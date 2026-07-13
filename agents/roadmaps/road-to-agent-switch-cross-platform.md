@@ -119,18 +119,20 @@ mocked FS where no VM is available.
 
 ## Phase 3: Shell integration + install + doctor
 
-- [ ] **Step 1:** `shellenv --shell zsh|bash|fish|powershell` (auto-detect from
+- [x] **Step 1:** `shellenv --shell zsh|bash|fish|powershell` (auto-detect from
       `$SHELL`/platform): zsh/bash POSIX, fish variant, PowerShell `claude`
       wrapper + `asw` function.
-- [ ] **Step 2:** cmd.exe fallback: `agent-switch run` works everywhere; document
+- [x] **Step 2:** cmd.exe fallback: `agent-switch run` works everywhere; document
       the no-wrapper limitation.
-- [ ] **Step 3:** `agent-switch doctor` — per-OS self-check (claude binary on PATH,
+      <!-- done: no cmd.exe function-wrapper by design (documented in README shell table + a dedicated note); `run` sets CLAUDE_CONFIG_DIR per invocation on every OS. -->
+- [x] **Step 3:** `agent-switch doctor` — per-OS self-check (claude binary on PATH,
       config-dir resolution, credential readability, share-link health) with
       actionable fixes. <!-- verify: node dist/index.js doctor -->
-- [ ] **Step 4:** Install story: `npm install -g` / `npm link` documented per
+- [x] **Step 4:** Install story: `npm install -g` / `npm link` documented per
       OS; `package.json` `files` + tarball hygiene. Native package managers
       (Homebrew/Scoop/winget) deferred. <!-- deferred: revisit after the tool is public -->
-- [ ] **Step 5:** README: per-OS install + integration sections, degradation
+      <!-- done: added `files: ["dist"]` — `npm pack --dry-run` ships 13 files (dist/*.js + README + LICENSE + package.json, 19.5kB); no src/tests/agents/dist-test. Per-OS install + integration table in README. Native PMs remain the only deferred sub-part. -->
+- [x] **Step 5:** README: per-OS install + integration sections, degradation
       matrix.
 
 **Exit criteria:** fresh-machine install path exercised per OS (VM/CI);

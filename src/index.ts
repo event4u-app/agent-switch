@@ -39,6 +39,8 @@ import {
 import { credentialStore } from "./credentials.js";
 import { withProperLock } from "./locks.js";
 import { applySharing, removeSharing, syncSharing } from "./share.js";
+import { detectShell, shellenvScript } from "./shellenv.js";
+import { runDoctor } from "./doctor.js";
 import {
   loadMappings,
   pruneMappings,
@@ -375,21 +377,8 @@ async function cmdWeb(name?: string): Promise<void> {
   await new Promise<void>((resolve) => context.on("close", resolve));
 }
 
-function cmdShellenv(): void {
-  console.log(`# agent-switch shell integration — add to ~/.zshrc:  eval "$(agent-switch shellenv)"
-claude() {
-  local dir
-  dir="$(command agent-switch dir 2>/dev/null)"
-  if [ -n "$dir" ]; then
-    CLAUDE_CONFIG_DIR="$dir" command claude "$@"
-  else
-    command claude "$@"
-  fi
-}
-# Convenience: "asw work" == "agent-switch use work", "asw" == "agent-switch list"
-asw() {
-  if [ $# -eq 0 ]; then command agent-switch list; else command agent-switch use "$@"; fi
-}`);
+function cmdShellenv(shellArg?: string): void {
+  console.log(shellenvScript(detectShell(shellArg)));
 }
 
 function usage(): void {
@@ -411,10 +400,18 @@ function usage(): void {
                                   share settings/skills/commands (sync re-links forked files)
   agent-switch web <name>              open claude.ai in a persistent per-profile browser
   agent-switch remove <name> [--force] delete a profile (incl. its keychain entry)
-  agent-switch shellenv                print the zsh integration snippet`);
+  agent-switch shellenv [--shell zsh|bash|fish|powershell]
+                                  print the shell integration snippet (auto-detects)
+  agent-switch doctor                  per-OS self-check (claude on PATH, config, creds, links)`);
 }
 
 // ---------- main -------------------------------------------------------------
+
+/** Value of a `--flag value` option, or undefined if absent. */
+function flagValue(args: string[], name: string): string | undefined {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : undefined;
+}
 
 async function main(): Promise<void> {
   const [cmd, ...rest] = process.argv.slice(2);
@@ -435,7 +432,8 @@ async function main(): Promise<void> {
     case "share": return cmdShare(positional[0], rest.slice(1));
     case "web": return cmdWeb(positional[0]);
     case "remove": case "rm": return cmdRemove(positional[0], rest.includes("--force"));
-    case "shellenv": return cmdShellenv();
+    case "shellenv": return cmdShellenv(flagValue(rest, "--shell") ?? positional[0]);
+    case "doctor": return process.exit(runDoctor());
     default: usage(); process.exit(cmd ? 1 : 0);
   }
 }

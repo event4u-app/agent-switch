@@ -202,6 +202,22 @@ export function syncSharing(sourceDir: string, targetDir: string): string[] {
   return actions;
 }
 
+export type LinkState = "linked" | "forked" | "missing";
+
+/** Health of each manifest-managed link in a profile, for `doctor`.
+ *  `linked` = intact symlink/junction; `forked` = a /config write replaced it
+ *  with a regular file (run `share sync`); `missing` = the link is gone. */
+export function sharedLinkHealth(targetDir: string): { name: string; state: LinkState }[] {
+  return readManifest(targetDir).map((name) => {
+    const dst = path.join(targetDir, name);
+    try {
+      return { name, state: fs.lstatSync(dst).isSymbolicLink() ? "linked" : "forked" };
+    } catch {
+      return { name, state: "missing" };
+    }
+  });
+}
+
 /** Remove agent-switch-created links only (manifest-guarded). */
 export function removeSharing(targetDir: string): string[] {
   const actions: string[] = [];

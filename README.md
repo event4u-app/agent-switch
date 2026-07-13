@@ -1,6 +1,6 @@
 # agent-switch
 
-Switch between multiple Claude Code accounts on macOS with a single shell command — no repeated login/logout, no browser round-trips after the initial setup.
+Switch between multiple Claude Code accounts on macOS, Linux, and Windows with a single shell command — no repeated login/logout, no browser round-trips after the initial setup.
 
 ```
 $ asw work        # switch active account
@@ -19,23 +19,39 @@ Most naive switchers snapshot the macOS Keychain entry (`Claude Code-credentials
 
 ## Install
 
+From source (any OS — needs Node ≥ 18):
+
 ```bash
 npm install          # or: npm ci
 npm run build
-npm link             # puts `agent-switch` on your PATH
+npm link             # puts `agent-switch` on your PATH (npm creates a .cmd shim on Windows)
 ```
 
-Add the shell integration to `~/.zshrc`:
+Native package managers (Homebrew / Scoop / winget) are planned once the tool
+is public; for now `npm link` (local) or `npm install -g agent-switch` (once
+published) is the install path on every OS.
 
-```bash
-eval "$(agent-switch shellenv)"
-```
+Then add the shell integration — `agent-switch shellenv` auto-detects your shell,
+or pass `--shell`:
+
+| Shell | One-time setup |
+|---|---|
+| **zsh** (macOS default) | add `eval "$(agent-switch shellenv)"` to `~/.zshrc` |
+| **bash** | add `eval "$(agent-switch shellenv)"` to `~/.bashrc` |
+| **fish** | add `agent-switch shellenv --shell fish \| source` to `~/.config/fish/config.fish` |
+| **PowerShell** (Windows) | add `agent-switch shellenv --shell powershell \| Out-String \| Invoke-Expression` to `$PROFILE` |
+| **cmd.exe** | no wrapper — use `agent-switch run <name>` directly (see below) |
 
 This defines:
 - a `claude` wrapper that injects the active profile's `CLAUDE_CONFIG_DIR`
 - `asw <name>` as shorthand for `agent-switch use <name>`, and bare `asw` for `agent-switch list`
 
-Open a new terminal afterwards.
+Open a new terminal afterwards, then run `agent-switch doctor` to self-check the setup.
+
+**cmd.exe has no function-wrapper story**, so there is no `claude` shadow there:
+run a profile explicitly with `agent-switch run <name>` (which sets
+`CLAUDE_CONFIG_DIR` for that one invocation). PowerShell is the recommended
+Windows shell.
 
 ## Setup your accounts
 
@@ -62,6 +78,7 @@ agent-switch add event4u
 | `agent-switch share on` | one settings/skills/commands/agents tree for all profiles |
 | `agent-switch web work` | claude.ai in a persistent per-profile browser (see below) |
 | `agent-switch remove old --force` | delete a profile incl. its keychain entry |
+| `agent-switch doctor` | per-OS self-check (claude on PATH, config, creds, share links) |
 
 ## Per-repo accounts (directory mappings)
 
@@ -110,6 +127,25 @@ npm install playwright && npx playwright install chromium
 ```
 
 (Alternative without any tooling: separate Chrome profiles or Firefox containers achieve the same thing.)
+
+## Platform support
+
+Every command works on macOS, Linux, and Windows, or degrades with an explicit
+message. `agent-switch doctor` reports the live status for your machine.
+
+| Capability | macOS | Linux | Windows |
+|---|---|---|---|
+| Profiles, switch, run, status, mappings | ✅ | ✅ | ✅ |
+| Credential store | Keychain (per-dir), file fallback | plaintext file per profile | plaintext file per profile |
+| `import` (login-free) | ✅ | ✅ | ✅ |
+| Share **directories** (skills/commands/agents) | ✅ symlink | ✅ symlink | ✅ junction (no admin) |
+| Share **files** (settings.json, …) | ✅ (forks on edit → `share sync`) | ✅ (same) | ⚠️ needs Developer Mode/admin; else skipped |
+| `share --history` | ✅ | ✅ | ❌ POSIX-only |
+| Shell wrapper | zsh/bash | zsh/bash/fish | PowerShell (cmd.exe → `run`) |
+| `web` (claude.ai browser) | ✅ | ✅ desktop session | ✅ |
+
+Full per-mechanism contract (verified/degraded/broken with sources) lives in
+[`ADOPTED.md`](ADOPTED.md#per-os-contract-matrix).
 
 ## Notes & gotchas
 
