@@ -7,3 +7,4 @@ dist/
 # agent-layer scratch (local-only)
 agents/runtime/
 agents/tmp/
+agents/state/
