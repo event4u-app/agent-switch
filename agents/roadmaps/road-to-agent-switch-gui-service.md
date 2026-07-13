@@ -223,13 +223,13 @@ the same violation.
   in CI is verified in Phase 5 Step 2.
 
 ### blocker: repo-hosting
-- **Status:** open
+- **Status:** resolved            <!-- github.com/event4u-app/agent-switch, pushed 2026-07-13 -->
 - **Owner:** user
 - **Blocks:** Phase 5 — Packaging, docs, CI
 - **What to do:**
-  1. Initialize the git repo + remote (see the cross-platform roadmap's
-     matching blocker).
-- **Resolved when:** `git remote -v` shows a pushable remote with Actions.
+  1. ~~Initialize the git repo + remote.~~ **Done:** `event4u-app/agent-switch`
+     (public), `main` pushed.
+- **Resolved when:** ~~`git remote -v` shows a pushable remote~~ — done.
 
 ## Notes
 

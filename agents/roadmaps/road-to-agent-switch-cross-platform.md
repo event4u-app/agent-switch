@@ -158,13 +158,13 @@ mocked FS where no VM is available.
 ## Blockers
 
 ### blocker: repo-hosting
-- **Status:** open
+- **Status:** resolved            <!-- github.com/event4u-app/agent-switch, pushed 2026-07-13 -->
 - **Owner:** user
 - **Blocks:** Phase 4 — CI + release readiness
 - **What to do:**
-  1. Decide hosting (GitHub private/public, org vs personal) and initialize the
-     git repo + remote.
-  2. Tell the agent the remote so the CI workflow lands in the right place.
+  1. ~~Decide hosting and initialize the git repo + remote.~~ **Done:**
+     `event4u-app/agent-switch` (public), `main` pushed.
+  2. ~~Tell the agent the remote.~~ Done — CI workflow can land in Phase 4.
 - **Resolved when:** `git remote -v` shows a pushable remote with Actions
   available.
 
