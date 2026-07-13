@@ -1,28 +1,35 @@
 /**
- * Directory → profile mappings for automatic per-repo account selection.
+ * Directory → (provider, profile) mappings for automatic per-repo account
+ * selection across all three CLI assistants.
  *
- * Adopted from claude-swap (mappings.py / PR #71): `agent-switch dir` resolves the
- * current working directory to the nearest mapped ancestor, so the `claude`
- * shell wrapper picks the right account per repository without switching.
- * Precedence in the wrapper: directory mapping > active profile > default.
+ * `agent-switch dir --provider <id>` resolves the current working directory to
+ * the nearest mapped ancestor for that provider, so each shell wrapper
+ * (`claude`/`codex`/`gemini`) picks the right account per repository without
+ * switching. Precedence in the wrapper: directory mapping > active-for-provider
+ * > default.
  *
- * Keys are normalized (expanded, absolute, symlink-resolved) paths; values
- * are profile names (stable here — profiles are named directories, unlike
- * claude-swap's reusable slot numbers).
+ * Keys are normalized (expanded, absolute, symlink-resolved; win32 drive-letter
+ * canonicalized) paths; values are `{ provider, name }`. A path may map a
+ * different profile per provider, so the stored value is keyed by provider:
+ * `{ "<path>": { claude: "<name>", codex: "<name>", ... } }`.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { ROOT, ensureRoot } from "./profiles.js";
+import { ProviderId } from "./providers.js";
 
 const MAPPINGS_FILE = path.join(ROOT, "mappings.json");
+
+/** provider → profile name, for one directory. */
+export type DirMapping = Partial<Record<ProviderId, string>>;
 
 /**
  * Windows path canonicalization for mapping keys. NTFS is case-insensitive and
  * drive letters appear in both cases (`C:\` vs `c:\`), so a mapping keyed under
  * one case must match a lookup in the other. Uppercase the drive letter (the
- * Windows convention) so `C:\Foo` and `c:\Foo` resolve to the same key. Pure —
- * no FS access — so it is unit-tested cross-platform. No-op off win32.
+ * Windows convention). Pure — no FS access — so it is unit-tested cross-platform.
+ * No-op off win32.
  */
 export function canonicalizeWin32(resolved: string, platform: NodeJS.Platform = process.platform): string {
   if (platform !== "win32") return resolved;
@@ -39,59 +46,92 @@ export function normalizePath(p: string): string {
   return canonicalizeWin32(resolved);
 }
 
-export function loadMappings(): Record<string, string> {
+export function loadMappings(): Record<string, DirMapping> {
+  let data: any;
   try {
-    const data = JSON.parse(fs.readFileSync(MAPPINGS_FILE, "utf8"));
-    return data && typeof data.mappings === "object" ? data.mappings : {};
+    data = JSON.parse(fs.readFileSync(MAPPINGS_FILE, "utf8"));
   } catch {
     return {};
   }
+  const raw = data && typeof data.mappings === "object" ? data.mappings : {};
+  const out: Record<string, DirMapping> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    // v1: value was a bare profile name (Claude). v2: value is a provider map.
+    if (typeof value === "string") out[key] = { claude: value };
+    else if (value && typeof value === "object") out[key] = value as DirMapping;
+  }
+  return out;
 }
 
-function save(mappings: Record<string, string>): void {
+function save(mappings: Record<string, DirMapping>): void {
   ensureRoot();
-  fs.writeFileSync(
-    MAPPINGS_FILE,
-    JSON.stringify({ schema: 1, mappings }, null, 2) + "\n",
-    { mode: 0o600 },
-  );
+  fs.writeFileSync(MAPPINGS_FILE, JSON.stringify({ schema: 2, mappings }, null, 2) + "\n", {
+    mode: 0o600,
+  });
 }
 
-export function setMapping(dir: string, profile: string): string {
+export function setMapping(dir: string, providerId: ProviderId, name: string): string {
   const key = normalizePath(dir);
   const mappings = loadMappings();
-  mappings[key] = profile;
+  mappings[key] = { ...mappings[key], [providerId]: name };
   save(mappings);
   return key;
 }
 
-export function removeMapping(dir: string): boolean {
+/** Remove a directory's mapping — one provider, or the whole entry. */
+export function removeMapping(dir: string, providerId?: ProviderId): boolean {
   const key = normalizePath(dir);
   const mappings = loadMappings();
   if (!(key in mappings)) return false;
-  delete mappings[key];
+  if (providerId) {
+    if (!(providerId in mappings[key])) return false;
+    delete mappings[key][providerId];
+    if (Object.keys(mappings[key]).length === 0) delete mappings[key];
+  } else {
+    delete mappings[key];
+  }
   save(mappings);
   return true;
 }
 
-/** Nearest mapped ancestor of `dir` (inclusive); null if none. */
-export function resolveMapping(dir: string): { path: string; profile: string } | null {
+/** Nearest mapped ancestor of `dir` (inclusive) for a provider; null if none. */
+export function resolveMapping(
+  dir: string,
+  providerId: ProviderId,
+): { path: string; name: string } | null {
   const mappings = loadMappings();
   let current = normalizePath(dir);
   for (;;) {
-    if (current in mappings) return { path: current, profile: mappings[current] };
+    const entry = mappings[current];
+    if (entry && entry[providerId]) return { path: current, name: entry[providerId]! };
     const parent = path.dirname(current);
     if (parent === current) return null;
     current = parent;
   }
 }
 
-/** Drop mappings pointing at a removed profile. Returns removed keys. */
-export function pruneMappings(profile: string): string[] {
+/** Drop mappings pointing at a removed (provider, name). Returns removed keys. */
+export function pruneMappings(providerId: ProviderId, name: string): string[] {
   const mappings = loadMappings();
-  const removed = Object.keys(mappings).filter((k) => mappings[k] === profile);
-  if (removed.length === 0) return [];
-  for (const k of removed) delete mappings[k];
-  save(mappings);
+  const removed: string[] = [];
+  for (const [key, entry] of Object.entries(mappings)) {
+    if (entry[providerId] === name) {
+      delete entry[providerId];
+      if (Object.keys(entry).length === 0) delete mappings[key];
+      removed.push(key);
+    }
+  }
+  if (removed.length > 0) save(mappings);
   return removed;
+}
+
+/** All mappings as flat rows for display. */
+export function mappingRows(): { path: string; provider: ProviderId; name: string }[] {
+  const rows: { path: string; provider: ProviderId; name: string }[] = [];
+  for (const [key, entry] of Object.entries(loadMappings())) {
+    for (const [provider, name] of Object.entries(entry)) {
+      rows.push({ path: key, provider: provider as ProviderId, name: name as string });
+    }
+  }
+  return rows.sort((a, b) => a.path.localeCompare(b.path) || a.provider.localeCompare(b.provider));
 }

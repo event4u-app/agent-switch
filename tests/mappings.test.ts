@@ -4,37 +4,66 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { canonicalizeWin32, normalizePath } from "../src/mappings.js";
+// mappings.ts imports profiles.ts (ROOT), which reads AGENT_SWITCH_HOME at load.
+const HOME = fs.mkdtempSync(path.join(os.tmpdir(), "asw-map-"));
+process.env.AGENT_SWITCH_HOME = HOME;
+const M = await import("../src/mappings.js");
 
-// Windows path handling for directory mappings: NTFS is case-insensitive and
-// drive letters appear in both cases, so a mapping must resolve regardless of
-// the drive-letter case the user typed.
-
-test("canonicalizeWin32 uppercases the drive letter on win32", () => {
-  assert.equal(canonicalizeWin32("c:\\Users\\x\\proj", "win32"), "C:\\Users\\x\\proj");
-  assert.equal(canonicalizeWin32("d:\\repo", "win32"), "D:\\repo");
-  assert.equal(canonicalizeWin32("C:\\already", "win32"), "C:\\already"); // idempotent
+test("canonicalizeWin32 uppercases the drive letter on win32, no-op elsewhere", () => {
+  assert.equal(M.canonicalizeWin32("c:\\Users\\x\\proj", "win32"), "C:\\Users\\x\\proj");
+  assert.equal(M.canonicalizeWin32("c:\\Users\\lower\\Mixed", "win32"), "C:\\Users\\lower\\Mixed");
+  assert.equal(M.canonicalizeWin32("/home/u/proj", "linux"), "/home/u/proj");
+  assert.equal(M.canonicalizeWin32("c:/lower", "darwin"), "c:/lower");
 });
 
-test("canonicalizeWin32 only touches the drive letter, not the rest of the path", () => {
-  // A lowercase segment after the drive must survive untouched.
-  assert.equal(canonicalizeWin32("c:\\Users\\lower\\Mixed", "win32"), "C:\\Users\\lower\\Mixed");
-});
-
-test("canonicalizeWin32 is a no-op off win32", () => {
-  assert.equal(canonicalizeWin32("/home/u/proj", "linux"), "/home/u/proj");
-  assert.equal(canonicalizeWin32("/Users/x/proj", "darwin"), "/Users/x/proj");
-  assert.equal(canonicalizeWin32("c:/lower", "linux"), "c:/lower");
-});
-
-test("normalizePath returns an absolute, resolved path", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-map-"));
+test("normalizePath returns an absolute, idempotent path", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-np-"));
   try {
-    const norm = normalizePath(dir);
+    const norm = M.normalizePath(dir);
     assert.equal(path.isAbsolute(norm), true);
-    // realpath of the same dir is stable / idempotent under normalizePath.
-    assert.equal(normalizePath(norm), norm);
+    assert.equal(M.normalizePath(norm), norm);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("setMapping / resolveMapping resolve the nearest ancestor per provider", () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-"));
+  const sub = path.join(repo, "packages", "app");
+  fs.mkdirSync(sub, { recursive: true });
+  try {
+    M.setMapping(repo, "claude", "work");
+    M.setMapping(repo, "codex", "oai");
+    // A descendant resolves to the ancestor mapping, per provider.
+    assert.equal(M.resolveMapping(sub, "claude")?.name, "work");
+    assert.equal(M.resolveMapping(sub, "codex")?.name, "oai");
+    // gemini has no mapping here.
+    assert.equal(M.resolveMapping(sub, "gemini"), null);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("pruneMappings drops only the (provider, name) it is given", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-prune-"));
+  try {
+    M.setMapping(dir, "claude", "gone");
+    M.setMapping(dir, "codex", "stays");
+    const removed = M.pruneMappings("claude", "gone");
+    assert.equal(removed.length, 1);
+    assert.equal(M.resolveMapping(dir, "claude"), null);
+    assert.equal(M.resolveMapping(dir, "codex")?.name, "stays"); // untouched
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("loadMappings migrates a v1 bare-string value to { claude: <name> }", () => {
+  // Write a v1-shaped mappings file directly and confirm it reads as provider-keyed.
+  fs.writeFileSync(
+    path.join(HOME, "mappings.json"),
+    JSON.stringify({ schema: 1, mappings: { "/some/dir": "legacy" } }),
+  );
+  const loaded = M.loadMappings();
+  assert.deepEqual(loaded["/some/dir"], { claude: "legacy" });
 });

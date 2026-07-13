@@ -1,17 +1,24 @@
-/** Profile roots, state file, and shared helpers. */
+/** Profile roots, per-provider state, layout migration, and shared helpers. */
 
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { ProviderId, PROVIDER_IDS, provider, isProviderId } from "./providers.js";
+import { CredentialStore, credentialStore } from "./credentials.js";
+
 export const HOME = os.homedir();
 export const ROOT = process.env.AGENT_SWITCH_HOME ?? path.join(HOME, ".agent-switch");
 export const STATE_FILE = path.join(ROOT, "state.json");
-export const DEFAULT_CONFIG_DIR = path.join(HOME, ".claude");
-export const DEFAULT_CONFIG_JSON = path.join(HOME, ".claude.json");
 
+/** The active profile name per provider. */
+export type ActiveMap = Record<ProviderId, string | null>;
 export interface State {
-  active: string | null;
+  active: ActiveMap;
+}
+
+function emptyActive(): ActiveMap {
+  return { claude: null, codex: null, gemini: null };
 }
 
 export function die(msg: string): never {
@@ -23,12 +30,84 @@ export function ensureRoot(): void {
   fs.mkdirSync(ROOT, { recursive: true, mode: 0o700 });
 }
 
+function validateName(name: string): void {
+  if (!/^[A-Za-z0-9_-]+$/.test(name)) die(`invalid profile name "${name}" (use a-z, 0-9, -, _)`);
+}
+
+export function profileDir(providerId: ProviderId, name: string): string {
+  validateName(name);
+  return path.join(ROOT, providerId, name);
+}
+
+/**
+ * The value exported as the provider's isolation env var
+ * (`<root>/<provider>/<name>/config`).
+ *
+ * IMPORTANT (macOS/claude): Claude Code derives its Keychain service name by
+ * hashing the *exact, unresolved* CLAUDE_CONFIG_DIR string. This function is
+ * the single source of that string — never pass a resolved/realpath variant.
+ * Changing this path for an existing profile changes the hash (see
+ * `migrateLegacyLayout`, which re-seeds the credential across the move).
+ */
+export function configDir(providerId: ProviderId, name: string): string {
+  return path.join(profileDir(providerId, name), "config");
+}
+
+export function browserDir(providerId: ProviderId, name: string): string {
+  return path.join(profileDir(providerId, name), "browser");
+}
+
+export function profileExists(providerId: ProviderId, name: string): boolean {
+  return fs.existsSync(configDir(providerId, name));
+}
+
+/** Profile names for one provider (dirs with a `config/` subdir), sorted. */
+export function listProfiles(providerId: ProviderId): string[] {
+  const dir = path.join(ROOT, providerId);
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && fs.existsSync(path.join(dir, e.name, "config")))
+    .map((e) => e.name)
+    .sort();
+}
+
+/** Every profile across all providers. */
+export function listAllProfiles(): { provider: ProviderId; name: string }[] {
+  return PROVIDER_IDS.flatMap((p) => listProfiles(p).map((name) => ({ provider: p, name })));
+}
+
+export function requireProfile(providerId: ProviderId, name: string | undefined, cmd: string): string {
+  if (!name) die(`usage: agent-switch ${cmd} <profile>`);
+  if (!profileExists(providerId, name)) {
+    const existing = listProfiles(providerId).join(", ") || "(none)";
+    die(`profile "${name}" not found for ${providerId}. Existing: ${existing}`);
+  }
+  return name;
+}
+
+/** Best-effort account identity for a profile, via its provider. */
+export function identity(providerId: ProviderId, name: string): string | null {
+  const p = provider(providerId);
+  return p.readIdentity(p.configDirFor(configDir(providerId, name)));
+}
+
+// ---------- state (per-provider active), with v1 → v2 migration ----------
+
 export function readState(): State {
   try {
-    return JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) as State;
+    const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    // v1: { active: "<name>" } — a single Claude profile.
+    if (typeof raw?.active === "string") {
+      return { active: { ...emptyActive(), claude: raw.active } };
+    }
+    if (raw?.active && typeof raw.active === "object") {
+      return { active: { ...emptyActive(), ...raw.active } };
+    }
   } catch {
-    return { active: null };
+    /* absent / unparsable → default */
   }
+  return { active: emptyActive() };
 }
 
 export function writeState(state: State): void {
@@ -36,57 +115,65 @@ export function writeState(state: State): void {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
 }
 
-export function profileDir(name: string): string {
-  if (!/^[A-Za-z0-9_-]+$/.test(name)) die(`invalid profile name "${name}" (use a-z, 0-9, -, _)`);
-  return path.join(ROOT, name);
+export function activeFor(providerId: ProviderId): string | null {
+  return readState().active[providerId];
 }
+
+export function setActive(providerId: ProviderId, name: string | null): void {
+  const state = readState();
+  state.active[providerId] = name;
+  writeState(state);
+}
+
+// ---------- layout migration: v1 <ROOT>/<name> → <ROOT>/claude/<name> ----------
 
 /**
- * The CLAUDE_CONFIG_DIR of a profile.
+ * One-time migration of v1 Claude profiles (`<ROOT>/<name>/config`) into the
+ * provider-scoped layout (`<ROOT>/claude/<name>/config`). Copy-then-verify;
+ * aborts a single profile on verify failure and keeps the original.
  *
- * IMPORTANT: on macOS, Claude Code derives its keychain service name by
- * hashing the *exact, unresolved* string of the env var (NFC-normalized).
- * This function is the single source of that string — never pass a
- * resolved/realpath variant to `claude` or to keychain.serviceNameFor().
+ * The config-dir path change alters the macOS Keychain service hash, so the
+ * credential is read from the old location and re-seeded as a plaintext
+ * `.credentials.json` (the supported path — Claude Code re-migrates it into the
+ * new hashed entry on first use). On linux/win the credential file simply moves
+ * with the dir. Idempotent: once every legacy dir is under `<provider>/`, a
+ * re-run does nothing. Returns the names migrated.
  */
-export function configDir(name: string): string {
-  return path.join(profileDir(name), "config");
-}
-
-export function browserDir(name: string): string {
-  return path.join(profileDir(name), "browser");
-}
-
-export function profileExists(name: string): boolean {
-  return fs.existsSync(configDir(name));
-}
-
-export function listProfiles(): string[] {
+export function migrateLegacyLayout(store: CredentialStore = credentialStore()): string[] {
   if (!fs.existsSync(ROOT)) return [];
-  return fs
-    .readdirSync(ROOT, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && fs.existsSync(path.join(ROOT, e.name, "config")))
-    .map((e) => e.name)
-    .sort();
-}
+  const moved: string[] = [];
+  for (const entry of fs.readdirSync(ROOT, { withFileTypes: true })) {
+    if (!entry.isDirectory() || isProviderId(entry.name)) continue; // already provider-scoped
+    const oldProfile = path.join(ROOT, entry.name);
+    const oldConfig = path.join(oldProfile, "config");
+    if (!fs.existsSync(oldConfig)) continue; // not a v1 profile dir
+    const newProfile = path.join(ROOT, "claude", entry.name);
+    if (fs.existsSync(newProfile)) continue; // name clash → leave for the user to resolve
 
-export function requireProfile(name: string | undefined, cmd: string): string {
-  if (!name) die(`usage: agent-switch ${cmd} <profile>`);
-  if (!profileExists(name)) {
-    die(`profile "${name}" not found. Existing: ${listProfiles().join(", ") || "(none)"}`);
-  }
-  return name;
-}
+    // Capture the credential BEFORE the path (and thus the hash) changes.
+    const cred = store.read(oldConfig);
 
-/** Read the account email from a profile's .claude.json (oauthAccount block). */
-export function accountEmail(name: string): string | null {
-  const cfg = path.join(configDir(name), ".claude.json");
-  try {
-    const json = JSON.parse(fs.readFileSync(cfg, "utf8"));
-    return json?.oauthAccount?.emailAddress ?? null;
-  } catch {
-    return null;
+    fs.mkdirSync(path.join(ROOT, "claude"), { recursive: true, mode: 0o700 });
+    fs.cpSync(oldProfile, newProfile, { recursive: true });
+    const newConfig = path.join(newProfile, "config");
+    if (!fs.existsSync(newConfig)) {
+      fs.rmSync(newProfile, { recursive: true, force: true }); // verify failed → abort this one
+      continue;
+    }
+
+    // Re-seed the credential so the new-path hash resolves it (macOS); on
+    // linux/win the file was copied already and this is a harmless no-op.
+    if (cred) {
+      store.clearStale(newConfig);
+      const credFile = path.join(newConfig, ".credentials.json");
+      if (!fs.existsSync(credFile)) fs.writeFileSync(credFile, cred, { mode: 0o600 });
+    }
+
+    store.removeEntry(oldConfig); // drop the stale old-path keychain entry (darwin)
+    fs.rmSync(oldProfile, { recursive: true, force: true });
+    moved.push(entry.name);
   }
+  return moved;
 }
 
 export function readJson(p: string): any | null {

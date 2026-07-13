@@ -1,17 +1,21 @@
 /**
- * Shell integration snippets, per shell.
+ * Shell integration snippets, per shell — a wrapper for each provider binary
+ * (`claude`, `codex`, `gemini`) plus `asw`.
  *
- * Each snippet defines two things:
- *   - a `claude` wrapper that injects the active profile's CLAUDE_CONFIG_DIR
- *     (resolved by `agent-switch dir`: directory mapping > active profile);
- *   - `asw` convenience: `asw <name>` == `agent-switch use <name>`, bare `asw`
- *     == `agent-switch list`.
+ * Each binary wrapper injects that provider's isolation env var from the
+ * resolved profile (`agent-switch dir --provider <id>`: mapping >
+ * active-for-provider > default). The wrapper must call the REAL binary, not
+ * recurse — each shell has its own escape (`command` on POSIX/fish,
+ * `Get-Command -CommandType Application` on PowerShell). cmd.exe has no clean
+ * function-wrapper story, so there is no cmd snippet — `agent-switch run <name>
+ * [--provider p]` is the cmd.exe path.
  *
- * The wrapper must call the REAL `claude`, not recurse into itself — each shell
- * has its own escape (`command` on POSIX/fish, `Get-Command -CommandType
- * Application` on PowerShell). cmd.exe has no clean function-wrapper story, so
- * there is no cmd snippet — `agent-switch run <name>` is the cmd.exe path.
+ * `asw` convenience: bare `asw` lists all providers' profiles; `asw <name>`
+ * switches the active Claude profile; `asw <provider> <name>` switches that
+ * provider's.
  */
+
+import { allProviders } from "./providers.js";
 
 export type Shell = "zsh" | "bash" | "fish" | "powershell";
 
@@ -38,65 +42,86 @@ export function detectShell(
   return "zsh"; // sensible POSIX default when $SHELL is unset
 }
 
-const POSIX = `# agent-switch shell integration — add to your rc file:  eval "$(agent-switch shellenv)"
-claude() {
+function posixWrapper(binary: string, envVar: string, id: string): string {
+  return `${binary}() {
   local dir
-  dir="$(command agent-switch dir 2>/dev/null)"
+  dir="$(command agent-switch dir --provider ${id} 2>/dev/null)"
   if [ -n "$dir" ]; then
-    CLAUDE_CONFIG_DIR="$dir" command claude "$@"
+    ${envVar}="$dir" command ${binary} "$@"
   else
-    command claude "$@"
+    command ${binary} "$@"
   fi
-}
-# Convenience: "asw work" == "agent-switch use work", "asw" == "agent-switch list"
-asw() {
-  if [ $# -eq 0 ]; then command agent-switch list; else command agent-switch use "$@"; fi
 }`;
+}
 
-const FISH = `# agent-switch shell integration — add to ~/.config/fish/config.fish:  agent-switch shellenv --shell fish | source
-function claude
-    set -l dir (command agent-switch dir 2>/dev/null)
+function fishWrapper(binary: string, envVar: string, id: string): string {
+  return `function ${binary}
+    set -l dir (command agent-switch dir --provider ${id} 2>/dev/null)
     if test -n "$dir"
-        CLAUDE_CONFIG_DIR=$dir command claude $argv
+        ${envVar}=$dir command ${binary} $argv
     else
-        command claude $argv
+        command ${binary} $argv
     end
-end
-# Convenience: "asw work" == "agent-switch use work", "asw" == "agent-switch list"
+end`;
+}
+
+function powershellWrapper(binary: string, envVar: string, id: string): string {
+  return `function ${binary} {
+    $exe = Get-Command ${binary} -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $exe) { Write-Error '${binary} not found on PATH.'; return }
+    $dir = (& agent-switch dir --provider ${id} 2>$null)
+    if ($dir) {
+        $prev = Get-Item -Path Env:\\${envVar} -ErrorAction SilentlyContinue
+        $env:${envVar} = $dir
+        try { & $exe.Source @args } finally { if ($prev) { $env:${envVar} = $prev.Value } else { Remove-Item Env:\\${envVar} -ErrorAction SilentlyContinue } }
+    } else {
+        & $exe.Source @args
+    }
+}`;
+}
+
+function build(header: string, wrappers: string[], asw: string): string {
+  return [header, ...wrappers, asw].join("\n");
+}
+
+export function shellenvScript(shell: Shell): string {
+  const providers = allProviders();
+
+  if (shell === "fish") {
+    const header = `# agent-switch shell integration — add to ~/.config/fish/config.fish:  agent-switch shellenv --shell fish | source`;
+    const asw = `# Convenience: "asw" lists all; "asw work" switches claude; "asw codex work" switches a provider
 function asw
     if test (count $argv) -eq 0
         command agent-switch list
+    else if contains -- $argv[1] claude codex gemini
+        command agent-switch use $argv[2] --provider $argv[1]
     else
         command agent-switch use $argv
     end
 end`;
-
-const POWERSHELL = `# agent-switch shell integration — add to $PROFILE:  agent-switch shellenv --shell powershell | Out-String | Invoke-Expression
-function claude {
-    $exe = Get-Command claude -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $exe) { Write-Error 'claude not found on PATH. Install Claude Code first.'; return }
-    $dir = (& agent-switch dir 2>$null)
-    if ($dir) {
-        $prev = $env:CLAUDE_CONFIG_DIR
-        $env:CLAUDE_CONFIG_DIR = $dir
-        try { & $exe.Source @args } finally { $env:CLAUDE_CONFIG_DIR = $prev }
-    } else {
-        & $exe.Source @args
-    }
-}
-# Convenience: "asw work" == "agent-switch use work", "asw" == "agent-switch list"
-function asw {
-    if ($args.Count -eq 0) { & agent-switch list } else { & agent-switch use @args }
-}`;
-
-export function shellenvScript(shell: Shell): string {
-  switch (shell) {
-    case "fish":
-      return FISH;
-    case "powershell":
-      return POWERSHELL;
-    case "zsh":
-    case "bash":
-      return POSIX;
+    return build(header, providers.map((p) => fishWrapper(p.binary, p.envVar, p.id)), asw);
   }
+
+  if (shell === "powershell") {
+    const header = `# agent-switch shell integration — add to $PROFILE:  agent-switch shellenv --shell powershell | Out-String | Invoke-Expression`;
+    const asw = `# Convenience: "asw" lists all; "asw work" switches claude; "asw codex work" switches a provider
+function asw {
+    if ($args.Count -eq 0) { command agent-switch list; return }
+    if (@('claude','codex','gemini') -contains $args[0]) { & agent-switch use $args[1] --provider $args[0] }
+    else { & agent-switch use @args }
+}`;
+    return build(header, providers.map((p) => powershellWrapper(p.binary, p.envVar, p.id)), asw);
+  }
+
+  // zsh + bash share the POSIX snippet.
+  const header = `# agent-switch shell integration — add to your rc file:  eval "$(agent-switch shellenv)"`;
+  const asw = `# Convenience: "asw" lists all; "asw work" switches claude; "asw codex work" switches a provider
+asw() {
+  if [ $# -eq 0 ]; then command agent-switch list; return; fi
+  case "$1" in
+    claude|codex|gemini) command agent-switch use "$2" --provider "$1" ;;
+    *) command agent-switch use "$@" ;;
+  esac
+}`;
+  return build(header, providers.map((p) => posixWrapper(p.binary, p.envVar, p.id)), asw);
 }
