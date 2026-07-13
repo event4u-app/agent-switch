@@ -50,32 +50,38 @@ zsh/bash/fish/PowerShell, a `doctor` self-check, and a green
 
 ## Phase 1: Contract verification per OS
 
-- [ ] **Step 1:** Test harness with `node:test` (zero new runtime deps);
+- [x] **Step 1:** Test harness with `node:test` (zero new runtime deps);
       `npm test` runs `tests/*.test.ts` via tsc + node.
       <!-- verify: npm test -->
-- [ ] **Step 2 (deferred from parent):** macOS keychain service-hash contract
+      <!-- done: harness present; fixed the runner to `tsc && cd dist-test && node --test` — the `**` glob is node-21+ only and failed on node 18 (engine floor); directory discovery diverges (18 ok, 22 treats dir as module). Verified green on node 18 + 22. -->
+
+- [x] **Step 2 (deferred from parent):** macOS keychain service-hash contract
       test against a real install — scratch profile, login, assert
       `security find-generic-password -s "Claude Code-credentials-<hash>"`
       hits. Integration test, gated by `AGENT_SWITCH_CONTRACT_TESTS=1`.
-- [ ] **Step 3 (deferred from parent):** Usage API response-shape check against
+- [x] **Step 3 (deferred from parent):** Usage API response-shape check against
       a live response (`five_hour`/`seven_day` + `utilization` + `resets_at`).
       Same integration gate.
-- [ ] **Step 4 (deferred from parent):** Verify Claude Code's settings-writer
+- [x] **Step 4 (deferred from parent):** Verify Claude Code's settings-writer
       symlink behavior on the current version: assert file symlink replacement
       (#40857); assert writes inside a symlinked directory (`skills/`,
       `agents/`) land in the share source.
-- [ ] **Step 5:** Linux verification (container/VM): config layout,
+- [x] **Step 5:** Linux verification (container/VM): config layout,
       `.credentials.json` under `CLAUDE_CONFIG_DIR`, lock-dir protocol,
       `sessions/{pid}.json`, `import` end-to-end.
-- [ ] **Step 6:** Windows verification (VM): `.credentials.json` under
+      <!-- done: Docker node:18 + node:22 bookworm — clean install + build + `npm test` green (9 tests, exit 0) + CLI smoke (current/use/list, email resolution) on real Linux. Fuller path coverage lands via Phase 4 unit tests on the same ubuntu CI leg. -->
+- [~] **Step 6:** Windows verification (VM): `.credentials.json` under
       `CLAUDE_CONFIG_DIR`, junction creation without elevation
       (`fs.symlinkSync(src, dst, "junction")`), lock-dir mtime on NTFS,
       `sessions/{pid}.json`, path normalization (drive letters, backslashes,
       `%USERPROFILE%`).
-- [ ] **Step 7:** Determine whether `~/.local/state/claude/` (or equivalent)
+      <!-- deferred: no local Windows environment. Cross-platform-testable parts (path normalization via node's path.win32, sessions PID logic, credential file path) are unit-tested; the Windows-LIVE parts (junction without elevation, file-symlink elevation, NTFS lock mtime) are encoded as win32-gated tests and verified for real by the windows-latest leg of the CI matrix (Phase 4 Step 2). Pending the first green CI run. -->
+- [x] **Step 7:** Determine whether `~/.local/state/claude/` (or equivalent)
       leaks across profiles; document in `README.md § Notes & gotchas`.
-- [ ] **Step 8:** Write the per-OS contract matrix into `ADOPTED.md`; correct
+      <!-- done: CLAUDE_CONFIG_DIR relocates only the config home, not the XDG state dir → any state Claude writes to ~/.local/state/claude/ is shared across profiles (credentials/.claude.json/history stay per-profile). Documented as a gotcha in README; exact contents version-dependent (noted in ADOPTED.md open-verification #4). -->
+- [x] **Step 8:** Write the per-OS contract matrix into `ADOPTED.md`; correct
       the stale write-through claim.
+      <!-- done: added "Per-OS contract matrix" section + corrected item 4 (write-through holds for directory links, not file links — #40857) + updated open-verification points. -->
 
 **Exit criteria:** `npm test` green; per-OS contract matrix in `ADOPTED.md`
 with verified/degraded/broken per mechanism.

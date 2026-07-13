@@ -8,7 +8,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "prepare": "tsc"
+    "prepare": "tsc",
+    "test": "tsc -p tsconfig.test.json && cd dist-test && node --test"
   },
   "engines": {
     "node": ">=18"

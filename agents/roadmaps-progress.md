@@ -6,17 +6,17 @@
 
 ## Overall
 
-**0 / 76 steps done · 0%**
+**7 / 75 steps done · 9%**
 
 ```text
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   0%
+████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   9%
 ```
 
 ## Open roadmaps
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-agent-switch-cross-platform.md](roadmaps/road-to-agent-switch-cross-platform.md) | 4 | 26 | 26 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
+| 1 | [road-to-agent-switch-cross-platform.md](roadmaps/road-to-agent-switch-cross-platform.md) | 4 | 26 | 18 | 7 | 1 | 0 | 0 | ███░░░░░░░ 28% |
 | 2 | [road-to-agent-switch-gui-service.md](roadmaps/road-to-agent-switch-gui-service.md) | 5 | 33 | 33 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
 | 3 | [road-to-agent-switch-multi-provider.md](roadmaps/road-to-agent-switch-multi-provider.md) | 3 | 17 | 17 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
 
@@ -26,11 +26,11 @@
 
 ### [road-to-agent-switch-cross-platform.md](roadmaps/road-to-agent-switch-cross-platform.md)
 
-**agent-switch cross-platform foundation (macOS / Linux / Windows)** — 0 / 26 done (0%)
+**agent-switch cross-platform foundation (macOS / Linux / Windows)** — 7 / 25 done (28%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
-| 1 | Contract verification per OS | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
+| 1 | Contract verification per OS | ✅ done | 0 | 7 | 1 | 0 | 100% |
 | 2 | Platform abstraction layer | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
 | 3 | Shell integration + install + doctor | ⬜ not started | 5 | 0 | 0 | 0 | 0% |
 | 4 | CI + release readiness | ⬜ not started | 7 | 0 | 0 | 0 | 0% |

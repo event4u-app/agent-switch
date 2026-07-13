@@ -107,6 +107,8 @@ npm install playwright && npx playwright install chromium
 - After `agent-switch import`, the imported profile and the old default login share one OAuth lineage — the first side to refresh wins. Stop using the bare default login afterwards.
 - Profiles are fully isolated by default; use `agent-switch share on` for a managed shared-settings setup.
 - Override the profile root with `AGENT_SWITCH_HOME` if you don't want `~/.agent-switch`.
+- **`CLAUDE_CONFIG_DIR` relocates only the config home, not the OS state dir.** On Linux, Claude Code may also write to `~/.local/state/claude/` (XDG state), which is *not* per-profile — so any state kept there (not credentials, which live in each profile's config dir) is effectively shared across all profiles. Impact is limited and the exact contents vary by version; flagged here so a surprising cross-profile artifact there is not mistaken for a leak of account data. Credentials, `.claude.json`, and history stay per profile.
+- **VS Code extension ignores `CLAUDE_CONFIG_DIR`** (upstream #30538) — the extension always uses the default `~/.claude`. Use the CLI (`agent-switch run` / the `claude` wrapper) for per-profile sessions; the extension is out of scope.
 
 ## Layout
 
