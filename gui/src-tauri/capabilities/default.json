@@ -1,0 +1,22 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "agent-switch GUI: window control + running the agent-switch CLI",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "agent-switch",
+          "cmd": "agent-switch",
+          "args": true
+        }
+      ]
+    }
+  ]
+}

@@ -9,3 +9,7 @@ dist-test/
 agents/runtime/
 agents/tmp/
 agents/state/
+gui/node_modules/
+gui/dist/
+gui/src-tauri/target/
+gui/src-tauri/gen/

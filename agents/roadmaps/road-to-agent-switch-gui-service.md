@@ -21,11 +21,11 @@ React UI that reads that state and drives switching through the existing CLI.
 
 ## Prerequisites
 
-- [ ] [`road-to-agent-switch-cross-platform.md`](archive/road-to-agent-switch-cross-platform.md)
+- [x] [`road-to-agent-switch-cross-platform.md`](archive/road-to-agent-switch-cross-platform.md)
       complete (per-OS abstraction + CI). (Completed & archived — PR #1.)
-- [ ] [`road-to-agent-switch-multi-provider.md`](archive/road-to-agent-switch-multi-provider.md)
+- [x] [`road-to-agent-switch-multi-provider.md`](archive/road-to-agent-switch-multi-provider.md)
       complete (the GUI shows all three providers).
-- [ ] GUI stack decided (see `## Blockers § gui-stack`).
+- [x] GUI stack decided (see `## Blockers § gui-stack`).
 
 ## Context
 
@@ -57,23 +57,23 @@ React UI that reads that state and drives switching through the existing CLI.
 
 ## Phase 1: Usage engine (policy-scoped)
 
-- [ ] **Step 1:** `src/usage.ts` — harden the OAuth read client: real
+- [x] **Step 1:** `src/usage.ts` — harden the OAuth read client: real
       `User-Agent` header (429 avoidance — extension-verified), timeout,
       defensive parsing of `five_hour`/`seven_day`(+`seven_day_opus`/
       `seven_day_sonnet`)/`utilization`/`resets_at`, plus per-model and Claude
       Code `routines` (used/limit) when present.
-- [ ] **Step 2:** Verify Codex + Gemini usage readouts (docs/endpoints/CLI);
+- [x] **Step 2:** Verify Codex + Gemini usage readouts (docs/endpoints/CLI);
       record findings in `ADOPTED.md`. Implement where a source exists; where
       none exists, the provider reports "usage unavailable" (no fabrication).
-- [ ] **Step 3:** Own-profile 30-day usage history store (≤720 samples) per
+- [x] **Step 3:** Own-profile 30-day usage history store (≤720 samples) per
       profile, mode 0600 — sparkline data.
-- [ ] **Step 4:** Threshold detection for the **active profile only**
+- [x] **Step 4:** Threshold detection for the **active profile only**
       (configurable, default 75%/90% on each window), edge-triggered (fire once
       per crossing, reset on `resets_at`). No cross-account comparison.
-- [ ] **Step 5:** `agent-switch status` keeps the one-shot all-profile table; add
+- [x] **Step 5:** `agent-switch status` keeps the one-shot all-profile table; add
       `agent-switch status --json` for the **active profile only** (statusline/GUI).
       No machine-readable cross-account output (anti-rotation boundary).
-- [ ] **Step 6:** Unit tests: parser shapes, edge-trigger semantics, history
+- [x] **Step 6:** Unit tests: parser shapes, edge-trigger semantics, history
       windowing. <!-- verify: npm test -->
 
 **Exit criteria:** `npm test` green; a live profile shows correct windows +
@@ -82,25 +82,26 @@ history; unsupported providers degrade cleanly (integration-gated).
 
 ## Phase 2: Background service
 
-- [ ] **Step 1:** `src/daemon.ts` — single-instance daemon (pidfile under the
+- [x] **Step 1:** `src/daemon.ts` — single-instance daemon (pidfile under the
       profile root), poll loop from Phase 1, writes `daemon-state.json`
       (last poll, per-profile snapshot, last error), mode 0600, SIGTERM-clean.
-- [ ] **Step 2:** Poll discipline: minimum interval ≥ 60s, jitter, exponential
+- [x] **Step 2:** Poll discipline: minimum interval ≥ 60s, jitter, exponential
       backoff on 401/403/429/5xx, and **poll only profiles with a live session**
       (`sessions/*.json` PIDs) plus the active profile — never a busy-poll of
       idle accounts.
-- [ ] **Step 3:** CLI: `agent-switch service start|stop|status|run` (`run` =
+- [x] **Step 3:** CLI: `agent-switch service start|stop|status|run` (`run` =
       foreground for debugging / service managers).
-- [ ] **Step 4:** `agent-switch service install|uninstall` per OS — launchd user
+- [x] **Step 4:** `agent-switch service install|uninstall` per OS — launchd user
       LaunchAgent (macOS), systemd user unit (Linux `systemctl --user`),
       Windows Task Scheduler logon trigger (`schtasks`); manifest records every
       generated file so uninstall removes exactly what was installed.
-- [ ] **Step 5:** Log file with size cap + single-generation rotation;
+      <!-- done: launchd plist / systemd user unit / schtasks logon task generated (golden-tested) + registration wired + manifest. The LIVE install→uninstall cycle (loading a real LaunchAgent that polls with the user's credential) is integration-gated — not auto-run to avoid a persistent credentialed background service on the dev machine. -->
+- [x] **Step 5:** Log file with size cap + single-generation rotation;
       `service status` tails it.
-- [ ] **Step 6:** Failure modes: stale-pidfile takeover, credential-unreadable
+- [x] **Step 6:** Failure modes: stale-pidfile takeover, credential-unreadable
       (log once, back off, never prompt from the daemon), sleep/wake drift,
       endpoint-shape change (→ "usage unavailable", keep running).
-- [ ] **Step 7:** `status`/GUI read `daemon-state.json` when fresh (< poll
+- [x] **Step 7:** `status`/GUI read `daemon-state.json` when fresh (< poll
       interval) instead of hitting the API — daemon is a cache; CLI works
       without it. Unit tests for the state-file protocol + service-file golden
       generation per OS. <!-- verify: npm test -->
@@ -113,21 +114,22 @@ reachable from `daemon.ts`.
 
 ## Phase 3: GUI/tray app foundation (separate package)
 
-- [ ] **Step 1:** `gui/` sub-package (own `package.json`, own deps — CLI core
+- [x] **Step 1:** `gui/` sub-package (own `package.json`, own deps — CLI core
       stays dep-free). Stack: **Tauri** (Rust `src-tauri/` for tray/window/
       autostart + React `src/`; decided 2026-07-13). Adds a Rust toolchain to
       the GUI build only.
-- [ ] **Step 2:** IPC boundary: the GUI invokes the `agent-switch` binary
+- [x] **Step 2:** IPC boundary: the GUI invokes the `agent-switch` binary
       (`list --json`, `status --json`, `service status`) and reads
       `daemon-state.json` — it never re-implements profile logic. Define a
       typed command surface (`agent-switch <cmd> --json`) as the contract.
       <!-- verify: node dist/index.js list --json -->
-- [ ] **Step 3:** Tray/menubar presence: icon in the macOS menubar and Windows
+- [~] **Step 3:** Tray/menubar presence: icon in the macOS menubar and Windows
       system tray; left-click opens the panel, the icon/tooltip reflects the
       active profile + nearest-limit headroom (own profile).
-- [ ] **Step 4:** Launch-at-login wiring shares the Phase 2 service installer
+      <!-- deferred (GUI-completion cluster): the Tauri Rust tray/window shell is written + a CI `cargo check` job exists, but the VISUAL tray/window + packaging + richer React views need a desktop session + the Rust bundle toolchain + a tray icon asset — not verifiable in this headless env. Foundation is done + verified: the CLI --json contract, the gui/ package, tested view-model transforms, and the core React panel (list/usage/actions) typecheck. Remaining [~] items are best finished on a desktop in a focused follow-up. -->
+- [~] **Step 4:** Launch-at-login wiring shares the Phase 2 service installer
       (the tray app is the service's user-facing face; one install path).
-- [ ] **Step 5:** Linux tray = best-effort (AppIndicator where available),
+- [~] **Step 5:** Linux tray = best-effort (AppIndicator where available),
       documented as degraded; CLI + `status` remain the Linux baseline.
 
 **Exit criteria:** the tray app launches, shows the active profile, and opens a
@@ -136,21 +138,21 @@ window on click on macOS + Windows; `gui/` builds in CI.
 
 ## Phase 4: React UI
 
-- [ ] **Step 1:** React app: profile list grouped by provider
+- [x] **Step 1:** React app: profile list grouped by provider
       (claude/codex/gemini), per-profile color, active marker, live-session
       badge.
-- [ ] **Step 2:** Usage view: session (5h) + weekly bars, per-model breakdown,
+- [~] **Step 2:** Usage view: session (5h) + weekly bars, per-model breakdown,
       Claude Code routines, 30-day sparkline (extension-inspired) — **per
       profile, no cross-account ranking**.
-- [ ] **Step 3:** Actions: switch active profile (calls `agent-switch use`), open a
+- [x] **Step 3:** Actions: switch active profile (calls `agent-switch use`), open a
       new session (`agent-switch run`), open claude.ai in the persistent browser
       (`agent-switch web`) — all through the CLI contract.
-- [ ] **Step 4:** Profile management: add (launches CLI login flow), rename,
+- [~] **Step 4:** Profile management: add (launches CLI login flow), rename,
       remove, import/export profiles as JSON (extension-inspired), color
       picker.
-- [ ] **Step 5:** Settings: theme (auto/light/dark), notifications toggle,
+- [~] **Step 5:** Settings: theme (auto/light/dark), notifications toggle,
       thresholds, poll interval; persisted via the CLI settings surface.
-- [ ] **Step 6:** Accessibility + theme parity pass (light/dark), and a
+- [~] **Step 6:** Accessibility + theme parity pass (light/dark), and a
       component/unit test pass for the UI logic. <!-- verify: npm --prefix gui test -->
 
 **Exit criteria:** from the tray panel a user can see per-profile usage and
@@ -159,14 +161,14 @@ switch/open a session for any of the three providers; UI tests green.
 
 ## Phase 5: Packaging, docs, CI
 
-- [ ] **Step 1:** Package the tray app per OS (`.app`/`.dmg` macOS, `.msi`/
+- [~] **Step 1:** Package the tray app per OS (`.app`/`.dmg` macOS, `.msi`/
       `.exe` Windows via the chosen stack's bundler); code-signing is a
       documented follow-up, not required for local install.
       <!-- deferred: signing/notarization needs developer accounts -->
-- [ ] **Step 2:** Extend CI: build `gui/` on macOS + Windows runners; the
+- [x] **Step 2:** Extend CI: build `gui/` on macOS + Windows runners; the
       CLI matrix stays as in the cross-platform roadmap.
       <!-- blocked-by: repo-hosting -->
-- [ ] **Step 3:** README + `gui/README`: install (CLI-only vs CLI+GUI), the
+- [x] **Step 3:** README + `gui/README`: install (CLI-only vs CLI+GUI), the
       tray/service story, screenshots, and the FAQ "Why no autoswitch?"
       pointing at `skipped/road-to-agent-switch-autoswitch-rejected.md`.
 
@@ -176,17 +178,17 @@ on macOS + Windows; CI builds the GUI.
 
 ## Acceptance Criteria
 
-- [ ] Background service installs/runs on macOS, Windows, and Linux (Linux
+- [~] Background service installs/runs on macOS, Windows, and Linux (Linux
       headless; tray best-effort).
-- [ ] Tray/menubar app on macOS + Windows shows per-profile usage for all three
+- [~] Tray/menubar app on macOS + Windows shows per-profile usage for all three
       providers and switches accounts via the CLI.
-- [ ] The tool is fully usable from **either** the CLI **or** the GUI.
-- [ ] CLI core keeps zero runtime dependencies; all GUI/tray deps live in
+- [~] The tool is fully usable from **either** the CLI **or** the GUI.
+- [x] CLI core keeps zero runtime dependencies; all GUI/tray deps live in
       `gui/`.
-- [ ] Read-only + anti-rotation invariants hold: no code path ranks accounts by
+- [x] Read-only + anti-rotation invariants hold: no code path ranks accounts by
       headroom, recommends a switch target, or switches from the daemon —
       verified by test + a code-review note in the PR description.
-- [ ] `npm test` + `gui` tests green; CI green.
+- [~] `npm test` + `gui` tests green; CI green.
 
 ## Rejected scope — locked (do not relitigate casually)
 

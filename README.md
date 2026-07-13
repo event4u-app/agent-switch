@@ -158,6 +158,39 @@ Full per-mechanism contract (verified/degraded/broken with sources) lives in
 - **`CLAUDE_CONFIG_DIR` relocates only the config home, not the OS state dir.** On Linux, Claude Code may also write to `~/.local/state/claude/` (XDG state), which is *not* per-profile — so any state kept there (not credentials, which live in each profile's config dir) is effectively shared across all profiles. Impact is limited and the exact contents vary by version; flagged here so a surprising cross-profile artifact there is not mistaken for a leak of account data. Credentials, `.claude.json`, and history stay per profile.
 - **VS Code extension ignores `CLAUDE_CONFIG_DIR`** (upstream #30538) — the extension always uses the default `~/.claude`. Use the CLI (`agent-switch run` / the `claude` wrapper) for per-profile sessions; the extension is out of scope.
 
+## Background service & tray GUI (optional)
+
+The CLI is fully usable on its own. Two optional layers add convenience:
+
+- **Usage daemon** — a background service polls each profile's **own** usage
+  (only profiles with a live session + the active one), caches it, and notifies
+  on the active profile's threshold crossings (75% / 90% by default):
+
+  ```bash
+  agent-switch service install    # launchd (macOS) / systemd --user (Linux) / Task Scheduler (Windows)
+  agent-switch service status     # health, last poll, cached profiles
+  agent-switch service start|stop # manual control (no install)
+  ```
+
+- **Tray/menubar GUI** (`gui/`, Tauri) — a small panel to see per-profile usage
+  and switch/open sessions. It is a **client of the CLI** (`agent-switch <cmd>
+  --json`) and never re-implements profile logic; the CLI core stays
+  dependency-free. See [`gui/README.md`](gui/README.md).
+
+Usage readout is per-provider: Claude exposes an OAuth `/usage` endpoint;
+**Codex and Gemini have no usage readout**, so they show identity only (never a
+fabricated number).
+
+### Why no automatic account rotation?
+
+`agent-switch` deliberately does **not** rank accounts by remaining headroom,
+suggest a "switch to X", or switch on hitting a limit — for any provider.
+Pooling subscriptions to route around rate limits violates the vendors' usage
+policies, and the decision engine minus the final switch is the same violation.
+The tool shows **your own** usage (the same information the vendors' native
+`/usage` surfaces show) and switches only when **you** ask. Rationale + the full
+rejected design: [`agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md`](agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md).
+
 ## Layout
 
 ```

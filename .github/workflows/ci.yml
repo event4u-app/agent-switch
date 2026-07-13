@@ -46,3 +46,31 @@ jobs:
           npm install -g --prefix "$prefix" "./$tgz"
           "$prefix/bin/agent-switch" --help
           AGENT_SWITCH_HOME="$(mktemp -d)" "$prefix/bin/agent-switch" doctor || true
+
+  gui:
+    name: gui ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+        working-directory: gui
+      - run: npm test
+        working-directory: gui
+      - run: npx tsc --noEmit
+        working-directory: gui
+      - run: npm run build
+        working-directory: gui
+      # Advisory compile-check of the Tauri Rust shell. The tray/window is a
+      # deferred item (needs a tray-icon asset + the bundle toolchain + a
+      # desktop session), so a failure here is informational, not blocking —
+      # the gui job gates on the JS/contract layer that IS done.
+      - run: cargo check --manifest-path gui/src-tauri/Cargo.toml
+        continue-on-error: true

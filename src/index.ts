@@ -50,10 +50,12 @@ import {
   accessTokenOf,
   fetchProfile,
   fetchUsage,
-  formatUsage,
   liveSessionPids,
   readProfileCredential,
 } from "./api.js";
+import { UsageSnapshot, formatSnapshot, parseUsage } from "./usage.js";
+import { isFresh, readDaemonState } from "./daemon.js";
+import { cmdService } from "./service.js";
 
 // Per-OS credential store (keychain-then-file on darwin, file-only elsewhere).
 const credentials = credentialStore();
@@ -189,8 +191,25 @@ function printProfileLine(providerId: ProviderId, name: string, showLive: boolea
   console.log(`${mark} ${name.padEnd(16)} ${id}${live}`);
 }
 
-function cmdList(providerId?: ProviderId): void {
+function cmdList(providerId?: ProviderId, json = false): void {
   const providers = providerId ? [providerId] : PROVIDER_IDS;
+
+  if (json) {
+    // The GUI IPC contract: the profile list (identity/active/live) — NOT usage.
+    // Usage stays behind `status --json` (active profile only, anti-rotation).
+    const rows = providers.flatMap((pid) =>
+      listProfiles(pid).map((n) => ({
+        provider: pid,
+        name: n,
+        identity: identity(pid, n),
+        active: activeFor(pid) === n,
+        liveSessions: pid === "claude" ? liveSessionPids(configDir("claude", n)).length : 0,
+      })),
+    );
+    console.log(JSON.stringify(rows, null, 2));
+    return;
+  }
+
   let any = false;
   for (const pid of providers) {
     const names = listProfiles(pid);
@@ -225,9 +244,39 @@ function cmdWhoami(providerId: ProviderId, name?: string): void {
   console.log(identity(providerId, n) ?? "not logged in yet");
 }
 
-/** Identity + (Claude only) 5h/7d usage. Codex/Gemini usage lands in the
- *  gui-service roadmap; here they degrade to an identity line. */
-async function cmdStatus(providerId?: ProviderId, name?: string): Promise<void> {
+/** A Claude profile's usage snapshot via the OAuth endpoint; null if the
+ *  credential is unreadable or the API shape is unknown. Codex/Gemini have no
+ *  usage readout (verified), so this is Claude-only. */
+async function claudeSnapshot(name: string): Promise<UsageSnapshot | null> {
+  // Prefer the daemon's cache when it's fresh (< its own poll interval) — the
+  // daemon is a cache, and the CLI works with or without it.
+  const state = readDaemonState();
+  if (state && isFresh(state, state.pollIntervalMs)) {
+    const cached = state.profiles[`claude/${name}`];
+    if (cached) return cached;
+  }
+  const creds = readProfileCredential(configDir("claude", name));
+  const token = creds ? accessTokenOf(creds) : null;
+  if (!token) return null;
+  const raw = await fetchUsage(token);
+  return raw ? parseUsage(raw) : null;
+}
+
+/**
+ * Identity + (Claude only) usage. The default all-profile table is human-only.
+ * `--json` emits the ACTIVE profile's snapshot ONLY — never a machine-readable
+ * cross-account view (the anti-rotation boundary: no ranking material).
+ */
+async function cmdStatus(providerId?: ProviderId, name?: string, json = false): Promise<void> {
+  if (json) {
+    const pid = providerId ?? "claude";
+    const active = name ?? activeFor(pid);
+    if (!active || !profileExists(pid, active)) die(`no active ${pid} profile for --json`);
+    const usage = pid === "claude" ? await claudeSnapshot(active) : null;
+    console.log(JSON.stringify({ provider: pid, name: active, identity: identity(pid, active), usage }, null, 2));
+    return;
+  }
+
   const rows = name
     ? [{ provider: providerId ?? "claude", name: requireProfile(providerId ?? "claude", name, "status") }]
     : (providerId ? listProfiles(providerId).map((n) => ({ provider: providerId, name: n })) : listAllProfiles());
@@ -237,7 +286,7 @@ async function cmdStatus(providerId?: ProviderId, name?: string): Promise<void> 
     const mark = activeFor(pid) === n ? "*" : " ";
     console.log(`${mark} ${pid}/${n} — ${identity(pid, n) ?? "not logged in"}`);
     if (pid !== "claude") {
-      console.log("  (usage readout is provider-specific — tracked in the gui-service roadmap)");
+      console.log("  (no usage readout for this provider — shows own usage only where available)");
       continue;
     }
     const creds = readProfileCredential(configDir("claude", n));
@@ -246,10 +295,10 @@ async function cmdStatus(providerId?: ProviderId, name?: string): Promise<void> 
       console.log("  (credential not readable — profile may not have run yet)");
       continue;
     }
-    const [profileInfo, usage] = await Promise.all([fetchProfile(token), fetchUsage(token)]);
+    const [profileInfo, raw] = await Promise.all([fetchProfile(token), fetchUsage(token)]);
     const org = profileInfo?.organization?.name ?? profileInfo?.account?.email ?? null;
     if (org) console.log(`  org: ${org}`);
-    const lines = usage ? formatUsage(usage) : [];
+    const lines = raw ? formatSnapshot(parseUsage(raw)) : [];
     if (lines.length > 0) lines.forEach((l) => console.log(l));
     else console.log("  (usage unavailable — token expired or API shape changed)");
   }
@@ -405,8 +454,8 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch import [--provider P] <name>    migrate the default install (no re-login)
   agent-switch use [--provider P] <name>       set the active profile for a provider
   agent-switch run [--provider P] <name> [..]  launch the provider's CLI on a profile
-  agent-switch list [--provider P]             list profiles, grouped by provider
-  agent-switch status [--provider P] [name]    identity (+ Claude usage) per profile
+  agent-switch list [--provider P] [--json]    list profiles, grouped by provider
+  agent-switch status [--provider P] [name] [--json]   identity (+ Claude usage); --json = active only
   agent-switch current [--provider P]          show the active profile(s)
   agent-switch whoami [--provider P] [name]    show a profile's account identity
   agent-switch dir [--provider P]              resolve profile for CWD (mapping > active)
@@ -417,6 +466,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
+  agent-switch service run|start|stop|status|install|uninstall   background usage daemon
   agent-switch doctor                          per-OS, per-provider self-check`);
 }
 
@@ -465,8 +515,8 @@ async function main(): Promise<void> {
     case "import": return cmdImport(providerId, positional[0]);
     case "use": return cmdUse(providerId, positional[0]);
     case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
-    case "list": case "ls": return cmdList(flagValue(rest, "--provider") ? providerId : undefined);
-    case "status": return cmdStatus(flagValue(rest, "--provider") ? providerId : undefined, positional[0]);
+    case "list": case "ls": return cmdList(flagValue(rest, "--provider") ? providerId : undefined, rest.includes("--json"));
+    case "status": return cmdStatus(flagValue(rest, "--provider") ? providerId : undefined, positional[0], rest.includes("--json"));
     case "current": return cmdCurrent(flagValue(rest, "--provider") ? providerId : undefined);
     case "whoami": return cmdWhoami(providerId, positional[0]);
     case "dir": return cmdDir(providerId);
@@ -477,6 +527,7 @@ async function main(): Promise<void> {
     case "web": return cmdWeb(positional[0]);
     case "remove": case "rm": return cmdRemove(providerId, positional[0], rest.includes("--force"));
     case "shellenv": return cmdShellenv(flagValue(rest, "--shell") ?? positional[0]);
+    case "service": return cmdService(positional[0]);
     case "doctor": return process.exit(runDoctor());
     case "help": case "--help": case "-h": return usage();
     default: usage(); process.exit(cmd ? 1 : 0);
