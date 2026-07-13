@@ -17,6 +17,18 @@ import { ROOT, ensureRoot } from "./profiles.js";
 
 const MAPPINGS_FILE = path.join(ROOT, "mappings.json");
 
+/**
+ * Windows path canonicalization for mapping keys. NTFS is case-insensitive and
+ * drive letters appear in both cases (`C:\` vs `c:\`), so a mapping keyed under
+ * one case must match a lookup in the other. Uppercase the drive letter (the
+ * Windows convention) so `C:\Foo` and `c:\Foo` resolve to the same key. Pure —
+ * no FS access — so it is unit-tested cross-platform. No-op off win32.
+ */
+export function canonicalizeWin32(resolved: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform !== "win32") return resolved;
+  return resolved.replace(/^([a-z]):/, (_m, d: string) => d.toUpperCase() + ":");
+}
+
 export function normalizePath(p: string): string {
   let resolved = path.resolve(p);
   try {
@@ -24,7 +36,7 @@ export function normalizePath(p: string): string {
   } catch {
     /* keep unresolved if the path doesn't exist */
   }
-  return resolved;
+  return canonicalizeWin32(resolved);
 }
 
 export function loadMappings(): Record<string, string> {

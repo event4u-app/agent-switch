@@ -89,26 +89,26 @@ with verified/degraded/broken per mechanism.
 
 ## Phase 2: Platform abstraction layer
 
-- [ ] **Step 1:** `src/credentials.ts` — read-only `CredentialStore` interface
+- [x] **Step 1:** `src/credentials.ts` — read-only `CredentialStore` interface
       (no `write()` by design): darwin = keychain-then-file, linux/win32 =
       file-only. `keychain.ts` becomes a darwin backend. `api.ts` credential
       read switches to it.
-- [ ] **Step 2:** `remove` per OS: keychain deletion darwin-only; elsewhere
+- [x] **Step 2:** `remove` per OS: keychain deletion darwin-only; elsewhere
       profile-dir removal suffices. Live-session guard unchanged.
-- [ ] **Step 3:** `import` per OS: source credential = keychain (darwin) or
+- [x] **Step 3:** `import` per OS: source credential = keychain (darwin) or
       `~/.claude/.credentials.json` (linux/win32); keep the lock-cooperative
       read; treat Windows lock staleness conservatively (Phase 1 Step 6).
-- [ ] **Step 4:** Path-handling audit: no hardcoded `/` joins on user input;
+- [x] **Step 4:** Path-handling audit: no hardcoded `/` joins on user input;
       `AGENT_SWITCH_HOME`/`CLAUDE_CONFIG_DIR` strings pass through unresolved (hash
       contract); win32 mappings normalization (case-insensitive drive letters,
       `realpathSync` behavior). <!-- verify: npm test -->
-- [ ] **Step 5:** Rework `share`: directories (`skills/`, `commands/`,
+- [x] **Step 5:** Rework `share`: directories (`skills/`, `commands/`,
       `agents/`) via symlink (POSIX) / junction (win32); files (`settings.json`,
       `keybindings.json`, `CLAUDE.md`) can no longer rely on write-through —
       link them, document that an in-profile `/config` write forks the file,
       and add `agent-switch share sync` to re-link forked files (manifest detects a
       replaced link). `--history` stays POSIX-only.
-- [ ] **Step 6:** `web` on linux/win32 (Playwright user-data-dir is
+- [x] **Step 6:** `web` on linux/win32 (Playwright user-data-dir is
       cross-platform; verify launch args); degrade with a clear message where
       unsupported.
 

@@ -36,9 +36,9 @@ import {
   requireProfile,
   writeState,
 } from "./profiles.js";
-import * as keychain from "./keychain.js";
+import { credentialStore } from "./credentials.js";
 import { withProperLock } from "./locks.js";
-import { applySharing, removeSharing } from "./share.js";
+import { applySharing, removeSharing, syncSharing } from "./share.js";
 import {
   loadMappings,
   pruneMappings,
@@ -54,6 +54,9 @@ import {
   liveSessionPids,
   readProfileCredential,
 } from "./api.js";
+
+// Per-OS credential store (keychain-then-file on darwin, file-only elsewhere).
+const credentials = credentialStore();
 
 // ---------- claude launcher --------------------------------------------------
 
@@ -106,9 +109,10 @@ async function cmdImport(name?: string): Promise<void> {
 
   await withProperLock(DEFAULT_CONFIG_DIR, () =>
     withProperLock(DEFAULT_CONFIG_JSON, () => {
-      // Stale hashed entry from an earlier profile at this exact path would
-      // shadow the seed — clear it before anything else.
-      keychain.deletePassword(keychain.serviceNameFor(dst));
+      // A stale OS-managed entry from an earlier profile at this exact path
+      // would shadow the seed (darwin reads the keychain before the file) —
+      // clear it before anything else. No-op off darwin.
+      credentials.clearStale(dst);
 
       fs.mkdirSync(dst, { recursive: true, mode: 0o700 });
       if (fs.existsSync(DEFAULT_CONFIG_DIR)) {
@@ -123,15 +127,9 @@ async function cmdImport(name?: string): Promise<void> {
         mode: 0o600,
       });
 
-      // Credential seed: keychain of the default install, else its file.
-      let creds = keychain.readDefaultCredential();
-      if (!creds) {
-        try {
-          creds = fs.readFileSync(path.join(DEFAULT_CONFIG_DIR, ".credentials.json"), "utf8");
-        } catch {
-          creds = null;
-        }
-      }
+      // Credential seed via the per-OS store: keychain (darwin) or the default
+      // install's plaintext .credentials.json (linux/win32), file fallback.
+      const creds = credentials.readDefault(DEFAULT_CONFIG_DIR);
       if (creds) {
         fs.writeFileSync(path.join(dst, ".credentials.json"), creds, { mode: 0o600 });
       }
@@ -291,8 +289,17 @@ function cmdShare(mode?: string, flags: string[] = []): void {
       console.log(`  ${p}: ${actions.length > 0 ? actions.join(", ") : "up to date"}`);
     }
     console.log(
-      "Claude Code writes through symlinks, so /config changes in any profile land in the source.",
+      "Shared directories (skills/, commands/, agents/) write through the link. Shared files\n" +
+        "(settings.json, ...) fork on an in-profile /config edit — run `agent-switch share sync`\n" +
+        "to push a fork back to the source and re-link.",
     );
+  } else if (mode === "sync") {
+    console.log(`Reconciling forked links against ${source}:`);
+    for (const p of profiles) {
+      if (configDir(p) === source) continue;
+      const actions = syncSharing(source, configDir(p));
+      console.log(`  ${p}: ${actions.length > 0 ? actions.join(", ") : "nothing to reconcile"}`);
+    }
   } else if (mode === "off") {
     for (const p of profiles) {
       const actions = removeSharing(configDir(p));
@@ -300,7 +307,7 @@ function cmdShare(mode?: string, flags: string[] = []): void {
     }
     console.log("Removed agent-switch-managed links (profile-own files were never touched).");
   } else {
-    die("usage: agent-switch share on|off [--history] [--source <profile|default>]");
+    die("usage: agent-switch share on|sync|off [--history] [--source <profile|default>]");
   }
 }
 
@@ -315,9 +322,10 @@ function cmdRemove(name?: string, force = false): void {
     die(`profile "${p}" has live Claude Code sessions (PIDs ${pids.join(", ")}). Close them or use --force.`);
   }
 
-  // Keychain first — the hashed service name can't be recomputed once the
-  // config dir path is conceptually gone from our bookkeeping.
-  const removedEntry = keychain.deletePassword(keychain.serviceNameFor(configDir(p)));
+  // OS credential entry first — on darwin the hashed service name can't be
+  // recomputed once the config dir path is gone from our bookkeeping. Off
+  // darwin this is a no-op (the credential file goes with the profile dir).
+  const removedEntry = credentials.removeEntry(configDir(p));
   fs.rmSync(profileDir(p), { recursive: true, force: true });
   if (state.active === p) writeState({ active: null });
   const pruned = pruneMappings(p);
@@ -345,11 +353,23 @@ async function cmdWeb(name?: string): Promise<void> {
 
   console.log(`Opening claude.ai with the persistent browser profile "${p}"...`);
   console.log("Log in once — the session is stored in the profile and reused next time.");
-  const context = await chromium.launchPersistentContext(userDataDir, {
-    headless: false,
-    viewport: null,
-    args: ["--start-maximized"],
-  });
+  // `--start-maximized` is a Chromium arg honored on macOS, Linux, and Windows;
+  // viewport:null lets the window drive the size. launchPersistentContext keeps
+  // the user-data-dir per profile on every OS.
+  let context: any;
+  try {
+    context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      viewport: null,
+      args: ["--start-maximized"],
+    });
+  } catch (err: any) {
+    die(
+      `failed to launch a browser: ${err?.message ?? err}\n` +
+        "On a headless Linux host there is no display to open — run this from a\n" +
+        "desktop session, or ensure Chromium is installed: `npx playwright install chromium`.",
+    );
+  }
   const page = context.pages()[0] ?? (await context.newPage());
   await page.goto("https://claude.ai/");
   await new Promise<void>((resolve) => context.on("close", resolve));
@@ -387,8 +407,8 @@ function usage(): void {
   agent-switch map <name> [dir]        map a directory (default: CWD) to a profile
   agent-switch unmap [dir]             remove a directory mapping
   agent-switch mappings                list directory mappings
-  agent-switch share on|off [--history] [--source <profile|default>]
-                                  share settings/skills/commands across profiles
+  agent-switch share on|sync|off [--history] [--source <profile|default>]
+                                  share settings/skills/commands (sync re-links forked files)
   agent-switch web <name>              open claude.ai in a persistent per-profile browser
   agent-switch remove <name> [--force] delete a profile (incl. its keychain entry)
   agent-switch shellenv                print the zsh integration snippet`);

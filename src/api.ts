@@ -16,21 +16,14 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { configDir } from "./profiles.js";
-import * as keychain from "./keychain.js";
+import { credentialStore } from "./credentials.js";
 
 const BETA_HEADER = "oauth-2025-04-20";
 
-/** A profile's live credential: keychain (hashed service) first — Claude Code
- * reads in that order too — then the plaintext file fallback. */
+/** A profile's live credential via the per-OS store (keychain-then-file on
+ * darwin, plaintext file on linux/win32). null if unreadable. */
 export function readProfileCredential(name: string): string | null {
-  const dir = configDir(name);
-  const fromKeychain = keychain.getPassword(keychain.serviceNameFor(dir));
-  if (fromKeychain) return fromKeychain;
-  try {
-    return fs.readFileSync(path.join(dir, ".credentials.json"), "utf8");
-  } catch {
-    return null;
-  }
+  return credentialStore().read(configDir(name));
 }
 
 export function accessTokenOf(credentials: string): string | null {

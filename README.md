@@ -78,14 +78,26 @@ lists, `agent-switch unmap` removes.
 
 ```bash
 agent-switch share on             # settings.json, CLAUDE.md, skills/, commands/, agents/
-agent-switch share on --history   # additionally share conversation history (--resume)
+agent-switch share on --history   # additionally share conversation history (--resume, POSIX only)
+agent-switch share sync           # re-link any file a /config edit forked (see below)
 agent-switch share off            # removes only agent-switch-created links
 ```
 
-Sharing works via symlinks from `~/.claude` (or `--source <profile>`) into each
-profile — Claude Code writes through symlinks, so `/config` changes made in any
-profile land in the shared source. Account-scoped state (credentials,
-`.claude.json`, plugins) always stays per profile.
+Sharing links from `~/.claude` (or `--source <profile>`) into each profile.
+Two behaviors, because Claude Code's settings writer writes atomically:
+
+- **Directories** (`skills/`, `commands/`, `agents/`) write **through** the link
+  — an edit in any profile lands in the shared source. This is the payoff.
+  Linked as a symlink on macOS/Linux, a junction on Windows (no admin needed).
+- **Files** (`settings.json`, `keybindings.json`, `CLAUDE.md`) are linked too,
+  but an in-profile `/config` edit **forks** the file (the atomic rename
+  replaces the link). Run `agent-switch share sync` to push a fork back into the
+  shared source and re-link it (last sync wins across profiles). On Windows,
+  file symlinks need Developer Mode or admin; without it, only the directories
+  are shared and files are skipped with a message.
+
+Account-scoped state (credentials, `.claude.json`, plugins) always stays per
+profile.
 
 ## Browser sessions (claude.ai) without re-login
 
