@@ -82,25 +82,26 @@ history; unsupported providers degrade cleanly (integration-gated).
 
 ## Phase 2: Background service
 
-- [ ] **Step 1:** `src/daemon.ts` — single-instance daemon (pidfile under the
+- [x] **Step 1:** `src/daemon.ts` — single-instance daemon (pidfile under the
       profile root), poll loop from Phase 1, writes `daemon-state.json`
       (last poll, per-profile snapshot, last error), mode 0600, SIGTERM-clean.
-- [ ] **Step 2:** Poll discipline: minimum interval ≥ 60s, jitter, exponential
+- [x] **Step 2:** Poll discipline: minimum interval ≥ 60s, jitter, exponential
       backoff on 401/403/429/5xx, and **poll only profiles with a live session**
       (`sessions/*.json` PIDs) plus the active profile — never a busy-poll of
       idle accounts.
-- [ ] **Step 3:** CLI: `agent-switch service start|stop|status|run` (`run` =
+- [x] **Step 3:** CLI: `agent-switch service start|stop|status|run` (`run` =
       foreground for debugging / service managers).
-- [ ] **Step 4:** `agent-switch service install|uninstall` per OS — launchd user
+- [x] **Step 4:** `agent-switch service install|uninstall` per OS — launchd user
       LaunchAgent (macOS), systemd user unit (Linux `systemctl --user`),
       Windows Task Scheduler logon trigger (`schtasks`); manifest records every
       generated file so uninstall removes exactly what was installed.
-- [ ] **Step 5:** Log file with size cap + single-generation rotation;
+      <!-- done: launchd plist / systemd user unit / schtasks logon task generated (golden-tested) + registration wired + manifest. The LIVE install→uninstall cycle (loading a real LaunchAgent that polls with the user's credential) is integration-gated — not auto-run to avoid a persistent credentialed background service on the dev machine. -->
+- [x] **Step 5:** Log file with size cap + single-generation rotation;
       `service status` tails it.
-- [ ] **Step 6:** Failure modes: stale-pidfile takeover, credential-unreadable
+- [x] **Step 6:** Failure modes: stale-pidfile takeover, credential-unreadable
       (log once, back off, never prompt from the daemon), sleep/wake drift,
       endpoint-shape change (→ "usage unavailable", keep running).
-- [ ] **Step 7:** `status`/GUI read `daemon-state.json` when fresh (< poll
+- [x] **Step 7:** `status`/GUI read `daemon-state.json` when fresh (< poll
       interval) instead of hitting the API — daemon is a cache; CLI works
       without it. Unit tests for the state-file protocol + service-file golden
       generation per OS. <!-- verify: npm test -->

@@ -54,6 +54,8 @@ import {
   readProfileCredential,
 } from "./api.js";
 import { UsageSnapshot, formatSnapshot, parseUsage } from "./usage.js";
+import { isFresh, readDaemonState } from "./daemon.js";
+import { cmdService } from "./service.js";
 
 // Per-OS credential store (keychain-then-file on darwin, file-only elsewhere).
 const credentials = credentialStore();
@@ -229,6 +231,13 @@ function cmdWhoami(providerId: ProviderId, name?: string): void {
  *  credential is unreadable or the API shape is unknown. Codex/Gemini have no
  *  usage readout (verified), so this is Claude-only. */
 async function claudeSnapshot(name: string): Promise<UsageSnapshot | null> {
+  // Prefer the daemon's cache when it's fresh (< its own poll interval) — the
+  // daemon is a cache, and the CLI works with or without it.
+  const state = readDaemonState();
+  if (state && isFresh(state, state.pollIntervalMs)) {
+    const cached = state.profiles[`claude/${name}`];
+    if (cached) return cached;
+  }
   const creds = readProfileCredential(configDir("claude", name));
   const token = creds ? accessTokenOf(creds) : null;
   if (!token) return null;
@@ -440,6 +449,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
+  agent-switch service run|start|stop|status|install|uninstall   background usage daemon
   agent-switch doctor                          per-OS, per-provider self-check`);
 }
 
@@ -500,6 +510,7 @@ async function main(): Promise<void> {
     case "web": return cmdWeb(positional[0]);
     case "remove": case "rm": return cmdRemove(providerId, positional[0], rest.includes("--force"));
     case "shellenv": return cmdShellenv(flagValue(rest, "--shell") ?? positional[0]);
+    case "service": return cmdService(positional[0]);
     case "doctor": return process.exit(runDoctor());
     case "help": case "--help": case "-h": return usage();
     default: usage(); process.exit(cmd ? 1 : 0);
