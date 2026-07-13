@@ -176,6 +176,17 @@ function cmdUse(providerId: ProviderId, name?: string): void {
   console.log(`New \`${provider(providerId).binary}\` sessions use this profile. Running sessions are unaffected.`);
 }
 
+function cmdDeactivate(providerId: ProviderId): void {
+  const active = activeFor(providerId);
+  if (!active) {
+    console.log(`No active ${providerId} profile.`);
+    return;
+  }
+  setActive(providerId, null);
+  console.log(`Deactivated ${providerId} profile "${active}". No ${providerId} profile is active.`);
+  console.log(`New \`${provider(providerId).binary}\` sessions fall back to the default install until you \`use\` one.`);
+}
+
 function cmdRun(providerId: ProviderId, name: string | undefined, args: string[]): void {
   const n = requireProfile(providerId, name, "run");
   process.exit(launch(provider(providerId), n, args));
@@ -456,6 +467,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch add [--provider P] <name>       create a profile and log it in
   agent-switch import [--provider P] <name>    migrate the default install (no re-login)
   agent-switch use [--provider P] <name>       set the active profile for a provider
+  agent-switch deactivate [--provider P]       clear the active profile for a provider
   agent-switch run [--provider P] <name> [..]  launch the provider's CLI on a profile
   agent-switch list [--provider P] [--json]    list profiles, grouped by provider
   agent-switch status [--provider P] [name] [--json]   identity (+ Claude usage); --json = active only
@@ -501,6 +513,7 @@ async function main(): Promise<void> {
     case "add": return cmdAdd(providerId, positional[0]);
     case "import": return cmdImport(providerId, positional[0]);
     case "use": return cmdUse(providerId, positional[0]);
+    case "deactivate": return cmdDeactivate(providerId);
     case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
     case "list": case "ls": return cmdList(providerExplicit ? providerId : undefined, !!flags.json);
     case "status": return cmdStatus(providerExplicit ? providerId : undefined, positional[0], !!flags.json);

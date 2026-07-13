@@ -51,6 +51,23 @@ test("flag-first `use --provider codex work` activates the right profile", gate,
   }
 });
 
+test("`deactivate --provider codex` clears only that provider's active profile", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "codex", "work");
+    seed(home, "claude", "main");
+    run(home, ["use", "--provider", "codex", "work"]);
+    run(home, ["use", "main"]); // claude active
+    run(home, ["deactivate", "--provider", "codex"]);
+    const state = JSON.parse(fs.readFileSync(path.join(home, "state.json"), "utf8"));
+    assert.equal(state.active.codex, null); // cleared
+    assert.equal(state.active.claude, "main"); // untouched
+    assert.equal(fs.existsSync(path.join(home, "codex", "work")), true); // profile itself kept
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("first `dir` after a v1→v2 upgrade migrates and prints only the clean config path (N1)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {

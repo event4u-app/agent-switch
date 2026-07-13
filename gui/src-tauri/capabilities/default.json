@@ -15,6 +15,11 @@
           "name": "agent-switch",
           "cmd": "agent-switch",
           "args": true
+        },
+        {
+          "name": "osascript",
+          "cmd": "osascript",
+          "args": true
         }
       ]
     }

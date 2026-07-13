@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Single dark theme tuned to JetBrains Darcula, expressed in the shadcn token
+ * schema so every shadcn component picks it up. HSL channels only (no hsl()),
+ * per the shadcn convention `hsl(var(--token))`. */
+:root {
+  --background: 225 6% 13%; /* #1e1f22 editor bg */
+  --foreground: 220 11% 89%; /* #dfe1e5 text */
+
+  --card: 220 6% 18%; /* #2b2d30 panel */
+  --card-foreground: 220 11% 89%;
+
+  --popover: 220 6% 18%;
+  --popover-foreground: 220 11% 89%;
+
+  --primary: 219 87% 57%; /* #3574f0 Darcula blue */
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 220 6% 24%; /* #393b40 */
+  --secondary-foreground: 220 11% 89%;
+
+  --muted: 220 6% 21%;
+  --muted-foreground: 218 5% 55%; /* #868a91 dimmed */
+
+  --accent: 220 6% 24%; /* hover surface */
+  --accent-foreground: 220 11% 92%;
+
+  --destructive: 2 82% 62%; /* #f0524d */
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 126 37% 45%; /* #499c54 active/live */
+
+  --border: 223 6% 24%; /* #393b40 */
+  --input: 223 6% 28%;
+  --ring: 219 87% 57%;
+
+  --radius: 0.5rem;
+
+  color-scheme: dark;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: -apple-system, system-ui, "Segoe UI", sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Thin, unobtrusive scrollbar in keeping with the IDE aesthetic. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 8px;
+  border: 2px solid hsl(var(--background));
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
