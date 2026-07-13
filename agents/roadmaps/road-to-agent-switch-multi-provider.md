@@ -20,10 +20,10 @@ profiles.
 
 ## Prerequisites
 
-- [ ] [`road-to-agent-switch-cross-platform.md`](archive/road-to-agent-switch-cross-platform.md)
+- [x] [`road-to-agent-switch-cross-platform.md`](archive/road-to-agent-switch-cross-platform.md)
       Phase 2 (platform abstraction) landed — provider abstraction layers on
       top of it. (Completed & archived — PR #1.)
-- [ ] `codex` and `gemini` binaries available for the contract tests.
+- [x] `codex` and `gemini` binaries available for the contract tests.
 
 ## Context
 
@@ -50,20 +50,21 @@ profiles.
 
 ## Phase 1: Provider abstraction
 
-- [ ] **Step 1:** `src/providers.ts` — a `Provider` interface:
+- [x] **Step 1:** `src/providers.ts` — a `Provider` interface:
       `id` (`claude`/`codex`/`gemini`), `binary`, `envVar`, `configDirFor(profileRoot)`
       (claude/codex = the dir; gemini = `<dir>/.gemini`), `credentialPath`,
       `readIdentity()`, `oneShotArgs(prompt)`. One implementation per provider.
-- [ ] **Step 2:** Extend the profile model to `(provider, name)`. On-disk
+- [x] **Step 2:** Extend the profile model to `(provider, name)`. On-disk
       layout: `~/.agent-switch/<provider>/<name>/config` (rename root from
       `.agent-switch`, with a one-time migration of existing Claude
       profiles from `~/.agent-switch/<name>` → `~/.agent-switch/claude/<name>`).
       <!-- verify: npm test -->
-- [ ] **Step 3:** Per-provider active state in `state.json`
+      <!-- done: migrateLegacyLayout() runs once on first command; copy-then-verify, re-seeds the credential across the macOS keychain-hash change (file move suffices on lin/win), idempotent, skips name clashes. Unit-tested + live CLI smoke. -->
+- [x] **Step 3:** Per-provider active state in `state.json`
       (`{ active: { claude, codex, gemini } }`); `use`/`current` take an
       optional `--provider` (default: infer from a provided binary name or the
       profile's provider).
-- [ ] **Step 4:** Keychain contract stays Claude-only (darwin): codex/gemini
+- [x] **Step 4:** Keychain contract stays Claude-only (darwin): codex/gemini
       credential read/delete is file-based (0600). Wire into `remove`.
 
 **Exit criteria:** existing Claude profiles migrate losslessly (`npm test`
@@ -73,15 +74,16 @@ abort. Revert `src/`.
 
 ## Phase 2: Commands across providers
 
-- [ ] **Step 1:** `add`/`import`/`use`/`run`/`list`/`status`/`remove` gain a
+- [x] **Step 1:** `add`/`import`/`use`/`run`/`list`/`status`/`remove` gain a
       `--provider` dimension; `list` groups by provider; bare `asw` lists all.
-- [ ] **Step 2:** `import` per provider from the default install:
+- [x] **Step 2:** `import` per provider from the default install:
       claude (existing), codex (`~/.codex`), gemini (`~/.gemini`). Seed the
       credential file into the profile dir; set each tool's
       onboarding/first-run flags where required (verified in Phase 1).
-- [ ] **Step 3:** `run` uses the provider's one-shot/interactive invocation
+      <!-- done: claude = existing lock+seed+onboarding path; codex/gemini copy their credential/identity files (auth.json; oauth_creds.json + google_accounts.json) via provider.importFiles. codex/gemini needed no extra first-run flag to accept a seeded credential. Interactive OAuth login (add without an existing install) stays integration-gated. -->
+- [x] **Step 3:** `run` uses the provider's one-shot/interactive invocation
       (`claude`, `codex`, `gemini`) with the right env var injected.
-- [ ] **Step 4:** Directory mappings become provider-aware:
+- [x] **Step 4:** Directory mappings become provider-aware:
       `agent-switch map <provider> <name> [dir]`; the shell wrapper resolves per
       binary. <!-- verify: npm test -->
 
@@ -92,15 +94,15 @@ provider-aware command routing.
 
 ## Phase 3: Shell integration for all three binaries
 
-- [ ] **Step 1:** `shellenv` emits wrappers for `claude`, `codex`, and
+- [x] **Step 1:** `shellenv` emits wrappers for `claude`, `codex`, and
       `gemini`, each injecting its provider's env var from the resolved
       profile (mapping > active-for-provider > default).
-- [ ] **Step 2:** `asw <provider> <name>` shorthand; bare `asw` lists all
+- [x] **Step 2:** `asw <provider> <name>` shorthand; bare `asw` lists all
       providers' profiles.
-- [ ] **Step 3:** PowerShell/fish/bash/zsh parity for all three wrappers
+- [x] **Step 3:** PowerShell/fish/bash/zsh parity for all three wrappers
       (extends the cross-platform Phase 3 shell work).
       <!-- verify: node dist/index.js shellenv --shell bash -->
-- [ ] **Step 4:** `agent-switch doctor` checks all three binaries + per-provider
+- [x] **Step 4:** `agent-switch doctor` checks all three binaries + per-provider
       credential readability.
 
 **Exit criteria:** a new shell session auto-selects the correct account for
@@ -109,12 +111,13 @@ each of the three binaries per directory mapping.
 
 ## Acceptance Criteria
 
-- [ ] A profile can be added, used, run, and removed for each of `claude`,
+- [x] A profile can be added, used, run, and removed for each of `claude`,
       `codex`, `gemini`.
-- [ ] Existing Claude profiles migrated with zero re-login.
-- [ ] Zero runtime dependencies preserved.
-- [ ] Read-only + anti-rotation invariants hold for all three providers.
-- [ ] `npm test` green.
+      <!-- Command mechanics verified live: list/use/current/dir/map/remove per provider + `run` launching the real `codex --version` with CODEX_HOME injected. The interactive OAuth login inside `add` (browser consent) is inherently manual → integration-gated, like the Claude keychain contract test. -->
+- [x] Existing Claude profiles migrated with zero re-login.
+- [x] Zero runtime dependencies preserved.
+- [x] Read-only + anti-rotation invariants hold for all three providers.
+- [x] `npm test` green.
 
 ## Notes
 
