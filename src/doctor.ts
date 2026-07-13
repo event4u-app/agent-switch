@@ -19,7 +19,8 @@ const WARN = "⚠️";
 const ERR = "❌";
 
 function binaryOnPath(binary: string): "yes" | "no" | "error" {
-  const probe = spawnSync(binary, ["--version"], { stdio: "ignore" });
+  // Timeout so a hung binary can't hang the doctor.
+  const probe = spawnSync(binary, ["--version"], { stdio: "ignore", timeout: 5000 });
   if ((probe.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return "no";
   if (probe.error) return "error";
   return "yes";

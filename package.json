@@ -15,7 +15,7 @@
     "test": "tsc -p tsconfig.test.json && cd dist-test && node --test"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "license": "MIT",
   "devDependencies": {

@@ -40,8 +40,9 @@ async function oauthGet(pathname: string, token: string): Promise<any | null> {
       headers: {
         Authorization: `Bearer ${token}`,
         "anthropic-beta": BETA_HEADER,
-        // A real User-Agent is required — the endpoint rate-limits (429) without
-        // one (extension-verified). Timeout keeps a hung read from blocking.
+        // Send an honest tool User-Agent. Some clients report the endpoint
+        // rate-limits (429) without one; unverified here, but a real UA is good
+        // practice regardless. Timeout keeps a hung read from blocking.
         "User-Agent": "agent-switch/1.0 (+https://github.com/event4u-app/agent-switch)",
       },
       signal: AbortSignal.timeout(10_000),
