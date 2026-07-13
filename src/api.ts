@@ -15,15 +15,15 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { configDir } from "./profiles.js";
 import { credentialStore } from "./credentials.js";
 
 const BETA_HEADER = "oauth-2025-04-20";
 
-/** A profile's live credential via the per-OS store (keychain-then-file on
- * darwin, plaintext file on linux/win32). null if unreadable. */
-export function readProfileCredential(name: string): string | null {
-  return credentialStore().read(configDir(name));
+/** A Claude profile's live credential via the per-OS store (keychain-then-file
+ * on darwin, plaintext file on linux/win32), given its config dir. Claude-only:
+ * the OAuth identity/usage endpoints below are Anthropic's. null if unreadable. */
+export function readProfileCredential(configDir: string): string | null {
+  return credentialStore().read(configDir);
 }
 
 export function accessTokenOf(credentials: string): string | null {
@@ -93,8 +93,8 @@ function pidAlive(pid: number): boolean {
 }
 
 /** PIDs of live Claude Code sessions running on a profile's config dir. */
-export function liveSessionPids(name: string): number[] {
-  const sessionsDir = path.join(configDir(name), "sessions");
+export function liveSessionPids(configDir: string): number[] {
+  const sessionsDir = path.join(configDir, "sessions");
   let entries: string[];
   try {
     entries = fs.readdirSync(sessionsDir);
