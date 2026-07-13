@@ -20,7 +20,7 @@ zsh/bash/fish/PowerShell, a `doctor` self-check, and a green
 ## Prerequisites
 
 - [x] Read `README.md`, `ADOPTED.md`,
-      [`archive/road-to-agent-switch-core.md`](archive/road-to-agent-switch-core.md).
+      [`road-to-agent-switch-core.md`](road-to-agent-switch-core.md).
 - [x] `npm run build` green on the current tree.
 - [x] A real Claude Code install for the macOS keychain contract test.
       <!-- present: `claude` on PATH; the hashed-service contract test stays opt-in (AGENT_SWITCH_CONTRACT_TESTS=1) as it needs a logged-in agent-switch profile. -->
@@ -28,11 +28,11 @@ zsh/bash/fish/PowerShell, a `doctor` self-check, and a green
 ## Context
 
 - Foundation of the `road-to-agent-switch-*` family. Two siblings build on it:
-  [`road-to-agent-switch-multi-provider.md`](road-to-agent-switch-multi-provider.md)
+  [`road-to-agent-switch-multi-provider.md`](../road-to-agent-switch-multi-provider.md)
   (Codex + Gemini) and
-  [`road-to-agent-switch-gui-service.md`](road-to-agent-switch-gui-service.md)
+  [`road-to-agent-switch-gui-service.md`](../road-to-agent-switch-gui-service.md)
   (usage engine + daemon + GUI). Rejected ideas:
-  [`skipped/road-to-agent-switch-autoswitch-rejected.md`](skipped/road-to-agent-switch-autoswitch-rejected.md).
+  [`skipped/road-to-agent-switch-autoswitch-rejected.md`](../skipped/road-to-agent-switch-autoswitch-rejected.md).
 - Three verification items were deferred from the parent (copied verbatim into
   Phase 1).
 - Verified platform facts (Claude Code docs + issue tracker, 2026-07-13):
@@ -71,12 +71,12 @@ zsh/bash/fish/PowerShell, a `doctor` self-check, and a green
       `.credentials.json` under `CLAUDE_CONFIG_DIR`, lock-dir protocol,
       `sessions/{pid}.json`, `import` end-to-end.
       <!-- done: Docker node:18 + node:22 bookworm — clean install + build + `npm test` green (9 tests, exit 0) + CLI smoke (current/use/list, email resolution) on real Linux. Fuller path coverage lands via Phase 4 unit tests on the same ubuntu CI leg. -->
-- [~] **Step 6:** Windows verification (VM): `.credentials.json` under
+- [x] **Step 6:** Windows verification (VM): `.credentials.json` under
       `CLAUDE_CONFIG_DIR`, junction creation without elevation
       (`fs.symlinkSync(src, dst, "junction")`), lock-dir mtime on NTFS,
       `sessions/{pid}.json`, path normalization (drive letters, backslashes,
       `%USERPROFILE%`).
-      <!-- deferred: no local Windows environment. Cross-platform-testable parts (path normalization via node's path.win32, sessions PID logic, credential file path) are unit-tested; the Windows-LIVE parts (junction without elevation, file-symlink elevation, NTFS lock mtime) are encoded as win32-gated tests and verified for real by the windows-latest leg of the CI matrix (Phase 4 Step 2). Pending the first green CI run. -->
+      <!-- done: windows-latest CI legs (node 18 + 22) green on PR #1 (run 29257150116) — exercised junction sharing without elevation, NTFS lock stale-takeover + timeout, path/session logic. File-symlink assertions stay win32-gated (need Developer Mode). -->
 - [x] **Step 7:** Determine whether `~/.local/state/claude/` (or equivalent)
       leaks across profiles; document in `README.md § Notes & gotchas`.
       <!-- done: CLAUDE_CONFIG_DIR relocates only the config home, not the XDG state dir → any state Claude writes to ~/.local/state/claude/ is shared across profiles (credentials/.claude.json/history stay per-profile). Documented as a gotcha in README; exact contents version-dependent (noted in ADOPTED.md open-verification #4). -->
@@ -168,7 +168,7 @@ mocked FS where no VM is available.
       storage or calls the OAuth token-refresh grant.
       <!-- verified: CredentialStore has no write(); api.ts is GET-only; no OAuth token endpoint; the only credential write is the supported plaintext import seed into a NEW profile dir (not Claude Code's keystore). -->
 - [x] `npm test` green; CI matrix green.
-      <!-- npm test green on macOS + Linux (node 18+22); "CI matrix green" is delegated to the PR's CI run (quality.local_auto_run=false → remote CI is the gate). -->
+      <!-- npm test green locally (macOS + Linux node 18+22); CI matrix green on PR #1 — all 7 jobs pass ([macos,ubuntu,windows]×[18,22] + tarball smoke), run 29257150116. -->
 
 
 ## Blockers
