@@ -10,7 +10,16 @@ const { create, execute, spawn } = vi.hoisted(() => {
 });
 vi.mock("@tauri-apps/plugin-shell", () => ({ Command: { create } }));
 
-import { listProfiles, activeStatus, switchProfile, openSession, openWeb } from "./ipc.js";
+import {
+  listProfiles,
+  activeStatus,
+  switchProfile,
+  openSession,
+  openWeb,
+  createProfile,
+  deactivateProfile,
+  removeProfile,
+} from "./ipc.js";
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -26,7 +35,12 @@ describe("ipc", () => {
     execute.mockResolvedValue({ code: 0, stdout: '{"provider":"claude","name":"work","identity":null,"usage":null}', stderr: "" });
     const s = await activeStatus();
     expect(create).toHaveBeenCalledWith("agent-switch", ["status", "--json"]);
-    expect(s.name).toBe("work");
+    expect(s?.name).toBe("work");
+  });
+
+  it("activeStatus returns null on a non-zero exit (no active profile — not an error)", async () => {
+    execute.mockResolvedValue({ code: 1, stdout: "", stderr: "error: no active claude profile for --json" });
+    await expect(activeStatus()).resolves.toBeNull();
   });
 
   it("switchProfile calls `use <name> --provider <p>` (name-first — avoids the flag-leak)", async () => {
@@ -46,5 +60,28 @@ describe("ipc", () => {
     await openWeb("work");
     expect(create).toHaveBeenCalledWith("agent-switch", ["web", "work"]);
     expect(spawn).toHaveBeenCalledTimes(2);
+  });
+
+  it("createProfile opens a terminal via osascript running `agent-switch add`", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+    await createProfile("codex", "work");
+    expect(create).toHaveBeenCalledWith("osascript", ["-e", expect.stringContaining("agent-switch add work --provider codex")]);
+  });
+
+  it("createProfile rejects an unsafe name before touching the shell (injection guard)", async () => {
+    await expect(createProfile("claude", 'a" & rm -rf ~ #')).rejects.toThrow(/letters, numbers/);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("deactivateProfile clears the active profile for a provider", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+    await deactivateProfile("claude");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["deactivate", "--provider", "claude"]);
+  });
+
+  it("removeProfile deletes with --force (deactivate-then-delete in one step)", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+    await removeProfile("codex", "old");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["remove", "old", "--provider", "codex", "--force"]);
   });
 });
