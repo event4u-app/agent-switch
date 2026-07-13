@@ -20,9 +20,9 @@ profiles.
 
 ## Prerequisites
 
-- [ ] [`road-to-agent-switch-cross-platform.md`](road-to-agent-switch-cross-platform.md)
+- [ ] [`road-to-agent-switch-cross-platform.md`](archive/road-to-agent-switch-cross-platform.md)
       Phase 2 (platform abstraction) landed — provider abstraction layers on
-      top of it.
+      top of it. (Completed & archived — PR #1.)
 - [ ] `codex` and `gemini` binaries available for the contract tests.
 
 ## Context

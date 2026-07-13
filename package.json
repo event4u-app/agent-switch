@@ -1,14 +1,18 @@
 {
   "name": "agent-switch",
   "version": "1.0.0",
-  "description": "Switch between multiple Claude Code accounts on macOS via isolated CLAUDE_CONFIG_DIR profiles",
+  "description": "Switch between multiple Claude Code accounts on macOS, Linux, and Windows via isolated CLAUDE_CONFIG_DIR profiles",
   "type": "module",
   "bin": {
     "agent-switch": "dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
-    "prepare": "tsc"
+    "prepare": "tsc",
+    "test": "tsc -p tsconfig.test.json && cd dist-test && node --test"
   },
   "engines": {
     "node": ">=18"

@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+        node: [18, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # Contract tests (AGENT_SWITCH_CONTRACT_TESTS) stay opt-in / local — they need
+      # a real Claude Code login and live network, so CI runs the unit suite only.
+      - run: npm test
+
+  pack:
+    name: tarball smoke (ubuntu · node 22)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # Install the packed tarball into a throwaway prefix and smoke the bin.
+      - run: |
+          set -e
+          npm pack
+          tgz="$(ls agent-switch-*.tgz)"
+          prefix="$(mktemp -d)"
+          npm install -g --prefix "$prefix" "./$tgz"
+          "$prefix/bin/agent-switch" --help
+          AGENT_SWITCH_HOME="$(mktemp -d)" "$prefix/bin/agent-switch" doctor || true

@@ -61,18 +61,31 @@ all under the lock) can capture a pre-rotation refresh token that is dead the
 moment the refresh saves. Ported as `withProperLock()` (touch interval 3s for
 margin, 9s bounded wait, stale takeover) and used around the `import` reads.
 
-### 4. Settings sharing via write-through symlinks → `src/share.ts`
+### 4. Settings sharing via symlinks → `src/share.ts`
 `session.py:17-35, SHARED_ITEMS/HISTORY_ITEMS/SHARE_MANIFEST`: symlink
 `settings.json`, `keybindings.json`, `CLAUDE.md`, `skills/`, `commands/`,
-`agents/` from one source into each profile — Claude Code's settings writer
-detects symlinks and writes through, so `/config` changes in any profile land
-in the source for all. Account-/instance-scoped items (`.claude.json`,
-`.credentials.json`, `plugins/`, `sessions/`, `ide/`, `statsig/`) are
-deliberately excluded. History (`projects/`, `history.jsonl`) is a separate
-opt-in (`--history`, POSIX-only — copies would fork history, not share it). A
-manifest records what agent-switch created so `share off` never touches user data.
-For an agent-config setup this is the payoff feature: one skills/commands/
-agents tree across all three accounts.
+`agents/` from one source into each profile. Account-/instance-scoped items
+(`.claude.json`, `.credentials.json`, `plugins/`, `sessions/`, `ide/`,
+`statsig/`) are deliberately excluded. History (`projects/`, `history.jsonl`)
+is a separate opt-in (`--history`, POSIX-only — copies would fork history, not
+share it). A manifest records what agent-switch created so `share off` never
+touches user data.
+
+**Write-through correction (issue #40857, verified 2026-07-13):** claude-swap's
+"Claude Code writes through symlinks" claim is only half true, and v1 inherited
+the stale full version. Claude Code's settings writer writes atomically
+(write-temp + rename), and a rename over a symlinked **file** *replaces the link
+with a regular file* — the shared value forks on the first in-profile `/config`
+write. **Directory** links are unaffected: a write *inside* a symlinked
+directory lands in the link target. So:
+- **Directories** (`skills/`, `commands/`, `agents/`) — genuinely shared;
+  in-profile writes land in the source. This is the payoff feature: one
+  skills/commands/agents tree across all accounts.
+- **Files** (`settings.json`, `keybindings.json`, `CLAUDE.md`) — linked, but an
+  in-profile `/config` write forks the file. Phase 2 adds `agent-switch share sync`
+  to detect a forked (replaced) link from the manifest and re-link it.
+Both halves are pinned by fs-primitive tests in `tests/integration.test.ts`
+(atomic-rename-breaks-file-link; write-inside-linked-dir-reaches-target).
 
 ### 5. Directory → profile mappings → `src/mappings.ts`
 `mappings.py` (their PR #71): map normalized absolute paths to accounts;
@@ -118,15 +131,46 @@ counts; `remove` refuses (without `--force`) while sessions run.
   as lineage identity) — elegant, noted for later (would let `list` flag two
   profiles holding the same account), but no current consumer. Parked.
 
-## Open verification points (not testable in this sandbox)
+## Per-OS contract matrix
 
-1. Keychain service hash: contract test against a real Claude Code install
-   (create profile, log in, `security find-generic-password -s "Claude
-   Code-credentials-<hash>"` must hit). claude-swap carries a dedicated
-   contract test for this (`tests/test_macos_keychain_contract.py`) — worth
-   mirroring in CI on a macOS runner.
-2. Usage API response shape: `formatUsage` expects `five_hour/seven_day`
-   with `utilization` + `resets_at`; verified only against claude-swap's
-   parser, not a live response.
-3. Write-through symlink behavior of Claude Code's settings writer on
-   current versions (claude-swap asserts it; we inherit the claim).
+Per-mechanism status across the three target platforms. **verified** =
+exercised on that OS (local run or CI matrix); **degraded** = works with a
+documented reduced behavior; **broken/n-a** = unsupported, degrades with an
+explicit message. Facts are docs-verified (Claude Code docs + issue tracker,
+2026-07-13) unless a test/run is cited.
+
+| Mechanism | macOS (darwin) | Linux | Windows (win32) |
+|---|---|---|---|
+| Credential store | Keychain (hashed service per config dir), file fallback | plaintext `.credentials.json` under `CLAUDE_CONFIG_DIR` | plaintext `.credentials.json` under `CLAUDE_CONFIG_DIR` |
+| Keychain service hash | verified (unit: `keychain.test.ts`; live contract gated by `AGENT_SWITCH_CONTRACT_TESTS`) | n-a (no keychain) | n-a (no keychain) |
+| `import` (login-free seed) | verified (macOS run) | verified (Linux container: build + CLI smoke, node 18/22) | file-source path; live junction/lock behavior → CI |
+| Directory share links (`skills/`, `commands/`, `agents/`) | verified | verified (fs primitive on Linux) | junction (`fs.symlinkSync(…, "junction")`, no elevation) → CI |
+| File share links (`settings.json`, …) | degraded — atomic-rename forks the link on `/config` write (#40857); `share sync` re-links | degraded — same | degraded — same; file symlinks need Developer Mode/admin, so `share sync` re-link may require it |
+| Lock protocol (`withProperLock`, dir mutex + mtime staleness) | verified | verified (Linux) | mtime on NTFS → CI (Windows runner) |
+| Live-session detection (`sessions/{pid}.json`) | verified | verified (path logic on Linux) | verified (path logic; `process.kill(pid,0)` cross-platform) |
+| Usage/identity OAuth reads | verified (shape gated by contract flag) | verified | verified |
+| `web` (Playwright persistent context) | verified | supported (Playwright is cross-platform) | supported |
+| Shell integration (`shellenv`) | zsh/bash | zsh/bash/fish | PowerShell wrapper; cmd.exe → `run` only (no wrapper) |
+| XDG/state relocation | `CLAUDE_CONFIG_DIR` only knob (no XDG, #1455) | same; `~/.local/state/claude/` may be shared (see README) | same |
+
+Windows-live rows marked "→ CI" are verified by the `windows-latest` leg of the
+CI matrix (Phase 4); pending the first green CI run they are encoded as
+win32-gated tests, not asserted locally.
+
+## Open verification points
+
+1. **Windows live filesystem behavior** — junction creation without elevation,
+   file-symlink elevation requirement, and lock-dir mtime on NTFS. No local
+   Windows environment; the `windows-latest` CI matrix leg (Phase 4) is the
+   real verification. Encoded as win32-gated tests until the first green run.
+2. **Keychain live contract** — the derived service name resolving a *real*
+   logged-in credential is gated behind `AGENT_SWITCH_CONTRACT_TESTS=1`
+   (needs a real login); the pure derivation is unit-pinned.
+3. **Usage API live shape** — `formatUsage` expects `five_hour/seven_day` with
+   `utilization` + `resets_at`; gated live check confirms the shape against a
+   real token.
+4. **`~/.local/state/claude/` cross-profile sharing** — `CLAUDE_CONFIG_DIR`
+   relocates only the config home, not the XDG state dir, so any state Claude
+   Code writes there is shared across profiles. Documented as a gotcha in
+   `README.md`; the exact contents/impact on current versions are not fully
+   determined (no multi-profile live run available).

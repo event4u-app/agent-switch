@@ -2,11 +2,11 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change (timestamp lives in git history).
 >
-> 3 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 2 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**0 / 76 steps done · 0%**
+**0 / 50 steps done · 0%**
 
 ```text
 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   0%
@@ -16,24 +16,12 @@
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-agent-switch-cross-platform.md](roadmaps/road-to-agent-switch-cross-platform.md) | 4 | 26 | 26 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
-| 2 | [road-to-agent-switch-gui-service.md](roadmaps/road-to-agent-switch-gui-service.md) | 5 | 33 | 33 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
-| 3 | [road-to-agent-switch-multi-provider.md](roadmaps/road-to-agent-switch-multi-provider.md) | 3 | 17 | 17 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
+| 1 | [road-to-agent-switch-gui-service.md](roadmaps/road-to-agent-switch-gui-service.md) | 5 | 33 | 33 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
+| 2 | [road-to-agent-switch-multi-provider.md](roadmaps/road-to-agent-switch-multi-provider.md) | 3 | 17 | 17 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
 
 ---
 
 ## Per-roadmap phase breakdown
-
-### [road-to-agent-switch-cross-platform.md](roadmaps/road-to-agent-switch-cross-platform.md)
-
-**agent-switch cross-platform foundation (macOS / Linux / Windows)** — 0 / 26 done (0%)
-
-| # | Phase | State | Open | Done | Deferred | Cancelled | % |
-|---|---|---|---:|---:|---:|---:|---:|
-| 1 | Contract verification per OS | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
-| 2 | Platform abstraction layer | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
-| 3 | Shell integration + install + doctor | ⬜ not started | 5 | 0 | 0 | 0 | 0% |
-| 4 | CI + release readiness | ⬜ not started | 7 | 0 | 0 | 0 | 0% |
 
 ### [road-to-agent-switch-gui-service.md](roadmaps/road-to-agent-switch-gui-service.md)
 
