@@ -30,4 +30,7 @@ npm run tauri build # package (.app/.dmg on macOS, .msi/.exe on Windows)
 - A tray icon at `src-tauri/icons/icon.png` (generate with `npm run tauri icon <src>`).
 - Platform webview: macOS/Windows ship one; Linux needs `webkit2gtk`.
 
-The `agent-switch` binary must be on `PATH` (the GUI shells out to it).
+The `agent-switch` binary must be installed on your shell `PATH` — `npm link`
+in the repo root, or `npm install -g agent-switch` once published. A menu-bar
+app launched from Finder only inherits a minimal `PATH`, so on macOS/Linux the
+GUI recovers your real login-shell `PATH` at startup to find the binary.

@@ -4,17 +4,33 @@
  * PLACEHOLDER brand mark: a dark rounded-square with a white "⇄" switch glyph
  * (two offset arrows — evokes account switching). Replace with real branding
  * anytime, then re-run `npm run tauri icon <this-output>` to regenerate the
- * platform set. Run: `node scripts/gen-icon.mjs [outfile]`.
+ * platform set.
+ *
+ * Two modes:
+ *   node scripts/gen-icon.mjs [outfile]              → colored app/bundle icon
+ *   node scripts/gen-icon.mjs --template [outfile]   → macOS menu-bar template
+ *
+ * The `--template` icon is monochrome-by-alpha: the body is opaque (black),
+ * the arrows are cut out to full transparency. macOS renders a template image
+ * by its alpha channel alone — painting the opaque body black on a light menu
+ * bar and white on a dark one, so it matches the other menu-bar icons, while
+ * the transparent arrows show the bar through. Default outfile: tray.png.
  */
 import * as zlib from "node:zlib";
 import * as fs from "node:fs";
 
+const args = process.argv.slice(2);
+const template = args.includes("--template");
+const out = args.find((a) => !a.startsWith("--")) ?? (template ? "tray.png" : "icon-source.png");
+
 const S = 1024;
-const out = process.argv[2] ?? "icon-source.png";
 
 // --- palette ---
-const BG = [55, 48, 163, 255]; // indigo #3730a3
-const FG = [255, 255, 255, 255]; // white glyph
+// Colored mode: indigo body + white glyph. Template mode: opaque body (color
+// is ignored by macOS; black is the correct neutral for other platforms) and
+// the glyph cut out to transparency.
+const BG = template ? [0, 0, 0, 255] : [55, 48, 163, 255];
+const FG = [255, 255, 255, 255]; // white glyph (colored mode only)
 const CLEAR = [0, 0, 0, 0];
 
 // --- geometry helpers ---
@@ -41,7 +57,8 @@ const glyph = (x, y) =>
   inRect(x, y, 372, 556, 712, 604, 712) || inTri(x, y, 388, 528, 388, 632, 300, 580); // bottom: shaft + head
 
 function pixel(x, y) {
-  if (glyph(x, y)) return FG;
+  // Template mode cuts the arrows out (transparent) instead of filling them.
+  if (glyph(x, y)) return template ? CLEAR : FG;
   if (inRoundedRect(x, y, 64, 64, 960, 960, 180)) return BG;
   return CLEAR;
 }
