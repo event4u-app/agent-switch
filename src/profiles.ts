@@ -139,8 +139,18 @@ export function setActive(providerId: ProviderId, name: string | null): void {
  * with the dir. Idempotent: once every legacy dir is under `<provider>/`, a
  * re-run does nothing. Returns the names migrated.
  */
+/**
+ * One-time marker so migration is not re-scanned on every command launch.
+ * Limitation (accepted, low-risk): a v1-layout profile that appears AFTER the
+ * marker is written (e.g. a backup restored into ROOT) is not auto-migrated —
+ * re-scanning on every launch to catch that is exactly the startup tax the
+ * marker exists to avoid. Delete `.layout-v2` to force a re-scan.
+ */
+const LAYOUT_MARKER = path.join(ROOT, ".layout-v2");
+
 export function migrateLegacyLayout(store: CredentialStore = credentialStore()): string[] {
   if (!fs.existsSync(ROOT)) return [];
+  if (fs.existsSync(LAYOUT_MARKER)) return []; // already migrated — cheap early-out
   const moved: string[] = [];
   for (const entry of fs.readdirSync(ROOT, { withFileTypes: true })) {
     if (!entry.isDirectory() || isProviderId(entry.name)) continue; // already provider-scoped
@@ -162,16 +172,31 @@ export function migrateLegacyLayout(store: CredentialStore = credentialStore()):
     }
 
     // Re-seed the credential so the new-path hash resolves it (macOS); on
-    // linux/win the file was copied already and this is a harmless no-op.
+    // linux/win the file was copied already. Always OVERWRITE: `cred` was read
+    // keychain-first, so it is the freshest known credential — a stale
+    // `.credentials.json` relic that `cpSync` copied must not shadow it, or the
+    // profile would migrate onto a dead token (round-2 review F2).
     if (cred) {
       store.clearStale(newConfig);
-      const credFile = path.join(newConfig, ".credentials.json");
-      if (!fs.existsSync(credFile)) fs.writeFileSync(credFile, cred, { mode: 0o600 });
+      fs.writeFileSync(path.join(newConfig, ".credentials.json"), cred, { mode: 0o600 });
     }
 
     store.removeEntry(oldConfig); // drop the stale old-path keychain entry (darwin)
     fs.rmSync(oldProfile, { recursive: true, force: true });
     moved.push(entry.name);
+  }
+
+  // Drop the marker only when no legacy profile dir remains (a name clash may
+  // have left one for the user to resolve — then re-scan next time).
+  const stillLegacy = fs
+    .readdirSync(ROOT, { withFileTypes: true })
+    .some((e) => e.isDirectory() && !isProviderId(e.name) && fs.existsSync(path.join(ROOT, e.name, "config")));
+  if (!stillLegacy) {
+    try {
+      fs.writeFileSync(LAYOUT_MARKER, "2\n", { mode: 0o600 });
+    } catch {
+      /* best-effort — a missing marker only costs a re-scan */
+    }
   }
   return moved;
 }

@@ -44,7 +44,7 @@ export function readDaemonState(file: string = STATE_FILE): DaemonState | null {
 }
 
 export function writeDaemonState(state: DaemonState, file: string = STATE_FILE): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
 }
 

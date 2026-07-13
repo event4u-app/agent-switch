@@ -33,7 +33,8 @@ import {
   activeFor,
   setActive,
 } from "./profiles.js";
-import { Provider, ProviderId, PROVIDER_IDS, isProviderId, provider } from "./providers.js";
+import { Provider, ProviderId, PROVIDER_IDS, provider } from "./providers.js";
+import { parseArgs, parseRun } from "./args.js";
 import { credentialStore } from "./credentials.js";
 import { withProperLock } from "./locks.js";
 import { applySharing, removeSharing, syncSharing } from "./share.js";
@@ -397,7 +398,9 @@ function cmdRemove(providerId: ProviderId, name?: string, force = false): void {
     }
   }
 
-  const removedEntry = credentials.removeEntry(configDir(providerId, n)); // darwin keychain only
+  // Keychain entries exist only for claude (darwin); codex/gemini are file-based,
+  // so computing a Claude hash for them would be a conceptual no-op — skip it.
+  const removedEntry = providerId === "claude" ? credentials.removeEntry(configDir(providerId, n)) : false;
   fs.rmSync(profileDir(providerId, n), { recursive: true, force: true });
   if (activeFor(providerId) === n) setActive(providerId, null);
   const pruned = pruneMappings(providerId, n);
@@ -472,41 +475,25 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
 
 // ---------- main -------------------------------------------------------------
 
-/** Value of a `--flag value` option, or undefined if absent. */
-function flagValue(args: string[], name: string): string | undefined {
-  const i = args.indexOf(name);
-  return i >= 0 ? args[i + 1] : undefined;
-}
-
-/** Resolve --provider (default claude); explicit but invalid → error. */
-function resolveProvider(args: string[]): ProviderId {
-  const v = flagValue(args, "--provider");
-  if (v === undefined) return "claude";
-  if (!isProviderId(v)) die(`unknown provider "${v}" (choose: ${PROVIDER_IDS.join(", ")})`);
-  return v;
-}
-
-/** For `run`: strip `--provider <val>`, take the profile name, pass the rest through. */
-function parseRun(rest: string[]): { providerId: ProviderId; name?: string; args: string[] } {
-  const providerId = resolveProvider(rest);
-  const args = [...rest];
-  const pi = args.indexOf("--provider");
-  if (pi >= 0) args.splice(pi, 2);
-  const name = args.shift();
-  return { providerId, name, args };
-}
-
 async function main(): Promise<void> {
-  const [cmd, ...rest] = process.argv.slice(2);
-  const positional = rest.filter((a) => !a.startsWith("--"));
-  const providerId = resolveProvider(rest);
+  const argv = process.argv.slice(2);
+  const { cmd, providerId, providerExplicit, positional, flags } = parseArgs(argv);
+  const rest = argv.slice(1); // args after the command (share/run parse these themselves)
 
   // One-time layout migration (v1 Claude profiles → provider-scoped). Quiet
-  // unless it actually moves something. Skipped for pure help.
+  // unless it actually moves something. The `.layout-v2` marker makes this a
+  // single existsSync after the first run, so there is no per-launch scan tax —
+  // `dir` (the shell-prompt hot path) MUST still run it, or the first post-
+  // upgrade `dir` would miss an un-migrated active profile and fall back to the
+  // default config dir. Only pure help / shellenv (which emit text, touch no
+  // profiles) skip it.
   if (cmd && !["help", "--help", "-h", "shellenv"].includes(cmd)) {
     const moved = migrateLegacyLayout();
     if (moved.length > 0) {
-      console.log(`Migrated ${moved.length} Claude profile(s) to the new layout: ${moved.join(", ")}.`);
+      // stderr, not stdout: `dir` is machine-consumed by the shell wrapper
+      // (`dir="$(agent-switch dir 2>/dev/null)"`), so a status line on stdout
+      // would pollute the resolved config path.
+      console.error(`Migrated ${moved.length} Claude profile(s) to the new layout: ${moved.join(", ")}.`);
     }
   }
 
@@ -515,18 +502,18 @@ async function main(): Promise<void> {
     case "import": return cmdImport(providerId, positional[0]);
     case "use": return cmdUse(providerId, positional[0]);
     case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
-    case "list": case "ls": return cmdList(flagValue(rest, "--provider") ? providerId : undefined, rest.includes("--json"));
-    case "status": return cmdStatus(flagValue(rest, "--provider") ? providerId : undefined, positional[0], rest.includes("--json"));
-    case "current": return cmdCurrent(flagValue(rest, "--provider") ? providerId : undefined);
+    case "list": case "ls": return cmdList(providerExplicit ? providerId : undefined, !!flags.json);
+    case "status": return cmdStatus(providerExplicit ? providerId : undefined, positional[0], !!flags.json);
+    case "current": return cmdCurrent(providerExplicit ? providerId : undefined);
     case "whoami": return cmdWhoami(providerId, positional[0]);
     case "dir": return cmdDir(providerId);
     case "map": return cmdMap(providerId, positional[0], positional[1]);
-    case "unmap": return cmdUnmap(flagValue(rest, "--provider") ? providerId : undefined, positional[0]);
+    case "unmap": return cmdUnmap(providerExplicit ? providerId : undefined, positional[0]);
     case "mappings": return cmdMappings();
     case "share": return cmdShare(positional[0], rest.slice(1));
     case "web": return cmdWeb(positional[0]);
-    case "remove": case "rm": return cmdRemove(providerId, positional[0], rest.includes("--force"));
-    case "shellenv": return cmdShellenv(flagValue(rest, "--shell") ?? positional[0]);
+    case "remove": case "rm": return cmdRemove(providerId, positional[0], !!flags.force);
+    case "shellenv": return cmdShellenv((flags.shell as string) ?? positional[0]);
     case "service": return cmdService(positional[0]);
     case "doctor": return process.exit(runDoctor());
     case "help": case "--help": case "-h": return usage();
