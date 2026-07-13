@@ -1,0 +1,133 @@
+# Taskfile for agent-switch — https://taskfile.dev
+# Run `task` (or `task --list`) to see everything.
+version: "3"
+
+vars:
+  NODE: node
+
+tasks:
+  default:
+    desc: List available tasks
+    silent: true
+    cmds:
+      - task --list
+
+  # ---------- setup ----------
+  install:
+    desc: Install CLI + GUI dependencies (npm ci)
+    cmds:
+      - npm ci
+      - npm --prefix gui ci
+
+  # ---------- CLI: build / test ----------
+  build:
+    desc: Compile the CLI (src → dist)
+    sources: ["src/**/*.ts", "tsconfig.json"]
+    generates: ["dist/**/*.js"]
+    cmds:
+      - npm run build
+
+  watch:
+    desc: Recompile the CLI on every change (tsc --watch)
+    cmds:
+      - npx tsc --watch
+
+  test:
+    desc: Run the CLI test suite (node:test)
+    cmds:
+      - npm test
+
+  test:contract:
+    desc: Run the opt-in contract tests too (needs a real login / live network)
+    env:
+      AGENT_SWITCH_CONTRACT_TESTS: "1"
+    cmds:
+      - npm test
+
+  test:gui:
+    desc: Run the GUI unit tests (vitest)
+    dir: gui
+    cmds:
+      - npm test
+
+  test:all:
+    desc: Run CLI + GUI tests
+    cmds:
+      - task: test
+      - task: test:gui
+
+  typecheck:
+    desc: Type-check the CLI (src + tests) without emitting
+    cmds:
+      - npx tsc --noEmit
+      - npx tsc -p tsconfig.test.json --noEmit
+
+  typecheck:gui:
+    desc: Type-check the GUI without emitting
+    dir: gui
+    cmds:
+      - npx tsc --noEmit
+
+  # ---------- CLI: run the dev build ----------
+  run:
+    desc: "Run the dev build with args:  task run -- list --json"
+    deps: [build]
+    cmds:
+      - "{{.NODE}} dist/index.js {{.CLI_ARGS}}"
+
+  dev:
+    desc: Build + `npm link` so `agent-switch` on PATH is this dev build
+    cmds:
+      - npm run build
+      - npm link
+      - 'echo "Linked. `agent-switch` now runs the dev build."'
+      - 'echo "Tip: export AGENT_SWITCH_HOME=$(mktemp -d) to avoid touching your real profiles."'
+
+  unlink:
+    desc: Undo `task dev` (npm unlink -g)
+    cmds:
+      - npm unlink -g agent-switch
+
+  doctor:
+    desc: Run the dev build's per-OS self-check
+    deps: [build]
+    cmds:
+      - "{{.NODE}} dist/index.js doctor"
+
+  service:run:
+    desc: Run the usage daemon in the foreground (dev)
+    deps: [build]
+    cmds:
+      - "{{.NODE}} dist/index.js service run"
+
+  # ---------- GUI (Tauri: needs Rust + a desktop session) ----------
+  gui:dev:
+    desc: Run the tray GUI in dev (Tauri + Vite)
+    dir: gui
+    cmds:
+      - npm run tauri dev
+
+  gui:build:
+    desc: Build the GUI frontend bundle
+    dir: gui
+    cmds:
+      - npm run build
+
+  gui:cargo-check:
+    desc: Compile-check the Tauri Rust shell
+    cmds:
+      - cargo check --manifest-path gui/src-tauri/Cargo.toml
+
+  # ---------- aggregate / housekeeping ----------
+  ci:
+    desc: Mirror CI locally (build + typecheck + CLI & GUI tests)
+    cmds:
+      - task: build
+      - task: typecheck
+      - task: test
+      - task: test:gui
+
+  clean:
+    desc: Remove build output
+    cmds:
+      - rm -rf dist dist-test gui/dist
