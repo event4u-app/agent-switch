@@ -51,6 +51,31 @@ test("flag-first `use --provider codex work` activates the right profile", gate,
   }
 });
 
+test("first `dir` after a v1→v2 upgrade migrates and prints only the clean config path (N1)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    // v1 flat layout + v1 state, active profile, no v2 marker yet.
+    fs.mkdirSync(path.join(home, "legacy", "config"), { recursive: true });
+    fs.writeFileSync(path.join(home, "legacy", "config", ".claude.json"), "{}");
+    fs.writeFileSync(path.join(home, "state.json"), JSON.stringify({ active: "legacy" }));
+
+    // The shell wrapper captures STDOUT only (`dir="$(agent-switch dir 2>/dev/null)"`).
+    const out = execFileSync("node", [CLI, "dir"], {
+      env: { ...process.env, AGENT_SWITCH_HOME: home },
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"], // drop stderr, like the wrapper
+    }).trim();
+
+    // `dir` must have triggered migration and returned exactly the migrated path
+    // — one line, no status noise (that goes to stderr).
+    assert.equal(out, path.join(home, "claude", "legacy", "config"));
+    assert.equal(fs.existsSync(path.join(home, "claude", "legacy", "config")), true);
+    assert.ok(!out.includes("Migrated"));
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("`list --json` emits the profile list as valid JSON (GUI contract)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {

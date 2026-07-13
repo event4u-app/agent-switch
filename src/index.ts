@@ -481,12 +481,19 @@ async function main(): Promise<void> {
   const rest = argv.slice(1); // args after the command (share/run parse these themselves)
 
   // One-time layout migration (v1 Claude profiles → provider-scoped). Quiet
-  // unless it actually moves something. Skipped for pure help and for read-only
-  // hot-path commands (`dir` runs on every shell prompt).
-  if (cmd && !["help", "--help", "-h", "shellenv", "dir"].includes(cmd)) {
+  // unless it actually moves something. The `.layout-v2` marker makes this a
+  // single existsSync after the first run, so there is no per-launch scan tax —
+  // `dir` (the shell-prompt hot path) MUST still run it, or the first post-
+  // upgrade `dir` would miss an un-migrated active profile and fall back to the
+  // default config dir. Only pure help / shellenv (which emit text, touch no
+  // profiles) skip it.
+  if (cmd && !["help", "--help", "-h", "shellenv"].includes(cmd)) {
     const moved = migrateLegacyLayout();
     if (moved.length > 0) {
-      console.log(`Migrated ${moved.length} Claude profile(s) to the new layout: ${moved.join(", ")}.`);
+      // stderr, not stdout: `dir` is machine-consumed by the shell wrapper
+      // (`dir="$(agent-switch dir 2>/dev/null)"`), so a status line on stdout
+      // would pollute the resolved config path.
+      console.error(`Migrated ${moved.length} Claude profile(s) to the new layout: ${moved.join(", ")}.`);
     }
   }
 

@@ -139,7 +139,13 @@ export function setActive(providerId: ProviderId, name: string | null): void {
  * with the dir. Idempotent: once every legacy dir is under `<provider>/`, a
  * re-run does nothing. Returns the names migrated.
  */
-/** One-time marker so migration is not re-scanned on every command launch. */
+/**
+ * One-time marker so migration is not re-scanned on every command launch.
+ * Limitation (accepted, low-risk): a v1-layout profile that appears AFTER the
+ * marker is written (e.g. a backup restored into ROOT) is not auto-migrated —
+ * re-scanning on every launch to catch that is exactly the startup tax the
+ * marker exists to avoid. Delete `.layout-v2` to force a re-scan.
+ */
 const LAYOUT_MARKER = path.join(ROOT, ".layout-v2");
 
 export function migrateLegacyLayout(store: CredentialStore = credentialStore()): string[] {
