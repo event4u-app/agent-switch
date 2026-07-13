@@ -50,10 +50,10 @@ import {
   accessTokenOf,
   fetchProfile,
   fetchUsage,
-  formatUsage,
   liveSessionPids,
   readProfileCredential,
 } from "./api.js";
+import { UsageSnapshot, formatSnapshot, parseUsage } from "./usage.js";
 
 // Per-OS credential store (keychain-then-file on darwin, file-only elsewhere).
 const credentials = credentialStore();
@@ -225,9 +225,32 @@ function cmdWhoami(providerId: ProviderId, name?: string): void {
   console.log(identity(providerId, n) ?? "not logged in yet");
 }
 
-/** Identity + (Claude only) 5h/7d usage. Codex/Gemini usage lands in the
- *  gui-service roadmap; here they degrade to an identity line. */
-async function cmdStatus(providerId?: ProviderId, name?: string): Promise<void> {
+/** A Claude profile's usage snapshot via the OAuth endpoint; null if the
+ *  credential is unreadable or the API shape is unknown. Codex/Gemini have no
+ *  usage readout (verified), so this is Claude-only. */
+async function claudeSnapshot(name: string): Promise<UsageSnapshot | null> {
+  const creds = readProfileCredential(configDir("claude", name));
+  const token = creds ? accessTokenOf(creds) : null;
+  if (!token) return null;
+  const raw = await fetchUsage(token);
+  return raw ? parseUsage(raw) : null;
+}
+
+/**
+ * Identity + (Claude only) usage. The default all-profile table is human-only.
+ * `--json` emits the ACTIVE profile's snapshot ONLY — never a machine-readable
+ * cross-account view (the anti-rotation boundary: no ranking material).
+ */
+async function cmdStatus(providerId?: ProviderId, name?: string, json = false): Promise<void> {
+  if (json) {
+    const pid = providerId ?? "claude";
+    const active = name ?? activeFor(pid);
+    if (!active || !profileExists(pid, active)) die(`no active ${pid} profile for --json`);
+    const usage = pid === "claude" ? await claudeSnapshot(active) : null;
+    console.log(JSON.stringify({ provider: pid, name: active, identity: identity(pid, active), usage }, null, 2));
+    return;
+  }
+
   const rows = name
     ? [{ provider: providerId ?? "claude", name: requireProfile(providerId ?? "claude", name, "status") }]
     : (providerId ? listProfiles(providerId).map((n) => ({ provider: providerId, name: n })) : listAllProfiles());
@@ -237,7 +260,7 @@ async function cmdStatus(providerId?: ProviderId, name?: string): Promise<void> 
     const mark = activeFor(pid) === n ? "*" : " ";
     console.log(`${mark} ${pid}/${n} — ${identity(pid, n) ?? "not logged in"}`);
     if (pid !== "claude") {
-      console.log("  (usage readout is provider-specific — tracked in the gui-service roadmap)");
+      console.log("  (no usage readout for this provider — shows own usage only where available)");
       continue;
     }
     const creds = readProfileCredential(configDir("claude", n));
@@ -246,10 +269,10 @@ async function cmdStatus(providerId?: ProviderId, name?: string): Promise<void> 
       console.log("  (credential not readable — profile may not have run yet)");
       continue;
     }
-    const [profileInfo, usage] = await Promise.all([fetchProfile(token), fetchUsage(token)]);
+    const [profileInfo, raw] = await Promise.all([fetchProfile(token), fetchUsage(token)]);
     const org = profileInfo?.organization?.name ?? profileInfo?.account?.email ?? null;
     if (org) console.log(`  org: ${org}`);
-    const lines = usage ? formatUsage(usage) : [];
+    const lines = raw ? formatSnapshot(parseUsage(raw)) : [];
     if (lines.length > 0) lines.forEach((l) => console.log(l));
     else console.log("  (usage unavailable — token expired or API shape changed)");
   }
@@ -406,7 +429,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch use [--provider P] <name>       set the active profile for a provider
   agent-switch run [--provider P] <name> [..]  launch the provider's CLI on a profile
   agent-switch list [--provider P]             list profiles, grouped by provider
-  agent-switch status [--provider P] [name]    identity (+ Claude usage) per profile
+  agent-switch status [--provider P] [name] [--json]   identity (+ Claude usage); --json = active only
   agent-switch current [--provider P]          show the active profile(s)
   agent-switch whoami [--provider P] [name]    show a profile's account identity
   agent-switch dir [--provider P]              resolve profile for CWD (mapping > active)
@@ -466,7 +489,7 @@ async function main(): Promise<void> {
     case "use": return cmdUse(providerId, positional[0]);
     case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
     case "list": case "ls": return cmdList(flagValue(rest, "--provider") ? providerId : undefined);
-    case "status": return cmdStatus(flagValue(rest, "--provider") ? providerId : undefined, positional[0]);
+    case "status": return cmdStatus(flagValue(rest, "--provider") ? providerId : undefined, positional[0], rest.includes("--json"));
     case "current": return cmdCurrent(flagValue(rest, "--provider") ? providerId : undefined);
     case "whoami": return cmdWhoami(providerId, positional[0]);
     case "dir": return cmdDir(providerId);

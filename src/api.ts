@@ -37,7 +37,13 @@ export function accessTokenOf(credentials: string): string | null {
 async function oauthGet(pathname: string, token: string): Promise<any | null> {
   try {
     const res = await fetch(`https://api.anthropic.com${pathname}`, {
-      headers: { Authorization: `Bearer ${token}`, "anthropic-beta": BETA_HEADER },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "anthropic-beta": BETA_HEADER,
+        // A real User-Agent is required — the endpoint rate-limits (429) without
+        // one (extension-verified). Timeout keeps a hung read from blocking.
+        "User-Agent": "agent-switch/1.0 (+https://github.com/event4u-app/agent-switch)",
+      },
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) return null;
@@ -55,25 +61,8 @@ export function fetchUsage(token: string): Promise<any | null> {
   return oauthGet("/api/oauth/usage", token);
 }
 
-/** Render the 5h/7d windows defensively; unknown shapes degrade to nothing. */
-export function formatUsage(usage: any): string[] {
-  const lines: string[] = [];
-  for (const [label, key] of [
-    ["5h", "five_hour"],
-    ["7d", "seven_day"],
-  ] as const) {
-    const w = usage?.[key];
-    if (!w || typeof w !== "object") continue;
-    const pct = typeof w.utilization === "number" ? Math.round(w.utilization) : null;
-    const resets = typeof w.resets_at === "string" ? new Date(w.resets_at) : null;
-    const resetStr =
-      resets && !isNaN(resets.getTime())
-        ? `  resets ${resets.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}`
-        : "";
-    if (pct !== null) lines.push(`  ${label}: ${String(pct).padStart(3)}%${resetStr}`);
-  }
-  return lines;
-}
+// Usage parsing/formatting moved to usage.ts (richer per-model + routines +
+// thresholds). api.ts stays the low-level fetch layer.
 
 // ---------------------------------------------------------------------------
 // Process detection — adopted from claude-swap (process_detection.py): Claude

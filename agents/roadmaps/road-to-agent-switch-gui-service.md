@@ -57,23 +57,23 @@ React UI that reads that state and drives switching through the existing CLI.
 
 ## Phase 1: Usage engine (policy-scoped)
 
-- [ ] **Step 1:** `src/usage.ts` — harden the OAuth read client: real
+- [x] **Step 1:** `src/usage.ts` — harden the OAuth read client: real
       `User-Agent` header (429 avoidance — extension-verified), timeout,
       defensive parsing of `five_hour`/`seven_day`(+`seven_day_opus`/
       `seven_day_sonnet`)/`utilization`/`resets_at`, plus per-model and Claude
       Code `routines` (used/limit) when present.
-- [ ] **Step 2:** Verify Codex + Gemini usage readouts (docs/endpoints/CLI);
+- [x] **Step 2:** Verify Codex + Gemini usage readouts (docs/endpoints/CLI);
       record findings in `ADOPTED.md`. Implement where a source exists; where
       none exists, the provider reports "usage unavailable" (no fabrication).
-- [ ] **Step 3:** Own-profile 30-day usage history store (≤720 samples) per
+- [x] **Step 3:** Own-profile 30-day usage history store (≤720 samples) per
       profile, mode 0600 — sparkline data.
-- [ ] **Step 4:** Threshold detection for the **active profile only**
+- [x] **Step 4:** Threshold detection for the **active profile only**
       (configurable, default 75%/90% on each window), edge-triggered (fire once
       per crossing, reset on `resets_at`). No cross-account comparison.
-- [ ] **Step 5:** `agent-switch status` keeps the one-shot all-profile table; add
+- [x] **Step 5:** `agent-switch status` keeps the one-shot all-profile table; add
       `agent-switch status --json` for the **active profile only** (statusline/GUI).
       No machine-readable cross-account output (anti-rotation boundary).
-- [ ] **Step 6:** Unit tests: parser shapes, edge-trigger semantics, history
+- [x] **Step 6:** Unit tests: parser shapes, edge-trigger semantics, history
       windowing. <!-- verify: npm test -->
 
 **Exit criteria:** `npm test` green; a live profile shows correct windows +

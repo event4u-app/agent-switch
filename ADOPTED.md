@@ -131,6 +131,18 @@ counts; `remove` refuses (without `--force`) while sessions run.
   as lineage identity) — elegant, noted for later (would let `list` flag two
   profiles holding the same account), but no current consumer. Parked.
 
+## Usage sources per provider (verified 2026-07-13)
+
+| Provider | Usage source | Status |
+|---|---|---|
+| `claude` (CLI) | OAuth `GET api.anthropic.com/api/oauth/usage` (Bearer + `anthropic-beta` + a real `User-Agent`, or the endpoint 429s) | **implemented** — `src/usage.ts` parses `five_hour`/`seven_day`(+`_opus`/`_sonnet`)/`utilization`/`resets_at` + `routines` |
+| `claude` (browser) | claude.ai web `GET /api/organizations/{uuid}/usage` (cookie-auth via the persistent context) | richer; noted, not wired (needs the Playwright context) — parked |
+| `codex` | none | **unavailable** — `codex --help` exposes `login`/`logout`/`doctor` but no usage/quota/limit command; no per-account readout. The UI shows "no usage source". |
+| `gemini` | none | **unavailable** — `gemini --help` exposes no usage/quota/stats command. The UI shows "no usage source". |
+
+Codex/Gemini surface identity only; agent-switch never fabricates a usage number
+where the provider offers none.
+
 ## Per-OS contract matrix
 
 Per-mechanism status across the three target platforms. **verified** =
