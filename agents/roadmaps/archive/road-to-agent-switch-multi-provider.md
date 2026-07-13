@@ -20,7 +20,7 @@ profiles.
 
 ## Prerequisites
 
-- [x] [`road-to-agent-switch-cross-platform.md`](archive/road-to-agent-switch-cross-platform.md)
+- [x] [`road-to-agent-switch-cross-platform.md`](road-to-agent-switch-cross-platform.md)
       Phase 2 (platform abstraction) landed — provider abstraction layers on
       top of it. (Completed & archived — PR #1.)
 - [x] `codex` and `gemini` binaries available for the contract tests.
@@ -29,7 +29,7 @@ profiles.
 
 - Sibling of the `road-to-agent-switch-*` family; depends on the cross-platform
   foundation. Consumed by
-  [`road-to-agent-switch-gui-service.md`](road-to-agent-switch-gui-service.md) (usage per
+  [`road-to-agent-switch-gui-service.md`](../road-to-agent-switch-gui-service.md) (usage per
   provider, GUI provider tabs).
 - **Verified live (2026-07-13)** — the isolation architecture holds for all
   three; env vars confirmed by running each CLI against a scratch dir:
@@ -46,7 +46,7 @@ profiles.
   granted interactively once (browser), same as Claude.
 - **Anti-rotation lock applies unchanged** to Codex (OpenAI) and Gemini
   (Google) accounts — see
-  [`skipped/road-to-agent-switch-autoswitch-rejected.md`](skipped/road-to-agent-switch-autoswitch-rejected.md).
+  [`skipped/road-to-agent-switch-autoswitch-rejected.md`](../skipped/road-to-agent-switch-autoswitch-rejected.md).
 
 ## Phase 1: Provider abstraction
 

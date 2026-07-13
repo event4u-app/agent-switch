@@ -28,7 +28,7 @@ zsh/bash/fish/PowerShell, a `doctor` self-check, and a green
 ## Context
 
 - Foundation of the `road-to-agent-switch-*` family. Two siblings build on it:
-  [`road-to-agent-switch-multi-provider.md`](../road-to-agent-switch-multi-provider.md)
+  [`road-to-agent-switch-multi-provider.md`](road-to-agent-switch-multi-provider.md)
   (Codex + Gemini) and
   [`road-to-agent-switch-gui-service.md`](../road-to-agent-switch-gui-service.md)
   (usage engine + daemon + GUI). Rejected ideas:
