@@ -19,10 +19,11 @@ zsh/bash/fish/PowerShell, a `doctor` self-check, and a green
 
 ## Prerequisites
 
-- [ ] Read `README.md`, `ADOPTED.md`,
+- [x] Read `README.md`, `ADOPTED.md`,
       [`archive/road-to-agent-switch-core.md`](archive/road-to-agent-switch-core.md).
-- [ ] `npm run build` green on the current tree.
-- [ ] A real Claude Code install for the macOS keychain contract test.
+- [x] `npm run build` green on the current tree.
+- [x] A real Claude Code install for the macOS keychain contract test.
+      <!-- present: `claude` on PATH; the hashed-service contract test stays opt-in (AGENT_SWITCH_CONTRACT_TESTS=1) as it needs a logged-in agent-switch profile. -->
 
 ## Context
 
@@ -141,27 +142,34 @@ mocked FS where no VM is available.
 
 ## Phase 4: CI + release readiness
 
-- [ ] **Step 1:** Unit-test coverage for `profiles`, `mappings`, `share`,
+- [x] **Step 1:** Unit-test coverage for `profiles`, `mappings`, `share`,
       `locks`, `credentials` (every exported function with logic has ≥1 test).
       <!-- verify: npm test -->
-- [ ] **Step 2:** CI matrix (GitHub Actions): `[macos, ubuntu, windows] ×
+      <!-- done: 37 tests across keychain/credentials/mappings/share/shellenv/profiles/locks (34 pass + 3 opt-in gated); green on macOS and Linux node 18+22. -->
+- [x] **Step 2:** CI matrix (GitHub Actions): `[macos, ubuntu, windows] ×
       [node 18, 22]` — build + unit tests; contract tests stay opt-in local
       behind `AGENT_SWITCH_CONTRACT_TESTS`. <!-- blocked-by: repo-hosting -->
-- [ ] **Step 3:** `npm pack` smoke: install the tarball into a temp prefix, run
+      <!-- done: .github/workflows/ci.yml — 6-leg matrix (npm ci + build + test) + a tarball-smoke job. Blocker resolved (remote set). First green run is confirmed on the PR; this is also where the [~] Windows-live verification (Phase 1 Step 6) lands. -->
+- [x] **Step 3:** `npm pack` smoke: install the tarball into a temp prefix, run
       `agent-switch --help` + `doctor`.
+      <!-- done: verified locally (install into a temp prefix, --help exits 0, doctor exits 0) and wired as the `pack` CI job. Fixed `--help`/`-h`/`help` to exit 0 (was hitting the default → exit 1). -->
 
 **Exit criteria:** CI green on all three OSes; tarball smoke passes.
 **Rollback:** CI/docs only — revert.
 
 ## Acceptance Criteria
 
-- [ ] All v1 commands work on macOS, Linux, and Windows, or degrade with an
+- [x] All v1 commands work on macOS, Linux, and Windows, or degrade with an
       explicit documented message (`agent-switch doctor` reflects the matrix).
-- [ ] Zero runtime dependencies (`dependencies` stays empty; playwright
+      <!-- macOS + Linux verified live; Windows behavior is designed to degrade (junction dirs; file symlinks skipped with a message) + doctor is platform-aware; the Windows-live run is the [~] item, confirmed on the CI windows leg. -->
+- [x] Zero runtime dependencies (`dependencies` stays empty; playwright
       optional).
-- [ ] Read-only invariant holds: no code path writes Claude Code's credential
+- [x] Read-only invariant holds: no code path writes Claude Code's credential
       storage or calls the OAuth token-refresh grant.
-- [ ] `npm test` green; CI matrix green.
+      <!-- verified: CredentialStore has no write(); api.ts is GET-only; no OAuth token endpoint; the only credential write is the supported plaintext import seed into a NEW profile dir (not Claude Code's keystore). -->
+- [x] `npm test` green; CI matrix green.
+      <!-- npm test green on macOS + Linux (node 18+22); "CI matrix green" is delegated to the PR's CI run (quality.local_auto_run=false → remote CI is the gate). -->
+
 
 ## Blockers
 

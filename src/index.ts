@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * agent-switch — Claude Code multi-account profile switcher for macOS
+ * agent-switch — Claude Code multi-account profile switcher (macOS, Linux, Windows)
  *
  * Architecture: CLAUDE_CONFIG_DIR isolation. Each profile is its own config
  * dir with its own live login (own keychain entry); switching only changes
@@ -382,7 +382,7 @@ function cmdShellenv(shellArg?: string): void {
 }
 
 function usage(): void {
-  console.log(`agent-switch — switch between multiple Claude Code accounts (macOS)
+  console.log(`agent-switch — switch between multiple Claude Code accounts (macOS · Linux · Windows)
 
   agent-switch add <name>              create a new profile and log it in
   agent-switch import <name>           migrate the default ~/.claude setup (no re-login)
@@ -434,6 +434,7 @@ async function main(): Promise<void> {
     case "remove": case "rm": return cmdRemove(positional[0], rest.includes("--force"));
     case "shellenv": return cmdShellenv(flagValue(rest, "--shell") ?? positional[0]);
     case "doctor": return process.exit(runDoctor());
+    case "help": case "--help": case "-h": return usage();
     default: usage(); process.exit(cmd ? 1 : 0);
   }
 }
