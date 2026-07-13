@@ -68,9 +68,7 @@ jobs:
         working-directory: gui
       - run: npm run build
         working-directory: gui
-      # Advisory compile-check of the Tauri Rust shell. The tray/window is a
-      # deferred item (needs a tray-icon asset + the bundle toolchain + a
-      # desktop session), so a failure here is informational, not blocking —
-      # the gui job gates on the JS/contract layer that IS done.
+      # Compile-check the Tauri Rust shell. Now gating (was advisory, which
+      # masked a missing icon asset + missing serde deps) — the shell compiles
+      # with the generated icon set and standard Tauri deps.
       - run: cargo check --manifest-path gui/src-tauri/Cargo.toml
-        continue-on-error: true
