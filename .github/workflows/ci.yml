@@ -46,3 +46,28 @@ jobs:
           npm install -g --prefix "$prefix" "./$tgz"
           "$prefix/bin/agent-switch" --help
           AGENT_SWITCH_HOME="$(mktemp -d)" "$prefix/bin/agent-switch" doctor || true
+
+  gui:
+    name: gui ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+        working-directory: gui
+      - run: npm test
+        working-directory: gui
+      - run: npx tsc --noEmit
+        working-directory: gui
+      - run: npm run build
+        working-directory: gui
+      # Compile-check the Tauri Rust shell. Full `tauri build` bundling
+      # (.dmg/.msi + a tray icon asset) is a packaging follow-up.
+      - run: cargo check --manifest-path gui/src-tauri/Cargo.toml

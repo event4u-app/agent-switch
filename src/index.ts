@@ -191,8 +191,25 @@ function printProfileLine(providerId: ProviderId, name: string, showLive: boolea
   console.log(`${mark} ${name.padEnd(16)} ${id}${live}`);
 }
 
-function cmdList(providerId?: ProviderId): void {
+function cmdList(providerId?: ProviderId, json = false): void {
   const providers = providerId ? [providerId] : PROVIDER_IDS;
+
+  if (json) {
+    // The GUI IPC contract: the profile list (identity/active/live) — NOT usage.
+    // Usage stays behind `status --json` (active profile only, anti-rotation).
+    const rows = providers.flatMap((pid) =>
+      listProfiles(pid).map((n) => ({
+        provider: pid,
+        name: n,
+        identity: identity(pid, n),
+        active: activeFor(pid) === n,
+        liveSessions: pid === "claude" ? liveSessionPids(configDir("claude", n)).length : 0,
+      })),
+    );
+    console.log(JSON.stringify(rows, null, 2));
+    return;
+  }
+
   let any = false;
   for (const pid of providers) {
     const names = listProfiles(pid);
@@ -437,7 +454,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch import [--provider P] <name>    migrate the default install (no re-login)
   agent-switch use [--provider P] <name>       set the active profile for a provider
   agent-switch run [--provider P] <name> [..]  launch the provider's CLI on a profile
-  agent-switch list [--provider P]             list profiles, grouped by provider
+  agent-switch list [--provider P] [--json]    list profiles, grouped by provider
   agent-switch status [--provider P] [name] [--json]   identity (+ Claude usage); --json = active only
   agent-switch current [--provider P]          show the active profile(s)
   agent-switch whoami [--provider P] [name]    show a profile's account identity
@@ -498,7 +515,7 @@ async function main(): Promise<void> {
     case "import": return cmdImport(providerId, positional[0]);
     case "use": return cmdUse(providerId, positional[0]);
     case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
-    case "list": case "ls": return cmdList(flagValue(rest, "--provider") ? providerId : undefined);
+    case "list": case "ls": return cmdList(flagValue(rest, "--provider") ? providerId : undefined, rest.includes("--json"));
     case "status": return cmdStatus(flagValue(rest, "--provider") ? providerId : undefined, positional[0], rest.includes("--json"));
     case "current": return cmdCurrent(flagValue(rest, "--provider") ? providerId : undefined);
     case "whoami": return cmdWhoami(providerId, positional[0]);
