@@ -106,22 +106,21 @@ logic). A provider has surfaces (`cli`, `ui`); a surface is enable/disable-able.
 
 ## Phase 3: Auto-switch — global default OFF, no ToS warning, signal-gated
 
-- [ ] **Step 1:** Flip the GUI global default: `gui/src/settings-store.ts`
-      `getAutoSwitchGlobal()` returns **false** unless the user explicitly enabled
-      it (invert the current "on unless literal off" logic; only literal "on"
-      enables). Update the doc comment.
-      <!-- verify: fresh localStorage → global auto-switch reads OFF; per-provider toggles hidden -->
-- [ ] **Step 2:** Remove the ToS/warning text from the auto-switch surfaces —
-      the GUI GeneralSettings auto-switch copy AND the CLI note printed by
-      `cmdAutoswitch` (`src/index.ts` — the "Pooling accounts to route around
-      limits may…" lines). Keep the mechanic; drop the legal admission.
-- [ ] **Step 3:** The per-provider auto-switch toggle renders **only** for
-      providers with a real usage readout (Claude). Codex/Gemini/new providers
-      never show an auto-switch control at all (not merely inert).
-      <!-- verify: Codex/Gemini tabs show no auto-switch toggle; Claude does -->
-- [ ] **Step 4:** Remove Gemini auto-switch as a concept — no toggle, no daemon
-      path. Confirm `src/daemon.ts` only ever auto-switches Claude and no code
-      offers Gemini rotation. Gemini keeps profile-switch untouched.
+- [x] **Step 1:** Flipped the GUI global default: `gui/src/settings-store.ts`
+      `getAutoSwitchGlobal()` returns **false** unless the value is literally
+      "on". Doc comment updated.
+      <!-- verify: App.test.tsx "auto-switch UI is hidden by default" ✓ -->
+- [x] **Step 2:** Removed the ToS note from `cmdAutoswitch` (the "Pooling
+      accounts to route around limits may conflict…" lines); kept the operational
+      guidance. GeneralSettings carries no ToS warning (none was added). Mechanic
+      intact.
+- [x] **Step 3:** Modelled `hasUsageReadout` on the provider (claude only); the
+      per-tab dot and footer toggle render only for providers with a readout, and
+      the CLI refuses `autoswitch on` for providers without one.
+      <!-- verify: providers.test.ts + App.test.tsx (codex/gemini no toggle) + functional reject ✓ -->
+- [x] **Step 4:** Gemini auto-switch removed as a concept — no GUI toggle, CLI
+      refuses it, and `src/daemon.ts` was already Claude-only. Gemini keeps
+      profile-switch untouched.
 
 ## Phase 4: GitHub Copilot CLI provider (profile-switch only)
 

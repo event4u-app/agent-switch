@@ -53,6 +53,12 @@ export interface Provider {
    * list is empty; codex/gemini just carry their credential/identity files.
    */
   readonly importFiles: readonly string[];
+  /**
+   * Whether this provider exposes a usage/quota readout agent-switch can read.
+   * Only `true` for Claude (its OAuth `/usage` endpoint). Auto-switch is offered
+   * ONLY for providers with a readout — there is nothing to trigger on otherwise.
+   */
+  readonly hasUsageReadout: boolean;
 }
 
 function readJson(p: string): any | null {
@@ -86,6 +92,7 @@ const claude: Provider = {
   readIdentity: (dir) => readJson(path.join(dir, ".claude.json"))?.oauthAccount?.emailAddress ?? null,
   oneShotArgs: (prompt) => ["-p", prompt],
   importFiles: [],
+  hasUsageReadout: true,
 };
 
 const codex: Provider = {
@@ -103,6 +110,7 @@ const codex: Provider = {
   },
   oneShotArgs: (prompt) => ["exec", prompt],
   importFiles: ["auth.json"],
+  hasUsageReadout: false,
 };
 
 const gemini: Provider = {
@@ -117,6 +125,7 @@ const gemini: Provider = {
   readIdentity: (dir) => readJson(path.join(dir, "google_accounts.json"))?.active ?? null,
   oneShotArgs: (prompt) => ["-p", prompt, "--output-format", "json"],
   importFiles: ["oauth_creds.json", "google_accounts.json"],
+  hasUsageReadout: false,
 };
 
 const PROVIDERS: Record<ProviderId, Provider> = { claude, codex, gemini };

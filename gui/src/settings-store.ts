@@ -6,14 +6,14 @@
 
 const AUTOSWITCH_GLOBAL_KEY = "agent-switch-autoswitch-global";
 
-/** Global master for the auto-switch feature. Default ON (available); when the
- *  user turns it off the app hides the toggles/dots and deactivates every
- *  provider's auto-switch. Only the literal "off" disables it. */
+/** Global master for the auto-switch feature. Default OFF — the user must
+ *  explicitly turn it on; only the literal "on" enables it. While off, the app
+ *  hides the auto-switch toggle/dots and no provider can auto-switch. */
 export function getAutoSwitchGlobal(): boolean {
   try {
-    return localStorage.getItem(AUTOSWITCH_GLOBAL_KEY) !== "off";
+    return localStorage.getItem(AUTOSWITCH_GLOBAL_KEY) === "on";
   } catch {
-    return true;
+    return false;
   }
 }
 

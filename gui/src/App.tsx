@@ -28,6 +28,7 @@ import { getAutoSwitchGlobal, setAutoSwitchGlobalFlag } from "./settings-store.j
 import {
   groupByProvider,
   formatReset,
+  hasUsageReadout,
   PROFILE_LABELS,
   type ProfileRow,
   type ProfileLabel,
@@ -266,9 +267,10 @@ export default function App() {
                   >
                     {PROVIDER_LABEL[pid]}
                     {/* Auto-switch status dot AFTER the label: green = on, red = off,
-                        grey = unavailable (needs 2+ profiles). Hidden entirely when the
-                        global master is off. */}
-                    {globalAuto && (
+                        grey = unavailable (needs 2+ profiles). Shown only for providers
+                        with a usage readout (Claude), and hidden when the global master
+                        is off. */}
+                    {globalAuto && hasUsageReadout(pid) && (
                       <span
                         className={cn(
                           "size-1.5 shrink-0 rounded-full",
@@ -466,6 +468,7 @@ export default function App() {
       <footer className="flex items-center justify-between gap-2 border-t border-border px-3 py-1.5">
         {auto &&
           globalAuto &&
+          hasUsageReadout(selected) &&
           !showSettings &&
           (() => {
             // Auto-switch needs 2+ profiles for the provider to have anything to switch to.

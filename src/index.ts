@@ -466,17 +466,18 @@ function cmdAutoswitch(
     die("--threshold must be a number between 1 and 100");
   }
   if (mode === "on" || mode === "off") {
+    // Auto-switch only makes sense where there is a usage readout to trigger on
+    // (Claude today). Elsewhere there is nothing to act on, so enabling is refused.
+    if (mode === "on" && !provider(providerId).hasUsageReadout) {
+      die(`auto-switch is only available for Claude (the only provider with a usage readout).`);
+    }
     const cfg = setAutoSwitch(providerId, { enabled: mode === "on", ...(threshold !== undefined ? { threshold } : {}) });
     console.log(`Auto-switch for ${providerId} ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%).`);
-    if (cfg.enabled && providerId === "claude") {
+    if (cfg.enabled) {
       console.log(
-        "The daemon will move the active Claude profile to the account with the most headroom\n" +
-          "once the active one hits the threshold. Pooling accounts to route around limits may\n" +
-          "conflict with a provider's usage policy — you enabled this deliberately.\n" +
-          "Run `agent-switch service start` so the daemon is watching.",
+        "The daemon moves the active Claude profile to the account with the most headroom\n" +
+          "once the active one hits the threshold. Run `agent-switch service start` so the daemon is watching.",
       );
-    } else if (cfg.enabled) {
-      console.log(`(note: ${providerId} has no usage readout, so auto-switch stays inert until one exists.)`);
     }
     return;
   }
