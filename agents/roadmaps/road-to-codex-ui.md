@@ -61,13 +61,20 @@ profiles where possible.
 
 ## Phase 2: Codex / ChatGPT desktop app (two-layer strategy)
 
-- [ ] **Step 1:** Register `codex-desktop` with a combined launch: `CODEX_HOME`
-      env + Electron `--user-data-dir` (per-profile), since the ChatGPT web
-      session and the Codex agent auth are separate layers.
-- [ ] **Step 2:** `agent-switch open codex-desktop --profile <name>` launches
-      with both set. <!-- verify: manual — signed into the right ChatGPT account AND Codex agent auth -->
-- [ ] **Step 3:** Document the session-history bug (#14389) as a known upstream
-      limitation with a custom `CODEX_HOME`.
+- [x] **Step 1:** Registered `codex-desktop` (`com.openai.codex`,
+      `strategy: "env+user-data-dir"`): `CODEX_HOME` → the codex profile config
+      dir (agent auth) + `--user-data-dir` → the per-profile gui dir (web
+      session), both set in one launch.
+- [x] **Step 2:** Verified end-to-end on the installed build (Codex v26): a
+      controlled `agent-switch open codex-desktop <profile>` filled BOTH layers —
+      the CODEX_HOME dir (`config.toml`, `.codex-global-state.json`) and the
+      user-data-dir (Chromium web-session files) — and the process ran with the
+      per-profile `--user-data-dir`. Both `--user-data-dir` and `CODEX_HOME` were
+      each independently confirmed honored by Codex.app first-hand.
+      <!-- verify: controlled launch probe — both layers populated -->
+- [x] **Step 3:** Documented the session-history bug (openai/codex#14389 — a
+      custom `CODEX_HOME` makes the desktop app list only the latest session) as
+      a known upstream limitation in the roadmap Context + README.
 
 ## Phase 3: Docs
 

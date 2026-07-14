@@ -83,6 +83,22 @@ test("codex-ide is registered (env strategy → CODEX_HOME, targets VS Code)", (
   assert.deepEqual(spec.args, ["-n", "--env", `CODEX_HOME=${path.join(HOME, "codex", "work", "config")}`, "-b", "com.microsoft.VSCode"]);
 });
 
+test("codex-desktop is registered two-layer (CODEX_HOME + --user-data-dir)", () => {
+  const app = A.findApp("codex-desktop");
+  assert.ok(app, "codex-desktop should be registered");
+  assert.equal(app!.strategy, "env+user-data-dir");
+  const spec = A.buildLaunch(app!, "work");
+  assert.deepEqual(spec.args, [
+    "-n",
+    "--env",
+    `CODEX_HOME=${path.join(HOME, "codex", "work", "config")}`,
+    "-b",
+    "com.openai.codex",
+    "--args",
+    `--user-data-dir=${path.join(HOME, "codex", "work", "gui", "codex-desktop")}`,
+  ]);
+});
+
 test("claude-desktop is registered (user-data-dir) and builds an isolated launch", () => {
   const app = A.findApp("claude-desktop");
   assert.ok(app, "claude-desktop should be registered");

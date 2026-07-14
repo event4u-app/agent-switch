@@ -65,6 +65,18 @@ export const APPS: readonly AppDescriptor[] = [
     strategy: "env",
     envVar: "CODEX_HOME",
   },
+  {
+    // Codex desktop app is two-layer (both verified first-hand): CODEX_HOME
+    // isolates the codex agent auth/config (reuses the codex profile dir), and
+    // --user-data-dir isolates the Electron/ChatGPT web session (per-profile
+    // gui dir). Both are set in one launch.
+    id: "codex-desktop",
+    displayName: "Codex",
+    bundleId: "com.openai.codex",
+    provider: "codex",
+    strategy: "env+user-data-dir",
+    envVar: "CODEX_HOME",
+  },
 ];
 
 export function findApp(id: string, registry: readonly AppDescriptor[] = APPS): AppDescriptor | null {
