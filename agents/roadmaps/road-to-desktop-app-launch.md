@@ -45,15 +45,16 @@ Key constraints this layer must honour:
 
 ## Phase 1: App registry
 
-- [ ] **Step 1:** Define an app descriptor: `{ id, displayName, bundleId,
-      strategy: "env" | "user-data-dir", envVar?, profileSubdir, detect() }`.
-      `detect()` reports whether the app is installed (bundleId / path probe).
-      <!-- verify: unit test the descriptor + detect() with a fake FS -->
-- [ ] **Step 2:** A pure `buildLaunch(descriptor, profileDir)` that returns the
-      exact argv/env for each strategy (no side effects) — the testable core.
-      <!-- verify: unit test both strategies' argv/env -->
-- [ ] **Step 3:** Per-profile GUI data dirs under the existing profile tree
-      (e.g. `<root>/<provider>/<name>/gui/<appId>/`), created lazily.
+- [x] **Step 1:** App descriptor `{ id, displayName, bundleId, provider,
+      strategy: "env" | "user-data-dir", envVar? }` + `isInstalled()` (macOS
+      bundle-id probe via `mdfind`) + `findApp()`. `src/apps.ts`.
+      <!-- verify: npm test (apps.test.ts) -->
+- [x] **Step 2:** Pure `buildLaunch(app, name)` returning the exact `open` argv
+      for each strategy (env → `--env VAR=<configDir>`; user-data-dir →
+      `--args --user-data-dir=<guiDataDir>`), no side effects.
+      <!-- verify: npm test — both strategies' argv asserted -->
+- [x] **Step 3:** Per-profile GUI data-dir scheme `<root>/<provider>/<name>/gui/<appId>/`
+      via `guiDataDir()`; created lazily at launch (Phase 2 `open`).
 
 ## Phase 2: CLI
 
