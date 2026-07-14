@@ -38,6 +38,7 @@ import {
   isProfileLabel,
   PROFILE_LABELS,
   readAutoSwitch,
+  readAutoSwitchAll,
   setAutoSwitch,
   ROOT,
 } from "./profiles.js";
@@ -447,35 +448,45 @@ function cmdLabel(providerId: ProviderId, name?: string, label?: string): void {
 }
 
 /** Enable/disable opt-in auto-switch, or show the current setting. */
-function cmdAutoswitch(mode?: string, flags: Record<string, string | boolean> = {}): void {
+function cmdAutoswitch(
+  providerId: ProviderId,
+  providerExplicit: boolean,
+  mode?: string,
+  flags: Record<string, string | boolean> = {},
+): void {
   const thresholdFlag = flags.threshold;
   const threshold = typeof thresholdFlag === "string" ? Number(thresholdFlag) : undefined;
   if (threshold !== undefined && (!Number.isFinite(threshold) || threshold < 1 || threshold > 100)) {
     die("--threshold must be a number between 1 and 100");
   }
   if (mode === "on" || mode === "off") {
-    const cfg = setAutoSwitch({ enabled: mode === "on", ...(threshold !== undefined ? { threshold } : {}) });
-    console.log(`Auto-switch ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%).`);
-    if (cfg.enabled) {
+    const cfg = setAutoSwitch(providerId, { enabled: mode === "on", ...(threshold !== undefined ? { threshold } : {}) });
+    console.log(`Auto-switch for ${providerId} ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%).`);
+    if (cfg.enabled && providerId === "claude") {
       console.log(
         "The daemon will move the active Claude profile to the account with the most headroom\n" +
           "once the active one hits the threshold. Pooling accounts to route around limits may\n" +
           "conflict with a provider's usage policy — you enabled this deliberately.\n" +
           "Run `agent-switch service start` so the daemon is watching.",
       );
+    } else if (cfg.enabled) {
+      console.log(`(note: ${providerId} has no usage readout, so auto-switch stays inert until one exists.)`);
     }
     return;
   }
   if (mode === undefined || mode === "status") {
-    const cfg = readAutoSwitch();
     if (flags.json) {
-      console.log(JSON.stringify(cfg));
+      // The GUI needs every provider's state at once (per-tab dots).
+      console.log(JSON.stringify(readAutoSwitchAll()));
       return;
     }
-    console.log(`Auto-switch is ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%).`);
+    for (const p of providerExplicit ? [providerId] : PROVIDER_IDS) {
+      const cfg = readAutoSwitch(p);
+      console.log(`${p}: auto-switch ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%).`);
+    }
     return;
   }
-  die("usage: agent-switch autoswitch on|off|status [--threshold <1-100>] [--json]");
+  die("usage: agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>] [--json]");
 }
 
 /**
@@ -587,7 +598,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
-  agent-switch autoswitch on|off|status [--threshold <1-100>]   opt-in auto-switch (default OFF)
+  agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>]   per-provider auto-switch (default OFF)
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
   agent-switch service run|start|stop|status|install|uninstall   background usage daemon
   agent-switch uninstall [--force]             remove all agent-switch data + daemon
@@ -624,7 +635,7 @@ async function main(): Promise<void> {
     case "use": return cmdUse(providerId, positional[0]);
     case "deactivate": return cmdDeactivate(providerId);
     case "label": return cmdLabel(providerId, positional[0], positional[1]);
-    case "autoswitch": return cmdAutoswitch(positional[0], flags);
+    case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags);
     case "uninstall": return cmdUninstall(flags);
     case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
     case "list": case "ls": return cmdList(providerExplicit ? providerId : undefined, !!flags.json);
