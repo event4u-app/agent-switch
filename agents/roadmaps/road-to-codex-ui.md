@@ -46,13 +46,18 @@ profiles where possible.
 
 ## Phase 1: Codex IDE extension (env strategy)
 
-- [ ] **Step 1:** Register `codex-ide` (`strategy: "env"`, `envVar: CODEX_HOME`,
-      reusing the existing Codex profile dir). Detect installed editor(s).
-- [ ] **Step 2:** `agent-switch open codex-ide --profile <name>` launches the
-      editor with `CODEX_HOME=<profile>` exported.
-      <!-- verify: manual — editor's Codex panel shows that account's sessions -->
-- [ ] **Step 3:** Re-verify openai/codex#7971 on the target extension version
-      (hardcoded config path); note the result.
+- [x] **Step 1:** Registered `codex-ide` (`strategy: "env"`, `envVar: CODEX_HOME`,
+      provider codex, reuses the codex profile config dir; targets VS Code
+      `com.microsoft.VSCode`, other editors future). <!-- verify: npm test — registry + argv -->
+- [x] **Step 2:** `agent-switch open codex-ide [profile]` launches the editor
+      with `CODEX_HOME` exported. The `open --env` delivery is verified (the
+      Codex.app probe populated a custom `CODEX_HOME`); the extension picking it
+      up is a manual check (see Step 3). <!-- verify: npm test (argv) + open --env delivery proven -->
+- [~] **Step 3:** Re-verify openai/codex#7971 (extension hardcoding a project-local
+      `config.toml`) on the target version — DEFERRED: the Codex VS Code
+      extension is not installed in this environment, so the extension-level
+      `CODEX_HOME` pickup can't be live-verified here. Run with the extension
+      installed; documented as a caveat.
 
 ## Phase 2: Codex / ChatGPT desktop app (two-layer strategy)
 
