@@ -14,7 +14,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 import {
   HOME,
@@ -66,6 +66,7 @@ import {
 import { UsageSnapshot, formatSnapshot, parseUsage } from "./usage.js";
 import { isFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daemon.js";
 import { cmdService, serviceUninstall } from "./service.js";
+import { APPS, buildLaunch, findApp, guiDataDir, isInstalled } from "./apps.js";
 
 // Per-OS credential store (keychain-then-file on darwin, file-only elsewhere).
 const credentials = credentialStore();
@@ -572,6 +573,50 @@ async function cmdWeb(name?: string): Promise<void> {
   await new Promise<void>((resolve) => context.on("close", resolve));
 }
 
+// ---------- GUI app launch (foundation) --------------------------------------
+
+function cmdApps(json = false): void {
+  if (json) {
+    const rows = APPS.map((a) => ({
+      id: a.id,
+      displayName: a.displayName,
+      provider: a.provider,
+      strategy: a.strategy,
+      installed: isInstalled(a),
+    }));
+    console.log(JSON.stringify(rows, null, 2));
+    return;
+  }
+  if (APPS.length === 0) {
+    console.log("No GUI apps registered yet — support for desktop clients (Claude Desktop, Codex UI)");
+    console.log("lands via their roadmaps. The launch layer (`agent-switch open`) is ready.");
+    return;
+  }
+  for (const a of APPS) {
+    const mark = isInstalled(a) ? "●" : "○";
+    console.log(`${mark} ${a.id.padEnd(16)} ${a.displayName} (${a.provider}, ${a.strategy})`);
+  }
+}
+
+/** Launch a registered GUI app on a profile, isolated (macOS). Profile: an
+ *  explicit positional name, else the active profile for the app's provider. */
+function cmdOpen(appId?: string, name?: string): void {
+  if (!appId) die("usage: agent-switch open <app> [profile]   (see `agent-switch apps`)");
+  const app = findApp(appId);
+  if (!app) die(`unknown app "${appId}". See \`agent-switch apps\` for registered apps.`);
+  if (process.platform !== "darwin") die("GUI app launch is macOS-only for now.");
+  const n = name ?? activeFor(app.provider);
+  if (!n) die(`no profile given and none active for ${app.provider} — pass a profile name.`);
+  requireProfile(app.provider, n, "open");
+  if (!isInstalled(app)) die(`${app.displayName} is not installed.`);
+  if (app.strategy === "user-data-dir") {
+    fs.mkdirSync(guiDataDir(app, n), { recursive: true, mode: 0o700 }); // lazy per-profile data dir
+  }
+  const spec = buildLaunch(app, n);
+  spawn(spec.program, spec.args, { detached: true, stdio: "ignore" }).unref();
+  console.log(`Opening ${app.displayName} on ${app.provider}/${n}...`);
+}
+
 function cmdShellenv(shellArg?: string): void {
   console.log(shellenvScript(detectShell(shellArg)));
 }
@@ -599,6 +644,8 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch remove [--provider P] <name> [--force]   delete a profile
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
   agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>]   per-provider auto-switch (default OFF)
+  agent-switch apps                            list launchable GUI apps (macOS)
+  agent-switch open <app> [profile]            launch a GUI app on a profile, isolated (macOS)
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
   agent-switch service run|start|stop|status|install|uninstall   background usage daemon
   agent-switch uninstall [--force]             remove all agent-switch data + daemon
@@ -636,6 +683,8 @@ async function main(): Promise<void> {
     case "deactivate": return cmdDeactivate(providerId);
     case "label": return cmdLabel(providerId, positional[0], positional[1]);
     case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags);
+    case "open": return cmdOpen(positional[0], positional[1]);
+    case "apps": return cmdApps(!!flags.json);
     case "uninstall": return cmdUninstall(flags);
     case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
     case "list": case "ls": return cmdList(providerExplicit ? providerId : undefined, !!flags.json);

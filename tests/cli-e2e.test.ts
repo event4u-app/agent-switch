@@ -51,6 +51,25 @@ test("flag-first `use --provider codex work` activates the right profile", gate,
   }
 });
 
+test("`apps` reports the empty registry (launch layer ready, no apps yet)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    assert.match(run(home, ["apps"]), /no gui apps registered/i);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`open` errors on a missing or unknown app (foundation registry is empty)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    assert.throws(() => run(home, ["open"]), /usage: agent-switch open/i);
+    assert.throws(() => run(home, ["open", "claude-desktop"]), /unknown app/i);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("`label` tags a profile and surfaces it in `list --json`", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
