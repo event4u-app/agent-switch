@@ -104,10 +104,12 @@ the documented upstream workaround).
    README with run order + version-pinning log template). <!-- verify: shellcheck clean (2 documented info-level disables); g04 passes locally ✓ -->
 - [x] Run g04 on macOS — env recovery for node children + cwd via lsof.
    <!-- verify: PASS 2026-07-14, macOS 15.7.3 — env via ps -wwE, cwd via lsof; live scan enumerated 26 real claude pids with cwds ✓ -->
-- [~] Run g01 (move handoff) with two logged-in profiles. **Gated: needs two
-   logged-in Claude profiles.** Record `claude --version` with the result.
-- [~] Run g02 (copy+fork, keep-source safety) with two logged-in profiles.
-   **Gated as g01.**
+- [x] Run g01 (move handoff) with two logged-in profiles.
+   <!-- verify: PASS 2026-07-14, claude 2.1.209, macOS — Matze1→Matze2: moved transcript resumed on target with full canary context. Confirms M2 (move) is the core takeover primitive → Phase 2 holds. Spike harness fix: canonicalize cwd (macOS /var→/private/var) before encoding the projects dir. ✓ -->
+- [x] Run g02 (copy+fork, keep-source safety) with two logged-in profiles.
+   <!-- verify: PASS 2026-07-14, claude 2.1.209, macOS — fork got a new session id + full context on target; source transcript byte-identical and still resumable. Confirms M3 (--fork-session) keep-source is safe; takeover must delete the target's original-id copy after a successful fork. ✓ -->
+   <!-- honest note: g01/g02 results are Claude-Code-version-pinned (2.1.209); the roadmap risk #1 canary re-checks the header/path shape before building further. -->
+
 - [~] Run g03 (Codex rollout transplant) with two authenticated codex homes.
    Outcome (a)/(b)/(c) decides Phase 5's shape; honest-null is a valid result.
    **Gated: needs two codex logins.**

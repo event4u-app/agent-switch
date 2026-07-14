@@ -26,6 +26,7 @@ enc() { printf '%s' "$1" | sed 's/[^a-zA-Z0-9]/-/g'; }
 
 CANARY="asw-fork-$(date +%s)-$RANDOM"
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/g02-project.XXXXXX")"; cd "$WORKDIR"
+WORKDIR="$(pwd -P)"; cd "$WORKDIR"   # canonicalize (macOS /var -> /private/var); claude encodes the physical cwd
 ENCDIR="$(enc "$PWD")"
 info "claude: $(claude --version 2>/dev/null || echo unknown) cwd=$PWD canary=$CANARY"
 

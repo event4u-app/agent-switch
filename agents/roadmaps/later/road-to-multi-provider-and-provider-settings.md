@@ -71,8 +71,8 @@ mechanic ships without an in-product legal admission and defaults off. See
 - [x] `src/apps.ts` — GUI launch layer (`env` / `user-data-dir`); registry empty.
 - [x] `src/profiles.ts` — per-provider `AutoSwitchConfig` (`DEFAULT_AUTOSWITCH = { enabled: false }`).
 - [x] `gui/src/App.tsx` — SettingsView (General / Design / Uninstall) + provider tabs.
-- [ ] [`road-to-claude-desktop.md`](road-to-claude-desktop.md) — the Claude Desktop "UI" surface a Providers toggle exposes.
-- [ ] [`road-to-codex-ui.md`](road-to-codex-ui.md) — the Codex "UI" surface a Providers toggle exposes.
+- [x] [`road-to-claude-desktop.md`](road-to-claude-desktop.md) — the Claude Desktop "UI" surface a Providers toggle exposes.
+- [x] [`road-to-codex-ui.md`](road-to-codex-ui.md) — the Codex "UI" surface a Providers toggle exposes.
 
 ## Phase 1: Provider + surface enable/disable (CLI-backed)
 
