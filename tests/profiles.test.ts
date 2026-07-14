@@ -41,7 +41,7 @@ test("state migrates v1 { active: string } to the per-provider map", () => {
 });
 
 test("activeFor / setActive are per-provider", () => {
-  P.writeState({ active: { claude: null, codex: null, gemini: null } }); // clean baseline (shared STATE_FILE)
+  P.writeState({ active: { claude: null, codex: null, gemini: null }, labels: {}, autoSwitch: { enabled: false, threshold: 95 } }); // clean baseline (shared STATE_FILE)
   P.setActive("codex", "work");
   P.setActive("gemini", "priv");
   assert.equal(P.activeFor("codex"), "work");
@@ -60,4 +60,33 @@ test("identity reads the provider's account (claude → .claude.json email)", ()
   assert.equal(P.identity("claude", "id"), "x@y.com");
   fs.mkdirSync(P.configDir("claude", "noid"), { recursive: true });
   assert.equal(P.identity("claude", "noid"), null);
+});
+
+test("labels round-trip per profile and clear cleanly", () => {
+  assert.equal(P.labelFor("claude", "lw"), null);
+  P.setLabel("claude", "lw", "Work");
+  assert.equal(P.labelFor("claude", "lw"), "Work");
+  // provider-scoped: same name under a different provider is independent
+  assert.equal(P.labelFor("codex", "lw"), null);
+  P.clearLabel("claude", "lw");
+  assert.equal(P.labelFor("claude", "lw"), null);
+});
+
+test("setActive/setLabel do not clobber each other in state.json", () => {
+  P.setLabel("claude", "coexist", "Personal");
+  P.setActive("claude", "coexist");
+  assert.equal(P.labelFor("claude", "coexist"), "Personal");
+  assert.equal(P.activeFor("claude"), "coexist");
+});
+
+test("auto-switch config defaults OFF and round-trips with a clamped threshold", () => {
+  assert.deepEqual(P.readAutoSwitch(), { enabled: false, threshold: 95 });
+  const cfg = P.setAutoSwitch({ enabled: true, threshold: 80 });
+  assert.deepEqual(cfg, { enabled: true, threshold: 80 });
+  assert.deepEqual(P.readAutoSwitch(), { enabled: true, threshold: 80 });
+  // an out-of-range threshold falls back to the default (safety net; the CLI
+  // also rejects it up front)
+  P.setAutoSwitch({ threshold: 999 });
+  assert.equal(P.readAutoSwitch().threshold, 95);
+  P.setAutoSwitch({ enabled: false });
 });
