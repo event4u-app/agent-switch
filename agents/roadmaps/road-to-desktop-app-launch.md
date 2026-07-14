@@ -58,13 +58,14 @@ Key constraints this layer must honour:
 
 ## Phase 2: CLI
 
-- [ ] **Step 1:** `agent-switch open <app> [--provider P] [--profile <name>]` —
-      resolve the profile (mapping > active > flag), build the launch, spawn it
-      detached. `env` strategy: `env <VAR>=<dir> open -a "<App>"`; `user-data-dir`
-      strategy: `open -n -a "<App>" --args --user-data-dir=<dir>`.
-- [ ] **Step 2:** `agent-switch apps` — list registered apps + installed/not.
-- [ ] **Step 3:** Errors: app not installed, unsupported OS (macOS first),
-      profile missing → actionable messages. <!-- verify: cli-e2e smoke -->
+- [x] **Step 1:** `agent-switch open <app> [profile]` — resolve the profile
+      (explicit name > active for the app's provider), lazily create the
+      per-profile GUI data dir, `buildLaunch`, spawn detached (`open -n …`).
+- [x] **Step 2:** `agent-switch apps` — list registered apps + installed dot
+      (empty-registry message in the foundation).
+- [x] **Step 3:** Errors: unknown app, unsupported OS (macOS-only), profile
+      missing/not-found, app-not-installed → actionable messages.
+      <!-- verify: npm test (cli-e2e: apps empty, open usage + unknown-app) -->
 
 ## Phase 3: GUI integration
 
