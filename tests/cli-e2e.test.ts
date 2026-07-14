@@ -51,6 +51,17 @@ test("flag-first `use --provider codex work` activates the right profile", gate,
   }
 });
 
+test("`takeover --in-place` refuses combos that break its contract (before any file op)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work");
+    assert.throws(() => run(home, ["takeover", "sess-1", "--to", "work", "--in-place", "--print-only"]), /--in-place cannot be combined/i);
+    assert.throws(() => run(home, ["takeover", "sess-1", "--to", "work", "--in-place", "--keep-source"]), /--in-place cannot be combined/i);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("`apps --json` lists the registered claude-desktop app", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {

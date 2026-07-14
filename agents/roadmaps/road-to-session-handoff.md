@@ -104,11 +104,11 @@ the documented upstream workaround).
    README with run order + version-pinning log template). <!-- verify: shellcheck clean (2 documented info-level disables); g04 passes locally ✓ -->
 - [x] Run g04 on macOS — env recovery for node children + cwd via lsof.
    <!-- verify: PASS 2026-07-14, macOS 15.7.3 — env via ps -wwE, cwd via lsof; live scan enumerated 26 real claude pids with cwds ✓ -->
-- [ ] Run g01 (move handoff) with two logged-in profiles. **Gated: needs two
+- [~] Run g01 (move handoff) with two logged-in profiles. **Gated: needs two
    logged-in Claude profiles.** Record `claude --version` with the result.
-- [ ] Run g02 (copy+fork, keep-source safety) with two logged-in profiles.
+- [~] Run g02 (copy+fork, keep-source safety) with two logged-in profiles.
    **Gated as g01.**
-- [ ] Run g03 (Codex rollout transplant) with two authenticated codex homes.
+- [~] Run g03 (Codex rollout transplant) with two authenticated codex homes.
    Outcome (a)/(b)/(c) decides Phase 5's shape; honest-null is a valid result.
    **Gated: needs two codex logins.**
 
@@ -182,35 +182,46 @@ New module `src/sessions.ts` (pure, unit-testable) + `cmdSessions` in
 
 ## Phase 3: `run --tmux` + in-place handoff (M4, POSIX, opt-in)
 
-- [ ] `agent-switch run <profile> --tmux` wraps the session in an
-   agent-switch-managed tmux pane (named session, recorded in state).
-- [ ] `takeover --in-place`: inside a managed pane only — `send-keys` a clean
-   exit, wait for process exit, respawn `claude --resume <id>` with the target
-   profile's env in the same pane. **Never touch non-managed terminals.**
-- [ ] Fallback path (no tmux / win32): spawn-new-terminal (M5) with the resume
-   command; document the "close the old window" hint.
+- [x] `agent-switch run <profile> --tmux` wraps the session in an
+   agent-switch-managed tmux session (name `asw-<provider>-<profile>`, recorded
+   in `<ROOT>/tmux-sessions.json`). `src/tmux.ts` + `cmdRun`. <!-- verify: tmux.test.ts + live new-session probe (tmux 3.7b) ✓ -->
+- [x] `takeover --in-place`: only inside a managed pane (recorded-name check) —
+   `respawn-pane -k` replaces the pane's process with the target profile's env +
+   `claude --resume <id>` (the pane persists). Chosen over send-keys/wait because
+   send-keys /exit tears the pane down when the CLI is the pane's own command;
+   `-k` reliably kills-and-replaces. **Never touches a non-managed session.**
+   <!-- verify: tmux.test.ts (builders + managed-only detection) + live respawn-pane probe ✓ -->
+- [x] Fallback (no managed pane / non-macOS): M5 spawn-new-terminal
+   (`osascript` Terminal.app on macOS, print elsewhere) with the resume command
+   and the "close the old window" hint. <!-- verify: cli-e2e in-place refusal combos; spawnNewTerminal path -->
+
+**Note:** g01's live handoff canary (Phase 0) still gates full end-to-end proof
+with a real Claude session; the tmux orchestration mechanics are verified here.
 
 ## Phase 4: GUI — profile → session list → one-click takeover
 
 Gated on Phases 1–2 (CLI is the engine; GUI stays a `--json` client).
 
-- [ ] `gui/src/ipc.ts` wrappers for `sessions --json` and
-   `takeover --json` (which then also orchestrates the fork-cleanup that
-   `--print-only` refuses today).
-- [ ] Panel: profile button → that profile's usage + other profiles' recent
-   /live sessions; click → confirm dialog (source profile, project, last
-   activity, fork y/n, permissions-reset note on fork).
-- [ ] Execution: managed-tmux session → M4 in-place; otherwise M5 spawn +
-   "close the old window" hint.
+- [x] `gui/src/ipc.ts`: `listSessions()` (→ `sessions --recent N --json`) +
+   `takeoverArgs()` (pure builder). Takeover runs **interactively in the
+   embedded terminal**, so the CLI's own keep-source fork-cleanup applies — the
+   non-interactive `takeover --json` fork-orchestration is deferred as a
+   refinement (noted; the interactive path covers the case today).
+   <!-- verify: ipc.test (listSessions/takeoverArgs) ✓ -->
+- [x] `SessionsView` (header history icon): Claude sessions list (profile, live
+   badge, age, summary) with a per-session **target-profile picker + fork
+   toggle + Take over** button. <!-- verify: App.test — take over opens the embedded terminal with the right args ✓ -->
+- [x] Execution: the GUI runs `takeover` in the embedded terminal, which
+   delegates to the CLI (managed-tmux → `--in-place`; otherwise M5 spawn).
 
 ## Phase 5: Codex parity — per the G0.3 outcome
 
-- [ ] G0.3 outcome (a): extend `sessions`/`takeover` to codex rollout files
+- [~] G0.3 outcome (a): extend `sessions`/`takeover` to codex rollout files
    (`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl`, date-partitioned move).
    Outcome (b): same + index-reconciliation step. Outcome (c): `sessions` lists
    codex sessions; takeover degrades to spawn-in-target (`codex resume --all`);
    the null is recorded here with codex version + state-layer inventory.
-- [ ] Gemini and further providers only after a per-provider ground-truth
+- [~] Gemini and further providers only after a per-provider ground-truth
    table exists (per the multi-provider roadmap's discipline).
 
 ## Risks & rules

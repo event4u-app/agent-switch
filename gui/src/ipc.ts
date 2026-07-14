@@ -7,7 +7,7 @@
 import { Command } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
 import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
-import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, UsageSnapshot, ProvidersStatus, ProviderSurface } from "./transforms.js";
+import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow } from "./transforms.js";
 
 async function runCli(args: string[]): Promise<string> {
   const out = await Command.create("agent-switch", args).execute();
@@ -183,6 +183,23 @@ export async function listApps(): Promise<AppInfo[]> {
  *  detached and returns immediately). */
 export async function openApp(appId: string, name: string): Promise<void> {
   await runCli(["open", appId, name]);
+}
+
+/** Claude sessions inventory (`sessions [profile] --recent N --json`). Read-only
+ *  — returns [] on failure so the panel never blanks. */
+export async function listSessions(profile?: string, recent = 20): Promise<SessionRow[]> {
+  const args = ["sessions", ...(profile ? [profile] : []), "--recent", String(recent), "--json"];
+  try {
+    return JSON.parse(await runCli(args));
+  } catch {
+    return [];
+  }
+}
+
+/** Args for `takeover`, run in the embedded terminal so the interactive resume
+ *  (and any fork-cleanup) happens in a real pty. Pure builder. */
+export function takeoverArgs(sessionId: string, to: string, keepSource = false): string[] {
+  return ["takeover", sessionId, "--to", to, ...(keepSource ? ["--keep-source"] : [])];
 }
 
 /** Quit the whole app (the `quit` Tauri command → app.exit). Closing the

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, RefreshCw, Play, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow } from "lucide-react";
+import { Plus, RefreshCw, Play, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft } from "lucide-react";
 import {
   deactivateProfile,
   getAutoSwitch,
@@ -7,9 +7,11 @@ import {
   getProviders,
   listApps,
   listProfiles,
+  listSessions,
   loginArgs,
   openApp,
   profileUsage,
+  takeoverArgs,
   quitApp,
   removeProfile,
   sessionArgs,
@@ -29,6 +31,7 @@ import {
   groupByProvider,
   formatReset,
   hasUsageReadout,
+  relativeAge,
   PROFILE_LABELS,
   type ProfileRow,
   type ProfileLabel,
@@ -36,6 +39,7 @@ import {
   type ProviderId,
   type ProvidersStatus,
   type ProviderSurface,
+  type SessionRow,
 } from "./transforms.js";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -101,6 +105,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showSessions, setShowSessions] = useState(false);
   const [globalAuto, setGlobalAuto] = useState(() => getAutoSwitchGlobal());
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   // The in-app pty terminal overlay (login / run), or null when none is open.
@@ -210,9 +215,22 @@ export default function App() {
           </Button>
           <Button
             size="icon"
+            variant={showSessions ? "secondary" : "ghost"}
+            onClick={() => {
+              setShowSessions((v) => !v);
+              setShowSettings(false);
+              setNotice(null);
+            }}
+            aria-label="Sessions"
+          >
+            <History />
+          </Button>
+          <Button
+            size="icon"
             variant={showSettings ? "secondary" : "ghost"}
             onClick={() => {
               setShowSettings((v) => !v);
+              setShowSessions(false);
               setNotice(null);
             }}
             aria-label="Settings"
@@ -240,6 +258,17 @@ export default function App() {
             autoSwitchEnabled={globalAuto}
             onToggleAutoSwitch={toggleGlobalAuto}
             onProvidersChanged={refresh}
+          />
+        ) : showSessions ? (
+          <SessionsView
+            claudeProfiles={grouped.claude.map((r) => r.name)}
+            onClose={() => setShowSessions(false)}
+            onTakeover={(sessionId, to, keepSource) =>
+              setTerminal({
+                args: takeoverArgs(sessionId, to, keepSource),
+                title: `Takeover — ${sessionId.slice(0, 8)} → ${to}`,
+              })
+            }
           />
         ) : (
           <>
@@ -815,6 +844,97 @@ function UninstallSettings({ onUninstall }: { onUninstall: () => void }) {
         </Button>
       </CardContent>
     </Card>
+  );
+}
+
+/** Sessions view (behind the header history icon): the Claude sessions
+ *  inventory, each with a target-profile picker + "Take over" that runs the
+ *  interactive takeover in the embedded terminal. */
+function SessionsView({
+  claudeProfiles,
+  onClose,
+  onTakeover,
+}: {
+  claudeProfiles: string[];
+  onClose: () => void;
+  onTakeover: (sessionId: string, to: string, keepSource: boolean) => void;
+}) {
+  const [sessions, setSessions] = useState<SessionRow[] | null>(null);
+  const [target, setTarget] = useState<Record<string, string>>({});
+  const [fork, setFork] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    listSessions(undefined, 20)
+      .then(setSessions)
+      .catch(() => setSessions([]));
+  }, []);
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold tracking-tight">Sessions</span>
+        <Button size="icon" variant="ghost" className="size-7" onClick={onClose} aria-label="Close sessions">
+          <X />
+        </Button>
+      </div>
+      {sessions === null ? (
+        <div className="px-1 text-xs text-muted-foreground">Loading…</div>
+      ) : sessions.length === 0 ? (
+        <div className="py-10 text-center text-sm text-muted-foreground">No Claude sessions yet.</div>
+      ) : (
+        <Card>
+          <div className="divide-y divide-border">
+            {sessions.map((s) => {
+              const others = claudeProfiles.filter((p) => p !== s.profile);
+              const to = target[s.sessionId] ?? others[0] ?? "";
+              return (
+                <div key={`${s.profile}/${s.sessionId}`} className="space-y-1.5 px-3 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-[13px] font-medium">{s.profile}</span>
+                    {s.live && <Badge variant="success">live</Badge>}
+                    <span className="ml-auto text-xs text-muted-foreground">{relativeAge(s.mtimeMs)}</span>
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground">{s.summary || s.cwd || s.projectDir}</div>
+                  {others.length > 0 && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-muted-foreground">→</span>
+                      <Select value={to} onValueChange={(v) => setTarget((m) => ({ ...m, [s.sessionId]: v }))}>
+                        <SelectTrigger aria-label={`Target for ${s.sessionId}`} className="h-7 w-auto gap-1 px-2 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {others.map((p) => (
+                            <SelectItem key={p} value={p}>
+                              {p}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        variant={fork[s.sessionId] ? "default" : "ghost"}
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setFork((m) => ({ ...m, [s.sessionId]: !m[s.sessionId] }))}
+                        aria-label={`Fork ${s.sessionId}`}
+                        title="Copy + fork instead of move (source keeps its own copy)"
+                      >
+                        fork
+                      </Button>
+                      <Button size="sm" variant="secondary" disabled={!to} onClick={() => onTakeover(s.sessionId, to, !!fork[s.sessionId])}>
+                        <ArrowRightLeft /> Take over
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+      <p className="text-[11px] leading-snug text-muted-foreground">
+        Take over moves a session to another profile and resumes it in the terminal — fork copies instead.
+      </p>
+    </div>
   );
 }
 

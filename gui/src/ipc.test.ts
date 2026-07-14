@@ -36,6 +36,8 @@ import {
   setAutostart,
   listApps,
   openApp,
+  listSessions,
+  takeoverArgs,
 } from "./ipc.js";
 
 beforeEach(() => vi.clearAllMocks());
@@ -135,6 +137,24 @@ describe("ipc", () => {
     expect(create).toHaveBeenCalledWith("agent-switch", ["autoswitch", "on", "--provider", "codex", "--threshold", "80"]);
     await setAutoSwitch("gemini", false);
     expect(create).toHaveBeenCalledWith("agent-switch", ["autoswitch", "off", "--provider", "gemini"]);
+  });
+
+  it("listSessions runs `sessions --recent N --json`; takeoverArgs builds the CLI args", async () => {
+    execute.mockResolvedValue({
+      code: 0,
+      stdout: '[{"provider":"claude","profile":"work","sessionId":"abc","projectDir":"p","cwd":"/w","mtimeMs":1,"live":false}]',
+      stderr: "",
+    });
+    const s = await listSessions(undefined, 20);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["sessions", "--recent", "20", "--json"]);
+    expect(s[0].sessionId).toBe("abc");
+    expect(takeoverArgs("abc", "privat")).toEqual(["takeover", "abc", "--to", "privat"]);
+    expect(takeoverArgs("abc", "privat", true)).toEqual(["takeover", "abc", "--to", "privat", "--keep-source"]);
+  });
+
+  it("listSessions returns [] on failure", async () => {
+    execute.mockResolvedValue({ code: 1, stdout: "", stderr: "boom" });
+    await expect(listSessions()).resolves.toEqual([]);
   });
 
   it("uninstall runs `uninstall --force`", async () => {

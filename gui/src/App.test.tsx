@@ -18,6 +18,8 @@ const ipc = vi.hoisted(() => ({
   openWeb: vi.fn(),
   loginArgs: (p: string, n: string) => ["add", n, "--provider", p],
   sessionArgs: (p: string, n: string) => ["run", n, "--provider", p],
+  takeoverArgs: (id: string, to: string, keep?: boolean) => ["takeover", id, "--to", to, ...(keep ? ["--keep-source"] : [])],
+  listSessions: vi.fn(),
   assertValidName: () => {},
   deactivateProfile: vi.fn(),
   removeProfile: vi.fn(),
@@ -96,6 +98,7 @@ beforeEach(() => {
   ipc.setAutostart.mockResolvedValue(undefined);
   ipc.listApps.mockResolvedValue([]);
   ipc.openApp.mockResolvedValue(undefined);
+  ipc.listSessions.mockResolvedValue([]);
   ipc.quitApp.mockResolvedValue(undefined);
 });
 
@@ -326,6 +329,17 @@ describe("App", () => {
     const btns = await screen.findAllByRole("button", { name: /claude desktop/i });
     fireEvent.click(btns[0]); // first claude row (work)
     expect(ipc.openApp).toHaveBeenCalledWith("claude-desktop", "work");
+  });
+
+  it("takes over a session from the Sessions view into the embedded terminal", async () => {
+    ipc.listSessions.mockResolvedValue([
+      { provider: "claude", profile: "work", sessionId: "abc12345", projectDir: "p", cwd: "/w", mtimeMs: Date.now() - 60_000, live: false },
+    ]);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /take over/i }));
+    const term = await screen.findByTestId("term");
+    expect(term.textContent).toContain("takeover abc12345 --to privat"); // moved to the other claude profile
   });
 
   it("quits the app from the Quit button", async () => {
