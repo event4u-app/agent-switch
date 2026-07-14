@@ -129,20 +129,30 @@ so `COPILOT_HOME` alone isolates config/history but **not** the account. True
 isolation needs a per-profile `COPILOT_GITHUB_TOKEN`. This phase front-loads that
 unknown before wiring the UI.
 
-- [ ] **Step 1 (verify first):** On a real install, confirm the isolation model:
+- [~] **Step 1 (verify first):** On a real install, confirm the isolation model:
       does `COPILOT_HOME=<profile>` + a per-profile `COPILOT_GITHUB_TOKEN` give a
       fully isolated account, and where does the token come from (PAT vs the
       CLI's own `/login`)? Record the verified mechanism before coding.
       <!-- verify: two COPILOT_HOME dirs + two tokens → two distinct signed-in accounts -->
-- [ ] **Step 2:** Extend the `Provider` interface for a token-via-env export
+      <!-- deferred: `copilot` CLI not installed in this env + credential-handling is security-sensitive; must verify on a real install before shipping any credential code (verify-before-complete / security-sensitive-stop) -->
+- [~] **Step 2:** Extend the `Provider` interface for a token-via-env export
       (an optional map of extra env vars set on `run`/launch), since Copilot's
       credential is not a file in the config dir. Add the `copilot` provider
       (`binary: "copilot"`, `envVar: "COPILOT_HOME"`, extra env `COPILOT_GITHUB_TOKEN`).
-- [ ] **Step 3:** `add`/`import`/`run` flow for Copilot profiles; store the
+      <!-- deferred: depends on Step 1's verified mechanism; no speculative abstraction without a verified consumer -->
+- [~] **Step 3:** `add`/`import`/`run` flow for Copilot profiles; store the
       per-profile token where the other secrets live (keychain-backed where
       available, file fallback). No usage readout → identity-only status.
-- [ ] **Step 4:** Copilot ships **off by default** in the Providers tab; no
+      <!-- deferred: security-sensitive credential flow, unverifiable without the tool + a real account -->
+- [~] **Step 4:** Copilot ships **off by default** in the Providers tab; no
       auto-switch. IDE surface is out of scope (no env-var mechanism).
+      <!-- deferred: with Steps 1-3 -->
+
+> **Phase 4 status:** deferred to on-device verification. Needs the `copilot`
+> CLI installed + a real GitHub account to confirm the credential-isolation
+> mechanism; shipping unverified secret-handling is refused by verify-before-
+> complete + security-sensitive-stop. The enabled-set (Phase 1) already includes
+> a slot for it, defaulting off.
 
 ## Phase 5: Cursor + Windsurf (apps layer, profile isolation)
 
@@ -150,27 +160,39 @@ Both are Electron IDEs with no config-dir env var — isolation is the launch-ti
 `--user-data-dir` the apps layer already supports. They are **apps**, not CLI
 providers.
 
-- [ ] **Step 1 (verify first):** Re-verify on real installs: `open -n -b <bundleId>
+- [~] **Step 1 (verify first):** Re-verify on real installs: `open -n -b <bundleId>
       --args --user-data-dir=<dir>` yields an isolated, parallel instance; and
       re-check the reported ~3-accounts-per-machine hardware-fingerprint cap
       (forum-sourced, unofficial) — note the real limit found.
       <!-- verify: 2nd process spawns (pgrep), data-dir populated, both windows independent -->
-- [ ] **Step 2:** Register `cursor` and `windsurf` in `src/apps.ts`
+      <!-- deferred: cursor/windsurf not installed in this env — the real bundle ids and the isolation probe can't be confirmed here; registering guessed bundle ids would ship an unverified fact -->
+- [~] **Step 2:** Register `cursor` and `windsurf` in `src/apps.ts`
       (`strategy: "user-data-dir"`, real bundle ids). `agent-switch open cursor <profile>`
       / `open windsurf <profile>` launch isolated instances.
-- [ ] **Step 3:** Both surface as **UI** providers in the Providers tab, off by
+      <!-- deferred: depends on Step 1's verified bundle ids -->
+- [~] **Step 3:** Both surface as **UI** providers in the Providers tab, off by
       default; profile-isolation only, no auto-switch. Document the login-once-
       per-profile behaviour and the fingerprint caveat.
+      <!-- deferred: with Steps 1-2 -->
+
+> **Phase 5 status:** deferred to on-device verification, mirroring how the
+> `claude-desktop` / `codex-ui` GUI clients are staged (draft roadmaps pending a
+> real-install probe). The apps launch layer (`src/apps.ts`) is ready; these two
+> register once their bundle ids + isolation are confirmed on a machine that has
+> them installed.
 
 ## Phase 6: Docs
 
-- [ ] **Step 1:** README — a provider capability matrix (isolation mechanism /
+- [~] **Step 1:** README — a provider capability matrix (isolation mechanism /
       usage-readout / profile-switch / auto-switch) mirroring the Context table.
-- [ ] **Step 2:** README — the Providers settings tab, default-enabled set, and
-      that auto-switch is globally off by default and Claude-only.
-- [ ] **Step 3:** README — Copilot CLI (token-per-profile), Cursor/Windsurf
+      <!-- deferred: lands with the new providers (Phases 4-5) so the matrix documents shipped, not planned, support -->
+- [x] **Step 2:** README — the Providers settings tab / `providers` command,
+      default-enabled set (Claude + Codex), and that auto-switch is globally off
+      by default and Claude-only.
+- [~] **Step 3:** README — Copilot CLI (token-per-profile), Cursor/Windsurf
       (user-data-dir isolation + caveats). Note IDE-Copilot / Amazon Q as out of
       scope with the reason.
+      <!-- deferred: with Phases 4-5 (documents features once they ship) -->
 
 ## Acceptance criteria
 
