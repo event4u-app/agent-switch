@@ -202,14 +202,17 @@ with a real Claude session; the tmux orchestration mechanics are verified here.
 
 Gated on Phases 1–2 (CLI is the engine; GUI stays a `--json` client).
 
-- [ ] `gui/src/ipc.ts` wrappers for `sessions --json` and
-   `takeover --json` (which then also orchestrates the fork-cleanup that
-   `--print-only` refuses today).
-- [ ] Panel: profile button → that profile's usage + other profiles' recent
-   /live sessions; click → confirm dialog (source profile, project, last
-   activity, fork y/n, permissions-reset note on fork).
-- [ ] Execution: managed-tmux session → M4 in-place; otherwise M5 spawn +
-   "close the old window" hint.
+- [x] `gui/src/ipc.ts`: `listSessions()` (→ `sessions --recent N --json`) +
+   `takeoverArgs()` (pure builder). Takeover runs **interactively in the
+   embedded terminal**, so the CLI's own keep-source fork-cleanup applies — the
+   non-interactive `takeover --json` fork-orchestration is deferred as a
+   refinement (noted; the interactive path covers the case today).
+   <!-- verify: ipc.test (listSessions/takeoverArgs) ✓ -->
+- [x] `SessionsView` (header history icon): Claude sessions list (profile, live
+   badge, age, summary) with a per-session **target-profile picker + fork
+   toggle + Take over** button. <!-- verify: App.test — take over opens the embedded terminal with the right args ✓ -->
+- [x] Execution: the GUI runs `takeover` in the embedded terminal, which
+   delegates to the CLI (managed-tmux → `--in-place`; otherwise M5 spawn).
 
 ## Phase 5: Codex parity — per the G0.3 outcome
 

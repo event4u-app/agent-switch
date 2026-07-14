@@ -6,6 +6,7 @@ import {
   trayTooltip,
   sparkline,
   formatReset,
+  relativeAge,
   type ProfileRow,
   type UsageSnapshot,
 } from "./transforms.js";
@@ -70,6 +71,19 @@ describe("sparkline", () => {
     expect(s.length).toBe(3);
     expect(s[0]).toBe("▁"); // 0% → lowest
     expect(s[2]).toBe("█"); // 100% → highest
+  });
+});
+
+describe("relativeAge", () => {
+  const now = Date.parse("2026-07-14T12:00:00Z");
+  it("renders s / m / h / d buckets", () => {
+    expect(relativeAge(now - 30_000, now)).toBe("30s");
+    expect(relativeAge(now - 5 * 60_000, now)).toBe("5m");
+    expect(relativeAge(now - 3 * 3600_000, now)).toBe("3h");
+    expect(relativeAge(now - 2 * 86_400_000, now)).toBe("2d");
+  });
+  it("clamps a future mtime to 0s", () => {
+    expect(relativeAge(now + 10_000, now)).toBe("0s");
   });
 });
 

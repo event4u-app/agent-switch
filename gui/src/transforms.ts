@@ -37,6 +37,29 @@ export interface ProfileRow {
   liveSessions: number;
 }
 
+/** One row from `agent-switch sessions --json` (Claude sessions inventory). */
+export interface SessionRow {
+  provider: ProviderId;
+  profile: string;
+  sessionId: string;
+  projectDir: string;
+  cwd: string | null;
+  mtimeMs: number;
+  live: boolean;
+  summary?: string | null;
+}
+
+/** Compact "how long ago" label from an mtime, e.g. "3m", "2h", "5d". Pure. */
+export function relativeAge(mtimeMs: number, now: number = Date.now()): string {
+  const s = Math.max(0, Math.floor((now - mtimeMs) / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
 export interface UsageWindow {
   key: string;
   label: string;
