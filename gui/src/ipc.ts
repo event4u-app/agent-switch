@@ -6,7 +6,7 @@
 
 import { Command } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
-import type { ProfileRow, StatusJson, ProviderId } from "./transforms.js";
+import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, UsageSnapshot } from "./transforms.js";
 
 async function runCli(args: string[]): Promise<string> {
   const out = await Command.create("agent-switch", args).execute();
@@ -80,6 +80,44 @@ export async function openSession(provider: ProviderId, name: string): Promise<v
 
 export async function openWeb(name: string): Promise<void> {
   Command.create("agent-switch", ["web", name]).spawn();
+}
+
+/** A single profile's own usage snapshot (Claude only; null for others or when
+ *  no credential/usage is available). Per-profile — the GUI composes the view. */
+export async function profileUsage(provider: ProviderId, name: string): Promise<UsageSnapshot | null> {
+  const out = await Command.create("agent-switch", ["status", "--provider", provider, name, "--json"]).execute();
+  if (out.code !== 0) return null;
+  try {
+    return (JSON.parse(out.stdout) as StatusJson).usage;
+  } catch {
+    return null;
+  }
+}
+
+/** Set or clear a profile's label (Work / Personal / Other). */
+export async function setProfileLabel(provider: ProviderId, name: string, label: ProfileLabel | null): Promise<void> {
+  await runCli(["label", name, label ?? "none", "--provider", provider]);
+}
+
+export interface AutoSwitch {
+  enabled: boolean;
+  threshold: number;
+}
+
+export async function getAutoSwitch(): Promise<AutoSwitch> {
+  return JSON.parse(await runCli(["autoswitch", "status", "--json"]));
+}
+
+export async function setAutoSwitch(enabled: boolean, threshold?: number): Promise<void> {
+  const args = ["autoswitch", enabled ? "on" : "off"];
+  if (threshold !== undefined) args.push("--threshold", String(threshold));
+  await runCli(args);
+}
+
+/** Remove all agent-switch data + the daemon (`uninstall --force`). Destructive
+ *  — the UI gates this behind an explicit confirm, then quits. */
+export async function uninstall(): Promise<void> {
+  await runCli(["uninstall", "--force"]);
 }
 
 /** Quit the whole app (the `quit` Tauri command → app.exit). Closing the

@@ -10,10 +10,14 @@
 
 export type ProviderId = "claude" | "codex" | "gemini";
 
+export const PROFILE_LABELS = ["Work", "Personal", "Other"] as const;
+export type ProfileLabel = (typeof PROFILE_LABELS)[number];
+
 export interface ProfileRow {
   provider: ProviderId;
   name: string;
   identity: string | null;
+  label: ProfileLabel | null;
   active: boolean;
   liveSessions: number;
 }
@@ -65,6 +69,24 @@ export function trayTooltip(active: ProfileRow | null, usage: UsageSnapshot | nu
   const limit = nearestLimit(usage);
   const head = limit === null ? "" : ` · ${limit}% used`;
   return `agent-switch — ${active.provider}/${active.name}${head}`;
+}
+
+/** Relative "resets in" hint from an ISO timestamp, e.g. "2h 47m" or "5d 3h".
+ *  Empty when unknown/past. Pure so it is unit-testable (pass `now`). */
+export function formatReset(iso: string | null, now: number = Date.now()): string {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (isNaN(t)) return "";
+  let s = Math.floor((t - now) / 1000);
+  if (s <= 0) return "";
+  const d = Math.floor(s / 86400);
+  s -= d * 86400;
+  const h = Math.floor(s / 3600);
+  s -= h * 3600;
+  const m = Math.floor(s / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
 }
 
 /** A tiny sparkline string from a utilization series (GUI + statusline). */
