@@ -2,14 +2,15 @@ import { useEffect, useState } from "react";
 import { Plus, RefreshCw, Play, LogIn, X, AlertCircle, Info, Power, Trash2 } from "lucide-react";
 import {
   activeStatus,
-  createProfile,
   deactivateProfile,
   listProfiles,
-  openSession,
+  loginArgs,
   quitApp,
   removeProfile,
+  sessionArgs,
   switchProfile,
 } from "./ipc.js";
+import { EmbeddedTerminal } from "./EmbeddedTerminal.js";
 import { groupByProvider, nearestLimit, type ProfileRow, type StatusJson, type ProviderId } from "./transforms.js";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,8 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  // The in-app pty terminal overlay (login / run), or null when none is open.
+  const [terminal, setTerminal] = useState<{ args: string[]; title: string } | null>(null);
 
   /** Run a mutating CLI action, then refresh; surface any failure. */
   function act(fn: () => Promise<void>) {
@@ -114,7 +117,19 @@ export default function App() {
       </header>
 
       <div className="flex-1 space-y-2.5 overflow-y-auto p-3">
-        {/* Provider switcher: profiles are sectioned by provider, one panel at a time. */}
+        {terminal ? (
+          <EmbeddedTerminal
+            key={terminal.args.join(" ")}
+            args={terminal.args}
+            title={terminal.title}
+            onClose={() => {
+              setTerminal(null);
+              void refresh();
+            }}
+          />
+        ) : (
+          <>
+            {/* Provider switcher: profiles are sectioned by provider, one panel at a time. */}
         <div role="tablist" className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
           {PROVIDERS.map((pid) => {
             const count = grouped[pid].length;
@@ -168,20 +183,17 @@ export default function App() {
             busy={busy}
             defaultProvider={selected}
             onCancel={() => setShowCreate(false)}
-            onCreate={async (provider, name) => {
-              setBusy(true);
+            onCreate={(provider, name) => {
               try {
-                await createProfile(provider, name);
+                const args = loginArgs(provider, name); // validates the name (throws on invalid)
                 setError(null);
+                setNotice(null);
                 setShowCreate(false);
                 setSelected(provider); // jump to the tab we just created into
-                setNotice(
-                  `Creating ${PROVIDER_LABEL[provider]} profile “${name}”. Complete the login in the Terminal window, then hit Refresh.`,
-                );
+                // Run the login in the in-app terminal — no external window.
+                setTerminal({ args, title: `Login — ${PROVIDER_LABEL[provider]} / ${name}` });
               } catch (e) {
                 setError(describeError(e));
-              } finally {
-                setBusy(false);
               }
             }}
           />
@@ -297,7 +309,16 @@ export default function App() {
                             Use
                           </Button>
                         )}
-                        <Button size="sm" variant="ghost" onClick={() => openSession(selected, r.name)}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            setTerminal({
+                              args: sessionArgs(selected, r.name),
+                              title: `Session — ${PROVIDER_LABEL[selected]} / ${r.name}`,
+                            })
+                          }
+                        >
                           <Play /> Run
                         </Button>
                         <Button
@@ -316,6 +337,8 @@ export default function App() {
               ))}
             </div>
           </Card>
+        )}
+          </>
         )}
       </div>
 
