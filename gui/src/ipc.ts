@@ -47,37 +47,33 @@ export async function removeProfile(provider: ProviderId, name: string): Promise
   await runCli(["remove", name, "--provider", provider, "--force"]);
 }
 
-/** Profile names allowed in the create form. Restricted so the name can be
- *  interpolated into the AppleScript command string without escaping. */
+/** Profile names allowed in the create form. Restricted so it is safe to pass
+ *  as a pty command argument and matches the CLI's own name rule. */
 export const PROFILE_NAME_RE = /^[A-Za-z0-9._-]+$/;
 
-/**
- * Create a profile and trigger its first login. The provider login is
- * interactive (OAuth needs a TTY), so we open a real Terminal window running
- * `agent-switch add` rather than trying to drive it headless. The user
- * completes the login there and returns to hit Refresh.
- */
-export async function createProfile(provider: ProviderId, name: string): Promise<void> {
+export function assertValidName(name: string): void {
   if (!PROFILE_NAME_RE.test(name)) {
     throw new Error("Name may only contain letters, numbers, dot, dash, underscore.");
   }
-  const cli = `agent-switch add ${name} --provider ${provider}`;
-  // macOS: AppleScript opens Terminal.app and runs the login. `name` is charset-
-  // validated above, so it cannot break out of the quoted `do script` string.
-  const script = `tell application "Terminal"\nactivate\ndo script "${cli}"\nend tell`;
-  try {
-    const out = await Command.create("osascript", ["-e", script]).execute();
-    if (out.code !== 0) throw new Error(out.stderr);
-  } catch {
-    throw new Error(`Could not open a terminal automatically. Run this manually:  ${cli}`);
-  }
 }
 
-export async function openSession(provider: ProviderId, name: string): Promise<void> {
-  // Fire-and-forget a new session; the CLI injects the provider env var.
-  Command.create("agent-switch", ["run", name, "--provider", provider]).spawn();
+/**
+ * Args for the interactive flows that run in the EMBEDDED terminal (no external
+ * window). `add` triggers the provider's first login; `run` opens a session.
+ * Both are TTY-interactive, so they run in the in-app pty rather than a
+ * headless spawn or a Terminal.app window.
+ */
+export function loginArgs(provider: ProviderId, name: string): string[] {
+  assertValidName(name);
+  return ["add", name, "--provider", provider];
 }
 
+export function sessionArgs(provider: ProviderId, name: string): string[] {
+  return ["run", name, "--provider", provider];
+}
+
+/** claude.ai in the persistent per-profile browser — a browser window, not a
+ *  terminal, so it stays a fire-and-forget spawn. */
 export async function openWeb(name: string): Promise<void> {
   Command.create("agent-switch", ["web", name]).spawn();
 }

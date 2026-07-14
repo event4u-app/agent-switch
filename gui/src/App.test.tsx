@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import * as React from "react";
 import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
 
 // The IPC layer is Tauri-coupled; mock it so the component logic is testable in
-// jsdom. vi.hoisted lets the (hoisted) vi.mock factory reference `ipc`.
+// jsdom. loginArgs/sessionArgs are pure arg builders — kept real so the args
+// the terminal receives are asserted for real. vi.hoisted lets the (hoisted)
+// vi.mock factory reference `ipc`.
 const ipc = vi.hoisted(() => ({
   listProfiles: vi.fn(),
   profileUsage: vi.fn(),
@@ -10,14 +13,27 @@ const ipc = vi.hoisted(() => ({
   setAutoSwitch: vi.fn(),
   setProfileLabel: vi.fn(),
   switchProfile: vi.fn(),
+  openWeb: vi.fn(),
+  loginArgs: (p: string, n: string) => ["add", n, "--provider", p],
+  sessionArgs: (p: string, n: string) => ["run", n, "--provider", p],
+  assertValidName: () => {},
   deactivateProfile: vi.fn(),
-  openSession: vi.fn(),
-  createProfile: vi.fn(),
   removeProfile: vi.fn(),
   uninstall: vi.fn(),
   quitApp: vi.fn(),
 }));
 vi.mock("./ipc.js", () => ipc);
+
+// The embedded terminal renders real xterm/pty — stub it so tests assert the
+// terminal OPENED (title + args) without a DOM canvas or a Tauri backend.
+vi.mock("./EmbeddedTerminal.js", () => ({
+  EmbeddedTerminal: (props: { args: string[]; title: string; onClose: () => void }) =>
+    React.createElement("div", { "data-testid": "term" }, [
+      React.createElement("span", { key: "t" }, props.title),
+      React.createElement("span", { key: "a" }, props.args.join(" ")),
+      React.createElement("button", { key: "c", onClick: props.onClose }, "close-term"),
+    ]),
+}));
 
 import App from "./App.js";
 import type { ProfileRow, UsageSnapshot } from "./transforms.js";
@@ -43,7 +59,6 @@ beforeEach(() => {
   ipc.setProfileLabel.mockResolvedValue(undefined);
   ipc.switchProfile.mockResolvedValue(undefined);
   ipc.deactivateProfile.mockResolvedValue(undefined);
-  ipc.createProfile.mockResolvedValue(undefined);
   ipc.removeProfile.mockResolvedValue(undefined);
   ipc.uninstall.mockResolvedValue(undefined);
   ipc.quitApp.mockResolvedValue(undefined);
@@ -85,11 +100,13 @@ describe("App", () => {
     expect(ipc.deactivateProfile).toHaveBeenCalledWith("claude");
   });
 
-  it("runs a session via the CLI when Run is clicked", async () => {
+  it("runs a session in the embedded terminal (no external window) when Run is clicked", async () => {
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i });
     fireEvent.click(screen.getAllByRole("button", { name: "Run" })[0]);
-    expect(ipc.openSession).toHaveBeenCalledWith("claude", "work");
+    const term = await screen.findByTestId("term");
+    expect(term.textContent).toContain("run work --provider claude"); // sessionArgs
+    expect(term.textContent).toMatch(/Session — Claude \/ work/);
   });
 
   it("surfaces an actionable error when the CLI binary is unreachable", async () => {
@@ -105,14 +122,16 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /create a profile/i })).toBeTruthy();
   });
 
-  it("creates a profile pre-selected to the open provider tab", async () => {
+  it("creates a profile by opening the login in the embedded terminal, pre-selected to the open tab", async () => {
     ipc.listProfiles.mockResolvedValue([]);
     render(<App />);
     fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
     fireEvent.click(screen.getByRole("button", { name: /^New$/ }));
     fireEvent.change(await screen.findByPlaceholderText(/e\.g\. work/), { target: { value: "work" } });
     fireEvent.click(screen.getByRole("button", { name: /create & log in/i }));
-    await waitFor(() => expect(ipc.createProfile).toHaveBeenCalledWith("codex", "work"));
+    const term = await screen.findByTestId("term");
+    expect(term.textContent).toContain("add work --provider codex"); // loginArgs, no osascript/Terminal.app
+    expect(term.textContent).toMatch(/Login — Codex \/ work/);
   });
 
   it("deletes a profile only after an explicit confirm", async () => {

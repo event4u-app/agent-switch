@@ -3,6 +3,8 @@
 // tray icon, the window, and launch-at-login. No profile logic lives here.
 #![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 
+mod pty;
+
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
@@ -72,7 +74,14 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![quit])
+        .manage(pty::PtyState::default())
+        .invoke_handler(tauri::generate_handler![
+            quit,
+            pty::term_open,
+            pty::term_write,
+            pty::term_resize,
+            pty::term_close
+        ])
         // Closing the window (X) must only hide it, never quit — the tray keeps
         // the app alive and it is re-shown from the tray. Quitting is explicit
         // (UI button / tray menu).

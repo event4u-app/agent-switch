@@ -16,9 +16,10 @@ import {
   listProfiles,
   activeStatus,
   switchProfile,
-  openSession,
   openWeb,
-  createProfile,
+  loginArgs,
+  sessionArgs,
+  assertValidName,
   deactivateProfile,
   removeProfile,
   quitApp,
@@ -62,23 +63,21 @@ describe("ipc", () => {
     await expect(listProfiles()).rejects.toThrow(/boom/);
   });
 
-  it("openSession / openWeb spawn fire-and-forget through the CLI", async () => {
-    await openSession("gemini", "g");
-    expect(create).toHaveBeenCalledWith("agent-switch", ["run", "g", "--provider", "gemini"]);
+  it("openWeb spawns claude.ai fire-and-forget (a browser, not a terminal)", async () => {
     await openWeb("work");
     expect(create).toHaveBeenCalledWith("agent-switch", ["web", "work"]);
-    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn).toHaveBeenCalledTimes(1);
   });
 
-  it("createProfile opens a terminal via osascript running `agent-switch add`", async () => {
-    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
-    await createProfile("codex", "work");
-    expect(create).toHaveBeenCalledWith("osascript", ["-e", expect.stringContaining("agent-switch add work --provider codex")]);
+  it("loginArgs / sessionArgs build the args the embedded terminal runs (no external window)", () => {
+    expect(loginArgs("codex", "work")).toEqual(["add", "work", "--provider", "codex"]);
+    expect(sessionArgs("gemini", "g")).toEqual(["run", "g", "--provider", "gemini"]);
   });
 
-  it("createProfile rejects an unsafe name before touching the shell (injection guard)", async () => {
-    await expect(createProfile("claude", 'a" & rm -rf ~ #')).rejects.toThrow(/letters, numbers/);
-    expect(create).not.toHaveBeenCalled();
+  it("loginArgs / assertValidName reject an unsafe profile name (injection guard)", () => {
+    expect(() => loginArgs("claude", 'a" & rm -rf ~ #')).toThrow(/letters, numbers/);
+    expect(() => assertValidName("ok.name-1_2")).not.toThrow();
+    expect(() => assertValidName("bad name")).toThrow(/letters, numbers/);
   });
 
   it("deactivateProfile clears the active profile for a provider", async () => {
