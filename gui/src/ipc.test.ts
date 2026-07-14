@@ -2,13 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock the Tauri shell plugin so the IPC wrappers are testable without a
 // runtime. vi.hoisted lets the (hoisted) vi.mock factory reference these.
-const { create, execute, spawn } = vi.hoisted(() => {
+const { create, execute, spawn, invoke } = vi.hoisted(() => {
   const execute = vi.fn();
   const spawn = vi.fn();
   const create = vi.fn(() => ({ execute, spawn }));
-  return { create, execute, spawn };
+  const invoke = vi.fn();
+  return { create, execute, spawn, invoke };
 });
 vi.mock("@tauri-apps/plugin-shell", () => ({ Command: { create } }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
 import {
   listProfiles,
@@ -19,6 +21,7 @@ import {
   createProfile,
   deactivateProfile,
   removeProfile,
+  quitApp,
 } from "./ipc.js";
 
 beforeEach(() => vi.clearAllMocks());
@@ -31,16 +34,16 @@ describe("ipc", () => {
     expect(rows[0].name).toBe("work");
   });
 
-  it("activeStatus runs `agent-switch status --json`", async () => {
-    execute.mockResolvedValue({ code: 0, stdout: '{"provider":"claude","name":"work","identity":null,"usage":null}', stderr: "" });
-    const s = await activeStatus();
-    expect(create).toHaveBeenCalledWith("agent-switch", ["status", "--json"]);
+  it("activeStatus runs `agent-switch status --provider <p> --json`", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: '{"provider":"codex","name":"work","identity":null,"usage":null}', stderr: "" });
+    const s = await activeStatus("codex");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["status", "--provider", "codex", "--json"]);
     expect(s?.name).toBe("work");
   });
 
   it("activeStatus returns null on a non-zero exit (no active profile — not an error)", async () => {
     execute.mockResolvedValue({ code: 1, stdout: "", stderr: "error: no active claude profile for --json" });
-    await expect(activeStatus()).resolves.toBeNull();
+    await expect(activeStatus("claude")).resolves.toBeNull();
   });
 
   it("switchProfile calls `use <name> --provider <p>` (name-first — avoids the flag-leak)", async () => {
@@ -83,5 +86,10 @@ describe("ipc", () => {
     execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
     await removeProfile("codex", "old");
     expect(create).toHaveBeenCalledWith("agent-switch", ["remove", "old", "--provider", "codex", "--force"]);
+  });
+
+  it("quitApp invokes the `quit` Tauri command", async () => {
+    await quitApp();
+    expect(invoke).toHaveBeenCalledWith("quit");
   });
 });

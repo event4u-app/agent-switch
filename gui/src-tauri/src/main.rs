@@ -6,7 +6,7 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Manager, WindowEvent,
 };
 
 fn show_main(app: &tauri::AppHandle) {
@@ -14,6 +14,15 @@ fn show_main(app: &tauri::AppHandle) {
         let _ = w.show();
         let _ = w.set_focus();
     }
+}
+
+// The UI's "Quit" button calls this to actually terminate the app. Closing the
+// window (X) only hides it (see the window-event handler), so quitting is an
+// explicit action from the UI button or the tray menu — never a side effect of
+// closing the panel.
+#[tauri::command]
+fn quit(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 // A GUI launched from Finder / the menu bar inherits a minimal PATH
@@ -63,7 +72,25 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .invoke_handler(tauri::generate_handler![quit])
+        // Closing the window (X) must only hide it, never quit — the tray keeps
+        // the app alive and it is re-shown from the tray. Quitting is explicit
+        // (UI button / tray menu).
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(|app| {
+            // Menu-bar utility: no Dock icon and not in the app switcher, so
+            // closing/minimizing never leaves a Dock entry behind. The window is
+            // reached from the tray, not the Dock.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             let show = MenuItem::with_id(app, "show", "Show agent-switch", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
