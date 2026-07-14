@@ -46,7 +46,7 @@ import {
   type ProviderSurface,
   ROOT,
 } from "./profiles.js";
-import { Provider, ProviderId, PROVIDER_IDS, provider } from "./providers.js";
+import { Provider, ProviderId, PROVIDER_IDS, provider, isProviderInstalled } from "./providers.js";
 import { parseArgs, parseRun } from "./args.js";
 import { credentialStore } from "./credentials.js";
 import { withProperLock } from "./locks.js";
@@ -522,14 +522,19 @@ function cmdProviders(
     return;
   }
   if (mode === undefined || mode === "status") {
+    const all = readProviders();
     if (flags.json) {
-      // The GUI needs every provider's enabled surfaces at once (the Providers tab).
-      console.log(JSON.stringify(readProviders()));
+      // The GUI needs every provider's enabled surfaces AND whether its binary
+      // is installed (so it can show but not enable a missing provider) at once.
+      const enriched = Object.fromEntries(
+        PROVIDER_IDS.map((p) => [p, { ...all[p], installed: isProviderInstalled(p) }]),
+      );
+      console.log(JSON.stringify(enriched));
       return;
     }
-    const all = readProviders();
     for (const p of providerExplicit ? [providerId] : PROVIDER_IDS) {
-      console.log(`${p}: cli ${all[p].cli ? "on" : "off"}, ui ${all[p].ui ? "on" : "off"}.`);
+      const inst = isProviderInstalled(p) ? "installed" : "not installed";
+      console.log(`${p}: cli ${all[p].cli ? "on" : "off"}, ui ${all[p].ui ? "on" : "off"} (${inst}).`);
     }
     return;
   }

@@ -21,6 +21,13 @@ export interface ProviderSurfaces {
 export type ProviderSurface = keyof ProviderSurfaces;
 export type ProvidersConfig = Record<ProviderId, ProviderSurfaces>;
 
+/** A provider's enabled surfaces plus whether its CLI binary is installed. A
+ *  not-installed provider is shown but cannot be enabled. */
+export interface ProviderStatus extends ProviderSurfaces {
+  installed: boolean;
+}
+export type ProvidersStatus = Record<ProviderId, ProviderStatus>;
+
 export interface ProfileRow {
   provider: ProviderId;
   name: string;

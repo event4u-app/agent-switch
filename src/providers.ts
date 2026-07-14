@@ -16,6 +16,7 @@
  * Everything is read-only + best-effort: unreadable identity returns null.
  */
 
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -136,4 +137,15 @@ export function provider(id: ProviderId): Provider {
 
 export function allProviders(): Provider[] {
   return PROVIDER_IDS.map((id) => PROVIDERS[id]);
+}
+
+/**
+ * Best-effort: is this provider's CLI binary installed (on PATH)? Probes
+ * `<binary> --version` and treats only ENOENT as not-installed (a non-zero exit
+ * or a timeout still means the binary exists). Used to gate enabling a provider
+ * the user hasn't installed.
+ */
+export function isProviderInstalled(id: ProviderId): boolean {
+  const probe = spawnSync(PROVIDERS[id].binary, ["--version"], { stdio: "ignore", timeout: 5000 });
+  return (probe.error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT";
 }
