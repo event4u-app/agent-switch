@@ -36,13 +36,15 @@ accounts able to run side-by-side.
 
 ## Phase 1: Register + launch
 
-- [ ] **Step 1:** Register `claude-desktop` (bundleId `com.anthropic.claudefordesktop`,
-      `strategy: "user-data-dir"`, profile GUI dir per app).
-- [ ] **Step 2:** `agent-switch open claude-desktop --profile <name>` launches
-      the app pointed at the profile's data-dir.
-      <!-- verify: manual — new dir populated with Cookies/Local Storage, window logged-out -->
-- [ ] **Step 3:** First run of a profile is logged-out (expected — web session);
-      surface a one-line hint that the user logs in once per profile.
+- [x] **Step 1:** Registered `claude-desktop` in `APPS` (bundleId
+      `com.anthropic.claudefordesktop`, `strategy: "user-data-dir"`, provider
+      claude; per-profile gui data dir). <!-- verify: npm test — registry + buildLaunch argv -->
+- [x] **Step 2:** `agent-switch open claude-desktop [profile]` launches the app
+      at the profile's data-dir (generic `open` from the foundation). argv
+      unit-tested; error paths (no profile / not installed) e2e-tested; a real
+      launch is verified in Phase 3. <!-- verify: npm test + Phase 3 probe -->
+- [x] **Step 3:** First launch of a profile prints a one-line "opens logged-out;
+      sign in once, session saved here" hint (fresh-data-dir detection in `open`).
 
 ## Phase 2: Caveats handled
 
