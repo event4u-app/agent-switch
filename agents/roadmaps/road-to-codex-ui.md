@@ -42,7 +42,7 @@ profiles where possible.
 - [x] [`road-to-desktop-app-launch.md`](archive/road-to-desktop-app-launch.md) — the
       launch layer (this client uses `strategy: "env"` for the IDE, and
       `env` + `user-data-dir` combined for the desktop app).
-- [ ] Existing Codex CLI `CODEX_HOME` profiles (reused as-is).
+- [x] Existing Codex CLI `CODEX_HOME` profiles (reused as-is).
 
 ## Phase 1: Codex IDE extension (env strategy)
 
@@ -78,8 +78,9 @@ profiles where possible.
 
 ## Phase 3: Docs
 
-- [ ] **Step 1:** README: Codex UI = IDE (one layer) vs desktop (two layers),
-      with the caveats and the re-verify note.
+- [x] **Step 1:** README "GUI apps" section lists Codex desktop (two-layer) and
+      Codex-in-VS-Code (CODEX_HOME only), plus the caveats (#14389 session-list,
+      #7971 re-verify, editor-must-be-freshly-launched).
 
 ## Acceptance criteria
 
