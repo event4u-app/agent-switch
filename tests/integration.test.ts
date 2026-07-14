@@ -77,6 +77,46 @@ test("share: atomic rename over a symlinked file replaces the link (fs primitive
   }
 });
 
+// road-to-session-handoff Phase 2 — the g01 flow through the real CLI: create a
+// canary session under profile A, `takeover` it to profile B, resume there and
+// get the canary back. Proves the move+resume semantics end-to-end on the
+// CURRENT Claude Code version (they are upstream-documented but version-
+// sensitive — this is the canary that fails loud on drift, roadmap risk #1).
+// Cost: 2 short non-interactive claude turns. Uses the REAL ~/.agent-switch.
+test("takeover: canary session moves between two logged-in profiles and resumes", gated, () => {
+  const src = process.env.AGENT_SWITCH_CONTRACT_SRC_PROFILE;
+  const tgt = process.env.AGENT_SWITCH_CONTRACT_TGT_PROFILE;
+  assert.ok(
+    src && tgt,
+    "set AGENT_SWITCH_CONTRACT_SRC_PROFILE and AGENT_SWITCH_CONTRACT_TGT_PROFILE to two logged-in claude profiles",
+  );
+  const CLI = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../dist/index.js");
+  assert.ok(fs.existsSync(CLI), "run `npm run build` first");
+  const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-contract-takeover-"));
+  const canary = `asw-contract-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const cli = (args: string[]) =>
+    execFileSync("node", [CLI, ...args], { cwd: workdir, encoding: "utf8" });
+  try {
+    const created = JSON.parse(
+      cli(["run", src!, "--", "-p", "--output-format", "json",
+        `Remember this codeword and nothing else: ${canary}. Reply only: stored.`]),
+    );
+    const id = created?.session_id;
+    assert.ok(typeof id === "string" && id.length > 0, "no session_id from create turn");
+
+    const out = cli(["takeover", id, "--to", tgt!, "--from", src!, "--print-only"]);
+    assert.match(out, /verified/); // the copy→verify→delete transfer ran
+
+    const resumed = JSON.parse(
+      cli(["run", tgt!, "--", "-p", "--resume", id, "--output-format", "json",
+        "What is the codeword I asked you to remember? Reply with only the codeword."]),
+    );
+    assert.ok(String(resumed?.result ?? "").includes(canary), "canary missing after handoff");
+  } finally {
+    fs.rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 // Step 4 (companion) — writes INSIDE a symlinked directory land in the target.
 // This is the other half of the #40857 finding and the load-bearing invariant
 // for Phase 2's `share` rework: directories (skills/, agents/, commands/) are

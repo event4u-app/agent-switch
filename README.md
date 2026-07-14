@@ -76,6 +76,8 @@ agent-switch add event4u
 | `agent-switch status` | identity + 5h/7d usage for every profile |
 | `agent-switch map work ~/projects/kunde-a` | `claude` in that repo always uses this account — no switching |
 | `agent-switch share on` | one settings/skills/commands/agents tree for all profiles |
+| `agent-switch sessions` | recent + live Claude sessions per profile |
+| `agent-switch takeover <id> --to work` | move a session to another account and resume it there (see below) |
 | `agent-switch web work` | claude.ai in a persistent per-profile browser (see below) |
 | `agent-switch remove old --force` | delete a profile incl. its keychain entry |
 | `agent-switch label work Work` | tag a profile (`Work` / `Personal` / `Other`, or `none` to clear) |
@@ -120,6 +122,31 @@ Two behaviors, because Claude Code's settings writer writes atomically:
 
 Account-scoped state (credentials, `.claude.json`, plugins) always stays per
 profile.
+
+## Session handoff between accounts (takeover)
+
+Switching the account should not cost the conversation. A Claude Code session is
+a transcript file scoped to its project directory — and an *account* handoff
+keeps that directory constant, so the session can move between profiles:
+
+```bash
+agent-switch sessions                       # recent + live sessions, per profile (* = live)
+agent-switch takeover <session-id> --to work        # move it, then resume on "work"
+agent-switch takeover <session-id> --to work --keep-source   # copy + fork instead (source keeps its own)
+```
+
+- **Move by default.** The transcript is transferred copy→verify→delete; the
+  original account no longer owns the session afterwards (no same-id divergence).
+- **`--keep-source` forks.** The target resumes with `--fork-session` (fresh
+  session id there); the source's transcript stays untouched. Session-scoped
+  permission approvals do not carry into a fork — Claude asks once more.
+- **Guard rails.** Takeover refuses when the source profile has live sessions
+  (close them first, or `--force`), never overwrites an existing transcript on
+  the target, and detects `share on --history` (nothing to move — profiles
+  already see one history tree).
+- In an interactive terminal the takeover resumes the session directly; use
+  `--print-only` to just print the resume command. Transcripts are treated as
+  opaque blobs — moved whole, never parsed or rewritten.
 
 ## Browser sessions (claude.ai) without re-login
 

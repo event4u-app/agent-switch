@@ -68,6 +68,15 @@ import {
   readProfileCredential,
 } from "./api.js";
 import { UsageSnapshot, formatSnapshot, parseUsage } from "./usage.js";
+import {
+  SessionRow,
+  cleanupForkVehicle,
+  listSessions,
+  locateSession,
+  markLive,
+  sharedHistory,
+  transferSession,
+} from "./sessions.js";
 import { isFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daemon.js";
 import { cmdService, serviceUninstall } from "./service.js";
 import { APPS, buildLaunch, findApp, guiDataDir, isInstalled } from "./apps.js";
@@ -413,6 +422,175 @@ function cmdShare(mode?: string, flags: string[] = []): void {
   }
 }
 
+// ---------- session inventory + takeover (Claude; Codex lands per G0.3) ------
+
+/** Relative age like "3m" / "2h" / "5d" for the sessions table. */
+function ageOf(mtimeMs: number): string {
+  const s = Math.max(0, Math.round((Date.now() - mtimeMs) / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  if (s < 86400) return `${Math.round(s / 3600)}h`;
+  return `${Math.round(s / 86400)}d`;
+}
+
+/**
+ * `agent-switch sessions [profile] [--recent N] [--json]` — recent (and, where
+ * detectable, live) Claude Code sessions per profile. The JSON branch is the
+ * GUI contract: a flat array, metadata only — transcript content never leaves
+ * the profile dir (only the guarded first-line header is read).
+ */
+function cmdSessions(
+  providerId: ProviderId,
+  providerExplicit: boolean,
+  name?: string,
+  flags: Record<string, string | boolean> = {},
+): void {
+  if (providerExplicit && providerId !== "claude") {
+    die(`sessions is Claude-only for now (${providerId} parity is gated on its Phase-0 spike — see scripts/spikes/)`);
+  }
+  const recentFlag = flags.recent;
+  const limit = typeof recentFlag === "string" ? Number(recentFlag) : 10;
+  if (!Number.isFinite(limit) || limit < 1) die("--recent must be a positive number");
+
+  const profiles = name ? [requireProfile("claude", name, "sessions")] : listProfiles("claude");
+  if (profiles.length === 0) die("no claude profiles");
+
+  const all: (SessionRow & { profile: string })[] = [];
+  for (const p of profiles) {
+    const cfg = configDir("claude", p);
+    const rows = listSessions(cfg, limit);
+    markLive(cfg, rows); // POSIX: pid→cwd→dir match; win32: stays recent-only
+    all.push(...rows.map((r) => ({ ...r, profile: p })));
+  }
+
+  if (flags.json) {
+    console.log(JSON.stringify(all.map((r) => ({ provider: "claude", ...r })), null, 2));
+    return;
+  }
+  let any = false;
+  for (const p of profiles) {
+    const rows = all.filter((r) => r.profile === p);
+    if (rows.length === 0) continue;
+    any = true;
+    console.log(`claude/${p}:`);
+    for (const r of rows) {
+      const mark = r.live ? "*" : " ";
+      const where = r.cwd ?? r.projectDir;
+      const summary = r.summary ? `  ${r.summary}` : "";
+      console.log(`${mark} ${r.sessionId}  ${where}  ${ageOf(r.mtimeMs)}${r.live ? "  [live]" : ""}${summary}`);
+    }
+  }
+  if (!any) {
+    console.log("No sessions found. Sessions appear after a `claude` run on a profile.");
+  } else {
+    console.log("\nTake one over with: agent-switch takeover <session-id> --to <profile>");
+  }
+}
+
+/**
+ * `agent-switch takeover <session-id> --to <profile>` — move a session between
+ * two Claude profiles and resume it there. Move by default; `--keep-source`
+ * copies and forces `--fork-session` on the target (fresh id there) so two
+ * profiles never both own a file under one session id. See the roadmap's
+ * guard order — every refusal here is a data-integrity rule, not polish.
+ */
+function cmdTakeover(sessionId?: string, flags: Record<string, string | boolean> = {}): void {
+  if (!sessionId || typeof flags.to !== "string") {
+    die(
+      "usage: agent-switch takeover <session-id> --to <profile> [--from <profile>] " +
+        "[--keep-source] [--print-only] [--force] [--json]\n" +
+        "       (list candidates with: agent-switch sessions)",
+    );
+  }
+  const target = requireProfile("claude", flags.to, "takeover --to");
+  const keepSource = !!flags["keep-source"];
+  const printOnly = !!flags["print-only"];
+  const json = !!flags.json;
+
+  // Source resolution: --from, or a scan across every Claude profile. More than
+  // one hit means same-id divergence already exists — surface, never guess.
+  const candidates = typeof flags.from === "string"
+    ? [requireProfile("claude", flags.from, "takeover --from")]
+    : listProfiles("claude");
+  const hits = candidates
+    .map((p) => ({ profile: p, loc: locateSession(configDir("claude", p), sessionId) }))
+    .filter((h) => h.loc !== null);
+  if (hits.length === 0) {
+    die(`session ${sessionId} not found in any claude profile (see: agent-switch sessions)`);
+  }
+  if (hits.length > 1) {
+    die(
+      `session ${sessionId} exists in MULTIPLE profiles (${hits.map((h) => h.profile).join(", ")}) — ` +
+        "the copies have diverged. Pick one explicitly with --from after inspecting them.",
+    );
+  }
+  const { profile: source, loc } = hits[0] as { profile: string; loc: NonNullable<ReturnType<typeof locateSession>> };
+  if (source === target) die(`session ${sessionId} is already in profile "${target}"`);
+
+  // keep-source needs the interactive fork+cleanup step: without it the target
+  // would keep a resumable copy under the ORIGINAL id — exactly the divergence
+  // this command exists to prevent. (The GUI orchestrates this via --json later.)
+  if (keepSource && (printOnly || json || !process.stdin.isTTY)) {
+    die("--keep-source needs an interactive terminal (the fork's transfer copy is cleaned up after the session ends) — run it without --print-only/--json in a TTY");
+  }
+
+  const srcCfg = configDir("claude", source);
+  const tgtCfg = configDir("claude", target);
+
+  // Live guard: moving (or forking) under a running session risks interleaving
+  // and appends into a file we just moved. Conservative by design: ANY live
+  // session on the source profile blocks, `--force` overrides.
+  const livePids = liveSessionPids(srcCfg);
+  if (livePids.length > 0 && !flags.force) {
+    die(
+      `profile "${source}" has live Claude sessions (PIDs ${livePids.join(", ")}). ` +
+        "Close them first (or --force if you are sure this session is not one of them).",
+    );
+  }
+
+  const resumeArgs = ["--resume", sessionId, ...(keepSource ? ["--fork-session"] : [])];
+  const resumeCommand = `agent-switch run ${target} -- ${resumeArgs.join(" ")}`;
+
+  // Shared-history mode (`share on --history`): both profiles already see one
+  // projects/ tree — file ops would be self-moves. Degrade to the resume step.
+  if (sharedHistory(srcCfg, tgtCfg)) {
+    if (json) {
+      console.log(JSON.stringify({ sessionId, from: source, to: target, transferred: [], shared: true, resumeCommand }, null, 2));
+      return;
+    }
+    console.log(`Profiles "${source}" and "${target}" share one history tree — nothing to move.`);
+    console.log(`Resume on the target with:\n  ${resumeCommand}`);
+    if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("claude"), target, resumeArgs));
+    return;
+  }
+
+  let result;
+  try {
+    result = transferSession(loc, tgtCfg, keepSource);
+  } catch (err: any) {
+    die(String(err?.message ?? err));
+  }
+
+  if (json) {
+    console.log(JSON.stringify({ sessionId, from: source, to: target, transferred: result.actions, shared: false, resumeCommand }, null, 2));
+    return;
+  }
+  console.log(`Session ${sessionId}: ${source} -> ${target}`);
+  for (const a of result.actions) console.log(`  ${a}`);
+  if (keepSource) {
+    console.log("Resuming with --fork-session (fresh id on the target; note: session-scoped");
+    console.log("permission approvals do not carry into a fork — Claude asks once more).");
+    const rc = launch(provider("claude"), target, resumeArgs);
+    // The fork got its own id; drop the vehicle copy that still carries the
+    // original id, or both profiles would own that id (the g02 trap).
+    cleanupForkVehicle(tgtCfg, loc.projectDir, sessionId);
+    console.log(`Cleaned up the transfer copy (${sessionId}) on the target — the fork has its own id.`);
+    process.exit(rc);
+  }
+  console.log(`Resume it with:\n  ${resumeCommand}`);
+  if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("claude"), target, resumeArgs));
+}
+
 function cmdRemove(providerId: ProviderId, name?: string, force = false): void {
   const n = requireProfile(providerId, name, "remove");
   if (activeFor(providerId) === n && !force) {
@@ -698,6 +876,8 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch unmap [--provider P] [dir]      remove a directory mapping
   agent-switch mappings                        list directory mappings
   agent-switch share on|sync|off [--history] [--source <profile|default>]   (Claude)
+  agent-switch sessions [profile] [--recent N] [--json]   recent + live Claude sessions per profile
+  agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--print-only] [--force]   move a session to another profile and resume it
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
@@ -756,6 +936,8 @@ async function main(): Promise<void> {
     case "unmap": return cmdUnmap(providerExplicit ? providerId : undefined, positional[0]);
     case "mappings": return cmdMappings();
     case "share": return cmdShare(positional[0], rest.slice(1));
+    case "sessions": return cmdSessions(providerId, providerExplicit, positional[0], flags);
+    case "takeover": return cmdTakeover(positional[0], flags);
     case "web": return cmdWeb(positional[0]);
     case "remove": case "rm": return cmdRemove(providerId, positional[0], !!flags.force);
     case "shellenv": return cmdShellenv((flags.shell as string) ?? positional[0]);

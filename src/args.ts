@@ -12,7 +12,7 @@
 import { ProviderId, PROVIDER_IDS, isProviderId } from "./providers.js";
 
 /** Flags that take a value (the next token), as opposed to boolean switches. */
-const VALUE_FLAGS = new Set(["provider", "shell", "source", "threshold"]);
+const VALUE_FLAGS = new Set(["provider", "shell", "source", "threshold", "to", "from", "recent"]);
 
 export interface ParsedArgs {
   cmd?: string;
