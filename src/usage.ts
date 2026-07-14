@@ -70,6 +70,44 @@ export function formatSnapshot(s: UsageSnapshot): string[] {
   return lines;
 }
 
+// ---------- headroom + auto-switch decision (pure) --------------------------
+
+/** Highest utilization across a snapshot's windows (0-100), or null when no
+ *  window reports a number. This is a profile's OWN headroom, never a ranking. */
+export function maxUtilization(s: UsageSnapshot): number | null {
+  const vals = s.windows.map((w) => w.utilization).filter((u): u is number => typeof u === "number");
+  return vals.length ? Math.max(...vals) : null;
+}
+
+export interface SwitchCandidate {
+  name: string;
+  snapshot: UsageSnapshot;
+}
+
+/**
+ * Opt-in auto-switch decision (pure, no I/O). Given the active profile and the
+ * same-provider candidates with their usage, return the profile to switch to,
+ * or null. Switches only when the active profile has hit `threshold`% on some
+ * window AND another candidate has strictly more headroom (lower max
+ * utilization) while itself staying below `threshold`. Ties keep the first
+ * candidate. This is a single switch decision gated behind config — never a
+ * display ranking.
+ */
+export function pickSwitchTarget(active: string, candidates: SwitchCandidate[], threshold: number): string | null {
+  const activeSnap = candidates.find((c) => c.name === active)?.snapshot;
+  const activeMax = activeSnap ? maxUtilization(activeSnap) : null;
+  if (activeMax === null || activeMax < threshold) return null; // active still has headroom
+
+  let best: { name: string; max: number } | null = null;
+  for (const c of candidates) {
+    if (c.name === active) continue;
+    const m = maxUtilization(c.snapshot);
+    if (m === null || m >= threshold) continue; // unknown or also maxed → not a target
+    if (!best || m < best.max) best = { name: c.name, max: m };
+  }
+  return best?.name ?? null;
+}
+
 // ---------- threshold detection (active profile only, edge-triggered) --------
 
 /** Per-window: the reset stamp last seen + which thresholds have already fired

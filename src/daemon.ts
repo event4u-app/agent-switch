@@ -1,23 +1,27 @@
 /**
- * Background usage daemon — a responsible poller and a cache, never a switcher.
+ * Background usage daemon — poller, cache, and (opt-in) auto-switcher.
  *
- * It polls each Claude profile that has a live session (plus the active
- * profile) for its OWN usage, appends history, detects active-profile threshold
- * crossings, and writes `daemon-state.json` so `status`/the GUI can read a fresh
- * snapshot without hitting the API. There is deliberately NO code path here that
- * mutates the active profile or ranks accounts (the anti-rotation lock).
+ * It polls Claude profiles for their OWN usage, appends history, detects
+ * active-profile threshold crossings, and writes `daemon-state.json` so
+ * `status`/the GUI can read a fresh snapshot without hitting the API. When
+ * `autoSwitch.enabled` (default OFF) it also watches every profile and moves the
+ * active pointer to the account with the most headroom once the active one hits
+ * the configured threshold — pooling accounts to route around limits, which the
+ * operator opts into deliberately (see `AutoSwitchConfig`). With auto-switch off
+ * it stays a pure poller/cache that never mutates the active profile.
  *
  * The pure helpers (single-instance, poll-target selection, backoff, state
- * freshness) are exported for unit testing; `runDaemon` is the loop.
+ * freshness, switch decision in `usage.ts`) are exported for unit testing;
+ * `runDaemon` is the loop.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { ROOT, activeFor, configDir, listProfiles } from "./profiles.js";
+import { ROOT, activeFor, configDir, listProfiles, readAutoSwitch, setActive } from "./profiles.js";
 import { profileDir } from "./profiles.js";
 import { accessTokenOf, fetchUsage, liveSessionPids, readProfileCredential } from "./api.js";
-import { parseUsage, detectCrossings, ThresholdState, UsageSnapshot } from "./usage.js";
+import { parseUsage, detectCrossings, pickSwitchTarget, SwitchCandidate, ThresholdState, UsageSnapshot } from "./usage.js";
 import { appendSample } from "./history.js";
 
 export const PIDFILE = path.join(ROOT, "daemon.pid");
@@ -102,15 +106,18 @@ export function releaseSingleInstance(myPid: number, file: string = PIDFILE): vo
 // ---------- poll discipline ----------
 
 /**
- * Which Claude profiles to poll this cycle: the active one plus any with a live
- * session — never a busy-poll of idle accounts. `liveCheck` is injected so the
- * selection is unit-testable.
+ * Which Claude profiles to poll this cycle. Normally the active one plus any
+ * with a live session — never a busy-poll of idle accounts. With `watchAll`
+ * (auto-switch enabled) every profile is polled, since the switch decision
+ * needs each candidate's headroom. `liveCheck` is injected for testability.
  */
 export function selectPollTargets(
   claudeNames: string[],
   active: string | null,
   liveCheck: (name: string) => boolean,
+  watchAll = false,
 ): string[] {
+  if (watchAll) return [...claudeNames];
   const targets = new Set<string>();
   if (active && claudeNames.includes(active)) targets.add(active);
   for (const n of claudeNames) if (liveCheck(n)) targets.add(n);
@@ -139,8 +146,10 @@ interface RunOptions {
 async function pollOnce(state: DaemonState, thresholds: Map<string, ThresholdState>, log: (l: string) => void): Promise<number> {
   const names = listProfiles("claude");
   const active = activeFor("claude");
-  const targets = selectPollTargets(names, active, (n) => liveSessionPids(configDir("claude", n)).length > 0);
+  const autoSwitch = readAutoSwitch();
+  const targets = selectPollTargets(names, active, (n) => liveSessionPids(configDir("claude", n)).length > 0, autoSwitch.enabled);
   let failures = 0;
+  const polled: SwitchCandidate[] = [];
 
   for (const name of targets) {
     const creds = readProfileCredential(configDir("claude", name));
@@ -158,6 +167,7 @@ async function pollOnce(state: DaemonState, thresholds: Map<string, ThresholdSta
     }
     const snapshot = parseUsage(raw);
     state.profiles[`claude/${name}`] = snapshot;
+    polled.push({ name, snapshot });
     appendSample(path.join(profileDir("claude", name), "usage-history.json"), snapshot);
 
     // Threshold crossings for the ACTIVE profile only.
@@ -168,6 +178,18 @@ async function pollOnce(state: DaemonState, thresholds: Map<string, ThresholdSta
       for (const c of crossings) log(`threshold: claude/${name} ${c.window} crossed ${c.threshold}% (now ${c.utilization}%)`);
     }
   }
+
+  // Opt-in auto-switch: when the active profile is out of headroom, move the
+  // active pointer to the same-provider account with the most headroom. Only
+  // affects NEW sessions (running ones keep their env). Off unless configured.
+  if (autoSwitch.enabled && active) {
+    const target = pickSwitchTarget(active, polled, autoSwitch.threshold);
+    if (target && target !== active) {
+      setActive("claude", target);
+      log(`auto-switch: claude/${active} out of headroom (≥${autoSwitch.threshold}%) → switched active to claude/${target}`);
+    }
+  }
+
   state.lastPoll = new Date().toISOString();
   state.lastError = failures > 0 ? `${failures} profile(s) failed to poll` : null;
   return failures;
