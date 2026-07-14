@@ -13,8 +13,10 @@
     "windows": [
       {
         "title": "agent-switch",
-        "width": 380,
-        "height": 560,
+        "width": 1040,
+        "height": 620,
+        "minWidth": 640,
+        "minHeight": 480,
         "visible": false,
         "resizable": true
       }

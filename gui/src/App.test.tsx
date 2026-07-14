@@ -82,9 +82,9 @@ beforeEach(() => {
   // All providers enabled by default in tests so the gemini tab is present for
   // the auto-switch-dot / footer assertions below.
   ipc.getProviders.mockResolvedValue({
-    claude: { cli: true, ui: true },
-    codex: { cli: true, ui: true },
-    gemini: { cli: true, ui: true },
+    claude: { cli: true, ui: true, installed: true },
+    codex: { cli: true, ui: true, installed: true },
+    gemini: { cli: true, ui: true, installed: true },
   });
   ipc.setProvider.mockResolvedValue(undefined);
   ipc.setProfileLabel.mockResolvedValue(undefined);
@@ -269,14 +269,29 @@ describe("App", () => {
 
   it("hides a disabled provider's tab in the main view", async () => {
     ipc.getProviders.mockResolvedValue({
-      claude: { cli: true, ui: true },
-      codex: { cli: true, ui: true },
-      gemini: { cli: false, ui: false }, // disabled → no tab
+      claude: { cli: true, ui: true, installed: true },
+      codex: { cli: true, ui: true, installed: true },
+      gemini: { cli: false, ui: false, installed: true }, // disabled → no tab
     });
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i });
     expect(screen.queryByRole("tab", { name: /gemini/i })).toBeNull();
     expect(screen.getByRole("tab", { name: /codex/i })).toBeTruthy();
+  });
+
+  it("shows a not-installed provider in the Providers tab but blocks enabling it", async () => {
+    ipc.getProviders.mockResolvedValue({
+      claude: { cli: true, ui: true, installed: true },
+      codex: { cli: true, ui: true, installed: true },
+      gemini: { cli: false, ui: false, installed: false }, // not installed, off
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /providers/i }));
+    const geminiCli = await screen.findByRole("button", { name: /gemini cli disabled \(not installed\)/i });
+    expect((geminiCli as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(geminiCli);
+    expect(ipc.setProvider).not.toHaveBeenCalled(); // can't enable a missing provider
   });
 
   it("changes the theme from the Design settings tab", async () => {

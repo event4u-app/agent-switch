@@ -34,7 +34,7 @@ import {
   type ProfileLabel,
   type UsageSnapshot,
   type ProviderId,
-  type ProvidersConfig,
+  type ProvidersStatus,
   type ProviderSurface,
 } from "./transforms.js";
 import { cn } from "@/lib/utils";
@@ -95,7 +95,7 @@ export default function App() {
   const [usage, setUsage] = useState<Record<string, UsageSnapshot>>({});
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [auto, setAuto] = useState<AutoSwitchMap | null>(null);
-  const [providers, setProviders] = useState<ProvidersConfig | null>(null);
+  const [providers, setProviders] = useState<ProvidersStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -674,7 +674,7 @@ const PROVIDER_SURFACES: { id: ProviderSurface; label: string }[] = [
  *  provider without deleting its profiles; `onChange` refreshes the main view so
  *  its tab strip updates immediately. */
 function ProvidersSettings({ onChange }: { onChange: () => void }) {
-  const [cfg, setCfg] = useState<ProvidersConfig | null>(null);
+  const [cfg, setCfg] = useState<ProvidersStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -701,30 +701,49 @@ function ProvidersSettings({ onChange }: { onChange: () => void }) {
       <CardContent className="space-y-3 p-3">
         <div className="text-xs text-muted-foreground">
           Enable the providers you use. Disabling one hides it — your profiles are kept and return when you re-enable it.
+          A provider that isn&apos;t installed is shown but can&apos;t be enabled.
         </div>
         {cfg === null && !err && <div className="text-xs text-muted-foreground">…</div>}
         {cfg &&
-          PROVIDERS.map((pid) => (
-            <div
-              key={pid}
-              className="flex items-center justify-between gap-2 border-t border-border pt-3 first:border-t-0 first:pt-0"
-            >
-              <div className="text-[13px] font-medium">{PROVIDER_LABEL[pid]}</div>
-              <div className="flex gap-1">
-                {PROVIDER_SURFACES.map((s) => (
-                  <Button
-                    key={s.id}
-                    size="sm"
-                    variant={cfg[pid][s.id] ? "default" : "outline"}
-                    onClick={() => toggle(pid, s.id)}
-                    aria-label={`${PROVIDER_LABEL[pid]} ${s.label} ${cfg[pid][s.id] ? "enabled" : "disabled"}`}
-                  >
-                    {s.label}
-                  </Button>
-                ))}
+          PROVIDERS.map((pid) => {
+            const installed = cfg[pid].installed;
+            return (
+              <div
+                key={pid}
+                className="flex items-center justify-between gap-2 border-t border-border pt-3 first:border-t-0 first:pt-0"
+              >
+                <div>
+                  <div className={cn("text-[13px] font-medium", !installed && "text-muted-foreground")}>
+                    {PROVIDER_LABEL[pid]}
+                  </div>
+                  {!installed && <div className="text-[11px] text-muted-foreground">not installed</div>}
+                </div>
+                <div className="flex gap-1">
+                  {PROVIDER_SURFACES.map((s) => {
+                    const on = cfg[pid][s.id];
+                    // Can't turn a surface ON when the provider isn't installed;
+                    // turning an already-on one OFF stays allowed.
+                    const blocked = !installed && !on;
+                    return (
+                      <Button
+                        key={s.id}
+                        size="sm"
+                        variant={on ? "default" : "outline"}
+                        disabled={blocked}
+                        title={blocked ? `Install ${PROVIDER_LABEL[pid]} to enable it` : undefined}
+                        onClick={() => toggle(pid, s.id)}
+                        aria-label={`${PROVIDER_LABEL[pid]} ${s.label} ${on ? "enabled" : "disabled"}${
+                          blocked ? " (not installed)" : ""
+                        }`}
+                      >
+                        {s.label}
+                      </Button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         {err && <div className="text-xs text-destructive">{err}</div>}
       </CardContent>
     </Card>

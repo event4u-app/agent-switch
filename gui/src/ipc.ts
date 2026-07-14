@@ -7,7 +7,7 @@
 import { Command } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
 import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
-import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, UsageSnapshot, ProvidersConfig, ProviderSurface } from "./transforms.js";
+import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, UsageSnapshot, ProvidersStatus, ProviderSurface } from "./transforms.js";
 
 async function runCli(args: string[]): Promise<string> {
   const out = await Command.create("agent-switch", args).execute();
@@ -115,9 +115,10 @@ export async function setAutoSwitch(provider: ProviderId, enabled: boolean, thre
   await runCli(args);
 }
 
-/** Every provider's enabled surfaces (the Providers settings tab). Thin wrapper
- *  over `providers status --json`; the GUI never re-implements the enabled-set. */
-export async function getProviders(): Promise<ProvidersConfig> {
+/** Every provider's enabled surfaces + installed flag (the Providers settings
+ *  tab). Thin wrapper over `providers status --json`; the GUI never
+ *  re-implements the enabled-set. */
+export async function getProviders(): Promise<ProvidersStatus> {
   return JSON.parse(await runCli(["providers", "status", "--json"]));
 }
 

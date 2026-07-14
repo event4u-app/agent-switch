@@ -103,6 +103,13 @@ logic). A provider has surfaces (`cli`, `ui`); a surface is enable/disable-able.
 - [x] **Step 4:** The main-view tab-strip is derived from the enabled-set
       (`enabledIds`), not the hardcoded literal; the strip's grid is dynamic and
       a disabled active provider auto-jumps to the first enabled one.
+- [x] **Step 5:** Install detection — `providers status` reports `installed`
+      (CLI binary on PATH, via `isProviderInstalled`). The Providers tab shows a
+      not-installed provider but disables *enabling* it (turning an already-on
+      surface off stays allowed).
+      <!-- verify: App.test.tsx "not-installed provider … blocks enabling" + functional `providers status --json` ✓ -->
+- [x] **Step 6:** Wider default window — landscape `1040×620` (was `380×560`),
+      with sensible min bounds, in `gui/src-tauri/tauri.conf.json`.
 
 ## Phase 3: Auto-switch — global default OFF, no ToS warning, signal-gated
 
