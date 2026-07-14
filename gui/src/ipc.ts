@@ -6,6 +6,7 @@
 
 import { Command } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
+import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
 import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, UsageSnapshot } from "./transforms.js";
 
 async function runCli(args: string[]): Promise<string> {
@@ -118,6 +119,36 @@ export async function setAutoSwitch(provider: ProviderId, enabled: boolean, thre
  *  — the UI gates this behind an explicit confirm, then quits. */
 export async function uninstall(): Promise<void> {
   await runCli(["uninstall", "--force"]);
+}
+
+/** Launch-at-login (Settings → General), backed by tauri-plugin-autostart. */
+export async function getAutostart(): Promise<boolean> {
+  return autostartIsEnabled();
+}
+export async function setAutostart(on: boolean): Promise<void> {
+  if (on) await autostartEnable();
+  else await autostartDisable();
+}
+
+/** Enable autostart ON by default, but only on the very first run — a one-shot
+ *  keyed on localStorage so a user who later turns it OFF is never overridden. */
+export async function applyAutostartDefault(): Promise<void> {
+  const KEY = "agent-switch-autostart-defaulted";
+  try {
+    if (localStorage.getItem(KEY) === "1") return;
+  } catch {
+    /* treat unreadable storage as not-yet-defaulted */
+  }
+  try {
+    localStorage.setItem(KEY, "1");
+  } catch {
+    /* best-effort */
+  }
+  try {
+    await autostartEnable();
+  } catch {
+    /* best-effort — the Settings toggle still reflects the real state */
+  }
 }
 
 /** Quit the whole app (the `quit` Tauri command → app.exit). Closing the
