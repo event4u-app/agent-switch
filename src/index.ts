@@ -32,6 +32,14 @@ import {
   requireProfile,
   activeFor,
   setActive,
+  labelFor,
+  setLabel,
+  clearLabel,
+  isProfileLabel,
+  PROFILE_LABELS,
+  readAutoSwitch,
+  setAutoSwitch,
+  ROOT,
 } from "./profiles.js";
 import { Provider, ProviderId, PROVIDER_IDS, provider } from "./providers.js";
 import { parseArgs, parseRun } from "./args.js";
@@ -55,8 +63,8 @@ import {
   readProfileCredential,
 } from "./api.js";
 import { UsageSnapshot, formatSnapshot, parseUsage } from "./usage.js";
-import { isFresh, readDaemonState } from "./daemon.js";
-import { cmdService } from "./service.js";
+import { isFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daemon.js";
+import { cmdService, serviceUninstall } from "./service.js";
 
 // Per-OS credential store (keychain-then-file on darwin, file-only elsewhere).
 const credentials = credentialStore();
@@ -214,6 +222,7 @@ function cmdList(providerId?: ProviderId, json = false): void {
         provider: pid,
         name: n,
         identity: identity(pid, n),
+        label: labelFor(pid, n),
         active: activeFor(pid) === n,
         liveSessions: pid === "claude" ? liveSessionPids(configDir("claude", n)).length : 0,
       })),
@@ -414,11 +423,108 @@ function cmdRemove(providerId: ProviderId, name?: string, force = false): void {
   const removedEntry = providerId === "claude" ? credentials.removeEntry(configDir(providerId, n)) : false;
   fs.rmSync(profileDir(providerId, n), { recursive: true, force: true });
   if (activeFor(providerId) === n) setActive(providerId, null);
+  clearLabel(providerId, n); // drop its label so it can't linger as an orphan
   const pruned = pruneMappings(providerId, n);
 
   console.log(`Removed ${providerId} profile "${n}".`);
   if (removedEntry) console.log("Removed its keychain credential entry.");
   if (pruned.length > 0) console.log(`Removed ${pruned.length} directory mapping(s).`);
+}
+
+/** Set or clear a profile's label (Work / Personal / Other). */
+function cmdLabel(providerId: ProviderId, name?: string, label?: string): void {
+  const n = requireProfile(providerId, name, "label");
+  if (label === undefined || label === "none" || label === "clear") {
+    setLabel(providerId, n, null);
+    console.log(`Cleared label for ${providerId}/${n}.`);
+    return;
+  }
+  if (!isProfileLabel(label)) {
+    die(`invalid label "${label}" (choose: ${PROFILE_LABELS.join(", ")}, or "none" to clear)`);
+  }
+  setLabel(providerId, n, label);
+  console.log(`Labeled ${providerId}/${n} as ${label}.`);
+}
+
+/** Enable/disable opt-in auto-switch, or show the current setting. */
+function cmdAutoswitch(mode?: string, flags: Record<string, string | boolean> = {}): void {
+  const thresholdFlag = flags.threshold;
+  const threshold = typeof thresholdFlag === "string" ? Number(thresholdFlag) : undefined;
+  if (threshold !== undefined && (!Number.isFinite(threshold) || threshold < 1 || threshold > 100)) {
+    die("--threshold must be a number between 1 and 100");
+  }
+  if (mode === "on" || mode === "off") {
+    const cfg = setAutoSwitch({ enabled: mode === "on", ...(threshold !== undefined ? { threshold } : {}) });
+    console.log(`Auto-switch ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%).`);
+    if (cfg.enabled) {
+      console.log(
+        "The daemon will move the active Claude profile to the account with the most headroom\n" +
+          "once the active one hits the threshold. Pooling accounts to route around limits may\n" +
+          "conflict with a provider's usage policy — you enabled this deliberately.\n" +
+          "Run `agent-switch service start` so the daemon is watching.",
+      );
+    }
+    return;
+  }
+  if (mode === undefined || mode === "status") {
+    const cfg = readAutoSwitch();
+    if (flags.json) {
+      console.log(JSON.stringify(cfg));
+      return;
+    }
+    console.log(`Auto-switch is ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%).`);
+    return;
+  }
+  die("usage: agent-switch autoswitch on|off|status [--threshold <1-100>] [--json]");
+}
+
+/**
+ * Remove agent-switch's own footprint. Deletes every profile (incl. Claude
+ * keychain entries), the state/mappings, and stops+uninstalls the daemon. Does
+ * NOT touch the provider CLIs' own default installs, nor `npm`/shell setup —
+ * those are surfaced as manual follow-ups. Destructive → requires confirmation.
+ */
+function cmdUninstall(flags: Record<string, string | boolean> = {}): void {
+  const claudeProfiles = listProfiles("claude");
+  const allProfiles = listAllProfiles();
+  if (!flags.force && !flags.yes) {
+    console.log("This removes ALL agent-switch data:");
+    console.log(`  - ${allProfiles.length} profile(s) and their configs under ${ROOT}`);
+    console.log(`  - ${claudeProfiles.length} Claude keychain credential entr(y/ies) (macOS)`);
+    console.log("  - directory mappings, active-profile state, and the background daemon/service");
+    console.log("It does NOT touch your default claude/codex/gemini installs.");
+    console.log("\nRe-run with --force to proceed:  agent-switch uninstall --force");
+    return;
+  }
+
+  // Stop + uninstall the background service, and kill a manually-started daemon.
+  try {
+    serviceUninstall();
+  } catch {
+    /* best-effort */
+  }
+  const pid = readPid(PIDFILE);
+  if (pid && processAlive(pid)) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  // Drop Claude keychain entries before deleting the dirs (darwin only; no-op elsewhere).
+  let removedEntries = 0;
+  for (const n of claudeProfiles) {
+    if (credentials.removeEntry(configDir("claude", n))) removedEntries++;
+  }
+
+  fs.rmSync(ROOT, { recursive: true, force: true });
+
+  console.log(`Removed ${allProfiles.length} profile(s) and all agent-switch data under ${ROOT}.`);
+  if (removedEntries > 0) console.log(`Removed ${removedEntries} Claude keychain entr(y/ies).`);
+  console.log("Follow-ups (manual, if you set them up):");
+  console.log("  - `npm uninstall -g agent-switch`  (or `npm unlink -g agent-switch`)");
+  console.log("  - remove the `agent-switch shellenv` line from your shell rc");
 }
 
 async function cmdWeb(name?: string): Promise<void> {
@@ -480,8 +586,11 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch share on|sync|off [--history] [--source <profile|default>]   (Claude)
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile
+  agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
+  agent-switch autoswitch on|off|status [--threshold <1-100>]   opt-in auto-switch (default OFF)
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
   agent-switch service run|start|stop|status|install|uninstall   background usage daemon
+  agent-switch uninstall [--force]             remove all agent-switch data + daemon
   agent-switch doctor                          per-OS, per-provider self-check`);
 }
 
@@ -514,6 +623,9 @@ async function main(): Promise<void> {
     case "import": return cmdImport(providerId, positional[0]);
     case "use": return cmdUse(providerId, positional[0]);
     case "deactivate": return cmdDeactivate(providerId);
+    case "label": return cmdLabel(providerId, positional[0], positional[1]);
+    case "autoswitch": return cmdAutoswitch(positional[0], flags);
+    case "uninstall": return cmdUninstall(flags);
     case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
     case "list": case "ls": return cmdList(providerExplicit ? providerId : undefined, !!flags.json);
     case "status": return cmdStatus(providerExplicit ? providerId : undefined, positional[0], !!flags.json);

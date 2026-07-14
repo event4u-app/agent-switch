@@ -23,6 +23,11 @@ import {
   deactivateProfile,
   removeProfile,
   quitApp,
+  profileUsage,
+  setProfileLabel,
+  getAutoSwitch,
+  setAutoSwitch,
+  uninstall,
 } from "./ipc.js";
 
 beforeEach(() => vi.clearAllMocks());
@@ -90,5 +95,36 @@ describe("ipc", () => {
   it("quitApp invokes the `quit` Tauri command", async () => {
     await quitApp();
     expect(invoke).toHaveBeenCalledWith("quit");
+  });
+
+  it("profileUsage reads a named profile's own usage snapshot", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: '{"provider":"claude","name":"work","identity":null,"usage":{"windows":[],"routines":null,"capturedAt":"x"}}', stderr: "" });
+    const u = await profileUsage("claude", "work");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["status", "--provider", "claude", "work", "--json"]);
+    expect(u).toEqual({ windows: [], routines: null, capturedAt: "x" });
+  });
+
+  it("setProfileLabel sets a label, and clears with `none`", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+    await setProfileLabel("claude", "work", "Work");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["label", "work", "Work", "--provider", "claude"]);
+    await setProfileLabel("claude", "work", null);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["label", "work", "none", "--provider", "claude"]);
+  });
+
+  it("getAutoSwitch / setAutoSwitch talk to the autoswitch command", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: '{"enabled":true,"threshold":90}', stderr: "" });
+    expect(await getAutoSwitch()).toEqual({ enabled: true, threshold: 90 });
+    expect(create).toHaveBeenCalledWith("agent-switch", ["autoswitch", "status", "--json"]);
+    await setAutoSwitch(true, 80);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["autoswitch", "on", "--threshold", "80"]);
+    await setAutoSwitch(false);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["autoswitch", "off"]);
+  });
+
+  it("uninstall runs `uninstall --force`", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+    await uninstall();
+    expect(create).toHaveBeenCalledWith("agent-switch", ["uninstall", "--force"]);
   });
 });

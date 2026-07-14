@@ -78,6 +78,9 @@ agent-switch add event4u
 | `agent-switch share on` | one settings/skills/commands/agents tree for all profiles |
 | `agent-switch web work` | claude.ai in a persistent per-profile browser (see below) |
 | `agent-switch remove old --force` | delete a profile incl. its keychain entry |
+| `agent-switch label work Work` | tag a profile (`Work` / `Personal` / `Other`, or `none` to clear) |
+| `agent-switch autoswitch on --threshold 90` | opt-in auto-switch on limit (off by default; see below) |
+| `agent-switch uninstall --force` | remove all agent-switch data, keychain entries, and the daemon |
 | `agent-switch doctor` | per-OS self-check (claude on PATH, config, creds, share links) |
 
 ## Per-repo accounts (directory mappings)
@@ -181,15 +184,22 @@ Usage readout is per-provider: Claude exposes an OAuth `/usage` endpoint;
 **Codex and Gemini have no usage readout**, so they show identity only (never a
 fabricated number).
 
-### Why no automatic account rotation?
+### Automatic account rotation (opt-in, off by default)
 
-`agent-switch` deliberately does **not** rank accounts by remaining headroom,
-suggest a "switch to X", or switch on hitting a limit — for any provider.
-Pooling subscriptions to route around rate limits violates the vendors' usage
-policies, and the decision engine minus the final switch is the same violation.
-The tool shows **your own** usage (the same information the vendors' native
-`/usage` surfaces show) and switches only when **you** ask. Rationale + the full
-rejected design: [`agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md`](agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md).
+By default `agent-switch` only switches when **you** ask, and shows **your own**
+usage per profile (the same information the vendors' native `/usage` surfaces
+show). It never nags or ranks unless you turn rotation on.
+
+Opt-in auto-switch (`agent-switch autoswitch on [--threshold N]`) lets the
+background daemon move the active Claude profile to the account with the most
+headroom once the active one hits the threshold. It is **off unless you enable
+it**, because pooling subscriptions to route around rate limits may conflict
+with a provider's usage policy — that trade-off is yours to make, deliberately.
+Switching only affects **new** sessions; running ones keep their environment.
+
+Earlier this rotation was rejected outright; that decision was later reversed in
+favour of the opt-in design above. Historical context:
+[`agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md`](agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md).
 
 ## Layout
 

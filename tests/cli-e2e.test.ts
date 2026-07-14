@@ -51,6 +51,59 @@ test("flag-first `use --provider codex work` activates the right profile", gate,
   }
 });
 
+test("`label` tags a profile and surfaces it in `list --json`", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work");
+    run(home, ["label", "work", "Work"]);
+    const rows = JSON.parse(run(home, ["list", "--json"]));
+    assert.equal(rows.find((r: any) => r.name === "work").label, "Work");
+    run(home, ["label", "work", "none"]); // clear
+    const cleared = JSON.parse(run(home, ["list", "--json"]));
+    assert.equal(cleared.find((r: any) => r.name === "work").label, null);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`autoswitch on --threshold` persists and defaults OFF", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    assert.match(run(home, ["autoswitch", "status"]), /OFF/);
+    run(home, ["autoswitch", "on", "--threshold", "88"]);
+    const state = JSON.parse(fs.readFileSync(path.join(home, "state.json"), "utf8"));
+    assert.equal(state.autoSwitch.enabled, true);
+    assert.equal(state.autoSwitch.threshold, 88); // value did not leak to a positional
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`uninstall --force` removes all agent-switch data", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work");
+    seed(home, "codex", "oai");
+    assert.equal(fs.existsSync(home), true);
+    run(home, ["uninstall", "--force"]);
+    assert.equal(fs.existsSync(home), false); // ROOT gone
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`uninstall` without --force does not delete anything", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work");
+    const out = run(home, ["uninstall"]);
+    assert.match(out, /--force/);
+    assert.equal(fs.existsSync(path.join(home, "claude", "work")), true); // untouched
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("`deactivate --provider codex` clears only that provider's active profile", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
