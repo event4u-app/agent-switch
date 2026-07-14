@@ -54,6 +54,6 @@ the observed header shape before building on them.
 | Gate | Date | Machine | Versions | Result |
 |---|---|---|---|---|
 | G0.4 | 2026-07-14 | macOS 15.7.3 | claude 2.1.209, codex 0.134.0 | PASS (env via `ps -wwE` for node children; cwd via `lsof`). Original probe against `sleep` was a false negative — Apple platform binaries block env readout; node processes (claude/codex) do not. |
-| G0.1 | — | — | — | open (needs two logged-in Claude profiles) |
-| G0.2 | — | — | — | open (needs two logged-in Claude profiles) |
+| G0.1 | 2026-07-14 | macOS 15.7.3 | claude 2.1.209 | PASS — Matze1→Matze2: moved transcript resumed on target with full canary context. Move (M2) confirmed as the core takeover primitive. Harness fix: canonicalize cwd (`/var`→`/private/var`) before encoding the projects dir. |
+| G0.2 | 2026-07-14 | macOS 15.7.3 | claude 2.1.209 | PASS — fork got a new session id + full context on target; source transcript byte-identical and still resumable. Keep-source (M3, `--fork-session`) is safe; takeover must delete the target's original-id copy after a successful fork. |
 | G0.3 | — | — | — | open (needs two authenticated codex homes) |
