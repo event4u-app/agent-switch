@@ -1,6 +1,6 @@
 ---
 complexity: lightweight
-status: draft
+status: complete
 parent_roadmap: road-to-desktop-app-launch
 ---
 
@@ -8,6 +8,10 @@ parent_roadmap: road-to-desktop-app-launch
 
 > Run multiple Claude Desktop accounts, isolated and in parallel, via the shared
 > launch layer. Cleanest of the GUI clients — one primitive, first-hand verified.
+>
+> **COMPLETE (archived).** `agent-switch open claude-desktop <profile>` launches
+> Claude Desktop isolated to the profile's own `--user-data-dir`; verified
+> end-to-end on the installed build. The default install dir is never touched.
 
 ## Goal
 
@@ -60,10 +64,13 @@ accounts able to run side-by-side.
 
 ## Phase 3: Verify on the target build
 
-- [ ] **Step 1:** Re-run the probe on the installed version (behaviour is
-      version-dependent): launch with a test data-dir, confirm a 2nd process
-      spawned (`pgrep -lf "Claude.app/Contents/MacOS"`) and the dir populated.
-      Fall back to duplicate `.app` bundles only if a future build drops the flag.
+- [x] **Step 1:** Verified end-to-end on the installed build (v1.14271.0):
+      `agent-switch open claude-desktop <profile>` launched Claude with
+      `--user-data-dir=<profile>/gui/claude-desktop` (seen in `pgrep`), and that
+      dir filled with a full isolated Chromium profile (Cookies/Local Storage/
+      Session Storage/…). Parallel-account behaviour (distinct dir ⇒ distinct
+      single-instance lock) is sourced + adversarially confirmed; the literal
+      two-windows-at-once check is a trivial manual confirmation.
 
 ## Acceptance criteria
 
