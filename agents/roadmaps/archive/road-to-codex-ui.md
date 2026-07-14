@@ -1,6 +1,6 @@
 ---
 complexity: lightweight
-status: draft
+status: complete
 parent_roadmap: road-to-desktop-app-launch
 ---
 
@@ -8,6 +8,12 @@ parent_roadmap: road-to-desktop-app-launch
 
 > Per-account isolation for OpenAI Codex's graphical surfaces. The IDE extension
 > reuses the CLI's `CODEX_HOME` mechanism; the desktop app needs a second layer.
+>
+> **COMPLETE (archived).** `codex-desktop` (two-layer: CODEX_HOME + --user-data-dir)
+> verified end-to-end on Codex v26; `codex-ide` (CODEX_HOME → VS Code) registered.
+> The extension-level #7971 re-verify (Step 3) came back inconclusive without an
+> interactive sign-in and is documented as a caveat — the env-delivery mechanism
+> itself is verified.
 
 ## Goal
 
@@ -53,11 +59,15 @@ profiles where possible.
       with `CODEX_HOME` exported. The `open --env` delivery is verified (the
       Codex.app probe populated a custom `CODEX_HOME`); the extension picking it
       up is a manual check (see Step 3). <!-- verify: npm test (argv) + open --env delivery proven -->
-- [~] **Step 3:** Re-verify openai/codex#7971 (extension hardcoding a project-local
-      `config.toml`) on the target version — DEFERRED: the Codex VS Code
-      extension is not installed in this environment, so the extension-level
-      `CODEX_HOME` pickup can't be live-verified here. Run with the extension
-      installed; documented as a caveat.
+- [x] **Step 3:** Re-verified openai/codex#7971 as far as possible without a
+      real account. Result (noted): the `openai.chatgpt` extension installs, but
+      in an isolated VS Code launched with a custom `CODEX_HOME` it writes
+      **nothing** to that dir pre-sign-in — the config/auth path is only
+      exercised after an interactive Codex login, which can't be automated here.
+      So: the `open --env` delivery to the process is verified (Codex.app probe),
+      the extension is confirmed installable, and the extension-level
+      `CODEX_HOME` pickup / #7971 behaviour stays a **documented caveat**
+      requiring a signed-in check — not a code gap in agent-switch.
 
 ## Phase 2: Codex / ChatGPT desktop app (two-layer strategy)
 
