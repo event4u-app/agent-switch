@@ -176,6 +176,135 @@ test("first `dir` after a v1→v2 upgrade migrates and prints only the clean con
   }
 });
 
+// ---------- sessions + takeover (road-to-session-handoff, Phases 1-2) --------
+// All file mechanics on seeded fakes; the real `claude --resume` semantics are
+// contract-gated. `--print-only` keeps every test launch-free, and execFileSync
+// has no TTY stdin, so the exec-into-session branch can never fire here.
+
+function seedTranscript(home: string, profile: string, encDir: string, id: string): string {
+  const dir = path.join(home, "claude", profile, "config", "projects", encDir);
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${id}.jsonl`);
+  fs.writeFileSync(file, `${JSON.stringify({ cwd: "/tmp/proj", summary: "seeded" })}\n{"opaque":1}\n`);
+  return file;
+}
+
+test("`sessions --json` lists seeded transcripts with metadata only (GUI contract)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work");
+    seedTranscript(home, "work", "-tmp-proj", "0000-e2e-id");
+    const rows = JSON.parse(run(home, ["sessions", "--json"]));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].provider, "claude");
+    assert.equal(rows[0].profile, "work");
+    assert.equal(rows[0].sessionId, "0000-e2e-id");
+    assert.equal(rows[0].cwd, "/tmp/proj");
+    assert.equal(rows[0].live, false);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`takeover --print-only` moves the transcript between profiles and prints the resume command", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "privat");
+    seed(home, "claude", "work");
+    const src = seedTranscript(home, "privat", "-tmp-proj", "0000-move-id");
+    const out = run(home, ["takeover", "0000-move-id", "--to", "work", "--print-only"]);
+    assert.match(out, /run work -- --resume 0000-move-id/);
+    assert.equal(fs.existsSync(src), false); // moved out of the source...
+    assert.equal(
+      fs.existsSync(path.join(home, "claude", "work", "config", "projects", "-tmp-proj", "0000-move-id.jsonl")),
+      true, // ...into the same encoded dir on the target
+    );
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`takeover` refuses a target collision and a multi-profile hit (divergence guards)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "privat");
+    seed(home, "claude", "work");
+    seedTranscript(home, "privat", "-tmp-proj", "0000-dup-id");
+    seedTranscript(home, "work", "-tmp-proj", "0000-dup-id");
+    // Without --from: the same id in two profiles is surfaced, never guessed.
+    assert.throws(() => run(home, ["takeover", "0000-dup-id", "--to", "work", "--print-only"]), /MULTIPLE profiles/);
+    // With --from: the transfer hits the collision refusal; both copies survive.
+    assert.throws(
+      () => run(home, ["takeover", "0000-dup-id", "--from", "privat", "--to", "work", "--print-only"]),
+      /refusing to overwrite/,
+    );
+    assert.equal(fs.existsSync(path.join(home, "claude", "privat", "config", "projects", "-tmp-proj", "0000-dup-id.jsonl")), true);
+    assert.equal(fs.existsSync(path.join(home, "claude", "work", "config", "projects", "-tmp-proj", "0000-dup-id.jsonl")), true);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`takeover` refuses when the source profile has live sessions; `--force` overrides", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "privat");
+    seed(home, "claude", "work");
+    seedTranscript(home, "privat", "-tmp-proj", "0000-live-id");
+    // A live-session pid file for THIS test process — alive by definition.
+    const sess = path.join(home, "claude", "privat", "config", "sessions");
+    fs.mkdirSync(sess, { recursive: true });
+    fs.writeFileSync(path.join(sess, `${process.pid}.json`), "{}");
+
+    assert.throws(() => run(home, ["takeover", "0000-live-id", "--to", "work", "--print-only"]), /live Claude sessions/);
+    run(home, ["takeover", "0000-live-id", "--to", "work", "--print-only", "--force"]);
+    assert.equal(
+      fs.existsSync(path.join(home, "claude", "work", "config", "projects", "-tmp-proj", "0000-live-id.jsonl")),
+      true,
+    );
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`takeover --keep-source` refuses non-interactive runs (fork cleanup needs the TTY step)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "privat");
+    seed(home, "claude", "work");
+    seedTranscript(home, "privat", "-tmp-proj", "0000-fork-id");
+    assert.throws(
+      () => run(home, ["takeover", "0000-fork-id", "--to", "work", "--keep-source", "--print-only"]),
+      /interactive terminal/,
+    );
+    // Nothing moved by the refusal.
+    assert.equal(fs.existsSync(path.join(home, "claude", "privat", "config", "projects", "-tmp-proj", "0000-fork-id.jsonl")), true);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`takeover` on a shared history tree does no file ops, prints the resume command", { skip: process.platform === "win32" ? "POSIX symlinks" : gate.skip }, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "privat");
+    seed(home, "claude", "work");
+    const src = seedTranscript(home, "privat", "-tmp-proj", "0000-shared-id");
+    // Simulate `share on --history`: the target's projects/ links to the source's.
+    fs.symlinkSync(
+      path.join(home, "claude", "privat", "config", "projects"),
+      path.join(home, "claude", "work", "config", "projects"),
+      "dir",
+    );
+    const out = run(home, ["takeover", "0000-shared-id", "--to", "work", "--print-only", "--from", "privat"]);
+    assert.match(out, /share one history tree/);
+    assert.match(out, /run work -- --resume 0000-shared-id/);
+    assert.equal(fs.existsSync(src), true); // untouched
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("`list --json` emits the profile list as valid JSON (GUI contract)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
