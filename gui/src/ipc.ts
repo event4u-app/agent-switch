@@ -100,12 +100,16 @@ export interface AutoSwitch {
   threshold: number;
 }
 
-export async function getAutoSwitch(): Promise<AutoSwitch> {
+/** Auto-switch is per provider; `status --json` returns every provider's config
+ *  so the UI can show each tab's state at once. */
+export type AutoSwitchMap = Record<ProviderId, AutoSwitch>;
+
+export async function getAutoSwitch(): Promise<AutoSwitchMap> {
   return JSON.parse(await runCli(["autoswitch", "status", "--json"]));
 }
 
-export async function setAutoSwitch(enabled: boolean, threshold?: number): Promise<void> {
-  const args = ["autoswitch", enabled ? "on" : "off"];
+export async function setAutoSwitch(provider: ProviderId, enabled: boolean, threshold?: number): Promise<void> {
+  const args = ["autoswitch", enabled ? "on" : "off", "--provider", provider];
   if (threshold !== undefined) args.push("--threshold", String(threshold));
   await runCli(args);
 }

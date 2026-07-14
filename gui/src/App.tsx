@@ -13,7 +13,7 @@ import {
   setProfileLabel,
   switchProfile,
   uninstall,
-  type AutoSwitch,
+  type AutoSwitchMap,
 } from "./ipc.js";
 import { EmbeddedTerminal } from "./EmbeddedTerminal.js";
 import {
@@ -81,7 +81,7 @@ export default function App() {
   const [rows, setRows] = useState<ProfileRow[]>([]);
   const [selected, setSelected] = useState<ProviderId>("claude");
   const [usage, setUsage] = useState<Record<string, UsageSnapshot>>({});
-  const [auto, setAuto] = useState<AutoSwitch | null>(null);
+  const [auto, setAuto] = useState<AutoSwitchMap | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -193,6 +193,13 @@ export default function App() {
                       active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                     )}
                   >
+                    {auto?.[pid]?.enabled && (
+                      <span
+                        className="size-1.5 shrink-0 rounded-full bg-[hsl(var(--destructive))]"
+                        title={`Auto-switch on for ${PROVIDER_LABEL[pid]}`}
+                        aria-label={`Auto-switch on for ${PROVIDER_LABEL[pid]}`}
+                      />
+                    )}
                     {PROVIDER_LABEL[pid]}
                     {count > 0 && (
                       <span
@@ -359,13 +366,15 @@ export default function App() {
           <button
             className={cn(
               "flex items-center gap-1.5 text-[11px] transition-colors",
-              auto.enabled ? "text-[hsl(var(--success))]" : "text-muted-foreground hover:text-foreground",
+              auto[selected].enabled ? "text-[hsl(var(--destructive))]" : "text-muted-foreground hover:text-foreground",
             )}
-            onClick={() => act(() => setAutoSwitch(!auto.enabled))}
-            title="Auto-switch to the account with the most headroom when the active one hits its limit"
+            onClick={() => act(() => setAutoSwitch(selected, !auto[selected].enabled))}
+            title={`Auto-switch the active ${PROVIDER_LABEL[selected]} account to the one with the most headroom when it hits its limit (this provider only)`}
           >
-            <span className={cn("size-2 rounded-full", auto.enabled ? "bg-[hsl(var(--success))]" : "bg-border")} />
-            Auto-switch {auto.enabled ? `on (${auto.threshold}%)` : "off"}
+            <span
+              className={cn("size-2 rounded-full", auto[selected].enabled ? "bg-[hsl(var(--destructive))]" : "bg-border")}
+            />
+            Auto-switch · {PROVIDER_LABEL[selected]} {auto[selected].enabled ? `on (${auto[selected].threshold}%)` : "off"}
           </button>
         )}
         <div className="ml-auto flex items-center gap-1">
