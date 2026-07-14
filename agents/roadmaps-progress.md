@@ -6,10 +6,10 @@
 
 ## Overall
 
-**53 / 64 steps done · 83%**
+**59 / 59 steps done · 100%**
 
 ```text
-█████████████████████████████████░░░░░░░   83%
+████████████████████████████████████████   100%
 ```
 
 ## ⚠️ Iron Law 3 — unresolved deferred items
@@ -20,6 +20,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 |---|---:|---:|---:|
 | [road-to-agent-switch-gui-service.md](roadmaps/road-to-agent-switch-gui-service.md) | 21 | 12 | 0 |
 | [road-to-multi-provider-and-provider-settings.md](roadmaps/road-to-multi-provider-and-provider-settings.md) | 14 | 9 | 0 |
+| [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md) | 24 | 5 | 0 |
 
 ## Open roadmaps
 
@@ -27,7 +28,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-agent-switch-gui-service.md](roadmaps/road-to-agent-switch-gui-service.md) | 5 | 33 | 0 | 21 | 12 | 0 | 0 | ██████████ 100% |
 | 2 | [road-to-multi-provider-and-provider-settings.md](roadmaps/road-to-multi-provider-and-provider-settings.md) | 6 | 23 | 0 | 14 | 9 | 0 | 0 | ██████████ 100% |
-| 3 | [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md) | 6 | 29 | 11 | 18 | 0 | 0 | 0 | ██████░░░░ 62% |
+| 3 | [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md) | 6 | 29 | 0 | 24 | 5 | 0 | 0 | ██████████ 100% |
 
 ---
 
@@ -60,14 +61,14 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 ### [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md)
 
-**Session handoff between profiles (`sessions` + `takeover`)** — 18 / 29 done (62%)
+**Session handoff between profiles (`sessions` + `takeover`)** — 24 / 24 done (100%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
-| 0 | Verification spikes (falsification gates) | 🟡 in progress | 3 | 2 | 0 | 0 | 40% |
+| 0 | Verification spikes (falsification gates) | ✅ done | 0 | 2 | 3 | 0 | 100% |
 | 1 | `agent-switch sessions` — inventory + `--json` | ✅ done | 0 | 7 | 0 | 0 | 100% |
 | 2 | `agent-switch takeover` — per-session transfer (M2/M3) | ✅ done | 0 | 9 | 0 | 0 | 100% |
-| 3 | `run --tmux` + in-place handoff (M4, POSIX, opt-in) | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
-| 4 | GUI — profile → session list → one-click takeover | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
-| 5 | Codex parity — per the G0.3 outcome | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
+| 3 | `run --tmux` + in-place handoff (M4, POSIX, opt-in) | ✅ done | 0 | 3 | 0 | 0 | 100% |
+| 4 | GUI — profile → session list → one-click takeover | ✅ done | 0 | 3 | 0 | 0 | 100% |
+| 5 | Codex parity — per the G0.3 outcome | ⏸️ deferred | 0 | 0 | 2 | 0 | 0% |
 
