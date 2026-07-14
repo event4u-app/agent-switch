@@ -80,6 +80,16 @@ import {
 import { isFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daemon.js";
 import { cmdService, serviceUninstall } from "./service.js";
 import { APPS, buildLaunch, findApp, guiDataDir, isInstalled } from "./apps.js";
+import {
+  currentManagedSession,
+  currentTmuxSessionName,
+  newSessionArgs,
+  readTmuxRegistry,
+  recordManagedSession,
+  respawnPaneArgs,
+  tmuxAvailable,
+  tmuxSessionName,
+} from "./tmux.js";
 
 // Per-OS credential store (keychain-then-file on darwin, file-only elsewhere).
 const credentials = credentialStore();
@@ -212,7 +222,25 @@ function cmdDeactivate(providerId: ProviderId): void {
 
 function cmdRun(providerId: ProviderId, name: string | undefined, args: string[]): void {
   const n = requireProfile(providerId, name, "run");
-  process.exit(launch(provider(providerId), n, args));
+  const p = provider(providerId);
+  // `--tmux` is an agent-switch flag, not a passthrough flag — strip it.
+  const wantTmux = args.includes("--tmux");
+  const passthrough = args.filter((a) => a !== "--tmux");
+
+  if (wantTmux) {
+    if (!tmuxAvailable()) {
+      console.log("(--tmux unavailable — tmux not found or Windows; running normally.)");
+    } else {
+      // Wrap the session in an agent-switch-managed tmux session (recorded so
+      // `takeover --in-place` knows this pane is ours to respawn).
+      const sess = tmuxSessionName(providerId, n);
+      recordManagedSession(sess, { provider: providerId, profile: n });
+      const argv = newSessionArgs(sess, p.envVar, configDir(providerId, n), [p.binary, ...passthrough]);
+      const res = spawnSync("tmux", argv, { stdio: "inherit" });
+      process.exit(res.status ?? 1);
+    }
+  }
+  process.exit(launch(p, n, passthrough));
 }
 
 function printProfileLine(providerId: ProviderId, name: string, showLive: boolean): void {
@@ -487,6 +515,40 @@ function cmdSessions(
   }
 }
 
+/** M5 fallback: open the resume in a NEW terminal (macOS Terminal.app), else
+ *  print it. Used when --in-place is asked for but there is no managed pane. */
+function spawnNewTerminal(command: string): void {
+  if (process.platform === "darwin") {
+    const script = `tell application "Terminal"\nactivate\ndo script "${command}"\nend tell`;
+    spawnSync("osascript", ["-e", script], { stdio: "ignore" });
+    console.log("Opened the resume in a new Terminal window — close the old window when you're done.");
+  } else {
+    console.log(`Open a new terminal and run:\n  ${command}\n(then close the old window).`);
+  }
+}
+
+/**
+ * In-place handoff. Inside an agent-switch-MANAGED tmux pane, replace the
+ * running CLI with the resume command under the target profile's env (the pane
+ * persists) — only ever a pane whose tmux session name is recorded as managed,
+ * never a user's own terminal. Otherwise fall back to M5 (spawn a new terminal).
+ * Exits the process.
+ */
+function resumeInPlace(target: string, resumeArgs: string[], resumeCommand: string): void {
+  const mgmt = currentManagedSession(currentTmuxSessionName(), readTmuxRegistry());
+  if (!mgmt) {
+    spawnNewTerminal(resumeCommand); // M5 — no managed pane to respawn
+    process.exit(0);
+  }
+  const sess = tmuxSessionName(mgmt.provider, mgmt.profile);
+  const p = provider("claude");
+  const argv = respawnPaneArgs(sess, p.envVar, configDir("claude", target), [p.binary, ...resumeArgs]);
+  const res = spawnSync("tmux", argv, { stdio: "inherit" });
+  recordManagedSession(sess, { provider: "claude", profile: target }); // pane now runs the target
+  console.log(`Handed the session over to "${target}" in the managed tmux pane "${sess}".`);
+  process.exit(res.status ?? 0);
+}
+
 /**
  * `agent-switch takeover <session-id> --to <profile>` — move a session between
  * two Claude profiles and resume it there. Move by default; `--keep-source`
@@ -506,6 +568,11 @@ function cmdTakeover(sessionId?: string, flags: Record<string, string | boolean>
   const keepSource = !!flags["keep-source"];
   const printOnly = !!flags["print-only"];
   const json = !!flags.json;
+  const inPlace = !!flags["in-place"];
+  if (inPlace && (printOnly || json)) die("--in-place cannot be combined with --print-only or --json.");
+  if (inPlace && keepSource) {
+    die("--in-place cannot be combined with --keep-source (the fork-cleanup needs a separate interactive step).");
+  }
 
   // Source resolution: --from, or a scan across every Claude profile. More than
   // one hit means same-id divergence already exists — surface, never guess.
@@ -588,6 +655,7 @@ function cmdTakeover(sessionId?: string, flags: Record<string, string | boolean>
     process.exit(rc);
   }
   console.log(`Resume it with:\n  ${resumeCommand}`);
+  if (inPlace) resumeInPlace(target, resumeArgs, resumeCommand); // exits: respawn managed pane, else M5
   if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("claude"), target, resumeArgs));
 }
 
@@ -866,7 +934,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch import [--provider P] <name>    migrate the default install (no re-login)
   agent-switch use [--provider P] <name>       set the active profile for a provider
   agent-switch deactivate [--provider P]       clear the active profile for a provider
-  agent-switch run [--provider P] <name> [..]  launch the provider's CLI on a profile
+  agent-switch run [--provider P] <name> [--tmux] [..]  launch the provider's CLI (--tmux = managed tmux session, POSIX)
   agent-switch list [--provider P] [--json]    list profiles, grouped by provider
   agent-switch status [--provider P] [name] [--json]   identity (+ Claude usage); --json = active only
   agent-switch current [--provider P]          show the active profile(s)
@@ -877,7 +945,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch mappings                        list directory mappings
   agent-switch share on|sync|off [--history] [--source <profile|default>]   (Claude)
   agent-switch sessions [profile] [--recent N] [--json]   recent + live Claude sessions per profile
-  agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--print-only] [--force]   move a session to another profile and resume it
+  agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place] [--print-only] [--force]   move a session to another profile and resume it
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile

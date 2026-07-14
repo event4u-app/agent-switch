@@ -182,13 +182,21 @@ New module `src/sessions.ts` (pure, unit-testable) + `cmdSessions` in
 
 ## Phase 3: `run --tmux` + in-place handoff (M4, POSIX, opt-in)
 
-- [ ] `agent-switch run <profile> --tmux` wraps the session in an
-   agent-switch-managed tmux pane (named session, recorded in state).
-- [ ] `takeover --in-place`: inside a managed pane only — `send-keys` a clean
-   exit, wait for process exit, respawn `claude --resume <id>` with the target
-   profile's env in the same pane. **Never touch non-managed terminals.**
-- [ ] Fallback path (no tmux / win32): spawn-new-terminal (M5) with the resume
-   command; document the "close the old window" hint.
+- [x] `agent-switch run <profile> --tmux` wraps the session in an
+   agent-switch-managed tmux session (name `asw-<provider>-<profile>`, recorded
+   in `<ROOT>/tmux-sessions.json`). `src/tmux.ts` + `cmdRun`. <!-- verify: tmux.test.ts + live new-session probe (tmux 3.7b) ✓ -->
+- [x] `takeover --in-place`: only inside a managed pane (recorded-name check) —
+   `respawn-pane -k` replaces the pane's process with the target profile's env +
+   `claude --resume <id>` (the pane persists). Chosen over send-keys/wait because
+   send-keys /exit tears the pane down when the CLI is the pane's own command;
+   `-k` reliably kills-and-replaces. **Never touches a non-managed session.**
+   <!-- verify: tmux.test.ts (builders + managed-only detection) + live respawn-pane probe ✓ -->
+- [x] Fallback (no managed pane / non-macOS): M5 spawn-new-terminal
+   (`osascript` Terminal.app on macOS, print elsewhere) with the resume command
+   and the "close the old window" hint. <!-- verify: cli-e2e in-place refusal combos; spawnNewTerminal path -->
+
+**Note:** g01's live handoff canary (Phase 0) still gates full end-to-end proof
+with a real Claude session; the tmux orchestration mechanics are verified here.
 
 ## Phase 4: GUI — profile → session list → one-click takeover
 
