@@ -176,9 +176,17 @@ agent-switch apps                 # list launchable GUI apps + installed state
 agent-switch open <app> [profile] # launch an app on a profile (active if omitted)
 ```
 
-**Supported now:** **Claude Desktop** (`agent-switch open claude-desktop <profile>`)
-— `user-data-dir` strategy, parallel accounts. More clients (Codex UI, …) land
-via their roadmaps in `agents/roadmaps/`.
+**Supported now:**
+
+- **Claude Desktop** (`agent-switch open claude-desktop <profile>`) —
+  `user-data-dir` strategy, parallel accounts.
+- **Codex desktop** (`agent-switch open codex-desktop <profile>`) — **two
+  layers** in one launch: `CODEX_HOME` (agent auth, reuses the codex profile) +
+  `--user-data-dir` (the ChatGPT web session).
+- **Codex in VS Code** (`agent-switch open codex-ide <profile>`) — `CODEX_HOME`
+  only (the extension reads it from the editor's env).
+
+More clients land via their roadmaps in `agents/roadmaps/`.
 
 Caveats (why this is experimental):
 - **macOS-only for now**; launched via the `open` command, not a Finder/Dock
@@ -193,6 +201,11 @@ Caveats (why this is experimental):
   profile signs in once and expires on its own schedule. Because an OAuth
   callback can reach the wrong live window, **quit other Claude windows before
   signing into a new account.**
+- **Codex** — the desktop app lists only the *latest* session when a custom
+  `CODEX_HOME` is set (upstream openai/codex#14389; cosmetic, not an isolation
+  failure). For `codex-ide`, `CODEX_HOME` reaches a *newly launched* editor
+  process — if your editor is already running, quit it first so the new account
+  takes effect (also re-check openai/codex#7971 on your extension version).
 
 Verify a candidate Electron app honours `--user-data-dir` on your machine:
 

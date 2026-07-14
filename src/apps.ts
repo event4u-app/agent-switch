@@ -22,7 +22,7 @@ import { spawnSync } from "node:child_process";
 import { ProviderId } from "./providers.js";
 import { configDir, profileDir } from "./profiles.js";
 
-export type LaunchStrategy = "env" | "user-data-dir";
+export type LaunchStrategy = "env" | "user-data-dir" | "env+user-data-dir";
 
 export interface AppDescriptor {
   /** Stable id, e.g. "claude-desktop". */
@@ -54,6 +54,29 @@ export const APPS: readonly AppDescriptor[] = [
     provider: "claude",
     strategy: "user-data-dir",
   },
+  {
+    // Codex IDE extension: the editor reads CODEX_HOME from its process env, so
+    // isolation is the env strategy (reuses the codex profile's config dir).
+    // Targets VS Code; other editors are a future addition.
+    id: "codex-ide",
+    displayName: "Codex (VS Code)",
+    bundleId: "com.microsoft.VSCode",
+    provider: "codex",
+    strategy: "env",
+    envVar: "CODEX_HOME",
+  },
+  {
+    // Codex desktop app is two-layer (both verified first-hand): CODEX_HOME
+    // isolates the codex agent auth/config (reuses the codex profile dir), and
+    // --user-data-dir isolates the Electron/ChatGPT web session (per-profile
+    // gui dir). Both are set in one launch.
+    id: "codex-desktop",
+    displayName: "Codex",
+    bundleId: "com.openai.codex",
+    provider: "codex",
+    strategy: "env+user-data-dir",
+    envVar: "CODEX_HOME",
+  },
 ];
 
 export function findApp(id: string, registry: readonly AppDescriptor[] = APPS): AppDescriptor | null {
@@ -80,17 +103,19 @@ export interface LaunchSpec {
  * profiles run in parallel. Throws on a misconfigured descriptor.
  */
 export function buildLaunch(app: AppDescriptor, name: string): LaunchSpec {
-  if (app.strategy === "env") {
-    if (!app.envVar) throw new Error(`app "${app.id}" uses the env strategy but declares no envVar`);
-    return {
-      program: "open",
-      args: ["-n", "--env", `${app.envVar}=${configDir(app.provider, name)}`, "-b", app.bundleId],
-    };
+  const wantsEnv = app.strategy === "env" || app.strategy === "env+user-data-dir";
+  const wantsUdd = app.strategy === "user-data-dir" || app.strategy === "env+user-data-dir";
+  if (wantsEnv && !app.envVar) {
+    throw new Error(`app "${app.id}" uses an env strategy but declares no envVar`);
   }
-  return {
-    program: "open",
-    args: ["-n", "-b", app.bundleId, "--args", `--user-data-dir=${guiDataDir(app, name)}`],
-  };
+  // `open -n [--env VAR=<configDir>] -b <bundle> [--args --user-data-dir=<guiDir>]`.
+  // Some apps isolate two independent layers at once (e.g. Codex desktop: its
+  // agent config via CODEX_HOME + its web session via --user-data-dir).
+  const args = ["-n"];
+  if (wantsEnv) args.push("--env", `${app.envVar}=${configDir(app.provider, name)}`);
+  args.push("-b", app.bundleId);
+  if (wantsUdd) args.push("--args", `--user-data-dir=${guiDataDir(app, name)}`);
+  return { program: "open", args };
 }
 
 /** Best-effort: is the app installed? (macOS bundle-id lookup; false elsewhere.) */
