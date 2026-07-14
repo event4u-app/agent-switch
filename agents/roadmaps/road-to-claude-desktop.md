@@ -48,13 +48,15 @@ accounts able to run side-by-side.
 
 ## Phase 2: Caveats handled
 
-- [ ] **Step 1:** Ensure the flag reaches the app on every launch (spawn the
-      inner binary or `open -n --args`; never rely on a bare `.app` double-click).
-- [ ] **Step 2:** OAuth re-login guard: a `claude://` callback can reach the
-      wrong live instance. Document "quit other Claude windows before
-      re-logging-in a profile" (and/or detect + warn).
-- [ ] **Step 3:** Leave the default `~/Library/Application Support/Claude` dir
-      untouched (existing account); new profiles get new dirs.
+- [x] **Step 1:** Launch always goes through `open -n … --args` (spawned
+      detached in `cmdOpen`), never a bare `.app` double-click — the flag always
+      reaches the app.
+- [x] **Step 2:** OAuth re-login guard — the first-launch hint and the README
+      GUI section both state "quit other Claude windows before signing in"
+      (a `claude://` callback can reach the wrong live instance).
+- [x] **Step 3:** The default `~/Library/Application Support/Claude` dir is never
+      used — `buildLaunch` always targets the profile-scoped gui data dir
+      (asserted by a test that rejects any default-install path).
 
 ## Phase 3: Verify on the target build
 

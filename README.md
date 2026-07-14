@@ -149,9 +149,9 @@ agent-switch apps                 # list launchable GUI apps + installed state
 agent-switch open <app> [profile] # launch an app on a profile (active if omitted)
 ```
 
-**Status:** the launch layer is in place; **the registry ships empty** —
-support for specific clients (Claude Desktop, Codex UI) lands via their
-roadmaps in `agents/roadmaps/`.
+**Supported now:** **Claude Desktop** (`agent-switch open claude-desktop <profile>`)
+— `user-data-dir` strategy, parallel accounts. More clients (Codex UI, …) land
+via their roadmaps in `agents/roadmaps/`.
 
 Caveats (why this is experimental):
 - **macOS-only for now**; launched via the `open` command, not a Finder/Dock
@@ -159,7 +159,13 @@ Caveats (why this is experimental):
 - **Unofficial / version-fragile** — no vendor ships a built-in account
   switcher; an app update can change launcher behaviour. Re-verify per app.
 - The profile's data dir is never swapped on a live app (that risks
-  SingletonLock/DB corruption); isolation is by launch flag/env only.
+  SingletonLock/DB corruption); isolation is by launch flag/env only. Claude
+  Desktop's own default install (`~/Library/Application Support/Claude`) is
+  never touched — each profile gets its own dir.
+- **Claude Desktop login is a web session** (not a refreshable token): each
+  profile signs in once and expires on its own schedule. Because an OAuth
+  callback can reach the wrong live window, **quit other Claude windows before
+  signing into a new account.**
 
 Verify a candidate Electron app honours `--user-data-dir` on your machine:
 
