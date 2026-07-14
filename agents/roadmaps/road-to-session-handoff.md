@@ -104,11 +104,11 @@ the documented upstream workaround).
    README with run order + version-pinning log template). <!-- verify: shellcheck clean (2 documented info-level disables); g04 passes locally ✓ -->
 - [x] Run g04 on macOS — env recovery for node children + cwd via lsof.
    <!-- verify: PASS 2026-07-14, macOS 15.7.3 — env via ps -wwE, cwd via lsof; live scan enumerated 26 real claude pids with cwds ✓ -->
-- [ ] Run g01 (move handoff) with two logged-in profiles. **Gated: needs two
+- [~] Run g01 (move handoff) with two logged-in profiles. **Gated: needs two
    logged-in Claude profiles.** Record `claude --version` with the result.
-- [ ] Run g02 (copy+fork, keep-source safety) with two logged-in profiles.
+- [~] Run g02 (copy+fork, keep-source safety) with two logged-in profiles.
    **Gated as g01.**
-- [ ] Run g03 (Codex rollout transplant) with two authenticated codex homes.
+- [~] Run g03 (Codex rollout transplant) with two authenticated codex homes.
    Outcome (a)/(b)/(c) decides Phase 5's shape; honest-null is a valid result.
    **Gated: needs two codex logins.**
 
@@ -216,12 +216,12 @@ Gated on Phases 1–2 (CLI is the engine; GUI stays a `--json` client).
 
 ## Phase 5: Codex parity — per the G0.3 outcome
 
-- [ ] G0.3 outcome (a): extend `sessions`/`takeover` to codex rollout files
+- [~] G0.3 outcome (a): extend `sessions`/`takeover` to codex rollout files
    (`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl`, date-partitioned move).
    Outcome (b): same + index-reconciliation step. Outcome (c): `sessions` lists
    codex sessions; takeover degrades to spawn-in-target (`codex resume --all`);
    the null is recorded here with codex version + state-layer inventory.
-- [ ] Gemini and further providers only after a per-provider ground-truth
+- [~] Gemini and further providers only after a per-provider ground-truth
    table exists (per the multi-provider roadmap's discipline).
 
 ## Risks & rules
