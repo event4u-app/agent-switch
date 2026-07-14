@@ -11,6 +11,8 @@ const ipc = vi.hoisted(() => ({
   profileUsage: vi.fn(),
   getAutoSwitch: vi.fn(),
   setAutoSwitch: vi.fn(),
+  getProviders: vi.fn(),
+  setProvider: vi.fn(),
   setProfileLabel: vi.fn(),
   switchProfile: vi.fn(),
   openWeb: vi.fn(),
@@ -64,6 +66,14 @@ beforeEach(() => {
     gemini: { enabled: false, threshold: 95 },
   });
   ipc.setAutoSwitch.mockResolvedValue(undefined);
+  // All providers enabled by default in tests so the gemini tab is present for
+  // the auto-switch-dot / footer assertions below.
+  ipc.getProviders.mockResolvedValue({
+    claude: { cli: true, ui: true },
+    codex: { cli: true, ui: true },
+    gemini: { cli: true, ui: true },
+  });
+  ipc.setProvider.mockResolvedValue(undefined);
   ipc.setProfileLabel.mockResolvedValue(undefined);
   ipc.switchProfile.mockResolvedValue(undefined);
   ipc.deactivateProfile.mockResolvedValue(undefined);
@@ -217,6 +227,27 @@ describe("App", () => {
     await screen.findByRole("tab", { name: /claude/i });
     expect(screen.queryByLabelText(/auto-switch/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /auto-switch ·/i })).toBeNull();
+  });
+
+  it("toggles a provider surface from the Providers settings tab", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /providers/i }));
+    // gemini CLI is on (mock) → clicking it disables that surface
+    fireEvent.click(await screen.findByRole("button", { name: /gemini cli enabled/i }));
+    expect(ipc.setProvider).toHaveBeenCalledWith("gemini", "cli", false);
+  });
+
+  it("hides a disabled provider's tab in the main view", async () => {
+    ipc.getProviders.mockResolvedValue({
+      claude: { cli: true, ui: true },
+      codex: { cli: true, ui: true },
+      gemini: { cli: false, ui: false }, // disabled → no tab
+    });
+    render(<App />);
+    await screen.findByRole("tab", { name: /claude/i });
+    expect(screen.queryByRole("tab", { name: /gemini/i })).toBeNull();
+    expect(screen.getByRole("tab", { name: /codex/i })).toBeTruthy();
   });
 
   it("changes the theme from the Design settings tab", async () => {

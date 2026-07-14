@@ -13,6 +13,14 @@ export type ProviderId = "claude" | "codex" | "gemini";
 export const PROFILE_LABELS = ["Work", "Personal", "Other"] as const;
 export type ProfileLabel = (typeof PROFILE_LABELS)[number];
 
+/** Which surfaces of a provider are enabled (mirrors the CLI `providers` map). */
+export interface ProviderSurfaces {
+  cli: boolean;
+  ui: boolean;
+}
+export type ProviderSurface = keyof ProviderSurfaces;
+export type ProvidersConfig = Record<ProviderId, ProviderSurfaces>;
+
 export interface ProfileRow {
   provider: ProviderId;
   name: string;

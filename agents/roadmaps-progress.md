@@ -6,10 +6,10 @@
 
 ## Overall
 
-**24 / 42 steps done · 57%**
+**28 / 42 steps done · 67%**
 
 ```text
-███████████████████████░░░░░░░░░░░░░░░░░   57%
+███████████████████████████░░░░░░░░░░░░░   67%
 ```
 
 ## ⚠️ Iron Law 3 — unresolved deferred items
@@ -25,7 +25,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-agent-switch-gui-service.md](roadmaps/road-to-agent-switch-gui-service.md) | 5 | 33 | 0 | 21 | 12 | 0 | 0 | ██████████ 100% |
-| 2 | [road-to-multi-provider-and-provider-settings.md](roadmaps/road-to-multi-provider-and-provider-settings.md) | 6 | 21 | 18 | 3 | 0 | 0 | 0 | █░░░░░░░░░ 14% |
+| 2 | [road-to-multi-provider-and-provider-settings.md](roadmaps/road-to-multi-provider-and-provider-settings.md) | 6 | 21 | 14 | 7 | 0 | 0 | 0 | ███░░░░░░░ 33% |
 
 ---
 
@@ -45,12 +45,12 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 ### [road-to-multi-provider-and-provider-settings.md](roadmaps/road-to-multi-provider-and-provider-settings.md)
 
-**Multi-provider expansion + Providers settings tab + auto-switch default-off** — 3 / 21 done (14%)
+**Multi-provider expansion + Providers settings tab + auto-switch default-off** — 7 / 21 done (33%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 1 | Provider + surface enable/disable (CLI-backed) | ✅ done | 0 | 3 | 0 | 0 | 100% |
-| 2 | GUI Providers settings tab | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
+| 2 | GUI Providers settings tab | ✅ done | 0 | 4 | 0 | 0 | 100% |
 | 3 | Auto-switch — global default OFF, no ToS warning, signal-gated | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
 | 4 | GitHub Copilot CLI provider (profile-switch only) | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
 | 5 | Cursor + Windsurf (apps layer, profile isolation) | ⬜ not started | 3 | 0 | 0 | 0 | 0% |

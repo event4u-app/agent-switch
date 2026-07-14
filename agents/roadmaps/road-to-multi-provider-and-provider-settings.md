@@ -93,15 +93,16 @@ logic). A provider has surfaces (`cli`, `ui`); a surface is enable/disable-able.
 
 ## Phase 2: GUI Providers settings tab
 
-- [ ] **Step 1:** Add `"providers"` to `SettingsTab` in `gui/src/App.tsx`
+- [x] **Step 1:** Add `"providers"` to `SettingsTab` in `gui/src/App.tsx`
       (`SETTINGS_TABS`), and a `ProvidersSettings` component.
-- [ ] **Step 2:** `ipc.ts` thin wrappers `getProviders()` / `setProvider(id, surface, on)`
+- [x] **Step 2:** `ipc.ts` thin wrappers `getProviders()` / `setProvider(id, surface, on)`
       over the `providers --json` command (pattern: `getAutoSwitch`/`setAutoSwitch`).
-- [ ] **Step 3:** The tab lists every provider with per-surface (CLI / UI)
+- [x] **Step 3:** The tab lists every provider with per-surface (CLI / UI)
       toggles; the main-view provider tab-strip renders only enabled providers.
-      <!-- verify: toggle gemini on in the tab → a Gemini tab appears in the main view -->
-- [ ] **Step 4:** `PROVIDERS` / `PROVIDER_LABEL` in `App.tsx` are derived from the
-      enabled-set, not the hardcoded `["claude","codex","gemini"]` literal.
+      <!-- verify: App.test.tsx — providers-tab toggle + disabled-provider hides its tab ✓ -->
+- [x] **Step 4:** The main-view tab-strip is derived from the enabled-set
+      (`enabledIds`), not the hardcoded literal; the strip's grid is dynamic and
+      a disabled active provider auto-jumps to the first enabled one.
 
 ## Phase 3: Auto-switch — global default OFF, no ToS warning, signal-gated
 
