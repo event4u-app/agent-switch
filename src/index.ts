@@ -660,12 +660,19 @@ function cmdOpen(appId?: string, name?: string): void {
   if (!n) die(`no profile given and none active for ${app.provider} — pass a profile name.`);
   requireProfile(app.provider, n, "open");
   if (!isInstalled(app)) die(`${app.displayName} is not installed.`);
+  let firstLaunch = false;
   if (app.strategy === "user-data-dir") {
-    fs.mkdirSync(guiDataDir(app, n), { recursive: true, mode: 0o700 }); // lazy per-profile data dir
+    const dir = guiDataDir(app, n);
+    firstLaunch = !fs.existsSync(dir);
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); // lazy per-profile data dir
   }
   const spec = buildLaunch(app, n);
   spawn(spec.program, spec.args, { detached: true, stdio: "ignore" }).unref();
   console.log(`Opening ${app.displayName} on ${app.provider}/${n}...`);
+  if (firstLaunch) {
+    console.log("First launch of this profile — it opens logged-out; sign in once and the session");
+    console.log("is saved to this profile. Quit other windows of this app before signing in.");
+  }
 }
 
 function cmdShellenv(shellArg?: string): void {

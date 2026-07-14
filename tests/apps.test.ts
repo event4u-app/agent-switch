@@ -54,8 +54,19 @@ test("buildLaunch throws on an env-strategy app with no envVar", () => {
   assert.throws(() => A.buildLaunch({ ...envApp, envVar: undefined }, "work"), /envVar/);
 });
 
-test("APPS starts empty (clients register their own); findApp resolves by id", () => {
-  assert.equal(A.APPS.length, 0);
+test("findApp resolves by id; unknown ids are null", () => {
   assert.equal(A.findApp("nope"), null);
   assert.equal(A.findApp("codex-ide", [envApp])?.id, "codex-ide");
+});
+
+test("claude-desktop is registered (user-data-dir) and builds an isolated launch", () => {
+  const app = A.findApp("claude-desktop");
+  assert.ok(app, "claude-desktop should be registered");
+  assert.equal(app!.strategy, "user-data-dir");
+  assert.equal(app!.provider, "claude");
+  const spec = A.buildLaunch(app!, "work");
+  // uses the profile's OWN gui data dir — never the default Claude install dir
+  const dataDir = path.join(HOME, "claude", "work", "gui", "claude-desktop");
+  assert.deepEqual(spec.args, ["-n", "-b", "com.anthropic.claudefordesktop", "--args", `--user-data-dir=${dataDir}`]);
+  assert.ok(!spec.args.some((a) => a.includes("Application Support/Claude")), "must not target the default install dir");
 });

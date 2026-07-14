@@ -51,20 +51,30 @@ test("flag-first `use --provider codex work` activates the right profile", gate,
   }
 });
 
-test("`apps` reports the empty registry (launch layer ready, no apps yet)", gate, () => {
+test("`apps --json` lists the registered claude-desktop app", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
-    assert.match(run(home, ["apps"]), /no gui apps registered/i);
+    const apps = JSON.parse(run(home, ["apps", "--json"]));
+    const cd = apps.find((a: any) => a.id === "claude-desktop");
+    assert.ok(cd, "claude-desktop should be listed");
+    assert.equal(cd.provider, "claude");
+    assert.equal(cd.strategy, "user-data-dir");
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
 
-test("`open` errors on a missing or unknown app (foundation registry is empty)", gate, () => {
+// Never runs a real launch: unknown-app + missing-profile both error BEFORE the
+// isInstalled/spawn step, so the app is never opened by the test.
+test("`open` errors before launching: usage, unknown app, and missing profile", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
     assert.throws(() => run(home, ["open"]), /usage: agent-switch open/i);
-    assert.throws(() => run(home, ["open", "claude-desktop"]), /unknown app/i);
+    assert.throws(() => run(home, ["open", "no-such-app"]), /unknown app/i);
+    // registered app but nothing to launch → errors before any launch. The exact
+    // reason is platform-dependent: non-macOS hits the "macOS-only" guard first;
+    // on macOS it reaches "no profile given". Either proves no launch happened.
+    assert.throws(() => run(home, ["open", "claude-desktop"]), /mac.?os-only|no profile given and none active/i);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

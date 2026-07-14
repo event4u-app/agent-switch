@@ -38,11 +38,23 @@ export interface AppDescriptor {
 }
 
 /**
- * Registered launchable GUI apps. EMPTY by design — the per-client roadmaps add
- * entries (and own each app's verification + caveats). The foundation only
- * provides the mechanism.
+ * Registered launchable GUI apps. Per-client roadmaps add entries (each owns its
+ * verification + caveats); the foundation provides the mechanism.
+ *
+ * claude-desktop: the account is a Chromium web session, isolated per profile
+ * by a distinct `--user-data-dir` (distinct single-instance lock ⇒ parallel
+ * accounts). The profile's own data dir is used — the default
+ * `~/Library/Application Support/Claude` install is never touched.
  */
-export const APPS: readonly AppDescriptor[] = [];
+export const APPS: readonly AppDescriptor[] = [
+  {
+    id: "claude-desktop",
+    displayName: "Claude Desktop",
+    bundleId: "com.anthropic.claudefordesktop",
+    provider: "claude",
+    strategy: "user-data-dir",
+  },
+];
 
 export function findApp(id: string, registry: readonly AppDescriptor[] = APPS): AppDescriptor | null {
   return registry.find((a) => a.id === id) ?? null;
