@@ -11,6 +11,8 @@ const ipc = vi.hoisted(() => ({
   profileUsage: vi.fn(),
   getAutoSwitch: vi.fn(),
   setAutoSwitch: vi.fn(),
+  getProviders: vi.fn(),
+  setProvider: vi.fn(),
   setProfileLabel: vi.fn(),
   switchProfile: vi.fn(),
   openWeb: vi.fn(),
@@ -39,6 +41,16 @@ vi.mock("./EmbeddedTerminal.js", () => ({
     ]),
 }));
 
+// The global auto-switch master lives in localStorage, which isn't reliably
+// available in this jsdom/node env — mock the store so the flag is controllable.
+const store = vi.hoisted(() => ({ globalAuto: true }));
+vi.mock("./settings-store.js", () => ({
+  getAutoSwitchGlobal: () => store.globalAuto,
+  setAutoSwitchGlobalFlag: (on: boolean) => {
+    store.globalAuto = on;
+  },
+}));
+
 import App from "./App.js";
 import type { ProfileRow, UsageSnapshot } from "./transforms.js";
 
@@ -56,6 +68,9 @@ const usageSnap: UsageSnapshot = {
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
+  // Global auto-switch defaults OFF in production; enable it for the auto-switch
+  // UI tests. (The dedicated default-off test flips this itself.)
+  store.globalAuto = true;
   ipc.listProfiles.mockResolvedValue(rows);
   ipc.profileUsage.mockResolvedValue(usageSnap);
   ipc.getAutoSwitch.mockResolvedValue({
@@ -64,6 +79,14 @@ beforeEach(() => {
     gemini: { enabled: false, threshold: 95 },
   });
   ipc.setAutoSwitch.mockResolvedValue(undefined);
+  // All providers enabled by default in tests so the gemini tab is present for
+  // the auto-switch-dot / footer assertions below.
+  ipc.getProviders.mockResolvedValue({
+    claude: { cli: true, ui: true },
+    codex: { cli: true, ui: true },
+    gemini: { cli: true, ui: true },
+  });
+  ipc.setProvider.mockResolvedValue(undefined);
   ipc.setProfileLabel.mockResolvedValue(undefined);
   ipc.switchProfile.mockResolvedValue(undefined);
   ipc.deactivateProfile.mockResolvedValue(undefined);
@@ -162,7 +185,7 @@ describe("App", () => {
     expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", true);
   });
 
-  it("per-tab auto-switch dot: green=on, red=off, grey=unavailable (<2 profiles)", async () => {
+  it("per-tab auto-switch dot shows ONLY for Claude (usage readout); none for codex/gemini", async () => {
     ipc.listProfiles.mockResolvedValue([
       { provider: "claude", name: "a", identity: null, label: null, active: true, liveSessions: 0 },
       { provider: "claude", name: "b", identity: null, label: null, active: false, liveSessions: 0 },
@@ -171,21 +194,37 @@ describe("App", () => {
       { provider: "gemini", name: "e", identity: null, label: null, active: false, liveSessions: 0 },
     ]);
     ipc.getAutoSwitch.mockResolvedValue({
-      claude: { enabled: true, threshold: 95 }, // 2 profiles, on  → green
-      codex: { enabled: false, threshold: 95 }, // 2 profiles, off → red
-      gemini: { enabled: true, threshold: 95 }, // 1 profile → unavailable (grey), despite enabled
+      claude: { enabled: true, threshold: 95 }, // 2 profiles, on → green dot
+      codex: { enabled: false, threshold: 95 },
+      gemini: { enabled: true, threshold: 95 },
     });
     render(<App />);
-    expect(await screen.findByLabelText(/auto-switch on for claude/i)).toBeTruthy(); // green
-    expect(screen.getByLabelText(/auto-switch off for codex/i)).toBeTruthy(); // red
-    expect(screen.getByLabelText(/auto-switch unavailable for gemini/i)).toBeTruthy(); // grey
-    expect(screen.queryByLabelText(/auto-switch on for gemini/i)).toBeNull(); // enabled flag ignored when <2
+    expect(await screen.findByLabelText(/auto-switch on for claude/i)).toBeTruthy(); // Claude has a dot
+    expect(screen.queryByLabelText(/auto-switch.*for codex/i)).toBeNull(); // no dot — no usage readout
+    expect(screen.queryByLabelText(/auto-switch.*for gemini/i)).toBeNull(); // no dot — no usage readout
   });
 
-  it("footer marks auto-switch not available for a provider with <2 profiles", async () => {
-    render(<App />); // default rows: gemini has 0 profiles
-    fireEvent.click(await screen.findByRole("tab", { name: /gemini/i }));
+  it("footer marks auto-switch not available for Claude with <2 profiles", async () => {
+    ipc.listProfiles.mockResolvedValue([
+      { provider: "claude", name: "solo", identity: null, label: null, active: true, liveSessions: 0 },
+    ]);
+    render(<App />); // Claude is the default tab and has only 1 profile
+    await screen.findByRole("tab", { name: /claude/i });
     expect(await screen.findByText(/not available/i)).toBeTruthy();
+  });
+
+  it("codex/gemini have no footer auto-switch toggle (no usage readout)", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
+    expect(screen.queryByText(/auto-switch ·/i)).toBeNull();
+  });
+
+  it("auto-switch UI is hidden by default (global master off)", async () => {
+    store.globalAuto = false; // production default
+    render(<App />);
+    await screen.findByRole("tab", { name: /claude/i });
+    expect(screen.queryByLabelText(/auto-switch/i)).toBeNull(); // no per-tab dots
+    expect(screen.queryByText(/auto-switch ·/i)).toBeNull(); // no footer toggle
   });
 
   it("opens a Settings view (agent tabs hidden) with General/Design/Uninstall sub-tabs", async () => {
@@ -217,6 +256,27 @@ describe("App", () => {
     await screen.findByRole("tab", { name: /claude/i });
     expect(screen.queryByLabelText(/auto-switch/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /auto-switch ·/i })).toBeNull();
+  });
+
+  it("toggles a provider surface from the Providers settings tab", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /providers/i }));
+    // gemini CLI is on (mock) → clicking it disables that surface
+    fireEvent.click(await screen.findByRole("button", { name: /gemini cli enabled/i }));
+    expect(ipc.setProvider).toHaveBeenCalledWith("gemini", "cli", false);
+  });
+
+  it("hides a disabled provider's tab in the main view", async () => {
+    ipc.getProviders.mockResolvedValue({
+      claude: { cli: true, ui: true },
+      codex: { cli: true, ui: true },
+      gemini: { cli: false, ui: false }, // disabled → no tab
+    });
+    render(<App />);
+    await screen.findByRole("tab", { name: /claude/i });
+    expect(screen.queryByRole("tab", { name: /gemini/i })).toBeNull();
+    expect(screen.getByRole("tab", { name: /codex/i })).toBeTruthy();
   });
 
   it("changes the theme from the Design settings tab", async () => {

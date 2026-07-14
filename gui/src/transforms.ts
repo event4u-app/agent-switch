@@ -13,6 +13,14 @@ export type ProviderId = "claude" | "codex" | "gemini";
 export const PROFILE_LABELS = ["Work", "Personal", "Other"] as const;
 export type ProfileLabel = (typeof PROFILE_LABELS)[number];
 
+/** Which surfaces of a provider are enabled (mirrors the CLI `providers` map). */
+export interface ProviderSurfaces {
+  cli: boolean;
+  ui: boolean;
+}
+export type ProviderSurface = keyof ProviderSurfaces;
+export type ProvidersConfig = Record<ProviderId, ProviderSurfaces>;
+
 export interface ProfileRow {
   provider: ProviderId;
   name: string;
@@ -40,6 +48,13 @@ export interface StatusJson {
   name: string;
   identity: string | null;
   usage: UsageSnapshot | null;
+}
+
+/** Whether a provider exposes a usage readout (Claude only). Auto-switch UI is
+ *  shown ONLY for these — there is nothing to trigger on otherwise. Mirrors the
+ *  CLI's `Provider.hasUsageReadout`. */
+export function hasUsageReadout(provider: ProviderId): boolean {
+  return provider === "claude";
 }
 
 /** Group the flat profile list by provider, preserving order. */

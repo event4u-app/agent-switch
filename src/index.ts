@@ -40,6 +40,10 @@ import {
   readAutoSwitch,
   readAutoSwitchAll,
   setAutoSwitch,
+  readProviders,
+  enabledProviders,
+  setProviderSurface,
+  type ProviderSurface,
   ROOT,
 } from "./profiles.js";
 import { Provider, ProviderId, PROVIDER_IDS, provider } from "./providers.js";
@@ -214,7 +218,8 @@ function printProfileLine(providerId: ProviderId, name: string, showLive: boolea
 }
 
 function cmdList(providerId?: ProviderId, json = false): void {
-  const providers = providerId ? [providerId] : PROVIDER_IDS;
+  // An explicit --provider always lists that one; otherwise only enabled providers.
+  const providers = providerId ? [providerId] : enabledProviders("cli");
 
   if (json) {
     // The GUI IPC contract: the profile list (identity/active/live) — NOT usage.
@@ -461,17 +466,18 @@ function cmdAutoswitch(
     die("--threshold must be a number between 1 and 100");
   }
   if (mode === "on" || mode === "off") {
+    // Auto-switch only makes sense where there is a usage readout to trigger on
+    // (Claude today). Elsewhere there is nothing to act on, so enabling is refused.
+    if (mode === "on" && !provider(providerId).hasUsageReadout) {
+      die(`auto-switch is only available for Claude (the only provider with a usage readout).`);
+    }
     const cfg = setAutoSwitch(providerId, { enabled: mode === "on", ...(threshold !== undefined ? { threshold } : {}) });
     console.log(`Auto-switch for ${providerId} ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%).`);
-    if (cfg.enabled && providerId === "claude") {
+    if (cfg.enabled) {
       console.log(
-        "The daemon will move the active Claude profile to the account with the most headroom\n" +
-          "once the active one hits the threshold. Pooling accounts to route around limits may\n" +
-          "conflict with a provider's usage policy — you enabled this deliberately.\n" +
-          "Run `agent-switch service start` so the daemon is watching.",
+        "The daemon moves the active Claude profile to the account with the most headroom\n" +
+          "once the active one hits the threshold. Run `agent-switch service start` so the daemon is watching.",
       );
-    } else if (cfg.enabled) {
-      console.log(`(note: ${providerId} has no usage readout, so auto-switch stays inert until one exists.)`);
     }
     return;
   }
@@ -488,6 +494,46 @@ function cmdAutoswitch(
     return;
   }
   die("usage: agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>] [--json]");
+}
+
+/**
+ * Enable/disable a provider's surfaces (cli / ui), or show the current setting.
+ * Disabling never deletes profiles — it only hides the provider from `list` and
+ * the GUI; re-enabling restores everything. Default enabled: Claude + Codex.
+ */
+function cmdProviders(
+  providerId: ProviderId,
+  providerExplicit: boolean,
+  mode?: string,
+  flags: Record<string, string | boolean> = {},
+): void {
+  const surfaceFlag = typeof flags.surface === "string" ? flags.surface : undefined;
+  if (surfaceFlag !== undefined && surfaceFlag !== "cli" && surfaceFlag !== "ui") {
+    die("--surface must be cli or ui");
+  }
+  if (mode === "enable" || mode === "disable") {
+    const enabled = mode === "enable";
+    const surfaces: ProviderSurface[] = surfaceFlag ? [surfaceFlag as ProviderSurface] : ["cli", "ui"];
+    const cfg = surfaces.reduce(
+      (_acc, s) => setProviderSurface(providerId, s, enabled),
+      readProviders()[providerId],
+    );
+    console.log(`${providerId}: cli ${cfg.cli ? "on" : "off"}, ui ${cfg.ui ? "on" : "off"}.`);
+    return;
+  }
+  if (mode === undefined || mode === "status") {
+    if (flags.json) {
+      // The GUI needs every provider's enabled surfaces at once (the Providers tab).
+      console.log(JSON.stringify(readProviders()));
+      return;
+    }
+    const all = readProviders();
+    for (const p of providerExplicit ? [providerId] : PROVIDER_IDS) {
+      console.log(`${p}: cli ${all[p].cli ? "on" : "off"}, ui ${all[p].ui ? "on" : "off"}.`);
+    }
+    return;
+  }
+  die("usage: agent-switch providers enable|disable|status [--provider P] [--surface cli|ui] [--json]");
 }
 
 /**
@@ -644,6 +690,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch remove [--provider P] <name> [--force]   delete a profile
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
   agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>]   per-provider auto-switch (default OFF)
+  agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
   agent-switch apps                            list launchable GUI apps (macOS)
   agent-switch open <app> [profile]            launch a GUI app on a profile, isolated (macOS)
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
@@ -683,6 +730,7 @@ async function main(): Promise<void> {
     case "deactivate": return cmdDeactivate(providerId);
     case "label": return cmdLabel(providerId, positional[0], positional[1]);
     case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags);
+    case "providers": return cmdProviders(providerId, providerExplicit, positional[0], flags);
     case "open": return cmdOpen(positional[0], positional[1]);
     case "apps": return cmdApps(!!flags.json);
     case "uninstall": return cmdUninstall(flags);

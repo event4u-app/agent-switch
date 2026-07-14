@@ -2,11 +2,11 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change (timestamp lives in git history).
 >
-> 1 open roadmap · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 2 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**21 / 21 steps done · 100%**
+**33 / 33 steps done · 100%**
 
 ```text
 ████████████████████████████████████████   100%
@@ -19,12 +19,14 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | Roadmap | Done | Deferred | Cancelled |
 |---|---:|---:|---:|
 | [road-to-agent-switch-gui-service.md](roadmaps/road-to-agent-switch-gui-service.md) | 21 | 12 | 0 |
+| [road-to-multi-provider-and-provider-settings.md](roadmaps/road-to-multi-provider-and-provider-settings.md) | 12 | 9 | 0 |
 
 ## Open roadmaps
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-agent-switch-gui-service.md](roadmaps/road-to-agent-switch-gui-service.md) | 5 | 33 | 0 | 21 | 12 | 0 | 0 | ██████████ 100% |
+| 2 | [road-to-multi-provider-and-provider-settings.md](roadmaps/road-to-multi-provider-and-provider-settings.md) | 6 | 21 | 0 | 12 | 9 | 0 | 0 | ██████████ 100% |
 
 ---
 
@@ -41,4 +43,17 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | 3 | GUI/tray app foundation (separate package) | ✅ done | 0 | 2 | 3 | 0 | 100% |
 | 4 | React UI | ✅ done | 0 | 2 | 4 | 0 | 100% |
 | 5 | Packaging, docs, CI | ✅ done | 0 | 4 | 5 | 0 | 100% |
+
+### [road-to-multi-provider-and-provider-settings.md](roadmaps/road-to-multi-provider-and-provider-settings.md)
+
+**Multi-provider expansion + Providers settings tab + auto-switch default-off** — 12 / 12 done (100%)
+
+| # | Phase | State | Open | Done | Deferred | Cancelled | % |
+|---|---|---|---:|---:|---:|---:|---:|
+| 1 | Provider + surface enable/disable (CLI-backed) | ✅ done | 0 | 3 | 0 | 0 | 100% |
+| 2 | GUI Providers settings tab | ✅ done | 0 | 4 | 0 | 0 | 100% |
+| 3 | Auto-switch — global default OFF, no ToS warning, signal-gated | ✅ done | 0 | 4 | 0 | 0 | 100% |
+| 4 | GitHub Copilot CLI provider (profile-switch only) | ⏭️ skipped | 0 | 0 | 4 | 0 | 0% |
+| 5 | Cursor + Windsurf (apps layer, profile isolation) | ⏭️ skipped | 0 | 0 | 3 | 0 | 0% |
+| 6 | Docs | ✅ done | 0 | 1 | 2 | 0 | 100% |
 

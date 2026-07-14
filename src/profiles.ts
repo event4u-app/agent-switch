@@ -40,10 +40,32 @@ export const DEFAULT_AUTOSWITCH: AutoSwitchConfig = { enabled: false, threshold:
 /** Auto-switch is configured PER PROVIDER (claude/codex/gemini each on/off). */
 export type AutoSwitchMap = Record<ProviderId, AutoSwitchConfig>;
 
+/**
+ * Which surfaces of a provider are enabled (offered in the GUI / allowed by the
+ * CLI). `cli` = the terminal tool; `ui` = the provider's desktop/GUI app, if any.
+ * Disabling a provider hides it without deleting its profiles — re-enabling
+ * restores everything.
+ */
+export interface ProviderSurfaces {
+  cli: boolean;
+  ui: boolean;
+}
+export type ProviderSurface = keyof ProviderSurfaces;
+export type ProvidersConfig = Record<ProviderId, ProviderSurfaces>;
+
+/**
+ * Providers enabled out of the box. Everything else is available but off by
+ * default — the user opts it in from the Providers settings tab. A provider that
+ * already has profiles is also treated as enabled on first migration, so
+ * upgrading never hides an account the user already set up.
+ */
+export const PROVIDERS_ON_BY_DEFAULT: readonly ProviderId[] = ["claude", "codex"];
+
 export interface State {
   active: ActiveMap;
   labels: LabelMap;
   autoSwitch: AutoSwitchMap;
+  providers: ProvidersConfig;
 }
 
 function emptyActive(): ActiveMap {
@@ -160,23 +182,51 @@ function normalizeAutoSwitchMap(raw: unknown): AutoSwitchMap {
   return out;
 }
 
+/** Default enabled-state for a provider when its config key is absent: on when
+ *  in the default set OR when it already has profiles (never hide existing). */
+function defaultSurfaces(id: ProviderId): ProviderSurfaces {
+  const on = PROVIDERS_ON_BY_DEFAULT.includes(id) || listProfiles(id).length > 0;
+  return { cli: on, ui: on };
+}
+
+function normalizeSurfaces(raw: unknown, id: ProviderId): ProviderSurfaces {
+  const r = (raw ?? {}) as Partial<ProviderSurfaces>;
+  const d = defaultSurfaces(id);
+  return {
+    cli: typeof r.cli === "boolean" ? r.cli : d.cli,
+    ui: typeof r.ui === "boolean" ? r.ui : d.ui,
+  };
+}
+
+function emptyProviders(): ProvidersConfig {
+  return Object.fromEntries(PROVIDER_IDS.map((p) => [p, defaultSurfaces(p)])) as ProvidersConfig;
+}
+
+function normalizeProvidersMap(raw: unknown): ProvidersConfig {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const out = emptyProviders();
+  for (const p of PROVIDER_IDS) out[p] = normalizeSurfaces(r[p], p);
+  return out;
+}
+
 export function readState(): State {
   try {
     const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
     const labels = normalizeLabels(raw?.labels);
     const autoSwitch = normalizeAutoSwitchMap(raw?.autoSwitch);
+    const providers = normalizeProvidersMap(raw?.providers);
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch, providers };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch };
+      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch, providers };
     }
-    return { active: emptyActive(), labels, autoSwitch };
+    return { active: emptyActive(), labels, autoSwitch, providers };
   } catch {
     /* absent / unparsable → default */
   }
-  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch() };
+  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders() };
 }
 
 export function writeState(state: State): void {
@@ -226,6 +276,33 @@ export function setAutoSwitch(providerId: ProviderId, cfg: Partial<AutoSwitchCon
   state.autoSwitch[providerId] = normalizeAutoSwitch({ ...state.autoSwitch[providerId], ...cfg });
   writeState(state);
   return state.autoSwitch[providerId];
+}
+
+// ---------- provider enable/disable (per surface) ----------
+
+/** Every provider's enabled surfaces (for `providers status` / the GUI tab). */
+export function readProviders(): ProvidersConfig {
+  return readState().providers;
+}
+
+/** Is a provider enabled? With a surface, that specific surface; without, either. */
+export function providerEnabled(providerId: ProviderId, surface?: ProviderSurface): boolean {
+  const s = readState().providers[providerId];
+  return surface ? s[surface] : s.cli || s.ui;
+}
+
+/** Provider ids whose given surface is enabled (default `cli`), in canonical order. */
+export function enabledProviders(surface: ProviderSurface = "cli"): ProviderId[] {
+  const cfg = readState().providers;
+  return PROVIDER_IDS.filter((p) => cfg[p][surface]);
+}
+
+/** Enable/disable one surface of a provider; returns its new surface state. */
+export function setProviderSurface(providerId: ProviderId, surface: ProviderSurface, enabled: boolean): ProviderSurfaces {
+  const state = readState();
+  state.providers[providerId] = { ...state.providers[providerId], [surface]: enabled };
+  writeState(state);
+  return state.providers[providerId];
 }
 
 // ---------- layout migration: v1 <ROOT>/<name> → <ROOT>/claude/<name> ----------

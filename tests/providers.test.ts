@@ -71,3 +71,9 @@ test("readIdentity returns null on missing/garbage without throwing", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("only Claude reports a usage readout (auto-switch is Claude-only)", () => {
+  assert.equal(provider("claude").hasUsageReadout, true);
+  assert.equal(provider("codex").hasUsageReadout, false);
+  assert.equal(provider("gemini").hasUsageReadout, false);
+});

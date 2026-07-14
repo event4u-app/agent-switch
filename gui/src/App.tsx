@@ -4,6 +4,7 @@ import {
   deactivateProfile,
   getAutoSwitch,
   getAutostart,
+  getProviders,
   listApps,
   listProfiles,
   loginArgs,
@@ -15,6 +16,7 @@ import {
   setAutoSwitch,
   setAutostart,
   setProfileLabel,
+  setProvider,
   switchProfile,
   uninstall,
   type AppInfo,
@@ -26,11 +28,14 @@ import { getAutoSwitchGlobal, setAutoSwitchGlobalFlag } from "./settings-store.j
 import {
   groupByProvider,
   formatReset,
+  hasUsageReadout,
   PROFILE_LABELS,
   type ProfileRow,
   type ProfileLabel,
   type UsageSnapshot,
   type ProviderId,
+  type ProvidersConfig,
+  type ProviderSurface,
 } from "./transforms.js";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -90,6 +95,7 @@ export default function App() {
   const [usage, setUsage] = useState<Record<string, UsageSnapshot>>({});
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [auto, setAuto] = useState<AutoSwitchMap | null>(null);
+  const [providers, setProviders] = useState<ProvidersConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -138,6 +144,11 @@ export default function App() {
     } catch {
       /* leave previous */
     }
+    try {
+      setProviders(await getProviders());
+    } catch {
+      /* leave previous */
+    }
     setApps(await listApps().catch(() => []));
     // Per-profile usage for the selected provider (Claude only has a readout).
     if (selected === "claude") {
@@ -161,6 +172,20 @@ export default function App() {
 
   const grouped = groupByProvider(rows);
   const shown = grouped[selected];
+
+  // Only enabled providers get a tab. Before the first load, fall back to the
+  // default set (Claude + Codex) so nothing flickers in.
+  const enabledIds = PROVIDERS.filter((p) =>
+    providers ? providers[p].cli || providers[p].ui : p !== "gemini",
+  );
+
+  // If the selected provider was just disabled, jump to the first enabled one.
+  useEffect(() => {
+    if (providers && enabledIds.length && !enabledIds.includes(selected)) {
+      setSelected(enabledIds[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providers]);
 
   return (
     <div className="flex h-full flex-col">
@@ -214,11 +239,16 @@ export default function App() {
             onUninstall={() => act(() => uninstall().then(quitApp))}
             autoSwitchEnabled={globalAuto}
             onToggleAutoSwitch={toggleGlobalAuto}
+            onProvidersChanged={refresh}
           />
         ) : (
           <>
-            <div role="tablist" className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
-              {PROVIDERS.map((pid) => {
+            <div
+              role="tablist"
+              className="grid gap-1 rounded-lg bg-muted p-1"
+              style={{ gridTemplateColumns: `repeat(${Math.max(enabledIds.length, 1)}, minmax(0, 1fr))` }}
+            >
+              {enabledIds.map((pid) => {
                 const count = grouped[pid].length;
                 const active = selected === pid;
                 return (
@@ -237,9 +267,10 @@ export default function App() {
                   >
                     {PROVIDER_LABEL[pid]}
                     {/* Auto-switch status dot AFTER the label: green = on, red = off,
-                        grey = unavailable (needs 2+ profiles). Hidden entirely when the
-                        global master is off. */}
-                    {globalAuto && (
+                        grey = unavailable (needs 2+ profiles). Shown only for providers
+                        with a usage readout (Claude), and hidden when the global master
+                        is off. */}
+                    {globalAuto && hasUsageReadout(pid) && (
                       <span
                         className={cn(
                           "size-1.5 shrink-0 rounded-full",
@@ -437,6 +468,7 @@ export default function App() {
       <footer className="flex items-center justify-between gap-2 border-t border-border px-3 py-1.5">
         {auto &&
           globalAuto &&
+          hasUsageReadout(selected) &&
           !showSettings &&
           (() => {
             // Auto-switch needs 2+ profiles for the provider to have anything to switch to.
@@ -505,26 +537,29 @@ function LabelSelect({ value, onChange }: { value: ProfileLabel | null; onChange
   );
 }
 
-type SettingsTab = "general" | "design" | "uninstall";
+type SettingsTab = "general" | "providers" | "design" | "uninstall";
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
+  { id: "providers", label: "Providers" },
   { id: "design", label: "Design" },
   { id: "uninstall", label: "Uninstall" },
 ];
 
 /** The full-window Settings view. Replaces the agent tabs while open (they are
- *  hidden), with its own sub-tabs: General (autostart), Design (theme), and a
- *  type-to-confirm Uninstall. */
+ *  hidden), with its own sub-tabs: General (autostart, auto-switch), Providers
+ *  (enable/disable), Design (theme), and a type-to-confirm Uninstall. */
 function SettingsView({
   onClose,
   onUninstall,
   autoSwitchEnabled,
   onToggleAutoSwitch,
+  onProvidersChanged,
 }: {
   onClose: () => void;
   onUninstall: () => void;
   autoSwitchEnabled: boolean;
   onToggleAutoSwitch: (on: boolean) => void;
+  onProvidersChanged: () => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
   return (
@@ -535,7 +570,7 @@ function SettingsView({
           <X />
         </Button>
       </div>
-      <div role="tablist" className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
+      <div role="tablist" className="grid grid-cols-4 gap-1 rounded-lg bg-muted p-1">
         {SETTINGS_TABS.map((t) => (
           <button
             key={t.id}
@@ -554,6 +589,7 @@ function SettingsView({
       {tab === "general" && (
         <GeneralSettings autoSwitchEnabled={autoSwitchEnabled} onToggleAutoSwitch={onToggleAutoSwitch} />
       )}
+      {tab === "providers" && <ProvidersSettings onChange={onProvidersChanged} />}
       {tab === "design" && <DesignSettings />}
       {tab === "uninstall" && <UninstallSettings onUninstall={onUninstall} />}
     </div>
@@ -624,6 +660,72 @@ function GeneralSettings({
             {autoSwitchEnabled ? "On" : "Off"}
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const PROVIDER_SURFACES: { id: ProviderSurface; label: string }[] = [
+  { id: "cli", label: "CLI" },
+  { id: "ui", label: "UI" },
+];
+
+/** Providers tab: enable/disable each provider's surfaces. Disabling hides a
+ *  provider without deleting its profiles; `onChange` refreshes the main view so
+ *  its tab strip updates immediately. */
+function ProvidersSettings({ onChange }: { onChange: () => void }) {
+  const [cfg, setCfg] = useState<ProvidersConfig | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    getProviders()
+      .then(setCfg)
+      .catch((e) => setErr(describeError(e)));
+  }, []);
+
+  async function toggle(pid: ProviderId, surface: ProviderSurface) {
+    if (!cfg) return;
+    const next = !cfg[pid][surface];
+    try {
+      await setProvider(pid, surface, next);
+      setCfg({ ...cfg, [pid]: { ...cfg[pid], [surface]: next } });
+      setErr(null);
+      onChange();
+    } catch (e) {
+      setErr(describeError(e));
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-3">
+        <div className="text-xs text-muted-foreground">
+          Enable the providers you use. Disabling one hides it — your profiles are kept and return when you re-enable it.
+        </div>
+        {cfg === null && !err && <div className="text-xs text-muted-foreground">…</div>}
+        {cfg &&
+          PROVIDERS.map((pid) => (
+            <div
+              key={pid}
+              className="flex items-center justify-between gap-2 border-t border-border pt-3 first:border-t-0 first:pt-0"
+            >
+              <div className="text-[13px] font-medium">{PROVIDER_LABEL[pid]}</div>
+              <div className="flex gap-1">
+                {PROVIDER_SURFACES.map((s) => (
+                  <Button
+                    key={s.id}
+                    size="sm"
+                    variant={cfg[pid][s.id] ? "default" : "outline"}
+                    onClick={() => toggle(pid, s.id)}
+                    aria-label={`${PROVIDER_LABEL[pid]} ${s.label} ${cfg[pid][s.id] ? "enabled" : "disabled"}`}
+                  >
+                    {s.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ))}
+        {err && <div className="text-xs text-destructive">{err}</div>}
       </CardContent>
     </Card>
   );
