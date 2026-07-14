@@ -49,6 +49,11 @@ test("activeFor / setActive are per-provider", () => {
       codex: { enabled: false, threshold: 95 },
       gemini: { enabled: false, threshold: 95 },
     },
+    providers: {
+      claude: { cli: true, ui: true },
+      codex: { cli: true, ui: true },
+      gemini: { cli: false, ui: false },
+    },
   }); // clean baseline (shared STATE_FILE)
   P.setActive("codex", "work");
   P.setActive("gemini", "priv");
@@ -115,9 +120,43 @@ test("legacy global auto-switch migrates onto every provider", () => {
     labels: {},
     // deliberately the OLD global shape, cast through unknown for the test
     autoSwitch: { enabled: true, threshold: 70 } as unknown as ReturnType<typeof P.readAutoSwitchAll>,
+    providers: {
+      claude: { cli: true, ui: true },
+      codex: { cli: true, ui: true },
+      gemini: { cli: false, ui: false },
+    },
   });
   const all = P.readAutoSwitchAll();
   for (const p of ["claude", "codex", "gemini"] as const) {
     assert.deepEqual(all[p], { enabled: true, threshold: 70 });
   }
+});
+
+test("providers: default enabled = claude + codex; gemini off; toggles persist", () => {
+  // Clean slate with NO gemini profiles → gemini is off purely by default.
+  fs.rmSync(path.join(HOME, "gemini"), { recursive: true, force: true });
+  fs.rmSync(P.STATE_FILE, { force: true });
+  const def = P.readProviders();
+  assert.deepEqual(def.claude, { cli: true, ui: true });
+  assert.deepEqual(def.codex, { cli: true, ui: true });
+  assert.deepEqual(def.gemini, { cli: false, ui: false });
+  assert.deepEqual(P.enabledProviders("cli"), ["claude", "codex"]);
+
+  // Enabling one surface persists and widens enabledProviders.
+  P.setProviderSurface("gemini", "cli", true);
+  assert.equal(P.providerEnabled("gemini", "cli"), true);
+  assert.equal(P.providerEnabled("gemini", "ui"), false);
+  assert.deepEqual(P.enabledProviders("cli"), ["claude", "codex", "gemini"]);
+
+  // Disabling a surface hides it again.
+  P.setProviderSurface("codex", "cli", false);
+  assert.deepEqual(P.enabledProviders("cli"), ["claude", "gemini"]);
+});
+
+test("providers: a provider with existing profiles is not hidden by default", () => {
+  // No `providers` key + gemini has a profile → default treats gemini enabled,
+  // so an upgrade never hides an account the user already set up.
+  fs.rmSync(P.STATE_FILE, { force: true });
+  fs.mkdirSync(P.configDir("gemini", "kept"), { recursive: true });
+  assert.equal(P.readProviders().gemini.cli, true);
 });

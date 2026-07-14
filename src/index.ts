@@ -40,6 +40,10 @@ import {
   readAutoSwitch,
   readAutoSwitchAll,
   setAutoSwitch,
+  readProviders,
+  enabledProviders,
+  setProviderSurface,
+  type ProviderSurface,
   ROOT,
 } from "./profiles.js";
 import { Provider, ProviderId, PROVIDER_IDS, provider } from "./providers.js";
@@ -214,7 +218,8 @@ function printProfileLine(providerId: ProviderId, name: string, showLive: boolea
 }
 
 function cmdList(providerId?: ProviderId, json = false): void {
-  const providers = providerId ? [providerId] : PROVIDER_IDS;
+  // An explicit --provider always lists that one; otherwise only enabled providers.
+  const providers = providerId ? [providerId] : enabledProviders("cli");
 
   if (json) {
     // The GUI IPC contract: the profile list (identity/active/live) — NOT usage.
@@ -491,6 +496,46 @@ function cmdAutoswitch(
 }
 
 /**
+ * Enable/disable a provider's surfaces (cli / ui), or show the current setting.
+ * Disabling never deletes profiles — it only hides the provider from `list` and
+ * the GUI; re-enabling restores everything. Default enabled: Claude + Codex.
+ */
+function cmdProviders(
+  providerId: ProviderId,
+  providerExplicit: boolean,
+  mode?: string,
+  flags: Record<string, string | boolean> = {},
+): void {
+  const surfaceFlag = typeof flags.surface === "string" ? flags.surface : undefined;
+  if (surfaceFlag !== undefined && surfaceFlag !== "cli" && surfaceFlag !== "ui") {
+    die("--surface must be cli or ui");
+  }
+  if (mode === "enable" || mode === "disable") {
+    const enabled = mode === "enable";
+    const surfaces: ProviderSurface[] = surfaceFlag ? [surfaceFlag as ProviderSurface] : ["cli", "ui"];
+    const cfg = surfaces.reduce(
+      (_acc, s) => setProviderSurface(providerId, s, enabled),
+      readProviders()[providerId],
+    );
+    console.log(`${providerId}: cli ${cfg.cli ? "on" : "off"}, ui ${cfg.ui ? "on" : "off"}.`);
+    return;
+  }
+  if (mode === undefined || mode === "status") {
+    if (flags.json) {
+      // The GUI needs every provider's enabled surfaces at once (the Providers tab).
+      console.log(JSON.stringify(readProviders()));
+      return;
+    }
+    const all = readProviders();
+    for (const p of providerExplicit ? [providerId] : PROVIDER_IDS) {
+      console.log(`${p}: cli ${all[p].cli ? "on" : "off"}, ui ${all[p].ui ? "on" : "off"}.`);
+    }
+    return;
+  }
+  die("usage: agent-switch providers enable|disable|status [--provider P] [--surface cli|ui] [--json]");
+}
+
+/**
  * Remove agent-switch's own footprint. Deletes every profile (incl. Claude
  * keychain entries), the state/mappings, and stops+uninstalls the daemon. Does
  * NOT touch the provider CLIs' own default installs, nor `npm`/shell setup —
@@ -644,6 +689,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch remove [--provider P] <name> [--force]   delete a profile
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
   agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>]   per-provider auto-switch (default OFF)
+  agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
   agent-switch apps                            list launchable GUI apps (macOS)
   agent-switch open <app> [profile]            launch a GUI app on a profile, isolated (macOS)
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
@@ -683,6 +729,7 @@ async function main(): Promise<void> {
     case "deactivate": return cmdDeactivate(providerId);
     case "label": return cmdLabel(providerId, positional[0], positional[1]);
     case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags);
+    case "providers": return cmdProviders(providerId, providerExplicit, positional[0], flags);
     case "open": return cmdOpen(positional[0], positional[1]);
     case "apps": return cmdApps(!!flags.json);
     case "uninstall": return cmdUninstall(flags);
