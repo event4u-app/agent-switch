@@ -41,7 +41,15 @@ test("state migrates v1 { active: string } to the per-provider map", () => {
 });
 
 test("activeFor / setActive are per-provider", () => {
-  P.writeState({ active: { claude: null, codex: null, gemini: null }, labels: {}, autoSwitch: { enabled: false, threshold: 95 } }); // clean baseline (shared STATE_FILE)
+  P.writeState({
+    active: { claude: null, codex: null, gemini: null },
+    labels: {},
+    autoSwitch: {
+      claude: { enabled: false, threshold: 95 },
+      codex: { enabled: false, threshold: 95 },
+      gemini: { enabled: false, threshold: 95 },
+    },
+  }); // clean baseline (shared STATE_FILE)
   P.setActive("codex", "work");
   P.setActive("gemini", "priv");
   assert.equal(P.activeFor("codex"), "work");
@@ -79,14 +87,37 @@ test("setActive/setLabel do not clobber each other in state.json", () => {
   assert.equal(P.activeFor("claude"), "coexist");
 });
 
-test("auto-switch config defaults OFF and round-trips with a clamped threshold", () => {
-  assert.deepEqual(P.readAutoSwitch(), { enabled: false, threshold: 95 });
-  const cfg = P.setAutoSwitch({ enabled: true, threshold: 80 });
+test("auto-switch is per provider — defaults OFF, round-trips, independent, clamps", () => {
+  P.setAutoSwitch("claude", { enabled: false });
+  P.setAutoSwitch("codex", { enabled: false });
+  assert.deepEqual(P.readAutoSwitch("claude"), { enabled: false, threshold: 95 });
+
+  const cfg = P.setAutoSwitch("claude", { enabled: true, threshold: 80 });
   assert.deepEqual(cfg, { enabled: true, threshold: 80 });
-  assert.deepEqual(P.readAutoSwitch(), { enabled: true, threshold: 80 });
-  // an out-of-range threshold falls back to the default (safety net; the CLI
-  // also rejects it up front)
-  P.setAutoSwitch({ threshold: 999 });
-  assert.equal(P.readAutoSwitch().threshold, 95);
-  P.setAutoSwitch({ enabled: false });
+  assert.deepEqual(P.readAutoSwitch("claude"), { enabled: true, threshold: 80 });
+  // per-provider: enabling claude does not touch codex
+  assert.equal(P.readAutoSwitch("codex").enabled, false);
+
+  // readAutoSwitchAll returns every provider's config
+  assert.equal(P.readAutoSwitchAll().claude.enabled, true);
+  assert.equal(P.readAutoSwitchAll().gemini.enabled, false);
+
+  // an out-of-range threshold falls back to the default (safety net)
+  P.setAutoSwitch("claude", { threshold: 999 });
+  assert.equal(P.readAutoSwitch("claude").threshold, 95);
+  P.setAutoSwitch("claude", { enabled: false });
+});
+
+test("legacy global auto-switch migrates onto every provider", () => {
+  // old shape: a single { enabled, threshold } (pre per-provider)
+  P.writeState({
+    active: { claude: null, codex: null, gemini: null },
+    labels: {},
+    // deliberately the OLD global shape, cast through unknown for the test
+    autoSwitch: { enabled: true, threshold: 70 } as unknown as ReturnType<typeof P.readAutoSwitchAll>,
+  });
+  const all = P.readAutoSwitchAll();
+  for (const p of ["claude", "codex", "gemini"] as const) {
+    assert.deepEqual(all[p], { enabled: true, threshold: 70 });
+  }
 });

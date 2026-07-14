@@ -37,10 +37,13 @@ export interface AutoSwitchConfig {
 }
 export const DEFAULT_AUTOSWITCH: AutoSwitchConfig = { enabled: false, threshold: 95 };
 
+/** Auto-switch is configured PER PROVIDER (claude/codex/gemini each on/off). */
+export type AutoSwitchMap = Record<ProviderId, AutoSwitchConfig>;
+
 export interface State {
   active: ActiveMap;
   labels: LabelMap;
-  autoSwitch: AutoSwitchConfig;
+  autoSwitch: AutoSwitchMap;
 }
 
 function emptyActive(): ActiveMap {
@@ -140,11 +143,28 @@ function normalizeAutoSwitch(raw: unknown): AutoSwitchConfig {
   return { enabled: r.enabled === true, threshold };
 }
 
+function emptyAutoSwitch(): AutoSwitchMap {
+  return { claude: { ...DEFAULT_AUTOSWITCH }, codex: { ...DEFAULT_AUTOSWITCH }, gemini: { ...DEFAULT_AUTOSWITCH } };
+}
+
+function normalizeAutoSwitchMap(raw: unknown): AutoSwitchMap {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  // Migration: a single global `{ enabled, threshold }` (the old shape) applies
+  // to every provider, so turning per-provider on doesn't silently disable it.
+  if ("enabled" in r || "threshold" in r) {
+    const one = normalizeAutoSwitch(r);
+    return { claude: { ...one }, codex: { ...one }, gemini: { ...one } };
+  }
+  const out = emptyAutoSwitch();
+  for (const p of PROVIDER_IDS) out[p] = normalizeAutoSwitch(r[p]);
+  return out;
+}
+
 export function readState(): State {
   try {
     const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
     const labels = normalizeLabels(raw?.labels);
-    const autoSwitch = normalizeAutoSwitch(raw?.autoSwitch);
+    const autoSwitch = normalizeAutoSwitchMap(raw?.autoSwitch);
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
       return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch };
@@ -156,7 +176,7 @@ export function readState(): State {
   } catch {
     /* absent / unparsable → default */
   }
-  return { active: emptyActive(), labels: {}, autoSwitch: { ...DEFAULT_AUTOSWITCH } };
+  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch() };
 }
 
 export function writeState(state: State): void {
@@ -192,15 +212,20 @@ export function clearLabel(providerId: ProviderId, name: string): void {
   setLabel(providerId, name, null);
 }
 
-export function readAutoSwitch(): AutoSwitchConfig {
+export function readAutoSwitch(providerId: ProviderId): AutoSwitchConfig {
+  return readState().autoSwitch[providerId];
+}
+
+/** All providers' auto-switch configs (for `status` / the GUI tab dots). */
+export function readAutoSwitchAll(): AutoSwitchMap {
   return readState().autoSwitch;
 }
 
-export function setAutoSwitch(cfg: Partial<AutoSwitchConfig>): AutoSwitchConfig {
+export function setAutoSwitch(providerId: ProviderId, cfg: Partial<AutoSwitchConfig>): AutoSwitchConfig {
   const state = readState();
-  state.autoSwitch = normalizeAutoSwitch({ ...state.autoSwitch, ...cfg });
+  state.autoSwitch[providerId] = normalizeAutoSwitch({ ...state.autoSwitch[providerId], ...cfg });
   writeState(state);
-  return state.autoSwitch;
+  return state.autoSwitch[providerId];
 }
 
 // ---------- layout migration: v1 <ROOT>/<name> → <ROOT>/claude/<name> ----------

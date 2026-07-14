@@ -54,7 +54,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   ipc.listProfiles.mockResolvedValue(rows);
   ipc.profileUsage.mockResolvedValue(usageSnap);
-  ipc.getAutoSwitch.mockResolvedValue({ enabled: false, threshold: 95 });
+  ipc.getAutoSwitch.mockResolvedValue({
+    claude: { enabled: false, threshold: 95 },
+    codex: { enabled: false, threshold: 95 },
+    gemini: { enabled: false, threshold: 95 },
+  });
   ipc.setAutoSwitch.mockResolvedValue(undefined);
   ipc.setProfileLabel.mockResolvedValue(undefined);
   ipc.switchProfile.mockResolvedValue(undefined);
@@ -143,10 +147,22 @@ describe("App", () => {
     await waitFor(() => expect(ipc.removeProfile).toHaveBeenCalledWith("codex", "oai"));
   });
 
-  it("toggles auto-switch from the footer", async () => {
+  it("toggles auto-switch for the SELECTED provider from the footer", async () => {
     render(<App />);
+    // default tab is claude, and it was off → clicking turns claude on
     fireEvent.click(await screen.findByRole("button", { name: /auto-switch/i }));
-    expect(ipc.setAutoSwitch).toHaveBeenCalledWith(true); // was off → turned on
+    expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", true);
+  });
+
+  it("shows a per-tab auto-switch dot only for providers that have it on", async () => {
+    ipc.getAutoSwitch.mockResolvedValue({
+      claude: { enabled: false, threshold: 95 },
+      codex: { enabled: true, threshold: 95 },
+      gemini: { enabled: false, threshold: 95 },
+    });
+    render(<App />);
+    expect(await screen.findByLabelText(/auto-switch on for codex/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/auto-switch on for claude/i)).toBeNull();
   });
 
   it("uninstalls only after an explicit confirm, then quits", async () => {

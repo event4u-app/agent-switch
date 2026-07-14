@@ -146,7 +146,9 @@ interface RunOptions {
 async function pollOnce(state: DaemonState, thresholds: Map<string, ThresholdState>, log: (l: string) => void): Promise<number> {
   const names = listProfiles("claude");
   const active = activeFor("claude");
-  const autoSwitch = readAutoSwitch();
+  // Auto-switch acts on Claude only — it's the sole provider with a usage
+  // readout to base a headroom decision on. codex/gemini configs are inert here.
+  const autoSwitch = readAutoSwitch("claude");
   const targets = selectPollTargets(names, active, (n) => liveSessionPids(configDir("claude", n)).length > 0, autoSwitch.enabled);
   let failures = 0;
   const polled: SwitchCandidate[] = [];

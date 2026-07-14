@@ -112,14 +112,21 @@ describe("ipc", () => {
     expect(create).toHaveBeenCalledWith("agent-switch", ["label", "work", "none", "--provider", "claude"]);
   });
 
-  it("getAutoSwitch / setAutoSwitch talk to the autoswitch command", async () => {
-    execute.mockResolvedValue({ code: 0, stdout: '{"enabled":true,"threshold":90}', stderr: "" });
-    expect(await getAutoSwitch()).toEqual({ enabled: true, threshold: 90 });
+  it("getAutoSwitch returns the per-provider map; setAutoSwitch targets one provider", async () => {
+    execute.mockResolvedValue({
+      code: 0,
+      stdout: '{"claude":{"enabled":true,"threshold":90},"codex":{"enabled":false,"threshold":95},"gemini":{"enabled":false,"threshold":95}}',
+      stderr: "",
+    });
+    const map = await getAutoSwitch();
     expect(create).toHaveBeenCalledWith("agent-switch", ["autoswitch", "status", "--json"]);
-    await setAutoSwitch(true, 80);
-    expect(create).toHaveBeenCalledWith("agent-switch", ["autoswitch", "on", "--threshold", "80"]);
-    await setAutoSwitch(false);
-    expect(create).toHaveBeenCalledWith("agent-switch", ["autoswitch", "off"]);
+    expect(map.claude).toEqual({ enabled: true, threshold: 90 });
+    expect(map.codex.enabled).toBe(false);
+
+    await setAutoSwitch("codex", true, 80);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["autoswitch", "on", "--provider", "codex", "--threshold", "80"]);
+    await setAutoSwitch("gemini", false);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["autoswitch", "off", "--provider", "gemini"]);
   });
 
   it("uninstall runs `uninstall --force`", async () => {
