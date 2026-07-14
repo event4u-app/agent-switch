@@ -2,10 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Single dark theme tuned to JetBrains Darcula, expressed in the shadcn token
- * schema so every shadcn component picks it up. HSL channels only (no hsl()),
- * per the shadcn convention `hsl(var(--token))`. */
+/* Themes in the shadcn token schema (HSL channels only, per `hsl(var(--token))`).
+ * Dark is the default (JetBrains Darcula); `:root[data-theme="light"]` is the
+ * IntelliJ-Light palette. `theme.ts` sets `data-theme` on <html> (resolving
+ * "system" against the OS preference). Radius/shared vars stay theme-agnostic. */
 :root {
+  --radius: 0.5rem;
+
   --background: 225 6% 13%; /* #1e1f22 editor bg */
   --foreground: 220 11% 89%; /* #dfe1e5 text */
 
@@ -36,9 +39,41 @@
   --input: 223 6% 28%;
   --ring: 219 87% 57%;
 
-  --radius: 0.5rem;
-
   color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --background: 0 0% 100%; /* #ffffff */
+  --foreground: 220 13% 18%; /* #282c34 */
+
+  --card: 220 20% 98%; /* #f7f8fa */
+  --card-foreground: 220 13% 18%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 220 13% 18%;
+
+  --primary: 219 80% 52%; /* #2b6fe0 — slightly deeper for contrast on white */
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 220 14% 92%; /* #e7e9ee */
+  --secondary-foreground: 220 13% 22%;
+
+  --muted: 220 16% 95%;
+  --muted-foreground: 220 8% 45%; /* #6b7280 */
+
+  --accent: 220 14% 92%;
+  --accent-foreground: 220 13% 18%;
+
+  --destructive: 0 72% 51%; /* #e5484d */
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 130 45% 34%; /* #2f7d3a — darker green for white bg */
+
+  --border: 220 13% 88%; /* #dbdfe6 */
+  --input: 220 13% 84%;
+  --ring: 219 80% 52%;
+
+  color-scheme: light;
 }
 
 * {

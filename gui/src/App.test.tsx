@@ -20,6 +20,8 @@ const ipc = vi.hoisted(() => ({
   deactivateProfile: vi.fn(),
   removeProfile: vi.fn(),
   uninstall: vi.fn(),
+  getAutostart: vi.fn(),
+  setAutostart: vi.fn(),
   quitApp: vi.fn(),
 }));
 vi.mock("./ipc.js", () => ipc);
@@ -65,6 +67,8 @@ beforeEach(() => {
   ipc.deactivateProfile.mockResolvedValue(undefined);
   ipc.removeProfile.mockResolvedValue(undefined);
   ipc.uninstall.mockResolvedValue(undefined);
+  ipc.getAutostart.mockResolvedValue(false);
+  ipc.setAutostart.mockResolvedValue(undefined);
   ipc.quitApp.mockResolvedValue(undefined);
 });
 
@@ -154,22 +158,84 @@ describe("App", () => {
     expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", true);
   });
 
-  it("shows a per-tab auto-switch dot only for providers that have it on", async () => {
+  it("per-tab auto-switch dot: green=on, red=off, grey=unavailable (<2 profiles)", async () => {
+    ipc.listProfiles.mockResolvedValue([
+      { provider: "claude", name: "a", identity: null, label: null, active: true, liveSessions: 0 },
+      { provider: "claude", name: "b", identity: null, label: null, active: false, liveSessions: 0 },
+      { provider: "codex", name: "c", identity: null, label: null, active: false, liveSessions: 0 },
+      { provider: "codex", name: "d", identity: null, label: null, active: false, liveSessions: 0 },
+      { provider: "gemini", name: "e", identity: null, label: null, active: false, liveSessions: 0 },
+    ]);
     ipc.getAutoSwitch.mockResolvedValue({
-      claude: { enabled: false, threshold: 95 },
-      codex: { enabled: true, threshold: 95 },
-      gemini: { enabled: false, threshold: 95 },
+      claude: { enabled: true, threshold: 95 }, // 2 profiles, on  → green
+      codex: { enabled: false, threshold: 95 }, // 2 profiles, off → red
+      gemini: { enabled: true, threshold: 95 }, // 1 profile → unavailable (grey), despite enabled
     });
     render(<App />);
-    expect(await screen.findByLabelText(/auto-switch on for codex/i)).toBeTruthy();
-    expect(screen.queryByLabelText(/auto-switch on for claude/i)).toBeNull();
+    expect(await screen.findByLabelText(/auto-switch on for claude/i)).toBeTruthy(); // green
+    expect(screen.getByLabelText(/auto-switch off for codex/i)).toBeTruthy(); // red
+    expect(screen.getByLabelText(/auto-switch unavailable for gemini/i)).toBeTruthy(); // grey
+    expect(screen.queryByLabelText(/auto-switch on for gemini/i)).toBeNull(); // enabled flag ignored when <2
   });
 
-  it("uninstalls only after an explicit confirm, then quits", async () => {
+  it("footer marks auto-switch not available for a provider with <2 profiles", async () => {
+    render(<App />); // default rows: gemini has 0 profiles
+    fireEvent.click(await screen.findByRole("tab", { name: /gemini/i }));
+    expect(await screen.findByText(/not available/i)).toBeTruthy();
+  });
+
+  it("opens a Settings view (agent tabs hidden) with General/Design/Uninstall sub-tabs", async () => {
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /uninstall/i }));
-    expect(ipc.uninstall).not.toHaveBeenCalled(); // first click → confirm
-    fireEvent.click(await screen.findByRole("button", { name: /^Uninstall$/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    // agent provider tabs are gone; settings sub-tabs are present
+    expect(screen.queryByRole("tab", { name: /claude/i })).toBeNull();
+    expect(screen.getByRole("tab", { name: /general/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /design/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /uninstall/i })).toBeTruthy();
+  });
+
+  it("toggles autostart from the General settings tab", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /start at login/i })); // autostart currently off
+    expect(ipc.setAutostart).toHaveBeenCalledWith(true);
+  });
+
+  it("global auto-switch off hides the dots + footer toggle and deactivates every provider", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /auto-switch globally/i })); // On → Off
+    await waitFor(() => expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", false));
+    expect(ipc.setAutoSwitch).toHaveBeenCalledWith("codex", false);
+    expect(ipc.setAutoSwitch).toHaveBeenCalledWith("gemini", false);
+    // back to the profile view: no per-tab dots, no footer toggle
+    fireEvent.click(screen.getByRole("button", { name: /close settings/i }));
+    await screen.findByRole("tab", { name: /claude/i });
+    expect(screen.queryByLabelText(/auto-switch/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /auto-switch ·/i })).toBeNull();
+  });
+
+  it("changes the theme from the Design settings tab", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /design/i }));
+    fireEvent.click(await screen.findByRole("radio", { name: "Light" }));
+    expect(document.documentElement.dataset.theme).toBe("light");
+  });
+
+  it("hides uninstall behind the Uninstall sub-tab and requires typing to confirm", async () => {
+    render(<App />);
+    expect(screen.queryByRole("button", { name: /uninstall agent-switch/i })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /uninstall/i }));
+
+    const uninstallBtn = await screen.findByRole("button", { name: /uninstall agent-switch/i });
+    expect((uninstallBtn as HTMLButtonElement).disabled).toBe(true); // disabled until the user actively types
+    fireEvent.click(uninstallBtn);
+    expect(ipc.uninstall).not.toHaveBeenCalled(); // a stray click does nothing
+
+    fireEvent.change(await screen.findByPlaceholderText("uninstall"), { target: { value: "uninstall" } });
+    fireEvent.click(screen.getByRole("button", { name: /uninstall agent-switch/i }));
     await waitFor(() => expect(ipc.uninstall).toHaveBeenCalled());
   });
 

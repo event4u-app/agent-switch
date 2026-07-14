@@ -2,15 +2,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock the Tauri shell plugin so the IPC wrappers are testable without a
 // runtime. vi.hoisted lets the (hoisted) vi.mock factory reference these.
-const { create, execute, spawn, invoke } = vi.hoisted(() => {
+const { create, execute, spawn, invoke, asEnable, asDisable, asIsEnabled } = vi.hoisted(() => {
   const execute = vi.fn();
   const spawn = vi.fn();
   const create = vi.fn(() => ({ execute, spawn }));
   const invoke = vi.fn();
-  return { create, execute, spawn, invoke };
+  const asEnable = vi.fn();
+  const asDisable = vi.fn();
+  const asIsEnabled = vi.fn();
+  return { create, execute, spawn, invoke, asEnable, asDisable, asIsEnabled };
 });
 vi.mock("@tauri-apps/plugin-shell", () => ({ Command: { create } }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/plugin-autostart", () => ({ enable: asEnable, disable: asDisable, isEnabled: asIsEnabled }));
 
 import {
   listProfiles,
@@ -28,6 +32,8 @@ import {
   getAutoSwitch,
   setAutoSwitch,
   uninstall,
+  getAutostart,
+  setAutostart,
 } from "./ipc.js";
 
 beforeEach(() => vi.clearAllMocks());
@@ -133,5 +139,15 @@ describe("ipc", () => {
     execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
     await uninstall();
     expect(create).toHaveBeenCalledWith("agent-switch", ["uninstall", "--force"]);
+  });
+
+  it("getAutostart / setAutostart wrap the autostart plugin", async () => {
+    asIsEnabled.mockResolvedValue(true);
+    expect(await getAutostart()).toBe(true);
+    expect(asIsEnabled).toHaveBeenCalled();
+    await setAutostart(true);
+    expect(asEnable).toHaveBeenCalled();
+    await setAutostart(false);
+    expect(asDisable).toHaveBeenCalled();
   });
 });

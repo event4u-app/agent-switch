@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Plus, RefreshCw, Play, LogIn, X, AlertCircle, Info, Power, Trash2 } from "lucide-react";
+import { Plus, RefreshCw, Play, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle } from "lucide-react";
 import {
   deactivateProfile,
   getAutoSwitch,
+  getAutostart,
   listProfiles,
   loginArgs,
   profileUsage,
@@ -10,12 +11,15 @@ import {
   removeProfile,
   sessionArgs,
   setAutoSwitch,
+  setAutostart,
   setProfileLabel,
   switchProfile,
   uninstall,
   type AutoSwitchMap,
 } from "./ipc.js";
 import { EmbeddedTerminal } from "./EmbeddedTerminal.js";
+import { applyTheme, getTheme, THEMES, type Theme } from "./theme.js";
+import { getAutoSwitchGlobal, setAutoSwitchGlobalFlag } from "./settings-store.js";
 import {
   groupByProvider,
   formatReset,
@@ -86,8 +90,9 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [globalAuto, setGlobalAuto] = useState(() => getAutoSwitchGlobal());
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [confirmUninstall, setConfirmUninstall] = useState(false);
   // The in-app pty terminal overlay (login / run), or null when none is open.
   const [terminal, setTerminal] = useState<{ args: string[]; title: string } | null>(null);
 
@@ -95,6 +100,20 @@ export default function App() {
     fn()
       .then(refresh)
       .catch((e) => setError(describeError(e)));
+  }
+
+  // Global auto-switch master. Turning it OFF hides the toggles/dots AND
+  // deactivates every provider's auto-switch (nothing can auto-switch behind a
+  // disabled master). Turning it back ON only re-exposes the per-provider
+  // toggles — it never re-enables them.
+  function toggleGlobalAuto(on: boolean) {
+    setAutoSwitchGlobalFlag(on);
+    setGlobalAuto(on);
+    if (!on) {
+      Promise.all(PROVIDERS.map((p) => setAutoSwitch(p, false)))
+        .then(refresh)
+        .catch((e) => setError(describeError(e)));
+    }
   }
 
   async function refresh() {
@@ -159,6 +178,17 @@ export default function App() {
           <Button size="icon" variant="ghost" onClick={refresh} disabled={busy} aria-label="Refresh">
             <RefreshCw className={busy ? "animate-spin" : undefined} />
           </Button>
+          <Button
+            size="icon"
+            variant={showSettings ? "secondary" : "ghost"}
+            onClick={() => {
+              setShowSettings((v) => !v);
+              setNotice(null);
+            }}
+            aria-label="Settings"
+          >
+            <Settings />
+          </Button>
         </div>
       </header>
 
@@ -172,6 +202,13 @@ export default function App() {
               setTerminal(null);
               void refresh();
             }}
+          />
+        ) : showSettings ? (
+          <SettingsView
+            onClose={() => setShowSettings(false)}
+            onUninstall={() => act(() => uninstall().then(quitApp))}
+            autoSwitchEnabled={globalAuto}
+            onToggleAutoSwitch={toggleGlobalAuto}
           />
         ) : (
           <>
@@ -193,14 +230,32 @@ export default function App() {
                       active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                     )}
                   >
-                    {auto?.[pid]?.enabled && (
+                    {PROVIDER_LABEL[pid]}
+                    {/* Auto-switch status dot AFTER the label: green = on, red = off,
+                        grey = unavailable (needs 2+ profiles). Hidden entirely when the
+                        global master is off. */}
+                    {globalAuto && (
                       <span
-                        className="size-1.5 shrink-0 rounded-full bg-[hsl(var(--destructive))]"
-                        title={`Auto-switch on for ${PROVIDER_LABEL[pid]}`}
-                        aria-label={`Auto-switch on for ${PROVIDER_LABEL[pid]}`}
+                        className={cn(
+                          "size-1.5 shrink-0 rounded-full",
+                          count < 2
+                            ? "bg-muted-foreground/40"
+                            : auto?.[pid]?.enabled
+                              ? "bg-[hsl(var(--success))]"
+                              : "bg-[hsl(var(--destructive))]",
+                        )}
+                        title={
+                          count < 2
+                            ? `Auto-switch unavailable for ${PROVIDER_LABEL[pid]} — needs 2+ profiles`
+                            : `Auto-switch ${auto?.[pid]?.enabled ? "on" : "off"} for ${PROVIDER_LABEL[pid]}`
+                        }
+                        aria-label={
+                          count < 2
+                            ? `Auto-switch unavailable for ${PROVIDER_LABEL[pid]}`
+                            : `Auto-switch ${auto?.[pid]?.enabled ? "on" : "off"} for ${PROVIDER_LABEL[pid]}`
+                        }
                       />
                     )}
-                    {PROVIDER_LABEL[pid]}
                     {count > 0 && (
                       <span
                         className={cn(
@@ -362,51 +417,53 @@ export default function App() {
       </div>
 
       <footer className="flex items-center justify-between gap-2 border-t border-border px-3 py-1.5">
-        {auto && (
-          <button
-            className={cn(
-              "flex items-center gap-1.5 text-[11px] transition-colors",
-              auto[selected].enabled ? "text-[hsl(var(--destructive))]" : "text-muted-foreground hover:text-foreground",
-            )}
-            onClick={() => act(() => setAutoSwitch(selected, !auto[selected].enabled))}
-            title={`Auto-switch the active ${PROVIDER_LABEL[selected]} account to the one with the most headroom when it hits its limit (this provider only)`}
-          >
-            <span
-              className={cn("size-2 rounded-full", auto[selected].enabled ? "bg-[hsl(var(--destructive))]" : "bg-border")}
-            />
-            Auto-switch · {PROVIDER_LABEL[selected]} {auto[selected].enabled ? `on (${auto[selected].threshold}%)` : "off"}
-          </button>
-        )}
-        <div className="ml-auto flex items-center gap-1">
-          {confirmUninstall ? (
-            <>
-              <span className="text-[11px] text-muted-foreground">Remove all data?</span>
-              <Button size="sm" variant="destructive" onClick={() => act(() => uninstall().then(quitApp))}>
-                Uninstall
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setConfirmUninstall(false)}>
-                No
-              </Button>
-            </>
-          ) : (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-muted-foreground hover:text-destructive"
-              onClick={() => setConfirmUninstall(true)}
-            >
-              Uninstall
-            </Button>
-          )}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 px-2 text-muted-foreground hover:text-destructive"
-            onClick={() => quitApp()}
-          >
-            <Power /> Quit
-          </Button>
-        </div>
+        {auto &&
+          globalAuto &&
+          !showSettings &&
+          (() => {
+            // Auto-switch needs 2+ profiles for the provider to have anything to switch to.
+            const canAuto = grouped[selected].length >= 2;
+            return (
+              <button
+                disabled={!canAuto}
+                className={cn(
+                  "flex items-center gap-1.5 text-[11px] transition-colors",
+                  !canAuto
+                    ? "cursor-not-allowed text-muted-foreground/60"
+                    : auto[selected].enabled
+                      ? "text-[hsl(var(--success))]"
+                      : "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => canAuto && act(() => setAutoSwitch(selected, !auto[selected].enabled))}
+                title={
+                  canAuto
+                    ? `Auto-switch the active ${PROVIDER_LABEL[selected]} account to the one with the most headroom when it hits its limit (this provider only)`
+                    : `Auto-switch needs at least 2 ${PROVIDER_LABEL[selected]} profiles to switch between`
+                }
+              >
+                <span
+                  className={cn(
+                    "size-2 rounded-full",
+                    !canAuto
+                      ? "bg-muted-foreground/40"
+                      : auto[selected].enabled
+                        ? "bg-[hsl(var(--success))]"
+                        : "bg-[hsl(var(--destructive))]",
+                  )}
+                />
+                Auto-switch · {PROVIDER_LABEL[selected]}{" "}
+                {!canAuto ? "not available" : auto[selected].enabled ? `on (${auto[selected].threshold}%)` : "off"}
+              </button>
+            );
+          })()}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="ml-auto h-6 px-2 text-muted-foreground hover:text-destructive"
+          onClick={() => quitApp()}
+        >
+          <Power /> Quit
+        </Button>
       </footer>
     </div>
   );
@@ -427,6 +484,198 @@ function LabelSelect({ value, onChange }: { value: ProfileLabel | null; onChange
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+type SettingsTab = "general" | "design" | "uninstall";
+const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
+  { id: "general", label: "General" },
+  { id: "design", label: "Design" },
+  { id: "uninstall", label: "Uninstall" },
+];
+
+/** The full-window Settings view. Replaces the agent tabs while open (they are
+ *  hidden), with its own sub-tabs: General (autostart), Design (theme), and a
+ *  type-to-confirm Uninstall. */
+function SettingsView({
+  onClose,
+  onUninstall,
+  autoSwitchEnabled,
+  onToggleAutoSwitch,
+}: {
+  onClose: () => void;
+  onUninstall: () => void;
+  autoSwitchEnabled: boolean;
+  onToggleAutoSwitch: (on: boolean) => void;
+}) {
+  const [tab, setTab] = useState<SettingsTab>("general");
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold tracking-tight">Settings</span>
+        <Button size="icon" variant="ghost" className="size-7" onClick={onClose} aria-label="Close settings">
+          <X />
+        </Button>
+      </div>
+      <div role="tablist" className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
+        {SETTINGS_TABS.map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={tab === t.id}
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "rounded-md px-2 py-1 text-xs font-medium transition-colors",
+              tab === t.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "general" && (
+        <GeneralSettings autoSwitchEnabled={autoSwitchEnabled} onToggleAutoSwitch={onToggleAutoSwitch} />
+      )}
+      {tab === "design" && <DesignSettings />}
+      {tab === "uninstall" && <UninstallSettings onUninstall={onUninstall} />}
+    </div>
+  );
+}
+
+function GeneralSettings({
+  autoSwitchEnabled,
+  onToggleAutoSwitch,
+}: {
+  autoSwitchEnabled: boolean;
+  onToggleAutoSwitch: (on: boolean) => void;
+}) {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    getAutostart()
+      .then(setEnabled)
+      .catch(() => setEnabled(false));
+  }, []);
+
+  async function toggle() {
+    const next = !enabled;
+    try {
+      await setAutostart(next);
+      setEnabled(next);
+      setErr(null);
+    } catch (e) {
+      setErr(describeError(e));
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-[13px] font-medium">Start at login</div>
+            <div className="text-xs text-muted-foreground">Launch agent-switch automatically when you sign in.</div>
+          </div>
+          <Button
+            size="sm"
+            variant={enabled ? "default" : "outline"}
+            disabled={enabled === null}
+            onClick={toggle}
+            aria-label="Start at login"
+          >
+            {enabled === null ? "…" : enabled ? "On" : "Off"}
+          </Button>
+        </div>
+        {err && <div className="text-xs text-destructive">{err}</div>}
+
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+          <div>
+            <div className="text-[13px] font-medium">Auto-switch</div>
+            <div className="text-xs text-muted-foreground">
+              Allow switching the active account when it hits its limit. Turning this off hides the per-provider
+              toggles and disables all of them.
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={autoSwitchEnabled ? "default" : "outline"}
+            onClick={() => onToggleAutoSwitch(!autoSwitchEnabled)}
+            aria-label="Auto-switch globally"
+          >
+            {autoSwitchEnabled ? "On" : "Off"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const THEME_LABEL: Record<Theme, string> = { light: "Light", dark: "Dark", system: "System" };
+
+function DesignSettings() {
+  const [theme, setTheme] = useState<Theme>(getTheme());
+  return (
+    <Card>
+      <CardContent className="space-y-2 p-3">
+        <div className="text-[13px] font-medium">Appearance</div>
+        <div role="radiogroup" aria-label="Theme" className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
+          {THEMES.map((t) => (
+            <button
+              key={t}
+              role="radio"
+              aria-checked={theme === t}
+              onClick={() => {
+                applyTheme(t);
+                setTheme(t);
+              }}
+              className={cn(
+                "rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+                theme === t ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {THEME_LABEL[t]}
+            </button>
+          ))}
+        </div>
+        <div className="text-xs text-muted-foreground">System follows your OS light/dark setting.</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Uninstall is type-to-confirm: the destructive button stays disabled until
+ *  the user actively types "uninstall", so it can never fire by a stray click. */
+function UninstallSettings({ onUninstall }: { onUninstall: () => void }) {
+  const [confirm, setConfirm] = useState("");
+  const ready = confirm.trim().toLowerCase() === "uninstall";
+  return (
+    <Card>
+      <CardContent className="space-y-2 p-3">
+        <div className="flex items-center gap-1.5 text-[13px] font-medium text-destructive">
+          <AlertTriangle className="size-4" /> Danger zone
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Uninstall removes <strong>all</strong> agent-switch profiles, credentials, directory mappings, and the
+          background daemon under <span className="font-mono">~/.agent-switch</span>. This cannot be undone.
+        </p>
+        <div className="space-y-1">
+          <Label htmlFor="uninstall-confirm">
+            Type <span className="font-mono text-foreground">uninstall</span> to confirm
+          </Label>
+          <Input
+            id="uninstall-confirm"
+            placeholder="uninstall"
+            value={confirm}
+            autoComplete="off"
+            onChange={(e) => setConfirm(e.target.value)}
+          />
+        </div>
+        <Button variant="destructive" className="w-full" disabled={!ready} onClick={onUninstall}>
+          <Trash2 /> Uninstall agent-switch
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

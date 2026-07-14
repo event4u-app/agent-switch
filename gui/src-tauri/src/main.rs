@@ -74,6 +74,11 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // Launch-at-login toggle (Settings → General). LaunchAgent on macOS.
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None::<Vec<&str>>,
+        ))
         .manage(pty::PtyState::default())
         .invoke_handler(tauri::generate_handler![
             quit,
