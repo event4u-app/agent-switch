@@ -34,6 +34,8 @@ import {
   uninstall,
   getAutostart,
   setAutostart,
+  listApps,
+  openApp,
 } from "./ipc.js";
 
 beforeEach(() => vi.clearAllMocks());
@@ -139,6 +141,24 @@ describe("ipc", () => {
     execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
     await uninstall();
     expect(create).toHaveBeenCalledWith("agent-switch", ["uninstall", "--force"]);
+  });
+
+  it("listApps parses `apps --json`; openApp runs `open <app> <profile>`", async () => {
+    execute.mockResolvedValue({
+      code: 0,
+      stdout: '[{"id":"claude-desktop","displayName":"Claude Desktop","provider":"claude","strategy":"user-data-dir","installed":true}]',
+      stderr: "",
+    });
+    const apps = await listApps();
+    expect(create).toHaveBeenCalledWith("agent-switch", ["apps", "--json"]);
+    expect(apps[0].id).toBe("claude-desktop");
+    await openApp("claude-desktop", "work");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["open", "claude-desktop", "work"]);
+  });
+
+  it("listApps returns [] on failure (never blanks the UI)", async () => {
+    execute.mockResolvedValue({ code: 1, stdout: "", stderr: "boom" });
+    await expect(listApps()).resolves.toEqual([]);
   });
 
   it("getAutostart / setAutostart wrap the autostart plugin", async () => {

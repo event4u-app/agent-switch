@@ -22,6 +22,8 @@ const ipc = vi.hoisted(() => ({
   uninstall: vi.fn(),
   getAutostart: vi.fn(),
   setAutostart: vi.fn(),
+  listApps: vi.fn(),
+  openApp: vi.fn(),
   quitApp: vi.fn(),
 }));
 vi.mock("./ipc.js", () => ipc);
@@ -69,6 +71,8 @@ beforeEach(() => {
   ipc.uninstall.mockResolvedValue(undefined);
   ipc.getAutostart.mockResolvedValue(false);
   ipc.setAutostart.mockResolvedValue(undefined);
+  ipc.listApps.mockResolvedValue([]);
+  ipc.openApp.mockResolvedValue(undefined);
   ipc.quitApp.mockResolvedValue(undefined);
 });
 
@@ -237,6 +241,16 @@ describe("App", () => {
     fireEvent.change(await screen.findByPlaceholderText("uninstall"), { target: { value: "uninstall" } });
     fireEvent.click(screen.getByRole("button", { name: /uninstall agent-switch/i }));
     await waitFor(() => expect(ipc.uninstall).toHaveBeenCalled());
+  });
+
+  it("shows an Open-in-app affordance for installed apps and launches on click", async () => {
+    ipc.listApps.mockResolvedValue([
+      { id: "claude-desktop", displayName: "Claude Desktop", provider: "claude", strategy: "user-data-dir", installed: true },
+    ]);
+    render(<App />);
+    const btns = await screen.findAllByRole("button", { name: /claude desktop/i });
+    fireEvent.click(btns[0]); // first claude row (work)
+    expect(ipc.openApp).toHaveBeenCalledWith("claude-desktop", "work");
   });
 
   it("quits the app from the Quit button", async () => {

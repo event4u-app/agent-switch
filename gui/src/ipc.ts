@@ -151,6 +151,29 @@ export async function applyAutostartDefault(): Promise<void> {
   }
 }
 
+export interface AppInfo {
+  id: string;
+  displayName: string;
+  provider: ProviderId;
+  strategy: "env" | "user-data-dir";
+  installed: boolean;
+}
+
+/** Launchable GUI apps registered in the CLI (empty until clients register). */
+export async function listApps(): Promise<AppInfo[]> {
+  try {
+    return JSON.parse(await runCli(["apps", "--json"]));
+  } catch {
+    return [];
+  }
+}
+
+/** Launch a GUI app on a profile, isolated (fire-and-forget; the CLI spawns it
+ *  detached and returns immediately). */
+export async function openApp(appId: string, name: string): Promise<void> {
+  await runCli(["open", appId, name]);
+}
+
 /** Quit the whole app (the `quit` Tauri command → app.exit). Closing the
  *  window only hides it, so this is the explicit way out. */
 export async function quitApp(): Promise<void> {

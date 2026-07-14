@@ -575,7 +575,18 @@ async function cmdWeb(name?: string): Promise<void> {
 
 // ---------- GUI app launch (foundation) --------------------------------------
 
-function cmdApps(): void {
+function cmdApps(json = false): void {
+  if (json) {
+    const rows = APPS.map((a) => ({
+      id: a.id,
+      displayName: a.displayName,
+      provider: a.provider,
+      strategy: a.strategy,
+      installed: isInstalled(a),
+    }));
+    console.log(JSON.stringify(rows, null, 2));
+    return;
+  }
   if (APPS.length === 0) {
     console.log("No GUI apps registered yet — support for desktop clients (Claude Desktop, Codex UI)");
     console.log("lands via their roadmaps. The launch layer (`agent-switch open`) is ready.");
@@ -673,7 +684,7 @@ async function main(): Promise<void> {
     case "label": return cmdLabel(providerId, positional[0], positional[1]);
     case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags);
     case "open": return cmdOpen(positional[0], positional[1]);
-    case "apps": return cmdApps();
+    case "apps": return cmdApps(!!flags.json);
     case "uninstall": return cmdUninstall(flags);
     case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
     case "list": case "ls": return cmdList(providerExplicit ? providerId : undefined, !!flags.json);

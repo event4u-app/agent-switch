@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { Plus, RefreshCw, Play, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle } from "lucide-react";
+import { Plus, RefreshCw, Play, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow } from "lucide-react";
 import {
   deactivateProfile,
   getAutoSwitch,
   getAutostart,
+  listApps,
   listProfiles,
   loginArgs,
+  openApp,
   profileUsage,
   quitApp,
   removeProfile,
@@ -15,6 +17,7 @@ import {
   setProfileLabel,
   switchProfile,
   uninstall,
+  type AppInfo,
   type AutoSwitchMap,
 } from "./ipc.js";
 import { EmbeddedTerminal } from "./EmbeddedTerminal.js";
@@ -85,6 +88,7 @@ export default function App() {
   const [rows, setRows] = useState<ProfileRow[]>([]);
   const [selected, setSelected] = useState<ProviderId>("claude");
   const [usage, setUsage] = useState<Record<string, UsageSnapshot>>({});
+  const [apps, setApps] = useState<AppInfo[]>([]);
   const [auto, setAuto] = useState<AutoSwitchMap | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -134,6 +138,7 @@ export default function App() {
     } catch {
       /* leave previous */
     }
+    setApps(await listApps().catch(() => []));
     // Per-profile usage for the selected provider (Claude only has a readout).
     if (selected === "claude") {
       const claude = loaded.filter((r) => r.provider === "claude");
@@ -393,6 +398,19 @@ export default function App() {
                               >
                                 <Play /> Run
                               </Button>
+                              {apps
+                                .filter((a) => a.provider === selected && a.installed)
+                                .map((a) => (
+                                  <Button
+                                    key={a.id}
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-muted-foreground hover:text-foreground"
+                                    onClick={() => act(() => openApp(a.id, r.name))}
+                                  >
+                                    <AppWindow /> {a.displayName}
+                                  </Button>
+                                ))}
                               <Button
                                 size="icon"
                                 variant="ghost"

@@ -69,9 +69,11 @@ Key constraints this layer must honour:
 
 ## Phase 3: GUI integration
 
-- [ ] **Step 1:** IPC wrappers `listApps()` / `openApp(app, provider, name)`.
-- [ ] **Step 2:** Per-profile row shows an "Open in …" affordance for each
-      installed supported app. <!-- verify: vitest on the ipc arg builders -->
+- [x] **Step 1:** IPC wrappers `listApps()` (parses `apps --json`, `[]` on
+      failure) / `openApp(appId, name)` (runs `open <app> <profile>`).
+- [x] **Step 2:** Per-profile row shows an "Open in <app>" button for each
+      registered+installed app matching the row's provider (nothing while the
+      registry is empty). <!-- verify: vitest — ipc builders + affordance-click launches -->
 
 ## Phase 4: Docs + safety
 
