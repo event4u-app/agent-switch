@@ -17,6 +17,7 @@
  * registered by the per-client roadmaps (claude-desktop, codex-ui), not here.
  */
 
+import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { ProviderId } from "./providers.js";
 import { configDir, profileDir } from "./profiles.js";
@@ -47,9 +48,11 @@ export function findApp(id: string, registry: readonly AppDescriptor[] = APPS): 
   return registry.find((a) => a.id === id) ?? null;
 }
 
-/** The per-profile Electron user-data dir for a "user-data-dir" app. */
+/** The per-profile Electron user-data dir for a "user-data-dir" app.
+ *  `path.join` keeps separators OS-correct (the string-concat version broke the
+ *  Windows CI: `\`-joined profileDir + `/`-appended tail = mixed separators). */
 export function guiDataDir(app: AppDescriptor, name: string): string {
-  return `${profileDir(app.provider, name)}/gui/${app.id}`;
+  return path.join(profileDir(app.provider, name), "gui", app.id);
 }
 
 export interface LaunchSpec {
