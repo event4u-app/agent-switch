@@ -1,9 +1,14 @@
 ---
 complexity: structural
-status: draft
+status: complete
 ---
 
 # Roadmap: desktop/GUI app launch layer (shared foundation)
+
+> **COMPLETE (archived).** All phases closed: the generic launch layer (registry
+> + pure `buildLaunch` for both strategies + `open`/`apps` CLI + GUI wiring +
+> docs) ships with an empty registry. End-to-end launch against a *real* app is
+> proven by the first per-client roadmap (`road-to-claude-desktop`).
 
 > Extend agent-switch's per-profile isolation beyond the three CLIs to GUI /
 > desktop clients (Claude Desktop, Codex UI, …). This is the shared foundation
@@ -77,9 +82,11 @@ Key constraints this layer must honour:
 
 ## Phase 4: Docs + safety
 
-- [ ] **Step 1:** README section: supported GUI clients, the two strategies,
-      and the caveats (wrapper needed, not official, re-verify after updates).
-- [ ] **Step 2:** A per-client "verify on your build" snippet users can run.
+- [x] **Step 1:** README "GUI apps (experimental, macOS)" section — the two
+      strategies, `apps`/`open` commands, empty-registry status, and the caveats
+      (macOS-only, `open`-launched not double-click, unofficial, no live swap).
+- [x] **Step 2:** A "verify a candidate Electron app honours --user-data-dir"
+      snippet users can run (in the same README section).
 
 ## Acceptance criteria
 

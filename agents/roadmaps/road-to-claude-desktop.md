@@ -31,7 +31,7 @@ accounts able to run side-by-side.
 
 ## Dependencies
 
-- [ ] [`road-to-desktop-app-launch.md`](road-to-desktop-app-launch.md) — the
+- [x] [`road-to-desktop-app-launch.md`](archive/road-to-desktop-app-launch.md) — the
       launch layer + registry (this client registers `strategy: "user-data-dir"`).
 
 ## Phase 1: Register + launch

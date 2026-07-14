@@ -39,7 +39,7 @@ profiles where possible.
 
 ## Dependencies
 
-- [ ] [`road-to-desktop-app-launch.md`](road-to-desktop-app-launch.md) — the
+- [x] [`road-to-desktop-app-launch.md`](archive/road-to-desktop-app-launch.md) — the
       launch layer (this client uses `strategy: "env"` for the IDE, and
       `env` + `user-data-dir` combined for the desktop app).
 - [ ] Existing Codex CLI `CODEX_HOME` profiles (reused as-is).

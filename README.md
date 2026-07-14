@@ -131,6 +131,42 @@ npm install playwright && npx playwright install chromium
 
 (Alternative without any tooling: separate Chrome profiles or Firefox containers achieve the same thing.)
 
+## GUI apps (experimental, macOS)
+
+Beyond the CLIs, agent-switch can launch **desktop/GUI clients** on an isolated
+profile. Two strategies, picked per app:
+
+- **env** — export the provider's config-dir env var (the same mechanism the
+  CLIs use, e.g. `CODEX_HOME`) when launching the app. Reuses the profile's
+  config dir.
+- **user-data-dir** — pass Chromium's `--user-data-dir` to an Electron app, so
+  each profile gets its own isolated data dir and profiles run **in parallel**.
+
+```bash
+agent-switch apps                 # list launchable GUI apps + installed state
+agent-switch open <app> [profile] # launch an app on a profile (active if omitted)
+```
+
+**Status:** the launch layer is in place; **the registry ships empty** —
+support for specific clients (Claude Desktop, Codex UI) lands via their
+roadmaps in `agents/roadmaps/`.
+
+Caveats (why this is experimental):
+- **macOS-only for now**; launched via the `open` command, not a Finder/Dock
+  double-click (a plain launch doesn't carry the flag/env → no isolation).
+- **Unofficial / version-fragile** — no vendor ships a built-in account
+  switcher; an app update can change launcher behaviour. Re-verify per app.
+- The profile's data dir is never swapped on a live app (that risks
+  SingletonLock/DB corruption); isolation is by launch flag/env only.
+
+Verify a candidate Electron app honours `--user-data-dir` on your machine:
+
+```bash
+open -n -a "<App>" --args --user-data-dir="$HOME/Library/Application Support/<App>-test"
+pgrep -lf "<App>.app/Contents/MacOS"        # ≥2 processes ⇒ parallel instances
+ls "$HOME/Library/Application Support/<App>-test"   # populated ⇒ flag honoured
+```
+
 ## Platform support
 
 Every command works on macOS, Linux, and Windows, or degrades with an explicit
