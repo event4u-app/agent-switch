@@ -12,6 +12,7 @@ const ipc = vi.hoisted(() => ({
   createProfile: vi.fn(),
   deactivateProfile: vi.fn(),
   removeProfile: vi.fn(),
+  quitApp: vi.fn(),
 }));
 vi.mock("./ipc.js", () => ipc);
 
@@ -39,38 +40,47 @@ beforeEach(() => {
   ipc.createProfile.mockResolvedValue(undefined);
   ipc.deactivateProfile.mockResolvedValue(undefined);
   ipc.removeProfile.mockResolvedValue(undefined);
+  ipc.quitApp.mockResolvedValue(undefined);
 });
 
 describe("App", () => {
-  it("loads and renders profiles grouped by provider + the active usage", async () => {
+  it("shows the selected provider's profiles + active usage; other providers stay behind their tab", async () => {
     render(<App />);
-    // provider group labels are unambiguous "loaded" anchors
-    expect(await screen.findByText("Codex")).toBeTruthy();
-    expect(screen.getAllByText("Claude").length).toBeGreaterThan(0);
-    expect(screen.getByText(/privat/)).toBeTruthy(); // unambiguous profile names
-    expect(screen.getByText(/oai/)).toBeTruthy();
-    // active usage window rendered (label + utilization)
+    // provider tabs are always present
+    expect(await screen.findByRole("tab", { name: /claude/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /codex/i })).toBeTruthy();
+    // default tab = claude → claude profiles visible, codex's `oai` hidden
+    expect(screen.getByText(/privat/)).toBeTruthy();
+    expect(screen.queryByText(/oai/)).toBeNull();
+    // active usage window for the selected provider
     expect(screen.getByText("5h")).toBeTruthy();
     expect(screen.getByText("42%")).toBeTruthy();
-    expect(screen.getByText(/42% used/)).toBeTruthy(); // nearest own limit badge
+    expect(screen.getByText(/42% used/)).toBeTruthy();
+  });
+
+  it("switches the provider tab to reveal that provider's profiles", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
+    expect(await screen.findByText(/oai/)).toBeTruthy(); // codex profile now shown
+    expect(screen.queryByText(/privat/)).toBeNull(); // claude profile now hidden
   });
 
   it("switches profile via the CLI and refreshes when Use is clicked", async () => {
     render(<App />);
-    await screen.findByText("Codex");
-    // only non-active rows have a Use button (privat, oai) — DOM order: privat first
+    await screen.findByRole("tab", { name: /claude/i });
+    // on the claude tab, only the non-active row (privat) has a Use button
     const useButtons = screen.getAllByRole("button", { name: "Use" });
-    expect(useButtons.length).toBe(2);
-    fireEvent.click(useButtons[0]); // privat
+    expect(useButtons.length).toBe(1);
+    fireEvent.click(useButtons[0]);
     expect(ipc.switchProfile).toHaveBeenCalledWith("claude", "privat");
     await waitFor(() => expect(ipc.listProfiles).toHaveBeenCalledTimes(2)); // refreshed
   });
 
   it("runs a session via the CLI when Run is clicked", async () => {
     render(<App />);
-    await screen.findByText("Codex");
+    await screen.findByRole("tab", { name: /claude/i });
     fireEvent.click(screen.getAllByRole("button", { name: "Run" })[0]);
-    expect(ipc.openSession).toHaveBeenCalled();
+    expect(ipc.openSession).toHaveBeenCalledWith("claude", "work");
   });
 
   it("shows 'No usage source' when the active profile has no usage", async () => {
@@ -85,23 +95,24 @@ describe("App", () => {
     expect(await screen.findByText(/not found on PATH.*npm link/)).toBeTruthy();
   });
 
-  it("shows an empty state with a create action when there are no profiles", async () => {
+  it("shows a per-provider empty state with a create action", async () => {
     ipc.listProfiles.mockResolvedValue([]);
     ipc.activeStatus.mockResolvedValue(null);
     render(<App />);
-    expect(await screen.findByText(/no profiles yet/i)).toBeTruthy();
+    expect(await screen.findByText(/no claude profiles yet/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /create a profile/i })).toBeTruthy();
   });
 
-  it("creates a profile + triggers login via the CLI from the New form", async () => {
+  it("creates a profile pre-selected to the open provider tab", async () => {
     ipc.listProfiles.mockResolvedValue([]);
     ipc.activeStatus.mockResolvedValue(null);
     render(<App />);
-    await screen.findByText(/no profiles yet/i);
+    // open the Codex tab first → the create form should default to codex
+    fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
     fireEvent.click(screen.getByRole("button", { name: /^New$/ }));
     fireEvent.change(await screen.findByPlaceholderText(/e\.g\. work/), { target: { value: "work" } });
     fireEvent.click(screen.getByRole("button", { name: /create & log in/i }));
-    await waitFor(() => expect(ipc.createProfile).toHaveBeenCalledWith("claude", "work"));
+    await waitFor(() => expect(ipc.createProfile).toHaveBeenCalledWith("codex", "work"));
     expect(await screen.findByText(/complete the login in the terminal/i)).toBeTruthy();
   });
 
@@ -114,12 +125,16 @@ describe("App", () => {
 
   it("deletes a profile only after an explicit confirm (deactivate-then-delete)", async () => {
     render(<App />);
-    await screen.findByText("Codex");
-    fireEvent.click(screen.getByRole("button", { name: /delete oai/i }));
-    // trash → inline confirm, nothing deleted yet
-    expect(ipc.removeProfile).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /delete oai/i }));
+    expect(ipc.removeProfile).not.toHaveBeenCalled(); // trash → confirm, nothing yet
     fireEvent.click(await screen.findByRole("button", { name: /^Yes$/ }));
-    expect(ipc.removeProfile).toHaveBeenCalledWith("codex", "oai");
-    await waitFor(() => expect(ipc.listProfiles).toHaveBeenCalledTimes(2)); // refreshed
+    await waitFor(() => expect(ipc.removeProfile).toHaveBeenCalledWith("codex", "oai"));
+  });
+
+  it("quits the app from the Quit button", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /quit/i }));
+    expect(ipc.quitApp).toHaveBeenCalled();
   });
 });
