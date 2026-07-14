@@ -5,6 +5,7 @@
  */
 
 import { Command } from "@tauri-apps/plugin-shell";
+import { invoke } from "@tauri-apps/api/core";
 import type { ProfileRow, StatusJson, ProviderId } from "./transforms.js";
 
 async function runCli(args: string[]): Promise<string> {
@@ -17,12 +18,12 @@ export async function listProfiles(): Promise<ProfileRow[]> {
   return JSON.parse(await runCli(["list", "--json"]));
 }
 
-export async function activeStatus(): Promise<StatusJson | null> {
+export async function activeStatus(provider: ProviderId = "claude"): Promise<StatusJson | null> {
   // A non-zero exit here means "no active profile / no usage yet" — a normal
   // empty state, not an error. Only a spawn failure (binary not found) rejects,
   // which `execute()` surfaces by throwing. Never let a missing active profile
   // blank the whole panel.
-  const out = await Command.create("agent-switch", ["status", "--json"]).execute();
+  const out = await Command.create("agent-switch", ["status", "--provider", provider, "--json"]).execute();
   if (out.code !== 0) return null;
   return JSON.parse(out.stdout);
 }
@@ -79,4 +80,10 @@ export async function openSession(provider: ProviderId, name: string): Promise<v
 
 export async function openWeb(name: string): Promise<void> {
   Command.create("agent-switch", ["web", name]).spawn();
+}
+
+/** Quit the whole app (the `quit` Tauri command → app.exit). Closing the
+ *  window only hides it, so this is the explicit way out. */
+export async function quitApp(): Promise<void> {
+  await invoke("quit");
 }
