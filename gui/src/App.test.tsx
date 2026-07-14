@@ -5,75 +5,84 @@ import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/re
 // jsdom. vi.hoisted lets the (hoisted) vi.mock factory reference `ipc`.
 const ipc = vi.hoisted(() => ({
   listProfiles: vi.fn(),
-  activeStatus: vi.fn(),
+  profileUsage: vi.fn(),
+  getAutoSwitch: vi.fn(),
+  setAutoSwitch: vi.fn(),
+  setProfileLabel: vi.fn(),
   switchProfile: vi.fn(),
-  openSession: vi.fn(),
-  openWeb: vi.fn(),
-  createProfile: vi.fn(),
   deactivateProfile: vi.fn(),
+  openSession: vi.fn(),
+  createProfile: vi.fn(),
   removeProfile: vi.fn(),
+  uninstall: vi.fn(),
   quitApp: vi.fn(),
 }));
 vi.mock("./ipc.js", () => ipc);
 
 import App from "./App.js";
-import type { ProfileRow, StatusJson } from "./transforms.js";
+import type { ProfileRow, UsageSnapshot } from "./transforms.js";
 
 const rows: ProfileRow[] = [
-  { provider: "claude", name: "work", identity: "w@x", active: true, liveSessions: 1 },
-  { provider: "claude", name: "privat", identity: "p@x", active: false, liveSessions: 0 },
-  { provider: "codex", name: "oai", identity: "acc", active: false, liveSessions: 0 },
+  { provider: "claude", name: "work", identity: "w@x", label: "Work", active: true, liveSessions: 1 },
+  { provider: "claude", name: "privat", identity: "p@x", label: "Personal", active: false, liveSessions: 0 },
+  { provider: "codex", name: "oai", identity: "acc", label: null, active: false, liveSessions: 0 },
 ];
-const status: StatusJson = {
-  provider: "claude",
-  name: "work",
-  identity: "w@x",
-  usage: { windows: [{ key: "5h", label: "5h", utilization: 42, resetsAt: null }], routines: null, capturedAt: "x" },
+const usageSnap: UsageSnapshot = {
+  windows: [{ key: "5h", label: "5h", utilization: 42, resetsAt: null }],
+  routines: null,
+  capturedAt: "x",
 };
 
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
   ipc.listProfiles.mockResolvedValue(rows);
-  ipc.activeStatus.mockResolvedValue(status);
+  ipc.profileUsage.mockResolvedValue(usageSnap);
+  ipc.getAutoSwitch.mockResolvedValue({ enabled: false, threshold: 95 });
+  ipc.setAutoSwitch.mockResolvedValue(undefined);
+  ipc.setProfileLabel.mockResolvedValue(undefined);
   ipc.switchProfile.mockResolvedValue(undefined);
-  ipc.createProfile.mockResolvedValue(undefined);
   ipc.deactivateProfile.mockResolvedValue(undefined);
+  ipc.createProfile.mockResolvedValue(undefined);
   ipc.removeProfile.mockResolvedValue(undefined);
+  ipc.uninstall.mockResolvedValue(undefined);
   ipc.quitApp.mockResolvedValue(undefined);
 });
 
 describe("App", () => {
-  it("shows the selected provider's profiles + active usage; other providers stay behind their tab", async () => {
+  it("shows the selected provider's profiles with per-profile usage; labels render", async () => {
     render(<App />);
-    // provider tabs are always present
     expect(await screen.findByRole("tab", { name: /claude/i })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: /codex/i })).toBeTruthy();
-    // default tab = claude → claude profiles visible, codex's `oai` hidden
     expect(screen.getByText(/privat/)).toBeTruthy();
-    expect(screen.queryByText(/oai/)).toBeNull();
-    // active usage window for the selected provider
-    expect(screen.getByText("5h")).toBeTruthy();
-    expect(screen.getByText("42%")).toBeTruthy();
-    expect(screen.getByText(/42% used/)).toBeTruthy();
+    expect(screen.queryByText(/oai/)).toBeNull(); // codex hidden behind its tab
+    // per-profile usage bar rendered for the claude profiles
+    expect(await screen.findAllByText("5h")).not.toHaveLength(0);
+    expect(screen.getAllByText("42%").length).toBeGreaterThan(0);
+    // label badge shown
+    expect(screen.getByText("Work")).toBeTruthy();
   });
 
   it("switches the provider tab to reveal that provider's profiles", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
-    expect(await screen.findByText(/oai/)).toBeTruthy(); // codex profile now shown
-    expect(screen.queryByText(/privat/)).toBeNull(); // claude profile now hidden
+    expect(await screen.findByText(/oai/)).toBeTruthy();
+    expect(screen.queryByText(/privat/)).toBeNull();
   });
 
-  it("switches profile via the CLI and refreshes when Use is clicked", async () => {
+  it("uses a non-active profile and refreshes", async () => {
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i });
-    // on the claude tab, only the non-active row (privat) has a Use button
     const useButtons = screen.getAllByRole("button", { name: "Use" });
-    expect(useButtons.length).toBe(1);
+    expect(useButtons.length).toBe(1); // only privat (work is active)
     fireEvent.click(useButtons[0]);
     expect(ipc.switchProfile).toHaveBeenCalledWith("claude", "privat");
-    await waitFor(() => expect(ipc.listProfiles).toHaveBeenCalledTimes(2)); // refreshed
+    await waitFor(() => expect(ipc.listProfiles).toHaveBeenCalledTimes(2));
+  });
+
+  it("deactivates the active profile via its Off button", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Off" }));
+    expect(ipc.deactivateProfile).toHaveBeenCalledWith("claude");
   });
 
   it("runs a session via the CLI when Run is clicked", async () => {
@@ -81,12 +90,6 @@ describe("App", () => {
     await screen.findByRole("tab", { name: /claude/i });
     fireEvent.click(screen.getAllByRole("button", { name: "Run" })[0]);
     expect(ipc.openSession).toHaveBeenCalledWith("claude", "work");
-  });
-
-  it("shows 'No usage source' when the active profile has no usage", async () => {
-    ipc.activeStatus.mockResolvedValue({ ...status, usage: null });
-    render(<App />);
-    expect(await screen.findByText(/no usage source/i)).toBeTruthy();
   });
 
   it("surfaces an actionable error when the CLI binary is unreachable", async () => {
@@ -97,7 +100,6 @@ describe("App", () => {
 
   it("shows a per-provider empty state with a create action", async () => {
     ipc.listProfiles.mockResolvedValue([]);
-    ipc.activeStatus.mockResolvedValue(null);
     render(<App />);
     expect(await screen.findByText(/no claude profiles yet/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /create a profile/i })).toBeTruthy();
@@ -105,31 +107,35 @@ describe("App", () => {
 
   it("creates a profile pre-selected to the open provider tab", async () => {
     ipc.listProfiles.mockResolvedValue([]);
-    ipc.activeStatus.mockResolvedValue(null);
     render(<App />);
-    // open the Codex tab first → the create form should default to codex
     fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
     fireEvent.click(screen.getByRole("button", { name: /^New$/ }));
     fireEvent.change(await screen.findByPlaceholderText(/e\.g\. work/), { target: { value: "work" } });
     fireEvent.click(screen.getByRole("button", { name: /create & log in/i }));
     await waitFor(() => expect(ipc.createProfile).toHaveBeenCalledWith("codex", "work"));
-    expect(await screen.findByText(/complete the login in the terminal/i)).toBeTruthy();
   });
 
-  it("deactivates the active profile from the Active card", async () => {
-    render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /deactivate/i }));
-    expect(ipc.deactivateProfile).toHaveBeenCalledWith("claude");
-    await waitFor(() => expect(ipc.listProfiles).toHaveBeenCalledTimes(2)); // refreshed
-  });
-
-  it("deletes a profile only after an explicit confirm (deactivate-then-delete)", async () => {
+  it("deletes a profile only after an explicit confirm", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
     fireEvent.click(await screen.findByRole("button", { name: /delete oai/i }));
-    expect(ipc.removeProfile).not.toHaveBeenCalled(); // trash → confirm, nothing yet
+    expect(ipc.removeProfile).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: /^Yes$/ }));
     await waitFor(() => expect(ipc.removeProfile).toHaveBeenCalledWith("codex", "oai"));
+  });
+
+  it("toggles auto-switch from the footer", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /auto-switch/i }));
+    expect(ipc.setAutoSwitch).toHaveBeenCalledWith(true); // was off → turned on
+  });
+
+  it("uninstalls only after an explicit confirm, then quits", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /uninstall/i }));
+    expect(ipc.uninstall).not.toHaveBeenCalled(); // first click → confirm
+    fireEvent.click(await screen.findByRole("button", { name: /^Uninstall$/ }));
+    await waitFor(() => expect(ipc.uninstall).toHaveBeenCalled());
   });
 
   it("quits the app from the Quit button", async () => {

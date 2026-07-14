@@ -1,16 +1,29 @@
 import { useEffect, useState } from "react";
 import { Plus, RefreshCw, Play, LogIn, X, AlertCircle, Info, Power, Trash2 } from "lucide-react";
 import {
-  activeStatus,
   createProfile,
   deactivateProfile,
+  getAutoSwitch,
   listProfiles,
   openSession,
+  profileUsage,
   quitApp,
   removeProfile,
+  setAutoSwitch,
+  setProfileLabel,
   switchProfile,
+  uninstall,
+  type AutoSwitch,
 } from "./ipc.js";
-import { groupByProvider, nearestLimit, type ProfileRow, type StatusJson, type ProviderId } from "./transforms.js";
+import {
+  groupByProvider,
+  formatReset,
+  PROFILE_LABELS,
+  type ProfileRow,
+  type ProfileLabel,
+  type UsageSnapshot,
+  type ProviderId,
+} from "./transforms.js";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,9 +34,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const PROVIDERS: ProviderId[] = ["claude", "codex", "gemini"];
 const PROVIDER_LABEL: Record<ProviderId, string> = { claude: "Claude", codex: "Codex", gemini: "Gemini" };
+const NO_LABEL = "none";
 
-/** Turn a raw CLI failure into something the user can act on. A spawn failure
- *  means the `agent-switch` binary is not on PATH. */
 function describeError(e: unknown): string {
   const msg = String((e as { message?: unknown })?.message ?? e);
   if (/not found|No such file|ENOENT|failed to (spawn|execute)|program/i.test(msg)) {
@@ -39,17 +51,43 @@ function utilColor(pct: number): string {
   return "hsl(var(--success))";
 }
 
+function UsageBars({ usage }: { usage: UsageSnapshot }) {
+  const windows = usage.windows.filter((w) => typeof w.utilization === "number");
+  if (windows.length === 0) return null;
+  return (
+    <div className="mt-1.5 space-y-1 pl-4">
+      {windows.map((w) => {
+        const pct = w.utilization ?? 0;
+        const reset = formatReset(w.resetsAt);
+        return (
+          <div key={w.key} className="flex items-center gap-2 text-[11px]">
+            <span className="w-8 shrink-0 text-muted-foreground">{w.label}</span>
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
+              <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, background: utilColor(pct) }} />
+            </div>
+            <span className="w-8 shrink-0 text-right tabular-nums" style={{ color: utilColor(pct) }}>
+              {pct}%
+            </span>
+            <span className="w-16 shrink-0 text-muted-foreground">{reset ? `${reset}` : ""}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function App() {
   const [rows, setRows] = useState<ProfileRow[]>([]);
-  const [status, setStatus] = useState<StatusJson | null>(null);
   const [selected, setSelected] = useState<ProviderId>("claude");
+  const [usage, setUsage] = useState<Record<string, UsageSnapshot>>({});
+  const [auto, setAuto] = useState<AutoSwitch | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmUninstall, setConfirmUninstall] = useState(false);
 
-  /** Run a mutating CLI action, then refresh; surface any failure. */
   function act(fn: () => Promise<void>) {
     fn()
       .then(refresh)
@@ -57,36 +95,44 @@ export default function App() {
   }
 
   async function refresh() {
-    // Load the list first; if that fails the CLI is unreachable, so surface an
-    // actionable error and skip status. A status failure must never blank the
-    // already-loaded list, so it gets its own catch. Status is per-selected-
-    // provider (usage only exists for Claude; others report identity only).
     setBusy(true);
+    let loaded: ProfileRow[];
     try {
-      setRows(await listProfiles());
+      loaded = await listProfiles();
+      setRows(loaded);
       setError(null);
     } catch (e) {
       setError(describeError(e));
       setBusy(false);
       return;
     }
+    // Best-effort side data — never blanks the list on failure.
     try {
-      setStatus(await activeStatus(selected));
-    } catch (e) {
-      setStatus(null);
-      setError(describeError(e));
+      setAuto(await getAutoSwitch());
+    } catch {
+      /* leave previous */
+    }
+    // Per-profile usage for the selected provider (Claude only has a readout).
+    if (selected === "claude") {
+      const claude = loaded.filter((r) => r.provider === "claude");
+      const entries = await Promise.all(
+        claude.map(async (r) => [r.name, await profileUsage("claude", r.name).catch(() => null)] as const),
+      );
+      const map: Record<string, UsageSnapshot> = {};
+      for (const [name, snap] of entries) if (snap) map[name] = snap;
+      setUsage(map);
+    } else {
+      setUsage({});
     }
     setBusy(false);
   }
 
-  // Re-runs on mount and whenever the provider tab changes (status is per-provider).
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
   const grouped = groupByProvider(rows);
-  const limit = nearestLimit(status?.usage ?? null);
   const shown = grouped[selected];
 
   return (
@@ -114,7 +160,6 @@ export default function App() {
       </header>
 
       <div className="flex-1 space-y-2.5 overflow-y-auto p-3">
-        {/* Provider switcher: profiles are sectioned by provider, one panel at a time. */}
         <div role="tablist" className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
           {PROVIDERS.map((pid) => {
             const count = grouped[pid].length;
@@ -174,7 +219,7 @@ export default function App() {
                 await createProfile(provider, name);
                 setError(null);
                 setShowCreate(false);
-                setSelected(provider); // jump to the tab we just created into
+                setSelected(provider);
                 setNotice(
                   `Creating ${PROVIDER_LABEL[provider]} profile “${name}”. Complete the login in the Terminal window, then hit Refresh.`,
                 );
@@ -185,56 +230,6 @@ export default function App() {
               }
             }}
           />
-        )}
-
-        {status && status.provider === selected && (
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">Active</span>
-                <div className="flex items-center gap-1.5">
-                  {limit !== null && <Badge variant={limit >= 90 ? "outline" : "default"}>{limit}% used</Badge>}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 px-2 text-muted-foreground hover:text-foreground"
-                    onClick={() => act(() => deactivateProfile(status.provider))}
-                  >
-                    <Power /> Deactivate
-                  </Button>
-                </div>
-              </div>
-              <div className="text-sm font-medium">
-                {PROVIDER_LABEL[status.provider]} / {status.name}
-                {status.identity && <span className="ml-1.5 font-normal text-muted-foreground">{status.identity}</span>}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {status.usage && status.usage.windows.length > 0 ? (
-                <div className="space-y-2">
-                  {status.usage.windows.map((w) => (
-                    <div key={w.key} className="space-y-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground">{w.label}</span>
-                        <span className="tabular-nums">{w.utilization ?? "?"}%</span>
-                      </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{
-                            width: `${Math.min(100, w.utilization ?? 0)}%`,
-                            background: utilColor(w.utilization ?? 0),
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-muted-foreground">No usage source</div>
-              )}
-            </CardContent>
-          </Card>
         )}
 
         {shown.length === 0 && !error ? (
@@ -257,61 +252,78 @@ export default function App() {
           <Card>
             <div className="divide-y divide-border">
               {shown.map((r) => (
-                <div key={r.name} className="flex items-center justify-between gap-2 px-3 py-2">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span
-                      className="size-2 shrink-0 rounded-full"
-                      style={{ background: r.active ? "hsl(var(--success))" : "hsl(var(--border))" }}
-                      aria-hidden
-                    />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="truncate text-[13px] font-medium">{r.name}</span>
-                        {r.liveSessions > 0 && <Badge variant="success">{r.liveSessions} live</Badge>}
+                <div key={r.name} className="px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="size-2 shrink-0 rounded-full"
+                        style={{ background: r.active ? "hsl(var(--success))" : "hsl(var(--border))" }}
+                        aria-hidden
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-[13px] font-medium">{r.name}</span>
+                          {r.active && <span className="text-[11px] font-medium text-[hsl(var(--success))]">active</span>}
+                          {r.liveSessions > 0 && <Badge variant="success">{r.liveSessions} live</Badge>}
+                        </div>
+                        <div className="truncate text-xs text-muted-foreground">{r.identity ?? "—"}</div>
                       </div>
-                      <div className="truncate text-xs text-muted-foreground">{r.identity ?? "—"}</div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {confirmDelete === `${selected}/${r.name}` ? (
+                        <>
+                          <span className="text-xs text-muted-foreground">Delete?</span>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => {
+                              setConfirmDelete(null);
+                              act(() => removeProfile(selected, r.name));
+                            }}
+                          >
+                            Yes
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(null)}>
+                            No
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <LabelSelect
+                            value={r.label}
+                            onChange={(label) => act(() => setProfileLabel(selected, r.name, label))}
+                          />
+                          {r.active ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-muted-foreground hover:text-foreground"
+                              onClick={() => act(() => deactivateProfile(selected))}
+                            >
+                              <Power /> Off
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="secondary" onClick={() => act(() => switchProfile(selected, r.name))}>
+                              Use
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost" onClick={() => openSession(selected, r.name)}>
+                            <Play /> Run
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-7 text-muted-foreground hover:text-destructive"
+                            aria-label={`Delete ${r.name}`}
+                            onClick={() => setConfirmDelete(`${selected}/${r.name}`)}
+                          >
+                            <Trash2 />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {confirmDelete === `${selected}/${r.name}` ? (
-                      <>
-                        <span className="text-xs text-muted-foreground">Delete?</span>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => {
-                            setConfirmDelete(null);
-                            act(() => removeProfile(selected, r.name));
-                          }}
-                        >
-                          Yes
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(null)}>
-                          No
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        {!r.active && (
-                          <Button size="sm" variant="secondary" onClick={() => act(() => switchProfile(selected, r.name))}>
-                            Use
-                          </Button>
-                        )}
-                        <Button size="sm" variant="ghost" onClick={() => openSession(selected, r.name)}>
-                          <Play /> Run
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-7 text-muted-foreground hover:text-destructive"
-                          aria-label={`Delete ${r.name}`}
-                          onClick={() => setConfirmDelete(`${selected}/${r.name}`)}
-                        >
-                          <Trash2 />
-                        </Button>
-                      </>
-                    )}
-                  </div>
+                  {usage[r.name] && <UsageBars usage={usage[r.name]} />}
                 </div>
               ))}
             </div>
@@ -319,18 +331,73 @@ export default function App() {
         )}
       </div>
 
-      <footer className="flex items-center justify-between border-t border-border px-3 py-1.5">
-        <span className="text-[11px] text-muted-foreground">Menu-bar app · closing hides it</span>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-2 text-muted-foreground hover:text-destructive"
-          onClick={() => quitApp()}
-        >
-          <Power /> Quit
-        </Button>
+      <footer className="flex items-center justify-between gap-2 border-t border-border px-3 py-1.5">
+        {auto && (
+          <button
+            className={cn(
+              "flex items-center gap-1.5 text-[11px] transition-colors",
+              auto.enabled ? "text-[hsl(var(--success))]" : "text-muted-foreground hover:text-foreground",
+            )}
+            onClick={() => act(() => setAutoSwitch(!auto.enabled))}
+            title="Auto-switch to the account with the most headroom when the active one hits its limit"
+          >
+            <span className={cn("size-2 rounded-full", auto.enabled ? "bg-[hsl(var(--success))]" : "bg-border")} />
+            Auto-switch {auto.enabled ? `on (${auto.threshold}%)` : "off"}
+          </button>
+        )}
+        <div className="ml-auto flex items-center gap-1">
+          {confirmUninstall ? (
+            <>
+              <span className="text-[11px] text-muted-foreground">Remove all data?</span>
+              <Button size="sm" variant="destructive" onClick={() => act(() => uninstall().then(quitApp))}>
+                Uninstall
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmUninstall(false)}>
+                No
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-muted-foreground hover:text-destructive"
+              onClick={() => setConfirmUninstall(true)}
+            >
+              Uninstall
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-muted-foreground hover:text-destructive"
+            onClick={() => quitApp()}
+          >
+            <Power /> Quit
+          </Button>
+        </div>
       </footer>
     </div>
+  );
+}
+
+function LabelSelect({ value, onChange }: { value: ProfileLabel | null; onChange: (v: ProfileLabel | null) => void }) {
+  return (
+    <Select
+      value={value ?? NO_LABEL}
+      onValueChange={(v) => onChange(v === NO_LABEL ? null : (v as ProfileLabel))}
+    >
+      <SelectTrigger aria-label="Label" className="h-7 w-auto gap-1 border-0 bg-transparent px-1.5 shadow-none focus:ring-1">
+        {value ? <Badge variant="secondary">{value}</Badge> : <span className="text-xs text-muted-foreground">Tag</span>}
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NO_LABEL}>— None</SelectItem>
+        {PROFILE_LABELS.map((l) => (
+          <SelectItem key={l} value={l}>
+            {l}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -345,7 +412,6 @@ function CreateProfileForm({
   onCreate: (provider: ProviderId, name: string) => void;
   onCancel: () => void;
 }) {
-  // Pre-selected to the open provider tab; the user can still change it.
   const [provider, setProvider] = useState<ProviderId>(defaultProvider);
   const [name, setName] = useState("");
   const trimmed = name.trim();

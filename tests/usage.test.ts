@@ -1,9 +1,53 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseUsage, formatSnapshot, detectCrossings, type ThresholdState } from "../src/usage.js";
+import {
+  parseUsage,
+  formatSnapshot,
+  detectCrossings,
+  maxUtilization,
+  pickSwitchTarget,
+  type ThresholdState,
+  type UsageSnapshot,
+} from "../src/usage.js";
 
 const AT = "2026-07-13T12:00:00.000Z";
+
+const snap = (util: number[]): UsageSnapshot => ({
+  windows: util.map((u, i) => ({ key: `w${i}`, label: `w${i}`, utilization: u, resetsAt: null })),
+  routines: null,
+  capturedAt: AT,
+});
+
+test("maxUtilization returns the highest window value, or null when none known", () => {
+  assert.equal(maxUtilization(snap([12, 63, 80])), 80);
+  assert.equal(maxUtilization({ windows: [], routines: null, capturedAt: AT }), null);
+});
+
+test("pickSwitchTarget returns null while the active profile still has headroom", () => {
+  const cands = [
+    { name: "work", snapshot: snap([50]) },
+    { name: "privat", snapshot: snap([10]) },
+  ];
+  assert.equal(pickSwitchTarget("work", cands, 95), null);
+});
+
+test("pickSwitchTarget picks the most-headroom account once the active one is maxed", () => {
+  const cands = [
+    { name: "work", snapshot: snap([96]) }, // active, over threshold
+    { name: "privat", snapshot: snap([40]) },
+    { name: "acme", snapshot: snap([20]) }, // most headroom
+  ];
+  assert.equal(pickSwitchTarget("work", cands, 95), "acme");
+});
+
+test("pickSwitchTarget returns null when every other account is also maxed", () => {
+  const cands = [
+    { name: "work", snapshot: snap([99]) },
+    { name: "privat", snapshot: snap([97]) },
+  ];
+  assert.equal(pickSwitchTarget("work", cands, 95), null);
+});
 
 test("parseUsage reads all four windows + routines, rounding utilization", () => {
   const raw = {

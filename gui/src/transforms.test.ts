@@ -5,14 +5,15 @@ import {
   nearestLimit,
   trayTooltip,
   sparkline,
+  formatReset,
   type ProfileRow,
   type UsageSnapshot,
 } from "./transforms.js";
 
 const rows: ProfileRow[] = [
-  { provider: "claude", name: "work", identity: "w@x.com", active: true, liveSessions: 1 },
-  { provider: "claude", name: "privat", identity: "p@x.com", active: false, liveSessions: 0 },
-  { provider: "codex", name: "oai", identity: "acc", active: false, liveSessions: 0 },
+  { provider: "claude", name: "work", identity: "w@x.com", label: "Work", active: true, liveSessions: 1 },
+  { provider: "claude", name: "privat", identity: "p@x.com", label: "Personal", active: false, liveSessions: 0 },
+  { provider: "codex", name: "oai", identity: "acc", label: null, active: false, liveSessions: 0 },
 ];
 
 describe("groupByProvider", () => {
@@ -69,5 +70,19 @@ describe("sparkline", () => {
     expect(s.length).toBe(3);
     expect(s[0]).toBe("▁"); // 0% → lowest
     expect(s[2]).toBe("█"); // 100% → highest
+  });
+});
+
+describe("formatReset", () => {
+  const now = Date.parse("2026-07-14T00:00:00Z");
+  it("renders days+hours, hours+minutes, or minutes", () => {
+    expect(formatReset("2026-07-19T03:00:00Z", now)).toBe("5d 3h");
+    expect(formatReset("2026-07-14T02:47:00Z", now)).toBe("2h 47m");
+    expect(formatReset("2026-07-14T00:12:00Z", now)).toBe("12m");
+  });
+  it("is empty for past, null, or unparseable timestamps", () => {
+    expect(formatReset("2026-07-13T00:00:00Z", now)).toBe("");
+    expect(formatReset(null, now)).toBe("");
+    expect(formatReset("nonsense", now)).toBe("");
   });
 });

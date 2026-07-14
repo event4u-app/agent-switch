@@ -13,12 +13,42 @@ export const STATE_FILE = path.join(ROOT, "state.json");
 
 /** The active profile name per provider. */
 export type ActiveMap = Record<ProviderId, string | null>;
+
+/** Optional profile type/tag, to tell work vs personal accounts apart. */
+export const PROFILE_LABELS = ["Work", "Personal", "Other"] as const;
+export type ProfileLabel = (typeof PROFILE_LABELS)[number];
+export function isProfileLabel(v: unknown): v is ProfileLabel {
+  return typeof v === "string" && (PROFILE_LABELS as readonly string[]).includes(v);
+}
+
+/** `"claude/work"` → label. Flat keys keep the shape trivially serialisable. */
+export type LabelMap = Record<string, ProfileLabel>;
+
+/**
+ * Opt-in auto-switch (default OFF). When enabled, the daemon switches the active
+ * profile to the same-provider account with the most headroom once the active
+ * one crosses `threshold`% on any window. This pools accounts to route around
+ * rate limits — off by default because it may conflict with a provider's usage
+ * policy; the operator turns it on deliberately.
+ */
+export interface AutoSwitchConfig {
+  enabled: boolean;
+  threshold: number; // percent (1-100)
+}
+export const DEFAULT_AUTOSWITCH: AutoSwitchConfig = { enabled: false, threshold: 95 };
+
 export interface State {
   active: ActiveMap;
+  labels: LabelMap;
+  autoSwitch: AutoSwitchConfig;
 }
 
 function emptyActive(): ActiveMap {
   return { claude: null, codex: null, gemini: null };
+}
+
+function labelKey(providerId: ProviderId, name: string): string {
+  return `${providerId}/${name}`;
 }
 
 export function die(msg: string): never {
@@ -94,20 +124,39 @@ export function identity(providerId: ProviderId, name: string): string | null {
 
 // ---------- state (per-provider active), with v1 → v2 migration ----------
 
+function normalizeLabels(raw: unknown): LabelMap {
+  const out: LabelMap = {};
+  if (raw && typeof raw === "object") {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (isProfileLabel(v)) out[k] = v;
+    }
+  }
+  return out;
+}
+
+function normalizeAutoSwitch(raw: unknown): AutoSwitchConfig {
+  const r = (raw ?? {}) as Partial<AutoSwitchConfig>;
+  const threshold = typeof r.threshold === "number" && r.threshold >= 1 && r.threshold <= 100 ? Math.round(r.threshold) : DEFAULT_AUTOSWITCH.threshold;
+  return { enabled: r.enabled === true, threshold };
+}
+
 export function readState(): State {
   try {
     const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    const labels = normalizeLabels(raw?.labels);
+    const autoSwitch = normalizeAutoSwitch(raw?.autoSwitch);
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active } };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active } };
+      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch };
     }
+    return { active: emptyActive(), labels, autoSwitch };
   } catch {
     /* absent / unparsable → default */
   }
-  return { active: emptyActive() };
+  return { active: emptyActive(), labels: {}, autoSwitch: { ...DEFAULT_AUTOSWITCH } };
 }
 
 export function writeState(state: State): void {
@@ -123,6 +172,35 @@ export function setActive(providerId: ProviderId, name: string | null): void {
   const state = readState();
   state.active[providerId] = name;
   writeState(state);
+}
+
+export function labelFor(providerId: ProviderId, name: string): ProfileLabel | null {
+  return readState().labels[labelKey(providerId, name)] ?? null;
+}
+
+/** Set (or clear, with null) a profile's label. */
+export function setLabel(providerId: ProviderId, name: string, label: ProfileLabel | null): void {
+  const state = readState();
+  const key = labelKey(providerId, name);
+  if (label) state.labels[key] = label;
+  else delete state.labels[key];
+  writeState(state);
+}
+
+/** Drop a removed profile's label so it can't linger as an orphan. */
+export function clearLabel(providerId: ProviderId, name: string): void {
+  setLabel(providerId, name, null);
+}
+
+export function readAutoSwitch(): AutoSwitchConfig {
+  return readState().autoSwitch;
+}
+
+export function setAutoSwitch(cfg: Partial<AutoSwitchConfig>): AutoSwitchConfig {
+  const state = readState();
+  state.autoSwitch = normalizeAutoSwitch({ ...state.autoSwitch, ...cfg });
+  writeState(state);
+  return state.autoSwitch;
 }
 
 // ---------- layout migration: v1 <ROOT>/<name> → <ROOT>/claude/<name> ----------
