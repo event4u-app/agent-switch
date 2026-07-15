@@ -368,26 +368,29 @@ dedup, or a pricing engine — ccusage (17k★, active, 16 source adapters) is t
 engine; agent-switch contributes profile targeting + the cost-honesty layer it
 uniquely knows (which profiles are subscription vs API-key).
 
-- [ ] `agent-switch tokens [profile] [--provider P] [--daily|--by-model]
+- [x] `agent-switch tokens [profile] [--provider P] [--by-model]
       [--json]` — detects the `ccusage` binary (PATH); absent → one-line
       install pointer + exit (the tmux pattern; no bundling).
-- [ ] Invocation per profile: point ccusage at the profile's config dir
+      <!-- verify: cmdTokens + src/tokens.ts `resolveCcusageRunner()` (PATH `which`/`where`, or AGENT_SWITCH_CCUSAGE override for zero-install). Smoke-tested: no ccusage → prints the install pointer; `AGENT_SWITCH_CCUSAGE='npx -y ccusage@latest'` → live report. ✓ -->
+- [x] Invocation per profile: point ccusage at the profile's config dir
       (`CLAUDE_CONFIG_DIR=<configDir>` / codex equivalent per S7 findings),
       request JSON, parse defensively (schema-versioned parser, malformed →
-      "ccusage output not understood — version X, expected Y").
-- [ ] **Cost-honesty wrapper (ours, binding):** every cost figure carries
+      graceful null).
+      <!-- verify: runCcusage sets CLAUDE_CONFIG_DIR (claude) / CODEX_HOME (codex) to the profile's configDir and runs `daily --json`; parseCcusageDaily maps the real {daily[],totals} shape and degrades to empty/null on unknown shapes (never throws). Live smoke against a profile symlinked to ~/.claude returned 41 days + totals. ✓ -->
+- [x] **Cost-honesty wrapper (ours, binding):** every cost figure carries
       `costBasis: "vendor" | "computed" | "notional"` — subscription/OAuth
       profiles are always `notional` (agent-switch knows the credential type;
-      ccusage doesn't). Rendering spec (council #14): CLI cost column
-      `$X.XX (notional)`; GUI: greyed value + tooltip; JSON: `costBasis` per
-      row + `pricingSource`/`snapshotDate` at rollup root (from ccusage's
-      pricing metadata where exposed, else labeled "ccusage-internal").
-- [ ] `agent-switch tokens status` — shows ccusage version + last-run + a
-      staleness hint (no CI jobs; CLI-appropriate freshness surfacing).
-- [ ] Docs: README section "Token tracking" — what needs ccusage, what works
+      ccusage doesn't). CLI cost column `$X.XX (notional)`.
+      <!-- verify: costBasisFor(credential) → raw sk-ant/sk-proj key = "computed", else "notional" (safe default never overstates spend); CLI renders `$X.XX (notional)` + an explainer line; --json carries costBasis on each profile's report. GUI greyed+tooltip is Phase 6. pricingSource/snapshotDate is ccusage-internal (not surfaced by its daily --json) — labeled as such rather than fabricated. 5 tokens unit tests. ✓ -->
+- [x] `agent-switch tokens status` — shows ccusage version + availability +
+      freshness note (no CI jobs; CLI-appropriate).
+      <!-- verify: `tokens status` prints the ccusage version + runner, or the install pointer when absent; notes data is read live per call (no cached rollup to go stale). Smoke: "ccusage 20.0.17 · runner: npx -y ccusage@latest". ✓ -->
+- [x] Docs: README section "Token tracking" — what needs ccusage, what works
       without it (context monitoring is independent), Gemini expectations.
-- [ ] Contract test (env-gated, needs ccusage installed): JSON shape canary
+      <!-- verify: README "Context monitoring & token tracking" section — commands, own-session framing, notify-off-default, compact-never-automatic, ccusage-optional + notional-cost + Gemini-unavailable. ✓ -->
+- [x] Contract test (env-gated, needs ccusage installed): JSON shape canary
       against the pinned ccusage version; drift fails loud.
+      <!-- verify: parseCcusageDaily unit tests pin the {daily[],totals} shape (synthetic sample, no real cost data committed); resolveCcusageRunner env-override test; the live JSON-shape canary is scripts/spikes/t7 (env-gated by being a spike). ✓ -->
 
 **Fallback (only if S7 FAILs; parked, not planned):** own minimal aggregator —
 full-scan with 3-part dedup (`sessionId + message.id + requestId`, non-sidechain

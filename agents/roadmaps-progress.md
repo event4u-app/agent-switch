@@ -6,10 +6,10 @@
 
 ## Overall
 
-**60 / 72 steps done · 83%**
+**66 / 72 steps done · 92%**
 
 ```text
-█████████████████████████████████░░░░░░░   83%
+█████████████████████████████████████░░░   92%
 ```
 
 ## ⚠️ Iron Law 3 — unresolved deferred items
@@ -24,7 +24,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md) | 9 | 47 | 12 | 32 | 3 | 0 | 0 | ███████░░░ 73% |
+| 1 | [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md) | 9 | 47 | 6 | 38 | 3 | 0 | 0 | █████████░ 86% |
 | 2 | [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md) | 6 | 29 | 0 | 28 | 1 | 0 | 0 | ██████████ 100% |
 
 ---
@@ -33,7 +33,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 ### [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md)
 
-**Session telemetry — context monitor + token/cost tracking** — 32 / 44 done (73%)
+**Session telemetry — context monitor + token/cost tracking** — 38 / 44 done (86%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
@@ -43,7 +43,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | 2.5 | hooks — lifecycle push channel (moved from Phase 7, council #2) | ✅ done | 0 | 5 | 0 | 0 | 100% |
 | 3 | daemon — get warned | ✅ done | 0 | 7 | 0 | 0 | 100% |
 | 4 | actions — one keypress, owned terminals only | 🟡 in progress | 1 | 3 | 0 | 0 | 75% |
-| 5 | tokens + cost — ccusage-delegated (council D2) | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
+| 5 | tokens + cost — ccusage-delegated (council D2) | ✅ done | 0 | 6 | 0 | 0 | 100% |
 | 6 | GUI — surfaces | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
 | 7 | (deferred): nice-to-haves | ⏭️ skipped | 0 | 0 | 3 | 0 | 0% |
 
