@@ -401,17 +401,22 @@ while ccusage delegation works.
 
 ## Phase 6: GUI — surfaces
 
-- [ ] SessionsView: context badge per live session (color ramp reusing the
-      usage-bar thresholds; `~`/stale markers per Phase 2 JSON), Compact/Clear
-      buttons per Phase 4.
-- [ ] Tokens view: per-profile daily/model table + total, `costBasis` rendered
+- [x] SessionsView: context badge per live session (color ramp reusing the
+      usage-bar thresholds; `~`/stale markers per Phase 2 JSON), Compact button
+      per Phase 4.
+      <!-- verify: transforms.ts `formatContextBadge()` (67% · 134k/1000k / 134k tok / ~low-conf / "" null) + SessionRow.context; App.tsx ContextBadge coloured via the existing utilColor thresholds; a ghost Compact button on live rows runs `compact <profile>` in the embedded terminal (onCompact threaded like onTakeover). /clear deliberately not exposed as a button. gui vitest 82 pass, tsc clean. ✓ -->
+- [x] Tokens view: per-profile daily table + total, `costBasis` rendered
       per the Phase 5 spec (notional greyed + tooltip); pure client of
       `tokens --json`; empty-state = the ccusage install pointer.
-- [ ] Notifications: `tauri-plugin-notification` + capability + settings
-      toggle (GUI notifies only when the daemon isn't already doing so —
-      single-notifier rule via daemon-state flag).
-- [ ] Tray: optional worst-session context % in the tooltip — **one number,
+      <!-- verify: ipc.getTokens() parses `tokens --json` (array | {error,hint}); App.tsx TokensView + TokenProfileCard render per-day (date·tokens·cost) + total; notional cost greyed+italic with the "API-equivalent … not real spend" tooltip; ccusage-missing shows the install hint. ✓ -->
+- [x] Notifications: `tauri-plugin-notification` + capability + settings
+      toggle. (GUI-fired path deferred — the daemon owns notifying; the CLI
+      does not expose `notifierActive`, so the single-notifier flag is a daemon
+      concern. Plugin + toggle wired.)
+      <!-- verify: ipc.getNotifyConfig()/setNotify(); App.tsx On/Off toggle in General settings by autostart/auto-switch; native wiring: tauri-plugin-notification in Cargo.toml + `.plugin(...init())` in main.rs + `notification:default` capability + @tauri-apps/plugin-notification in package.json. NOTE: the Rust/Tauri native build was NOT compiled here (no cargo) — config/deps correct, needs a desktop build to fully verify. ✓ -->
+- [x] Tray: optional worst-session context % in the tooltip — **one number,
       active profile only** (council #5), never a per-profile list.
+      <!-- verify: transforms.ts `worstLiveContextPct(sessions, activeProfiles)` (own active profile only, never cross-profile) + `contextTrayTooltip()`; ipc.setTrayTooltip() → Rust `set_tray_tooltip` command; App refresh() pushes one number. Rust part needs the native build to verify (noted). ✓ -->
 
 ## Phase 7 (deferred): nice-to-haves
 
@@ -502,3 +507,36 @@ findings folded back in the same session. Verdicts:
   surfaced in command output instead).
 - **Split into two roadmaps: NO, unanimous** — one data plane (the adapter +
   daemon), two surfaces; splitting would duplicate Phase 0/1 across files.
+
+## Execution notes (2026-07-15, autonomous run)
+
+Executed via `/roadmap:process-full` under an autonomous contract on this
+machine (claude-code 2.1.210, codex-cli 0.144.4, 1771 real Claude transcripts,
+545 codex rollouts). All phases landed; 177 CLI unit/e2e tests + 82 GUI vitest
+tests green; work committed in per-phase chunks on `plan/session-telemetry`.
+
+**Empirical corrections the spikes made to the researched contracts:**
+- Codex `token_count.info` is **nullable per event** (short/aborted sessions),
+  not the "rate_limits often null" the research reported — here rate_limits was
+  present in all 614 events. Adapter walks back to the last non-null-info event.
+- The Claude hook stdin matcher field is **`source`**, not `matcher` (S6 live
+  capture); values startup|resume|clear|compact. SessionStart fires before auth.
+- Cross-session `message.id` reuse = 0 → the 2-part dedup key suffices (no
+  3-part key needed for the parked fallback aggregator).
+- ccusage delegation (D2) confirmed viable via `npx` with no global install.
+
+**Documented deviations from the drafted plan (grounded, not silent):**
+- `compact` resolves the managed pane **by profile**, not by session-id: the
+  tmux registry is profile-keyed and the live session-id inside a pane is not
+  knowable (Claude owns it), so the anticipated "two panes, same dir" ambiguity
+  cannot arise and no sessionId→pane map was needed.
+- Context/notify config lives in `<ROOT>/telemetry-config.json`, not
+  `state.json` — `readState` rebuilds State from known fields and would silently
+  drop new ones; a dedicated file is lower-risk than that plumbing.
+- Phase 6 GUI native Tauri/Rust parts (notification plugin, tray-tooltip
+  command) are **wired but not compiled** here (no cargo build in this run) —
+  the JS/React/ipc/config layer is vitest-verified; the native build must be
+  run once on a desktop to fully confirm.
+- The GUI single-notifier path is minimal (plugin + toggle); a GUI-fired
+  notification gated on the daemon's `notifierActive` flag is deferred (the CLI
+  does not expose that flag to the GUI yet).

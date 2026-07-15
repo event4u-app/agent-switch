@@ -6,8 +6,14 @@ import {
   trayTooltip,
   sparkline,
   formatReset,
+  formatTokensK,
+  formatContextBadge,
+  worstLiveContextPct,
+  contextTrayTooltip,
   relativeAge,
   type ProfileRow,
+  type SessionRow,
+  type SessionContext,
   type UsageSnapshot,
 } from "./transforms.js";
 
@@ -84,6 +90,75 @@ describe("relativeAge", () => {
   });
   it("clamps a future mtime to 0s", () => {
     expect(relativeAge(now + 10_000, now)).toBe("0s");
+  });
+});
+
+describe("formatTokensK", () => {
+  it("rounds to thousands with a k suffix", () => {
+    expect(formatTokensK(134_000)).toBe("134k");
+    expect(formatTokensK(1_000_000)).toBe("1000k");
+    expect(formatTokensK(499)).toBe("0k");
+    expect(formatTokensK(1_500)).toBe("2k");
+  });
+});
+
+describe("formatContextBadge", () => {
+  const ctx = (over: Partial<SessionContext>): SessionContext => ({
+    pct: 67,
+    contextTokens: 134_000,
+    windowTokens: 1_000_000,
+    model: "sonnet",
+    confidence: "high",
+    ...over,
+  });
+  it("renders pct · used/window when the window is known", () => {
+    expect(formatContextBadge(ctx({}))).toBe("67% · 134k/1000k");
+  });
+  it("falls back to a raw token count when the window is unknown", () => {
+    expect(formatContextBadge(ctx({ windowTokens: null, pct: null }))).toBe("134k tok");
+  });
+  it("prefixes ~ on a low-confidence (estimated) readout", () => {
+    expect(formatContextBadge(ctx({ confidence: "low" }))).toBe("~67% · 134k/1000k");
+    expect(formatContextBadge(ctx({ confidence: "low", windowTokens: null, pct: null }))).toBe("~134k tok");
+  });
+  it("is empty when there is no context", () => {
+    expect(formatContextBadge(null)).toBe("");
+    expect(formatContextBadge(undefined)).toBe("");
+  });
+});
+
+describe("worstLiveContextPct", () => {
+  const sess = (over: Partial<SessionRow>): SessionRow => ({
+    provider: "claude",
+    profile: "work",
+    sessionId: "s",
+    projectDir: "p",
+    cwd: null,
+    mtimeMs: 0,
+    live: true,
+    ...over,
+  });
+  const withPct = (profile: string, live: boolean, pct: number | null): SessionRow =>
+    sess({ profile, live, context: { pct, contextTokens: 1, windowTokens: 1, model: null, confidence: "high" } });
+
+  it("returns the max fill across the active profile's live sessions", () => {
+    const rows = [withPct("work", true, 40), withPct("work", true, 82), withPct("privat", true, 95)];
+    expect(worstLiveContextPct(rows, ["work"])).toBe(82); // never leaks privat's 95 — own account only
+  });
+  it("ignores non-live sessions and sessions with no context pct", () => {
+    const rows = [withPct("work", false, 99), sess({ profile: "work", live: true, context: null }), withPct("work", true, 30)];
+    expect(worstLiveContextPct(rows, ["work"])).toBe(30);
+  });
+  it("returns null when nothing matches", () => {
+    expect(worstLiveContextPct([], ["work"])).toBeNull();
+    expect(worstLiveContextPct([withPct("work", true, 50)], [])).toBeNull();
+  });
+});
+
+describe("contextTrayTooltip", () => {
+  it("shows one number for the active profile, or the bare name when unknown", () => {
+    expect(contextTrayTooltip(82)).toBe("agent-switch — 82% context");
+    expect(contextTrayTooltip(null)).toBe("agent-switch");
   });
 });
 

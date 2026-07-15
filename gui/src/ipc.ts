@@ -7,7 +7,7 @@
 import { Command } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
 import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
-import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow } from "./transforms.js";
+import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow, TokenRow } from "./transforms.js";
 
 async function runCli(args: string[]): Promise<string> {
   const out = await Command.create("agent-switch", args).execute();
@@ -219,6 +219,61 @@ export async function listSessions(profile?: string, recent = 20): Promise<Sessi
  *  (and any fork-cleanup) happens in a real pty. Pure builder. */
 export function takeoverArgs(sessionId: string, to: string, keepSource = false): string[] {
   return ["takeover", sessionId, "--to", to, ...(keepSource ? ["--keep-source"] : [])];
+}
+
+/** Args for `compact <profile>`, run in the embedded terminal (same pattern as
+ *  takeover) — types `/compact` into the profile's managed tmux pane and prints
+ *  a line. `/clear` is intentionally not exposed here (destructive). Pure. */
+export function compactArgs(profile: string): string[] {
+  return ["compact", profile];
+}
+
+/** ccusage / token tracking is unavailable — the `tokens --json` payload
+ *  carries an `error` (and usually a `hint`) instead of the per-profile array. */
+export interface TokensError {
+  error: string;
+  hint?: string;
+}
+
+/** Per-profile token usage (`tokens [profile] --json`, Claude). Returns a
+ *  {@link TokensError} when ccusage is missing — the `--json` path prints the
+ *  error object rather than exiting on the non-json path. Pure `--json` client. */
+export async function getTokens(profile?: string): Promise<TokenRow[] | TokensError> {
+  const args = ["tokens", ...(profile ? [profile] : []), "--json"];
+  const out = await Command.create("agent-switch", args).execute();
+  try {
+    const parsed = JSON.parse(out.stdout);
+    if (parsed && !Array.isArray(parsed) && typeof parsed.error === "string") {
+      return parsed as TokensError;
+    }
+    return parsed as TokenRow[];
+  } catch {
+    return { error: "tokens-unavailable", hint: out.stderr || "Install ccusage for token tracking." };
+  }
+}
+
+/** Notification config (`notify status --json`). `contextThresholds` are the
+ *  context-fill percentages that trigger a notification. */
+export interface NotifyConfig {
+  notify: boolean;
+  contextThresholds: number[];
+}
+
+export async function getNotifyConfig(): Promise<NotifyConfig> {
+  return JSON.parse(await runCli(["notify", "status", "--json"]));
+}
+
+export async function setNotify(on: boolean, thresholds?: number[]): Promise<void> {
+  const args = ["notify", on ? "on" : "off"];
+  if (thresholds && thresholds.length) args.push("--threshold", thresholds.join(","));
+  await runCli(args);
+}
+
+/** Update the tray tooltip (active profile's worst live-session context fill).
+ *  Best-effort — the caller ignores failures so a tray hiccup never blanks the
+ *  UI. Backed by the `set_tray_tooltip` Tauri command. */
+export async function setTrayTooltip(text: string): Promise<void> {
+  await invoke("set_tray_tooltip", { text });
 }
 
 /** Quit the whole app (the `quit` Tauri command → app.exit). Closing the

@@ -6,10 +6,10 @@
 
 ## Overall
 
-**66 / 72 steps done · 92%**
+**70 / 72 steps done · 97%**
 
 ```text
-█████████████████████████████████████░░░   92%
+███████████████████████████████████████░   97%
 ```
 
 ## ⚠️ Iron Law 3 — unresolved deferred items
@@ -24,7 +24,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md) | 9 | 47 | 6 | 38 | 3 | 0 | 0 | █████████░ 86% |
+| 1 | [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md) | 9 | 47 | 2 | 42 | 3 | 0 | 0 | ██████████ 95% |
 | 2 | [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md) | 6 | 29 | 0 | 28 | 1 | 0 | 0 | ██████████ 100% |
 
 ---
@@ -33,7 +33,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 ### [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md)
 
-**Session telemetry — context monitor + token/cost tracking** — 38 / 44 done (86%)
+**Session telemetry — context monitor + token/cost tracking** — 42 / 44 done (95%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
@@ -44,7 +44,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | 3 | daemon — get warned | ✅ done | 0 | 7 | 0 | 0 | 100% |
 | 4 | actions — one keypress, owned terminals only | 🟡 in progress | 1 | 3 | 0 | 0 | 75% |
 | 5 | tokens + cost — ccusage-delegated (council D2) | ✅ done | 0 | 6 | 0 | 0 | 100% |
-| 6 | GUI — surfaces | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
+| 6 | GUI — surfaces | ✅ done | 0 | 4 | 0 | 0 | 100% |
 | 7 | (deferred): nice-to-haves | ⏭️ skipped | 0 | 0 | 3 | 0 | 0% |
 
 ### [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md)

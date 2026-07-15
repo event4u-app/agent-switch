@@ -37,6 +37,17 @@ export interface ProfileRow {
   liveSessions: number;
 }
 
+/** Context-window readout for a session/status (Claude). `pct` is that ONE
+ *  session's own fill — never a cross-session ranking. `confidence: "low"`
+ *  means the window size was estimated, so the UI marks it with a `~`. */
+export interface SessionContext {
+  pct: number | null;
+  contextTokens: number;
+  windowTokens: number | null;
+  model: string | null;
+  confidence: "high" | "low";
+}
+
 /** One row from `agent-switch sessions --json` (Claude sessions inventory). */
 export interface SessionRow {
   provider: ProviderId;
@@ -47,6 +58,81 @@ export interface SessionRow {
   mtimeMs: number;
   live: boolean;
   summary?: string | null;
+  context?: SessionContext | null;
+}
+
+/** Compact "134k" token count. Pure — used by the context badge + tokens view. */
+export function formatTokensK(n: number): string {
+  return `${Math.round(n / 1000)}k`;
+}
+
+/** Context badge label for a session row, e.g. "67% · 134k/1000k". Degrades to
+ *  "134k tok" when the window size is unknown, prefixes "~" on a low-confidence
+ *  (estimated-window) readout, and is empty when there is no context at all. */
+export function formatContextBadge(context: SessionContext | null | undefined): string {
+  if (!context) return "";
+  const prefix = context.confidence === "low" ? "~" : "";
+  const tokens = formatTokensK(context.contextTokens);
+  if (context.windowTokens == null || context.pct == null) {
+    return `${prefix}${tokens} tok`;
+  }
+  return `${prefix}${context.pct}% · ${tokens}/${formatTokensK(context.windowTokens)}`;
+}
+
+/** Highest own context-window fill (0-100) across the ACTIVE profile's live
+ *  sessions, or null when none is known. Own-account only — the tray shows this
+ *  ONE number, never a comparison across profiles. Pure so it is unit-testable. */
+export function worstLiveContextPct(sessions: SessionRow[], activeProfiles: string[]): number | null {
+  const active = new Set(activeProfiles);
+  const pcts = sessions
+    .filter((s) => s.live && active.has(s.profile))
+    .map((s) => s.context?.pct)
+    .filter((p): p is number => typeof p === "number");
+  return pcts.length ? Math.max(...pcts) : null;
+}
+
+/** Tray tooltip for the active profile's worst live-session context fill. One
+ *  number, active profile only — never a per-profile list. */
+export function contextTrayTooltip(pct: number | null): string {
+  return pct == null ? "agent-switch" : `agent-switch — ${pct}% context`;
+}
+
+/** Per-day token usage (one entry from `tokens --json`'s `days`). */
+export interface TokenDay {
+  date: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalTokens: number;
+  cost: number;
+  models: string[];
+}
+
+export interface TokenTotals {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalTokens: number;
+  cost: number;
+}
+
+/** How a cost figure was derived: real vendor billing, computed from token
+ *  counts, or a notional API-equivalent value of subscription usage. */
+export type CostBasis = "vendor" | "computed" | "notional";
+
+export interface TokenUsage {
+  days: TokenDay[];
+  totals: TokenTotals;
+  costBasis: CostBasis;
+}
+
+/** One profile's token usage from `tokens [profile] --json` (Claude). */
+export interface TokenRow {
+  provider: ProviderId;
+  name: string;
+  tokens: TokenUsage | null;
 }
 
 /** Compact "how long ago" label from an mtime, e.g. "3m", "2h", "5d". Pure. */

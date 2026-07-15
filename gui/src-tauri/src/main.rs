@@ -27,6 +27,17 @@ fn quit(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+// The React UI computes the active profile's worst live-session context fill
+// (one number, own account only — never a per-profile list) and pushes it here
+// so the menu-bar icon's tooltip reflects it. Best-effort: a missing tray icon
+// is a silent no-op, never an error to the UI.
+#[tauri::command]
+fn set_tray_tooltip(app: tauri::AppHandle, text: String) {
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let _ = tray.set_tooltip(Some(text));
+    }
+}
+
 // A GUI launched from Finder / the menu bar inherits a minimal PATH
 // (`/usr/bin:/bin:/usr/sbin:/sbin`) — not the user's shell PATH — so the
 // `agent-switch` binary (npm-linked or Homebrew-installed) is unreachable and
@@ -79,9 +90,11 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None::<Vec<&str>>,
         ))
+        .plugin(tauri_plugin_notification::init())
         .manage(pty::PtyState::default())
         .invoke_handler(tauri::generate_handler![
             quit,
+            set_tray_tooltip,
             pty::term_open,
             pty::term_write,
             pty::term_resize,
@@ -115,9 +128,10 @@ fn main() {
             // for the Dock / installer.
             let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
 
-            TrayIconBuilder::new()
+            TrayIconBuilder::with_id("main-tray")
                 .icon(tray_icon)
                 .icon_as_template(true)
+                .tooltip("agent-switch")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
