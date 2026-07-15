@@ -36,13 +36,19 @@ const ipc = vi.hoisted(() => ({
   listNotifications: vi.fn(),
   recordNotification: vi.fn(),
   clearNotifications: vi.fn(),
+  getOsNotify: vi.fn(),
+  setOsNotify: vi.fn(),
 }));
 vi.mock("./ipc.js", () => ipc);
 
 // Desktop notifications go through the Tauri plugin, which isn't available in
-// jsdom — mock the wrapper so the in-window logic is testable without it.
+// jsdom — mock the wrappers so the in-window logic is testable without it.
 const desktopNotify = vi.hoisted(() => vi.fn().mockResolvedValue(false));
-vi.mock("./notifications.js", () => ({ sendDesktopNotification: desktopNotify }));
+vi.mock("./notifications.js", () => ({
+  sendDesktopNotification: desktopNotify,
+  desktopPermission: vi.fn().mockResolvedValue("default"),
+  requestDesktopPermission: vi.fn().mockResolvedValue("granted"),
+}));
 
 // The embedded terminal renders real xterm/pty — stub it so tests assert the
 // terminal OPENED (title + args) without a DOM canvas or a Tauri backend.
@@ -57,7 +63,7 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0 }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[] }));
 vi.mock("./settings-store.js", () => ({
   getAutoSwitchGlobal: () => store.globalAuto,
   setAutoSwitchGlobalFlag: (on: boolean) => {
@@ -75,6 +81,10 @@ vi.mock("./settings-store.js", () => ({
   getNotifLastRead: () => store.notifLastRead,
   setNotifLastRead: (ts: number) => {
     store.notifLastRead = ts;
+  },
+  getMutedKinds: () => store.mutedKinds,
+  setMutedKinds: (kinds: string[]) => {
+    store.mutedKinds = kinds;
   },
 }));
 
@@ -99,6 +109,7 @@ beforeEach(() => {
   // UI tests. (The dedicated default-off test flips this itself.)
   store.globalAuto = true;
   store.notifLastRead = 0;
+  store.mutedKinds = [];
   ipc.listProfiles.mockResolvedValue(rows);
   ipc.profileUsage.mockResolvedValue(usageSnap);
   ipc.getAutoSwitch.mockResolvedValue({
@@ -133,7 +144,10 @@ beforeEach(() => {
   ipc.listNotifications.mockResolvedValue([]);
   ipc.recordNotification.mockResolvedValue(undefined);
   ipc.clearNotifications.mockResolvedValue(undefined);
+  ipc.getOsNotify.mockResolvedValue(false);
+  ipc.setOsNotify.mockResolvedValue(undefined);
   desktopNotify.mockClear();
+  desktopNotify.mockResolvedValue(false);
 });
 
 describe("App", () => {
@@ -345,6 +359,66 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /clear notifications/i }));
     expect(ipc.clearNotifications).toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByText("Hello")).toBeNull());
+  });
+
+  it("shows an in-window toast when a fresh event cannot be delivered to the desktop", async () => {
+    desktopNotify.mockResolvedValue(false); // permission denied / unavailable
+    ipc.listNotifications.mockResolvedValue([
+      { id: "t1", ts: Date.now() + 1_000_000, kind: "warning", title: "Usage fetch failed", message: "codex/oai" },
+    ]);
+    render(<App />);
+    const toast = await screen.findByRole("status");
+    expect(toast.textContent).toContain("Usage fetch failed");
+    expect(desktopNotify).toHaveBeenCalled();
+  });
+
+  it("does not show a toast when the desktop notification was delivered", async () => {
+    desktopNotify.mockResolvedValue(true); // desktop delivered it
+    ipc.listNotifications.mockResolvedValue([
+      { id: "t2", ts: Date.now() + 1_000_000, kind: "success", title: "Auto-switched account", message: "→ privat" },
+    ]);
+    render(<App />);
+    await waitFor(() => expect(desktopNotify).toHaveBeenCalled());
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("skips the GUI notification for an event the daemon already showed (osNotified)", async () => {
+    desktopNotify.mockResolvedValue(false);
+    ipc.listNotifications.mockResolvedValue([
+      { id: "t3", ts: Date.now() + 1_000_000, kind: "success", title: "Auto-switched account", message: "→ privat", osNotified: true },
+    ]);
+    render(<App />);
+    // it still lands in the flyout, but the GUI neither desktop-notifies nor toasts
+    const bell = await screen.findByRole("button", { name: /notifications/i });
+    fireEvent.click(bell);
+    expect(await screen.findByText("Auto-switched account")).toBeTruthy();
+    expect(desktopNotify).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("hides a muted kind from the flyout and the unread badge", async () => {
+    store.mutedKinds = ["warning"];
+    desktopNotify.mockResolvedValue(true); // avoid toasts in this assertion
+    const ts = Date.now() + 1_000_000;
+    ipc.listNotifications.mockResolvedValue([
+      { id: "s", ts, kind: "success", title: "Switched account", message: "→ privat" },
+      { id: "w", ts, kind: "warning", title: "Fetch failed", message: "codex/oai" },
+    ]);
+    render(<App />);
+    const bell = await screen.findByRole("button", { name: /notifications/i });
+    await waitFor(() => expect(bell.textContent).toContain("1")); // only the visible (success) counts
+    fireEvent.click(bell);
+    expect(await screen.findByText("Switched account")).toBeTruthy();
+    expect(screen.queryByText("Fetch failed")).toBeNull(); // muted → not listed
+  });
+
+  it("toggles a per-kind mute from the Alerts settings tab", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /alerts/i }));
+    expect(await screen.findByText(/desktop notifications/i)).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: /toggle fetch failures/i }));
+    expect(store.mutedKinds).toContain("warning");
   });
 
   it("global auto-switch off hides the badge colouring + footer toggle and deactivates every provider", async () => {

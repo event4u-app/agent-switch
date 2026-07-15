@@ -19,6 +19,9 @@ export interface AppNotification {
   kind: NotificationKind;
   title: string;
   message: string;
+  /** The daemon already fired an OS notification for this event → the GUI skips
+   *  its own desktop notification / toast (still shown in the flyout). */
+  osNotified?: boolean;
 }
 
 /**
@@ -35,5 +38,28 @@ export async function sendDesktopNotification(title: string, body: string): Prom
     return true;
   } catch {
     return false; // plugin unavailable (non-Tauri env) → in-window fallback
+  }
+}
+
+export type DesktopPermission = "granted" | "denied" | "default" | "unavailable";
+
+/** Current OS permission state for desktop notifications (for the settings UI).
+ *  `unavailable` when the plugin can't be reached (non-Tauri env). */
+export async function desktopPermission(): Promise<DesktopPermission> {
+  try {
+    return (await isPermissionGranted()) ? "granted" : "default";
+  } catch {
+    return "unavailable";
+  }
+}
+
+/** Explicitly request desktop-notification permission (settings "Enable" path).
+ *  Returns the resulting state. */
+export async function requestDesktopPermission(): Promise<DesktopPermission> {
+  try {
+    if (await isPermissionGranted()) return "granted";
+    return (await requestPermission()) === "granted" ? "granted" : "denied";
+  } catch {
+    return "unavailable";
   }
 }

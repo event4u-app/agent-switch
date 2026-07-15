@@ -1,16 +1,10 @@
 import { useState } from "react";
-import { Bell, AlertCircle, AlertTriangle, Check, Info, Trash2, X } from "lucide-react";
+import { Bell, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { relativeAge } from "./transforms.js";
-import type { AppNotification, NotificationKind } from "./notifications.js";
-
-const KIND_META: Record<NotificationKind, { Icon: typeof Bell; className: string }> = {
-  success: { Icon: Check, className: "text-[hsl(var(--success))]" },
-  error: { Icon: AlertCircle, className: "text-destructive" },
-  warning: { Icon: AlertTriangle, className: "text-primary" },
-  info: { Icon: Info, className: "text-muted-foreground" },
-};
+import { KIND_META } from "./notif-kind.js";
+import type { AppNotification } from "./notifications.js";
 
 /** Header bell + unread badge that opens a flyout listing the recent
  *  notifications (newest first) with a relative timestamp. This is the
