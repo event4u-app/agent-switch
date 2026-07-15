@@ -1,10 +1,10 @@
 /**
  * Generate the source app icon (1024×1024 RGBA PNG) with zero dependencies.
  *
- * PLACEHOLDER brand mark: a dark rounded-square with a white "⇄" switch glyph
- * (two offset arrows — evokes account switching). Replace with real branding
- * anytime, then re-run `npm run tauri icon <this-output>` to regenerate the
- * platform set.
+ * Brand mark: an event4u-orange rounded-square with a white rotating-arrows
+ * "refresh" glyph (a broken ring + two clockwise arrowheads — the reset/switch
+ * motif). Edit the palette or glyph below, then re-run
+ * `npm run tauri icon <this-output>` to regenerate the platform set.
  *
  * Two modes:
  *   node scripts/gen-icon.mjs [outfile]              → colored app/bundle icon
@@ -26,10 +26,10 @@ const out = args.find((a) => !a.startsWith("--")) ?? (template ? "tray.png" : "i
 const S = 1024;
 
 // --- palette ---
-// Colored mode: indigo body + white glyph. Template mode: opaque body (color
-// is ignored by macOS; black is the correct neutral for other platforms) and
-// the glyph cut out to transparency.
-const BG = template ? [0, 0, 0, 255] : [55, 48, 163, 255];
+// Colored mode: event4u-orange body + white glyph. Template mode: opaque body
+// (color is ignored by macOS; black is the correct neutral for other
+// platforms) and the glyph cut out to transparency.
+const BG = template ? [0, 0, 0, 255] : [209, 92, 56, 255]; // #d15c38 event4u orange
 const FG = [255, 255, 255, 255]; // white glyph (colored mode only)
 const CLEAR = [0, 0, 0, 0];
 
@@ -40,7 +40,6 @@ const inRoundedRect = (x, y, x0, y0, x1, y1, r) => {
   const cy = Math.min(Math.max(y, y0 + r), y1 - r);
   return (x - cx) ** 2 + (y - cy) ** 2 <= r * r || (x >= x0 + r && x <= x1 - r) || (y >= y0 + r && y <= y1 - r);
 };
-const inRect = (x, y, x0, y0, x1, y1) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
 const sign = (px, py, ax, ay, bx, by) => (px - bx) * (ay - by) - (ax - bx) * (py - by);
 const inTri = (px, py, ax, ay, bx, by, cx, cy) => {
   const d1 = sign(px, py, ax, ay, bx, by);
@@ -51,10 +50,40 @@ const inTri = (px, py, ax, ay, bx, by, cx, cy) => {
   return !(neg && pos);
 };
 
-// Top arrow → right; bottom arrow → left (a "⇄" switch mark).
+// A "refresh" mark: two clockwise arcs (a broken ring with two ~10° gaps) plus
+// an arrowhead at each arc's leading end — the rotating-arrows / recycle glyph.
+const CX = 512, CY = 512;
+const R_IN = 262, R_OUT = 340; // ~78px stroke
+const R_MID = (R_IN + R_OUT) / 2;
+const DEG = Math.PI / 180;
+// Two ~170° arcs (clockwise; image y grows down), gaps at ~205° (lower-left)
+// and ~25° (right) where the arrowheads sit.
+const inArc = (x, y) => {
+  const dx = x - CX, dy = y - CY;
+  const d = Math.hypot(dx, dy);
+  if (d < R_IN || d > R_OUT) return false;
+  let a = Math.atan2(dy, dx) / DEG;
+  if (a < 0) a += 360;
+  return (a >= 30 && a <= 200) || a >= 210 || a <= 20;
+};
+// Arrowhead triangle at the leading (clockwise) end of an arc — [tip, outer,
+// inner] vertices flaring past the stroke and pointing along the tangent.
+const head = (deg) => {
+  const a = deg * DEG;
+  const rx = Math.cos(a), ry = Math.sin(a);
+  const tx = -Math.sin(a), ty = Math.cos(a); // clockwise tangent
+  const flare = 52, len = 132;
+  return [
+    CX + R_MID * rx + tx * len, CY + R_MID * ry + ty * len,
+    CX + (R_OUT + flare) * rx, CY + (R_OUT + flare) * ry,
+    CX + (R_IN - flare) * rx, CY + (R_IN - flare) * ry,
+  ];
+};
+const H1 = head(200), H2 = head(20);
 const glyph = (x, y) =>
-  inRect(x, y, 312, 420, 652, 468) || inTri(x, y, 636, 392, 636, 496, 724, 444) || // top: shaft + head
-  inRect(x, y, 372, 556, 712, 604, 712) || inTri(x, y, 388, 528, 388, 632, 300, 580); // bottom: shaft + head
+  inArc(x, y) ||
+  inTri(x, y, H1[0], H1[1], H1[2], H1[3], H1[4], H1[5]) ||
+  inTri(x, y, H2[0], H2[1], H2[2], H2[3], H2[4], H2[5]);
 
 function pixel(x, y) {
   // Template mode cuts the arrows out (transparent) instead of filling them.

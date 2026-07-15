@@ -18,7 +18,7 @@
   --popover: 220 6% 18%;
   --popover-foreground: 220 11% 89%;
 
-  --primary: 219 87% 57%; /* #3574f0 Darcula blue */
+  --primary: 15 63% 52%; /* #d15c38 event4u orange */
   --primary-foreground: 0 0% 100%;
 
   --secondary: 220 6% 24%; /* #393b40 */
@@ -37,7 +37,7 @@
 
   --border: 223 6% 24%; /* #393b40 */
   --input: 223 6% 28%;
-  --ring: 219 87% 57%;
+  --ring: 15 63% 52%;
 
   color-scheme: dark;
 }
@@ -52,7 +52,7 @@
   --popover: 0 0% 100%;
   --popover-foreground: 220 13% 18%;
 
-  --primary: 219 80% 52%; /* #2b6fe0 — slightly deeper for contrast on white */
+  --primary: 15 66% 47%; /* event4u orange, deeper for contrast on white */
   --primary-foreground: 0 0% 100%;
 
   --secondary: 220 14% 92%; /* #e7e9ee */
@@ -71,7 +71,7 @@
 
   --border: 220 13% 88%; /* #dbdfe6 */
   --input: 220 13% 84%;
-  --ring: 219 80% 52%;
+  --ring: 15 66% 47%;
 
   color-scheme: light;
 }

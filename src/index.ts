@@ -35,6 +35,7 @@ import {
   labelFor,
   setLabel,
   clearLabel,
+  renameProfile,
   isProfileLabel,
   PROFILE_LABELS,
   readAutoSwitch,
@@ -794,6 +795,33 @@ function cmdLabel(providerId: ProviderId, name?: string, label?: string): void {
 }
 
 /** Enable/disable opt-in auto-switch, or show the current setting. */
+/** Rename a profile (move its config dir + carry active/label/mappings). */
+function cmdRename(providerId: ProviderId, from?: string, to?: string): void {
+  const n = requireProfile(providerId, from, "rename");
+  if (!to) die("usage: agent-switch rename <old> <new> [--provider P]");
+  if (!/^[A-Za-z0-9._-]+$/.test(to)) {
+    die("new name may contain only letters, numbers, dots, dashes and underscores.");
+  }
+  if (to === n) return; // no-op
+  if (profileExists(providerId, to)) die(`profile "${to}" already exists for ${providerId}.`);
+  if (providerId === "claude") {
+    const pids = liveSessionPids(configDir("claude", n));
+    if (pids.length > 0) die(`profile "${n}" has live Claude sessions (PIDs ${pids.join(", ")}). Close them first.`);
+  }
+  try {
+    renameProfile(providerId, n, to);
+  } catch (err: any) {
+    die(String(err?.message ?? err));
+  }
+  for (const m of mappingRows()) {
+    if (m.provider === providerId && m.name === n) setMapping(m.path, providerId, to);
+  }
+  console.log(`Renamed ${providerId} profile "${n}" → "${to}".`);
+  if (providerId === "claude" && process.platform === "darwin") {
+    console.log("Note: Claude keeps its credential in the Keychain keyed by the config path (which can't be moved) — you may need to log in again on this profile.");
+  }
+}
+
 /** Manually redeem one banked rate-limit reset for a Codex profile. Consumes a
  *  real, scarce credit — the GUI gates this behind a confirmation. */
 async function cmdReset(providerId: ProviderId, name?: string): Promise<void> {
@@ -1076,6 +1104,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
   agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>]   per-provider auto-switch (default OFF)
   agent-switch reset <profile> --provider codex                                redeem one banked Codex rate-limit reset
+  agent-switch rename <old> <new> [--provider P]                               rename a profile (name & keep its tag)
   agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
   agent-switch apps                            list launchable GUI apps (macOS)
   agent-switch open <app> [profile]            launch a GUI app on a profile, isolated (macOS)
@@ -1117,6 +1146,7 @@ async function main(): Promise<void> {
     case "label": return cmdLabel(providerId, positional[0], positional[1]);
     case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags, positional[1]);
     case "reset": return cmdReset(providerId, positional[0]);
+    case "rename": return cmdRename(providerId, positional[0], positional[1]);
     case "providers": return cmdProviders(providerId, providerExplicit, positional[0], flags);
     case "open": return cmdOpen(positional[0], positional[1]);
     case "apps": return cmdApps(!!flags.json);

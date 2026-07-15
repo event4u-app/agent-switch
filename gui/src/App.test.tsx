@@ -23,6 +23,7 @@ const ipc = vi.hoisted(() => ({
   assertValidName: () => {},
   deactivateProfile: vi.fn(),
   removeProfile: vi.fn(),
+  renameProfile: vi.fn(),
   uninstall: vi.fn(),
   getAutostart: vi.fn(),
   setAutostart: vi.fn(),
@@ -48,7 +49,7 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10 }));
 vi.mock("./settings-store.js", () => ({
   getAutoSwitchGlobal: () => store.globalAuto,
   setAutoSwitchGlobalFlag: (on: boolean) => {
@@ -58,6 +59,11 @@ vi.mock("./settings-store.js", () => ({
   setAutoRefreshLimitsFlag: (on: boolean) => {
     store.autoRefresh = on;
   },
+  getRefreshMinutes: () => store.refreshMin,
+  setRefreshMinutes: (min: number) => {
+    store.refreshMin = min;
+  },
+  REFRESH_INTERVAL_CHOICES: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60],
 }));
 
 import App from "./App.js";
@@ -100,6 +106,7 @@ beforeEach(() => {
   ipc.switchProfile.mockResolvedValue(undefined);
   ipc.deactivateProfile.mockResolvedValue(undefined);
   ipc.removeProfile.mockResolvedValue(undefined);
+  ipc.renameProfile.mockResolvedValue(undefined);
   ipc.uninstall.mockResolvedValue(undefined);
   ipc.getAutostart.mockResolvedValue(false);
   ipc.setAutostart.mockResolvedValue(undefined);
@@ -116,7 +123,7 @@ describe("App", () => {
   it("shows the selected provider's profiles with per-profile usage; labels render", async () => {
     render(<App />);
     expect(await screen.findByRole("tab", { name: /claude/i })).toBeTruthy();
-    expect(screen.getByText(/privat/)).toBeTruthy();
+    expect(await screen.findByText(/privat/)).toBeTruthy();
     expect(screen.queryByText(/oai/)).toBeNull(); // codex hidden behind its tab
     // per-profile usage bar rendered for the claude profiles
     expect(await screen.findAllByText("5h")).not.toHaveLength(0);
@@ -135,7 +142,7 @@ describe("App", () => {
   it("uses a non-active profile and refreshes", async () => {
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i });
-    const useButtons = screen.getAllByRole("button", { name: "Use" });
+    const useButtons = await screen.findAllByRole("button", { name: "Use" });
     expect(useButtons.length).toBe(1); // only privat (work is active)
     fireEvent.click(useButtons[0]);
     expect(ipc.switchProfile).toHaveBeenCalledWith("claude", "privat");
@@ -151,7 +158,7 @@ describe("App", () => {
   it("runs a session in the embedded terminal (no external window) when Term is clicked", async () => {
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i });
-    fireEvent.click(screen.getAllByRole("button", { name: "Term" })[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Term" }))[0]);
     const term = await screen.findByTestId("term");
     expect(term.textContent).toContain("run work --provider claude"); // sessionArgs
     expect(term.textContent).toMatch(/Session — Claude \/ work/);
@@ -176,10 +183,23 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
     fireEvent.click(screen.getByRole("button", { name: /^New$/ }));
     fireEvent.change(await screen.findByPlaceholderText(/e\.g\. work/), { target: { value: "work" } });
+    fireEvent.click(screen.getByRole("button", { name: "Work" })); // tag is required
     fireEvent.click(screen.getByRole("button", { name: /create & log in/i }));
     const term = await screen.findByTestId("term");
     expect(term.textContent).toContain("add work --provider codex"); // loginArgs, no osascript/Terminal.app
     expect(term.textContent).toMatch(/Login — Codex \/ work/);
+    expect(ipc.setProfileLabel).toHaveBeenCalledWith("codex", "work", "Work"); // required tag persisted on create
+  });
+
+  it("edits a profile's name via the pencil → renameProfile", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /edit oai/i }));
+    const nameInput = await screen.findByLabelText("Profile name");
+    fireEvent.change(nameInput, { target: { value: "renamed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Work" })); // tag stays required on edit
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(ipc.renameProfile).toHaveBeenCalledWith("codex", "oai", "renamed"));
   });
 
   it("deletes a profile only after an explicit confirm", async () => {
@@ -259,6 +279,16 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
     fireEvent.click(await screen.findByRole("button", { name: /start at login/i })); // autostart currently off
     expect(ipc.setAutostart).toHaveBeenCalledWith(true);
+  });
+
+  it("changes the refresh interval from the General settings dropdown", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    const select = (await screen.findByLabelText(/refresh interval/i)) as HTMLSelectElement;
+    expect(select.value).toBe("10"); // default
+    fireEvent.change(select, { target: { value: "30" } });
+    expect(store.refreshMin).toBe(30); // persisted via setRefreshMinutes
+    expect(select.value).toBe("30");
   });
 
   it("global auto-switch off hides the badge colouring + footer toggle and deactivates every provider", async () => {
