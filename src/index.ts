@@ -87,7 +87,7 @@ import {
 } from "./sessions.js";
 import { isFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daemon.js";
 import { cmdService, serviceUninstall } from "./service.js";
-import { ContextReading, readContext } from "./telemetry.js";
+import { ContextReading, readContext, turnInFlight } from "./telemetry.js";
 import {
   installHooks,
   uninstallHooks,
@@ -107,6 +107,7 @@ import {
   readTmuxRegistry,
   recordManagedSession,
   respawnPaneArgs,
+  sendKeysArgs,
   tmuxAvailable,
   tmuxSessionName,
 } from "./tmux.js";
@@ -583,6 +584,61 @@ function cmdHooks(sub?: string, name?: string): void {
       "\nsettings.json changed. If you use `share on`, run `agent-switch share sync` so the edit propagates and the link is restored.",
     );
   }
+}
+
+/** Idle-guard window per provider (council #10): a Claude turn runs 15–60s, a
+ *  Codex turn can be sub-second. In-flight = last transcript entry non-finalized
+ *  AND younger than this. */
+const IDLE_GUARD_MS: Record<string, number> = { claude: 15_000, codex: 5_000 };
+
+/**
+ * `agent-switch compact <profile> [--clear] [--dry-run] [--force] [--provider P]`
+ * — type `/compact` (or `/clear`, gated) into the profile's agent-switch-MANAGED
+ * tmux pane. MANAGED panes only (registry check); never a user's own terminal.
+ * Refuses while a turn is in flight (idle guard) unless --force. Own-session.
+ */
+function cmdCompact(providerId: ProviderId, name?: string, flags: Record<string, string | boolean> = {}): void {
+  if (providerId !== "claude" && providerId !== "codex") die(`compact supports claude and codex (not ${providerId})`);
+  const profile = requireProfile(providerId, name, "compact");
+  const clear = !!flags.clear;
+  const dryRun = !!flags["dry-run"];
+  const force = !!flags.force;
+  const literal = clear ? "/clear" : "/compact";
+
+  // 1. resolve the managed pane (profile-keyed; a profile has one managed name).
+  const sess = tmuxSessionName(providerId, profile);
+  const registry = readTmuxRegistry();
+  if (!registry[sess]) {
+    die(
+      `no agent-switch-managed tmux pane for ${providerId}/${profile}.\n` +
+        `We only ever type into panes we own. Start one with:  agent-switch run ${profile} --tmux\n` +
+        `Or run this yourself in the session's terminal:  ${literal}`,
+    );
+  }
+
+  // 2. /clear is destructive — gate behind --force (no interactive confirm in a one-shot CLI).
+  if (clear && !force) {
+    die("/clear discards the whole conversation. Re-run with --force if you really mean it (or use /compact to summarize instead).");
+  }
+
+  // 3. idle guard — never type into a running turn.
+  const cfg = configDir(providerId, profile);
+  const rows = providerId === "codex" ? listCodexSessions(cfg, 10) : listSessions(cfg, 10);
+  if (providerId === "claude") markLive(cfg, rows);
+  const target = rows.find((r) => r.live && r.file) ?? rows.find((r) => r.file);
+  if (target?.file && !force && turnInFlight(target.file, Date.now(), IDLE_GUARD_MS[providerId] ?? 15_000)) {
+    die(`a turn looks in-flight in ${providerId}/${profile} (last entry is unfinished + recent). Wait for it, or pass --force.`);
+  }
+
+  // 4. act (or dry-run).
+  const argv = sendKeysArgs(sess, literal);
+  if (dryRun) {
+    console.log(`[dry-run] tmux ${argv.map((a) => (a.includes(" ") ? `'${a}'` : a)).join(" ")}`);
+    return;
+  }
+  const res = spawnSync("tmux", argv, { stdio: "ignore" });
+  if (res.status === 0) console.log(`Sent ${literal} to the managed pane "${sess}".`);
+  else die(`tmux send-keys failed (is the pane still open?). Run ${literal} yourself in the session.`);
 }
 
 /**
@@ -1244,6 +1300,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch sessions [profile] [--recent N] [--json]   recent + live Claude sessions per profile (with context %)
   agent-switch hooks install|uninstall|status [profile]   manage lifecycle push hooks in Claude settings.json
   agent-switch notify on|off|status [--threshold 80,95]   OS notifications for context/usage crossings (off by default)
+  agent-switch compact <profile> [--clear] [--dry-run] [--force]   type /compact (or /clear) into the profile's managed tmux pane
   agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place] [--print-only] [--force]   move a session to another profile and resume it
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile
@@ -1310,6 +1367,7 @@ async function main(): Promise<void> {
     case "sessions": return cmdSessions(providerId, providerExplicit, positional[0], flags);
     case "hooks": return cmdHooks(positional[0], positional[1]);
     case "notify": return cmdNotify(positional[0], flags);
+    case "compact": return cmdCompact(providerId, positional[0], flags);
     case "takeover": return cmdTakeover(providerId, providerExplicit, positional[0], flags);
     case "web": return cmdWeb(positional[0]);
     case "remove": case "rm": return cmdRemove(providerId, positional[0], !!flags.force);

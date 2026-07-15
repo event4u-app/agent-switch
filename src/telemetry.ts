@@ -232,6 +232,27 @@ export function readContext(
   return provider === "codex" ? readCodexContext(file, opts) : readClaudeContext(file, opts);
 }
 
+/** Idle guard for `compact` (Phase 4). A turn is "in flight" when the LAST
+ *  transcript line is a non-finalized assistant entry (`stop_reason` null) — we
+ *  must not type `/compact` into a running turn. Pure; degraded → false (don't
+ *  block on an unreadable file). `nowMs`/`maxAgeMs` bound how recent the
+ *  in-flight entry must be to still count (a stale null entry from a crashed
+ *  turn should not block forever). */
+export function turnInFlight(file: string, nowMs: number, maxAgeMs: number): boolean {
+  const lines = tailLines(file, 64 * 1024);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let o: any;
+    try { o = JSON.parse(lines[i]); } catch { continue; }
+    if (o?.type !== "assistant") return false; // newest entry isn't an assistant turn
+    const sr = o.message?.stop_reason;
+    if (sr !== null && sr !== undefined) return false; // finalized → not in flight
+    const ts = typeof o.timestamp === "string" ? Date.parse(o.timestamp) : NaN;
+    if (Number.isNaN(ts)) return true; // no timestamp but non-finalized → assume in flight
+    return nowMs - ts <= maxAgeMs; // recent + non-finalized → in flight
+  }
+  return false;
+}
+
 /** A session's context reading joined from its on-disk transcript. `file` is
  *  the resolved transcript/rollout path; `provider` selects the reader. Thin
  *  join so the CLI/daemon can go SessionRow → path → reading in one call. */

@@ -14,6 +14,7 @@ import {
   sessionContext,
   claudeTranscriptPath,
   preflightClaude,
+  turnInFlight,
   CONTEXT_WINDOWS,
   SUPPORTED_CLAUDE,
 } from "../src/telemetry.js";
@@ -205,6 +206,24 @@ test("tailLines: drops the partial first line when capped", () => {
 test("invariant: SUPPORTED_CLAUDE and CONTEXT_WINDOWS are non-empty", () => {
   assert.ok(SUPPORTED_CLAUDE.length > 0);
   assert.ok(Object.keys(CONTEXT_WINDOWS).length > 0);
+});
+
+test("turnInFlight: true only for a recent non-finalized last assistant entry", () => {
+  const now = 1_000_000;
+  // non-finalized + recent → in flight
+  const running = tmpFile([asst({ input_tokens: 1 }, { stop: null, ts: new Date(now - 2000).toISOString() })]);
+  assert.equal(turnInFlight(running, now, 15_000), true);
+  // non-finalized but stale (older than the guard window) → not blocking
+  const stale = tmpFile([asst({ input_tokens: 1 }, { stop: null, ts: new Date(now - 60_000).toISOString() })]);
+  assert.equal(turnInFlight(stale, now, 15_000), false);
+  // finalized last entry → not in flight
+  const done = tmpFile([asst({ input_tokens: 1 }, { stop: "end_turn", ts: new Date(now - 1000).toISOString() })]);
+  assert.equal(turnInFlight(done, now, 15_000), false);
+  // last line is a user entry → not in flight
+  const user = tmpFile([asst({ input_tokens: 1 }, { stop: "end_turn" }), JSON.stringify({ type: "user", message: { content: "hi" } })]);
+  assert.equal(turnInFlight(user, now, 15_000), false);
+  // unreadable → false (never block on a missing file)
+  assert.equal(turnInFlight("/no/such.jsonl", now, 15_000), false);
 });
 
 test("perf: reading context from a large transcript stays cheap (capped tail)", () => {

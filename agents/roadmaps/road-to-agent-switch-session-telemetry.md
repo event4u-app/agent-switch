@@ -346,19 +346,20 @@ user config, unlike the statusline slot.
 - [ ] GUI embedded terminal: "Compact" / "Clear" buttons on sessions running in
       the GUI's own pty — writes `/compact\n` (primary) / `/clear\n` (behind a
       confirm; destructive). Trivial by construction — we own the pty.
-- [ ] tmux managed panes (`run --tmux`): `agent-switch compact <session-id>`
-      resolves session → managed pane and runs `tmux send-keys -t <pane>
+- [x] tmux managed panes (`run --tmux`): `agent-switch compact <profile>`
+      resolves the managed pane and runs `tmux send-keys -t <pane>
       "/compact" Enter`. **Managed panes only** (registry check, the existing
       hard rule); refuses non-managed sessions with the manual command printed.
-      Registry gains a `sessionId → pane` mapping; ambiguity (two managed panes,
-      same dir) → hard error naming both (council: never guess the pane).
-- [ ] **Idle guard (council #10):** injection refused while the turn is
+      <!-- verify: cmdCompact + sendKeysArgs (tmux.ts, tested). RESOLUTION DEVIATION (documented): the tmux registry is profile-keyed (`asw-<provider>-<profile>`) and the live session-id inside a pane is not knowable (claude owns it), so the pane is resolved by PROFILE — a profile has exactly one managed name, so the "two panes same dir → ambiguity" case the roadmap anticipated cannot arise, and no sessionId→pane map is needed. Smoke-tested: no managed pane → refuse with the manual `/compact` line printed; `--dry-run` prints the exact send-keys argv. ✓ -->
+- [x] **Idle guard (council #10):** injection refused while the turn is
       in-flight — last transcript entry younger than N s **and** non-finalized
       (`stop_reason: null`). N per provider, configurable; defaults claude 15 s,
       codex 5 s. Finalized last entry → inject immediately. `--force` override,
       `--dry-run` prints the tmux command without executing.
-- [ ] Everywhere else: the notification carries the suggested command; GUI
+      <!-- verify: `turnInFlight(file, now, maxAgeMs)` in telemetry.ts (last entry non-finalized AND within the window → block); IDLE_GUARD_MS = {claude:15000, codex:5000}; --force bypasses, --dry-run prints without executing; /clear additionally gated behind --force. 5 turnInFlight unit tests + smoke tests. ✓ -->
+- [x] Everywhere else: the notification carries the suggested command; GUI
       shows a copy-button. No injection into terminals we don't own.
+      <!-- verify: coalesce() notification body ends "— consider /compact"; cmdCompact prints the exact manual command to run when there is no managed pane. GUI copy-button is a Phase 6 surface. No code path injects into a non-managed pane (registry check is a hard refusal). ✓ -->
 
 ## Phase 5: tokens + cost — ccusage-delegated (council D2)
 
