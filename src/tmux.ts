@@ -74,6 +74,14 @@ export function respawnPaneArgs(target: string, envVar: string, dir: string, cmd
   return ["respawn-pane", "-k", "-t", target, "-e", `${envVar}=${dir}`, "--", ...cmd];
 }
 
+/** `tmux send-keys -t <target> <literal> Enter` — type a command into a pane.
+ *  Used by `compact` to type `/compact` into an agent-switch-MANAGED pane (the
+ *  CLI is the pane's own process and stays running, so send-keys is right here,
+ *  unlike takeover's respawn-pane). NEVER used on a non-managed pane. */
+export function sendKeysArgs(target: string, literal: string): string[] {
+  return ["send-keys", "-t", target, literal, "Enter"];
+}
+
 // ---------- environment detection --------------------------------------------
 
 export function tmuxAvailable(): boolean {

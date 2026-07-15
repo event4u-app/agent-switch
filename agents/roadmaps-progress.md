@@ -2,14 +2,14 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change (timestamp lives in git history).
 >
-> 2 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 3 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**39 / 48 steps done · 81%**
+**83 / 92 steps done · 90%**
 
 ```text
-████████████████████████████████░░░░░░░░   81%
+████████████████████████████████████░░░░   90%
 ```
 
 ## ⚠️ Iron Law 3 — unresolved deferred items
@@ -18,18 +18,36 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 | Roadmap | Done | Deferred | Cancelled |
 |---|---:|---:|---:|
+| [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md) | 44 | 3 | 0 |
 | [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md) | 28 | 1 | 0 |
 
 ## Open roadmaps
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-desktop-notifications.md](roadmaps/road-to-desktop-notifications.md) | 4 | 20 | 9 | 11 | 0 | 0 | 0 | ██████░░░░ 55% |
-| 2 | [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md) | 6 | 29 | 0 | 28 | 1 | 0 | 0 | ██████████ 100% |
+| 1 | [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md) | 9 | 47 | 0 | 44 | 3 | 0 | 0 | ██████████ 100% |
+| 2 | [road-to-desktop-notifications.md](roadmaps/road-to-desktop-notifications.md) | 4 | 20 | 9 | 11 | 0 | 0 | 0 | ██████░░░░ 55% |
+| 3 | [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md) | 6 | 29 | 0 | 28 | 1 | 0 | 0 | ██████████ 100% |
 
 ---
 
 ## Per-roadmap phase breakdown
+
+### [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md)
+
+**Session telemetry — context monitor + token/cost tracking** — 44 / 44 done (100%)
+
+| # | Phase | State | Open | Done | Deferred | Cancelled | % |
+|---|---|---|---:|---:|---:|---:|---:|
+| 0 | Contract verification spikes (falsification gates) | ✅ done | 0 | 7 | 0 | 0 | 100% |
+| 1 | telemetry adapter — the single sanctioned transcript reader | ✅ done | 0 | 8 | 0 | 0 | 100% |
+| 2 | CLI surface — see it | ✅ done | 0 | 3 | 0 | 0 | 100% |
+| 2.5 | hooks — lifecycle push channel (moved from Phase 7, council #2) | ✅ done | 0 | 5 | 0 | 0 | 100% |
+| 3 | daemon — get warned | ✅ done | 0 | 7 | 0 | 0 | 100% |
+| 4 | actions — one keypress, owned terminals only | ✅ done | 0 | 4 | 0 | 0 | 100% |
+| 5 | tokens + cost — ccusage-delegated (council D2) | ✅ done | 0 | 6 | 0 | 0 | 100% |
+| 6 | GUI — surfaces | ✅ done | 0 | 4 | 0 | 0 | 100% |
+| 7 | (deferred): nice-to-haves | ⏭️ skipped | 0 | 0 | 3 | 0 | 0% |
 
 ### [road-to-desktop-notifications.md](roadmaps/road-to-desktop-notifications.md)
 

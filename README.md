@@ -148,6 +148,40 @@ agent-switch takeover <session-id> --to work --keep-source   # copy + fork inste
   `--print-only` to just print the resume command. Transcripts are treated as
   opaque blobs — moved whole, never parsed or rewritten.
 
+## Context monitoring & token tracking
+
+See how full each live session's context window is *before* the "97% of context
+used" wall, get warned at a threshold, and act — all from own-session data read
+locally (no API calls, own-profile only, never a cross-account comparison).
+
+```bash
+agent-switch sessions                 # live sessions now carry a context column: 67% · 134k/1000k
+agent-switch status                   # active profile's worst live session's context, one line
+agent-switch notify on --threshold 80,95   # daemon fires ONE coalesced OS notification per cycle on a crossing
+agent-switch compact work             # type /compact into work's agent-switch-managed tmux pane (idle-guarded)
+agent-switch tokens work              # token usage + cost per day (delegated to ccusage)
+```
+
+- **Context %** is read from the session's own transcript (the last finalized
+  main-chain turn's input side, matching Claude Code's own `/context`); the
+  window (200k / 1M) comes from a small per-model table. Unknown model → raw
+  tokens, no guessed percentage. Codex context comes in-band from its rollout.
+- **Notifications** are **off by default** and, when on, name only the project +
+  percentage + a suggested `/compact` — never another profile. Enable per-session
+  liveness/compaction signals with `agent-switch hooks install` (adds additive,
+  reversible, share-aware hooks to the profile's `settings.json`).
+- **Compaction is never automatic.** `agent-switch compact <profile>` only types
+  into an agent-switch-*managed* tmux pane (`run --tmux`), refuses while a turn
+  is in flight (`--force` to override), and prints the manual command anywhere
+  else. `/clear` is gated behind `--force` (it discards the conversation).
+- **Token tracking needs [ccusage](https://github.com/ccusage/ccusage)** — an
+  optional external tool (not bundled). Install it (`npm i -g ccusage`) or run
+  zero-install with `AGENT_SWITCH_CCUSAGE='npx -y ccusage@latest'`. Context
+  monitoring works without it. **Subscription/OAuth profiles show cost as
+  "notional"** (the API-equivalent value of included usage, *not* real spend);
+  only a raw API-key profile shows computed spend. Gemini has no live-context
+  readout (shipped as unavailable); ccusage may still report its token totals.
+
 ## Browser sessions (claude.ai) without re-login
 
 `agent-switch web <name>` launches a Playwright Chromium instance with a **persistent user-data-dir per profile** (`~/.agent-switch/<name>/browser`). You log in once per account; cookies and session live in that directory and are reused on every subsequent `agent-switch web <name>`. No cookie copying, no fragile session extraction — just isolated browser profiles.

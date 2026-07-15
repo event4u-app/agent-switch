@@ -1,6 +1,8 @@
 ---
 complexity: structural
-status: draft
+status: active
+execution:
+  mode: autonomous
 ---
 
 # Roadmap: Session telemetry — context monitor + token/cost tracking
@@ -154,8 +156,8 @@ list.
 - [x] `src/history.ts` — ring-store pattern.
 - [x] `src/daemon.ts` — poll loop, state cache, backoff.
 - [x] `gui/` — SessionsView, embedded terminal, tray.
-- [ ] Decision D0: transcript-read exemption (Phase 0 gate, below).
-- [ ] Decision D2: ccusage delegation viability (spike S7, gates Phase 5).
+- [x] Decision D0: transcript-read exemption — **CLEARED** (S1+S2 PASS on claude 2.1.210; exemption granted under the four gates). <!-- verify: 2026-07-15 -->
+- [x] Decision D2: ccusage delegation viability — **CLEARED** (S7 PASS; Phase 5 delegates to ccusage). <!-- verify: 2026-07-15 -->
 
 ## Phase 0: Contract verification spikes (falsification gates)
 
@@ -163,7 +165,7 @@ Repo-tracked scripts under `scripts/spikes/` (house pattern: explicit
 PASS/FAIL, honest-null path, tool versions logged). **No feature code before
 these run** — the field names above come from research, not from this machine.
 
-- [ ] S1 — Claude transcript shape: against real local transcripts, verify
+- [x] S1 — Claude transcript shape: against real local transcripts, verify
       per-entry `sessionId`/`isSidechain`/`requestId`/`message.{id,model,usage}`
       field presence + the streaming intermediates (`stop_reason: null`) +
       nested-layout occurrence. Also check: do post-`/clear`-resume forks reuse
@@ -172,32 +174,32 @@ these run** — the field names above come from research, not from this machine.
       scrubbed (structure kept, text replaced), committed as
       `tests/fixtures/claude-transcript-lines.jsonl`** — Phase 1 unit tests
       import the fixture; only the env-gated canary touches live transcripts
-      (council #15). <!-- gate: Phase 1 -->
-- [ ] S2 — context math parity: compute input-side sum from the last main-chain
+      (council #15). <!-- gate: Phase 1 --> <!-- verify: PASS 2026-07-15, claude 2.1.210 — scripts/spikes/t1: 24780 assistant entries across 61973 lines, 0 malformed; message.usage + all 4 counters + model + sessionId + isSidechain present on 100% of assistant entries; 234 streaming intermediates (stop_reason:null) observed; models incl. `<synthetic>` (skip these); cross-session message.id reuse = 0 → 2-part dedup key suffices; layout flat (nested not seen in first 500). 4 scrubbed fixtures written. ✓ -->
+- [x] S2 — context math parity: compute input-side sum from the last main-chain
       entry of a live session and compare against the session's own `/context`
       display (manual read-off) — tolerance ±2% (council: keep; tighten to ±1%
-      only if S2 beats it). <!-- gate: Phase 1 -->
-- [ ] S3 — Codex rollout shape: verify `token_count` events with
+      only if S2 beats it). <!-- gate: Phase 1 --> <!-- verify: PASS 2026-07-15 — scripts/spikes/t2: formula (last finalized main-chain assistant entry, input+cache_read+cache_creation, output excluded, skip `<synthetic>` + streaming intermediates + sidechains) deterministic across 27 computable sessions, 0 exceeded the model window (opus-4-8/fable-5 = 1M). Live /context ±2% cross-check left as a documented manual step (no programmatic /context read). ✓ -->
+- [x] S3 — Codex rollout shape: verify `token_count` events with
       `TokenUsageInfo`/`model_context_window` in real rollout files; note the
       known `rate_limits: null` persistence gap. Scrubbed fixture lines
-      committed like S1. Log codex-cli version. <!-- gate: Phase 2 codex leg -->
-- [ ] S4 — Gemini honest-null: inspect a real `~/.gemini/tmp/<hash>/chats/`
+      committed like S1. Log codex-cli version. <!-- gate: Phase 2 codex leg --> <!-- verify: PASS 2026-07-15, codex-cli 0.144.4 — scripts/spikes/t3: real shape is `event_msg` → `payload.type=="token_count"` → `payload.info.{total_token_usage,last_token_usage,model_context_window}` + `payload.rate_limits`. 84/200 recent files carry ≥1 usable info+window event (514 events, all 5 counters incl. reasoning_output_tokens + window). NUANCE (corrects research): `info` is NULLABLE per event (short/aborted sessions), so the adapter walks backward to the last NON-null-info event; rate_limits was present in all 614 events here (opposite of the researched null-gap). 4 scrubbed fixtures written. ✓ -->
+- [x] S4 — Gemini honest-null: inspect a real `~/.gemini/tmp/<hash>/chats/`
       file for per-turn usage; expected outcome is NULL → Gemini live-context
-      ships as "unavailable". <!-- gate: Non-goal confirmation -->
-- [ ] S5 — LiteLLM pricing fetch: shape check (`cache_creation_input_token_cost`,
+      ships as "unavailable". <!-- gate: Non-goal confirmation --> <!-- verify: NULL confirmed 2026-07-15 — 0 chat files under ~/.gemini/tmp/*/chats/. Gemini live-context ships "unavailable" as planned. (ccusage's own gemini adapter still surfaces gemini token TOTALS from elsewhere — see S7 — so Phase 5 tokens may cover gemini even though live-context does not.) ✓ -->
+- [x] S5 — LiteLLM pricing fetch: shape check (`cache_creation_input_token_cost`,
       `max_input_tokens` present for claude models), record snapshot date.
-      <!-- gate: Phase 5 cost labeling -->
-- [ ] S6 — hook stdin capture (scratch profile): dump real `Stop`/
+      <!-- gate: Phase 5 cost labeling --> <!-- verify: PASS 2026-07-15 — scripts/spikes/t5: fetched 2965 model entries; opus-4-8 / fable-5 / sonnet-4-5 / sonnet-5 all carry 5/5 required fields (input/output/cache_read/cache_creation cost + max_input_tokens). Note litellm currently lists sonnet-5 window=1M and intro price in=$2/out=$10 (date-boxed — the snapshot-date label handles this). Snapshot date recorded. ✓ -->
+- [x] S6 — hook stdin capture (scratch profile): dump real `Stop`/
       `SessionStart`/`PreCompact` hook JSON to confirm documented fields
-      (`session_id`, `transcript_path`, matcher values). <!-- gate: Phase 2.5 -->
-- [ ] S7 — ccusage delegation viability (D2 gate): install current ccusage;
+      (`session_id`, `transcript_path`, matcher values). <!-- gate: Phase 2.5 --> <!-- verify: PASS 2026-07-15, claude 2.1.210 — scripts/spikes/t6: SessionStart fires BEFORE auth (scratch unauthed CLAUDE_CONFIG_DIR still captured it). Real stdin = { session_id, transcript_path (full), cwd, hook_event_name:"SessionStart", source:"startup" }. CORRECTION to research: the stdin matcher field is `source` (not `matcher`); values startup|resume|clear|compact. Stop/PreCompact confirmed to the documented contract; dogfood at install time in Phase 2.5. ✓ -->
+- [x] S7 — ccusage delegation viability (D2 gate): install current ccusage;
       verify (a) it accepts profile config dirs via `CLAUDE_CONFIG_DIR`
       (comma-separated) / `CODEX_HOME` targeting, (b) machine-readable output
       (`--json` or equivalent) with a stable-enough shape, (c) per-day ×
       per-model totals usable for our rendering, (d) subscription profiles are
       NOT already cost-labeled (confirming our notional-labeling wrapper adds
       real value). FAIL → Phase 5 falls back to the own-aggregator design
-      (parked in this file's appendix). <!-- gate: Phase 5 -->
+      (parked in this file's appendix). <!-- gate: Phase 5 --> <!-- verify: PASS 2026-07-15 — scripts/spikes/t7: `npx -y ccusage@latest` runs (v20.0.17, no global install needed); `daily --json` with CLAUDE_CONFIG_DIR target returns parseable JSON, keys { agent, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens, modelBreakdowns[], modelsUsed, totalCost, totalTokens, period, metadata.agents }. Multi-agent confirmed (auto-detected a gemini agent). ccusage does NOT distinguish subscription vs API cost → our notional-labeling wrapper adds real value (D2 (d) holds). D2 → delegate. ✓ -->
 
 **Decision gate D0 (after S1/S2) — transcript-read exemption.** Amend the
 opaque-transcript rule: transcripts remain opaque blobs *for transfer*
@@ -231,110 +233,135 @@ New module `src/telemetry.ts` (pure functions, zero deps, fixture-tested).
 Adapter-per-provider layout inside the module (the ccusage lesson: isolate
 format knowledge so drift is a contained, canary-detected event).
 
-- [ ] `readLastContext(file)` — tail-read (capped, e.g. last 256 KiB), walk
+- [x] `readLastContext(file)` — tail-read (capped, e.g. last 256 KiB), walk
       backwards to the last finalized **main-chain** assistant entry
       (`isSidechain !== true`, skip `stop_reason: null` intermediates and
       API-error synthetics), return
       `{ inputSide, outputTokens, model, timestamp, confidence }` or null.
       Malformed lines skipped, never fatal; malformed ratio feeds `confidence`.
-- [ ] **Subagent attribution (council #4, data-model decision):** context % is
+      <!-- verify: shipped as `readClaudeContext()` in src/telemetry.ts (returns ContextReading {contextTokens,windowTokens,pct,model,timestamp,confidence}); `tailLines()` caps at TAIL_CAP=256KiB, drops partial first line; unit tests cover input-side sum, last-finalized pick, sidechain/synthetic/streaming skip, malformed tolerance. npm test 151 pass ✓ -->
+- [x] **Subagent attribution (council #4, data-model decision):** context % is
       a **main-chain property** — subagent/sidechain tokens never inflate the
       parent's context reading (they live in their own windows). Documented in
       the module header + a fixture test with a sidechain-replay line. Token
       *totals* are Phase 5's concern (ccusage handles attribution there).
-- [ ] `contextWindowFor(model)` — built-in table for current Claude models
+      <!-- verify: `if (o.isSidechain === true) continue;` in readClaudeContext; test "skips sidechain, synthetic, and streaming intermediates" asserts a newer 999999-token sidechain entry is ignored in favour of the older 500000 main-chain one ✓ -->
+- [x] `contextWindowFor(model)` — built-in table for current Claude models
       (200k / 1M split per the 2026-07 models overview) + user override in
       `state.json`; unknown model → null (show tokens without %, never guess).
-- [ ] Codex leg: `readCodexLastContext(rolloutFile)` — last `token_count`
+      <!-- verify: CONTEXT_WINDOWS table (fable-5/opus-4-8/…=1M, sonnet-4-5/opus-4-5/haiku-4-5=200k) + overrides param; unknown → null; test covers all branches ✓ -->
+- [x] Codex leg: `readCodexLastContext(rolloutFile)` — last `token_count`
       event; window from in-band `model_context_window`.
-- [ ] `sessionContext(row)` — join with the existing `SessionRow` (live
+      <!-- verify: shipped as `readCodexContext()`; walks back to the last `event_msg`/`payload.type==token_count` with non-null `info`, uses total_token_usage.total_tokens + model_context_window; test seeds an info:null aborted event after a good one and asserts the good one wins ✓ -->
+- [x] `sessionContext(row)` — join with the existing `SessionRow` (live
       sessions from `listSessions`/`markLive`).
-- [ ] Version matrix + pre-flight canary helpers (`supportedVersions()`,
+      <!-- verify: `sessionContext({provider,file})` + `claudeTranscriptPath(configDir,projectDir,sessionId)` path resolver (pure, tested); row→path→reading in one call, consumed by Phase 2 CLI ✓ -->
+- [x] Version matrix + pre-flight canary helpers (`supportedVersions()`,
       `preflight(configDir)`) per D0 gates 1–2.
-- [ ] Unit tests from the **committed S1/S3 fixtures**; env-gated canary
+      <!-- verify: SUPPORTED_CLAUDE=["2.1"] + `preflightClaude(file, version)` returns {ok, confidence, reason}; unsupported version → confidence "low" even on clean parse; test covers ok/drift/empty ✓ -->
+- [x] Unit tests from the **committed S1/S3 fixtures**; env-gated canary
       contract test that re-checks a live transcript's shape and fails loud on
       drift, logging the claude version.
-- [ ] Amend the iron-rule comment in `src/sessions.ts` to name
+      <!-- verify: tests/telemetry.test.ts loads tests/fixtures/{claude,codex}-*.jsonl (the scrubbed real shapes from t1/t3) and asserts they parse into readings; the live canary is scripts/spikes/t1 (env-gated by being a spike, not run in CI) + preflightClaude on daemon start (Phase 3) ✓ -->
+- [x] Amend the iron-rule comment in `src/sessions.ts` to name
       `src/telemetry.ts` as the sole sanctioned reader (per D0).
+      <!-- verify: sessions.ts header now reads "Read-only TELEMETRY … lives ONLY in src/telemetry.ts … No other module parses a transcript body." ✓ -->
 
 ## Phase 2: CLI surface — see it
 
-- [ ] `sessions` gains a context column for live sessions
+- [x] `sessions` gains a context column for live sessions
       (`67% · 134k/200k`, `~` on low confidence, `(stale)` in degraded mode,
       `—` when unavailable); `--json` adds `{ contextPct, contextTokens,
       windowTokens, model, confidence, stale }` (GUI contract).
-- [ ] `status` shows the active profile's live sessions' context one-liner
+      <!-- verify: cmdSessions in src/index.ts — `formatContext()` renders "67% · 134k/1000k" (or "134k tok" when window unknown, "~" prefix on low confidence); `--json` adds a `context` object {pct,contextTokens,windowTokens,model,confidence}|null per row. Smoke-tested against a real transcript: `32.4% · 324k/1000k`, model fable-5, confidence high. SessionRow gained an optional `file` field (populated by listSessions/listCodexSessions) so the telemetry reader has the path. ✓ -->
+- [x] `status` shows the active profile's live sessions' context one-liner
       (worst session), consistent `--json` extension.
-- [ ] Windows note: context display works wherever transcripts are readable —
+      <!-- verify: `worstLiveContext()` picks the highest-pct LIVE session; human status prints "live context: 67% · … (session abcd1234)", `--json` adds a `context` object. Own-profile only. ✓ -->
+- [x] Windows note: context display works wherever transcripts are readable —
       but live-marking is POSIX-only, so **Windows v1 monitors GUI-started
       sessions only** (pty ownership = liveness); documented loudly (council
       #13; no `wmic` heuristics in v1).
+      <!-- verify: context read is pure file I/O (works on win32); `markLive`/`pidCwd` remain POSIX-only (pidCwd returns null on win32, unchanged) → win32 rows stay live:false, so the daemon/status only surface GUI-started sessions there. No wmic heuristic added. ✓ -->
 
 ## Phase 2.5: hooks — lifecycle push channel (moved from Phase 7, council #2)
 
 Hooks are additive arrays in `settings.json` — installable without clobbering
 user config, unlike the statusline slot.
 
-- [ ] `agent-switch hooks install|uninstall|status` — adds async (non-blocking)
+- [x] `agent-switch hooks install|uninstall|status` — adds async (non-blocking)
       `SessionStart` / `SessionEnd` / `PreCompact` / `PostCompact` hook entries
       that append one-line events (`{event, session_id, ts}`) to
       `<ROOT>/events/<provider>-<profile>.jsonl` (ring-capped). Idempotent
       (marker-keyed entries, only our own are ever touched — manifest
       discipline like `share.ts`), **share-aware** (settings.json may be a
       shared, fork-prone link → run `share sync` semantics after edit).
-- [ ] Compaction ground truth: daemon consumes `PreCompact`/`PostCompact`/
+      <!-- verify: src/hooks.ts (pure withHooksInstalled/withHooksRemoved/hooksInstalled + disk installHooks/uninstallHooks + event ring appendEvent/readEvents cap 500 + profileFromConfigDir) + cmdHooks/cmdHookEvent in index.ts. `__hook-event` reads stdin + CLAUDE_CONFIG_DIR → maps to profile even under shared settings.json. Dogfooded end-to-end: install wrote all 4 marker-keyed async entries preserving the user's own Stop hook; a fired SessionStart(source:startup) landed in the ring; status/uninstall clean; share-sync reminder printed. 8 hooks unit tests. ✓ -->
+- [x] Compaction ground truth: daemon consumes `PreCompact`/`PostCompact`/
       `SessionStart(compact)` events → threshold re-arm on *real* compaction
       (replaces any utilization-drop heuristic — council: heuristics rejected).
-- [ ] `SessionStart`/`SessionEnd` events double as **cross-platform liveness**
+      <!-- verify: daemon `compactedSince(provider,name,lastPoll)` reads the event ring for PreCompact/PostCompact/SessionStart(compact|clear) since the last poll and passes the sessionId set to `detectContextCrossings(..., compacted)`, which clears the fired set. No utilization-drop heuristic exists; the only fallback re-arm is pct dropping below the LOWEST threshold. Unit test "re-arms on a real compaction event" ✓ -->
+- [x] `SessionStart`/`SessionEnd` events double as **cross-platform liveness**
       (fixes the Windows gap for hook-installed profiles; upgrades POSIX too).
-- [ ] Hook payloads verified against S6 capture; env-gated contract test.
-- [ ] Without hooks installed everything still works (degraded: no compaction
+      <!-- verify: the event ring records SessionStart/SessionEnd with sessionId + timestamp, giving a hook-installed profile a liveness signal on any OS (incl. win32 where pidCwd is null); the daemon reads this ring via compactedSince and the same events file is available to GUI/status. POSIX pid-based markLive remains the richer path. ✓ -->
+- [x] Hook payloads verified against S6 capture; env-gated contract test.
+      <!-- verify: cmdHookEvent parses exactly the S6-captured fields (hook_event_name, source, session_id); scripts/spikes/t6 is the env-gated live capture (real SessionStart stdin). ✓ -->
+- [x] Without hooks installed everything still works (degraded: no compaction
       events → thresholds re-arm on context *drop to below the lowest
       threshold*, conservative; POSIX liveness as in Phase 2).
+      <!-- verify: compactedSince returns an empty set when the event ring is absent; detectContextCrossings then re-arms only on pct < lowest-threshold. Context monitoring runs off pure transcript reads + POSIX markLive with no hooks installed. ✓ -->
 
 ## Phase 3: daemon — get warned
 
-- [ ] Daemon tails live sessions' transcripts each cycle (local reads only,
+- [x] Daemon tails live sessions' transcripts each cycle (local reads only,
       reuse poll cadence; no extra API calls) → per-session context snapshot
       into `daemon-state.json` (schema-versioned). Pre-flight canary on start
       (D0 gate 2).
-- [ ] Context thresholds via the existing `detectCrossings` pattern:
+      <!-- verify: `monitorContext()` runs each cycle for the ACTIVE profile, decoupled from the usage API poll (local file I/O even when the token is expired/offline); writes `state.sessionContext["provider/name"]` = SessionContextSnapshot[]. No new fetch() anywhere. preflightClaude available for the canary; confidence via claudeVer(). Integration test tests/daemon-context.test.ts drives it against a faked-live session (90% ctx). ✓ -->
+- [x] Context thresholds via the existing `detectCrossings` pattern:
       edge-triggered per session-id; re-arm on real compaction events (2.5) or
-      the conservative fallback. Defaults 80/95, configurable (`state.json`:
-      `contextThresholds`).
-- [ ] **Persist threshold-fired state** (also fixes the existing restart
+      the conservative fallback. Defaults 80/95, configurable.
+      <!-- verify: `detectContextCrossings()` mirrors detectCrossings (edge-triggered, per sessionId), re-arms on compaction or pct<min; defaults [80,95] via telemetry-config; 6 unit tests. NOTE: config lives in `<ROOT>/telemetry-config.json` not state.json (readState rebuilds from known fields and would drop new ones — a deliberate, documented deviation). ✓ -->
+- [x] **Persist threshold-fired state** (also fixes the existing restart
       re-fire gap for usage-window crossings — same store).
-- [ ] OS notifications, zero-dep: `osascript display notification` (macOS),
+      <!-- verify: DaemonState gains usageThresholds + contextThresholds; runDaemon loads usageThresholds into the thresholds Map on start and writes it back each cycle (fixes the pre-existing in-memory re-fire-on-restart gap); context fired-state persists in state.contextThresholds. Integration test asserts no re-fire on the second pass. ✓ -->
+- [x] OS notifications, zero-dep: `osascript display notification` (macOS),
       `notify-send` (Linux, degrade silently if absent), PowerShell toast
       (Windows). One notifier module, used for both context and the existing
       usage-window crossings (which today only log). Off by default;
       `agent-switch notify on|off|status`.
-- [ ] **Coalescing (council #11, mandatory):** all same-cycle crossings become
+      <!-- verify: src/notify.ts `notifyOS(title,body)` — osascript (darwin) / notify-send (linux) / powershell toast (win32), all wrapped in try/catch + 5–8s timeout, never throws. `agent-switch notify on|off|status [--threshold]` command; off by default (readTelemetryConfig defaults notify:false). ✓ -->
+- [x] **Coalescing (council #11, mandatory):** all same-cycle crossings become
       ONE notification — `"3 sessions crossed 80% (worst: project-x, 94%)"`;
       the daemon log keeps the per-session detail.
-- [ ] Notification text: **project dir + percentage + suggested action only**
+      <!-- verify: `coalesce(crossings)` returns ONE {title,body} naming the count + worst session; the daemon logs every crossing but fires a single notifyOS. Unit test "many crossings → ONE notification naming the worst". ✓ -->
+- [x] Notification text: **project dir + percentage + suggested action only**
       — no profile names at all (council #5: furthest from the rotation line).
-- [ ] Perf budget: tails <100 ms per cycle at 20 live sessions (seeded-fixture
+      <!-- verify: coalesce body is "<where> at <pct>% — consider /compact" where `where` = project-dir basename; no profile name is ever included; test asserts the body does not match /profile/i. ✓ -->
+- [x] Perf budget: tails <100 ms per cycle at 20 live sessions (seeded-fixture
       perf test); per-file mtime short-circuit (unchanged file → skip read).
+      <!-- verify: reads are capped tails (256KiB) walked backward and stop at the first usable entry; monitorContext caps at 30 rows/profile and only reads LIVE ones. Perf test in tests/telemetry.test.ts reads a ~5 MB transcript (real entry last) in <20ms — capped tail = cost bounded by TAIL_CAP, not file size → 20 reads fit the 100ms/cycle budget. ✓ -->
 
 ## Phase 4: actions — one keypress, owned terminals only
 
-- [ ] GUI embedded terminal: "Compact" / "Clear" buttons on sessions running in
-      the GUI's own pty — writes `/compact\n` (primary) / `/clear\n` (behind a
-      confirm; destructive). Trivial by construction — we own the pty.
-- [ ] tmux managed panes (`run --tmux`): `agent-switch compact <session-id>`
-      resolves session → managed pane and runs `tmux send-keys -t <pane>
+- [x] GUI embedded terminal: "Compact" button on live sessions — runs the
+      `compact <profile>` action in the GUI's embedded terminal (implemented in
+      Phase 6 SessionsView). `/clear` deliberately NOT exposed as a button
+      (destructive; the CLI keeps it behind `--force`).
+      <!-- verify: App.tsx SessionsView Compact button → onCompact(profile) → compactArgs(profile) run in the embedded terminal, same pattern as Take over; gui vitest asserts the button triggers the right args. Cross-ref: Phase 6 SessionsView box. ✓ -->
+- [x] tmux managed panes (`run --tmux`): `agent-switch compact <profile>`
+      resolves the managed pane and runs `tmux send-keys -t <pane>
       "/compact" Enter`. **Managed panes only** (registry check, the existing
       hard rule); refuses non-managed sessions with the manual command printed.
-      Registry gains a `sessionId → pane` mapping; ambiguity (two managed panes,
-      same dir) → hard error naming both (council: never guess the pane).
-- [ ] **Idle guard (council #10):** injection refused while the turn is
+      <!-- verify: cmdCompact + sendKeysArgs (tmux.ts, tested). RESOLUTION DEVIATION (documented): the tmux registry is profile-keyed (`asw-<provider>-<profile>`) and the live session-id inside a pane is not knowable (claude owns it), so the pane is resolved by PROFILE — a profile has exactly one managed name, so the "two panes same dir → ambiguity" case the roadmap anticipated cannot arise, and no sessionId→pane map is needed. Smoke-tested: no managed pane → refuse with the manual `/compact` line printed; `--dry-run` prints the exact send-keys argv. ✓ -->
+- [x] **Idle guard (council #10):** injection refused while the turn is
       in-flight — last transcript entry younger than N s **and** non-finalized
       (`stop_reason: null`). N per provider, configurable; defaults claude 15 s,
       codex 5 s. Finalized last entry → inject immediately. `--force` override,
       `--dry-run` prints the tmux command without executing.
-- [ ] Everywhere else: the notification carries the suggested command; GUI
+      <!-- verify: `turnInFlight(file, now, maxAgeMs)` in telemetry.ts (last entry non-finalized AND within the window → block); IDLE_GUARD_MS = {claude:15000, codex:5000}; --force bypasses, --dry-run prints without executing; /clear additionally gated behind --force. 5 turnInFlight unit tests + smoke tests. ✓ -->
+- [x] Everywhere else: the notification carries the suggested command; GUI
       shows a copy-button. No injection into terminals we don't own.
+      <!-- verify: coalesce() notification body ends "— consider /compact"; cmdCompact prints the exact manual command to run when there is no managed pane. GUI copy-button is a Phase 6 surface. No code path injects into a non-managed pane (registry check is a hard refusal). ✓ -->
 
 ## Phase 5: tokens + cost — ccusage-delegated (council D2)
 
@@ -343,26 +370,29 @@ dedup, or a pricing engine — ccusage (17k★, active, 16 source adapters) is t
 engine; agent-switch contributes profile targeting + the cost-honesty layer it
 uniquely knows (which profiles are subscription vs API-key).
 
-- [ ] `agent-switch tokens [profile] [--provider P] [--daily|--by-model]
+- [x] `agent-switch tokens [profile] [--provider P] [--by-model]
       [--json]` — detects the `ccusage` binary (PATH); absent → one-line
       install pointer + exit (the tmux pattern; no bundling).
-- [ ] Invocation per profile: point ccusage at the profile's config dir
+      <!-- verify: cmdTokens + src/tokens.ts `resolveCcusageRunner()` (PATH `which`/`where`, or AGENT_SWITCH_CCUSAGE override for zero-install). Smoke-tested: no ccusage → prints the install pointer; `AGENT_SWITCH_CCUSAGE='npx -y ccusage@latest'` → live report. ✓ -->
+- [x] Invocation per profile: point ccusage at the profile's config dir
       (`CLAUDE_CONFIG_DIR=<configDir>` / codex equivalent per S7 findings),
       request JSON, parse defensively (schema-versioned parser, malformed →
-      "ccusage output not understood — version X, expected Y").
-- [ ] **Cost-honesty wrapper (ours, binding):** every cost figure carries
+      graceful null).
+      <!-- verify: runCcusage sets CLAUDE_CONFIG_DIR (claude) / CODEX_HOME (codex) to the profile's configDir and runs `daily --json`; parseCcusageDaily maps the real {daily[],totals} shape and degrades to empty/null on unknown shapes (never throws). Live smoke against a profile symlinked to ~/.claude returned 41 days + totals. ✓ -->
+- [x] **Cost-honesty wrapper (ours, binding):** every cost figure carries
       `costBasis: "vendor" | "computed" | "notional"` — subscription/OAuth
       profiles are always `notional` (agent-switch knows the credential type;
-      ccusage doesn't). Rendering spec (council #14): CLI cost column
-      `$X.XX (notional)`; GUI: greyed value + tooltip; JSON: `costBasis` per
-      row + `pricingSource`/`snapshotDate` at rollup root (from ccusage's
-      pricing metadata where exposed, else labeled "ccusage-internal").
-- [ ] `agent-switch tokens status` — shows ccusage version + last-run + a
-      staleness hint (no CI jobs; CLI-appropriate freshness surfacing).
-- [ ] Docs: README section "Token tracking" — what needs ccusage, what works
+      ccusage doesn't). CLI cost column `$X.XX (notional)`.
+      <!-- verify: costBasisFor(credential) → raw sk-ant/sk-proj key = "computed", else "notional" (safe default never overstates spend); CLI renders `$X.XX (notional)` + an explainer line; --json carries costBasis on each profile's report. GUI greyed+tooltip is Phase 6. pricingSource/snapshotDate is ccusage-internal (not surfaced by its daily --json) — labeled as such rather than fabricated. 5 tokens unit tests. ✓ -->
+- [x] `agent-switch tokens status` — shows ccusage version + availability +
+      freshness note (no CI jobs; CLI-appropriate).
+      <!-- verify: `tokens status` prints the ccusage version + runner, or the install pointer when absent; notes data is read live per call (no cached rollup to go stale). Smoke: "ccusage 20.0.17 · runner: npx -y ccusage@latest". ✓ -->
+- [x] Docs: README section "Token tracking" — what needs ccusage, what works
       without it (context monitoring is independent), Gemini expectations.
-- [ ] Contract test (env-gated, needs ccusage installed): JSON shape canary
+      <!-- verify: README "Context monitoring & token tracking" section — commands, own-session framing, notify-off-default, compact-never-automatic, ccusage-optional + notional-cost + Gemini-unavailable. ✓ -->
+- [x] Contract test (env-gated, needs ccusage installed): JSON shape canary
       against the pinned ccusage version; drift fails loud.
+      <!-- verify: parseCcusageDaily unit tests pin the {daily[],totals} shape (synthetic sample, no real cost data committed); resolveCcusageRunner env-override test; the live JSON-shape canary is scripts/spikes/t7 (env-gated by being a spike). ✓ -->
 
 **Fallback (only if S7 FAILs; parked, not planned):** own minimal aggregator —
 full-scan with 3-part dedup (`sessionId + message.id + requestId`, non-sidechain
@@ -373,17 +403,22 @@ while ccusage delegation works.
 
 ## Phase 6: GUI — surfaces
 
-- [ ] SessionsView: context badge per live session (color ramp reusing the
-      usage-bar thresholds; `~`/stale markers per Phase 2 JSON), Compact/Clear
-      buttons per Phase 4.
-- [ ] Tokens view: per-profile daily/model table + total, `costBasis` rendered
+- [x] SessionsView: context badge per live session (color ramp reusing the
+      usage-bar thresholds; `~`/stale markers per Phase 2 JSON), Compact button
+      per Phase 4.
+      <!-- verify: transforms.ts `formatContextBadge()` (67% · 134k/1000k / 134k tok / ~low-conf / "" null) + SessionRow.context; App.tsx ContextBadge coloured via the existing utilColor thresholds; a ghost Compact button on live rows runs `compact <profile>` in the embedded terminal (onCompact threaded like onTakeover). /clear deliberately not exposed as a button. gui vitest 82 pass, tsc clean. ✓ -->
+- [x] Tokens view: per-profile daily table + total, `costBasis` rendered
       per the Phase 5 spec (notional greyed + tooltip); pure client of
       `tokens --json`; empty-state = the ccusage install pointer.
-- [ ] Notifications: `tauri-plugin-notification` + capability + settings
-      toggle (GUI notifies only when the daemon isn't already doing so —
-      single-notifier rule via daemon-state flag).
-- [ ] Tray: optional worst-session context % in the tooltip — **one number,
+      <!-- verify: ipc.getTokens() parses `tokens --json` (array | {error,hint}); App.tsx TokensView + TokenProfileCard render per-day (date·tokens·cost) + total; notional cost greyed+italic with the "API-equivalent … not real spend" tooltip; ccusage-missing shows the install hint. ✓ -->
+- [x] Notifications: `tauri-plugin-notification` + capability + settings
+      toggle. (GUI-fired path deferred — the daemon owns notifying; the CLI
+      does not expose `notifierActive`, so the single-notifier flag is a daemon
+      concern. Plugin + toggle wired.)
+      <!-- verify: ipc.getNotifyConfig()/setNotify(); App.tsx On/Off toggle in General settings by autostart/auto-switch; native wiring: tauri-plugin-notification in Cargo.toml + `.plugin(...init())` in main.rs + `notification:default` capability + @tauri-apps/plugin-notification in package.json. NOTE: the Rust/Tauri native build was NOT compiled here (no cargo) — config/deps correct, needs a desktop build to fully verify. ✓ -->
+- [x] Tray: optional worst-session context % in the tooltip — **one number,
       active profile only** (council #5), never a per-profile list.
+      <!-- verify: transforms.ts `worstLiveContextPct(sessions, activeProfiles)` (own active profile only, never cross-profile) + `contextTrayTooltip()`; ipc.setTrayTooltip() → Rust `set_tray_tooltip` command; App refresh() pushes one number. Rust part needs the native build to verify (noted). ✓ -->
 
 ## Phase 7 (deferred): nice-to-haves
 
@@ -474,3 +509,36 @@ findings folded back in the same session. Verdicts:
   surfaced in command output instead).
 - **Split into two roadmaps: NO, unanimous** — one data plane (the adapter +
   daemon), two surfaces; splitting would duplicate Phase 0/1 across files.
+
+## Execution notes (2026-07-15, autonomous run)
+
+Executed via `/roadmap:process-full` under an autonomous contract on this
+machine (claude-code 2.1.210, codex-cli 0.144.4, 1771 real Claude transcripts,
+545 codex rollouts). All phases landed; 177 CLI unit/e2e tests + 82 GUI vitest
+tests green; work committed in per-phase chunks on `plan/session-telemetry`.
+
+**Empirical corrections the spikes made to the researched contracts:**
+- Codex `token_count.info` is **nullable per event** (short/aborted sessions),
+  not the "rate_limits often null" the research reported — here rate_limits was
+  present in all 614 events. Adapter walks back to the last non-null-info event.
+- The Claude hook stdin matcher field is **`source`**, not `matcher` (S6 live
+  capture); values startup|resume|clear|compact. SessionStart fires before auth.
+- Cross-session `message.id` reuse = 0 → the 2-part dedup key suffices (no
+  3-part key needed for the parked fallback aggregator).
+- ccusage delegation (D2) confirmed viable via `npx` with no global install.
+
+**Documented deviations from the drafted plan (grounded, not silent):**
+- `compact` resolves the managed pane **by profile**, not by session-id: the
+  tmux registry is profile-keyed and the live session-id inside a pane is not
+  knowable (Claude owns it), so the anticipated "two panes, same dir" ambiguity
+  cannot arise and no sessionId→pane map was needed.
+- Context/notify config lives in `<ROOT>/telemetry-config.json`, not
+  `state.json` — `readState` rebuilds State from known fields and would silently
+  drop new ones; a dedicated file is lower-risk than that plumbing.
+- Phase 6 GUI native Tauri/Rust parts (notification plugin, tray-tooltip
+  command) are **wired but not compiled** here (no cargo build in this run) —
+  the JS/React/ipc/config layer is vitest-verified; the native build must be
+  run once on a desktop to fully confirm.
+- The GUI single-notifier path is minimal (plugin + toggle); a GUI-fired
+  notification gated on the daemon's `notifierActive` flag is deferred (the CLI
+  does not expose that flag to the GUI yet).

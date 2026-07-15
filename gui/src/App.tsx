@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Pencil, Check } from "lucide-react";
+import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Coins, Minimize2, Pencil, Check } from "lucide-react";
 import {
+  compactArgs,
   deactivateProfile,
   getAutoSwitch,
   getAutostart,
+  getNotifyConfig,
   getProviders,
+  getTokens,
   listApps,
   listProfiles,
   listSessions,
@@ -15,6 +18,8 @@ import {
   openApp,
   profileUsage,
   redeemReset,
+  setNotify,
+  setTrayTooltip,
   takeoverArgs,
   quitApp,
   removeProfile,
@@ -31,6 +36,7 @@ import {
   uninstall,
   type AppInfo,
   type AutoSwitchMap,
+  type TokensError,
 } from "./ipc.js";
 import { EmbeddedTerminal } from "./EmbeddedTerminal.js";
 import { NotificationBell } from "./NotificationBell.js";
@@ -51,8 +57,12 @@ import { loadUsageCache, saveUsageSnapshot, type UsageEntry } from "./usage-cach
 import {
   groupByProvider,
   formatReset,
+  formatContextBadge,
+  formatTokensK,
   hasUsageReadout,
   relativeAge,
+  worstLiveContextPct,
+  contextTrayTooltip,
   PROFILE_LABELS,
   type ProfileRow,
   type ProfileLabel,
@@ -61,6 +71,8 @@ import {
   type ProvidersStatus,
   type ProviderSurface,
   type SessionRow,
+  type SessionContext,
+  type TokenRow,
 } from "./transforms.js";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -167,6 +179,7 @@ export default function App() {
   const [showCreate, setShowCreate] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
+  const [showTokens, setShowTokens] = useState(false);
   const [globalAuto, setGlobalAuto] = useState(() => getAutoSwitchGlobal());
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState<string | null>(null);
@@ -274,6 +287,18 @@ export default function App() {
         }
       }
     }
+    // Tray tooltip: the active Claude profile's worst live-session context fill
+    // (one number, own account only). Best-effort + non-blocking — a tray hiccup
+    // must never delay or blank the panel.
+    void (async () => {
+      try {
+        const sess = await listSessions(undefined, 20);
+        const activeClaude = loaded.filter((r) => r.provider === "claude" && r.active).map((r) => r.name);
+        await setTrayTooltip(contextTrayTooltip(worstLiveContextPct(sess, activeClaude)));
+      } catch {
+        /* best-effort tray update */
+      }
+    })();
     // The countdown is owned by the auto-refresh timer alone — a manual refresh
     // does NOT restart it (that would just delay the next usage fetch, since the
     // cooldown already blocks a re-fetch within the same interval).
@@ -411,9 +436,23 @@ export default function App() {
           />
           <Button
             size="icon"
+            variant={showTokens ? "secondary" : "ghost"}
+            onClick={() => {
+              setShowTokens((v) => !v);
+              setShowSessions(false);
+              setShowSettings(false);
+              setNotice(null);
+            }}
+            aria-label="Tokens"
+          >
+            <Coins />
+          </Button>
+          <Button
+            size="icon"
             variant={showSessions ? "secondary" : "ghost"}
             onClick={() => {
               setShowSessions((v) => !v);
+              setShowTokens(false);
               setShowSettings(false);
               setNotice(null);
             }}
@@ -426,6 +465,7 @@ export default function App() {
             variant={showSettings ? "secondary" : "ghost"}
             onClick={() => {
               setShowSettings((v) => !v);
+              setShowTokens(false);
               setShowSessions(false);
               setNotice(null);
             }}
@@ -459,6 +499,8 @@ export default function App() {
             onChangeRefreshMin={changeRefreshMin}
             onProvidersChanged={refresh}
           />
+        ) : showTokens ? (
+          <TokensView onClose={() => setShowTokens(false)} />
         ) : showSessions ? (
           <SessionsView
             claudeProfiles={grouped.claude.map((r) => r.name)}
@@ -467,6 +509,12 @@ export default function App() {
               setTerminal({
                 args: takeoverArgs(sessionId, to, keepSource),
                 title: `Takeover — ${sessionId.slice(0, 8)} → ${to}`,
+              })
+            }
+            onCompact={(profile) =>
+              setTerminal({
+                args: compactArgs(profile),
+                title: `Compact — ${profile}`,
               })
             }
           />
@@ -970,6 +1018,8 @@ function GeneralSettings({
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [strategy, setStrategy] = useState<SwitchStrategy | null>(null);
+  const [notify, setNotifyState] = useState<boolean | null>(null);
+  const [notifyThresholds, setNotifyThresholds] = useState<number[]>([]);
 
   useEffect(() => {
     getAutostart()
@@ -978,7 +1028,24 @@ function GeneralSettings({
     getSwitchStrategy()
       .then(setStrategy)
       .catch(() => setStrategy("reset-first"));
+    getNotifyConfig()
+      .then((c) => {
+        setNotifyState(c.notify);
+        setNotifyThresholds(c.contextThresholds);
+      })
+      .catch(() => setNotifyState(false));
   }, []);
+
+  async function toggleNotify() {
+    const next = !notify;
+    try {
+      await setNotify(next, notifyThresholds);
+      setNotifyState(next);
+      setErr(null);
+    } catch (e) {
+      setErr(describeError(e));
+    }
+  }
 
   function pickStrategy(next: SwitchStrategy) {
     setStrategy(next);
@@ -1048,6 +1115,25 @@ function GeneralSettings({
             aria-label="Auto-refresh limits"
           >
             {autoRefresh ? "On" : "Off"}
+          </Button>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+          <div>
+            <div className="text-[13px] font-medium">Context alerts</div>
+            <div className="text-xs text-muted-foreground">
+              Notify when a session's context window crosses a threshold
+              {notifyThresholds.length > 0 && ` (${notifyThresholds.join("%, ")}%)`}.
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={notify ? "default" : "outline"}
+            disabled={notify === null}
+            onClick={toggleNotify}
+            aria-label="Context alerts"
+          >
+            {notify === null ? "…" : notify ? "On" : "Off"}
           </Button>
         </div>
 
@@ -1258,17 +1344,39 @@ function UninstallSettings({ onUninstall }: { onUninstall: () => void }) {
   );
 }
 
+/** Compact context-window badge for a live session, coloured with the same
+ *  thresholds as the usage bars (green <70, amber <90, red ≥90). Own-session
+ *  only — never a comparison across sessions. Empty context renders nothing. */
+function ContextBadge({ context }: { context?: SessionContext | null }) {
+  const label = formatContextBadge(context);
+  if (!label) return null;
+  const pct = context?.pct ?? null;
+  const color = typeof pct === "number" ? utilColor(pct) : undefined;
+  return (
+    <span
+      className="rounded-full border px-1.5 py-0.5 text-[10px] font-medium leading-none tabular-nums"
+      style={color ? { color, borderColor: color } : undefined}
+      title={context?.model ? `Context window — ${context.model}` : "Context window"}
+    >
+      {label}
+    </span>
+  );
+}
+
 /** Sessions view (behind the header history icon): the Claude sessions
  *  inventory, each with a target-profile picker + "Take over" that runs the
- *  interactive takeover in the embedded terminal. */
+ *  interactive takeover in the embedded terminal, plus a "Compact" action on
+ *  live sessions. */
 function SessionsView({
   claudeProfiles,
   onClose,
   onTakeover,
+  onCompact,
 }: {
   claudeProfiles: string[];
   onClose: () => void;
   onTakeover: (sessionId: string, to: string, keepSource: boolean) => void;
+  onCompact: (profile: string) => void;
 }) {
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [target, setTarget] = useState<Record<string, string>>({});
@@ -1303,7 +1411,19 @@ function SessionsView({
                   <div className="flex items-center gap-1.5">
                     <span className="truncate text-[13px] font-medium">{s.profile}</span>
                     {s.live && <Badge variant="success">live</Badge>}
+                    <ContextBadge context={s.context} />
                     <span className="ml-auto text-xs text-muted-foreground">{relativeAge(s.mtimeMs)}</span>
+                    {s.live && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => onCompact(s.profile)}
+                        title="Run /compact in this session's terminal to shrink its context window"
+                      >
+                        <Minimize2 /> Compact
+                      </Button>
+                    )}
                   </div>
                   <div className="truncate text-xs text-muted-foreground">{s.summary || s.cwd || s.projectDir}</div>
                   {others.length > 0 && (
@@ -1344,6 +1464,104 @@ function SessionsView({
       )}
       <p className="text-[11px] leading-snug text-muted-foreground">
         Take over moves a session to another profile and resumes it in the terminal — fork copies instead.
+      </p>
+    </div>
+  );
+}
+
+/** One profile's token usage: a per-day table (date · tokens · cost) + a total
+ *  row. A notional cost basis (API-equivalent value of subscription usage) is
+ *  greyed + italic with an explanatory tooltip so it is never read as real spend. */
+function TokenProfileCard({ row }: { row: TokenRow }) {
+  const t = row.tokens;
+  const notional = t?.costBasis === "notional";
+  const costTitle = notional ? "API-equivalent value of subscription usage, not real spend" : undefined;
+  return (
+    <Card>
+      <CardContent className="space-y-2 p-3">
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-[13px] font-medium">{row.name}</span>
+          {t && (
+            <Badge variant="outline" title={costTitle}>
+              {t.costBasis}
+            </Badge>
+          )}
+        </div>
+        {!t || t.days.length === 0 ? (
+          <div className="text-xs text-muted-foreground">No usage recorded.</div>
+        ) : (
+          <div className="space-y-1 text-[11px]">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <span className="w-20 shrink-0">Date</span>
+              <span className="flex-1 text-right">Tokens</span>
+              <span className="w-16 shrink-0 text-right">Cost</span>
+            </div>
+            {t.days.map((d) => (
+              <div key={d.date} className="flex items-center gap-2">
+                <span className="w-20 shrink-0 truncate">{d.date}</span>
+                <span className="flex-1 text-right tabular-nums">{formatTokensK(d.totalTokens)}</span>
+                <span
+                  className={cn("w-16 shrink-0 text-right tabular-nums", notional && "italic text-muted-foreground")}
+                  title={costTitle}
+                >
+                  ${d.cost.toFixed(2)}
+                </span>
+              </div>
+            ))}
+            <div className="flex items-center gap-2 border-t border-border pt-1 font-medium">
+              <span className="w-20 shrink-0">Total</span>
+              <span className="flex-1 text-right tabular-nums">{formatTokensK(t.totals.totalTokens)}</span>
+              <span
+                className={cn("w-16 shrink-0 text-right tabular-nums", notional && "italic text-muted-foreground")}
+                title={costTitle}
+              >
+                ${t.totals.cost.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Tokens view (behind the header coins icon): per-profile Claude token usage
+ *  from `tokens --json`. A pure `--json` client — when ccusage is missing the
+ *  payload carries an install hint, shown in place of the tables. */
+function TokensView({ onClose }: { onClose: () => void }) {
+  const [data, setData] = useState<TokenRow[] | TokensError | null>(null);
+
+  useEffect(() => {
+    getTokens()
+      .then(setData)
+      .catch(() => setData({ error: "tokens-unavailable" }));
+  }, []);
+
+  const err = data && !Array.isArray(data) ? data : null;
+  const rows = Array.isArray(data) ? data : [];
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold tracking-tight">Token usage</span>
+        <Button size="icon" variant="ghost" className="size-7" onClick={onClose} aria-label="Close tokens">
+          <X />
+        </Button>
+      </div>
+      {data === null ? (
+        <div className="px-1 text-xs text-muted-foreground">Loading…</div>
+      ) : err ? (
+        <div className="py-10 text-center text-sm text-muted-foreground">
+          {err.hint || "Install ccusage for token tracking."}
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="py-10 text-center text-sm text-muted-foreground">No token usage yet.</div>
+      ) : (
+        rows.map((r) => <TokenProfileCard key={`${r.provider}/${r.name}`} row={r} />)
+      )}
+      <p className="text-[11px] leading-snug text-muted-foreground">
+        Daily token totals per profile. Costs marked <span className="italic">notional</span> are the API-equivalent
+        value of subscription usage, not real spend.
       </p>
     </div>
   );
