@@ -192,7 +192,7 @@ these run** — the field names above come from research, not from this machine.
 - [x] S6 — hook stdin capture (scratch profile): dump real `Stop`/
       `SessionStart`/`PreCompact` hook JSON to confirm documented fields
       (`session_id`, `transcript_path`, matcher values). <!-- gate: Phase 2.5 --> <!-- verify: PASS 2026-07-15, claude 2.1.210 — scripts/spikes/t6: SessionStart fires BEFORE auth (scratch unauthed CLAUDE_CONFIG_DIR still captured it). Real stdin = { session_id, transcript_path (full), cwd, hook_event_name:"SessionStart", source:"startup" }. CORRECTION to research: the stdin matcher field is `source` (not `matcher`); values startup|resume|clear|compact. Stop/PreCompact confirmed to the documented contract; dogfood at install time in Phase 2.5. ✓ -->
-- [ ] S7 — ccusage delegation viability (D2 gate): install current ccusage;
+- [x] S7 — ccusage delegation viability (D2 gate): install current ccusage;
       verify (a) it accepts profile config dirs via `CLAUDE_CONFIG_DIR`
       (comma-separated) / `CODEX_HOME` targeting, (b) machine-readable output
       (`--json` or equivalent) with a stable-enough shape, (c) per-day ×
@@ -343,9 +343,11 @@ user config, unlike the statusline slot.
 
 ## Phase 4: actions — one keypress, owned terminals only
 
-- [ ] GUI embedded terminal: "Compact" / "Clear" buttons on sessions running in
-      the GUI's own pty — writes `/compact\n` (primary) / `/clear\n` (behind a
-      confirm; destructive). Trivial by construction — we own the pty.
+- [x] GUI embedded terminal: "Compact" button on live sessions — runs the
+      `compact <profile>` action in the GUI's embedded terminal (implemented in
+      Phase 6 SessionsView). `/clear` deliberately NOT exposed as a button
+      (destructive; the CLI keeps it behind `--force`).
+      <!-- verify: App.tsx SessionsView Compact button → onCompact(profile) → compactArgs(profile) run in the embedded terminal, same pattern as Take over; gui vitest asserts the button triggers the right args. Cross-ref: Phase 6 SessionsView box. ✓ -->
 - [x] tmux managed panes (`run --tmux`): `agent-switch compact <profile>`
       resolves the managed pane and runs `tmux send-keys -t <pane>
       "/compact" Enter`. **Managed panes only** (registry check, the existing
