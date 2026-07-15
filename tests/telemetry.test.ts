@@ -206,3 +206,20 @@ test("invariant: SUPPORTED_CLAUDE and CONTEXT_WINDOWS are non-empty", () => {
   assert.ok(SUPPORTED_CLAUDE.length > 0);
   assert.ok(Object.keys(CONTEXT_WINDOWS).length > 0);
 });
+
+test("perf: reading context from a large transcript stays cheap (capped tail)", () => {
+  // A big transcript (~5 MB) with the real entry at the very end. The capped
+  // tail read means cost is bounded by TAIL_CAP, not file size — the daemon's
+  // <100ms/cycle budget rests on this.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-perf-"));
+  const f = path.join(dir, "big.jsonl");
+  const filler = JSON.stringify({ type: "user", message: { content: "x".repeat(400) } }) + "\n";
+  const body = filler.repeat(12000) + asst({ input_tokens: 500_000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 }) + "\n";
+  fs.writeFileSync(f, body); // ~5 MB, real entry last
+  const t0 = process.hrtime.bigint();
+  const r = readClaudeContext(f, { claudeVersion: "2.1.210" })!;
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  assert.equal(r.contextTokens, 500_000, "finds the real entry in the capped tail");
+  // 20 such reads must fit well under the 100ms/cycle budget → single read < 20ms
+  assert.ok(ms < 20, `single capped read should be <20ms, was ${ms.toFixed(1)}ms`);
+});

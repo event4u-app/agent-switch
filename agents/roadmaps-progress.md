@@ -6,10 +6,10 @@
 
 ## Overall
 
-**47 / 72 steps done · 65%**
+**57 / 72 steps done · 79%**
 
 ```text
-██████████████████████████░░░░░░░░░░░░░░   65%
+████████████████████████████████░░░░░░░░   79%
 ```
 
 ## ⚠️ Iron Law 3 — unresolved deferred items
@@ -24,7 +24,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md) | 9 | 47 | 25 | 19 | 3 | 0 | 0 | ████░░░░░░ 43% |
+| 1 | [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md) | 9 | 47 | 15 | 29 | 3 | 0 | 0 | ███████░░░ 66% |
 | 2 | [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md) | 6 | 29 | 0 | 28 | 1 | 0 | 0 | ██████████ 100% |
 
 ---
@@ -33,15 +33,15 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 ### [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md)
 
-**Session telemetry — context monitor + token/cost tracking** — 19 / 44 done (43%)
+**Session telemetry — context monitor + token/cost tracking** — 29 / 44 done (66%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 0 | Contract verification spikes (falsification gates) | 🟡 in progress | 1 | 6 | 0 | 0 | 86% |
 | 1 | telemetry adapter — the single sanctioned transcript reader | ✅ done | 0 | 8 | 0 | 0 | 100% |
 | 2 | CLI surface — see it | ✅ done | 0 | 3 | 0 | 0 | 100% |
-| 2.5 | hooks — lifecycle push channel (moved from Phase 7, council #2) | 🟡 in progress | 3 | 2 | 0 | 0 | 40% |
-| 3 | daemon — get warned | ⬜ not started | 7 | 0 | 0 | 0 | 0% |
+| 2.5 | hooks — lifecycle push channel (moved from Phase 7, council #2) | ✅ done | 0 | 5 | 0 | 0 | 100% |
+| 3 | daemon — get warned | ✅ done | 0 | 7 | 0 | 0 | 100% |
 | 4 | actions — one keypress, owned terminals only | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
 | 5 | tokens + cost — ccusage-delegated (council D2) | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
 | 6 | GUI — surfaces | ⬜ not started | 4 | 0 | 0 | 0 | 0% |

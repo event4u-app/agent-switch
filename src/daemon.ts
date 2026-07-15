@@ -26,6 +26,18 @@ import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, SwitchCa
 import { readCodexUsage } from "./codex-usage.js";
 import { redeemResetCredit } from "./codex-reset.js";
 import { appendSample } from "./history.js";
+import { SessionRow, listSessions, listCodexSessions, markLive } from "./sessions.js";
+import { readContext } from "./telemetry.js";
+import {
+  readTelemetryConfig,
+  detectContextCrossings,
+  coalesce,
+  notifyOS,
+  ContextThresholdState,
+  ContextSample,
+} from "./notify.js";
+import { readEvents, eventFile } from "./hooks.js";
+import { execFileSync } from "node:child_process";
 
 // Providers whose active profile the daemon may auto-switch (they expose a
 // usage readout to base a headroom decision on). Gemini has none.
@@ -36,12 +48,33 @@ export const STATE_FILE = path.join(ROOT, "daemon-state.json");
 export const MIN_INTERVAL_MS = 60_000; // never poll faster than once a minute
 export const MAX_BACKOFF_MS = 30 * 60_000; // cap backoff at 30 min
 
+/** A live session's context snapshot for the GUI/status (schema-versioned via
+ *  the enclosing DaemonState). Own-session only. */
+export interface SessionContextSnapshot {
+  sessionId: string;
+  pct: number | null;
+  contextTokens: number;
+  windowTokens: number | null;
+  where: string;
+  confidence: "high" | "low";
+  at: string;
+}
+
 export interface DaemonState {
   lastPoll: string | null;
   pollIntervalMs: number;
   /** "claude/<name>" → the profile's own usage snapshot. */
   profiles: Record<string, UsageSnapshot>;
   lastError: string | null;
+  /** "provider/<name>" → per-live-session context snapshots (active profile). */
+  sessionContext?: Record<string, SessionContextSnapshot[]>;
+  /** Persisted usage-window fired state (fixes the restart re-fire gap). */
+  usageThresholds?: Record<string, ThresholdState>;
+  /** Persisted per-session context fired state. */
+  contextThresholds?: Record<string, ContextThresholdState>;
+  /** Set true while the daemon is actively notifying, so the GUI defers to it
+   *  (single-notifier rule). */
+  notifierActive?: boolean;
 }
 
 // ---------- state file (the cache) ----------
@@ -139,6 +172,81 @@ export function nextIntervalMs(baseMs: number, consecutiveFailures: number, capM
   return Math.min(base * 2 ** consecutiveFailures, capMs);
 }
 
+// ---------- context monitoring (own-session; Phase 3) ----------
+
+let _claudeVer: string | null | undefined;
+function claudeVer(): string | null {
+  if (_claudeVer !== undefined) return _claudeVer;
+  try {
+    _claudeVer = execFileSync("claude", ["--version"], { encoding: "utf8" }).trim() || null;
+  } catch {
+    _claudeVer = null;
+  }
+  return _claudeVer;
+}
+
+/** Session ids for `provider/name` that saw a real compaction (or a fresh
+ *  clear) since `sinceISO`, from the hook event ring — the ground-truth re-arm
+ *  signal (Phase 2.5). Empty when hooks are not installed. */
+function compactedSince(provider: ProviderId, name: string, sinceISO: string | null): Set<string> {
+  const out = new Set<string>();
+  const since = sinceISO ? Date.parse(sinceISO) : 0;
+  for (const e of readEvents(eventFile(ROOT, provider, name))) {
+    if (!e.sessionId) continue;
+    const isCompact = e.event === "PreCompact" || e.event === "PostCompact" || (e.event === "SessionStart" && (e.source === "compact" || e.source === "clear"));
+    if (isCompact && (!since || Date.parse(e.at) >= since)) out.add(e.sessionId);
+  }
+  return out;
+}
+
+/**
+ * Tail the active profile's LIVE sessions, snapshot their own context into the
+ * daemon state, detect per-session threshold crossings (edge-triggered, re-armed
+ * on real compaction events), and fire ONE coalesced OS notification per cycle
+ * when `notify` is enabled. Local file reads only — no API calls. Own-session
+ * only: nothing here compares profiles. Best-effort; never throws.
+ */
+export function monitorContext(provider: ProviderId, name: string, state: DaemonState, log: (l: string) => void): void {
+  try {
+    if (provider !== "claude" && provider !== "codex") return;
+    const cfg = configDir(provider, name);
+    const rows: SessionRow[] = provider === "codex" ? listCodexSessions(cfg, 30) : listSessions(cfg, 30);
+    if (provider === "claude") markLive(cfg, rows);
+    const live = rows.filter((r) => r.live && r.file);
+    const key = `${provider}/${name}`;
+    const now = new Date().toISOString();
+
+    const samples: ContextSample[] = [];
+    const snapshots: SessionContextSnapshot[] = [];
+    for (const r of live) {
+      const c = readContext(provider, r.file!, { claudeVersion: claudeVer() });
+      if (!c) continue;
+      const where = (r.cwd ?? r.projectDir).split("/").filter(Boolean).slice(-1)[0] || r.projectDir;
+      samples.push({ sessionId: r.sessionId, pct: c.pct, where });
+      snapshots.push({ sessionId: r.sessionId, pct: c.pct, contextTokens: c.contextTokens, windowTokens: c.windowTokens, where, confidence: c.confidence, at: now });
+    }
+
+    state.sessionContext = state.sessionContext ?? {};
+    state.sessionContext[key] = snapshots;
+
+    const cfgT = readTelemetryConfig(ROOT);
+    const prev: ContextThresholdState = (state.contextThresholds ?? {})[key] ?? {};
+    const compacted = compactedSince(provider, name, state.lastPoll);
+    const { crossings, state: next } = detectContextCrossings(samples, prev, cfgT.contextThresholds, compacted);
+    state.contextThresholds = state.contextThresholds ?? {};
+    state.contextThresholds[key] = next;
+
+    for (const c of crossings) log(`context: ${provider}/${name} ${c.where} crossed ${c.threshold}% (now ${c.pct}%)`);
+    const note = coalesce(crossings);
+    if (note && cfgT.notify) {
+      state.notifierActive = true;
+      notifyOS(note.title, note.body);
+    }
+  } catch (err: any) {
+    log(`context monitor error: ${String(err?.message ?? err)}`);
+  }
+}
+
 // ---------- the loop ----------
 
 interface RunOptions {
@@ -193,6 +301,10 @@ async function pollProvider(
       for (const c of crossings) log(`threshold: ${provider}/${name} ${c.window} crossed ${c.threshold}% (now ${c.utilization}%)`);
     }
   }
+
+  // Context monitoring is local file I/O only — it must run for the active
+  // profile even when the usage API poll failed (expired token, offline).
+  if (active) monitorContext(provider, active, state, log);
 
   if (!autoSwitch.enabled || !active) return failures;
 
@@ -269,7 +381,9 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
     profiles: {},
     lastError: null,
   };
-  const thresholds = new Map<string, ThresholdState>();
+  // Load persisted usage-window fired state so crossings do NOT re-fire after a
+  // daemon restart within the same window cycle (the pre-existing in-memory gap).
+  const thresholds = new Map<string, ThresholdState>(Object.entries(state.usageThresholds ?? {}));
   // Anti-loop guard for reset-first: `<provider>/<name>` → the window resets_at
   // we last redeemed for, so we never redeem the same stuck cycle twice.
   const redeemed = new Map<string, string>();
@@ -288,6 +402,7 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
     }
     const wait = nextIntervalMs(baseInterval, consecutiveFailures);
     state.pollIntervalMs = wait;
+    state.usageThresholds = Object.fromEntries(thresholds); // persist for restart
     writeDaemonState(state);
 
     if (opts.maxCycles !== undefined && ++cycles >= opts.maxCycles) break;

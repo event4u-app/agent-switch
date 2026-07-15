@@ -98,6 +98,7 @@ import {
   profileFromConfigDir,
   HookEventRecord,
 } from "./hooks.js";
+import { readTelemetryConfig, writeTelemetryConfig } from "./notify.js";
 import { APPS, buildLaunch, findApp, guiDataDir, isInstalled } from "./apps.js";
 import {
   currentManagedSession,
@@ -581,6 +582,32 @@ function cmdHooks(sub?: string, name?: string): void {
     console.log(
       "\nsettings.json changed. If you use `share on`, run `agent-switch share sync` so the edit propagates and the link is restored.",
     );
+  }
+}
+
+/**
+ * `agent-switch notify on|off|status [--threshold a,b]` — toggle the daemon's
+ * OS notifications for context/usage crossings (off by default) and set the
+ * per-session context thresholds. Own-session only.
+ */
+function cmdNotify(sub?: string, flags: Record<string, string | boolean> = {}): void {
+  const action = sub ?? "status";
+  const cfg = readTelemetryConfig(ROOT);
+  if (typeof flags.threshold === "string") {
+    const parsed = flags.threshold.split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n > 0 && n <= 100);
+    if (parsed.length === 0) die("--threshold must be a comma-separated list of 1–100 numbers, e.g. --threshold 80,95");
+    cfg.contextThresholds = parsed.sort((a, b) => a - b);
+    writeTelemetryConfig(ROOT, cfg);
+  }
+  if (action === "on" || action === "off") {
+    cfg.notify = action === "on";
+    writeTelemetryConfig(ROOT, cfg);
+  } else if (action !== "status") {
+    die("usage: agent-switch notify on|off|status [--threshold 80,95]");
+  }
+  console.log(`notifications: ${cfg.notify ? "on" : "off"}  ·  context thresholds: ${cfg.contextThresholds.join(", ")}%`);
+  if (!cfg.notify && action === "status") {
+    console.log("(enable with `agent-switch notify on`; the daemon fires one coalesced notification per cycle when a live session crosses a threshold)");
   }
 }
 
@@ -1216,6 +1243,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch share on|sync|off [--history] [--source <profile|default>]   (Claude)
   agent-switch sessions [profile] [--recent N] [--json]   recent + live Claude sessions per profile (with context %)
   agent-switch hooks install|uninstall|status [profile]   manage lifecycle push hooks in Claude settings.json
+  agent-switch notify on|off|status [--threshold 80,95]   OS notifications for context/usage crossings (off by default)
   agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place] [--print-only] [--force]   move a session to another profile and resume it
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile
@@ -1281,6 +1309,7 @@ async function main(): Promise<void> {
     case "share": return cmdShare(positional[0], rest.slice(1));
     case "sessions": return cmdSessions(providerId, providerExplicit, positional[0], flags);
     case "hooks": return cmdHooks(positional[0], positional[1]);
+    case "notify": return cmdNotify(positional[0], flags);
     case "takeover": return cmdTakeover(providerId, providerExplicit, positional[0], flags);
     case "web": return cmdWeb(positional[0]);
     case "remove": case "rm": return cmdRemove(providerId, positional[0], !!flags.force);

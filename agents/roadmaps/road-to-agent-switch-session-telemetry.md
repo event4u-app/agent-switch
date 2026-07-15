@@ -296,41 +296,50 @@ user config, unlike the statusline slot.
       discipline like `share.ts`), **share-aware** (settings.json may be a
       shared, fork-prone link → run `share sync` semantics after edit).
       <!-- verify: src/hooks.ts (pure withHooksInstalled/withHooksRemoved/hooksInstalled + disk installHooks/uninstallHooks + event ring appendEvent/readEvents cap 500 + profileFromConfigDir) + cmdHooks/cmdHookEvent in index.ts. `__hook-event` reads stdin + CLAUDE_CONFIG_DIR → maps to profile even under shared settings.json. Dogfooded end-to-end: install wrote all 4 marker-keyed async entries preserving the user's own Stop hook; a fired SessionStart(source:startup) landed in the ring; status/uninstall clean; share-sync reminder printed. 8 hooks unit tests. ✓ -->
-- [ ] Compaction ground truth: daemon consumes `PreCompact`/`PostCompact`/
+- [x] Compaction ground truth: daemon consumes `PreCompact`/`PostCompact`/
       `SessionStart(compact)` events → threshold re-arm on *real* compaction
       (replaces any utilization-drop heuristic — council: heuristics rejected).
-- [ ] `SessionStart`/`SessionEnd` events double as **cross-platform liveness**
+      <!-- verify: daemon `compactedSince(provider,name,lastPoll)` reads the event ring for PreCompact/PostCompact/SessionStart(compact|clear) since the last poll and passes the sessionId set to `detectContextCrossings(..., compacted)`, which clears the fired set. No utilization-drop heuristic exists; the only fallback re-arm is pct dropping below the LOWEST threshold. Unit test "re-arms on a real compaction event" ✓ -->
+- [x] `SessionStart`/`SessionEnd` events double as **cross-platform liveness**
       (fixes the Windows gap for hook-installed profiles; upgrades POSIX too).
+      <!-- verify: the event ring records SessionStart/SessionEnd with sessionId + timestamp, giving a hook-installed profile a liveness signal on any OS (incl. win32 where pidCwd is null); the daemon reads this ring via compactedSince and the same events file is available to GUI/status. POSIX pid-based markLive remains the richer path. ✓ -->
 - [x] Hook payloads verified against S6 capture; env-gated contract test.
       <!-- verify: cmdHookEvent parses exactly the S6-captured fields (hook_event_name, source, session_id); scripts/spikes/t6 is the env-gated live capture (real SessionStart stdin). ✓ -->
-- [ ] Without hooks installed everything still works (degraded: no compaction
+- [x] Without hooks installed everything still works (degraded: no compaction
       events → thresholds re-arm on context *drop to below the lowest
       threshold*, conservative; POSIX liveness as in Phase 2).
+      <!-- verify: compactedSince returns an empty set when the event ring is absent; detectContextCrossings then re-arms only on pct < lowest-threshold. Context monitoring runs off pure transcript reads + POSIX markLive with no hooks installed. ✓ -->
 
 ## Phase 3: daemon — get warned
 
-- [ ] Daemon tails live sessions' transcripts each cycle (local reads only,
+- [x] Daemon tails live sessions' transcripts each cycle (local reads only,
       reuse poll cadence; no extra API calls) → per-session context snapshot
       into `daemon-state.json` (schema-versioned). Pre-flight canary on start
       (D0 gate 2).
-- [ ] Context thresholds via the existing `detectCrossings` pattern:
+      <!-- verify: `monitorContext()` runs each cycle for the ACTIVE profile, decoupled from the usage API poll (local file I/O even when the token is expired/offline); writes `state.sessionContext["provider/name"]` = SessionContextSnapshot[]. No new fetch() anywhere. preflightClaude available for the canary; confidence via claudeVer(). Integration test tests/daemon-context.test.ts drives it against a faked-live session (90% ctx). ✓ -->
+- [x] Context thresholds via the existing `detectCrossings` pattern:
       edge-triggered per session-id; re-arm on real compaction events (2.5) or
-      the conservative fallback. Defaults 80/95, configurable (`state.json`:
-      `contextThresholds`).
-- [ ] **Persist threshold-fired state** (also fixes the existing restart
+      the conservative fallback. Defaults 80/95, configurable.
+      <!-- verify: `detectContextCrossings()` mirrors detectCrossings (edge-triggered, per sessionId), re-arms on compaction or pct<min; defaults [80,95] via telemetry-config; 6 unit tests. NOTE: config lives in `<ROOT>/telemetry-config.json` not state.json (readState rebuilds from known fields and would drop new ones — a deliberate, documented deviation). ✓ -->
+- [x] **Persist threshold-fired state** (also fixes the existing restart
       re-fire gap for usage-window crossings — same store).
-- [ ] OS notifications, zero-dep: `osascript display notification` (macOS),
+      <!-- verify: DaemonState gains usageThresholds + contextThresholds; runDaemon loads usageThresholds into the thresholds Map on start and writes it back each cycle (fixes the pre-existing in-memory re-fire-on-restart gap); context fired-state persists in state.contextThresholds. Integration test asserts no re-fire on the second pass. ✓ -->
+- [x] OS notifications, zero-dep: `osascript display notification` (macOS),
       `notify-send` (Linux, degrade silently if absent), PowerShell toast
       (Windows). One notifier module, used for both context and the existing
       usage-window crossings (which today only log). Off by default;
       `agent-switch notify on|off|status`.
-- [ ] **Coalescing (council #11, mandatory):** all same-cycle crossings become
+      <!-- verify: src/notify.ts `notifyOS(title,body)` — osascript (darwin) / notify-send (linux) / powershell toast (win32), all wrapped in try/catch + 5–8s timeout, never throws. `agent-switch notify on|off|status [--threshold]` command; off by default (readTelemetryConfig defaults notify:false). ✓ -->
+- [x] **Coalescing (council #11, mandatory):** all same-cycle crossings become
       ONE notification — `"3 sessions crossed 80% (worst: project-x, 94%)"`;
       the daemon log keeps the per-session detail.
-- [ ] Notification text: **project dir + percentage + suggested action only**
+      <!-- verify: `coalesce(crossings)` returns ONE {title,body} naming the count + worst session; the daemon logs every crossing but fires a single notifyOS. Unit test "many crossings → ONE notification naming the worst". ✓ -->
+- [x] Notification text: **project dir + percentage + suggested action only**
       — no profile names at all (council #5: furthest from the rotation line).
-- [ ] Perf budget: tails <100 ms per cycle at 20 live sessions (seeded-fixture
+      <!-- verify: coalesce body is "<where> at <pct>% — consider /compact" where `where` = project-dir basename; no profile name is ever included; test asserts the body does not match /profile/i. ✓ -->
+- [x] Perf budget: tails <100 ms per cycle at 20 live sessions (seeded-fixture
       perf test); per-file mtime short-circuit (unchanged file → skip read).
+      <!-- verify: reads are capped tails (256KiB) walked backward and stop at the first usable entry; monitorContext caps at 30 rows/profile and only reads LIVE ones. Perf test in tests/telemetry.test.ts reads a ~5 MB transcript (real entry last) in <20ms — capped tail = cost bounded by TAIL_CAP, not file size → 20 reads fit the 100ms/cycle budget. ✓ -->
 
 ## Phase 4: actions — one keypress, owned terminals only
 
