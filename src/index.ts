@@ -44,6 +44,8 @@ import {
   readSwitchStrategy,
   setSwitchStrategy,
   SwitchStrategy,
+  readOsNotifications,
+  setOsNotifications,
   readProviders,
   enabledProviders,
   setProviderSurface,
@@ -1067,6 +1069,17 @@ function cmdNotify(flags: Record<string, string | boolean>): void {
   if (flags.json) console.log(JSON.stringify(created));
 }
 
+/** `agent-switch os-notify [on|off|status] [--json]` — toggle whether the
+ *  background daemon fires OS desktop notifications itself (for timeliness when
+ *  the GUI is closed). Default off. */
+function cmdOsNotify(sub: string | undefined, json = false): void {
+  if (sub === "on" || sub === "off") setOsNotifications(sub === "on");
+  else if (sub && sub !== "status") die("usage: agent-switch os-notify [on|off|status] [--json]");
+  const enabled = readOsNotifications();
+  if (json) console.log(JSON.stringify({ enabled }));
+  else console.log(`Daemon OS notifications ${enabled ? "ON" : "OFF"}.`);
+}
+
 /** `agent-switch notifications [clear] [--json]` — list the recent
  *  notifications (newest first) or clear the log. */
 function cmdNotifications(sub: string | undefined, json = false): void {
@@ -1154,6 +1167,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch service run|start|stop|status|install|uninstall   background usage daemon
   agent-switch notifications [clear] [--json]  recent notifications (auto-switches, fetch failures)
   agent-switch notify --kind K --title T --message M [--json]   record a notification event
+  agent-switch os-notify [on|off|status] [--json]   daemon-side OS desktop notifications (default off)
   agent-switch uninstall [--force]             remove all agent-switch data + daemon
   agent-switch doctor                          per-OS, per-provider self-check`);
 }
@@ -1196,6 +1210,7 @@ async function main(): Promise<void> {
     case "apps": return cmdApps(!!flags.json);
     case "notify": return cmdNotify(flags);
     case "notifications": return cmdNotifications(positional[0], !!flags.json);
+    case "os-notify": return cmdOsNotify(positional[0], !!flags.json);
     case "uninstall": return cmdUninstall(flags);
     case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
     case "list": case "ls": return cmdList(providerExplicit ? providerId : undefined, !!flags.json);

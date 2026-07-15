@@ -26,7 +26,20 @@ import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, SwitchCa
 import { readCodexUsage } from "./codex-usage.js";
 import { redeemResetCredit } from "./codex-reset.js";
 import { appendSample } from "./history.js";
-import { appendNotification } from "./notifications.js";
+import { appendNotification, markOsNotified, Notification } from "./notifications.js";
+import { readOsNotifications } from "./profiles.js";
+import { osNotify } from "./os-notify.js";
+
+/** Append an event to the shared log and, when the operator opted into
+ *  daemon-side OS notifications, fire a desktop notification too — marking the
+ *  record so the GUI does not show it a second time. Deduped events (append
+ *  returns null) never OS-notify. */
+function notify(event: Pick<Notification, "kind" | "title" | "message">): void {
+  const created = appendNotification(event);
+  if (created && readOsNotifications() && osNotify(event.title, event.message)) {
+    markOsNotified(created.id);
+  }
+}
 
 // Providers whose active profile the daemon may auto-switch (they expose a
 // usage readout to base a headroom decision on). Gemini has none.
@@ -182,7 +195,7 @@ async function pollProvider(
     const snapshot = await snapshotFor(provider, name);
     if (!snapshot) {
       failures++;
-      appendNotification({
+      notify({
         kind: "warning",
         title: "Usage fetch failed",
         message: `Could not fetch usage limits for ${provider}/${name}.`,
@@ -196,7 +209,14 @@ async function pollProvider(
       const prev = thresholds.get(`${provider}/${name}`) ?? {};
       const { crossings, state: next } = detectCrossings(snapshot, prev);
       thresholds.set(`${provider}/${name}`, next);
-      for (const c of crossings) log(`threshold: ${provider}/${name} ${c.window} crossed ${c.threshold}% (now ${c.utilization}%)`);
+      for (const c of crossings) {
+        log(`threshold: ${provider}/${name} ${c.window} crossed ${c.threshold}% (now ${c.utilization}%)`);
+        notify({
+          kind: "info",
+          title: "Usage threshold crossed",
+          message: `${provider}/${name} ${c.window} passed ${c.threshold}% (now ${c.utilization}%).`,
+        });
+      }
     }
   }
 
@@ -220,7 +240,7 @@ async function pollProvider(
       const r = await redeemResetCredit(configDir("codex", active));
       if (r.ok) {
         log(`auto-switch: codex/${active} over ≥${autoSwitch.threshold}% → redeemed a reset (windows_reset=${r.windowsReset ?? "?"}); staying on ${active}`);
-        appendNotification({
+        notify({
           kind: "success",
           title: "Codex reset redeemed",
           message: `codex/${active} hit ≥${autoSwitch.threshold}% — redeemed a banked reset and stayed on ${active}.`,
@@ -235,7 +255,7 @@ async function pollProvider(
   if (target && target !== active) {
     setActive(provider, target);
     log(`auto-switch: ${provider}/${active} out of headroom (≥${autoSwitch.threshold}%) → switched active to ${provider}/${target}`);
-    appendNotification({
+    notify({
       kind: "success",
       title: "Auto-switched account",
       message: `${provider}/${active} hit ≥${autoSwitch.threshold}% — switched active to ${provider}/${target}.`,

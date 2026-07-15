@@ -7,6 +7,7 @@ import * as path from "node:path";
 import {
   appendNotification,
   clearNotifications,
+  markOsNotified,
   readNotifications,
   DEDUP_WINDOW_MS,
   MAX_NOTIFICATIONS,
@@ -79,4 +80,15 @@ test("clearNotifications empties the log", () => {
   appendNotification({ kind: "info", title: "x", message: "y" }, 1000, f);
   clearNotifications(f);
   assert.deepEqual(readNotifications(f), []);
+});
+
+test("markOsNotified flags a stored notification (and no-ops on an unknown id)", () => {
+  const f = tmpFile();
+  const created = appendNotification({ kind: "success", title: "Switched", message: "→ privat" }, 1000, f);
+  assert.ok(created);
+  assert.notEqual(readNotifications(f)[0].osNotified, true); // not marked yet
+  markOsNotified(created.id, f);
+  assert.equal(readNotifications(f)[0].osNotified, true);
+  markOsNotified("does-not-exist", f); // no throw, no change
+  assert.equal(readNotifications(f).length, 1);
 });
