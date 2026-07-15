@@ -8,6 +8,9 @@ import {
   listApps,
   listProfiles,
   listSessions,
+  listNotifications,
+  recordNotification,
+  clearNotifications,
   loginArgs,
   openApp,
   profileUsage,
@@ -30,6 +33,8 @@ import {
   type AutoSwitchMap,
 } from "./ipc.js";
 import { EmbeddedTerminal } from "./EmbeddedTerminal.js";
+import { NotificationBell } from "./NotificationBell.js";
+import { sendDesktopNotification, type AppNotification } from "./notifications.js";
 import { applyTheme, getTheme, THEMES, type Theme } from "./theme.js";
 import {
   getAutoSwitchGlobal,
@@ -39,6 +44,8 @@ import {
   getRefreshMinutes,
   setRefreshMinutes,
   REFRESH_INTERVAL_CHOICES,
+  getNotifLastRead,
+  setNotifLastRead,
 } from "./settings-store.js";
 import { loadUsageCache, saveUsageSnapshot, type UsageEntry } from "./usage-cache.js";
 import {
@@ -167,6 +174,16 @@ export default function App() {
   // The in-app pty terminal overlay (login / run), or null when none is open.
   const [terminal, setTerminal] = useState<{ args: string[]; title: string } | null>(null);
 
+  // Notifications (auto-switches, usage-fetch failures). The event log is owned
+  // by the CLI + daemon; the GUI reads it on each refresh, renders the bell +
+  // flyout, and fires a best-effort desktop notification for events it has not
+  // notified yet. `notifNotifiedTsRef` starts at mount time so opening the app
+  // never blasts the desktop with historical events (they still show in the
+  // flyout). `notifLastRead` (persisted) drives the unread badge.
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notifLastRead, setNotifLastReadState] = useState(() => getNotifLastRead());
+  const notifNotifiedTsRef = useRef(Date.now());
+
   // Usage auto-refresh: a configurable timer (default 10 min, set in General
   // settings), shown as a live countdown by the footer refresh button. Tab
   // switches do NOT refresh (per user request) — only the timer and the manual
@@ -246,13 +263,47 @@ export default function App() {
           lastUsageFetchRef.current[key] = Date.now();
           setUsage((prev) => ({ ...prev, [key]: { snap, fresh: true } }));
           saveUsageSnapshot(key, snap);
+        } else {
+          // Record the failure (deduped in the CLI log; the daemon uses the same
+          // wording so a background poll failure never double-notifies).
+          await recordNotification(
+            "warning",
+            "Usage fetch failed",
+            `Could not fetch usage limits for ${selected}/${r.name}.`,
+          ).catch(() => {});
         }
       }
     }
     // The countdown is owned by the auto-refresh timer alone — a manual refresh
     // does NOT restart it (that would just delay the next usage fetch, since the
     // cooldown already blocks a re-fetch within the same interval).
+    await syncNotifications();
     setBusy(false);
+  }
+
+  // Load the notification log, then fire a best-effort desktop notification for
+  // any event newer than the last we notified (the flyout shows them all
+  // regardless — that is the in-window fallback when desktop is denied).
+  async function syncNotifications() {
+    const list = await listNotifications().catch(() => [] as AppNotification[]);
+    setNotifications(list);
+    const fresh = list.filter((n) => n.ts > notifNotifiedTsRef.current);
+    if (fresh.length === 0) return;
+    notifNotifiedTsRef.current = Math.max(notifNotifiedTsRef.current, ...fresh.map((n) => n.ts));
+    for (const n of fresh.slice(0, 5)) void sendDesktopNotification(n.title, n.message);
+  }
+
+  // Opening the bell marks everything up to the newest as read (persisted).
+  function markNotifsRead() {
+    const newest = notifications[0]?.ts ?? Date.now();
+    setNotifLastRead(newest);
+    setNotifLastReadState(newest);
+  }
+
+  function clearNotifs() {
+    void clearNotifications()
+      .then(() => setNotifications([]))
+      .catch((e) => setError(describeError(e)));
   }
 
   // Keep the interval pointed at the latest refresh closure (current tab).
@@ -301,6 +352,7 @@ export default function App() {
 
   const secondsLeft = Math.max(0, Math.ceil((nextRefreshRef.current - nowTick) / 1000));
   const countdown = `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}`;
+  const unreadNotifs = notifications.filter((n) => n.ts > notifLastRead).length;
 
   // Only enabled providers get a tab. Before the first load, fall back to the
   // default set (Claude + Codex) so nothing flickers in.
@@ -351,6 +403,12 @@ export default function App() {
           >
             <Plus /> New
           </Button>
+          <NotificationBell
+            notifications={notifications}
+            unread={unreadNotifs}
+            onMarkRead={markNotifsRead}
+            onClear={clearNotifs}
+          />
           <Button
             size="icon"
             variant={showSessions ? "secondary" : "ghost"}
