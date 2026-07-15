@@ -6,13 +6,17 @@ import * as path from "node:path";
 
 import {
   cleanupForkVehicle,
+  codexSessionId,
   encodeProjectDir,
   listSessions,
+  listCodexSessions,
   locateSession,
+  locateCodexSession,
   markLive,
   readSessionHeader,
   sharedHistory,
   transferSession,
+  transferCodexSession,
 } from "../src/sessions.js";
 
 // The transfer layer moves OPAQUE transcript blobs between profile config
@@ -205,6 +209,105 @@ test("cleanupForkVehicle removes the original-id transfer copy (the g02 divergen
     cleanupForkVehicle(tgt, "-proj", "sid");
     assert.equal(fs.existsSync(path.join(tgt, "projects", "-proj", "sid.jsonl")), false);
     assert.equal(fs.existsSync(path.join(tgt, "projects", "-proj", "sid")), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ---------- Codex parity (g03 outcome (a)) ----------------------------------
+// Codex sessions are date-partitioned rollout files:
+//   <config>/sessions/YYYY/MM/DD/rollout-<ISO8601>-<uuid>.jsonl[.zst]
+// with no encoded-cwd dir and no checkpoint subdir. These drive the pure file
+// mechanics on seeded fakes (the real `codex resume` semantics are verified by
+// scripts/spikes/g03, not re-run here).
+
+const UUID_A = "019f621b-287b-7001-820f-bdfcd4cb21cc";
+const UUID_B = "019f6218-a8db-7981-81cd-97b3cfcc8d36";
+
+/** Seed a fake codex rollout under a home; returns its path. */
+function seedCodexRollout(
+  configDir: string,
+  datePath: string,
+  ts: string,
+  uuid: string,
+  opts: { zst?: boolean; mtimeMs?: number; bytes?: string } = {},
+): string {
+  const dir = path.join(configDir, "sessions", datePath);
+  fs.mkdirSync(dir, { recursive: true });
+  const ext = opts.zst ? ".jsonl.zst" : ".jsonl";
+  const file = path.join(dir, `rollout-${ts}-${uuid}${ext}`);
+  fs.writeFileSync(file, opts.bytes ?? `{"type":"session_meta","id":"${uuid}"}\n{"opaque":"blob"}\n`);
+  if (opts.mtimeMs !== undefined) fs.utimesSync(file, new Date(opts.mtimeMs), new Date(opts.mtimeMs));
+  return file;
+}
+
+test("codexSessionId extracts the trailing UUID, never the timestamp", () => {
+  assert.equal(codexSessionId(`rollout-2026-07-14T21-29-34-${UUID_A}.jsonl`), UUID_A);
+  assert.equal(codexSessionId(`rollout-2026-07-14T21-29-34-${UUID_A}.jsonl.zst`), UUID_A);
+  assert.equal(codexSessionId("rollout-2026-07-14T21-29-34.jsonl"), null); // no uuid
+  assert.equal(codexSessionId("not-a-rollout.txt"), null);
+});
+
+test("listCodexSessions walks the date partitions, newest first, capped", () => {
+  const root = tmp();
+  try {
+    const cfg = path.join(root, "codex");
+    seedCodexRollout(cfg, "2026/07/12", "2026-07-12T01-00-00", UUID_A, { mtimeMs: 1000 });
+    seedCodexRollout(cfg, "2026/07/14", "2026-07-14T02-00-00", UUID_B, { mtimeMs: 3000 });
+    const rows = listCodexSessions(cfg, 10);
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].sessionId, UUID_B); // newest first
+    assert.equal(rows[0].projectDir, path.join("2026", "07", "14"));
+    assert.equal(rows[0].cwd, null); // rollout blob never read
+    assert.equal(listCodexSessions(cfg, 1).length, 1);
+    assert.deepEqual(listCodexSessions(path.join(root, "nope"), 5), []); // no sessions dir → empty
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("locateCodexSession finds the rollout by id and preserves its relative path", () => {
+  const root = tmp();
+  try {
+    const cfg = path.join(root, "codex");
+    seedCodexRollout(cfg, "2026/07/14", "2026-07-14T02-00-00", UUID_A);
+    assert.equal(locateCodexSession(cfg, "missing"), null);
+    const loc = locateCodexSession(cfg, UUID_A);
+    assert.ok(loc);
+    assert.equal(loc!.rel, path.join("sessions", "2026", "07", "14", `rollout-2026-07-14T02-00-00-${UUID_A}.jsonl`));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("transferCodexSession moves copy→verify→delete, preserving the date partition", () => {
+  const root = tmp();
+  try {
+    const src = path.join(root, "src");
+    const tgt = path.join(root, "tgt");
+    const srcFile = seedCodexRollout(src, "2026/07/14", "2026-07-14T02-00-00", UUID_A, { bytes: "line1\nline2\n" });
+    const loc = locateCodexSession(src, UUID_A)!;
+    const res = transferCodexSession(loc, tgt);
+    const tgtFile = path.join(tgt, "sessions", "2026", "07", "14", `rollout-2026-07-14T02-00-00-${UUID_A}.jsonl`);
+    assert.equal(res.targetJsonl, tgtFile);
+    assert.equal(fs.existsSync(tgtFile), true); // copied to same relative path
+    assert.equal(fs.existsSync(srcFile), false); // source removed (move)
+    assert.equal(fs.readFileSync(tgtFile, "utf8"), "line1\nline2\n");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("transferCodexSession REFUSES a target collision — never overwrites a same-id rollout", () => {
+  const root = tmp();
+  try {
+    const src = path.join(root, "src");
+    const tgt = path.join(root, "tgt");
+    seedCodexRollout(src, "2026/07/14", "2026-07-14T02-00-00", UUID_A);
+    seedCodexRollout(tgt, "2026/07/14", "2026-07-14T02-00-00", UUID_A); // same rel path already there
+    const loc = locateCodexSession(src, UUID_A)!;
+    assert.throws(() => transferCodexSession(loc, tgt), /refusing to overwrite/);
+    assert.equal(fs.existsSync(loc.rollout), true); // source untouched on refusal
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -283,3 +283,134 @@ export function cleanupForkVehicle(tgtConfigDir: string, projectDir: string, ses
   fs.rmSync(path.join(proj, `${sessionId}.jsonl`), { force: true });
   fs.rmSync(path.join(proj, sessionId), { recursive: true, force: true });
 }
+
+// ---------- Codex parity (verified in scripts/spikes/g03: outcome (a)) --------
+//
+// Codex CLI's on-disk layout differs from Claude Code's: a session is one
+// date-partitioned rollout file — `<config>/sessions/YYYY/MM/DD/rollout-<ISO8601
+// timestamp>-<uuid>.jsonl` (optionally `.jsonl.zst`) — with no encoded-cwd
+// project dir and no checkpoint subdir. The session id is the trailing UUID in
+// the filename. g03 confirmed outcome (a): a rollout MOVED into another
+// authenticated CODEX_HOME (preserving the date-partitioned relative path)
+// resumes immediately by id — full takeover parity, no index rebuild.
+//
+// Same iron rules as Claude: transcripts are opaque (never read here), transfers
+// are copy → verify → delete, resume-by-id is the supported path. Codex fork
+// (`--keep-source`) has NO verified spike, so codex takeover is MOVE-ONLY — the
+// caller refuses keep-source rather than risk same-id divergence.
+
+/** The trailing UUID of a codex rollout filename, or null. Anchored on the
+ *  `.jsonl[.zst]` tail so the ISO8601 timestamp earlier in the name (which also
+ *  contains hyphen-separated digits) can never be mistaken for the id. */
+export function codexSessionId(filename: string): string | null {
+  const m = /-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.jsonl(?:\.zst)?$/.exec(
+    filename,
+  );
+  return m ? m[1] : null;
+}
+
+/** All rollout files under a codex home's `sessions/` tree, as [absPath, dirent-relative].
+ *  Bounded recursive scan of the date partitions; tolerant of a missing tree. */
+function walkCodexRollouts(sessionsDir: string): string[] {
+  const out: string[] = [];
+  const stack = [sessionsDir];
+  while (stack.length > 0) {
+    const dir = stack.pop() as string;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        stack.push(full);
+      } else if (e.isFile() && codexSessionId(e.name) !== null) {
+        out.push(full);
+      }
+    }
+  }
+  return out;
+}
+
+/** Recent codex sessions of one home, newest first, capped at `limit`. The
+ *  rollout blob is never read (format is opaque + version-unstable), so `cwd`
+ *  and `summary` are null; `projectDir` carries the date-partition path for
+ *  display parity with the Claude listing. */
+export function listCodexSessions(configDir: string, limit: number): SessionRow[] {
+  const sessionsDir = path.join(configDir, "sessions");
+  const rows: SessionRow[] = [];
+  for (const file of walkCodexRollouts(sessionsDir)) {
+    const id = codexSessionId(path.basename(file));
+    if (id === null) continue;
+    let st: fs.Stats;
+    try {
+      st = fs.statSync(file);
+    } catch {
+      continue;
+    }
+    if (!st.isFile()) continue;
+    rows.push({
+      sessionId: id,
+      projectDir: path.relative(sessionsDir, path.dirname(file)),
+      cwd: null,
+      summary: null,
+      mtimeMs: st.mtimeMs,
+      live: false,
+    });
+  }
+  rows.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return rows.slice(0, limit);
+}
+
+export interface CodexSessionLocation {
+  configDir: string;
+  /** Absolute path to the rollout file. */
+  rollout: string;
+  /** Path of the rollout relative to `configDir` (e.g. `sessions/2026/07/14/rollout-….jsonl`),
+   *  preserved verbatim on transfer so the target's date partitions match. */
+  rel: string;
+}
+
+/** Where a codex session id lives inside ONE home, or null. */
+export function locateCodexSession(configDir: string, sessionId: string): CodexSessionLocation | null {
+  const sessionsDir = path.join(configDir, "sessions");
+  for (const file of walkCodexRollouts(sessionsDir)) {
+    if (codexSessionId(path.basename(file)) === sessionId) {
+      return { configDir, rollout: file, rel: path.relative(configDir, file) };
+    }
+  }
+  return null;
+}
+
+/**
+ * Move one codex rollout into the target home, preserving its date-partitioned
+ * relative path. copy → verify (byte size) → delete-source, mirroring
+ * `transferSession`. Move-only: codex fork is unverified, so there is no
+ * keep-source path here (the caller refuses it) — a same-id copy in two homes
+ * would be exactly the divergence the move avoids. Throws on a target collision.
+ */
+export function transferCodexSession(loc: CodexSessionLocation, tgtConfigDir: string): TransferResult {
+  const tgtRollout = path.join(tgtConfigDir, loc.rel);
+  if (fs.existsSync(tgtRollout)) {
+    throw new Error(
+      `target already has a rollout for this session id (${tgtRollout}) — refusing to overwrite`,
+    );
+  }
+  fs.mkdirSync(path.dirname(tgtRollout), { recursive: true, mode: 0o700 });
+  const actions: string[] = [];
+
+  fs.copyFileSync(loc.rollout, tgtRollout);
+  const srcSize = fs.statSync(loc.rollout).size;
+  const tgtSize = fs.statSync(tgtRollout).size;
+  if (srcSize !== tgtSize) {
+    fs.rmSync(tgtRollout, { force: true });
+    throw new Error(`rollout copy failed verification (${srcSize} != ${tgtSize} bytes)`);
+  }
+  actions.push(`copied rollout (${srcSize} bytes, verified)`);
+
+  fs.rmSync(loc.rollout, { force: true });
+  actions.push("removed source copy (move complete)");
+  return { actions, targetJsonl: tgtRollout };
+}

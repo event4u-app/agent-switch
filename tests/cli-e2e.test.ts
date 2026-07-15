@@ -328,3 +328,67 @@ test("`list --json` emits the profile list as valid JSON (GUI contract)", gate, 
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+// ---------- Codex parity (road-to-session-handoff, Phase 5; g03 outcome a) ---
+// Codex sessions are date-partitioned rollout files. Same launch-free approach:
+// --print-only / --json keep every test off a real `codex` invocation.
+
+const CODEX_UUID = "00000000-0000-4000-8000-000000000abc";
+
+function seedCodexRollout(home: string, profile: string, id: string): string {
+  const dir = path.join(home, "codex", profile, "config", "sessions", "2026", "07", "14");
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `rollout-2026-07-14T02-00-00-${id}.jsonl`);
+  fs.writeFileSync(file, `${JSON.stringify({ type: "session_meta", id })}\n{"opaque":1}\n`);
+  return file;
+}
+
+test("`sessions --provider codex --json` lists seeded rollouts (metadata only)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "codex", "work");
+    seedCodexRollout(home, "work", CODEX_UUID);
+    const rows = JSON.parse(run(home, ["sessions", "--provider", "codex", "--json"]));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].provider, "codex");
+    assert.equal(rows[0].profile, "work");
+    assert.equal(rows[0].sessionId, CODEX_UUID);
+    assert.equal(rows[0].cwd, null); // rollout blob never read
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`takeover --provider codex --print-only` moves the rollout and prints the codex resume command", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "codex", "privat");
+    seed(home, "codex", "work");
+    const src = seedCodexRollout(home, "privat", CODEX_UUID);
+    const out = run(home, ["takeover", CODEX_UUID, "--to", "work", "--provider", "codex", "--print-only"]);
+    assert.match(out, new RegExp(`run work --provider codex -- resume ${CODEX_UUID}`));
+    assert.equal(fs.existsSync(src), false); // moved out of the source...
+    assert.equal(
+      fs.existsSync(path.join(home, "codex", "work", "config", "sessions", "2026", "07", "14", `rollout-2026-07-14T02-00-00-${CODEX_UUID}.jsonl`)),
+      true, // ...into the same date partition on the target
+    );
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`takeover --provider codex --keep-source` is refused (fork unverified → move-only)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "codex", "privat");
+    seed(home, "codex", "work");
+    const src = seedCodexRollout(home, "privat", CODEX_UUID);
+    assert.throws(
+      () => run(home, ["takeover", CODEX_UUID, "--to", "work", "--provider", "codex", "--keep-source", "--print-only"]),
+      /keep-source is not supported for codex/i,
+    );
+    assert.equal(fs.existsSync(src), true); // refused before any file op
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

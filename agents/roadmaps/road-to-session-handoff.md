@@ -110,9 +110,8 @@ the documented upstream workaround).
    <!-- verify: PASS 2026-07-14, claude 2.1.209, macOS — fork got a new session id + full context on target; source transcript byte-identical and still resumable. Confirms M3 (--fork-session) keep-source is safe; takeover must delete the target's original-id copy after a successful fork. ✓ -->
    <!-- honest note: g01/g02 results are Claude-Code-version-pinned (2.1.209); the roadmap risk #1 canary re-checks the header/path shape before building further. -->
 
-- [~] Run g03 (Codex rollout transplant) with two authenticated codex homes.
-   Outcome (a)/(b)/(c) decides Phase 5's shape; honest-null is a valid result.
-   **Gated: needs two codex logins.**
+- [x] Run g03 (Codex rollout transplant) with two authenticated codex homes.
+   <!-- verify: PASS 2026-07-14, codex-cli 0.134.0, macOS — Matze1 (mathias@matnex.com) -> Matze2 (gpt@galawork.de), two DIFFERENT accounts: a rollout moved into the target CODEX_HOME (date-partitioned path preserved) resumes immediately by id with full canary context, despite state_5.sqlite present in both homes. => outcome (a): full takeover parity, no index rebuild. Harness fixes: guard snapshot() against a missing sessions/ dir (pipefail), and add --skip-git-repo-check + </dev/null to both codex exec calls (codex 0.134.0 refuses exec outside a trusted dir and reads stdin). ✓ -->
 
 ## Phase 1: `agent-switch sessions` — inventory + `--json`
 
@@ -218,11 +217,9 @@ Gated on Phases 1–2 (CLI is the engine; GUI stays a `--json` client).
 
 ## Phase 5: Codex parity — per the G0.3 outcome
 
-- [~] G0.3 outcome (a): extend `sessions`/`takeover` to codex rollout files
+- [x] G0.3 outcome (a): extend `sessions`/`takeover` to codex rollout files
    (`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl`, date-partitioned move).
-   Outcome (b): same + index-reconciliation step. Outcome (c): `sessions` lists
-   codex sessions; takeover degrades to spawn-in-target (`codex resume --all`);
-   the null is recorded here with codex version + state-layer inventory.
+   <!-- verify: shipped 2026-07-14 — src/sessions.ts (listCodexSessions/locateCodexSession/transferCodexSession, move-only, copy→verify→delete, collision refusal) + provider-aware cmdSessions/cmdTakeover/resumeInPlace in src/index.ts. Codex is move-only: --keep-source refused (fork unverified, no g0.2-equivalent), and codex has no pid-file live detection (surfaced, not implied). Verified: 14 sessions unit tests + 3 codex cli-e2e (full suite 131 pass/0 fail) AND a real CLI end-to-end (Matze1->Matze2, real accounts): sessions --json listed it, takeover moved+printed `codex resume`, resume on the target returned the canary. Outcome was (a), so no index-reconciliation (b) / spawn-only (c) branch was needed. ✓ -->
 - [~] Gemini and further providers only after a per-provider ground-truth
    table exists (per the multi-provider roadmap's discipline).
 
