@@ -37,6 +37,15 @@ export interface AutoSwitchConfig {
 }
 export const DEFAULT_AUTOSWITCH: AutoSwitchConfig = { enabled: false, threshold: 95 };
 
+/**
+ * How auto-switch reacts when the active profile is out of headroom:
+ *   - `reset-first`  (default): redeem a banked rate-limit reset if one is
+ *     available (Codex only), and only switch profiles once none remain.
+ *   - `rotation-first`: switch to the account with the most headroom directly.
+ */
+export type SwitchStrategy = "reset-first" | "rotation-first";
+export const DEFAULT_SWITCH_STRATEGY: SwitchStrategy = "reset-first";
+
 /** Auto-switch is configured PER PROVIDER (claude/codex/gemini each on/off). */
 export type AutoSwitchMap = Record<ProviderId, AutoSwitchConfig>;
 
@@ -66,6 +75,7 @@ export interface State {
   labels: LabelMap;
   autoSwitch: AutoSwitchMap;
   providers: ProvidersConfig;
+  switchStrategy: SwitchStrategy;
 }
 
 function emptyActive(): ActiveMap {
@@ -215,18 +225,29 @@ export function readState(): State {
     const labels = normalizeLabels(raw?.labels);
     const autoSwitch = normalizeAutoSwitchMap(raw?.autoSwitch);
     const providers = normalizeProvidersMap(raw?.providers);
+    const switchStrategy: SwitchStrategy = raw?.switchStrategy === "rotation-first" ? "rotation-first" : DEFAULT_SWITCH_STRATEGY;
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch, providers };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch, providers, switchStrategy };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch, providers };
+      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch, providers, switchStrategy };
     }
-    return { active: emptyActive(), labels, autoSwitch, providers };
+    return { active: emptyActive(), labels, autoSwitch, providers, switchStrategy };
   } catch {
     /* absent / unparsable → default */
   }
-  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders() };
+  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), switchStrategy: DEFAULT_SWITCH_STRATEGY };
+}
+
+export function readSwitchStrategy(): SwitchStrategy {
+  return readState().switchStrategy;
+}
+
+export function setSwitchStrategy(strategy: SwitchStrategy): void {
+  const state = readState();
+  state.switchStrategy = strategy;
+  writeState(state);
 }
 
 export function writeState(state: State): void {

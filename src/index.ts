@@ -40,6 +40,9 @@ import {
   readAutoSwitch,
   readAutoSwitchAll,
   setAutoSwitch,
+  readSwitchStrategy,
+  setSwitchStrategy,
+  SwitchStrategy,
   readProviders,
   enabledProviders,
   setProviderSurface,
@@ -68,6 +71,8 @@ import {
   readProfileCredential,
 } from "./api.js";
 import { UsageSnapshot, formatSnapshot, parseUsage } from "./usage.js";
+import { readCodexUsage } from "./codex-usage.js";
+import { redeemResetCredit } from "./codex-reset.js";
 import {
   SessionRow,
   cleanupForkVehicle,
@@ -340,7 +345,11 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
     const pid = providerId ?? "claude";
     const active = name ?? activeFor(pid);
     if (!active || !profileExists(pid, active)) die(`no active ${pid} profile for --json`);
-    const usage = pid === "claude" ? await claudeSnapshot(active) : null;
+    const usage = pid === "claude"
+      ? await claudeSnapshot(active)
+      : pid === "codex"
+        ? await readCodexUsage(configDir("codex", active))
+        : null;
     console.log(JSON.stringify({ provider: pid, name: active, identity: identity(pid, active), usage }, null, 2));
     return;
   }
@@ -353,6 +362,15 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
   for (const { provider: pid, name: n } of rows as { provider: ProviderId; name: string }[]) {
     const mark = activeFor(pid) === n ? "*" : " ";
     console.log(`${mark} ${pid}/${n} — ${identity(pid, n) ?? "not logged in"}`);
+    if (pid === "codex") {
+      // Last-known from the newest rollout (no live endpoint); shows nothing
+      // until this profile has run codex at least once.
+      const snap = await readCodexUsage(configDir("codex", n));
+      const lines = snap ? formatSnapshot(snap) : [];
+      if (lines.length > 0) lines.forEach((l) => console.log(l));
+      else console.log("  (usage unavailable — token expired or not logged in)");
+      continue;
+    }
     if (pid !== "claude") {
       console.log("  (no usage readout for this provider — shows own usage only where available)");
       continue;
@@ -776,12 +794,40 @@ function cmdLabel(providerId: ProviderId, name?: string, label?: string): void {
 }
 
 /** Enable/disable opt-in auto-switch, or show the current setting. */
+/** Manually redeem one banked rate-limit reset for a Codex profile. Consumes a
+ *  real, scarce credit — the GUI gates this behind a confirmation. */
+async function cmdReset(providerId: ProviderId, name?: string): Promise<void> {
+  if (providerId !== "codex") die("reset is only available for codex (banked rate-limit resets).");
+  const n = requireProfile("codex", name, "reset");
+  const r = await redeemResetCredit(configDir("codex", n));
+  if (r.ok) {
+    console.log(`Redeemed a reset for codex/${n} (windows_reset=${r.windowsReset ?? "?"}).`);
+  } else {
+    die(`reset failed: ${r.reason ?? "unknown"}`);
+  }
+}
+
 function cmdAutoswitch(
   providerId: ProviderId,
   providerExplicit: boolean,
   mode?: string,
   flags: Record<string, string | boolean> = {},
+  value?: string,
 ): void {
+  // `autoswitch strategy [reset-first|rotation-first]` — global switch behaviour.
+  if (mode === "strategy") {
+    if (value === "reset-first" || value === "rotation-first") {
+      setSwitchStrategy(value as SwitchStrategy);
+    } else if (value !== undefined) {
+      die("usage: agent-switch autoswitch strategy [reset-first|rotation-first]");
+    }
+    if (flags.json) {
+      console.log(JSON.stringify({ strategy: readSwitchStrategy() }));
+    } else {
+      console.log(`Auto-switch strategy: ${readSwitchStrategy()}.`);
+    }
+    return;
+  }
   const thresholdFlag = flags.threshold;
   const threshold = typeof thresholdFlag === "string" ? Number(thresholdFlag) : undefined;
   if (threshold !== undefined && (!Number.isFinite(threshold) || threshold < 1 || threshold > 100)) {
@@ -791,14 +837,16 @@ function cmdAutoswitch(
     // Auto-switch only makes sense where there is a usage readout to trigger on
     // (Claude today). Elsewhere there is nothing to act on, so enabling is refused.
     if (mode === "on" && !provider(providerId).hasUsageReadout) {
-      die(`auto-switch is only available for Claude (the only provider with a usage readout).`);
+      die(`auto-switch is only available for providers with a usage readout (Claude, Codex).`);
     }
     const cfg = setAutoSwitch(providerId, { enabled: mode === "on", ...(threshold !== undefined ? { threshold } : {}) });
     console.log(`Auto-switch for ${providerId} ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%).`);
     if (cfg.enabled) {
+      const strat = readSwitchStrategy();
       console.log(
-        "The daemon moves the active Claude profile to the account with the most headroom\n" +
-          "once the active one hits the threshold. Run `agent-switch service start` so the daemon is watching.",
+        `Strategy: ${strat}${strat === "reset-first" ? " (redeem a banked reset before switching, Codex)" : ""}.\n` +
+          `The daemon moves the active ${providerId} profile to the account with the most headroom once the\n` +
+          "active one hits the threshold. Run `agent-switch service start` so the daemon is watching.",
       );
     }
     return;
@@ -809,13 +857,14 @@ function cmdAutoswitch(
       console.log(JSON.stringify(readAutoSwitchAll()));
       return;
     }
+    console.log(`strategy: ${readSwitchStrategy()}`);
     for (const p of providerExplicit ? [providerId] : PROVIDER_IDS) {
       const cfg = readAutoSwitch(p);
       console.log(`${p}: auto-switch ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%).`);
     }
     return;
   }
-  die("usage: agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>] [--json]");
+  die("usage: agent-switch autoswitch on|off|status|strategy [reset-first|rotation-first] [--provider P] [--threshold <1-100>] [--json]");
 }
 
 /**
@@ -1026,6 +1075,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch remove [--provider P] <name> [--force]   delete a profile
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
   agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>]   per-provider auto-switch (default OFF)
+  agent-switch reset <profile> --provider codex                                redeem one banked Codex rate-limit reset
   agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
   agent-switch apps                            list launchable GUI apps (macOS)
   agent-switch open <app> [profile]            launch a GUI app on a profile, isolated (macOS)
@@ -1065,7 +1115,8 @@ async function main(): Promise<void> {
     case "use": return cmdUse(providerId, positional[0]);
     case "deactivate": return cmdDeactivate(providerId);
     case "label": return cmdLabel(providerId, positional[0], positional[1]);
-    case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags);
+    case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags, positional[1]);
+    case "reset": return cmdReset(providerId, positional[0]);
     case "providers": return cmdProviders(providerId, providerExplicit, positional[0], flags);
     case "open": return cmdOpen(positional[0], positional[1]);
     case "apps": return cmdApps(!!flags.json);
