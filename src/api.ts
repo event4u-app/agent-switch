@@ -35,22 +35,39 @@ export function accessTokenOf(credentials: string): string | null {
 }
 
 async function oauthGet(pathname: string, token: string): Promise<any | null> {
-  try {
-    const res = await fetch(`https://api.anthropic.com${pathname}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "anthropic-beta": BETA_HEADER,
-        // Send an honest tool User-Agent. Some clients report the endpoint
-        // rate-limits (429) without one; unverified here, but a real UA is good
-        // practice regardless. Timeout keeps a hung read from blocking.
-        "User-Agent": "agent-switch/1.0 (+https://github.com/event4u-app/agent-switch)",
-      },
-      signal: AbortSignal.timeout(10_000),
-    });
+  // The usage/profile endpoints rate-limit (429) aggressively — a few near-
+  // simultaneous reads (e.g. the GUI polling every profile) trip it, which
+  // surfaced as a profile's usage intermittently coming back empty. Retry a 429
+  // with a short backoff (honouring Retry-After), capped, so one throttled read
+  // recovers instead of silently degrading to "no data".
+  for (let attempt = 0; ; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(`https://api.anthropic.com${pathname}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "anthropic-beta": BETA_HEADER,
+          // Send an honest tool User-Agent. Some clients report the endpoint
+          // rate-limits (429) without one; a real UA is good practice regardless.
+          "User-Agent": "agent-switch/1.0 (+https://github.com/event4u-app/agent-switch)",
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch {
+      return null; // network / timeout — stay snappy, don't retry
+    }
+    if (res.status === 429 && attempt < 3) {
+      const retryAfter = Number(res.headers.get("retry-after"));
+      const waitMs = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 5_000) : 800 * (attempt + 1);
+      await new Promise((r) => setTimeout(r, waitMs));
+      continue;
+    }
     if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
+    try {
+      return await res.json();
+    } catch {
+      return null;
+    }
   }
 }
 

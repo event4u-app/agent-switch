@@ -138,10 +138,10 @@ describe("App", () => {
     expect(ipc.deactivateProfile).toHaveBeenCalledWith("claude");
   });
 
-  it("runs a session in the embedded terminal (no external window) when Run is clicked", async () => {
+  it("runs a session in the embedded terminal (no external window) when Term is clicked", async () => {
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i });
-    fireEvent.click(screen.getAllByRole("button", { name: "Run" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Term" })[0]);
     const term = await screen.findByTestId("term");
     expect(term.textContent).toContain("run work --provider claude"); // sessionArgs
     expect(term.textContent).toMatch(/Session — Claude \/ work/);
@@ -188,7 +188,7 @@ describe("App", () => {
     expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", true);
   });
 
-  it("per-tab auto-switch dot shows ONLY for Claude (usage readout); none for codex/gemini", async () => {
+  it("per-tab auto-switch badge colouring shows ONLY for Claude (usage readout); none for codex/gemini", async () => {
     ipc.listProfiles.mockResolvedValue([
       { provider: "claude", name: "a", identity: null, label: null, active: true, liveSessions: 0 },
       { provider: "claude", name: "b", identity: null, label: null, active: false, liveSessions: 0 },
@@ -247,7 +247,7 @@ describe("App", () => {
     expect(ipc.setAutostart).toHaveBeenCalledWith(true);
   });
 
-  it("global auto-switch off hides the dots + footer toggle and deactivates every provider", async () => {
+  it("global auto-switch off hides the badge colouring + footer toggle and deactivates every provider", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
     fireEvent.click(await screen.findByRole("button", { name: /auto-switch globally/i })); // On → Off
