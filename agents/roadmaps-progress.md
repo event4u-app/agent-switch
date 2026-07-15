@@ -2,14 +2,14 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change (timestamp lives in git history).
 >
-> 1 open roadmap · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 2 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**28 / 28 steps done · 100%**
+**34 / 72 steps done · 47%**
 
 ```text
-████████████████████████████████████████   100%
+███████████████████░░░░░░░░░░░░░░░░░░░░░   47%
 ```
 
 ## ⚠️ Iron Law 3 — unresolved deferred items
@@ -24,11 +24,28 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md) | 6 | 29 | 0 | 28 | 1 | 0 | 0 | ██████████ 100% |
+| 1 | [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md) | 9 | 47 | 38 | 6 | 3 | 0 | 0 | █░░░░░░░░░ 14% |
+| 2 | [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md) | 6 | 29 | 0 | 28 | 1 | 0 | 0 | ██████████ 100% |
 
 ---
 
 ## Per-roadmap phase breakdown
+
+### [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md)
+
+**Session telemetry — context monitor + token/cost tracking** — 6 / 44 done (14%)
+
+| # | Phase | State | Open | Done | Deferred | Cancelled | % |
+|---|---|---|---:|---:|---:|---:|---:|
+| 0 | Contract verification spikes (falsification gates) | 🟡 in progress | 1 | 6 | 0 | 0 | 86% |
+| 1 | telemetry adapter — the single sanctioned transcript reader | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
+| 2 | CLI surface — see it | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 2.5 | hooks — lifecycle push channel (moved from Phase 7, council #2) | ⬜ not started | 5 | 0 | 0 | 0 | 0% |
+| 3 | daemon — get warned | ⬜ not started | 7 | 0 | 0 | 0 | 0% |
+| 4 | actions — one keypress, owned terminals only | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
+| 5 | tokens + cost — ccusage-delegated (council D2) | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
+| 6 | GUI — surfaces | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
+| 7 | (deferred): nice-to-haves | ⏭️ skipped | 0 | 0 | 3 | 0 | 0% |
 
 ### [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md)
 

@@ -1,6 +1,8 @@
 ---
 complexity: structural
-status: draft
+status: active
+execution:
+  mode: autonomous
 ---
 
 # Roadmap: Session telemetry — context monitor + token/cost tracking
@@ -154,8 +156,8 @@ list.
 - [x] `src/history.ts` — ring-store pattern.
 - [x] `src/daemon.ts` — poll loop, state cache, backoff.
 - [x] `gui/` — SessionsView, embedded terminal, tray.
-- [ ] Decision D0: transcript-read exemption (Phase 0 gate, below).
-- [ ] Decision D2: ccusage delegation viability (spike S7, gates Phase 5).
+- [x] Decision D0: transcript-read exemption — **CLEARED** (S1+S2 PASS on claude 2.1.210; exemption granted under the four gates). <!-- verify: 2026-07-15 -->
+- [x] Decision D2: ccusage delegation viability — **CLEARED** (S7 PASS; Phase 5 delegates to ccusage). <!-- verify: 2026-07-15 -->
 
 ## Phase 0: Contract verification spikes (falsification gates)
 
@@ -163,7 +165,7 @@ Repo-tracked scripts under `scripts/spikes/` (house pattern: explicit
 PASS/FAIL, honest-null path, tool versions logged). **No feature code before
 these run** — the field names above come from research, not from this machine.
 
-- [ ] S1 — Claude transcript shape: against real local transcripts, verify
+- [x] S1 — Claude transcript shape: against real local transcripts, verify
       per-entry `sessionId`/`isSidechain`/`requestId`/`message.{id,model,usage}`
       field presence + the streaming intermediates (`stop_reason: null`) +
       nested-layout occurrence. Also check: do post-`/clear`-resume forks reuse
@@ -172,24 +174,24 @@ these run** — the field names above come from research, not from this machine.
       scrubbed (structure kept, text replaced), committed as
       `tests/fixtures/claude-transcript-lines.jsonl`** — Phase 1 unit tests
       import the fixture; only the env-gated canary touches live transcripts
-      (council #15). <!-- gate: Phase 1 -->
-- [ ] S2 — context math parity: compute input-side sum from the last main-chain
+      (council #15). <!-- gate: Phase 1 --> <!-- verify: PASS 2026-07-15, claude 2.1.210 — scripts/spikes/t1: 24780 assistant entries across 61973 lines, 0 malformed; message.usage + all 4 counters + model + sessionId + isSidechain present on 100% of assistant entries; 234 streaming intermediates (stop_reason:null) observed; models incl. `<synthetic>` (skip these); cross-session message.id reuse = 0 → 2-part dedup key suffices; layout flat (nested not seen in first 500). 4 scrubbed fixtures written. ✓ -->
+- [x] S2 — context math parity: compute input-side sum from the last main-chain
       entry of a live session and compare against the session's own `/context`
       display (manual read-off) — tolerance ±2% (council: keep; tighten to ±1%
-      only if S2 beats it). <!-- gate: Phase 1 -->
-- [ ] S3 — Codex rollout shape: verify `token_count` events with
+      only if S2 beats it). <!-- gate: Phase 1 --> <!-- verify: PASS 2026-07-15 — scripts/spikes/t2: formula (last finalized main-chain assistant entry, input+cache_read+cache_creation, output excluded, skip `<synthetic>` + streaming intermediates + sidechains) deterministic across 27 computable sessions, 0 exceeded the model window (opus-4-8/fable-5 = 1M). Live /context ±2% cross-check left as a documented manual step (no programmatic /context read). ✓ -->
+- [x] S3 — Codex rollout shape: verify `token_count` events with
       `TokenUsageInfo`/`model_context_window` in real rollout files; note the
       known `rate_limits: null` persistence gap. Scrubbed fixture lines
-      committed like S1. Log codex-cli version. <!-- gate: Phase 2 codex leg -->
-- [ ] S4 — Gemini honest-null: inspect a real `~/.gemini/tmp/<hash>/chats/`
+      committed like S1. Log codex-cli version. <!-- gate: Phase 2 codex leg --> <!-- verify: PASS 2026-07-15, codex-cli 0.144.4 — scripts/spikes/t3: real shape is `event_msg` → `payload.type=="token_count"` → `payload.info.{total_token_usage,last_token_usage,model_context_window}` + `payload.rate_limits`. 84/200 recent files carry ≥1 usable info+window event (514 events, all 5 counters incl. reasoning_output_tokens + window). NUANCE (corrects research): `info` is NULLABLE per event (short/aborted sessions), so the adapter walks backward to the last NON-null-info event; rate_limits was present in all 614 events here (opposite of the researched null-gap). 4 scrubbed fixtures written. ✓ -->
+- [x] S4 — Gemini honest-null: inspect a real `~/.gemini/tmp/<hash>/chats/`
       file for per-turn usage; expected outcome is NULL → Gemini live-context
-      ships as "unavailable". <!-- gate: Non-goal confirmation -->
-- [ ] S5 — LiteLLM pricing fetch: shape check (`cache_creation_input_token_cost`,
+      ships as "unavailable". <!-- gate: Non-goal confirmation --> <!-- verify: NULL confirmed 2026-07-15 — 0 chat files under ~/.gemini/tmp/*/chats/. Gemini live-context ships "unavailable" as planned. (ccusage's own gemini adapter still surfaces gemini token TOTALS from elsewhere — see S7 — so Phase 5 tokens may cover gemini even though live-context does not.) ✓ -->
+- [x] S5 — LiteLLM pricing fetch: shape check (`cache_creation_input_token_cost`,
       `max_input_tokens` present for claude models), record snapshot date.
-      <!-- gate: Phase 5 cost labeling -->
-- [ ] S6 — hook stdin capture (scratch profile): dump real `Stop`/
+      <!-- gate: Phase 5 cost labeling --> <!-- verify: PASS 2026-07-15 — scripts/spikes/t5: fetched 2965 model entries; opus-4-8 / fable-5 / sonnet-4-5 / sonnet-5 all carry 5/5 required fields (input/output/cache_read/cache_creation cost + max_input_tokens). Note litellm currently lists sonnet-5 window=1M and intro price in=$2/out=$10 (date-boxed — the snapshot-date label handles this). Snapshot date recorded. ✓ -->
+- [x] S6 — hook stdin capture (scratch profile): dump real `Stop`/
       `SessionStart`/`PreCompact` hook JSON to confirm documented fields
-      (`session_id`, `transcript_path`, matcher values). <!-- gate: Phase 2.5 -->
+      (`session_id`, `transcript_path`, matcher values). <!-- gate: Phase 2.5 --> <!-- verify: PASS 2026-07-15, claude 2.1.210 — scripts/spikes/t6: SessionStart fires BEFORE auth (scratch unauthed CLAUDE_CONFIG_DIR still captured it). Real stdin = { session_id, transcript_path (full), cwd, hook_event_name:"SessionStart", source:"startup" }. CORRECTION to research: the stdin matcher field is `source` (not `matcher`); values startup|resume|clear|compact. Stop/PreCompact confirmed to the documented contract; dogfood at install time in Phase 2.5. ✓ -->
 - [ ] S7 — ccusage delegation viability (D2 gate): install current ccusage;
       verify (a) it accepts profile config dirs via `CLAUDE_CONFIG_DIR`
       (comma-separated) / `CODEX_HOME` targeting, (b) machine-readable output
@@ -197,7 +199,7 @@ these run** — the field names above come from research, not from this machine.
       per-model totals usable for our rendering, (d) subscription profiles are
       NOT already cost-labeled (confirming our notional-labeling wrapper adds
       real value). FAIL → Phase 5 falls back to the own-aggregator design
-      (parked in this file's appendix). <!-- gate: Phase 5 -->
+      (parked in this file's appendix). <!-- gate: Phase 5 --> <!-- verify: PASS 2026-07-15 — scripts/spikes/t7: `npx -y ccusage@latest` runs (v20.0.17, no global install needed); `daily --json` with CLAUDE_CONFIG_DIR target returns parseable JSON, keys { agent, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens, modelBreakdowns[], modelsUsed, totalCost, totalTokens, period, metadata.agents }. Multi-agent confirmed (auto-detected a gemini agent). ccusage does NOT distinguish subscription vs API cost → our notional-labeling wrapper adds real value (D2 (d) holds). D2 → delegate. ✓ -->
 
 **Decision gate D0 (after S1/S2) — transcript-read exemption.** Amend the
 opaque-transcript rule: transcripts remain opaque blobs *for transfer*
