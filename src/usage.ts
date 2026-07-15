@@ -34,16 +34,51 @@ const WINDOW_DEFS: ReadonlyArray<readonly [string, string]> = [
   ["seven_day_sonnet", "7d Sonnet"],
 ];
 
-/** Defensive parse — unknown shapes degrade to fewer windows, never throw. */
+/** One entry of the current `limits[]` shape → a window, or null to skip. This
+ *  array is the ONLY place the per-model weekly limit (e.g. Fable) is exposed;
+ *  `weekly_all` is the all-models weekly window, `session` the 5h window. */
+function windowFromLimit(l: any): UsageWindow | null {
+  if (!l || typeof l !== "object") return null;
+  const utilization = typeof l.percent === "number" ? Math.round(l.percent) : null;
+  const resetsAt = typeof l.resets_at === "string" ? l.resets_at : null;
+  if (utilization === null && resetsAt === null) return null;
+  const kind = typeof l.kind === "string" ? l.kind : "";
+  if (kind === "session") return { key: "five_hour", label: "5h", utilization, resetsAt };
+  if (kind === "weekly_all") return { key: "seven_day", label: "All", utilization, resetsAt };
+  if (kind === "weekly_scoped") {
+    const model = l.scope?.model?.display_name;
+    const surface = l.scope?.surface;
+    const name = (typeof model === "string" && model) || (typeof surface === "string" && surface) || "scoped";
+    const key = `weekly_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")}`;
+    return { key, label: name, utilization, resetsAt };
+  }
+  return { key: kind || "unknown", label: kind ? kind.replace(/_/g, " ") : "?", utilization, resetsAt };
+}
+
+/** Defensive parse — unknown shapes degrade to fewer windows, never throw.
+ *  Prefers the current `limits[]` array (carries the per-model Fable window);
+ *  falls back to the legacy top-level `five_hour`/`seven_day` keys. */
 export function parseUsage(raw: any, capturedAt: string = new Date().toISOString()): UsageSnapshot {
   const windows: UsageWindow[] = [];
-  for (const [key, label] of WINDOW_DEFS) {
-    const w = raw?.[key];
-    if (!w || typeof w !== "object") continue;
-    const utilization = typeof w.utilization === "number" ? Math.round(w.utilization) : null;
-    const resetsAt = typeof w.resets_at === "string" ? w.resets_at : null;
-    if (utilization === null && resetsAt === null) continue;
-    windows.push({ key, label, utilization, resetsAt });
+  if (Array.isArray(raw?.limits) && raw.limits.length > 0) {
+    const seen = new Set<string>();
+    for (const l of raw.limits) {
+      const w = windowFromLimit(l);
+      if (w && !seen.has(w.key)) {
+        seen.add(w.key);
+        windows.push(w);
+      }
+    }
+  }
+  if (windows.length === 0) {
+    for (const [key, label] of WINDOW_DEFS) {
+      const w = raw?.[key];
+      if (!w || typeof w !== "object") continue;
+      const utilization = typeof w.utilization === "number" ? Math.round(w.utilization) : null;
+      const resetsAt = typeof w.resets_at === "string" ? w.resets_at : null;
+      if (utilization === null && resetsAt === null) continue;
+      windows.push({ key, label, utilization, resetsAt });
+    }
   }
   let routines: { used: number; limit: number } | null = null;
   const r = raw?.routines;

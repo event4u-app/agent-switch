@@ -78,6 +78,29 @@ test("parseUsage degrades on missing/garbage without throwing", () => {
   assert.equal(s.routines, null);
 });
 
+test("parseUsage prefers the limits[] shape and surfaces the per-model (Fable) window", () => {
+  const raw = {
+    // legacy top-level keys are also present; the limits[] array wins when non-empty
+    five_hour: { utilization: 9, resets_at: AT },
+    seven_day: { utilization: 63, resets_at: AT },
+    limits: [
+      { kind: "session", percent: 9, resets_at: "2026-07-15T06:00:00Z", scope: null },
+      { kind: "weekly_all", percent: 63, resets_at: "2026-07-17T18:00:00Z", scope: null },
+      {
+        kind: "weekly_scoped",
+        percent: 95,
+        resets_at: "2026-07-17T18:00:00Z",
+        scope: { model: { id: null, display_name: "Fable" }, surface: null },
+      },
+    ],
+  };
+  const s = parseUsage(raw, AT);
+  assert.deepEqual(
+    s.windows.map((w) => `${w.key}:${w.label}:${w.utilization}`),
+    ["five_hour:5h:9", "seven_day:All:63", "weekly_fable:Fable:95"],
+  );
+});
+
 test("formatSnapshot renders percent lines + routines, skips null-utilization windows", () => {
   const s = parseUsage({ five_hour: { utilization: 50, resets_at: AT }, routines: { used: 2, limit: 5 } }, AT);
   const lines = formatSnapshot(s);
