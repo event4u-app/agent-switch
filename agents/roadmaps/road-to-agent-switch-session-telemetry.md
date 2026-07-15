@@ -269,35 +269,40 @@ format knowledge so drift is a contained, canary-detected event).
 
 ## Phase 2: CLI surface — see it
 
-- [ ] `sessions` gains a context column for live sessions
+- [x] `sessions` gains a context column for live sessions
       (`67% · 134k/200k`, `~` on low confidence, `(stale)` in degraded mode,
       `—` when unavailable); `--json` adds `{ contextPct, contextTokens,
       windowTokens, model, confidence, stale }` (GUI contract).
-- [ ] `status` shows the active profile's live sessions' context one-liner
+      <!-- verify: cmdSessions in src/index.ts — `formatContext()` renders "67% · 134k/1000k" (or "134k tok" when window unknown, "~" prefix on low confidence); `--json` adds a `context` object {pct,contextTokens,windowTokens,model,confidence}|null per row. Smoke-tested against a real transcript: `32.4% · 324k/1000k`, model fable-5, confidence high. SessionRow gained an optional `file` field (populated by listSessions/listCodexSessions) so the telemetry reader has the path. ✓ -->
+- [x] `status` shows the active profile's live sessions' context one-liner
       (worst session), consistent `--json` extension.
-- [ ] Windows note: context display works wherever transcripts are readable —
+      <!-- verify: `worstLiveContext()` picks the highest-pct LIVE session; human status prints "live context: 67% · … (session abcd1234)", `--json` adds a `context` object. Own-profile only. ✓ -->
+- [x] Windows note: context display works wherever transcripts are readable —
       but live-marking is POSIX-only, so **Windows v1 monitors GUI-started
       sessions only** (pty ownership = liveness); documented loudly (council
       #13; no `wmic` heuristics in v1).
+      <!-- verify: context read is pure file I/O (works on win32); `markLive`/`pidCwd` remain POSIX-only (pidCwd returns null on win32, unchanged) → win32 rows stay live:false, so the daemon/status only surface GUI-started sessions there. No wmic heuristic added. ✓ -->
 
 ## Phase 2.5: hooks — lifecycle push channel (moved from Phase 7, council #2)
 
 Hooks are additive arrays in `settings.json` — installable without clobbering
 user config, unlike the statusline slot.
 
-- [ ] `agent-switch hooks install|uninstall|status` — adds async (non-blocking)
+- [x] `agent-switch hooks install|uninstall|status` — adds async (non-blocking)
       `SessionStart` / `SessionEnd` / `PreCompact` / `PostCompact` hook entries
       that append one-line events (`{event, session_id, ts}`) to
       `<ROOT>/events/<provider>-<profile>.jsonl` (ring-capped). Idempotent
       (marker-keyed entries, only our own are ever touched — manifest
       discipline like `share.ts`), **share-aware** (settings.json may be a
       shared, fork-prone link → run `share sync` semantics after edit).
+      <!-- verify: src/hooks.ts (pure withHooksInstalled/withHooksRemoved/hooksInstalled + disk installHooks/uninstallHooks + event ring appendEvent/readEvents cap 500 + profileFromConfigDir) + cmdHooks/cmdHookEvent in index.ts. `__hook-event` reads stdin + CLAUDE_CONFIG_DIR → maps to profile even under shared settings.json. Dogfooded end-to-end: install wrote all 4 marker-keyed async entries preserving the user's own Stop hook; a fired SessionStart(source:startup) landed in the ring; status/uninstall clean; share-sync reminder printed. 8 hooks unit tests. ✓ -->
 - [ ] Compaction ground truth: daemon consumes `PreCompact`/`PostCompact`/
       `SessionStart(compact)` events → threshold re-arm on *real* compaction
       (replaces any utilization-drop heuristic — council: heuristics rejected).
 - [ ] `SessionStart`/`SessionEnd` events double as **cross-platform liveness**
       (fixes the Windows gap for hook-installed profiles; upgrades POSIX too).
-- [ ] Hook payloads verified against S6 capture; env-gated contract test.
+- [x] Hook payloads verified against S6 capture; env-gated contract test.
+      <!-- verify: cmdHookEvent parses exactly the S6-captured fields (hook_event_name, source, session_id); scripts/spikes/t6 is the env-gated live capture (real SessionStart stdin). ✓ -->
 - [ ] Without hooks installed everything still works (degraded: no compaction
       events → thresholds re-arm on context *drop to below the lowest
       threshold*, conservative; POSIX liveness as in Phase 2).

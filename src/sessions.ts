@@ -83,6 +83,9 @@ export interface SessionRow {
   summary: string | null;
   mtimeMs: number;
   live: boolean;
+  /** Absolute transcript/rollout path — the sanctioned telemetry reader
+   *  (src/telemetry.ts) consumes this. Optional so seeded fakes need not set it. */
+  file?: string;
 }
 
 /** Recent sessions of one profile config dir, newest first, capped at `limit`.
@@ -125,6 +128,7 @@ export function listSessions(configDir: string, limit: number): SessionRow[] {
         summary: header.summary,
         mtimeMs: st.mtimeMs,
         live: false,
+        file,
       });
     }
   }
@@ -363,6 +367,7 @@ export function listCodexSessions(configDir: string, limit: number): SessionRow[
       summary: null,
       mtimeMs: st.mtimeMs,
       live: false,
+      file,
     });
   }
   rows.sort((a, b) => b.mtimeMs - a.mtimeMs);
