@@ -31,11 +31,14 @@ WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/g03-project.XXXXXX")"; cd "$WORKDIR"
 info "cwd=$PWD canary=$CANARY"
 info "codex version: $(codex --version 2>/dev/null || echo unknown)"
 
-snapshot() { find "$1/sessions" -type f \( -name 'rollout-*.jsonl' -o -name 'rollout-*.jsonl.zst' \) 2>/dev/null | sort; }
+# tolerate a brand-new home with no sessions/ dir yet (find on a missing path
+# exits non-zero, which set -o pipefail would turn into a silent script abort).
+snapshot() { [[ -d "$1/sessions" ]] || return 0; find "$1/sessions" -type f \( -name 'rollout-*.jsonl' -o -name 'rollout-*.jsonl.zst' \) 2>/dev/null | sort; }
 
 # 1) create a session under SOURCE and identify its rollout file by set-difference
 BEFORE="$(snapshot "$SRC")"
-CODEX_HOME="$SRC" codex exec "Remember this codeword and nothing else: $CANARY. Reply only: stored." \
+CODEX_HOME="$SRC" codex exec --skip-git-repo-check \
+  "Remember this codeword and nothing else: $CANARY. Reply only: stored." </dev/null \
   >/dev/null 2>&1 || fail "codex exec failed under source home (logged in?)"
 AFTER="$(snapshot "$SRC")"
 NEW_FILE="$(comm -13 <(echo "$BEFORE") <(echo "$AFTER") | head -n1)"
@@ -64,8 +67,8 @@ info "moved to    : $TGT/$REL"
 ask() {  # ask() <resume-args...> — returns 0 if canary comes back
   local OUT RC
   set +e
-  OUT="$(CODEX_HOME="$TGT" codex exec resume "$@" \
-        "What is the codeword I asked you to remember? Reply with only the codeword." 2>&1)"
+  OUT="$(CODEX_HOME="$TGT" codex exec resume --skip-git-repo-check "$@" \
+        "What is the codeword I asked you to remember? Reply with only the codeword." </dev/null 2>&1)"
   RC=$?
   set -e
   info "reply (rc=$RC): $(tail -n1 <<<"$OUT")"
