@@ -55,6 +55,7 @@ test("activeFor / setActive are per-provider", () => {
       gemini: { cli: false, ui: false },
     },
     switchStrategy: "reset-first",
+    osNotifications: false,
   }); // clean baseline (shared STATE_FILE)
   P.setActive("codex", "work");
   P.setActive("gemini", "priv");
@@ -127,6 +128,7 @@ test("legacy global auto-switch migrates onto every provider", () => {
       gemini: { cli: false, ui: false },
     },
     switchStrategy: "reset-first",
+    osNotifications: false,
   });
   const all = P.readAutoSwitchAll();
   for (const p of ["claude", "codex", "gemini"] as const) {
@@ -178,6 +180,7 @@ test("switchStrategy defaults to reset-first and persists a change", () => {
       gemini: { cli: false, ui: false },
     },
     switchStrategy: "reset-first",
+    osNotifications: false,
   });
   assert.equal(P.readSwitchStrategy(), "reset-first");
   P.setSwitchStrategy("rotation-first");
@@ -185,6 +188,18 @@ test("switchStrategy defaults to reset-first and persists a change", () => {
   // survives a state round-trip that doesn't mention it? setActive rewrites state
   P.setActive("claude", null);
   assert.equal(P.readSwitchStrategy(), "rotation-first");
+});
+
+test("osNotifications defaults OFF and persists a change", () => {
+  fs.rmSync(P.STATE_FILE, { force: true });
+  assert.equal(P.readOsNotifications(), false); // no state file → default off
+  P.setOsNotifications(true);
+  assert.equal(P.readOsNotifications(), true);
+  // survives an unrelated state write
+  P.setActive("codex", null);
+  assert.equal(P.readOsNotifications(), true);
+  P.setOsNotifications(false);
+  assert.equal(P.readOsNotifications(), false);
 });
 
 test("renameProfile moves the config dir and carries active + label", () => {

@@ -76,6 +76,9 @@ export interface State {
   autoSwitch: AutoSwitchMap;
   providers: ProvidersConfig;
   switchStrategy: SwitchStrategy;
+  /** Whether the background daemon fires OS desktop notifications itself (for
+   *  timeliness when the GUI is closed). Default false — opt-in. */
+  osNotifications: boolean;
 }
 
 function emptyActive(): ActiveMap {
@@ -226,18 +229,19 @@ export function readState(): State {
     const autoSwitch = normalizeAutoSwitchMap(raw?.autoSwitch);
     const providers = normalizeProvidersMap(raw?.providers);
     const switchStrategy: SwitchStrategy = raw?.switchStrategy === "rotation-first" ? "rotation-first" : DEFAULT_SWITCH_STRATEGY;
+    const osNotifications = raw?.osNotifications === true;
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch, providers, switchStrategy };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch, providers, switchStrategy, osNotifications };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch, providers, switchStrategy };
+      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch, providers, switchStrategy, osNotifications };
     }
-    return { active: emptyActive(), labels, autoSwitch, providers, switchStrategy };
+    return { active: emptyActive(), labels, autoSwitch, providers, switchStrategy, osNotifications };
   } catch {
     /* absent / unparsable → default */
   }
-  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), switchStrategy: DEFAULT_SWITCH_STRATEGY };
+  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), switchStrategy: DEFAULT_SWITCH_STRATEGY, osNotifications: false };
 }
 
 export function readSwitchStrategy(): SwitchStrategy {
@@ -247,6 +251,16 @@ export function readSwitchStrategy(): SwitchStrategy {
 export function setSwitchStrategy(strategy: SwitchStrategy): void {
   const state = readState();
   state.switchStrategy = strategy;
+  writeState(state);
+}
+
+export function readOsNotifications(): boolean {
+  return readState().osNotifications;
+}
+
+export function setOsNotifications(on: boolean): void {
+  const state = readState();
+  state.osNotifications = on;
   writeState(state);
 }
 

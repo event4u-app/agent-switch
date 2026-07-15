@@ -2,14 +2,14 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change (timestamp lives in git history).
 >
-> 3 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 2 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**83 / 92 steps done · 90%**
+**72 / 72 steps done · 100%**
 
 ```text
-████████████████████████████████████░░░░   90%
+████████████████████████████████████████   100%
 ```
 
 ## ⚠️ Iron Law 3 — unresolved deferred items
@@ -26,8 +26,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-agent-switch-session-telemetry.md](roadmaps/road-to-agent-switch-session-telemetry.md) | 9 | 47 | 0 | 44 | 3 | 0 | 0 | ██████████ 100% |
-| 2 | [road-to-desktop-notifications.md](roadmaps/road-to-desktop-notifications.md) | 4 | 20 | 9 | 11 | 0 | 0 | 0 | ██████░░░░ 55% |
-| 3 | [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md) | 6 | 29 | 0 | 28 | 1 | 0 | 0 | ██████████ 100% |
+| 2 | [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md) | 6 | 29 | 0 | 28 | 1 | 0 | 0 | ██████████ 100% |
 
 ---
 
@@ -48,17 +47,6 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | 5 | tokens + cost — ccusage-delegated (council D2) | ✅ done | 0 | 6 | 0 | 0 | 100% |
 | 6 | GUI — surfaces | ✅ done | 0 | 4 | 0 | 0 | 100% |
 | 7 | (deferred): nice-to-haves | ⏭️ skipped | 0 | 0 | 3 | 0 | 0% |
-
-### [road-to-desktop-notifications.md](roadmaps/road-to-desktop-notifications.md)
-
-**Desktop + in-window notifications** — 11 / 20 done (55%)
-
-| # | Phase | State | Open | Done | Deferred | Cancelled | % |
-|---|---|---|---:|---:|---:|---:|---:|
-| 1 | Core notification pipeline (done) | ✅ done | 0 | 11 | 0 | 0 | 100% |
-| 2 | In-window active toast fallback | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
-| 3 | Daemon-side immediate OS notifications (headless timeliness) | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
-| 4 | Preferences + more event kinds | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
 
 ### [road-to-session-handoff.md](roadmaps/road-to-session-handoff.md)
 

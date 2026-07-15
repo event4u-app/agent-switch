@@ -4,6 +4,8 @@
  * lives in the CLI; these are view-level toggles only.
  */
 
+import type { NotificationKind } from "./notifications.js";
+
 const AUTOSWITCH_GLOBAL_KEY = "agent-switch-autoswitch-global";
 
 /** Global master for the auto-switch feature. Default OFF — the user must
@@ -91,6 +93,27 @@ export function getNotifLastRead(): number {
 export function setNotifLastRead(ts: number): void {
   try {
     localStorage.setItem(NOTIF_LAST_READ_KEY, String(ts));
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const MUTED_KINDS_KEY = "agent-switch-muted-notif-kinds";
+
+/** Notification kinds the user has muted — suppressed from desktop, toast, and
+ *  the unread badge (they still land in the CLI log). Default: none muted. */
+export function getMutedKinds(): NotificationKind[] {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(MUTED_KINDS_KEY) ?? "[]");
+    return Array.isArray(raw) ? (raw.filter((k) => typeof k === "string") as NotificationKind[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function setMutedKinds(kinds: NotificationKind[]): void {
+  try {
+    localStorage.setItem(MUTED_KINDS_KEY, JSON.stringify(kinds));
   } catch {
     /* no/blocked localStorage → in-memory only for this session */
   }

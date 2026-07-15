@@ -24,6 +24,9 @@ export interface Notification {
   kind: NotificationKind;
   title: string;
   message: string;
+  /** Set when the daemon already fired an OS desktop notification for this
+   *  event, so the GUI does not show it a second time. */
+  osNotified?: boolean;
 }
 
 export const NOTIFICATIONS_FILE = path.join(ROOT, "notifications.json");
@@ -79,4 +82,15 @@ export function appendNotification(
 
 export function clearNotifications(file: string = NOTIFICATIONS_FILE): void {
   writeNotifications([], file);
+}
+
+/** Mark a stored notification as already-OS-notified (set by the daemon after it
+ *  fires a desktop notification, so the GUI does not re-notify). No-op if the id
+ *  is gone (trimmed out of the ring). */
+export function markOsNotified(id: string, file: string = NOTIFICATIONS_FILE): void {
+  const list = readNotifications(file);
+  const n = list.find((x) => x.id === id);
+  if (!n) return;
+  n.osNotified = true;
+  writeNotifications(list, file);
 }

@@ -1,6 +1,6 @@
 ---
 complexity: standard
-status: active
+status: complete
 ---
 
 # Roadmap: Desktop + in-window notifications
@@ -70,10 +70,12 @@ status: active
 > permission is denied, a transient toast makes a new event visible without the
 > user opening the flyout.
 
-- [ ] A lightweight toast component (auto-dismiss, stacked) rendered on a new
-  event when `sendDesktopNotification` returned false.
-- [ ] Respect the same dedup so a toast never repeats a persistent failure.
-- [ ] Tests: toast appears on a denied-desktop new event, not on a granted one.
+- [x] A lightweight toast component (auto-dismiss, stacked) rendered on a new
+  event when `sendDesktopNotification` returned false (`Toaster.tsx`, shared
+  `notif-kind.tsx` icon map).
+- [x] Respect the same dedup so a toast never repeats a persistent failure
+  (inherited from the CLI log dedup — toasts derive from already-deduped events).
+- [x] Tests: toast appears on a denied-desktop new event, not on a granted one.
 
 ## Phase 3: Daemon-side immediate OS notifications (headless timeliness)
 
@@ -81,16 +83,20 @@ status: active
 > on the next GUI poll. For headless timeliness the daemon could fire the OS
 > notification itself.
 
-- [ ] Cross-platform OS-notify from Node in the daemon (`osascript` on macOS,
-  `notify-send` on Linux, PowerShell/BurntToast on Windows), best-effort.
-- [ ] Guard against double-notify with the GUI (the log dedup + a "notified"
-  marker).
-- [ ] Gate behind a setting (some users do not want background OS toasts).
+- [x] Cross-platform OS-notify from Node in the daemon (`osascript` on macOS,
+  `notify-send` on Linux, PowerShell balloon on Windows), best-effort
+  (`os-notify.ts`, pure `buildOsNotifyCommand` + `osNotify`).
+- [x] Guard against double-notify with the GUI (the log dedup + an `osNotified`
+  marker set by the daemon; the GUI skips events already OS-notified).
+- [x] Gate behind a setting (`osNotifications` in state, default off;
+  `agent-switch os-notify [on|off|status]`; daemon reads it before firing).
 
 ## Phase 4: Preferences + more event kinds
 
-- [ ] Per-kind enable/disable (e.g. mute fetch-failure warnings, keep switches).
-- [ ] Surface threshold crossings the daemon already logs
+- [x] Per-kind enable/disable — mute toggles (localStorage `mutedKinds`) that
+  suppress a kind from desktop, toast, flyout, and the unread badge.
+- [x] Surface threshold crossings the daemon already logs
   (`threshold: … crossed N%`) as `info` notifications.
-- [ ] A General-settings toggle for desktop notifications (mirror the OS
-  permission state, offer a re-request path).
+- [x] A settings toggle for desktop notifications (mirror the OS permission
+  state + a re-request path) — plus a background (daemon) toggle and the mute
+  controls, in a dedicated **Alerts** settings tab.

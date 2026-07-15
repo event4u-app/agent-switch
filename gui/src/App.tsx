@@ -14,6 +14,8 @@ import {
   listNotifications,
   recordNotification,
   clearNotifications,
+  getOsNotify,
+  setOsNotify,
   loginArgs,
   openApp,
   profileUsage,
@@ -40,7 +42,15 @@ import {
 } from "./ipc.js";
 import { EmbeddedTerminal } from "./EmbeddedTerminal.js";
 import { NotificationBell } from "./NotificationBell.js";
-import { sendDesktopNotification, type AppNotification } from "./notifications.js";
+import { Toaster } from "./Toaster.js";
+import {
+  sendDesktopNotification,
+  desktopPermission,
+  requestDesktopPermission,
+  type AppNotification,
+  type NotificationKind,
+  type DesktopPermission,
+} from "./notifications.js";
 import { applyTheme, getTheme, THEMES, type Theme } from "./theme.js";
 import {
   getAutoSwitchGlobal,
@@ -52,6 +62,8 @@ import {
   REFRESH_INTERVAL_CHOICES,
   getNotifLastRead,
   setNotifLastRead,
+  getMutedKinds,
+  setMutedKinds,
 } from "./settings-store.js";
 import { loadUsageCache, saveUsageSnapshot, type UsageEntry } from "./usage-cache.js";
 import {
@@ -196,6 +208,10 @@ export default function App() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notifLastRead, setNotifLastReadState] = useState(() => getNotifLastRead());
   const notifNotifiedTsRef = useRef(Date.now());
+  // Transient in-window toasts (the fallback when a desktop notification is denied).
+  const [toasts, setToasts] = useState<AppNotification[]>([]);
+  // Muted notification kinds — suppressed from desktop, toast, flyout, and badge.
+  const [mutedKinds, setMutedKindsState] = useState<NotificationKind[]>(() => getMutedKinds());
 
   // Usage auto-refresh: a configurable timer (default 10 min, set in General
   // settings), shown as a live countdown by the footer refresh button. Tab
@@ -315,12 +331,40 @@ export default function App() {
     const fresh = list.filter((n) => n.ts > notifNotifiedTsRef.current);
     if (fresh.length === 0) return;
     notifNotifiedTsRef.current = Math.max(notifNotifiedTsRef.current, ...fresh.map((n) => n.ts));
-    for (const n of fresh.slice(0, 5)) void sendDesktopNotification(n.title, n.message);
+    // Desktop first; when it can't be delivered (permission denied / unavailable)
+    // fall back to an in-window toast. The CLI log already deduped these events,
+    // so a persistent failure produces at most one toast per dedup window.
+    const mutedSet = new Set(mutedKinds);
+    for (const n of fresh.slice(0, 5)) {
+      // Skip events the daemon already showed on the desktop, and muted kinds.
+      if (n.osNotified || mutedSet.has(n.kind)) continue;
+      const shown = await sendDesktopNotification(n.title, n.message);
+      if (!shown) pushToast(n);
+    }
+  }
+
+  function toggleMuteKind(kind: NotificationKind) {
+    setMutedKindsState((prev) => {
+      const next = prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind];
+      setMutedKinds(next);
+      return next;
+    });
+  }
+
+  // Toast lifecycle: add + auto-dismiss after a few seconds (manual close also
+  // calls dismissToast). Deduped upstream, so no extra guard needed here.
+  function pushToast(n: AppNotification) {
+    setToasts((prev) => (prev.some((t) => t.id === n.id) ? prev : [...prev, n]));
+    setTimeout(() => dismissToast(n.id), 6000);
+  }
+
+  function dismissToast(id: string) {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }
 
   // Opening the bell marks everything up to the newest as read (persisted).
   function markNotifsRead() {
-    const newest = notifications[0]?.ts ?? Date.now();
+    const newest = visibleNotifs[0]?.ts ?? Date.now();
     setNotifLastRead(newest);
     setNotifLastReadState(newest);
   }
@@ -377,7 +421,9 @@ export default function App() {
 
   const secondsLeft = Math.max(0, Math.ceil((nextRefreshRef.current - nowTick) / 1000));
   const countdown = `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}`;
-  const unreadNotifs = notifications.filter((n) => n.ts > notifLastRead).length;
+  const mutedSet = new Set(mutedKinds);
+  const visibleNotifs = notifications.filter((n) => !mutedSet.has(n.kind));
+  const unreadNotifs = visibleNotifs.filter((n) => n.ts > notifLastRead).length;
 
   // Only enabled providers get a tab. Before the first load, fall back to the
   // default set (Claude + Codex) so nothing flickers in.
@@ -395,6 +441,7 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col">
+      <Toaster toasts={toasts} onDismiss={dismissToast} />
       <header
         data-tauri-drag-region
         className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-border bg-background/95 px-3 py-2.5 backdrop-blur"
@@ -429,7 +476,7 @@ export default function App() {
             <Plus /> New
           </Button>
           <NotificationBell
-            notifications={notifications}
+            notifications={visibleNotifs}
             unread={unreadNotifs}
             onMarkRead={markNotifsRead}
             onClear={clearNotifs}
@@ -497,6 +544,8 @@ export default function App() {
             onToggleAutoRefresh={toggleAutoRefresh}
             refreshMin={refreshMin}
             onChangeRefreshMin={changeRefreshMin}
+            mutedKinds={mutedKinds}
+            onToggleMute={toggleMuteKind}
             onProvidersChanged={refresh}
           />
         ) : showTokens ? (
@@ -926,9 +975,10 @@ function EditProfileRow({
 }
 
 
-type SettingsTab = "general" | "providers" | "design" | "uninstall";
+type SettingsTab = "general" | "notifications" | "providers" | "design" | "uninstall";
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
+  { id: "notifications", label: "Alerts" },
   { id: "providers", label: "Providers" },
   { id: "design", label: "Design" },
   { id: "uninstall", label: "Uninstall" },
@@ -946,6 +996,8 @@ function SettingsView({
   onToggleAutoRefresh,
   refreshMin,
   onChangeRefreshMin,
+  mutedKinds,
+  onToggleMute,
   onProvidersChanged,
 }: {
   onClose: () => void;
@@ -956,6 +1008,8 @@ function SettingsView({
   onToggleAutoRefresh: (on: boolean) => void;
   refreshMin: number;
   onChangeRefreshMin: (min: number) => void;
+  mutedKinds: NotificationKind[];
+  onToggleMute: (kind: NotificationKind) => void;
   onProvidersChanged: () => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
@@ -967,7 +1021,7 @@ function SettingsView({
           <X />
         </Button>
       </div>
-      <div role="tablist" className="grid grid-cols-4 gap-1 rounded-lg bg-muted p-1">
+      <div role="tablist" className="grid grid-cols-5 gap-1 rounded-lg bg-muted p-1">
         {SETTINGS_TABS.map((t) => (
           <button
             key={t.id}
@@ -993,10 +1047,127 @@ function SettingsView({
           onChangeRefreshMin={onChangeRefreshMin}
         />
       )}
+      {tab === "notifications" && <NotificationSettings mutedKinds={mutedKinds} onToggleMute={onToggleMute} />}
       {tab === "providers" && <ProvidersSettings onChange={onProvidersChanged} />}
       {tab === "design" && <DesignSettings />}
       {tab === "uninstall" && <UninstallSettings onUninstall={onUninstall} />}
     </div>
+  );
+}
+
+// Friendly labels for the per-kind mute toggles.
+const KIND_LABELS: { kind: NotificationKind; label: string; hint: string }[] = [
+  { kind: "success", label: "Account switches", hint: "Auto-switches and redeemed Codex resets." },
+  { kind: "warning", label: "Fetch failures", hint: "A usage-limit fetch that did not succeed." },
+  { kind: "info", label: "Threshold crossings", hint: "The active account passing a usage threshold." },
+  { kind: "error", label: "Errors", hint: "Unexpected failures." },
+];
+
+const PERMISSION_LABEL: Record<DesktopPermission, string> = {
+  granted: "Granted",
+  denied: "Denied",
+  default: "Not yet requested",
+  unavailable: "Unavailable",
+};
+
+/** Alerts tab: desktop-notification permission, background (daemon) OS
+ *  notifications, and per-kind mute toggles. */
+function NotificationSettings({
+  mutedKinds,
+  onToggleMute,
+}: {
+  mutedKinds: NotificationKind[];
+  onToggleMute: (kind: NotificationKind) => void;
+}) {
+  const [perm, setPerm] = useState<DesktopPermission | null>(null);
+  const [osNotify, setOsNotifyState] = useState<boolean | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const muted = new Set(mutedKinds);
+
+  useEffect(() => {
+    desktopPermission().then(setPerm).catch(() => setPerm("unavailable"));
+    getOsNotify().then(setOsNotifyState).catch(() => setOsNotifyState(false));
+  }, []);
+
+  function requestPerm() {
+    requestDesktopPermission().then(setPerm).catch(() => setPerm("unavailable"));
+  }
+
+  function toggleOsNotify() {
+    const next = !osNotify;
+    setOsNotifyState(next);
+    setOsNotify(next).catch((e) => {
+      setOsNotifyState(!next); // revert on failure
+      setErr(describeError(e));
+    });
+  }
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium">Desktop notifications</div>
+            <div className="text-xs text-muted-foreground">
+              OS permission: <span className="font-medium">{perm ? PERMISSION_LABEL[perm] : "…"}</span>. When denied,
+              alerts still appear in the bell and as in-window toasts.
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={perm === "granted" ? "default" : "outline"}
+            disabled={perm === null || perm === "granted" || perm === "unavailable"}
+            onClick={requestPerm}
+            aria-label="Enable desktop notifications"
+          >
+            {perm === "granted" ? "On" : "Enable"}
+          </Button>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium">Notify when the app is closed</div>
+            <div className="text-xs text-muted-foreground">
+              Let the background service post OS notifications too, so auto-switches reach you even when this window
+              isn't open.
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={osNotify ? "default" : "outline"}
+            disabled={osNotify === null}
+            onClick={toggleOsNotify}
+            aria-label="Notify when closed"
+          >
+            {osNotify === null ? "…" : osNotify ? "On" : "Off"}
+          </Button>
+        </div>
+        {err && <div className="text-xs text-destructive">{err}</div>}
+
+        <div className="border-t border-border pt-3">
+          <div className="text-[13px] font-medium">Alert types</div>
+          <div className="mb-2 text-xs text-muted-foreground">Mute the kinds you don't want to be alerted about.</div>
+          <div className="space-y-2">
+            {KIND_LABELS.map(({ kind, label, hint }) => (
+              <div key={kind} className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[13px]">{label}</div>
+                  <div className="text-xs text-muted-foreground">{hint}</div>
+                </div>
+                <Button
+                  size="sm"
+                  variant={muted.has(kind) ? "outline" : "default"}
+                  onClick={() => onToggleMute(kind)}
+                  aria-label={`Toggle ${label}`}
+                >
+                  {muted.has(kind) ? "Muted" : "On"}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -310,3 +310,13 @@ export async function recordNotification(kind: NotificationKind, title: string, 
 export async function clearNotifications(): Promise<void> {
   await runCli(["notifications", "clear"]);
 }
+
+/** Whether the background daemon fires OS notifications itself (default off). */
+export async function getOsNotify(): Promise<boolean> {
+  const { enabled } = JSON.parse(await runCli(["os-notify", "status", "--json"]));
+  return !!enabled;
+}
+
+export async function setOsNotify(on: boolean): Promise<void> {
+  await runCli(["os-notify", on ? "on" : "off"]);
+}
