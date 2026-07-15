@@ -725,6 +725,7 @@ function cmdNotify(sub?: string, flags: Record<string, string | boolean> = {}): 
   } else if (action !== "status") {
     die("usage: agent-switch notify on|off|status [--threshold 80,95]");
   }
+  if (flags.json) { console.log(JSON.stringify({ notify: cfg.notify, contextThresholds: cfg.contextThresholds }, null, 2)); return; }
   console.log(`notifications: ${cfg.notify ? "on" : "off"}  ·  context thresholds: ${cfg.contextThresholds.join(", ")}%`);
   if (!cfg.notify && action === "status") {
     console.log("(enable with `agent-switch notify on`; the daemon fires one coalesced notification per cycle when a live session crosses a threshold)");
