@@ -19,7 +19,12 @@ const ipc = vi.hoisted(() => ({
   loginArgs: (p: string, n: string) => ["add", n, "--provider", p],
   sessionArgs: (p: string, n: string) => ["run", n, "--provider", p],
   takeoverArgs: (id: string, to: string, keep?: boolean) => ["takeover", id, "--to", to, ...(keep ? ["--keep-source"] : [])],
+  compactArgs: (profile: string) => ["compact", profile],
   listSessions: vi.fn(),
+  getTokens: vi.fn(),
+  getNotifyConfig: vi.fn(),
+  setNotify: vi.fn(),
+  setTrayTooltip: vi.fn(),
   assertValidName: () => {},
   deactivateProfile: vi.fn(),
   removeProfile: vi.fn(),
@@ -140,6 +145,10 @@ beforeEach(() => {
   ipc.listApps.mockResolvedValue([]);
   ipc.openApp.mockResolvedValue(undefined);
   ipc.listSessions.mockResolvedValue([]);
+  ipc.getTokens.mockResolvedValue([]);
+  ipc.getNotifyConfig.mockResolvedValue({ notify: false, contextThresholds: [80, 95] });
+  ipc.setNotify.mockResolvedValue(undefined);
+  ipc.setTrayTooltip.mockResolvedValue(undefined);
   ipc.quitApp.mockResolvedValue(undefined);
   ipc.listNotifications.mockResolvedValue([]);
   ipc.recordNotification.mockResolvedValue(undefined);
@@ -520,5 +529,62 @@ describe("App", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /quit/i }));
     expect(ipc.quitApp).toHaveBeenCalled();
+  });
+
+  it("shows the context badge and runs Compact in the embedded terminal for a live session", async () => {
+    ipc.listSessions.mockResolvedValue([
+      {
+        provider: "claude",
+        profile: "work",
+        sessionId: "abc12345",
+        projectDir: "p",
+        cwd: "/w",
+        mtimeMs: Date.now() - 60_000,
+        live: true,
+        context: { pct: 67, contextTokens: 134_000, windowTokens: 1_000_000, model: "sonnet", confidence: "high" },
+      },
+    ]);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+    expect(await screen.findByText("67% · 134k/1000k")).toBeTruthy(); // context badge
+    fireEvent.click(await screen.findByRole("button", { name: /compact/i }));
+    const term = await screen.findByTestId("term");
+    expect(term.textContent).toContain("compact work"); // compactArgs
+    expect(term.textContent).toMatch(/Compact — work/);
+  });
+
+  it("renders per-profile token usage (day + total) in the Tokens view", async () => {
+    ipc.getTokens.mockResolvedValue([
+      {
+        provider: "claude",
+        name: "work",
+        tokens: {
+          days: [
+            { date: "2026-07-14", inputTokens: 1, outputTokens: 2, cacheCreationTokens: 0, cacheReadTokens: 0, totalTokens: 120_000, cost: 1.5, models: ["sonnet"] },
+          ],
+          totals: { inputTokens: 1, outputTokens: 2, cacheCreationTokens: 0, cacheReadTokens: 0, totalTokens: 120_000, cost: 1.5 },
+          costBasis: "notional",
+        },
+      },
+    ]);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /tokens/i }));
+    expect(await screen.findByText("2026-07-14")).toBeTruthy();
+    expect(screen.getAllByText("notional").length).toBeGreaterThan(0); // cost basis surfaced (badge + footnote)
+    expect(screen.getAllByText("$1.50").length).toBeGreaterThan(0);
+  });
+
+  it("shows the ccusage install hint when token tracking is unavailable", async () => {
+    ipc.getTokens.mockResolvedValue({ error: "ccusage-not-found", hint: "Install ccusage: npm i -g ccusage" });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /tokens/i }));
+    expect(await screen.findByText(/install ccusage/i)).toBeTruthy();
+  });
+
+  it("toggles context alerts from the General settings tab", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^context alerts$/i })); // currently off
+    await waitFor(() => expect(ipc.setNotify).toHaveBeenCalledWith(true, [80, 95]));
   });
 });

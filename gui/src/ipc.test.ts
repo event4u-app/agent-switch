@@ -38,6 +38,11 @@ import {
   openApp,
   listSessions,
   takeoverArgs,
+  compactArgs,
+  getTokens,
+  getNotifyConfig,
+  setNotify,
+  setTrayTooltip,
 } from "./ipc.js";
 
 beforeEach(() => vi.clearAllMocks());
@@ -189,5 +194,57 @@ describe("ipc", () => {
     expect(asEnable).toHaveBeenCalled();
     await setAutostart(false);
     expect(asDisable).toHaveBeenCalled();
+  });
+
+  it("compactArgs builds `compact <profile>` (embedded-terminal builder, like takeoverArgs)", () => {
+    expect(compactArgs("work")).toEqual(["compact", "work"]);
+  });
+
+  it("getTokens runs `tokens [profile] --json` and parses the per-profile array", async () => {
+    execute.mockResolvedValue({
+      code: 0,
+      stdout:
+        '[{"provider":"claude","name":"work","tokens":{"days":[{"date":"2026-07-14","inputTokens":1,"outputTokens":2,"cacheCreationTokens":0,"cacheReadTokens":0,"totalTokens":3,"cost":0.5,"models":["sonnet"]}],"totals":{"inputTokens":1,"outputTokens":2,"cacheCreationTokens":0,"cacheReadTokens":0,"totalTokens":3,"cost":0.5},"costBasis":"notional"}}]',
+      stderr: "",
+    });
+    const rows = await getTokens("work");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["tokens", "work", "--json"]);
+    expect(Array.isArray(rows)).toBe(true);
+    if (Array.isArray(rows)) {
+      expect(rows[0].name).toBe("work");
+      expect(rows[0].tokens?.costBasis).toBe("notional");
+    }
+  });
+
+  it("getTokens surfaces the ccusage-not-found error object (no profile arg)", async () => {
+    execute.mockResolvedValue({
+      code: 0,
+      stdout: '{"error":"ccusage-not-found","hint":"Install ccusage: npm i -g ccusage"}',
+      stderr: "",
+    });
+    const res = await getTokens();
+    expect(create).toHaveBeenCalledWith("agent-switch", ["tokens", "--json"]);
+    expect(Array.isArray(res)).toBe(false);
+    if (!Array.isArray(res)) {
+      expect(res.error).toBe("ccusage-not-found");
+      expect(res.hint).toMatch(/Install ccusage/);
+    }
+  });
+
+  it("getNotifyConfig parses `alerts status --json`; setNotify toggles + passes thresholds", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: '{"notify":true,"contextThresholds":[80,95]}', stderr: "" });
+    const cfg = await getNotifyConfig();
+    expect(create).toHaveBeenCalledWith("agent-switch", ["alerts", "status", "--json"]);
+    expect(cfg).toEqual({ notify: true, contextThresholds: [80, 95] });
+
+    await setNotify(true, [80, 95]);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["alerts", "on", "--threshold", "80,95"]);
+    await setNotify(false);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["alerts", "off"]);
+  });
+
+  it("setTrayTooltip invokes the `set_tray_tooltip` Tauri command", async () => {
+    await setTrayTooltip("agent-switch — 82% context");
+    expect(invoke).toHaveBeenCalledWith("set_tray_tooltip", { text: "agent-switch — 82% context" });
   });
 });

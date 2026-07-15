@@ -44,6 +44,10 @@ test("respawnPaneArgs uses -k (kill+replace) and re-exports the target env", () 
   ]);
 });
 
+test("sendKeysArgs types a literal command + Enter into a target pane", () => {
+  assert.deepEqual(T.sendKeysArgs("asw-claude-work", "/compact"), ["send-keys", "-t", "asw-claude-work", "/compact", "Enter"]);
+});
+
 test("managed-session registry round-trips and forgets", () => {
   const f = path.join(HOME, "tmux-reg.json");
   assert.deepEqual(T.readTmuxRegistry(f), {});

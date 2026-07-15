@@ -90,6 +90,19 @@ import {
 } from "./sessions.js";
 import { isFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daemon.js";
 import { cmdService, serviceUninstall } from "./service.js";
+import { ContextReading, readContext, turnInFlight } from "./telemetry.js";
+import {
+  installHooks,
+  uninstallHooks,
+  hooksInstalled,
+  readSettings,
+  appendEvent,
+  eventFile,
+  profileFromConfigDir,
+  HookEventRecord,
+} from "./hooks.js";
+import { readTelemetryConfig, writeTelemetryConfig } from "./notify.js";
+import { resolveCcusageRunner, runCcusage, costBasisFor, TokenReport } from "./tokens.js";
 import { appendNotification, readNotifications, clearNotifications, NotificationKind } from "./notifications.js";
 import { APPS, buildLaunch, findApp, guiDataDir, isInstalled } from "./apps.js";
 import {
@@ -99,6 +112,7 @@ import {
   readTmuxRegistry,
   recordManagedSession,
   respawnPaneArgs,
+  sendKeysArgs,
   tmuxAvailable,
   tmuxSessionName,
 } from "./tmux.js";
@@ -354,7 +368,11 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
       : pid === "codex"
         ? await readCodexUsage(configDir("codex", active))
         : null;
-    console.log(JSON.stringify({ provider: pid, name: active, identity: identity(pid, active), usage }, null, 2));
+    const wc = worstLiveContext(pid, active);
+    const context = wc
+      ? { sessionId: wc.sessionId, pct: wc.pct, contextTokens: wc.contextTokens, windowTokens: wc.windowTokens, model: wc.model, confidence: wc.confidence }
+      : null;
+    console.log(JSON.stringify({ provider: pid, name: active, identity: identity(pid, active), usage, context }, null, 2));
     return;
   }
 
@@ -366,6 +384,8 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
   for (const { provider: pid, name: n } of rows as { provider: ProviderId; name: string }[]) {
     const mark = activeFor(pid) === n ? "*" : " ";
     console.log(`${mark} ${pid}/${n} — ${identity(pid, n) ?? "not logged in"}`);
+    const wc = worstLiveContext(pid, n);
+    if (wc) console.log(`  live context: ${formatContext(wc)}  (session ${wc.sessionId.slice(0, 8)})`);
     if (pid === "codex") {
       // Last-known from the newest rollout (no live endpoint); shows nothing
       // until this profile has run codex at least once.
@@ -486,6 +506,264 @@ function ageOf(mtimeMs: number): string {
   return `${Math.round(s / 86400)}d`;
 }
 
+/** `claude --version`, read once per process (best-effort). Null when claude is
+ *  not on PATH → the telemetry reader degrades to low confidence, never fails. */
+let _claudeVersion: string | null | undefined;
+function claudeVersion(): string | null {
+  if (_claudeVersion !== undefined) return _claudeVersion;
+  try {
+    _claudeVersion = spawnSync("claude", ["--version"], { encoding: "utf8" }).stdout?.trim() || null;
+  } catch {
+    _claudeVersion = null;
+  }
+  return _claudeVersion;
+}
+
+/** Read a session row's own context state via the sanctioned telemetry reader.
+ *  Own-session only — never a cross-account view. */
+function contextForRow(providerId: ProviderId, row: SessionRow): ContextReading | null {
+  if (!row.file) return null;
+  if (providerId !== "claude" && providerId !== "codex") return null;
+  return readContext(providerId, row.file, { claudeVersion: claudeVersion() });
+}
+
+/** The worst (highest-utilization) LIVE session's context for a profile — the
+ *  one-liner `status` surfaces. Own-profile only; live-marking is POSIX-only
+ *  (win32 has none, so this returns null there). Claude/codex only. */
+function worstLiveContext(providerId: ProviderId, name: string): (ContextReading & { sessionId: string }) | null {
+  if (providerId !== "claude" && providerId !== "codex") return null;
+  const cfg = configDir(providerId, name);
+  const rows = providerId === "codex" ? listCodexSessions(cfg, 20) : listSessions(cfg, 20);
+  if (providerId === "claude") markLive(cfg, rows);
+  let worst: (ContextReading & { sessionId: string }) | null = null;
+  for (const r of rows) {
+    if (!r.live) continue;
+    const c = contextForRow(providerId, r);
+    if (!c) continue;
+    const key = c.pct ?? c.contextTokens / 1e9; // pct when known, else a tiny token-based tiebreak
+    const worstKey = worst ? (worst.pct ?? worst.contextTokens / 1e9) : -1;
+    if (key > worstKey) worst = { ...c, sessionId: r.sessionId };
+  }
+  return worst;
+}
+
+/** One-column context render for the sessions table: "67% · 134k/200k",
+ *  "134k tok" (window unknown), with a "~" prefix on low confidence. Empty
+ *  string when there is nothing to show. */
+function formatContext(c: ContextReading | null): string {
+  if (!c) return "";
+  const mark = c.confidence === "low" ? "~" : "";
+  const k = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`);
+  if (c.pct !== null && c.windowTokens) return `${mark}${c.pct}% · ${k(c.contextTokens)}/${k(c.windowTokens)}`;
+  return `${mark}${k(c.contextTokens)} tok`;
+}
+
+/**
+ * `agent-switch hooks install|uninstall|status [profile]` — manage the
+ * lifecycle push hooks in Claude profiles' settings.json. Additive,
+ * marker-keyed, idempotent, share-aware (settings.json may be a shared,
+ * fork-prone link — after an edit the user should run `share sync`). Claude
+ * only (the hook contract is Claude Code's).
+ */
+function cmdHooks(sub?: string, name?: string): void {
+  const action = sub ?? "status";
+  if (!["install", "uninstall", "status"].includes(action)) {
+    die("usage: agent-switch hooks install|uninstall|status [profile]");
+  }
+  const profiles = name ? [requireProfile("claude", name, "hooks")] : listProfiles("claude");
+  if (profiles.length === 0) die("no claude profiles");
+
+  let sharedWarn = false;
+  for (const p of profiles) {
+    const cfg = configDir("claude", p);
+    if (action === "status") {
+      console.log(`claude/${p}: ${hooksInstalled(readSettings(cfg)) ? "installed" : "not installed"}`);
+      continue;
+    }
+    const res = action === "install" ? installHooks(cfg) : uninstallHooks(cfg);
+    console.log(`claude/${p}: ${action} ${res.changed ? "done" : "(no change)"}`);
+    if (res.changed) sharedWarn = true;
+  }
+  if (sharedWarn) {
+    console.log(
+      "\nsettings.json changed. If you use `share on`, run `agent-switch share sync` so the edit propagates and the link is restored.",
+    );
+  }
+}
+
+/**
+ * `agent-switch tokens [profile] [--provider P] [--by-model] [--json]` — token
+ * usage + cost per profile, delegated to ccusage (optional external tool). The
+ * cost figure always carries its `costBasis`; subscription/OAuth profiles are
+ * "notional" (API-equivalent, never real spend). Own-profile only.
+ */
+function cmdTokens(providerId: ProviderId, providerExplicit: boolean, name?: string, flags: Record<string, string | boolean> = {}): void {
+  if (providerExplicit && providerId !== "claude" && providerId !== "codex") {
+    die(`tokens supports claude and codex (not ${providerId})`);
+  }
+  const runner = resolveCcusageRunner();
+
+  // `tokens status` — ccusage availability + version, CLI-appropriate freshness.
+  if (name === "status") {
+    if (!runner) { console.log("ccusage: not found on PATH. Install with `npm i -g ccusage`, or set AGENT_SWITCH_CCUSAGE='npx -y ccusage@latest'."); return; }
+    const [cmd, ...prefix] = runner;
+    const ver = spawnSync(cmd, [...prefix, "--version"], { encoding: "utf8", timeout: 60_000 }).stdout?.trim() || "(unknown)";
+    console.log(`ccusage: ${ver}  ·  runner: ${runner.join(" ")}`);
+    console.log("Token data is read live from ccusage on each `tokens` call (no cached rollup to go stale).");
+    return;
+  }
+
+  if (!runner) {
+    const msg = "Token tracking needs ccusage (an optional external tool we don't bundle).\n" +
+      "  Install:   npm i -g ccusage      (or: brew install ccusage)\n" +
+      "  Zero-install: run once with  AGENT_SWITCH_CCUSAGE='npx -y ccusage@latest' agent-switch tokens\n" +
+      "Context monitoring (sessions/status/notify) works without it.";
+    if (flags.json) { console.log(JSON.stringify({ error: "ccusage-not-found", hint: msg }, null, 2)); return; }
+    die(msg);
+  }
+
+  const profiles = name ? [requireProfile(providerId, name, "tokens")] : listProfiles(providerId);
+  if (profiles.length === 0) die(`no ${providerId} profiles`);
+
+  const results: { profile: string; report: TokenReport | null }[] = [];
+  for (const p of profiles) {
+    const cfg = configDir(providerId, p);
+    const basis = costBasisFor(readProfileCredential(cfg));
+    results.push({ profile: p, report: runCcusage(runner, providerId, cfg, basis) });
+  }
+
+  if (flags.json) {
+    console.log(JSON.stringify(results.map((r) => ({ provider: providerId, name: r.profile, tokens: r.report })), null, 2));
+    return;
+  }
+
+  const fmtCost = (n: number, basis: string) => `$${n.toFixed(2)} (${basis})`;
+  const k = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`);
+  for (const { profile: p, report } of results) {
+    console.log(`${providerId}/${p}:`);
+    if (!report) { console.log("  (no ccusage data — profile may not have run, or ccusage errored)"); continue; }
+    if (flags["by-model"]) {
+      const models = [...new Set(report.days.flatMap((d) => d.models))];
+      console.log(`  models: ${models.join(", ") || "(none)"}`);
+    }
+    for (const d of report.days.slice(-14)) {
+      console.log(`  ${d.date}  ${k(d.totalTokens)} tok  ${fmtCost(d.cost, report.costBasis)}`);
+    }
+    console.log(`  ── total: ${k(report.totals.totalTokens)} tok  ${fmtCost(report.totals.cost, report.costBasis)}`);
+    if (report.costBasis === "notional") console.log("  (notional = API-equivalent value of subscription usage, not real spend)");
+  }
+}
+
+/** Idle-guard window per provider (council #10): a Claude turn runs 15–60s, a
+ *  Codex turn can be sub-second. In-flight = last transcript entry non-finalized
+ *  AND younger than this. */
+const IDLE_GUARD_MS: Record<string, number> = { claude: 15_000, codex: 5_000 };
+
+/**
+ * `agent-switch compact <profile> [--clear] [--dry-run] [--force] [--provider P]`
+ * — type `/compact` (or `/clear`, gated) into the profile's agent-switch-MANAGED
+ * tmux pane. MANAGED panes only (registry check); never a user's own terminal.
+ * Refuses while a turn is in flight (idle guard) unless --force. Own-session.
+ */
+function cmdCompact(providerId: ProviderId, name?: string, flags: Record<string, string | boolean> = {}): void {
+  if (providerId !== "claude" && providerId !== "codex") die(`compact supports claude and codex (not ${providerId})`);
+  const profile = requireProfile(providerId, name, "compact");
+  const clear = !!flags.clear;
+  const dryRun = !!flags["dry-run"];
+  const force = !!flags.force;
+  const literal = clear ? "/clear" : "/compact";
+
+  // 1. resolve the managed pane (profile-keyed; a profile has one managed name).
+  const sess = tmuxSessionName(providerId, profile);
+  const registry = readTmuxRegistry();
+  if (!registry[sess]) {
+    die(
+      `no agent-switch-managed tmux pane for ${providerId}/${profile}.\n` +
+        `We only ever type into panes we own. Start one with:  agent-switch run ${profile} --tmux\n` +
+        `Or run this yourself in the session's terminal:  ${literal}`,
+    );
+  }
+
+  // 2. /clear is destructive — gate behind --force (no interactive confirm in a one-shot CLI).
+  if (clear && !force) {
+    die("/clear discards the whole conversation. Re-run with --force if you really mean it (or use /compact to summarize instead).");
+  }
+
+  // 3. idle guard — never type into a running turn.
+  const cfg = configDir(providerId, profile);
+  const rows = providerId === "codex" ? listCodexSessions(cfg, 10) : listSessions(cfg, 10);
+  if (providerId === "claude") markLive(cfg, rows);
+  const target = rows.find((r) => r.live && r.file) ?? rows.find((r) => r.file);
+  if (target?.file && !force && turnInFlight(target.file, Date.now(), IDLE_GUARD_MS[providerId] ?? 15_000)) {
+    die(`a turn looks in-flight in ${providerId}/${profile} (last entry is unfinished + recent). Wait for it, or pass --force.`);
+  }
+
+  // 4. act (or dry-run).
+  const argv = sendKeysArgs(sess, literal);
+  if (dryRun) {
+    console.log(`[dry-run] tmux ${argv.map((a) => (a.includes(" ") ? `'${a}'` : a)).join(" ")}`);
+    return;
+  }
+  const res = spawnSync("tmux", argv, { stdio: "ignore" });
+  if (res.status === 0) console.log(`Sent ${literal} to the managed pane "${sess}".`);
+  else die(`tmux send-keys failed (is the pane still open?). Run ${literal} yourself in the session.`);
+}
+
+/**
+ * `agent-switch alerts on|off|status [--threshold a,b]` — toggle whether the
+ * daemon records context/usage crossings into the shared notification log
+ * (off by default) and set the per-session context thresholds. Own-session
+ * only. (Named `alerts` to avoid the `notify` command, which records a raw
+ * notification event into the log.)
+ */
+function cmdAlerts(sub?: string, flags: Record<string, string | boolean> = {}): void {
+  const action = sub ?? "status";
+  const cfg = readTelemetryConfig(ROOT);
+  if (typeof flags.threshold === "string") {
+    const parsed = flags.threshold.split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n > 0 && n <= 100);
+    if (parsed.length === 0) die("--threshold must be a comma-separated list of 1–100 numbers, e.g. --threshold 80,95");
+    cfg.contextThresholds = parsed.sort((a, b) => a - b);
+    writeTelemetryConfig(ROOT, cfg);
+  }
+  if (action === "on" || action === "off") {
+    cfg.notify = action === "on";
+    writeTelemetryConfig(ROOT, cfg);
+  } else if (action !== "status") {
+    die("usage: agent-switch alerts on|off|status [--threshold 80,95]");
+  }
+  if (flags.json) { console.log(JSON.stringify({ notify: cfg.notify, contextThresholds: cfg.contextThresholds }, null, 2)); return; }
+  console.log(`notifications: ${cfg.notify ? "on" : "off"}  ·  context thresholds: ${cfg.contextThresholds.join(", ")}%`);
+  if (!cfg.notify && action === "status") {
+    console.log("(enable with `agent-switch alerts on`; the daemon records one coalesced notification per cycle when a live session crosses a threshold)");
+  }
+}
+
+/**
+ * Internal: the command Claude runs for each installed hook. Reads the hook's
+ * stdin JSON and its own CLAUDE_CONFIG_DIR env, maps the dir back to a profile
+ * (works even under a shared settings.json), and appends one event to the ring.
+ * Silent + best-effort — a hook must never disrupt the session it fires in.
+ */
+function cmdHookEvent(): void {
+  try {
+    const raw = fs.readFileSync(0, "utf8"); // stdin
+    const o = JSON.parse(raw);
+    const cfg = process.env.CLAUDE_CONFIG_DIR;
+    if (!cfg) return;
+    const who = profileFromConfigDir(cfg, ROOT);
+    if (!who) return;
+    const rec: HookEventRecord = {
+      event: typeof o.hook_event_name === "string" ? o.hook_event_name : "unknown",
+      source: typeof o.source === "string" ? o.source : undefined,
+      sessionId: typeof o.session_id === "string" ? o.session_id : undefined,
+      at: new Date().toISOString(),
+    };
+    appendEvent(eventFile(ROOT, who.provider, who.profile), rec);
+  } catch {
+    // never throw from a hook
+  }
+}
+
 /**
  * `agent-switch sessions [profile] [--recent N] [--json]` — recent (and, where
  * detectable, live) Claude Code sessions per profile. The JSON branch is the
@@ -520,7 +798,22 @@ function cmdSessions(
   }
 
   if (flags.json) {
-    console.log(JSON.stringify(all.map((r) => ({ provider: providerId, ...r })), null, 2));
+    console.log(
+      JSON.stringify(
+        all.map((r) => {
+          const c = contextForRow(providerId, r);
+          return {
+            provider: providerId,
+            ...r,
+            context: c
+              ? { pct: c.pct, contextTokens: c.contextTokens, windowTokens: c.windowTokens, model: c.model, confidence: c.confidence }
+              : null,
+          };
+        }),
+        null,
+        2,
+      ),
+    );
     return;
   }
   const providerFlag = providerId === "claude" ? "" : ` --provider ${providerId}`;
@@ -534,7 +827,9 @@ function cmdSessions(
       const mark = r.live ? "*" : " ";
       const where = r.cwd ?? r.projectDir;
       const summary = r.summary ? `  ${r.summary}` : "";
-      console.log(`${mark} ${r.sessionId}  ${where}  ${ageOf(r.mtimeMs)}${r.live ? "  [live]" : ""}${summary}`);
+      const ctx = formatContext(contextForRow(providerId, r));
+      const ctxCol = ctx ? `  ${ctx}` : "";
+      console.log(`${mark} ${r.sessionId}  ${where}  ${ageOf(r.mtimeMs)}${ctxCol}${r.live ? "  [live]" : ""}${summary}`);
     }
   }
   if (!any) {
@@ -1152,7 +1447,11 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch unmap [--provider P] [dir]      remove a directory mapping
   agent-switch mappings                        list directory mappings
   agent-switch share on|sync|off [--history] [--source <profile|default>]   (Claude)
-  agent-switch sessions [profile] [--recent N] [--json]   recent + live Claude sessions per profile
+  agent-switch sessions [profile] [--recent N] [--json]   recent + live Claude sessions per profile (with context %)
+  agent-switch hooks install|uninstall|status [profile]   manage lifecycle push hooks in Claude settings.json
+  agent-switch alerts on|off|status [--threshold 80,95]   record context/usage crossings to the notification log (off by default)
+  agent-switch compact <profile> [--clear] [--dry-run] [--force]   type /compact (or /clear) into the profile's managed tmux pane
+  agent-switch tokens [profile] [--by-model] [--json]   token usage + cost per profile (via ccusage; subscription cost = notional)
   agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place] [--print-only] [--force]   move a session to another profile and resume it
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile
@@ -1186,6 +1485,8 @@ async function main(): Promise<void> {
   // upgrade `dir` would miss an un-migrated active profile and fall back to the
   // default config dir. Only pure help / shellenv (which emit text, touch no
   // profiles) skip it.
+  if (cmd === "__hook-event") return cmdHookEvent(); // internal, silent, no migration
+
   if (cmd && !["help", "--help", "-h", "shellenv"].includes(cmd)) {
     const moved = migrateLegacyLayout();
     if (moved.length > 0) {
@@ -1223,6 +1524,10 @@ async function main(): Promise<void> {
     case "mappings": return cmdMappings();
     case "share": return cmdShare(positional[0], rest.slice(1));
     case "sessions": return cmdSessions(providerId, providerExplicit, positional[0], flags);
+    case "hooks": return cmdHooks(positional[0], positional[1]);
+    case "alerts": return cmdAlerts(positional[0], flags);
+    case "compact": return cmdCompact(providerId, positional[0], flags);
+    case "tokens": return cmdTokens(providerId, providerExplicit, positional[0], flags);
     case "takeover": return cmdTakeover(providerId, providerExplicit, positional[0], flags);
     case "web": return cmdWeb(positional[0]);
     case "remove": case "rm": return cmdRemove(providerId, positional[0], !!flags.force);
