@@ -26,6 +26,7 @@ import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, SwitchCa
 import { readCodexUsage } from "./codex-usage.js";
 import { redeemResetCredit } from "./codex-reset.js";
 import { appendSample } from "./history.js";
+import { appendNotification } from "./notifications.js";
 
 // Providers whose active profile the daemon may auto-switch (they expose a
 // usage readout to base a headroom decision on). Gemini has none.
@@ -181,6 +182,11 @@ async function pollProvider(
     const snapshot = await snapshotFor(provider, name);
     if (!snapshot) {
       failures++;
+      appendNotification({
+        kind: "warning",
+        title: "Usage fetch failed",
+        message: `Could not fetch usage limits for ${provider}/${name}.`,
+      });
       continue;
     }
     state.profiles[`${provider}/${name}`] = snapshot;
@@ -214,6 +220,11 @@ async function pollProvider(
       const r = await redeemResetCredit(configDir("codex", active));
       if (r.ok) {
         log(`auto-switch: codex/${active} over ≥${autoSwitch.threshold}% → redeemed a reset (windows_reset=${r.windowsReset ?? "?"}); staying on ${active}`);
+        appendNotification({
+          kind: "success",
+          title: "Codex reset redeemed",
+          message: `codex/${active} hit ≥${autoSwitch.threshold}% — redeemed a banked reset and stayed on ${active}.`,
+        });
         return failures;
       }
       log(`auto-switch: codex/${active} reset redeem failed (${r.reason ?? "?"}) → falling back to a profile switch`);
@@ -224,6 +235,11 @@ async function pollProvider(
   if (target && target !== active) {
     setActive(provider, target);
     log(`auto-switch: ${provider}/${active} out of headroom (≥${autoSwitch.threshold}%) → switched active to ${provider}/${target}`);
+    appendNotification({
+      kind: "success",
+      title: "Auto-switched account",
+      message: `${provider}/${active} hit ≥${autoSwitch.threshold}% — switched active to ${provider}/${target}.`,
+    });
   }
   return failures;
 }

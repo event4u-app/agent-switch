@@ -88,6 +88,7 @@ import {
 } from "./sessions.js";
 import { isFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daemon.js";
 import { cmdService, serviceUninstall } from "./service.js";
+import { appendNotification, readNotifications, clearNotifications, NotificationKind } from "./notifications.js";
 import { APPS, buildLaunch, findApp, guiDataDir, isInstalled } from "./apps.js";
 import {
   currentManagedSession,
@@ -1048,6 +1049,47 @@ function cmdApps(json = false): void {
   }
 }
 
+const NOTIFICATION_KINDS: NotificationKind[] = ["success", "error", "warning", "info"];
+
+/** `agent-switch notify --kind <k> --title <t> --message <m> [--json]` — record
+ *  an event in the shared notification log. The GUI uses this for its own
+ *  limit-fetch failures; the daemon appends directly via the module. `--json`
+ *  echoes the created notification (or `null` when it was deduplicated). */
+function cmdNotify(flags: Record<string, string | boolean>): void {
+  const kind = typeof flags.kind === "string" ? flags.kind : "info";
+  const title = typeof flags.title === "string" ? flags.title : "";
+  const message = typeof flags.message === "string" ? flags.message : "";
+  if (!NOTIFICATION_KINDS.includes(kind as NotificationKind)) {
+    die(`usage: agent-switch notify --kind <${NOTIFICATION_KINDS.join("|")}> --title <t> --message <m> [--json]`);
+  }
+  if (!title && !message) die("agent-switch notify needs at least --title or --message");
+  const created = appendNotification({ kind: kind as NotificationKind, title, message });
+  if (flags.json) console.log(JSON.stringify(created));
+}
+
+/** `agent-switch notifications [clear] [--json]` — list the recent
+ *  notifications (newest first) or clear the log. */
+function cmdNotifications(sub: string | undefined, json = false): void {
+  if (sub === "clear") {
+    clearNotifications();
+    console.log(json ? "[]" : "Notifications cleared.");
+    return;
+  }
+  const list = [...readNotifications()].reverse(); // newest first
+  if (json) {
+    console.log(JSON.stringify(list));
+    return;
+  }
+  if (list.length === 0) {
+    console.log("No notifications.");
+    return;
+  }
+  for (const n of list) {
+    const when = new Date(n.ts).toLocaleString();
+    console.log(`[${when}] ${n.kind.toUpperCase()} ${n.title}${n.message ? ` — ${n.message}` : ""}`);
+  }
+}
+
 /** Launch a registered GUI app on a profile, isolated (macOS). Profile: an
  *  explicit positional name, else the active profile for the app's provider. */
 function cmdOpen(appId?: string, name?: string): void {
@@ -1110,6 +1152,8 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch open <app> [profile]            launch a GUI app on a profile, isolated (macOS)
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
   agent-switch service run|start|stop|status|install|uninstall   background usage daemon
+  agent-switch notifications [clear] [--json]  recent notifications (auto-switches, fetch failures)
+  agent-switch notify --kind K --title T --message M [--json]   record a notification event
   agent-switch uninstall [--force]             remove all agent-switch data + daemon
   agent-switch doctor                          per-OS, per-provider self-check`);
 }
@@ -1150,6 +1194,8 @@ async function main(): Promise<void> {
     case "providers": return cmdProviders(providerId, providerExplicit, positional[0], flags);
     case "open": return cmdOpen(positional[0], positional[1]);
     case "apps": return cmdApps(!!flags.json);
+    case "notify": return cmdNotify(flags);
+    case "notifications": return cmdNotifications(positional[0], !!flags.json);
     case "uninstall": return cmdUninstall(flags);
     case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
     case "list": case "ls": return cmdList(providerExplicit ? providerId : undefined, !!flags.json);

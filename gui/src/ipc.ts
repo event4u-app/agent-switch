@@ -8,6 +8,7 @@ import { Command } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
 import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
 import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow } from "./transforms.js";
+import type { AppNotification, NotificationKind } from "./notifications.js";
 
 async function runCli(args: string[]): Promise<string> {
   const out = await Command.create("agent-switch", args).execute();
@@ -231,4 +232,24 @@ export function takeoverArgs(sessionId: string, to: string, keepSource = false):
  *  window only hides it, so this is the explicit way out. */
 export async function quitApp(): Promise<void> {
   await invoke("quit");
+}
+
+/** Recent notifications, newest first (`notifications --json`). Read-only —
+ *  returns [] on failure so the bell never blanks. */
+export async function listNotifications(): Promise<AppNotification[]> {
+  try {
+    return JSON.parse(await runCli(["notifications", "--json"]));
+  } catch {
+    return [];
+  }
+}
+
+/** Record a notification event in the shared log (the daemon appends its own). */
+export async function recordNotification(kind: NotificationKind, title: string, message: string): Promise<void> {
+  await runCli(["notify", "--kind", kind, "--title", title, "--message", message]);
+}
+
+/** Empty the notification log. */
+export async function clearNotifications(): Promise<void> {
+  await runCli(["notifications", "clear"]);
 }

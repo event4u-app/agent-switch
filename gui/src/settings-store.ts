@@ -73,3 +73,25 @@ export function setRefreshMinutes(min: number): void {
     /* no/blocked localStorage → in-memory only for this session */
   }
 }
+
+const NOTIF_LAST_READ_KEY = "agent-switch-notif-last-read";
+
+/** Timestamp (unix ms) of the newest notification the user has seen. The bell's
+ *  unread count is the number of notifications newer than this. Default 0 (a
+ *  fresh install treats every existing notification as unread). */
+export function getNotifLastRead(): number {
+  try {
+    const raw = Number(localStorage.getItem(NOTIF_LAST_READ_KEY));
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function setNotifLastRead(ts: number): void {
+  try {
+    localStorage.setItem(NOTIF_LAST_READ_KEY, String(ts));
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}

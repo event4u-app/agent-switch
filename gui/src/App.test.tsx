@@ -33,8 +33,16 @@ const ipc = vi.hoisted(() => ({
   listApps: vi.fn(),
   openApp: vi.fn(),
   quitApp: vi.fn(),
+  listNotifications: vi.fn(),
+  recordNotification: vi.fn(),
+  clearNotifications: vi.fn(),
 }));
 vi.mock("./ipc.js", () => ipc);
+
+// Desktop notifications go through the Tauri plugin, which isn't available in
+// jsdom — mock the wrapper so the in-window logic is testable without it.
+const desktopNotify = vi.hoisted(() => vi.fn().mockResolvedValue(false));
+vi.mock("./notifications.js", () => ({ sendDesktopNotification: desktopNotify }));
 
 // The embedded terminal renders real xterm/pty — stub it so tests assert the
 // terminal OPENED (title + args) without a DOM canvas or a Tauri backend.
@@ -49,7 +57,7 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10 }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0 }));
 vi.mock("./settings-store.js", () => ({
   getAutoSwitchGlobal: () => store.globalAuto,
   setAutoSwitchGlobalFlag: (on: boolean) => {
@@ -64,6 +72,10 @@ vi.mock("./settings-store.js", () => ({
     store.refreshMin = min;
   },
   REFRESH_INTERVAL_CHOICES: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60],
+  getNotifLastRead: () => store.notifLastRead,
+  setNotifLastRead: (ts: number) => {
+    store.notifLastRead = ts;
+  },
 }));
 
 import App from "./App.js";
@@ -86,6 +98,7 @@ beforeEach(() => {
   // Global auto-switch defaults OFF in production; enable it for the auto-switch
   // UI tests. (The dedicated default-off test flips this itself.)
   store.globalAuto = true;
+  store.notifLastRead = 0;
   ipc.listProfiles.mockResolvedValue(rows);
   ipc.profileUsage.mockResolvedValue(usageSnap);
   ipc.getAutoSwitch.mockResolvedValue({
@@ -117,6 +130,10 @@ beforeEach(() => {
   ipc.openApp.mockResolvedValue(undefined);
   ipc.listSessions.mockResolvedValue([]);
   ipc.quitApp.mockResolvedValue(undefined);
+  ipc.listNotifications.mockResolvedValue([]);
+  ipc.recordNotification.mockResolvedValue(undefined);
+  ipc.clearNotifications.mockResolvedValue(undefined);
+  desktopNotify.mockClear();
 });
 
 describe("App", () => {
@@ -289,6 +306,45 @@ describe("App", () => {
     fireEvent.change(select, { target: { value: "30" } });
     expect(store.refreshMin).toBe(30); // persisted via setRefreshMinutes
     expect(select.value).toBe("30");
+  });
+
+  it("shows an unread badge and lists notifications in the bell flyout", async () => {
+    ipc.listNotifications.mockResolvedValue([
+      { id: "1", ts: 2000, kind: "success", title: "Auto-switched account", message: "claude/work → claude/privat." },
+      { id: "2", ts: 1000, kind: "warning", title: "Usage fetch failed", message: "Could not fetch usage limits for codex/oai." },
+    ]);
+    render(<App />);
+    const bell = await screen.findByRole("button", { name: /notifications/i });
+    // unread badge = both (lastRead defaults to 0)
+    await waitFor(() => expect(bell.textContent).toContain("2"));
+    fireEvent.click(bell);
+    expect(await screen.findByText("Auto-switched account")).toBeTruthy();
+    expect(screen.getByText(/Could not fetch usage limits for codex\/oai/)).toBeTruthy();
+    // opening marked them read → badge cleared
+    await waitFor(() => expect(store.notifLastRead).toBe(2000));
+  });
+
+  it("records a warning notification when a usage fetch fails", async () => {
+    ipc.profileUsage.mockResolvedValue(null); // fetch failure
+    render(<App />);
+    await waitFor(() =>
+      expect(ipc.recordNotification).toHaveBeenCalledWith(
+        "warning",
+        "Usage fetch failed",
+        expect.stringContaining("Could not fetch usage limits for claude/"),
+      ),
+    );
+  });
+
+  it("clears notifications from the flyout", async () => {
+    ipc.listNotifications.mockResolvedValue([
+      { id: "1", ts: 3000, kind: "info", title: "Hello", message: "world" },
+    ]);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /notifications/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /clear notifications/i }));
+    expect(ipc.clearNotifications).toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByText("Hello")).toBeNull());
   });
 
   it("global auto-switch off hides the badge colouring + footer toggle and deactivates every provider", async () => {
