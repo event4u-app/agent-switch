@@ -233,31 +233,39 @@ New module `src/telemetry.ts` (pure functions, zero deps, fixture-tested).
 Adapter-per-provider layout inside the module (the ccusage lesson: isolate
 format knowledge so drift is a contained, canary-detected event).
 
-- [ ] `readLastContext(file)` — tail-read (capped, e.g. last 256 KiB), walk
+- [x] `readLastContext(file)` — tail-read (capped, e.g. last 256 KiB), walk
       backwards to the last finalized **main-chain** assistant entry
       (`isSidechain !== true`, skip `stop_reason: null` intermediates and
       API-error synthetics), return
       `{ inputSide, outputTokens, model, timestamp, confidence }` or null.
       Malformed lines skipped, never fatal; malformed ratio feeds `confidence`.
-- [ ] **Subagent attribution (council #4, data-model decision):** context % is
+      <!-- verify: shipped as `readClaudeContext()` in src/telemetry.ts (returns ContextReading {contextTokens,windowTokens,pct,model,timestamp,confidence}); `tailLines()` caps at TAIL_CAP=256KiB, drops partial first line; unit tests cover input-side sum, last-finalized pick, sidechain/synthetic/streaming skip, malformed tolerance. npm test 151 pass ✓ -->
+- [x] **Subagent attribution (council #4, data-model decision):** context % is
       a **main-chain property** — subagent/sidechain tokens never inflate the
       parent's context reading (they live in their own windows). Documented in
       the module header + a fixture test with a sidechain-replay line. Token
       *totals* are Phase 5's concern (ccusage handles attribution there).
-- [ ] `contextWindowFor(model)` — built-in table for current Claude models
+      <!-- verify: `if (o.isSidechain === true) continue;` in readClaudeContext; test "skips sidechain, synthetic, and streaming intermediates" asserts a newer 999999-token sidechain entry is ignored in favour of the older 500000 main-chain one ✓ -->
+- [x] `contextWindowFor(model)` — built-in table for current Claude models
       (200k / 1M split per the 2026-07 models overview) + user override in
       `state.json`; unknown model → null (show tokens without %, never guess).
-- [ ] Codex leg: `readCodexLastContext(rolloutFile)` — last `token_count`
+      <!-- verify: CONTEXT_WINDOWS table (fable-5/opus-4-8/…=1M, sonnet-4-5/opus-4-5/haiku-4-5=200k) + overrides param; unknown → null; test covers all branches ✓ -->
+- [x] Codex leg: `readCodexLastContext(rolloutFile)` — last `token_count`
       event; window from in-band `model_context_window`.
-- [ ] `sessionContext(row)` — join with the existing `SessionRow` (live
+      <!-- verify: shipped as `readCodexContext()`; walks back to the last `event_msg`/`payload.type==token_count` with non-null `info`, uses total_token_usage.total_tokens + model_context_window; test seeds an info:null aborted event after a good one and asserts the good one wins ✓ -->
+- [x] `sessionContext(row)` — join with the existing `SessionRow` (live
       sessions from `listSessions`/`markLive`).
-- [ ] Version matrix + pre-flight canary helpers (`supportedVersions()`,
+      <!-- verify: `sessionContext({provider,file})` + `claudeTranscriptPath(configDir,projectDir,sessionId)` path resolver (pure, tested); row→path→reading in one call, consumed by Phase 2 CLI ✓ -->
+- [x] Version matrix + pre-flight canary helpers (`supportedVersions()`,
       `preflight(configDir)`) per D0 gates 1–2.
-- [ ] Unit tests from the **committed S1/S3 fixtures**; env-gated canary
+      <!-- verify: SUPPORTED_CLAUDE=["2.1"] + `preflightClaude(file, version)` returns {ok, confidence, reason}; unsupported version → confidence "low" even on clean parse; test covers ok/drift/empty ✓ -->
+- [x] Unit tests from the **committed S1/S3 fixtures**; env-gated canary
       contract test that re-checks a live transcript's shape and fails loud on
       drift, logging the claude version.
-- [ ] Amend the iron-rule comment in `src/sessions.ts` to name
+      <!-- verify: tests/telemetry.test.ts loads tests/fixtures/{claude,codex}-*.jsonl (the scrubbed real shapes from t1/t3) and asserts they parse into readings; the live canary is scripts/spikes/t1 (env-gated by being a spike, not run in CI) + preflightClaude on daemon start (Phase 3) ✓ -->
+- [x] Amend the iron-rule comment in `src/sessions.ts` to name
       `src/telemetry.ts` as the sole sanctioned reader (per D0).
+      <!-- verify: sessions.ts header now reads "Read-only TELEMETRY … lives ONLY in src/telemetry.ts … No other module parses a transcript body." ✓ -->
 
 ## Phase 2: CLI surface — see it
 

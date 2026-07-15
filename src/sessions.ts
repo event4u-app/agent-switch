@@ -9,8 +9,13 @@
  * resuming under the target's CLAUDE_CONFIG_DIR.
  *
  * Iron rules (roadmap: road-to-session-handoff):
- *   - Transcripts are OPAQUE, version-unstable blobs. The only read in this
- *     codebase is `readSessionHeader` — first line, capped, try/catch.
+ *   - Transcripts are OPAQUE, version-unstable blobs FOR TRANSFER. The only
+ *     read in THIS module is `readSessionHeader` — first line, capped,
+ *     try/catch. Read-only TELEMETRY (context/token counts) is the one
+ *     sanctioned exception and lives ONLY in `src/telemetry.ts` (roadmap:
+ *     road-to-agent-switch-session-telemetry, decision gate D0) — guarded,
+ *     capped, version-gated, confidence-scored. No other module parses a
+ *     transcript body.
  *   - Transfers are copy → verify → delete (the `migrateLegacyLayout`
  *     precedent): no step ever leaves zero copies of a transcript.
  *   - Index files (`sessions-index.json`, `history.jsonl`) are never written —
