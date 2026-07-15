@@ -186,3 +186,23 @@ test("switchStrategy defaults to reset-first and persists a change", () => {
   P.setActive("claude", null);
   assert.equal(P.readSwitchStrategy(), "rotation-first");
 });
+
+test("renameProfile moves the config dir and carries active + label", () => {
+  fs.rmSync(P.STATE_FILE, { force: true });
+  fs.mkdirSync(P.configDir("codex", "old"), { recursive: true });
+  fs.writeFileSync(path.join(P.configDir("codex", "old"), "auth.json"), "{}");
+  P.setActive("codex", "old");
+  P.setLabel("codex", "old", "Work");
+
+  P.renameProfile("codex", "old", "new");
+  assert.equal(fs.existsSync(P.configDir("codex", "new")), true); // moved…
+  assert.equal(fs.existsSync(P.configDir("codex", "old")), false); // …source gone
+  assert.equal(P.activeFor("codex"), "new"); // active pointer followed
+  assert.equal(P.labelFor("codex", "new"), "Work"); // label carried
+  assert.equal(P.labelFor("codex", "old"), null);
+
+  // refuses a target that already exists, and a missing source
+  fs.mkdirSync(P.configDir("codex", "taken"), { recursive: true });
+  assert.throws(() => P.renameProfile("codex", "new", "taken"), /already exists/);
+  assert.throws(() => P.renameProfile("codex", "ghost", "x"), /does not exist/);
+});

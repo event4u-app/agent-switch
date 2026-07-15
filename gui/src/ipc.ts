@@ -48,6 +48,12 @@ export async function removeProfile(provider: ProviderId, name: string): Promise
   await runCli(["remove", name, "--provider", provider, "--force"]);
 }
 
+/** Rename a profile (name only; its tag is carried over). */
+export async function renameProfile(provider: ProviderId, from: string, to: string): Promise<void> {
+  assertValidName(to);
+  await runCli(["rename", from, to, "--provider", provider]);
+}
+
 /** Profile names allowed in the create form. Restricted so it is safe to pass
  *  as a pty command argument and matches the CLI's own name rule. */
 export const PROFILE_NAME_RE = /^[A-Za-z0-9._-]+$/;

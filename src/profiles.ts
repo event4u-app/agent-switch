@@ -283,6 +283,27 @@ export function clearLabel(providerId: ProviderId, name: string): void {
   setLabel(providerId, name, null);
 }
 
+/**
+ * Rename a profile: move its config dir and carry its state (active pointer +
+ * label) to the new name. Directory mappings + the keychain caveat (Claude on
+ * darwin) are handled by the caller. Throws if the source is missing or the
+ * target already exists — the caller validates the new name first.
+ */
+export function renameProfile(providerId: ProviderId, from: string, to: string): void {
+  if (!profileExists(providerId, from)) throw new Error(`profile "${from}" does not exist`);
+  if (profileExists(providerId, to)) throw new Error(`profile "${to}" already exists`);
+  fs.renameSync(profileDir(providerId, from), profileDir(providerId, to));
+  const state = readState();
+  if (state.active[providerId] === from) state.active[providerId] = to;
+  const fromKey = labelKey(providerId, from);
+  const toKey = labelKey(providerId, to);
+  if (state.labels[fromKey] !== undefined) {
+    state.labels[toKey] = state.labels[fromKey];
+    delete state.labels[fromKey];
+  }
+  writeState(state);
+}
+
 export function readAutoSwitch(providerId: ProviderId): AutoSwitchConfig {
   return readState().autoSwitch[providerId];
 }

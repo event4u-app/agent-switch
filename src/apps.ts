@@ -59,7 +59,7 @@ export const APPS: readonly AppDescriptor[] = [
     // isolation is the env strategy (reuses the codex profile's config dir).
     // Targets VS Code; other editors are a future addition.
     id: "codex-ide",
-    displayName: "Codex (VS Code)",
+    displayName: "VS Code",
     bundleId: "com.microsoft.VSCode",
     provider: "codex",
     strategy: "env",
