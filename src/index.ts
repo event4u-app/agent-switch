@@ -72,10 +72,13 @@ import {
   SessionRow,
   cleanupForkVehicle,
   listSessions,
+  listCodexSessions,
   locateSession,
+  locateCodexSession,
   markLive,
   sharedHistory,
   transferSession,
+  transferCodexSession,
 } from "./sessions.js";
 import { isFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daemon.js";
 import { cmdService, serviceUninstall } from "./service.js";
@@ -473,34 +476,38 @@ function cmdSessions(
   name?: string,
   flags: Record<string, string | boolean> = {},
 ): void {
-  if (providerExplicit && providerId !== "claude") {
-    die(`sessions is Claude-only for now (${providerId} parity is gated on its Phase-0 spike — see scripts/spikes/)`);
+  if (providerExplicit && providerId !== "claude" && providerId !== "codex") {
+    die(`sessions supports claude and codex for now (${providerId} parity is gated on its Phase-0 spike — see scripts/spikes/)`);
   }
   const recentFlag = flags.recent;
   const limit = typeof recentFlag === "string" ? Number(recentFlag) : 10;
   if (!Number.isFinite(limit) || limit < 1) die("--recent must be a positive number");
 
-  const profiles = name ? [requireProfile("claude", name, "sessions")] : listProfiles("claude");
-  if (profiles.length === 0) die("no claude profiles");
+  const profiles = name ? [requireProfile(providerId, name, "sessions")] : listProfiles(providerId);
+  if (profiles.length === 0) die(`no ${providerId} profiles`);
 
   const all: (SessionRow & { profile: string })[] = [];
   for (const p of profiles) {
-    const cfg = configDir("claude", p);
-    const rows = listSessions(cfg, limit);
-    markLive(cfg, rows); // POSIX: pid→cwd→dir match; win32: stays recent-only
+    const cfg = configDir(providerId, p);
+    // Codex stores date-partitioned rollout files (no encoded-cwd dir); its live
+    // detection is not available via the Claude pid-file mechanism, so codex rows
+    // stay recent-only (no live marking).
+    const rows = providerId === "codex" ? listCodexSessions(cfg, limit) : listSessions(cfg, limit);
+    if (providerId === "claude") markLive(cfg, rows); // POSIX: pid→cwd→dir match; win32: recent-only
     all.push(...rows.map((r) => ({ ...r, profile: p })));
   }
 
   if (flags.json) {
-    console.log(JSON.stringify(all.map((r) => ({ provider: "claude", ...r })), null, 2));
+    console.log(JSON.stringify(all.map((r) => ({ provider: providerId, ...r })), null, 2));
     return;
   }
+  const providerFlag = providerId === "claude" ? "" : ` --provider ${providerId}`;
   let any = false;
   for (const p of profiles) {
     const rows = all.filter((r) => r.profile === p);
     if (rows.length === 0) continue;
     any = true;
-    console.log(`claude/${p}:`);
+    console.log(`${providerId}/${p}:`);
     for (const r of rows) {
       const mark = r.live ? "*" : " ";
       const where = r.cwd ?? r.projectDir;
@@ -509,9 +516,9 @@ function cmdSessions(
     }
   }
   if (!any) {
-    console.log("No sessions found. Sessions appear after a `claude` run on a profile.");
+    console.log(`No sessions found. Sessions appear after a \`${provider(providerId).binary}\` run on a profile.`);
   } else {
-    console.log("\nTake one over with: agent-switch takeover <session-id> --to <profile>");
+    console.log(`\nTake one over with: agent-switch takeover <session-id> --to <profile>${providerFlag}`);
   }
 }
 
@@ -534,17 +541,17 @@ function spawnNewTerminal(command: string): void {
  * never a user's own terminal. Otherwise fall back to M5 (spawn a new terminal).
  * Exits the process.
  */
-function resumeInPlace(target: string, resumeArgs: string[], resumeCommand: string): void {
+function resumeInPlace(providerId: ProviderId, target: string, resumeArgs: string[], resumeCommand: string): void {
   const mgmt = currentManagedSession(currentTmuxSessionName(), readTmuxRegistry());
   if (!mgmt) {
     spawnNewTerminal(resumeCommand); // M5 — no managed pane to respawn
     process.exit(0);
   }
   const sess = tmuxSessionName(mgmt.provider, mgmt.profile);
-  const p = provider("claude");
-  const argv = respawnPaneArgs(sess, p.envVar, configDir("claude", target), [p.binary, ...resumeArgs]);
+  const p = provider(providerId);
+  const argv = respawnPaneArgs(sess, p.envVar, configDir(providerId, target), [p.binary, ...resumeArgs]);
   const res = spawnSync("tmux", argv, { stdio: "inherit" });
-  recordManagedSession(sess, { provider: "claude", profile: target }); // pane now runs the target
+  recordManagedSession(sess, { provider: providerId, profile: target }); // pane now runs the target
   console.log(`Handed the session over to "${target}" in the managed tmux pane "${sess}".`);
   process.exit(res.status ?? 0);
 }
@@ -556,15 +563,23 @@ function resumeInPlace(target: string, resumeArgs: string[], resumeCommand: stri
  * profiles never both own a file under one session id. See the roadmap's
  * guard order — every refusal here is a data-integrity rule, not polish.
  */
-function cmdTakeover(sessionId?: string, flags: Record<string, string | boolean> = {}): void {
+function cmdTakeover(
+  providerId: ProviderId,
+  providerExplicit: boolean,
+  sessionId?: string,
+  flags: Record<string, string | boolean> = {},
+): void {
+  if (providerExplicit && providerId !== "claude" && providerId !== "codex") {
+    die(`takeover supports claude and codex for now (${providerId} parity is gated on its Phase-0 spike — see scripts/spikes/)`);
+  }
   if (!sessionId || typeof flags.to !== "string") {
     die(
-      "usage: agent-switch takeover <session-id> --to <profile> [--from <profile>] " +
+      "usage: agent-switch takeover <session-id> --to <profile> [--provider claude|codex] [--from <profile>] " +
         "[--keep-source] [--print-only] [--force] [--json]\n" +
         "       (list candidates with: agent-switch sessions)",
     );
   }
-  const target = requireProfile("claude", flags.to, "takeover --to");
+  const target = requireProfile(providerId, flags.to, "takeover --to");
   const keepSource = !!flags["keep-source"];
   const printOnly = !!flags["print-only"];
   const json = !!flags.json;
@@ -572,6 +587,10 @@ function cmdTakeover(sessionId?: string, flags: Record<string, string | boolean>
   if (inPlace && (printOnly || json)) die("--in-place cannot be combined with --print-only or --json.");
   if (inPlace && keepSource) {
     die("--in-place cannot be combined with --keep-source (the fork-cleanup needs a separate interactive step).");
+  }
+
+  if (providerId === "codex") {
+    return takeoverCodex(sessionId, target, { keepSource, printOnly, json, inPlace, from: flags.from, force: !!flags.force });
   }
 
   // Source resolution: --from, or a scan across every Claude profile. More than
@@ -655,8 +674,65 @@ function cmdTakeover(sessionId?: string, flags: Record<string, string | boolean>
     process.exit(rc);
   }
   console.log(`Resume it with:\n  ${resumeCommand}`);
-  if (inPlace) resumeInPlace(target, resumeArgs, resumeCommand); // exits: respawn managed pane, else M5
+  if (inPlace) resumeInPlace("claude", target, resumeArgs, resumeCommand); // exits: respawn managed pane, else M5
   if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("claude"), target, resumeArgs));
+}
+
+/**
+ * Codex takeover — move-only (g03 outcome (a): a rollout moved into another
+ * authenticated CODEX_HOME resumes immediately by id). Codex has no verified
+ * fork spike, so `--keep-source` is refused rather than risk same-id
+ * divergence, and no reliable pid-file live detection exists, so the absence of
+ * a live-guard is surfaced instead of implied.
+ */
+function takeoverCodex(
+  sessionId: string,
+  target: string,
+  opts: { keepSource: boolean; printOnly: boolean; json: boolean; inPlace: boolean; from: string | boolean | undefined; force: boolean },
+): void {
+  const { keepSource, printOnly, json, inPlace, from } = opts;
+  if (keepSource) {
+    die("--keep-source is not supported for codex: fork parity is unverified (no g0.2-equivalent spike), so a kept source would risk two homes owning one session id. Codex takeover is move-only.");
+  }
+
+  const candidates = typeof from === "string"
+    ? [requireProfile("codex", from, "takeover --from")]
+    : listProfiles("codex");
+  const hits = candidates
+    .map((p) => ({ profile: p, loc: locateCodexSession(configDir("codex", p), sessionId) }))
+    .filter((h) => h.loc !== null);
+  if (hits.length === 0) {
+    die(`session ${sessionId} not found in any codex profile (see: agent-switch sessions --provider codex)`);
+  }
+  if (hits.length > 1) {
+    die(
+      `session ${sessionId} exists in MULTIPLE codex profiles (${hits.map((h) => h.profile).join(", ")}) — ` +
+        "the copies have diverged. Pick one explicitly with --from after inspecting them.",
+    );
+  }
+  const { profile: source, loc } = hits[0] as { profile: string; loc: NonNullable<ReturnType<typeof locateCodexSession>> };
+  if (source === target) die(`session ${sessionId} is already in profile "${target}"`);
+
+  const resumeArgs = ["resume", sessionId];
+  const resumeCommand = `agent-switch run ${target} --provider codex -- ${resumeArgs.join(" ")}`;
+
+  let result;
+  try {
+    result = transferCodexSession(loc, configDir("codex", target));
+  } catch (err: any) {
+    die(String(err?.message ?? err));
+  }
+
+  if (json) {
+    console.log(JSON.stringify({ provider: "codex", sessionId, from: source, to: target, transferred: result.actions, shared: false, resumeCommand }, null, 2));
+    return;
+  }
+  console.log(`Session ${sessionId}: codex ${source} -> ${target}`);
+  for (const a of result.actions) console.log(`  ${a}`);
+  console.log("Note: codex has no pid-file live detection — make sure no active codex session was running on the source profile.");
+  console.log(`Resume it with:\n  ${resumeCommand}`);
+  if (inPlace) resumeInPlace("codex", target, resumeArgs, resumeCommand); // exits
+  if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("codex"), target, resumeArgs));
 }
 
 function cmdRemove(providerId: ProviderId, name?: string, force = false): void {
@@ -1005,7 +1081,7 @@ async function main(): Promise<void> {
     case "mappings": return cmdMappings();
     case "share": return cmdShare(positional[0], rest.slice(1));
     case "sessions": return cmdSessions(providerId, providerExplicit, positional[0], flags);
-    case "takeover": return cmdTakeover(positional[0], flags);
+    case "takeover": return cmdTakeover(providerId, providerExplicit, positional[0], flags);
     case "web": return cmdWeb(positional[0]);
     case "remove": case "rm": return cmdRemove(providerId, positional[0], !!flags.force);
     case "shellenv": return cmdShellenv((flags.shell as string) ?? positional[0]);
