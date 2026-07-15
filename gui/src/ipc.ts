@@ -8,6 +8,7 @@ import { Command } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
 import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
 import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow, TokenRow } from "./transforms.js";
+import type { AppNotification, NotificationKind } from "./notifications.js";
 
 async function runCli(args: string[]): Promise<string> {
   const out = await Command.create("agent-switch", args).execute();
@@ -46,6 +47,12 @@ export async function deactivateProfile(provider: ProviderId): Promise<void> {
  */
 export async function removeProfile(provider: ProviderId, name: string): Promise<void> {
   await runCli(["remove", name, "--provider", provider, "--force"]);
+}
+
+/** Rename a profile (name only; its tag is carried over). */
+export async function renameProfile(provider: ProviderId, from: string, to: string): Promise<void> {
+  assertValidName(to);
+  await runCli(["rename", from, to, "--provider", provider]);
 }
 
 /** Profile names allowed in the create form. Restricted so it is safe to pass
@@ -252,19 +259,21 @@ export async function getTokens(profile?: string): Promise<TokenRow[] | TokensEr
   }
 }
 
-/** Notification config (`notify status --json`). `contextThresholds` are the
- *  context-fill percentages that trigger a notification. */
+/** Context-alert config (`alerts status --json`). `contextThresholds` are the
+ *  context-fill percentages that record a crossing into the notification log.
+ *  (The CLI command is `alerts`, distinct from `notify` which records a raw
+ *  notification event.) */
 export interface NotifyConfig {
   notify: boolean;
   contextThresholds: number[];
 }
 
 export async function getNotifyConfig(): Promise<NotifyConfig> {
-  return JSON.parse(await runCli(["notify", "status", "--json"]));
+  return JSON.parse(await runCli(["alerts", "status", "--json"]));
 }
 
 export async function setNotify(on: boolean, thresholds?: number[]): Promise<void> {
-  const args = ["notify", on ? "on" : "off"];
+  const args = ["alerts", on ? "on" : "off"];
   if (thresholds && thresholds.length) args.push("--threshold", thresholds.join(","));
   await runCli(args);
 }
@@ -280,4 +289,24 @@ export async function setTrayTooltip(text: string): Promise<void> {
  *  window only hides it, so this is the explicit way out. */
 export async function quitApp(): Promise<void> {
   await invoke("quit");
+}
+
+/** Recent notifications, newest first (`notifications --json`). Read-only —
+ *  returns [] on failure so the bell never blanks. */
+export async function listNotifications(): Promise<AppNotification[]> {
+  try {
+    return JSON.parse(await runCli(["notifications", "--json"]));
+  } catch {
+    return [];
+  }
+}
+
+/** Record a notification event in the shared log (the daemon appends its own). */
+export async function recordNotification(kind: NotificationKind, title: string, message: string): Promise<void> {
+  await runCli(["notify", "--kind", kind, "--title", title, "--message", message]);
+}
+
+/** Empty the notification log. */
+export async function clearNotifications(): Promise<void> {
+  await runCli(["notifications", "clear"]);
 }

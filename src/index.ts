@@ -35,6 +35,7 @@ import {
   labelFor,
   setLabel,
   clearLabel,
+  renameProfile,
   isProfileLabel,
   PROFILE_LABELS,
   readAutoSwitch,
@@ -100,6 +101,7 @@ import {
 } from "./hooks.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "./notify.js";
 import { resolveCcusageRunner, runCcusage, costBasisFor, TokenReport } from "./tokens.js";
+import { appendNotification, readNotifications, clearNotifications, NotificationKind } from "./notifications.js";
 import { APPS, buildLaunch, findApp, guiDataDir, isInstalled } from "./apps.js";
 import {
   currentManagedSession,
@@ -706,11 +708,13 @@ function cmdCompact(providerId: ProviderId, name?: string, flags: Record<string,
 }
 
 /**
- * `agent-switch notify on|off|status [--threshold a,b]` — toggle the daemon's
- * OS notifications for context/usage crossings (off by default) and set the
- * per-session context thresholds. Own-session only.
+ * `agent-switch alerts on|off|status [--threshold a,b]` — toggle whether the
+ * daemon records context/usage crossings into the shared notification log
+ * (off by default) and set the per-session context thresholds. Own-session
+ * only. (Named `alerts` to avoid the `notify` command, which records a raw
+ * notification event into the log.)
  */
-function cmdNotify(sub?: string, flags: Record<string, string | boolean> = {}): void {
+function cmdAlerts(sub?: string, flags: Record<string, string | boolean> = {}): void {
   const action = sub ?? "status";
   const cfg = readTelemetryConfig(ROOT);
   if (typeof flags.threshold === "string") {
@@ -723,12 +727,12 @@ function cmdNotify(sub?: string, flags: Record<string, string | boolean> = {}): 
     cfg.notify = action === "on";
     writeTelemetryConfig(ROOT, cfg);
   } else if (action !== "status") {
-    die("usage: agent-switch notify on|off|status [--threshold 80,95]");
+    die("usage: agent-switch alerts on|off|status [--threshold 80,95]");
   }
   if (flags.json) { console.log(JSON.stringify({ notify: cfg.notify, contextThresholds: cfg.contextThresholds }, null, 2)); return; }
   console.log(`notifications: ${cfg.notify ? "on" : "off"}  ·  context thresholds: ${cfg.contextThresholds.join(", ")}%`);
   if (!cfg.notify && action === "status") {
-    console.log("(enable with `agent-switch notify on`; the daemon fires one coalesced notification per cycle when a live session crosses a threshold)");
+    console.log("(enable with `agent-switch alerts on`; the daemon records one coalesced notification per cycle when a live session crosses a threshold)");
   }
 }
 
@@ -1087,6 +1091,33 @@ function cmdLabel(providerId: ProviderId, name?: string, label?: string): void {
 }
 
 /** Enable/disable opt-in auto-switch, or show the current setting. */
+/** Rename a profile (move its config dir + carry active/label/mappings). */
+function cmdRename(providerId: ProviderId, from?: string, to?: string): void {
+  const n = requireProfile(providerId, from, "rename");
+  if (!to) die("usage: agent-switch rename <old> <new> [--provider P]");
+  if (!/^[A-Za-z0-9._-]+$/.test(to)) {
+    die("new name may contain only letters, numbers, dots, dashes and underscores.");
+  }
+  if (to === n) return; // no-op
+  if (profileExists(providerId, to)) die(`profile "${to}" already exists for ${providerId}.`);
+  if (providerId === "claude") {
+    const pids = liveSessionPids(configDir("claude", n));
+    if (pids.length > 0) die(`profile "${n}" has live Claude sessions (PIDs ${pids.join(", ")}). Close them first.`);
+  }
+  try {
+    renameProfile(providerId, n, to);
+  } catch (err: any) {
+    die(String(err?.message ?? err));
+  }
+  for (const m of mappingRows()) {
+    if (m.provider === providerId && m.name === n) setMapping(m.path, providerId, to);
+  }
+  console.log(`Renamed ${providerId} profile "${n}" → "${to}".`);
+  if (providerId === "claude" && process.platform === "darwin") {
+    console.log("Note: Claude keeps its credential in the Keychain keyed by the config path (which can't be moved) — you may need to log in again on this profile.");
+  }
+}
+
 /** Manually redeem one banked rate-limit reset for a Codex profile. Consumes a
  *  real, scarce credit — the GUI gates this behind a confirmation. */
 async function cmdReset(providerId: ProviderId, name?: string): Promise<void> {
@@ -1313,6 +1344,47 @@ function cmdApps(json = false): void {
   }
 }
 
+const NOTIFICATION_KINDS: NotificationKind[] = ["success", "error", "warning", "info"];
+
+/** `agent-switch notify --kind <k> --title <t> --message <m> [--json]` — record
+ *  an event in the shared notification log. The GUI uses this for its own
+ *  limit-fetch failures; the daemon appends directly via the module. `--json`
+ *  echoes the created notification (or `null` when it was deduplicated). */
+function cmdNotify(flags: Record<string, string | boolean>): void {
+  const kind = typeof flags.kind === "string" ? flags.kind : "info";
+  const title = typeof flags.title === "string" ? flags.title : "";
+  const message = typeof flags.message === "string" ? flags.message : "";
+  if (!NOTIFICATION_KINDS.includes(kind as NotificationKind)) {
+    die(`usage: agent-switch notify --kind <${NOTIFICATION_KINDS.join("|")}> --title <t> --message <m> [--json]`);
+  }
+  if (!title && !message) die("agent-switch notify needs at least --title or --message");
+  const created = appendNotification({ kind: kind as NotificationKind, title, message });
+  if (flags.json) console.log(JSON.stringify(created));
+}
+
+/** `agent-switch notifications [clear] [--json]` — list the recent
+ *  notifications (newest first) or clear the log. */
+function cmdNotifications(sub: string | undefined, json = false): void {
+  if (sub === "clear") {
+    clearNotifications();
+    console.log(json ? "[]" : "Notifications cleared.");
+    return;
+  }
+  const list = [...readNotifications()].reverse(); // newest first
+  if (json) {
+    console.log(JSON.stringify(list));
+    return;
+  }
+  if (list.length === 0) {
+    console.log("No notifications.");
+    return;
+  }
+  for (const n of list) {
+    const when = new Date(n.ts).toLocaleString();
+    console.log(`[${when}] ${n.kind.toUpperCase()} ${n.title}${n.message ? ` — ${n.message}` : ""}`);
+  }
+}
+
 /** Launch a registered GUI app on a profile, isolated (macOS). Profile: an
  *  explicit positional name, else the active profile for the app's provider. */
 function cmdOpen(appId?: string, name?: string): void {
@@ -1364,7 +1436,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch share on|sync|off [--history] [--source <profile|default>]   (Claude)
   agent-switch sessions [profile] [--recent N] [--json]   recent + live Claude sessions per profile (with context %)
   agent-switch hooks install|uninstall|status [profile]   manage lifecycle push hooks in Claude settings.json
-  agent-switch notify on|off|status [--threshold 80,95]   OS notifications for context/usage crossings (off by default)
+  agent-switch alerts on|off|status [--threshold 80,95]   record context/usage crossings to the notification log (off by default)
   agent-switch compact <profile> [--clear] [--dry-run] [--force]   type /compact (or /clear) into the profile's managed tmux pane
   agent-switch tokens [profile] [--by-model] [--json]   token usage + cost per profile (via ccusage; subscription cost = notional)
   agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place] [--print-only] [--force]   move a session to another profile and resume it
@@ -1373,11 +1445,14 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
   agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>]   per-provider auto-switch (default OFF)
   agent-switch reset <profile> --provider codex                                redeem one banked Codex rate-limit reset
+  agent-switch rename <old> <new> [--provider P]                               rename a profile (name & keep its tag)
   agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
   agent-switch apps                            list launchable GUI apps (macOS)
   agent-switch open <app> [profile]            launch a GUI app on a profile, isolated (macOS)
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
   agent-switch service run|start|stop|status|install|uninstall   background usage daemon
+  agent-switch notifications [clear] [--json]  recent notifications (auto-switches, fetch failures)
+  agent-switch notify --kind K --title T --message M [--json]   record a notification event
   agent-switch uninstall [--force]             remove all agent-switch data + daemon
   agent-switch doctor                          per-OS, per-provider self-check`);
 }
@@ -1416,9 +1491,12 @@ async function main(): Promise<void> {
     case "label": return cmdLabel(providerId, positional[0], positional[1]);
     case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags, positional[1]);
     case "reset": return cmdReset(providerId, positional[0]);
+    case "rename": return cmdRename(providerId, positional[0], positional[1]);
     case "providers": return cmdProviders(providerId, providerExplicit, positional[0], flags);
     case "open": return cmdOpen(positional[0], positional[1]);
     case "apps": return cmdApps(!!flags.json);
+    case "notify": return cmdNotify(flags);
+    case "notifications": return cmdNotifications(positional[0], !!flags.json);
     case "uninstall": return cmdUninstall(flags);
     case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
     case "list": case "ls": return cmdList(providerExplicit ? providerId : undefined, !!flags.json);
@@ -1432,7 +1510,7 @@ async function main(): Promise<void> {
     case "share": return cmdShare(positional[0], rest.slice(1));
     case "sessions": return cmdSessions(providerId, providerExplicit, positional[0], flags);
     case "hooks": return cmdHooks(positional[0], positional[1]);
-    case "notify": return cmdNotify(positional[0], flags);
+    case "alerts": return cmdAlerts(positional[0], flags);
     case "compact": return cmdCompact(providerId, positional[0], flags);
     case "tokens": return cmdTokens(providerId, providerExplicit, positional[0], flags);
     case "takeover": return cmdTakeover(providerId, providerExplicit, positional[0], flags);

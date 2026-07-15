@@ -85,6 +85,9 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        // Desktop notifications (usage-fetch failures, successful auto-switches).
+        // The GUI falls back to its in-window bell/flyout when permission is denied.
+        .plugin(tauri_plugin_notification::init())
         // Launch-at-login toggle (Settings → General). LaunchAgent on macOS.
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,

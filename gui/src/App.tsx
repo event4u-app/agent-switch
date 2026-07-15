@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Coins, Minimize2 } from "lucide-react";
+import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Coins, Minimize2, Pencil, Check } from "lucide-react";
 import {
   compactArgs,
   deactivateProfile,
@@ -11,6 +11,9 @@ import {
   listApps,
   listProfiles,
   listSessions,
+  listNotifications,
+  recordNotification,
+  clearNotifications,
   loginArgs,
   openApp,
   profileUsage,
@@ -20,6 +23,7 @@ import {
   takeoverArgs,
   quitApp,
   removeProfile,
+  renameProfile,
   sessionArgs,
   setAutoSwitch,
   setAutostart,
@@ -35,8 +39,20 @@ import {
   type TokensError,
 } from "./ipc.js";
 import { EmbeddedTerminal } from "./EmbeddedTerminal.js";
+import { NotificationBell } from "./NotificationBell.js";
+import { sendDesktopNotification, type AppNotification } from "./notifications.js";
 import { applyTheme, getTheme, THEMES, type Theme } from "./theme.js";
-import { getAutoSwitchGlobal, setAutoSwitchGlobalFlag, getAutoRefreshLimits, setAutoRefreshLimitsFlag } from "./settings-store.js";
+import {
+  getAutoSwitchGlobal,
+  setAutoSwitchGlobalFlag,
+  getAutoRefreshLimits,
+  setAutoRefreshLimitsFlag,
+  getRefreshMinutes,
+  setRefreshMinutes,
+  REFRESH_INTERVAL_CHOICES,
+  getNotifLastRead,
+  setNotifLastRead,
+} from "./settings-store.js";
 import { loadUsageCache, saveUsageSnapshot, type UsageEntry } from "./usage-cache.js";
 import {
   groupByProvider,
@@ -68,7 +84,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const PROVIDERS: ProviderId[] = ["claude", "codex", "gemini"];
 const PROVIDER_LABEL: Record<ProviderId, string> = { claude: "Claude", codex: "Codex", gemini: "Gemini" };
-const NO_LABEL = "none";
+
+// On macOS the window uses the Overlay title-bar style (native traffic lights,
+// content drawn into the title bar) — the header must leave room on the left so
+// its content doesn't sit under the traffic lights.
+const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
 
 function describeError(e: unknown): string {
   const msg = String((e as { message?: unknown })?.message ?? e);
@@ -163,16 +183,35 @@ export default function App() {
   const [globalAuto, setGlobalAuto] = useState(() => getAutoSwitchGlobal());
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState<string | null>(null);
+  const [editKey, setEditKey] = useState<string | null>(null);
   // The in-app pty terminal overlay (login / run), or null when none is open.
   const [terminal, setTerminal] = useState<{ args: string[]; title: string } | null>(null);
 
-  // Usage auto-refresh: a 5-minute timer, shown as a live countdown by the
-  // footer refresh button. Tab switches do NOT refresh (per user request) — only
-  // the timer and the manual button do. `nextRefreshRef` is the wall-clock
-  // deadline; `nowTick` re-renders the countdown each second. `refreshRef` holds
-  // the latest refresh closure so the interval always fetches the current tab.
-  const REFRESH_MS = 5 * 60 * 1000;
+  // Notifications (auto-switches, usage-fetch failures). The event log is owned
+  // by the CLI + daemon; the GUI reads it on each refresh, renders the bell +
+  // flyout, and fires a best-effort desktop notification for events it has not
+  // notified yet. `notifNotifiedTsRef` starts at mount time so opening the app
+  // never blasts the desktop with historical events (they still show in the
+  // flyout). `notifLastRead` (persisted) drives the unread badge.
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notifLastRead, setNotifLastReadState] = useState(() => getNotifLastRead());
+  const notifNotifiedTsRef = useRef(Date.now());
+
+  // Usage auto-refresh: a configurable timer (default 10 min, set in General
+  // settings), shown as a live countdown by the footer refresh button. Tab
+  // switches do NOT refresh (per user request) — only the timer and the manual
+  // button do. `nextRefreshRef` is the wall-clock deadline; `nowTick` re-renders
+  // the countdown each second. `refreshRef` holds the latest refresh closure so
+  // the interval always fetches the current tab.
+  const [refreshMin, setRefreshMin] = useState(() => getRefreshMinutes());
+  const REFRESH_MS = refreshMin * 60 * 1000;
   const nextRefreshRef = useRef(Date.now() + REFRESH_MS);
+  // Per-profile cooldown: skip a usage re-fetch when the last successful one is
+  // newer than the refresh interval, so a manual refresh never fetches more
+  // often than the auto-refresh countdown itself — it matches the countdown
+  // exactly, which keeps Claude's rate-limited endpoint from being self-tripped.
+  const USAGE_COOLDOWN_MS = REFRESH_MS;
+  const lastUsageFetchRef = useRef<Record<string, number>>({});
   const refreshRef = useRef<() => void>(() => {});
   const [nowTick, setNowTick] = useState(Date.now());
 
@@ -228,11 +267,23 @@ export default function App() {
     if (selected === "claude" || selected === "codex") {
       const profs = loaded.filter((r) => r.provider === selected);
       for (const r of profs) {
+        const key = `${selected}/${r.name}`;
+        const last = lastUsageFetchRef.current[key] ?? 0;
+        // Cooldown: if we already have a fresh value fetched < 60s ago, reuse it.
+        if (usage[key]?.fresh && Date.now() - last < USAGE_COOLDOWN_MS) continue;
         const snap = await profileUsage(selected, r.name).catch(() => null);
         if (snap) {
-          const key = `${selected}/${r.name}`;
+          lastUsageFetchRef.current[key] = Date.now();
           setUsage((prev) => ({ ...prev, [key]: { snap, fresh: true } }));
           saveUsageSnapshot(key, snap);
+        } else {
+          // Record the failure (deduped in the CLI log; the daemon uses the same
+          // wording so a background poll failure never double-notifies).
+          await recordNotification(
+            "warning",
+            "Usage fetch failed",
+            `Could not fetch usage limits for ${selected}/${r.name}.`,
+          ).catch(() => {});
         }
       }
     }
@@ -248,8 +299,36 @@ export default function App() {
         /* best-effort tray update */
       }
     })();
-    nextRefreshRef.current = Date.now() + REFRESH_MS; // any refresh restarts the countdown
+    // The countdown is owned by the auto-refresh timer alone — a manual refresh
+    // does NOT restart it (that would just delay the next usage fetch, since the
+    // cooldown already blocks a re-fetch within the same interval).
+    await syncNotifications();
     setBusy(false);
+  }
+
+  // Load the notification log, then fire a best-effort desktop notification for
+  // any event newer than the last we notified (the flyout shows them all
+  // regardless — that is the in-window fallback when desktop is denied).
+  async function syncNotifications() {
+    const list = await listNotifications().catch(() => [] as AppNotification[]);
+    setNotifications(list);
+    const fresh = list.filter((n) => n.ts > notifNotifiedTsRef.current);
+    if (fresh.length === 0) return;
+    notifNotifiedTsRef.current = Math.max(notifNotifiedTsRef.current, ...fresh.map((n) => n.ts));
+    for (const n of fresh.slice(0, 5)) void sendDesktopNotification(n.title, n.message);
+  }
+
+  // Opening the bell marks everything up to the newest as read (persisted).
+  function markNotifsRead() {
+    const newest = notifications[0]?.ts ?? Date.now();
+    setNotifLastRead(newest);
+    setNotifLastReadState(newest);
+  }
+
+  function clearNotifs() {
+    void clearNotifications()
+      .then(() => setNotifications([]))
+      .catch((e) => setError(describeError(e)));
   }
 
   // Keep the interval pointed at the latest refresh closure (current tab).
@@ -260,6 +339,17 @@ export default function App() {
     setAutoRefresh(on);
     if (on) nextRefreshRef.current = Date.now() + REFRESH_MS; // restart the countdown
   }
+
+  function changeRefreshMin(min: number) {
+    setRefreshMinutes(min);
+    setRefreshMin(min);
+  }
+
+  // Re-base the countdown whenever the interval changes so a new value takes
+  // effect immediately (rather than after the current, longer deadline).
+  useEffect(() => {
+    nextRefreshRef.current = Date.now() + REFRESH_MS;
+  }, [REFRESH_MS]);
 
   // Initial load only. Tab switches do NOT refetch (they display cached/last-known
   // usage); the 5-minute timer and the manual button are the only refresh paths.
@@ -280,13 +370,14 @@ export default function App() {
     }, 1000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefresh]);
+  }, [autoRefresh, REFRESH_MS]);
 
   const grouped = groupByProvider(rows);
   const shown = grouped[selected];
 
   const secondsLeft = Math.max(0, Math.ceil((nextRefreshRef.current - nowTick) / 1000));
   const countdown = `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}`;
+  const unreadNotifs = notifications.filter((n) => n.ts > notifLastRead).length;
 
   // Only enabled providers get a tab. Before the first load, fall back to the
   // default set (Claude + Codex) so nothing flickers in.
@@ -304,12 +395,29 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-border bg-background/95 px-3 py-2.5 backdrop-blur">
-        <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold tracking-tight">agent-switch</span>
-          {rows.length > 0 && <span className="text-xs text-muted-foreground">{rows.length} profiles</span>}
+      <header
+        data-tauri-drag-region
+        className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-border bg-background/95 px-3 py-2.5 backdrop-blur"
+        style={IS_MAC ? { paddingLeft: 78 } : undefined}
+      >
+        <div className="flex items-center gap-2" data-tauri-drag-region>
+          <div
+            className="flex size-8 shrink-0 items-center justify-center rounded-[7px] bg-primary"
+            data-tauri-drag-region
+            aria-hidden
+          >
+            <RefreshCw className="size-5 text-primary-foreground" />
+          </div>
+          <span className="text-sm font-semibold tracking-tight" data-tauri-drag-region>
+            agent-switch
+          </span>
+          {rows.length > 0 && (
+            <span className="text-xs text-muted-foreground" data-tauri-drag-region>
+              {rows.length} profiles
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5" data-tauri-drag-region>
           <Button
             size="sm"
             variant={showCreate ? "secondary" : "default"}
@@ -320,6 +428,12 @@ export default function App() {
           >
             <Plus /> New
           </Button>
+          <NotificationBell
+            notifications={notifications}
+            unread={unreadNotifs}
+            onMarkRead={markNotifsRead}
+            onClear={clearNotifs}
+          />
           <Button
             size="icon"
             variant={showTokens ? "secondary" : "ghost"}
@@ -381,6 +495,8 @@ export default function App() {
             onToggleAutoSwitch={toggleGlobalAuto}
             autoRefresh={autoRefresh}
             onToggleAutoRefresh={toggleAutoRefresh}
+            refreshMin={refreshMin}
+            onChangeRefreshMin={changeRefreshMin}
             onProvidersChanged={refresh}
           />
         ) : showTokens ? (
@@ -482,13 +598,16 @@ export default function App() {
                 busy={busy}
                 defaultProvider={selected}
                 onCancel={() => setShowCreate(false)}
-                onCreate={(provider, name) => {
+                onCreate={(provider, name, label) => {
                   try {
                     const args = loginArgs(provider, name); // validates the name (throws on invalid)
                     setError(null);
                     setNotice(null);
                     setShowCreate(false);
                     setSelected(provider); // jump to the tab we just created into
+                    // Persist the (required) tag up front — it's keyed by
+                    // provider/name and doesn't need the profile dir to exist yet.
+                    void setProfileLabel(provider, name, label).catch(() => {});
                     // Run the login in the in-app terminal — no external window.
                     setTerminal({ args, title: `Login — ${PROVIDER_LABEL[provider]} / ${name}` });
                   } catch (e) {
@@ -515,20 +634,36 @@ export default function App() {
                 </Button>
               </div>
             ) : (
-              <Card>
-                <div className="divide-y divide-border">
-                  {shown.map((r) => (
-                    // Key by provider+name: a Claude and a Codex profile can share a
-                    // name (e.g. "Matze1"); a name-only key lets React morph one into
-                    // the other on a tab switch — the brief Claude-on-Codex flash.
-                    <div key={`${r.provider}/${r.name}`} className="px-3 py-2">
+              <div className="space-y-1.5">
+                {shown.map((r, i) => (
+                  // Key by provider+name: a Claude and a Codex profile can share a
+                  // name (e.g. "Matze1"); a name-only key lets React morph one into
+                  // the other on a tab switch — the brief Claude-on-Codex flash.
+                  // Each profile is its own tile with an alternating shade so the
+                  // rows are easy to tell apart.
+                  <div
+                    key={`${r.provider}/${r.name}`}
+                    className={cn(
+                      "rounded-lg border border-border px-3 py-2.5",
+                      i % 2 === 0 ? "bg-card" : "bg-muted/40",
+                    )}
+                  >
+                      {editKey === `${r.provider}/${r.name}` ? (
+                        <EditProfileRow
+                          current={r}
+                          busy={busy}
+                          onCancel={() => setEditKey(null)}
+                          onSave={(newName, newLabel) => {
+                            setEditKey(null);
+                            act(async () => {
+                              if (newLabel !== r.label) await setProfileLabel(selected, r.name, newLabel);
+                              if (newName !== r.name) await renameProfile(selected, r.name, newName);
+                            });
+                          }}
+                        />
+                      ) : (
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex min-w-0 items-center gap-2">
-                          <span
-                            className="size-2 shrink-0 rounded-full"
-                            style={{ background: r.active ? "hsl(var(--success))" : "hsl(var(--border))" }}
-                            aria-hidden
-                          />
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5">
                               <span className="truncate text-[13px] font-medium">{r.name}</span>
@@ -558,10 +693,7 @@ export default function App() {
                             </>
                           ) : (
                             <>
-                              <LabelSelect
-                                value={r.label}
-                                onChange={(label) => act(() => setProfileLabel(selected, r.name, label))}
-                              />
+                              {r.label && <Badge variant="secondary" className="mr-0.5">{r.label}</Badge>}
                               {r.active ? (
                                 <Button
                                   size="sm"
@@ -633,6 +765,15 @@ export default function App() {
                               <Button
                                 size="icon"
                                 variant="ghost"
+                                className="size-7 text-muted-foreground hover:text-foreground"
+                                aria-label={`Edit ${r.name}`}
+                                onClick={() => setEditKey(`${selected}/${r.name}`)}
+                              >
+                                <Pencil />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
                                 className="size-7 text-muted-foreground hover:text-destructive"
                                 aria-label={`Delete ${r.name}`}
                                 onClick={() => setConfirmDelete(`${selected}/${r.name}`)}
@@ -643,6 +784,7 @@ export default function App() {
                           )}
                         </div>
                       </div>
+                      )}
                       {/* Claude + Codex both have a usage readout. Keyed by
                           provider/name so a same-name profile of the other provider
                           never shows here; renders last-known (grey) or hatched N.A.
@@ -656,7 +798,6 @@ export default function App() {
                     </div>
                   ))}
                 </div>
-              </Card>
             )}
           </>
         )}
@@ -734,23 +875,56 @@ export default function App() {
   );
 }
 
-function LabelSelect({ value, onChange }: { value: ProfileLabel | null; onChange: (v: ProfileLabel | null) => void }) {
+/** Inline editor for a profile's name + tag (opened by the pencil button).
+ *  A tag stays required; the name is renamed via the CLI on save. */
+function EditProfileRow({
+  current,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  current: ProfileRow;
+  busy: boolean;
+  onSave: (name: string, label: ProfileLabel) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(current.name);
+  const [label, setLabel] = useState<ProfileLabel | null>(current.label);
+  const trimmed = name.trim();
+  // Enabled as soon as something differs from the original (and stays valid:
+  // non-empty name + a tag); disabled when nothing changed.
+  const changed = trimmed !== current.name || label !== current.label;
+  const canSave = changed && !!trimmed && !!label && !busy;
   return (
-    <Select value={value ?? NO_LABEL} onValueChange={(v) => onChange(v === NO_LABEL ? null : (v as ProfileLabel))}>
-      <SelectTrigger aria-label="Label" className="h-7 w-auto gap-1 border-0 bg-transparent px-1.5 shadow-none focus:ring-1">
-        {value ? <Badge variant="secondary">{value}</Badge> : <span className="text-xs text-muted-foreground">Tag</span>}
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={NO_LABEL}>— None</SelectItem>
+    <div className="flex items-center gap-2">
+      <Input
+        value={name}
+        autoFocus
+        aria-label="Profile name"
+        className="h-8 min-w-0 flex-1"
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && canSave) onSave(trimmed, label!);
+          if (e.key === "Escape") onCancel();
+        }}
+      />
+      <div className="flex shrink-0 gap-1">
         {PROFILE_LABELS.map((l) => (
-          <SelectItem key={l} value={l}>
+          <Button key={l} size="sm" variant={label === l ? "default" : "outline"} className="h-8 px-2" onClick={() => setLabel(l)}>
             {l}
-          </SelectItem>
+          </Button>
         ))}
-      </SelectContent>
-    </Select>
+      </div>
+      <Button size="icon" variant="secondary" className="size-8 shrink-0" disabled={!canSave} onClick={() => onSave(trimmed, label!)} aria-label="Save">
+        <Check />
+      </Button>
+      <Button size="icon" variant="ghost" className="size-8 shrink-0" onClick={onCancel} aria-label="Cancel edit">
+        <X />
+      </Button>
+    </div>
   );
 }
+
 
 type SettingsTab = "general" | "providers" | "design" | "uninstall";
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
@@ -770,6 +944,8 @@ function SettingsView({
   onToggleAutoSwitch,
   autoRefresh,
   onToggleAutoRefresh,
+  refreshMin,
+  onChangeRefreshMin,
   onProvidersChanged,
 }: {
   onClose: () => void;
@@ -778,6 +954,8 @@ function SettingsView({
   onToggleAutoSwitch: (on: boolean) => void;
   autoRefresh: boolean;
   onToggleAutoRefresh: (on: boolean) => void;
+  refreshMin: number;
+  onChangeRefreshMin: (min: number) => void;
   onProvidersChanged: () => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
@@ -811,6 +989,8 @@ function SettingsView({
           onToggleAutoSwitch={onToggleAutoSwitch}
           autoRefresh={autoRefresh}
           onToggleAutoRefresh={onToggleAutoRefresh}
+          refreshMin={refreshMin}
+          onChangeRefreshMin={onChangeRefreshMin}
         />
       )}
       {tab === "providers" && <ProvidersSettings onChange={onProvidersChanged} />}
@@ -825,11 +1005,15 @@ function GeneralSettings({
   onToggleAutoSwitch,
   autoRefresh,
   onToggleAutoRefresh,
+  refreshMin,
+  onChangeRefreshMin,
 }: {
   autoSwitchEnabled: boolean;
   onToggleAutoSwitch: (on: boolean) => void;
   autoRefresh: boolean;
   onToggleAutoRefresh: (on: boolean) => void;
+  refreshMin: number;
+  onChangeRefreshMin: (min: number) => void;
 }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -921,7 +1105,7 @@ function GeneralSettings({
           <div>
             <div className="text-[13px] font-medium">Auto-refresh limits</div>
             <div className="text-xs text-muted-foreground">
-              Refresh usage limits automatically every 5 minutes. When off, use the refresh button in the footer.
+              Refresh usage limits automatically on the interval below. When off, use the refresh button in the footer.
             </div>
           </div>
           <Button
@@ -936,7 +1120,7 @@ function GeneralSettings({
 
         <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
           <div>
-            <div className="text-[13px] font-medium">Notifications</div>
+            <div className="text-[13px] font-medium">Context alerts</div>
             <div className="text-xs text-muted-foreground">
               Notify when a session's context window crosses a threshold
               {notifyThresholds.length > 0 && ` (${notifyThresholds.join("%, ")}%)`}.
@@ -947,10 +1131,31 @@ function GeneralSettings({
             variant={notify ? "default" : "outline"}
             disabled={notify === null}
             onClick={toggleNotify}
-            aria-label="Notifications"
+            aria-label="Context alerts"
           >
             {notify === null ? "…" : notify ? "On" : "Off"}
           </Button>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium">Refresh interval</div>
+            <div className="text-xs text-muted-foreground">
+              How often usage limits refresh. Also the minimum spacing between manual refreshes.
+            </div>
+          </div>
+          <select
+            value={refreshMin}
+            onChange={(e) => onChangeRefreshMin(Number(e.target.value))}
+            aria-label="Refresh interval"
+            className="h-8 shrink-0 rounded-md border border-input bg-background px-2 text-[13px]"
+          >
+            {REFRESH_INTERVAL_CHOICES.map((m) => (
+              <option key={m} value={m}>
+                {m} min
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
@@ -1370,12 +1575,14 @@ function CreateProfileForm({
 }: {
   busy: boolean;
   defaultProvider: ProviderId;
-  onCreate: (provider: ProviderId, name: string) => void;
+  onCreate: (provider: ProviderId, name: string, label: ProfileLabel) => void;
   onCancel: () => void;
 }) {
   const [provider, setProvider] = useState<ProviderId>(defaultProvider);
   const [name, setName] = useState("");
+  const [label, setLabel] = useState<ProfileLabel | null>(null);
   const trimmed = name.trim();
+  const canCreate = !!trimmed && !!label && !busy;
 
   return (
     <Card>
@@ -1395,7 +1602,7 @@ function CreateProfileForm({
             autoFocus
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && trimmed && !busy) onCreate(provider, trimmed);
+              if (e.key === "Enter" && canCreate) onCreate(provider, trimmed, label!);
             }}
           />
         </div>
@@ -1414,7 +1621,22 @@ function CreateProfileForm({
             </SelectContent>
           </Select>
         </div>
-        <Button className="w-full" disabled={!trimmed || busy} onClick={() => onCreate(provider, trimmed)}>
+        <div className="space-y-1">
+          <Label>Tag (required)</Label>
+          <div className="grid grid-cols-3 gap-1">
+            {PROFILE_LABELS.map((l) => (
+              <Button
+                key={l}
+                size="sm"
+                variant={label === l ? "default" : "outline"}
+                onClick={() => setLabel(l)}
+              >
+                {l}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <Button className="w-full" disabled={!canCreate} onClick={() => onCreate(provider, trimmed, label!)}>
           <LogIn /> Create & log in
         </Button>
         <p className="text-[11px] leading-snug text-muted-foreground">

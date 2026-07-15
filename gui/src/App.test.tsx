@@ -28,6 +28,7 @@ const ipc = vi.hoisted(() => ({
   assertValidName: () => {},
   deactivateProfile: vi.fn(),
   removeProfile: vi.fn(),
+  renameProfile: vi.fn(),
   uninstall: vi.fn(),
   getAutostart: vi.fn(),
   setAutostart: vi.fn(),
@@ -37,8 +38,16 @@ const ipc = vi.hoisted(() => ({
   listApps: vi.fn(),
   openApp: vi.fn(),
   quitApp: vi.fn(),
+  listNotifications: vi.fn(),
+  recordNotification: vi.fn(),
+  clearNotifications: vi.fn(),
 }));
 vi.mock("./ipc.js", () => ipc);
+
+// Desktop notifications go through the Tauri plugin, which isn't available in
+// jsdom — mock the wrapper so the in-window logic is testable without it.
+const desktopNotify = vi.hoisted(() => vi.fn().mockResolvedValue(false));
+vi.mock("./notifications.js", () => ({ sendDesktopNotification: desktopNotify }));
 
 // The embedded terminal renders real xterm/pty — stub it so tests assert the
 // terminal OPENED (title + args) without a DOM canvas or a Tauri backend.
@@ -53,7 +62,7 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0 }));
 vi.mock("./settings-store.js", () => ({
   getAutoSwitchGlobal: () => store.globalAuto,
   setAutoSwitchGlobalFlag: (on: boolean) => {
@@ -62,6 +71,15 @@ vi.mock("./settings-store.js", () => ({
   getAutoRefreshLimits: () => store.autoRefresh,
   setAutoRefreshLimitsFlag: (on: boolean) => {
     store.autoRefresh = on;
+  },
+  getRefreshMinutes: () => store.refreshMin,
+  setRefreshMinutes: (min: number) => {
+    store.refreshMin = min;
+  },
+  REFRESH_INTERVAL_CHOICES: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60],
+  getNotifLastRead: () => store.notifLastRead,
+  setNotifLastRead: (ts: number) => {
+    store.notifLastRead = ts;
   },
 }));
 
@@ -85,6 +103,7 @@ beforeEach(() => {
   // Global auto-switch defaults OFF in production; enable it for the auto-switch
   // UI tests. (The dedicated default-off test flips this itself.)
   store.globalAuto = true;
+  store.notifLastRead = 0;
   ipc.listProfiles.mockResolvedValue(rows);
   ipc.profileUsage.mockResolvedValue(usageSnap);
   ipc.getAutoSwitch.mockResolvedValue({
@@ -105,6 +124,7 @@ beforeEach(() => {
   ipc.switchProfile.mockResolvedValue(undefined);
   ipc.deactivateProfile.mockResolvedValue(undefined);
   ipc.removeProfile.mockResolvedValue(undefined);
+  ipc.renameProfile.mockResolvedValue(undefined);
   ipc.uninstall.mockResolvedValue(undefined);
   ipc.getAutostart.mockResolvedValue(false);
   ipc.setAutostart.mockResolvedValue(undefined);
@@ -119,13 +139,17 @@ beforeEach(() => {
   ipc.setNotify.mockResolvedValue(undefined);
   ipc.setTrayTooltip.mockResolvedValue(undefined);
   ipc.quitApp.mockResolvedValue(undefined);
+  ipc.listNotifications.mockResolvedValue([]);
+  ipc.recordNotification.mockResolvedValue(undefined);
+  ipc.clearNotifications.mockResolvedValue(undefined);
+  desktopNotify.mockClear();
 });
 
 describe("App", () => {
   it("shows the selected provider's profiles with per-profile usage; labels render", async () => {
     render(<App />);
     expect(await screen.findByRole("tab", { name: /claude/i })).toBeTruthy();
-    expect(screen.getByText(/privat/)).toBeTruthy();
+    expect(await screen.findByText(/privat/)).toBeTruthy();
     expect(screen.queryByText(/oai/)).toBeNull(); // codex hidden behind its tab
     // per-profile usage bar rendered for the claude profiles
     expect(await screen.findAllByText("5h")).not.toHaveLength(0);
@@ -144,7 +168,7 @@ describe("App", () => {
   it("uses a non-active profile and refreshes", async () => {
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i });
-    const useButtons = screen.getAllByRole("button", { name: "Use" });
+    const useButtons = await screen.findAllByRole("button", { name: "Use" });
     expect(useButtons.length).toBe(1); // only privat (work is active)
     fireEvent.click(useButtons[0]);
     expect(ipc.switchProfile).toHaveBeenCalledWith("claude", "privat");
@@ -160,7 +184,7 @@ describe("App", () => {
   it("runs a session in the embedded terminal (no external window) when Term is clicked", async () => {
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i });
-    fireEvent.click(screen.getAllByRole("button", { name: "Term" })[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Term" }))[0]);
     const term = await screen.findByTestId("term");
     expect(term.textContent).toContain("run work --provider claude"); // sessionArgs
     expect(term.textContent).toMatch(/Session — Claude \/ work/);
@@ -185,10 +209,23 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
     fireEvent.click(screen.getByRole("button", { name: /^New$/ }));
     fireEvent.change(await screen.findByPlaceholderText(/e\.g\. work/), { target: { value: "work" } });
+    fireEvent.click(screen.getByRole("button", { name: "Work" })); // tag is required
     fireEvent.click(screen.getByRole("button", { name: /create & log in/i }));
     const term = await screen.findByTestId("term");
     expect(term.textContent).toContain("add work --provider codex"); // loginArgs, no osascript/Terminal.app
     expect(term.textContent).toMatch(/Login — Codex \/ work/);
+    expect(ipc.setProfileLabel).toHaveBeenCalledWith("codex", "work", "Work"); // required tag persisted on create
+  });
+
+  it("edits a profile's name via the pencil → renameProfile", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /edit oai/i }));
+    const nameInput = await screen.findByLabelText("Profile name");
+    fireEvent.change(nameInput, { target: { value: "renamed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Work" })); // tag stays required on edit
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(ipc.renameProfile).toHaveBeenCalledWith("codex", "oai", "renamed"));
   });
 
   it("deletes a profile only after an explicit confirm", async () => {
@@ -268,6 +305,55 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
     fireEvent.click(await screen.findByRole("button", { name: /start at login/i })); // autostart currently off
     expect(ipc.setAutostart).toHaveBeenCalledWith(true);
+  });
+
+  it("changes the refresh interval from the General settings dropdown", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    const select = (await screen.findByLabelText(/refresh interval/i)) as HTMLSelectElement;
+    expect(select.value).toBe("10"); // default
+    fireEvent.change(select, { target: { value: "30" } });
+    expect(store.refreshMin).toBe(30); // persisted via setRefreshMinutes
+    expect(select.value).toBe("30");
+  });
+
+  it("shows an unread badge and lists notifications in the bell flyout", async () => {
+    ipc.listNotifications.mockResolvedValue([
+      { id: "1", ts: 2000, kind: "success", title: "Auto-switched account", message: "claude/work → claude/privat." },
+      { id: "2", ts: 1000, kind: "warning", title: "Usage fetch failed", message: "Could not fetch usage limits for codex/oai." },
+    ]);
+    render(<App />);
+    const bell = await screen.findByRole("button", { name: /notifications/i });
+    // unread badge = both (lastRead defaults to 0)
+    await waitFor(() => expect(bell.textContent).toContain("2"));
+    fireEvent.click(bell);
+    expect(await screen.findByText("Auto-switched account")).toBeTruthy();
+    expect(screen.getByText(/Could not fetch usage limits for codex\/oai/)).toBeTruthy();
+    // opening marked them read → badge cleared
+    await waitFor(() => expect(store.notifLastRead).toBe(2000));
+  });
+
+  it("records a warning notification when a usage fetch fails", async () => {
+    ipc.profileUsage.mockResolvedValue(null); // fetch failure
+    render(<App />);
+    await waitFor(() =>
+      expect(ipc.recordNotification).toHaveBeenCalledWith(
+        "warning",
+        "Usage fetch failed",
+        expect.stringContaining("Could not fetch usage limits for claude/"),
+      ),
+    );
+  });
+
+  it("clears notifications from the flyout", async () => {
+    ipc.listNotifications.mockResolvedValue([
+      { id: "1", ts: 3000, kind: "info", title: "Hello", message: "world" },
+    ]);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /notifications/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /clear notifications/i }));
+    expect(ipc.clearNotifications).toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByText("Hello")).toBeNull());
   });
 
   it("global auto-switch off hides the badge colouring + footer toggle and deactivates every provider", async () => {
@@ -421,10 +507,10 @@ describe("App", () => {
     expect(await screen.findByText(/install ccusage/i)).toBeTruthy();
   });
 
-  it("toggles notifications from the General settings tab", async () => {
+  it("toggles context alerts from the General settings tab", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /^notifications$/i })); // currently off
+    fireEvent.click(await screen.findByRole("button", { name: /^context alerts$/i })); // currently off
     await waitFor(() => expect(ipc.setNotify).toHaveBeenCalledWith(true, [80, 95]));
   });
 });

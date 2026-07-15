@@ -231,16 +231,16 @@ describe("ipc", () => {
     }
   });
 
-  it("getNotifyConfig parses `notify status --json`; setNotify toggles + passes thresholds", async () => {
+  it("getNotifyConfig parses `alerts status --json`; setNotify toggles + passes thresholds", async () => {
     execute.mockResolvedValue({ code: 0, stdout: '{"notify":true,"contextThresholds":[80,95]}', stderr: "" });
     const cfg = await getNotifyConfig();
-    expect(create).toHaveBeenCalledWith("agent-switch", ["notify", "status", "--json"]);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["alerts", "status", "--json"]);
     expect(cfg).toEqual({ notify: true, contextThresholds: [80, 95] });
 
     await setNotify(true, [80, 95]);
-    expect(create).toHaveBeenCalledWith("agent-switch", ["notify", "on", "--threshold", "80,95"]);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["alerts", "on", "--threshold", "80,95"]);
     await setNotify(false);
-    expect(create).toHaveBeenCalledWith("agent-switch", ["notify", "off"]);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["alerts", "off"]);
   });
 
   it("setTrayTooltip invokes the `set_tray_tooltip` Tauri command", async () => {

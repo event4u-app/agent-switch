@@ -1,15 +1,20 @@
 /**
- * Zero-dep OS notifier + per-session context-threshold detection (roadmap:
+ * Per-session context-threshold detection + alert config (roadmap:
  * road-to-agent-switch-session-telemetry, Phase 3). Own-session only: a
- * notification names a project dir + percentage + suggested action, NEVER
- * another profile (council #5 — furthest from the rotation line).
+ * crossing names a project dir + percentage + suggested action, NEVER another
+ * profile (council #5 — furthest from the rotation line).
+ *
+ * Delivery is via the shared notification log (`src/notifications.ts` →
+ * `appendNotification`): the daemon records the coalesced crossing there and
+ * the GUI bell/flyout reads it + fires a best-effort desktop notification (the
+ * app's single notifier). This module only DETECTS + COALESCES; it does not
+ * fire an OS toast itself.
  *
  * Config lives in `<ROOT>/telemetry-config.json` (its own file rather than
  * state.json, whose readState rebuilds from known fields and would drop new
  * ones): { notify: boolean (default OFF), contextThresholds: number[] }.
  */
 
-import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -112,29 +117,4 @@ export function coalesce(crossings: ContextCrossing[]): { title: string; body: s
       ? `${worst.where} at ${worst.pct}% context — consider /compact`
       : `worst: ${worst.where} at ${worst.pct}% — consider /compact`;
   return { title, body };
-}
-
-// ---------- OS notification (best-effort, zero-dep) ----------
-
-/** Fire an OS notification. Best-effort per platform; never throws, degrades
- *  silently when the platform tool is absent (e.g. no notify-send on Linux). */
-export function notifyOS(title: string, body: string): void {
-  try {
-    if (process.platform === "darwin") {
-      const esc = (s: string) => s.replace(/["\\]/g, "\\$&");
-      spawnSync("osascript", ["-e", `display notification "${esc(body)}" with title "${esc(title)}"`], { stdio: "ignore", timeout: 5000 });
-    } else if (process.platform === "linux") {
-      spawnSync("notify-send", [title, body], { stdio: "ignore", timeout: 5000 });
-    } else if (process.platform === "win32") {
-      const esc = (s: string) => s.replace(/'/g, "''");
-      const ps = `[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; ` +
-        `$t=[Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); ` +
-        `$t.GetElementsByTagName('text')[0].AppendChild($t.CreateTextNode('${esc(title)}')) > $null; ` +
-        `$t.GetElementsByTagName('text')[1].AppendChild($t.CreateTextNode('${esc(body)}')) > $null; ` +
-        `[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('agent-switch').Show([Windows.UI.Notifications.ToastNotification]::new($t))`;
-      spawnSync("powershell", ["-NoProfile", "-Command", ps], { stdio: "ignore", timeout: 8000 });
-    }
-  } catch {
-    // never throw from a notifier
-  }
 }
