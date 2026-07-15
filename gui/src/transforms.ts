@@ -71,6 +71,8 @@ export interface UsageSnapshot {
   windows: UsageWindow[];
   routines: { used: number; limit: number } | null;
   capturedAt: string;
+  /** Codex only: banked rate-limit reset credits still available. */
+  resetCredits?: number | null;
 }
 
 export interface StatusJson {
@@ -80,11 +82,11 @@ export interface StatusJson {
   usage: UsageSnapshot | null;
 }
 
-/** Whether a provider exposes a usage readout (Claude only). Auto-switch UI is
- *  shown ONLY for these — there is nothing to trigger on otherwise. Mirrors the
- *  CLI's `Provider.hasUsageReadout`. */
+/** Whether a provider exposes a usage readout (Claude + Codex). Auto-switch UI
+ *  is shown ONLY for these — there is nothing to trigger on otherwise. Mirrors
+ *  the CLI's `Provider.hasUsageReadout`. */
 export function hasUsageReadout(provider: ProviderId): boolean {
-  return provider === "claude";
+  return provider === "claude" || provider === "codex";
 }
 
 /** Group the flat profile list by provider, preserving order. */

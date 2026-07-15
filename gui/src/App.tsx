@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw } from "lucide-react";
 import {
   deactivateProfile,
   getAutoSwitch,
@@ -11,12 +11,16 @@ import {
   loginArgs,
   openApp,
   profileUsage,
+  redeemReset,
   takeoverArgs,
   quitApp,
   removeProfile,
   sessionArgs,
   setAutoSwitch,
   setAutostart,
+  getSwitchStrategy,
+  setSwitchStrategy,
+  type SwitchStrategy,
   setProfileLabel,
   setProvider,
   switchProfile,
@@ -26,7 +30,8 @@ import {
 } from "./ipc.js";
 import { EmbeddedTerminal } from "./EmbeddedTerminal.js";
 import { applyTheme, getTheme, THEMES, type Theme } from "./theme.js";
-import { getAutoSwitchGlobal, setAutoSwitchGlobalFlag } from "./settings-store.js";
+import { getAutoSwitchGlobal, setAutoSwitchGlobalFlag, getAutoRefreshLimits, setAutoRefreshLimitsFlag } from "./settings-store.js";
+import { loadUsageCache, saveUsageSnapshot, type UsageEntry } from "./usage-cache.js";
 import {
   groupByProvider,
   formatReset,
@@ -68,35 +73,47 @@ function utilColor(pct: number): string {
   return "hsl(var(--success))";
 }
 
-function UsageBars({ usage }: { usage: UsageSnapshot }) {
-  // Render a bar for EVERY known window. A window whose utilization we don't
-  // have (yet) shows as a grey hatched "N.A." track instead of disappearing, so
-  // the set of bars stays stable wherever a readout exists (no flicker as values
-  // arrive). Only a snapshot with no windows at all renders nothing.
-  const windows = usage.windows;
-  if (windows.length === 0) return null;
+// Fallback windows when we have NO snapshot at all — still show grey hatched
+// "N.A." bars (rather than nothing) so a provider with a usage readout always
+// has a stable bar area.
+const PLACEHOLDER_WINDOWS: UsageSnapshot["windows"] = [
+  { key: "five_hour", label: "5h", utilization: null, resetsAt: null },
+  { key: "seven_day", label: "7d", utilization: null, resetsAt: null },
+];
+
+const HATCH = "repeating-linear-gradient(45deg, hsl(var(--muted-foreground) / 0.5) 0 3px, transparent 3px 6px)";
+
+/**
+ * Usage bars for one profile. Three states per window:
+ *   - fresh value  → coloured fill + coloured % + reset countdown.
+ *   - stale value (from cache, no live data yet) → GREY solid fill + grey % (last-known).
+ *   - no value     → grey HATCHED track + "N.A.".
+ * With no snapshot at all, PLACEHOLDER_WINDOWS render as hatched N.A.
+ */
+function UsageBars({ usage, stale }: { usage: UsageSnapshot | null; stale: boolean }) {
+  const windows = usage && usage.windows.length > 0 ? usage.windows : PLACEHOLDER_WINDOWS;
   return (
     <div className="mt-1.5 space-y-1 pl-4">
       {windows.map((w) => {
         const known = typeof w.utilization === "number";
-        const pct = w.utilization ?? 0;
-        const reset = known ? formatReset(w.resetsAt) : "";
+        const pct = Math.min(100, w.utilization ?? 0);
+        const reset = known && !stale ? formatReset(w.resetsAt) : "";
         return (
           <div key={w.key} className="flex items-center gap-2 text-[11px]">
             <span className="w-12 shrink-0 truncate text-muted-foreground" title={w.label}>{w.label}</span>
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
-              {known ? (
-                <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, background: utilColor(pct) }} />
+              {!known ? (
+                <div className="h-full w-full rounded-full opacity-70" style={{ backgroundImage: HATCH }} />
               ) : (
                 <div
-                  className="h-full w-full rounded-full opacity-70"
-                  style={{ backgroundImage: "repeating-linear-gradient(45deg, hsl(var(--muted-foreground) / 0.5) 0 3px, transparent 3px 6px)" }}
+                  className="h-full rounded-full"
+                  style={{ width: `${pct}%`, background: stale ? "hsl(var(--muted-foreground))" : utilColor(pct) }}
                 />
               )}
             </div>
             <span
-              className={cn("w-10 shrink-0 text-right tabular-nums", !known && "text-muted-foreground")}
-              style={known ? { color: utilColor(pct) } : undefined}
+              className={cn("w-10 shrink-0 text-right tabular-nums", (!known || stale) && "text-muted-foreground")}
+              style={known && !stale ? { color: utilColor(pct) } : undefined}
             >
               {known ? `${pct}%` : "N.A."}
             </span>
@@ -104,6 +121,12 @@ function UsageBars({ usage }: { usage: UsageSnapshot }) {
           </div>
         );
       })}
+      {typeof usage?.resetCredits === "number" && (
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="w-12 shrink-0">resets</span>
+          <span className="tabular-nums">{usage.resetCredits} available</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -111,7 +134,10 @@ function UsageBars({ usage }: { usage: UsageSnapshot }) {
 export default function App() {
   const [rows, setRows] = useState<ProfileRow[]>([]);
   const [selected, setSelected] = useState<ProviderId>("claude");
-  const [usage, setUsage] = useState<Record<string, UsageSnapshot>>({});
+  // Usage keyed by `<provider>/<name>`, seeded from the local cache so bars show
+  // the last-known values (greyed) immediately, before any live fetch.
+  const [usage, setUsage] = useState<Record<string, UsageEntry>>(() => loadUsageCache());
+  const [autoRefresh, setAutoRefresh] = useState(() => getAutoRefreshLimits());
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [auto, setAuto] = useState<AutoSwitchMap | null>(null);
   const [providers, setProviders] = useState<ProvidersStatus | null>(null);
@@ -123,8 +149,19 @@ export default function App() {
   const [showSessions, setShowSessions] = useState(false);
   const [globalAuto, setGlobalAuto] = useState(() => getAutoSwitchGlobal());
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState<string | null>(null);
   // The in-app pty terminal overlay (login / run), or null when none is open.
   const [terminal, setTerminal] = useState<{ args: string[]; title: string } | null>(null);
+
+  // Usage auto-refresh: a 5-minute timer, shown as a live countdown by the
+  // footer refresh button. Tab switches do NOT refresh (per user request) — only
+  // the timer and the manual button do. `nextRefreshRef` is the wall-clock
+  // deadline; `nowTick` re-renders the countdown each second. `refreshRef` holds
+  // the latest refresh closure so the interval always fetches the current tab.
+  const REFRESH_MS = 5 * 60 * 1000;
+  const nextRefreshRef = useRef(Date.now() + REFRESH_MS);
+  const refreshRef = useRef<() => void>(() => {});
+  const [nowTick, setNowTick] = useState(Date.now());
 
   function act(fn: () => Promise<void>) {
     fn()
@@ -170,36 +207,61 @@ export default function App() {
       /* leave previous */
     }
     setApps(await listApps().catch(() => []));
-    // Per-profile usage (Claude only has a readout). Fetch in the background and
-    // MERGE into the previous map so neither a reload nor a tab round-trip ever
-    // blanks the bars — they update in place when fresh data lands. Non-Claude
-    // tabs leave the map untouched (bars are gated to Claude at render), so
-    // switching back to Claude shows the warm bars immediately.
-    if (selected === "claude") {
-      const claude = loaded.filter((r) => r.provider === "claude");
-      // Fetch usage SEQUENTIALLY, not in parallel: near-simultaneous calls to the
-      // OAuth usage endpoint burst-trip its rate limit (429), which showed up as a
-      // profile's bars intermittently missing until a later refresh. Serial avoids
-      // the burst; the CLI retries a 429 with backoff underneath. Merging each
-      // success in place paints it immediately without blanking the others.
-      for (const r of claude) {
-        const snap = await profileUsage("claude", r.name).catch(() => null);
+    // Usage for the selected provider (Claude via its OAuth endpoint; Codex from
+    // its latest rollout). Fetch SEQUENTIALLY so Claude's rate-limited endpoint
+    // isn't burst-tripped (the CLI also retries a 429 underneath). Merge each
+    // result in place, keyed by `<provider>/<name>`, and persist it — so neither
+    // a reload nor a restart ever blanks the bars.
+    if (selected === "claude" || selected === "codex") {
+      const profs = loaded.filter((r) => r.provider === selected);
+      for (const r of profs) {
+        const snap = await profileUsage(selected, r.name).catch(() => null);
         if (snap) {
-          const fresh = snap;
-          setUsage((prev) => ({ ...prev, [r.name]: fresh }));
+          const key = `${selected}/${r.name}`;
+          setUsage((prev) => ({ ...prev, [key]: { snap, fresh: true } }));
+          saveUsageSnapshot(key, snap);
         }
       }
     }
+    nextRefreshRef.current = Date.now() + REFRESH_MS; // any refresh restarts the countdown
     setBusy(false);
   }
 
+  // Keep the interval pointed at the latest refresh closure (current tab).
+  refreshRef.current = refresh;
+
+  function toggleAutoRefresh(on: boolean) {
+    setAutoRefreshLimitsFlag(on);
+    setAutoRefresh(on);
+    if (on) nextRefreshRef.current = Date.now() + REFRESH_MS; // restart the countdown
+  }
+
+  // Initial load only. Tab switches do NOT refetch (they display cached/last-known
+  // usage); the 5-minute timer and the manual button are the only refresh paths.
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected]);
+  }, []);
+
+  // 1s ticker: drives the countdown and fires the auto-refresh when due.
+  useEffect(() => {
+    const id = setInterval(() => {
+      const t = Date.now();
+      setNowTick(t);
+      if (autoRefresh && t >= nextRefreshRef.current) {
+        nextRefreshRef.current = t + REFRESH_MS;
+        void refreshRef.current();
+      }
+    }, 1000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRefresh]);
 
   const grouped = groupByProvider(rows);
   const shown = grouped[selected];
+
+  const secondsLeft = Math.max(0, Math.ceil((nextRefreshRef.current - nowTick) / 1000));
+  const countdown = `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}`;
 
   // Only enabled providers get a tab. Before the first load, fall back to the
   // default set (Claude + Codex) so nothing flickers in.
@@ -232,9 +294,6 @@ export default function App() {
             }}
           >
             <Plus /> New
-          </Button>
-          <Button size="icon" variant="ghost" onClick={refresh} disabled={busy} aria-label="Refresh">
-            <RefreshCw className={busy ? "animate-spin" : undefined} />
           </Button>
           <Button
             size="icon"
@@ -280,6 +339,8 @@ export default function App() {
             onUninstall={() => act(() => uninstall().then(quitApp))}
             autoSwitchEnabled={globalAuto}
             onToggleAutoSwitch={toggleGlobalAuto}
+            autoRefresh={autoRefresh}
+            onToggleAutoRefresh={toggleAutoRefresh}
             onProvidersChanged={refresh}
           />
         ) : showSessions ? (
@@ -479,6 +540,35 @@ export default function App() {
                               >
                                 <Terminal /> Term
                               </Button>
+                              {selected === "codex" &&
+                                (usage[`codex/${r.name}`]?.snap?.resetCredits ?? 0) > 0 &&
+                                (confirmReset === `${selected}/${r.name}` ? (
+                                  <>
+                                    <span className="text-xs text-muted-foreground">Redeem a reset?</span>
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={() => {
+                                        setConfirmReset(null);
+                                        act(() => redeemReset(selected, r.name));
+                                      }}
+                                    >
+                                      Yes
+                                    </Button>
+                                    <Button size="sm" variant="ghost" onClick={() => setConfirmReset(null)}>
+                                      No
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setConfirmReset(`${selected}/${r.name}`)}
+                                    title={`Redeem one banked rate-limit reset (${usage[`codex/${r.name}`]?.snap?.resetCredits} available)`}
+                                  >
+                                    <RotateCcw /> Reset
+                                  </Button>
+                                ))}
                               {apps
                                 .filter((a) => a.provider === selected && a.installed)
                                 .map((a) => (
@@ -505,10 +595,16 @@ export default function App() {
                           )}
                         </div>
                       </div>
-                      {/* Usage exists only for Claude; gating on the selected provider
-                          stops a stale same-name entry from flashing Claude's bars onto
-                          a Codex card during a tab switch. */}
-                      {selected === "claude" && usage[r.name] && <UsageBars usage={usage[r.name]} />}
+                      {/* Claude + Codex both have a usage readout. Keyed by
+                          provider/name so a same-name profile of the other provider
+                          never shows here; renders last-known (grey) or hatched N.A.
+                          when there's no live/cached value. */}
+                      {(selected === "claude" || selected === "codex") && (
+                        <UsageBars
+                          usage={usage[`${selected}/${r.name}`]?.snap ?? null}
+                          stale={!usage[`${selected}/${r.name}`]?.fresh}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -559,14 +655,32 @@ export default function App() {
               </button>
             );
           })()}
-        <Button
-          size="sm"
-          variant="ghost"
-          className="ml-auto h-6 px-2 text-muted-foreground hover:text-destructive"
-          onClick={() => quitApp()}
-        >
-          <Power /> Quit
-        </Button>
+        <div className="ml-auto flex items-center gap-1.5">
+          {autoRefresh && !terminal && (
+            <span className="tabular-nums text-[11px] text-muted-foreground" title="Time until usage limits auto-refresh">
+              {countdown}
+            </span>
+          )}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-6 text-muted-foreground hover:text-foreground"
+            onClick={refresh}
+            disabled={busy}
+            aria-label="Refresh"
+            title="Refresh now"
+          >
+            <RefreshCw className={cn("size-3.5", busy && "animate-spin")} />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-muted-foreground hover:text-destructive"
+            onClick={() => quitApp()}
+          >
+            <Power /> Quit
+          </Button>
+        </div>
       </footer>
     </div>
   );
@@ -606,12 +720,16 @@ function SettingsView({
   onUninstall,
   autoSwitchEnabled,
   onToggleAutoSwitch,
+  autoRefresh,
+  onToggleAutoRefresh,
   onProvidersChanged,
 }: {
   onClose: () => void;
   onUninstall: () => void;
   autoSwitchEnabled: boolean;
   onToggleAutoSwitch: (on: boolean) => void;
+  autoRefresh: boolean;
+  onToggleAutoRefresh: (on: boolean) => void;
   onProvidersChanged: () => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
@@ -640,7 +758,12 @@ function SettingsView({
         ))}
       </div>
       {tab === "general" && (
-        <GeneralSettings autoSwitchEnabled={autoSwitchEnabled} onToggleAutoSwitch={onToggleAutoSwitch} />
+        <GeneralSettings
+          autoSwitchEnabled={autoSwitchEnabled}
+          onToggleAutoSwitch={onToggleAutoSwitch}
+          autoRefresh={autoRefresh}
+          onToggleAutoRefresh={onToggleAutoRefresh}
+        />
       )}
       {tab === "providers" && <ProvidersSettings onChange={onProvidersChanged} />}
       {tab === "design" && <DesignSettings />}
@@ -652,18 +775,31 @@ function SettingsView({
 function GeneralSettings({
   autoSwitchEnabled,
   onToggleAutoSwitch,
+  autoRefresh,
+  onToggleAutoRefresh,
 }: {
   autoSwitchEnabled: boolean;
   onToggleAutoSwitch: (on: boolean) => void;
+  autoRefresh: boolean;
+  onToggleAutoRefresh: (on: boolean) => void;
 }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [strategy, setStrategy] = useState<SwitchStrategy | null>(null);
 
   useEffect(() => {
     getAutostart()
       .then(setEnabled)
       .catch(() => setEnabled(false));
+    getSwitchStrategy()
+      .then(setStrategy)
+      .catch(() => setStrategy("reset-first"));
   }, []);
+
+  function pickStrategy(next: SwitchStrategy) {
+    setStrategy(next);
+    setSwitchStrategy(next).catch((e) => setErr(describeError(e)));
+  }
 
   async function toggle() {
     const next = !enabled;
@@ -712,6 +848,52 @@ function GeneralSettings({
           >
             {autoSwitchEnabled ? "On" : "Off"}
           </Button>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+          <div>
+            <div className="text-[13px] font-medium">Auto-refresh limits</div>
+            <div className="text-xs text-muted-foreground">
+              Refresh usage limits automatically every 5 minutes. When off, use the refresh button in the footer.
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={autoRefresh ? "default" : "outline"}
+            onClick={() => onToggleAutoRefresh(!autoRefresh)}
+            aria-label="Auto-refresh limits"
+          >
+            {autoRefresh ? "On" : "Off"}
+          </Button>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium">Switch strategy</div>
+            <div className="text-xs text-muted-foreground">
+              When auto-switch fires: <span className="font-medium">reset first</span> redeems a banked Codex reset
+              before switching accounts; <span className="font-medium">rotation first</span> switches straight to the
+              account with the most headroom.
+            </div>
+          </div>
+          <div className="flex shrink-0 gap-1">
+            <Button
+              size="sm"
+              variant={strategy === "reset-first" ? "default" : "outline"}
+              disabled={strategy === null}
+              onClick={() => pickStrategy("reset-first")}
+            >
+              Reset first
+            </Button>
+            <Button
+              size="sm"
+              variant={strategy === "rotation-first" ? "default" : "outline"}
+              disabled={strategy === null}
+              onClick={() => pickStrategy("rotation-first")}
+            >
+              Rotation first
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>
