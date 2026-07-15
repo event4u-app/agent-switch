@@ -23,6 +23,9 @@ export interface UsageSnapshot {
   routines: { used: number; limit: number } | null;
   /** ISO capture time. */
   capturedAt: string;
+  /** Codex only: banked rate-limit reset credits still available ("N available").
+   *  Undefined for providers/plans that don't expose it. */
+  resetCredits?: number | null;
 }
 
 // The windows Claude's /usage exposes, richest first. seven_day_opus/sonnet are

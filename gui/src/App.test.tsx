@@ -26,6 +26,9 @@ const ipc = vi.hoisted(() => ({
   uninstall: vi.fn(),
   getAutostart: vi.fn(),
   setAutostart: vi.fn(),
+  getSwitchStrategy: vi.fn(),
+  setSwitchStrategy: vi.fn(),
+  redeemReset: vi.fn(),
   listApps: vi.fn(),
   openApp: vi.fn(),
   quitApp: vi.fn(),
@@ -45,11 +48,15 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true }));
 vi.mock("./settings-store.js", () => ({
   getAutoSwitchGlobal: () => store.globalAuto,
   setAutoSwitchGlobalFlag: (on: boolean) => {
     store.globalAuto = on;
+  },
+  getAutoRefreshLimits: () => store.autoRefresh,
+  setAutoRefreshLimitsFlag: (on: boolean) => {
+    store.autoRefresh = on;
   },
 }));
 
@@ -96,6 +103,9 @@ beforeEach(() => {
   ipc.uninstall.mockResolvedValue(undefined);
   ipc.getAutostart.mockResolvedValue(false);
   ipc.setAutostart.mockResolvedValue(undefined);
+  ipc.getSwitchStrategy.mockResolvedValue("reset-first");
+  ipc.setSwitchStrategy.mockResolvedValue(undefined);
+  ipc.redeemReset.mockResolvedValue(undefined);
   ipc.listApps.mockResolvedValue([]);
   ipc.openApp.mockResolvedValue(undefined);
   ipc.listSessions.mockResolvedValue([]);
@@ -188,7 +198,7 @@ describe("App", () => {
     expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", true);
   });
 
-  it("per-tab auto-switch badge colouring shows ONLY for Claude (usage readout); none for codex/gemini", async () => {
+  it("per-tab auto-switch badge colouring shows for Claude + Codex (usage readout); not Gemini", async () => {
     ipc.listProfiles.mockResolvedValue([
       { provider: "claude", name: "a", identity: null, label: null, active: true, liveSessions: 0 },
       { provider: "claude", name: "b", identity: null, label: null, active: false, liveSessions: 0 },
@@ -197,14 +207,14 @@ describe("App", () => {
       { provider: "gemini", name: "e", identity: null, label: null, active: false, liveSessions: 0 },
     ]);
     ipc.getAutoSwitch.mockResolvedValue({
-      claude: { enabled: true, threshold: 95 }, // 2 profiles, on → green dot
-      codex: { enabled: false, threshold: 95 },
+      claude: { enabled: true, threshold: 95 }, // 2 profiles, on → green badge
+      codex: { enabled: false, threshold: 95 }, // 2 profiles, off → red badge
       gemini: { enabled: true, threshold: 95 },
     });
     render(<App />);
-    expect(await screen.findByLabelText(/auto-switch on for claude/i)).toBeTruthy(); // Claude has a dot
-    expect(screen.queryByLabelText(/auto-switch.*for codex/i)).toBeNull(); // no dot — no usage readout
-    expect(screen.queryByLabelText(/auto-switch.*for gemini/i)).toBeNull(); // no dot — no usage readout
+    expect(await screen.findByLabelText(/auto-switch on for claude/i)).toBeTruthy();
+    expect(await screen.findByLabelText(/auto-switch off for codex/i)).toBeTruthy(); // Codex now has a usage readout
+    expect(screen.queryByLabelText(/auto-switch.*for gemini/i)).toBeNull(); // no readout → no badge colour
   });
 
   it("footer marks auto-switch not available for Claude with <2 profiles", async () => {
@@ -216,10 +226,14 @@ describe("App", () => {
     expect(await screen.findByText(/not available/i)).toBeTruthy();
   });
 
-  it("codex/gemini have no footer auto-switch toggle (no usage readout)", async () => {
+  it("Codex now shows the footer auto-switch toggle (it has a usage readout)", async () => {
+    ipc.listProfiles.mockResolvedValue([
+      { provider: "codex", name: "c", identity: null, label: null, active: true, liveSessions: 0 },
+      { provider: "codex", name: "d", identity: null, label: null, active: false, liveSessions: 0 },
+    ]);
     render(<App />);
     fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
-    expect(screen.queryByText(/auto-switch ·/i)).toBeNull();
+    expect(await screen.findByText(/auto-switch ·/i)).toBeTruthy();
   });
 
   it("auto-switch UI is hidden by default (global master off)", async () => {

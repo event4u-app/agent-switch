@@ -54,6 +54,7 @@ test("activeFor / setActive are per-provider", () => {
       codex: { cli: true, ui: true },
       gemini: { cli: false, ui: false },
     },
+    switchStrategy: "reset-first",
   }); // clean baseline (shared STATE_FILE)
   P.setActive("codex", "work");
   P.setActive("gemini", "priv");
@@ -125,6 +126,7 @@ test("legacy global auto-switch migrates onto every provider", () => {
       codex: { cli: true, ui: true },
       gemini: { cli: false, ui: false },
     },
+    switchStrategy: "reset-first",
   });
   const all = P.readAutoSwitchAll();
   for (const p of ["claude", "codex", "gemini"] as const) {
@@ -159,4 +161,28 @@ test("providers: a provider with existing profiles is not hidden by default", ()
   fs.rmSync(P.STATE_FILE, { force: true });
   fs.mkdirSync(P.configDir("gemini", "kept"), { recursive: true });
   assert.equal(P.readProviders().gemini.cli, true);
+});
+
+test("switchStrategy defaults to reset-first and persists a change", () => {
+  P.writeState({
+    active: { claude: null, codex: null, gemini: null },
+    labels: {},
+    autoSwitch: {
+      claude: { enabled: false, threshold: 95 },
+      codex: { enabled: false, threshold: 95 },
+      gemini: { enabled: false, threshold: 95 },
+    },
+    providers: {
+      claude: { cli: true, ui: true },
+      codex: { cli: true, ui: true },
+      gemini: { cli: false, ui: false },
+    },
+    switchStrategy: "reset-first",
+  });
+  assert.equal(P.readSwitchStrategy(), "reset-first");
+  P.setSwitchStrategy("rotation-first");
+  assert.equal(P.readSwitchStrategy(), "rotation-first");
+  // survives a state round-trip that doesn't mention it? setActive rewrites state
+  P.setActive("claude", null);
+  assert.equal(P.readSwitchStrategy(), "rotation-first");
 });

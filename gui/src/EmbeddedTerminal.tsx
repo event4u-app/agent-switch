@@ -82,7 +82,7 @@ export function EmbeddedTerminal({
           the FitAddon can size the pty to the real available height. A generous
           black bottom margin keeps the CLI's status line off the border so it
           stays readable (the FitAddon sizes the pty inside this padding). */}
-      <div ref={hostRef} className="min-h-0 w-full flex-1 overflow-hidden px-1.5 pt-1.5 pb-8" />
+      <div ref={hostRef} className="min-h-0 w-full flex-1 overflow-hidden px-1.5 pt-1.5 pb-16" />
     </div>
   );
 }

@@ -24,3 +24,23 @@ export function setAutoSwitchGlobalFlag(on: boolean): void {
     /* no/blocked localStorage → in-memory only for this session */
   }
 }
+
+const AUTO_REFRESH_KEY = "agent-switch-auto-refresh-limits";
+
+/** Whether usage limits auto-refresh on the 5-minute timer. Default ON — only
+ *  the literal "off" disables it (so a fresh install gets the timer). */
+export function getAutoRefreshLimits(): boolean {
+  try {
+    return localStorage.getItem(AUTO_REFRESH_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setAutoRefreshLimitsFlag(on: boolean): void {
+  try {
+    localStorage.setItem(AUTO_REFRESH_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}

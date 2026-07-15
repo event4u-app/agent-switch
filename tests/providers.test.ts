@@ -72,8 +72,8 @@ test("readIdentity returns null on missing/garbage without throwing", () => {
   }
 });
 
-test("only Claude reports a usage readout (auto-switch is Claude-only)", () => {
+test("Claude and Codex report a usage readout (auto-switch capable); Gemini does not", () => {
   assert.equal(provider("claude").hasUsageReadout, true);
-  assert.equal(provider("codex").hasUsageReadout, false);
+  assert.equal(provider("codex").hasUsageReadout, true); // live via wham/usage
   assert.equal(provider("gemini").hasUsageReadout, false);
 });

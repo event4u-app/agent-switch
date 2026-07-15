@@ -111,7 +111,7 @@ const codex: Provider = {
   },
   oneShotArgs: (prompt) => ["exec", prompt],
   importFiles: ["auth.json"],
-  hasUsageReadout: false,
+  hasUsageReadout: true, // live via wham/usage (ChatGPT backend)
 };
 
 const gemini: Provider = {
