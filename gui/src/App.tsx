@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, RefreshCw, Play, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft } from "lucide-react";
+import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft } from "lucide-react";
 import {
   deactivateProfile,
   getAutoSwitch,
@@ -69,23 +69,38 @@ function utilColor(pct: number): string {
 }
 
 function UsageBars({ usage }: { usage: UsageSnapshot }) {
-  const windows = usage.windows.filter((w) => typeof w.utilization === "number");
+  // Render a bar for EVERY known window. A window whose utilization we don't
+  // have (yet) shows as a grey hatched "N.A." track instead of disappearing, so
+  // the set of bars stays stable wherever a readout exists (no flicker as values
+  // arrive). Only a snapshot with no windows at all renders nothing.
+  const windows = usage.windows;
   if (windows.length === 0) return null;
   return (
     <div className="mt-1.5 space-y-1 pl-4">
       {windows.map((w) => {
+        const known = typeof w.utilization === "number";
         const pct = w.utilization ?? 0;
-        const reset = formatReset(w.resetsAt);
+        const reset = known ? formatReset(w.resetsAt) : "";
         return (
           <div key={w.key} className="flex items-center gap-2 text-[11px]">
-            <span className="w-8 shrink-0 text-muted-foreground">{w.label}</span>
+            <span className="w-12 shrink-0 truncate text-muted-foreground" title={w.label}>{w.label}</span>
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
-              <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, background: utilColor(pct) }} />
+              {known ? (
+                <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, background: utilColor(pct) }} />
+              ) : (
+                <div
+                  className="h-full w-full rounded-full opacity-70"
+                  style={{ backgroundImage: "repeating-linear-gradient(45deg, hsl(var(--muted-foreground) / 0.5) 0 3px, transparent 3px 6px)" }}
+                />
+              )}
             </div>
-            <span className="w-8 shrink-0 text-right tabular-nums" style={{ color: utilColor(pct) }}>
-              {pct}%
+            <span
+              className={cn("w-10 shrink-0 text-right tabular-nums", !known && "text-muted-foreground")}
+              style={known ? { color: utilColor(pct) } : undefined}
+            >
+              {known ? `${pct}%` : "N.A."}
             </span>
-            <span className="w-16 shrink-0 text-muted-foreground">{reset ? `${reset}` : ""}</span>
+            <span className="w-16 shrink-0 text-muted-foreground">{reset}</span>
           </div>
         );
       })}
@@ -155,17 +170,25 @@ export default function App() {
       /* leave previous */
     }
     setApps(await listApps().catch(() => []));
-    // Per-profile usage for the selected provider (Claude only has a readout).
+    // Per-profile usage (Claude only has a readout). Fetch in the background and
+    // MERGE into the previous map so neither a reload nor a tab round-trip ever
+    // blanks the bars — they update in place when fresh data lands. Non-Claude
+    // tabs leave the map untouched (bars are gated to Claude at render), so
+    // switching back to Claude shows the warm bars immediately.
     if (selected === "claude") {
       const claude = loaded.filter((r) => r.provider === "claude");
-      const entries = await Promise.all(
-        claude.map(async (r) => [r.name, await profileUsage("claude", r.name).catch(() => null)] as const),
-      );
-      const map: Record<string, UsageSnapshot> = {};
-      for (const [name, snap] of entries) if (snap) map[name] = snap;
-      setUsage(map);
-    } else {
-      setUsage({});
+      // Fetch usage SEQUENTIALLY, not in parallel: near-simultaneous calls to the
+      // OAuth usage endpoint burst-trip its rate limit (429), which showed up as a
+      // profile's bars intermittently missing until a later refresh. Serial avoids
+      // the burst; the CLI retries a 429 with backoff underneath. Merging each
+      // success in place paints it immediately without blanking the others.
+      for (const r of claude) {
+        const snap = await profileUsage("claude", r.name).catch(() => null);
+        if (snap) {
+          const fresh = snap;
+          setUsage((prev) => ({ ...prev, [r.name]: fresh }));
+        }
+      }
     }
     setBusy(false);
   }
@@ -280,6 +303,17 @@ export default function App() {
               {enabledIds.map((pid) => {
                 const count = grouped[pid].length;
                 const active = selected === pid;
+                // The count badge doubles as the auto-switch indicator (it replaces the
+                // former standalone dot): green = on, red = off, grey = unavailable
+                // (needs 2+ profiles). Only for providers with a usage readout (Claude)
+                // and only while the global master is on; otherwise the badge is neutral.
+                const autoColored = globalAuto && hasUsageReadout(pid);
+                const autoState: "unavailable" | "on" | "off" =
+                  count < 2 ? "unavailable" : auto?.[pid]?.enabled ? "on" : "off";
+                const autoLabel =
+                  autoState === "unavailable"
+                    ? `Auto-switch unavailable for ${PROVIDER_LABEL[pid]} — needs 2+ profiles`
+                    : `Auto-switch ${autoState} for ${PROVIDER_LABEL[pid]}`;
                 return (
                   <button
                     key={pid}
@@ -295,38 +329,22 @@ export default function App() {
                     )}
                   >
                     {PROVIDER_LABEL[pid]}
-                    {/* Auto-switch status dot AFTER the label: green = on, red = off,
-                        grey = unavailable (needs 2+ profiles). Shown only for providers
-                        with a usage readout (Claude), and hidden when the global master
-                        is off. */}
-                    {globalAuto && hasUsageReadout(pid) && (
-                      <span
-                        className={cn(
-                          "size-1.5 shrink-0 rounded-full",
-                          count < 2
-                            ? "bg-muted-foreground/40"
-                            : auto?.[pid]?.enabled
-                              ? "bg-[hsl(var(--success))]"
-                              : "bg-[hsl(var(--destructive))]",
-                        )}
-                        title={
-                          count < 2
-                            ? `Auto-switch unavailable for ${PROVIDER_LABEL[pid]} — needs 2+ profiles`
-                            : `Auto-switch ${auto?.[pid]?.enabled ? "on" : "off"} for ${PROVIDER_LABEL[pid]}`
-                        }
-                        aria-label={
-                          count < 2
-                            ? `Auto-switch unavailable for ${PROVIDER_LABEL[pid]}`
-                            : `Auto-switch ${auto?.[pid]?.enabled ? "on" : "off"} for ${PROVIDER_LABEL[pid]}`
-                        }
-                      />
-                    )}
                     {count > 0 && (
                       <span
                         className={cn(
                           "rounded-full px-1.5 text-[10px] leading-tight",
-                          active ? "bg-secondary text-secondary-foreground" : "bg-secondary/50",
+                          !autoColored
+                            ? active
+                              ? "bg-secondary text-secondary-foreground"
+                              : "bg-secondary/50"
+                            : autoState === "unavailable"
+                              ? "bg-muted-foreground/40 text-foreground"
+                              : autoState === "on"
+                                ? "bg-[hsl(var(--success))] text-white"
+                                : "bg-[hsl(var(--destructive))] text-[hsl(var(--destructive-foreground))]",
                         )}
+                        title={autoColored ? autoLabel : undefined}
+                        aria-label={autoColored ? autoLabel : undefined}
                       >
                         {count}
                       </span>
@@ -391,7 +409,10 @@ export default function App() {
               <Card>
                 <div className="divide-y divide-border">
                   {shown.map((r) => (
-                    <div key={r.name} className="px-3 py-2">
+                    // Key by provider+name: a Claude and a Codex profile can share a
+                    // name (e.g. "Matze1"); a name-only key lets React morph one into
+                    // the other on a tab switch — the brief Claude-on-Codex flash.
+                    <div key={`${r.provider}/${r.name}`} className="px-3 py-2">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex min-w-0 items-center gap-2">
                           <span
@@ -456,7 +477,7 @@ export default function App() {
                                   })
                                 }
                               >
-                                <Play /> Run
+                                <Terminal /> Term
                               </Button>
                               {apps
                                 .filter((a) => a.provider === selected && a.installed)
@@ -484,7 +505,10 @@ export default function App() {
                           )}
                         </div>
                       </div>
-                      {usage[r.name] && <UsageBars usage={usage[r.name]} />}
+                      {/* Usage exists only for Claude; gating on the selected provider
+                          stops a stale same-name entry from flashing Claude's bars onto
+                          a Codex card during a tab switch. */}
+                      {selected === "claude" && usage[r.name] && <UsageBars usage={usage[r.name]} />}
                     </div>
                   ))}
                 </div>

@@ -40,9 +40,10 @@ export function EmbeddedTerminal({
     } catch {
       /* host not laid out yet — resize handler will fit */
     }
+    term.focus(); // start typing immediately — no click-to-focus first
 
     const ctrl = attachTerminal(term, tauriBackend, args, () => setExited(true));
-    const onResize = () => {
+    const refit = () => {
       try {
         fit.fit();
         ctrl.resize(term.rows, term.cols);
@@ -50,10 +51,16 @@ export function EmbeddedTerminal({
         /* ignore transient layout errors */
       }
     };
-    window.addEventListener("resize", onResize);
+    // Re-fit whenever the host box changes — window resize, the window being
+    // dragged to a new size, or the initial layout settling. A ResizeObserver on
+    // the host catches all three (a window-resize listener alone misses the last).
+    const ro = new ResizeObserver(refit);
+    ro.observe(host);
+    window.addEventListener("resize", refit);
 
     return () => {
-      window.removeEventListener("resize", onResize);
+      ro.disconnect();
+      window.removeEventListener("resize", refit);
       void ctrl.dispose();
       term.dispose();
     };
@@ -61,7 +68,7 @@ export function EmbeddedTerminal({
   }, []);
 
   return (
-    <div className="flex flex-col rounded-md border border-border bg-[#0b0b10]">
+    <div className="flex h-full flex-col rounded-md border border-border bg-[#0b0b10]">
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <span className="text-xs text-muted-foreground">
           {title}
@@ -71,7 +78,11 @@ export function EmbeddedTerminal({
           <X className="size-3.5" />
         </Button>
       </div>
-      <div ref={hostRef} className="h-64 w-full overflow-hidden p-1.5" />
+      {/* Grow to fill the panel; min-h-0 lets the flex child actually shrink so
+          the FitAddon can size the pty to the real available height. A generous
+          black bottom margin keeps the CLI's status line off the border so it
+          stays readable (the FitAddon sizes the pty inside this padding). */}
+      <div ref={hostRef} className="min-h-0 w-full flex-1 overflow-hidden px-1.5 pt-1.5 pb-8" />
     </div>
   );
 }
