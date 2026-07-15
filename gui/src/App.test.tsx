@@ -123,7 +123,7 @@ describe("App", () => {
   it("shows the selected provider's profiles with per-profile usage; labels render", async () => {
     render(<App />);
     expect(await screen.findByRole("tab", { name: /claude/i })).toBeTruthy();
-    expect(screen.getByText(/privat/)).toBeTruthy();
+    expect(await screen.findByText(/privat/)).toBeTruthy();
     expect(screen.queryByText(/oai/)).toBeNull(); // codex hidden behind its tab
     // per-profile usage bar rendered for the claude profiles
     expect(await screen.findAllByText("5h")).not.toHaveLength(0);
@@ -142,7 +142,7 @@ describe("App", () => {
   it("uses a non-active profile and refreshes", async () => {
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i });
-    const useButtons = screen.getAllByRole("button", { name: "Use" });
+    const useButtons = await screen.findAllByRole("button", { name: "Use" });
     expect(useButtons.length).toBe(1); // only privat (work is active)
     fireEvent.click(useButtons[0]);
     expect(ipc.switchProfile).toHaveBeenCalledWith("claude", "privat");
@@ -158,7 +158,7 @@ describe("App", () => {
   it("runs a session in the embedded terminal (no external window) when Term is clicked", async () => {
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i });
-    fireEvent.click(screen.getAllByRole("button", { name: "Term" })[0]);
+    fireEvent.click((await screen.findAllByRole("button", { name: "Term" }))[0]);
     const term = await screen.findByTestId("term");
     expect(term.textContent).toContain("run work --provider claude"); // sessionArgs
     expect(term.textContent).toMatch(/Session — Claude \/ work/);
