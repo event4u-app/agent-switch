@@ -20,6 +20,13 @@ import {
   listProfiles,
   activeStatus,
   switchProfile,
+  agentConfigVersion,
+  installAgentConfig,
+  upgradeAgentConfig,
+  shareStatus,
+  shareOn,
+  shareOff,
+  shareSync,
   openWeb,
   loginArgs,
   sessionArgs,
@@ -214,5 +221,56 @@ describe("ipc", () => {
   it("setTrayTooltip invokes the `set_tray_tooltip` Tauri command", async () => {
     await setTrayTooltip("agent-switch — 82% context");
     expect(invoke).toHaveBeenCalledWith("set_tray_tooltip", { text: "agent-switch — 82% context" });
+  });
+});
+
+describe("agent-config companion CLI", () => {
+  it("agentConfigVersion runs the scoped `agent-config --version` and parses the version", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: "agent-config 9.2.0\n", stderr: "" });
+    expect(await agentConfigVersion()).toBe("9.2.0");
+    expect(create).toHaveBeenCalledWith("agent-config-version", ["--version"]);
+  });
+
+  it("agentConfigVersion returns null when not installed (non-zero exit or spawn throws)", async () => {
+    execute.mockResolvedValue({ code: 127, stdout: "", stderr: "command not found" });
+    expect(await agentConfigVersion()).toBeNull();
+    execute.mockRejectedValueOnce(new Error("ENOENT"));
+    expect(await agentConfigVersion()).toBeNull();
+  });
+
+  it("installAgentConfig runs the exact scoped npx installer, throwing on failure", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+    await installAgentConfig();
+    expect(create).toHaveBeenCalledWith("agent-config-install", ["-y", "@event4u/agent-config", "init"]);
+    execute.mockResolvedValue({ code: 1, stdout: "", stderr: "network down" });
+    await expect(installAgentConfig()).rejects.toThrow(/network down/);
+  });
+
+  it("upgradeAgentConfig runs the scoped `agent-config upgrade`, throwing on failure", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+    await upgradeAgentConfig();
+    expect(create).toHaveBeenCalledWith("agent-config-upgrade", ["upgrade"]);
+    execute.mockResolvedValue({ code: 2, stdout: "", stderr: "boom" });
+    await expect(upgradeAgentConfig()).rejects.toThrow(/boom/);
+  });
+});
+
+describe("share (global-skill linking)", () => {
+  it("shareStatus reads real state via `share status --source default --json`", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: '{"active":true,"source":"default","profiles":[{"name":"work","shared":true}]}', stderr: "" });
+    const s = await shareStatus();
+    expect(create).toHaveBeenCalledWith("agent-switch", ["share", "status", "--source", "default", "--json"]);
+    expect(s.active).toBe(true);
+    expect(s.profiles[0]).toEqual({ name: "work", shared: true });
+  });
+
+  it("shareOn / shareOff / shareSync issue the right commands", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+    await shareOn();
+    expect(create).toHaveBeenCalledWith("agent-switch", ["share", "on", "--source", "default"]);
+    await shareOff();
+    expect(create).toHaveBeenCalledWith("agent-switch", ["share", "off"]);
+    await shareSync();
+    expect(create).toHaveBeenCalledWith("agent-switch", ["share", "sync", "--source", "default"]);
   });
 });

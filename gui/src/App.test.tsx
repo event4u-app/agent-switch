@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as React from "react";
-import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, cleanup, act } from "@testing-library/react";
 
 // The IPC layer is Tauri-coupled; mock it so the component logic is testable in
 // jsdom. loginArgs/sessionArgs are pure arg builders — kept real so the args
@@ -42,6 +42,13 @@ const ipc = vi.hoisted(() => ({
   clearNotifications: vi.fn(),
   getOsNotify: vi.fn(),
   setOsNotify: vi.fn(),
+  agentConfigVersion: vi.fn(),
+  installAgentConfig: vi.fn(),
+  upgradeAgentConfig: vi.fn(),
+  shareStatus: vi.fn(),
+  shareOn: vi.fn(),
+  shareOff: vi.fn(),
+  shareSync: vi.fn(),
 }));
 vi.mock("./ipc.js", () => ipc);
 
@@ -49,9 +56,17 @@ vi.mock("./ipc.js", () => ipc);
 // jsdom — mock the wrappers so the in-window logic is testable without it.
 const desktopNotify = vi.hoisted(() => vi.fn().mockResolvedValue(false));
 const clearDesktopNotify = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const showAppWindow = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+// Capture the click callback the app registers, so a test can fire it.
+const notifClick = vi.hoisted(() => ({ cb: null as null | (() => void) }));
 vi.mock("./notifications.js", () => ({
   sendDesktopNotification: desktopNotify,
   clearDesktopNotifications: clearDesktopNotify,
+  showAppWindow,
+  onNotificationClick: (cb: () => void) => {
+    notifClick.cb = cb;
+    return Promise.resolve(() => {});
+  },
   desktopPermission: vi.fn().mockResolvedValue("default"),
   requestDesktopPermission: vi.fn().mockResolvedValue("granted"),
 }));
@@ -69,11 +84,18 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "" }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0 }));
 // Keep the update-check path inert in the App tests: uptodate → no toast, no
 // network. The update logic itself is covered by updates.test.ts.
-vi.mock("./updates.js", () => ({
+// Keep the real pure helpers (isNewer/compareVersions — used by agent-config.js)
+// but stub the two outward-facing calls so tests never hit the network.
+const fetchLatest = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" }),
+);
+vi.mock("./updates.js", async (importActual) => ({
+  ...(await importActual<typeof import("./updates.js")>()),
   checkForUpdate: () => Promise.resolve({ kind: "uptodate", current: "1.0.0", latest: "1.0.0" }),
+  fetchLatestRelease: fetchLatest,
 }));
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: vi.fn() }));
 vi.mock("./settings-store.js", () => ({
@@ -110,6 +132,14 @@ vi.mock("./settings-store.js", () => ({
   setUpdateNotifiedVersion: (v: string) => {
     store.updateNotifiedVersion = v;
   },
+  getAgentConfigNotifiedVersion: () => store.agentConfigNotifiedVersion,
+  setAgentConfigNotifiedVersion: (v: string) => {
+    store.agentConfigNotifiedVersion = v;
+  },
+  getNextUsageRefreshAt: () => store.nextUsageRefreshAt,
+  setNextUsageRefreshAt: (ts: number) => {
+    store.nextUsageRefreshAt = ts;
+  },
 }));
 
 import App from "./App.js";
@@ -129,11 +159,19 @@ const usageSnap: UsageSnapshot = {
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
+  // usage-cache uses real localStorage — clear it so a prior test's fetch-attempt
+  // cooldown doesn't suppress the usage fetch in the next test.
+  try {
+    localStorage.clear();
+  } catch {
+    /* jsdom may not provide it */
+  }
   // Global auto-switch defaults OFF in production; enable it for the auto-switch
   // UI tests. (The dedicated default-off test flips this itself.)
   store.globalAuto = true;
   store.notifLastRead = 0;
   store.mutedKinds = [];
+  store.agentConfigNotifiedVersion = "";
   ipc.listProfiles.mockResolvedValue(rows);
   ipc.profileUsage.mockResolvedValue(usageSnap);
   ipc.getAutoSwitch.mockResolvedValue({
@@ -173,9 +211,21 @@ beforeEach(() => {
   ipc.clearNotifications.mockResolvedValue(undefined);
   ipc.getOsNotify.mockResolvedValue(false);
   ipc.setOsNotify.mockResolvedValue(undefined);
+  // agent-config detected as installed + up to date → banner hidden by default,
+  // so it never interferes with the existing assertions.
+  ipc.agentConfigVersion.mockResolvedValue("9.2.0");
+  ipc.installAgentConfig.mockResolvedValue(undefined);
+  ipc.upgradeAgentConfig.mockResolvedValue(undefined);
+  ipc.shareStatus.mockResolvedValue({ active: false, source: "default", profiles: [] });
+  ipc.shareOn.mockResolvedValue(undefined);
+  ipc.shareOff.mockResolvedValue(undefined);
+  ipc.shareSync.mockResolvedValue(undefined);
+  fetchLatest.mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" });
   desktopNotify.mockClear();
   desktopNotify.mockResolvedValue(false);
   clearDesktopNotify.mockClear();
+  showAppWindow.mockClear();
+  notifClick.cb = null;
 });
 
 describe("App", () => {
@@ -390,6 +440,78 @@ describe("App", () => {
     await waitFor(() => expect(screen.queryByText("Hello")).toBeNull());
   });
 
+  it("clicking a desktop notification shows the window and opens the bell flyout", async () => {
+    ipc.listNotifications.mockResolvedValue([
+      { id: "1", ts: 2000, kind: "success", title: "Auto-switched account", message: "claude/work → claude/privat." },
+    ]);
+    render(<App />);
+    await waitFor(() => expect(notifClick.cb).toBeTypeOf("function")); // listener registered
+    // The flyout is closed until the notification is clicked.
+    expect(screen.queryByText("Auto-switched account")).toBeNull();
+    act(() => notifClick.cb!()); // simulate the OS notification click
+    await waitFor(() => expect(showAppWindow).toHaveBeenCalled());
+    expect(await screen.findByText("Auto-switched account")).toBeTruthy(); // flyout opened
+  });
+
+  it("the manual Refresh button forces a usage fetch even within the interval cooldown", async () => {
+    // jsdom's default localStorage is a no-op stub here, which would disable the
+    // cooldown entirely — install a working in-memory one so the cooldown is real.
+    const map = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      value: {
+        getItem: (k: string) => map.get(k) ?? null,
+        setItem: (k: string, v: string) => void map.set(k, String(v)),
+        removeItem: (k: string) => void map.delete(k),
+        clear: () => map.clear(),
+      },
+      configurable: true,
+    });
+    // Seed a recent fetch attempt for every claude profile so the AUTOMATIC
+    // (mount) refresh is on cooldown and skips fetching.
+    localStorage.setItem(
+      "agent-switch.usage.attempts.v1",
+      JSON.stringify({ "claude/work": Date.now(), "claude/privat": Date.now() }),
+    );
+    render(<App />);
+    // Wait for the mount refresh to finish (listNotifications is its last step).
+    await waitFor(() => expect(ipc.listNotifications).toHaveBeenCalled());
+    expect(ipc.profileUsage).not.toHaveBeenCalled(); // cooldown respected on the automatic path
+    fireEvent.click(await screen.findByRole("button", { name: /^refresh$/i }));
+    await waitFor(() => expect(ipc.profileUsage).toHaveBeenCalled()); // manual click bypassed the cooldown
+  });
+
+  it("shows the agent-config install banner when it is not installed", async () => {
+    ipc.agentConfigVersion.mockResolvedValue(null); // not installed
+    render(<App />);
+    expect(await screen.findByText(/supercharge your ai agents/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /install/i })).toBeTruthy();
+  });
+
+  it("fires an update notification only when agent-config is installed AND newer exists", async () => {
+    ipc.agentConfigVersion.mockResolvedValue("9.1.0"); // installed, older
+    fetchLatest.mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" });
+    render(<App />);
+    await waitFor(() =>
+      expect(ipc.recordNotification).toHaveBeenCalledWith(
+        "info",
+        "agent-config update available",
+        expect.stringContaining("v9.1.0 → v9.2.0"),
+      ),
+    );
+  });
+
+  it("does NOT notify about an agent-config update when it is not installed", async () => {
+    ipc.agentConfigVersion.mockResolvedValue(null); // not installed
+    fetchLatest.mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" });
+    render(<App />);
+    await screen.findByText(/supercharge your ai agents/i); // banner rendered → detect ran
+    expect(ipc.recordNotification).not.toHaveBeenCalledWith(
+      "info",
+      "agent-config update available",
+      expect.anything(),
+    );
+  });
+
   it("shows an in-window toast when a fresh event cannot be delivered to the desktop", async () => {
     desktopNotify.mockResolvedValue(false); // permission denied / unavailable
     ipc.listNotifications.mockResolvedValue([
@@ -498,6 +620,16 @@ describe("App", () => {
     expect((geminiCli as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(geminiCli);
     expect(ipc.setProvider).not.toHaveBeenCalled(); // can't enable a missing provider
+  });
+
+  it("toggling 'Share global skills' in General settings links the global content into profiles", async () => {
+    ipc.shareStatus.mockResolvedValue({ active: false, source: "default", profiles: [] });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    const toggle = await screen.findByRole("button", { name: /share global skills/i });
+    expect(toggle.textContent).toMatch(/off/i);
+    fireEvent.click(toggle);
+    await waitFor(() => expect(ipc.shareOn).toHaveBeenCalled()); // runs `share on --source default`
   });
 
   it("changes the theme from the Design settings tab", async () => {

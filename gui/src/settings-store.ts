@@ -119,6 +119,49 @@ export function setUpdateNotifiedVersion(version: string): void {
   }
 }
 
+const NEXT_USAGE_REFRESH_AT_KEY = "agent-switch-next-usage-refresh-at";
+
+/** Wall-clock (unix ms) of the next scheduled usage refresh, persisted so a dev
+ *  rebuild/reload does NOT restart the countdown (which would re-fetch and burn
+ *  the rate-limited endpoint). 0 = unset. */
+export function getNextUsageRefreshAt(): number {
+  try {
+    const n = Number(localStorage.getItem(NEXT_USAGE_REFRESH_AT_KEY));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function setNextUsageRefreshAt(ts: number): void {
+  try {
+    localStorage.setItem(NEXT_USAGE_REFRESH_AT_KEY, String(ts));
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const AGENT_CONFIG_NOTIFIED_VERSION_KEY = "agent-switch-agent-config-notified-version";
+
+/** The newest agent-config version we have already notified about, so the
+ *  hourly check fires at most one "update available" notification per version.
+ *  Empty string = never notified. */
+export function getAgentConfigNotifiedVersion(): string {
+  try {
+    return localStorage.getItem(AGENT_CONFIG_NOTIFIED_VERSION_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setAgentConfigNotifiedVersion(version: string): void {
+  try {
+    localStorage.setItem(AGENT_CONFIG_NOTIFIED_VERSION_KEY, version);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const NOTIF_LAST_READ_KEY = "agent-switch-notif-last-read";
 
 /** Timestamp (unix ms) of the newest notification the user has seen. The bell's

@@ -5,6 +5,10 @@ import {
   setRefreshMinutes,
   getDevMode,
   setDevModeFlag,
+  getAgentConfigNotifiedVersion,
+  setAgentConfigNotifiedVersion,
+  getNextUsageRefreshAt,
+  setNextUsageRefreshAt,
   getAutoUpdateCheck,
   setAutoUpdateCheckFlag,
   getUpdateNotifiedVersion,
@@ -84,5 +88,25 @@ describe("getUpdateNotifiedVersion / setUpdateNotifiedVersion", () => {
     expect(getUpdateNotifiedVersion()).toBe("");
     setUpdateNotifiedVersion("v1.1.0");
     expect(getUpdateNotifiedVersion()).toBe("v1.1.0");
+  });
+});
+
+describe("getAgentConfigNotifiedVersion / setAgentConfigNotifiedVersion", () => {
+  it("defaults to empty and round-trips the notified version", () => {
+    expect(getAgentConfigNotifiedVersion()).toBe("");
+    setAgentConfigNotifiedVersion("9.2.0");
+    expect(getAgentConfigNotifiedVersion()).toBe("9.2.0");
+  });
+});
+
+describe("getNextUsageRefreshAt / setNextUsageRefreshAt", () => {
+  it("defaults to 0 and round-trips a positive timestamp (survives reload via localStorage)", () => {
+    expect(getNextUsageRefreshAt()).toBe(0);
+    setNextUsageRefreshAt(1_784_000_000_000);
+    expect(getNextUsageRefreshAt()).toBe(1_784_000_000_000);
+  });
+  it("ignores a garbage / non-positive stored value", () => {
+    localStorage.setItem("agent-switch-next-usage-refresh-at", "nope");
+    expect(getNextUsageRefreshAt()).toBe(0);
   });
 });
