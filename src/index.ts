@@ -632,9 +632,9 @@ function cmdTokens(providerId: ProviderId, providerExplicit: boolean, name?: str
 
   if (!runner) {
     const msg = "Token tracking needs ccusage (an optional external tool we don't bundle).\n" +
-      "  Install:   npm i -g ccusage      (or: brew install ccusage)\n" +
-      "  Zero-install: run once with  AGENT_SWITCH_CCUSAGE='npx -y ccusage@latest' agent-switch tokens\n" +
-      "Context monitoring (sessions/status/notify) works without it.";
+      "  Install it:   agent-switch tokens install     (runs `npm i -g ccusage`; or `brew install ccusage`)\n" +
+      "  Zero-install: AGENT_SWITCH_CCUSAGE='npx -y ccusage@latest' agent-switch tokens\n" +
+      "Context monitoring (sessions/status/alerts) works without it.";
     if (flags.json) { console.log(JSON.stringify({ error: "ccusage-not-found", hint: msg }, null, 2)); return; }
     die(msg);
   }
