@@ -3,6 +3,7 @@ import {
   groupByProvider,
   activeRow,
   nearestLimit,
+  pickMostHeadroom,
   trayTooltip,
   sparkline,
   formatReset,
@@ -173,5 +174,31 @@ describe("formatReset", () => {
     expect(formatReset("2026-07-13T00:00:00Z", now)).toBe("");
     expect(formatReset(null, now)).toBe("");
     expect(formatReset("nonsense", now)).toBe("");
+  });
+});
+
+describe("pickMostHeadroom", () => {
+  it("picks the lowest known utilization (most headroom)", () => {
+    expect(
+      pickMostHeadroom([
+        { name: "a", max: 80 },
+        { name: "b", max: 20 },
+        { name: "c", max: 55 },
+      ]),
+    ).toBe("b");
+  });
+
+  it("treats unknown usage as worse than any real value, but still picks it if nothing is known", () => {
+    expect(
+      pickMostHeadroom([
+        { name: "known", max: 90 },
+        { name: "unknown", max: null },
+      ]),
+    ).toBe("known");
+    expect(pickMostHeadroom([{ name: "only", max: null }])).toBe("only");
+  });
+
+  it("returns null when there are no candidates", () => {
+    expect(pickMostHeadroom([])).toBeNull();
   });
 });

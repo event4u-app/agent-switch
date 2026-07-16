@@ -8,7 +8,7 @@
  * and the caller relies on the in-window bell/flyout as the guaranteed fallback.
  */
 
-import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { isPermissionGranted, requestPermission, sendNotification, removeAllActive } from "@tauri-apps/plugin-notification";
 
 export type NotificationKind = "success" | "error" | "warning" | "info";
 
@@ -38,6 +38,21 @@ export async function sendDesktopNotification(title: string, body: string): Prom
     return true;
   } catch {
     return false; // plugin unavailable (non-Tauri env) → in-window fallback
+  }
+}
+
+/**
+ * Remove the desktop notifications THIS app delivered from the OS notification
+ * center — called when the user clears the in-app log so the two stay in sync.
+ * Best-effort: no-op when the plugin is unavailable or permission was never
+ * granted. Only affects GUI-sent notifications; the daemon's OS notifications
+ * (osascript / notify-send) belong to other processes and cannot be removed.
+ */
+export async function clearDesktopNotifications(): Promise<void> {
+  try {
+    await removeAllActive();
+  } catch {
+    /* plugin unavailable / unsupported → nothing to clear */
   }
 }
 
