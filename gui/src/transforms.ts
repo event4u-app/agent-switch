@@ -61,7 +61,7 @@ export interface SessionRow {
   context?: SessionContext | null;
 }
 
-/** Compact "134k" token count. Pure — used by the context badge + tokens view. */
+/** Compact "134k" token count. Pure — used by the context badge. */
 export function formatTokensK(n: number): string {
   return `${Math.round(n / 1000)}k`;
 }
@@ -95,44 +95,6 @@ export function worstLiveContextPct(sessions: SessionRow[], activeProfiles: stri
  *  number, active profile only — never a per-profile list. */
 export function contextTrayTooltip(pct: number | null): string {
   return pct == null ? "agent-switch" : `agent-switch — ${pct}% context`;
-}
-
-/** Per-day token usage (one entry from `tokens --json`'s `days`). */
-export interface TokenDay {
-  date: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationTokens: number;
-  cacheReadTokens: number;
-  totalTokens: number;
-  cost: number;
-  models: string[];
-}
-
-export interface TokenTotals {
-  inputTokens: number;
-  outputTokens: number;
-  cacheCreationTokens: number;
-  cacheReadTokens: number;
-  totalTokens: number;
-  cost: number;
-}
-
-/** How a cost figure was derived: real vendor billing, computed from token
- *  counts, or a notional API-equivalent value of subscription usage. */
-export type CostBasis = "vendor" | "computed" | "notional";
-
-export interface TokenUsage {
-  days: TokenDay[];
-  totals: TokenTotals;
-  costBasis: CostBasis;
-}
-
-/** One profile's token usage from `tokens [profile] --json` (Claude). */
-export interface TokenRow {
-  provider: ProviderId;
-  name: string;
-  tokens: TokenUsage | null;
 }
 
 /** Compact "how long ago" label from an mtime, e.g. "3m", "2h", "5d". Pure. */

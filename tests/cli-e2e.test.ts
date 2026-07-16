@@ -393,46 +393,4 @@ test("`takeover --provider codex --keep-source` is refused (fork unverified → 
   }
 });
 
-test("`tokens install --dry-run` prints the install command without running it", gate, () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
-  try {
-    const out = run(home, ["tokens", "install", "--dry-run"]);
-    // ccusage absent in CI → the dry-run command; a dev box with ccusage on PATH
-    // short-circuits to "already installed". Either is correct; neither installs.
-    assert.match(out, /npm install -g ccusage|already installed/);
-  } finally {
-    fs.rmSync(home, { recursive: true, force: true });
-  }
-});
 
-test("`tokens --json` runs ccusage (stubbed) and renders the parsed report with costBasis", gate, () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
-  try {
-    // A stub standing in for ccusage: emits the real `daily --json` shape so the
-    // whole runCcusage → parseCcusageDaily → render chain is exercised without
-    // ccusage installed. AGENT_SWITCH_CCUSAGE overrides the runner.
-    const stub = path.join(home, "ccusage-stub.mjs");
-    fs.writeFileSync(
-      stub,
-      `const a=process.argv.slice(2);` +
-        `if(a.includes("--version")){console.log("stub 1.0.0");process.exit(0);}` +
-        `if(a[0]==="daily"){console.log(JSON.stringify({daily:[{agent:"claude",period:"2026-07-15",inputTokens:100,outputTokens:20,cacheCreationTokens:5,cacheReadTokens:50,totalTokens:175,totalCost:1.23,modelsUsed:["claude-opus-4-8"]}],totals:{inputTokens:100,outputTokens:20,cacheCreationTokens:5,cacheReadTokens:50,totalTokens:175,totalCost:1.23}}));process.exit(0);}` +
-        `process.exit(1);`,
-    );
-    fs.mkdirSync(path.join(home, "claude", "work", "config"), { recursive: true });
-    fs.writeFileSync(path.join(home, "state.json"), JSON.stringify({ active: { claude: "work" }, labels: {}, autoSwitch: {}, providers: {}, switchStrategy: "best" }));
-
-    const out = execFileSync("node", [CLI, "tokens", "work", "--json"], {
-      env: { ...process.env, AGENT_SWITCH_HOME: home, AGENT_SWITCH_CCUSAGE: `node ${stub}` },
-      encoding: "utf8",
-    });
-    const rows = JSON.parse(out);
-    assert.equal(rows[0].name, "work");
-    assert.equal(rows[0].tokens.totals.totalTokens, 175);
-    assert.equal(rows[0].tokens.days[0].cost, 1.23);
-    // subscription/OAuth (empty-credential) profile → notional, never real spend
-    assert.equal(rows[0].tokens.costBasis, "notional");
-  } finally {
-    fs.rmSync(home, { recursive: true, force: true });
-  }
-});

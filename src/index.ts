@@ -102,7 +102,6 @@ import {
   HookEventRecord,
 } from "./hooks.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "./notify.js";
-import { resolveCcusageRunner, runCcusage, costBasisFor, TokenReport, CCUSAGE_INSTALL } from "./tokens.js";
 import { appendNotification, readNotifications, clearNotifications, NotificationKind } from "./notifications.js";
 import { APPS, buildLaunch, findApp, guiDataDir, isInstalled } from "./apps.js";
 import {
@@ -591,85 +590,6 @@ function cmdHooks(sub?: string, name?: string): void {
   }
 }
 
-/**
- * `agent-switch tokens [profile] [--provider P] [--by-model] [--json]` — token
- * usage + cost per profile, delegated to ccusage (optional external tool). The
- * cost figure always carries its `costBasis`; subscription/OAuth profiles are
- * "notional" (API-equivalent, never real spend). Own-profile only.
- */
-function cmdTokens(providerId: ProviderId, providerExplicit: boolean, name?: string, flags: Record<string, string | boolean> = {}): void {
-  if (providerExplicit && providerId !== "claude" && providerId !== "codex") {
-    die(`tokens supports claude and codex (not ${providerId})`);
-  }
-  const runner = resolveCcusageRunner();
-
-  // `tokens status` — ccusage availability + version, CLI-appropriate freshness.
-  if (name === "status") {
-    if (!runner) { console.log("ccusage: not found on PATH. Install with `agent-switch tokens install` (or `npm i -g ccusage`), or set AGENT_SWITCH_CCUSAGE='npx -y ccusage@latest'."); return; }
-    const [cmd, ...prefix] = runner;
-    const ver = spawnSync(cmd, [...prefix, "--version"], { encoding: "utf8", timeout: 60_000 }).stdout?.trim() || "(unknown)";
-    console.log(`ccusage: ${ver}  ·  runner: ${runner.join(" ")}`);
-    console.log("Token data is read live from ccusage on each `tokens` call (no cached rollup to go stale).");
-    return;
-  }
-
-  // `tokens install` — install ccusage globally, streaming output to the caller
-  // (the GUI runs this in its embedded terminal via the Install button). We do
-  // NOT bundle ccusage (zero-dep invariant + council D2); this is an explicit,
-  // user-triggered install of an optional external tool.
-  if (name === "install") {
-    if (runner && runner[0] === "ccusage") { console.log(`ccusage is already installed (${runner.join(" ")}). Nothing to do.`); return; }
-    const cmd = CCUSAGE_INSTALL.join(" ");
-    if (flags["dry-run"]) { console.log(`[dry-run] ${cmd}`); return; }
-    const npmOk = spawnSync("npm", ["--version"], { stdio: "ignore", shell: process.platform === "win32" }).status === 0;
-    if (!npmOk) die("npm not found. Install Node.js/npm first, or install ccusage another way (e.g. `brew install ccusage`).");
-    console.log(`Installing ccusage — running: ${cmd}\n`);
-    const res = spawnSync(CCUSAGE_INSTALL[0], [...CCUSAGE_INSTALL.slice(1)], { stdio: "inherit", shell: process.platform === "win32" });
-    if (res.status === 0) console.log("\nccusage installed. Run `agent-switch tokens` to see usage + cost.");
-    else die(`\nccusage install failed (exit ${res.status ?? "?"}). Try \`${cmd}\` yourself, or \`brew install ccusage\`.`);
-    return;
-  }
-
-  if (!runner) {
-    const msg = "Token tracking needs ccusage (an optional external tool we don't bundle).\n" +
-      "  Install it:   agent-switch tokens install     (runs `npm i -g ccusage`; or `brew install ccusage`)\n" +
-      "  Zero-install: AGENT_SWITCH_CCUSAGE='npx -y ccusage@latest' agent-switch tokens\n" +
-      "Context monitoring (sessions/status/alerts) works without it.";
-    if (flags.json) { console.log(JSON.stringify({ error: "ccusage-not-found", hint: msg }, null, 2)); return; }
-    die(msg);
-  }
-
-  const profiles = name ? [requireProfile(providerId, name, "tokens")] : listProfiles(providerId);
-  if (profiles.length === 0) die(`no ${providerId} profiles`);
-
-  const results: { profile: string; report: TokenReport | null }[] = [];
-  for (const p of profiles) {
-    const cfg = configDir(providerId, p);
-    const basis = costBasisFor(readProfileCredential(cfg));
-    results.push({ profile: p, report: runCcusage(runner, providerId, cfg, basis) });
-  }
-
-  if (flags.json) {
-    console.log(JSON.stringify(results.map((r) => ({ provider: providerId, name: r.profile, tokens: r.report })), null, 2));
-    return;
-  }
-
-  const fmtCost = (n: number, basis: string) => `$${n.toFixed(2)} (${basis})`;
-  const k = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : `${n}`);
-  for (const { profile: p, report } of results) {
-    console.log(`${providerId}/${p}:`);
-    if (!report) { console.log("  (no ccusage data — profile may not have run, or ccusage errored)"); continue; }
-    if (flags["by-model"]) {
-      const models = [...new Set(report.days.flatMap((d) => d.models))];
-      console.log(`  models: ${models.join(", ") || "(none)"}`);
-    }
-    for (const d of report.days.slice(-14)) {
-      console.log(`  ${d.date}  ${k(d.totalTokens)} tok  ${fmtCost(d.cost, report.costBasis)}`);
-    }
-    console.log(`  ── total: ${k(report.totals.totalTokens)} tok  ${fmtCost(report.totals.cost, report.costBasis)}`);
-    if (report.costBasis === "notional") console.log("  (notional = API-equivalent value of subscription usage, not real spend)");
-  }
-}
 
 /** Idle-guard window per provider (council #10): a Claude turn runs 15–60s, a
  *  Codex turn can be sub-second. In-flight = last transcript entry non-finalized
@@ -1465,8 +1385,6 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch hooks install|uninstall|status [profile]   manage lifecycle push hooks in Claude settings.json
   agent-switch alerts on|off|status [--threshold 80,95]   record context/usage crossings to the notification log (off by default)
   agent-switch compact <profile> [--clear] [--dry-run] [--force]   type /compact (or /clear) into the profile's managed tmux pane
-  agent-switch tokens [profile] [--by-model] [--json]   token usage + cost per profile (via ccusage; subscription cost = notional)
-  agent-switch tokens install                           install ccusage (the optional external tool token tracking needs)
   agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place] [--print-only] [--force]   move a session to another profile and resume it
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile
@@ -1542,7 +1460,6 @@ async function main(): Promise<void> {
     case "hooks": return cmdHooks(positional[0], positional[1]);
     case "alerts": return cmdAlerts(positional[0], flags);
     case "compact": return cmdCompact(providerId, positional[0], flags);
-    case "tokens": return cmdTokens(providerId, providerExplicit, positional[0], flags);
     case "takeover": return cmdTakeover(providerId, providerExplicit, positional[0], flags);
     case "web": return cmdWeb(positional[0]);
     case "remove": case "rm": return cmdRemove(providerId, positional[0], !!flags.force);
