@@ -1,6 +1,6 @@
 ---
 complexity: standard
-status: active
+status: complete
 ---
 
 # Roadmap: Session handoff between profiles (`sessions` + `takeover`)
