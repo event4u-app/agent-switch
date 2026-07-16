@@ -19,6 +19,29 @@ tasks:
       - npm ci
       - npm --prefix gui ci
 
+  deps:
+    desc: Install CLI deps only if package.json / lockfile changed (or node_modules is missing)
+    method: timestamp
+    sources:
+      - package.json
+      - package-lock.json
+    generates:
+      - node_modules/.package-lock.json
+    cmds:
+      - npm install
+
+  gui:deps:
+    desc: Install GUI deps only if package.json / lockfile changed (or node_modules is missing)
+    dir: gui
+    method: timestamp
+    sources:
+      - package.json
+      - package-lock.json
+    generates:
+      - node_modules/.package-lock.json
+    cmds:
+      - npm install
+
   # ---------- CLI: build / test ----------
   build:
     desc: Compile the CLI (src → dist)
@@ -77,6 +100,7 @@ tasks:
 
   dev:
     desc: Build + `npm link` so `agent-switch` on PATH is this dev build
+    deps: [deps]
     cmds:
       - npm run build
       - npm link
@@ -104,6 +128,7 @@ tasks:
   gui:dev:
     desc: Run the tray GUI in dev (Tauri + Vite)
     dir: gui
+    deps: [gui:deps]
     cmds:
       - npm run tauri dev
 
