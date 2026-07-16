@@ -102,7 +102,7 @@ import {
   HookEventRecord,
 } from "./hooks.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "./notify.js";
-import { resolveCcusageRunner, runCcusage, costBasisFor, TokenReport } from "./tokens.js";
+import { resolveCcusageRunner, runCcusage, costBasisFor, TokenReport, CCUSAGE_INSTALL } from "./tokens.js";
 import { appendNotification, readNotifications, clearNotifications, NotificationKind } from "./notifications.js";
 import { APPS, buildLaunch, findApp, guiDataDir, isInstalled } from "./apps.js";
 import {
@@ -605,11 +605,28 @@ function cmdTokens(providerId: ProviderId, providerExplicit: boolean, name?: str
 
   // `tokens status` — ccusage availability + version, CLI-appropriate freshness.
   if (name === "status") {
-    if (!runner) { console.log("ccusage: not found on PATH. Install with `npm i -g ccusage`, or set AGENT_SWITCH_CCUSAGE='npx -y ccusage@latest'."); return; }
+    if (!runner) { console.log("ccusage: not found on PATH. Install with `agent-switch tokens install` (or `npm i -g ccusage`), or set AGENT_SWITCH_CCUSAGE='npx -y ccusage@latest'."); return; }
     const [cmd, ...prefix] = runner;
     const ver = spawnSync(cmd, [...prefix, "--version"], { encoding: "utf8", timeout: 60_000 }).stdout?.trim() || "(unknown)";
     console.log(`ccusage: ${ver}  ·  runner: ${runner.join(" ")}`);
     console.log("Token data is read live from ccusage on each `tokens` call (no cached rollup to go stale).");
+    return;
+  }
+
+  // `tokens install` — install ccusage globally, streaming output to the caller
+  // (the GUI runs this in its embedded terminal via the Install button). We do
+  // NOT bundle ccusage (zero-dep invariant + council D2); this is an explicit,
+  // user-triggered install of an optional external tool.
+  if (name === "install") {
+    if (runner && runner[0] === "ccusage") { console.log(`ccusage is already installed (${runner.join(" ")}). Nothing to do.`); return; }
+    const cmd = CCUSAGE_INSTALL.join(" ");
+    if (flags["dry-run"]) { console.log(`[dry-run] ${cmd}`); return; }
+    const npmOk = spawnSync("npm", ["--version"], { stdio: "ignore", shell: process.platform === "win32" }).status === 0;
+    if (!npmOk) die("npm not found. Install Node.js/npm first, or install ccusage another way (e.g. `brew install ccusage`).");
+    console.log(`Installing ccusage — running: ${cmd}\n`);
+    const res = spawnSync(CCUSAGE_INSTALL[0], [...CCUSAGE_INSTALL.slice(1)], { stdio: "inherit", shell: process.platform === "win32" });
+    if (res.status === 0) console.log("\nccusage installed. Run `agent-switch tokens` to see usage + cost.");
+    else die(`\nccusage install failed (exit ${res.status ?? "?"}). Try \`${cmd}\` yourself, or \`brew install ccusage\`.`);
     return;
   }
 
@@ -1449,6 +1466,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch alerts on|off|status [--threshold 80,95]   record context/usage crossings to the notification log (off by default)
   agent-switch compact <profile> [--clear] [--dry-run] [--force]   type /compact (or /clear) into the profile's managed tmux pane
   agent-switch tokens [profile] [--by-model] [--json]   token usage + cost per profile (via ccusage; subscription cost = notional)
+  agent-switch tokens install                           install ccusage (the optional external tool token tracking needs)
   agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place] [--print-only] [--force]   move a session to another profile and resume it
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile

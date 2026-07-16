@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseCcusageDaily, costBasisFor, resolveCcusageRunner } from "../src/tokens.js";
+import { parseCcusageDaily, costBasisFor, resolveCcusageRunner, CCUSAGE_INSTALL } from "../src/tokens.js";
 
 // A synthetic object matching the real `ccusage daily --json` shape captured in
 // spikes/t7 — deliberately synthetic so no real usage/cost data is committed.
@@ -49,4 +49,8 @@ test("costBasisFor: subscription/OAuth → notional, raw API key → computed", 
 
 test("resolveCcusageRunner honours the env override", () => {
   assert.deepEqual(resolveCcusageRunner({ AGENT_SWITCH_CCUSAGE: "npx -y ccusage@latest" } as any), ["npx", "-y", "ccusage@latest"]);
+});
+
+test("CCUSAGE_INSTALL is the global npm install command (never a bundled dep)", () => {
+  assert.deepEqual([...CCUSAGE_INSTALL], ["npm", "install", "-g", "ccusage"]);
 });

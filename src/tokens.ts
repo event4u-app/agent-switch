@@ -16,6 +16,11 @@ import { spawnSync } from "node:child_process";
 /** How a cost figure should be read (binding display rule, council #4). */
 export type CostBasis = "vendor" | "computed" | "notional";
 
+/** The command `tokens install` runs (in the GUI's embedded terminal or a
+ *  user's shell) to install ccusage globally. Fixed literal — never bundled as
+ *  a dependency (zero-dep invariant + council D2). */
+export const CCUSAGE_INSTALL = ["npm", "install", "-g", "ccusage"] as const;
+
 export interface TokenDay {
   date: string;
   inputTokens: number;

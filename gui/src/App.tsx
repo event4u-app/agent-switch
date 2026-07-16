@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Coins, Minimize2, Pencil, Check } from "lucide-react";
 import {
   compactArgs,
+  tokensInstallArgs,
   deactivateProfile,
   getAutoSwitch,
   getAutostart,
@@ -549,7 +550,10 @@ export default function App() {
             onProvidersChanged={refresh}
           />
         ) : showTokens ? (
-          <TokensView onClose={() => setShowTokens(false)} />
+          <TokensView
+            onClose={() => setShowTokens(false)}
+            onInstall={() => setTerminal({ args: tokensInstallArgs(), title: "Install ccusage" })}
+          />
         ) : showSessions ? (
           <SessionsView
             claudeProfiles={grouped.claude.map((r) => r.name)}
@@ -1717,7 +1721,7 @@ function TokenProfileCard({ row }: { row: TokenRow }) {
 /** Tokens view (behind the header coins icon): per-profile Claude token usage
  *  from `tokens --json`. A pure `--json` client — when ccusage is missing the
  *  payload carries an install hint, shown in place of the tables. */
-function TokensView({ onClose }: { onClose: () => void }) {
+function TokensView({ onClose, onInstall }: { onClose: () => void; onInstall: () => void }) {
   const [data, setData] = useState<TokenRow[] | TokensError | null>(null);
 
   useEffect(() => {
@@ -1740,8 +1744,14 @@ function TokensView({ onClose }: { onClose: () => void }) {
       {data === null ? (
         <div className="px-1 text-xs text-muted-foreground">Loading…</div>
       ) : err ? (
-        <div className="py-10 text-center text-sm text-muted-foreground">
-          {err.hint || "Install ccusage for token tracking."}
+        <div className="space-y-3 py-10 text-center">
+          <div className="text-sm text-muted-foreground">
+            Token tracking needs <span className="font-medium">ccusage</span>, an optional external tool.
+          </div>
+          <Button size="sm" onClick={onInstall} aria-label="Install ccusage">
+            <Coins /> Install ccusage
+          </Button>
+          <div className="text-[11px] text-muted-foreground">Runs {`npm install -g ccusage`} in the terminal.</div>
         </div>
       ) : rows.length === 0 ? (
         <div className="py-10 text-center text-sm text-muted-foreground">No token usage yet.</div>

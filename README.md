@@ -175,12 +175,15 @@ agent-switch tokens work              # token usage + cost per day (delegated to
   is in flight (`--force` to override), and prints the manual command anywhere
   else. `/clear` is gated behind `--force` (it discards the conversation).
 - **Token tracking needs [ccusage](https://github.com/ccusage/ccusage)** — an
-  optional external tool (not bundled). Install it (`npm i -g ccusage`) or run
-  zero-install with `AGENT_SWITCH_CCUSAGE='npx -y ccusage@latest'`. Context
-  monitoring works without it. **Subscription/OAuth profiles show cost as
-  "notional"** (the API-equivalent value of included usage, *not* real spend);
-  only a raw API-key profile shows computed spend. Gemini has no live-context
-  readout (shipped as unavailable); ccusage may still report its token totals.
+  optional external tool (not bundled, to keep the CLI zero-dependency).
+  Install it with **`agent-switch tokens install`** (runs `npm i -g ccusage`),
+  or in the GUI click **Install ccusage** in the Token-usage view — it runs the
+  install in the embedded terminal. Zero-install alternative:
+  `AGENT_SWITCH_CCUSAGE='npx -y ccusage@latest'`. Context monitoring works
+  without it. **Subscription/OAuth profiles show cost as "notional"** (the
+  API-equivalent value of included usage, *not* real spend); only a raw API-key
+  profile shows computed spend. Gemini has no live-context readout (shipped as
+  unavailable); ccusage may still report its token totals.
 
 ## Browser sessions (claude.ai) without re-login
 
