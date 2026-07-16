@@ -1184,30 +1184,30 @@ function NotificationSettings({
           </Button>
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
-          <div className="min-w-0">
-            <div className="text-[13px] font-medium">Context alerts</div>
-            <div className="text-xs text-muted-foreground">
-              Notify when a session's context window crosses a threshold
-              {notifyThresholds.length > 0 && ` (${notifyThresholds.join("%, ")}%)`}.
-            </div>
-          </div>
-          <Button
-            size="sm"
-            variant={notify ? "default" : "outline"}
-            disabled={notify === null}
-            onClick={toggleNotify}
-            aria-label="Context alerts"
-          >
-            {notify === null ? "…" : notify ? "On" : "Off"}
-          </Button>
-        </div>
         {err && <div className="text-xs text-destructive">{err}</div>}
 
         <div className="border-t border-border pt-3">
           <div className="text-[13px] font-medium">Alert types</div>
-          <div className="mb-2 text-xs text-muted-foreground">Mute the kinds you don't want to be alerted about.</div>
+          <div className="mb-2 text-xs text-muted-foreground">Choose what you want to be alerted about.</div>
           <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[13px]">Context alerts</div>
+                <div className="text-xs text-muted-foreground">
+                  A session's context window passing a threshold
+                  {notifyThresholds.length > 0 && ` (${notifyThresholds.join("%, ")}%)`}.
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant={notify ? "default" : "outline"}
+                disabled={notify === null}
+                onClick={toggleNotify}
+                aria-label="Context alerts"
+              >
+                {notify === null ? "…" : notify ? "On" : "Off"}
+              </Button>
+            </div>
             {KIND_LABELS.map(({ kind, label, hint }) => (
               <div key={kind} className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
