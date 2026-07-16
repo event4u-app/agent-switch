@@ -30,7 +30,7 @@
   },
   "plugins": {
     "shell": {
-      "open": false
+      "open": "^https://github\\.com/event4u-app/agent-switch/"
     }
   },
   "bundle": {

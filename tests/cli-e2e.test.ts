@@ -394,3 +394,31 @@ test("`takeover --provider codex --keep-source` is refused (fork unverified → 
 });
 
 
+test("`notify --kind/--title/--message` records the event and reads back (GUI notification path — F: value-flags)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    const created = JSON.parse(
+      run(home, ["notify", "--kind", "success", "--title", "Auto-switched account", "--message", "a → b (dev test).", "--json"]),
+    );
+    assert.equal(created.kind, "success"); // --kind value was consumed, not dropped
+    assert.equal(created.title, "Auto-switched account"); // --title value survived
+    assert.equal(created.message, "a → b (dev test)."); // --message value survived
+    const list = JSON.parse(run(home, ["notifications", "--json"]));
+    assert.equal(list.length, 1);
+    assert.equal(list[0].title, "Auto-switched account");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`providers disable --surface cli` toggles only that surface (value-flag regression)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    run(home, ["providers", "disable", "--provider", "claude", "--surface", "cli"]);
+    const status = JSON.parse(run(home, ["providers", "status", "--json"]));
+    assert.equal(status.claude.cli, false); // the targeted surface went off
+    assert.equal(status.claude.ui, true); // the other surface is untouched
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

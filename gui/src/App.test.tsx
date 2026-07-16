@@ -48,8 +48,10 @@ vi.mock("./ipc.js", () => ipc);
 // Desktop notifications go through the Tauri plugin, which isn't available in
 // jsdom — mock the wrappers so the in-window logic is testable without it.
 const desktopNotify = vi.hoisted(() => vi.fn().mockResolvedValue(false));
+const clearDesktopNotify = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock("./notifications.js", () => ({
   sendDesktopNotification: desktopNotify,
+  clearDesktopNotifications: clearDesktopNotify,
   desktopPermission: vi.fn().mockResolvedValue("default"),
   requestDesktopPermission: vi.fn().mockResolvedValue("granted"),
 }));
@@ -67,7 +69,13 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[] }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "" }));
+// Keep the update-check path inert in the App tests: uptodate → no toast, no
+// network. The update logic itself is covered by updates.test.ts.
+vi.mock("./updates.js", () => ({
+  checkForUpdate: () => Promise.resolve({ kind: "uptodate", current: "1.0.0", latest: "1.0.0" }),
+}));
+vi.mock("@tauri-apps/plugin-shell", () => ({ open: vi.fn() }));
 vi.mock("./settings-store.js", () => ({
   getAutoSwitchGlobal: () => store.globalAuto,
   setAutoSwitchGlobalFlag: (on: boolean) => {
@@ -89,6 +97,18 @@ vi.mock("./settings-store.js", () => ({
   getMutedKinds: () => store.mutedKinds,
   setMutedKinds: (kinds: string[]) => {
     store.mutedKinds = kinds;
+  },
+  getDevMode: () => store.devMode,
+  setDevModeFlag: (on: boolean) => {
+    store.devMode = on;
+  },
+  getAutoUpdateCheck: () => store.autoUpdateCheck,
+  setAutoUpdateCheckFlag: (on: boolean) => {
+    store.autoUpdateCheck = on;
+  },
+  getUpdateNotifiedVersion: () => store.updateNotifiedVersion,
+  setUpdateNotifiedVersion: (v: string) => {
+    store.updateNotifiedVersion = v;
   },
 }));
 
@@ -155,6 +175,7 @@ beforeEach(() => {
   ipc.setOsNotify.mockResolvedValue(undefined);
   desktopNotify.mockClear();
   desktopNotify.mockResolvedValue(false);
+  clearDesktopNotify.mockClear();
 });
 
 describe("App", () => {
@@ -364,7 +385,8 @@ describe("App", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /notifications/i }));
     fireEvent.click(await screen.findByRole("button", { name: /clear notifications/i }));
-    expect(ipc.clearNotifications).toHaveBeenCalled();
+    expect(ipc.clearNotifications).toHaveBeenCalled(); // clears the in-app log…
+    expect(clearDesktopNotify).toHaveBeenCalled(); // …AND the GUI-sent OS notifications
     await waitFor(() => expect(screen.queryByText("Hello")).toBeNull());
   });
 

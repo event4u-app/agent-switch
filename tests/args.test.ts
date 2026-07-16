@@ -41,6 +41,25 @@ test("parseArgs consumes --shell / --source values", () => {
   assert.equal(s.flags.source, "work");
 });
 
+test("parseArgs consumes notify's --kind/--title/--message values (regression: GUI notify + fetch-fail alerts)", () => {
+  // These flags carry the notification content. If any is treated as a boolean
+  // switch, its value leaks into positionals and `notify` dies with
+  // "needs at least --title or --message" — the bug behind the dead test button
+  // and the missing usage-fetch-failure notifications.
+  const p = parseArgs(["notify", "--kind", "success", "--title", "Auto-switched account", "--message", "a → b (dev test)."]);
+  assert.equal(p.flags.kind, "success");
+  assert.equal(p.flags.title, "Auto-switched account");
+  assert.equal(p.flags.message, "a → b (dev test).");
+  assert.deepEqual(p.positional, []); // none of the values leaked in
+});
+
+test("parseArgs consumes providers' --surface value", () => {
+  const p = parseArgs(["providers", "enable", "--provider", "claude", "--surface", "cli"]);
+  assert.equal(p.flags.surface, "cli");
+  assert.equal(p.providerId, "claude");
+  assert.deepEqual(p.positional, ["enable"]); // "cli" is the --surface value, not a positional
+});
+
 test("parseArgs throws on an explicit invalid provider (testable, not process.exit)", () => {
   assert.throws(() => parseArgs(["use", "--provider", "bogus", "x"]), /unknown provider/);
 });

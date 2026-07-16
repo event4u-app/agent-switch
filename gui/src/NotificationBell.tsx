@@ -17,11 +17,15 @@ export function NotificationBell({
   unread,
   onMarkRead,
   onClear,
+  onGenerateTest,
 }: {
   notifications: AppNotification[];
   unread: number;
   onMarkRead: () => void;
   onClear: () => void;
+  /** Dev-mode only: generate a batch of test notifications to exercise the
+   *  drawer. Undefined (the default) hides the button entirely. */
+  onGenerateTest?: () => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -101,6 +105,13 @@ export function NotificationBell({
                 </ul>
               )}
             </div>
+            {onGenerateTest && (
+              <div className="shrink-0 border-t border-border p-2">
+                <Button size="sm" variant="outline" className="w-full" onClick={onGenerateTest}>
+                  Generate 25 test notifications
+                </Button>
+              </div>
+            )}
           </div>
         </>,
         document.body,

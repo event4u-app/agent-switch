@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Minimize2, Pencil, Check } from "lucide-react";
+import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Minimize2, Pencil, Check, Download } from "lucide-react";
 import {
   compactArgs,
   deactivateProfile,
@@ -43,6 +43,7 @@ import { NotificationBell } from "./NotificationBell.js";
 import { Toaster } from "./Toaster.js";
 import {
   sendDesktopNotification,
+  clearDesktopNotifications,
   desktopPermission,
   requestDesktopPermission,
   type AppNotification,
@@ -62,13 +63,23 @@ import {
   setNotifLastRead,
   getMutedKinds,
   setMutedKinds,
+  getDevMode,
+  setDevModeFlag,
+  getAutoUpdateCheck,
+  setAutoUpdateCheckFlag,
+  getUpdateNotifiedVersion,
+  setUpdateNotifiedVersion,
 } from "./settings-store.js";
+import { checkForUpdate, type UpdateCheck } from "./updates.js";
+import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { loadUsageCache, saveUsageSnapshot, dropUsageSnapshot, type UsageEntry } from "./usage-cache.js";
 import {
   groupByProvider,
   formatReset,
   formatContextBadge,
   hasUsageReadout,
+  nearestLimit,
+  pickMostHeadroom,
   relativeAge,
   worstLiveContextPct,
   contextTrayTooltip,
@@ -97,6 +108,9 @@ const PROVIDER_LABEL: Record<ProviderId, string> = { claude: "Claude", codex: "C
 // content drawn into the title bar) — the header must leave room on the left so
 // its content doesn't sit under the traffic lights.
 const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
+/** True only in a dev build (`vite dev` / `tauri dev`) — false in a shipped
+ *  release. Gates the developer-mode toggle so it never appears for end users. */
+const IS_DEV = import.meta.env.DEV;
 
 function describeError(e: unknown): string {
   const msg = String((e as { message?: unknown })?.message ?? e);
@@ -178,6 +192,7 @@ export default function App() {
   // the last-known values (greyed) immediately, before any live fetch.
   const [usage, setUsage] = useState<Record<string, UsageEntry>>(() => loadUsageCache());
   const [autoRefresh, setAutoRefresh] = useState(() => getAutoRefreshLimits());
+  const [autoUpdateCheck, setAutoUpdateCheck] = useState(() => getAutoUpdateCheck());
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [auto, setAuto] = useState<AutoSwitchMap | null>(null);
   const [providers, setProviders] = useState<ProvidersStatus | null>(null);
@@ -188,6 +203,9 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
   const [globalAuto, setGlobalAuto] = useState(() => getAutoSwitchGlobal());
+  // Developer mode — only ever true in a dev build; unlocks the in-app test
+  // helpers (generate notifications, force an auto-switch). Off in any release.
+  const [devMode, setDevModeState] = useState(() => IS_DEV && getDevMode());
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState<string | null>(null);
   const [editKey, setEditKey] = useState<string | null>(null);
@@ -244,6 +262,93 @@ export default function App() {
         .then(refresh)
         .catch((e) => setError(describeError(e)));
     }
+  }
+
+  function toggleDevMode(on: boolean) {
+    setDevModeFlag(on);
+    setDevModeState(on);
+  }
+
+  function toggleAutoUpdateCheck(on: boolean) {
+    setAutoUpdateCheckFlag(on);
+    setAutoUpdateCheck(on);
+  }
+
+  // Automatic update check (Approach A — check + notify, never self-install).
+  // Runs once on open and then every 24h WHILE the app stays running (a tray app
+  // can run for weeks, so on-open alone would leave it stale). When a newer
+  // release is found it fires one in-window toast per version — deduped via the
+  // persisted "notified version" so it never nags on every launch/interval.
+  // Toggle-gated (default ON); the Updates settings tab shows live status either
+  // way. Fully best-effort: any failure is swallowed here and surfaced only in
+  // the Updates tab, never as an error banner.
+  useEffect(() => {
+    if (!autoUpdateCheck) return;
+    let cancelled = false;
+    async function runCheck() {
+      const res = await checkForUpdate();
+      if (cancelled || res.kind !== "available") return;
+      if (getUpdateNotifiedVersion() === res.release.tag) return; // already toasted this version
+      setUpdateNotifiedVersion(res.release.tag);
+      pushToast({
+        id: `update-${res.release.tag}`,
+        ts: Date.now(),
+        kind: "info",
+        title: `Update available — ${res.release.tag}`,
+        message: "Open Settings › Updates to download it.",
+      });
+    }
+    void runCheck();
+    const id = setInterval(() => void runCheck(), 24 * 60 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [autoUpdateCheck]);
+
+  // Dev-mode: append 25 varied test notifications (varied so the CLI's dedup
+  // never collapses them), then refresh the flyout list.
+  async function generateTestNotifications() {
+    const kinds: NotificationKind[] = ["success", "warning", "info", "error"];
+    for (let i = 1; i <= 25; i++) {
+      const kind = kinds[i % kinds.length];
+      try {
+        await recordNotification(
+          kind,
+          `Test notification ${i} of 25`,
+          `Dev test event #${i} (${kind}) to exercise the notification drawer.`,
+        );
+      } catch {
+        /* best-effort in dev */
+      }
+    }
+    await syncNotifications();
+  }
+
+  // Dev-mode: force the auto-switch the daemon would make for the selected
+  // provider — switch the active profile to the same-provider account with the
+  // most headroom and record the "Auto-switched account" event — without waiting
+  // for a real threshold crossing.
+  function triggerAutoSwitchTest() {
+    const profs = rows.filter((r) => r.provider === selected);
+    const active = profs.find((r) => r.active)?.name ?? null;
+    const target = pickMostHeadroom(
+      profs
+        .filter((r) => r.name !== active)
+        .map((r) => ({ name: r.name, max: nearestLimit(usage[`${selected}/${r.name}`]?.snap ?? null) })),
+    );
+    if (!target) {
+      setError(`Auto-switch test needs a second ${PROVIDER_LABEL[selected]} profile to switch to.`);
+      return;
+    }
+    act(async () => {
+      await switchProfile(selected, target);
+      await recordNotification(
+        "success",
+        "Auto-switched account",
+        `${selected}/${active ?? "—"} → ${selected}/${target} (dev test trigger).`,
+      );
+    });
   }
 
   async function refresh() {
@@ -368,6 +473,10 @@ export default function App() {
     void clearNotifications()
       .then(() => setNotifications([]))
       .catch((e) => setError(describeError(e)));
+    // Also drop the GUI-delivered desktop notifications from the OS center so the
+    // two surfaces stay in sync (best-effort; daemon-sent OS notifications can't
+    // be removed by the app).
+    void clearDesktopNotifications();
   }
 
   // Keep the interval pointed at the latest refresh closure (current tab).
@@ -475,6 +584,7 @@ export default function App() {
             unread={unreadNotifs}
             onMarkRead={markNotifsRead}
             onClear={clearNotifs}
+            onGenerateTest={devMode ? generateTestNotifications : undefined}
           />
           <Button
             size="icon"
@@ -524,9 +634,13 @@ export default function App() {
             onToggleAutoRefresh={toggleAutoRefresh}
             refreshMin={refreshMin}
             onChangeRefreshMin={changeRefreshMin}
+            autoUpdateCheck={autoUpdateCheck}
+            onToggleAutoUpdateCheck={toggleAutoUpdateCheck}
             mutedKinds={mutedKinds}
             onToggleMute={toggleMuteKind}
             onProvidersChanged={refresh}
+            devMode={devMode}
+            onToggleDevMode={toggleDevMode}
           />
         ) : showSessions ? (
           <SessionsView
@@ -889,6 +1003,16 @@ export default function App() {
               </button>
             );
           })()}
+        {devMode && globalAuto && hasUsageReadout(selected) && !showSettings && grouped[selected].length >= 2 && (
+          <button
+            className="flex items-center gap-1.5 text-[11px] text-primary transition-colors hover:opacity-80"
+            onClick={triggerAutoSwitchTest}
+            title={`Dev: force an auto-switch of the active ${PROVIDER_LABEL[selected]} account to the one with the most headroom, now`}
+          >
+            <ArrowRightLeft className="size-3" />
+            Trigger (test)
+          </button>
+        )}
         <div className="ml-auto flex items-center gap-1.5">
           {autoRefresh && !terminal && (
             <span className="tabular-nums text-[11px] text-muted-foreground" title="Time until usage limits auto-refresh">
@@ -971,12 +1095,13 @@ function EditProfileRow({
 }
 
 
-type SettingsTab = "general" | "notifications" | "providers" | "design" | "uninstall";
+type SettingsTab = "general" | "notifications" | "providers" | "design" | "updates" | "uninstall";
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "notifications", label: "Alerts" },
   { id: "providers", label: "Providers" },
   { id: "design", label: "Design" },
+  { id: "updates", label: "Updates" },
   { id: "uninstall", label: "Uninstall" },
 ];
 
@@ -992,9 +1117,13 @@ function SettingsView({
   onToggleAutoRefresh,
   refreshMin,
   onChangeRefreshMin,
+  autoUpdateCheck,
+  onToggleAutoUpdateCheck,
   mutedKinds,
   onToggleMute,
   onProvidersChanged,
+  devMode,
+  onToggleDevMode,
 }: {
   onClose: () => void;
   onUninstall: () => void;
@@ -1004,9 +1133,13 @@ function SettingsView({
   onToggleAutoRefresh: (on: boolean) => void;
   refreshMin: number;
   onChangeRefreshMin: (min: number) => void;
+  autoUpdateCheck: boolean;
+  onToggleAutoUpdateCheck: (on: boolean) => void;
   mutedKinds: NotificationKind[];
   onToggleMute: (kind: NotificationKind) => void;
   onProvidersChanged: () => void;
+  devMode: boolean;
+  onToggleDevMode: (on: boolean) => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
   return (
@@ -1017,7 +1150,7 @@ function SettingsView({
           <X />
         </Button>
       </div>
-      <div role="tablist" className="grid grid-cols-5 gap-1 rounded-lg bg-muted p-1">
+      <div role="tablist" className="grid grid-cols-6 gap-1 rounded-lg bg-muted p-1">
         {SETTINGS_TABS.map((t) => (
           <button
             key={t.id}
@@ -1041,11 +1174,16 @@ function SettingsView({
           onToggleAutoRefresh={onToggleAutoRefresh}
           refreshMin={refreshMin}
           onChangeRefreshMin={onChangeRefreshMin}
+          devMode={devMode}
+          onToggleDevMode={onToggleDevMode}
         />
       )}
       {tab === "notifications" && <NotificationSettings mutedKinds={mutedKinds} onToggleMute={onToggleMute} />}
       {tab === "providers" && <ProvidersSettings onChange={onProvidersChanged} />}
       {tab === "design" && <DesignSettings />}
+      {tab === "updates" && (
+        <UpdatesSettings autoUpdateCheck={autoUpdateCheck} onToggleAutoUpdateCheck={onToggleAutoUpdateCheck} />
+      )}
       {tab === "uninstall" && <UninstallSettings onUninstall={onUninstall} />}
     </div>
   );
@@ -1212,6 +1350,8 @@ function GeneralSettings({
   onToggleAutoRefresh,
   refreshMin,
   onChangeRefreshMin,
+  devMode,
+  onToggleDevMode,
 }: {
   autoSwitchEnabled: boolean;
   onToggleAutoSwitch: (on: boolean) => void;
@@ -1219,6 +1359,8 @@ function GeneralSettings({
   onToggleAutoRefresh: (on: boolean) => void;
   refreshMin: number;
   onChangeRefreshMin: (min: number) => void;
+  devMode: boolean;
+  onToggleDevMode: (on: boolean) => void;
 }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -1353,6 +1495,26 @@ function GeneralSettings({
             </Button>
           </div>
         </div>
+
+        {IS_DEV && (
+          <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+            <div>
+              <div className="text-[13px] font-medium">Developer mode</div>
+              <div className="text-xs text-muted-foreground">
+                Adds in-app test helpers: generate 25 test notifications in the bell drawer, and force an auto-switch
+                for the current provider. Dev builds only.
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant={devMode ? "default" : "outline"}
+              onClick={() => onToggleDevMode(!devMode)}
+              aria-label="Developer mode"
+            >
+              {devMode ? "On" : "Off"}
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -1471,6 +1633,104 @@ function DesignSettings() {
           ))}
         </div>
         <div className="text-xs text-muted-foreground">System follows your OS light/dark setting.</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Updates tab: shows the running version, checks GitHub Releases for a newer
+ *  one, and links to the download. This is check-and-notify only (Approach A) —
+ *  it never downloads or installs anything itself; the Download button opens the
+ *  release page in the browser. Auto-check (default ON) drives the on-open + 24h
+ *  background check in App plus this tab's initial check. */
+function UpdatesSettings({
+  autoUpdateCheck,
+  onToggleAutoUpdateCheck,
+}: {
+  autoUpdateCheck: boolean;
+  onToggleAutoUpdateCheck: (on: boolean) => void;
+}) {
+  const [check, setCheck] = useState<UpdateCheck | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function runCheck() {
+    setBusy(true);
+    try {
+      setCheck(await checkForUpdate());
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    void runCheck();
+  }, []);
+
+  const available = check?.kind === "available" ? check.release : null;
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium">Version</div>
+            <div className="text-xs text-muted-foreground">
+              Current: <span className="font-medium tabular-nums">{check ? check.current : "…"}</span>
+              {check?.kind === "uptodate" && " · you're on the latest version."}
+              {check?.kind === "no-releases" && " · no releases published yet."}
+              {check?.kind === "error" && (
+                <span className="text-destructive"> · check failed: {check.message}</span>
+              )}
+            </div>
+          </div>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void runCheck()} aria-label="Check for updates">
+            <RefreshCw className={cn("size-3.5", busy && "animate-spin")} />
+            {busy ? "Checking…" : "Check now"}
+          </Button>
+        </div>
+
+        {available && (
+          <div className="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3">
+            <div className="flex items-center gap-2">
+              <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden />
+              <div className="text-[13px] font-medium">
+                {available.name} available
+                {available.publishedAt && (
+                  <span className="ml-1 font-normal text-muted-foreground tabular-nums">
+                    ({new Date(available.publishedAt).toLocaleDateString()})
+                  </span>
+                )}
+              </div>
+            </div>
+            {available.notes && (
+              <div className="max-h-24 overflow-y-auto whitespace-pre-wrap text-xs text-muted-foreground">
+                {available.notes.slice(0, 500)}
+                {available.notes.length > 500 && "…"}
+              </div>
+            )}
+            <Button size="sm" onClick={() => void openUrl(available.url)} aria-label={`Download ${available.tag}`}>
+              <Download className="size-3.5" /> Download {available.tag}
+            </Button>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium">Automatic update check</div>
+            <div className="text-xs text-muted-foreground">
+              Check for a newer version on open and every 24 hours, and notify you when one is found. This only checks
+              and notifies — it never downloads or installs on its own.
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={autoUpdateCheck ? "default" : "outline"}
+            onClick={() => onToggleAutoUpdateCheck(!autoUpdateCheck)}
+            aria-label="Automatic update check"
+          >
+            {autoUpdateCheck ? "On" : "Off"}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
