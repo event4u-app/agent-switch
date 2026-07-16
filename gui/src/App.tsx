@@ -65,7 +65,7 @@ import {
   getMutedKinds,
   setMutedKinds,
 } from "./settings-store.js";
-import { loadUsageCache, saveUsageSnapshot, type UsageEntry } from "./usage-cache.js";
+import { loadUsageCache, saveUsageSnapshot, dropUsageSnapshot, type UsageEntry } from "./usage-cache.js";
 import {
   groupByProvider,
   formatReset,
@@ -706,7 +706,25 @@ export default function App() {
                             setEditKey(null);
                             act(async () => {
                               if (newLabel !== r.label) await setProfileLabel(selected, r.name, newLabel);
-                              if (newName !== r.name) await renameProfile(selected, r.name, newName);
+                              if (newName !== r.name) {
+                                await renameProfile(selected, r.name, newName);
+                                // Forget any cached usage under both the old and new keys so the
+                                // follow-up refresh re-fetches the renamed profile fresh — a reused
+                                // name must never show a prior account's numbers (localStorage +
+                                // in-memory + the cooldown ref, which the fetch loop reads live).
+                                const oldKey = `${selected}/${r.name}`;
+                                const newKey = `${selected}/${newName}`;
+                                dropUsageSnapshot(oldKey);
+                                dropUsageSnapshot(newKey);
+                                delete lastUsageFetchRef.current[oldKey];
+                                delete lastUsageFetchRef.current[newKey];
+                                setUsage((prev) => {
+                                  const next = { ...prev };
+                                  delete next[oldKey];
+                                  delete next[newKey];
+                                  return next;
+                                });
+                              }
                             });
                           }}
                         />

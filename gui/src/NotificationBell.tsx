@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { Bell, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -44,16 +45,19 @@ export function NotificationBell({
           </span>
         )}
       </Button>
-      {open && (
+      {/* Portalled to <body>: the header's `backdrop-blur` creates a containing
+       *  block for fixed descendants, which would otherwise trap this drawer
+       *  inside the titlebar instead of the window. */}
+      {open && createPortal(
         <>
           {/* click-away backdrop */}
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
+          <div className="fixed inset-0 z-40 animate-in fade-in duration-150" onClick={() => setOpen(false)} aria-hidden />
           <div
             role="dialog"
             aria-label="Notifications"
-            className="absolute right-0 top-9 z-50 w-80 overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
+            className="fixed inset-y-0 right-0 z-50 flex h-full w-80 flex-col border-l border-border bg-popover shadow-xl animate-in slide-in-from-right-full duration-300 ease-out"
           >
-            <div className="flex items-center justify-between border-b border-border px-3 py-2">
+            <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
               <span className="text-[13px] font-semibold">Notifications</span>
               <div className="flex items-center gap-1">
                 <Button
@@ -71,7 +75,7 @@ export function NotificationBell({
                 </Button>
               </div>
             </div>
-            <div className="max-h-80 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto">
               {notifications.length === 0 ? (
                 <div className="px-3 py-6 text-center text-xs text-muted-foreground">No notifications yet.</div>
               ) : (
@@ -98,7 +102,8 @@ export function NotificationBell({
               )}
             </div>
           </div>
-        </>
+        </>,
+        document.body,
       )}
     </div>
   );

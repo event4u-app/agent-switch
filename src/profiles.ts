@@ -298,15 +298,39 @@ export function clearLabel(providerId: ProviderId, name: string): void {
 }
 
 /**
- * Rename a profile: move its config dir and carry its state (active pointer +
- * label) to the new name. Directory mappings + the keychain caveat (Claude on
- * darwin) are handled by the caller. Throws if the source is missing or the
- * target already exists — the caller validates the new name first.
+ * Rename a profile: move its config dir, carry its Claude credential across the
+ * path change, and carry its state (active pointer + label) to the new name.
+ * Throws if the source is missing or the target already exists — the caller
+ * validates the new name first.
+ *
+ * Credential carry-over (mirrors `migrateLegacyLayout`): Claude on darwin keys
+ * its Keychain credential by a hash of the *exact* config-dir string, so the
+ * rename would otherwise orphan it (keychain miss at the new path → no token →
+ * usage/limits stop updating). Read it from the old path BEFORE the move, then
+ * re-seed a plaintext `.credentials.json` at the new path (Claude Code migrates
+ * it back into a hashed entry on first use) and drop the stale old-path entry.
+ * On linux/win the credential is a file that moves with the dir and the store's
+ * keychain ops are no-ops, so the re-seed is a harmless same-content rewrite.
  */
-export function renameProfile(providerId: ProviderId, from: string, to: string): void {
+export function renameProfile(providerId: ProviderId, from: string, to: string, store: CredentialStore = credentialStore()): void {
   if (!profileExists(providerId, from)) throw new Error(`profile "${from}" does not exist`);
   if (profileExists(providerId, to)) throw new Error(`profile "${to}" already exists`);
+
+  const fromConfig = configDir(providerId, from);
+  const toConfig = configDir(providerId, to);
+  // Capture the credential while the old path (and thus the darwin keychain hash)
+  // still resolves. Only Claude uses this store; codex/gemini keep auth inside
+  // the config dir, which simply moves with the rename.
+  const cred = providerId === "claude" ? store.read(fromConfig) : null;
+
   fs.renameSync(profileDir(providerId, from), profileDir(providerId, to));
+
+  if (cred) {
+    store.clearStale(toConfig); // a stale hashed entry at the new path would shadow the seed (darwin)
+    fs.writeFileSync(path.join(toConfig, ".credentials.json"), cred, { mode: 0o600 });
+    store.removeEntry(fromConfig); // drop the orphaned old-path keychain entry (darwin)
+  }
+
   const state = readState();
   if (state.active[providerId] === from) state.active[providerId] = to;
   const fromKey = labelKey(providerId, from);

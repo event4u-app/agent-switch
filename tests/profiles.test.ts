@@ -221,3 +221,30 @@ test("renameProfile moves the config dir and carries active + label", () => {
   assert.throws(() => P.renameProfile("codex", "new", "taken"), /already exists/);
   assert.throws(() => P.renameProfile("codex", "ghost", "x"), /does not exist/);
 });
+
+test("renameProfile carries the Claude credential across the config-path (keychain-hash) change", () => {
+  fs.rmSync(P.STATE_FILE, { force: true });
+  const from = P.configDir("claude", "src");
+  fs.mkdirSync(from, { recursive: true });
+
+  // Recording store: read() returns the live (keychain-first) credential from the
+  // OLD path; clearStale/removeEntry record the paths they were asked to clear.
+  const cleared: string[] = [];
+  const removed: string[] = [];
+  const store = {
+    read: (dir: string) => (dir === from ? "TOKEN" : null),
+    readDefault: () => null,
+    removeEntry: (dir: string) => (removed.push(dir), true),
+    clearStale: (dir: string) => void cleared.push(dir),
+  };
+
+  P.renameProfile("claude", "src", "dst", store);
+
+  const dst = P.configDir("claude", "dst");
+  assert.equal(fs.existsSync(dst), true); // moved…
+  assert.equal(fs.existsSync(from), false); // …source gone
+  // credential re-seeded as a plaintext file at the NEW path so a token is readable there
+  assert.equal(fs.readFileSync(path.join(dst, ".credentials.json"), "utf8"), "TOKEN");
+  assert.deepEqual(cleared, [dst]); // cleared any stale entry at the new path before seeding
+  assert.deepEqual(removed, [from]); // dropped the orphaned old-path keychain entry
+});

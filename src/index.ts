@@ -1115,9 +1115,6 @@ function cmdRename(providerId: ProviderId, from?: string, to?: string): void {
     if (m.provider === providerId && m.name === n) setMapping(m.path, providerId, to);
   }
   console.log(`Renamed ${providerId} profile "${n}" → "${to}".`);
-  if (providerId === "claude" && process.platform === "darwin") {
-    console.log("Note: Claude keeps its credential in the Keychain keyed by the config path (which can't be moved) — you may need to log in again on this profile.");
-  }
 }
 
 /** Manually redeem one banked rate-limit reset for a Codex profile. Consumes a

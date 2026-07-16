@@ -55,3 +55,17 @@ export function saveUsageSnapshot(key: string, snap: UsageSnapshot): void {
     /* ignore — persistence is best-effort */
   }
 }
+
+/** Forget one profile's cached snapshot. Called on rename so numbers from a
+ *  prior account/state never linger under a reused `<provider>/<profile>` key
+ *  until the next successful fetch overwrites them. No-op if the key is absent. */
+export function dropUsageSnapshot(key: string): void {
+  try {
+    const raw = readRaw();
+    if (!(key in raw)) return;
+    delete raw[key];
+    localStorage.setItem(KEY, JSON.stringify(raw));
+  } catch {
+    /* ignore — best-effort */
+  }
+}
