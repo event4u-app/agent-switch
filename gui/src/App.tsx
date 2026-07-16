@@ -1103,16 +1103,35 @@ function NotificationSettings({
 }) {
   const [perm, setPerm] = useState<DesktopPermission | null>(null);
   const [osNotify, setOsNotifyState] = useState<boolean | null>(null);
+  const [notify, setNotifyState] = useState<boolean | null>(null);
+  const [notifyThresholds, setNotifyThresholds] = useState<number[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const muted = new Set(mutedKinds);
 
   useEffect(() => {
     desktopPermission().then(setPerm).catch(() => setPerm("unavailable"));
     getOsNotify().then(setOsNotifyState).catch(() => setOsNotifyState(false));
+    getNotifyConfig()
+      .then((c) => {
+        setNotifyState(c.notify);
+        setNotifyThresholds(c.contextThresholds);
+      })
+      .catch(() => setNotifyState(false));
   }, []);
 
   function requestPerm() {
     requestDesktopPermission().then(setPerm).catch(() => setPerm("unavailable"));
+  }
+
+  async function toggleNotify() {
+    const next = !notify;
+    try {
+      await setNotify(next, notifyThresholds);
+      setNotifyState(next);
+      setErr(null);
+    } catch (e) {
+      setErr(describeError(e));
+    }
   }
 
   function toggleOsNotify() {
@@ -1164,6 +1183,25 @@ function NotificationSettings({
             {osNotify === null ? "…" : osNotify ? "On" : "Off"}
           </Button>
         </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium">Context alerts</div>
+            <div className="text-xs text-muted-foreground">
+              Notify when a session's context window crosses a threshold
+              {notifyThresholds.length > 0 && ` (${notifyThresholds.join("%, ")}%)`}.
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={notify ? "default" : "outline"}
+            disabled={notify === null}
+            onClick={toggleNotify}
+            aria-label="Context alerts"
+          >
+            {notify === null ? "…" : notify ? "On" : "Off"}
+          </Button>
+        </div>
         {err && <div className="text-xs text-destructive">{err}</div>}
 
         <div className="border-t border-border pt-3">
@@ -1211,8 +1249,6 @@ function GeneralSettings({
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [strategy, setStrategy] = useState<SwitchStrategy | null>(null);
-  const [notify, setNotifyState] = useState<boolean | null>(null);
-  const [notifyThresholds, setNotifyThresholds] = useState<number[]>([]);
 
   useEffect(() => {
     getAutostart()
@@ -1221,24 +1257,7 @@ function GeneralSettings({
     getSwitchStrategy()
       .then(setStrategy)
       .catch(() => setStrategy("reset-first"));
-    getNotifyConfig()
-      .then((c) => {
-        setNotifyState(c.notify);
-        setNotifyThresholds(c.contextThresholds);
-      })
-      .catch(() => setNotifyState(false));
   }, []);
-
-  async function toggleNotify() {
-    const next = !notify;
-    try {
-      await setNotify(next, notifyThresholds);
-      setNotifyState(next);
-      setErr(null);
-    } catch (e) {
-      setErr(describeError(e));
-    }
-  }
 
   function pickStrategy(next: SwitchStrategy) {
     setStrategy(next);
@@ -1308,25 +1327,6 @@ function GeneralSettings({
             aria-label="Auto-refresh limits"
           >
             {autoRefresh ? "On" : "Off"}
-          </Button>
-        </div>
-
-        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
-          <div>
-            <div className="text-[13px] font-medium">Context alerts</div>
-            <div className="text-xs text-muted-foreground">
-              Notify when a session's context window crosses a threshold
-              {notifyThresholds.length > 0 && ` (${notifyThresholds.join("%, ")}%)`}.
-            </div>
-          </div>
-          <Button
-            size="sm"
-            variant={notify ? "default" : "outline"}
-            disabled={notify === null}
-            onClick={toggleNotify}
-            aria-label="Context alerts"
-          >
-            {notify === null ? "…" : notify ? "On" : "Off"}
           </Button>
         </div>
 
