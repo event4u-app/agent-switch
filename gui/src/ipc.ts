@@ -7,7 +7,7 @@
 import { Command } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
 import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
-import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow, TokenRow } from "./transforms.js";
+import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow } from "./transforms.js";
 import type { AppNotification, NotificationKind } from "./notifications.js";
 
 async function runCli(args: string[]): Promise<string> {
@@ -233,37 +233,6 @@ export function takeoverArgs(sessionId: string, to: string, keepSource = false):
  *  a line. `/clear` is intentionally not exposed here (destructive). Pure. */
 export function compactArgs(profile: string): string[] {
   return ["compact", profile];
-}
-
-/** Args for `tokens install`, run in the embedded terminal so the ccusage
- *  install streams its output to a real pty (and the user can enter a sudo
- *  password if their npm needs one). Pure builder. */
-export function tokensInstallArgs(): string[] {
-  return ["tokens", "install"];
-}
-
-/** ccusage / token tracking is unavailable — the `tokens --json` payload
- *  carries an `error` (and usually a `hint`) instead of the per-profile array. */
-export interface TokensError {
-  error: string;
-  hint?: string;
-}
-
-/** Per-profile token usage (`tokens [profile] --json`, Claude). Returns a
- *  {@link TokensError} when ccusage is missing — the `--json` path prints the
- *  error object rather than exiting on the non-json path. Pure `--json` client. */
-export async function getTokens(profile?: string): Promise<TokenRow[] | TokensError> {
-  const args = ["tokens", ...(profile ? [profile] : []), "--json"];
-  const out = await Command.create("agent-switch", args).execute();
-  try {
-    const parsed = JSON.parse(out.stdout);
-    if (parsed && !Array.isArray(parsed) && typeof parsed.error === "string") {
-      return parsed as TokensError;
-    }
-    return parsed as TokenRow[];
-  } catch {
-    return { error: "tokens-unavailable", hint: out.stderr || "Install ccusage for token tracking." };
-  }
 }
 
 /** Context-alert config (`alerts status --json`). `contextThresholds` are the

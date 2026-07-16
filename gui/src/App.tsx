@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Coins, Minimize2, Pencil, Check, Download } from "lucide-react";
+import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Minimize2, Pencil, Check, Download } from "lucide-react";
 import {
   compactArgs,
-  tokensInstallArgs,
   deactivateProfile,
   getAutoSwitch,
   getAutostart,
   getNotifyConfig,
   getProviders,
-  getTokens,
   listApps,
   listProfiles,
   listSessions,
@@ -39,7 +37,6 @@ import {
   uninstall,
   type AppInfo,
   type AutoSwitchMap,
-  type TokensError,
 } from "./ipc.js";
 import { EmbeddedTerminal } from "./EmbeddedTerminal.js";
 import { NotificationBell } from "./NotificationBell.js";
@@ -80,7 +77,6 @@ import {
   groupByProvider,
   formatReset,
   formatContextBadge,
-  formatTokensK,
   hasUsageReadout,
   nearestLimit,
   pickMostHeadroom,
@@ -96,7 +92,6 @@ import {
   type ProviderSurface,
   type SessionRow,
   type SessionContext,
-  type TokenRow,
 } from "./transforms.js";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -207,7 +202,6 @@ export default function App() {
   const [showCreate, setShowCreate] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
-  const [showTokens, setShowTokens] = useState(false);
   const [globalAuto, setGlobalAuto] = useState(() => getAutoSwitchGlobal());
   // Developer mode — only ever true in a dev build; unlocks the in-app test
   // helpers (generate notifications, force an auto-switch). Off in any release.
@@ -594,23 +588,9 @@ export default function App() {
           />
           <Button
             size="icon"
-            variant={showTokens ? "secondary" : "ghost"}
-            onClick={() => {
-              setShowTokens((v) => !v);
-              setShowSessions(false);
-              setShowSettings(false);
-              setNotice(null);
-            }}
-            aria-label="Tokens"
-          >
-            <Coins />
-          </Button>
-          <Button
-            size="icon"
             variant={showSessions ? "secondary" : "ghost"}
             onClick={() => {
               setShowSessions((v) => !v);
-              setShowTokens(false);
               setShowSettings(false);
               setNotice(null);
             }}
@@ -623,7 +603,6 @@ export default function App() {
             variant={showSettings ? "secondary" : "ghost"}
             onClick={() => {
               setShowSettings((v) => !v);
-              setShowTokens(false);
               setShowSessions(false);
               setNotice(null);
             }}
@@ -662,11 +641,6 @@ export default function App() {
             onProvidersChanged={refresh}
             devMode={devMode}
             onToggleDevMode={toggleDevMode}
-          />
-        ) : showTokens ? (
-          <TokensView
-            onClose={() => setShowTokens(false)}
-            onInstall={() => setTerminal({ args: tokensInstallArgs(), title: "Install ccusage" })}
           />
         ) : showSessions ? (
           <SessionsView
@@ -1917,110 +1891,6 @@ function SessionsView({
       )}
       <p className="text-[11px] leading-snug text-muted-foreground">
         Take over moves a session to another profile and resumes it in the terminal — fork copies instead.
-      </p>
-    </div>
-  );
-}
-
-/** One profile's token usage: a per-day table (date · tokens · cost) + a total
- *  row. A notional cost basis (API-equivalent value of subscription usage) is
- *  greyed + italic with an explanatory tooltip so it is never read as real spend. */
-function TokenProfileCard({ row }: { row: TokenRow }) {
-  const t = row.tokens;
-  const notional = t?.costBasis === "notional";
-  const costTitle = notional ? "API-equivalent value of subscription usage, not real spend" : undefined;
-  return (
-    <Card>
-      <CardContent className="space-y-2 p-3">
-        <div className="flex items-center gap-1.5">
-          <span className="truncate text-[13px] font-medium">{row.name}</span>
-          {t && (
-            <Badge variant="outline" title={costTitle}>
-              {t.costBasis}
-            </Badge>
-          )}
-        </div>
-        {!t || t.days.length === 0 ? (
-          <div className="text-xs text-muted-foreground">No usage recorded.</div>
-        ) : (
-          <div className="space-y-1 text-[11px]">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <span className="w-20 shrink-0">Date</span>
-              <span className="flex-1 text-right">Tokens</span>
-              <span className="w-16 shrink-0 text-right">Cost</span>
-            </div>
-            {t.days.map((d) => (
-              <div key={d.date} className="flex items-center gap-2">
-                <span className="w-20 shrink-0 truncate">{d.date}</span>
-                <span className="flex-1 text-right tabular-nums">{formatTokensK(d.totalTokens)}</span>
-                <span
-                  className={cn("w-16 shrink-0 text-right tabular-nums", notional && "italic text-muted-foreground")}
-                  title={costTitle}
-                >
-                  ${d.cost.toFixed(2)}
-                </span>
-              </div>
-            ))}
-            <div className="flex items-center gap-2 border-t border-border pt-1 font-medium">
-              <span className="w-20 shrink-0">Total</span>
-              <span className="flex-1 text-right tabular-nums">{formatTokensK(t.totals.totalTokens)}</span>
-              <span
-                className={cn("w-16 shrink-0 text-right tabular-nums", notional && "italic text-muted-foreground")}
-                title={costTitle}
-              >
-                ${t.totals.cost.toFixed(2)}
-              </span>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-/** Tokens view (behind the header coins icon): per-profile Claude token usage
- *  from `tokens --json`. A pure `--json` client — when ccusage is missing the
- *  payload carries an install hint, shown in place of the tables. */
-function TokensView({ onClose, onInstall }: { onClose: () => void; onInstall: () => void }) {
-  const [data, setData] = useState<TokenRow[] | TokensError | null>(null);
-
-  useEffect(() => {
-    getTokens()
-      .then(setData)
-      .catch(() => setData({ error: "tokens-unavailable" }));
-  }, []);
-
-  const err = data && !Array.isArray(data) ? data : null;
-  const rows = Array.isArray(data) ? data : [];
-
-  return (
-    <div className="space-y-2.5">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold tracking-tight">Token usage</span>
-        <Button size="icon" variant="ghost" className="size-7" onClick={onClose} aria-label="Close tokens">
-          <X />
-        </Button>
-      </div>
-      {data === null ? (
-        <div className="px-1 text-xs text-muted-foreground">Loading…</div>
-      ) : err ? (
-        <div className="space-y-3 py-10 text-center">
-          <div className="text-sm text-muted-foreground">
-            Token tracking needs <span className="font-medium">ccusage</span>, an optional external tool.
-          </div>
-          <Button size="sm" onClick={onInstall} aria-label="Install ccusage">
-            <Coins /> Install ccusage
-          </Button>
-          <div className="text-[11px] text-muted-foreground">Runs {`npm install -g ccusage`} in the terminal.</div>
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="py-10 text-center text-sm text-muted-foreground">No token usage yet.</div>
-      ) : (
-        rows.map((r) => <TokenProfileCard key={`${r.provider}/${r.name}`} row={r} />)
-      )}
-      <p className="text-[11px] leading-snug text-muted-foreground">
-        Daily token totals per profile. Costs marked <span className="italic">notional</span> are the API-equivalent
-        value of subscription usage, not real spend.
       </p>
     </div>
   );

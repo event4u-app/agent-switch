@@ -20,9 +20,7 @@ const ipc = vi.hoisted(() => ({
   sessionArgs: (p: string, n: string) => ["run", n, "--provider", p],
   takeoverArgs: (id: string, to: string, keep?: boolean) => ["takeover", id, "--to", to, ...(keep ? ["--keep-source"] : [])],
   compactArgs: (profile: string) => ["compact", profile],
-  tokensInstallArgs: () => ["tokens", "install"],
   listSessions: vi.fn(),
-  getTokens: vi.fn(),
   getNotifyConfig: vi.fn(),
   setNotify: vi.fn(),
   setTrayTooltip: vi.fn(),
@@ -166,7 +164,6 @@ beforeEach(() => {
   ipc.listApps.mockResolvedValue([]);
   ipc.openApp.mockResolvedValue(undefined);
   ipc.listSessions.mockResolvedValue([]);
-  ipc.getTokens.mockResolvedValue([]);
   ipc.getNotifyConfig.mockResolvedValue({ notify: false, contextThresholds: [80, 95] });
   ipc.setNotify.mockResolvedValue(undefined);
   ipc.setTrayTooltip.mockResolvedValue(undefined);
@@ -574,36 +571,6 @@ describe("App", () => {
     const term = await screen.findByTestId("term");
     expect(term.textContent).toContain("compact work"); // compactArgs
     expect(term.textContent).toMatch(/Compact — work/);
-  });
-
-  it("renders per-profile token usage (day + total) in the Tokens view", async () => {
-    ipc.getTokens.mockResolvedValue([
-      {
-        provider: "claude",
-        name: "work",
-        tokens: {
-          days: [
-            { date: "2026-07-14", inputTokens: 1, outputTokens: 2, cacheCreationTokens: 0, cacheReadTokens: 0, totalTokens: 120_000, cost: 1.5, models: ["sonnet"] },
-          ],
-          totals: { inputTokens: 1, outputTokens: 2, cacheCreationTokens: 0, cacheReadTokens: 0, totalTokens: 120_000, cost: 1.5 },
-          costBasis: "notional",
-        },
-      },
-    ]);
-    render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /tokens/i }));
-    expect(await screen.findByText("2026-07-14")).toBeTruthy();
-    expect(screen.getAllByText("notional").length).toBeGreaterThan(0); // cost basis surfaced (badge + footnote)
-    expect(screen.getAllByText("$1.50").length).toBeGreaterThan(0);
-  });
-
-  it("offers an Install ccusage button that runs `tokens install` in the terminal", async () => {
-    ipc.getTokens.mockResolvedValue({ error: "ccusage-not-found", hint: "Install ccusage: npm i -g ccusage" });
-    render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /tokens/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /install ccusage/i }));
-    const term = await screen.findByTestId("term");
-    expect(term.textContent).toContain("tokens install");
   });
 
   it("toggles context alerts from the Alerts settings tab", async () => {

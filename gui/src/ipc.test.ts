@@ -39,8 +39,6 @@ import {
   listSessions,
   takeoverArgs,
   compactArgs,
-  tokensInstallArgs,
-  getTokens,
   getNotifyConfig,
   setNotify,
   setTrayTooltip,
@@ -197,43 +195,8 @@ describe("ipc", () => {
     expect(asDisable).toHaveBeenCalled();
   });
 
-  it("tokensInstallArgs builds `tokens install` (embedded-terminal install builder)", () => {
-    expect(tokensInstallArgs()).toEqual(["tokens", "install"]);
-  });
-
   it("compactArgs builds `compact <profile>` (embedded-terminal builder, like takeoverArgs)", () => {
     expect(compactArgs("work")).toEqual(["compact", "work"]);
-  });
-
-  it("getTokens runs `tokens [profile] --json` and parses the per-profile array", async () => {
-    execute.mockResolvedValue({
-      code: 0,
-      stdout:
-        '[{"provider":"claude","name":"work","tokens":{"days":[{"date":"2026-07-14","inputTokens":1,"outputTokens":2,"cacheCreationTokens":0,"cacheReadTokens":0,"totalTokens":3,"cost":0.5,"models":["sonnet"]}],"totals":{"inputTokens":1,"outputTokens":2,"cacheCreationTokens":0,"cacheReadTokens":0,"totalTokens":3,"cost":0.5},"costBasis":"notional"}}]',
-      stderr: "",
-    });
-    const rows = await getTokens("work");
-    expect(create).toHaveBeenCalledWith("agent-switch", ["tokens", "work", "--json"]);
-    expect(Array.isArray(rows)).toBe(true);
-    if (Array.isArray(rows)) {
-      expect(rows[0].name).toBe("work");
-      expect(rows[0].tokens?.costBasis).toBe("notional");
-    }
-  });
-
-  it("getTokens surfaces the ccusage-not-found error object (no profile arg)", async () => {
-    execute.mockResolvedValue({
-      code: 0,
-      stdout: '{"error":"ccusage-not-found","hint":"Install ccusage: npm i -g ccusage"}',
-      stderr: "",
-    });
-    const res = await getTokens();
-    expect(create).toHaveBeenCalledWith("agent-switch", ["tokens", "--json"]);
-    expect(Array.isArray(res)).toBe(false);
-    if (!Array.isArray(res)) {
-      expect(res.error).toBe("ccusage-not-found");
-      expect(res.hint).toMatch(/Install ccusage/);
-    }
   });
 
   it("getNotifyConfig parses `alerts status --json`; setNotify toggles + passes thresholds", async () => {
