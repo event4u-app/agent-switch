@@ -196,6 +196,20 @@ export function nearestLimit(usage: UsageSnapshot | null): number | null {
   return vals.length ? Math.max(...vals) : null;
 }
 
+/** Pick the candidate with the most headroom (lowest nearest-limit) among the
+ *  non-active same-provider profiles — the target the daemon's auto-switch would
+ *  choose. A candidate with unknown usage (`max === null`) sinks below any known
+ *  value and only wins if nothing has usage. Returns null when there is no
+ *  candidate. Pure, so the dev-mode "trigger auto-switch" test is unit-testable. */
+export function pickMostHeadroom(candidates: { name: string; max: number | null }[]): string | null {
+  let best: { name: string; max: number } | null = null;
+  for (const c of candidates) {
+    const m = c.max ?? 101; // unknown usage → worse than any real 0-100 value
+    if (!best || m < best.max) best = { name: c.name, max: m };
+  }
+  return best?.name ?? null;
+}
+
 /** Tray tooltip: active profile + its nearest own limit. */
 export function trayTooltip(active: ProfileRow | null, usage: UsageSnapshot | null): string {
   if (!active) return "agent-switch — no active profile";

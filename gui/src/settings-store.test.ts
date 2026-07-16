@@ -1,5 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_REFRESH_MINUTES, getRefreshMinutes, setRefreshMinutes } from "./settings-store.js";
+import {
+  DEFAULT_REFRESH_MINUTES,
+  getRefreshMinutes,
+  setRefreshMinutes,
+  getDevMode,
+  setDevModeFlag,
+  getAutoUpdateCheck,
+  setAutoUpdateCheckFlag,
+  getUpdateNotifiedVersion,
+  setUpdateNotifiedVersion,
+} from "./settings-store.js";
 
 const KEY = "agent-switch-refresh-interval-min";
 
@@ -44,5 +54,35 @@ describe("getRefreshMinutes", () => {
     expect(getRefreshMinutes()).toBe(DEFAULT_REFRESH_MINUTES);
     localStorage.setItem(KEY, "-15");
     expect(getRefreshMinutes()).toBe(DEFAULT_REFRESH_MINUTES);
+  });
+});
+
+describe("getDevMode / setDevModeFlag", () => {
+  it("defaults to off and round-trips only the literal on/off", () => {
+    expect(getDevMode()).toBe(false);
+    setDevModeFlag(true);
+    expect(getDevMode()).toBe(true);
+    setDevModeFlag(false);
+    expect(getDevMode()).toBe(false);
+  });
+});
+
+describe("getAutoUpdateCheck / setAutoUpdateCheckFlag", () => {
+  it("defaults to ON when unset (fresh install gets update checks)", () => {
+    expect(getAutoUpdateCheck()).toBe(true);
+  });
+  it("only the literal 'off' disables it", () => {
+    setAutoUpdateCheckFlag(false);
+    expect(getAutoUpdateCheck()).toBe(false);
+    setAutoUpdateCheckFlag(true);
+    expect(getAutoUpdateCheck()).toBe(true);
+  });
+});
+
+describe("getUpdateNotifiedVersion / setUpdateNotifiedVersion", () => {
+  it("defaults to empty and round-trips a version", () => {
+    expect(getUpdateNotifiedVersion()).toBe("");
+    setUpdateNotifiedVersion("v1.1.0");
+    expect(getUpdateNotifiedVersion()).toBe("v1.1.0");
   });
 });

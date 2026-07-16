@@ -76,6 +76,49 @@ export function setRefreshMinutes(min: number): void {
   }
 }
 
+const AUTO_UPDATE_CHECK_KEY = "agent-switch-auto-update-check";
+
+/** Whether the app checks for a newer release automatically (on open + every
+ *  24h while running) and notifies when one is found. Default ON — only the
+ *  literal "off" disables it, so a fresh install gets update checks. This is a
+ *  check-and-notify toggle, NOT silent self-install. */
+export function getAutoUpdateCheck(): boolean {
+  try {
+    return localStorage.getItem(AUTO_UPDATE_CHECK_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setAutoUpdateCheckFlag(on: boolean): void {
+  try {
+    localStorage.setItem(AUTO_UPDATE_CHECK_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const UPDATE_NOTIFIED_VERSION_KEY = "agent-switch-update-notified-version";
+
+/** The newest version we have already toasted the user about, so an automatic
+ *  check fires at most one "update available" toast per version (not on every
+ *  launch/interval). Empty string = never notified. */
+export function getUpdateNotifiedVersion(): string {
+  try {
+    return localStorage.getItem(UPDATE_NOTIFIED_VERSION_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setUpdateNotifiedVersion(version: string): void {
+  try {
+    localStorage.setItem(UPDATE_NOTIFIED_VERSION_KEY, version);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const NOTIF_LAST_READ_KEY = "agent-switch-notif-last-read";
 
 /** Timestamp (unix ms) of the newest notification the user has seen. The bell's
@@ -93,6 +136,28 @@ export function getNotifLastRead(): number {
 export function setNotifLastRead(ts: number): void {
   try {
     localStorage.setItem(NOTIF_LAST_READ_KEY, String(ts));
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const DEV_MODE_KEY = "agent-switch-dev-mode";
+
+/** Developer mode — unlocks in-app test helpers (generate notifications, force
+ *  an auto-switch). Default OFF. The toggle is only offered when the app runs
+ *  from a dev build (`import.meta.env.DEV`), so a shipped release can neither
+ *  show nor enable it. */
+export function getDevMode(): boolean {
+  try {
+    return localStorage.getItem(DEV_MODE_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+export function setDevModeFlag(on: boolean): void {
+  try {
+    localStorage.setItem(DEV_MODE_KEY, on ? "on" : "off");
   } catch {
     /* no/blocked localStorage → in-memory only for this session */
   }
