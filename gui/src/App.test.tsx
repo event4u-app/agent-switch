@@ -584,9 +584,10 @@ describe("App", () => {
     expect(term.textContent).toContain("tokens install");
   });
 
-  it("toggles context alerts from the General settings tab", async () => {
+  it("toggles context alerts from the Alerts settings tab", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /alerts/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^context alerts$/i })); // currently off
     await waitFor(() => expect(ipc.setNotify).toHaveBeenCalledWith(true, [80, 95]));
   });
