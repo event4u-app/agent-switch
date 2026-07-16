@@ -11,8 +11,23 @@
 
 import { ProviderId, PROVIDER_IDS, isProviderId } from "./providers.js";
 
-/** Flags that take a value (the next token), as opposed to boolean switches. */
-const VALUE_FLAGS = new Set(["provider", "shell", "source", "threshold", "to", "from", "recent"]);
+/** Flags that take a value (the next token), as opposed to boolean switches.
+ *  Every flag read as a string in index.ts MUST be listed here, or its value
+ *  leaks into the positionals and the flag reads back as boolean `true`
+ *  (the bug behind `notify`/`providers --surface` silently losing their args). */
+const VALUE_FLAGS = new Set([
+  "provider",
+  "shell",
+  "source",
+  "threshold",
+  "to",
+  "from",
+  "recent",
+  "kind",
+  "title",
+  "message",
+  "surface",
+]);
 
 export interface ParsedArgs {
   cmd?: string;
