@@ -8,7 +8,8 @@
  * and the caller relies on the in-window bell/flyout as the guaranteed fallback.
  */
 
-import { isPermissionGranted, requestPermission, sendNotification, removeAllActive } from "@tauri-apps/plugin-notification";
+import { isPermissionGranted, requestPermission, sendNotification, removeAllActive, onAction } from "@tauri-apps/plugin-notification";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export type NotificationKind = "success" | "error" | "warning" | "info";
 
@@ -53,6 +54,34 @@ export async function clearDesktopNotifications(): Promise<void> {
     await removeAllActive();
   } catch {
     /* plugin unavailable / unsupported → nothing to clear */
+  }
+}
+
+/**
+ * Register a callback for when the user clicks one of THIS app's desktop
+ * notifications. Returns an unregister function. Best-effort: a no-op unregister
+ * when the plugin is unavailable (non-Tauri env / tests). Only fires for
+ * GUI-delivered notifications — daemon-sent ones (osascript / notify-send) come
+ * from other processes and never reach this listener.
+ */
+export async function onNotificationClick(cb: () => void): Promise<() => void> {
+  try {
+    const listener = await onAction(() => cb());
+    return () => void listener.unregister();
+  } catch {
+    return () => {};
+  }
+}
+
+/** Bring the app window to the front (show + focus). Best-effort — a no-op
+ *  outside a Tauri context. */
+export async function showAppWindow(): Promise<void> {
+  try {
+    const w = getCurrentWindow();
+    await w.show();
+    await w.setFocus();
+  } catch {
+    /* non-Tauri env → nothing to show */
   }
 }
 

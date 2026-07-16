@@ -9,11 +9,72 @@ import { invoke } from "@tauri-apps/api/core";
 import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
 import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow } from "./transforms.js";
 import type { AppNotification, NotificationKind } from "./notifications.js";
+import { parseAgentConfigVersion } from "./agent-config.js";
 
 async function runCli(args: string[]): Promise<string> {
   const out = await Command.create("agent-switch", args).execute();
   if (out.code !== 0) throw new Error(out.stderr || `agent-switch ${args.join(" ")} failed`);
   return out.stdout;
+}
+
+// ---- agent-config companion CLI (separate binary; scoped shell entries) ----
+
+/** Installed agent-config version via `agent-config --version`; null when the
+ *  binary is absent (spawn fails / not on PATH) or prints nothing parseable. */
+export async function agentConfigVersion(): Promise<string | null> {
+  try {
+    const out = await Command.create("agent-config-version", ["--version"]).execute();
+    if (out.code !== 0) return null;
+    return parseAgentConfigVersion(out.stdout);
+  } catch {
+    return null; // not installed / not on PATH
+  }
+}
+
+/** Install agent-config via its README-recommended installer. `init` opens a
+ *  browser setup wizard and writes to the global scope (v2.5+). Rejects on a
+ *  non-zero exit so the caller can surface the failure. */
+export async function installAgentConfig(): Promise<void> {
+  const out = await Command.create("agent-config-install", ["-y", "@event4u/agent-config", "init"]).execute();
+  if (out.code !== 0) throw new Error(out.stderr || `agent-config install failed (exit ${out.code})`);
+}
+
+/** Upgrade an installed agent-config to the latest release. Rejects on non-zero. */
+export async function upgradeAgentConfig(): Promise<void> {
+  const out = await Command.create("agent-config-upgrade", ["upgrade"]).execute();
+  if (out.code !== 0) throw new Error(out.stderr || `agent-config upgrade failed (exit ${out.code})`);
+}
+
+// ---- share: link the global (default ~/.claude) skills/commands/agents/CLAUDE.md
+// into every Claude profile, so a profile inherits the globally-installed
+// agent-config content. Account files (.credentials.json/.claude.json) are never
+// shared. Directory links auto-reflect global updates; file links are reconciled
+// by `share sync`. ----
+
+export interface ShareStatus {
+  active: boolean;
+  source: string;
+  profiles: { name: string; shared: boolean }[];
+}
+
+/** Real share state (from each profile's link manifest, not a cached flag). */
+export async function shareStatus(): Promise<ShareStatus> {
+  return JSON.parse(await runCli(["share", "status", "--source", "default", "--json"]));
+}
+
+/** Link the global ~/.claude content into every profile. */
+export async function shareOn(): Promise<void> {
+  await runCli(["share", "on", "--source", "default"]);
+}
+
+/** Remove agent-switch-managed links from every profile (profile-own files untouched). */
+export async function shareOff(): Promise<void> {
+  await runCli(["share", "off"]);
+}
+
+/** Reconcile forked file-links (e.g. CLAUDE.md after an atomic write) back to links. */
+export async function shareSync(): Promise<void> {
+  await runCli(["share", "sync", "--source", "default"]);
 }
 
 export async function listProfiles(): Promise<ProfileRow[]> {

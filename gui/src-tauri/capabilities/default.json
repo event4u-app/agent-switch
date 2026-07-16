@@ -15,6 +15,7 @@
     "notification:default",
     "shell:allow-open",
     "notification:allow-remove-active",
+    "notification:allow-register-listener",
     {
       "identifier": "shell:allow-execute",
       "allow": [
@@ -22,6 +23,21 @@
           "name": "agent-switch",
           "cmd": "agent-switch",
           "args": true
+        },
+        {
+          "name": "agent-config-version",
+          "cmd": "agent-config",
+          "args": ["--version"]
+        },
+        {
+          "name": "agent-config-upgrade",
+          "cmd": "agent-config",
+          "args": ["upgrade"]
+        },
+        {
+          "name": "agent-config-install",
+          "cmd": "npx",
+          "args": ["-y", "@event4u/agent-config", "init"]
         }
       ]
     }

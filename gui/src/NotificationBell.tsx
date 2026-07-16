@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Bell, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,7 @@ export function NotificationBell({
   onMarkRead,
   onClear,
   onGenerateTest,
+  openNonce,
 }: {
   notifications: AppNotification[];
   unread: number;
@@ -26,8 +27,20 @@ export function NotificationBell({
   /** Dev-mode only: generate a batch of test notifications to exercise the
    *  drawer. Undefined (the default) hides the button entirely. */
   onGenerateTest?: () => void;
+  /** Bump this to open the flyout programmatically (e.g. when the user clicks a
+   *  desktop notification). Each new value opens + marks read. */
+  openNonce?: number;
 }) {
   const [open, setOpen] = useState(false);
+
+  // Open the flyout when the parent bumps the nonce (desktop-notification click).
+  useEffect(() => {
+    if (openNonce) {
+      setOpen(true);
+      onMarkRead();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openNonce]);
 
   function toggle() {
     setOpen((v) => {

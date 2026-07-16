@@ -422,3 +422,37 @@ test("`providers disable --surface cli` toggles only that surface (value-flag re
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("`label` tags a not-yet-created profile and it survives creation (new-profile tag regression)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    // The GUI sets the tag BEFORE `add` creates the profile. Labeling a profile
+    // that does not exist yet must succeed (not error) and persist.
+    run(home, ["label", "work", "Work", "--provider", "codex"]);
+    const state = JSON.parse(fs.readFileSync(path.join(home, "state.json"), "utf8"));
+    assert.equal(state.labels["codex/work"], "Work"); // persisted up front
+    // Once the profile exists, the pre-set tag surfaces in `list --json`.
+    seed(home, "codex", "work");
+    const rows = JSON.parse(run(home, ["list", "--provider", "codex", "--json"]));
+    assert.equal(rows.find((r: any) => r.name === "work").label, "Work");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`share status --json` reports the real link state (off, then on after `share on`)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "src"); // acts as the --source
+    seed(home, "claude", "dst");
+    fs.mkdirSync(path.join(home, "claude", "src", "config", "skills"), { recursive: true });
+    const off = JSON.parse(run(home, ["share", "status", "--source", "src", "--json"]));
+    assert.equal(off.active, false);
+    run(home, ["share", "on", "--source", "src"]);
+    const on = JSON.parse(run(home, ["share", "status", "--source", "src", "--json"]));
+    assert.equal(on.active, true);
+    assert.equal(on.profiles.find((p: any) => p.name === "dst").shared, true);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

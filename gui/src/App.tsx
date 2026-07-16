@@ -34,6 +34,13 @@ import {
   setProfileLabel,
   setProvider,
   switchProfile,
+  agentConfigVersion,
+  installAgentConfig,
+  upgradeAgentConfig,
+  shareStatus,
+  shareOn,
+  shareOff,
+  shareSync,
   uninstall,
   type AppInfo,
   type AutoSwitchMap,
@@ -44,6 +51,8 @@ import { Toaster } from "./Toaster.js";
 import {
   sendDesktopNotification,
   clearDesktopNotifications,
+  onNotificationClick,
+  showAppWindow,
   desktopPermission,
   requestDesktopPermission,
   type AppNotification,
@@ -69,10 +78,16 @@ import {
   setAutoUpdateCheckFlag,
   getUpdateNotifiedVersion,
   setUpdateNotifiedVersion,
+  getAgentConfigNotifiedVersion,
+  setAgentConfigNotifiedVersion,
+  getNextUsageRefreshAt,
+  setNextUsageRefreshAt,
 } from "./settings-store.js";
-import { checkForUpdate, type UpdateCheck } from "./updates.js";
+import { checkForUpdate, fetchLatestRelease, isNewer, type UpdateCheck } from "./updates.js";
+import { AgentConfigBanner } from "./AgentConfigBanner.js";
+import { deriveAgentConfigView, AGENT_CONFIG_REPO, AGENT_CONFIG_REPO_URL, type AgentConfigStatus } from "./agent-config.js";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
-import { loadUsageCache, saveUsageSnapshot, dropUsageSnapshot, type UsageEntry } from "./usage-cache.js";
+import { loadUsageCache, saveUsageSnapshot, dropUsageSnapshot, getUsageAttempts, markUsageAttempt, fetchOnCooldown, type UsageEntry } from "./usage-cache.js";
 import {
   groupByProvider,
   formatReset,
@@ -206,6 +221,14 @@ export default function App() {
   // Developer mode — only ever true in a dev build; unlocks the in-app test
   // helpers (generate notifications, force an auto-switch). Off in any release.
   const [devMode, setDevModeState] = useState(() => IS_DEV && getDevMode());
+  // agent-config companion CLI status (for the recommend/upgrade banner). null =
+  // not yet detected → banner stays hidden until the first detect resolves.
+  const [agentConfig, setAgentConfig] = useState<AgentConfigStatus | null>(null);
+  // Bumped when the user clicks a desktop notification → opens the bell flyout.
+  const [notifOpenNonce, setNotifOpenNonce] = useState(0);
+  // Whether the global ~/.claude content (agent-config skills etc.) is linked
+  // into the profiles. Real state, loaded from `share status`.
+  const [shareActive, setShareActive] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState<string | null>(null);
   const [editKey, setEditKey] = useState<string | null>(null);
@@ -234,19 +257,20 @@ export default function App() {
   // the interval always fetches the current tab.
   const [refreshMin, setRefreshMin] = useState(() => getRefreshMinutes());
   const REFRESH_MS = refreshMin * 60 * 1000;
-  const nextRefreshRef = useRef(Date.now() + REFRESH_MS);
+  // Restore the persisted deadline so a rebuild continues the countdown instead
+  // of restarting it (a restart would trigger an immediate re-fetch each reload).
+  const nextRefreshRef = useRef(getNextUsageRefreshAt() || Date.now() + REFRESH_MS);
   // Per-profile cooldown: skip a usage re-fetch when the last successful one is
   // newer than the refresh interval, so a manual refresh never fetches more
   // often than the auto-refresh countdown itself — it matches the countdown
   // exactly, which keeps Claude's rate-limited endpoint from being self-tripped.
   const USAGE_COOLDOWN_MS = REFRESH_MS;
-  const lastUsageFetchRef = useRef<Record<string, number>>({});
   const refreshRef = useRef<() => void>(() => {});
   const [nowTick, setNowTick] = useState(Date.now());
 
   function act(fn: () => Promise<void>) {
     fn()
-      .then(refresh)
+      .then(() => refresh())
       .catch((e) => setError(describeError(e)));
   }
 
@@ -259,7 +283,7 @@ export default function App() {
     setGlobalAuto(on);
     if (!on) {
       Promise.all(PROVIDERS.map((p) => setAutoSwitch(p, false)))
-        .then(refresh)
+        .then(() => refresh())
         .catch((e) => setError(describeError(e)));
     }
   }
@@ -267,6 +291,16 @@ export default function App() {
   function toggleDevMode(on: boolean) {
     setDevModeFlag(on);
     setDevModeState(on);
+  }
+
+  // Turn global-skill sharing on/off across all profiles, then re-read the real
+  // state. `on` links the default ~/.claude content (agent-config skills etc.)
+  // into every profile; `off` removes the managed links (profile-own files stay).
+  function toggleShare(on: boolean) {
+    (on ? shareOn() : shareOff())
+      .then(shareStatus)
+      .then((s) => setShareActive(s.active))
+      .catch((e) => setError(describeError(e)));
   }
 
   function toggleAutoUpdateCheck(on: boolean) {
@@ -351,7 +385,10 @@ export default function App() {
     });
   }
 
-  async function refresh() {
+  // `force` = a manual refresh (footer button): bypass the per-profile fetch
+  // cooldown so the user always gets fresh data on demand. Automatic paths
+  // (mount, timer, rebuild) call refresh() with force=false and respect it.
+  async function refresh(force = false) {
     setBusy(true);
     let loaded: ProfileRow[];
     try {
@@ -382,19 +419,23 @@ export default function App() {
     // a reload nor a restart ever blanks the bars.
     if (selected === "claude" || selected === "codex") {
       const profs = loaded.filter((r) => r.provider === selected);
+      const attempts = getUsageAttempts();
       for (const r of profs) {
         const key = `${selected}/${r.name}`;
-        const last = lastUsageFetchRef.current[key] ?? 0;
-        // Cooldown: if we already have a fresh value fetched < 60s ago, reuse it.
-        if (usage[key]?.fresh && Date.now() - last < USAGE_COOLDOWN_MS) continue;
+        // Cooldown keyed on the last fetch ATTEMPT (persisted in localStorage,
+        // survives a dev rebuild), set below on success AND failure. So a rebuild
+        // never re-fetches within the interval — and a rate-limited (failing)
+        // profile stops being hammered, which is what was flooding the log.
+        if (!force && fetchOnCooldown(attempts[key], USAGE_COOLDOWN_MS)) continue;
+        markUsageAttempt(key, Date.now()); // record the attempt up front (before the await)
         const snap = await profileUsage(selected, r.name).catch(() => null);
         if (snap) {
-          lastUsageFetchRef.current[key] = Date.now();
           setUsage((prev) => ({ ...prev, [key]: { snap, fresh: true } }));
           saveUsageSnapshot(key, snap);
         } else {
-          // Record the failure (deduped in the CLI log; the daemon uses the same
-          // wording so a background poll failure never double-notifies).
+          // Failure: the attempt is already recorded, so we won't retry (or
+          // re-notify) until the cooldown elapses. One notification per window,
+          // not one per rebuild.
           await recordNotification(
             "warning",
             "Usage fetch failed",
@@ -485,7 +526,10 @@ export default function App() {
   function toggleAutoRefresh(on: boolean) {
     setAutoRefreshLimitsFlag(on);
     setAutoRefresh(on);
-    if (on) nextRefreshRef.current = Date.now() + REFRESH_MS; // restart the countdown
+    if (on) {
+      nextRefreshRef.current = Date.now() + REFRESH_MS; // restart the countdown
+      setNextUsageRefreshAt(nextRefreshRef.current);
+    }
   }
 
   function changeRefreshMin(min: number) {
@@ -497,13 +541,65 @@ export default function App() {
   // effect immediately (rather than after the current, longer deadline).
   useEffect(() => {
     nextRefreshRef.current = Date.now() + REFRESH_MS;
+    setNextUsageRefreshAt(nextRefreshRef.current);
   }, [REFRESH_MS]);
+
+  // Detect the agent-config companion CLI (installed version via the CLI, latest
+  // via GitHub Releases) for the recommend/upgrade banner. Best-effort: an absent
+  // binary → not installed; an offline release check → latest unknown.
+  async function detectAgentConfig() {
+    const current = await agentConfigVersion();
+    let latest: string | null = null;
+    try {
+      latest = (await fetchLatestRelease(AGENT_CONFIG_REPO))?.tag ?? null;
+    } catch {
+      /* offline / rate-limited → latest unknown (banner still shows install/dev) */
+    }
+    setAgentConfig({ installed: current !== null, current, latest });
+    // Notify (once per version) ONLY when agent-config is installed AND a newer
+    // release exists — never a nag when it isn't installed.
+    if (current && latest && isNewer(latest, current) && getAgentConfigNotifiedVersion() !== latest) {
+      setAgentConfigNotifiedVersion(latest);
+      await recordNotification(
+        "info",
+        "agent-config update available",
+        `v${current} → v${latest} — use the banner below to update.`,
+      );
+      await syncNotifications();
+    }
+  }
 
   // Initial load only. Tab switches do NOT refetch (they display cached/last-known
   // usage); the 5-minute timer and the manual button are the only refresh paths.
   useEffect(() => {
     refresh();
+    void detectAgentConfig();
+    void shareStatus()
+      .then((s) => setShareActive(s.active))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-check agent-config for updates at least hourly while the app runs (a tray
+  // app stays open for days, so on-open alone would miss a release). The notify
+  // gating (installed + newer + once-per-version) lives in detectAgentConfig.
+  useEffect(() => {
+    const id = setInterval(() => void detectAgentConfig(), 60 * 60 * 1000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Clicking one of the app's desktop notifications brings the window to the
+  // front AND opens the bell flyout (the guaranteed in-window surface).
+  useEffect(() => {
+    let unlisten = () => {};
+    void onNotificationClick(() => {
+      void showAppWindow();
+      setNotifOpenNonce((n) => n + 1);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten();
   }, []);
 
   // 1s ticker: drives the countdown and fires the auto-refresh when due.
@@ -513,6 +609,7 @@ export default function App() {
       setNowTick(t);
       if (autoRefresh && t >= nextRefreshRef.current) {
         nextRefreshRef.current = t + REFRESH_MS;
+        setNextUsageRefreshAt(nextRefreshRef.current);
         void refreshRef.current();
       }
     }, 1000);
@@ -585,6 +682,7 @@ export default function App() {
             onMarkRead={markNotifsRead}
             onClear={clearNotifs}
             onGenerateTest={devMode ? generateTestNotifications : undefined}
+            openNonce={notifOpenNonce}
           />
           <Button
             size="icon"
@@ -622,6 +720,9 @@ export default function App() {
             onClose={() => {
               setTerminal(null);
               void refresh();
+              // A profile just created via login has no shared links yet — re-link
+              // so it inherits the global skills too (no-op when sharing is off).
+              if (shareActive) void shareOn().catch(() => {});
             }}
           />
         ) : showSettings ? (
@@ -641,6 +742,8 @@ export default function App() {
             onProvidersChanged={refresh}
             devMode={devMode}
             onToggleDevMode={toggleDevMode}
+            shareActive={shareActive}
+            onToggleShare={toggleShare}
           />
         ) : showSessions ? (
           <SessionsView
@@ -802,14 +905,12 @@ export default function App() {
                                 await renameProfile(selected, r.name, newName);
                                 // Forget any cached usage under both the old and new keys so the
                                 // follow-up refresh re-fetches the renamed profile fresh — a reused
-                                // name must never show a prior account's numbers (localStorage +
-                                // in-memory + the cooldown ref, which the fetch loop reads live).
+                                // name must never show a prior account's numbers. Dropping the cache
+                                // entry also clears its capturedAt, so the cooldown no longer applies.
                                 const oldKey = `${selected}/${r.name}`;
                                 const newKey = `${selected}/${newName}`;
                                 dropUsageSnapshot(oldKey);
                                 dropUsageSnapshot(newKey);
-                                delete lastUsageFetchRef.current[oldKey];
-                                delete lastUsageFetchRef.current[newKey];
                                 setUsage((prev) => {
                                   const next = { ...prev };
                                   delete next[oldKey];
@@ -863,7 +964,18 @@ export default function App() {
                                   <Power /> Off
                                 </Button>
                               ) : (
-                                <Button size="sm" variant="secondary" onClick={() => act(() => switchProfile(selected, r.name))}>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() =>
+                                    act(async () => {
+                                      await switchProfile(selected, r.name);
+                                      // Keep the shared file-links (CLAUDE.md/settings) fresh for the
+                                      // now-active profile — no-op when sharing is off.
+                                      if (shareActive) await shareSync().catch(() => {});
+                                    })
+                                  }
+                                >
                                   Use
                                 </Button>
                               )}
@@ -962,6 +1074,24 @@ export default function App() {
         )}
       </div>
 
+      {(() => {
+        const acView = deriveAgentConfigView(agentConfig, devMode);
+        if (!acView.visible) return null;
+        return (
+          <AgentConfigBanner
+            view={acView}
+            devMode={devMode}
+            onOpenRepo={() => void openUrl(AGENT_CONFIG_REPO_URL)}
+            onInstall={installAgentConfig}
+            onUpdate={upgradeAgentConfig}
+            onSuccess={() => void detectAgentConfig()}
+            onNotifyError={(message) =>
+              void recordNotification("error", "agent-config setup failed", message).then(syncNotifications)
+            }
+          />
+        );
+      })()}
+
       <footer className="flex items-center justify-between gap-2 border-t border-border px-3 py-1.5">
         {auto &&
           globalAuto &&
@@ -1023,10 +1153,10 @@ export default function App() {
             size="icon"
             variant="ghost"
             className="size-6 text-muted-foreground hover:text-foreground"
-            onClick={refresh}
+            onClick={() => refresh(true)}
             disabled={busy}
             aria-label="Refresh"
-            title="Refresh now"
+            title="Refresh now (ignores the interval cooldown)"
           >
             <RefreshCw className={cn("size-3.5", busy && "animate-spin")} />
           </Button>
@@ -1070,6 +1200,10 @@ function EditProfileRow({
         value={name}
         autoFocus
         aria-label="Profile name"
+        autoCorrect="off"
+        autoCapitalize="off"
+        autoComplete="off"
+        spellCheck={false}
         className="h-8 min-w-0 flex-1"
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => {
@@ -1124,6 +1258,8 @@ function SettingsView({
   onProvidersChanged,
   devMode,
   onToggleDevMode,
+  shareActive,
+  onToggleShare,
 }: {
   onClose: () => void;
   onUninstall: () => void;
@@ -1140,6 +1276,8 @@ function SettingsView({
   onProvidersChanged: () => void;
   devMode: boolean;
   onToggleDevMode: (on: boolean) => void;
+  shareActive: boolean;
+  onToggleShare: (on: boolean) => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
   return (
@@ -1176,6 +1314,8 @@ function SettingsView({
           onChangeRefreshMin={onChangeRefreshMin}
           devMode={devMode}
           onToggleDevMode={onToggleDevMode}
+          shareActive={shareActive}
+          onToggleShare={onToggleShare}
         />
       )}
       {tab === "notifications" && <NotificationSettings mutedKinds={mutedKinds} onToggleMute={onToggleMute} />}
@@ -1352,6 +1492,8 @@ function GeneralSettings({
   onChangeRefreshMin,
   devMode,
   onToggleDevMode,
+  shareActive,
+  onToggleShare,
 }: {
   autoSwitchEnabled: boolean;
   onToggleAutoSwitch: (on: boolean) => void;
@@ -1361,6 +1503,8 @@ function GeneralSettings({
   onChangeRefreshMin: (min: number) => void;
   devMode: boolean;
   onToggleDevMode: (on: boolean) => void;
+  shareActive: boolean;
+  onToggleShare: (on: boolean) => void;
 }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -1494,6 +1638,25 @@ function GeneralSettings({
               Rotation first
             </Button>
           </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium">Share global skills</div>
+            <div className="text-xs text-muted-foreground">
+              Link the globally-installed agent-config content (skills, commands, agents, CLAUDE.md from{" "}
+              <span className="font-mono">~/.claude</span>) into every profile, so an active profile inherits it.
+              Account credentials are never shared.
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={shareActive ? "default" : "outline"}
+            onClick={() => onToggleShare(!shareActive)}
+            aria-label="Share global skills"
+          >
+            {shareActive ? "On" : "Off"}
+          </Button>
         </div>
 
         {IS_DEV && (
@@ -1929,6 +2092,10 @@ function CreateProfileForm({
             placeholder="e.g. work"
             value={name}
             autoFocus
+            autoCorrect="off"
+            autoCapitalize="off"
+            autoComplete="off"
+            spellCheck={false}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && canCreate) onCreate(provider, trimmed, label!);

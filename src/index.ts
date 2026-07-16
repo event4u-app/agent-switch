@@ -56,7 +56,7 @@ import { Provider, ProviderId, PROVIDER_IDS, provider, isProviderInstalled } fro
 import { parseArgs, parseRun } from "./args.js";
 import { credentialStore } from "./credentials.js";
 import { withProperLock } from "./locks.js";
-import { applySharing, removeSharing, syncSharing } from "./share.js";
+import { applySharing, removeSharing, syncSharing, sharedLinkHealth } from "./share.js";
 import { detectShell, shellenvScript } from "./shellenv.js";
 import { runDoctor } from "./doctor.js";
 import {
@@ -489,8 +489,21 @@ function cmdShare(mode?: string, flags: string[] = []): void {
       if (actions.length > 0) console.log(`  ${p}: ${actions.join(", ")}`);
     }
     console.log("Removed agent-switch-managed links (profile-own files were never touched).");
+  } else if (mode === "status") {
+    // Report the REAL state (from each profile's link manifest), not a cached
+    // flag: sharing is active when any profile carries agent-switch-managed links.
+    const rows = profiles
+      .filter((p) => configDir("claude", p) !== source)
+      .map((p) => ({ name: p, shared: sharedLinkHealth(configDir("claude", p)).length > 0 }));
+    const active = rows.some((r) => r.shared);
+    if (flags.includes("--json")) {
+      console.log(JSON.stringify({ active, source: sourceName ?? "default", profiles: rows }));
+      return;
+    }
+    console.log(`share: ${active ? "on" : "off"} (source ${sourceName ?? "default"})`);
+    for (const r of rows) console.log(`  ${r.name}: ${r.shared ? "shared" : "own"}`);
   } else {
-    die("usage: agent-switch share on|sync|off [--history] [--source <profile|default>]");
+    die("usage: agent-switch share on|sync|off|status [--history] [--source <profile|default>]");
   }
 }
 
@@ -1016,17 +1029,21 @@ function cmdRemove(providerId: ProviderId, name?: string, force = false): void {
 
 /** Set or clear a profile's label (Work / Personal / Other). */
 function cmdLabel(providerId: ProviderId, name?: string, label?: string): void {
-  const n = requireProfile(providerId, name, "label");
+  // The profile need NOT exist yet: a label is independent state keyed by
+  // provider/name, and the GUI sets the tag up front while `add` runs the login
+  // in a terminal. Requiring the profile here made that set fail (and the GUI
+  // swallowed the error), so a new profile's tag was silently lost.
+  if (!name) die(`usage: agent-switch label <profile> [${PROFILE_LABELS.join("|")}|none] [--provider P]`);
   if (label === undefined || label === "none" || label === "clear") {
-    setLabel(providerId, n, null);
-    console.log(`Cleared label for ${providerId}/${n}.`);
+    setLabel(providerId, name, null);
+    console.log(`Cleared label for ${providerId}/${name}.`);
     return;
   }
   if (!isProfileLabel(label)) {
     die(`invalid label "${label}" (choose: ${PROFILE_LABELS.join(", ")}, or "none" to clear)`);
   }
-  setLabel(providerId, n, label);
-  console.log(`Labeled ${providerId}/${n} as ${label}.`);
+  setLabel(providerId, name, label);
+  console.log(`Labeled ${providerId}/${name} as ${label}.`);
 }
 
 /** Enable/disable opt-in auto-switch, or show the current setting. */
@@ -1380,7 +1397,7 @@ Provider defaults to claude; pass --provider codex|gemini for the others.
   agent-switch map [--provider P] <name> [dir] map a directory to a profile
   agent-switch unmap [--provider P] [dir]      remove a directory mapping
   agent-switch mappings                        list directory mappings
-  agent-switch share on|sync|off [--history] [--source <profile|default>]   (Claude)
+  agent-switch share on|sync|off|status [--history] [--source <profile|default>] [--json]   (Claude)
   agent-switch sessions [profile] [--recent N] [--json]   recent + live Claude sessions per profile (with context %)
   agent-switch hooks install|uninstall|status [profile]   manage lifecycle push hooks in Claude settings.json
   agent-switch alerts on|off|status [--threshold 80,95]   record context/usage crossings to the notification log (off by default)

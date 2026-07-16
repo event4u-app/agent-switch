@@ -56,15 +56,58 @@ export function saveUsageSnapshot(key: string, snap: UsageSnapshot): void {
   }
 }
 
-/** Forget one profile's cached snapshot. Called on rename so numbers from a
- *  prior account/state never linger under a reused `<provider>/<profile>` key
- *  until the next successful fetch overwrites them. No-op if the key is absent. */
+const ATTEMPTS_KEY = "agent-switch.usage.attempts.v1";
+
+function readAttempts(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(ATTEMPTS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Last usage-fetch ATTEMPT time (unix ms) per `<provider>/<profile>`. Set on
+ *  every attempt — success OR FAILURE — and persisted, so a failed fetch still
+ *  records its attempt and a dev rebuild can't re-hammer the rate-limited usage
+ *  endpoint (the bug behind the "Usage fetch failed" flood on every rebuild). */
+export function getUsageAttempts(): Record<string, number> {
+  return readAttempts();
+}
+
+export function markUsageAttempt(key: string, ts: number): void {
+  try {
+    const raw = readAttempts();
+    raw[key] = ts;
+    localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(raw));
+  } catch {
+    /* best-effort */
+  }
+}
+
+/** True when the last fetch attempt for a profile is still within the cooldown,
+ *  so it must NOT be re-fetched yet — whether that attempt succeeded or failed. */
+export function fetchOnCooldown(attemptAt: number | undefined, cooldownMs: number, now: number = Date.now()): boolean {
+  return typeof attemptAt === "number" && attemptAt > 0 && now - attemptAt < cooldownMs;
+}
+
+/** Forget one profile's cached snapshot AND its attempt timestamp. Called on
+ *  rename so numbers from a prior account never linger under a reused key and
+ *  the renamed profile is re-fetched right away. No-op if the key is absent. */
 export function dropUsageSnapshot(key: string): void {
   try {
     const raw = readRaw();
-    if (!(key in raw)) return;
-    delete raw[key];
-    localStorage.setItem(KEY, JSON.stringify(raw));
+    if (key in raw) {
+      delete raw[key];
+      localStorage.setItem(KEY, JSON.stringify(raw));
+    }
+    const attempts = readAttempts();
+    if (key in attempts) {
+      delete attempts[key];
+      localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(attempts));
+    }
   } catch {
     /* ignore — best-effort */
   }
