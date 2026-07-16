@@ -126,9 +126,12 @@ tasks:
 
   # ---------- GUI (Tauri: needs Rust + a desktop session) ----------
   gui:dev:
-    desc: Run the tray GUI in dev (Tauri + Vite)
+    # `dev` (build + npm link) runs first so `agent-switch` on PATH is this
+    # dev build — the GUI spawns the CLI, so without it the tray would drive a
+    # stale/older binary (e.g. missing the session context column).
+    desc: Run the tray GUI in dev (builds + links the CLI first, then Tauri + Vite)
     dir: gui
-    deps: [gui:deps]
+    deps: [gui:deps, dev]
     cmds:
       - npm run tauri dev
 
