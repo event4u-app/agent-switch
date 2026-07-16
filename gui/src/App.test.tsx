@@ -20,6 +20,7 @@ const ipc = vi.hoisted(() => ({
   sessionArgs: (p: string, n: string) => ["run", n, "--provider", p],
   takeoverArgs: (id: string, to: string, keep?: boolean) => ["takeover", id, "--to", to, ...(keep ? ["--keep-source"] : [])],
   compactArgs: (profile: string) => ["compact", profile],
+  tokensInstallArgs: () => ["tokens", "install"],
   listSessions: vi.fn(),
   getTokens: vi.fn(),
   getNotifyConfig: vi.fn(),
@@ -500,11 +501,13 @@ describe("App", () => {
     expect(screen.getAllByText("$1.50").length).toBeGreaterThan(0);
   });
 
-  it("shows the ccusage install hint when token tracking is unavailable", async () => {
+  it("offers an Install ccusage button that runs `tokens install` in the terminal", async () => {
     ipc.getTokens.mockResolvedValue({ error: "ccusage-not-found", hint: "Install ccusage: npm i -g ccusage" });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /tokens/i }));
-    expect(await screen.findByText(/install ccusage/i)).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: /install ccusage/i }));
+    const term = await screen.findByTestId("term");
+    expect(term.textContent).toContain("tokens install");
   });
 
   it("toggles context alerts from the General settings tab", async () => {

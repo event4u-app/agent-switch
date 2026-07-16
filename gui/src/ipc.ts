@@ -235,6 +235,13 @@ export function compactArgs(profile: string): string[] {
   return ["compact", profile];
 }
 
+/** Args for `tokens install`, run in the embedded terminal so the ccusage
+ *  install streams its output to a real pty (and the user can enter a sudo
+ *  password if their npm needs one). Pure builder. */
+export function tokensInstallArgs(): string[] {
+  return ["tokens", "install"];
+}
+
 /** ccusage / token tracking is unavailable — the `tokens --json` payload
  *  carries an `error` (and usually a `hint`) instead of the per-profile array. */
 export interface TokensError {

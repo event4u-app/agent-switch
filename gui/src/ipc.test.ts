@@ -39,6 +39,7 @@ import {
   listSessions,
   takeoverArgs,
   compactArgs,
+  tokensInstallArgs,
   getTokens,
   getNotifyConfig,
   setNotify,
@@ -194,6 +195,10 @@ describe("ipc", () => {
     expect(asEnable).toHaveBeenCalled();
     await setAutostart(false);
     expect(asDisable).toHaveBeenCalled();
+  });
+
+  it("tokensInstallArgs builds `tokens install` (embedded-terminal install builder)", () => {
+    expect(tokensInstallArgs()).toEqual(["tokens", "install"]);
   });
 
   it("compactArgs builds `compact <profile>` (embedded-terminal builder, like takeoverArgs)", () => {

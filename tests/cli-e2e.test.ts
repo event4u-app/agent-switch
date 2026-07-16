@@ -392,3 +392,15 @@ test("`takeover --provider codex --keep-source` is refused (fork unverified → 
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("`tokens install --dry-run` prints the install command without running it", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    const out = run(home, ["tokens", "install", "--dry-run"]);
+    // ccusage absent in CI → the dry-run command; a dev box with ccusage on PATH
+    // short-circuits to "already installed". Either is correct; neither installs.
+    assert.match(out, /npm install -g ccusage|already installed/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
