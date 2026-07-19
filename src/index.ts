@@ -99,6 +99,7 @@ import { isFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daem
 import { cmdService, serviceUninstall } from "./service.js";
 import { ContextReading, readContext, turnInFlight } from "./telemetry.js";
 import { readPreview, type SessionPreview } from "./session-preview.js";
+import { inheritPermissions } from "./settings-inherit.js";
 import {
   installHooks,
   uninstallHooks,
@@ -163,6 +164,16 @@ function cmdAdd(providerId: ProviderId, name?: string): void {
   console.log(`Created ${providerId} profile "${name}".`);
   console.log(`Launching ${p.binary} for first login (log in inside if prompted)...`);
   launch(p, name, []);
+  // Seed the profile's command-permission allowlist from the user's global
+  // Claude settings — a profile runs under its own CLAUDE_CONFIG_DIR, so it
+  // never reads ~/.claude/settings.json and would otherwise re-prompt for every
+  // globally-approved command. Permissions only; the global file is read-only.
+  if (providerId === "claude") {
+    const seeded = inheritPermissions(configDir("claude", name), CLAUDE_HOME);
+    if (seeded.addedAllow > 0) {
+      console.log(`Seeded ${seeded.addedAllow} command permission(s) from your global Claude settings.`);
+    }
+  }
   const id = identity(providerId, name);
   console.log(id ? `Profile "${name}" is linked to ${id}.` : `Profile "${name}" created.`);
   console.log(`Activate it with: agent-switch use ${name}${providerId === "claude" ? "" : ` --provider ${providerId}`}`);
@@ -528,6 +539,39 @@ function cmdShare(mode?: string, flags: string[] = []): void {
     for (const r of rows) console.log(`  ${r.name}: ${r.shared ? "shared" : "own"}`);
   } else {
     die("usage: agent-switch share on|sync|off|status [--history] [--source <profile|default>]");
+  }
+}
+
+/**
+ * `agent-switch settings inherit [<profile>] [--json]` — copy the command
+ * permission allowlist from the user's GLOBAL Claude settings
+ * (~/.claude/settings.json) into a profile's settings.json (all claude profiles
+ * when none is named). A profile runs under its own CLAUDE_CONFIG_DIR and never
+ * reads the global file, so without this it re-prompts for every command that is
+ * already approved globally. Permissions are UNIONED (a profile's own grants are
+ * kept); the global file is only read, never written. This is the backfill for
+ * profiles created before `add` started seeding permissions automatically.
+ */
+function cmdSettings(providerId: ProviderId, sub?: string, positional: string[] = [], flags: Record<string, string | boolean> = {}): void {
+  if (providerId !== "claude") die("settings inherit is Claude-only (permissions are a Claude Code concept)");
+  if (sub !== "inherit") die("usage: agent-switch settings inherit [<profile>] [--json]");
+
+  const named = positional[0];
+  const targets = named ? [requireProfile("claude", named, "settings inherit")] : listProfiles("claude");
+  if (targets.length === 0) die("no claude profiles");
+
+  const results = targets.map((p) => ({ profile: p, ...inheritPermissions(configDir("claude", p), CLAUDE_HOME) }));
+  if (flags.json) {
+    console.log(JSON.stringify({ source: "global (~/.claude)", results }, null, 2));
+    return;
+  }
+  console.log("Inheriting command permissions from your global Claude settings (~/.claude):");
+  for (const r of results) {
+    console.log(
+      r.changed
+        ? `  ${r.profile}: +${r.addedAllow} permission(s) (now ${r.allowCount})`
+        : `  ${r.profile}: up to date (${r.allowCount})`,
+    );
   }
 }
 
@@ -1708,6 +1752,7 @@ Provider defaults to claude; pass --provider codex|antigravity for the others.
   agent-switch unmap [--provider P] [dir]      remove a directory mapping
   agent-switch mappings                        list directory mappings
   agent-switch share on|sync|off|status [--history] [--source <profile|default>] [--json]   (Claude)
+  agent-switch settings inherit [<profile>] [--json]   copy global (~/.claude) command permissions into a profile (Claude)
   agent-switch sessions [profile] [--recent N] [--json]   recent + live Claude sessions per profile (with context %)
   agent-switch hooks install|uninstall|status [profile]   manage lifecycle push hooks in Claude settings.json
   agent-switch alerts on|off|status [--threshold 80,95]   record context/usage crossings to the notification log (off by default)
@@ -1784,6 +1829,7 @@ async function main(): Promise<void> {
     case "unmap": return cmdUnmap(providerExplicit ? providerId : undefined, positional[0]);
     case "mappings": return cmdMappings();
     case "share": return cmdShare(positional[0], rest.slice(1));
+    case "settings": return cmdSettings(providerId, positional[0], positional.slice(1), flags);
     case "sessions":
       if (positional[0] === "rm") return cmdSessionsRm(providerId, providerExplicit, positional[1], flags);
       if (positional[0] === "restore") return cmdSessionsRestore(providerId, providerExplicit, positional[1], flags);

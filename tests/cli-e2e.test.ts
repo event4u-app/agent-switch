@@ -664,3 +664,37 @@ test("`handoff extract` rejects a traversal id before fs access", gate, () => {
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test(
+  "`settings inherit` copies the global permission allowlist into a profile, keeping its own settings",
+  // CLAUDE_HOME resolves via os.homedir(), which reads USERPROFILE (not HOME) on win32 → not hermetic there.
+  { skip: process.platform === "win32" ? "os.homedir uses USERPROFILE on win32" : gate.skip },
+  () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "asw-home-"));
+    try {
+      seed(home, "claude", "work");
+      fs.mkdirSync(path.join(fakeHome, ".claude"), { recursive: true });
+      fs.writeFileSync(
+        path.join(fakeHome, ".claude", "settings.json"),
+        JSON.stringify({ permissions: { allow: ["Bash(git *)", "Bash(npm *)"], defaultMode: "auto" }, theme: "light" }),
+      );
+      const out = execFileSync("node", [CLI, "settings", "inherit", "work", "--json"], {
+        env: { ...process.env, AGENT_SWITCH_HOME: home, HOME: fakeHome },
+        encoding: "utf8",
+      });
+      const j = JSON.parse(out);
+      assert.equal(j.results[0].profile, "work");
+      assert.equal(j.results[0].changed, true);
+      assert.equal(j.results[0].addedAllow, 2);
+      const written = JSON.parse(
+        fs.readFileSync(path.join(home, "claude", "work", "config", "settings.json"), "utf8"),
+      );
+      assert.deepEqual(written.permissions.allow, ["Bash(git *)", "Bash(npm *)"]);
+      assert.equal(written.permissions.defaultMode, "auto");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    }
+  },
+);
