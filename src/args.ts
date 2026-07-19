@@ -27,6 +27,9 @@ const VALUE_FLAGS = new Set([
   "title",
   "message",
   "surface",
+  "tag",
+  "ack",
+  "brief",
 ]);
 
 export interface ParsedArgs {

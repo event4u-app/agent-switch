@@ -49,6 +49,20 @@ test("pickSwitchTarget returns null when every other account is also maxed", () 
   assert.equal(pickSwitchTarget("work", cands, 95), null);
 });
 
+test("pickSwitchTarget honours the eligibility filter (tag scope)", () => {
+  const cands = [
+    { name: "work", snapshot: snap([96]) }, // active, over threshold
+    { name: "privat", snapshot: snap([10]) }, // most headroom, but NOT eligible (wrong tag)
+    { name: "work2", snapshot: snap([40]) }, // eligible
+  ];
+  // Only "work"/"work2" are eligible (e.g. tag=Work); "privat" is excluded despite
+  // having the most headroom → the target is the eligible one.
+  const eligible = (n: string) => n !== "privat";
+  assert.equal(pickSwitchTarget("work", cands, 95, eligible), "work2");
+  // No eligible target → null even though a maxed active would otherwise switch.
+  assert.equal(pickSwitchTarget("work", cands, 95, (n) => n === "nope"), null);
+});
+
 test("parseUsage reads all four windows + routines, rounding utilization", () => {
   const raw = {
     five_hour: { utilization: 12.4, resets_at: "2026-07-13T17:00:00Z" },

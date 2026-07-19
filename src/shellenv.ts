@@ -1,6 +1,6 @@
 /**
  * Shell integration snippets, per shell — a wrapper for each provider binary
- * (`claude`, `codex`, `gemini`) plus `asw`.
+ * (`claude`, `codex`, `agy`) plus `asw`.
  *
  * Each binary wrapper injects that provider's isolation env var from the
  * resolved profile (`agent-switch dir --provider <id>`: mapping >
@@ -93,7 +93,7 @@ export function shellenvScript(shell: Shell): string {
 function asw
     if test (count $argv) -eq 0
         command agent-switch list
-    else if contains -- $argv[1] claude codex gemini
+    else if contains -- $argv[1] claude codex antigravity
         command agent-switch use $argv[2] --provider $argv[1]
     else
         command agent-switch use $argv
@@ -107,7 +107,7 @@ end`;
     const asw = `# Convenience: "asw" lists all; "asw work" switches claude; "asw codex work" switches a provider
 function asw {
     if ($args.Count -eq 0) { command agent-switch list; return }
-    if (@('claude','codex','gemini') -contains $args[0]) { & agent-switch use $args[1] --provider $args[0] }
+    if (@('claude','codex','antigravity') -contains $args[0]) { & agent-switch use $args[1] --provider $args[0] }
     else { & agent-switch use @args }
 }`;
     return build(header, providers.map((p) => powershellWrapper(p.binary, p.envVar, p.id)), asw);
@@ -119,7 +119,7 @@ function asw {
 asw() {
   if [ $# -eq 0 ]; then command agent-switch list; return; fi
   case "$1" in
-    claude|codex|gemini) command agent-switch use "$2" --provider "$1" ;;
+    claude|codex|antigravity) command agent-switch use "$2" --provider "$1" ;;
     *) command agent-switch use "$@" ;;
   esac
 }`;

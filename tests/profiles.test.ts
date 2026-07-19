@@ -16,51 +16,51 @@ test("ROOT honors AGENT_SWITCH_HOME", () => {
 
 test("paths are provider-scoped: <root>/<provider>/<name>/config", () => {
   assert.equal(P.profileDir("codex", "work"), path.join(HOME, "codex", "work"));
-  assert.equal(P.configDir("gemini", "work"), path.join(HOME, "gemini", "work", "config"));
+  assert.equal(P.configDir("antigravity", "work"), path.join(HOME, "antigravity", "work", "config"));
   assert.equal(P.browserDir("claude", "work"), path.join(HOME, "claude", "work", "browser"));
 });
 
 test("listProfiles is per-provider; listAllProfiles spans providers", () => {
-  for (const [prov, name] of [["claude", "a"], ["claude", "b"], ["codex", "c"], ["gemini", "d"]] as const) {
+  for (const [prov, name] of [["claude", "a"], ["claude", "b"], ["codex", "c"], ["antigravity", "d"]] as const) {
     fs.mkdirSync(P.configDir(prov, name), { recursive: true });
   }
   assert.deepEqual(P.listProfiles("claude"), ["a", "b"]);
   assert.deepEqual(P.listProfiles("codex"), ["c"]);
   assert.deepEqual(
     P.listAllProfiles().map((r) => `${r.provider}/${r.name}`).sort(),
-    ["claude/a", "claude/b", "codex/c", "gemini/d"],
+    ["antigravity/d", "claude/a", "claude/b", "codex/c"],
   );
-  assert.equal(P.profileExists("gemini", "d"), true);
-  assert.equal(P.profileExists("gemini", "x"), false);
+  assert.equal(P.profileExists("antigravity", "d"), true);
+  assert.equal(P.profileExists("antigravity", "x"), false);
 });
 
 test("state migrates v1 { active: string } to the per-provider map", () => {
   // v1 shape: a single active name meant the Claude profile.
   fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: "legacy" }));
-  assert.deepEqual(P.readState().active, { claude: "legacy", codex: null, gemini: null });
+  assert.deepEqual(P.readState().active, { claude: "legacy", codex: null, antigravity: null });
 });
 
 test("activeFor / setActive are per-provider", () => {
   P.writeState({
-    active: { claude: null, codex: null, gemini: null },
+    active: { claude: null, codex: null, antigravity: null },
     labels: {},
     autoSwitch: {
-      claude: { enabled: false, threshold: 95 },
-      codex: { enabled: false, threshold: 95 },
-      gemini: { enabled: false, threshold: 95 },
+      claude: { enabled: false, threshold: 95, tag: "all" },
+      codex: { enabled: false, threshold: 95, tag: "all" },
+      antigravity: { enabled: false, threshold: 95, tag: "all" },
     },
     providers: {
       claude: { cli: true, ui: true },
       codex: { cli: true, ui: true },
-      gemini: { cli: false, ui: false },
+      antigravity: { cli: false, ui: false },
     },
     switchStrategy: "reset-first",
     osNotifications: false,
   }); // clean baseline (shared STATE_FILE)
   P.setActive("codex", "work");
-  P.setActive("gemini", "priv");
+  P.setActive("antigravity", "priv");
   assert.equal(P.activeFor("codex"), "work");
-  assert.equal(P.activeFor("gemini"), "priv");
+  assert.equal(P.activeFor("antigravity"), "priv");
   assert.equal(P.activeFor("claude"), null);
   P.setActive("codex", null);
   assert.equal(P.activeFor("codex"), null);
@@ -97,87 +97,93 @@ test("setActive/setLabel do not clobber each other in state.json", () => {
 test("auto-switch is per provider — defaults OFF, round-trips, independent, clamps", () => {
   P.setAutoSwitch("claude", { enabled: false });
   P.setAutoSwitch("codex", { enabled: false });
-  assert.deepEqual(P.readAutoSwitch("claude"), { enabled: false, threshold: 95 });
+  assert.deepEqual(P.readAutoSwitch("claude"), { enabled: false, threshold: 95, tag: "all" });
 
   const cfg = P.setAutoSwitch("claude", { enabled: true, threshold: 80 });
-  assert.deepEqual(cfg, { enabled: true, threshold: 80 });
-  assert.deepEqual(P.readAutoSwitch("claude"), { enabled: true, threshold: 80 });
+  assert.deepEqual(cfg, { enabled: true, threshold: 80, tag: "all" });
+  assert.deepEqual(P.readAutoSwitch("claude"), { enabled: true, threshold: 80, tag: "all" });
   // per-provider: enabling claude does not touch codex
   assert.equal(P.readAutoSwitch("codex").enabled, false);
 
   // readAutoSwitchAll returns every provider's config
   assert.equal(P.readAutoSwitchAll().claude.enabled, true);
-  assert.equal(P.readAutoSwitchAll().gemini.enabled, false);
+  assert.equal(P.readAutoSwitchAll().antigravity.enabled, false);
 
   // an out-of-range threshold falls back to the default (safety net)
   P.setAutoSwitch("claude", { threshold: 999 });
   assert.equal(P.readAutoSwitch("claude").threshold, 95);
+
+  // tag filter persists; an invalid tag falls back to "all"
+  P.setAutoSwitch("claude", { tag: "Work" });
+  assert.equal(P.readAutoSwitch("claude").tag, "Work");
+  P.setAutoSwitch("claude", { tag: "bogus" as unknown as "all" });
+  assert.equal(P.readAutoSwitch("claude").tag, "all");
   P.setAutoSwitch("claude", { enabled: false });
 });
 
 test("legacy global auto-switch migrates onto every provider", () => {
   // old shape: a single { enabled, threshold } (pre per-provider)
   P.writeState({
-    active: { claude: null, codex: null, gemini: null },
+    active: { claude: null, codex: null, antigravity: null },
     labels: {},
     // deliberately the OLD global shape, cast through unknown for the test
     autoSwitch: { enabled: true, threshold: 70 } as unknown as ReturnType<typeof P.readAutoSwitchAll>,
     providers: {
       claude: { cli: true, ui: true },
       codex: { cli: true, ui: true },
-      gemini: { cli: false, ui: false },
+      antigravity: { cli: false, ui: false },
     },
     switchStrategy: "reset-first",
     osNotifications: false,
   });
   const all = P.readAutoSwitchAll();
-  for (const p of ["claude", "codex", "gemini"] as const) {
-    assert.deepEqual(all[p], { enabled: true, threshold: 70 });
+  for (const p of ["claude", "codex", "antigravity"] as const) {
+    assert.deepEqual(all[p], { enabled: true, threshold: 70, tag: "all" });
   }
 });
 
-test("providers: default enabled = claude + codex; gemini off; toggles persist", () => {
-  // Clean slate with NO gemini profiles → gemini is off purely by default.
-  fs.rmSync(path.join(HOME, "gemini"), { recursive: true, force: true });
+test("providers: default enabled = claude + codex; antigravity off; toggles persist", () => {
+  // Clean slate with NO antigravity profiles → antigravity is off purely by default.
+  fs.rmSync(path.join(HOME, "antigravity"), { recursive: true, force: true });
   fs.rmSync(P.STATE_FILE, { force: true });
   const def = P.readProviders();
   assert.deepEqual(def.claude, { cli: true, ui: true });
   assert.deepEqual(def.codex, { cli: true, ui: true });
-  assert.deepEqual(def.gemini, { cli: false, ui: false });
+  assert.deepEqual(def.antigravity, { cli: false, ui: false });
   assert.deepEqual(P.enabledProviders("cli"), ["claude", "codex"]);
 
   // Enabling one surface persists and widens enabledProviders.
-  P.setProviderSurface("gemini", "cli", true);
-  assert.equal(P.providerEnabled("gemini", "cli"), true);
-  assert.equal(P.providerEnabled("gemini", "ui"), false);
-  assert.deepEqual(P.enabledProviders("cli"), ["claude", "codex", "gemini"]);
+  P.setProviderSurface("antigravity", "cli", true);
+  assert.equal(P.providerEnabled("antigravity", "cli"), true);
+  assert.equal(P.providerEnabled("antigravity", "ui"), false);
+  assert.deepEqual(P.enabledProviders("cli"), ["claude", "codex", "antigravity"]);
 
   // Disabling a surface hides it again.
   P.setProviderSurface("codex", "cli", false);
-  assert.deepEqual(P.enabledProviders("cli"), ["claude", "gemini"]);
+  assert.deepEqual(P.enabledProviders("cli"), ["claude", "antigravity"]);
 });
 
 test("providers: a provider with existing profiles is not hidden by default", () => {
-  // No `providers` key + gemini has a profile → default treats gemini enabled,
+  // No `providers` key + antigravity has a profile → default treats antigravity enabled,
   // so an upgrade never hides an account the user already set up.
   fs.rmSync(P.STATE_FILE, { force: true });
-  fs.mkdirSync(P.configDir("gemini", "kept"), { recursive: true });
-  assert.equal(P.readProviders().gemini.cli, true);
+  fs.mkdirSync(P.configDir("antigravity", "kept"), { recursive: true });
+  assert.equal(P.readProviders().antigravity.cli, true);
 });
 
 test("switchStrategy defaults to reset-first and persists a change", () => {
   P.writeState({
-    active: { claude: null, codex: null, gemini: null },
+    active: { claude: null, codex: null, antigravity: null },
     labels: {},
     autoSwitch: {
-      claude: { enabled: false, threshold: 95 },
-      codex: { enabled: false, threshold: 95 },
-      gemini: { enabled: false, threshold: 95 },
+      claude: { enabled: false, threshold: 95, tag: "all" },
+      codex: { enabled: false, threshold: 95, tag: "all" },
+      antigravity: { enabled: false, threshold: 95, tag: "all" },
     },
     providers: {
       claude: { cli: true, ui: true },
       codex: { cli: true, ui: true },
-      gemini: { cli: false, ui: false },
+      antigravity: { cli: false, ui: false },
     },
     switchStrategy: "reset-first",
     osNotifications: false,

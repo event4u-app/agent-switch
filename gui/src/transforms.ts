@@ -8,10 +8,14 @@
  * across accounts.
  */
 
-export type ProviderId = "claude" | "codex" | "gemini";
+export type ProviderId = "claude" | "codex" | "antigravity";
 
 export const PROFILE_LABELS = ["Work", "Personal", "Other"] as const;
 export type ProfileLabel = (typeof PROFILE_LABELS)[number];
+
+/** Which accounts (by label) auto-switch may switch to; "all" = no filter.
+ *  Mirrors the CLI's AutoSwitchTag. */
+export type AutoSwitchTag = "all" | ProfileLabel;
 
 /** Which surfaces of a provider are enabled (mirrors the CLI `providers` map). */
 export interface ProviderSurfaces {
@@ -59,6 +63,19 @@ export interface SessionRow {
   live: boolean;
   summary?: string | null;
   context?: SessionContext | null;
+}
+
+/** One turn of a session content preview (ADR-002 bounded reader). */
+export interface SessionPreviewMessage {
+  role: "user" | "assistant";
+  text: string;
+}
+
+/** The first few conversation turns of a session, from `sessions preview --json`.
+ *  `truncated` = more turns exist past those shown (or the read hit its cap). */
+export interface SessionPreview {
+  messages: SessionPreviewMessage[];
+  truncated: boolean;
 }
 
 /** Compact "134k" token count. Pure — used by the context badge. */
@@ -139,7 +156,7 @@ export function hasUsageReadout(provider: ProviderId): boolean {
 
 /** Group the flat profile list by provider, preserving order. */
 export function groupByProvider(rows: ProfileRow[]): Record<ProviderId, ProfileRow[]> {
-  const out: Record<ProviderId, ProfileRow[]> = { claude: [], codex: [], gemini: [] };
+  const out: Record<ProviderId, ProfileRow[]> = { claude: [], codex: [], antigravity: [] };
   for (const r of rows) out[r.provider].push(r);
   return out;
 }

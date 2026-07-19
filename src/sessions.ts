@@ -11,11 +11,12 @@
  * Iron rules (roadmap: road-to-session-handoff):
  *   - Transcripts are OPAQUE, version-unstable blobs FOR TRANSFER. The only
  *     read in THIS module is `readSessionHeader` — first line, capped,
- *     try/catch. Read-only TELEMETRY (context/token counts) is the one
- *     sanctioned exception and lives ONLY in `src/telemetry.ts` (roadmap:
- *     road-to-agent-switch-session-telemetry, decision gate D0) — guarded,
- *     capped, version-gated, confidence-scored. No other module parses a
- *     transcript body.
+ *     try/catch. There are exactly TWO sanctioned body readers, both guarded +
+ *     capped + fenced + degraded-mode, and NO others: read-only TELEMETRY
+ *     (context/token counts, `src/telemetry.ts`, road-to-agent-switch-session-
+ *     telemetry gate D0) and read-only PREVIEW (the first few conversation
+ *     turns for the GUI list, `src/session-preview.ts`, ADR-002). No other
+ *     module parses a transcript body.
  *   - Transfers are copy → verify → delete (the `migrateLegacyLayout`
  *     precedent): no step ever leaves zero copies of a transcript.
  *   - Index files (`sessions-index.json`, `history.jsonl`) are never written —
@@ -291,6 +292,199 @@ export function cleanupForkVehicle(tgtConfigDir: string, projectDir: string, ses
   const proj = path.join(tgtConfigDir, "projects", projectDir);
   fs.rmSync(path.join(proj, `${sessionId}.jsonl`), { force: true });
   fs.rmSync(path.join(proj, sessionId), { recursive: true, force: true });
+}
+
+// ---------- per-session delete (Claude: files; Codex: native command) ---------
+//
+// Delete turns the latent takeover path-traversal (a raw id joined into an fs
+// path) into DIRECT destruction, so a strict id gate runs before any fs access,
+// and a realpath-prefix assertion is defense-in-depth behind it. Claude has no
+// native session-delete, so deletion is a file op — trash-move by default
+// (recoverable), true rm only on `purge`. Codex owns its store (.zst/indexes),
+// so codex deletion is delegated to the native CLI, never a manual rollout rm.
+
+/** Canonical UUID (both providers id sessions this way). */
+const SESSION_ID_RE =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/** Strict session-id gate — a canonical UUID only. Rejects `/`, `\`, `..`, and
+ *  anything else before the id is ever joined into a filesystem path. MUST be
+ *  the first call on the `sessions rm` / `restore` path. */
+export function assertValidSessionId(id: string): void {
+  if (typeof id !== "string" || !SESSION_ID_RE.test(id)) {
+    throw new Error(
+      `invalid session id ${JSON.stringify(String(id))} — expected a canonical UUID`,
+    );
+  }
+}
+
+/** Defense-in-depth: the resolved target must live inside `rootDir` after
+ *  symlink resolution, or we refuse to touch it. Both paths must exist. */
+function assertInside(rootDir: string, target: string): void {
+  const root = fs.realpathSync(rootDir);
+  const resolved = fs.realpathSync(target);
+  const rel = path.relative(root, resolved);
+  if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error(`refusing to operate on a path outside ${rootDir}: ${target}`);
+  }
+}
+
+const TRASH_DIRNAME = ".agent-switch-trash";
+const TRASH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Move a file/dir into `dest`, falling back to copy→verify→delete across a
+ *  device boundary (rename fails EXDEV). */
+function moveInto(src: string, dest: string, isDir: boolean): void {
+  try {
+    fs.renameSync(src, dest);
+    return;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "EXDEV") throw e;
+  }
+  if (isDir) {
+    fs.cpSync(src, dest, { recursive: true });
+    fs.rmSync(src, { recursive: true, force: true });
+  } else {
+    fs.copyFileSync(src, dest);
+    if (fs.statSync(src).size !== fs.statSync(dest).size) {
+      fs.rmSync(dest, { force: true });
+      throw new Error(`trash move failed verification: ${dest}`);
+    }
+    fs.rmSync(src, { force: true });
+  }
+}
+
+export interface DeleteResult {
+  mode: "trash" | "purge";
+  /** Set when trashed — the handle `restoreSession` takes. */
+  trashId: string | null;
+  removed: string[];
+  /** Anything a best-effort purge could not remove (privacy residue to surface). */
+  residue: string[];
+}
+
+interface TrashManifest {
+  id: string;
+  projectDir: string;
+  hadCheckpoint: boolean;
+  trashedAt: string;
+}
+
+/**
+ * Delete one Claude session. Ordering is ALWAYS checkpoint-dir first, transcript
+ * LAST — a crash mid-delete then leaves a locatable, still-resumable session
+ * (`locateSession` keys on `<id>.jsonl`) rather than an orphaned checkpoint.
+ * Default is a recoverable trash-move into `<config>/.agent-switch-trash/`;
+ * `purge` does the true irreversible `fs.rmSync`. `now` is injectable for tests.
+ */
+export function deleteSession(
+  loc: SessionLocation,
+  opts: { purge?: boolean; now?: number } = {},
+): DeleteResult {
+  const projectsRoot = path.join(loc.configDir, "projects");
+  assertInside(projectsRoot, loc.jsonl);
+  if (loc.checkpointDir) assertInside(projectsRoot, loc.checkpointDir);
+
+  const removed: string[] = [];
+  const residue: string[] = [];
+
+  if (opts.purge) {
+    if (loc.checkpointDir) {
+      try {
+        fs.rmSync(loc.checkpointDir, { recursive: true, force: true });
+        removed.push(loc.checkpointDir);
+      } catch {
+        residue.push(loc.checkpointDir);
+      }
+    }
+    try {
+      fs.rmSync(loc.jsonl, { force: true });
+      removed.push(loc.jsonl);
+    } catch {
+      residue.push(loc.jsonl);
+    }
+    return { mode: "purge", trashId: null, removed, residue };
+  }
+
+  const id = path.basename(loc.jsonl, ".jsonl");
+  const trashId = `${opts.now ?? Date.now()}-${id}`;
+  const dest = path.join(loc.configDir, TRASH_DIRNAME, trashId);
+  const destProj = path.join(dest, "projects", loc.projectDir);
+  fs.mkdirSync(destProj, { recursive: true, mode: 0o700 });
+
+  if (loc.checkpointDir) {
+    moveInto(loc.checkpointDir, path.join(destProj, path.basename(loc.checkpointDir)), true);
+    removed.push(loc.checkpointDir);
+  }
+  moveInto(loc.jsonl, path.join(destProj, path.basename(loc.jsonl)), false);
+  removed.push(loc.jsonl);
+
+  const manifest: TrashManifest = {
+    id,
+    projectDir: loc.projectDir,
+    hadCheckpoint: loc.checkpointDir !== null,
+    trashedAt: new Date(opts.now ?? Date.now()).toISOString(),
+  };
+  fs.writeFileSync(path.join(dest, "manifest.json"), JSON.stringify(manifest, null, 2));
+
+  return { mode: "trash", trashId, removed, residue };
+}
+
+/** Restore a trashed Claude session back to its origin. Refuses if a live
+ *  transcript already occupies the id (never silently overwrites). */
+export function restoreSession(configDir: string, trashId: string): { restored: string } {
+  const dest = path.join(configDir, TRASH_DIRNAME, trashId);
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(dest, "manifest.json"), "utf8"),
+  ) as TrashManifest;
+  const backProj = path.join(configDir, "projects", manifest.projectDir);
+  const backJsonl = path.join(backProj, `${manifest.id}.jsonl`);
+  if (fs.existsSync(backJsonl)) {
+    throw new Error(`cannot restore: ${backJsonl} already exists`);
+  }
+  fs.mkdirSync(backProj, { recursive: true, mode: 0o700 });
+  const trashProj = path.join(dest, "projects", manifest.projectDir);
+  if (manifest.hadCheckpoint) {
+    moveInto(path.join(trashProj, manifest.id), path.join(backProj, manifest.id), true);
+  }
+  moveInto(path.join(trashProj, `${manifest.id}.jsonl`), backJsonl, false);
+  fs.rmSync(dest, { recursive: true, force: true });
+  return { restored: backJsonl };
+}
+
+/** Drop trashed sessions older than the TTL. Best-effort; `now`/`ttlMs`
+ *  injectable for tests. Returns how many trash entries were removed. */
+export function sweepTrash(configDir: string, now = Date.now(), ttlMs = TRASH_TTL_MS): number {
+  const trash = path.join(configDir, TRASH_DIRNAME);
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(trash, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  let swept = 0;
+  for (const d of entries) {
+    if (!d.isDirectory()) continue;
+    const ts = Number(d.name.split("-")[0]);
+    if (Number.isFinite(ts) && now - ts > ttlMs) {
+      fs.rmSync(path.join(trash, d.name), { recursive: true, force: true });
+      swept++;
+    }
+  }
+  return swept;
+}
+
+/** Does a Claude trash entry with this id exist in this profile? (Lets the CLI
+ *  find which profile owns a trash-id without re-deriving the trash path.) */
+export function trashedSessionExists(configDir: string, trashId: string): boolean {
+  return fs.existsSync(path.join(configDir, TRASH_DIRNAME, trashId, "manifest.json"));
+}
+
+/** Native codex session action → argv. Spawned with `CODEX_HOME` set to the
+ *  profile config dir; codex owns its store, so we never rm rollouts by hand.
+ *  NB: codex exits 0 even when the id is not found — the caller inspects output. */
+export function codexSessionCommand(action: "archive" | "delete" | "unarchive", sessionId: string): string[] {
+  return [action, sessionId];
 }
 
 // ---------- Codex parity (verified in scripts/spikes/g03: outcome (a)) --------

@@ -18,7 +18,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { ROOT, activeFor, configDir, listProfiles, readAutoSwitch, setActive, readSwitchStrategy, SwitchStrategy } from "./profiles.js";
+import { ROOT, activeFor, configDir, labelFor, listProfiles, readAutoSwitch, setActive, readSwitchStrategy, SwitchStrategy } from "./profiles.js";
 import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
 import { accessTokenOf, fetchUsage, liveSessionPids, readProfileCredential } from "./api.js";
@@ -53,7 +53,7 @@ function notify(event: Pick<Notification, "kind" | "title" | "message">): void {
 }
 
 // Providers whose active profile the daemon may auto-switch (they expose a
-// usage readout to base a headroom decision on). Gemini has none.
+// usage readout to base a headroom decision on). Antigravity has none.
 const AUTO_PROVIDERS = ["claude", "codex"] as const;
 
 export const PIDFILE = path.join(ROOT, "daemon.pid");
@@ -362,7 +362,10 @@ async function pollProvider(
     }
   }
 
-  const target = pickSwitchTarget(active, polled, autoSwitch.threshold);
+  // Tag filter: only accounts carrying the configured label are eligible switch
+  // targets ("all" = no filter). Lets the operator pool e.g. only Work accounts.
+  const eligible = (name: string) => autoSwitch.tag === "all" || labelFor(provider, name) === autoSwitch.tag;
+  const target = pickSwitchTarget(active, polled, autoSwitch.threshold, eligible);
   if (target && target !== active) {
     setActive(provider, target);
     log(`auto-switch: ${provider}/${active} out of headroom (≥${autoSwitch.threshold}%) → switched active to ${provider}/${target}`);

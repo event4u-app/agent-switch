@@ -77,6 +77,16 @@ export const APPS: readonly AppDescriptor[] = [
     strategy: "env+user-data-dir",
     envVar: "CODEX_HOME",
   },
+  {
+    // Antigravity is an Electron/VS Code-fork IDE whose login is a web session in
+    // an Electron user-data dir — isolate per profile via --user-data-dir (same
+    // strategy as claude-desktop). The agy CLI's HOME lever is separate.
+    id: "antigravity",
+    displayName: "Antigravity",
+    bundleId: "com.google.antigravity",
+    provider: "antigravity",
+    strategy: "user-data-dir",
+  },
 ];
 
 export function findApp(id: string, registry: readonly AppDescriptor[] = APPS): AppDescriptor | null {

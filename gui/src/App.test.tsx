@@ -21,6 +21,11 @@ const ipc = vi.hoisted(() => ({
   takeoverArgs: (id: string, to: string, keep?: boolean) => ["takeover", id, "--to", to, ...(keep ? ["--keep-source"] : [])],
   compactArgs: (profile: string) => ["compact", profile],
   listSessions: vi.fn(),
+  sessionPreview: vi.fn(),
+  deleteSession: vi.fn(),
+  restoreSession: vi.fn(),
+  extractHandoffBrief: vi.fn(),
+  handoffSeedArgs: (tp: string, tprof: string, bp: string) => ["handoff", "seed", "--to", tprof, "--provider", tp, "--brief", bp],
   getNotifyConfig: vi.fn(),
   setNotify: vi.fn(),
   setTrayTooltip: vi.fn(),
@@ -84,7 +89,7 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0 }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, shareGlobal: true, hideSummaries: false }));
 // Keep the update-check path inert in the App tests: uptodate → no toast, no
 // network. The update logic itself is covered by updates.test.ts.
 // Keep the real pure helpers (isNewer/compareVersions — used by agent-config.js)
@@ -115,6 +120,14 @@ vi.mock("./settings-store.js", () => ({
   getNotifLastRead: () => store.notifLastRead,
   setNotifLastRead: (ts: number) => {
     store.notifLastRead = ts;
+  },
+  getShareGlobal: () => store.shareGlobal,
+  setShareGlobalFlag: (on: boolean) => {
+    store.shareGlobal = on;
+  },
+  getHideSummaries: () => store.hideSummaries,
+  setHideSummariesFlag: (on: boolean) => {
+    store.hideSummaries = on;
   },
   getMutedKinds: () => store.mutedKinds,
   setMutedKinds: (kinds: string[]) => {
@@ -171,21 +184,22 @@ beforeEach(() => {
   store.globalAuto = true;
   store.notifLastRead = 0;
   store.mutedKinds = [];
+  store.shareGlobal = true;
   store.agentConfigNotifiedVersion = "";
   ipc.listProfiles.mockResolvedValue(rows);
   ipc.profileUsage.mockResolvedValue(usageSnap);
   ipc.getAutoSwitch.mockResolvedValue({
-    claude: { enabled: false, threshold: 95 },
-    codex: { enabled: false, threshold: 95 },
-    gemini: { enabled: false, threshold: 95 },
+    claude: { enabled: false, threshold: 95, tag: "all" },
+    codex: { enabled: false, threshold: 95, tag: "all" },
+    antigravity: { enabled: false, threshold: 95, tag: "all" },
   });
   ipc.setAutoSwitch.mockResolvedValue(undefined);
-  // All providers enabled by default in tests so the gemini tab is present for
+  // All providers enabled by default in tests so the antigravity tab is present for
   // the auto-switch-dot / footer assertions below.
   ipc.getProviders.mockResolvedValue({
     claude: { cli: true, ui: true, installed: true },
     codex: { cli: true, ui: true, installed: true },
-    gemini: { cli: true, ui: true, installed: true },
+    antigravity: { cli: true, ui: true, installed: true },
   });
   ipc.setProvider.mockResolvedValue(undefined);
   ipc.setProfileLabel.mockResolvedValue(undefined);
@@ -202,6 +216,10 @@ beforeEach(() => {
   ipc.listApps.mockResolvedValue([]);
   ipc.openApp.mockResolvedValue(undefined);
   ipc.listSessions.mockResolvedValue([]);
+  ipc.sessionPreview.mockResolvedValue({ messages: [], truncated: false });
+  ipc.deleteSession.mockResolvedValue({ mode: "trash", trashId: null });
+  ipc.restoreSession.mockResolvedValue(undefined);
+  ipc.extractHandoffBrief.mockResolvedValue({ brief: "# Handoff brief\n\n- Source session: abc", briefPath: "/cfg/.agent-switch/handoff/abc.md" });
   ipc.getNotifyConfig.mockResolvedValue({ notify: false, contextThresholds: [80, 95] });
   ipc.setNotify.mockResolvedValue(undefined);
   ipc.setTrayTooltip.mockResolvedValue(undefined);
@@ -237,8 +255,8 @@ describe("App", () => {
     // per-profile usage bar rendered for the claude profiles
     expect(await screen.findAllByText("5h")).not.toHaveLength(0);
     expect(screen.getAllByText("42%").length).toBeGreaterThan(0);
-    // label badge shown
-    expect(screen.getByText("Work")).toBeTruthy();
+    // label badge shown (scope past the always-visible auto-switch tag <option>Work</option>)
+    expect(screen.getByText("Work", { selector: ":not(option)" })).toBeTruthy();
   });
 
   it("switches the provider tab to reveal that provider's profiles", async () => {
@@ -327,23 +345,41 @@ describe("App", () => {
     expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", true);
   });
 
-  it("per-tab auto-switch badge colouring shows for Claude + Codex (usage readout); not Gemini", async () => {
+  it("per-tab auto-switch badge colouring shows for Claude + Codex (usage readout); not Antigravity", async () => {
     ipc.listProfiles.mockResolvedValue([
       { provider: "claude", name: "a", identity: null, label: null, active: true, liveSessions: 0 },
       { provider: "claude", name: "b", identity: null, label: null, active: false, liveSessions: 0 },
       { provider: "codex", name: "c", identity: null, label: null, active: false, liveSessions: 0 },
       { provider: "codex", name: "d", identity: null, label: null, active: false, liveSessions: 0 },
-      { provider: "gemini", name: "e", identity: null, label: null, active: false, liveSessions: 0 },
+      { provider: "antigravity", name: "e", identity: null, label: null, active: false, liveSessions: 0 },
     ]);
     ipc.getAutoSwitch.mockResolvedValue({
-      claude: { enabled: true, threshold: 95 }, // 2 profiles, on → green badge
-      codex: { enabled: false, threshold: 95 }, // 2 profiles, off → red badge
-      gemini: { enabled: true, threshold: 95 },
+      claude: { enabled: true, threshold: 95, tag: "all" }, // 2 profiles, on → green badge
+      codex: { enabled: false, threshold: 95, tag: "all" }, // 2 profiles, off → red badge
+      antigravity: { enabled: true, threshold: 95, tag: "all" },
     });
     render(<App />);
     expect(await screen.findByLabelText(/auto-switch on for claude/i)).toBeTruthy();
     expect(await screen.findByLabelText(/auto-switch off for codex/i)).toBeTruthy(); // Codex now has a usage readout
-    expect(screen.queryByLabelText(/auto-switch.*for gemini/i)).toBeNull(); // no readout → no badge colour
+    expect(screen.queryByLabelText(/auto-switch.*for antigravity/i)).toBeNull(); // no readout → no badge colour
+  });
+
+  it("shows an auto-switch tag filter with only existing tags and applies the choice", async () => {
+    // Default rows: claude work=Work, claude privat=Personal (no "Other").
+    ipc.getAutoSwitch.mockResolvedValue({
+      claude: { enabled: true, threshold: 95, tag: "all" }, // on → tag filter shows
+      codex: { enabled: false, threshold: 95, tag: "all" },
+      antigravity: { enabled: false, threshold: 95, tag: "all" },
+    });
+    render(<App />);
+    const select = (await screen.findByLabelText(/auto-switch accounts for claude/i)) as HTMLSelectElement;
+    const opts = Array.from(select.options).map((o) => o.textContent);
+    expect(opts).toContain("All accounts");
+    expect(opts).toContain("Work");
+    expect(opts).toContain("Personal");
+    expect(opts).not.toContain("Other"); // no Claude profile carries "Other" → not offered
+    fireEvent.change(select, { target: { value: "Work" } });
+    await waitFor(() => expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", true, 95, "Work"));
   });
 
   it("footer marks auto-switch not available for Claude with <2 profiles", async () => {
@@ -487,6 +523,14 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /install/i })).toBeTruthy();
   });
 
+  it("hides the agent-config banner on a subpage — only on the main page", async () => {
+    ipc.agentConfigVersion.mockResolvedValue(null); // banner would show on main
+    render(<App />);
+    expect(await screen.findByText(/supercharge your ai agents/i)).toBeTruthy(); // main page
+    fireEvent.click(screen.getByRole("button", { name: /sessions/i }));
+    await waitFor(() => expect(screen.queryByText(/supercharge your ai agents/i)).toBeNull()); // subpage
+  });
+
   it("fires an update notification only when agent-config is installed AND newer exists", async () => {
     ipc.agentConfigVersion.mockResolvedValue("9.1.0"); // installed, older
     fetchLatest.mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" });
@@ -578,7 +622,7 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /auto-switch globally/i })); // On → Off
     await waitFor(() => expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", false));
     expect(ipc.setAutoSwitch).toHaveBeenCalledWith("codex", false);
-    expect(ipc.setAutoSwitch).toHaveBeenCalledWith("gemini", false);
+    expect(ipc.setAutoSwitch).toHaveBeenCalledWith("antigravity", false);
     // back to the profile view: no per-tab dots, no footer toggle
     fireEvent.click(screen.getByRole("button", { name: /close settings/i }));
     await screen.findByRole("tab", { name: /claude/i });
@@ -590,20 +634,50 @@ describe("App", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
     fireEvent.click(await screen.findByRole("tab", { name: /providers/i }));
-    // gemini CLI is on (mock) → clicking it disables that surface
-    fireEvent.click(await screen.findByRole("button", { name: /gemini cli enabled/i }));
-    expect(ipc.setProvider).toHaveBeenCalledWith("gemini", "cli", false);
+    // codex CLI is on (mock) → clicking it disables that surface
+    fireEvent.click(await screen.findByRole("button", { name: /codex cli enabled/i }));
+    expect(ipc.setProvider).toHaveBeenCalledWith("codex", "cli", false);
+  });
+
+  it("offers the UI surface only for providers with a registered desktop app", async () => {
+    // Only claude + antigravity have an app in this mock (codex has none here).
+    ipc.listApps.mockResolvedValue([
+      { id: "claude-desktop", displayName: "Claude Desktop", provider: "claude", strategy: "env", installed: true },
+      { id: "antigravity", displayName: "Antigravity", provider: "antigravity", strategy: "user-data-dir", installed: true },
+    ]);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /providers/i }));
+    // Every provider offers a CLI surface (all three have a working CLI).
+    expect(await screen.findByRole("button", { name: /claude cli/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /codex cli/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /antigravity cli/i })).toBeTruthy();
+    // UI surface only where a desktop app is registered: claude + antigravity yes, codex no.
+    expect(screen.getByRole("button", { name: /claude ui/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /antigravity ui/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /codex ui/i })).toBeNull();
+  });
+
+  it("shows an added provider's profile in its tab (antigravity/MatneX regression)", async () => {
+    ipc.listProfiles.mockResolvedValue([
+      ...rows,
+      { provider: "antigravity", name: "MatneX", identity: "mathias@matnex.com", label: "Personal", active: false, liveSessions: 0 },
+    ]);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: /antigravity/i }));
+    expect(await screen.findByText(/MatneX/)).toBeTruthy();
+    expect(screen.getByText("mathias@matnex.com")).toBeTruthy(); // email identity surfaced
   });
 
   it("hides a disabled provider's tab in the main view", async () => {
     ipc.getProviders.mockResolvedValue({
       claude: { cli: true, ui: true, installed: true },
       codex: { cli: true, ui: true, installed: true },
-      gemini: { cli: false, ui: false, installed: true }, // disabled → no tab
+      antigravity: { cli: false, ui: false, installed: true }, // disabled → no tab
     });
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i });
-    expect(screen.queryByRole("tab", { name: /gemini/i })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /antigravity/i })).toBeNull();
     expect(screen.getByRole("tab", { name: /codex/i })).toBeTruthy();
   });
 
@@ -611,14 +685,14 @@ describe("App", () => {
     ipc.getProviders.mockResolvedValue({
       claude: { cli: true, ui: true, installed: true },
       codex: { cli: true, ui: true, installed: true },
-      gemini: { cli: false, ui: false, installed: false }, // not installed, off
+      antigravity: { cli: false, ui: false, installed: false }, // not installed, off
     });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
     fireEvent.click(await screen.findByRole("tab", { name: /providers/i }));
-    const geminiCli = await screen.findByRole("button", { name: /gemini cli disabled \(not installed\)/i });
-    expect((geminiCli as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(geminiCli);
+    const antigravityCli = await screen.findByRole("button", { name: /antigravity cli disabled \(not installed\)/i });
+    expect((antigravityCli as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(antigravityCli);
     expect(ipc.setProvider).not.toHaveBeenCalled(); // can't enable a missing provider
   });
 
@@ -667,14 +741,97 @@ describe("App", () => {
   });
 
   it("takes over a session from the Sessions view into the embedded terminal", async () => {
-    ipc.listSessions.mockResolvedValue([
-      { provider: "claude", profile: "work", sessionId: "abc12345", projectDir: "p", cwd: "/w", mtimeMs: Date.now() - 60_000, live: false },
-    ]);
+    ipc.listSessions.mockImplementation((_p?: string, _r?: number, provider?: string) =>
+      Promise.resolve(
+        provider === "claude"
+          ? [{ provider: "claude", profile: "work", sessionId: "abc12345", projectDir: "p", cwd: "/w", mtimeMs: Date.now() - 60_000, live: false }]
+          : [],
+      ),
+    );
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /take over/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /take over/i })); // actions live on the tile, always visible
     const term = await screen.findByTestId("term");
     expect(term.textContent).toContain("takeover abc12345 --to privat"); // moved to the other claude profile
+  });
+
+  it("deletes a session after an inline confirm and offers Undo", async () => {
+    ipc.listSessions.mockImplementation((_p?: string, _r?: number, provider?: string) =>
+      Promise.resolve(
+        provider === "claude"
+          ? [{ provider: "claude", profile: "work", sessionId: "abc12345", projectDir: "p", cwd: "/w", mtimeMs: Date.now() - 60_000, live: false }]
+          : [],
+      ),
+    );
+    ipc.deleteSession.mockResolvedValue({ mode: "trash", trashId: "1000-abc12345" });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /delete session abc12345/i }));
+    expect(ipc.deleteSession).not.toHaveBeenCalled(); // first click only arms the confirm
+    fireEvent.click(await screen.findByRole("button", { name: /^Delete$/i }));
+    await waitFor(() => expect(ipc.deleteSession).toHaveBeenCalledWith("claude", "abc12345", "work"));
+    expect(await screen.findByRole("button", { name: /undo/i })).toBeTruthy();
+  });
+
+  it("suppresses the session summary in the list when hideSummaries is on", async () => {
+    store.hideSummaries = true;
+    ipc.listSessions.mockImplementation((_p?: string, _r?: number, provider?: string) =>
+      Promise.resolve(
+        provider === "claude"
+          ? [{ provider: "claude", profile: "work", sessionId: "abc12345", projectDir: "p", cwd: "/w", summary: "secret summary text", mtimeMs: Date.now() - 60_000, live: false }]
+          : [],
+      ),
+    );
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+      await screen.findByRole("button", { name: /delete session abc12345/i }); // tile rendered
+      expect(screen.queryByText("secret summary text")).toBeNull(); // summary suppressed on the tile
+      expect(screen.queryByRole("button", { name: /show preview abc12345/i })).toBeNull(); // no preview affordance when hidden
+    } finally {
+      store.hideSummaries = false;
+    }
+  });
+
+  it("hands off a claude session to codex: lossy banner, vendor named, seed opens the terminal", async () => {
+    ipc.listSessions.mockImplementation((_p?: string, _r?: number, provider?: string) =>
+      Promise.resolve(
+        provider === "claude"
+          ? [{ provider: "claude", profile: "work", sessionId: "abc12345", projectDir: "p", cwd: "/w", mtimeMs: Date.now() - 60_000, live: false }]
+          : [],
+      ),
+    );
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /hand off session abc12345/i }));
+    // modal: brief extracted for the OTHER provider (codex), lossy banner names the vendor
+    await waitFor(() => expect(ipc.extractHandoffBrief).toHaveBeenCalledWith("claude", "work", "abc12345", "codex"));
+    expect(await screen.findByText(/history, tool state/i)).toBeTruthy(); // lossy banner
+    // Seed opens the embedded terminal with the path-only seed args
+    fireEvent.click(await screen.findByRole("button", { name: /seed codex session/i }));
+    const term = await screen.findByTestId("term");
+    expect(term.textContent).toContain("handoff seed --to oai --provider codex --brief /cfg/.agent-switch/handoff/abc.md");
+  });
+
+  it("disables delete on a live session row", async () => {
+    ipc.listSessions.mockImplementation((_p?: string, _r?: number, provider?: string) =>
+      Promise.resolve(
+        provider === "claude"
+          ? [{ provider: "claude", profile: "work", sessionId: "abc12345", projectDir: "p", cwd: "/w", mtimeMs: Date.now(), live: true }]
+          : [],
+      ),
+    );
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+    const del = await screen.findByRole("button", { name: /delete session abc12345/i });
+    expect((del as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("hides the New button on a subpage — only shown on the main page", async () => {
+    render(<App />);
+    expect(await screen.findByRole("button", { name: /new/i })).toBeTruthy(); // main page
+    fireEvent.click(screen.getByRole("button", { name: /sessions/i }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /new/i })).toBeNull()); // subpage
   });
 
   it("quits the app from the Quit button", async () => {
@@ -684,25 +841,75 @@ describe("App", () => {
   });
 
   it("shows the context badge and runs Compact in the embedded terminal for a live session", async () => {
-    ipc.listSessions.mockResolvedValue([
-      {
-        provider: "claude",
-        profile: "work",
-        sessionId: "abc12345",
-        projectDir: "p",
-        cwd: "/w",
-        mtimeMs: Date.now() - 60_000,
-        live: true,
-        context: { pct: 67, contextTokens: 134_000, windowTokens: 1_000_000, model: "sonnet", confidence: "high" },
-      },
-    ]);
+    ipc.listSessions.mockImplementation((_p?: string, _r?: number, provider?: string) =>
+      Promise.resolve(
+        provider === "claude"
+          ? [
+              {
+                provider: "claude",
+                profile: "work",
+                sessionId: "abc12345",
+                projectDir: "p",
+                cwd: "/w",
+                mtimeMs: Date.now() - 60_000,
+                live: true,
+                context: { pct: 67, contextTokens: 134_000, windowTokens: 1_000_000, model: "sonnet", confidence: "high" },
+              },
+            ]
+          : [],
+      ),
+    );
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
-    expect(await screen.findByText("67% · 134k/1000k")).toBeTruthy(); // context badge
+    expect(await screen.findByText("67% · 134k/1000k")).toBeTruthy(); // context badge on the tile
     fireEvent.click(await screen.findByRole("button", { name: /compact/i }));
     const term = await screen.findByTestId("term");
     expect(term.textContent).toContain("compact work"); // compactArgs
     expect(term.textContent).toMatch(/Compact — work/);
+  });
+
+  it("lazily fetches and renders a content preview when a claude session is expanded", async () => {
+    ipc.listSessions.mockImplementation((_p?: string, _r?: number, provider?: string) =>
+      Promise.resolve(
+        provider === "claude"
+          ? [{ provider: "claude", profile: "work", sessionId: "abc12345", projectDir: "p", cwd: "/w", mtimeMs: Date.now() - 60_000, live: false }]
+          : [],
+      ),
+    );
+    ipc.sessionPreview.mockResolvedValue({
+      messages: [
+        { role: "user", text: "hello there" },
+        { role: "assistant", text: "hi back" },
+      ],
+      truncated: false,
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+    expect(ipc.sessionPreview).not.toHaveBeenCalled(); // not fetched until the preview is opened
+    fireEvent.click(await screen.findByRole("button", { name: /show preview abc12345/i }));
+    await waitFor(() => expect(ipc.sessionPreview).toHaveBeenCalledWith("claude", "abc12345", "work"));
+    expect(await screen.findByText("hello there")).toBeTruthy();
+    expect(await screen.findByText("hi back")).toBeTruthy();
+  });
+
+  it("hides the preview and never fetches it when hideSummaries is on (privacy gate)", async () => {
+    store.hideSummaries = true;
+    ipc.listSessions.mockImplementation((_p?: string, _r?: number, provider?: string) =>
+      Promise.resolve(
+        provider === "claude"
+          ? [{ provider: "claude", profile: "work", sessionId: "abc12345", projectDir: "p", cwd: "/w", summary: "s", mtimeMs: Date.now() - 60_000, live: false }]
+          : [],
+      ),
+    );
+    try {
+      render(<App />);
+      fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+      await screen.findByRole("button", { name: /delete session abc12345/i }); // tile rendered
+      expect(screen.queryByRole("button", { name: /show preview abc12345/i })).toBeNull(); // no preview affordance
+      expect(ipc.sessionPreview).not.toHaveBeenCalled(); // gated: never read the transcript body
+    } finally {
+      store.hideSummaries = false;
+    }
   });
 
   it("toggles context alerts from the Alerts settings tab", async () => {

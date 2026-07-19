@@ -7,7 +7,7 @@
 import { Command } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
 import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
-import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow } from "./transforms.js";
+import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, AutoSwitchTag, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow, SessionPreview } from "./transforms.js";
 import type { AppNotification, NotificationKind } from "./notifications.js";
 import { parseAgentConfigVersion } from "./agent-config.js";
 
@@ -167,6 +167,7 @@ export async function setProfileLabel(provider: ProviderId, name: string, label:
 export interface AutoSwitch {
   enabled: boolean;
   threshold: number;
+  tag: AutoSwitchTag;
 }
 
 /** Auto-switch is per provider; `status --json` returns every provider's config
@@ -177,9 +178,15 @@ export async function getAutoSwitch(): Promise<AutoSwitchMap> {
   return JSON.parse(await runCli(["autoswitch", "status", "--json"]));
 }
 
-export async function setAutoSwitch(provider: ProviderId, enabled: boolean, threshold?: number): Promise<void> {
+export async function setAutoSwitch(
+  provider: ProviderId,
+  enabled: boolean,
+  threshold?: number,
+  tag?: AutoSwitchTag,
+): Promise<void> {
   const args = ["autoswitch", enabled ? "on" : "off", "--provider", provider];
   if (threshold !== undefined) args.push("--threshold", String(threshold));
+  if (tag !== undefined) args.push("--tag", tag);
   await runCli(args);
 }
 
@@ -274,8 +281,15 @@ export async function openApp(appId: string, name: string): Promise<void> {
 
 /** Claude sessions inventory (`sessions [profile] --recent N --json`). Read-only
  *  — returns [] on failure so the panel never blanks. */
-export async function listSessions(profile?: string, recent = 20): Promise<SessionRow[]> {
-  const args = ["sessions", ...(profile ? [profile] : []), "--recent", String(recent), "--json"];
+export async function listSessions(profile?: string, recent = 20, provider?: ProviderId): Promise<SessionRow[]> {
+  const args = [
+    "sessions",
+    ...(profile ? [profile] : []),
+    "--recent",
+    String(recent),
+    ...(provider ? ["--provider", provider] : []),
+    "--json",
+  ];
   try {
     return JSON.parse(await runCli(args));
   } catch {
@@ -283,10 +297,102 @@ export async function listSessions(profile?: string, recent = 20): Promise<Sessi
   }
 }
 
+/** The first few conversation turns of one session, for the collapsible preview.
+ *  Bounded, local-only read (ADR-002); degrades to an empty preview on any error
+ *  so an expand never throws. Fetched lazily (on expand), gated by the caller on
+ *  the "Hide session summaries" setting. */
+export async function sessionPreview(
+  provider: ProviderId,
+  sessionId: string,
+  profile: string,
+): Promise<SessionPreview> {
+  const empty: SessionPreview = { messages: [], truncated: false };
+  try {
+    const out = await runCli(["sessions", "preview", sessionId, "--provider", provider, "--from", profile]);
+    const parsed = JSON.parse(out) as Partial<SessionPreview>;
+    return { messages: parsed.messages ?? [], truncated: !!parsed.truncated };
+  } catch {
+    return empty;
+  }
+}
+
+/** Args for `sessions rm` — carries ONLY id/provider/from(/`--purge`)/`--yes`,
+ *  NEVER a `live` flag: the CLI re-resolves + re-checks liveness at exec (TOCTOU).
+ *  Pure builder. */
+export function deleteSessionArgs(
+  provider: ProviderId,
+  sessionId: string,
+  from: string,
+  opts: { purge?: boolean } = {},
+): string[] {
+  return ["sessions", "rm", sessionId, "--provider", provider, "--from", from, ...(opts.purge ? ["--purge"] : []), "--yes"];
+}
+
+/** Delete a session (default = recoverable trash). Returns the trash handle for
+ *  Undo (Claude); codex archives natively (no trash handle). */
+export async function deleteSession(
+  provider: ProviderId,
+  sessionId: string,
+  from: string,
+  opts: { purge?: boolean } = {},
+): Promise<{ mode: string; trashId: string | null }> {
+  const out = await runCli([...deleteSessionArgs(provider, sessionId, from, opts), "--json"]);
+  try {
+    const parsed = JSON.parse(out);
+    return { mode: parsed.mode ?? (opts.purge ? "purge" : "trash"), trashId: parsed.trashId ?? null };
+  } catch {
+    return { mode: opts.purge ? "purge" : "trash", trashId: null };
+  }
+}
+
+/** Undo a delete. Claude: `handle` is the trash-id. Codex: `handle` is the
+ *  session id (native `codex unarchive`). Both need the owning profile. */
+export async function restoreSession(provider: ProviderId, handle: string, from: string): Promise<void> {
+  await runCli(["sessions", "restore", handle, "--provider", provider, "--from", from]);
+}
+
+/** Extract a metadata-only handoff brief from a source session. Writes the
+ *  0600 brief file and returns its text (for the preview) + path (for seeding).
+ *  Reads no transcript body. */
+export async function extractHandoffBrief(
+  provider: ProviderId,
+  profile: string,
+  sessionId: string,
+  targetProvider: ProviderId,
+): Promise<{ brief: string; briefPath: string }> {
+  const printed = await runCli([
+    "handoff", "extract", sessionId, "--provider", provider, "--from", profile, "--to", targetProvider, "--print-only",
+  ]);
+  const json = await runCli([
+    "handoff", "extract", sessionId, "--provider", provider, "--from", profile, "--to", targetProvider, "--json",
+  ]);
+  let briefPath = "";
+  try {
+    briefPath = JSON.parse(json).briefPath ?? "";
+  } catch {
+    /* leave empty — seed will guard */
+  }
+  return { brief: printed, briefPath };
+}
+
+/** Args to seed the TARGET session in the embedded pty. References the brief BY
+ *  PATH only — content never enters argv. Interactive (auth is interactive). Pure. */
+export function handoffSeedArgs(targetProvider: ProviderId, targetProfile: string, briefPath: string): string[] {
+  return ["handoff", "seed", "--to", targetProfile, "--provider", targetProvider, "--brief", briefPath];
+}
+
 /** Args for `takeover`, run in the embedded terminal so the interactive resume
- *  (and any fork-cleanup) happens in a real pty. Pure builder. */
-export function takeoverArgs(sessionId: string, to: string, keepSource = false): string[] {
-  return ["takeover", sessionId, "--to", to, ...(keepSource ? ["--keep-source"] : [])];
+ *  (and any fork-cleanup) happens in a real pty. Same-provider only; `--provider`
+ *  is emitted for non-claude so a codex row takes over within codex. Pure builder. */
+export function takeoverArgs(sessionId: string, to: string, keepSource = false, provider: ProviderId = "claude"): string[] {
+  return [
+    "takeover",
+    sessionId,
+    "--to",
+    to,
+    ...(provider !== "claude" ? ["--provider", provider] : []),
+    ...(keepSource ? ["--keep-source"] : []),
+  ];
 }
 
 /** Args for `compact <profile>`, run in the embedded terminal (same pattern as

@@ -44,6 +44,12 @@ import {
   listApps,
   openApp,
   listSessions,
+  sessionPreview,
+  deleteSessionArgs,
+  deleteSession,
+  restoreSession,
+  extractHandoffBrief,
+  handoffSeedArgs,
   takeoverArgs,
   compactArgs,
   getNotifyConfig,
@@ -92,7 +98,7 @@ describe("ipc", () => {
 
   it("loginArgs / sessionArgs build the args the embedded terminal runs (no external window)", () => {
     expect(loginArgs("codex", "work")).toEqual(["add", "work", "--provider", "codex"]);
-    expect(sessionArgs("gemini", "g")).toEqual(["run", "g", "--provider", "gemini"]);
+    expect(sessionArgs("antigravity", "g")).toEqual(["run", "g", "--provider", "antigravity"]);
   });
 
   it("loginArgs / assertValidName reject an unsafe profile name (injection guard)", () => {
@@ -136,7 +142,7 @@ describe("ipc", () => {
   it("getAutoSwitch returns the per-provider map; setAutoSwitch targets one provider", async () => {
     execute.mockResolvedValue({
       code: 0,
-      stdout: '{"claude":{"enabled":true,"threshold":90},"codex":{"enabled":false,"threshold":95},"gemini":{"enabled":false,"threshold":95}}',
+      stdout: '{"claude":{"enabled":true,"threshold":90},"codex":{"enabled":false,"threshold":95},"antigravity":{"enabled":false,"threshold":95}}',
       stderr: "",
     });
     const map = await getAutoSwitch();
@@ -146,8 +152,8 @@ describe("ipc", () => {
 
     await setAutoSwitch("codex", true, 80);
     expect(create).toHaveBeenCalledWith("agent-switch", ["autoswitch", "on", "--provider", "codex", "--threshold", "80"]);
-    await setAutoSwitch("gemini", false);
-    expect(create).toHaveBeenCalledWith("agent-switch", ["autoswitch", "off", "--provider", "gemini"]);
+    await setAutoSwitch("antigravity", false);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["autoswitch", "off", "--provider", "antigravity"]);
   });
 
   it("listSessions runs `sessions --recent N --json`; takeoverArgs builds the CLI args", async () => {
@@ -166,6 +172,62 @@ describe("ipc", () => {
   it("listSessions returns [] on failure", async () => {
     execute.mockResolvedValue({ code: 1, stdout: "", stderr: "boom" });
     await expect(listSessions()).resolves.toEqual([]);
+  });
+
+  it("sessionPreview runs `sessions preview <id> --provider P --from profile` and parses turns", async () => {
+    execute.mockResolvedValue({
+      code: 0,
+      stdout: '{"provider":"claude","profile":"work","sessionId":"abc","messages":[{"role":"user","text":"hi"}],"truncated":true}',
+      stderr: "",
+    });
+    const p = await sessionPreview("claude", "abc", "work");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["sessions", "preview", "abc", "--provider", "claude", "--from", "work"]);
+    expect(p.messages).toEqual([{ role: "user", text: "hi" }]);
+    expect(p.truncated).toBe(true);
+  });
+
+  it("sessionPreview degrades to an empty preview on failure", async () => {
+    execute.mockResolvedValue({ code: 1, stdout: "", stderr: "boom" });
+    await expect(sessionPreview("claude", "abc", "work")).resolves.toEqual({ messages: [], truncated: false });
+  });
+
+  it("listSessions passes --provider when given; deleteSessionArgs carries no live flag", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: "[]", stderr: "" });
+    await listSessions(undefined, 20, "codex");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["sessions", "--recent", "20", "--provider", "codex", "--json"]);
+    expect(deleteSessionArgs("claude", "id1", "work")).toEqual([
+      "sessions", "rm", "id1", "--provider", "claude", "--from", "work", "--yes",
+    ]);
+    expect(deleteSessionArgs("claude", "id1", "work", { purge: true })).toEqual([
+      "sessions", "rm", "id1", "--provider", "claude", "--from", "work", "--purge", "--yes",
+    ]);
+  });
+
+  it("extractHandoffBrief prints the brief + reads the 0600 path; handoffSeedArgs is path-only", async () => {
+    execute
+      .mockResolvedValueOnce({ code: 0, stdout: "# Handoff brief\n- Source session: id1", stderr: "" }) // --print-only
+      .mockResolvedValueOnce({ code: 0, stdout: '{"briefPath":"/cfg/.agent-switch/handoff/id1.md"}', stderr: "" }); // --json
+    const r = await extractHandoffBrief("claude", "work", "id1", "codex");
+    expect(create).toHaveBeenCalledWith("agent-switch", [
+      "handoff", "extract", "id1", "--provider", "claude", "--from", "work", "--to", "codex", "--print-only",
+    ]);
+    expect(r.brief).toMatch(/Handoff brief/);
+    expect(r.briefPath).toBe("/cfg/.agent-switch/handoff/id1.md");
+    // seed args reference the path only — never brief content
+    expect(handoffSeedArgs("codex", "oai", "/cfg/.agent-switch/handoff/id1.md")).toEqual([
+      "handoff", "seed", "--to", "oai", "--provider", "codex", "--brief", "/cfg/.agent-switch/handoff/id1.md",
+    ]);
+  });
+
+  it("deleteSession appends --json and returns the trash handle; restoreSession builds restore", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: '{"mode":"trash","trashId":"1000-id1"}', stderr: "" });
+    const r = await deleteSession("claude", "id1", "work");
+    expect(create).toHaveBeenCalledWith("agent-switch", [
+      "sessions", "rm", "id1", "--provider", "claude", "--from", "work", "--yes", "--json",
+    ]);
+    expect(r).toEqual({ mode: "trash", trashId: "1000-id1" });
+    await restoreSession("claude", "1000-id1", "work");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["sessions", "restore", "1000-id1", "--provider", "claude", "--from", "work"]);
   });
 
   it("uninstall runs `uninstall --force`", async () => {

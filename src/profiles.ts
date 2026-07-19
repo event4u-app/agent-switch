@@ -31,11 +31,18 @@ export type LabelMap = Record<string, ProfileLabel>;
  * rate limits — off by default because it may conflict with a provider's usage
  * policy; the operator turns it on deliberately.
  */
+/** Which accounts (by label) auto-switch may switch TO. `"all"` = no filter;
+ *  otherwise only profiles carrying that label are eligible targets. Lets the
+ *  operator pool e.g. only their Work accounts and never fall over onto a
+ *  Personal one. */
+export type AutoSwitchTag = "all" | ProfileLabel;
+
 export interface AutoSwitchConfig {
   enabled: boolean;
   threshold: number; // percent (1-100)
+  tag: AutoSwitchTag; // eligible switch targets by label ("all" = every account)
 }
-export const DEFAULT_AUTOSWITCH: AutoSwitchConfig = { enabled: false, threshold: 95 };
+export const DEFAULT_AUTOSWITCH: AutoSwitchConfig = { enabled: false, threshold: 95, tag: "all" };
 
 /**
  * How auto-switch reacts when the active profile is out of headroom:
@@ -46,7 +53,7 @@ export const DEFAULT_AUTOSWITCH: AutoSwitchConfig = { enabled: false, threshold:
 export type SwitchStrategy = "reset-first" | "rotation-first";
 export const DEFAULT_SWITCH_STRATEGY: SwitchStrategy = "reset-first";
 
-/** Auto-switch is configured PER PROVIDER (claude/codex/gemini each on/off). */
+/** Auto-switch is configured PER PROVIDER (claude/codex/antigravity each on/off). */
 export type AutoSwitchMap = Record<ProviderId, AutoSwitchConfig>;
 
 /**
@@ -82,7 +89,7 @@ export interface State {
 }
 
 function emptyActive(): ActiveMap {
-  return { claude: null, codex: null, gemini: null };
+  return { claude: null, codex: null, antigravity: null };
 }
 
 function labelKey(providerId: ProviderId, name: string): string {
@@ -175,11 +182,12 @@ function normalizeLabels(raw: unknown): LabelMap {
 function normalizeAutoSwitch(raw: unknown): AutoSwitchConfig {
   const r = (raw ?? {}) as Partial<AutoSwitchConfig>;
   const threshold = typeof r.threshold === "number" && r.threshold >= 1 && r.threshold <= 100 ? Math.round(r.threshold) : DEFAULT_AUTOSWITCH.threshold;
-  return { enabled: r.enabled === true, threshold };
+  const tag: AutoSwitchTag = r.tag === "all" || isProfileLabel(r.tag) ? r.tag : DEFAULT_AUTOSWITCH.tag;
+  return { enabled: r.enabled === true, threshold, tag };
 }
 
 function emptyAutoSwitch(): AutoSwitchMap {
-  return { claude: { ...DEFAULT_AUTOSWITCH }, codex: { ...DEFAULT_AUTOSWITCH }, gemini: { ...DEFAULT_AUTOSWITCH } };
+  return { claude: { ...DEFAULT_AUTOSWITCH }, codex: { ...DEFAULT_AUTOSWITCH }, antigravity: { ...DEFAULT_AUTOSWITCH } };
 }
 
 function normalizeAutoSwitchMap(raw: unknown): AutoSwitchMap {
@@ -188,7 +196,7 @@ function normalizeAutoSwitchMap(raw: unknown): AutoSwitchMap {
   // to every provider, so turning per-provider on doesn't silently disable it.
   if ("enabled" in r || "threshold" in r) {
     const one = normalizeAutoSwitch(r);
-    return { claude: { ...one }, codex: { ...one }, gemini: { ...one } };
+    return { claude: { ...one }, codex: { ...one }, antigravity: { ...one } };
   }
   const out = emptyAutoSwitch();
   for (const p of PROVIDER_IDS) out[p] = normalizeAutoSwitch(r[p]);
@@ -319,7 +327,7 @@ export function renameProfile(providerId: ProviderId, from: string, to: string, 
   const fromConfig = configDir(providerId, from);
   const toConfig = configDir(providerId, to);
   // Capture the credential while the old path (and thus the darwin keychain hash)
-  // still resolves. Only Claude uses this store; codex/gemini keep auth inside
+  // still resolves. Only Claude uses this store; codex/antigravity keep auth inside
   // the config dir, which simply moves with the rename.
   const cred = providerId === "claude" ? store.read(fromConfig) : null;
 

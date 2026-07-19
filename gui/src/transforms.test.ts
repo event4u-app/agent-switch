@@ -29,7 +29,7 @@ describe("groupByProvider", () => {
     const g = groupByProvider(rows);
     expect(g.claude.map((r) => r.name)).toEqual(["work", "privat"]);
     expect(g.codex.map((r) => r.name)).toEqual(["oai"]);
-    expect(g.gemini).toEqual([]);
+    expect(g.antigravity).toEqual([]);
   });
 });
 

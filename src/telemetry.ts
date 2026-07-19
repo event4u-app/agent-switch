@@ -5,7 +5,9 @@
  * Iron rule amendment (D0, verified by scripts/spikes/t1+t2 on claude 2.1.210):
  * transcripts remain OPAQUE, version-unstable blobs *for transfer* (see
  * sessions.ts — takeover never parses beyond line 1). READ-ONLY TELEMETRY is
- * permitted here and ONLY here, under four gates:
+ * one of the two sanctioned body readers (the other is read-only PREVIEW,
+ * `src/session-preview.ts`, ADR-002); telemetry parsing is permitted here and
+ * ONLY here, under four gates:
  *   1. version matrix     — SUPPORTED_CLAUDE below; unknown → low confidence.
  *   2. pre-flight canary   — `preflightClaude`, run by the daemon on start.
  *   3. degraded mode       — every reader returns null / low confidence rather

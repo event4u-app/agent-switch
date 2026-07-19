@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * agent-switch — multi-account profile switcher for Claude Code, Codex, and
- * Gemini (macOS, Linux, Windows).
+ * Antigravity (macOS, Linux, Windows).
  *
  * Architecture: config-dir isolation. Each profile is its own config dir with
  * its own live login, selected by the provider's env var (CLAUDE_CONFIG_DIR /
- * CODEX_HOME / GEMINI_CLI_HOME). Switching only changes which dir new
+ * CODEX_HOME / HOME). Switching only changes which dir new
  * invocations point at — nothing is snapshotted, so nothing goes stale.
  *
  * On-disk layout: ~/.agent-switch/<provider>/<name>/config. v1 Claude profiles
@@ -44,16 +44,17 @@ import {
   readSwitchStrategy,
   setSwitchStrategy,
   SwitchStrategy,
+  type AutoSwitchTag,
   readOsNotifications,
   setOsNotifications,
   readProviders,
-  enabledProviders,
   setProviderSurface,
   type ProviderSurface,
   ROOT,
 } from "./profiles.js";
-import { Provider, ProviderId, PROVIDER_IDS, provider, isProviderInstalled } from "./providers.js";
-import { parseArgs, parseRun } from "./args.js";
+import { Provider, ProviderId, PROVIDER_IDS, provider, isProviderInstalled, resolveBinary } from "./providers.js";
+import { parseArgs, parseRun, resolveProviderValue } from "./args.js";
+import { extractBrief, writeBrief, sweepBriefs, seedPrompt } from "./handoff.js";
 import { credentialStore } from "./credentials.js";
 import { withProperLock } from "./locks.js";
 import { applySharing, removeSharing, syncSharing, sharedLinkHealth } from "./share.js";
@@ -78,19 +79,26 @@ import { readCodexUsage } from "./codex-usage.js";
 import { redeemResetCredit } from "./codex-reset.js";
 import {
   SessionRow,
+  assertValidSessionId,
   cleanupForkVehicle,
+  codexSessionCommand,
+  deleteSession,
   listSessions,
   listCodexSessions,
   locateSession,
   locateCodexSession,
   markLive,
+  restoreSession,
   sharedHistory,
+  sweepTrash,
   transferSession,
   transferCodexSession,
+  trashedSessionExists,
 } from "./sessions.js";
 import { isFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daemon.js";
 import { cmdService, serviceUninstall } from "./service.js";
 import { ContextReading, readContext, turnInFlight } from "./telemetry.js";
+import { readPreview, type SessionPreview } from "./session-preview.js";
 import {
   installHooks,
   uninstallHooks,
@@ -104,6 +112,7 @@ import {
 import { readTelemetryConfig, writeTelemetryConfig } from "./notify.js";
 import { appendNotification, readNotifications, clearNotifications, NotificationKind } from "./notifications.js";
 import { APPS, buildLaunch, findApp, guiDataDir, isInstalled } from "./apps.js";
+import { ensureAgyKeychain } from "./agy-keychain.js";
 import {
   currentManagedSession,
   currentTmuxSessionName,
@@ -124,8 +133,19 @@ const CLAUDE_JSON = path.join(HOME, ".claude.json");
 // ---------- launcher ---------------------------------------------------------
 
 function launch(p: Provider, name: string, args: string[]): number {
-  const env = { ...process.env, [p.envVar]: configDir(p.id, name) };
-  const res = spawnSync(p.binary, args, { env, stdio: "inherit" });
+  const home = configDir(p.id, name);
+  const env: NodeJS.ProcessEnv = { ...process.env, [p.envVar]: home };
+  // Antigravity's agy CLI stores its token in the macOS keychain (fixed key) —
+  // seed a per-profile keychain under this HOME so the token is isolated per
+  // account (and macOS doesn't pop its "no keychain found" dialog). No-op off mac.
+  // CFFIXED_USER_HOME is pinned to HOME so CoreFoundation can't be redirected out
+  // of the profile by an ambient value (see agy-keychain.ts). Only for antigravity
+  // — claude/codex keep the real HOME (their isolation is a config-dir env var).
+  if (p.id === "antigravity") {
+    ensureAgyKeychain(home);
+    env.CFFIXED_USER_HOME = home;
+  }
+  const res = spawnSync(resolveBinary(p.binary), args, { env, stdio: "inherit" });
   if (res.error && (res.error as NodeJS.ErrnoException).code === "ENOENT") {
     die(`\`${p.binary}\` binary not found on PATH. Install ${p.id} first.`);
   }
@@ -192,8 +212,8 @@ async function importClaude(name: string): Promise<void> {
   );
 }
 
-/** Import a codex/gemini profile: copy the credential/identity files from the
- *  default install's config dir into the profile's config dir. */
+/** Import a file-based provider profile (e.g. codex): copy the credential/identity
+ *  files from the default install's config dir into the profile's config dir. */
 function importFileProvider(p: Provider, name: string): void {
   const srcDir = p.defaultConfigDir();
   if (!fs.existsSync(srcDir)) die(`no default ${p.binary} install (${srcDir}) found to import`);
@@ -280,8 +300,12 @@ function printProfileLine(providerId: ProviderId, name: string, showLive: boolea
 }
 
 function cmdList(providerId?: ProviderId, json = false): void {
-  // An explicit --provider always lists that one; otherwise only enabled providers.
-  const providers = providerId ? [providerId] : enabledProviders("cli");
+  // An explicit --provider always lists that one; otherwise every provider that
+  // is enabled on ANY surface. Gating on the CLI surface alone would silently
+  // drop a UI-only provider's profiles (e.g. Antigravity, cli:false/ui:true) —
+  // the GUI reads `list --json` for every tab, so it must see them too.
+  const cfg = readProviders();
+  const providers = providerId ? [providerId] : PROVIDER_IDS.filter((p) => cfg[p].cli || cfg[p].ui);
 
   if (json) {
     // The GUI IPC contract: the profile list (identity/active/live) — NOT usage.
@@ -311,7 +335,7 @@ function cmdList(providerId?: ProviderId, json = false): void {
       printProfileLine(pid, n, true);
     }
   }
-  if (!any) console.log("No profiles yet. Create one with: agent-switch add <name> [--provider codex|gemini]");
+  if (!any) console.log("No profiles yet. Create one with: agent-switch add <name> [--provider codex|antigravity]");
 }
 
 function cmdCurrent(providerId?: ProviderId): void {
@@ -335,7 +359,7 @@ function cmdWhoami(providerId: ProviderId, name?: string): void {
 }
 
 /** A Claude profile's usage snapshot via the OAuth endpoint; null if the
- *  credential is unreadable or the API shape is unknown. Codex/Gemini have no
+ *  credential is unreadable or the API shape is unknown. Codex/Antigravity have no
  *  usage readout (verified), so this is Claude-only. */
 async function claudeSnapshot(name: string): Promise<UsageSnapshot | null> {
   // Prefer the daemon's cache when it's fresh (< its own poll interval) — the
@@ -789,6 +813,55 @@ function cmdSessions(
   }
 }
 
+/**
+ * `agent-switch sessions preview <id> [--provider claude|codex] [--from <profile>]`
+ * — the first few conversation turns of ONE session, for the GUI's collapsible
+ * preview. Uses the sanctioned bounded reader (src/session-preview.ts, ADR-002):
+ * a capped head read, fenced, degraded to an EMPTY preview on any failure or
+ * unknown id (never an error — the GUI degrades to "no preview"). Codex is
+ * deferred (opaque/often-compressed rollout) → always an empty preview. JSON.
+ */
+function cmdSessionsPreview(
+  providerId: ProviderId,
+  providerExplicit: boolean,
+  sessionId?: string,
+  flags: Record<string, string | boolean> = {},
+): void {
+  if (providerExplicit && providerId !== "claude" && providerId !== "codex") {
+    die(`sessions preview supports claude and codex (not ${providerId})`);
+  }
+  if (!sessionId) {
+    die("usage: agent-switch sessions preview <session-id> [--provider claude|codex] [--from <profile>]");
+  }
+  try {
+    assertValidSessionId(sessionId);
+  } catch (e) {
+    die((e as Error).message);
+  }
+
+  const empty: SessionPreview = { messages: [], truncated: false };
+  const emit = (preview: SessionPreview, profile: string | null) =>
+    console.log(JSON.stringify({ provider: providerId, profile, sessionId, ...preview }, null, 2));
+
+  if (providerId === "codex") {
+    emit(empty, null); // deferred: opaque, often .zst-compressed rollout blob (ADR-002)
+    return;
+  }
+
+  const candidates = typeof flags.from === "string"
+    ? [requireProfile("claude", flags.from, "sessions preview --from")]
+    : listProfiles("claude");
+  const hits = candidates
+    .map((p) => ({ profile: p, loc: locateSession(configDir("claude", p), sessionId) }))
+    .filter((h) => h.loc !== null);
+  if (hits.length === 0) {
+    emit(empty, null); // unknown id → empty preview, never an error
+    return;
+  }
+  const { profile, loc } = hits[0] as { profile: string; loc: NonNullable<ReturnType<typeof locateSession>> };
+  emit(readPreview("claude", loc.jsonl) ?? empty, profile);
+}
+
 /** M5 fallback: open the resume in a NEW terminal (macOS Terminal.app), else
  *  print it. Used when --in-place is asked for but there is no managed pane. */
 function spawnNewTerminal(command: string): void {
@@ -821,6 +894,227 @@ function resumeInPlace(providerId: ProviderId, target: string, resumeArgs: strin
   recordManagedSession(sess, { provider: providerId, profile: target }); // pane now runs the target
   console.log(`Handed the session over to "${target}" in the managed tmux pane "${sess}".`);
   process.exit(res.status ?? 0);
+}
+
+/**
+ * `agent-switch handoff extract <id> --from <profile> --to <targetProvider> [--print-only] [--json]`
+ * — compose a metadata-only brief from the SOURCE session (`--provider`/`--from`)
+ * for handing off to `--to` (target provider). Writes a 0600 brief file unless
+ * `--print-only`. Reads no transcript body.
+ *
+ * `agent-switch handoff seed --to <profile> [--provider P] --brief <path>` —
+ * open the TARGET agent INTERACTIVELY (pty) with a prompt that references the
+ * brief BY PATH (content never enters argv). The source session is untouched.
+ */
+function cmdHandoff(
+  providerId: ProviderId,
+  sub?: string,
+  positional: string[] = [],
+  flags: Record<string, string | boolean> = {},
+): void {
+  if (sub === "extract") {
+    const sessionId = positional[0];
+    if (!sessionId || typeof flags.to !== "string") {
+      die("usage: agent-switch handoff extract <session-id> --from <profile> --to <target-provider> [--provider claude|codex] [--print-only] [--json]");
+    }
+    try {
+      assertValidSessionId(sessionId);
+    } catch (e) {
+      die((e as Error).message);
+    }
+    const targetProvider = resolveProviderValue(flags.to);
+    const srcProfile = requireProfile(providerId, typeof flags.from === "string" ? flags.from : undefined, "handoff extract --from");
+    const cfg = configDir(providerId, srcProfile);
+    const brief = extractBrief({ provider: providerId, profile: srcProfile, sessionId, configDir: cfg, targetProvider });
+    sweepBriefs(cfg);
+    if (flags["print-only"]) {
+      if (flags.json) console.log(JSON.stringify({ provider: providerId, profile: srcProfile, sessionId, targetProvider, brief }, null, 2));
+      else console.log(brief);
+      return;
+    }
+    const briefPath = writeBrief(cfg, sessionId, brief);
+    if (flags.json) console.log(JSON.stringify({ provider: providerId, profile: srcProfile, sessionId, targetProvider, briefPath }, null, 2));
+    else console.log(`Wrote handoff brief: ${briefPath}\nSeed the target with: agent-switch handoff seed --to <profile> --provider ${targetProvider} --brief ${briefPath}`);
+    return;
+  }
+
+  if (sub === "seed") {
+    if (typeof flags.to !== "string" || typeof flags.brief !== "string") {
+      die("usage: agent-switch handoff seed --to <profile> [--provider claude|codex] --brief <path>");
+    }
+    const target = requireProfile(providerId, flags.to, "handoff seed --to");
+    const briefPath = path.resolve(flags.brief);
+    if (!fs.existsSync(briefPath)) die(`brief not found: ${briefPath}`);
+    const prompt = seedPrompt(briefPath);
+    if (flags["print-only"]) {
+      console.log(`agent-switch run ${target} --provider ${providerId} -- ${JSON.stringify(prompt)}`);
+      return;
+    }
+    // Interactive launch (auth is interactive — spike h1). Source untouched.
+    cmdRun(providerId, target, [prompt]);
+    return;
+  }
+
+  die("usage: agent-switch handoff extract|seed ...");
+}
+
+/**
+ * `agent-switch sessions rm <id> [--provider claude|codex] [--from <profile>]
+ * [--purge] [--yes] [--ack <id>] [--json]` — delete ONE session. Claude: a
+ * recoverable trash-move (undo via `sessions restore`), `--purge` for true
+ * deletion. Codex: the native `codex archive` (trash) / `codex delete` (purge),
+ * because Codex owns its store format (.zst / indexes). Guards: strict id
+ * validation, no-`--force`-over-live (Claude pids re-checked HERE; Codex mtime
+ * freshness), multi-profile ambiguity refusal, shared-history acknowledgment.
+ * `--yes` is mandatory (the GUI passes it after its own confirmation).
+ */
+function cmdSessionsRm(
+  providerId: ProviderId,
+  providerExplicit: boolean,
+  sessionId?: string,
+  flags: Record<string, string | boolean> = {},
+): void {
+  if (providerExplicit && providerId !== "claude" && providerId !== "codex") {
+    die(`sessions rm supports claude and codex (not ${providerId})`);
+  }
+  if (!sessionId) {
+    die("usage: agent-switch sessions rm <session-id> [--provider claude|codex] [--from <profile>] [--purge] [--yes] [--json]");
+  }
+  try {
+    assertValidSessionId(sessionId);
+  } catch (e) {
+    die((e as Error).message);
+  }
+  const purge = !!flags.purge;
+  const json = !!flags.json;
+  if (!flags.yes) die("refusing to delete without --yes (the GUI passes it after its own confirmation)");
+
+  if (providerId === "codex") return sessionsRmCodex(sessionId, flags, purge, json);
+
+  const candidates = typeof flags.from === "string"
+    ? [requireProfile("claude", flags.from, "sessions rm --from")]
+    : listProfiles("claude");
+  const hits = candidates
+    .map((p) => ({ profile: p, loc: locateSession(configDir("claude", p), sessionId) }))
+    .filter((h) => h.loc !== null);
+  if (hits.length === 0) die(`session ${sessionId} not found in any claude profile (see: agent-switch sessions)`);
+  if (hits.length > 1) {
+    die(`session ${sessionId} exists in MULTIPLE profiles (${hits.map((h) => h.profile).join(", ")}) — pick one with --from`);
+  }
+  const { profile, loc } = hits[0] as { profile: string; loc: NonNullable<ReturnType<typeof locateSession>> };
+  const cfg = configDir("claude", profile);
+
+  // Live-guard, re-checked at exec time. --force does NOT override delete.
+  const livePids = liveSessionPids(cfg);
+  if (livePids.length > 0) {
+    die(`profile "${profile}" has live Claude sessions (PIDs ${livePids.join(", ")}). Stop the session first — --force does not override delete.`);
+  }
+
+  // Shared-history: deleting removes the transcript for EVERY profile sharing the tree.
+  const sharers = listProfiles("claude").filter(
+    (p) => p !== profile && sharedHistory(cfg, configDir("claude", p)),
+  );
+  if (sharers.length > 0 && flags.ack !== sessionId) {
+    die(`profiles [${sharers.join(", ")}] share this history tree — deleting removes the session for all of them. Re-run with --ack ${sessionId} to confirm.`);
+  }
+
+  const res = deleteSession(loc, { purge });
+  sweepTrash(cfg);
+  if (json) {
+    console.log(JSON.stringify({ provider: "claude", profile, sessionId, ...res }, null, 2));
+    return;
+  }
+  if (res.mode === "trash") {
+    console.log(`Trashed claude session ${sessionId} from "${profile}". Restore: agent-switch sessions restore ${res.trashId} --from ${profile}`);
+  } else {
+    console.log(`Purged claude session ${sessionId} from "${profile}" (irreversible).`);
+    if (res.residue.length) console.log(`  could not remove: ${res.residue.join(", ")}`);
+  }
+}
+
+/** Codex delete path — native `codex archive`/`delete` in the profile's
+ *  CODEX_HOME (codex exits 0 even on not-found, so success is read from output). */
+function sessionsRmCodex(sessionId: string, flags: Record<string, string | boolean>, purge: boolean, json: boolean): void {
+  const candidates = typeof flags.from === "string"
+    ? [requireProfile("codex", flags.from, "sessions rm --from")]
+    : listProfiles("codex");
+  const hits = candidates
+    .map((p) => ({ profile: p, loc: locateCodexSession(configDir("codex", p), sessionId) }))
+    .filter((h) => h.loc !== null);
+  if (hits.length === 0) die(`session ${sessionId} not found in any codex profile`);
+  if (hits.length > 1) {
+    die(`session ${sessionId} exists in MULTIPLE codex profiles (${hits.map((h) => h.profile).join(", ")}) — pick one with --from`);
+  }
+  const { profile, loc } = hits[0] as { profile: string; loc: NonNullable<ReturnType<typeof locateCodexSession>> };
+  const cfg = configDir("codex", profile);
+
+  // Codex has no live-pid signal → mtime-freshness proxy; typed --ack overrides.
+  const ageMs = Date.now() - fs.statSync(loc.rollout).mtimeMs;
+  if (ageMs < 60_000 && flags.ack !== sessionId) {
+    die(`codex session ${sessionId} was written ${Math.round(ageMs / 1000)}s ago and may be live (codex has no liveness signal). Re-run with --ack ${sessionId} if it is idle.`);
+  }
+
+  const action = purge ? "delete" : "archive";
+  const p = provider("codex");
+  const env: NodeJS.ProcessEnv = { ...process.env, [p.envVar]: cfg };
+  const r = spawnSync(resolveBinary(p.binary), codexSessionCommand(action, sessionId), { env, encoding: "utf8" });
+  const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
+  if (/no .*session.*found/i.test(out)) die(`codex could not find session ${sessionId} in "${profile}": ${out}`);
+  if (r.status && r.status !== 0) die(`codex ${action} failed: ${out || `exit ${r.status}`}`);
+  if (json) {
+    console.log(JSON.stringify({ provider: "codex", profile, sessionId, mode: purge ? "purge" : "trash", action }, null, 2));
+    return;
+  }
+  console.log(
+    purge
+      ? `Deleted codex session ${sessionId} from "${profile}" via \`codex delete\` (irreversible).`
+      : `Archived codex session ${sessionId} from "${profile}" via \`codex archive\`. Restore: agent-switch sessions restore ${sessionId} --provider codex --from ${profile}`,
+  );
+}
+
+/**
+ * `agent-switch sessions restore <handle> [--provider codex] [--from <profile>]`
+ * — undo a delete. Claude: `<handle>` is the trash-id; the owning profile is
+ * scanned (or `--from`). Codex: `<handle>` is the session id; runs native
+ * `codex unarchive` and needs `--from` for the CODEX_HOME.
+ */
+function cmdSessionsRestore(
+  providerId: ProviderId,
+  providerExplicit: boolean,
+  handle?: string,
+  flags: Record<string, string | boolean> = {},
+): void {
+  if (providerExplicit && providerId !== "claude" && providerId !== "codex") {
+    die(`sessions restore supports claude and codex (not ${providerId})`);
+  }
+  if (!handle) die("usage: agent-switch sessions restore <trash-id|session-id> [--provider codex] [--from <profile>]");
+
+  if (providerId === "codex") {
+    try {
+      assertValidSessionId(handle);
+    } catch (e) {
+      die((e as Error).message);
+    }
+    if (typeof flags.from !== "string") die("codex restore needs --from <profile> (the session's home)");
+    const profile = requireProfile("codex", flags.from, "sessions restore --from");
+    const p = provider("codex");
+    const env: NodeJS.ProcessEnv = { ...process.env, [p.envVar]: configDir("codex", profile) };
+    const r = spawnSync(resolveBinary(p.binary), codexSessionCommand("unarchive", handle), { env, encoding: "utf8" });
+    const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
+    if (/no .*session.*found/i.test(out)) die(`codex could not find an archived session ${handle} in "${profile}": ${out}`);
+    console.log(`Unarchived codex session ${handle} in "${profile}".`);
+    return;
+  }
+
+  const candidates = typeof flags.from === "string"
+    ? [requireProfile("claude", flags.from, "sessions restore --from")]
+    : listProfiles("claude");
+  const owner = candidates.find((p) => trashedSessionExists(configDir("claude", p), handle));
+  if (!owner) {
+    die(`no trashed session "${handle}" found${typeof flags.from === "string" ? ` in ${flags.from}` : ""} (use the trash-id printed when you deleted it)`);
+  }
+  const r = restoreSession(configDir("claude", owner), handle);
+  console.log(`Restored claude session to ${r.restored} in "${owner}".`);
 }
 
 /**
@@ -1014,7 +1308,7 @@ function cmdRemove(providerId: ProviderId, name?: string, force = false): void {
     }
   }
 
-  // Keychain entries exist only for claude (darwin); codex/gemini are file-based,
+  // Keychain entries exist only for claude (darwin); codex/antigravity are file-based,
   // so computing a Claude hash for them would be a conceptual no-op — skip it.
   const removedEntry = providerId === "claude" ? credentials.removeEntry(configDir(providerId, n)) : false;
   fs.rmSync(profileDir(providerId, n), { recursive: true, force: true });
@@ -1110,14 +1404,29 @@ function cmdAutoswitch(
   if (threshold !== undefined && (!Number.isFinite(threshold) || threshold < 1 || threshold > 100)) {
     die("--threshold must be a number between 1 and 100");
   }
+  // --tag <all|work|personal|other>: restrict switch targets to accounts with
+  // that label (case-insensitive). "all" clears the filter.
+  const tagFlag = flags.tag;
+  let tag: AutoSwitchTag | undefined;
+  if (typeof tagFlag === "string") {
+    const low = tagFlag.toLowerCase();
+    const matched = low === "all" ? "all" : PROFILE_LABELS.find((l) => l.toLowerCase() === low);
+    if (!matched) die("--tag must be one of: all, work, personal, other");
+    tag = matched as AutoSwitchTag;
+  }
   if (mode === "on" || mode === "off") {
     // Auto-switch only makes sense where there is a usage readout to trigger on
     // (Claude today). Elsewhere there is nothing to act on, so enabling is refused.
     if (mode === "on" && !provider(providerId).hasUsageReadout) {
       die(`auto-switch is only available for providers with a usage readout (Claude, Codex).`);
     }
-    const cfg = setAutoSwitch(providerId, { enabled: mode === "on", ...(threshold !== undefined ? { threshold } : {}) });
-    console.log(`Auto-switch for ${providerId} ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%).`);
+    const cfg = setAutoSwitch(providerId, {
+      enabled: mode === "on",
+      ...(threshold !== undefined ? { threshold } : {}),
+      ...(tag !== undefined ? { tag } : {}),
+    });
+    const tagNote = cfg.tag === "all" ? "" : `, tag ${cfg.tag}`;
+    console.log(`Auto-switch for ${providerId} ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%${tagNote}).`);
     if (cfg.enabled) {
       const strat = readSwitchStrategy();
       console.log(
@@ -1137,11 +1446,12 @@ function cmdAutoswitch(
     console.log(`strategy: ${readSwitchStrategy()}`);
     for (const p of providerExplicit ? [providerId] : PROVIDER_IDS) {
       const cfg = readAutoSwitch(p);
-      console.log(`${p}: auto-switch ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%).`);
+      const tagNote = cfg.tag === "all" ? "" : `, tag ${cfg.tag}`;
+      console.log(`${p}: auto-switch ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%${tagNote}).`);
     }
     return;
   }
-  die("usage: agent-switch autoswitch on|off|status|strategy [reset-first|rotation-first] [--provider P] [--threshold <1-100>] [--json]");
+  die("usage: agent-switch autoswitch on|off|status|strategy [reset-first|rotation-first] [--provider P] [--threshold <1-100>] [--tag all|work|personal|other] [--json]");
 }
 
 /**
@@ -1203,7 +1513,7 @@ function cmdUninstall(flags: Record<string, string | boolean> = {}): void {
     console.log(`  - ${allProfiles.length} profile(s) and their configs under ${ROOT}`);
     console.log(`  - ${claudeProfiles.length} Claude keychain credential entr(y/ies) (macOS)`);
     console.log("  - directory mappings, active-profile state, and the background daemon/service");
-    console.log("It does NOT touch your default claude/codex/gemini installs.");
+    console.log("It does NOT touch your default claude/codex/antigravity installs.");
     console.log("\nRe-run with --force to proceed:  agent-switch uninstall --force");
     return;
   }
@@ -1380,9 +1690,9 @@ function cmdShellenv(shellArg?: string): void {
 }
 
 function usage(): void {
-  console.log(`agent-switch — switch accounts for Claude Code, Codex, and Gemini (macOS · Linux · Windows)
+  console.log(`agent-switch — switch accounts for Claude Code, Codex, and Antigravity (macOS · Linux · Windows)
 
-Provider defaults to claude; pass --provider codex|gemini for the others.
+Provider defaults to claude; pass --provider codex|antigravity for the others.
 
   agent-switch add [--provider P] <name>       create a profile and log it in
   agent-switch import [--provider P] <name>    migrate the default install (no re-login)
@@ -1464,6 +1774,7 @@ async function main(): Promise<void> {
     case "os-notify": return cmdOsNotify(positional[0], !!flags.json);
     case "uninstall": return cmdUninstall(flags);
     case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
+    case "handoff": return cmdHandoff(providerId, positional[0], positional.slice(1), flags);
     case "list": case "ls": return cmdList(providerExplicit ? providerId : undefined, !!flags.json);
     case "status": return cmdStatus(providerExplicit ? providerId : undefined, positional[0], !!flags.json);
     case "current": return cmdCurrent(providerExplicit ? providerId : undefined);
@@ -1473,7 +1784,11 @@ async function main(): Promise<void> {
     case "unmap": return cmdUnmap(providerExplicit ? providerId : undefined, positional[0]);
     case "mappings": return cmdMappings();
     case "share": return cmdShare(positional[0], rest.slice(1));
-    case "sessions": return cmdSessions(providerId, providerExplicit, positional[0], flags);
+    case "sessions":
+      if (positional[0] === "rm") return cmdSessionsRm(providerId, providerExplicit, positional[1], flags);
+      if (positional[0] === "restore") return cmdSessionsRestore(providerId, providerExplicit, positional[1], flags);
+      if (positional[0] === "preview") return cmdSessionsPreview(providerId, providerExplicit, positional[1], flags);
+      return cmdSessions(providerId, providerExplicit, positional[0], flags);
     case "hooks": return cmdHooks(positional[0], positional[1]);
     case "alerts": return cmdAlerts(positional[0], flags);
     case "compact": return cmdCompact(providerId, positional[0], flags);
