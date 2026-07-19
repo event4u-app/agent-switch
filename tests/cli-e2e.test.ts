@@ -646,7 +646,9 @@ test("`handoff extract` writes a 0600 brief; `seed --print-only` references the 
     assert.ok(j.briefPath.endsWith(`${HID}.md`));
     if (process.platform !== "win32") assert.equal(fs.statSync(j.briefPath).mode & 0o777, 0o600);
     const cmd = run(home, ["handoff", "seed", "--to", "oai", "--provider", "codex", "--brief", j.briefPath, "--print-only"]);
-    assert.ok(cmd.includes(j.briefPath)); // path referenced
+    // The seed prompt is JSON.stringify'd for the shell, so on Windows the path's
+    // backslashes appear escaped (\\) — match the escaped form (a no-op on POSIX).
+    assert.ok(cmd.includes(j.briefPath.replace(/\\/g, "\\\\"))); // path referenced
     assert.ok(!cmd.includes("SECRET-BODY")); // content NOT in the seed command/argv
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
