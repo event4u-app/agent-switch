@@ -37,8 +37,8 @@ test("setMapping / resolveMapping resolve the nearest ancestor per provider", ()
     // A descendant resolves to the ancestor mapping, per provider.
     assert.equal(M.resolveMapping(sub, "claude")?.name, "work");
     assert.equal(M.resolveMapping(sub, "codex")?.name, "oai");
-    // gemini has no mapping here.
-    assert.equal(M.resolveMapping(sub, "gemini"), null);
+    // antigravity has no mapping here.
+    assert.equal(M.resolveMapping(sub, "antigravity"), null);
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }

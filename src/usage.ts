@@ -4,7 +4,7 @@
  * Parses Claude's OAuth `/usage` response into a defensive snapshot, formats it
  * for `status`, tracks 30-day history, and detects active-profile threshold
  * crossings. It NEVER compares or ranks accounts — that is the anti-rotation
- * boundary the whole roadmap is locked around. Codex/Gemini have no usage
+ * boundary the whole roadmap is locked around. Codex/Antigravity have no usage
  * readout (verified), so they surface "usage unavailable" and never reach here.
  */
 
@@ -131,7 +131,12 @@ export interface SwitchCandidate {
  * candidate. This is a single switch decision gated behind config — never a
  * display ranking.
  */
-export function pickSwitchTarget(active: string, candidates: SwitchCandidate[], threshold: number): string | null {
+export function pickSwitchTarget(
+  active: string,
+  candidates: SwitchCandidate[],
+  threshold: number,
+  isEligible: (name: string) => boolean = () => true,
+): string | null {
   const activeSnap = candidates.find((c) => c.name === active)?.snapshot;
   const activeMax = activeSnap ? maxUtilization(activeSnap) : null;
   if (activeMax === null || activeMax < threshold) return null; // active still has headroom
@@ -139,6 +144,7 @@ export function pickSwitchTarget(active: string, candidates: SwitchCandidate[], 
   let best: { name: string; max: number } | null = null;
   for (const c of candidates) {
     if (c.name === active) continue;
+    if (!isEligible(c.name)) continue; // tag filter: only eligible accounts are switch targets
     const m = maxUtilization(c.snapshot);
     if (m === null || m >= threshold) continue; // unknown or also maxed → not a target
     if (!best || m < best.max) best = { name: c.name, max: m };

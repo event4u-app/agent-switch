@@ -4,7 +4,7 @@
  *
  * `agent-switch dir --provider <id>` resolves the current working directory to
  * the nearest mapped ancestor for that provider, so each shell wrapper
- * (`claude`/`codex`/`gemini`) picks the right account per repository without
+ * (`claude`/`codex`/`agy`) picks the right account per repository without
  * switching. Precedence in the wrapper: directory mapping > active-for-provider
  * > default.
  *

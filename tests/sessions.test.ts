@@ -5,8 +5,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import {
+  assertValidSessionId,
   cleanupForkVehicle,
+  codexSessionCommand,
   codexSessionId,
+  deleteSession,
   encodeProjectDir,
   listSessions,
   listCodexSessions,
@@ -14,10 +17,15 @@ import {
   locateCodexSession,
   markLive,
   readSessionHeader,
+  restoreSession,
   sharedHistory,
+  sweepTrash,
   transferSession,
   transferCodexSession,
 } from "../src/sessions.js";
+
+// A canonical UUID for the delete/restore tests (assertValidSessionId requires one).
+const UID = "11111111-1111-4111-8111-111111111111";
 
 // The transfer layer moves OPAQUE transcript blobs between profile config
 // dirs. These tests drive the pure file mechanics on seeded fakes — the real
@@ -311,4 +319,117 @@ test("transferCodexSession REFUSES a target collision — never overwrites a sam
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+// ---------- per-session delete / restore / sweep -----------------------------
+
+test("assertValidSessionId accepts a UUID and rejects traversal / non-UUID ids", () => {
+  assertValidSessionId(UID); // no throw
+  for (const bad of ["../../etc/passwd", "a/b", "..", "", "abc12345", `${UID}/x`]) {
+    assert.throws(() => assertValidSessionId(bad), /invalid session id/);
+  }
+});
+
+test("deleteSession (trash) relocates transcript + checkpoint + manifest; restoreSession round-trips", () => {
+  const root = tmp();
+  try {
+    const cfg = path.join(root, "cfg");
+    seedSession(cfg, "-proj", UID, { cwd: "/proj" });
+    fs.mkdirSync(path.join(cfg, "projects", "-proj", UID), { recursive: true }); // checkpoint dir
+    fs.writeFileSync(path.join(cfg, "projects", "-proj", UID, "ckpt"), "x");
+
+    const loc = locateSession(cfg, UID)!;
+    const res = deleteSession(loc, { now: 1000 });
+    assert.equal(res.mode, "trash");
+    assert.equal(res.trashId, `1000-${UID}`);
+    assert.equal(fs.existsSync(loc.jsonl), false); // source gone
+    assert.equal(fs.existsSync(loc.checkpointDir!), false);
+
+    const dest = path.join(cfg, ".agent-switch-trash", `1000-${UID}`);
+    assert.equal(fs.existsSync(path.join(dest, "projects", "-proj", `${UID}.jsonl`)), true);
+    assert.equal(fs.existsSync(path.join(dest, "projects", "-proj", UID, "ckpt")), true);
+    assert.equal(fs.existsSync(path.join(dest, "manifest.json")), true);
+
+    const r = restoreSession(cfg, res.trashId!);
+    assert.equal(fs.existsSync(r.restored), true);
+    assert.equal(fs.existsSync(path.join(cfg, "projects", "-proj", `${UID}.jsonl`)), true);
+    assert.equal(fs.existsSync(path.join(cfg, "projects", "-proj", UID, "ckpt")), true);
+    assert.equal(fs.existsSync(dest), false); // trash entry consumed
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("deleteSession (purge) removes transcript + checkpoint irreversibly, no trash", () => {
+  const root = tmp();
+  try {
+    const cfg = path.join(root, "cfg");
+    seedSession(cfg, "-proj", UID);
+    fs.mkdirSync(path.join(cfg, "projects", "-proj", UID), { recursive: true });
+    fs.writeFileSync(path.join(cfg, "projects", "-proj", UID, "ckpt"), "x");
+    const loc = locateSession(cfg, UID)!;
+    const res = deleteSession(loc, { purge: true });
+    assert.equal(res.mode, "purge");
+    assert.equal(res.residue.length, 0);
+    assert.equal(fs.existsSync(loc.jsonl), false);
+    assert.equal(fs.existsSync(loc.checkpointDir!), false);
+    assert.equal(fs.existsSync(path.join(cfg, ".agent-switch-trash")), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("deleteSession succeeds and restores when there is no checkpoint dir", () => {
+  const root = tmp();
+  try {
+    const cfg = path.join(root, "cfg");
+    seedSession(cfg, "-proj", UID);
+    const loc = locateSession(cfg, UID)!;
+    assert.equal(loc.checkpointDir, null);
+    const res = deleteSession(loc, { now: 2000 });
+    assert.equal(fs.existsSync(loc.jsonl), false);
+    restoreSession(cfg, res.trashId!);
+    assert.equal(fs.existsSync(path.join(cfg, "projects", "-proj", `${UID}.jsonl`)), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("deleteSession refuses a transcript that resolves OUTSIDE the profile tree", { skip: WIN ? "POSIX symlinks" : false }, () => {
+  const root = tmp();
+  try {
+    const cfg = path.join(root, "cfg");
+    const outside = path.join(root, "outside.jsonl");
+    fs.writeFileSync(outside, "secret\n");
+    const projDir = path.join(cfg, "projects", "-proj");
+    fs.mkdirSync(projDir, { recursive: true });
+    fs.symlinkSync(outside, path.join(projDir, `${UID}.jsonl`));
+    const loc = locateSession(cfg, UID)!;
+    assert.throws(() => deleteSession(loc, { purge: true }), /outside/);
+    assert.equal(fs.existsSync(outside), true); // never touched
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("sweepTrash drops entries older than the TTL, keeps fresh ones", () => {
+  const root = tmp();
+  try {
+    const cfg = path.join(root, "cfg");
+    const trash = path.join(cfg, ".agent-switch-trash");
+    fs.mkdirSync(path.join(trash, `1000-${UID}`), { recursive: true }); // old
+    fs.mkdirSync(path.join(trash, `9000000000000-${UID}`), { recursive: true }); // fresh
+    const now = 1000 + 8 * 24 * 60 * 60 * 1000; // 8 days past the old entry
+    assert.equal(sweepTrash(cfg, now), 1);
+    assert.equal(fs.existsSync(path.join(trash, `1000-${UID}`)), false);
+    assert.equal(fs.existsSync(path.join(trash, `9000000000000-${UID}`)), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("codexSessionCommand maps the native archive/delete/unarchive verbs", () => {
+  assert.deepEqual(codexSessionCommand("archive", UID), ["archive", UID]);
+  assert.deepEqual(codexSessionCommand("delete", UID), ["delete", UID]);
+  assert.deepEqual(codexSessionCommand("unarchive", UID), ["unarchive", UID]);
 });

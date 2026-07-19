@@ -9,6 +9,10 @@ import {
   setAgentConfigNotifiedVersion,
   getNextUsageRefreshAt,
   setNextUsageRefreshAt,
+  getMutedKinds,
+  setMutedKinds,
+  getShareGlobal,
+  setShareGlobalFlag,
   getAutoUpdateCheck,
   setAutoUpdateCheckFlag,
   getUpdateNotifiedVersion,
@@ -108,5 +112,25 @@ describe("getNextUsageRefreshAt / setNextUsageRefreshAt", () => {
   it("ignores a garbage / non-positive stored value", () => {
     localStorage.setItem("agent-switch-next-usage-refresh-at", "nope");
     expect(getNextUsageRefreshAt()).toBe(0);
+  });
+});
+
+describe("getMutedKinds default", () => {
+  it("mutes `warning` (fetch failures) when never set; an explicit value wins", () => {
+    expect(getMutedKinds()).toEqual(["warning"]); // unset → default-muted
+    setMutedKinds([]); // user explicitly unmutes everything
+    expect(getMutedKinds()).toEqual([]);
+    setMutedKinds(["error"]);
+    expect(getMutedKinds()).toEqual(["error"]);
+  });
+});
+
+describe("getShareGlobal / setShareGlobalFlag", () => {
+  it("defaults ON and only the literal off disables it", () => {
+    expect(getShareGlobal()).toBe(true); // unset → on
+    setShareGlobalFlag(false);
+    expect(getShareGlobal()).toBe(false);
+    setShareGlobalFlag(true);
+    expect(getShareGlobal()).toBe(true);
   });
 });

@@ -44,6 +44,32 @@ export function loadUsageCache(): Record<string, UsageEntry> {
   return out;
 }
 
+/**
+ * Backfill reset timestamps we already knew but a newer snapshot dropped, so a
+ * reset time is never LOST once seen (the API omits `resets_at` for some
+ * windows / at 0%). Per-window by key: if `next` has no `resetsAt` for a window
+ * but `prev` did, carry the previous one forward. Pure — unit-testable.
+ */
+export function withStickyResets(prev: UsageSnapshot | undefined, next: UsageSnapshot): UsageSnapshot {
+  if (!prev) return next;
+  const prevReset = new Map(prev.windows.map((w) => [w.key, w.resetsAt]));
+  return {
+    ...next,
+    windows: next.windows.map((w) => (w.resetsAt == null && prevReset.get(w.key) ? { ...w, resetsAt: prevReset.get(w.key)! } : w)),
+  };
+}
+
+/** Age-based staleness: a snapshot is stale (render hatched) only when its
+ *  `capturedAt` is older than `staleAfterMs` — so recently-captured or unchanged
+ *  data (a skipped-on-cooldown fetch) stays solid, and only genuinely old data
+ *  hatches. A missing/unparseable timestamp counts as stale (can't prove currency).
+ *  No snapshot at all → not stale (the bars render N.A., not hatched-value). Pure. */
+export function isUsageStale(snap: UsageSnapshot | undefined | null, now: number, staleAfterMs: number): boolean {
+  if (!snap) return false;
+  const age = now - Date.parse(snap.capturedAt);
+  return !Number.isFinite(age) || age > staleAfterMs;
+}
+
 /** Persist one profile's latest snapshot for the next session. `key` is
  *  `<provider>/<profile>`. */
 export function saveUsageSnapshot(key: string, snap: UsageSnapshot): void {

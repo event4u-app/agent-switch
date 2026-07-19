@@ -184,6 +184,28 @@ export function setNotifLastRead(ts: number): void {
   }
 }
 
+const SHARE_GLOBAL_KEY = "agent-switch-share-global";
+
+/** Whether the global ~/.claude content (agent-config skills etc.) should be
+ *  linked into every profile. Default ON — only the literal "off" disables it,
+ *  so a fresh install shares by default. The GUI reconciles the real link state
+ *  to this preference. */
+export function getShareGlobal(): boolean {
+  try {
+    return localStorage.getItem(SHARE_GLOBAL_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setShareGlobalFlag(on: boolean): void {
+  try {
+    localStorage.setItem(SHARE_GLOBAL_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const DEV_MODE_KEY = "agent-switch-dev-mode";
 
 /** Developer mode — unlocks in-app test helpers (generate notifications, force
@@ -212,16 +234,42 @@ const MUTED_KINDS_KEY = "agent-switch-muted-notif-kinds";
  *  the unread badge (they still land in the CLI log). Default: none muted. */
 export function getMutedKinds(): NotificationKind[] {
   try {
-    const raw: unknown = JSON.parse(localStorage.getItem(MUTED_KINDS_KEY) ?? "[]");
+    const stored = localStorage.getItem(MUTED_KINDS_KEY);
+    // Default (never set): mute `warning` — the "Usage fetch failed" class — so a
+    // transient rate-limit blip doesn't nag on desktop/toast/badge (it still
+    // lands in the flyout log). An explicit stored value (incl. `[]`) wins.
+    if (stored === null) return ["warning"];
+    const raw: unknown = JSON.parse(stored);
     return Array.isArray(raw) ? (raw.filter((k) => typeof k === "string") as NotificationKind[]) : [];
   } catch {
-    return [];
+    return ["warning"];
   }
 }
 
 export function setMutedKinds(kinds: NotificationKind[]): void {
   try {
     localStorage.setItem(MUTED_KINDS_KEY, JSON.stringify(kinds));
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const HIDE_SUMMARIES_KEY = "agent-switch-hide-summaries";
+
+/** Suppress session summaries in the Sessions list (the one pre-existing
+ *  transcript-content egress to the GUI). Default OFF — summaries show unless
+ *  the user opts to hide them. */
+export function getHideSummaries(): boolean {
+  try {
+    return localStorage.getItem(HIDE_SUMMARIES_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+export function setHideSummariesFlag(on: boolean): void {
+  try {
+    localStorage.setItem(HIDE_SUMMARIES_KEY, on ? "on" : "off");
   } catch {
     /* no/blocked localStorage → in-memory only for this session */
   }

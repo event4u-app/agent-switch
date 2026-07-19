@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Minimize2, Pencil, Check, Download } from "lucide-react";
+import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Minimize2, Pencil, Check, Download, Send, ChevronRight, ChevronDown, MessageSquare, Folder, Hash } from "lucide-react";
 import {
   compactArgs,
   deactivateProfile,
@@ -10,6 +10,11 @@ import {
   listApps,
   listProfiles,
   listSessions,
+  sessionPreview,
+  deleteSession,
+  restoreSession,
+  extractHandoffBrief,
+  handoffSeedArgs,
   listNotifications,
   recordNotification,
   clearNotifications,
@@ -72,6 +77,10 @@ import {
   setNotifLastRead,
   getMutedKinds,
   setMutedKinds,
+  getHideSummaries,
+  setHideSummariesFlag,
+  getShareGlobal,
+  setShareGlobalFlag,
   getDevMode,
   setDevModeFlag,
   getAutoUpdateCheck,
@@ -85,12 +94,12 @@ import {
 } from "./settings-store.js";
 import { checkForUpdate, fetchLatestRelease, isNewer, type UpdateCheck } from "./updates.js";
 import { AgentConfigBanner } from "./AgentConfigBanner.js";
+import { UsageBars, utilColor } from "./UsageBars.js";
 import { deriveAgentConfigView, AGENT_CONFIG_REPO, AGENT_CONFIG_REPO_URL, type AgentConfigStatus } from "./agent-config.js";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
-import { loadUsageCache, saveUsageSnapshot, dropUsageSnapshot, getUsageAttempts, markUsageAttempt, fetchOnCooldown, type UsageEntry } from "./usage-cache.js";
+import { loadUsageCache, saveUsageSnapshot, withStickyResets, isUsageStale, dropUsageSnapshot, getUsageAttempts, markUsageAttempt, fetchOnCooldown, type UsageEntry } from "./usage-cache.js";
 import {
   groupByProvider,
-  formatReset,
   formatContextBadge,
   hasUsageReadout,
   nearestLimit,
@@ -101,12 +110,14 @@ import {
   PROFILE_LABELS,
   type ProfileRow,
   type ProfileLabel,
+  type AutoSwitchTag,
   type UsageSnapshot,
   type ProviderId,
   type ProvidersStatus,
   type ProviderSurface,
   type SessionRow,
   type SessionContext,
+  type SessionPreview,
 } from "./transforms.js";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -116,8 +127,8 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-const PROVIDERS: ProviderId[] = ["claude", "codex", "gemini"];
-const PROVIDER_LABEL: Record<ProviderId, string> = { claude: "Claude", codex: "Codex", gemini: "Gemini" };
+const PROVIDERS: ProviderId[] = ["claude", "codex", "antigravity"];
+const PROVIDER_LABEL: Record<ProviderId, string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
 
 // On macOS the window uses the Overlay title-bar style (native traffic lights,
 // content drawn into the title bar) — the header must leave room on the left so
@@ -133,71 +144,6 @@ function describeError(e: unknown): string {
     return "agent-switch CLI not found on PATH — run `npm link` in the repo root (see README).";
   }
   return msg;
-}
-
-/** Utilization bar colour: green under 70%, amber under 90%, red at/above. */
-function utilColor(pct: number): string {
-  if (pct >= 90) return "hsl(var(--destructive))";
-  if (pct >= 70) return "#d9a343";
-  return "hsl(var(--success))";
-}
-
-// Fallback windows when we have NO snapshot at all — still show grey hatched
-// "N.A." bars (rather than nothing) so a provider with a usage readout always
-// has a stable bar area.
-const PLACEHOLDER_WINDOWS: UsageSnapshot["windows"] = [
-  { key: "five_hour", label: "5h", utilization: null, resetsAt: null },
-  { key: "seven_day", label: "7d", utilization: null, resetsAt: null },
-];
-
-const HATCH = "repeating-linear-gradient(45deg, hsl(var(--muted-foreground) / 0.5) 0 3px, transparent 3px 6px)";
-
-/**
- * Usage bars for one profile. Three states per window:
- *   - fresh value  → coloured fill + coloured % + reset countdown.
- *   - stale value (from cache, no live data yet) → GREY solid fill + grey % (last-known).
- *   - no value     → grey HATCHED track + "N.A.".
- * With no snapshot at all, PLACEHOLDER_WINDOWS render as hatched N.A.
- */
-function UsageBars({ usage, stale }: { usage: UsageSnapshot | null; stale: boolean }) {
-  const windows = usage && usage.windows.length > 0 ? usage.windows : PLACEHOLDER_WINDOWS;
-  return (
-    <div className="mt-1.5 space-y-1 pl-4">
-      {windows.map((w) => {
-        const known = typeof w.utilization === "number";
-        const pct = Math.min(100, w.utilization ?? 0);
-        const reset = known && !stale ? formatReset(w.resetsAt) : "";
-        return (
-          <div key={w.key} className="flex items-center gap-2 text-[11px]">
-            <span className="w-12 shrink-0 truncate text-muted-foreground" title={w.label}>{w.label}</span>
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
-              {!known ? (
-                <div className="h-full w-full rounded-full opacity-70" style={{ backgroundImage: HATCH }} />
-              ) : (
-                <div
-                  className="h-full rounded-full"
-                  style={{ width: `${pct}%`, background: stale ? "hsl(var(--muted-foreground))" : utilColor(pct) }}
-                />
-              )}
-            </div>
-            <span
-              className={cn("w-10 shrink-0 text-right tabular-nums", (!known || stale) && "text-muted-foreground")}
-              style={known && !stale ? { color: utilColor(pct) } : undefined}
-            >
-              {known ? `${pct}%` : "N.A."}
-            </span>
-            <span className="w-16 shrink-0 text-muted-foreground">{reset}</span>
-          </div>
-        );
-      })}
-      {typeof usage?.resetCredits === "number" && (
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span className="w-12 shrink-0">resets</span>
-          <span className="tabular-nums">{usage.resetCredits} available</span>
-        </div>
-      )}
-    </div>
-  );
 }
 
 export default function App() {
@@ -217,6 +163,11 @@ export default function App() {
   const [showCreate, setShowCreate] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
+  const [hideSummaries, setHideSummaries] = useState(getHideSummaries());
+  const toggleHideSummaries = (on: boolean) => {
+    setHideSummaries(on);
+    setHideSummariesFlag(on);
+  };
   const [globalAuto, setGlobalAuto] = useState(() => getAutoSwitchGlobal());
   // Developer mode — only ever true in a dev build; unlocks the in-app test
   // helpers (generate notifications, force an auto-switch). Off in any release.
@@ -265,6 +216,10 @@ export default function App() {
   // often than the auto-refresh countdown itself — it matches the countdown
   // exactly, which keeps Claude's rate-limited endpoint from being self-tripped.
   const USAGE_COOLDOWN_MS = REFRESH_MS;
+  // Staleness is AGE-based, not "fetched-this-session": data captured within the
+  // last ~2 refresh cycles is still current (a skipped-on-cooldown or unchanged
+  // value stays solid); only genuinely old data (repeated refresh failures) hatches.
+  const STALE_AFTER_MS = REFRESH_MS * 2;
   const refreshRef = useRef<() => void>(() => {});
   const [nowTick, setNowTick] = useState(Date.now());
 
@@ -296,11 +251,35 @@ export default function App() {
   // Turn global-skill sharing on/off across all profiles, then re-read the real
   // state. `on` links the default ~/.claude content (agent-config skills etc.)
   // into every profile; `off` removes the managed links (profile-own files stay).
+  // Explicit toggle: persist the preference and apply it directly.
   function toggleShare(on: boolean) {
+    setShareGlobalFlag(on);
     (on ? shareOn() : shareOff())
       .then(shareStatus)
       .then((s) => setShareActive(s.active))
       .catch((e) => setError(describeError(e)));
+  }
+
+  // Automatic reconcile toward the (default-on) preference: if sharing is on and
+  // any profile is not yet linked (e.g. a freshly created one, or first launch),
+  // link them; if the preference is off but links exist, remove them. Runs on
+  // mount and after a profile is created. No-op when there are no profiles.
+  async function reconcileShare() {
+    const pref = getShareGlobal();
+    try {
+      const s = await shareStatus();
+      if (pref && s.profiles.some((p) => !p.shared)) {
+        await shareOn();
+        setShareActive((await shareStatus()).active);
+      } else if (!pref && s.active) {
+        await shareOff();
+        setShareActive(false);
+      } else {
+        setShareActive(s.active);
+      }
+    } catch {
+      setShareActive(false);
+    }
   }
 
   function toggleAutoUpdateCheck(on: boolean) {
@@ -366,9 +345,12 @@ export default function App() {
   function triggerAutoSwitchTest() {
     const profs = rows.filter((r) => r.provider === selected);
     const active = profs.find((r) => r.active)?.name ?? null;
+    // Respect the configured tag filter — only accounts with that label (or all)
+    // are eligible targets, exactly like the daemon.
+    const tag = auto?.[selected]?.tag ?? "all";
     const target = pickMostHeadroom(
       profs
-        .filter((r) => r.name !== active)
+        .filter((r) => r.name !== active && (tag === "all" || r.label === tag))
         .map((r) => ({ name: r.name, max: nearestLimit(usage[`${selected}/${r.name}`]?.snap ?? null) })),
     );
     if (!target) {
@@ -420,6 +402,7 @@ export default function App() {
     if (selected === "claude" || selected === "codex") {
       const profs = loaded.filter((r) => r.provider === selected);
       const attempts = getUsageAttempts();
+      let fetched = 0; // count of ACTUAL fetches this cycle (drives the stagger)
       for (const r of profs) {
         const key = `${selected}/${r.name}`;
         // Cooldown keyed on the last fetch ATTEMPT (persisted in localStorage,
@@ -427,11 +410,21 @@ export default function App() {
         // never re-fetches within the interval — and a rate-limited (failing)
         // profile stops being hammered, which is what was flooding the log.
         if (!force && fetchOnCooldown(attempts[key], USAGE_COOLDOWN_MS)) continue;
+        // Burst de-spacing: the /api/oauth/usage endpoint 429s on a few
+        // near-simultaneous reads (api.ts), so space consecutive per-profile
+        // fetches — the concurrency, not the frequency, is what trips it.
+        if (fetched > 0) await sleep(USAGE_FETCH_STAGGER_MS);
+        fetched++;
         markUsageAttempt(key, Date.now()); // record the attempt up front (before the await)
         const snap = await profileUsage(selected, r.name).catch(() => null);
         if (snap) {
-          setUsage((prev) => ({ ...prev, [key]: { snap, fresh: true } }));
-          saveUsageSnapshot(key, snap);
+          // Carry forward any reset time a prior snapshot had that this one dropped
+          // (the API omits resets_at for some windows) — never lose a reset once seen.
+          setUsage((prev) => {
+            const merged = withStickyResets(prev[key]?.snap, snap);
+            saveUsageSnapshot(key, merged);
+            return { ...prev, [key]: { snap: merged, fresh: true } };
+          });
         } else {
           // Failure: the attempt is already recorded, so we won't retry (or
           // re-notify) until the cooldown elapses. One notification per window,
@@ -574,9 +567,7 @@ export default function App() {
   useEffect(() => {
     refresh();
     void detectAgentConfig();
-    void shareStatus()
-      .then((s) => setShareActive(s.active))
-      .catch(() => {});
+    void reconcileShare(); // default-on: link the global skills into profiles
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -629,7 +620,7 @@ export default function App() {
   // Only enabled providers get a tab. Before the first load, fall back to the
   // default set (Claude + Codex) so nothing flickers in.
   const enabledIds = PROVIDERS.filter((p) =>
-    providers ? providers[p].cli || providers[p].ui : p !== "gemini",
+    providers ? providers[p].cli || providers[p].ui : p !== "antigravity",
   );
 
   // If the selected provider was just disabled, jump to the first enabled one.
@@ -666,16 +657,20 @@ export default function App() {
           )}
         </div>
         <div className="flex items-center gap-1.5" data-tauri-drag-region>
-          <Button
-            size="sm"
-            variant={showCreate ? "secondary" : "default"}
-            onClick={() => {
-              setShowCreate((v) => !v);
-              setNotice(null);
-            }}
-          >
-            <Plus /> New
-          </Button>
+          {/* New (create-profile) only on the main page — a subpage (sessions,
+              settings) or the terminal overlay has no create form to reveal. */}
+          {!terminal && !showSettings && !showSessions && (
+            <Button
+              size="sm"
+              variant={showCreate ? "secondary" : "default"}
+              onClick={() => {
+                setShowCreate((v) => !v);
+                setNotice(null);
+              }}
+            >
+              <Plus /> New
+            </Button>
+          )}
           <NotificationBell
             notifications={visibleNotifs}
             unread={unreadNotifs}
@@ -720,9 +715,9 @@ export default function App() {
             onClose={() => {
               setTerminal(null);
               void refresh();
-              // A profile just created via login has no shared links yet — re-link
-              // so it inherits the global skills too (no-op when sharing is off).
-              if (shareActive) void shareOn().catch(() => {});
+              // A profile just created via login has no shared links yet —
+              // reconcile so it inherits the global skills per the preference.
+              void reconcileShare();
             }}
           />
         ) : showSettings ? (
@@ -737,9 +732,12 @@ export default function App() {
             onChangeRefreshMin={changeRefreshMin}
             autoUpdateCheck={autoUpdateCheck}
             onToggleAutoUpdateCheck={toggleAutoUpdateCheck}
+            hideSummaries={hideSummaries}
+            onToggleHideSummaries={toggleHideSummaries}
             mutedKinds={mutedKinds}
             onToggleMute={toggleMuteKind}
             onProvidersChanged={refresh}
+            providersWithUi={new Set(apps.map((a) => a.provider))}
             devMode={devMode}
             onToggleDevMode={toggleDevMode}
             shareActive={shareActive}
@@ -747,11 +745,17 @@ export default function App() {
           />
         ) : showSessions ? (
           <SessionsView
-            claudeProfiles={grouped.claude.map((r) => r.name)}
+            enabledIds={enabledIds}
+            profilesByProvider={{
+              claude: grouped.claude.map((r) => r.name),
+              codex: grouped.codex.map((r) => r.name),
+              antigravity: grouped.antigravity.map((r) => r.name),
+            }}
+            hideSummaries={hideSummaries}
             onClose={() => setShowSessions(false)}
-            onTakeover={(sessionId, to, keepSource) =>
+            onTakeover={(provider, sessionId, to, keepSource) =>
               setTerminal({
-                args: takeoverArgs(sessionId, to, keepSource),
+                args: takeoverArgs(sessionId, to, keepSource, provider),
                 title: `Takeover — ${sessionId.slice(0, 8)} → ${to}`,
               })
             }
@@ -759,6 +763,17 @@ export default function App() {
               setTerminal({
                 args: compactArgs(profile),
                 title: `Compact — ${profile}`,
+              })
+            }
+            onDelete={(provider, sessionId, profile) => deleteSession(provider, sessionId, profile)}
+            onRestore={(provider, handle, profile) => restoreSession(provider, handle, profile)}
+            onExtractBrief={(provider, profile, sessionId, targetProvider) =>
+              extractHandoffBrief(provider, profile, sessionId, targetProvider)
+            }
+            onSeed={(targetProvider, targetProfile, briefPath) =>
+              setTerminal({
+                args: handoffSeedArgs(targetProvider, targetProfile, briefPath),
+                title: `Handoff → ${PROVIDER_LABEL[targetProvider]} / ${targetProfile}`,
               })
             }
           />
@@ -1063,7 +1078,7 @@ export default function App() {
                       {(selected === "claude" || selected === "codex") && (
                         <UsageBars
                           usage={usage[`${selected}/${r.name}`]?.snap ?? null}
-                          stale={!usage[`${selected}/${r.name}`]?.fresh}
+                          stale={isUsageStale(usage[`${selected}/${r.name}`]?.snap, nowTick, STALE_AFTER_MS)}
                         />
                       )}
                     </div>
@@ -1075,6 +1090,9 @@ export default function App() {
       </div>
 
       {(() => {
+        // Only on the main (profile) page — subpages (sessions, settings) and the
+        // terminal overlay hide it, like the New button.
+        if (terminal || showSettings || showSessions) return null;
         const acView = deriveAgentConfigView(agentConfig, devMode);
         if (!acView.visible) return null;
         return (
@@ -1100,37 +1118,70 @@ export default function App() {
           (() => {
             // Auto-switch needs 2+ profiles for the provider to have anything to switch to.
             const canAuto = grouped[selected].length >= 2;
+            // Tag filter options: "all" plus the labels that actually exist among
+            // this provider's profiles (never offer a tag no account carries).
+            const presentLabels = PROFILE_LABELS.filter((l) => grouped[selected].some((r) => r.label === l));
+            const tagOptions: AutoSwitchTag[] = ["all", ...presentLabels];
             return (
-              <button
-                disabled={!canAuto}
-                className={cn(
-                  "flex items-center gap-1.5 text-[11px] transition-colors",
-                  !canAuto
-                    ? "cursor-not-allowed text-muted-foreground/60"
-                    : auto[selected].enabled
-                      ? "text-[hsl(var(--success))]"
-                      : "text-muted-foreground hover:text-foreground",
-                )}
-                onClick={() => canAuto && act(() => setAutoSwitch(selected, !auto[selected].enabled))}
-                title={
-                  canAuto
-                    ? `Auto-switch the active ${PROVIDER_LABEL[selected]} account to the one with the most headroom when it hits its limit (this provider only)`
-                    : `Auto-switch needs at least 2 ${PROVIDER_LABEL[selected]} profiles to switch between`
-                }
-              >
-                <span
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={!canAuto}
                   className={cn(
-                    "size-2 rounded-full",
+                    "flex items-center gap-1.5 text-[11px] transition-colors",
                     !canAuto
-                      ? "bg-muted-foreground/40"
+                      ? "cursor-not-allowed text-muted-foreground/60"
                       : auto[selected].enabled
-                        ? "bg-[hsl(var(--success))]"
-                        : "bg-[hsl(var(--destructive))]",
+                        ? "text-[hsl(var(--success))]"
+                        : "text-muted-foreground hover:text-foreground",
                   )}
-                />
-                Auto-switch · {PROVIDER_LABEL[selected]}{" "}
-                {!canAuto ? "not available" : auto[selected].enabled ? `on (${auto[selected].threshold}%)` : "off"}
-              </button>
+                  onClick={() => canAuto && act(() => setAutoSwitch(selected, !auto[selected].enabled))}
+                  title={
+                    canAuto
+                      ? `Auto-switch the active ${PROVIDER_LABEL[selected]} account to the one with the most headroom when it hits its limit (this provider only)`
+                      : `Auto-switch needs at least 2 ${PROVIDER_LABEL[selected]} profiles to switch between`
+                  }
+                >
+                  <span
+                    className={cn(
+                      "size-2 rounded-full",
+                      !canAuto
+                        ? "bg-muted-foreground/40"
+                        : auto[selected].enabled
+                          ? "bg-[hsl(var(--success))]"
+                          : "bg-[hsl(var(--destructive))]",
+                    )}
+                  />
+                  Auto-switch · {PROVIDER_LABEL[selected]}{" "}
+                  {!canAuto ? "not available" : auto[selected].enabled ? `on (${auto[selected].threshold}%)` : "off"}
+                </button>
+                {/* Tag scope: which accounts auto-switch may switch to. Always visible
+                    (independent of on/off) so it can be configured BEFORE enabling —
+                    changing it here preserves the current on/off state, never flips it on. */}
+                {canAuto && presentLabels.length >= 1 && (
+                  <select
+                    aria-label={`Auto-switch accounts for ${PROVIDER_LABEL[selected]}`}
+                    value={auto[selected].tag}
+                    onChange={(e) =>
+                      act(() =>
+                        setAutoSwitch(
+                          selected,
+                          auto[selected].enabled,
+                          auto[selected].threshold,
+                          e.target.value as AutoSwitchTag,
+                        ),
+                      )
+                    }
+                    className="rounded border border-border bg-background px-1 py-0.5 text-[11px] text-muted-foreground"
+                    title="Restrict auto-switch to accounts with this tag"
+                  >
+                    {tagOptions.map((t) => (
+                      <option key={t} value={t}>
+                        {t === "all" ? "All accounts" : t}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
             );
           })()}
         {devMode && globalAuto && hasUsageReadout(selected) && !showSettings && grouped[selected].length >= 2 && (
@@ -1253,9 +1304,12 @@ function SettingsView({
   onChangeRefreshMin,
   autoUpdateCheck,
   onToggleAutoUpdateCheck,
+  hideSummaries,
+  onToggleHideSummaries,
   mutedKinds,
   onToggleMute,
   onProvidersChanged,
+  providersWithUi,
   devMode,
   onToggleDevMode,
   shareActive,
@@ -1267,6 +1321,8 @@ function SettingsView({
   onToggleAutoSwitch: (on: boolean) => void;
   autoRefresh: boolean;
   onToggleAutoRefresh: (on: boolean) => void;
+  hideSummaries: boolean;
+  onToggleHideSummaries: (on: boolean) => void;
   refreshMin: number;
   onChangeRefreshMin: (min: number) => void;
   autoUpdateCheck: boolean;
@@ -1274,6 +1330,7 @@ function SettingsView({
   mutedKinds: NotificationKind[];
   onToggleMute: (kind: NotificationKind) => void;
   onProvidersChanged: () => void;
+  providersWithUi: Set<ProviderId>;
   devMode: boolean;
   onToggleDevMode: (on: boolean) => void;
   shareActive: boolean;
@@ -1312,6 +1369,8 @@ function SettingsView({
           onToggleAutoRefresh={onToggleAutoRefresh}
           refreshMin={refreshMin}
           onChangeRefreshMin={onChangeRefreshMin}
+          hideSummaries={hideSummaries}
+          onToggleHideSummaries={onToggleHideSummaries}
           devMode={devMode}
           onToggleDevMode={onToggleDevMode}
           shareActive={shareActive}
@@ -1319,7 +1378,7 @@ function SettingsView({
         />
       )}
       {tab === "notifications" && <NotificationSettings mutedKinds={mutedKinds} onToggleMute={onToggleMute} />}
-      {tab === "providers" && <ProvidersSettings onChange={onProvidersChanged} />}
+      {tab === "providers" && <ProvidersSettings onChange={onProvidersChanged} providersWithUi={providersWithUi} />}
       {tab === "design" && <DesignSettings />}
       {tab === "updates" && (
         <UpdatesSettings autoUpdateCheck={autoUpdateCheck} onToggleAutoUpdateCheck={onToggleAutoUpdateCheck} />
@@ -1490,6 +1549,8 @@ function GeneralSettings({
   onToggleAutoRefresh,
   refreshMin,
   onChangeRefreshMin,
+  hideSummaries,
+  onToggleHideSummaries,
   devMode,
   onToggleDevMode,
   shareActive,
@@ -1501,6 +1562,8 @@ function GeneralSettings({
   onToggleAutoRefresh: (on: boolean) => void;
   refreshMin: number;
   onChangeRefreshMin: (min: number) => void;
+  hideSummaries: boolean;
+  onToggleHideSummaries: (on: boolean) => void;
   devMode: boolean;
   onToggleDevMode: (on: boolean) => void;
   shareActive: boolean;
@@ -1587,6 +1650,23 @@ function GeneralSettings({
             aria-label="Auto-refresh limits"
           >
             {autoRefresh ? "On" : "Off"}
+          </Button>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+          <div>
+            <div className="text-[13px] font-medium">Hide session summaries</div>
+            <div className="text-xs text-muted-foreground">
+              Suppress the first-line session summary in the Sessions list (the only session content shown in the GUI).
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={hideSummaries ? "default" : "outline"}
+            onClick={() => onToggleHideSummaries(!hideSummaries)}
+            aria-label="Hide session summaries"
+          >
+            {hideSummaries ? "On" : "Off"}
           </Button>
         </div>
 
@@ -1691,7 +1771,7 @@ const PROVIDER_SURFACES: { id: ProviderSurface; label: string }[] = [
 /** Providers tab: enable/disable each provider's surfaces. Disabling hides a
  *  provider without deleting its profiles; `onChange` refreshes the main view so
  *  its tab strip updates immediately. */
-function ProvidersSettings({ onChange }: { onChange: () => void }) {
+function ProvidersSettings({ onChange, providersWithUi }: { onChange: () => void; providersWithUi: Set<ProviderId> }) {
   const [cfg, setCfg] = useState<ProvidersStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -1737,7 +1817,11 @@ function ProvidersSettings({ onChange }: { onChange: () => void }) {
                   {!installed && <div className="text-[11px] text-muted-foreground">not installed</div>}
                 </div>
                 <div className="flex gap-1">
-                  {PROVIDER_SURFACES.map((s) => {
+                  {PROVIDER_SURFACES.filter((s) =>
+                    // Every provider has a CLI; only offer the UI surface when the
+                    // provider has a registered desktop app.
+                    s.id === "cli" ? true : providersWithUi.has(pid),
+                  ).map((s) => {
                     const on = cfg[pid][s.id];
                     // Can't turn a surface ON when the provider isn't installed;
                     // turning an already-on one OFF stays allowed.
@@ -1953,30 +2037,315 @@ function ContextBadge({ context }: { context?: SessionContext | null }) {
   );
 }
 
-/** Sessions view (behind the header history icon): the Claude sessions
- *  inventory, each with a target-profile picker + "Take over" that runs the
- *  interactive takeover in the embedded terminal, plus a "Compact" action on
- *  live sessions. */
+/** One session TILE — always shows the session's identity (profile, live +
+ *  context badges, age), its summary + location metadata, and the grouped
+ *  actions (Take over / Hand off / Compact / Delete). Only the content PREVIEW
+ *  is collapsible: a "Vorschau" disclosure that lazy-fetches the first turns on
+ *  first open (Claude-only per ADR-002, gated on the "Hide session summaries"
+ *  setting). */
+function SessionCard({
+  s,
+  others,
+  hideSummaries,
+  canHandoff,
+  onDelete,
+  onCompact,
+  onTakeover,
+  onHandoff,
+}: {
+  s: SessionRow;
+  others: string[];
+  hideSummaries: boolean;
+  canHandoff: boolean;
+  onDelete: (s: SessionRow) => void | Promise<void>;
+  onCompact: (profile: string) => void;
+  onTakeover: (provider: ProviderId, sessionId: string, to: string, keepSource: boolean) => void;
+  onHandoff: (s: SessionRow) => void;
+}) {
+  const [showPreview, setShowPreview] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const [to, setTo] = useState(others[0] ?? "");
+  const [forkOn, setForkOn] = useState(false);
+  const [preview, setPreview] = useState<SessionPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const summaryLine = hideSummaries ? null : s.summary;
+  const where = s.cwd || s.projectDir;
+  // Preview is Claude-only (codex blob deferred, ADR-002) and privacy-gated on
+  // the same toggle that governs the first-line summary.
+  const previewAllowed = s.provider === "claude" && !hideSummaries;
+
+  async function togglePreview() {
+    const next = !showPreview;
+    setShowPreview(next);
+    if (next && preview === null && !previewLoading) {
+      setPreviewLoading(true);
+      try {
+        setPreview(await sessionPreview(s.provider, s.sessionId, s.profile));
+      } finally {
+        setPreviewLoading(false);
+      }
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-3 transition-colors hover:border-foreground/25">
+      {/* Identity */}
+      <div className="flex items-center gap-2">
+        <span className="truncate text-sm font-semibold tracking-tight">{s.profile}</span>
+        {s.live && <Badge variant="success">live</Badge>}
+        <ContextBadge context={s.context} />
+        <span
+          className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground"
+          title={new Date(s.mtimeMs).toLocaleString()}
+        >
+          {relativeAge(s.mtimeMs)}
+        </span>
+      </div>
+
+      {/* Summary */}
+      {summaryLine && <p className="mt-1 truncate text-xs text-muted-foreground">{summaryLine}</p>}
+
+      {/* Location metadata */}
+      <div className="mt-1.5 flex items-center gap-3 text-[11px] text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-1">
+          <Folder className="size-3 shrink-0" />
+          <span className="truncate" title={where}>{where}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-0.5 font-mono" title={s.sessionId}>
+          <Hash className="size-3" />
+          {s.sessionId.slice(0, 8)}
+        </span>
+        {s.context?.model && <span className="shrink-0 truncate">{s.context.model}</span>}
+        {s.provider === "codex" && <span className="shrink-0">liveness unknown</span>}
+      </div>
+
+      {/* Content preview — the only collapsible part */}
+      {previewAllowed && (
+        <div className="mt-2">
+          <button
+            onClick={togglePreview}
+            aria-expanded={showPreview}
+            aria-label={showPreview ? `Hide preview ${s.sessionId.slice(0, 8)}` : `Show preview ${s.sessionId.slice(0, 8)}`}
+            className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {showPreview ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+            <MessageSquare className="size-3" />
+            Vorschau
+          </button>
+          {showPreview && (
+            <div className="mt-1.5 rounded-md border border-border bg-muted/40 p-2.5">
+              {previewLoading ? (
+                <p className="text-[11px] text-muted-foreground">Loading preview…</p>
+              ) : preview && preview.messages.length > 0 ? (
+                <div className="space-y-2">
+                  {preview.messages.map((m, i) => (
+                    <div key={i} className="flex gap-1.5 text-[11px] leading-relaxed">
+                      <span
+                        className={cn(
+                          "mt-px shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold uppercase leading-none tracking-wide",
+                          m.role === "user"
+                            ? "bg-secondary text-secondary-foreground"
+                            : "bg-accent text-accent-foreground",
+                        )}
+                      >
+                        {m.role === "user" ? "You" : "Agent"}
+                      </span>
+                      <span className="min-w-0 text-muted-foreground">{m.text}</span>
+                    </div>
+                  ))}
+                  {preview.truncated && <p className="pl-0.5 text-[10px] text-muted-foreground">…</p>}
+                </div>
+              ) : (
+                <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <MessageSquare className="size-3" /> No preview available.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="mt-2.5 border-t border-border pt-2.5">
+        {confirm ? (
+          <div className="space-y-1.5">
+            <div className="text-[13px] font-medium text-destructive">Delete this session?</div>
+            <div className="text-[11px] text-muted-foreground">
+              {s.provider === "codex" ? "Archived via codex — Undo restores it." : "Moved to trash — Undo restores it."}
+            </div>
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-7 px-2 text-xs"
+                onClick={() => {
+                  setConfirm(false);
+                  void onDelete(s);
+                }}
+              >
+                <Trash2 /> Delete
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setConfirm(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-1">
+            {others.length > 0 && (
+              <>
+                <Select value={to} onValueChange={setTo}>
+                  <SelectTrigger aria-label={`Target for ${s.sessionId}`} className="h-7 w-auto gap-1 px-2 text-xs">
+                    <SelectValue placeholder="target…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {others.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  variant={forkOn ? "default" : "ghost"}
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setForkOn((v) => !v)}
+                  aria-label={`Fork ${s.sessionId}`}
+                  title="Copy + fork instead of move (source keeps its own copy)"
+                >
+                  fork
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7"
+                  disabled={!to}
+                  onClick={() => onTakeover(s.provider, s.sessionId, to, forkOn)}
+                >
+                  <ArrowRightLeft /> Take over
+                </Button>
+              </>
+            )}
+            {canHandoff && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={() => onHandoff(s)}
+                aria-label={`Hand off session ${s.sessionId.slice(0, 8)} to another agent`}
+              >
+                <Send className="size-3" /> Hand off
+              </Button>
+            )}
+            {s.live && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={() => onCompact(s.profile)}
+                title="Run /compact in this session's terminal to shrink its context window"
+              >
+                <Minimize2 /> Compact
+              </Button>
+            )}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="ml-auto size-7 text-muted-foreground hover:text-destructive"
+              disabled={s.live}
+              aria-label={`Delete session ${s.sessionId.slice(0, 8)}`}
+              title={s.live ? "Stop the live session first" : "Delete this session"}
+              onClick={() => setConfirm(true)}
+            >
+              <Trash2 />
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Sessions view (behind the header history icon): the multi-provider sessions
+ *  inventory. Each session is a collapsible SessionCard; expanding reveals a
+ *  bounded content preview + the grouped takeover / hand-off / compact / delete
+ *  actions. */
+// Providers with a session store the GUI can list/delete. Antigravity has none.
+const SESSION_PROVIDERS: ProviderId[] = ["claude", "codex"];
+
+/** Gap between consecutive per-profile usage fetches in one refresh cycle — the
+ *  usage endpoint 429s on near-simultaneous reads (api.ts), so we space them.
+ *  Zero under vitest so the suite never pays real wall-clock for the stagger. */
+const USAGE_FETCH_STAGGER_MS = import.meta.env?.MODE === "test" ? 0 : 1500;
+const sleep = (ms: number) => (ms > 0 ? new Promise<void>((resolve) => setTimeout(resolve, ms)) : Promise.resolve());
+
 function SessionsView({
-  claudeProfiles,
+  enabledIds,
+  profilesByProvider,
+  hideSummaries,
   onClose,
   onTakeover,
   onCompact,
+  onDelete,
+  onRestore,
+  onExtractBrief,
+  onSeed,
 }: {
-  claudeProfiles: string[];
+  enabledIds: ProviderId[];
+  profilesByProvider: Record<ProviderId, string[]>;
+  hideSummaries: boolean;
   onClose: () => void;
-  onTakeover: (sessionId: string, to: string, keepSource: boolean) => void;
+  onTakeover: (provider: ProviderId, sessionId: string, to: string, keepSource: boolean) => void;
   onCompact: (profile: string) => void;
+  onDelete: (provider: ProviderId, sessionId: string, profile: string) => Promise<{ mode: string; trashId: string | null }>;
+  onRestore: (provider: ProviderId, handle: string, profile: string) => Promise<void>;
+  onExtractBrief: (
+    provider: ProviderId,
+    profile: string,
+    sessionId: string,
+    targetProvider: ProviderId,
+  ) => Promise<{ brief: string; briefPath: string }>;
+  onSeed: (targetProvider: ProviderId, targetProfile: string, briefPath: string) => void;
 }) {
+  const tabs = enabledIds.filter((p) => SESSION_PROVIDERS.includes(p));
+  const [handoff, setHandoff] = useState<SessionRow | null>(null);
+  const [tab, setTab] = useState<ProviderId>(tabs[0] ?? "claude");
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
-  const [target, setTarget] = useState<Record<string, string>>({});
-  const [fork, setFork] = useState<Record<string, boolean>>({});
+  const [undo, setUndo] = useState<{ provider: ProviderId; handle: string; profile: string; label: string } | null>(null);
 
-  useEffect(() => {
-    listSessions(undefined, 20)
-      .then(setSessions)
+  function reload() {
+    // Per-provider fetch, each independent — a failing codex fetch never blanks claude.
+    Promise.all(tabs.map((p) => listSessions(undefined, 20, p)))
+      .then((lists) => setSessions(lists.flat()))
       .catch(() => setSessions([]));
-  }, []);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => reload(), []);
+
+  const shown = (sessions ?? []).filter((s) => s.provider === tab);
+
+  async function doDelete(s: SessionRow) {
+    setSessions((prev) => (prev ?? []).filter((x) => !(x.provider === s.provider && x.sessionId === s.sessionId)));
+    try {
+      const res = await onDelete(s.provider, s.sessionId, s.profile);
+      const handle = res.trashId ?? (s.provider === "codex" ? s.sessionId : null); // codex archive is undo-able by id
+      if (handle) setUndo({ provider: s.provider, handle, profile: s.profile, label: s.sessionId.slice(0, 8) });
+    } catch {
+      reload(); // roll back the optimistic removal
+    }
+  }
+  async function doUndo() {
+    if (!undo) return;
+    const u = undo;
+    setUndo(null);
+    try {
+      await onRestore(u.provider, u.handle, u.profile);
+    } finally {
+      reload();
+    }
+  }
 
   return (
     <div className="space-y-2.5">
@@ -1986,75 +2355,200 @@ function SessionsView({
           <X />
         </Button>
       </div>
+
+      {tabs.length > 1 && (
+        <div
+          role="tablist"
+          className="grid gap-1 rounded-lg bg-muted p-1"
+          style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+        >
+          {tabs.map((pid) => {
+            const n = sessions?.filter((s) => s.provider === pid).length ?? 0;
+            return (
+              <button
+                key={pid}
+                role="tab"
+                aria-selected={tab === pid}
+                onClick={() => setTab(pid)}
+                className={cn(
+                  "flex items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                  tab === pid ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {PROVIDER_LABEL[pid]}
+                {n > 0 && <span className="rounded-full bg-secondary px-1.5 text-[10px] leading-tight">{n}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {undo && (
+        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-1.5 text-xs">
+          <span className="text-muted-foreground">Deleted session {undo.label}.</span>
+          <Button size="sm" variant="secondary" className="ml-auto h-6 px-2 text-xs" onClick={doUndo}>
+            Undo
+          </Button>
+        </div>
+      )}
+
       {sessions === null ? (
         <div className="px-1 text-xs text-muted-foreground">Loading…</div>
-      ) : sessions.length === 0 ? (
-        <div className="py-10 text-center text-sm text-muted-foreground">No Claude sessions yet.</div>
+      ) : shown.length === 0 ? (
+        <div className="py-10 text-center text-sm text-muted-foreground">No {PROVIDER_LABEL[tab]} sessions yet.</div>
       ) : (
-        <Card>
-          <div className="divide-y divide-border">
-            {sessions.map((s) => {
-              const others = claudeProfiles.filter((p) => p !== s.profile);
-              const to = target[s.sessionId] ?? others[0] ?? "";
-              return (
-                <div key={`${s.profile}/${s.sessionId}`} className="space-y-1.5 px-3 py-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="truncate text-[13px] font-medium">{s.profile}</span>
-                    {s.live && <Badge variant="success">live</Badge>}
-                    <ContextBadge context={s.context} />
-                    <span className="ml-auto text-xs text-muted-foreground">{relativeAge(s.mtimeMs)}</span>
-                    {s.live && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 px-2 text-xs"
-                        onClick={() => onCompact(s.profile)}
-                        title="Run /compact in this session's terminal to shrink its context window"
-                      >
-                        <Minimize2 /> Compact
-                      </Button>
-                    )}
-                  </div>
-                  <div className="truncate text-xs text-muted-foreground">{s.summary || s.cwd || s.projectDir}</div>
-                  {others.length > 0 && (
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs text-muted-foreground">→</span>
-                      <Select value={to} onValueChange={(v) => setTarget((m) => ({ ...m, [s.sessionId]: v }))}>
-                        <SelectTrigger aria-label={`Target for ${s.sessionId}`} className="h-7 w-auto gap-1 px-2 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {others.map((p) => (
-                            <SelectItem key={p} value={p}>
-                              {p}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        size="sm"
-                        variant={fork[s.sessionId] ? "default" : "ghost"}
-                        className="h-7 px-2 text-xs"
-                        onClick={() => setFork((m) => ({ ...m, [s.sessionId]: !m[s.sessionId] }))}
-                        aria-label={`Fork ${s.sessionId}`}
-                        title="Copy + fork instead of move (source keeps its own copy)"
-                      >
-                        fork
-                      </Button>
-                      <Button size="sm" variant="secondary" disabled={!to} onClick={() => onTakeover(s.sessionId, to, !!fork[s.sessionId])}>
-                        <ArrowRightLeft /> Take over
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Card>
+        <div className="space-y-2">
+          {shown.map((s) => (
+            <SessionCard
+              key={`${s.provider}/${s.sessionId}`}
+              s={s}
+              others={(profilesByProvider[s.provider] ?? []).filter((p) => p !== s.profile)}
+              hideSummaries={hideSummaries}
+              canHandoff={tabs.some((p) => p !== s.provider && (profilesByProvider[p] ?? []).length > 0)}
+              onDelete={doDelete}
+              onCompact={onCompact}
+              onTakeover={onTakeover}
+              onHandoff={setHandoff}
+            />
+          ))}
+        </div>
+      )}
+
+      {handoff && (
+        <HandoffModal
+          session={handoff}
+          targets={tabs
+            .filter((p) => p !== handoff.provider)
+            .map((p) => ({ provider: p, profiles: profilesByProvider[p] ?? [] }))
+            .filter((t) => t.profiles.length > 0)}
+          onExtractBrief={onExtractBrief}
+          onSeed={(tp, tprof, bp) => {
+            setHandoff(null);
+            onSeed(tp, tprof, bp);
+          }}
+          onClose={() => setHandoff(null)}
+        />
       )}
       <p className="text-[11px] leading-snug text-muted-foreground">
-        Take over moves a session to another profile and resumes it in the terminal — fork copies instead.
+        Take over moves a session to another profile of the same agent and resumes it — fork copies instead. Delete
+        trashes a session; Undo restores it.
       </p>
+    </div>
+  );
+}
+
+/** Cross-provider handoff modal. Extracts a metadata-only brief from the source
+ *  session, shows it (the human egress gate — Seed is disabled until the brief
+ *  has loaded/been viewed), states the lossiness + names the destination vendor,
+ *  then seeds a NEW target session in the embedded pty. The source is untouched. */
+function HandoffModal({
+  session,
+  targets,
+  onExtractBrief,
+  onSeed,
+  onClose,
+}: {
+  session: SessionRow;
+  targets: { provider: ProviderId; profiles: string[] }[];
+  onExtractBrief: (
+    provider: ProviderId,
+    profile: string,
+    sessionId: string,
+    targetProvider: ProviderId,
+  ) => Promise<{ brief: string; briefPath: string }>;
+  onSeed: (targetProvider: ProviderId, targetProfile: string, briefPath: string) => void;
+  onClose: () => void;
+}) {
+  const [tp, setTp] = useState<ProviderId>(targets[0]?.provider ?? "codex");
+  const targetProfiles = targets.find((t) => t.provider === tp)?.profiles ?? [];
+  const [tprof, setTprof] = useState<string>(targetProfiles[0] ?? "");
+  const [brief, setBrief] = useState<string | null>(null);
+  const [briefPath, setBriefPath] = useState<string>("");
+
+  useEffect(() => {
+    setBrief(null);
+    onExtractBrief(session.provider, session.profile, session.sessionId, tp)
+      .then(({ brief, briefPath }) => {
+        setBrief(brief);
+        setBriefPath(briefPath);
+      })
+      .catch(() => {
+        setBrief("");
+        setBriefPath("");
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tp]);
+
+  // Keep the profile selection valid when the target provider changes.
+  useEffect(() => {
+    if (!targetProfiles.includes(tprof)) setTprof(targetProfiles[0] ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tp]);
+
+  const ready = brief !== null && !!briefPath && !!tprof; // Seed gated on a loaded brief
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-background/80 p-4" role="dialog" aria-label="Hand off session">
+      <Card className="w-full max-w-md space-y-3 p-4">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold">Hand off to another agent</span>
+          <Button size="icon" variant="ghost" className="size-6" onClick={onClose} aria-label="Close handoff">
+            <X />
+          </Button>
+        </div>
+
+        <div className="rounded-md border border-[hsl(var(--destructive))]/40 bg-[hsl(var(--destructive))]/5 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
+          Lossy — starts a <strong>new {PROVIDER_LABEL[tp]}</strong> session from a short brief. History, tool state,
+          and checkpoints do <strong>not</strong> transfer; the original {PROVIDER_LABEL[session.provider]} session stays.
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">To</span>
+          <select
+            aria-label="Target agent"
+            value={tp}
+            onChange={(e) => setTp(e.target.value as ProviderId)}
+            className="h-7 rounded border border-border bg-background px-1 text-xs"
+          >
+            {targets.map((t) => (
+              <option key={t.provider} value={t.provider}>
+                {PROVIDER_LABEL[t.provider]}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Target profile"
+            value={tprof}
+            onChange={(e) => setTprof(e.target.value)}
+            className="h-7 rounded border border-border bg-background px-1 text-xs"
+          >
+            {targetProfiles.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <div className="mb-1 text-[11px] text-muted-foreground">Brief preview (metadata only — no transcript content)</div>
+          <textarea
+            aria-label="Handoff brief preview"
+            readOnly
+            value={brief ?? "Loading brief…"}
+            className="h-40 w-full resize-none rounded border border-border bg-muted/30 p-2 font-mono text-[11px]"
+          />
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button size="sm" variant="default" disabled={!ready} onClick={() => onSeed(tp, tprof, briefPath)}>
+            <Send /> Seed {PROVIDER_LABEL[tp]} session
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }

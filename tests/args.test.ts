@@ -66,7 +66,7 @@ test("parseArgs throws on an explicit invalid provider (testable, not process.ex
 
 test("resolveProviderValue: undefined → claude, valid → itself, invalid → throws", () => {
   assert.equal(resolveProviderValue(undefined), "claude");
-  assert.equal(resolveProviderValue("gemini"), "gemini");
+  assert.equal(resolveProviderValue("antigravity"), "antigravity");
   assert.throws(() => resolveProviderValue("nope"), /unknown provider/);
 });
 
