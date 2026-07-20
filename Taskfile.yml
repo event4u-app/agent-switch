@@ -155,6 +155,34 @@ tasks:
       - task: test
       - task: test:gui
 
+  # ---------- release ----------
+  release:
+    desc: |
+      Bump the version in all four files (package.json, gui/package.json,
+      tauri.conf.json, Cargo.toml) + commit + tag vX.Y.Z. Does NOT push by
+      default (the tag push triggers the npm publish + installer build). Usage:
+        task release -- 1.2.0
+        task release -- --as patch|minor|major
+        task release -- 1.2.0 --dry-run
+        task release -- 1.2.0 --push
+    cmds:
+      - "{{.NODE}} scripts/release.mjs {{.CLI_ARGS}}"
+
+  release:patch:
+    desc: "Bump the patch version + commit + tag (add -- --push to push)"
+    cmds:
+      - "{{.NODE}} scripts/release.mjs --as patch {{.CLI_ARGS}}"
+
+  release:minor:
+    desc: "Bump the minor version + commit + tag (add -- --push to push)"
+    cmds:
+      - "{{.NODE}} scripts/release.mjs --as minor {{.CLI_ARGS}}"
+
+  release:major:
+    desc: "Bump the major version + commit + tag (add -- --push to push)"
+    cmds:
+      - "{{.NODE}} scripts/release.mjs --as major {{.CLI_ARGS}}"
+
   clean:
     desc: Remove build output
     cmds:
