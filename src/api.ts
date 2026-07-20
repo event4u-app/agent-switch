@@ -79,6 +79,43 @@ export function fetchUsage(token: string): Promise<any | null> {
   return oauthGet("/api/oauth/usage", token);
 }
 
+export type AuthState = "ok" | "expired" | "no-credential" | "unknown";
+
+/** Classify an HTTP status (null = network/timeout failure) into an auth state.
+ *  Pure — the testable core of `checkAuth`. 401/403 = credential present but
+ *  rejected (login expired); 2xx = valid; anything else / no response = unknown
+ *  (offline, transient, or an API change) — NEVER reported as "expired". */
+export function classifyAuthStatus(status: number | null): Exclude<AuthState, "no-credential"> {
+  if (status === null) return "unknown";
+  if (status === 401 || status === 403) return "expired";
+  if (status >= 200 && status < 300) return "ok";
+  return "unknown";
+}
+
+/** Read-only login check for a Claude profile: is the stored credential still
+ *  accepted by Anthropic? Never writes or refreshes a token. "no-credential"
+ *  when nothing is stored; otherwise the classified profile-endpoint probe. */
+export async function checkAuth(configDir: string): Promise<AuthState> {
+  const creds = readProfileCredential(configDir);
+  const token = creds ? accessTokenOf(creds) : null;
+  if (!token) return "no-credential";
+  let status: number | null = null;
+  try {
+    const res = await fetch("https://api.anthropic.com/api/oauth/profile", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "anthropic-beta": BETA_HEADER,
+        "User-Agent": "agent-switch/1.0 (+https://github.com/event4u-app/agent-switch)",
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    status = res.status;
+  } catch {
+    status = null;
+  }
+  return classifyAuthStatus(status);
+}
+
 // Usage parsing/formatting moved to usage.ts (richer per-model + routines +
 // thresholds). api.ts stays the low-level fetch layer.
 

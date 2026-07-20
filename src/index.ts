@@ -69,6 +69,7 @@ import {
 } from "./mappings.js";
 import {
   accessTokenOf,
+  checkAuth,
   fetchProfile,
   fetchUsage,
   liveSessionPids,
@@ -433,7 +434,17 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
     if (org) console.log(`  org: ${org}`);
     const lines = raw ? formatSnapshot(parseUsage(raw)) : [];
     if (lines.length > 0) lines.forEach((l) => console.log(l));
-    else console.log("  (usage unavailable — token expired or API shape changed)");
+    else if (profileInfo) console.log("  (usage unavailable — API shape changed?)");
+    else {
+      // Both profile and usage came back empty — disambiguate a dead login from
+      // a transient/offline failure with one read-only probe (no token write).
+      const auth = await checkAuth(configDir("claude", n));
+      console.log(
+        auth === "expired"
+          ? `  (login expired — run \`agent-switch run ${n}\` and /login again)`
+          : "  (usage unavailable — offline, or the login expired)",
+      );
+    }
   }
 }
 
@@ -1809,7 +1820,7 @@ async function main(): Promise<void> {
     case "remove": case "rm": return cmdRemove(providerId, positional[0], !!flags.force);
     case "shellenv": return cmdShellenv((flags.shell as string) ?? positional[0]);
     case "service": return cmdService(positional[0]);
-    case "doctor": return process.exit(runDoctor());
+    case "doctor": return process.exit(await runDoctor());
     case "help": case "--help": case "-h": return usage();
     default: usage(); process.exit(cmd ? 1 : 0);
   }
