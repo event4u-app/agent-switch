@@ -9,10 +9,15 @@
 //   - gui/src-tauri/Cargo.toml           (the Rust crate) + Cargo.lock entry
 //
 // Usage:
-//   node scripts/release.mjs 1.2.0            # exact version
-//   node scripts/release.mjs --as patch       # bump patch (minor|major too)
-//   node scripts/release.mjs --as minor --dry-run
+//   node scripts/release.mjs                  # AUTO: bump from commits since the last tag
+//   node scripts/release.mjs --dry-run        # preview the auto-detected bump
+//   node scripts/release.mjs 1.2.0            # exact version (override)
+//   node scripts/release.mjs --as patch       # forced bump (minor|major too)
 //   node scripts/release.mjs 1.2.0 --push     # also push branch + tag (triggers CI publish)
+//
+// With no version and no --as, the bump is auto-detected from the Conventional
+// Commits since the last tag: a `feat!:` / `BREAKING CHANGE` → major, a `feat:`
+// → minor, otherwise → patch. Same default as the agent-config release flow.
 //
 // By default it bumps + commits + tags but does NOT push: pushing the vX.Y.Z
 // tag triggers the real npm publish and GitHub Release (publish-npm.yml +
@@ -47,21 +52,52 @@ const pkgPath = path.join(ROOT, "package.json");
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 const current = pkg.version;
 
+/** Apply a semver bump kind to a plain X.Y.Z base. */
+function bumpVersion(base, kind) {
+  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(base);
+  if (!m) die(`current version "${base}" is not plain X.Y.Z — pass an exact version instead`);
+  const [maj, min, pat] = m.slice(1).map(Number);
+  if (kind === "major") return `${maj + 1}.0.0`;
+  if (kind === "minor") return `${maj}.${min + 1}.0`;
+  if (kind === "patch") return `${maj}.${min}.${pat + 1}`;
+  die(`bump kind must be major|minor|patch, got "${kind ?? ""}"`);
+}
+
+/** Auto-detect the bump from Conventional Commits since the last tag:
+ *  a `type!:` / `BREAKING CHANGE` → major, a `feat:` → minor, else → patch.
+ *  Returns { kind, since, count } or null when there is nothing to release. */
+function detectBump() {
+  let since = null;
+  try {
+    since = git("describe", "--tags", "--abbrev=0");
+  } catch {
+    since = null; // no tags yet → scan all history
+  }
+  let log = "";
+  try {
+    log = git("log", since ? `${since}..HEAD` : "HEAD", "--format=%B%x1e");
+  } catch {
+    log = "";
+  }
+  const commits = log.split("\x1e").map((c) => c.trim()).filter(Boolean);
+  if (commits.length === 0) return null;
+  const breaking = commits.some((c) => /^[a-z]+(\([^)]*\))?!:/im.test(c) || /BREAKING[ -]CHANGE/.test(c));
+  const feat = commits.some((c) => /^feat(\([^)]*\))?:/im.test(c));
+  return { kind: breaking ? "major" : feat ? "minor" : "patch", since, count: commits.length };
+}
+
 let target;
+let autoNote = "";
 if (asIdx !== -1) {
-  const kind = args[asIdx + 1];
-  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(current);
-  if (!m) die(`current version "${current}" is not plain X.Y.Z — pass an exact version instead`);
-  let [maj, min, pat] = m.slice(1).map(Number);
-  if (kind === "major") [maj, min, pat] = [maj + 1, 0, 0];
-  else if (kind === "minor") [min, pat] = [min + 1, 0];
-  else if (kind === "patch") pat = pat + 1;
-  else die(`--as expects major|minor|patch, got "${kind ?? ""}"`);
-  target = `${maj}.${min}.${pat}`;
+  target = bumpVersion(current, args[asIdx + 1]);
 } else if (positional) {
   target = positional;
 } else {
-  die("pass a version (e.g. 1.2.0) or --as patch|minor|major");
+  // No version and no --as: auto-detect from the commit history (the default).
+  const d = detectBump();
+  if (!d) die(`no commits since ${git("describe", "--tags", "--abbrev=0")} — nothing to release`);
+  target = bumpVersion(current, d.kind);
+  autoNote = `auto: ${d.kind} bump from ${d.count} commit(s)${d.since ? ` since ${d.since}` : " (no prior tag)"}`;
 }
 if (!SEMVER.test(target)) die(`"${target}" is not a valid X.Y.Z version`);
 if (target === current) die(`target ${target} equals the current version`);
@@ -97,7 +133,7 @@ function bumpFile(rel, re, label) {
   else fs.writeFileSync(p, next);
 }
 
-console.log(`${dryRun ? "[dry-run] " : ""}release ${current} → ${target} (tag ${tag})`);
+console.log(`${dryRun ? "[dry-run] " : ""}release ${current} → ${target} (tag ${tag})${autoNote ? ` — ${autoNote}` : ""}`);
 // JSON files: only the first top-level "version" key (anchored to 2-space indent).
 bumpFile("package.json", /^(  "version":\s*")[^"]+/m, "package.json");
 bumpFile("gui/package.json", /^(  "version":\s*")[^"]+/m, "gui/package.json");
