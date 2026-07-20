@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Minimize2, Pencil, Check, Download, Send, ChevronRight, ChevronDown, MessageSquare, Folder, Hash } from "lucide-react";
+import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Minimize2, Pencil, Check, Download, Send, ChevronRight, ChevronDown, MessageSquare, Folder, Hash, Clock, Copy } from "lucide-react";
 import {
   compactArgs,
   deactivateProfile,
@@ -2071,6 +2071,9 @@ function SessionCard({
 
   const summaryLine = hideSummaries ? null : s.summary;
   const where = s.cwd || s.projectDir;
+  // Session age = creation time; falls back to mtime when the backend/filesystem
+  // reports no birthtime.
+  const created = s.birthtimeMs && s.birthtimeMs > 0 ? s.birthtimeMs : s.mtimeMs;
   // Preview is Claude-only (codex blob deferred, ADR-002) and privacy-gated on
   // the same toggle that governs the first-line summary.
   const previewAllowed = s.provider === "claude" && !hideSummaries;
@@ -2097,7 +2100,7 @@ function SessionCard({
         <ContextBadge context={s.context} />
         <span
           className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground"
-          title={new Date(s.mtimeMs).toLocaleString()}
+          title={`Zuletzt genutzt: ${new Date(s.mtimeMs).toLocaleString()}`}
         >
           {relativeAge(s.mtimeMs)}
         </span>
@@ -2115,6 +2118,13 @@ function SessionCard({
         <span className="flex shrink-0 items-center gap-0.5 font-mono" title={s.sessionId}>
           <Hash className="size-3" />
           {s.sessionId.slice(0, 8)}
+        </span>
+        <span
+          className="flex shrink-0 items-center gap-0.5"
+          title={`Erstellt: ${new Date(created).toLocaleString()}`}
+        >
+          <Clock className="size-3" />
+          {relativeAge(created)} alt
         </span>
         {s.context?.model && <span className="shrink-0 truncate">{s.context.model}</span>}
         {s.provider === "codex" && <span className="shrink-0">liveness unknown</span>}
@@ -2324,7 +2334,12 @@ function SessionsView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => reload(), []);
 
-  const shown = (sessions ?? []).filter((s) => s.provider === tab);
+  // Live (current) session always on top; the rest by last activity, newest
+  // first. `.filter` returns a fresh array, so the in-place sort never mutates
+  // the `sessions` state.
+  const shown = (sessions ?? [])
+    .filter((s) => s.provider === tab)
+    .sort((a, b) => Number(b.live) - Number(a.live) || b.mtimeMs - a.mtimeMs);
 
   async function doDelete(s: SessionRow) {
     setSessions((prev) => (prev ?? []).filter((x) => !(x.provider === s.provider && x.sessionId === s.sessionId)));
@@ -2464,6 +2479,18 @@ function HandoffModal({
   const [tprof, setTprof] = useState<string>(targetProfiles[0] ?? "");
   const [brief, setBrief] = useState<string | null>(null);
   const [briefPath, setBriefPath] = useState<string>("");
+  const [copied, setCopied] = useState(false);
+
+  async function copyBrief() {
+    if (!brief) return;
+    try {
+      await navigator.clipboard.writeText(brief);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked (e.g. no permission) — nothing to recover, leave state */
+    }
+  }
 
   useEffect(() => {
     setBrief(null);
@@ -2532,12 +2559,25 @@ function HandoffModal({
 
         <div>
           <div className="mb-1 text-[11px] text-muted-foreground">Brief preview (metadata only — no transcript content)</div>
-          <textarea
-            aria-label="Handoff brief preview"
-            readOnly
-            value={brief ?? "Loading brief…"}
-            className="h-40 w-full resize-none rounded border border-border bg-muted/30 p-2 font-mono text-[11px]"
-          />
+          <div className="relative">
+            <textarea
+              aria-label="Handoff brief preview"
+              readOnly
+              value={brief ?? "Loading brief…"}
+              className="h-40 w-full resize-none rounded border border-border bg-muted/30 p-2 pr-9 font-mono text-[11px]"
+            />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="absolute right-1.5 top-1.5 size-6 text-muted-foreground hover:text-foreground"
+              disabled={!brief}
+              onClick={copyBrief}
+              aria-label={copied ? "Brief copied" : "Copy brief"}
+              title={copied ? "Copied" : "Copy brief"}
+            >
+              {copied ? <Check /> : <Copy />}
+            </Button>
+          </div>
         </div>
 
         <div className="flex justify-end gap-2">
