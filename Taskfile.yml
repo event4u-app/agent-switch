@@ -162,12 +162,15 @@ tasks:
   release:
     desc: |
       Bump the version in all four files (package.json, gui/package.json,
-      tauri.conf.json, Cargo.toml) + commit + tag vX.Y.Z. Does NOT push by
-      default (the tag push triggers the npm publish + installer build). Usage:
-        task release -- 1.2.0
+      tauri.conf.json, Cargo.toml) + commit + tag vX.Y.Z. With no args the bump
+      is auto-detected from the commits since the last tag (feat! → major,
+      feat → minor, else patch). Does NOT push by default (the tag push triggers
+      the npm publish + installer build). Usage:
+        task release                       # auto-detect the bump
+        task release -- --dry-run          # preview the auto bump
+        task release -- 1.2.0              # exact version (override)
         task release -- --as patch|minor|major
-        task release -- 1.2.0 --dry-run
-        task release -- 1.2.0 --push
+        task release -- --push             # also push (triggers CI publish)
     cmds:
       - "{{.NODE}} scripts/release.mjs {{.CLI_ARGS}}"
 
