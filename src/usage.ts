@@ -97,12 +97,62 @@ function resetHint(iso: string): string {
   return `  resets ${d.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}`;
 }
 
+// ---------- pace (informational, pure) --------------------------------------
+
+export type PaceStatus = "ahead" | "on-track" | "behind";
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Default minimum gap (fraction of the window) before pace is called either
+ *  way — guards against noise around the on-track line. */
+export const PACE_MIN_GAP = 0.05;
+
+/** Window length for pace, derived from the key. The 5h window is deliberately
+ *  excluded (too short/bursty to pace meaningfully); only weekly windows pace. */
+function paceWindowMs(key: string): number | null {
+  if (key === "five_hour") return null;
+  if (key.startsWith("seven_day") || key.startsWith("weekly")) return WEEK_MS;
+  return null;
+}
+
+/**
+ * "Ahead of pace" = more of the window's quota consumed than of its cycle
+ * elapsed. PURE and stale-safe: time is measured against the snapshot's
+ * `capturedAt` (its real measurement instant), never the wall clock, so a
+ * re-served stale snapshot is judged against when it was actually taken. This
+ * is purely informational — it is NEVER an input to a switch decision (the
+ * anti-rotation boundary this file is locked around).
+ *
+ * Returns null when it cannot be judged: no utilization/reset, the 5h window,
+ * within 24h of a reset (suppressed — early-cycle noise), or a captured time
+ * outside the window's own cycle.
+ */
+export function windowPace(w: UsageWindow, capturedAtIso: string, minGap: number = PACE_MIN_GAP): PaceStatus | null {
+  if (w.utilization === null || w.resetsAt === null) return null;
+  const durMs = paceWindowMs(w.key);
+  if (durMs === null) return null;
+  const reset = Date.parse(w.resetsAt);
+  const captured = Date.parse(capturedAtIso);
+  if (Number.isNaN(reset) || Number.isNaN(captured)) return null;
+  const cycleStart = reset - durMs;
+  const elapsedMs = captured - cycleStart;
+  if (elapsedMs < DAY_MS) return null; // 24h post-reset suppression
+  if (elapsedMs <= 0 || elapsedMs > durMs) return null; // outside this cycle
+  const aheadBy = w.utilization / 100 - elapsedMs / durMs;
+  if (aheadBy > minGap) return "ahead";
+  if (aheadBy < -minGap) return "behind";
+  return "on-track";
+}
+
 /** Human-readable lines for `status`; empty when nothing is known. */
 export function formatSnapshot(s: UsageSnapshot): string[] {
   const lines: string[] = [];
   for (const w of s.windows) {
     if (w.utilization === null) continue;
-    lines.push(`  ${w.label}: ${String(w.utilization).padStart(3)}%${w.resetsAt ? resetHint(w.resetsAt) : ""}`);
+    // Surface only "ahead of pace" — the one informative signal; on-track /
+    // behind are the quiet default and add no line noise.
+    const pace = windowPace(w, s.capturedAt) === "ahead" ? "  · ahead of pace" : "";
+    lines.push(`  ${w.label}: ${String(w.utilization).padStart(3)}%${w.resetsAt ? resetHint(w.resetsAt) : ""}${pace}`);
   }
   if (s.routines) lines.push(`  routines: ${s.routines.used}/${s.routines.limit}`);
   return lines;
