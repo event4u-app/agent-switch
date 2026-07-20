@@ -99,18 +99,20 @@ tasks:
       - "{{.NODE}} dist/index.js {{.CLI_ARGS}}"
 
   dev:
-    desc: Build + `npm link` so `agent-switch` on PATH is this dev build
+    desc: Build + link this dev build as `agent-switch` on PATH (backs up any installed version; `task unlink` restores it)
     deps: [deps]
     cmds:
       - npm run build
-      - npm link
-      - 'echo "Linked. `agent-switch` now runs the dev build."'
+      # Backs up a globally-installed agent-switch before linking (npm link
+      # would otherwise fail EEXIST); `task unlink` restores it.
+      - bash scripts/dev-link.sh link
+      - 'echo "Linked the dev build. Run `task unlink` to restore your installed agent-switch."'
       - 'echo "Tip: export AGENT_SWITCH_HOME=$(mktemp -d) to avoid touching your real profiles."'
 
   unlink:
-    desc: Undo `task dev` (npm unlink -g)
+    desc: Restore the installed agent-switch (undo `task dev`)
     cmds:
-      - npm unlink -g agent-switch
+      - bash scripts/dev-link.sh unlink
 
   doctor:
     desc: Run the dev build's per-OS self-check
@@ -126,14 +128,15 @@ tasks:
 
   # ---------- GUI (Tauri: needs Rust + a desktop session) ----------
   gui:dev:
-    # `dev` (build + npm link) runs first so `agent-switch` on PATH is this
-    # dev build — the GUI spawns the CLI, so without it the tray would drive a
-    # stale/older binary (e.g. missing the session context column).
-    desc: Run the tray GUI in dev (builds + links the CLI first, then Tauri + Vite)
-    dir: gui
-    deps: [gui:deps, dev]
+    # The GUI spawns the `agent-switch` CLI, so it must drive THIS repo's dev
+    # build, not a stale global one. dev-link.sh temporarily links the dev build
+    # (backing up any installed agent-switch) and restores the installed version
+    # on exit — including Ctrl-C — via a trap. See scripts/dev-link.sh.
+    desc: Run the tray GUI in dev — temporarily links the CLI dev build, restores the installed one on exit
+    deps: [gui:deps, deps]
     cmds:
-      - npm run tauri dev
+      - npm run build
+      - bash scripts/dev-link.sh run 'cd gui && npm run tauri dev'
 
   gui:build:
     desc: Build the GUI frontend bundle
