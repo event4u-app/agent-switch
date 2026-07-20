@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Release helper — bump the version everywhere it lives, commit, and tag.
+// Release helper — the full release in one step: bump the version everywhere it
+// lives, commit, tag, and push. The tag push triggers the npm publish +
+// installer build in CI, so `task release` needs no manual follow-up.
 //
 // agent-switch carries its version in four files that MUST stay in lockstep
 // (publish-npm.yml refuses to publish when the tag and package.json disagree):
@@ -9,20 +11,19 @@
 //   - gui/src-tauri/Cargo.toml           (the Rust crate) + Cargo.lock entry
 //
 // Usage:
-//   node scripts/release.mjs                  # AUTO: bump from commits since the last tag
-//   node scripts/release.mjs --dry-run        # preview the auto-detected bump
-//   node scripts/release.mjs 1.2.0            # exact version (override)
-//   node scripts/release.mjs --as patch       # forced bump (minor|major too)
-//   node scripts/release.mjs 1.2.0 --push     # also push branch + tag (triggers CI publish)
+//   node scripts/release.mjs              # AUTO: bump from commits, tag, push → CI publishes
+//   node scripts/release.mjs --dry-run    # preview the auto-detected bump, change nothing
+//   node scripts/release.mjs --no-push    # bump + commit + tag locally, do NOT push
+//   node scripts/release.mjs 1.2.0        # exact version (override the auto bump)
+//   node scripts/release.mjs --as minor   # forced bump (major|minor|patch)
 //
 // With no version and no --as, the bump is auto-detected from the Conventional
 // Commits since the last tag: a `feat!:` / `BREAKING CHANGE` → major, a `feat:`
 // → minor, otherwise → patch. Same default as the agent-config release flow.
 //
-// By default it bumps + commits + tags but does NOT push: pushing the vX.Y.Z
-// tag triggers the real npm publish and GitHub Release (publish-npm.yml +
-// release.yml), so that step stays an explicit, deliberate `--push` or a manual
-// `git push --follow-tags`.
+// It PUSHES by default — the whole point is a one-command release. Pushing the
+// vX.Y.Z tag triggers the npm publish + GitHub Release (publish-npm.yml +
+// release.yml). Use --no-push to stop at the local tag, --dry-run to preview.
 
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -32,7 +33,10 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
-const push = args.includes("--push");
+// Push is the DEFAULT — `task release` is a full release: bump → commit → tag →
+// push, and the tag push triggers the npm publish + installer build in CI.
+// `--no-push` stops after the local tag; `--dry-run` previews without touching.
+const noPush = args.includes("--no-push");
 
 function die(msg) {
   console.error(`release: ${msg}`);
@@ -81,8 +85,12 @@ function detectBump() {
   }
   const commits = log.split("\x1e").map((c) => c.trim()).filter(Boolean);
   if (commits.length === 0) return null;
-  const breaking = commits.some((c) => /^[a-z]+(\([^)]*\))?!:/im.test(c) || /BREAKING[ -]CHANGE/.test(c));
-  const feat = commits.some((c) => /^feat(\([^)]*\))?:/im.test(c));
+  // Per Conventional Commits: breaking = a `type!:` in the SUBJECT line, or a
+  // `BREAKING CHANGE:` FOOTER (line-anchored + colon). Not a loose phrase match
+  // — a commit that merely *describes* the convention must not trigger major.
+  const subject = (c) => c.split("\n", 1)[0];
+  const breaking = commits.some((c) => /^[a-z]+(\([^)]*\))?!:/i.test(subject(c)) || /^BREAKING[ -]CHANGE:/m.test(c));
+  const feat = commits.some((c) => /^feat(\([^)]*\))?:/i.test(subject(c)));
   return { kind: breaking ? "major" : feat ? "minor" : "patch", since, count: commits.length };
 }
 
@@ -158,12 +166,11 @@ git("commit", "-m", `chore(release): ${tag}`);
 git("tag", tag);
 console.log(`✅  committed the bump and tagged ${tag}`);
 
-if (push) {
+if (noPush) {
+  console.log(`--no-push: stopped at the local tag. To release it: git push origin HEAD ${tag}`);
+} else {
   const branch = git("rev-parse", "--abbrev-ref", "HEAD");
   git("push", "origin", branch);
   git("push", "origin", tag);
-  console.log(`✅  pushed ${branch} + ${tag} — CI will publish to npm and build the installers`);
-} else {
-  console.log("Next (this triggers the npm publish + installer build):");
-  console.log(`  git push --follow-tags`);
+  console.log(`✅  pushed ${branch} + ${tag} — CI is now publishing to npm and building the installers.`);
 }
