@@ -60,6 +60,9 @@ export interface SessionRow {
   projectDir: string;
   cwd: string | null;
   mtimeMs: number;
+  /** File creation time — session age (when it started), vs `mtimeMs` (last
+   *  activity). Optional: absent from older payloads/fakes → treat as mtime. */
+  birthtimeMs?: number;
   live: boolean;
   summary?: string | null;
   context?: SessionContext | null;

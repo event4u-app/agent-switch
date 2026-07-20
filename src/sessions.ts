@@ -83,6 +83,10 @@ export interface SessionRow {
   cwd: string | null;
   summary: string | null;
   mtimeMs: number;
+  /** File creation time — the session's "age" (when it started), distinct from
+   *  `mtimeMs` (last activity). Falls back to `mtimeMs` on filesystems that do
+   *  not report a birthtime. */
+  birthtimeMs: number;
   live: boolean;
   /** Absolute transcript/rollout path — the sanctioned telemetry reader
    *  (src/telemetry.ts) consumes this. Optional so seeded fakes need not set it. */
@@ -128,6 +132,7 @@ export function listSessions(configDir: string, limit: number): SessionRow[] {
         cwd: header.cwd,
         summary: header.summary,
         mtimeMs: st.mtimeMs,
+        birthtimeMs: st.birthtimeMs || st.mtimeMs,
         live: false,
         file,
       });
@@ -560,6 +565,7 @@ export function listCodexSessions(configDir: string, limit: number): SessionRow[
       cwd: null,
       summary: null,
       mtimeMs: st.mtimeMs,
+      birthtimeMs: st.birthtimeMs || st.mtimeMs,
       live: false,
       file,
     });
