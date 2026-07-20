@@ -85,6 +85,9 @@ export interface DaemonState {
   usageThresholds?: Record<string, ThresholdState>;
   /** Persisted per-session context fired state. */
   contextThresholds?: Record<string, ContextThresholdState>;
+  /** "provider/<name>" → true while a usage-fetch failure has already been
+   *  notified, so the daemon warns ONCE per outage instead of every cycle. */
+  notifiedFetchFail?: Record<string, boolean>;
 }
 
 // ---------- state file (the cache) ----------
@@ -298,18 +301,30 @@ async function pollProvider(
   let failures = 0;
   const polled: SwitchCandidate[] = [];
 
+  state.notifiedFetchFail = state.notifiedFetchFail ?? {};
   for (const name of targets) {
+    const key = `${provider}/${name}`;
     const snapshot = await snapshotFor(provider, name);
     if (!snapshot) {
       failures++;
-      notify({
-        kind: "warning",
-        title: "Usage fetch failed",
-        message: `Could not fetch usage limits for ${provider}/${name}.`,
-      });
+      // Fail-safe: the last-known snapshot in state.profiles[key] is left intact
+      // (never overwritten with null), and we warn ONCE per outage rather than
+      // every cycle — the loop keeps serving the last good numbers meanwhile.
+      if (!state.notifiedFetchFail[key]) {
+        state.notifiedFetchFail[key] = true;
+        notify({
+          kind: "warning",
+          title: "Usage fetch failed",
+          message: `Could not fetch usage limits for ${provider}/${name}. Keeping the last known values.`,
+        });
+      }
       continue;
     }
-    state.profiles[`${provider}/${name}`] = snapshot;
+    if (state.notifiedFetchFail[key]) {
+      delete state.notifiedFetchFail[key];
+      log(`recovered: ${provider}/${name} usage fetch succeeded again`);
+    }
+    state.profiles[key] = snapshot;
     polled.push({ name, snapshot });
     appendSample(path.join(profileDir(provider, name), "usage-history.json"), snapshot);
     if (name === active) {

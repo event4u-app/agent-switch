@@ -13,6 +13,7 @@ import { ROOT, activeFor, configDir, listProfiles, profileExists } from "./profi
 import { Provider, allProviders, provider } from "./providers.js";
 import { credentialStore } from "./credentials.js";
 import { sharedLinkHealth } from "./share.js";
+import { checkAuth, type AuthState } from "./api.js";
 
 const OK = "✅";
 const WARN = "⚠️";
@@ -37,7 +38,7 @@ function credentialReadable(p: Provider, name: string): boolean {
   }
 }
 
-export function runDoctor(): number {
+export async function runDoctor(): Promise<number> {
   let hardError = false;
   const line = (mark: string, msg: string) => console.log(`${mark}  ${msg}`);
 
@@ -75,9 +76,29 @@ export function runDoctor(): number {
     if (active && !profileExists(p.id, active)) {
       line(WARN, `  active ${p.id} profile "${active}" no longer exists.`);
     }
+    // Login validity (Claude only): probe readable credentials in parallel, so
+    // an expired login is caught here instead of failing silently at next use.
+    // Read-only; offline / transient degrades to a neutral note, never a WARN.
+    const authByName = new Map<string, AuthState>();
+    if (p.id === "claude") {
+      const readable = names.filter((n) => credentialReadable(p, n));
+      const states = await Promise.all(readable.map((n) => checkAuth(p.configDirFor(configDir(p.id, n)))));
+      readable.forEach((n, i) => authByName.set(n, states[i]));
+    }
     for (const n of names) {
-      if (credentialReadable(p, n)) line(OK, `  ${p.id}/${n}: credential readable.`);
-      else line(WARN, `  ${p.id}/${n}: credential not readable — \`agent-switch run ${n}${p.id === "claude" ? "" : ` --provider ${p.id}`}\` and log in.`);
+      if (!credentialReadable(p, n)) {
+        line(WARN, `  ${p.id}/${n}: credential not readable — \`agent-switch run ${n}${p.id === "claude" ? "" : ` --provider ${p.id}`}\` and log in.`);
+        continue;
+      }
+      const auth = authByName.get(n);
+      if (auth === "expired") {
+        line(WARN, `  ${p.id}/${n}: login expired — \`agent-switch run ${n}\` and /login again.`);
+      } else if (auth === "ok") {
+        line(OK, `  ${p.id}/${n}: credential readable, login valid.`);
+      } else {
+        // Non-Claude (no probe) or Claude "unknown"/offline — don't over-claim.
+        line(OK, `  ${p.id}/${n}: credential readable${p.id === "claude" ? " (login not verified — offline?)" : ""}.`);
+      }
     }
   }
 

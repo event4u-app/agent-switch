@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { applySharing, syncSharing, removeSharing, SHARED_ITEMS } from "../src/share.js";
+import { applySharing, syncSharing, removeSharing, settingsSharingRisk, SHARED_ITEMS } from "../src/share.js";
 
 // The share layer links user-level settings from a source into each profile.
 // Directories write through the link; files fork on an in-profile write and are
@@ -163,4 +163,45 @@ test("share never links the token-/MCP-OAuth-bearing account files", () => {
   // future version writes mcpServers/tokens into settings.json, this shared
   // surface would need a per-key allowlist (tracked in the 1.0.1 roadmap).
   assert.ok(SHARED_ITEMS.includes("settings.json"), "settings.json is the shared surface this guard watches");
+});
+
+// Phase 3 (usage-reliability roadmap): the per-key content guard. A settings.json
+// that carries mcpServers / token keys is NOT linked into profiles (would pool
+// MCP OAuth state across the whole-file symlink), while a clean one still links.
+test("settingsSharingRisk flags mcpServers / token keys, passes clean settings", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "asw-srisk-"));
+  try {
+    const clean = path.join(root, "clean.json");
+    const withMcp = path.join(root, "mcp.json");
+    const withTok = path.join(root, "tok.json");
+    fs.writeFileSync(clean, JSON.stringify({ theme: "dark", editorMode: "vim" }));
+    fs.writeFileSync(withMcp, JSON.stringify({ theme: "dark", mcpServers: { x: { url: "…" } } }));
+    fs.writeFileSync(withTok, JSON.stringify({ oauthToken: "secret" }));
+    assert.equal(settingsSharingRisk(clean), null);
+    assert.match(settingsSharingRisk(withMcp) ?? "", /mcpServers/);
+    assert.match(settingsSharingRisk(withTok) ?? "", /oauthToken/);
+    // Malformed JSON is not blocked (guard targets known keys, not validity).
+    fs.writeFileSync(clean, "{not json");
+    assert.equal(settingsSharingRisk(clean), null);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("applySharing skips a settings.json that carries mcpServers, links a clean one", { skip: WIN ? "file symlinks gated on win32" : false }, () => {
+  const { root, source, target } = setup();
+  try {
+    // Clean settings from setup() links normally.
+    let actions = applySharing(source, target, false);
+    assert.ok(actions.some((a) => a.includes("linked settings.json")));
+    removeSharing(target);
+    // Now the source settings.json gains an mcpServers block → must be skipped.
+    fs.writeFileSync(path.join(source, "settings.json"), JSON.stringify({ theme: "dark", mcpServers: { s: {} } }));
+    actions = applySharing(source, target, false);
+    assert.ok(actions.some((a) => a.startsWith("skipped settings.json:") && a.includes("mcpServers")));
+    // It was NOT linked — the profile has no settings.json symlink.
+    assert.equal(fs.existsSync(path.join(target, "settings.json")), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

@@ -102,6 +102,28 @@ function pointsAt(dst: string, src: string): boolean {
   }
 }
 
+// Keys that must never propagate across profiles via a shared settings.json:
+// MCP server definitions (which can carry OAuth/device tokens) and any
+// token-/secret-shaped key. `.claude.json` / `.credentials.json` are already
+// excluded from sharing entirely; this closes the one shared surface that is a
+// whole-file symlink with no per-key filtering.
+const SENSITIVE_SETTINGS_KEY = /^(mcpServers$|.*(token|secret|api[_-]?key|credential|oauth).*)/i;
+
+/** Reason string when a settings.json carries account-scoped keys that must not
+ *  be shared, else null. Malformed JSON is not blocked — the guard targets the
+ *  known sensitive keys, not file validity. Exported for the share guard test. */
+export function settingsSharingRisk(settingsPath: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const hit = Object.keys(parsed as Record<string, unknown>).find((k) => SENSITIVE_SETTINGS_KEY.test(k));
+  return hit ? `contains "${hit}" — MCP/token state is account-scoped and never shared` : null;
+}
+
 /** Link items from sourceDir into targetDir. Returns human-readable actions. */
 export function applySharing(sourceDir: string, targetDir: string, withHistory: boolean): string[] {
   const actions: string[] = [];
@@ -141,6 +163,14 @@ export function applySharing(sourceDir: string, targetDir: string, withHistory: 
       }
       actions.push(`skipped ${item.name}: profile has its own copy (remove it to share)`);
       continue;
+    }
+
+    if (item.name === "settings.json") {
+      const risk = settingsSharingRisk(src);
+      if (risk) {
+        actions.push(`skipped ${item.name}: ${risk}`);
+        continue;
+      }
     }
 
     try {
@@ -195,6 +225,13 @@ export function syncSharing(sourceDir: string, targetDir: string): string[] {
 
     if (st.isFile()) {
       // Forked file: propagate the profile's edit to the source, then re-link.
+      if (name === "settings.json") {
+        const risk = settingsSharingRisk(dst);
+        if (risk) {
+          actions.push(`skipped ${name}: ${risk} — profile edit not pushed to the shared source`);
+          continue;
+        }
+      }
       fs.mkdirSync(path.dirname(src), { recursive: true });
       fs.copyFileSync(dst, src);
       fs.unlinkSync(dst);
