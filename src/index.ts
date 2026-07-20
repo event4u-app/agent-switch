@@ -1428,6 +1428,18 @@ function cmdAutoswitch(
     const tagNote = cfg.tag === "all" ? "" : `, tag ${cfg.tag}`;
     console.log(`Auto-switch for ${providerId} ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%${tagNote}).`);
     if (cfg.enabled) {
+      // Usage-policy disclosure — restored deliberately. Automated rotation on
+      // quota signals pools separate subscriptions to route around per-account
+      // rate limits; a prior review found this can violate the provider's usage
+      // policy. Enabling is the user's decision, but the risk must be stated.
+      console.warn(
+        "⚠️  Usage-policy warning: quota-triggered rotation across accounts can violate\n" +
+          "   the providers' usage policies — it pools separate subscriptions to route around\n" +
+          "   per-account rate limits. An internal review unanimously recommended removing it;\n" +
+          "   it ships off-by-default anyway. See the README before enabling. (Per-context\n" +
+          "   profile switching — private / work / client — is unaffected; this applies only\n" +
+          "   to automated quota-driven rotation.)",
+      );
       const strat = readSwitchStrategy();
       console.log(
         `Strategy: ${strat}${strat === "reset-first" ? " (redeem a banked reset before switching, Codex)" : ""}.\n` +
