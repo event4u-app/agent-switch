@@ -161,31 +161,32 @@ tasks:
   # ---------- release ----------
   release:
     desc: |
-      Bump the version in all four files (package.json, gui/package.json,
-      tauri.conf.json, Cargo.toml) + commit + tag vX.Y.Z. With no args the bump
-      is auto-detected from the commits since the last tag (feat! → major,
-      feat → minor, else patch). Does NOT push by default (the tag push triggers
-      the npm publish + installer build). Usage:
-        task release                       # auto-detect the bump
-        task release -- --dry-run          # preview the auto bump
+      Full one-command release: bump the version in all four files
+      (package.json, gui/package.json, tauri.conf.json, Cargo.toml) + commit +
+      tag vX.Y.Z + PUSH. The tag push triggers the npm publish + installer build
+      in CI — no manual follow-up. With no args the bump is auto-detected from
+      the commits since the last tag (feat! → major, feat → minor, else patch).
+      Usage:
+        task release                       # auto-detect, tag, push → CI publishes
+        task release -- --dry-run          # preview only, change nothing
+        task release -- --no-push          # bump + commit + tag locally, no push
         task release -- 1.2.0              # exact version (override)
         task release -- --as patch|minor|major
-        task release -- --push             # also push (triggers CI publish)
     cmds:
       - "{{.NODE}} scripts/release.mjs {{.CLI_ARGS}}"
 
   release:patch:
-    desc: "Bump the patch version + commit + tag (add -- --push to push)"
+    desc: "Release a patch bump: commit + tag + push (CI publishes; --no-push to stop local)"
     cmds:
       - "{{.NODE}} scripts/release.mjs --as patch {{.CLI_ARGS}}"
 
   release:minor:
-    desc: "Bump the minor version + commit + tag (add -- --push to push)"
+    desc: "Release a minor bump: commit + tag + push (CI publishes; --no-push to stop local)"
     cmds:
       - "{{.NODE}} scripts/release.mjs --as minor {{.CLI_ARGS}}"
 
   release:major:
-    desc: "Bump the major version + commit + tag (add -- --push to push)"
+    desc: "Release a major bump: commit + tag + push (CI publishes; --no-push to stop local)"
     cmds:
       - "{{.NODE}} scripts/release.mjs --as major {{.CLI_ARGS}}"
 
