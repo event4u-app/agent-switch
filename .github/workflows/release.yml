@@ -1,0 +1,83 @@
+name: Release
+
+# Build the Tauri GUI installers for macOS, Linux, and Windows and attach them
+# to a GitHub Release. The `agent-switch` CLI itself ships via npm (see the
+# `pack` job in ci.yml) — the GUI locates it on PATH at runtime, so these
+# installers cover the desktop shell only.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  installers:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One universal .dmg/.app that runs on both Apple Silicon and Intel.
+          - os: macos-latest
+            label: macOS (universal)
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: "--target universal-apple-darwin"
+          # 22.04 keeps the glibc/webkit floor low for broad Linux compatibility.
+          - os: ubuntu-22.04
+            label: Linux (deb / rpm / AppImage)
+            rust-targets: ""
+            args: ""
+          - os: windows-latest
+            label: Windows (msi / nsis)
+            rust-targets: ""
+            args: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux bundling dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            build-essential \
+            file
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gui/src-tauri
+
+      # tauri-action does not install frontend deps itself; the Tauri
+      # beforeBuildCommand (`npm run build` → vite) needs them present.
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: gui
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: gui
+          # Tag-triggered: reuse the pushed tag. Manual runs fall back to the
+          # app version (app-v1.0.0) so a dispatch still lands on a real release.
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'app-v__VERSION__' }}
+          releaseName: "agent-switch ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}"
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
