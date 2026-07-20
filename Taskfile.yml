@@ -190,6 +190,18 @@ tasks:
     cmds:
       - "{{.NODE}} scripts/release.mjs --as major {{.CLI_ARGS}}"
 
+  npm:login:
+    desc: |
+      One-time interactive npm login (scoped to @event4u, web-auth + 2FA), then
+      verify. For the manual-publish fallback and to bootstrap the very first
+      publish of a new package — routine releases run through publish-npm.yml on
+      the tag push (OIDC Trusted Publishing, no stored token). Usage:
+        task npm:login
+    cmds:
+      - npm login --scope=@event4u --registry=https://registry.npmjs.org
+      - cmd: npm whoami
+      - cmd: npm access list packages @event4u
+
   clean:
     desc: Remove build output
     cmds:
