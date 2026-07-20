@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { formatReset, type UsageSnapshot } from "./transforms.js";
+import { formatReset, windowPace, type UsageSnapshot } from "./transforms.js";
 
 /** Utilization → bar colour: green (headroom) · amber (≥70%) · red (≥90%). */
 export function utilColor(pct: number): string {
@@ -36,6 +36,9 @@ export function UsageBars({ usage, stale }: { usage: UsageSnapshot | null; stale
         // Cached data still carries a valid reset time — show it even when stale
         // (formatReset already returns "" once the window has rolled over).
         const reset = known ? formatReset(w.resetsAt) : "";
+        // Informational only — "ahead of pace" = more quota used than cycle
+        // elapsed. Never wired to a switch decision.
+        const ahead = usage && known && windowPace(w, usage.capturedAt) === "ahead";
         return (
           <div key={w.key} className="flex items-center gap-2 text-[11px]">
             <span className="w-12 shrink-0 truncate text-muted-foreground" title={w.label}>{w.label}</span>
@@ -55,6 +58,15 @@ export function UsageBars({ usage, stale }: { usage: UsageSnapshot | null; stale
               {known ? `${pct}%` : "N.A."}
             </span>
             <span className={cn("w-16 shrink-0 text-muted-foreground", stale && "opacity-70")}>{reset}</span>
+            {ahead && (
+              <span
+                className="shrink-0 text-[10px] font-medium tabular-nums"
+                style={{ color: "#d9a343" }}
+                title="Ahead of pace — more of this window's quota used than of its cycle elapsed"
+              >
+                ↑ pace
+              </span>
+            )}
           </div>
         );
       })}

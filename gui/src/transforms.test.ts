@@ -12,10 +12,12 @@ import {
   worstLiveContextPct,
   contextTrayTooltip,
   relativeAge,
+  windowPace,
   type ProfileRow,
   type SessionRow,
   type SessionContext,
   type UsageSnapshot,
+  type UsageWindow,
 } from "./transforms.js";
 
 const rows: ProfileRow[] = [
@@ -200,5 +202,38 @@ describe("pickMostHeadroom", () => {
 
   it("returns null when there are no candidates", () => {
     expect(pickMostHeadroom([])).toBeNull();
+  });
+});
+
+describe("windowPace (GUI mirror of the CLI windowPace)", () => {
+  const AT = "2026-07-13T12:00:00.000Z";
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const CAP = Date.parse(AT);
+  // Weekly window whose cycle is `frac` elapsed at the AT capture instant.
+  const pw = (util: number | null, frac: number, key = "seven_day"): UsageWindow => ({
+    key,
+    label: key,
+    utilization: util,
+    resetsAt: new Date(CAP - frac * WEEK_MS + WEEK_MS).toISOString(),
+  });
+
+  it("is ahead when more quota used than cycle elapsed", () => {
+    expect(windowPace(pw(80, 0.3), AT)).toBe("ahead");
+  });
+
+  it("derives behind / on-track from the gap", () => {
+    expect(windowPace(pw(10, 0.5), AT)).toBe("behind");
+    expect(windowPace(pw(50, 0.5), AT)).toBe("on-track");
+  });
+
+  it("suppresses within 24h of the cycle start, excludes 5h, and needs data", () => {
+    expect(windowPace(pw(99, 0.1), AT)).toBeNull(); // < 24h elapsed
+    expect(windowPace(pw(90, 0.3, "five_hour"), AT)).toBeNull(); // 5h excluded
+    expect(windowPace(pw(null, 0.3), AT)).toBeNull(); // no utilization
+  });
+
+  it("measures against capturedAt, not the wall clock", () => {
+    const w = pw(80, 0.3);
+    expect(windowPace(w, AT)).toBe(windowPace(w, AT));
   });
 });

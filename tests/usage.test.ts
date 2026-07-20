@@ -7,8 +7,10 @@ import {
   detectCrossings,
   maxUtilization,
   pickSwitchTarget,
+  windowPace,
   type ThresholdState,
   type UsageSnapshot,
+  type UsageWindow,
 } from "../src/usage.js";
 
 const AT = "2026-07-13T12:00:00.000Z";
@@ -149,4 +151,50 @@ test("detectCrossings fires each threshold once per window cycle (edge-triggered
   // window rolls over (new resets_at) at 80% → 75 fires again for the new cycle.
   r = detectCrossings(win(80, "R2"), state);
   assert.deepEqual(r.crossings.map((c) => c.threshold), [75]);
+});
+
+// ---------- windowPace (informational) ----------
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const CAP = Date.parse(AT);
+// Build a weekly window whose cycle is `frac` elapsed at the AT capture instant:
+// resets_at = cycleStart + WEEK, cycleStart = captured − frac·WEEK.
+const pw = (util: number | null, frac: number, key = "seven_day"): UsageWindow => ({
+  key,
+  label: key,
+  utilization: util,
+  resetsAt: new Date(CAP - frac * WEEK_MS + WEEK_MS).toISOString(),
+});
+
+test("windowPace: ahead when more quota used than cycle elapsed", () => {
+  // 80% used, 30% of the week elapsed → clearly ahead.
+  assert.equal(windowPace(pw(80, 0.3), AT), "ahead");
+});
+
+test("windowPace: behind and on-track are derived from the gap, not hardcoded", () => {
+  assert.equal(windowPace(pw(10, 0.5), AT), "behind"); // 0.10 − 0.50 = −0.40
+  assert.equal(windowPace(pw(50, 0.5), AT), "on-track"); // gap 0 within ±minGap
+});
+
+test("windowPace: suppressed within 24h of the reset cycle start", () => {
+  // 0.7 of a day elapsed (< 24h) → suppressed regardless of utilization.
+  assert.equal(windowPace(pw(99, 0.1), AT), null);
+});
+
+test("windowPace: the 5h window is excluded", () => {
+  assert.equal(windowPace(pw(90, 0.3, "five_hour"), AT), null);
+});
+
+test("windowPace: null when utilization or reset is missing, or captured is outside the cycle", () => {
+  assert.equal(windowPace({ key: "seven_day", label: "7d", utilization: null, resetsAt: AT }, AT), null);
+  assert.equal(windowPace({ key: "seven_day", label: "7d", utilization: 50, resetsAt: null }, AT), null);
+  assert.equal(windowPace(pw(50, 1.3), AT), null); // captured past the reset → outside cycle
+});
+
+test("windowPace measures against capturedAt, not the wall clock (stale-safe)", () => {
+  // Same window judged via its own capturedAt gives the same verdict no matter
+  // when the test runs — the function takes no wall-clock input.
+  const w = pw(80, 0.3);
+  assert.equal(windowPace(w, AT), windowPace(w, AT));
+  assert.equal(windowPace(w, AT), "ahead");
 });

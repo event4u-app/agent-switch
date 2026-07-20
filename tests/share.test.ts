@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { applySharing, syncSharing, removeSharing } from "../src/share.js";
+import { applySharing, syncSharing, removeSharing, SHARED_ITEMS } from "../src/share.js";
 
 // The share layer links user-level settings from a source into each profile.
 // Directories write through the link; files fork on an in-profile write and are
@@ -113,4 +113,19 @@ test("applySharing skips a profile's own (non-managed) copy", () => {
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+// Guard: `share on` must never link the account-scoped files that carry MCP
+// OAuth state / device tokens (`.claude.json` holds mcpServers + auth,
+// `.credentials.json` holds OAuth tokens). Sharing them would pool MCP OAuth
+// state across profiles — the latent cross-profile leak flagged in the
+// claude-swap comparison. They are account-scoped by design; this locks it.
+test("share never links the token-/MCP-OAuth-bearing account files", () => {
+  assert.ok(!SHARED_ITEMS.includes(".claude.json"), ".claude.json (mcpServers + auth) must never be shared");
+  assert.ok(!SHARED_ITEMS.includes(".credentials.json"), ".credentials.json (OAuth tokens) must never be shared");
+  // settings.json IS shared as a whole-file symlink — safe today (Claude Code
+  // keeps MCP auth in .claude.json/.credentials.json, both excluded above). If a
+  // future version writes mcpServers/tokens into settings.json, this shared
+  // surface would need a per-key allowlist (tracked in the 1.0.1 roadmap).
+  assert.ok(SHARED_ITEMS.includes("settings.json"), "settings.json is the shared surface this guard watches");
 });

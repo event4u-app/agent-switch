@@ -178,6 +178,34 @@ export function nearestLimit(usage: UsageSnapshot | null): number | null {
   return vals.length ? Math.max(...vals) : null;
 }
 
+export type PaceStatus = "ahead" | "on-track" | "behind";
+
+const PACE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const PACE_DAY_MS = 24 * 60 * 60 * 1000;
+const PACE_MIN_GAP = 0.05;
+
+/** GUI mirror of the CLI's `windowPace` (src/usage.ts) — kept in sync by
+ *  transforms.test.ts. "Ahead of pace" = more of the window's quota used than
+ *  of its cycle elapsed, measured against the snapshot's `capturedAt` (never the
+ *  wall clock, so a stale snapshot is judged against its real capture instant).
+ *  PURELY informational — never an input to any switch decision. Null when it
+ *  cannot be judged (no data, the 5h window, within 24h of reset, out of cycle). */
+export function windowPace(w: UsageWindow, capturedAtIso: string, minGap: number = PACE_MIN_GAP): PaceStatus | null {
+  if (w.utilization === null || w.resetsAt === null) return null;
+  const durMs = w.key === "five_hour" ? null : w.key.startsWith("seven_day") || w.key.startsWith("weekly") ? PACE_WEEK_MS : null;
+  if (durMs === null) return null;
+  const reset = Date.parse(w.resetsAt);
+  const captured = Date.parse(capturedAtIso);
+  if (Number.isNaN(reset) || Number.isNaN(captured)) return null;
+  const elapsedMs = captured - (reset - durMs);
+  if (elapsedMs < PACE_DAY_MS) return null; // 24h post-reset suppression
+  if (elapsedMs <= 0 || elapsedMs > durMs) return null; // outside this cycle
+  const aheadBy = w.utilization / 100 - elapsedMs / durMs;
+  if (aheadBy > minGap) return "ahead";
+  if (aheadBy < -minGap) return "behind";
+  return "on-track";
+}
+
 /** Pick the candidate with the most headroom (lowest nearest-limit) among the
  *  non-active same-provider profiles — the target the daemon's auto-switch would
  *  choose. A candidate with unknown usage (`max === null`) sinks below any known

@@ -344,6 +344,13 @@ By default `agent-switch` only switches when **you** ask, and shows **your own**
 usage per profile (the same information the vendors' native `/usage` surfaces
 show). It never nags or ranks unless you turn rotation on.
 
+> **Usage-policy warning.** Quota-triggered rotation across accounts can violate
+> the providers' usage policies: it pools separate subscriptions to route around
+> per-account rate limits. Enabling it is your decision — but the risk is real,
+> and this notice states it plainly. Plain per-context profile switching
+> (private / work / client) and viewing your own usage are **not** affected;
+> this warning is specific to automated quota-driven rotation.
+
 Auto-switch is **globally off by default** and must be explicitly enabled. It is
 available **only for Claude** — the one provider with a usage readout to trigger
 on; Codex and Gemini have none, so they are profile-switch only and never show an
@@ -352,9 +359,14 @@ the background daemon moves the active Claude profile to the account with the mo
 headroom once the active one hits the threshold. Switching only affects **new**
 sessions; running ones keep their environment.
 
-Earlier this rotation was rejected outright; that decision was later reversed in
-favour of the opt-in design above. Historical context:
-[`agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md`](agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md).
+**On the record:** this capability was reviewed and **rejected** — first in the
+v1 adoption analysis, then in a two-round AI-council review that was **unanimous**
+that quota-triggered cross-account rotation crosses the providers' usage policies
+and recommended removal. It ships here anyway, off by default, as a deliberate
+decision that **overrode** that recommendation — not a relitigation that resolved
+it. The full rejection rationale is preserved verbatim in
+[`agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md`](agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md);
+read it before enabling.
 
 ## Layout
 
