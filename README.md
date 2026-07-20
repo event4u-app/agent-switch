@@ -19,7 +19,21 @@ Most naive switchers snapshot the macOS Keychain entry (`Claude Code-credentials
 
 ## Install
 
-From source (any OS — needs Node ≥ 18):
+**npm / npx** (any OS — needs Node ≥ 18). The package is published as
+`@event4u/agent-switch` (the bare name `agent-switch` on npm is an unrelated
+project):
+
+```bash
+npm install -g @event4u/agent-switch    # puts `agent-switch` on your PATH
+# or run without installing:
+npx @event4u/agent-switch --help
+npx @event4u/agent-switch setup
+```
+
+`npx` is handy for a one-off or first run; for daily use install globally so the
+`agent-switch` / `asw` commands and the shell wrapper are always on PATH.
+
+From source (for development):
 
 ```bash
 npm install          # or: npm ci
@@ -27,9 +41,8 @@ npm run build
 npm link             # puts `agent-switch` on your PATH (npm creates a .cmd shim on Windows)
 ```
 
-Native package managers (Homebrew / Scoop / winget) are planned once the tool
-is public; for now `npm link` (local) or `npm install -g agent-switch` (once
-published) is the install path on every OS.
+Native package managers (Homebrew / Scoop / winget) are planned; `npm i -g`
+above is the supported install path on every OS in the meantime.
 
 Then add the shell integration — `agent-switch shellenv` auto-detects your shell,
 or pass `--shell`:
@@ -293,6 +306,37 @@ The CLI is fully usable on its own. Two optional layers add convenience:
 Usage readout is per-provider: Claude exposes an OAuth `/usage` endpoint;
 **Codex and Gemini have no usage readout**, so they show identity only (never a
 fabricated number).
+
+### Installing the desktop app (unsigned builds)
+
+The tray GUI ships as native installers on the project's GitHub Releases —
+`.dmg`/`.app` (macOS, universal), `.deb`/`.rpm`/`.AppImage` (Linux), and
+`.msi`/`.exe` (Windows). They are **not code-signed or notarized yet**, so the
+OS blocks the first launch. This is expected; here is how to open them.
+
+**macOS** — Gatekeeper shows *"'agent-switch.app' can't be opened because Apple
+cannot check it for malicious software."* Pick one:
+
+- **Recommended:** open **System Settings → Privacy & Security**, scroll to the
+  message about `agent-switch`, and click **Open Anyway**, then confirm. On
+  macOS 15 (Sequoia) and later this is the only reliable route.
+- **macOS 14 and earlier:** right-click (Control-click) the app in Finder →
+  **Open** → **Open** in the dialog. (Double-clicking only offers "Move to
+  Trash" — you must use the right-click menu to get an "Open" button.)
+- **Terminal:** strip the quarantine flag directly —
+  `xattr -dr com.apple.quarantine /Applications/agent-switch.app`.
+
+You only do this once per install; subsequent launches open normally.
+
+**Windows** — SmartScreen shows *"Windows protected your PC."* Click **More
+info → Run anyway**.
+
+**Linux** — no Gatekeeper equivalent; for the AppImage, mark it executable
+(`chmod +x agent-switch_*.AppImage`) before running.
+
+To remove these prompts entirely, the builds need Apple Developer-ID signing +
+notarization (macOS) and an Authenticode certificate (Windows) — wired via
+release secrets when certificates are available.
 
 ### Automatic account rotation (opt-in, off by default)
 
