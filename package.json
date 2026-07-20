@@ -1,5 +1,5 @@
 {
-  "name": "agent-switch",
+  "name": "@event4u/agent-switch",
   "version": "1.0.0",
   "description": "Switch between multiple Claude Code accounts on macOS, Linux, and Windows via isolated CLAUDE_CONFIG_DIR profiles",
   "type": "module",
@@ -9,6 +9,10 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsc",
     "prepare": "tsc",

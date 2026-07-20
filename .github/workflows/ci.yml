@@ -41,7 +41,8 @@ jobs:
       - run: |
           set -e
           npm pack
-          tgz="$(ls agent-switch-*.tgz)"
+          # Scoped package (@event4u/agent-switch) packs as event4u-agent-switch-*.tgz.
+          tgz="$(ls event4u-agent-switch-*.tgz)"
           prefix="$(mktemp -d)"
           npm install -g --prefix "$prefix" "./$tgz"
           "$prefix/bin/agent-switch" --help

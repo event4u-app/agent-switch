@@ -1,0 +1,121 @@
+name: Publish to npm
+
+# Publishes @event4u/agent-switch to the npm registry via OIDC Trusted
+# Publishing whenever a version tag is pushed (v1.2.3 — the same tag that
+# release.yml uses to build the desktop installers, so one tag ships both the
+# CLI to npm and the GUI installers to the GitHub Release).
+#
+# One-time setup on npmjs.com: configure Trusted Publishing for
+# @event4u/agent-switch pointing at repo event4u-app/agent-switch and workflow
+# publish-npm.yml (mirrors the @event4u/agent-config setup). No NPM_TOKEN secret
+# is needed once that is in place.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish (e.g. v1.2.3)."
+        required: true
+        type: string
+
+concurrency:
+  group: publish-npm-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish-npm:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for npm OIDC Trusted Publishing + provenance
+    steps:
+      - name: Check out released tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+
+      - name: Upgrade npm (Trusted Publishing requires >= 11.5.1)
+        run: npm install -g npm@11
+
+      - name: Resolve tag and expected version
+        id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+          # Tags are v-prefixed (v1.2.3); the package version is not.
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Verify package version matches tag
+        run: |
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "${{ steps.v.outputs.version }}" != "$pkg" ]; then
+            echo "::error::package.json version ($pkg) does not match tag ${{ steps.v.outputs.tag }}; aborting publish."
+            exit 1
+          fi
+          echo "✅  $pkg == ${{ steps.v.outputs.tag }}"
+
+      - name: Skip if already published (idempotent re-runs)
+        id: check
+        run: |
+          if npm view "@event4u/agent-switch@${{ steps.v.outputs.version }}" version >/dev/null 2>&1; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "@event4u/agent-switch@${{ steps.v.outputs.version }} is already on the registry — skipping."
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.check.outputs.already_published != 'true'
+        run: npm ci
+
+      - name: Build (prepack chain)
+        if: steps.check.outputs.already_published != 'true'
+        run: npm run build
+
+      - name: Smoke the packed CLI
+        if: steps.check.outputs.already_published != 'true'
+        run: |
+          set -e
+          npm pack
+          tgz="$(ls event4u-agent-switch-*.tgz)"
+          prefix="$(mktemp -d)"
+          npm install -g --prefix "$prefix" "./$tgz"
+          "$prefix/bin/agent-switch" --help
+
+      - name: Publish via OIDC Trusted Publishing
+        if: steps.check.outputs.already_published != 'true'
+        run: npm publish
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## npm publish"
+            echo
+            if [ "${{ steps.check.outputs.already_published }}" = "true" ]; then
+              echo "⏭️  \`@event4u/agent-switch@${{ steps.v.outputs.version }}\` was already on the registry."
+            elif [ "${{ job.status }}" = "success" ]; then
+              echo "📦  Published \`@event4u/agent-switch@${{ steps.v.outputs.version }}\`"
+              echo "- https://www.npmjs.com/package/@event4u/agent-switch/v/${{ steps.v.outputs.version }}"
+            else
+              echo "❌  Publish failed (see logs)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
