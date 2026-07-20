@@ -17,7 +17,9 @@
  *
  * Account-/instance-scoped items (`.claude.json`, `.credentials.json`,
  * `plugins/`, `sessions/`, `ide/`, `statsig/`) are deliberately never shared.
- * History (`projects/`, `history.jsonl`) is a POSIX-only opt-in.
+ * History (`projects/`, `history.jsonl`, `plans/`) is a POSIX-only opt-in.
+ * (`plans/` defaults to `<CLAUDE_CONFIG_DIR>/plans/` in Claude Code, so plan-mode
+ * files are otherwise isolated per profile — verified against claude-code 2.1.215.)
  *
  * A manifest (.agent-switch-shared.json) records what agent-switch created, so
  * unshare/sync only ever touch agent-switch-managed links, never user data.
@@ -40,10 +42,13 @@ const BASE_ITEMS: ShareItem[] = [
   { name: "agents", kind: "dir" },
 ];
 
-/** Conversation history; opt-in — shares `claude --resume` across accounts. */
+/** Conversation history + plan-mode files; opt-in — shares `claude --resume`
+ *  and the plan store across accounts. `plans/` is a `dir`, so writes inside it
+ *  reach the source (no atomic-rename fork), exactly like `projects/`. */
 const HISTORY_ITEMS: ShareItem[] = [
   { name: "projects", kind: "dir" },
   { name: "history.jsonl", kind: "file" },
+  { name: "plans", kind: "dir" },
 ];
 
 /** Names exported for messaging/tests. */

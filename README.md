@@ -115,7 +115,7 @@ lists, `agent-switch unmap` removes.
 
 ```bash
 agent-switch share on             # settings.json, CLAUDE.md, skills/, commands/, agents/
-agent-switch share on --history   # additionally share conversation history (--resume, POSIX only)
+agent-switch share on --history   # additionally share conversation history + plans/ (--resume, POSIX only)
 agent-switch share sync           # re-link any file a /config edit forked (see below)
 agent-switch share off            # removes only agent-switch-created links
 ```
