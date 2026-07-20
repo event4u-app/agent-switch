@@ -46,6 +46,41 @@ test("applySharing links shared directories (write-through) and records the mani
   }
 });
 
+// `plans/` defaults to `<CLAUDE_CONFIG_DIR>/plans/` in Claude Code (verified
+// against claude-code 2.1.215: the plan store resolves via the config-home
+// function, same as `projects/`), so plan-mode files are isolated per profile
+// unless `share on --history` links them. As a directory it writes through the
+// link (no atomic-rename fork) — this asserts that payoff on the new item.
+test("share on --history links plans/ as a write-through directory", () => {
+  const { root, source, target } = setup();
+  try {
+    fs.mkdirSync(path.join(source, "plans"));
+    fs.writeFileSync(path.join(source, "plans", "existing.md"), "plan");
+    const actions = applySharing(source, target, true);
+
+    assert.equal(fs.lstatSync(path.join(target, "plans")).isSymbolicLink(), true);
+    assert.ok(actions.some((a) => a.includes("linked plans")));
+    // A write inside the linked plans/ dir reaches the source (shared, not forked).
+    fs.writeFileSync(path.join(target, "plans", "new.md"), "from-profile");
+    assert.equal(fs.readFileSync(path.join(source, "plans", "new.md"), "utf8"), "from-profile");
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(target, ".agent-switch-shared.json"), "utf8"));
+    assert.ok(manifest.links.includes("plans"));
+
+    // Without --history, plans/ is NOT linked — it stays profile-isolated.
+    const { root: r2, source: s2, target: t2 } = setup();
+    try {
+      fs.mkdirSync(path.join(s2, "plans"));
+      applySharing(s2, t2, false);
+      assert.equal(fs.existsSync(path.join(t2, "plans")), false);
+    } finally {
+      fs.rmSync(r2, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("share sync pushes a forked file back to the source and re-links", { skip: WIN ? "file symlinks gated on win32" : false }, () => {
   const { root, source, target } = setup();
   try {
