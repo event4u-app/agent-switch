@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Minimize2, Pencil, Check, Download, Send, ChevronRight, ChevronDown, MessageSquare, Folder, Hash, Clock, Copy } from "lucide-react";
+import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Minimize2, Pencil, Check, Download, Send, ChevronRight, ChevronDown, MessageSquare, Folder, Hash, Clock, Copy, Loader2 } from "lucide-react";
 import {
   compactArgs,
   deactivateProfile,
@@ -1931,7 +1931,7 @@ function UpdatesSettings({
             </div>
           </div>
           <Button size="sm" variant="outline" disabled={busy} onClick={() => void runCheck()} aria-label="Check for updates">
-            <RefreshCw className={cn("size-3.5", busy && "animate-spin")} />
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
             {busy ? "Checking…" : "Check now"}
           </Button>
         </div>
