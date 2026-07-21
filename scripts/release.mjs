@@ -94,33 +94,42 @@ function detectBump() {
   return { kind: breaking ? "major" : feat ? "minor" : "patch", since, count: commits.length };
 }
 
+const tagExists = (v) => git("tag", "--list", v) !== "";
+
 let target;
 let autoNote = "";
 if (asIdx !== -1) {
   target = bumpVersion(current, args[asIdx + 1]);
 } else if (positional) {
   target = positional;
+} else if (!tagExists(current)) {
+  // The current package.json version has no tag yet → RELEASE IT AS-IS (don't
+  // bump). This is what you want for the first release of a version (e.g. after
+  // a reset to 1.0.0): `task release` cuts 1.0.0, not 1.1.0.
+  target = current;
+  autoNote = `releasing current version ${current} (not yet tagged)`;
 } else {
-  // No version and no --as: auto-detect from the commit history (the default).
+  // Current version is already released → auto-detect the next bump.
   const d = detectBump();
-  if (!d) die(`no commits since ${git("describe", "--tags", "--abbrev=0")} — nothing to release`);
+  if (!d) die(`no commits since ${current} — nothing to release`);
   target = bumpVersion(current, d.kind);
-  autoNote = `auto: ${d.kind} bump from ${d.count} commit(s)${d.since ? ` since ${d.since}` : " (no prior tag)"}`;
+  autoNote = `auto: ${d.kind} bump from ${d.count} commit(s)${d.since ? ` since ${d.since}` : ""}`;
 }
 if (!SEMVER.test(target)) die(`"${target}" is not a valid X.Y.Z version`);
-if (target === current) die(`target ${target} equals the current version`);
 
 // Bare-numeric tag (no `v` prefix) — matches the release/publish workflows and
 // the @event4u/agent-config convention.
 const tag = target;
+// Whether we bump version files + make a release commit, or just tag the
+// current (already-committed) version as-is.
+const isBump = target !== current;
 
 // ---------- preconditions ----------
 if (!dryRun) {
   if (git("status", "--porcelain")) {
     die("working tree is not clean — commit or stash first so the release commit is only the version bump");
   }
-  const tags = git("tag", "--list", tag);
-  if (tags) die(`tag ${tag} already exists`);
+  if (tagExists(tag)) die(`tag ${tag} already exists`);
 }
 
 // ---------- the edits (one replacer per file, minimal + anchored) ----------
@@ -144,45 +153,47 @@ function bumpFile(rel, re, label) {
 }
 
 console.log(`${dryRun ? "[dry-run] " : ""}release ${current} → ${target} (tag ${tag})${autoNote ? ` — ${autoNote}` : ""}`);
-// JSON files: only the first top-level "version" key (anchored to 2-space indent).
-bumpFile("package.json", /^(  "version":\s*")[^"]+/m, "package.json");
-bumpFile("gui/package.json", /^(  "version":\s*")[^"]+/m, "gui/package.json");
-bumpFile("gui/src-tauri/tauri.conf.json", /^(  "version":\s*")[^"]+/m, "tauri.conf.json");
-// Cargo.toml: the [package] version at column 0 (dependency versions are inline).
-bumpFile("gui/src-tauri/Cargo.toml", /^(version = ")[^"]+/m, "Cargo.toml");
-// Cargo.lock: the agent-switch-gui package block's version line.
-bumpFile(
-  "gui/src-tauri/Cargo.lock",
-  /(name = "agent-switch-gui"\nversion = ")[^"]+/,
-  "Cargo.lock",
-);
-// package.json: keep the per-platform GUI optionalDependencies pinned to the
-// same version (they are published in lockstep by release.yml). The `-<suffix>`
-// requirement keeps this from matching the main package name.
-{
-  const p = path.join(ROOT, "package.json");
-  const text = fs.readFileSync(p, "utf8");
-  const next = text.replace(/("@event4u\/agent-switch-[a-z0-9-]+":\s*")[^"]+/g, (_m, pre) => `${pre}${target}`);
-  if (next !== text) {
-    if (dryRun) console.log(`  · package.json GUI optionalDependencies → ${target}`);
-    else fs.writeFileSync(p, next);
+
+if (isBump) {
+  // JSON files: only the first top-level "version" key (anchored to 2-space indent).
+  bumpFile("package.json", /^(  "version":\s*")[^"]+/m, "package.json");
+  bumpFile("gui/package.json", /^(  "version":\s*")[^"]+/m, "gui/package.json");
+  bumpFile("gui/src-tauri/tauri.conf.json", /^(  "version":\s*")[^"]+/m, "tauri.conf.json");
+  // Cargo.toml: the [package] version at column 0 (dependency versions are inline).
+  bumpFile("gui/src-tauri/Cargo.toml", /^(version = ")[^"]+/m, "Cargo.toml");
+  // Cargo.lock: the agent-switch-gui package block's version line.
+  bumpFile("gui/src-tauri/Cargo.lock", /(name = "agent-switch-gui"\nversion = ")[^"]+/, "Cargo.lock");
+  // package.json: keep the per-platform GUI optionalDependencies pinned to the
+  // same version (published in lockstep by release.yml). The `-<suffix>` keeps
+  // this from matching the main package name.
+  {
+    const p = path.join(ROOT, "package.json");
+    const text = fs.readFileSync(p, "utf8");
+    const next = text.replace(/("@event4u\/agent-switch-[a-z0-9-]+":\s*")[^"]+/g, (_m, pre) => `${pre}${target}`);
+    if (next !== text) {
+      if (dryRun) console.log(`  · package.json GUI optionalDependencies → ${target}`);
+      else fs.writeFileSync(p, next);
+    }
   }
+} else {
+  console.log(`  · ${current} is not tagged yet — tagging it as-is, no version bump`);
 }
 
 if (dryRun) {
-  console.log("[dry-run] no files written, no commit, no tag.");
+  console.log(isBump ? "[dry-run] no files written, no commit, no tag." : "[dry-run] no tag created.");
   process.exit(0);
 }
 
-// Resync package-lock.json with the bumped package.json (incl. the GUI
-// optionalDependencies) — otherwise CI `npm ci` fails EUSAGE ("out of sync").
-execFileSync("npm", ["install", "--package-lock-only", "--ignore-scripts"], { cwd: ROOT, stdio: "ignore" });
-
-// ---------- commit + tag ----------
-git("add", "package.json", "package-lock.json", "gui/package.json", "gui/src-tauri/tauri.conf.json", "gui/src-tauri/Cargo.toml", "gui/src-tauri/Cargo.lock");
-git("commit", "-m", `chore(release): ${tag}`);
+// ---------- commit (only when bumping) + tag ----------
+if (isBump) {
+  // Resync package-lock.json with the bumped package.json (incl. the GUI
+  // optionalDependencies) — otherwise CI `npm ci` fails EUSAGE ("out of sync").
+  execFileSync("npm", ["install", "--package-lock-only", "--ignore-scripts"], { cwd: ROOT, stdio: "ignore" });
+  git("add", "package.json", "package-lock.json", "gui/package.json", "gui/src-tauri/tauri.conf.json", "gui/src-tauri/Cargo.toml", "gui/src-tauri/Cargo.lock");
+  git("commit", "-m", `chore(release): ${tag}`);
+}
 git("tag", tag);
-console.log(`✅  committed the bump and tagged ${tag}`);
+console.log(isBump ? `✅  committed the bump and tagged ${tag}` : `✅  tagged ${tag} (current version, no bump)`);
 
 if (noPush) {
   console.log(`--no-push: stopped at the local tag. To release it: git push origin HEAD ${tag}`);
