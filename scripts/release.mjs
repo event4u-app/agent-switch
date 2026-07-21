@@ -22,7 +22,7 @@
 // → minor, otherwise → patch. Same default as the agent-config release flow.
 //
 // It PUSHES by default — the whole point is a one-command release. Pushing the
-// vX.Y.Z tag triggers the npm publish + GitHub Release (publish-npm.yml +
+// version tag triggers the npm publish + GitHub Release (publish-npm.yml +
 // release.yml). Use --no-push to stop at the local tag, --dry-run to preview.
 
 import { execFileSync } from "node:child_process";
@@ -110,7 +110,9 @@ if (asIdx !== -1) {
 if (!SEMVER.test(target)) die(`"${target}" is not a valid X.Y.Z version`);
 if (target === current) die(`target ${target} equals the current version`);
 
-const tag = `v${target}`;
+// Bare-numeric tag (no `v` prefix) — matches the release/publish workflows and
+// the @event4u/agent-config convention.
+const tag = target;
 
 // ---------- preconditions ----------
 if (!dryRun) {
@@ -154,6 +156,18 @@ bumpFile(
   /(name = "agent-switch-gui"\nversion = ")[^"]+/,
   "Cargo.lock",
 );
+// package.json: keep the per-platform GUI optionalDependencies pinned to the
+// same version (they are published in lockstep by release.yml). The `-<suffix>`
+// requirement keeps this from matching the main package name.
+{
+  const p = path.join(ROOT, "package.json");
+  const text = fs.readFileSync(p, "utf8");
+  const next = text.replace(/("@event4u\/agent-switch-[a-z0-9-]+":\s*")[^"]+/g, (_m, pre) => `${pre}${target}`);
+  if (next !== text) {
+    if (dryRun) console.log(`  · package.json GUI optionalDependencies → ${target}`);
+    else fs.writeFileSync(p, next);
+  }
+}
 
 if (dryRun) {
   console.log("[dry-run] no files written, no commit, no tag.");

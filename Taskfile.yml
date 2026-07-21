@@ -163,7 +163,7 @@ tasks:
     desc: |
       Full one-command release: bump the version in all four files
       (package.json, gui/package.json, tauri.conf.json, Cargo.toml) + commit +
-      tag vX.Y.Z + PUSH. The tag push triggers the npm publish + installer build
+      tag X.Y.Z + PUSH. The tag push triggers the npm publish + installer build
       in CI — no manual follow-up. With no args the bump is auto-detected from
       the commits since the last tag (feat! → major, feat → minor, else patch).
       Usage:

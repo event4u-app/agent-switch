@@ -43,10 +43,16 @@ test("release workflow is present and tab-free (YAML forbids literal tabs)", () 
   assert.equal(tabLine, -1, `release.yml line ${tabLine + 1} uses a tab; YAML indentation must be spaces`);
 });
 
-test("release triggers on v* tag pushes", () => {
+test("release triggers on bare-numeric version tags (not v-prefixed)", () => {
   assert.match(yml, /on:/);
   assert.match(yml, /tags:/, "release must trigger on tag pushes");
-  assert.match(yml, /["']v\*["']/, "release must trigger on the v* tag pattern");
+  // Bare-numeric convention (1.2.3), matching the published 1.0.0 release.
+  assert.match(yml, /\[0-9\]\+\\?\.\[0-9\]\+\\?\.\[0-9\]\+/, "release must trigger on bare-numeric tags");
+  assert.doesNotMatch(yml, /["']v\*["']/, "release must NOT use the v* tag pattern (draft/convention drift)");
+});
+
+test("release publishes non-draft (visible to /releases/latest + the update check)", () => {
+  assert.match(yml, /releaseDraft:\s*false/, "releaseDraft must be false — a draft is invisible to the update check");
 });
 
 test("release matrix covers macOS, Linux, and Windows", () => {
