@@ -57,13 +57,18 @@ pub fn term_open(
 
     let mut cmd = CommandBuilder::new(BIN);
     cmd.args(&args);
-    // Inherit the recovered PATH (see recover_user_path) + start in $HOME so
-    // relative work isn't rooted at the app bundle.
+    // Inherit the recovered PATH (see recover_user_path) so `agent-switch` and
+    // the provider CLIs resolve.
     if let Ok(path) = std::env::var("PATH") {
         cmd.env("PATH", path);
     }
+    // Start in the app's own global dir (~/.agent-switch), not $HOME: the
+    // terminal then touches one dedicated folder instead of every subfolder
+    // under the user's home, keeping the macOS folder-access surface small.
     if let Ok(home) = std::env::var("HOME") {
-        cmd.cwd(home);
+        let dir = std::path::Path::new(&home).join(".agent-switch");
+        let _ = std::fs::create_dir_all(&dir);
+        cmd.cwd(if dir.is_dir() { dir } else { std::path::PathBuf::from(home) });
     }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
