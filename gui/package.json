@@ -1,6 +1,6 @@
 {
   "name": "agent-switch-gui",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Tray/menubar GUI for agent-switch — a client of the CLI's --json contract",
   "private": true,
   "type": "module",
