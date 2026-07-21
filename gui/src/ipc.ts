@@ -434,6 +434,20 @@ export async function quitApp(): Promise<void> {
   await invoke("quit");
 }
 
+/** Show the window and give the app its Dock icon back (the `show_window` Tauri
+ *  command → Regular activation policy + show + focus). Routed through Rust so
+ *  every show path restores the Dock presence. */
+export async function showWindow(): Promise<void> {
+  await invoke("show_window");
+}
+
+/** Push the "minimize into Dock" preference to Rust (the `set_minimize_to_dock`
+ *  command). Called on startup and on every toggle so the window-event handler
+ *  reads a value in sync with the UI. */
+export async function setMinimizeToDock(enabled: boolean): Promise<void> {
+  await invoke("set_minimize_to_dock", { enabled });
+}
+
 /** Recent notifications, newest first (`notifications --json`). Read-only —
  *  returns [] on failure so the bell never blanks. */
 export async function listNotifications(): Promise<AppNotification[]> {

@@ -9,7 +9,7 @@
  */
 
 import { isPermissionGranted, requestPermission, sendNotification, removeAllActive, onAction } from "@tauri-apps/plugin-notification";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 
 export type NotificationKind = "success" | "error" | "warning" | "info";
 
@@ -73,13 +73,12 @@ export async function onNotificationClick(cb: () => void): Promise<() => void> {
   }
 }
 
-/** Bring the app window to the front (show + focus). Best-effort — a no-op
- *  outside a Tauri context. */
+/** Bring the app window to the front (show + focus) and restore its Dock icon.
+ *  Routed through the `show_window` Tauri command so the macOS activation policy
+ *  goes back to Regular. Best-effort — a no-op outside a Tauri context. */
 export async function showAppWindow(): Promise<void> {
   try {
-    const w = getCurrentWindow();
-    await w.show();
-    await w.setFocus();
+    await invoke("show_window");
   } catch {
     /* non-Tauri env → nothing to show */
   }
