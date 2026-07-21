@@ -61,6 +61,7 @@ import { applySharing, removeSharing, syncSharing, sharedLinkHealth } from "./sh
 import { detectShell, shellenvScript } from "./shellenv.js";
 import { runDoctor } from "./doctor.js";
 import { launchGui } from "./gui-launch.js";
+import { checkForUpdate, selfUpdate } from "./updates.js";
 import {
   mappingRows,
   pruneMappings,
@@ -1696,6 +1697,40 @@ function cmdGui(): void {
   }
 }
 
+/** `agent-switch check-update` — compare the running version against the latest
+ *  GitHub release (read-only; the same check the GUI runs). */
+async function cmdCheckUpdate(json = false): Promise<void> {
+  const c = await checkForUpdate();
+  if (json) {
+    console.log(JSON.stringify(c));
+    return;
+  }
+  switch (c.kind) {
+    case "uptodate":
+      console.log(`agent-switch ${c.current} — up to date (latest ${c.latest}).`);
+      break;
+    case "available":
+      console.log(`Update available: ${c.current} → ${c.release.tag}\n  ${c.release.url}\n  Run \`agent-switch update\` to install it.`);
+      break;
+    case "no-releases":
+      console.log(`agent-switch ${c.current} — no releases published yet.`);
+      break;
+    case "error":
+      console.log(`agent-switch ${c.current} — update check failed: ${c.message}`);
+      break;
+  }
+}
+
+/** `agent-switch update` — self-update to the latest published version via npm. */
+async function cmdUpdate(): Promise<void> {
+  const c = await checkForUpdate();
+  if (c.kind === "uptodate") return void console.log(`Already on the latest version (${c.current}).`);
+  if (c.kind === "no-releases") return void console.log("No releases published yet — nothing to update to.");
+  if (c.kind === "available") console.log(`Updating ${c.current} → ${c.release.tag} via npm…`);
+  else console.log(`Update check failed (${c.message}); attempting \`npm install\` anyway…`);
+  process.exit(selfUpdate());
+}
+
 function cmdOpen(appId?: string, name?: string): void {
   if (!appId) die("usage: agent-switch open <app> [profile]   (see `agent-switch apps`)");
   const app = findApp(appId);
@@ -1756,6 +1791,8 @@ Provider defaults to claude; pass --provider codex|antigravity for the others.
   agent-switch rename <old> <new> [--provider P]                               rename a profile (name & keep its tag)
   agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
   agent-switch gui                             launch the tray/menubar GUI (bundled via npm)
+  agent-switch check-update [--json]           check GitHub Releases for a newer version
+  agent-switch update                          self-update to the latest version (via npm)
   agent-switch apps                            list launchable GUI apps (macOS)
   agent-switch open <app> [profile]            launch a GUI app on a profile, isolated (macOS)
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
@@ -1804,6 +1841,8 @@ async function main(): Promise<void> {
     case "rename": return cmdRename(providerId, positional[0], positional[1]);
     case "providers": return cmdProviders(providerId, providerExplicit, positional[0], flags);
     case "gui": return cmdGui();
+    case "update": case "upgrade": return cmdUpdate();
+    case "check-update": case "check-updates": return cmdCheckUpdate(!!flags.json);
     case "open": return cmdOpen(positional[0], positional[1]);
     case "apps": return cmdApps(!!flags.json);
     case "notify": return cmdNotify(flags);
