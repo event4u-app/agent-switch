@@ -307,6 +307,24 @@ Usage readout is per-provider: Claude exposes an OAuth `/usage` endpoint;
 **Codex and Gemini have no usage readout**, so they show identity only (never a
 fabricated number).
 
+### Run it all automatically (on login)
+
+For a hands-off setup where the daemon **and** the tray GUI start on login:
+
+```bash
+agent-switch service install    # daemon on login (launchd / systemd --user / Task Scheduler)
+agent-switch gui                # launch the tray GUI (installs it on first use, then runs it)
+```
+
+The tray GUI enables **launch-at-login by default on its first run**; toggle it
+any time in **Settings → General → Start at login**. The daemon is a separate,
+one-time `service install` — the GUI does not manage it. Check both with
+`agent-switch service status` and the GUI's General tab.
+
+> After updating the GUI (a new npm version), re-toggle *Start at login* once so
+> the login item points at the new build — the launch-at-login entry references
+> the installed binary path, which changes across versions.
+
 ### Installing the desktop app (unsigned builds)
 
 The tray GUI ships as native installers on the project's GitHub Releases —

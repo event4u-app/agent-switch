@@ -93,7 +93,6 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None::<Vec<&str>>,
         ))
-        .plugin(tauri_plugin_notification::init())
         .manage(pty::PtyState::default())
         .invoke_handler(tauri::generate_handler![
             quit,
