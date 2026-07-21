@@ -17,6 +17,9 @@ jobs:
   installers:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # tauri-action creates the GitHub Release
+      id-token: write # npm OIDC Trusted Publishing for the per-platform GUI package
     strategy:
       fail-fast: false
       matrix:
@@ -26,15 +29,18 @@ jobs:
             label: macOS (universal)
             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
             args: "--target universal-apple-darwin"
+            gui-pkg: darwin
           # 22.04 keeps the glibc/webkit floor low for broad Linux compatibility.
           - os: ubuntu-22.04
             label: Linux (deb / rpm / AppImage)
             rust-targets: ""
             args: ""
+            gui-pkg: linux-x64
           - os: windows-latest
             label: Windows (msi / nsis)
             rust-targets: ""
             args: ""
+            gui-pkg: win32-x64
     steps:
       - uses: actions/checkout@v4
 
@@ -54,6 +60,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          registry-url: "https://registry.npmjs.org" # for the per-platform npm publish below
           cache: npm
           cache-dependency-path: gui/package-lock.json
 
@@ -85,3 +92,23 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      # Ship the built GUI binary as a per-platform npm package so
+      # `agent-switch gui` (an optionalDependency of the CLI) can launch it —
+      # npm delivery carries no quarantine flag, so no Gatekeeper/SmartScreen
+      # block. Only on a real tag push (a version to pin to), and idempotent so
+      # a re-run never double-publishes. One-time npm setup: configure Trusted
+      # Publishing for each @event4u/agent-switch-<platform> package too.
+      - name: Publish the per-platform GUI npm package
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          set -e
+          npm install -g npm@11
+          node scripts/pack-gui-platform.mjs --platform "${{ matrix.gui-pkg }}" --out gui-pkg
+          ver="$(node -p "require('./package.json').version")"
+          if npm view "@event4u/agent-switch-${{ matrix.gui-pkg }}@${ver}" version >/dev/null 2>&1; then
+            echo "@event4u/agent-switch-${{ matrix.gui-pkg }}@${ver} already published — skipping."
+          else
+            (cd gui-pkg && npm publish)
+          fi
