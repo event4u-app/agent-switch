@@ -181,18 +181,6 @@ if (isBump) {
   bumpFile("gui/src-tauri/Cargo.toml", /^(version = ")[^"]+/m, "Cargo.toml");
   // Cargo.lock: the agent-switch-gui package block's version line.
   bumpFile("gui/src-tauri/Cargo.lock", /(name = "agent-switch-gui"\nversion = ")[^"]+/, "Cargo.lock");
-  // package.json: keep the per-platform GUI optionalDependencies pinned to the
-  // same version (published in lockstep by release.yml). The `-<suffix>` keeps
-  // this from matching the main package name.
-  {
-    const p = path.join(ROOT, "package.json");
-    const text = fs.readFileSync(p, "utf8");
-    const next = text.replace(/("@event4u\/agent-switch-[a-z0-9-]+":\s*")[^"]+/g, (_m, pre) => `${pre}${target}`);
-    if (next !== text) {
-      if (dryRun) console.log(`  · package.json GUI optionalDependencies → ${target}`);
-      else fs.writeFileSync(p, next);
-    }
-  }
 } else {
   console.log(`  · ${current} is not tagged yet — tagging it as-is, no version bump`);
 }

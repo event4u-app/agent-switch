@@ -1,90 +1,138 @@
 /**
  * `agent-switch gui` — launch the desktop tray GUI.
  *
- * The GUI is a native (Tauri) binary, so it can't run "as JS". Instead the
- * prebuilt binary ships as a per-platform optional-dependency npm package
- * (`@event4u/agent-switch-<platform>`, the esbuild pattern), installed
- * automatically alongside the CLI. Because it arrives via npm — not a
- * browser-downloaded DMG/exe — it carries no quarantine flag, so it launches
- * without the Gatekeeper / SmartScreen "unverified developer" block.
+ * The GUI is a native (Tauri) binary. Rather than ship it through npm, this
+ * downloads the prebuilt artifact from the matching GitHub Release on first
+ * use, caches it under ~/.agent-switch/gui/<version>/, and launches it. A
+ * release-downloaded, cached binary avoids the browser-download Gatekeeper
+ * quarantine, and reuses the artifacts the release already publishes.
  *
- * The platform→package / artifact / launch-argv resolution is pure and tested;
- * only {@link launchGui} touches the filesystem and spawns a process.
+ * Per platform the release carries a runnable artifact:
+ *   - macOS: `*.app.tar.gz` (the .app bundle) → extract, `open`.
+ *   - Linux: `*.AppImage`                     → chmod +x, run.
+ *   - Windows: `*-setup.exe` (NSIS installer) → run (installs; no portable exe).
+ *
+ * The platform→asset resolution is pure and tested; download/extract/launch
+ * touch the filesystem + network.
  */
 
-import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
+import { spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const require = createRequire(import.meta.url);
+/** The repo whose GitHub Releases carry the GUI artifacts. */
+const UPDATE_REPO = "event4u-app/agent-switch";
+const CACHE_ROOT = path.join(os.homedir(), ".agent-switch", "gui");
 
-/** The optional-dependency package carrying the GUI binary for a platform+arch,
- *  or null when the platform is unsupported. macOS ships a universal binary, so
- *  one darwin package serves both arches. Pure. */
-export function guiPackageFor(platform: string = process.platform, arch: string = process.arch): string | null {
-  if (platform === "darwin") return "@event4u/agent-switch-darwin";
-  if (platform === "win32" && arch === "x64") return "@event4u/agent-switch-win32-x64";
-  if (platform === "linux" && arch === "x64") return "@event4u/agent-switch-linux-x64";
-  return null;
-}
-
-/** The artifact file name inside a platform package. macOS ships the `.app`
- *  bundle (launched via `open`), Windows the `.exe`, Linux the raw binary. Pure. */
-export function guiArtifactName(platform: string = process.platform): string | null {
-  if (platform === "darwin") return "agent-switch.app";
-  if (platform === "win32") return "agent-switch.exe";
-  if (platform === "linux") return "agent-switch";
-  return null;
-}
-
-/** Program + args to launch the artifact at `artifactPath`. macOS uses `open`
- *  (the artifact is an .app bundle); elsewhere the binary is executed directly.
- *  Pure — the launch convention split out for testing. */
-export function guiLaunchArgv(platform: string, artifactPath: string): { program: string; args: string[] } {
-  if (platform === "darwin") return { program: "open", args: ["-n", artifactPath] };
-  return { program: artifactPath, args: [] };
-}
-
-/** Absolute path to the GUI artifact for the host, or null when the platform
- *  package isn't installed / the artifact is missing. */
-export function resolveGuiArtifact(platform: string = process.platform, arch: string = process.arch): string | null {
-  const pkg = guiPackageFor(platform, arch);
-  const artifact = guiArtifactName(platform);
-  if (!pkg || !artifact) return null;
-  let pkgDir: string;
+/** The running CLI's version, from the package's own package.json. */
+function currentVersion(): string {
   try {
-    pkgDir = path.dirname(require.resolve(`${pkg}/package.json`));
+    const pkg = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+    return JSON.parse(fs.readFileSync(pkg, "utf8")).version ?? "0.0.0";
   } catch {
-    return null; // optional dependency not installed for this platform
+    return "0.0.0";
   }
-  const p = path.join(pkgDir, "bin", artifact);
-  return fs.existsSync(p) ? p : null;
 }
 
-/** Launch the desktop GUI, detached so the CLI returns immediately. Throws a
- *  helpful error when the platform is unsupported or the package is absent. */
-export function launchGui(): void {
-  const pkg = guiPackageFor();
-  if (!pkg) {
-    throw new Error(`the desktop GUI has no prebuilt binary for ${process.platform}/${process.arch} — build it from source with \`task gui:build\`.`);
+export type GuiKind = "app" | "appimage" | "win-setup";
+
+/** The release-asset pattern + handling for the host platform+arch, or null
+ *  when unsupported. Pure. */
+export function guiAssetSpec(
+  platform: string = process.platform,
+  arch: string = process.arch,
+): { match: RegExp; kind: GuiKind } | null {
+  if (platform === "darwin") return { match: /\.app\.tar\.gz$/, kind: "app" };
+  if (platform === "linux" && arch === "x64") return { match: /\.AppImage$/i, kind: "appimage" };
+  if (platform === "win32" && arch === "x64") return { match: /-setup\.exe$/i, kind: "win-setup" };
+  return null;
+}
+
+/** Program + args to launch a prepared artifact. Pure. */
+export function guiLaunchArgv(kind: GuiKind, target: string): { program: string; args: string[] } {
+  if (kind === "app") return { program: "open", args: ["-n", target] };
+  return { program: target, args: [] }; // AppImage runs directly; win-setup runs the installer
+}
+
+interface Asset {
+  name: string;
+  url: string;
+}
+
+/** Find a matching GUI asset on the release for `version`, falling back to the
+ *  latest release. Returns null when neither has one. */
+async function findAsset(version: string, match: RegExp): Promise<Asset | null> {
+  const headers = { Accept: "application/vnd.github+json", "User-Agent": "@event4u/agent-switch gui-launch" };
+  for (const ref of [`tags/${version}`, "latest"]) {
+    let res: Response;
+    try {
+      res = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/${ref}`, { headers });
+    } catch {
+      continue;
+    }
+    if (!res.ok) continue;
+    const rel = (await res.json()) as { assets?: { name: string; browser_download_url: string }[] };
+    const a = (rel.assets ?? []).find((x) => match.test(x.name));
+    if (a) return { name: a.name, url: a.browser_download_url };
   }
-  const artifact = resolveGuiArtifact();
-  if (!artifact) {
+  return null;
+}
+
+/** Download `url` to `dest` (follows redirects via global fetch). */
+async function download(url: string, dest: string): Promise<void> {
+  const res = await fetch(url, { headers: { "User-Agent": "@event4u/agent-switch gui-launch" } });
+  if (!res.ok) throw new Error(`download failed: ${res.status} ${url}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  fs.writeFileSync(dest, buf);
+}
+
+/** Ensure the GUI artifact for the host is downloaded + prepared under the
+ *  version cache, and return the path to launch. */
+async function ensureGuiArtifact(spec: { match: RegExp; kind: GuiKind }): Promise<string> {
+  const version = currentVersion();
+  const dir = path.join(CACHE_ROOT, version);
+  const launchName = spec.kind === "app" ? "agent-switch.app" : spec.kind === "appimage" ? "agent-switch.AppImage" : "agent-switch-setup.exe";
+  const launchPath = path.join(dir, launchName);
+  if (fs.existsSync(launchPath)) return launchPath; // already cached
+
+  const asset = await findAsset(version, spec.match);
+  if (!asset) {
     throw new Error(
-      `GUI binary not found — the platform package "${pkg}" is not installed.\n` +
-        `Reinstall the CLI so npm pulls it: \`npm install -g @event4u/agent-switch\`.`,
+      `no GUI artifact for ${process.platform}/${process.arch} on the ${version} (or latest) release.\n` +
+        `Download an installer from https://github.com/${UPDATE_REPO}/releases instead.`,
     );
   }
-  // On POSIX the raw binary needs the executable bit (npm can drop it).
-  if (process.platform !== "win32" && process.platform !== "darwin") {
-    try {
-      fs.chmodSync(artifact, 0o755);
-    } catch {
-      /* best-effort */
-    }
+  fs.mkdirSync(dir, { recursive: true });
+  console.log(`Downloading the GUI (${asset.name})…`);
+
+  if (spec.kind === "app") {
+    const tgz = path.join(dir, "app.tar.gz");
+    await download(asset.url, tgz);
+    // Extract the .app bundle, then locate it (the tarball name may vary).
+    const r = spawnSync("tar", ["-xzf", tgz, "-C", dir], { encoding: "utf8" });
+    if (r.status !== 0) throw new Error(`extract failed: ${r.stderr || r.status}`);
+    fs.rmSync(tgz, { force: true });
+    const appDir = fs.readdirSync(dir).find((n) => n.endsWith(".app"));
+    if (!appDir) throw new Error("extracted archive contained no .app bundle");
+    if (appDir !== launchName) fs.renameSync(path.join(dir, appDir), launchPath);
+    return launchPath;
   }
-  const { program, args } = guiLaunchArgv(process.platform, artifact);
+
+  await download(asset.url, launchPath);
+  if (spec.kind === "appimage") fs.chmodSync(launchPath, 0o755);
+  return launchPath;
+}
+
+/** Launch the desktop GUI (downloading + caching it on first use). */
+export async function launchGui(): Promise<void> {
+  const spec = guiAssetSpec();
+  if (!spec) {
+    throw new Error(`the desktop GUI has no prebuilt artifact for ${process.platform}/${process.arch} — build it from source with \`task gui:build\`.`);
+  }
+  const target = await ensureGuiArtifact(spec);
+  const { program, args } = guiLaunchArgv(spec.kind, target);
   const child = spawn(program, args, { detached: true, stdio: "ignore" });
   child.unref();
 }
