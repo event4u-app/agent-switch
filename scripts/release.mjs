@@ -96,24 +96,42 @@ function detectBump() {
 
 const tagExists = (v) => git("tag", "--list", v) !== "";
 
+/** Compare two X.Y.Z versions (pre-release/build stripped): <0, 0, >0. */
+function cmpSemver(a, b) {
+  const pa = a.split(/[-+]/)[0].split(".").map(Number);
+  const pb = b.split(/[-+]/)[0].split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  return 0;
+}
+/** Highest existing bare-numeric git tag, or null. */
+function latestTagVersion() {
+  const tags = git("tag").split("\n").map((t) => t.trim()).filter((t) => SEMVER.test(t));
+  return tags.length ? tags.sort(cmpSemver).at(-1) : null;
+}
+
+// Bump from the HIGHER of package.json and the latest tag. A package.json that
+// lags the tags (a release commit that never landed on this branch) must not
+// make the computed next version collide with an existing tag.
+const latest = latestTagVersion();
+const base = latest && cmpSemver(latest, current) > 0 ? latest : current;
+
 let target;
 let autoNote = "";
 if (asIdx !== -1) {
-  target = bumpVersion(current, args[asIdx + 1]);
+  target = bumpVersion(base, args[asIdx + 1]);
 } else if (positional) {
   target = positional;
-} else if (!tagExists(current)) {
-  // The current package.json version has no tag yet → RELEASE IT AS-IS (don't
-  // bump). This is what you want for the first release of a version (e.g. after
-  // a reset to 1.0.0): `task release` cuts 1.0.0, not 1.1.0.
-  target = current;
-  autoNote = `releasing current version ${current} (not yet tagged)`;
+} else if (!tagExists(base)) {
+  // `base` has no tag yet → RELEASE IT AS-IS (first release of a version, e.g.
+  // after a reset to 1.0.0: cut 1.0.0, not 1.1.0).
+  target = base;
+  autoNote = `releasing ${base} (not yet tagged)`;
 } else {
-  // Current version is already released → auto-detect the next bump.
+  // `base` is already released → auto-detect the next bump from it.
   const d = detectBump();
-  if (!d) die(`no commits since ${current} — nothing to release`);
-  target = bumpVersion(current, d.kind);
-  autoNote = `auto: ${d.kind} bump from ${d.count} commit(s)${d.since ? ` since ${d.since}` : ""}`;
+  if (!d) die(`no commits since ${base} — nothing to release`);
+  target = bumpVersion(base, d.kind);
+  autoNote = `auto: ${d.kind} bump from ${base}${base !== current ? ` (latest tag; package.json was ${current})` : ""} — ${d.count} commit(s)`;
 }
 if (!SEMVER.test(target)) die(`"${target}" is not a valid X.Y.Z version`);
 
