@@ -86,7 +86,7 @@ jobs:
           # Tag-triggered: reuse the pushed bare tag (e.g. 1.2.0). Manual runs
           # fall back to the app version so a dispatch still lands on a release.
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '__VERSION__' }}
-          releaseName: "agent-switch ${{ github.ref_type == 'tag' && github.ref_name || '__VERSION__' }}"
+          releaseName: "${{ github.ref_type == 'tag' && github.ref_name || '__VERSION__' }}"
           # Publish immediately (NOT a draft) — a draft release is invisible to
           # GitHub's /releases/latest, so the in-app update check never sees it.
           releaseDraft: false
