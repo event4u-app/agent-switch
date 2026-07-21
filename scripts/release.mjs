@@ -1,31 +1,28 @@
 #!/usr/bin/env node
-// Release helper — the full release in one step: bump the version everywhere it
-// lives, commit, tag, and push. The tag push triggers the npm publish +
-// installer build in CI, so `task release` needs no manual follow-up.
+// Release helper — one interactive command: work out the next version, show it,
+// ask y/n, then bump every version file, commit, tag, and push. The tag push
+// triggers the npm publish + installer build in CI (publish-npm.yml +
+// release.yml), so `task release` needs no manual follow-up.
 //
-// agent-switch carries its version in four files that MUST stay in lockstep
-// (publish-npm.yml refuses to publish when the tag and package.json disagree):
-//   - package.json                       (the npm package — the match gate)
-//   - gui/package.json                   (the Tauri frontend)
-//   - gui/src-tauri/tauri.conf.json      (the desktop app / installer version)
-//   - gui/src-tauri/Cargo.toml           (the Rust crate) + Cargo.lock entry
+// The version is chosen to be FREE: it steps past every version ever used —
+// git tags AND npm's full history, which includes "burned" versions (published
+// then unpublished; npm refuses to republish those, E400). So the auto number
+// can never collide with an existing tag or a burned npm version.
+//
+// Version lives in four files kept in lockstep (publish-npm.yml refuses to
+// publish on a tag/package.json mismatch): package.json, gui/package.json,
+// gui/src-tauri/tauri.conf.json, gui/src-tauri/Cargo.toml (+ Cargo.lock).
 //
 // Usage:
-//   node scripts/release.mjs              # AUTO: bump from commits, tag, push → CI publishes
-//   node scripts/release.mjs --dry-run    # preview the auto-detected bump, change nothing
-//   node scripts/release.mjs --no-push    # bump + commit + tag locally, do NOT push
-//   node scripts/release.mjs 1.2.0        # exact version (override the auto bump)
+//   node scripts/release.mjs              # AUTO: next free version, confirm, release
+//   node scripts/release.mjs --dry-run    # preview only, no prompt, change nothing
 //   node scripts/release.mjs --as minor   # forced bump (major|minor|patch)
-//
-// With no version and no --as, the bump is auto-detected from the Conventional
-// Commits since the last tag: a `feat!:` / `BREAKING CHANGE` → major, a `feat:`
-// → minor, otherwise → patch. Same default as the agent-config release flow.
-//
-// It PUSHES by default — the whole point is a one-command release. Pushing the
-// version tag triggers the npm publish + GitHub Release (publish-npm.yml +
-// release.yml). Use --no-push to stop at the local tag, --dry-run to preview.
+//   node scripts/release.mjs 1.5.0        # exact version (override)
+//   node scripts/release.mjs --yes        # skip the y/n confirmation (automation)
+//   node scripts/release.mjs --no-push    # commit + tag locally, do NOT push
 
 import { execFileSync } from "node:child_process";
+import { createInterface } from "node:readline/promises";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,10 +30,8 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
-// Push is the DEFAULT — `task release` is a full release: bump → commit → tag →
-// push, and the tag push triggers the npm publish + installer build in CI.
-// `--no-push` stops after the local tag; `--dry-run` previews without touching.
 const noPush = args.includes("--no-push");
+const assumeYes = args.includes("--yes") || args.includes("-y");
 
 function die(msg) {
   console.error(`release: ${msg}`);
@@ -46,20 +41,27 @@ function git(...a) {
   return execFileSync("git", a, { cwd: ROOT, encoding: "utf8" }).trim();
 }
 
-// ---------- resolve the target version ----------
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
-const asIdx = args.indexOf("--as");
-// A bare X.Y.Z arg — excluding the value that follows --as (when present).
-const positional = args.find((a, i) => !a.startsWith("-") && !(asIdx !== -1 && i === asIdx + 1));
-
 const pkgPath = path.join(ROOT, "package.json");
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 const current = pkg.version;
+const PACKAGE_NAME = pkg.name;
+
+const asIdx = args.indexOf("--as");
+const positional = args.find((a, i) => !a.startsWith("-") && !(asIdx !== -1 && i === asIdx + 1));
+
+/** Compare two X.Y.Z versions (pre-release/build stripped): <0, 0, >0. */
+function cmpSemver(a, b) {
+  const pa = a.split(/[-+]/)[0].split(".").map(Number);
+  const pb = b.split(/[-+]/)[0].split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  return 0;
+}
 
 /** Apply a semver bump kind to a plain X.Y.Z base. */
-function bumpVersion(base, kind) {
-  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(base);
-  if (!m) die(`current version "${base}" is not plain X.Y.Z — pass an exact version instead`);
+function bumpVersion(baseV, kind) {
+  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(baseV);
+  if (!m) die(`"${baseV}" is not plain X.Y.Z — pass an exact version instead`);
   const [maj, min, pat] = m.slice(1).map(Number);
   if (kind === "major") return `${maj + 1}.0.0`;
   if (kind === "minor") return `${maj}.${min + 1}.0`;
@@ -67,15 +69,28 @@ function bumpVersion(base, kind) {
   die(`bump kind must be major|minor|patch, got "${kind ?? ""}"`);
 }
 
+/** Every version ever taken: git tags + npm's full history (published AND
+ *  unpublished/"burned" — npm never lets a burned version be republished). */
+function takenVersions() {
+  const taken = new Set();
+  for (const t of git("tag").split("\n").map((x) => x.trim())) if (SEMVER.test(t)) taken.add(t);
+  try {
+    const out = execFileSync("npm", ["view", PACKAGE_NAME, "time", "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    for (const k of Object.keys(JSON.parse(out))) if (SEMVER.test(k)) taken.add(k);
+  } catch {
+    /* offline, or the package isn't published yet — tags only */
+  }
+  return taken;
+}
+
 /** Auto-detect the bump from Conventional Commits since the last tag:
- *  a `type!:` / `BREAKING CHANGE` → major, a `feat:` → minor, else → patch.
- *  Returns { kind, since, count } or null when there is nothing to release. */
+ *  a `type!:` / `BREAKING CHANGE:` → major, a `feat:` → minor, else → patch. */
 function detectBump() {
   let since = null;
   try {
     since = git("describe", "--tags", "--abbrev=0");
   } catch {
-    since = null; // no tags yet → scan all history
+    since = null;
   }
   let log = "";
   try {
@@ -85,121 +100,110 @@ function detectBump() {
   }
   const commits = log.split("\x1e").map((c) => c.trim()).filter(Boolean);
   if (commits.length === 0) return null;
-  // Per Conventional Commits: breaking = a `type!:` in the SUBJECT line, or a
-  // `BREAKING CHANGE:` FOOTER (line-anchored + colon). Not a loose phrase match
-  // — a commit that merely *describes* the convention must not trigger major.
   const subject = (c) => c.split("\n", 1)[0];
   const breaking = commits.some((c) => /^[a-z]+(\([^)]*\))?!:/i.test(subject(c)) || /^BREAKING[ -]CHANGE:/m.test(c));
   const feat = commits.some((c) => /^feat(\([^)]*\))?:/i.test(subject(c)));
   return { kind: breaking ? "major" : feat ? "minor" : "patch", since, count: commits.length };
 }
 
-const tagExists = (v) => git("tag", "--list", v) !== "";
-
-/** Compare two X.Y.Z versions (pre-release/build stripped): <0, 0, >0. */
-function cmpSemver(a, b) {
-  const pa = a.split(/[-+]/)[0].split(".").map(Number);
-  const pb = b.split(/[-+]/)[0].split(".").map(Number);
-  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
-  return 0;
-}
-/** Highest existing bare-numeric git tag, or null. */
-function latestTagVersion() {
-  const tags = git("tag").split("\n").map((t) => t.trim()).filter((t) => SEMVER.test(t));
-  return tags.length ? tags.sort(cmpSemver).at(-1) : null;
-}
-
-// Bump from the HIGHER of package.json and the latest tag. A package.json that
-// lags the tags (a release commit that never landed on this branch) must not
-// make the computed next version collide with an existing tag.
-const latest = latestTagVersion();
-const base = latest && cmpSemver(latest, current) > 0 ? latest : current;
+// ---------- resolve the target version (always a FREE one) ----------
+const taken = takenVersions();
+const highestTaken = [...taken].sort(cmpSemver).at(-1) ?? null;
+// Move forward past everything ever used (tags + published + burned).
+const base = highestTaken && cmpSemver(highestTaken, current) > 0 ? highestTaken : current;
 
 let target;
-let autoNote = "";
+let note = "";
 if (asIdx !== -1) {
   target = bumpVersion(base, args[asIdx + 1]);
 } else if (positional) {
   target = positional;
-} else if (!tagExists(base)) {
-  // `base` has no tag yet → RELEASE IT AS-IS (first release of a version, e.g.
-  // after a reset to 1.0.0: cut 1.0.0, not 1.1.0).
-  target = base;
-  autoNote = `releasing ${base} (not yet tagged)`;
+} else if (!taken.has(base)) {
+  target = base; // never released → release as-is (e.g. a fresh reset to 1.0.0)
+  note = `${base} was never released — releasing as-is`;
 } else {
-  // `base` is already released → auto-detect the next bump from it.
+  // Auto: bump kind from the commits since the last tag; default to patch when
+  // there are none (you still asked to release — the y/n prompt is the gate).
   const d = detectBump();
-  if (!d) die(`no commits since ${base} — nothing to release`);
-  target = bumpVersion(base, d.kind);
-  autoNote = `auto: ${d.kind} bump from ${base}${base !== current ? ` (latest tag; package.json was ${current})` : ""} — ${d.count} commit(s)`;
+  const kind = d?.kind ?? "patch";
+  target = bumpVersion(base, kind);
+  note = `${kind} bump from ${base}${base !== current ? ` (highest ever used; package.json was ${current})` : ""}, ${d ? `${d.count} commit(s)` : "no new commits"}`;
 }
 if (!SEMVER.test(target)) die(`"${target}" is not a valid X.Y.Z version`);
 
-// Bare-numeric tag (no `v` prefix) — matches the release/publish workflows and
-// the @event4u/agent-config convention.
+// Never land on a taken version (a tag, a published version, or a burned npm
+// version) — patch-increment until free. This is what stops the E400.
+const skipped = [];
+while (taken.has(target)) {
+  skipped.push(target);
+  target = bumpVersion(target, "patch");
+}
+if (skipped.length) note += `${note ? "; " : ""}skipped already-used ${skipped.join(", ")}`;
+
 const tag = target;
-// Whether we bump version files + make a release commit, or just tag the
-// current (already-committed) version as-is.
 const isBump = target !== current;
 
 // ---------- preconditions ----------
-if (!dryRun) {
-  if (git("status", "--porcelain")) {
-    die("working tree is not clean — commit or stash first so the release commit is only the version bump");
-  }
-  if (tagExists(tag)) die(`tag ${tag} already exists`);
+if (!dryRun && git("status", "--porcelain")) {
+  die("working tree is not clean — commit or stash first so the release commit is only the version bump");
 }
 
-// ---------- the edits (one replacer per file, minimal + anchored) ----------
-/** Replace via a regex that captures a prefix group $1 and swaps the version. */
+/** Replace an anchored version string in a file (logs in dry-run, writes otherwise). */
 function bumpFile(rel, re, label) {
   const p = path.join(ROOT, rel);
   let text;
   try {
     text = fs.readFileSync(p, "utf8");
   } catch {
-    console.warn(`  · skip ${rel} (not found)`);
-    return;
+    return void console.warn(`  · skip ${rel} (not found)`);
   }
-  if (!re.test(text)) {
-    console.warn(`  · skip ${rel} (${label} version line not found)`);
-    return;
-  }
-  const next = text.replace(re, (_m, pre) => `${pre}${target}`);
+  if (!re.test(text)) return void console.warn(`  · skip ${rel} (${label} version line not found)`);
   if (dryRun) console.log(`  · ${rel} → ${target}`);
-  else fs.writeFileSync(p, next);
+  else fs.writeFileSync(p, text.replace(re, (_m, pre) => `${pre}${target}`));
 }
-
-console.log(`${dryRun ? "[dry-run] " : ""}release ${current} → ${target} (tag ${tag})${autoNote ? ` — ${autoNote}` : ""}`);
-
-if (isBump) {
-  // JSON files: only the first top-level "version" key (anchored to 2-space indent).
+function bumpAllFiles() {
   bumpFile("package.json", /^(  "version":\s*")[^"]+/m, "package.json");
   bumpFile("gui/package.json", /^(  "version":\s*")[^"]+/m, "gui/package.json");
   bumpFile("gui/src-tauri/tauri.conf.json", /^(  "version":\s*")[^"]+/m, "tauri.conf.json");
-  // Cargo.toml: the [package] version at column 0 (dependency versions are inline).
   bumpFile("gui/src-tauri/Cargo.toml", /^(version = ")[^"]+/m, "Cargo.toml");
-  // Cargo.lock: the agent-switch-gui package block's version line.
   bumpFile("gui/src-tauri/Cargo.lock", /(name = "agent-switch-gui"\nversion = ")[^"]+/, "Cargo.lock");
-} else {
-  console.log(`  · ${current} is not tagged yet — tagging it as-is, no version bump`);
 }
 
+/** y/n prompt (agent-config style). --yes / --dry-run skip it; a non-TTY (piped)
+ *  proceeds so automation isn't blocked. */
+async function confirm(question) {
+  if (assumeYes || !process.stdin.isTTY) return true;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const ans = (await rl.question(`${question} [y/N] `)).trim().toLowerCase();
+  rl.close();
+  return ans === "y" || ans === "yes";
+}
+
+// ---------- plan → confirm → release ----------
+console.log(`${dryRun ? "[dry-run] " : ""}release: ${current} → ${target}  (tag ${tag}${isBump ? "" : ", as-is"})${note ? `\n  ${note}` : ""}`);
+
 if (dryRun) {
-  console.log(isBump ? "[dry-run] no files written, no commit, no tag." : "[dry-run] no tag created.");
+  if (isBump) bumpAllFiles();
+  console.log("[dry-run] nothing written, no tag, no push.");
   process.exit(0);
 }
 
-// ---------- commit (only when bumping) + tag ----------
+if (!(await confirm(`Release ${tag}${noPush ? " (local only)" : " and push → npm publish + installers"}?`))) {
+  console.log("Aborted — nothing changed.");
+  process.exit(0);
+}
+
 if (isBump) {
-  // Resync package-lock.json with the bumped package.json (incl. the GUI
-  // optionalDependencies) — otherwise CI `npm ci` fails EUSAGE ("out of sync").
+  bumpAllFiles();
+  // Resync package-lock.json with the bumped package.json so CI `npm ci` stays happy.
   execFileSync("npm", ["install", "--package-lock-only", "--ignore-scripts"], { cwd: ROOT, stdio: "ignore" });
   git("add", "package.json", "package-lock.json", "gui/package.json", "gui/src-tauri/tauri.conf.json", "gui/src-tauri/Cargo.toml", "gui/src-tauri/Cargo.lock");
   git("commit", "-m", `chore(release): ${tag}`);
+} else {
+  console.log(`  · tagging ${current} as-is (no version bump)`);
 }
 git("tag", tag);
-console.log(isBump ? `✅  committed the bump and tagged ${tag}` : `✅  tagged ${tag} (current version, no bump)`);
+console.log(`✅  tagged ${tag}`);
 
 if (noPush) {
   console.log(`--no-push: stopped at the local tag. To release it: git push origin HEAD ${tag}`);
