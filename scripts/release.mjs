@@ -156,6 +156,18 @@ bumpFile(
   /(name = "agent-switch-gui"\nversion = ")[^"]+/,
   "Cargo.lock",
 );
+// package.json: keep the per-platform GUI optionalDependencies pinned to the
+// same version (they are published in lockstep by release.yml). The `-<suffix>`
+// requirement keeps this from matching the main package name.
+{
+  const p = path.join(ROOT, "package.json");
+  const text = fs.readFileSync(p, "utf8");
+  const next = text.replace(/("@event4u\/agent-switch-[a-z0-9-]+":\s*")[^"]+/g, (_m, pre) => `${pre}${target}`);
+  if (next !== text) {
+    if (dryRun) console.log(`  · package.json GUI optionalDependencies → ${target}`);
+    else fs.writeFileSync(p, next);
+  }
+}
 
 if (dryRun) {
   console.log("[dry-run] no files written, no commit, no tag.");

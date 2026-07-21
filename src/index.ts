@@ -60,6 +60,7 @@ import { withProperLock } from "./locks.js";
 import { applySharing, removeSharing, syncSharing, sharedLinkHealth } from "./share.js";
 import { detectShell, shellenvScript } from "./shellenv.js";
 import { runDoctor } from "./doctor.js";
+import { launchGui } from "./gui-launch.js";
 import {
   mappingRows,
   pruneMappings,
@@ -1684,6 +1685,17 @@ function cmdNotifications(sub: string | undefined, json = false): void {
 
 /** Launch a registered GUI app on a profile, isolated (macOS). Profile: an
  *  explicit positional name, else the active profile for the app's provider. */
+function cmdGui(): void {
+  // Launch the tray/menubar GUI (its prebuilt binary ships as a per-platform
+  // optional-dependency package; see gui-launch.ts).
+  try {
+    launchGui();
+    console.log("Launched the agent-switch GUI.");
+  } catch (err: any) {
+    die(String(err?.message ?? err));
+  }
+}
+
 function cmdOpen(appId?: string, name?: string): void {
   if (!appId) die("usage: agent-switch open <app> [profile]   (see `agent-switch apps`)");
   const app = findApp(appId);
@@ -1743,6 +1755,7 @@ Provider defaults to claude; pass --provider codex|antigravity for the others.
   agent-switch reset <profile> --provider codex                                redeem one banked Codex rate-limit reset
   agent-switch rename <old> <new> [--provider P]                               rename a profile (name & keep its tag)
   agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
+  agent-switch gui                             launch the tray/menubar GUI (bundled via npm)
   agent-switch apps                            list launchable GUI apps (macOS)
   agent-switch open <app> [profile]            launch a GUI app on a profile, isolated (macOS)
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
@@ -1790,6 +1803,7 @@ async function main(): Promise<void> {
     case "reset": return cmdReset(providerId, positional[0]);
     case "rename": return cmdRename(providerId, positional[0], positional[1]);
     case "providers": return cmdProviders(providerId, providerExplicit, positional[0], flags);
+    case "gui": return cmdGui();
     case "open": return cmdOpen(positional[0], positional[1]);
     case "apps": return cmdApps(!!flags.json);
     case "notify": return cmdNotify(flags);
