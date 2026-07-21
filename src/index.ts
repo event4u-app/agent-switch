@@ -1686,11 +1686,11 @@ function cmdNotifications(sub: string | undefined, json = false): void {
 
 /** Launch a registered GUI app on a profile, isolated (macOS). Profile: an
  *  explicit positional name, else the active profile for the app's provider. */
-function cmdGui(): void {
-  // Launch the tray/menubar GUI (its prebuilt binary ships as a per-platform
-  // optional-dependency package; see gui-launch.ts).
+async function cmdGui(): Promise<void> {
+  // Launch the tray/menubar GUI — downloads its prebuilt artifact from the
+  // matching GitHub Release on first use, then caches it (see gui-launch.ts).
   try {
-    launchGui();
+    await launchGui();
     console.log("Launched the agent-switch GUI.");
   } catch (err: any) {
     die(String(err?.message ?? err));
