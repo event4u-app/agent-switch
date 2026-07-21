@@ -22,7 +22,7 @@
 // → minor, otherwise → patch. Same default as the agent-config release flow.
 //
 // It PUSHES by default — the whole point is a one-command release. Pushing the
-// vX.Y.Z tag triggers the npm publish + GitHub Release (publish-npm.yml +
+// version tag triggers the npm publish + GitHub Release (publish-npm.yml +
 // release.yml). Use --no-push to stop at the local tag, --dry-run to preview.
 
 import { execFileSync } from "node:child_process";
@@ -110,7 +110,9 @@ if (asIdx !== -1) {
 if (!SEMVER.test(target)) die(`"${target}" is not a valid X.Y.Z version`);
 if (target === current) die(`target ${target} equals the current version`);
 
-const tag = `v${target}`;
+// Bare-numeric tag (no `v` prefix) — matches the release/publish workflows and
+// the @event4u/agent-config convention.
+const tag = target;
 
 // ---------- preconditions ----------
 if (!dryRun) {

@@ -1,7 +1,7 @@
 name: Publish to npm
 
 # Publishes @event4u/agent-switch to the npm registry via OIDC Trusted
-# Publishing whenever a version tag is pushed (v1.2.3 — the same tag that
+# Publishing whenever a version tag is pushed (1.2.3 — the same tag that
 # release.yml uses to build the desktop installers, so one tag ships both the
 # CLI to npm and the GUI installers to the GitHub Release).
 #
@@ -12,11 +12,13 @@ name: Publish to npm
 on:
   push:
     tags:
-      - "v*"
+      # Bare-numeric version tags (no `v` prefix), matching the release convention.
+      - "[0-9]+.[0-9]+.[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+-*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to publish (e.g. v1.2.3)."
+        description: "Existing tag to publish (e.g. 1.2.3)."
         required: true
         type: string
 
@@ -58,7 +60,8 @@ jobs:
           else
             tag="${GITHUB_REF_NAME}"
           fi
-          # Tags are v-prefixed (v1.2.3); the package version is not.
+          # Tags are bare-numeric (1.2.3 == the package version); tolerate a
+          # stray leading `v` on old tags just in case.
           version="${tag#v}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"

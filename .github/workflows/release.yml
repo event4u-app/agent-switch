@@ -7,7 +7,10 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      # Bare-numeric version tags (no `v` prefix) — matches the published 1.0.0
+      # release and the @event4u/agent-config convention.
+      - "[0-9]+.[0-9]+.[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+-*"
   workflow_dispatch:
 
 jobs:
@@ -73,10 +76,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: gui
-          # Tag-triggered: reuse the pushed tag. Manual runs fall back to the
-          # app version (app-v1.0.0) so a dispatch still lands on a real release.
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'app-v__VERSION__' }}
-          releaseName: "agent-switch ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}"
-          releaseDraft: true
+          # Tag-triggered: reuse the pushed bare tag (e.g. 1.2.0). Manual runs
+          # fall back to the app version so a dispatch still lands on a release.
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '__VERSION__' }}
+          releaseName: "agent-switch ${{ github.ref_type == 'tag' && github.ref_name || '__VERSION__' }}"
+          # Publish immediately (NOT a draft) — a draft release is invisible to
+          # GitHub's /releases/latest, so the in-app update check never sees it.
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
