@@ -98,6 +98,29 @@ export function setAutoUpdateCheckFlag(on: boolean): void {
   }
 }
 
+const MINIMIZE_TO_DOCK_KEY = "agent-switch-minimize-to-dock";
+
+/** macOS only: whether the yellow minimize button minimizes the window into the
+ *  Dock (standard) or drops the app out of the Dock — same as closing. Default
+ *  OFF: the app shows in the Dock while open, but minimizing/closing removes it
+ *  from the Dock (it stays reachable from the menu-bar tray). Only the literal
+ *  "on" enables minimize-into-Dock. */
+export function getMinimizeToDock(): boolean {
+  try {
+    return localStorage.getItem(MINIMIZE_TO_DOCK_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+export function setMinimizeToDockFlag(on: boolean): void {
+  try {
+    localStorage.setItem(MINIMIZE_TO_DOCK_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const UPDATE_NOTIFIED_VERSION_KEY = "agent-switch-update-notified-version";
 
 /** The newest version we have already toasted the user about, so an automatic

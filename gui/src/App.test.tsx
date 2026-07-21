@@ -42,6 +42,7 @@ const ipc = vi.hoisted(() => ({
   listApps: vi.fn(),
   openApp: vi.fn(),
   quitApp: vi.fn(),
+  setMinimizeToDock: vi.fn(),
   listNotifications: vi.fn(),
   recordNotification: vi.fn(),
   clearNotifications: vi.fn(),
@@ -89,7 +90,7 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, shareGlobal: true, hideSummaries: false }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, shareGlobal: true, hideSummaries: false, minimizeToDock: false }));
 // Keep the update-check path inert in the App tests: uptodate → no toast, no
 // network. The update logic itself is covered by updates.test.ts.
 // Keep the real pure helpers (isNewer/compareVersions — used by agent-config.js)
@@ -140,6 +141,10 @@ vi.mock("./settings-store.js", () => ({
   getAutoUpdateCheck: () => store.autoUpdateCheck,
   setAutoUpdateCheckFlag: (on: boolean) => {
     store.autoUpdateCheck = on;
+  },
+  getMinimizeToDock: () => store.minimizeToDock,
+  setMinimizeToDockFlag: (on: boolean) => {
+    store.minimizeToDock = on;
   },
   getUpdateNotifiedVersion: () => store.updateNotifiedVersion,
   setUpdateNotifiedVersion: (v: string) => {

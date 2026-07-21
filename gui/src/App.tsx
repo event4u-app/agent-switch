@@ -28,6 +28,7 @@ import {
   setTrayTooltip,
   takeoverArgs,
   quitApp,
+  setMinimizeToDock,
   removeProfile,
   renameProfile,
   sessionArgs,
@@ -85,6 +86,8 @@ import {
   setDevModeFlag,
   getAutoUpdateCheck,
   setAutoUpdateCheckFlag,
+  getMinimizeToDock,
+  setMinimizeToDockFlag,
   getUpdateNotifiedVersion,
   setUpdateNotifiedVersion,
   getAgentConfigNotifiedVersion,
@@ -154,6 +157,7 @@ export default function App() {
   const [usage, setUsage] = useState<Record<string, UsageEntry>>(() => loadUsageCache());
   const [autoRefresh, setAutoRefresh] = useState(() => getAutoRefreshLimits());
   const [autoUpdateCheck, setAutoUpdateCheck] = useState(() => getAutoUpdateCheck());
+  const [minimizeToDock, setMinimizeToDockState] = useState(() => getMinimizeToDock());
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [auto, setAuto] = useState<AutoSwitchMap | null>(null);
   const [providers, setProviders] = useState<ProvidersStatus | null>(null);
@@ -286,6 +290,18 @@ export default function App() {
     setAutoUpdateCheckFlag(on);
     setAutoUpdateCheck(on);
   }
+
+  function toggleMinimizeToDock(on: boolean) {
+    setMinimizeToDockFlag(on);
+    setMinimizeToDockState(on);
+    void setMinimizeToDock(on); // keep the Rust window-event handler in sync
+  }
+
+  // Push the persisted "minimize into Dock" preference to Rust once on startup
+  // so the native window-event handler matches the UI from the first minimize.
+  useEffect(() => {
+    void setMinimizeToDock(getMinimizeToDock());
+  }, []);
 
   // Automatic update check (Approach A — check + notify, never self-install).
   // Runs once on open and then every 24h WHILE the app stays running (a tray app
@@ -732,6 +748,8 @@ export default function App() {
             onChangeRefreshMin={changeRefreshMin}
             autoUpdateCheck={autoUpdateCheck}
             onToggleAutoUpdateCheck={toggleAutoUpdateCheck}
+            minimizeToDock={minimizeToDock}
+            onToggleMinimizeToDock={toggleMinimizeToDock}
             hideSummaries={hideSummaries}
             onToggleHideSummaries={toggleHideSummaries}
             mutedKinds={mutedKinds}
@@ -1304,6 +1322,8 @@ function SettingsView({
   onChangeRefreshMin,
   autoUpdateCheck,
   onToggleAutoUpdateCheck,
+  minimizeToDock,
+  onToggleMinimizeToDock,
   hideSummaries,
   onToggleHideSummaries,
   mutedKinds,
@@ -1327,6 +1347,8 @@ function SettingsView({
   onChangeRefreshMin: (min: number) => void;
   autoUpdateCheck: boolean;
   onToggleAutoUpdateCheck: (on: boolean) => void;
+  minimizeToDock: boolean;
+  onToggleMinimizeToDock: (on: boolean) => void;
   mutedKinds: NotificationKind[];
   onToggleMute: (kind: NotificationKind) => void;
   onProvidersChanged: () => void;
@@ -1371,6 +1393,8 @@ function SettingsView({
           onChangeRefreshMin={onChangeRefreshMin}
           hideSummaries={hideSummaries}
           onToggleHideSummaries={onToggleHideSummaries}
+          minimizeToDock={minimizeToDock}
+          onToggleMinimizeToDock={onToggleMinimizeToDock}
           devMode={devMode}
           onToggleDevMode={onToggleDevMode}
           shareActive={shareActive}
@@ -1551,6 +1575,8 @@ function GeneralSettings({
   onChangeRefreshMin,
   hideSummaries,
   onToggleHideSummaries,
+  minimizeToDock,
+  onToggleMinimizeToDock,
   devMode,
   onToggleDevMode,
   shareActive,
@@ -1564,6 +1590,8 @@ function GeneralSettings({
   onChangeRefreshMin: (min: number) => void;
   hideSummaries: boolean;
   onToggleHideSummaries: (on: boolean) => void;
+  minimizeToDock: boolean;
+  onToggleMinimizeToDock: (on: boolean) => void;
   devMode: boolean;
   onToggleDevMode: (on: boolean) => void;
   shareActive: boolean;
@@ -1617,6 +1645,26 @@ function GeneralSettings({
           </Button>
         </div>
         {err && <div className="text-xs text-destructive">{err}</div>}
+
+        {IS_MAC && (
+          <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+            <div>
+              <div className="text-[13px] font-medium">Minimize into Dock</div>
+              <div className="text-xs text-muted-foreground">
+                On: the yellow button minimizes the window into the Dock (macOS standard). Off (default): minimizing or
+                closing removes agent-switch from the Dock — it stays in the menu bar and reopens from there.
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant={minimizeToDock ? "default" : "outline"}
+              onClick={() => onToggleMinimizeToDock(!minimizeToDock)}
+              aria-label="Minimize into Dock"
+            >
+              {minimizeToDock ? "On" : "Off"}
+            </Button>
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
           <div>

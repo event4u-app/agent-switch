@@ -1,9 +1,12 @@
 // agent-switch tray/menubar shell. The window hosts the React UI, which drives
 // the `agent-switch` CLI via the shell plugin; this Rust side only owns the
-// tray icon, the window, and launch-at-login. No profile logic lives here.
+// tray icon, the window, the Dock presence, and launch-at-login. No profile
+// logic lives here.
 #![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
 
 mod pty;
+
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -11,11 +14,39 @@ use tauri::{
     Manager, WindowEvent,
 };
 
+// Whether the yellow "minimize" button minimizes the window into the Dock
+// (macOS standard) or drops the app out of the Dock entirely — same as close.
+// Pushed from the UI (Settings → General) via `set_minimize_to_dock`. Default
+// off: minimizing behaves like closing (the app leaves the Dock).
+#[derive(Default)]
+struct DockPrefs {
+    minimize_to_dock: AtomicBool,
+}
+
+// Show the main window and give the app a Dock presence. On macOS the Regular
+// activation policy is what puts the icon in the Dock; the app starts as an
+// Accessory (menu-bar only) and becomes Regular the moment its window is shown.
 fn show_main(app: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
     if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
     }
+}
+
+// Hide the window and remove the app from the Dock (macOS Accessory policy).
+// The tray icon keeps the app alive, so it is re-shown from there (or, when a
+// Dock icon is still present, from the Dock via the Reopen event).
+fn hide_from_dock(window: &tauri::Window) {
+    // Clear any miniaturized state so the next show is a clean full window.
+    let _ = window.unminimize();
+    let _ = window.hide();
+    #[cfg(target_os = "macos")]
+    let _ = window
+        .app_handle()
+        .set_activation_policy(tauri::ActivationPolicy::Accessory);
 }
 
 // The UI's "Quit" button calls this to actually terminate the app. Closing the
@@ -25,6 +56,22 @@ fn show_main(app: &tauri::AppHandle) {
 #[tauri::command]
 fn quit(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+// Show the window + Dock icon. The frontend calls this (rather than the JS
+// window API) so every show path goes through the one place that flips the
+// macOS activation policy back to Regular.
+#[tauri::command]
+fn show_window(app: tauri::AppHandle) {
+    show_main(&app);
+}
+
+// The UI pushes the "minimize into Dock" preference here (on startup and on
+// every toggle) so the window-event handler can read it without touching the
+// frontend's localStorage.
+#[tauri::command]
+fn set_minimize_to_dock(state: tauri::State<DockPrefs>, enabled: bool) {
+    state.minimize_to_dock.store(enabled, Ordering::Relaxed);
 }
 
 // The React UI computes the active profile's worst live-session context fill
@@ -83,7 +130,7 @@ fn main() {
     #[cfg(unix)]
     recover_user_path();
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         // Desktop notifications (usage-fetch failures, successful auto-switches).
         // The GUI falls back to its in-window bell/flyout when permission is denied.
@@ -94,29 +141,53 @@ fn main() {
             None::<Vec<&str>>,
         ))
         .manage(pty::PtyState::default())
+        .manage(DockPrefs::default())
         .invoke_handler(tauri::generate_handler![
             quit,
+            show_window,
+            set_minimize_to_dock,
             set_tray_tooltip,
             pty::term_open,
             pty::term_write,
             pty::term_resize,
             pty::term_close
         ])
-        // Closing the window (X) must only hide it, never quit — the tray keeps
-        // the app alive and it is re-shown from the tray. Quitting is explicit
-        // (UI button / tray menu).
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
+            if window.label() != "main" {
+                return;
+            }
+            match event {
+                // Closing (red X) never quits — it hides the window and drops
+                // the Dock icon. The tray keeps the app alive; quitting is
+                // explicit (UI button / tray menu).
+                WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
-                    let _ = window.hide();
+                    hide_from_dock(window);
                 }
+                // Minimizing (yellow) with "minimize into Dock" OFF (default)
+                // behaves like closing: the app leaves the Dock. With it ON, do
+                // nothing and let macOS minimize into the Dock natively. macOS
+                // emits no minimize event, so detect it on focus-loss via
+                // is_minimized() (a plain focus loss — clicking another app —
+                // is not minimized, so it is ignored). macOS only: the Dock
+                // model does not apply to the Windows/Linux taskbar.
+                #[cfg(target_os = "macos")]
+                WindowEvent::Focused(false) => {
+                    let minimize_to_dock = window
+                        .state::<DockPrefs>()
+                        .minimize_to_dock
+                        .load(Ordering::Relaxed);
+                    if !minimize_to_dock && window.is_minimized().unwrap_or(false) {
+                        hide_from_dock(window);
+                    }
+                }
+                _ => {}
             }
         })
         .setup(|app| {
-            // Menu-bar utility: no Dock icon and not in the app switcher, so
-            // closing/minimizing never leaves a Dock entry behind. The window is
-            // reached from the tray, not the Dock.
+            // Start with no Dock icon (menu-bar only); a Dock presence appears
+            // the moment the window is shown (show_main → Regular). An
+            // autostart/login launch that never opens a window stays Dock-less.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
@@ -149,6 +220,14 @@ fn main() {
                 .build(app)?;
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("error while running agent-switch GUI");
+
+    app.run(|_app_handle, _event| {
+        // macOS: clicking the Dock icon when no window is visible re-shows it.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = _event {
+            show_main(_app_handle);
+        }
+    });
 }
