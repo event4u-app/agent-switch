@@ -39,9 +39,12 @@ fn show_main(app: &tauri::AppHandle) {
 // Hide the window and remove the app from the Dock (macOS Accessory policy).
 // The tray icon keeps the app alive, so it is re-shown from there (or, when a
 // Dock icon is still present, from the Dock via the Reopen event).
+//
+// Do NOT unminimize here: on the minimize path the window is mid-miniaturize,
+// and un-minimizing would visually restore it (the window "maximizes" right
+// back) instead of disappearing. Hiding a miniaturized window removes its Dock
+// tile; show_main() unminimizes when the window is next shown.
 fn hide_from_dock(window: &tauri::Window) {
-    // Clear any miniaturized state so the next show is a clean full window.
-    let _ = window.unminimize();
     let _ = window.hide();
     #[cfg(target_os = "macos")]
     let _ = window
