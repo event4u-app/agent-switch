@@ -87,7 +87,9 @@ jobs:
 
       - name: Install dependencies
         if: steps.check.outputs.already_published != 'true'
-        run: npm ci
+        # --omit=optional: the CLI build needs none of the GUI platform packages,
+        # and they may not be published yet on this same tag (race with release.yml).
+        run: npm ci --omit=optional
 
       - name: Build (prepack chain)
         if: steps.check.outputs.already_published != 'true'

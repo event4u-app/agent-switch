@@ -174,8 +174,12 @@ if (dryRun) {
   process.exit(0);
 }
 
+// Resync package-lock.json with the bumped package.json (incl. the GUI
+// optionalDependencies) — otherwise CI `npm ci` fails EUSAGE ("out of sync").
+execFileSync("npm", ["install", "--package-lock-only", "--ignore-scripts"], { cwd: ROOT, stdio: "ignore" });
+
 // ---------- commit + tag ----------
-git("add", "package.json", "gui/package.json", "gui/src-tauri/tauri.conf.json", "gui/src-tauri/Cargo.toml", "gui/src-tauri/Cargo.lock");
+git("add", "package.json", "package-lock.json", "gui/package.json", "gui/src-tauri/tauri.conf.json", "gui/src-tauri/Cargo.toml", "gui/src-tauri/Cargo.lock");
 git("commit", "-m", `chore(release): ${tag}`);
 git("tag", tag);
 console.log(`✅  committed the bump and tagged ${tag}`);
