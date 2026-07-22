@@ -44,6 +44,8 @@ const ipc = vi.hoisted(() => ({
   quitApp: vi.fn(),
   setMinimizeToDock: vi.fn(),
   selfUpdate: vi.fn(),
+  linkProviderBinary: vi.fn(),
+  unlinkProviderBinary: vi.fn(),
   listNotifications: vi.fn(),
   recordNotification: vi.fn(),
   clearNotifications: vi.fn(),

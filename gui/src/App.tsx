@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Minimize2, Pencil, Check, Download, Send, ChevronRight, ChevronDown, MessageSquare, Folder, Hash, Clock, Copy, Loader2 } from "lucide-react";
+import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Minimize2, Pencil, Check, Download, Send, ChevronRight, ChevronDown, MessageSquare, Folder, Hash, Clock, Copy, Loader2, Link2 } from "lucide-react";
 import {
   compactArgs,
   deactivateProfile,
@@ -40,6 +40,8 @@ import {
   type SwitchStrategy,
   setProfileLabel,
   setProvider,
+  linkProviderBinary,
+  unlinkProviderBinary,
   switchProfile,
   agentConfigVersion,
   installAgentConfig,
@@ -1860,6 +1862,9 @@ const PROVIDER_SURFACES: { id: ProviderSurface; label: string }[] = [
 function ProvidersSettings({ onChange, providersWithUi }: { onChange: () => void; providersWithUi: Set<ProviderId> }) {
   const [cfg, setCfg] = useState<ProvidersStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [linking, setLinking] = useState<ProviderId | null>(null);
+  const [linkPath, setLinkPath] = useState("");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     getProviders()
@@ -1880,55 +1885,134 @@ function ProvidersSettings({ onChange, providersWithUi }: { onChange: () => void
     }
   }
 
+  // Link/unlink re-fetch the whole status so `installed` + `binaryPath` reflect
+  // the new resolution (linking a valid path flips a provider to enable-able).
+  async function link(pid: ProviderId) {
+    const p = linkPath.trim();
+    if (!p) return;
+    setBusy(true);
+    try {
+      await linkProviderBinary(pid, p);
+      setCfg(await getProviders());
+      setErr(null);
+      setLinking(null);
+      setLinkPath("");
+      onChange();
+    } catch (e) {
+      setErr(describeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unlink(pid: ProviderId) {
+    setBusy(true);
+    try {
+      await unlinkProviderBinary(pid);
+      setCfg(await getProviders());
+      setErr(null);
+      onChange();
+    } catch (e) {
+      setErr(describeError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Card>
       <CardContent className="space-y-3 p-3">
         <div className="text-xs text-muted-foreground">
           Enable the providers you use. Disabling one hides it — your profiles are kept and return when you re-enable it.
-          A provider that isn&apos;t installed is shown but can&apos;t be enabled.
+          If a provider&apos;s CLI isn&apos;t on your PATH, link its binary and you can still use it.
         </div>
         {cfg === null && !err && <div className="text-xs text-muted-foreground">…</div>}
         {cfg &&
           PROVIDERS.map((pid) => {
             const installed = cfg[pid].installed;
+            const linkedPath = cfg[pid].binaryPath ?? null;
+            const binName = { claude: "claude", codex: "codex", antigravity: "agy" }[pid];
             return (
-              <div
-                key={pid}
-                className="flex items-center justify-between gap-2 border-t border-border pt-3 first:border-t-0 first:pt-0"
-              >
-                <div>
-                  <div className={cn("text-[13px] font-medium", !installed && "text-muted-foreground")}>
-                    {PROVIDER_LABEL[pid]}
+              <div key={pid} className="space-y-2 border-t border-border pt-3 first:border-t-0 first:pt-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className={cn("text-[13px] font-medium", !installed && "text-muted-foreground")}>
+                      {PROVIDER_LABEL[pid]}
+                    </div>
+                    <div className="truncate text-[11px] text-muted-foreground" title={linkedPath ?? undefined}>
+                      {linkedPath ? `Linked: ${linkedPath}` : installed ? "Installed" : "Not installed — link its binary to use it"}
+                    </div>
                   </div>
-                  {!installed && <div className="text-[11px] text-muted-foreground">not installed</div>}
+                  <div className="flex shrink-0 gap-1">
+                    {PROVIDER_SURFACES.filter((s) =>
+                      // Every provider has a CLI; only offer the UI surface when the
+                      // provider has a registered desktop app.
+                      s.id === "cli" ? true : providersWithUi.has(pid),
+                    ).map((s) => {
+                      const on = cfg[pid][s.id];
+                      // Can't turn a surface ON when the provider isn't installed or
+                      // linked; turning an already-on one OFF stays allowed.
+                      const blocked = !installed && !on;
+                      return (
+                        <Button
+                          key={s.id}
+                          size="sm"
+                          variant={on ? "default" : "outline"}
+                          disabled={blocked}
+                          title={blocked ? `Install or link ${PROVIDER_LABEL[pid]} to enable it` : undefined}
+                          onClick={() => toggle(pid, s.id)}
+                          aria-label={`${PROVIDER_LABEL[pid]} ${s.label} ${on ? "enabled" : "disabled"}${
+                            blocked ? " (not installed)" : ""
+                          }`}
+                        >
+                          {s.label}
+                        </Button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="flex gap-1">
-                  {PROVIDER_SURFACES.filter((s) =>
-                    // Every provider has a CLI; only offer the UI surface when the
-                    // provider has a registered desktop app.
-                    s.id === "cli" ? true : providersWithUi.has(pid),
-                  ).map((s) => {
-                    const on = cfg[pid][s.id];
-                    // Can't turn a surface ON when the provider isn't installed;
-                    // turning an already-on one OFF stays allowed.
-                    const blocked = !installed && !on;
-                    return (
-                      <Button
-                        key={s.id}
-                        size="sm"
-                        variant={on ? "default" : "outline"}
-                        disabled={blocked}
-                        title={blocked ? `Install ${PROVIDER_LABEL[pid]} to enable it` : undefined}
-                        onClick={() => toggle(pid, s.id)}
-                        aria-label={`${PROVIDER_LABEL[pid]} ${s.label} ${on ? "enabled" : "disabled"}${
-                          blocked ? " (not installed)" : ""
-                        }`}
-                      >
-                        {s.label}
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {linkedPath ? (
+                    <>
+                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setLinking(pid); setLinkPath(linkedPath); }}>
+                        <Link2 className="size-3.5" /> Change link
                       </Button>
-                    );
-                  })}
+                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => void unlink(pid)}>
+                        Unlink
+                      </Button>
+                    </>
+                  ) : (
+                    !installed && (
+                      <Button size="sm" variant="outline" disabled={busy} onClick={() => { setLinking(pid); setLinkPath(""); }}>
+                        <Link2 className="size-3.5" /> Link binary…
+                      </Button>
+                    )
+                  )}
                 </div>
+
+                {linking === pid && (
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      value={linkPath}
+                      autoFocus
+                      spellCheck={false}
+                      autoComplete="off"
+                      placeholder={`/full/path/to/${binName}`}
+                      onChange={(e) => setLinkPath(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void link(pid);
+                        if (e.key === "Escape") { setLinking(null); setLinkPath(""); }
+                      }}
+                    />
+                    <Button size="sm" disabled={busy || !linkPath.trim()} onClick={() => void link(pid)}>
+                      {busy ? <Loader2 className="size-3.5 animate-spin" /> : null} Link
+                    </Button>
+                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setLinking(null); setLinkPath(""); }}>
+                      Cancel
+                    </Button>
+                  </div>
+                )}
               </div>
             );
           })}
