@@ -1,6 +1,6 @@
 {
   "name": "@event4u/agent-switch",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Switch between multiple Claude Code accounts on macOS, Linux, and Windows via isolated CLAUDE_CONFIG_DIR profiles",
   "repository": {
     "type": "git",
