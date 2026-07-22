@@ -158,6 +158,43 @@ tasks:
       - task: test
       - task: test:gui
 
+  # ---------- docs (Starlight) ----------
+  docs:install:
+    desc: Install the docs-site dependencies (npm ci)
+    dir: starlight
+    cmds:
+      - npm ci
+
+  docs:dev:
+    desc: "Serve the docs site locally with hot reload (http://localhost:4321/agent-switch/)"
+    dir: starlight
+    cmds:
+      - npm run dev
+
+  docs:build:
+    desc: Build the static docs site into starlight/dist
+    dir: starlight
+    cmds:
+      - npm run build
+
+  docs:preview:
+    desc: Preview the built docs site locally
+    dir: starlight
+    cmds:
+      - npm run preview
+
+  docs:check:
+    desc: Type-check + validate the docs content collection
+    dir: starlight
+    cmds:
+      - npm run astro -- check
+
+  docs:clean:
+    desc: Remove docs build output
+    dir: starlight
+    cmds:
+      - rm -rf dist .astro
+
   # ---------- release ----------
   release:
     desc: |

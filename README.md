@@ -1,6 +1,16 @@
+<p align="center"><a href="https://event4u.app"><img alt="agent-switch" src=".github/assets/banner.png"></a></p>
+
 # agent-switch
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/@event4u/agent-switch"><img alt="npm" src="https://img.shields.io/npm/v/@event4u/agent-switch?style=flat-square&color=orange"></a>
+  <a href="https://event4u-app.github.io/agent-switch/"><img alt="Documentation" src="https://img.shields.io/badge/docs-event4u--app.github.io-orange?style=flat-square"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-orange?style=flat-square"></a>
+</p>
+
 Switch between multiple Claude Code accounts on macOS, Linux, and Windows with a single shell command — no repeated login/logout, no browser round-trips after the initial setup.
+
+📖 **[Read the documentation →](https://event4u-app.github.io/agent-switch/)**
 
 ```
 $ asw work        # switch active account
@@ -19,7 +29,7 @@ Most naive switchers snapshot the macOS Keychain entry (`Claude Code-credentials
 
 ## Install
 
-**npm / npx** (any OS — needs Node ≥ 18). The package is published as
+**npm / npx** (any OS — needs Node ≥ 20). The package is published as
 `@event4u/agent-switch` (the bare name `agent-switch` on npm is an unrelated
 project):
 
