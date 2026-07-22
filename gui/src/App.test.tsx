@@ -43,6 +43,7 @@ const ipc = vi.hoisted(() => ({
   openApp: vi.fn(),
   quitApp: vi.fn(),
   setMinimizeToDock: vi.fn(),
+  selfUpdate: vi.fn(),
   listNotifications: vi.fn(),
   recordNotification: vi.fn(),
   clearNotifications: vi.fn(),
@@ -90,7 +91,7 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, shareGlobal: true, hideSummaries: false, minimizeToDock: false }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, shareGlobal: true, hideSummaries: false, minimizeToDock: false, autoUpdateKinds: ["major", "minor", "patch"] }));
 // Keep the update-check path inert in the App tests: uptodate → no toast, no
 // network. The update logic itself is covered by updates.test.ts.
 // Keep the real pure helpers (isNewer/compareVersions — used by agent-config.js)
@@ -145,6 +146,10 @@ vi.mock("./settings-store.js", () => ({
   getMinimizeToDock: () => store.minimizeToDock,
   setMinimizeToDockFlag: (on: boolean) => {
     store.minimizeToDock = on;
+  },
+  getAutoUpdateKinds: () => store.autoUpdateKinds,
+  setAutoUpdateKinds: (kinds: string[]) => {
+    store.autoUpdateKinds = kinds;
   },
   getUpdateNotifiedVersion: () => store.updateNotifiedVersion,
   setUpdateNotifiedVersion: (v: string) => {
@@ -229,6 +234,7 @@ beforeEach(() => {
   ipc.setNotify.mockResolvedValue(undefined);
   ipc.setTrayTooltip.mockResolvedValue(undefined);
   ipc.quitApp.mockResolvedValue(undefined);
+  ipc.selfUpdate.mockResolvedValue({ ok: true, output: "" });
   ipc.listNotifications.mockResolvedValue([]);
   ipc.recordNotification.mockResolvedValue(undefined);
   ipc.clearNotifications.mockResolvedValue(undefined);
