@@ -98,6 +98,33 @@ export function setAutoUpdateCheckFlag(on: boolean): void {
   }
 }
 
+const AUTO_UPDATE_KINDS_KEY = "agent-switch-auto-update-kinds";
+const ALL_UPDATE_KINDS = ["major", "minor", "patch"] as const;
+type StoredUpdateKind = (typeof ALL_UPDATE_KINDS)[number];
+
+/** Which release types auto-update installs when it is on. Default: all three
+ *  (major, minor, patch) — auto-update was turned on, so everything applies
+ *  until the user narrows it. Persisted as a comma list; an unknown/missing
+ *  value falls back to all. */
+export function getAutoUpdateKinds(): StoredUpdateKind[] {
+  try {
+    const raw = localStorage.getItem(AUTO_UPDATE_KINDS_KEY);
+    if (raw == null) return [...ALL_UPDATE_KINDS];
+    const kinds = raw.split(",").filter((k): k is StoredUpdateKind => (ALL_UPDATE_KINDS as readonly string[]).includes(k));
+    return kinds;
+  } catch {
+    return [...ALL_UPDATE_KINDS];
+  }
+}
+
+export function setAutoUpdateKinds(kinds: StoredUpdateKind[]): void {
+  try {
+    localStorage.setItem(AUTO_UPDATE_KINDS_KEY, kinds.join(","));
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const MINIMIZE_TO_DOCK_KEY = "agent-switch-minimize-to-dock";
 
 /** macOS only: whether the yellow minimize button minimizes the window into the

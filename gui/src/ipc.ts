@@ -448,6 +448,21 @@ export async function setMinimizeToDock(enabled: boolean): Promise<void> {
   await invoke("set_minimize_to_dock", { enabled });
 }
 
+export interface SelfUpdateResult {
+  ok: boolean;
+  output: string;
+}
+
+/** Update the installed CLI in place by running `agent-switch update`
+ *  (`npm install -g @event4u/agent-switch@latest`). The GUI itself is fetched
+ *  per-version from the release, so applying the update needs a restart; the
+ *  caller surfaces that. Returns ok=false with the captured output on failure
+ *  (e.g. no write access to the global npm prefix) rather than throwing. */
+export async function selfUpdate(): Promise<SelfUpdateResult> {
+  const out = await Command.create("agent-switch", ["update"]).execute();
+  return { ok: out.code === 0, output: `${out.stdout}\n${out.stderr}`.trim() };
+}
+
 /** Recent notifications, newest first (`notifications --json`). Read-only —
  *  returns [] on failure so the bell never blanks. */
 export async function listNotifications(): Promise<AppNotification[]> {
