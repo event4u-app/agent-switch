@@ -1,0 +1,33 @@
+---
+title: agent-switch
+description: Switch between multiple Claude Code, Codex, and Antigravity accounts via isolated config-dir profiles.
+template: splash
+hero:
+  tagline: Switch between multiple Claude Code, Codex, and Antigravity accounts with one shell command — no repeated logins, nothing goes stale.
+  image:
+    html: '<img src="/agent-switch/banner.png" alt="agent-switch" />'
+  actions:
+    - text: Get started
+      link: /agent-switch/getting-started/introduction/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/event4u-app/agent-switch
+      icon: external
+---
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid>
+  <Card title="Multi-provider" icon="puzzle">
+    Claude Code, Codex, and Antigravity — one architecture, one command surface. See the [introduction](/agent-switch/getting-started/introduction/).
+  </Card>
+  <Card title="Live & isolated" icon="approve-check">
+    Config-dir isolation gives every account its own directory, so each stays logged in independently and nothing goes stale. See the [introduction](/agent-switch/getting-started/introduction/).
+  </Card>
+  <Card title="Per-repo accounts" icon="setting">
+    Bind accounts to directories with mappings and shared settings. See [mappings & sharing](/agent-switch/guides/mappings-and-sharing/).
+  </Card>
+  <Card title="Sessions & handoff" icon="random">
+    Move or fork sessions between accounts, write cross-provider briefs, and drive it all from the tray GUI. See [sessions & handoff](/agent-switch/guides/sessions-and-handoff/) and the [tray GUI](/agent-switch/guides/tray-gui/).
+  </Card>
+</CardGrid>
