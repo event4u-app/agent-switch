@@ -50,6 +50,21 @@ export function isNewer(latest: string, current: string): boolean {
   return compareVersions(latest, current) > 0;
 }
 
+/** A semver bump class, used to gate which updates auto-install. */
+export type UpdateKind = "major" | "minor" | "patch";
+
+/** Classify the bump from `current` to `latest`: a higher first component is a
+ *  major bump, a higher second (same major) a minor, otherwise a patch. Returns
+ *  null when `latest` is not strictly newer. Pure. */
+export function releaseKind(current: string, latest: string): UpdateKind | null {
+  if (!isNewer(latest, current)) return null;
+  const c = parseVersion(current);
+  const l = parseVersion(latest);
+  if ((l[0] ?? 0) > (c[0] ?? 0)) return "major";
+  if ((l[1] ?? 0) > (c[1] ?? 0)) return "minor";
+  return "patch";
+}
+
 /** The subset of the GitHub release payload the UI needs. */
 export interface ReleaseInfo {
   tag: string;

@@ -29,6 +29,7 @@ import {
   takeoverArgs,
   quitApp,
   setMinimizeToDock,
+  selfUpdate,
   removeProfile,
   renameProfile,
   sessionArgs,
@@ -88,6 +89,8 @@ import {
   setAutoUpdateCheckFlag,
   getMinimizeToDock,
   setMinimizeToDockFlag,
+  getAutoUpdateKinds,
+  setAutoUpdateKinds,
   getUpdateNotifiedVersion,
   setUpdateNotifiedVersion,
   getAgentConfigNotifiedVersion,
@@ -95,7 +98,7 @@ import {
   getNextUsageRefreshAt,
   setNextUsageRefreshAt,
 } from "./settings-store.js";
-import { checkForUpdate, fetchLatestRelease, isNewer, type UpdateCheck } from "./updates.js";
+import { checkForUpdate, fetchLatestRelease, isNewer, releaseKind, type UpdateCheck, type UpdateKind } from "./updates.js";
 import { AgentConfigBanner } from "./AgentConfigBanner.js";
 import { UsageBars, utilColor } from "./UsageBars.js";
 import { deriveAgentConfigView, AGENT_CONFIG_REPO, AGENT_CONFIG_REPO_URL, type AgentConfigStatus } from "./agent-config.js";
@@ -158,6 +161,7 @@ export default function App() {
   const [autoRefresh, setAutoRefresh] = useState(() => getAutoRefreshLimits());
   const [autoUpdateCheck, setAutoUpdateCheck] = useState(() => getAutoUpdateCheck());
   const [minimizeToDock, setMinimizeToDockState] = useState(() => getMinimizeToDock());
+  const [autoUpdateKinds, setAutoUpdateKindsState] = useState<UpdateKind[]>(() => getAutoUpdateKinds());
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [auto, setAuto] = useState<AutoSwitchMap | null>(null);
   const [providers, setProviders] = useState<ProvidersStatus | null>(null);
@@ -291,6 +295,12 @@ export default function App() {
     setAutoUpdateCheck(on);
   }
 
+  function toggleAutoUpdateKind(kind: UpdateKind, on: boolean) {
+    const next = on ? [...new Set([...autoUpdateKinds, kind])] : autoUpdateKinds.filter((k) => k !== kind);
+    setAutoUpdateKinds(next);
+    setAutoUpdateKindsState(next);
+  }
+
   function toggleMinimizeToDock(on: boolean) {
     setMinimizeToDockFlag(on);
     setMinimizeToDockState(on);
@@ -303,29 +313,46 @@ export default function App() {
     void setMinimizeToDock(getMinimizeToDock());
   }, []);
 
-  // Automatic update check (Approach A — check + notify, never self-install).
-  // Runs once on open and then every 24h WHILE the app stays running (a tray app
-  // can run for weeks, so on-open alone would leave it stale). When a newer
-  // release is found it fires one in-window toast per version — deduped via the
-  // persisted "notified version" so it never nags on every launch/interval.
-  // Toggle-gated (default ON); the Updates settings tab shows live status either
-  // way. Fully best-effort: any failure is swallowed here and surfaced only in
-  // the Updates tab, never as an error banner.
+  // Automatic updates. Runs once on open and then every 24h WHILE the app stays
+  // running (a tray app can run for weeks, so on-open alone would leave it
+  // stale). When a newer release is found, its bump kind (major/minor/patch) is
+  // matched against the enabled kinds: an enabled kind is installed in place
+  // (`agent-switch update` → npm i -g @latest) and a "restart to apply" toast is
+  // shown; a disabled kind only notifies so the user can update manually. Each
+  // version is handled once — deduped via the persisted "notified version" — so
+  // a running app never reinstalls or re-nags the same release every interval.
+  // Toggle-gated (default ON); the Updates settings tab shows live status and a
+  // manual "Update now" button either way. Best-effort: check failures are
+  // swallowed and surfaced only in the Updates tab, never as an error banner.
   useEffect(() => {
     if (!autoUpdateCheck) return;
     let cancelled = false;
     async function runCheck() {
       const res = await checkForUpdate();
       if (cancelled || res.kind !== "available") return;
-      if (getUpdateNotifiedVersion() === res.release.tag) return; // already toasted this version
-      setUpdateNotifiedVersion(res.release.tag);
-      pushToast({
-        id: `update-${res.release.tag}`,
-        ts: Date.now(),
-        kind: "info",
-        title: `Update available — ${res.release.tag}`,
-        message: "Open Settings › Updates to download it.",
-      });
+      const tag = res.release.tag;
+      if (getUpdateNotifiedVersion() === tag) return; // already handled this version
+      setUpdateNotifiedVersion(tag); // dedupe whether we install or only notify
+      const kind = releaseKind(res.current, tag);
+      if (kind && autoUpdateKinds.includes(kind)) {
+        const r = await selfUpdate();
+        if (cancelled) return;
+        pushToast({
+          id: `update-${tag}`,
+          ts: Date.now(),
+          kind: r.ok ? "success" : "warning",
+          title: r.ok ? `Updated to ${tag}` : `Update to ${tag} failed`,
+          message: r.ok ? "Restart agent-switch to apply." : "Open Settings › Updates to retry.",
+        });
+      } else {
+        pushToast({
+          id: `update-${tag}`,
+          ts: Date.now(),
+          kind: "info",
+          title: `Update available — ${tag}`,
+          message: `Open Settings › Updates to install it${kind ? ` (${kind})` : ""}.`,
+        });
+      }
     }
     void runCheck();
     const id = setInterval(() => void runCheck(), 24 * 60 * 60 * 1000);
@@ -333,7 +360,7 @@ export default function App() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [autoUpdateCheck]);
+  }, [autoUpdateCheck, autoUpdateKinds]);
 
   // Dev-mode: append 25 varied test notifications (varied so the CLI's dedup
   // never collapses them), then refresh the flyout list.
@@ -748,6 +775,8 @@ export default function App() {
             onChangeRefreshMin={changeRefreshMin}
             autoUpdateCheck={autoUpdateCheck}
             onToggleAutoUpdateCheck={toggleAutoUpdateCheck}
+            autoUpdateKinds={autoUpdateKinds}
+            onToggleAutoUpdateKind={toggleAutoUpdateKind}
             minimizeToDock={minimizeToDock}
             onToggleMinimizeToDock={toggleMinimizeToDock}
             hideSummaries={hideSummaries}
@@ -1322,6 +1351,8 @@ function SettingsView({
   onChangeRefreshMin,
   autoUpdateCheck,
   onToggleAutoUpdateCheck,
+  autoUpdateKinds,
+  onToggleAutoUpdateKind,
   minimizeToDock,
   onToggleMinimizeToDock,
   hideSummaries,
@@ -1347,6 +1378,8 @@ function SettingsView({
   onChangeRefreshMin: (min: number) => void;
   autoUpdateCheck: boolean;
   onToggleAutoUpdateCheck: (on: boolean) => void;
+  autoUpdateKinds: UpdateKind[];
+  onToggleAutoUpdateKind: (kind: UpdateKind, on: boolean) => void;
   minimizeToDock: boolean;
   onToggleMinimizeToDock: (on: boolean) => void;
   mutedKinds: NotificationKind[];
@@ -1405,7 +1438,12 @@ function SettingsView({
       {tab === "providers" && <ProvidersSettings onChange={onProvidersChanged} providersWithUi={providersWithUi} />}
       {tab === "design" && <DesignSettings />}
       {tab === "updates" && (
-        <UpdatesSettings autoUpdateCheck={autoUpdateCheck} onToggleAutoUpdateCheck={onToggleAutoUpdateCheck} />
+        <UpdatesSettings
+          autoUpdateCheck={autoUpdateCheck}
+          onToggleAutoUpdateCheck={onToggleAutoUpdateCheck}
+          autoUpdateKinds={autoUpdateKinds}
+          onToggleAutoUpdateKind={onToggleAutoUpdateKind}
+        />
       )}
       {tab === "uninstall" && <UninstallSettings onUninstall={onUninstall} />}
     </div>
@@ -1933,20 +1971,33 @@ function DesignSettings() {
   );
 }
 
+// The auto-update release types, in descending impact order.
+const UPDATE_KINDS: { kind: UpdateKind; label: string }[] = [
+  { kind: "major", label: "Major" },
+  { kind: "minor", label: "Minor" },
+  { kind: "patch", label: "Bugfix" },
+];
+
 /** Updates tab: shows the running version, checks GitHub Releases for a newer
- *  one, and links to the download. This is check-and-notify only (Approach A) —
- *  it never downloads or installs anything itself; the Download button opens the
- *  release page in the browser. Auto-check (default ON) drives the on-open + 24h
- *  background check in App plus this tab's initial check. */
+ *  one, and updates in place via `agent-switch update` (npm i -g @latest) — the
+ *  "Update now" button installs immediately and Automatic updates installs the
+ *  enabled release types on its own (see App's 24h check). Applying an update
+ *  needs a restart, since the running GUI is fetched per-version. */
 function UpdatesSettings({
   autoUpdateCheck,
   onToggleAutoUpdateCheck,
+  autoUpdateKinds,
+  onToggleAutoUpdateKind,
 }: {
   autoUpdateCheck: boolean;
   onToggleAutoUpdateCheck: (on: boolean) => void;
+  autoUpdateKinds: UpdateKind[];
+  onToggleAutoUpdateKind: (kind: UpdateKind, on: boolean) => void;
 }) {
   const [check, setCheck] = useState<UpdateCheck | null>(null);
   const [busy, setBusy] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [updateNote, setUpdateNote] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function runCheck() {
     setBusy(true);
@@ -1954,6 +2005,21 @@ function UpdatesSettings({
       setCheck(await checkForUpdate());
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runUpdate(tag: string) {
+    setUpdating(true);
+    setUpdateNote(null);
+    try {
+      const r = await selfUpdate();
+      setUpdateNote(
+        r.ok
+          ? { ok: true, text: `Updated to ${tag} — restart agent-switch to apply.` }
+          : { ok: false, text: `Update failed: ${r.output.slice(-300) || "unknown error"}` },
+      );
+    } finally {
+      setUpdating(false);
     }
   }
 
@@ -1978,7 +2044,7 @@ function UpdatesSettings({
               )}
             </div>
           </div>
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => void runCheck()} aria-label="Check for updates">
+          <Button size="sm" variant="outline" disabled={busy || updating} onClick={() => void runCheck()} aria-label="Check for updates">
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
             {busy ? "Checking…" : "Check now"}
           </Button>
@@ -2003,29 +2069,66 @@ function UpdatesSettings({
                 {available.notes.length > 500 && "…"}
               </div>
             )}
-            <Button size="sm" onClick={() => void openUrl(available.url)} aria-label={`Download ${available.tag}`}>
-              <Download className="size-3.5" /> Download {available.tag}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button size="sm" disabled={updating} onClick={() => void runUpdate(available.tag)} aria-label={`Update to ${available.tag}`}>
+                {updating ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                {updating ? "Updating…" : `Update to ${available.tag}`}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => void openUrl(available.url)} aria-label="Release notes">
+                Release notes
+              </Button>
+            </div>
           </div>
+        )}
+
+        {updateNote && (
+          <div className={cn("text-xs", updateNote.ok ? "text-muted-foreground" : "text-destructive")}>{updateNote.text}</div>
         )}
 
         <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
           <div className="min-w-0">
-            <div className="text-[13px] font-medium">Automatic update check</div>
+            <div className="text-[13px] font-medium">Automatic updates</div>
             <div className="text-xs text-muted-foreground">
-              Check for a newer version on open and every 24 hours, and notify you when one is found. This only checks
-              and notifies — it never downloads or installs on its own.
+              Check on open and every 24 hours, and install a new version automatically (for the release types selected
+              below). You'll be told to restart once it's applied.
             </div>
           </div>
           <Button
             size="sm"
             variant={autoUpdateCheck ? "default" : "outline"}
             onClick={() => onToggleAutoUpdateCheck(!autoUpdateCheck)}
-            aria-label="Automatic update check"
+            aria-label="Automatic updates"
           >
             {autoUpdateCheck ? "On" : "Off"}
           </Button>
         </div>
+
+        {autoUpdateCheck && (
+          <div className="space-y-2 border-t border-border pt-3">
+            <div className="text-[13px] font-medium">Install automatically for</div>
+            <div className="text-xs text-muted-foreground">
+              Uncheck a type to only be notified about it (e.g. leave Major off to review big releases first).
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {UPDATE_KINDS.map(({ kind, label }) => {
+                const on = autoUpdateKinds.includes(kind);
+                return (
+                  <Button
+                    key={kind}
+                    size="sm"
+                    variant={on ? "default" : "outline"}
+                    onClick={() => onToggleAutoUpdateKind(kind, !on)}
+                    aria-label={`Auto-update ${label}`}
+                    aria-pressed={on}
+                  >
+                    {on ? <Check className="size-3.5" /> : null}
+                    {label}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
