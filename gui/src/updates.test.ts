@@ -10,7 +10,26 @@ import {
   parseRelease,
   checkForUpdate,
   fetchLatestRelease,
+  releaseKind,
 } from "./updates.js";
+
+describe("releaseKind", () => {
+  it("classifies the bump by the highest changed component", () => {
+    expect(releaseKind("1.2.3", "2.0.0")).toBe("major");
+    expect(releaseKind("1.2.3", "2.5.9")).toBe("major"); // major wins even if minor/patch also jump
+    expect(releaseKind("1.2.3", "1.3.0")).toBe("minor");
+    expect(releaseKind("1.2.3", "1.2.4")).toBe("patch");
+  });
+  it("returns null when latest is not strictly newer", () => {
+    expect(releaseKind("1.2.3", "1.2.3")).toBeNull();
+    expect(releaseKind("1.2.3", "1.2.0")).toBeNull();
+    expect(releaseKind("2.0.0", "1.9.9")).toBeNull();
+  });
+  it("tolerates a leading v and missing components", () => {
+    expect(releaseKind("1.2.3", "v1.2.4")).toBe("patch");
+    expect(releaseKind("1.0.0", "1.1")).toBe("minor"); // 1.1 == 1.1.0
+  });
+});
 
 describe("parseVersion", () => {
   it("strips a leading v and splits on dots", () => {
