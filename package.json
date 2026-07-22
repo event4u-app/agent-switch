@@ -18,8 +18,9 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsc",
-    "prepare": "tsc",
+    "build": "tsc && chmod +x dist/index.js",
+    "prepare": "npm run build",
+    "prepack": "node scripts/prepack-check.mjs",
     "test": "tsc -p tsconfig.test.json && cd dist-test && node --test"
   },
   "engines": {
