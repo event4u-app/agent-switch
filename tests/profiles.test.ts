@@ -54,6 +54,7 @@ test("activeFor / setActive are per-provider", () => {
       codex: { cli: true, ui: true },
       antigravity: { cli: false, ui: false },
     },
+    binaryPaths: {},
     switchStrategy: "reset-first",
     osNotifications: false,
   }); // clean baseline (shared STATE_FILE)
@@ -133,6 +134,7 @@ test("legacy global auto-switch migrates onto every provider", () => {
       codex: { cli: true, ui: true },
       antigravity: { cli: false, ui: false },
     },
+    binaryPaths: {},
     switchStrategy: "reset-first",
     osNotifications: false,
   });
@@ -185,6 +187,7 @@ test("switchStrategy defaults to reset-first and persists a change", () => {
       codex: { cli: true, ui: true },
       antigravity: { cli: false, ui: false },
     },
+    binaryPaths: {},
     switchStrategy: "reset-first",
     osNotifications: false,
   });
@@ -253,4 +256,15 @@ test("renameProfile carries the Claude credential across the config-path (keycha
   assert.equal(fs.readFileSync(path.join(dst, ".credentials.json"), "utf8"), "TOKEN");
   assert.deepEqual(cleared, [dst]); // cleared any stale entry at the new path before seeding
   assert.deepEqual(removed, [from]); // dropped the orphaned old-path keychain entry
+});
+
+test("binary paths: link round-trips, readBinaryPaths reflects it, unlink clears", () => {
+  P.setBinaryPath("claude", "/opt/tools/claude");
+  assert.equal(P.readBinaryPath("claude"), "/opt/tools/claude");
+  assert.equal(P.readBinaryPaths().claude, "/opt/tools/claude");
+  assert.equal(P.readBinaryPath("codex"), null); // untouched providers stay null
+
+  P.setBinaryPath("claude", null);
+  assert.equal(P.readBinaryPath("claude"), null);
+  assert.equal(P.readBinaryPaths().claude, undefined);
 });

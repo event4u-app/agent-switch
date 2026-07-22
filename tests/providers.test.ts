@@ -4,10 +4,28 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { provider, allProviders, isProviderId, PROVIDER_IDS, decodeGoKeyringEmail } from "../src/providers.js";
+import { provider, allProviders, isProviderId, PROVIDER_IDS, decodeGoKeyringEmail, resolveBinary, isProviderInstalled } from "../src/providers.js";
 
 const b64url = (obj: unknown) => Buffer.from(JSON.stringify(obj)).toString("base64url");
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "asw-prov-"));
+
+test("a linked binary path wins over PATH resolution when it exists", () => {
+  const dir = tmp();
+  const linked = path.join(dir, "my-claude");
+  fs.writeFileSync(linked, "#!/bin/sh\n", { mode: 0o755 });
+  // A present linked path is used verbatim, regardless of what's on PATH.
+  assert.equal(resolveBinary("claude", linked), linked);
+  assert.equal(isProviderInstalled("claude", linked), true);
+});
+
+test("a linked path that does not exist is ignored (falls back to PATH resolution)", () => {
+  const missing = path.join(tmp(), "nope");
+  // A bogus link never masquerades as installed, and resolveBinary skips it.
+  assert.equal(isProviderInstalled("codex", missing), isProviderInstalled("codex"));
+  assert.equal(resolveBinary("codex", missing), resolveBinary("codex"));
+  // No link → unchanged behavior (bare name or ~/.local/bin), never the missing path.
+  assert.notEqual(resolveBinary("codex", missing), missing);
+});
 
 test("isProviderId guards the three ids", () => {
   assert.equal(isProviderId("codex"), true);
