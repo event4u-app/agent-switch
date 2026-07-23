@@ -31,18 +31,82 @@ export async function agentConfigVersion(): Promise<string | null> {
   }
 }
 
-/** Install agent-config via its README-recommended installer. `init` opens a
- *  browser setup wizard and writes to the global scope (v2.5+). Rejects on a
- *  non-zero exit so the caller can surface the failure. */
-export async function installAgentConfig(): Promise<void> {
-  const out = await Command.create("agent-config-install", ["-y", "@event4u/agent-config", "init"]).execute();
-  if (out.code !== 0) throw new Error(out.stderr || `agent-config install failed (exit ${out.code})`);
+// Install/upgrade are deliberately NOT spawned by the GUI (copy-command only):
+// unattended `npm i -g` fails on most stock macOS/Linux setups and even a
+// success stays invisible to the already-running process's PATH.
+
+// ---- agent-config local server (embedded settings — ac.rs Tauri commands) ----
+// All AC API traffic goes through Rust: a Rust request sends no Origin header,
+// so AC's browser-origin allow-list is skipped by design; a fetch() from this
+// webview (Origin tauri://localhost) would be 403'd. The webview only renders.
+
+/** Discovery status of the agent-config local server (mirrors Rust `AcStatus`). */
+export type AcStatus =
+  | { status: "notInstalled" }
+  | { status: "notRunning" }
+  | { status: "live"; port: number; pid: number; version: string | null }
+  | { status: "wedged"; pid: number; port: number };
+
+/** Typed error union (mirrors Rust `AcError`); `invoke` rejects with one of these. */
+export type AcError =
+  | { kind: "notInstalled" }
+  | { kind: "notRunning" }
+  | { kind: "wedged"; pid: number }
+  | { kind: "spawnFailed"; exitCode: number | null; stderr: string }
+  | { kind: "startTimeout"; waitedMs: number; exitCode: number | null; stderr: string }
+  | { kind: "tokenRotated" }
+  | { kind: "tokenUnreadable"; message: string }
+  | { kind: "request"; message: string };
+
+export interface AcApiResponse {
+  status: number;
+  body: string;
 }
 
-/** Upgrade an installed agent-config to the latest release. Rejects on non-zero. */
-export async function upgradeAgentConfig(): Promise<void> {
-  const out = await Command.create("agent-config-upgrade", ["upgrade"]).execute();
-  if (out.code !== 0) throw new Error(out.stderr || `agent-config upgrade failed (exit ${out.code})`);
+/** Read-only discovery: discovery file + pid liveness + authed ping. */
+export async function acDiscover(): Promise<AcStatus> {
+  return invoke<AcStatus>("ac_discover");
+}
+
+/** Discover; when not live, spawn `agent-config ui:serve --no-open` and wait
+ *  (bounded) for the discovery file + authed ping. Rejects with an AcError —
+ *  a wedged server is never killed here (see acForceRestart). */
+export async function acEnsure(): Promise<AcStatus> {
+  return invoke<AcStatus>("ac_ensure");
+}
+
+/** Loopback AC API call via Rust. Non-2xx resolves with its status (the caller
+ *  decides what a 404/422 means); a 401 that survives the built-in one-shot
+ *  recovery (re-discover + token re-read + retry) rejects with tokenRotated. */
+export async function acApi(method: string, path: string, body?: string): Promise<AcApiResponse> {
+  return invoke<AcApiResponse>("ac_api", { method, path, body: body ?? null });
+}
+
+/** Wedged case ONLY (pid alive, ping dead): kill the recorded pid, respawn,
+ *  take ownership. The UI must get explicit user consent before calling this. */
+export async function acForceRestart(): Promise<AcStatus> {
+  return invoke<AcStatus>("ac_force_restart");
+}
+
+/** Shut the server down if AS spawned it (POST /api/v1/shutdown, SIGTERM
+ *  fallback); a server AS merely found is left running. Also runs
+ *  automatically on app exit. */
+export async function acRelease(): Promise<void> {
+  return invoke("ac_release");
+}
+
+/** Open (or focus) the separate settings WebviewWindow. The URL — including
+ *  the bearer token — is built entirely in Rust; the token never enters this
+ *  webview's JS context. Emits `ac-settings-closed` to this window when the
+ *  settings window is destroyed (the keepalive stops on it). */
+export async function acOpenSettingsWindow(theme: "light" | "dark", profile?: string): Promise<AcStatus> {
+  return invoke<AcStatus>("ac_open_settings_window", { theme, profile: profile ?? null });
+}
+
+/** The permanent "Open in browser" escape hatch — AC's own browser bootstrap
+ *  URL, built and opened entirely in Rust (token stays out of this webview). */
+export async function acOpenInBrowser(): Promise<void> {
+  return invoke("ac_open_in_browser");
 }
 
 // ---- share: link the global (default ~/.claude) skills/commands/agents/CLAUDE.md
@@ -75,6 +139,33 @@ export async function shareOff(): Promise<void> {
 /** Reconcile forked file-links (e.g. CLAUDE.md after an atomic write) back to links. */
 export async function shareSync(): Promise<void> {
   await runCli(["share", "sync", "--source", "default"]);
+}
+
+// ---- tooling readout (`agent-switch tooling --json`): the Tooling section's
+// ONLY data channel. Detection lives in the CLI (src/tooling.ts) — the GUI
+// renders the readout and never shells out to probe binaries on its own. ----
+
+export type ToolingId = "agent-config" | "rtk" | "claude" | "codex" | "agy";
+export type ToolingIdentity = "token-killer" | "unknown-rtk" | "unverified";
+
+/** Mirrors the CLI's ToolStatus (src/tooling.ts) exactly. Absence is encoded as
+ *  `present: false`; `identity` appears only for tools with a name-collision
+ *  risk (today: rtk). */
+export interface ToolingEntry {
+  id: ToolingId;
+  present: boolean;
+  version: string | null;
+  path: string | null;
+  healthy: boolean;
+  identity?: ToolingIdentity;
+  /** One actionable sentence when unhealthy; empty string when healthy. */
+  hint: string;
+}
+
+/** Full detection sweep, run by the CLI (measured ≈850 ms cold — the caller
+ *  caches the result and shows its age rather than re-sweeping per render). */
+export async function toolingStatus(): Promise<ToolingEntry[]> {
+  return JSON.parse(await runCli(["tooling", "--json"]));
 }
 
 export async function listProfiles(): Promise<ProfileRow[]> {

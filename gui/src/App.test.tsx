@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as React from "react";
-import { render, screen, waitFor, fireEvent, cleanup, act } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, cleanup, act, within } from "@testing-library/react";
 
 // The IPC layer is Tauri-coupled; mock it so the component logic is testable in
 // jsdom. loginArgs/sessionArgs are pure arg builders — kept real so the args
@@ -52,8 +52,14 @@ const ipc = vi.hoisted(() => ({
   getOsNotify: vi.fn(),
   setOsNotify: vi.fn(),
   agentConfigVersion: vi.fn(),
-  installAgentConfig: vi.fn(),
-  upgradeAgentConfig: vi.fn(),
+  acOpenSettingsWindow: vi.fn(),
+  acOpenInBrowser: vi.fn(),
+  acForceRestart: vi.fn(),
+  acDiscover: vi.fn(),
+  acEnsure: vi.fn(),
+  acApi: vi.fn(),
+  acRelease: vi.fn(),
+  toolingStatus: vi.fn(),
   shareStatus: vi.fn(),
   shareOn: vi.fn(),
   shareOff: vi.fn(),
@@ -93,7 +99,7 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, shareGlobal: true, hideSummaries: false, minimizeToDock: false, autoUpdateKinds: ["major", "minor", "patch"] }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, acCardDismissed: false, shareGlobal: true, hideSummaries: false, minimizeToDock: false, autoUpdateKinds: ["major", "minor", "patch"], providerFilter: "claude" }));
 // Keep the update-check path inert in the App tests: uptodate → no toast, no
 // network. The update logic itself is covered by updates.test.ts.
 // Keep the real pure helpers (isNewer/compareVersions — used by agent-config.js)
@@ -107,6 +113,9 @@ vi.mock("./updates.js", async (importActual) => ({
   fetchLatestRelease: fetchLatest,
 }));
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: vi.fn() }));
+// The settings-window lifecycle event comes from the Tauri event system,
+// unavailable in jsdom — a resolved unlisten keeps the effect inert.
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
 vi.mock("./settings-store.js", () => ({
   getAutoSwitchGlobal: () => store.globalAuto,
   setAutoSwitchGlobalFlag: (on: boolean) => {
@@ -165,6 +174,14 @@ vi.mock("./settings-store.js", () => ({
   setNextUsageRefreshAt: (ts: number) => {
     store.nextUsageRefreshAt = ts;
   },
+  getAgentConfigCardDismissed: () => store.acCardDismissed,
+  setAgentConfigCardDismissed: () => {
+    store.acCardDismissed = true;
+  },
+  getProviderFilter: () => store.providerFilter,
+  setProviderFilter: (id: string) => {
+    store.providerFilter = id;
+  },
 }));
 
 import App from "./App.js";
@@ -198,6 +215,8 @@ beforeEach(() => {
   store.mutedKinds = [];
   store.shareGlobal = true;
   store.agentConfigNotifiedVersion = "";
+  store.acCardDismissed = false;
+  store.providerFilter = "claude";
   ipc.listProfiles.mockResolvedValue(rows);
   ipc.profileUsage.mockResolvedValue(usageSnap);
   ipc.getAutoSwitch.mockResolvedValue({
@@ -242,11 +261,23 @@ beforeEach(() => {
   ipc.clearNotifications.mockResolvedValue(undefined);
   ipc.getOsNotify.mockResolvedValue(false);
   ipc.setOsNotify.mockResolvedValue(undefined);
-  // agent-config detected as installed + up to date → banner hidden by default,
-  // so it never interferes with the existing assertions.
+  // agent-config detected as installed + up to date → the first-run card is
+  // hidden by default, so it never interferes with the existing assertions.
   ipc.agentConfigVersion.mockResolvedValue("9.2.0");
-  ipc.installAgentConfig.mockResolvedValue(undefined);
-  ipc.upgradeAgentConfig.mockResolvedValue(undefined);
+  ipc.acOpenSettingsWindow.mockResolvedValue({ status: "live", port: 41066, pid: 4242, version: "9.7.0" });
+  ipc.acOpenInBrowser.mockResolvedValue(undefined);
+  ipc.acForceRestart.mockResolvedValue({ status: "live", port: 41066, pid: 4243, version: "9.7.0" });
+  ipc.acApi.mockResolvedValue({ status: 200, body: "{}" });
+  ipc.acEnsure.mockResolvedValue({ status: "live", port: 41066, pid: 4242, version: "9.7.0" });
+  // Tooling readout defaults to all-healthy so the section renders quietly and
+  // never interferes with the existing assertions.
+  ipc.toolingStatus.mockResolvedValue([
+    { id: "agent-config", present: true, version: "9.7.0", path: "/usr/local/bin/agent-config", healthy: true, hint: "" },
+    { id: "rtk", present: true, version: "1.4.2", path: "/usr/local/bin/rtk", healthy: true, identity: "token-killer", hint: "" },
+    { id: "claude", present: true, version: "2.0.0", path: "/usr/local/bin/claude", healthy: true, hint: "" },
+    { id: "codex", present: true, version: "0.5.0", path: "/usr/local/bin/codex", healthy: true, hint: "" },
+    { id: "agy", present: true, version: "1.0.0", path: "/usr/local/bin/agy", healthy: true, hint: "" },
+  ]);
   ipc.shareStatus.mockResolvedValue({ active: false, source: "default", profiles: [] });
   ipc.shareOn.mockResolvedValue(undefined);
   ipc.shareOff.mockResolvedValue(undefined);
@@ -377,14 +408,16 @@ describe("App", () => {
     expect(screen.queryByLabelText(/auto-switch.*for antigravity/i)).toBeNull(); // no readout → no badge colour
   });
 
-  it("shows an auto-switch tag filter with only existing tags and applies the choice", async () => {
+  it("shows an auto-switch tag filter (Settings › Auto-switch) with only existing tags and applies the choice", async () => {
     // Default rows: claude work=Work, claude privat=Personal (no "Other").
     ipc.getAutoSwitch.mockResolvedValue({
-      claude: { enabled: true, threshold: 95, tag: "all" }, // on → tag filter shows
+      claude: { enabled: true, threshold: 95, tag: "all" },
       codex: { enabled: false, threshold: 95, tag: "all" },
       antigravity: { enabled: false, threshold: 95, tag: "all" },
     });
     render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /auto-switch/i }));
     const select = (await screen.findByLabelText(/auto-switch accounts for claude/i)) as HTMLSelectElement;
     const opts = Array.from(select.options).map((o) => o.textContent);
     expect(opts).toContain("All accounts");
@@ -422,14 +455,16 @@ describe("App", () => {
     expect(screen.queryByText(/auto-switch ·/i)).toBeNull(); // no footer toggle
   });
 
-  it("opens a Settings view (agent tabs hidden) with General/Design/Uninstall sub-tabs", async () => {
+  it("opens the Settings section (provider filter hidden) with its five groups", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    // agent provider tabs are gone; settings sub-tabs are present
+    // the provider filter is gone; the settings groups are present
     expect(screen.queryByRole("tab", { name: /claude/i })).toBeNull();
     expect(screen.getByRole("tab", { name: /general/i })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: /design/i })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: /uninstall/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /notifications/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /auto-switch/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /updates/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /advanced/i })).toBeTruthy();
   });
 
   it("toggles autostart from the General settings tab", async () => {
@@ -529,19 +564,86 @@ describe("App", () => {
     await waitFor(() => expect(ipc.profileUsage).toHaveBeenCalled()); // manual click bypassed the cooldown
   });
 
-  it("shows the agent-config install banner when it is not installed", async () => {
+  it("shows the agent-config first-run card (copy-command, nothing spawned) when it is not installed", async () => {
     ipc.agentConfigVersion.mockResolvedValue(null); // not installed
     render(<App />);
     expect(await screen.findByText(/supercharge your ai agents/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /install/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /copy install command/i })).toBeTruthy();
+    // Copy-command only — no unattended install button exists anywhere.
+    expect(screen.queryByRole("button", { name: /^install \(free\)$/i })).toBeNull();
   });
 
-  it("hides the agent-config banner on a subpage — only on the main page", async () => {
-    ipc.agentConfigVersion.mockResolvedValue(null); // banner would show on main
+  it("hides the first-run card on other sections — Profiles only (Ecosystem has its own card)", async () => {
+    ipc.agentConfigVersion.mockResolvedValue(null); // card shows on Profiles
     render(<App />);
-    expect(await screen.findByText(/supercharge your ai agents/i)).toBeTruthy(); // main page
-    fireEvent.click(screen.getByRole("button", { name: /sessions/i }));
-    await waitFor(() => expect(screen.queryByText(/supercharge your ai agents/i)).toBeNull()); // subpage
+    expect(await screen.findByText(/supercharge your ai agents/i)).toBeTruthy(); // Profiles
+    fireEvent.click(screen.getByRole("button", { name: /^usage$/i }));
+    await waitFor(() => expect(screen.queryByText(/supercharge your ai agents/i)).toBeNull()); // gone
+    fireEvent.click(screen.getByRole("button", { name: /^ecosystem$/i }));
+    // The Ecosystem section renders its own (non-dismissible) card.
+    expect(await screen.findByText(/supercharge your ai agents/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /dismiss agent-config recommendation/i })).toBeNull();
+  });
+
+  it("dismissing the first-run card is permanent — survives a remount", async () => {
+    ipc.agentConfigVersion.mockResolvedValue(null);
+    const first = render(<App />);
+    expect(await screen.findByText(/supercharge your ai agents/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /dismiss agent-config recommendation/i }));
+    await waitFor(() => expect(screen.queryByText(/supercharge your ai agents/i)).toBeNull());
+    first.unmount();
+    render(<App />); // fresh mount, same storage
+    await screen.findByRole("button", { name: /^ecosystem$/i }); // app settled
+    expect(screen.queryByText(/supercharge your ai agents/i)).toBeNull(); // still dismissed on Profiles
+  });
+
+  it("the Ecosystem section shows the installed state that the retired footer strip hid", async () => {
+    ipc.agentConfigVersion.mockResolvedValue("9.2.0"); // installed + current → no first-run card
+    fetchLatest.mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    expect(await screen.findByText(/agent-config is up to date/i)).toBeTruthy();
+    expect(screen.getByText(/nothing installs itself/i)).toBeTruthy(); // the boundary line
+    expect(screen.getByText(/shared setup/i)).toBeTruthy();
+  });
+
+  it("opens the embedded settings window via Rust (token never enters this webview) and shows provenance", async () => {
+    ipc.agentConfigVersion.mockResolvedValue("9.2.0");
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /open settings/i }));
+    await waitFor(() => expect(ipc.acOpenSettingsWindow).toHaveBeenCalledWith("dark"));
+    // Provenance: version, port, target — the user always sees whose settings they edit.
+    expect(await screen.findByText(/v9\.7\.0 · port 41066 · target: global/i)).toBeTruthy();
+  });
+
+  it("wedged server → consent UI; Force restart is user-initiated, never silent", async () => {
+    ipc.agentConfigVersion.mockResolvedValue("9.2.0");
+    ipc.acOpenSettingsWindow.mockRejectedValueOnce({ kind: "wedged", pid: 777 });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /open settings/i }));
+    expect(await screen.findByText(/not responding \(pid 777\)/i)).toBeTruthy();
+    expect(ipc.acForceRestart).not.toHaveBeenCalled(); // nothing killed without consent
+    fireEvent.click(screen.getByRole("button", { name: /force restart/i }));
+    await waitFor(() => expect(ipc.acForceRestart).toHaveBeenCalled());
+  });
+
+  it("spawn failure surfaces the exit code, stderr and the manual command — actionable, never vague", async () => {
+    ipc.agentConfigVersion.mockResolvedValue("9.2.0");
+    ipc.acOpenSettingsWindow.mockRejectedValueOnce({ kind: "spawnFailed", exitCode: 1, stderr: "EADDRINUSE" });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /open settings/i }));
+    expect(await screen.findByText(/exit 1.*EADDRINUSE.*agent-config ui:serve/i)).toBeTruthy();
+  });
+
+  it("the permanent Open-in-browser escape hatch goes through Rust", async () => {
+    ipc.agentConfigVersion.mockResolvedValue("9.2.0");
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /open in browser/i }));
+    await waitFor(() => expect(ipc.acOpenInBrowser).toHaveBeenCalled());
   });
 
   it("fires an update notification only when agent-config is installed AND newer exists", async () => {
@@ -561,7 +663,7 @@ describe("App", () => {
     ipc.agentConfigVersion.mockResolvedValue(null); // not installed
     fetchLatest.mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" });
     render(<App />);
-    await screen.findByText(/supercharge your ai agents/i); // banner rendered → detect ran
+    await screen.findByText(/supercharge your ai agents/i); // first-run card rendered → detect ran
     expect(ipc.recordNotification).not.toHaveBeenCalledWith(
       "info",
       "agent-config update available",
@@ -620,10 +722,10 @@ describe("App", () => {
     expect(screen.queryByText("Fetch failed")).toBeNull(); // muted → not listed
   });
 
-  it("toggles a per-kind mute from the Alerts settings tab", async () => {
+  it("toggles a per-kind mute from the Notifications settings group", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    fireEvent.click(await screen.findByRole("tab", { name: /alerts/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /notifications/i }));
     expect(await screen.findByText(/desktop notifications/i)).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: /toggle fetch failures/i }));
     expect(store.mutedKinds).toContain("warning");
@@ -632,21 +734,22 @@ describe("App", () => {
   it("global auto-switch off hides the badge colouring + footer toggle and deactivates every provider", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /auto-switch/i }));
     fireEvent.click(await screen.findByRole("button", { name: /auto-switch globally/i })); // On → Off
     await waitFor(() => expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", false));
     expect(ipc.setAutoSwitch).toHaveBeenCalledWith("codex", false);
     expect(ipc.setAutoSwitch).toHaveBeenCalledWith("antigravity", false);
     // back to the profile view: no per-tab dots, no footer toggle
-    fireEvent.click(screen.getByRole("button", { name: /close settings/i }));
+    fireEvent.click(screen.getByRole("button", { name: /profiles/i }));
     await screen.findByRole("tab", { name: /claude/i });
     expect(screen.queryByLabelText(/auto-switch/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /auto-switch ·/i })).toBeNull();
   });
 
-  it("toggles a provider surface from the Providers settings tab", async () => {
+  it("toggles a provider surface from the Advanced settings group", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    fireEvent.click(await screen.findByRole("tab", { name: /providers/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /advanced/i }));
     // codex CLI is on (mock) → clicking it disables that surface
     fireEvent.click(await screen.findByRole("button", { name: /codex cli enabled/i }));
     expect(ipc.setProvider).toHaveBeenCalledWith("codex", "cli", false);
@@ -660,7 +763,7 @@ describe("App", () => {
     ]);
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    fireEvent.click(await screen.findByRole("tab", { name: /providers/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /advanced/i }));
     // Every provider offers a CLI surface (all three have a working CLI).
     expect(await screen.findByRole("button", { name: /claude cli/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /codex cli/i })).toBeTruthy();
@@ -694,7 +797,7 @@ describe("App", () => {
     expect(screen.getByRole("tab", { name: /codex/i })).toBeTruthy();
   });
 
-  it("shows a not-installed provider in the Providers tab but blocks enabling it", async () => {
+  it("shows a not-installed provider in the Advanced group but blocks enabling it", async () => {
     ipc.getProviders.mockResolvedValue({
       claude: { cli: true, ui: true, installed: true },
       codex: { cli: true, ui: true, installed: true },
@@ -702,7 +805,7 @@ describe("App", () => {
     });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    fireEvent.click(await screen.findByRole("tab", { name: /providers/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /advanced/i }));
     const antigravityCli = await screen.findByRole("button", { name: /antigravity cli disabled \(not installed\)/i });
     expect((antigravityCli as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(antigravityCli);
@@ -719,19 +822,18 @@ describe("App", () => {
     await waitFor(() => expect(ipc.shareOn).toHaveBeenCalled()); // runs `share on --source default`
   });
 
-  it("changes the theme from the Design settings tab", async () => {
+  it("changes the theme from the General settings group (Appearance)", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    fireEvent.click(await screen.findByRole("tab", { name: /design/i }));
-    fireEvent.click(await screen.findByRole("radio", { name: "Light" }));
+    fireEvent.click(await screen.findByRole("radio", { name: "Light" })); // Appearance lives in General now
     expect(document.documentElement.dataset.theme).toBe("light");
   });
 
-  it("hides uninstall behind the Uninstall sub-tab and requires typing to confirm", async () => {
+  it("hides uninstall behind the Advanced settings group and requires typing to confirm", async () => {
     render(<App />);
     expect(screen.queryByRole("button", { name: /uninstall agent-switch/i })).toBeNull();
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    fireEvent.click(await screen.findByRole("tab", { name: /uninstall/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /advanced/i }));
 
     const uninstallBtn = await screen.findByRole("button", { name: /uninstall agent-switch/i });
     expect((uninstallBtn as HTMLButtonElement).disabled).toBe(true); // disabled until the user actively types
@@ -762,7 +864,7 @@ describe("App", () => {
       ),
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /take over/i })); // actions live on the tile, always visible
     const term = await screen.findByTestId("term");
     expect(term.textContent).toContain("takeover abc12345 --to privat"); // moved to the other claude profile
@@ -778,7 +880,7 @@ describe("App", () => {
     );
     ipc.deleteSession.mockResolvedValue({ mode: "trash", trashId: "1000-abc12345" });
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /delete session abc12345/i }));
     expect(ipc.deleteSession).not.toHaveBeenCalled(); // first click only arms the confirm
     fireEvent.click(await screen.findByRole("button", { name: /^Delete$/i }));
@@ -797,7 +899,7 @@ describe("App", () => {
     );
     try {
       render(<App />);
-      fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
       await screen.findByRole("button", { name: /delete session abc12345/i }); // tile rendered
       expect(screen.queryByText("secret summary text")).toBeNull(); // summary suppressed on the tile
       expect(screen.queryByRole("button", { name: /show preview abc12345/i })).toBeNull(); // no preview affordance when hidden
@@ -815,7 +917,7 @@ describe("App", () => {
       ),
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /hand off session abc12345/i }));
     // modal: brief extracted for the OTHER provider (codex), lossy banner names the vendor
     await waitFor(() => expect(ipc.extractHandoffBrief).toHaveBeenCalledWith("claude", "work", "abc12345", "codex"));
@@ -835,7 +937,7 @@ describe("App", () => {
       ),
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
     const del = await screen.findByRole("button", { name: /delete session abc12345/i });
     expect((del as HTMLButtonElement).disabled).toBe(true);
   });
@@ -843,7 +945,7 @@ describe("App", () => {
   it("hides the New button on a subpage — only shown on the main page", async () => {
     render(<App />);
     expect(await screen.findByRole("button", { name: /new/i })).toBeTruthy(); // main page
-    fireEvent.click(screen.getByRole("button", { name: /sessions/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^usage$/i }));
     await waitFor(() => expect(screen.queryByRole("button", { name: /new/i })).toBeNull()); // subpage
   });
 
@@ -873,7 +975,7 @@ describe("App", () => {
       ),
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
     expect(await screen.findByText("67% · 134k/1000k")).toBeTruthy(); // context badge on the tile
     fireEvent.click(await screen.findByRole("button", { name: /compact/i }));
     const term = await screen.findByTestId("term");
@@ -897,7 +999,7 @@ describe("App", () => {
       truncated: false,
     });
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
     expect(ipc.sessionPreview).not.toHaveBeenCalled(); // not fetched until the preview is opened
     fireEvent.click(await screen.findByRole("button", { name: /show preview abc12345/i }));
     await waitFor(() => expect(ipc.sessionPreview).toHaveBeenCalledWith("claude", "abc12345", "work"));
@@ -916,7 +1018,7 @@ describe("App", () => {
     );
     try {
       render(<App />);
-      fireEvent.click(await screen.findByRole("button", { name: /sessions/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
       await screen.findByRole("button", { name: /delete session abc12345/i }); // tile rendered
       expect(screen.queryByRole("button", { name: /show preview abc12345/i })).toBeNull(); // no preview affordance
       expect(ipc.sessionPreview).not.toHaveBeenCalled(); // gated: never read the transcript body
@@ -925,11 +1027,71 @@ describe("App", () => {
     }
   });
 
-  it("toggles context alerts from the Alerts settings tab", async () => {
+  it("toggles context alerts from the Notifications settings group", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    fireEvent.click(await screen.findByRole("tab", { name: /alerts/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /notifications/i }));
     fireEvent.click(await screen.findByRole("button", { name: /^context alerts$/i })); // currently off
     await waitFor(() => expect(ipc.setNotify).toHaveBeenCalledWith(true, [80, 95]));
+  });
+});
+
+describe("sidebar sections", () => {
+  it("routes between the five sections from the sidebar nav", async () => {
+    render(<App />);
+    await screen.findByRole("tab", { name: /claude/i }); // Profiles is the default section
+    const nav = screen.getByRole("navigation", { name: /sections/i });
+    expect(within(nav).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Profiles",
+      "Usage",
+      "Tooling",
+      "Ecosystem",
+      "Settings",
+    ]);
+    fireEvent.click(within(nav).getByRole("button", { name: "Usage" }));
+    expect(await screen.findByText(/sessions live below/i)).toBeTruthy();
+    fireEvent.click(within(nav).getByRole("button", { name: "Tooling" }));
+    // The Tooling section renders the CLI's `tooling --json` readout (never its
+    // own detection) — the all-healthy default resolves into five OK rows.
+    expect(await screen.findByText(/detected by the agent-switch cli/i)).toBeTruthy();
+    await waitFor(() => expect(ipc.toolingStatus).toHaveBeenCalled());
+    expect((await screen.findAllByTestId("tooling-row")).length).toBe(5);
+    fireEvent.click(within(nav).getByRole("button", { name: "Ecosystem" }));
+    expect(await screen.findByText(/nothing installs itself/i)).toBeTruthy();
+    fireEvent.click(within(nav).getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("tab", { name: /general/i })).toBeTruthy();
+    fireEvent.click(within(nav).getByRole("button", { name: "Profiles" }));
+    expect(await screen.findByRole("tab", { name: /claude/i })).toBeTruthy(); // back on the profile list
+  });
+
+  it("marks the active section and moves focus with the arrow keys (wrapping)", async () => {
+    render(<App />);
+    await screen.findByRole("tab", { name: /claude/i });
+    const nav = screen.getByRole("navigation", { name: /sections/i });
+    const items = within(nav).getAllByRole("button");
+    expect(items[0].getAttribute("aria-current")).toBe("page"); // Profiles active by default
+    items[0].focus();
+    fireEvent.keyDown(items[0], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(items[1]);
+    fireEvent.keyDown(items[1], { key: "ArrowUp" });
+    expect(document.activeElement).toBe(items[0]);
+    fireEvent.keyDown(items[0], { key: "ArrowUp" }); // wraps to the last item
+    expect(document.activeElement).toBe(items[4]);
+    fireEvent.keyDown(items[4], { key: "ArrowDown" }); // wraps back to the first
+    expect(document.activeElement).toBe(items[0]);
+    fireEvent.keyDown(items[0], { key: "End" });
+    expect(document.activeElement).toBe(items[4]);
+    fireEvent.keyDown(items[4], { key: "Home" });
+    expect(document.activeElement).toBe(items[0]);
+  });
+
+  it("persists the provider filter and restores it on the next mount", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
+    expect(store.providerFilter).toBe("codex"); // persisted like the other UI prefs
+    cleanup();
+    render(<App />);
+    expect(await screen.findByText(/oai/)).toBeTruthy(); // reopens filtered to codex
+    expect(screen.queryByText(/privat/)).toBeNull();
   });
 });

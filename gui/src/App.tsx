@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, Settings, AlertTriangle, AppWindow, History, ArrowRightLeft, RotateCcw, Minimize2, Pencil, Check, Download, Send, ChevronRight, ChevronDown, MessageSquare, Folder, Hash, Clock, Copy, Loader2, Link2 } from "lucide-react";
+import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, AlertTriangle, AppWindow, ArrowRightLeft, RotateCcw, Minimize2, Pencil, Check, Download, Send, ChevronRight, ChevronDown, MessageSquare, Folder, Hash, Clock, Copy, Loader2, Link2 } from "lucide-react";
 import {
   compactArgs,
   deactivateProfile,
@@ -44,8 +44,11 @@ import {
   unlinkProviderBinary,
   switchProfile,
   agentConfigVersion,
-  installAgentConfig,
-  upgradeAgentConfig,
+  acOpenSettingsWindow,
+  acOpenInBrowser,
+  acForceRestart,
+  type AcStatus,
+  type AcError,
   shareStatus,
   shareOn,
   shareOff,
@@ -96,12 +99,20 @@ import {
   getUpdateNotifiedVersion,
   setUpdateNotifiedVersion,
   getAgentConfigNotifiedVersion,
+  getAgentConfigCardDismissed,
+  setAgentConfigCardDismissed,
   setAgentConfigNotifiedVersion,
   getNextUsageRefreshAt,
   setNextUsageRefreshAt,
+  getProviderFilter,
+  setProviderFilter,
 } from "./settings-store.js";
 import { checkForUpdate, fetchLatestRelease, isNewer, releaseKind, type UpdateCheck, type UpdateKind } from "./updates.js";
-import { AgentConfigBanner } from "./AgentConfigBanner.js";
+import { AgentConfigCard } from "./AgentConfigCard.js";
+import { startKeepalive, stopKeepalive } from "./ac-keepalive.js";
+import { listen } from "@tauri-apps/api/event";
+import { ToolingSection, type ToolingCache } from "./ToolingSection.js";
+import { Sidebar, type Section } from "./Sidebar.js";
 import { UsageBars, utilColor } from "./UsageBars.js";
 import { deriveAgentConfigView, AGENT_CONFIG_REPO, AGENT_CONFIG_REPO_URL, type AgentConfigStatus } from "./agent-config.js";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
@@ -142,6 +153,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = { claude: "Claude", codex: "C
 // content drawn into the title bar) — the header must leave room on the left so
 // its content doesn't sit under the traffic lights.
 const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
+const IS_WINDOWS = typeof navigator !== "undefined" && /Win/i.test(navigator.userAgent);
 /** True only in a dev build (`vite dev` / `tauri dev`) — false in a shipped
  *  release. Gates the developer-mode toggle so it never appears for end users. */
 const IS_DEV = import.meta.env.DEV;
@@ -156,7 +168,9 @@ function describeError(e: unknown): string {
 
 export default function App() {
   const [rows, setRows] = useState<ProfileRow[]>([]);
-  const [selected, setSelected] = useState<ProviderId>("claude");
+  // Provider filter inside the Profiles section (persisted so Profiles reopens
+  // on the provider the user last worked with).
+  const [selected, setSelected] = useState<ProviderId>(() => getProviderFilter());
   // Usage keyed by `<provider>/<name>`, seeded from the local cache so bars show
   // the last-known values (greyed) immediately, before any live fetch.
   const [usage, setUsage] = useState<Record<string, UsageEntry>>(() => loadUsageCache());
@@ -171,8 +185,9 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showSessions, setShowSessions] = useState(false);
+  // Active sidebar section. Plain state, no router — the tray/menubar entry
+  // opens the window on Profiles (the default).
+  const [section, setSection] = useState<Section>("profiles");
   const [hideSummaries, setHideSummaries] = useState(getHideSummaries());
   const toggleHideSummaries = (on: boolean) => {
     setHideSummaries(on);
@@ -185,6 +200,65 @@ export default function App() {
   // agent-config companion CLI status (for the recommend/upgrade banner). null =
   // not yet detected → banner stays hidden until the first detect resolves.
   const [agentConfig, setAgentConfig] = useState<AgentConfigStatus | null>(null);
+  // First-run recommendation card on Profiles: a dismissal is permanent (the
+  // recommendation lives on in the Ecosystem section, visited deliberately).
+  const [acCardDismissed, setAcCardDismissed] = useState(() => getAgentConfigCardDismissed());
+  // Embedded settings window: last live status (provenance), pending error
+  // (failure states are explicit, incl. the consent-gated wedged case).
+  const [acLive, setAcLive] = useState<Extract<AcStatus, { status: "live" }> | null>(null);
+  const [acOpenError, setAcOpenError] = useState<AcError | null>(null);
+  const [acBusy, setAcBusy] = useState(false);
+
+  // The keepalive runs only while the settings window exists: started on a
+  // successful open, stopped when Rust reports the window destroyed (and on
+  // unmount). A ping failing while it runs triggers one transparent respawn
+  // inside the keepalive itself.
+  useEffect(() => {
+    const un = listen("ac-settings-closed", () => stopKeepalive());
+    return () => {
+      void un.then((f) => f());
+      stopKeepalive();
+    };
+  }, []);
+
+  async function openAcSettings() {
+    setAcBusy(true);
+    setAcOpenError(null);
+    try {
+      const effectiveTheme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+      const status = await acOpenSettingsWindow(effectiveTheme);
+      if (status.status === "live") setAcLive(status);
+      startKeepalive();
+    } catch (e) {
+      setAcOpenError(e as AcError);
+    } finally {
+      setAcBusy(false);
+    }
+  }
+
+  async function openAcInBrowser() {
+    setAcOpenError(null);
+    try {
+      await acOpenInBrowser();
+    } catch (e) {
+      setAcOpenError(e as AcError);
+    }
+  }
+
+  // Wedged case only — invoked exclusively from the consent UI below; AS never
+  // silently kills a server it did not spawn.
+  async function forceRestartAc() {
+    setAcBusy(true);
+    try {
+      await acForceRestart();
+      setAcOpenError(null);
+      await openAcSettings();
+    } catch (e) {
+      setAcOpenError(e as AcError);
+    } finally {
+      setAcBusy(false);
+    }
+  }
   // Bumped when the user clicks a desktop notification → opens the bell flyout.
   const [notifOpenNonce, setNotifOpenNonce] = useState(0);
   // Whether the global ~/.claude content (agent-config skills etc.) is linked
@@ -195,6 +269,10 @@ export default function App() {
   const [editKey, setEditKey] = useState<string | null>(null);
   // The in-app pty terminal overlay (login / run), or null when none is open.
   const [terminal, setTerminal] = useState<{ args: string[]; title: string } | null>(null);
+  // Tooling detection sweep cache (entries + timestamp). Owned here so it
+  // survives section switches; the section itself decides when to re-sweep
+  // (first open, manual refresh, window focus past the 60s threshold).
+  const [toolingCache, setToolingCache] = useState<ToolingCache | null>(null);
 
   // Notifications (auto-switches, usage-fetch failures). The event log is owned
   // by the CLI + daemon; the GUI reads it on each refresh, renders the bell +
@@ -237,6 +315,12 @@ export default function App() {
     fn()
       .then(() => refresh())
       .catch((e) => setError(describeError(e)));
+  }
+
+  // Change the Profiles provider filter AND persist it (like the other UI prefs).
+  function selectProvider(pid: ProviderId) {
+    setSelected(pid);
+    setProviderFilter(pid);
   }
 
   // Global auto-switch master. Turning it OFF hides the toggles/dots AND
@@ -675,18 +759,21 @@ export default function App() {
   // If the selected provider was just disabled, jump to the first enabled one.
   useEffect(() => {
     if (providers && enabledIds.length && !enabledIds.includes(selected)) {
-      setSelected(enabledIds[0]);
+      selectProvider(enabledIds[0]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providers]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full">
       <Toaster toasts={toasts} onDismiss={dismissToast} />
+      {/* The traffic-light reserve lives in the sidebar's top 44px on macOS, so
+          the header no longer needs a left padding for it. */}
+      <Sidebar section={section} onSelect={setSection} onQuit={() => quitApp()} isMac={IS_MAC} />
+      <div className="flex min-w-0 flex-1 flex-col">
       <header
         data-tauri-drag-region
         className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-border bg-background/95 px-3 py-2.5 backdrop-blur"
-        style={IS_MAC ? { paddingLeft: 78 } : undefined}
       >
         <div className="flex items-center gap-2" data-tauri-drag-region>
           <div
@@ -706,9 +793,9 @@ export default function App() {
           )}
         </div>
         <div className="flex items-center gap-1.5" data-tauri-drag-region>
-          {/* New (create-profile) only on the main page — a subpage (sessions,
-              settings) or the terminal overlay has no create form to reveal. */}
-          {!terminal && !showSettings && !showSessions && (
+          {/* New (create-profile) only on Profiles — another section or the
+              terminal overlay has no create form to reveal. */}
+          {!terminal && section === "profiles" && (
             <Button
               size="sm"
               variant={showCreate ? "secondary" : "default"}
@@ -728,30 +815,6 @@ export default function App() {
             onGenerateTest={devMode ? generateTestNotifications : undefined}
             openNonce={notifOpenNonce}
           />
-          <Button
-            size="icon"
-            variant={showSessions ? "secondary" : "ghost"}
-            onClick={() => {
-              setShowSessions((v) => !v);
-              setShowSettings(false);
-              setNotice(null);
-            }}
-            aria-label="Sessions"
-          >
-            <History />
-          </Button>
-          <Button
-            size="icon"
-            variant={showSettings ? "secondary" : "ghost"}
-            onClick={() => {
-              setShowSettings((v) => !v);
-              setShowSessions(false);
-              setNotice(null);
-            }}
-            aria-label="Settings"
-          >
-            <Settings />
-          </Button>
         </div>
       </header>
 
@@ -769,12 +832,17 @@ export default function App() {
               void reconcileShare();
             }}
           />
-        ) : showSettings ? (
+        ) : section === "settings" ? (
           <SettingsView
-            onClose={() => setShowSettings(false)}
             onUninstall={() => act(() => uninstall().then(quitApp))}
             autoSwitchEnabled={globalAuto}
             onToggleAutoSwitch={toggleGlobalAuto}
+            auto={auto}
+            grouped={grouped}
+            onChangeAutoTag={(pid, tag) => {
+              if (!auto) return;
+              act(() => setAutoSwitch(pid, auto[pid].enabled, auto[pid].threshold, tag));
+            }}
             autoRefresh={autoRefresh}
             onToggleAutoRefresh={toggleAutoRefresh}
             refreshMin={refreshMin}
@@ -796,7 +864,14 @@ export default function App() {
             shareActive={shareActive}
             onToggleShare={toggleShare}
           />
-        ) : showSessions ? (
+        ) : section === "usage" ? (
+          <>
+            <div>
+              <div className="text-sm font-semibold tracking-tight">Usage</div>
+              <p className="text-xs text-muted-foreground">
+                Cross-account usage comparisons land here in an upcoming release. Until then, your sessions live below.
+              </p>
+            </div>
           <SessionsView
             enabledIds={enabledIds}
             profilesByProvider={{
@@ -805,7 +880,7 @@ export default function App() {
               antigravity: grouped.antigravity.map((r) => r.name),
             }}
             hideSummaries={hideSummaries}
-            onClose={() => setShowSessions(false)}
+            onClose={() => setSection("profiles")}
             onTakeover={(provider, sessionId, to, keepSource) =>
               setTerminal({
                 args: takeoverArgs(sessionId, to, keepSource, provider),
@@ -830,8 +905,167 @@ export default function App() {
               })
             }
           />
+          </>
+        ) : section === "tooling" ? (
+          <ToolingSection
+            cache={toolingCache}
+            onCache={setToolingCache}
+            isWindows={IS_WINDOWS}
+            onNotifyError={(message) =>
+              void recordNotification("error", "Tooling check failed", message).then(syncNotifications)
+            }
+          />
+        ) : section === "ecosystem" ? (
+          <div className="space-y-2.5">
+            <div>
+              <div className="text-sm font-semibold tracking-tight">Ecosystem</div>
+              <p className="text-xs text-muted-foreground">
+                The tools around your agents — status, setup and where they compose.
+              </p>
+            </div>
+            {(() => {
+              // Unlike the retired footer strip, the Ecosystem card also renders
+              // the installed state — this section is user-visited, not chrome.
+              const acView = deriveAgentConfigView(agentConfig, devMode);
+              const shownView = acView.visible
+                ? acView
+                : agentConfig?.installed && agentConfig.current
+                  ? ({
+                      visible: true,
+                      mode: "installed",
+                      current: agentConfig.current,
+                      latest: agentConfig.latest,
+                    } as const)
+                  : null;
+              if (!shownView) return null;
+              return (
+                <AgentConfigCard
+                  view={shownView}
+                  variant="ecosystem"
+                  devMode={devMode}
+                  isWindows={IS_WINDOWS}
+                  onOpenRepo={() => void openUrl(AGENT_CONFIG_REPO_URL)}
+                  onNotifyError={(message) =>
+                    void recordNotification("error", "agent-config setup failed", message).then(syncNotifications)
+                  }
+                />
+              );
+            })()}
+            {agentConfig?.installed && (
+              <div className="rounded-[10px] border border-border bg-card px-4 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-semibold leading-tight">agent-config settings</div>
+                    <p className="text-xs text-muted-foreground">
+                      {acLive
+                        ? `v${acLive.version ?? agentConfig.current ?? "?"} · port ${acLive.port} · target: global configuration`
+                        : "Opens agent-config's real settings UI in a managed window. Target: global configuration (per-profile settings arrive with a future agent-config release)."}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <Button size="sm" onClick={() => void openAcSettings()} disabled={acBusy}>
+                      {acBusy ? "Opening…" : "Open settings"}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => void openAcInBrowser()}>
+                      Open in browser
+                    </Button>
+                  </div>
+                </div>
+                {acOpenError &&
+                  (acOpenError.kind === "wedged" ? (
+                    <div className="mt-2 rounded-md border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/10 px-3 py-2 text-xs">
+                      <p>
+                        agent-config was found but is not responding (pid {acOpenError.pid}). agent-switch never
+                        kills a server it did not start — restart it?
+                      </p>
+                      <div className="mt-1.5 flex gap-1.5">
+                        <Button size="sm" onClick={() => void forceRestartAc()} disabled={acBusy}>
+                          Force restart
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => setAcOpenError(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-destructive">
+                      {acOpenError.kind === "spawnFailed" || acOpenError.kind === "startTimeout"
+                        ? `The agent-config server failed to start${"exitCode" in acOpenError && acOpenError.exitCode !== null ? ` (exit ${acOpenError.exitCode})` : ""}${acOpenError.stderr ? `: ${acOpenError.stderr}` : "."} Run it manually: agent-config ui:serve`
+                        : acOpenError.kind === "notInstalled"
+                          ? "agent-config is not installed — use the card above."
+                          : acOpenError.kind === "tokenRotated"
+                            ? "The server was restarted externally — try again."
+                            : "message" in acOpenError
+                              ? acOpenError.message
+                              : "The server is not reachable — try again or open in browser."}
+                    </p>
+                  ))}
+                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  The window shows agent-config's real UI — releases without the embed contract include their own
+                  navigation inside it.
+                </p>
+              </div>
+            )}
+            <div className="rounded-[10px] border border-border bg-card px-4 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[13px] font-semibold leading-tight">Shared setup</div>
+                  <p className="text-xs text-muted-foreground">
+                    {shareActive
+                      ? "On — settings, keybindings, CLAUDE.md, skills, commands and agents are linked across profiles. This is the tree agent-config installs into."
+                      : "Off — every profile keeps its own settings, skills and commands."}
+                  </p>
+                </div>
+                <Button size="sm" variant="secondary" onClick={() => setSection("settings")}>
+                  Manage in Settings
+                </Button>
+              </div>
+            </div>
+            <div className="rounded-[10px] border border-border bg-card px-4 py-3">
+              <div className="text-[13px] font-semibold leading-tight">Provider CLIs</div>
+              <p className="mb-1.5 text-xs text-muted-foreground">The agents agent-switch manages accounts for.</p>
+              <div className="flex flex-wrap gap-1.5">
+                <Button size="sm" variant="secondary" onClick={() => void openUrl("https://docs.anthropic.com/en/docs/claude-code")}>
+                  Claude Code docs
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => void openUrl("https://github.com/openai/codex")}>
+                  Codex CLI
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => void openUrl("https://antigravity.google")}>
+                  Antigravity
+                </Button>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Nothing installs itself — agent-switch is not a proxy. Install commands are copied for your own
+              terminal, never run for you.
+            </p>
+          </div>
         ) : (
           <>
+            {(() => {
+              // First-run recommendation: self-retires permanently on dismissal;
+              // deriveAgentConfigView already hides it once installed + current.
+              if (acCardDismissed) return null;
+              const acView = deriveAgentConfigView(agentConfig, devMode);
+              if (!acView.visible) return null;
+              return (
+                <AgentConfigCard
+                  view={acView}
+                  variant="first-run"
+                  devMode={devMode}
+                  isWindows={IS_WINDOWS}
+                  onOpenRepo={() => void openUrl(AGENT_CONFIG_REPO_URL)}
+                  onDismiss={() => {
+                    setAgentConfigCardDismissed();
+                    setAcCardDismissed(true);
+                  }}
+                  onNotifyError={(message) =>
+                    void recordNotification("error", "agent-config setup failed", message).then(syncNotifications)
+                  }
+                />
+              );
+            })()}
             <div
               role="tablist"
               className="grid gap-1 rounded-lg bg-muted p-1"
@@ -857,7 +1091,7 @@ export default function App() {
                     role="tab"
                     aria-selected={active}
                     onClick={() => {
-                      setSelected(pid);
+                      selectProvider(pid);
                       setConfirmDelete(null);
                     }}
                     className={cn(
@@ -1142,39 +1376,14 @@ export default function App() {
         )}
       </div>
 
-      {(() => {
-        // Only on the main (profile) page — subpages (sessions, settings) and the
-        // terminal overlay hide it, like the New button.
-        if (terminal || showSettings || showSessions) return null;
-        const acView = deriveAgentConfigView(agentConfig, devMode);
-        if (!acView.visible) return null;
-        return (
-          <AgentConfigBanner
-            view={acView}
-            devMode={devMode}
-            onOpenRepo={() => void openUrl(AGENT_CONFIG_REPO_URL)}
-            onInstall={installAgentConfig}
-            onUpdate={upgradeAgentConfig}
-            onSuccess={() => void detectAgentConfig()}
-            onNotifyError={(message) =>
-              void recordNotification("error", "agent-config setup failed", message).then(syncNotifications)
-            }
-          />
-        );
-      })()}
-
       <footer className="flex items-center justify-between gap-2 border-t border-border px-3 py-1.5">
         {auto &&
           globalAuto &&
           hasUsageReadout(selected) &&
-          !showSettings &&
+          section !== "settings" &&
           (() => {
             // Auto-switch needs 2+ profiles for the provider to have anything to switch to.
             const canAuto = grouped[selected].length >= 2;
-            // Tag filter options: "all" plus the labels that actually exist among
-            // this provider's profiles (never offer a tag no account carries).
-            const presentLabels = PROFILE_LABELS.filter((l) => grouped[selected].some((r) => r.label === l));
-            const tagOptions: AutoSwitchTag[] = ["all", ...presentLabels];
             return (
               <div className="flex items-center gap-2">
                 <button
@@ -1207,37 +1416,10 @@ export default function App() {
                   Auto-switch · {PROVIDER_LABEL[selected]}{" "}
                   {!canAuto ? "not available" : auto[selected].enabled ? `on (${auto[selected].threshold}%)` : "off"}
                 </button>
-                {/* Tag scope: which accounts auto-switch may switch to. Always visible
-                    (independent of on/off) so it can be configured BEFORE enabling —
-                    changing it here preserves the current on/off state, never flips it on. */}
-                {canAuto && presentLabels.length >= 1 && (
-                  <select
-                    aria-label={`Auto-switch accounts for ${PROVIDER_LABEL[selected]}`}
-                    value={auto[selected].tag}
-                    onChange={(e) =>
-                      act(() =>
-                        setAutoSwitch(
-                          selected,
-                          auto[selected].enabled,
-                          auto[selected].threshold,
-                          e.target.value as AutoSwitchTag,
-                        ),
-                      )
-                    }
-                    className="rounded border border-border bg-background px-1 py-0.5 text-[11px] text-muted-foreground"
-                    title="Restrict auto-switch to accounts with this tag"
-                  >
-                    {tagOptions.map((t) => (
-                      <option key={t} value={t}>
-                        {t === "all" ? "All accounts" : t}
-                      </option>
-                    ))}
-                  </select>
-                )}
               </div>
             );
           })()}
-        {devMode && globalAuto && hasUsageReadout(selected) && !showSettings && grouped[selected].length >= 2 && (
+        {devMode && globalAuto && hasUsageReadout(selected) && section !== "settings" && grouped[selected].length >= 2 && (
           <button
             className="flex items-center gap-1.5 text-[11px] text-primary transition-colors hover:opacity-80"
             onClick={triggerAutoSwitchTest}
@@ -1264,16 +1446,9 @@ export default function App() {
           >
             <RefreshCw className={cn("size-3.5", busy && "animate-spin")} />
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 px-2 text-muted-foreground hover:text-destructive"
-            onClick={() => quitApp()}
-          >
-            <Power /> Quit
-          </Button>
         </div>
       </footer>
+      </div>
     </div>
   );
 }
@@ -1333,24 +1508,26 @@ function EditProfileRow({
 }
 
 
-type SettingsTab = "general" | "notifications" | "providers" | "design" | "updates" | "uninstall";
+type SettingsTab = "general" | "notifications" | "autoswitch" | "updates" | "advanced";
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
-  { id: "notifications", label: "Alerts" },
-  { id: "providers", label: "Providers" },
-  { id: "design", label: "Design" },
+  { id: "notifications", label: "Notifications" },
+  { id: "autoswitch", label: "Auto-switch" },
   { id: "updates", label: "Updates" },
-  { id: "uninstall", label: "Uninstall" },
+  { id: "advanced", label: "Advanced" },
 ];
 
-/** The full-window Settings view. Replaces the agent tabs while open (they are
- *  hidden), with its own sub-tabs: General (autostart, auto-switch), Providers
- *  (enable/disable), Design (theme), and a type-to-confirm Uninstall. */
+/** The Settings section, grouped: General (autostart, refresh, sharing, theme),
+ *  Notifications, Auto-switch (master, strategy, per-provider scope), Updates,
+ *  and Advanced (providers + the type-to-confirm Uninstall, last). Pure
+ *  relocation of the pre-sidebar settings — no new settings live here. */
 function SettingsView({
-  onClose,
   onUninstall,
   autoSwitchEnabled,
   onToggleAutoSwitch,
+  auto,
+  grouped,
+  onChangeAutoTag,
   autoRefresh,
   onToggleAutoRefresh,
   refreshMin,
@@ -1372,10 +1549,12 @@ function SettingsView({
   shareActive,
   onToggleShare,
 }: {
-  onClose: () => void;
   onUninstall: () => void;
   autoSwitchEnabled: boolean;
   onToggleAutoSwitch: (on: boolean) => void;
+  auto: AutoSwitchMap | null;
+  grouped: Record<ProviderId, ProfileRow[]>;
+  onChangeAutoTag: (pid: ProviderId, tag: AutoSwitchTag) => void;
   autoRefresh: boolean;
   onToggleAutoRefresh: (on: boolean) => void;
   hideSummaries: boolean;
@@ -1402,11 +1581,8 @@ function SettingsView({
     <div className="space-y-2.5">
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold tracking-tight">Settings</span>
-        <Button size="icon" variant="ghost" className="size-7" onClick={onClose} aria-label="Close settings">
-          <X />
-        </Button>
       </div>
-      <div role="tablist" className="grid grid-cols-6 gap-1 rounded-lg bg-muted p-1">
+      <div role="tablist" className="grid grid-cols-5 gap-1 rounded-lg bg-muted p-1">
         {SETTINGS_TABS.map((t) => (
           <button
             key={t.id}
@@ -1423,26 +1599,34 @@ function SettingsView({
         ))}
       </div>
       {tab === "general" && (
-        <GeneralSettings
-          autoSwitchEnabled={autoSwitchEnabled}
-          onToggleAutoSwitch={onToggleAutoSwitch}
-          autoRefresh={autoRefresh}
-          onToggleAutoRefresh={onToggleAutoRefresh}
-          refreshMin={refreshMin}
-          onChangeRefreshMin={onChangeRefreshMin}
-          hideSummaries={hideSummaries}
-          onToggleHideSummaries={onToggleHideSummaries}
-          minimizeToDock={minimizeToDock}
-          onToggleMinimizeToDock={onToggleMinimizeToDock}
-          devMode={devMode}
-          onToggleDevMode={onToggleDevMode}
-          shareActive={shareActive}
-          onToggleShare={onToggleShare}
-        />
+        <>
+          <GeneralSettings
+            autoRefresh={autoRefresh}
+            onToggleAutoRefresh={onToggleAutoRefresh}
+            refreshMin={refreshMin}
+            onChangeRefreshMin={onChangeRefreshMin}
+            hideSummaries={hideSummaries}
+            onToggleHideSummaries={onToggleHideSummaries}
+            minimizeToDock={minimizeToDock}
+            onToggleMinimizeToDock={onToggleMinimizeToDock}
+            devMode={devMode}
+            onToggleDevMode={onToggleDevMode}
+            shareActive={shareActive}
+            onToggleShare={onToggleShare}
+          />
+          <DesignSettings />
+        </>
       )}
       {tab === "notifications" && <NotificationSettings mutedKinds={mutedKinds} onToggleMute={onToggleMute} />}
-      {tab === "providers" && <ProvidersSettings onChange={onProvidersChanged} providersWithUi={providersWithUi} />}
-      {tab === "design" && <DesignSettings />}
+      {tab === "autoswitch" && (
+        <AutoSwitchSettings
+          enabled={autoSwitchEnabled}
+          onToggle={onToggleAutoSwitch}
+          auto={auto}
+          grouped={grouped}
+          onChangeTag={onChangeAutoTag}
+        />
+      )}
       {tab === "updates" && (
         <UpdatesSettings
           autoUpdateCheck={autoUpdateCheck}
@@ -1451,7 +1635,12 @@ function SettingsView({
           onToggleAutoUpdateKind={onToggleAutoUpdateKind}
         />
       )}
-      {tab === "uninstall" && <UninstallSettings onUninstall={onUninstall} />}
+      {tab === "advanced" && (
+        <>
+          <ProvidersSettings onChange={onProvidersChanged} providersWithUi={providersWithUi} />
+          <UninstallSettings onUninstall={onUninstall} />
+        </>
+      )}
     </div>
   );
 }
@@ -1611,8 +1800,6 @@ function NotificationSettings({
 }
 
 function GeneralSettings({
-  autoSwitchEnabled,
-  onToggleAutoSwitch,
   autoRefresh,
   onToggleAutoRefresh,
   refreshMin,
@@ -1626,8 +1813,6 @@ function GeneralSettings({
   shareActive,
   onToggleShare,
 }: {
-  autoSwitchEnabled: boolean;
-  onToggleAutoSwitch: (on: boolean) => void;
   autoRefresh: boolean;
   onToggleAutoRefresh: (on: boolean) => void;
   refreshMin: number;
@@ -1643,21 +1828,12 @@ function GeneralSettings({
 }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [strategy, setStrategy] = useState<SwitchStrategy | null>(null);
 
   useEffect(() => {
     getAutostart()
       .then(setEnabled)
       .catch(() => setEnabled(false));
-    getSwitchStrategy()
-      .then(setStrategy)
-      .catch(() => setStrategy("reset-first"));
   }, []);
-
-  function pickStrategy(next: SwitchStrategy) {
-    setStrategy(next);
-    setSwitchStrategy(next).catch((e) => setErr(describeError(e)));
-  }
 
   async function toggle() {
     const next = !enabled;
@@ -1709,24 +1885,6 @@ function GeneralSettings({
             </Button>
           </div>
         )}
-
-        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
-          <div>
-            <div className="text-[13px] font-medium">Auto-switch</div>
-            <div className="text-xs text-muted-foreground">
-              Allow switching the active account when it hits its limit. Turning this off hides the per-provider
-              toggles and disables all of them.
-            </div>
-          </div>
-          <Button
-            size="sm"
-            variant={autoSwitchEnabled ? "default" : "outline"}
-            onClick={() => onToggleAutoSwitch(!autoSwitchEnabled)}
-            aria-label="Auto-switch globally"
-          >
-            {autoSwitchEnabled ? "On" : "Off"}
-          </Button>
-        </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
           <div>
@@ -1785,35 +1943,6 @@ function GeneralSettings({
 
         <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
           <div className="min-w-0">
-            <div className="text-[13px] font-medium">Switch strategy</div>
-            <div className="text-xs text-muted-foreground">
-              When auto-switch fires: <span className="font-medium">reset first</span> redeems a banked Codex reset
-              before switching accounts; <span className="font-medium">rotation first</span> switches straight to the
-              account with the most headroom.
-            </div>
-          </div>
-          <div className="flex shrink-0 gap-1">
-            <Button
-              size="sm"
-              variant={strategy === "reset-first" ? "default" : "outline"}
-              disabled={strategy === null}
-              onClick={() => pickStrategy("reset-first")}
-            >
-              Reset first
-            </Button>
-            <Button
-              size="sm"
-              variant={strategy === "rotation-first" ? "default" : "outline"}
-              disabled={strategy === null}
-              onClick={() => pickStrategy("rotation-first")}
-            >
-              Rotation first
-            </Button>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
-          <div className="min-w-0">
             <div className="text-[13px] font-medium">Share global skills</div>
             <div className="text-xs text-muted-foreground">
               Link the globally-installed agent-config content (skills, commands, agents, CLAUDE.md from{" "}
@@ -1850,6 +1979,143 @@ function GeneralSettings({
             </Button>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Settings › Auto-switch: the global master (was in General), the switch
+ *  strategy (was in General), and the per-provider account scope (was the
+ *  footer "All accounts" select). Relocation only — same behavior. */
+function AutoSwitchSettings({
+  enabled,
+  onToggle,
+  auto,
+  grouped,
+  onChangeTag,
+}: {
+  enabled: boolean;
+  onToggle: (on: boolean) => void;
+  auto: AutoSwitchMap | null;
+  grouped: Record<ProviderId, ProfileRow[]>;
+  onChangeTag: (pid: ProviderId, tag: AutoSwitchTag) => void;
+}) {
+  const [strategy, setStrategy] = useState<SwitchStrategy | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    getSwitchStrategy()
+      .then(setStrategy)
+      .catch(() => setStrategy("reset-first"));
+  }, []);
+
+  function pickStrategy(next: SwitchStrategy) {
+    setStrategy(next);
+    setSwitchStrategy(next).catch((e) => setErr(describeError(e)));
+  }
+
+  // Scope is configurable per provider with a usage readout and 2+ profiles
+  // carrying at least one tag (same conditions the old footer select used).
+  const scopeProviders = PROVIDERS.filter(
+    (pid) =>
+      hasUsageReadout(pid) &&
+      grouped[pid].length >= 2 &&
+      PROFILE_LABELS.some((l) => grouped[pid].some((r) => r.label === l)),
+  );
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-[13px] font-medium">Auto-switch</div>
+            <div className="text-xs text-muted-foreground">
+              Allow switching the active account when it hits its limit. Turning this off hides the per-provider
+              toggles and disables all of them.
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={enabled ? "default" : "outline"}
+            onClick={() => onToggle(!enabled)}
+            aria-label="Auto-switch globally"
+          >
+            {enabled ? "On" : "Off"}
+          </Button>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium">Switch strategy</div>
+            <div className="text-xs text-muted-foreground">
+              When auto-switch fires: <span className="font-medium">reset first</span> redeems a banked Codex reset
+              before switching accounts; <span className="font-medium">rotation first</span> switches straight to the
+              account with the most headroom.
+            </div>
+          </div>
+          <div className="flex shrink-0 gap-1">
+            <Button
+              size="sm"
+              variant={strategy === "reset-first" ? "default" : "outline"}
+              disabled={strategy === null}
+              onClick={() => pickStrategy("reset-first")}
+            >
+              Reset first
+            </Button>
+            <Button
+              size="sm"
+              variant={strategy === "rotation-first" ? "default" : "outline"}
+              disabled={strategy === null}
+              onClick={() => pickStrategy("rotation-first")}
+            >
+              Rotation first
+            </Button>
+          </div>
+        </div>
+
+        {enabled && auto && (
+          <div className="space-y-2 border-t border-border pt-3">
+            <div className="min-w-0">
+              <div className="text-[13px] font-medium">Account scope</div>
+              <div className="text-xs text-muted-foreground">
+                Which accounts auto-switch may switch to, per provider. Changing it preserves the current on/off
+                state — it never flips auto-switch on.
+              </div>
+            </div>
+            {scopeProviders.length === 0 ? (
+              <div className="text-xs text-muted-foreground">
+                Appears once a provider with a usage readout has 2+ tagged profiles.
+              </div>
+            ) : (
+              scopeProviders.map((pid) => {
+                // Tag options: "all" plus the labels that actually exist among this
+                // provider's profiles (never offer a tag no account carries).
+                const presentLabels = PROFILE_LABELS.filter((l) => grouped[pid].some((r) => r.label === l));
+                const tagOptions: AutoSwitchTag[] = ["all", ...presentLabels];
+                return (
+                  <div key={pid} className="flex items-center justify-between gap-2">
+                    <div className="text-[13px]">{PROVIDER_LABEL[pid]}</div>
+                    <select
+                      aria-label={`Auto-switch accounts for ${PROVIDER_LABEL[pid]}`}
+                      value={auto[pid].tag}
+                      onChange={(e) => onChangeTag(pid, e.target.value as AutoSwitchTag)}
+                      className="h-8 shrink-0 rounded-md border border-input bg-background px-2 text-[13px]"
+                      title="Restrict auto-switch to accounts with this tag"
+                    >
+                      {tagOptions.map((t) => (
+                        <option key={t} value={t}>
+                          {t === "all" ? "All accounts" : t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {err && <div className="text-xs text-destructive">{err}</div>}
       </CardContent>
     </Card>
   );
@@ -2517,10 +2783,10 @@ function SessionCard({
   );
 }
 
-/** Sessions view (behind the header history icon): the multi-provider sessions
- *  inventory. Each session is a collapsible SessionCard; expanding reveals a
- *  bounded content preview + the grouped takeover / hand-off / compact / delete
- *  actions. */
+/** Sessions view (rendered inside the Usage section): the multi-provider
+ *  sessions inventory. Each session is a collapsible SessionCard; expanding
+ *  reveals a bounded content preview + the grouped takeover / hand-off /
+ *  compact / delete actions. */
 // Providers with a session store the GUI can list/delete. Antigravity has none.
 const SESSION_PROVIDERS: ProviderId[] = ["claude", "codex"];
 
