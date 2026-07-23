@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 900" width="1040" height="900">
+<style>
+  text{font-family:-apple-system,'SF Pro Text','Inter',system-ui,sans-serif;fill:#dfe1e5}
+  .t-h{font-size:15px;font-weight:600}
+  .t-hh{font-size:17px;font-weight:600}
+  .t-b{font-size:13px}
+  .t-n{font-size:13px;font-weight:600}
+  .t-m{font-size:12px;fill:#868a91}
+  .t-s{font-size:11px;fill:#868a91}
+  .t-l{font-size:10px;fill:#868a91;letter-spacing:.09em}
+  .t-btn{font-size:12px;font-weight:500}
+  .t-mono{font-size:11px;font-family:'SF Mono',ui-monospace,Menlo,monospace;fill:#a9b0ba}
+  .t-num{font-size:11px;font-weight:700;fill:#1e1f22}
+  .t-leg{font-size:12px}
+  .hair{stroke:#393b40;stroke-width:1}
+</style>
+
+<rect x="0" y="0" width="1040" height="620" rx="10" fill="#1e1f22"/>
+<rect x="0" y="0" width="200" height="620" rx="10" fill="#232427"/>
+<rect x="190" y="0" width="10" height="620" fill="#232427"/>
+<line x1="200" y1="0" x2="200" y2="620" class="hair"/>
+<circle cx="20" cy="24" r="6" fill="#f0524d"/><circle cx="40" cy="24" r="6" fill="#d9a441"/><circle cx="60" cy="24" r="6" fill="#499c54"/>
+<rect x="16" y="56" width="26" height="26" rx="7" fill="#d15c38"/>
+<text x="50" y="74" class="t-h">agent-switch</text>
+<text x="50" y="124" class="t-b" fill="#868a91">Profiles</text>
+<rect x="150" y="110" width="30" height="18" rx="9" fill="#393b40"/><text x="165" y="123" class="t-s" text-anchor="middle">7</text>
+<text x="50" y="162" class="t-b" fill="#868a91">Usage</text>
+<text x="50" y="200" class="t-b" fill="#868a91">Tooling</text><circle cx="176" cy="195" r="4" fill="#d15c38"/>
+<rect x="10" y="216" width="180" height="34" rx="8" fill="#2f3134"/>
+<rect x="10" y="216" width="3" height="34" rx="1.5" fill="#d15c38"/>
+<text x="50" y="238" class="t-b">Ecosystem</text>
+<text x="50" y="280" class="t-b" fill="#868a91">Settings</text>
+<line x1="16" y1="548" x2="184" y2="548" class="hair"/>
+<circle cx="24" cy="574" r="4" fill="#499c54"/><text x="38" y="578" class="t-s">Auto-switch on</text>
+<text x="16" y="600" class="t-s">v1.6.0</text><text x="184" y="600" class="t-s" text-anchor="end">Quit</text>
+
+<line x1="200" y1="52" x2="1040" y2="52" class="hair"/>
+<text x="224" y="33" class="t-h">Ecosystem</text>
+<text x="310" y="33" class="t-m">Companion tools that work with your profiles</text>
+<g stroke="#868a91" stroke-width="1.6" fill="none" stroke-linecap="round">
+  <path d="M932 32 a7 7 0 1 1 4 -12 M936 16 v5 h-5"/>
+  <path d="M978 20 a7 7 0 0 1 14 0 v8 h-14z M981 32 h8"/>
+</g>
+
+<!-- agent-config primary card -->
+<rect x="224" y="72" width="792" height="176" rx="10" fill="#2b2d30"/>
+<rect x="248" y="96" width="44" height="44" rx="11" fill="#d15c38"/>
+<g fill="#fff">
+  <rect x="257" y="107" width="26" height="5" rx="2.5" opacity="0.95"/>
+  <rect x="257" y="117" width="20" height="5" rx="2.5" opacity="0.8"/>
+  <rect x="257" y="127" width="14" height="5" rx="2.5" opacity="0.6"/>
+</g>
+<text x="308" y="112" class="t-hh">agent-config</text>
+<rect x="440" y="98" width="80" height="18" rx="9" fill="#2f4a33"/>
+<text x="480" y="111" class="t-s" text-anchor="middle" fill="#7fc088">v9.7.0 · current</text>
+<text x="308" y="134" class="t-m">Audited skills, commands and governance rules, compiled into Claude Code, Cursor and</text>
+<text x="308" y="152" class="t-m">5 more hosts. No daemon, no proxy — it writes files your agents already read.</text>
+
+<line x1="248" y1="176" x2="992" y2="176" class="hair"/>
+<text x="248" y="200" class="t-l">ACTIVE IN THIS PROFILE</text>
+<text x="248" y="222" class="t-b">personal</text>
+<rect x="312" y="208" width="86" height="18" rx="9" fill="#393b40"/>
+<text x="355" y="221" class="t-s" text-anchor="middle">12 skills</text>
+<rect x="406" y="208" width="98" height="18" rx="9" fill="#393b40"/>
+<text x="455" y="221" class="t-s" text-anchor="middle">8 commands</text>
+<rect x="512" y="208" width="126" height="18" rx="9" fill="#393b40"/>
+<text x="575" y="221" class="t-s" text-anchor="middle">shared across 7</text>
+
+<rect x="798" y="192" width="90" height="30" rx="7" fill="none" stroke="#393b40"/>
+<text x="843" y="211" class="t-btn" text-anchor="middle">Open repo</text>
+<rect x="898" y="192" width="94" height="30" rx="7" fill="#d15c38"/>
+<text x="945" y="211" class="t-btn" fill="#fff" text-anchor="middle">Settings</text>
+
+<!-- shared setup -->
+<rect x="224" y="262" width="388" height="150" rx="10" fill="#2b2d30"/>
+<text x="248" y="288" class="t-n">Shared setup</text>
+<rect x="548" y="276" width="40" height="22" rx="11" fill="#499c54"/>
+<circle cx="577" cy="287" r="8" fill="#fff"/>
+<text x="248" y="310" class="t-s">One skills, commands and rules tree for all 7</text>
+<text x="248" y="326" class="t-s">profiles. Switching accounts never changes what</text>
+<text x="248" y="342" class="t-s">your agents know how to do.</text>
+<rect x="248" y="356" width="340" height="20" rx="5" fill="#1e1f22"/>
+<text x="258" y="370" class="t-mono">~/.agent-switch/shared/{skills,commands,agents}</text>
+<text x="248" y="394" class="t-s">Turn off to give each profile its own tree.</text>
+
+<!-- rtk secondary -->
+<rect x="628" y="262" width="388" height="150" rx="10" fill="#2b2d30"/>
+<text x="652" y="288" class="t-n">rtk</text>
+<rect x="682" y="274" width="98" height="16" rx="8" fill="#4a3f24"/>
+<text x="731" y="286" class="t-s" text-anchor="middle" fill="#d9a441">Wrong binary</text>
+<text x="652" y="310" class="t-s">Shrinks verbose command output before it reaches</text>
+<text x="652" y="326" class="t-s">your agent's context. Third-party, Apache-2.0.</text>
+<text x="652" y="342" class="t-s">agent-config wraps commands with it when present.</text>
+<rect x="652" y="356" width="248" height="20" rx="5" fill="#1e1f22"/>
+<text x="662" y="370" class="t-mono">brew install rtk-ai/tap/rtk</text>
+<rect x="910" y="354" width="72" height="24" rx="7" fill="none" stroke="#393b40"/>
+<text x="946" y="370" class="t-btn" text-anchor="middle">Copy</text>
+<text x="652" y="396" class="t-s">Upstream reports 60–90% savings (their measurement).</text>
+
+<!-- footnote -->
+<text x="224" y="446" class="t-s">Nothing here is installed without you asking. agent-switch never proxies, intercepts or rewrites your agents' traffic — see NON-GOALS.</text>
+
+<line x1="200" y1="588" x2="1040" y2="588" class="hair"/>
+<text x="224" y="608" class="t-s">Profile: personal</text>
+<text x="1016" y="608" class="t-s" text-anchor="end">2 companion tools</text>
+
+<circle cx="212" cy="120" r="10" fill="#d15c38"/><text x="212" y="124" class="t-num" text-anchor="middle">1</text>
+<circle cx="1006" cy="207" r="10" fill="#d15c38"/><text x="1006" y="211" class="t-num" text-anchor="middle">2</text>
+<circle cx="212" cy="200" r="10" fill="#d15c38"/><text x="212" y="204" class="t-num" text-anchor="middle">3</text>
+<circle cx="212" cy="288" r="10" fill="#d15c38"/><text x="212" y="292" class="t-num" text-anchor="middle">4</text>
+<circle cx="212" cy="442" r="10" fill="#d15c38"/><text x="212" y="446" class="t-num" text-anchor="middle">5</text>
+
+<text x="0" y="668" class="t-l">ECOSYSTEM — WHERE THE FOOTER PROMO STRIP GOES TO BECOME USEFUL</text>
+<line x1="0" y1="680" x2="1040" y2="680" class="hair"/>
+<g class="t-leg">
+  <text x="0" y="704" font-weight="600">1 · The banner becomes a card the user navigated to</text>
+  <text x="0" y="722" fill="#868a91">Same three-state logic as today's AgentConfigBanner (install / update / installed) — the pure</text>
+  <text x="0" y="738" fill="#868a91">derive function is kept unchanged and only the render site moves. The permanent gradient strip</text>
+  <text x="0" y="754" fill="#868a91">above the footer is deleted. Net: less always-on chrome, more information when asked for.</text>
+
+  <text x="0" y="784" font-weight="600">3 · Installed state stops being an advert</text>
+  <text x="0" y="802" fill="#868a91">Once agent-config is present the card shows what it is doing in this profile — skills, commands,</text>
+  <text x="0" y="818" fill="#868a91">whether the tree is shared. That is the state most users are in most of the time, and today it</text>
+  <text x="0" y="834" fill="#868a91">renders nothing at all. A first-run variant appears once on Profiles, then retires for good.</text>
+
+  <text x="530" y="704" font-weight="600">2 · "Settings" is the payoff of the whole roadmap</text>
+  <text x="530" y="722" fill="#868a91">Opens agent-config's own settings surface inside this window (next graphic). Falls back to</text>
+  <text x="530" y="738" fill="#868a91">"Open in browser" when embedding is unavailable — headless, old version, unsupported webview.</text>
+
+  <text x="530" y="768" font-weight="600">4 · Shared setup belongs here, not buried in a CLI flag</text>
+  <text x="530" y="786" fill="#868a91">`share on` is the mechanism agent-config installs into. Surfacing it next to agent-config is</text>
+  <text x="530" y="802" fill="#868a91">what makes the relationship legible, and it is where the symlink collision warning belongs.</text>
+
+  <text x="530" y="832" font-weight="600">5 · The boundary is stated on the page that promotes</text>
+  <text x="530" y="850" fill="#868a91">One line, no drama: nothing installs itself, and agent-switch is not a proxy. The claim about</text>
+  <text x="530" y="866" fill="#868a91">rtk's savings is attributed to upstream rather than asserted in our own voice.</text>
+</g>
+</svg>

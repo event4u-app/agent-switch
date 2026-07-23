@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 880" width="1040" height="880">
+<style>
+  text{font-family:-apple-system,'SF Pro Text','Inter',system-ui,sans-serif;fill:#dfe1e5}
+  .t-h{font-size:15px;font-weight:600}
+  .t-b{font-size:13px}
+  .t-n{font-size:13px;font-weight:600}
+  .t-m{font-size:12px;fill:#868a91}
+  .t-s{font-size:11px;fill:#868a91}
+  .t-l{font-size:10px;fill:#868a91;letter-spacing:.09em}
+  .t-btn{font-size:12px;font-weight:500}
+  .t-num{font-size:11px;font-weight:700;fill:#1e1f22}
+  .t-leg{font-size:12px}
+  .hair{stroke:#393b40;stroke-width:1}
+</style>
+
+<rect x="0" y="0" width="1040" height="620" rx="10" fill="#1e1f22"/>
+<rect x="0" y="0" width="200" height="620" rx="10" fill="#232427"/>
+<rect x="190" y="0" width="10" height="620" fill="#232427"/>
+<line x1="200" y1="0" x2="200" y2="620" class="hair"/>
+<circle cx="20" cy="24" r="6" fill="#f0524d"/><circle cx="40" cy="24" r="6" fill="#d9a441"/><circle cx="60" cy="24" r="6" fill="#499c54"/>
+<rect x="16" y="56" width="26" height="26" rx="7" fill="#d15c38"/>
+<text x="50" y="74" class="t-h">agent-switch</text>
+<text x="50" y="124" class="t-b" fill="#868a91">Profiles</text>
+<rect x="150" y="110" width="30" height="18" rx="9" fill="#393b40"/><text x="165" y="123" class="t-s" text-anchor="middle">7</text>
+<text x="50" y="162" class="t-b" fill="#868a91">Usage</text>
+<text x="50" y="200" class="t-b" fill="#868a91">Tooling</text><circle cx="176" cy="195" r="4" fill="#d15c38"/>
+<text x="50" y="238" class="t-b" fill="#868a91">Ecosystem</text>
+<rect x="10" y="254" width="180" height="34" rx="8" fill="#2f3134"/>
+<rect x="10" y="254" width="3" height="34" rx="1.5" fill="#d15c38"/>
+<text x="50" y="276" class="t-b">Settings</text>
+<line x1="16" y1="548" x2="184" y2="548" class="hair"/>
+<circle cx="24" cy="574" r="4" fill="#499c54"/><text x="38" y="578" class="t-s">Auto-switch on</text>
+<text x="16" y="600" class="t-s">v1.6.0</text><text x="184" y="600" class="t-s" text-anchor="end">Quit</text>
+
+<line x1="200" y1="52" x2="1040" y2="52" class="hair"/>
+<text x="224" y="33" class="t-h">Settings</text>
+<rect x="768" y="14" width="144" height="26" rx="7" fill="none" stroke="#393b40"/>
+<text x="784" y="31" class="t-btn" fill="#868a91">Search settings</text>
+<g stroke="#868a91" stroke-width="1.6" fill="none" stroke-linecap="round">
+  <path d="M932 32 a7 7 0 1 1 4 -12 M936 16 v5 h-5"/>
+  <path d="M978 20 a7 7 0 0 1 14 0 v8 h-14z M981 32 h8"/>
+</g>
+
+<!-- group rail -->
+<rect x="224" y="72" width="152" height="30" rx="7" fill="#2b2d30"/>
+<rect x="224" y="72" width="3" height="30" rx="1.5" fill="#d15c38"/>
+<text x="244" y="92" class="t-b">General</text>
+<text x="244" y="130" class="t-b" fill="#868a91">Notifications</text>
+<text x="244" y="168" class="t-b" fill="#868a91">Auto-switch</text>
+<text x="244" y="206" class="t-b" fill="#868a91">Updates</text>
+<text x="244" y="244" class="t-b" fill="#868a91">Advanced</text>
+<line x1="400" y1="72" x2="400" y2="556" class="hair"/>
+
+<text x="428" y="90" class="t-h">General</text>
+
+<rect x="428" y="106" width="588" height="56" rx="8" fill="#2b2d30"/>
+<text x="448" y="130" class="t-n">Appearance</text>
+<text x="448" y="148" class="t-s">Follows your system setting</text>
+<rect x="876" y="122" width="120" height="26" rx="7" fill="#3d3f43"/>
+<rect x="878" y="124" width="38" height="22" rx="6" fill="#2b2d30"/>
+<text x="897" y="139" class="t-s" text-anchor="middle" fill="#dfe1e5">Auto</text>
+<text x="936" y="139" class="t-s" text-anchor="middle">Light</text>
+<text x="976" y="139" class="t-s" text-anchor="middle">Dark</text>
+
+<rect x="428" y="172" width="588" height="56" rx="8" fill="#2b2d30"/>
+<text x="448" y="196" class="t-n">Start at login</text>
+<text x="448" y="214" class="t-s">Keeps the tray icon and auto-switch running</text>
+<rect x="956" y="188" width="40" height="22" rx="11" fill="#d15c38"/>
+<circle cx="985" cy="199" r="8" fill="#fff"/>
+
+<rect x="428" y="238" width="588" height="56" rx="8" fill="#2b2d30"/>
+<text x="448" y="262" class="t-n">Default launch target</text>
+<text x="448" y="280" class="t-s">What the Use button opens when you switch profiles</text>
+<rect x="876" y="254" width="120" height="26" rx="7" fill="#3d3f43"/>
+<text x="936" y="271" class="t-btn" text-anchor="middle">Terminal ⌄</text>
+
+<rect x="428" y="304" width="588" height="56" rx="8" fill="#2b2d30"/>
+<text x="448" y="328" class="t-n">Show usage on profile cards</text>
+<text x="448" y="346" class="t-s">Turn off for a denser list — full detail stays in Usage</text>
+<rect x="956" y="320" width="40" height="22" rx="11" fill="#d15c38"/>
+<circle cx="985" cy="331" r="8" fill="#fff"/>
+
+<line x1="428" y1="386" x2="1016" y2="386" class="hair"/>
+<text x="428" y="412" class="t-l">DANGER ZONE — LIVES IN ADVANCED, NOT HERE</text>
+<text x="428" y="436" class="t-s">Reset all profiles, uninstall the shell integration and remove keychain entries are grouped</text>
+<text x="428" y="452" class="t-s">at the bottom of Advanced behind a confirm step. They never sit beside an everyday toggle.</text>
+
+<line x1="200" y1="588" x2="1040" y2="588" class="hair"/>
+<text x="224" y="608" class="t-s">Changes save immediately</text>
+<text x="1016" y="608" class="t-s" text-anchor="end">agent-switch v1.6.0</text>
+
+<circle cx="212" cy="88" r="10" fill="#d15c38"/><text x="212" y="92" class="t-num" text-anchor="middle">1</text>
+<circle cx="1006" cy="120" r="10" fill="#d15c38"/><text x="1006" y="124" class="t-num" text-anchor="middle">2</text>
+<circle cx="416" cy="342" r="10" fill="#d15c38"/><text x="416" y="346" class="t-num" text-anchor="middle">3</text>
+<circle cx="416" cy="408" r="10" fill="#d15c38"/><text x="416" y="412" class="t-num" text-anchor="middle">4</text>
+<circle cx="212" cy="604" r="10" fill="#d15c38"/><text x="212" y="608" class="t-num" text-anchor="middle">5</text>
+
+<text x="0" y="668" class="t-l">SETTINGS — A RELOCATION, NOT AN EXPANSION. NO NEW SETTING SHIPS IN THIS PHASE.</text>
+<line x1="0" y1="680" x2="1040" y2="680" class="hair"/>
+<g class="t-leg">
+  <text x="0" y="704" font-weight="600">1 · Five groups, mirroring the sidebar's discipline</text>
+  <text x="0" y="722" fill="#868a91">General · Notifications · Auto-switch · Updates · Advanced. Today's flat settings-store is</text>
+  <text x="0" y="738" fill="#868a91">redistributed across them unchanged. The diff should show moves, not additions — if a setting</text>
+  <text x="0" y="754" fill="#868a91">appears here that did not exist before, this phase has failed its own acceptance criterion.</text>
+
+  <text x="0" y="784" font-weight="600">2 · Every row says what it does, not what it is</text>
+  <text x="0" y="802" fill="#868a91">A title in the user's vocabulary, a sentence of consequence beneath it, one control at the right.</text>
+  <text x="0" y="818" fill="#868a91">"Start at login" explains what keeps running. No row does double duty.</text>
+
+  <text x="530" y="704" font-weight="600">3 · Settings can point at other sections</text>
+  <text x="530" y="722" fill="#868a91">Turning usage bars off is safe because the copy names where the detail still lives. Sections</text>
+  <text x="530" y="738" fill="#868a91">that reference each other are how a five-section app stays navigable.</text>
+
+  <text x="530" y="768" font-weight="600">4 · Destructive actions are quarantined</text>
+  <text x="530" y="786" fill="#868a91">Reset, uninstall and keychain removal sit at the end of Advanced behind a confirm — the same</text>
+  <text x="530" y="802" fill="#868a91">reasoning that moved delete off the profile row into an overflow menu.</text>
+
+  <text x="530" y="832" font-weight="600">5 · No save button</text>
+  <text x="530" y="850" fill="#868a91">agent-switch settings are local and reversible, so they apply on change and the footer says so.</text>
+  <text x="530" y="866" fill="#868a91">agent-config's embedded surface keeps its own explicit Save — it writes files to disk.</text>
+</g>
+</svg>
