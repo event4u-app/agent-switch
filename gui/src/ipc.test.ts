@@ -374,15 +374,15 @@ describe("agent-config companion CLI", () => {
 });
 
 describe("share (global-skill linking)", () => {
-  it("shareStatus reads real state via `share status --source default --json`", async () => {
+  it("shareStatus reads real state via `share status --json` (no --source: the CLI only echoes it)", async () => {
     execute.mockResolvedValue({ code: 0, stdout: '{"active":true,"source":"default","profiles":[{"name":"work","shared":true}]}', stderr: "" });
     const s = await shareStatus();
-    expect(create).toHaveBeenCalledWith("agent-switch", ["share", "status", "--source", "default", "--json"]);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["share", "status", "--json"]);
     expect(s.active).toBe(true);
     expect(s.profiles[0]).toEqual({ name: "work", shared: true });
   });
 
-  it("shareOn / shareOff / shareSync issue the right commands", async () => {
+  it("shareOn / shareOff / shareSync issue the right commands (default source)", async () => {
     execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
     await shareOn();
     expect(create).toHaveBeenCalledWith("agent-switch", ["share", "on", "--source", "default"]);
@@ -390,5 +390,13 @@ describe("share (global-skill linking)", () => {
     expect(create).toHaveBeenCalledWith("agent-switch", ["share", "off"]);
     await shareSync();
     expect(create).toHaveBeenCalledWith("agent-switch", ["share", "sync", "--source", "default"]);
+  });
+
+  it("shareOn / shareSync pass a profile source through as --source <profile>", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+    await shareOn("work");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["share", "on", "--source", "work"]);
+    await shareSync("work");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["share", "sync", "--source", "work"]);
   });
 });

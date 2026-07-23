@@ -16,7 +16,7 @@ export const AGENT_CONFIG_UPDATE_COMMAND = "npm install -g @event4u/agent-config
  * SVG so it stays crisp at any DPI and picks up the app's primary colour, so it
  * themes with the rest of the UI instead of shipping a fixed raster asset.
  */
-function AgentConfigMark() {
+export function AgentConfigMark() {
   return (
     <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden className="shrink-0">
       <defs>

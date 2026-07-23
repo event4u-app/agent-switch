@@ -121,14 +121,19 @@ export interface ShareStatus {
   profiles: { name: string; shared: boolean }[];
 }
 
-/** Real share state (from each profile's link manifest, not a cached flag). */
+/** Real share state (from each profile's link manifest, not a cached flag).
+ *  No `--source` flag: the CLI's `share status` only ECHOES a passed source
+ *  back (it never persists one), so the GUI owns the source selection
+ *  (settings-store) and reads the plain link state here. */
 export async function shareStatus(): Promise<ShareStatus> {
-  return JSON.parse(await runCli(["share", "status", "--source", "default", "--json"]));
+  return JSON.parse(await runCli(["share", "status", "--json"]));
 }
 
-/** Link the global ~/.claude content into every profile. */
-export async function shareOn(): Promise<void> {
-  await runCli(["share", "on", "--source", "default"]);
+/** Link a source tree's content into every profile. `source` is a Claude
+ *  profile name or "default" (= the global ~/.claude), matching the CLI's
+ *  `share on --source <profile|default>`. */
+export async function shareOn(source = "default"): Promise<void> {
+  await runCli(["share", "on", "--source", source]);
 }
 
 /** Remove agent-switch-managed links from every profile (profile-own files untouched). */
@@ -136,9 +141,10 @@ export async function shareOff(): Promise<void> {
   await runCli(["share", "off"]);
 }
 
-/** Reconcile forked file-links (e.g. CLAUDE.md after an atomic write) back to links. */
-export async function shareSync(): Promise<void> {
-  await runCli(["share", "sync", "--source", "default"]);
+/** Reconcile forked file-links (e.g. CLAUDE.md after an atomic write) back to
+ *  links — against the same source the links were created from. */
+export async function shareSync(source = "default"): Promise<void> {
+  await runCli(["share", "sync", "--source", source]);
 }
 
 // ---- tooling readout (`agent-switch tooling --json`): the Tooling section's
@@ -247,6 +253,29 @@ export async function profileUsage(provider: ProviderId, name: string): Promise<
     return (JSON.parse(out.stdout) as StatusJson).usage;
   } catch {
     return null;
+  }
+}
+
+/** One stored usage-history sample (written hourly by the background service). */
+export interface UsageHistorySample {
+  at: string;
+  windows: { key: string; utilization: number | null }[];
+}
+
+/** One profile's usage-history series from `usage history --provider <p> --json`. */
+export interface UsageHistoryProfile {
+  profile: string;
+  samples: UsageHistorySample[];
+}
+
+/** Per-profile usage history for the Usage section's 30-day chart. Read-only —
+ *  returns [] on any failure (including an older CLI without the subcommand)
+ *  so the chart degrades to its empty state instead of erroring. */
+export async function usageHistory(provider: ProviderId = "claude"): Promise<UsageHistoryProfile[]> {
+  try {
+    return JSON.parse(await runCli(["usage", "history", "--provider", provider, "--json"]));
+  } catch {
+    return [];
   }
 }
 

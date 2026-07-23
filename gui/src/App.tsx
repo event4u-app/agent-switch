@@ -102,16 +102,24 @@ import {
   getAgentConfigCardDismissed,
   setAgentConfigCardDismissed,
   setAgentConfigNotifiedVersion,
+  getShareSource,
+  setShareSourceFlag,
   getNextUsageRefreshAt,
   setNextUsageRefreshAt,
   getProviderFilter,
   setProviderFilter,
 } from "./settings-store.js";
 import { checkForUpdate, fetchLatestRelease, isNewer, releaseKind, type UpdateCheck, type UpdateKind } from "./updates.js";
-import { AgentConfigCard } from "./AgentConfigCard.js";
+import {
+  AgentConfigCard,
+  AgentConfigMark,
+  AGENT_CONFIG_INSTALL_COMMAND,
+  AGENT_CONFIG_UPDATE_COMMAND,
+} from "./AgentConfigCard.js";
 import { startKeepalive, stopKeepalive } from "./ac-keepalive.js";
 import { listen } from "@tauri-apps/api/event";
 import { ToolingSection, type ToolingCache } from "./ToolingSection.js";
+import { UsageSection, type UsageHistoryCache } from "./UsageSection.js";
 import { Sidebar, type Section } from "./Sidebar.js";
 import { UsageBars, utilColor } from "./UsageBars.js";
 import { deriveAgentConfigView, AGENT_CONFIG_REPO, AGENT_CONFIG_REPO_URL, type AgentConfigStatus } from "./agent-config.js";
@@ -145,6 +153,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 
 const PROVIDERS: ProviderId[] = ["claude", "codex", "antigravity"];
 const PROVIDER_LABEL: Record<ProviderId, string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
@@ -261,9 +270,16 @@ export default function App() {
   }
   // Bumped when the user clicks a desktop notification → opens the bell flyout.
   const [notifOpenNonce, setNotifOpenNonce] = useState(0);
-  // Whether the global ~/.claude content (agent-config skills etc.) is linked
-  // into the profiles. Real state, loaded from `share status`.
+  // Whether the shared source tree (agent-config skills etc.) is linked into
+  // the profiles. Real state, loaded from `share status`.
   const [shareActive, setShareActive] = useState(false);
+  // Per-profile link state from the same readout (drives the "shared across N"
+  // chip on the Ecosystem primary card).
+  const [shareProfiles, setShareProfiles] = useState<{ name: string; shared: boolean }[]>([]);
+  // Which tree the profiles link FROM: "default" (= ~/.claude) or a Claude
+  // profile name. GUI-owned: the CLI never records an active source — its
+  // `share status` merely echoes a passed `--source` flag back.
+  const [shareSource, setShareSourceState] = useState(() => getShareSource());
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState<string | null>(null);
   const [editKey, setEditKey] = useState<string | null>(null);
@@ -273,6 +289,10 @@ export default function App() {
   // survives section switches; the section itself decides when to re-sweep
   // (first open, manual refresh, window focus past the 60s threshold).
   const [toolingCache, setToolingCache] = useState<ToolingCache | null>(null);
+  // Usage-history series cache (per provider). Owned here like the tooling
+  // cache so it survives section switches; the Usage section fetches a
+  // provider's series once on first open and reuses it afterwards.
+  const [usageHistoryCache, setUsageHistoryCache] = useState<UsageHistoryCache>({});
 
   // Notifications (auto-switches, usage-fetch failures). The event log is owned
   // by the CLI + daemon; the GUI reads it on each refresh, renders the bell +
@@ -343,14 +363,34 @@ export default function App() {
   }
 
   // Turn global-skill sharing on/off across all profiles, then re-read the real
-  // state. `on` links the default ~/.claude content (agent-config skills etc.)
-  // into every profile; `off` removes the managed links (profile-own files stay).
+  // state. `on` links the selected source tree (agent-config skills etc.) into
+  // every profile; `off` removes the managed links (profile-own files stay).
   // Explicit toggle: persist the preference and apply it directly.
   function toggleShare(on: boolean) {
     setShareGlobalFlag(on);
-    (on ? shareOn() : shareOff())
+    (on ? shareOn(shareSource) : shareOff())
       .then(shareStatus)
-      .then((s) => setShareActive(s.active))
+      .then((s) => {
+        setShareActive(s.active);
+        setShareProfiles(s.profiles);
+      })
+      .catch((e) => setError(describeError(e)));
+  }
+
+  // Change which tree the profiles link from. Persisted GUI-side (the CLI has
+  // no notion of a current source); when sharing is active, every profile is
+  // relinked to the new source right away. The confirm gate lives in the
+  // Shared-setup card — this only executes an already-confirmed change.
+  function changeShareSource(source: string) {
+    setShareSourceFlag(source);
+    setShareSourceState(source);
+    if (!shareActive) return;
+    shareOn(source)
+      .then(shareStatus)
+      .then((s) => {
+        setShareActive(s.active);
+        setShareProfiles(s.profiles);
+      })
       .catch((e) => setError(describeError(e)));
   }
 
@@ -361,16 +401,16 @@ export default function App() {
   async function reconcileShare() {
     const pref = getShareGlobal();
     try {
-      const s = await shareStatus();
+      let s = await shareStatus();
       if (pref && s.profiles.some((p) => !p.shared)) {
-        await shareOn();
-        setShareActive((await shareStatus()).active);
+        await shareOn(getShareSource());
+        s = await shareStatus();
       } else if (!pref && s.active) {
         await shareOff();
-        setShareActive(false);
-      } else {
-        setShareActive(s.active);
+        s = await shareStatus();
       }
+      setShareActive(s.active);
+      setShareProfiles(s.profiles);
     } catch {
       setShareActive(false);
     }
@@ -825,6 +865,10 @@ export default function App() {
             args={terminal.args}
             title={terminal.title}
             onClose={() => {
+              // A closed `tooling install|upgrade` run invalidates the tooling
+              // cache — the section's remount then re-runs the detection sweep,
+              // so the row reflects what the run actually changed.
+              if (terminal.args[0] === "tooling") setToolingCache(null);
               setTerminal(null);
               void refresh();
               // A profile just created via login has no shared links yet —
@@ -857,21 +901,10 @@ export default function App() {
             onToggleHideSummaries={toggleHideSummaries}
             mutedKinds={mutedKinds}
             onToggleMute={toggleMuteKind}
-            onProvidersChanged={refresh}
-            providersWithUi={new Set(apps.map((a) => a.provider))}
             devMode={devMode}
             onToggleDevMode={toggleDevMode}
-            shareActive={shareActive}
-            onToggleShare={toggleShare}
           />
-        ) : section === "usage" ? (
-          <>
-            <div>
-              <div className="text-sm font-semibold tracking-tight">Usage</div>
-              <p className="text-xs text-muted-foreground">
-                Cross-account usage comparisons land here in an upcoming release. Until then, your sessions live below.
-              </p>
-            </div>
+        ) : section === "sessions" ? (
           <SessionsView
             enabledIds={enabledIds}
             profilesByProvider={{
@@ -905,141 +938,89 @@ export default function App() {
               })
             }
           />
-          </>
+        ) : section === "usage" ? (
+          <UsageSection
+            rows={rows}
+            usage={usage}
+            nowTick={nowTick}
+            history={usageHistoryCache}
+            onHistory={(pid, data) => setUsageHistoryCache((prev) => ({ ...prev, [pid]: data }))}
+            onSwitch={(pid, name) =>
+              // Same path as the profile card's Use button: switch, keep the
+              // shared file-links fresh, then the act() wrapper refreshes.
+              act(async () => {
+                await switchProfile(pid, name);
+                if (shareActive) await shareSync(shareSource).catch(() => {});
+              })
+            }
+          />
         ) : section === "tooling" ? (
           <ToolingSection
             cache={toolingCache}
             onCache={setToolingCache}
             isWindows={IS_WINDOWS}
+            profileCounts={{
+              claude: grouped.claude.length,
+              codex: grouped.codex.length,
+              agy: grouped.antigravity.length,
+            }}
+            agentConfigUpdateTo={
+              agentConfig?.current && agentConfig.latest && isNewer(agentConfig.latest, agentConfig.current)
+                ? agentConfig.latest
+                : null
+            }
+            onRunTool={(action, id) =>
+              // Owner amendment: install/update run visibly in the embedded
+              // terminal (user-initiated). Its onClose nulls the tooling cache,
+              // so the section remounts and re-sweeps.
+              setTerminal({
+                args: ["tooling", action, id],
+                title: `${action === "install" ? "Install" : "Update"} — ${id}`,
+              })
+            }
             onNotifyError={(message) =>
               void recordNotification("error", "Tooling check failed", message).then(syncNotifications)
             }
           />
         ) : section === "ecosystem" ? (
-          <div className="space-y-2.5">
+          <div className="flex min-h-full flex-col gap-2.5">
             <div>
               <div className="text-sm font-semibold tracking-tight">Ecosystem</div>
-              <p className="text-xs text-muted-foreground">
-                The tools around your agents — status, setup and where they compose.
-              </p>
+              <p className="text-xs text-muted-foreground">Companion tools that work with your profiles</p>
             </div>
-            {(() => {
-              // Unlike the retired footer strip, the Ecosystem card also renders
-              // the installed state — this section is user-visited, not chrome.
-              const acView = deriveAgentConfigView(agentConfig, devMode);
-              const shownView = acView.visible
-                ? acView
-                : agentConfig?.installed && agentConfig.current
-                  ? ({
-                      visible: true,
-                      mode: "installed",
-                      current: agentConfig.current,
-                      latest: agentConfig.latest,
-                    } as const)
-                  : null;
-              if (!shownView) return null;
-              return (
-                <AgentConfigCard
-                  view={shownView}
-                  variant="ecosystem"
-                  devMode={devMode}
-                  isWindows={IS_WINDOWS}
-                  onOpenRepo={() => void openUrl(AGENT_CONFIG_REPO_URL)}
-                  onNotifyError={(message) =>
-                    void recordNotification("error", "agent-config setup failed", message).then(syncNotifications)
-                  }
-                />
-              );
-            })()}
-            {agentConfig?.installed && (
-              <div className="rounded-[10px] border border-border bg-card px-4 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-semibold leading-tight">agent-config settings</div>
-                    <p className="text-xs text-muted-foreground">
-                      {acLive
-                        ? `v${acLive.version ?? agentConfig.current ?? "?"} · port ${acLive.port} · target: global configuration`
-                        : "Opens agent-config's real settings UI in a managed window. Target: global configuration (per-profile settings arrive with a future agent-config release)."}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <Button size="sm" onClick={() => void openAcSettings()} disabled={acBusy}>
-                      {acBusy ? "Opening…" : "Open settings"}
-                    </Button>
-                    <Button size="sm" variant="secondary" onClick={() => void openAcInBrowser()}>
-                      Open in browser
-                    </Button>
-                  </div>
-                </div>
-                {acOpenError &&
-                  (acOpenError.kind === "wedged" ? (
-                    <div className="mt-2 rounded-md border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/10 px-3 py-2 text-xs">
-                      <p>
-                        agent-config was found but is not responding (pid {acOpenError.pid}). agent-switch never
-                        kills a server it did not start — restart it?
-                      </p>
-                      <div className="mt-1.5 flex gap-1.5">
-                        <Button size="sm" onClick={() => void forceRestartAc()} disabled={acBusy}>
-                          Force restart
-                        </Button>
-                        <Button size="sm" variant="secondary" onClick={() => setAcOpenError(null)}>
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-xs text-destructive">
-                      {acOpenError.kind === "spawnFailed" || acOpenError.kind === "startTimeout"
-                        ? `The agent-config server failed to start${"exitCode" in acOpenError && acOpenError.exitCode !== null ? ` (exit ${acOpenError.exitCode})` : ""}${acOpenError.stderr ? `: ${acOpenError.stderr}` : "."} Run it manually: agent-config ui:serve`
-                        : acOpenError.kind === "notInstalled"
-                          ? "agent-config is not installed — use the card above."
-                          : acOpenError.kind === "tokenRotated"
-                            ? "The server was restarted externally — try again."
-                            : "message" in acOpenError
-                              ? acOpenError.message
-                              : "The server is not reachable — try again or open in browser."}
-                    </p>
-                  ))}
-                <p className="mt-1.5 text-[11px] text-muted-foreground">
-                  The window shows agent-config's real UI — releases without the embed contract include their own
-                  navigation inside it.
-                </p>
-              </div>
-            )}
-            <div className="rounded-[10px] border border-border bg-card px-4 py-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-[13px] font-semibold leading-tight">Shared setup</div>
-                  <p className="text-xs text-muted-foreground">
-                    {shareActive
-                      ? "On — settings, keybindings, CLAUDE.md, skills, commands and agents are linked across profiles. This is the tree agent-config installs into."
-                      : "Off — every profile keeps its own settings, skills and commands."}
-                  </p>
-                </div>
-                <Button size="sm" variant="secondary" onClick={() => setSection("settings")}>
-                  Manage in Settings
-                </Button>
-              </div>
-            </div>
-            <div className="rounded-[10px] border border-border bg-card px-4 py-3">
-              <div className="text-[13px] font-semibold leading-tight">Provider CLIs</div>
-              <p className="mb-1.5 text-xs text-muted-foreground">The agents agent-switch manages accounts for.</p>
-              <div className="flex flex-wrap gap-1.5">
-                <Button size="sm" variant="secondary" onClick={() => void openUrl("https://docs.anthropic.com/en/docs/claude-code")}>
-                  Claude Code docs
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => void openUrl("https://github.com/openai/codex")}>
-                  Codex CLI
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => void openUrl("https://antigravity.google")}>
-                  Antigravity
-                </Button>
-              </div>
-            </div>
+            <AcPrimaryCard
+              status={agentConfig}
+              acLive={acLive}
+              acOpenError={acOpenError}
+              acBusy={acBusy}
+              activeProfile={grouped.claude.find((r) => r.active)?.name ?? null}
+              sharedCount={shareProfiles.filter((p) => p.shared).length}
+              isWindows={IS_WINDOWS}
+              onOpenRepo={() => void openUrl(AGENT_CONFIG_REPO_URL)}
+              onOpenSettings={() => void openAcSettings()}
+              onOpenInBrowser={() => void openAcInBrowser()}
+              onForceRestart={() => void forceRestartAc()}
+              onCancelError={() => setAcOpenError(null)}
+              onNotifyError={(message) =>
+                void recordNotification("error", "agent-config setup failed", message).then(syncNotifications)
+              }
+            />
+            <SharedSetupCard
+              active={shareActive}
+              source={shareSource}
+              claudeProfiles={grouped.claude.map((r) => r.name)}
+              onToggle={toggleShare}
+              onChangeSource={changeShareSource}
+            />
+            <ProvidersSettings onChange={refresh} providersWithUi={new Set(apps.map((a) => a.provider))} />
             <p className="text-[11px] text-muted-foreground">
               Nothing installs itself — agent-switch is not a proxy. Install commands are copied for your own
               terminal, never run for you.
             </p>
+            <div className="mt-auto flex items-center justify-between border-t border-border pt-2 text-[11px] text-muted-foreground">
+              <span>Profile: {grouped.claude.find((r) => r.active)?.name ?? "—"}</span>
+              <span>1 companion tool</span>
+            </div>
           </div>
         ) : (
           <>
@@ -1274,7 +1255,7 @@ export default function App() {
                                       await switchProfile(selected, r.name);
                                       // Keep the shared file-links (CLAUDE.md/settings) fresh for the
                                       // now-active profile — no-op when sharing is off.
-                                      if (shareActive) await shareSync().catch(() => {});
+                                      if (shareActive) await shareSync(shareSource).catch(() => {});
                                     })
                                   }
                                 >
@@ -1508,6 +1489,279 @@ function EditProfileRow({
 }
 
 
+/**
+ * Ecosystem primary card — agent-config as the section's headline citizen.
+ * Merges the former recommend/upgrade card and the separate "agent-config
+ * settings" card into one surface: mark + name + version pill, description,
+ * install/update copy-command row (never an unattended install), and — once
+ * installed — the ACTIVE IN THIS PROFILE row with the shared-across chip and
+ * the Open repo / Settings actions. Every embedded-settings failure state
+ * (incl. the consent-gated wedged restart and the permanent Open-in-browser
+ * escape hatch) is relocated here unchanged.
+ */
+function AcPrimaryCard({
+  status,
+  acLive,
+  acOpenError,
+  acBusy,
+  activeProfile,
+  sharedCount,
+  isWindows,
+  onOpenRepo,
+  onOpenSettings,
+  onOpenInBrowser,
+  onForceRestart,
+  onCancelError,
+  onNotifyError,
+}: {
+  status: AgentConfigStatus | null;
+  acLive: Extract<AcStatus, { status: "live" }> | null;
+  acOpenError: AcError | null;
+  acBusy: boolean;
+  activeProfile: string | null;
+  sharedCount: number;
+  isWindows: boolean;
+  onOpenRepo: () => void;
+  onOpenSettings: () => void;
+  onOpenInBrowser: () => void;
+  onForceRestart: () => void;
+  onCancelError: () => void;
+  onNotifyError: (message: string) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  if (!status) return null; // detection pending — never flash a wrong state
+
+  const mode: "install" | "update" | "current" = !status.installed
+    ? "install"
+    : status.current && status.latest && isNewer(status.latest, status.current)
+      ? "update"
+      : "current";
+  const command = mode === "update" ? AGENT_CONFIG_UPDATE_COMMAND : AGENT_CONFIG_INSTALL_COMMAND;
+
+  async function copyCommand() {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      onNotifyError(e instanceof Error ? e.message : String(e)); // notification only — nothing inline
+    }
+  }
+
+  return (
+    <div className="rounded-[10px] border border-border bg-card px-4 py-3">
+      <div className="flex items-start gap-3">
+        <AgentConfigMark />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={onOpenRepo}
+              title="Open the agent-config repository"
+              className="text-[15px] font-semibold leading-tight transition-opacity hover:opacity-90"
+            >
+              agent-config
+            </button>
+            {mode === "current" && status.current && (
+              <span className="rounded-full bg-[hsl(var(--success))]/15 px-2 py-0.5 text-[11px] font-medium text-[hsl(var(--success))]">
+                v{status.current} · current
+              </span>
+            )}
+            {mode === "update" && (
+              <span className="rounded-full bg-[hsl(var(--warning))]/15 px-2 py-0.5 text-[11px] font-medium text-[hsl(var(--warning))]">
+                v{status.current} → v{status.latest} available
+              </span>
+            )}
+            {mode === "install" && (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                not installed
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Audited skills, commands and governance rules, compiled into Claude Code, Cursor and 5 more hosts. No
+            daemon, no proxy — it writes files your agents already read.
+          </p>
+        </div>
+        {mode === "install" && (
+          <Button size="sm" variant="outline" className="shrink-0" onClick={onOpenRepo}>
+            Open repo
+          </Button>
+        )}
+      </div>
+
+      {mode !== "current" && (
+        <>
+          <div className="mt-2.5 flex items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-md bg-muted px-2 py-1 font-mono text-xs">{command}</code>
+            <Button size="sm" onClick={() => void copyCommand()}>
+              {copied ? <Check /> : <Copy />}
+              {copied ? "Copied" : mode === "update" ? "Copy update command" : "Copy install command"}
+            </Button>
+          </div>
+          {!isWindows && (
+            <p className="mt-1.5 text-[11px] text-muted-foreground">
+              Run it in your own terminal. If it fails with EACCES, see npm&apos;s permissions guide (or use a Node
+              version manager).
+            </p>
+          )}
+        </>
+      )}
+
+      {status.installed && (
+        <div className="mt-3 border-t border-border pt-3">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+            Active in this profile
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-[13px] font-medium">{activeProfile ?? "no active profile"}</span>
+              {sharedCount > 0 && (
+                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                  shared across {sharedCount}
+                </span>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Button size="sm" variant="outline" onClick={onOpenRepo}>
+                Open repo
+              </Button>
+              <Button size="sm" variant="secondary" onClick={onOpenInBrowser}>
+                Open in browser
+              </Button>
+              <Button size="sm" onClick={onOpenSettings} disabled={acBusy} aria-label="Open agent-config settings">
+                {acBusy ? "Opening…" : "Settings"}
+              </Button>
+            </div>
+          </div>
+          {acOpenError &&
+            (acOpenError.kind === "wedged" ? (
+              <div className="mt-2 rounded-md border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/10 px-3 py-2 text-xs">
+                <p>
+                  agent-config was found but is not responding (pid {acOpenError.pid}). agent-switch never kills a
+                  server it did not start — restart it?
+                </p>
+                <div className="mt-1.5 flex gap-1.5">
+                  <Button size="sm" onClick={onForceRestart} disabled={acBusy}>
+                    Force restart
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={onCancelError}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-destructive">
+                {acOpenError.kind === "spawnFailed" || acOpenError.kind === "startTimeout"
+                  ? `The agent-config server failed to start${"exitCode" in acOpenError && acOpenError.exitCode !== null ? ` (exit ${acOpenError.exitCode})` : ""}${acOpenError.stderr ? `: ${acOpenError.stderr}` : "."} Run it manually: agent-config ui:serve`
+                  : acOpenError.kind === "notInstalled"
+                    ? "agent-config is not installed — copy the install command above."
+                    : acOpenError.kind === "tokenRotated"
+                      ? "The server was restarted externally — try again."
+                      : "message" in acOpenError
+                        ? acOpenError.message
+                        : "The server is not reachable — try again or open in browser."}
+              </p>
+            ))}
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            {acLive
+              ? `v${acLive.version ?? status.current ?? "?"} · port ${acLive.port} · target: global configuration`
+              : "The window shows agent-config's real UI — releases without the embed contract include their own navigation inside it."}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Ecosystem "Shared setup" card — the relocated Settings › General sharing
+ * toggle (same shareOn/shareOff semantics), plus the source of the shared
+ * tree: "default" (= ~/.claude) or a Claude profile. Switching the source
+ * while sharing is active relinks every profile, so it asks with a one-line
+ * inline confirm first; with sharing off the choice is only persisted.
+ */
+function SharedSetupCard({
+  active,
+  source,
+  claudeProfiles,
+  onToggle,
+  onChangeSource,
+}: {
+  active: boolean;
+  source: string;
+  claudeProfiles: string[];
+  onToggle: (on: boolean) => void;
+  onChangeSource: (source: string) => void;
+}) {
+  const [pendingSource, setPendingSource] = useState<string | null>(null);
+  // The CLI shares FROM ~/.claude for "default" and from the profile's own
+  // config dir otherwise (src/profiles.ts configDir) — display that path.
+  const sourcePath = source === "default" ? "~/.claude" : `~/.agent-switch/claude/${source}/config`;
+
+  function pick(next: string) {
+    if (next === source) return;
+    if (active) setPendingSource(next); // relinking every profile — confirm first
+    else onChangeSource(next);
+  }
+
+  return (
+    <div className="rounded-[10px] border border-border bg-card px-4 py-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-[13px] font-semibold leading-tight">Shared setup</div>
+        <Switch checked={active} onCheckedChange={onToggle} aria-label="Shared setup" />
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        One skills, commands and rules tree for all {claudeProfiles.length} profiles. Switching accounts never changes
+        what your agents know how to do. Account credentials are never shared.
+      </p>
+      <div className="mt-2 truncate rounded-md bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground" title={sourcePath}>
+        {sourcePath}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <select
+          aria-label="Shared setup source"
+          value={source}
+          onChange={(e) => pick(e.target.value)}
+          className="h-8 rounded-md border border-input bg-background px-2 text-[13px]"
+        >
+          <option value="default">Default (~/.claude)</option>
+          {claudeProfiles.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+        {source !== "default" && (
+          <Button size="sm" variant="outline" onClick={() => onChangeSource("default")}>
+            Reset to default
+          </Button>
+        )}
+      </div>
+      {pendingSource && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+          <span>
+            Relink all profiles to {pendingSource === "default" ? "~/.claude" : pendingSource}?
+          </span>
+          <Button
+            size="sm"
+            onClick={() => {
+              onChangeSource(pendingSource);
+              setPendingSource(null);
+            }}
+          >
+            Relink
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setPendingSource(null)}>
+            Cancel
+          </Button>
+        </div>
+      )}
+      <p className="mt-2 text-[11px] text-muted-foreground">Turn off to give each profile its own tree.</p>
+    </div>
+  );
+}
+
 type SettingsTab = "general" | "notifications" | "autoswitch" | "updates" | "advanced";
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
@@ -1517,10 +1771,10 @@ const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "advanced", label: "Advanced" },
 ];
 
-/** The Settings section, grouped: General (autostart, refresh, sharing, theme),
+/** The Settings section, grouped: General (autostart, refresh, theme),
  *  Notifications, Auto-switch (master, strategy, per-provider scope), Updates,
- *  and Advanced (providers + the type-to-confirm Uninstall, last). Pure
- *  relocation of the pre-sidebar settings — no new settings live here. */
+ *  and Advanced (the type-to-confirm Uninstall). Sharing and the provider
+ *  surfaces moved to Ecosystem, where they sit next to what they configure. */
 function SettingsView({
   onUninstall,
   autoSwitchEnabled,
@@ -1542,12 +1796,8 @@ function SettingsView({
   onToggleHideSummaries,
   mutedKinds,
   onToggleMute,
-  onProvidersChanged,
-  providersWithUi,
   devMode,
   onToggleDevMode,
-  shareActive,
-  onToggleShare,
 }: {
   onUninstall: () => void;
   autoSwitchEnabled: boolean;
@@ -1569,12 +1819,8 @@ function SettingsView({
   onToggleMinimizeToDock: (on: boolean) => void;
   mutedKinds: NotificationKind[];
   onToggleMute: (kind: NotificationKind) => void;
-  onProvidersChanged: () => void;
-  providersWithUi: Set<ProviderId>;
   devMode: boolean;
   onToggleDevMode: (on: boolean) => void;
-  shareActive: boolean;
-  onToggleShare: (on: boolean) => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
   return (
@@ -1611,8 +1857,6 @@ function SettingsView({
             onToggleMinimizeToDock={onToggleMinimizeToDock}
             devMode={devMode}
             onToggleDevMode={onToggleDevMode}
-            shareActive={shareActive}
-            onToggleShare={onToggleShare}
           />
           <DesignSettings />
         </>
@@ -1635,12 +1879,7 @@ function SettingsView({
           onToggleAutoUpdateKind={onToggleAutoUpdateKind}
         />
       )}
-      {tab === "advanced" && (
-        <>
-          <ProvidersSettings onChange={onProvidersChanged} providersWithUi={providersWithUi} />
-          <UninstallSettings onUninstall={onUninstall} />
-        </>
-      )}
+      {tab === "advanced" && <UninstallSettings onUninstall={onUninstall} />}
     </div>
   );
 }
@@ -1741,15 +1980,12 @@ function NotificationSettings({
               isn't open.
             </div>
           </div>
-          <Button
-            size="sm"
-            variant={osNotify ? "default" : "outline"}
+          <Switch
+            checked={!!osNotify}
             disabled={osNotify === null}
-            onClick={toggleOsNotify}
+            onCheckedChange={() => toggleOsNotify()}
             aria-label="Notify when closed"
-          >
-            {osNotify === null ? "…" : osNotify ? "On" : "Off"}
-          </Button>
+          />
         </div>
 
         {err && <div className="text-xs text-destructive">{err}</div>}
@@ -1766,15 +2002,12 @@ function NotificationSettings({
                   {notifyThresholds.length > 0 && ` (${notifyThresholds.join("%, ")}%)`}.
                 </div>
               </div>
-              <Button
-                size="sm"
-                variant={notify ? "default" : "outline"}
+              <Switch
+                checked={!!notify}
                 disabled={notify === null}
-                onClick={toggleNotify}
+                onCheckedChange={() => void toggleNotify()}
                 aria-label="Context alerts"
-              >
-                {notify === null ? "…" : notify ? "On" : "Off"}
-              </Button>
+              />
             </div>
             {KIND_LABELS.map(({ kind, label, hint }) => (
               <div key={kind} className="flex items-center justify-between gap-2">
@@ -1782,14 +2015,11 @@ function NotificationSettings({
                   <div className="text-[13px]">{label}</div>
                   <div className="text-xs text-muted-foreground">{hint}</div>
                 </div>
-                <Button
-                  size="sm"
-                  variant={muted.has(kind) ? "outline" : "default"}
-                  onClick={() => onToggleMute(kind)}
+                <Switch
+                  checked={!muted.has(kind)}
+                  onCheckedChange={() => onToggleMute(kind)}
                   aria-label={`Toggle ${label}`}
-                >
-                  {muted.has(kind) ? "Muted" : "On"}
-                </Button>
+                />
               </div>
             ))}
           </div>
@@ -1810,8 +2040,6 @@ function GeneralSettings({
   onToggleMinimizeToDock,
   devMode,
   onToggleDevMode,
-  shareActive,
-  onToggleShare,
 }: {
   autoRefresh: boolean;
   onToggleAutoRefresh: (on: boolean) => void;
@@ -1823,8 +2051,6 @@ function GeneralSettings({
   onToggleMinimizeToDock: (on: boolean) => void;
   devMode: boolean;
   onToggleDevMode: (on: boolean) => void;
-  shareActive: boolean;
-  onToggleShare: (on: boolean) => void;
 }) {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -1854,15 +2080,12 @@ function GeneralSettings({
             <div className="text-[13px] font-medium">Start at login</div>
             <div className="text-xs text-muted-foreground">Launch agent-switch automatically when you sign in.</div>
           </div>
-          <Button
-            size="sm"
-            variant={enabled ? "default" : "outline"}
+          <Switch
+            checked={!!enabled}
             disabled={enabled === null}
-            onClick={toggle}
+            onCheckedChange={() => void toggle()}
             aria-label="Start at login"
-          >
-            {enabled === null ? "…" : enabled ? "On" : "Off"}
-          </Button>
+          />
         </div>
         {err && <div className="text-xs text-destructive">{err}</div>}
 
@@ -1875,14 +2098,7 @@ function GeneralSettings({
                 closing removes agent-switch from the Dock — it stays in the menu bar and reopens from there.
               </div>
             </div>
-            <Button
-              size="sm"
-              variant={minimizeToDock ? "default" : "outline"}
-              onClick={() => onToggleMinimizeToDock(!minimizeToDock)}
-              aria-label="Minimize into Dock"
-            >
-              {minimizeToDock ? "On" : "Off"}
-            </Button>
+            <Switch checked={minimizeToDock} onCheckedChange={onToggleMinimizeToDock} aria-label="Minimize into Dock" />
           </div>
         )}
 
@@ -1893,14 +2109,7 @@ function GeneralSettings({
               Refresh usage limits automatically on the interval below. When off, use the refresh button in the footer.
             </div>
           </div>
-          <Button
-            size="sm"
-            variant={autoRefresh ? "default" : "outline"}
-            onClick={() => onToggleAutoRefresh(!autoRefresh)}
-            aria-label="Auto-refresh limits"
-          >
-            {autoRefresh ? "On" : "Off"}
-          </Button>
+          <Switch checked={autoRefresh} onCheckedChange={onToggleAutoRefresh} aria-label="Auto-refresh limits" />
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
@@ -1910,14 +2119,7 @@ function GeneralSettings({
               Suppress the first-line session summary in the Sessions list (the only session content shown in the GUI).
             </div>
           </div>
-          <Button
-            size="sm"
-            variant={hideSummaries ? "default" : "outline"}
-            onClick={() => onToggleHideSummaries(!hideSummaries)}
-            aria-label="Hide session summaries"
-          >
-            {hideSummaries ? "On" : "Off"}
-          </Button>
+          <Switch checked={hideSummaries} onCheckedChange={onToggleHideSummaries} aria-label="Hide session summaries" />
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
@@ -1941,25 +2143,6 @@ function GeneralSettings({
           </select>
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
-          <div className="min-w-0">
-            <div className="text-[13px] font-medium">Share global skills</div>
-            <div className="text-xs text-muted-foreground">
-              Link the globally-installed agent-config content (skills, commands, agents, CLAUDE.md from{" "}
-              <span className="font-mono">~/.claude</span>) into every profile, so an active profile inherits it.
-              Account credentials are never shared.
-            </div>
-          </div>
-          <Button
-            size="sm"
-            variant={shareActive ? "default" : "outline"}
-            onClick={() => onToggleShare(!shareActive)}
-            aria-label="Share global skills"
-          >
-            {shareActive ? "On" : "Off"}
-          </Button>
-        </div>
-
         {IS_DEV && (
           <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
             <div>
@@ -1969,14 +2152,7 @@ function GeneralSettings({
                 for the current provider. Dev builds only.
               </div>
             </div>
-            <Button
-              size="sm"
-              variant={devMode ? "default" : "outline"}
-              onClick={() => onToggleDevMode(!devMode)}
-              aria-label="Developer mode"
-            >
-              {devMode ? "On" : "Off"}
-            </Button>
+            <Switch checked={devMode} onCheckedChange={onToggleDevMode} aria-label="Developer mode" />
           </div>
         )}
       </CardContent>
@@ -2034,14 +2210,7 @@ function AutoSwitchSettings({
               toggles and disables all of them.
             </div>
           </div>
-          <Button
-            size="sm"
-            variant={enabled ? "default" : "outline"}
-            onClick={() => onToggle(!enabled)}
-            aria-label="Auto-switch globally"
-          >
-            {enabled ? "On" : "Off"}
-          </Button>
+          <Switch checked={enabled} onCheckedChange={onToggle} aria-label="Auto-switch globally" />
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
@@ -2123,12 +2292,13 @@ function AutoSwitchSettings({
 
 const PROVIDER_SURFACES: { id: ProviderSurface; label: string }[] = [
   { id: "cli", label: "CLI" },
-  { id: "ui", label: "UI" },
+  { id: "ui", label: "GUI" },
 ];
 
-/** Providers tab: enable/disable each provider's surfaces. Disabling hides a
- *  provider without deleting its profiles; `onChange` refreshes the main view so
- *  its tab strip updates immediately. */
+/** Ecosystem providers card: enable/disable each provider's surfaces (CLI /
+ *  GUI switches — same setProvider semantics as the former Settings › Advanced
+ *  tab, relocated). Disabling hides a provider without deleting its profiles;
+ *  `onChange` refreshes the main view so its tab strip updates immediately. */
 function ProvidersSettings({ onChange, providersWithUi }: { onChange: () => void; providersWithUi: Set<ProviderId> }) {
   const [cfg, setCfg] = useState<ProvidersStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -2192,9 +2362,12 @@ function ProvidersSettings({ onChange, providersWithUi }: { onChange: () => void
   return (
     <Card>
       <CardContent className="space-y-3 p-3">
-        <div className="text-xs text-muted-foreground">
-          Enable the providers you use. Disabling one hides it — your profiles are kept and return when you re-enable it.
-          If a provider&apos;s CLI isn&apos;t on your PATH, link its binary and you can still use it.
+        <div>
+          <div className="text-[13px] font-semibold leading-tight">Providers</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            Enable the providers you use. Disabling one hides it — your profiles are kept and return when you re-enable
+            it. If a provider&apos;s CLI isn&apos;t on your PATH, link its binary and you can still use it.
+          </div>
         </div>
         {cfg === null && !err && <div className="text-xs text-muted-foreground">…</div>}
         {cfg &&
@@ -2213,9 +2386,9 @@ function ProvidersSettings({ onChange, providersWithUi }: { onChange: () => void
                       {linkedPath ? `Linked: ${linkedPath}` : installed ? "Installed" : "Not installed — link its binary to use it"}
                     </div>
                   </div>
-                  <div className="flex shrink-0 gap-1">
+                  <div className="flex shrink-0 items-center gap-3">
                     {PROVIDER_SURFACES.filter((s) =>
-                      // Every provider has a CLI; only offer the UI surface when the
+                      // Every provider has a CLI; only offer the GUI surface when the
                       // provider has a registered desktop app.
                       s.id === "cli" ? true : providersWithUi.has(pid),
                     ).map((s) => {
@@ -2224,19 +2397,16 @@ function ProvidersSettings({ onChange, providersWithUi }: { onChange: () => void
                       // linked; turning an already-on one OFF stays allowed.
                       const blocked = !installed && !on;
                       return (
-                        <Button
-                          key={s.id}
-                          size="sm"
-                          variant={on ? "default" : "outline"}
-                          disabled={blocked}
-                          title={blocked ? `Install or link ${PROVIDER_LABEL[pid]} to enable it` : undefined}
-                          onClick={() => toggle(pid, s.id)}
-                          aria-label={`${PROVIDER_LABEL[pid]} ${s.label} ${on ? "enabled" : "disabled"}${
-                            blocked ? " (not installed)" : ""
-                          }`}
-                        >
-                          {s.label}
-                        </Button>
+                        <div key={s.id} className="flex items-center gap-1.5">
+                          <span className="text-[11px] text-muted-foreground">{s.label}</span>
+                          <Switch
+                            checked={on}
+                            disabled={blocked}
+                            title={blocked ? `Install or link ${PROVIDER_LABEL[pid]} to enable it` : undefined}
+                            onCheckedChange={() => void toggle(pid, s.id)}
+                            aria-label={`${PROVIDER_LABEL[pid]} ${s.label}${blocked ? " (not installed)" : ""}`}
+                          />
+                        </div>
                       );
                     })}
                   </div>
@@ -2447,14 +2617,7 @@ function UpdatesSettings({
               below). You'll be told to restart once it's applied.
             </div>
           </div>
-          <Button
-            size="sm"
-            variant={autoUpdateCheck ? "default" : "outline"}
-            onClick={() => onToggleAutoUpdateCheck(!autoUpdateCheck)}
-            aria-label="Automatic updates"
-          >
-            {autoUpdateCheck ? "On" : "Off"}
-          </Button>
+          <Switch checked={autoUpdateCheck} onCheckedChange={onToggleAutoUpdateCheck} aria-label="Automatic updates" />
         </div>
 
         {autoUpdateCheck && (
@@ -2463,21 +2626,18 @@ function UpdatesSettings({
             <div className="text-xs text-muted-foreground">
               Uncheck a type to only be notified about it (e.g. leave Major off to review big releases first).
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-4">
               {UPDATE_KINDS.map(({ kind, label }) => {
                 const on = autoUpdateKinds.includes(kind);
                 return (
-                  <Button
-                    key={kind}
-                    size="sm"
-                    variant={on ? "default" : "outline"}
-                    onClick={() => onToggleAutoUpdateKind(kind, !on)}
-                    aria-label={`Auto-update ${label}`}
-                    aria-pressed={on}
-                  >
-                    {on ? <Check className="size-3.5" /> : null}
-                    {label}
-                  </Button>
+                  <div key={kind} className="flex items-center gap-1.5">
+                    <span className="text-[13px]">{label}</span>
+                    <Switch
+                      checked={on}
+                      onCheckedChange={(next) => onToggleAutoUpdateKind(kind, next)}
+                      aria-label={`Auto-update ${label}`}
+                    />
+                  </div>
                 );
               })}
             </div>

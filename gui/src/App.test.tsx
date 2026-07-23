@@ -9,6 +9,7 @@ import { render, screen, waitFor, fireEvent, cleanup, act, within } from "@testi
 const ipc = vi.hoisted(() => ({
   listProfiles: vi.fn(),
   profileUsage: vi.fn(),
+  usageHistory: vi.fn(),
   getAutoSwitch: vi.fn(),
   setAutoSwitch: vi.fn(),
   getProviders: vi.fn(),
@@ -99,7 +100,7 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, acCardDismissed: false, shareGlobal: true, hideSummaries: false, minimizeToDock: false, autoUpdateKinds: ["major", "minor", "patch"], providerFilter: "claude" }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, acCardDismissed: false, shareGlobal: true, shareSource: "default", hideSummaries: false, minimizeToDock: false, autoUpdateKinds: ["major", "minor", "patch"], providerFilter: "claude" }));
 // Keep the update-check path inert in the App tests: uptodate → no toast, no
 // network. The update logic itself is covered by updates.test.ts.
 // Keep the real pure helpers (isNewer/compareVersions — used by agent-config.js)
@@ -137,6 +138,10 @@ vi.mock("./settings-store.js", () => ({
   getShareGlobal: () => store.shareGlobal,
   setShareGlobalFlag: (on: boolean) => {
     store.shareGlobal = on;
+  },
+  getShareSource: () => store.shareSource,
+  setShareSourceFlag: (source: string) => {
+    store.shareSource = source;
   },
   getHideSummaries: () => store.hideSummaries,
   setHideSummariesFlag: (on: boolean) => {
@@ -214,11 +219,13 @@ beforeEach(() => {
   store.notifLastRead = 0;
   store.mutedKinds = [];
   store.shareGlobal = true;
+  store.shareSource = "default";
   store.agentConfigNotifiedVersion = "";
   store.acCardDismissed = false;
   store.providerFilter = "claude";
   ipc.listProfiles.mockResolvedValue(rows);
   ipc.profileUsage.mockResolvedValue(usageSnap);
+  ipc.usageHistory.mockResolvedValue([]);
   ipc.getAutoSwitch.mockResolvedValue({
     claude: { enabled: false, threshold: 95, tag: "all" },
     codex: { enabled: false, threshold: 95, tag: "all" },
@@ -467,10 +474,12 @@ describe("App", () => {
     expect(screen.getByRole("tab", { name: /advanced/i })).toBeTruthy();
   });
 
-  it("toggles autostart from the General settings tab", async () => {
+  it("toggles autostart from the General settings tab (pill switch)", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /start at login/i })); // autostart currently off
+    const sw = await screen.findByRole("switch", { name: /start at login/i });
+    expect(sw.getAttribute("aria-checked")).toBe("false"); // autostart currently off
+    fireEvent.click(sw);
     expect(ipc.setAutostart).toHaveBeenCalledWith(true);
   });
 
@@ -573,15 +582,16 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: /^install \(free\)$/i })).toBeNull();
   });
 
-  it("hides the first-run card on other sections — Profiles only (Ecosystem has its own card)", async () => {
+  it("hides the first-run card on other sections — Profiles only (Ecosystem has the primary card)", async () => {
     ipc.agentConfigVersion.mockResolvedValue(null); // card shows on Profiles
     render(<App />);
     expect(await screen.findByText(/supercharge your ai agents/i)).toBeTruthy(); // Profiles
     fireEvent.click(screen.getByRole("button", { name: /^usage$/i }));
     await waitFor(() => expect(screen.queryByText(/supercharge your ai agents/i)).toBeNull()); // gone
     fireEvent.click(screen.getByRole("button", { name: /^ecosystem$/i }));
-    // The Ecosystem section renders its own (non-dismissible) card.
-    expect(await screen.findByText(/supercharge your ai agents/i)).toBeTruthy();
+    // The Ecosystem primary card renders the install state (copy-command only).
+    expect(await screen.findByText(/not installed/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /copy install command/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /dismiss agent-config recommendation/i })).toBeNull();
   });
 
@@ -597,21 +607,54 @@ describe("App", () => {
     expect(screen.queryByText(/supercharge your ai agents/i)).toBeNull(); // still dismissed on Profiles
   });
 
-  it("the Ecosystem section shows the installed state that the retired footer strip hid", async () => {
+  it("the Ecosystem primary card shows the current-version pill, active profile and shared chip", async () => {
     ipc.agentConfigVersion.mockResolvedValue("9.2.0"); // installed + current → no first-run card
+    fetchLatest.mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" });
+    ipc.shareStatus.mockResolvedValue({
+      active: true,
+      source: "default",
+      profiles: [
+        { name: "work", shared: true },
+        { name: "privat", shared: true },
+      ],
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    expect(await screen.findByText(/v9\.2\.0 · current/i)).toBeTruthy(); // status pill
+    expect(screen.getByText(/active in this profile/i)).toBeTruthy();
+    expect(await screen.findByText(/shared across 2/i)).toBeTruthy(); // backed by shareStatus
+    expect(screen.getByText(/nothing installs itself/i)).toBeTruthy(); // the boundary line
+    expect(screen.getByText(/shared setup/i)).toBeTruthy();
+    expect(screen.getByText(/^Profile: work$/)).toBeTruthy(); // section footer
+    expect(screen.getByText(/1 companion tool/i)).toBeTruthy();
+  });
+
+  it("the Ecosystem primary card shows the update pill + copy-update command for an older install", async () => {
+    ipc.agentConfigVersion.mockResolvedValue("9.1.0"); // installed, older
     fetchLatest.mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
-    expect(await screen.findByText(/agent-config is up to date/i)).toBeTruthy();
-    expect(screen.getByText(/nothing installs itself/i)).toBeTruthy(); // the boundary line
-    expect(screen.getByText(/shared setup/i)).toBeTruthy();
+    expect(await screen.findByText(/v9\.1\.0 → v9\.2\.0 available/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /copy update command/i })).toBeTruthy();
+    // Installed → the settings entry point is still there alongside the update hint.
+    expect(screen.getByRole("button", { name: /open agent-config settings/i })).toBeTruthy();
+  });
+
+  it("Settings no longer hosts sharing or providers — they live in Ecosystem", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    await screen.findByRole("tab", { name: /general/i });
+    expect(screen.queryByText(/share global skills/i)).toBeNull(); // moved to Ecosystem
+    fireEvent.click(screen.getByRole("tab", { name: /advanced/i }));
+    expect(await screen.findByRole("button", { name: /uninstall agent-switch/i })).toBeTruthy(); // uninstall stays
+    expect(screen.queryByRole("switch", { name: /codex cli/i })).toBeNull(); // providers moved to Ecosystem
   });
 
   it("opens the embedded settings window via Rust (token never enters this webview) and shows provenance", async () => {
     ipc.agentConfigVersion.mockResolvedValue("9.2.0");
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /open settings/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /open agent-config settings/i }));
     await waitFor(() => expect(ipc.acOpenSettingsWindow).toHaveBeenCalledWith("dark"));
     // Provenance: version, port, target — the user always sees whose settings they edit.
     expect(await screen.findByText(/v9\.7\.0 · port 41066 · target: global/i)).toBeTruthy();
@@ -622,7 +665,7 @@ describe("App", () => {
     ipc.acOpenSettingsWindow.mockRejectedValueOnce({ kind: "wedged", pid: 777 });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /open settings/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /open agent-config settings/i }));
     expect(await screen.findByText(/not responding \(pid 777\)/i)).toBeTruthy();
     expect(ipc.acForceRestart).not.toHaveBeenCalled(); // nothing killed without consent
     fireEvent.click(screen.getByRole("button", { name: /force restart/i }));
@@ -634,7 +677,7 @@ describe("App", () => {
     ipc.acOpenSettingsWindow.mockRejectedValueOnce({ kind: "spawnFailed", exitCode: 1, stderr: "EADDRINUSE" });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /open settings/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /open agent-config settings/i }));
     expect(await screen.findByText(/exit 1.*EADDRINUSE.*agent-config ui:serve/i)).toBeTruthy();
   });
 
@@ -727,7 +770,7 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
     fireEvent.click(await screen.findByRole("tab", { name: /notifications/i }));
     expect(await screen.findByText(/desktop notifications/i)).toBeTruthy();
-    fireEvent.click(await screen.findByRole("button", { name: /toggle fetch failures/i }));
+    fireEvent.click(await screen.findByRole("switch", { name: /toggle fetch failures/i }));
     expect(store.mutedKinds).toContain("warning");
   });
 
@@ -735,7 +778,7 @@ describe("App", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
     fireEvent.click(await screen.findByRole("tab", { name: /auto-switch/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /auto-switch globally/i })); // On → Off
+    fireEvent.click(await screen.findByRole("switch", { name: /auto-switch globally/i })); // On → Off
     await waitFor(() => expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", false));
     expect(ipc.setAutoSwitch).toHaveBeenCalledWith("codex", false);
     expect(ipc.setAutoSwitch).toHaveBeenCalledWith("antigravity", false);
@@ -746,32 +789,32 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: /auto-switch ·/i })).toBeNull();
   });
 
-  it("toggles a provider surface from the Advanced settings group", async () => {
+  it("toggles a provider surface from the Ecosystem providers card (moved out of Settings)", async () => {
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    fireEvent.click(await screen.findByRole("tab", { name: /advanced/i }));
-    // codex CLI is on (mock) → clicking it disables that surface
-    fireEvent.click(await screen.findByRole("button", { name: /codex cli enabled/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    // codex CLI is on (mock) → flipping its switch disables that surface
+    const sw = await screen.findByRole("switch", { name: /^codex cli$/i });
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(sw);
     expect(ipc.setProvider).toHaveBeenCalledWith("codex", "cli", false);
   });
 
-  it("offers the UI surface only for providers with a registered desktop app", async () => {
+  it("offers the GUI surface only for providers with a registered desktop app", async () => {
     // Only claude + antigravity have an app in this mock (codex has none here).
     ipc.listApps.mockResolvedValue([
       { id: "claude-desktop", displayName: "Claude Desktop", provider: "claude", strategy: "env", installed: true },
       { id: "antigravity", displayName: "Antigravity", provider: "antigravity", strategy: "user-data-dir", installed: true },
     ]);
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    fireEvent.click(await screen.findByRole("tab", { name: /advanced/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
     // Every provider offers a CLI surface (all three have a working CLI).
-    expect(await screen.findByRole("button", { name: /claude cli/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /codex cli/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /antigravity cli/i })).toBeTruthy();
-    // UI surface only where a desktop app is registered: claude + antigravity yes, codex no.
-    expect(screen.getByRole("button", { name: /claude ui/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /antigravity ui/i })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /codex ui/i })).toBeNull();
+    expect(await screen.findByRole("switch", { name: /claude cli/i })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: /codex cli/i })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: /antigravity cli/i })).toBeTruthy();
+    // GUI surface only where a desktop app is registered: claude + antigravity yes, codex no.
+    expect(screen.getByRole("switch", { name: /claude gui/i })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: /antigravity gui/i })).toBeTruthy();
+    expect(screen.queryByRole("switch", { name: /codex gui/i })).toBeNull();
   });
 
   it("shows an added provider's profile in its tab (antigravity/MatneX regression)", async () => {
@@ -797,29 +840,93 @@ describe("App", () => {
     expect(screen.getByRole("tab", { name: /codex/i })).toBeTruthy();
   });
 
-  it("shows a not-installed provider in the Advanced group but blocks enabling it", async () => {
+  it("shows a not-installed provider in the Ecosystem providers card but blocks enabling it", async () => {
     ipc.getProviders.mockResolvedValue({
       claude: { cli: true, ui: true, installed: true },
       codex: { cli: true, ui: true, installed: true },
       antigravity: { cli: false, ui: false, installed: false }, // not installed, off
     });
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    fireEvent.click(await screen.findByRole("tab", { name: /advanced/i }));
-    const antigravityCli = await screen.findByRole("button", { name: /antigravity cli disabled \(not installed\)/i });
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    const antigravityCli = await screen.findByRole("switch", { name: /antigravity cli \(not installed\)/i });
     expect((antigravityCli as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(antigravityCli);
     expect(ipc.setProvider).not.toHaveBeenCalled(); // can't enable a missing provider
   });
 
-  it("toggling 'Share global skills' in General settings links the global content into profiles", async () => {
-    ipc.shareStatus.mockResolvedValue({ active: false, source: "default", profiles: [] });
+  it("the Shared-setup switch (Ecosystem) links the source tree into every profile", async () => {
+    store.shareGlobal = false; // pref off so the mount reconcile doesn't auto-link
+    ipc.shareStatus.mockResolvedValue({
+      active: false,
+      source: "default",
+      profiles: [
+        { name: "work", shared: false },
+        { name: "privat", shared: false },
+      ],
+    });
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    const toggle = await screen.findByRole("button", { name: /share global skills/i });
-    expect(toggle.textContent).toMatch(/off/i);
-    fireEvent.click(toggle);
-    await waitFor(() => expect(ipc.shareOn).toHaveBeenCalled()); // runs `share on --source default`
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    const sw = await screen.findByRole("switch", { name: /shared setup/i });
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(sw);
+    await waitFor(() => expect(ipc.shareOn).toHaveBeenCalledWith("default")); // `share on --source default`
+  });
+
+  it("turning the Shared-setup switch off removes the managed links", async () => {
+    ipc.shareStatus.mockResolvedValue({
+      active: true,
+      source: "default",
+      profiles: [
+        { name: "work", shared: true },
+        { name: "privat", shared: true },
+      ],
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    const sw = await screen.findByRole("switch", { name: /shared setup/i });
+    await waitFor(() => expect(sw.getAttribute("aria-checked")).toBe("true"));
+    fireEvent.click(sw);
+    await waitFor(() => expect(ipc.shareOff).toHaveBeenCalled());
+  });
+
+  it("switching the share source asks inline first, then relinks with the chosen profile", async () => {
+    ipc.shareStatus.mockResolvedValue({
+      active: true,
+      source: "default",
+      profiles: [
+        { name: "work", shared: true },
+        { name: "privat", shared: true },
+      ],
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    const select = (await screen.findByLabelText(/shared setup source/i)) as HTMLSelectElement;
+    expect(await screen.findByText("~/.claude")).toBeTruthy(); // default source path shown
+    fireEvent.change(select, { target: { value: "work" } });
+    expect(ipc.shareOn).not.toHaveBeenCalled(); // inline confirm gates the relink
+    fireEvent.click(await screen.findByRole("button", { name: /^relink$/i }));
+    await waitFor(() => expect(ipc.shareOn).toHaveBeenCalledWith("work"));
+    expect(store.shareSource).toBe("work"); // persisted GUI-side (the CLI keeps no source)
+    expect(await screen.findByText("~/.agent-switch/claude/work/config")).toBeTruthy(); // path follows
+    // Source ≠ default → the reset affordance appears and goes straight back.
+    fireEvent.click(await screen.findByRole("button", { name: /reset to default/i }));
+    await waitFor(() => expect(ipc.shareOn).toHaveBeenCalledWith("default"));
+    expect(store.shareSource).toBe("default");
+  });
+
+  it("cancelling the share-source confirm changes nothing", async () => {
+    ipc.shareStatus.mockResolvedValue({
+      active: true,
+      source: "default",
+      profiles: [{ name: "work", shared: true }],
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    const select = (await screen.findByLabelText(/shared setup source/i)) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "privat" } });
+    fireEvent.click(await screen.findByRole("button", { name: /^cancel$/i }));
+    expect(ipc.shareOn).not.toHaveBeenCalled();
+    expect(store.shareSource).toBe("default");
   });
 
   it("changes the theme from the General settings group (Appearance)", async () => {
@@ -864,7 +971,7 @@ describe("App", () => {
       ),
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^sessions$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /take over/i })); // actions live on the tile, always visible
     const term = await screen.findByTestId("term");
     expect(term.textContent).toContain("takeover abc12345 --to privat"); // moved to the other claude profile
@@ -880,7 +987,7 @@ describe("App", () => {
     );
     ipc.deleteSession.mockResolvedValue({ mode: "trash", trashId: "1000-abc12345" });
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^sessions$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /delete session abc12345/i }));
     expect(ipc.deleteSession).not.toHaveBeenCalled(); // first click only arms the confirm
     fireEvent.click(await screen.findByRole("button", { name: /^Delete$/i }));
@@ -899,7 +1006,7 @@ describe("App", () => {
     );
     try {
       render(<App />);
-      fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /^sessions$/i }));
       await screen.findByRole("button", { name: /delete session abc12345/i }); // tile rendered
       expect(screen.queryByText("secret summary text")).toBeNull(); // summary suppressed on the tile
       expect(screen.queryByRole("button", { name: /show preview abc12345/i })).toBeNull(); // no preview affordance when hidden
@@ -917,7 +1024,7 @@ describe("App", () => {
       ),
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^sessions$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /hand off session abc12345/i }));
     // modal: brief extracted for the OTHER provider (codex), lossy banner names the vendor
     await waitFor(() => expect(ipc.extractHandoffBrief).toHaveBeenCalledWith("claude", "work", "abc12345", "codex"));
@@ -937,7 +1044,7 @@ describe("App", () => {
       ),
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^sessions$/i }));
     const del = await screen.findByRole("button", { name: /delete session abc12345/i });
     expect((del as HTMLButtonElement).disabled).toBe(true);
   });
@@ -975,7 +1082,7 @@ describe("App", () => {
       ),
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^sessions$/i }));
     expect(await screen.findByText("67% · 134k/1000k")).toBeTruthy(); // context badge on the tile
     fireEvent.click(await screen.findByRole("button", { name: /compact/i }));
     const term = await screen.findByTestId("term");
@@ -999,7 +1106,7 @@ describe("App", () => {
       truncated: false,
     });
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^sessions$/i }));
     expect(ipc.sessionPreview).not.toHaveBeenCalled(); // not fetched until the preview is opened
     fireEvent.click(await screen.findByRole("button", { name: /show preview abc12345/i }));
     await waitFor(() => expect(ipc.sessionPreview).toHaveBeenCalledWith("claude", "abc12345", "work"));
@@ -1018,7 +1125,7 @@ describe("App", () => {
     );
     try {
       render(<App />);
-      fireEvent.click(await screen.findByRole("button", { name: /^usage$/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /^sessions$/i }));
       await screen.findByRole("button", { name: /delete session abc12345/i }); // tile rendered
       expect(screen.queryByRole("button", { name: /show preview abc12345/i })).toBeNull(); // no preview affordance
       expect(ipc.sessionPreview).not.toHaveBeenCalled(); // gated: never read the transcript body
@@ -1031,29 +1138,35 @@ describe("App", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
     fireEvent.click(await screen.findByRole("tab", { name: /notifications/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /^context alerts$/i })); // currently off
+    fireEvent.click(await screen.findByRole("switch", { name: /^context alerts$/i })); // currently off
     await waitFor(() => expect(ipc.setNotify).toHaveBeenCalledWith(true, [80, 95]));
   });
 });
 
 describe("sidebar sections", () => {
-  it("routes between the five sections from the sidebar nav", async () => {
+  it("routes between the six sections from the sidebar nav", async () => {
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i }); // Profiles is the default section
     const nav = screen.getByRole("navigation", { name: /sections/i });
     expect(within(nav).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
       "Profiles",
+      "Sessions",
       "Usage",
       "Tooling",
       "Ecosystem",
       "Settings",
     ]);
+    // Sessions = the (correctly named) sessions inventory; Usage = the new
+    // cross-account comparison view.
+    fireEvent.click(within(nav).getByRole("button", { name: "Sessions" }));
+    expect(await screen.findByText(/no claude sessions yet/i)).toBeTruthy();
     fireEvent.click(within(nav).getByRole("button", { name: "Usage" }));
-    expect(await screen.findByText(/sessions live below/i)).toBeTruthy();
+    expect(await screen.findByText(/most headroom right now/i)).toBeTruthy();
+    expect(screen.getByText(/by account/i)).toBeTruthy();
     fireEvent.click(within(nav).getByRole("button", { name: "Tooling" }));
     // The Tooling section renders the CLI's `tooling --json` readout (never its
     // own detection) — the all-healthy default resolves into five OK rows.
-    expect(await screen.findByText(/detected by the agent-switch cli/i)).toBeTruthy();
+    expect(await screen.findByText(/can never disagree/i)).toBeTruthy(); // the doctor-parity caption
     await waitFor(() => expect(ipc.toolingStatus).toHaveBeenCalled());
     expect((await screen.findAllByTestId("tooling-row")).length).toBe(5);
     fireEvent.click(within(nav).getByRole("button", { name: "Ecosystem" }));
@@ -1075,13 +1188,13 @@ describe("sidebar sections", () => {
     expect(document.activeElement).toBe(items[1]);
     fireEvent.keyDown(items[1], { key: "ArrowUp" });
     expect(document.activeElement).toBe(items[0]);
-    fireEvent.keyDown(items[0], { key: "ArrowUp" }); // wraps to the last item
-    expect(document.activeElement).toBe(items[4]);
-    fireEvent.keyDown(items[4], { key: "ArrowDown" }); // wraps back to the first
+    fireEvent.keyDown(items[0], { key: "ArrowUp" }); // wraps to the last item (Settings, index 5 of 6)
+    expect(document.activeElement).toBe(items[5]);
+    fireEvent.keyDown(items[5], { key: "ArrowDown" }); // wraps back to the first
     expect(document.activeElement).toBe(items[0]);
     fireEvent.keyDown(items[0], { key: "End" });
-    expect(document.activeElement).toBe(items[4]);
-    fireEvent.keyDown(items[4], { key: "Home" });
+    expect(document.activeElement).toBe(items[5]);
+    fireEvent.keyDown(items[5], { key: "Home" });
     expect(document.activeElement).toBe(items[0]);
   });
 
@@ -1093,5 +1206,48 @@ describe("sidebar sections", () => {
     render(<App />);
     expect(await screen.findByText(/oai/)).toBeTruthy(); // reopens filtered to codex
     expect(screen.queryByText(/privat/)).toBeNull();
+  });
+});
+
+describe("tooling actions (owner amendment: visible runs in the embedded terminal)", () => {
+  async function openTooling() {
+    render(<App />);
+    await screen.findByRole("tab", { name: /claude/i });
+    fireEvent.click(within(screen.getByRole("navigation", { name: /sections/i })).getByRole("button", { name: "Tooling" }));
+  }
+
+  it("Install runs `agent-switch tooling install <id>` in the embedded terminal and re-sweeps on close", async () => {
+    ipc.toolingStatus.mockResolvedValue([
+      { id: "rtk", present: false, version: null, path: null, healthy: false, hint: "not installed — install: `brew install rtk`" },
+    ]);
+    await openTooling();
+    fireEvent.click(await screen.findByRole("button", { name: /install/i }));
+    // The stubbed terminal shows the exact CLI invocation it was opened on.
+    const term = await screen.findByTestId("term");
+    expect(term.textContent).toContain("Install — rtk");
+    expect(term.textContent).toContain("tooling install rtk");
+    expect(ipc.toolingStatus).toHaveBeenCalledTimes(1);
+    // Closing the run invalidates the tooling cache → the remounted section re-sweeps.
+    fireEvent.click(screen.getByRole("button", { name: "close-term" }));
+    await waitFor(() => expect(ipc.toolingStatus).toHaveBeenCalledTimes(2));
+  });
+
+  it("Update runs `agent-switch tooling upgrade <id>` in the embedded terminal", async () => {
+    await openTooling();
+    // All-healthy default readout → plain Update buttons, attention-sorted rows
+    // keep the CLI's input order: agent-config leads.
+    const updates = await screen.findAllByRole("button", { name: /^update$/i });
+    fireEvent.click(updates[0]);
+    const term = await screen.findByTestId("term");
+    expect(term.textContent).toContain("Update — agent-config");
+    expect(term.textContent).toContain("tooling upgrade agent-config");
+  });
+
+  it("labels the agent-config Update with the newer version App's detection found", async () => {
+    fetchLatest.mockResolvedValue({ tag: "9.9.0", name: "", url: "", notes: "", publishedAt: "" });
+    await openTooling();
+    fireEvent.click(await screen.findByRole("button", { name: "Update to v9.9.0" }));
+    const term = await screen.findByTestId("term");
+    expect(term.textContent).toContain("tooling upgrade agent-config");
   });
 });

@@ -1,19 +1,26 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, AlertTriangle, Check, Copy, RefreshCw } from "lucide-react";
+import { AlertCircle, AlertTriangle, Check, Copy, Download, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { toolingStatus, type ToolingEntry } from "./ipc.js";
+import { toolingStatus, type ToolingEntry, type ToolingId } from "./ipc.js";
 import { relativeAge } from "./transforms.js";
 
 /**
  * Tooling section: renders the CLI's `tooling --json` readout — the ONLY data
  * channel; the GUI never shells out to detect on its own. The sweep is
  * expensive (≈850 ms cold, spike S0.2), so the result is cached by the parent
- * (it survives section switches) with a timestamp shown as "checked Xs ago".
- * Invalidation: manual Refresh, and window focus when the cache is older than
- * {@link FOCUS_REFRESH_AFTER_MS}. A copy action never refreshes — nothing was
- * installed by copying. While a sweep runs with nothing cached, fixed-height
- * skeleton rows hold the layout (no layout shift when results land).
+ * (it survives section switches) with a timestamp shown as "Last checked Xs
+ * ago". Invalidation: manual Re-check, window focus when the cache is older
+ * than {@link FOCUS_REFRESH_AFTER_MS}, and — owned by the parent — the close of
+ * a `tooling install|upgrade` terminal run (the parent nulls the cache, so the
+ * remount re-sweeps). A copy action never refreshes — nothing was installed by
+ * copying. While a sweep runs with nothing cached, fixed-height skeleton rows
+ * hold the layout (no layout shift when results land).
+ *
+ * Install/update runs happen in the embedded terminal (user-initiated, output
+ * fully visible — the owner amendment superseding the copy-only stance); copy
+ * stays as the fallback where no verified command exists (agy) and on the
+ * attention states (replacing a foreign binary automatically is invasive).
  */
 
 export interface ToolingCache {
@@ -40,6 +47,39 @@ const STATE_RANK: Record<RowState, number> = { attention: 0, missing: 1, ok: 2 }
 
 export function sortByAttention(entries: ToolingEntry[]): ToolingEntry[] {
   return [...entries].sort((a, b) => STATE_RANK[rowState(a)] - STATE_RANK[rowState(b)]);
+}
+
+/** One line per tool: what it does FOR THE USER, never how it is wired
+ *  (spec § Copy rules). */
+export const TOOL_DESCRIPTIONS: Record<ToolingId, string> = {
+  "agent-config": "Governance rules and skills for your agents",
+  rtk: "Shrinks verbose tool output before it reaches your agent's context (third-party, Apache-2.0)",
+  claude: "Claude Code CLI",
+  codex: "Codex CLI",
+  agy: "Antigravity CLI",
+};
+
+/** Tools with a verified per-platform install/upgrade command behind
+ *  `agent-switch tooling install|upgrade <id>`. agy is deliberately absent —
+ *  the CLI refuses it honestly (no standalone installer), so its row keeps the
+ *  copy-command fallback only. */
+export const INSTALLABLE_TOOLS: ReadonlySet<ToolingId> = new Set(["agent-config", "rtk", "claude", "codex"]);
+
+/** Header attention summary: "N of M need attention", or "All M healthy". */
+export function attentionSummary(entries: ToolingEntry[]): string {
+  const n = entries.filter((t) => rowState(t) !== "ok").length;
+  if (n === 0) return `All ${entries.length} healthy`;
+  return `${n} of ${entries.length} need${n === 1 ? "s" : ""} attention`;
+}
+
+/** Footer platform tag from the webview's user agent. The CPU arch is not
+ *  available in a webview UA — omit it rather than fake it (the SVG's "arm64"
+ *  is aspirational; a wrong arch would be an invented fact). */
+export function platformLabel(userAgent: string): string | null {
+  if (/Mac/i.test(userAgent)) return "macOS";
+  if (/Win/i.test(userAgent)) return "Windows";
+  if (/Linux/i.test(userAgent)) return "Linux";
+  return null;
 }
 
 /** The runnable command inside a CLI hint = its LAST backticked span (the
@@ -96,16 +136,35 @@ function describeEntry(t: ToolingEntry): { label: string; explanation: string | 
 function ToolingRow({
   entry,
   isWindows,
+  profileCount,
+  updateTo,
+  onRunTool,
   onNotifyError,
 }: {
   entry: ToolingEntry;
   isWindows: boolean;
+  /** Isolated profile count for provider rows (claude/codex/agy); undefined
+   *  for non-provider tools. */
+  profileCount?: number;
+  /** agent-config only: the newer version App's update detection found (null =
+   *  none known) — turns the Update label into "Update to vX". */
+  updateTo: string | null;
+  onRunTool: (action: "install" | "upgrade", id: ToolingId) => void;
   onNotifyError: (message: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const state = rowState(entry);
   const { label, explanation } = describeEntry(entry);
   const command = state === "ok" ? null : commandFromHint(entry.hint);
+  const installable = INSTALLABLE_TOOLS.has(entry.id);
+  // Button per row state (owner amendment): missing + verified command →
+  // Install runs in the embedded terminal; healthy + verified command →
+  // Update (the package manager decides whether anything happens — no fake
+  // update-available detection). Copy stays for agy (no verified command)
+  // and the attention states (auto-replacing a foreign binary is invasive).
+  const showInstall = state === "missing" && installable;
+  const showUpdate = state === "ok" && installable;
+  const showCopy = command !== null && !showInstall;
 
   async function copyCommand() {
     if (!command) return;
@@ -117,6 +176,18 @@ function ToolingRow({
       onNotifyError(e instanceof Error ? e.message : String(e)); // notification only — nothing inline
     }
   }
+
+  // Description line per the design contract: what the tool does · version ·
+  // isolated-profile count (provider rows only).
+  const meta = [
+    TOOL_DESCRIPTIONS[entry.id],
+    entry.version ? `v${entry.version}` : null,
+    profileCount != null && profileCount > 0
+      ? `${profileCount} profile${profileCount === 1 ? "" : "s"} isolated`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div
@@ -138,7 +209,6 @@ function ToolingRow({
           <AlertCircle className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         )}
         <span className="text-[13px] font-medium">{entry.id}</span>
-        {entry.version && <span className="text-xs text-muted-foreground">v{entry.version}</span>}
         <span
           className={cn(
             "text-[11px] font-medium",
@@ -146,25 +216,47 @@ function ToolingRow({
               ? "text-[hsl(var(--success))]"
               : state === "attention"
                 ? "text-[hsl(var(--warning))]"
-                : "text-muted-foreground",
+                : "rounded-full bg-muted px-1.5 text-muted-foreground",
           )}
         >
-          {label}
+          {state === "missing" ? "Not found" : label}
         </span>
         {state === "ok" && entry.path && (
           <span className="ml-auto min-w-0 truncate font-mono text-[11px] text-muted-foreground" title={entry.path}>
             {entry.path}
           </span>
         )}
-        {command && (
+        {showUpdate && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className={cn("shrink-0", !entry.path && "ml-auto")}
+            onClick={() => onRunTool("upgrade", entry.id)}
+            title={`Run \`agent-switch tooling upgrade ${entry.id}\` in the embedded terminal`}
+          >
+            {entry.id === "agent-config" && updateTo ? `Update to v${updateTo}` : "Update"}
+          </Button>
+        )}
+        {showInstall && (
+          <Button
+            size="sm"
+            className="ml-auto shrink-0"
+            onClick={() => onRunTool("install", entry.id)}
+            title={`Run \`agent-switch tooling install ${entry.id}\` in the embedded terminal`}
+          >
+            <Download /> Install
+          </Button>
+        )}
+        {showCopy && (
           <Button size="sm" className="ml-auto shrink-0" onClick={() => void copyCommand()}>
             {copied ? <Check /> : <Copy />}
             {copied ? "Copied" : "Copy command"}
           </Button>
         )}
       </div>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">{meta}</p>
       {explanation && <HintText text={explanation} className="mt-1" />}
-      {command && !isWindows && command.startsWith("npm ") && (
+      {showCopy && command && !isWindows && command.startsWith("npm ") && (
         <p className="mt-1 text-[11px] text-muted-foreground">
           Run it in your own terminal. If it fails with EACCES, see npm&apos;s permissions guide (or use a Node
           version manager).
@@ -197,12 +289,22 @@ export function ToolingSection({
   cache,
   onCache,
   isWindows,
+  profileCounts,
+  agentConfigUpdateTo,
+  onRunTool,
   onNotifyError,
 }: {
-  /** Sweep cache, owned by the parent so it survives section switches. */
+  /** Sweep cache, owned by the parent so it survives section switches (and so
+   *  the parent can null it after a tooling terminal run → remount re-sweeps). */
   cache: ToolingCache | null;
   onCache: (cache: ToolingCache) => void;
   isWindows: boolean;
+  /** Profile count per provider tool id ("N profiles isolated" on those rows). */
+  profileCounts: Partial<Record<ToolingId, number>>;
+  /** Newer agent-config version from App's update detection, or null. */
+  agentConfigUpdateTo: string | null;
+  /** Open the embedded terminal on `agent-switch tooling <action> <id>`. */
+  onRunTool: (action: "install" | "upgrade", id: ToolingId) => void;
   onNotifyError: (message: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -230,6 +332,8 @@ export function ToolingSection({
 
   // First open with nothing cached → run the sweep in the background (the
   // skeletons below hold the layout). A cached readout renders immediately.
+  // This is also the re-check path after a tooling terminal run: the parent
+  // nulls the cache on that terminal's close, and this remount re-sweeps.
   useEffect(() => {
     if (!cacheRef.current) void sweep();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -247,51 +351,59 @@ export function ToolingSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 1s ticker for the "checked Xs ago" age line (same cadence as the footer).
+  // 1s ticker for the "Last checked Xs ago" footer line.
   useEffect(() => {
     const id = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
 
   const entries = cache ? sortByAttention(cache.entries) : null;
+  const platform = platformLabel(typeof navigator === "undefined" ? "" : navigator.userAgent);
 
   return (
-    <div className="space-y-2.5">
+    <div className="flex min-h-full flex-col gap-2.5">
       <div className="flex items-center justify-between gap-2">
-        <div>
+        <div className="flex items-baseline gap-2.5">
           <div className="text-sm font-semibold tracking-tight">Tooling</div>
-          <p className="text-xs text-muted-foreground">
-            Health of your agent toolchain — detected by the agent-switch CLI, never run from this app.
-          </p>
+          {entries && <span className="text-xs text-muted-foreground">{attentionSummary(entries)}</span>}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {cache && (
-            <span className="tabular-nums text-[11px] text-muted-foreground" title="Age of the last detection sweep">
-              checked {relativeAge(cache.at, nowTick)} ago
-            </span>
-          )}
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-6 text-muted-foreground hover:text-foreground"
-            onClick={() => void sweep()}
-            disabled={busy}
-            aria-label="Refresh tooling"
-            title="Re-run the detection sweep now"
-          >
-            <RefreshCw className={cn("size-3.5", busy && "animate-spin")} />
-          </Button>
-        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0"
+          onClick={() => void sweep()}
+          disabled={busy}
+          aria-label="Re-check tooling"
+          title="Re-run the detection sweep now"
+        >
+          <RefreshCw className={cn(busy && "animate-spin")} /> Re-check
+        </Button>
       </div>
+      <div className="text-[10px] font-medium tracking-[.09em] text-muted-foreground">AGENT STACK</div>
       {entries ? (
         <div className="space-y-2.5">
           {entries.map((t) => (
-            <ToolingRow key={t.id} entry={t} isWindows={isWindows} onNotifyError={onNotifyError} />
+            <ToolingRow
+              key={t.id}
+              entry={t}
+              isWindows={isWindows}
+              profileCount={profileCounts[t.id]}
+              updateTo={agentConfigUpdateTo}
+              onRunTool={onRunTool}
+              onNotifyError={onNotifyError}
+            />
           ))}
         </div>
       ) : (
         <SkeletonRows />
       )}
+      <HintText text="Checks run from the same readout as `agent-switch doctor` — the CLI and this page can never disagree." />
+      <div className="mt-auto flex items-center justify-between border-t border-border pt-2 text-[11px] text-muted-foreground">
+        <span className="tabular-nums" title="Age of the last detection sweep">
+          {cache ? `Last checked ${relativeAge(cache.at, nowTick)} ago` : "Checking…"}
+        </span>
+        {platform && <span>{platform}</span>}
+      </div>
     </div>
   );
 }

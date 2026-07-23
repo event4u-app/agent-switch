@@ -277,6 +277,27 @@ export function setShareGlobalFlag(on: boolean): void {
   }
 }
 
+const SHARE_SOURCE_KEY = "agent-switch-share-source";
+
+/** Which tree `share on` links from: "default" (= ~/.claude) or a Claude
+ *  profile name. Persisted HERE because the CLI never records an active
+ *  source — `share status` only echoes a passed flag back. */
+export function getShareSource(): string {
+  try {
+    return localStorage.getItem(SHARE_SOURCE_KEY) || "default";
+  } catch {
+    return "default";
+  }
+}
+
+export function setShareSourceFlag(source: string): void {
+  try {
+    localStorage.setItem(SHARE_SOURCE_KEY, source);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const DEV_MODE_KEY = "agent-switch-dev-mode";
 
 /** Developer mode — unlocks in-app test helpers (generate notifications, force

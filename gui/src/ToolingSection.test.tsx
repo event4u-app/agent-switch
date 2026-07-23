@@ -12,10 +12,12 @@ import {
   sortByAttention,
   rowState,
   commandFromHint,
+  attentionSummary,
+  platformLabel,
   FOCUS_REFRESH_AFTER_MS,
   type ToolingCache,
 } from "./ToolingSection.js";
-import type { ToolingEntry } from "./ipc.js";
+import type { ToolingEntry, ToolingId } from "./ipc.js";
 
 const ok = (id: ToolingEntry["id"], over: Partial<ToolingEntry> = {}): ToolingEntry => ({
   id,
@@ -35,6 +37,11 @@ const missing = (id: ToolingEntry["id"], hint: string): ToolingEntry => ({
   healthy: false,
   hint,
 });
+
+const missingAgy = missing(
+  "agy",
+  "not installed — install the agy CLI, or link it: `agent-switch providers link --provider antigravity --path <path-to-binary>`",
+);
 
 const wrongRtk: ToolingEntry = {
   id: "rtk",
@@ -56,20 +63,47 @@ const unverifiedRtk: ToolingEntry = {
   hint: "could not verify `rtk` (probe timed out or crashed) — run `rtk gain` manually to check",
 };
 
+// Present-but-broken (generic attention row, no identity) — keeps the
+// copy-command fallback with an npm command, for the EACCES-note tests.
+const unhealthyAc: ToolingEntry = {
+  id: "agent-config",
+  present: true,
+  version: null,
+  path: "/usr/local/bin/agent-config",
+  healthy: false,
+  hint: "`agent-config --version` failed to run — reinstall it (install: `npm install -g @event4u/agent-config`)",
+};
+
 const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined);
 
 /** Stateful harness — the real parent (App) owns the cache the same way. */
 function Harness({
   initial = null,
   isWindows = false,
+  profileCounts = {},
+  agentConfigUpdateTo = null,
+  onRunTool = () => {},
   onNotifyError = () => {},
 }: {
   initial?: ToolingCache | null;
   isWindows?: boolean;
+  profileCounts?: Partial<Record<ToolingId, number>>;
+  agentConfigUpdateTo?: string | null;
+  onRunTool?: (action: "install" | "upgrade", id: ToolingId) => void;
   onNotifyError?: (message: string) => void;
 }) {
   const [cache, setCache] = React.useState<ToolingCache | null>(initial);
-  return <ToolingSection cache={cache} onCache={setCache} isWindows={isWindows} onNotifyError={onNotifyError} />;
+  return (
+    <ToolingSection
+      cache={cache}
+      onCache={setCache}
+      isWindows={isWindows}
+      profileCounts={profileCounts}
+      agentConfigUpdateTo={agentConfigUpdateTo}
+      onRunTool={onRunTool}
+      onNotifyError={onNotifyError}
+    />
+  );
 }
 
 beforeEach(() => {
@@ -83,7 +117,7 @@ afterEach(() => vi.useRealTimers());
 
 describe("pure helpers", () => {
   it("rowState classifies the three classes; sortByAttention leads with attention, keeps input order within groups", () => {
-    const entries = [ok("agent-config"), missing("claude", "not installed — install the claude CLI"), wrongRtk, ok("codex"), missing("agy", "not installed — install the agy CLI")];
+    const entries = [ok("agent-config"), missing("claude", "not installed — install the claude CLI"), wrongRtk, ok("codex"), missingAgy];
     expect(entries.map(rowState)).toEqual(["ok", "missing", "attention", "ok", "missing"]);
     expect(sortByAttention(entries).map((t) => t.id)).toEqual(["rtk", "claude", "agy", "agent-config", "codex"]);
   });
@@ -96,10 +130,25 @@ describe("pure helpers", () => {
     );
     expect(commandFromHint("no command here")).toBeNull();
   });
+
+  it("attentionSummary counts non-ok rows, with an all-healthy variant and singular grammar", () => {
+    expect(attentionSummary([ok("agent-config"), wrongRtk, missingAgy, ok("codex"), ok("claude")])).toBe(
+      "2 of 5 need attention",
+    );
+    expect(attentionSummary([ok("agent-config"), wrongRtk])).toBe("1 of 2 needs attention");
+    expect(attentionSummary([ok("agent-config"), ok("rtk")])).toBe("All 2 healthy");
+  });
+
+  it("platformLabel maps the webview UA to an OS name and omits what it cannot know", () => {
+    expect(platformLabel("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit")).toBe("macOS");
+    expect(platformLabel("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")).toBe("Windows");
+    expect(platformLabel("Mozilla/5.0 (X11; Linux x86_64)")).toBe("Linux");
+    expect(platformLabel("SomethingElse/1.0")).toBeNull();
+  });
 });
 
 describe("ToolingSection", () => {
-  it("renders all four state classes with paired icon + text labels, attention-first", async () => {
+  it("renders the state classes with paired icon + text labels, descriptions, attention-first", async () => {
     toolingStatus.mockResolvedValue([
       ok("agent-config", { version: "9.7.0" }),
       wrongRtk,
@@ -115,11 +164,91 @@ describe("ToolingSection", () => {
     expect(rows[0].textContent).toContain("Wrong binary");
     expect(rows[0].textContent).toContain("Rust Type Kit"); // the collision is named
     expect(rows[1].textContent).toContain("claude");
-    expect(rows[1].textContent).toContain("Not installed");
+    expect(rows[1].textContent).toContain("Not found"); // the missing pill
     expect(rows[2].textContent).toContain("agent-config");
     expect(rows[2].textContent).toContain("OK");
-    expect(rows[2].textContent).toContain("v9.7.0");
+    // Description line: what the tool does · version (per the design contract)
+    expect(rows[2].textContent).toContain("Governance rules and skills for your agents · v9.7.0");
     expect(rows[2].textContent).toContain("/usr/local/bin/agent-config"); // path shown on healthy rows
+    expect(rows[0].textContent).toContain("Shrinks verbose tool output"); // rtk description on every state
+  });
+
+  it("appends the isolated-profile count to provider rows (with singular grammar), never to others", async () => {
+    toolingStatus.mockResolvedValue([ok("agent-config", { version: "9.7.0" }), ok("claude", { version: "2.4.1" }), ok("codex")]);
+    render(<Harness profileCounts={{ claude: 4, codex: 1, agy: 0 }} />);
+    await screen.findByText("claude");
+    const rows = screen.getAllByTestId("tooling-row");
+    const byId = (id: string) => rows.find((r) => r.textContent?.includes(id))!;
+    expect(byId("claude").textContent).toContain("Claude Code CLI · v2.4.1 · 4 profiles isolated");
+    expect(byId("codex").textContent).toContain("Codex CLI · v1.2.3 · 1 profile isolated");
+    expect(byId("agent-config").textContent).not.toContain("isolated"); // not a provider row
+  });
+
+  it("shows the attention count in the header, or the all-healthy variant", async () => {
+    toolingStatus.mockResolvedValue([ok("agent-config"), wrongRtk, missingAgy, ok("codex"), ok("claude")]);
+    render(<Harness />);
+    expect(await screen.findByText("2 of 5 need attention")).toBeTruthy();
+    cleanup();
+    toolingStatus.mockResolvedValue([ok("agent-config"), ok("rtk")]);
+    render(<Harness />);
+    expect(await screen.findByText("All 2 healthy")).toBeTruthy();
+  });
+
+  it("a missing tool with a verified command gets an Install button that runs `tooling install <id>`", async () => {
+    toolingStatus.mockResolvedValue([missing("rtk", "not installed — install: `brew install rtk`")]);
+    const onRunTool = vi.fn();
+    render(<Harness onRunTool={onRunTool} />);
+    fireEvent.click(await screen.findByRole("button", { name: /install/i }));
+    expect(onRunTool).toHaveBeenCalledWith("install", "rtk");
+    // The terminal run replaces the copy fallback — nothing to copy here.
+    expect(screen.queryByRole("button", { name: /copy command/i })).toBeNull();
+  });
+
+  it("a healthy tool gets an Update button that runs `tooling upgrade <id>`", async () => {
+    toolingStatus.mockResolvedValue([ok("codex")]);
+    const onRunTool = vi.fn();
+    render(<Harness onRunTool={onRunTool} />);
+    fireEvent.click(await screen.findByRole("button", { name: /^update$/i }));
+    expect(onRunTool).toHaveBeenCalledWith("upgrade", "codex");
+  });
+
+  it("the agent-config Update button names the newer version when App's detection knows one", async () => {
+    toolingStatus.mockResolvedValue([ok("agent-config", { version: "9.7.0" }), ok("codex")]);
+    const onRunTool = vi.fn();
+    render(<Harness agentConfigUpdateTo="9.8.0" onRunTool={onRunTool} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Update to v9.8.0" }));
+    expect(onRunTool).toHaveBeenCalledWith("upgrade", "agent-config");
+    // Other rows keep the plain label — the version came from agent-config's detection.
+    expect(screen.getByRole("button", { name: "Update" })).toBeTruthy();
+  });
+
+  it("agy never gets a run button — missing keeps the copy-command fallback, healthy has no action", async () => {
+    toolingStatus.mockResolvedValue([missingAgy]);
+    render(<Harness />);
+    const row = await screen.findByTestId("tooling-row");
+    expect(screen.queryByRole("button", { name: /install/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /update/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /copy command/i }));
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("agent-switch providers link --provider antigravity --path <path-to-binary>"),
+    );
+    expect(row.textContent).toContain("Antigravity CLI");
+    cleanup();
+    toolingStatus.mockResolvedValue([ok("agy")]);
+    render(<Harness />);
+    await screen.findByTestId("tooling-row");
+    expect(screen.queryByRole("button", { name: /install|update|copy/i })).toBeNull();
+  });
+
+  it("attention states keep the copy-command fallback (no automatic replacement of a foreign binary)", async () => {
+    toolingStatus.mockResolvedValue([wrongRtk]);
+    render(<Harness />);
+    const row = await screen.findByTestId("tooling-row");
+    expect(row.dataset.state).toBe("attention");
+    expect(screen.queryByRole("button", { name: /install|update/i })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /copy command/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("brew install rtk"));
+    expect(await screen.findByRole("button", { name: /copied/i })).toBeTruthy();
   });
 
   it("renders the unverified state with the manual `rtk gain` check", async () => {
@@ -133,27 +262,18 @@ describe("ToolingSection", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("rtk gain"));
   });
 
-  it("copies the hint's command on a missing row and shows a transient Copied state", async () => {
+  it("shows the EACCES note only on COPY rows with npm commands (mac/linux), never on Windows or Install rows", async () => {
     toolingStatus.mockResolvedValue([
-      missing("agent-config", "not installed — install: `npm install -g @event4u/agent-config`"),
-    ]);
-    render(<Harness />);
-    fireEvent.click(await screen.findByRole("button", { name: /copy command/i }));
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith("npm install -g @event4u/agent-config"));
-    expect(await screen.findByRole("button", { name: /copied/i })).toBeTruthy();
-  });
-
-  it("shows the EACCES note for npm commands on macOS/Linux and hides it on Windows", async () => {
-    toolingStatus.mockResolvedValue([
-      missing("agent-config", "not installed — install: `npm install -g @event4u/agent-config`"),
-      missing("rtk", "not installed — install: `brew install rtk`"),
+      unhealthyAc, // copy row with an npm command → note
+      wrongRtk, // copy row with a brew command → no note
+      missing("codex", "not installed — install: `npm install -g @openai/codex`"), // Install row → run is visible, no note
     ]);
     render(<Harness isWindows={false} />);
-    expect(await screen.findAllByTestId("tooling-row")).toHaveLength(2);
-    expect(screen.getAllByText(/EACCES/)).toHaveLength(1); // npm row only, never the brew row
+    expect(await screen.findAllByTestId("tooling-row")).toHaveLength(3);
+    expect(screen.getAllByText(/EACCES/)).toHaveLength(1); // the npm COPY row only
     cleanup();
     render(<Harness isWindows={true} />);
-    expect(await screen.findAllByTestId("tooling-row")).toHaveLength(2);
+    expect(await screen.findAllByTestId("tooling-row")).toHaveLength(3);
     expect(screen.queryByText(/EACCES/)).toBeNull();
   });
 
@@ -168,17 +288,33 @@ describe("ToolingSection", () => {
     expect(screen.queryAllByTestId("tooling-skeleton")).toHaveLength(0);
   });
 
-  it("serves a cached readout without re-sweeping, and shows its age", async () => {
+  it("serves a cached readout without re-sweeping, and shows its age in the footer", async () => {
     render(<Harness initial={{ entries: [ok("agent-config")], at: Date.now() - 30_000 }} />);
     expect(await screen.findByTestId("tooling-row")).toBeTruthy();
     expect(toolingStatus).not.toHaveBeenCalled(); // cache is the point — no sweep per open
-    expect(screen.getByText(/checked 30s ago/)).toBeTruthy();
+    expect(screen.getByText(/Last checked 30s ago/)).toBeTruthy();
   });
 
-  it("the manual Refresh button re-runs the sweep", async () => {
+  it("shows the platform tag in the footer, derived from the user agent (no invented arch)", async () => {
+    Object.defineProperty(navigator, "userAgent", {
+      value: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+      configurable: true,
+    });
+    render(<Harness initial={{ entries: [ok("agent-config")], at: Date.now() }} />);
+    expect(await screen.findByText("macOS")).toBeTruthy();
+    expect(screen.queryByText(/arm64|x86/)).toBeNull();
+  });
+
+  it("shows the doctor-parity caption (one source of truth, two renderers)", async () => {
+    render(<Harness initial={{ entries: [ok("agent-config")], at: Date.now() }} />);
+    expect(await screen.findByText(/can never disagree/)).toBeTruthy();
+    expect(screen.getByText("agent-switch doctor")).toBeTruthy();
+  });
+
+  it("the Re-check button re-runs the sweep", async () => {
     render(<Harness initial={{ entries: [ok("agent-config")], at: Date.now() }} />);
     expect(toolingStatus).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /refresh tooling/i }));
+    fireEvent.click(screen.getByRole("button", { name: /re-check tooling/i }));
     await waitFor(() => expect(toolingStatus).toHaveBeenCalledTimes(1));
   });
 
@@ -204,7 +340,7 @@ describe("ToolingSection", () => {
 
   it("a clipboard failure routes to the notification system only", async () => {
     writeText.mockRejectedValue(new Error("clipboard blocked"));
-    toolingStatus.mockResolvedValue([missing("rtk", "not installed — install: `brew install rtk`")]);
+    toolingStatus.mockResolvedValue([wrongRtk]);
     const onNotifyError = vi.fn();
     render(<Harness onNotifyError={onNotifyError} />);
     fireEvent.click(await screen.findByRole("button", { name: /copy command/i }));
