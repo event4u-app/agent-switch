@@ -251,6 +251,149 @@ export function checkTooling(opts: CheckOptions = {}): ToolStatus[] {
   });
 }
 
+// ---------- install / upgrade ---------------------------------------------------
+
+export type ToolAction = "install" | "upgrade";
+
+export interface ToolCommand {
+  cmd: string;
+  args: string[];
+  /** Human-readable rendering, printed (as `→ …`) before the run. */
+  display: string;
+}
+
+/** npm packages behind the npm-installed tools (same commands the hints cite). */
+const NPM_PACKAGES = {
+  "agent-config": "@event4u/agent-config",
+  claude: "@anthropic-ai/claude-code",
+  codex: "@openai/codex",
+} as const;
+
+/** rtk's upstream installer (linux — used for install AND upgrade there).
+ *  NEVER `cargo install rtk`: that builds the unrelated Rust Type Kit. */
+const RTK_INSTALL_SH = "curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh";
+
+function npmCommand(pkg: string, latest: boolean): ToolCommand {
+  const spec = latest ? `${pkg}@latest` : pkg;
+  return { cmd: "npm", args: ["install", "-g", spec], display: `npm install -g ${spec}` };
+}
+
+/**
+ * The exact command for `tooling install|upgrade <id>` — pure, per-platform.
+ * A `refusal` result means there is no honest command to run (today: agy —
+ * the binary ships with the Antigravity app; this repo documents no standalone
+ * installer, and inventing one would be worse than saying so).
+ *
+ * `claudePath` (resolved linked-or-PATH binary) selects the claude upgrade
+ * shape: the CLI's own `claude update` when the binary is present, else the
+ * npm `@latest` reinstall.
+ */
+export function planToolAction(
+  id: ToolId,
+  action: ToolAction,
+  opts: { platform?: NodeJS.Platform; claudePath?: string | null } = {},
+): { command: ToolCommand } | { refusal: string } {
+  const platform = opts.platform ?? process.platform;
+  switch (id) {
+    case "agent-config":
+      return { command: npmCommand(NPM_PACKAGES["agent-config"], action === "upgrade") };
+    case "codex":
+      return { command: npmCommand(NPM_PACKAGES.codex, action === "upgrade") };
+    case "claude":
+      if (action === "upgrade" && opts.claudePath) {
+        return { command: { cmd: opts.claudePath, args: ["update"], display: "claude update" } };
+      }
+      return { command: npmCommand(NPM_PACKAGES.claude, action === "upgrade") };
+    case "rtk": {
+      if (platform === "darwin") {
+        const verb = action === "upgrade" ? "upgrade" : "install";
+        return { command: { cmd: "brew", args: [verb, "rtk"], display: `brew ${verb} rtk` } };
+      }
+      if (platform === "win32") {
+        return { command: { cmd: "winget", args: [action, "rtk-ai.rtk"], display: `winget ${action} rtk-ai.rtk` } };
+      }
+      // linux (and anything else POSIX): the upstream installer covers both actions.
+      return { command: { cmd: "sh", args: ["-c", RTK_INSTALL_SH], display: RTK_INSTALL_SH } };
+    }
+    case "agy":
+      return {
+        refusal:
+          "`agy` has no standalone installer — the Antigravity CLI ships with the Antigravity app.\n" +
+          "Install the app, then (if `agy` is not on PATH) link the binary:\n" +
+          "  agent-switch providers link --provider antigravity --path <path-to-agy>",
+      };
+  }
+}
+
+/** Runs an install/upgrade command as a visible child (inherit stdio) and
+ *  returns its exit code. Injectable so tests never really install anything. */
+export type InstallRunner = (cmd: string, args: string[]) => number;
+
+/** The real runner: inherits stdio (the GUI runs this CLI inside its embedded
+ *  terminal, so the user watches npm/brew output live), searches
+ *  {@link toolingSearchPath} so a GUI-spawned run finds npm/brew on a stripped
+ *  PATH, and uses `shell` on Windows for `.cmd` shims (same as selfUpdate). */
+export function defaultInstallRunner(cmd: string, args: string[]): number {
+  const r = spawnSync(cmd, args, {
+    stdio: "inherit",
+    env: { ...process.env, PATH: toolingSearchPath() },
+    shell: process.platform === "win32",
+  });
+  if ((r.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+    console.error(`❌ \`${cmd}\` not found on PATH — install it first, then retry.`);
+    return 1;
+  }
+  return r.status ?? 1;
+}
+
+/** The claude binary `tooling upgrade claude` prefers: linked path first (same
+ *  precedence as resolveBinary), else PATH. Null → npm fallback. */
+function resolveClaudeForUpdate(): string | null {
+  const linked = readBinaryPath("claude");
+  if (linked && fs.existsSync(linked)) return linked;
+  return findOnPath("claude");
+}
+
+/**
+ * `agent-switch tooling install|upgrade <id>` — plan the per-platform command,
+ * print it (transparency: the user sees exactly what runs), run it with
+ * inherited stdio, and return the child's exit code. A refusal (agy) prints
+ * the explanation and returns 1 without running anything.
+ */
+export function runToolAction(
+  id: ToolId,
+  action: ToolAction,
+  opts: {
+    platform?: NodeJS.Platform;
+    run?: InstallRunner;
+    claudePath?: string | null;
+    log?: (line: string) => void;
+    error?: (line: string) => void;
+  } = {},
+): number {
+  const log = opts.log ?? console.log;
+  const error = opts.error ?? console.error;
+  const claudePath =
+    opts.claudePath !== undefined
+      ? opts.claudePath
+      : id === "claude" && action === "upgrade"
+        ? resolveClaudeForUpdate()
+        : null;
+  const plan = planToolAction(id, action, { platform: opts.platform, claudePath });
+  if ("refusal" in plan) {
+    error(plan.refusal);
+    return 1;
+  }
+  log(`→ ${plan.command.display}`);
+  const status = (opts.run ?? defaultInstallRunner)(plan.command.cmd, plan.command.args);
+  if (status === 0) {
+    log(`✅ ${id} ${action === "upgrade" ? "upgraded" : "installed"} — verify with \`agent-switch tooling\`.`);
+  } else {
+    error(`❌ \`${plan.command.display}\` exited with ${status} (its output is above).`);
+  }
+  return status;
+}
+
 // ---------- renderers -----------------------------------------------------------
 
 export function statusGlyph(t: ToolStatus): "✅" | "⚠️" | "❌" {

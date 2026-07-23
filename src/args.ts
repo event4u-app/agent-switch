@@ -30,6 +30,7 @@ const VALUE_FLAGS = new Set([
   "tag",
   "ack",
   "brief",
+  "profile",
 ]);
 
 export interface ParsedArgs {
