@@ -1,6 +1,6 @@
 [package]
 name = "agent-switch-gui"
-version = "1.5.1"
+version = "1.6.0"
 description = "agent-switch tray/menubar GUI"
 edition = "2021"
 rust-version = "1.77"
