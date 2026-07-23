@@ -189,6 +189,12 @@ tasks:
     cmds:
       - npm run astro -- check
 
+  docs:screenshots:
+    desc: Regenerate the anonymized docs screenshots (pure-Node SVG, no dependencies)
+    dir: starlight/screenshots
+    cmds:
+      - node generate.mjs
+
   docs:clean:
     desc: Remove docs build output
     dir: starlight

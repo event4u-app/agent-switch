@@ -22,6 +22,8 @@ agent-switch sessions work --recent 10
 agent-switch sessions preview 3f2a9c --from work
 ```
 
+![Terminal showing agent-switch sessions output with a table of recent sessions, each with a context-usage bar, and a live session marked with a green dot](/agent-switch/screenshots/sessions.svg)
+
 `sessions preview` is a bounded reader — it returns empty for Codex or when reading fails, rather than dumping an unbounded transcript.
 
 ### Deleting sessions
@@ -68,7 +70,7 @@ Takeover is **move-by-default**: it copies the session to the target, verifies t
 
 ### Handoff — bridge across providers
 
-Handoff composes a metadata-only brief to continue work in a **different** provider. Per [ADR-001](/agent-switch/reference/adr/), this is a lossy bridge — it does not restore full conversation state.
+Handoff composes a metadata-only brief to continue work in a **different** provider. Per [ADR-001](https://github.com/event4u-app/agent-switch/blob/main/docs/adr/ADR-001-cross-provider-handoff-is-a-lossy-bridge.md), this is a lossy bridge — it does not restore full conversation state.
 
 ```bash
 # 1. Extract a brief from a Claude session, targeting Codex

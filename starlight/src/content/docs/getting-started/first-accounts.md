@@ -42,6 +42,8 @@ asw codex work     # switch the codex profile
 
 Then just run `claude` (or `codex` / `agy`) as normal — it runs on the active profile.
 
+![Terminal showing the asw command listing three anonymized profiles with the active one marked by an asterisk, then switching to another profile](/agent-switch/screenshots/asw-list.svg)
+
 ## Inspect state
 
 | Command | Shows |
@@ -50,6 +52,8 @@ Then just run `claude` (or `codex` / `agy`) as normal — it runs on the active 
 | `agent-switch status [name]` | Identity + usage |
 | `agent-switch current` | The active profile |
 | `agent-switch whoami [name]` | Account identity |
+
+![Terminal showing agent-switch status output with the active profile, plan, usage bar, weekly-pace bar, and live-session context percentage](/agent-switch/screenshots/status.svg)
 
 ## Next
 
