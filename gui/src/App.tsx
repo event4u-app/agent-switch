@@ -320,9 +320,10 @@ export default function App() {
   // stale). When a newer release is found, its bump kind (major/minor/patch) is
   // matched against the enabled kinds: an enabled kind is installed in place
   // (`agent-switch update` → npm i -g @latest) and a "restart to apply" toast is
-  // shown; a disabled kind only notifies so the user can update manually. Each
-  // version is handled once — deduped via the persisted "notified version" — so
-  // a running app never reinstalls or re-nags the same release every interval.
+  // shown; a disabled kind only notifies so the user can update manually. A
+  // handled version is deduped via the persisted "notified version" so a running
+  // app never re-nags the same release every interval — but a FAILED install is
+  // not marked handled, so it retries on the next check instead of giving up.
   // Toggle-gated (default ON); the Updates settings tab shows live status and a
   // manual "Update now" button either way. Best-effort: check failures are
   // swallowed and surfaced only in the Updates tab, never as an error banner.
@@ -334,11 +335,13 @@ export default function App() {
       if (cancelled || res.kind !== "available") return;
       const tag = res.release.tag;
       if (getUpdateNotifiedVersion() === tag) return; // already handled this version
-      setUpdateNotifiedVersion(tag); // dedupe whether we install or only notify
       const kind = releaseKind(res.current, tag);
       if (kind && autoUpdateKinds.includes(kind)) {
         const r = await selfUpdate();
         if (cancelled) return;
+        // Dedupe only once the install actually succeeded — a failed self-update
+        // must be retried on the next check, not silently marked handled forever.
+        if (r.ok) setUpdateNotifiedVersion(tag);
         pushToast({
           id: `update-${tag}`,
           ts: Date.now(),
@@ -347,6 +350,7 @@ export default function App() {
           message: r.ok ? "Restart agent-switch to apply." : "Open Settings › Updates to retry.",
         });
       } else {
+        setUpdateNotifiedVersion(tag); // notify-only: dedupe so we don't re-nag every interval
         pushToast({
           id: `update-${tag}`,
           ts: Date.now(),
