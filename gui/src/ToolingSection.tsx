@@ -3,6 +3,7 @@ import { AlertCircle, AlertTriangle, Check, Copy, Download, RefreshCw } from "lu
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toolingStatus, type ToolingEntry, type ToolingId } from "./ipc.js";
+import { latestToolVersion, toolUpdateAvailable, UPDATE_CHECK_TOOLS } from "./tool-updates.js";
 import { relativeAge } from "./transforms.js";
 
 /**
@@ -26,6 +27,19 @@ import { relativeAge } from "./transforms.js";
 export interface ToolingCache {
   entries: ToolingEntry[];
   at: number;
+  /** Latest known version per update-checked tool (rtk/claude/codex), fetched
+   *  once per sweep and cached WITH the entries — same age, same invalidation.
+   *  Absent id / null = latest unknown → that row renders no Update button. */
+  latest?: Partial<Record<ToolingId, string | null>>;
+}
+
+/** Latest-version lookups for the present+healthy update-checked tools — one
+ *  round per sweep. Failures are already null inside latestToolVersion, so a
+ *  dead registry can never fail the sweep. */
+async function fetchLatestVersions(entries: ToolingEntry[]): Promise<Partial<Record<ToolingId, string | null>>> {
+  const targets = entries.filter((t) => t.present && t.healthy && UPDATE_CHECK_TOOLS.has(t.id));
+  const pairs = await Promise.all(targets.map(async (t) => [t.id, await latestToolVersion(t.id)] as const));
+  return Object.fromEntries(pairs);
 }
 
 /** Window-focus re-sweep threshold: a fresher cache is served as-is. */
@@ -138,6 +152,7 @@ function ToolingRow({
   isWindows,
   profileCount,
   updateTo,
+  latest,
   onRunTool,
   onNotifyError,
 }: {
@@ -149,6 +164,9 @@ function ToolingRow({
   /** agent-config only: the newer version App's update detection found (null =
    *  none known) — turns the Update label into "Update to vX". */
   updateTo: string | null;
+  /** Latest known version from the sweep's registry check (rtk/claude/codex);
+   *  null = unknown/unfetchable → no Update button (honest, not speculative). */
+  latest: string | null;
   onRunTool: (action: "install" | "upgrade", id: ToolingId) => void;
   onNotifyError: (message: string) => void;
 }) {
@@ -158,13 +176,17 @@ function ToolingRow({
   const command = state === "ok" ? null : commandFromHint(entry.hint);
   const installable = INSTALLABLE_TOOLS.has(entry.id);
   // Button per row state (owner amendment): missing + verified command →
-  // Install runs in the embedded terminal; healthy + verified command →
-  // Update (the package manager decides whether anything happens — no fake
-  // update-available detection). Copy stays for agy (no verified command)
-  // and the attention states (auto-replacing a foreign binary is invasive).
+  // Install runs in the embedded terminal; healthy → Update ONLY when an
+  // update actually exists (owner requirement): agent-config from App's
+  // release detection (single source), rtk/claude/codex from the sweep's
+  // registry check. Unknown latest → no button, never a speculative one.
+  // Copy stays for agy (no verified command) and the attention states
+  // (auto-replacing a foreign binary is invasive).
+  const updateAvailable = entry.id === "agent-config" ? updateTo !== null : toolUpdateAvailable(entry, latest);
   const showInstall = state === "missing" && installable;
-  const showUpdate = state === "ok" && installable;
+  const showUpdate = state === "ok" && installable && updateAvailable;
   const showCopy = command !== null && !showInstall;
+  const updateVersion = entry.id === "agent-config" ? updateTo : latest;
 
   async function copyCommand() {
     if (!command) return;
@@ -234,7 +256,7 @@ function ToolingRow({
             onClick={() => onRunTool("upgrade", entry.id)}
             title={`Run \`agent-switch tooling upgrade ${entry.id}\` in the embedded terminal`}
           >
-            {entry.id === "agent-config" && updateTo ? `Update to v${updateTo}` : "Update"}
+            {updateVersion ? `Update to v${updateVersion.replace(/^[vV]/, "")}` : "Update"}
           </Button>
         )}
         {showInstall && (
@@ -321,7 +343,13 @@ export function ToolingSection({
     setBusy(true);
     try {
       const entries = await toolingStatus();
-      onCache({ entries, at: Date.now() });
+      const at = Date.now();
+      onCache({ entries, at });
+      // Latest-version lookups ride the same sweep (and the same cache entry —
+      // same age, same invalidation) but land after the rows, so a slow
+      // registry never delays the readout itself.
+      const latest = await fetchLatestVersions(entries);
+      onCache({ entries, at, latest });
     } catch (e) {
       onNotifyError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -389,6 +417,7 @@ export function ToolingSection({
               isWindows={isWindows}
               profileCount={profileCounts[t.id]}
               updateTo={agentConfigUpdateTo}
+              latest={cache?.latest?.[t.id] ?? null}
               onRunTool={onRunTool}
               onNotifyError={onNotifyError}
             />

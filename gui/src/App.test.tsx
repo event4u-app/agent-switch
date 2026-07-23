@@ -113,6 +113,13 @@ vi.mock("./updates.js", async (importActual) => ({
   checkForUpdate: () => Promise.resolve({ kind: "uptodate", current: "1.0.0", latest: "1.0.0" }),
   fetchLatestRelease: fetchLatest,
 }));
+// Tooling latest-version lookups (rtk/claude/codex) stay off the network too.
+// Default: latest unknown → the Tooling section renders no Update buttons.
+const latestToolVersion = vi.hoisted(() => vi.fn());
+vi.mock("./tool-updates.js", async (importActual) => ({
+  ...(await importActual<typeof import("./tool-updates.js")>()),
+  latestToolVersion,
+}));
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: vi.fn() }));
 // The settings-window lifecycle event comes from the Tauri event system,
 // unavailable in jsdom — a resolved unlisten keeps the effect inert.
@@ -290,6 +297,7 @@ beforeEach(() => {
   ipc.shareOff.mockResolvedValue(undefined);
   ipc.shareSync.mockResolvedValue(undefined);
   fetchLatest.mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" });
+  latestToolVersion.mockResolvedValue(null);
   desktopNotify.mockClear();
   desktopNotify.mockResolvedValue(false);
   clearDesktopNotify.mockClear();
@@ -1232,15 +1240,23 @@ describe("tooling actions (owner amendment: visible runs in the embedded termina
     await waitFor(() => expect(ipc.toolingStatus).toHaveBeenCalledTimes(2));
   });
 
-  it("Update runs `agent-switch tooling upgrade <id>` in the embedded terminal", async () => {
+  it("Update renders ONLY when a newer latest exists, and runs `tooling upgrade <id>` in the embedded terminal", async () => {
+    // rtk (installed 1.4.2) has a newer release; claude/codex latest unknown →
+    // exactly one Update button, on the rtk row, naming the version.
+    latestToolVersion.mockImplementation(async (id: string) => (id === "rtk" ? "9.9.9" : null));
     await openTooling();
-    // All-healthy default readout → plain Update buttons, attention-sorted rows
-    // keep the CLI's input order: agent-config leads.
-    const updates = await screen.findAllByRole("button", { name: /^update$/i });
-    fireEvent.click(updates[0]);
+    const updates = await screen.findAllByRole("button", { name: /update/i });
+    expect(updates).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Update to v9.9.9" }));
     const term = await screen.findByTestId("term");
-    expect(term.textContent).toContain("Update — agent-config");
-    expect(term.textContent).toContain("tooling upgrade agent-config");
+    expect(term.textContent).toContain("Update — rtk");
+    expect(term.textContent).toContain("tooling upgrade rtk");
+  });
+
+  it("shows NO Update buttons on the all-healthy readout when no newer latest is known", async () => {
+    await openTooling(); // default: latestToolVersion → null, agent-config detection up to date
+    await screen.findAllByTestId("tooling-row");
+    expect(screen.queryByRole("button", { name: /update/i })).toBeNull();
   });
 
   it("labels the agent-config Update with the newer version App's detection found", async () => {

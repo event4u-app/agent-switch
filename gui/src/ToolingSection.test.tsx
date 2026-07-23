@@ -7,6 +7,15 @@ import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-libra
 const toolingStatus = vi.hoisted(() => vi.fn());
 vi.mock("./ipc.js", () => ({ toolingStatus }));
 
+// Stub only the outward-facing latest-version lookup (network); the pure
+// helpers (toolUpdateAvailable & co) stay real so the button gating is
+// exercised for real. Default: latest unknown → no Update buttons.
+const latestToolVersion = vi.hoisted(() => vi.fn());
+vi.mock("./tool-updates.js", async (importActual) => ({
+  ...(await importActual<typeof import("./tool-updates.js")>()),
+  latestToolVersion,
+}));
+
 import {
   ToolingSection,
   sortByAttention,
@@ -112,6 +121,7 @@ beforeEach(() => {
   writeText.mockClear().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
   toolingStatus.mockResolvedValue([ok("agent-config"), ok("rtk", { identity: "token-killer" })]);
+  latestToolVersion.mockResolvedValue(null); // latest unknown by default → honest: no Update buttons
 });
 afterEach(() => vi.useRealTimers());
 
@@ -204,22 +214,66 @@ describe("ToolingSection", () => {
     expect(screen.queryByRole("button", { name: /copy command/i })).toBeNull();
   });
 
-  it("a healthy tool gets an Update button that runs `tooling upgrade <id>`", async () => {
-    toolingStatus.mockResolvedValue([ok("codex")]);
+  it("a healthy tool with a newer latest gets an Update button naming the version, running `tooling upgrade <id>`", async () => {
+    toolingStatus.mockResolvedValue([ok("codex", { version: "1.2.3" })]);
+    latestToolVersion.mockResolvedValue("1.3.0");
     const onRunTool = vi.fn();
     render(<Harness onRunTool={onRunTool} />);
-    fireEvent.click(await screen.findByRole("button", { name: /^update$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Update to v1.3.0" }));
     expect(onRunTool).toHaveBeenCalledWith("upgrade", "codex");
+    expect(latestToolVersion).toHaveBeenCalledWith("codex");
   });
 
-  it("the agent-config Update button names the newer version when App's detection knows one", async () => {
-    toolingStatus.mockResolvedValue([ok("agent-config", { version: "9.7.0" }), ok("codex")]);
+  it("a healthy tool shows NO Update button when the latest is equal or unknown (honest, never speculative)", async () => {
+    toolingStatus.mockResolvedValue([ok("codex", { version: "1.2.3" }), ok("claude", { version: "2.0.0" })]);
+    // codex: up to date · claude: latest unfetchable (offline/rate-limited)
+    latestToolVersion.mockImplementation(async (id: string) => (id === "codex" ? "1.2.3" : null));
+    render(<Harness />);
+    await screen.findByText("codex");
+    await waitFor(() => expect(latestToolVersion).toHaveBeenCalledWith("claude"));
+    expect(screen.queryByRole("button", { name: /update/i })).toBeNull();
+  });
+
+  it("fetches latest versions only for present+healthy rtk/claude/codex during the sweep", async () => {
+    toolingStatus.mockResolvedValue([
+      ok("rtk", { identity: "token-killer" }),
+      ok("codex"),
+      missing("claude", "not installed — install: `npm install -g @anthropic-ai/claude-code`"),
+      ok("agent-config"),
+      ok("agy"),
+    ]);
+    render(<Harness />);
+    await screen.findByText("codex");
+    await waitFor(() => expect(latestToolVersion).toHaveBeenCalledTimes(2));
+    expect(latestToolVersion).toHaveBeenCalledWith("rtk");
+    expect(latestToolVersion).toHaveBeenCalledWith("codex");
+    expect(latestToolVersion).not.toHaveBeenCalledWith("claude"); // missing → nothing to update
+    expect(latestToolVersion).not.toHaveBeenCalledWith("agent-config"); // App's detection is the single source
+  });
+
+  it("the agent-config Update button renders only when App's detection knows a newer version", async () => {
+    toolingStatus.mockResolvedValue([ok("agent-config", { version: "9.7.0" })]);
     const onRunTool = vi.fn();
     render(<Harness agentConfigUpdateTo="9.8.0" onRunTool={onRunTool} />);
     fireEvent.click(await screen.findByRole("button", { name: "Update to v9.8.0" }));
     expect(onRunTool).toHaveBeenCalledWith("upgrade", "agent-config");
-    // Other rows keep the plain label — the version came from agent-config's detection.
-    expect(screen.getByRole("button", { name: "Update" })).toBeTruthy();
+    expect(latestToolVersion).not.toHaveBeenCalledWith("agent-config"); // single source: App's detection
+    cleanup();
+    // No newer version known → no button (previously it always showed).
+    render(<Harness agentConfigUpdateTo={null} />);
+    await screen.findByText("agent-config");
+    expect(screen.queryByRole("button", { name: /update/i })).toBeNull();
+  });
+
+  it("caches the latest versions WITH the sweep — a fresh cache renders the button without any refetch", async () => {
+    render(
+      <Harness
+        initial={{ entries: [ok("rtk", { version: "0.34.3" })], at: Date.now(), latest: { rtk: "0.43.0" } }}
+      />,
+    );
+    expect(await screen.findByRole("button", { name: "Update to v0.43.0" })).toBeTruthy();
+    expect(toolingStatus).not.toHaveBeenCalled();
+    expect(latestToolVersion).not.toHaveBeenCalled();
   });
 
   it("agy never gets a run button — missing keeps the copy-command fallback, healthy has no action", async () => {
