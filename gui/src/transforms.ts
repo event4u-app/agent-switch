@@ -25,10 +25,12 @@ export interface ProviderSurfaces {
 export type ProviderSurface = keyof ProviderSurfaces;
 export type ProvidersConfig = Record<ProviderId, ProviderSurfaces>;
 
-/** A provider's enabled surfaces plus whether its CLI binary is installed. A
- *  not-installed provider is shown but cannot be enabled. */
+/** A provider's enabled surfaces, whether its CLI binary is usable (on PATH or
+ *  linked), and the linked path if the user pointed us at one. A provider that
+ *  is neither installed nor linked is shown but cannot be enabled until linked. */
 export interface ProviderStatus extends ProviderSurfaces {
   installed: boolean;
+  binaryPath?: string | null;
 }
 export type ProvidersStatus = Record<ProviderId, ProviderStatus>;
 

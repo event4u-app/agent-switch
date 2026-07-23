@@ -184,12 +184,14 @@ function localBinary(binary: string): string {
 }
 
 /**
- * Resolve a CLI binary to an invocable command: its bare name when it is on
- * PATH, otherwise its ~/.local/bin path when the binary lives there (GUI apps
- * often run with a minimal PATH that omits it), otherwise the bare name so the
- * caller surfaces a clean "not found" error.
+ * Resolve a CLI binary to an invocable command: a user-linked path when set and
+ * present (the CLI is not on PATH but the user pointed us at it), otherwise its
+ * bare name when it is on PATH, otherwise its ~/.local/bin path when the binary
+ * lives there (GUI apps often run with a minimal PATH that omits it), otherwise
+ * the bare name so the caller surfaces a clean "not found" error.
  */
-export function resolveBinary(binary: string): string {
+export function resolveBinary(binary: string, linked?: string | null): string {
+  if (linked && fs.existsSync(linked)) return linked;
   const probe = spawnSync(binary, ["--version"], { stdio: "ignore", timeout: 5000 });
   if ((probe.error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") return binary;
   const local = localBinary(binary);
@@ -197,12 +199,14 @@ export function resolveBinary(binary: string): string {
 }
 
 /**
- * Best-effort: is this provider's CLI binary installed? Probes `<binary>
- * --version` on PATH and treats only ENOENT as not-installed (a non-zero exit or
- * a timeout still means the binary exists), then falls back to the ~/.local/bin
- * install location. Used to gate enabling a provider the user hasn't installed.
+ * Best-effort: is this provider's CLI binary usable? True when a user-linked
+ * path is set and present, else when `<binary> --version` resolves on PATH
+ * (only ENOENT counts as not-installed — a non-zero exit or a timeout still
+ * means the binary exists), else when it lives in ~/.local/bin. Used to gate
+ * enabling a provider the user hasn't installed (or hasn't linked).
  */
-export function isProviderInstalled(id: ProviderId): boolean {
+export function isProviderInstalled(id: ProviderId, linked?: string | null): boolean {
+  if (linked && fs.existsSync(linked)) return true;
   const bin = PROVIDERS[id].binary;
   const probe = spawnSync(bin, ["--version"], { stdio: "ignore", timeout: 5000 });
   if ((probe.error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") return true;

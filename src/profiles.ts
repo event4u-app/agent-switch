@@ -70,6 +70,14 @@ export type ProviderSurface = keyof ProviderSurfaces;
 export type ProvidersConfig = Record<ProviderId, ProviderSurfaces>;
 
 /**
+ * Optional per-provider absolute path to the CLI binary. Set when the CLI is not
+ * on PATH — the user "links" their install from the GUI (or `providers link`) so
+ * agent-switch can drive it without a PATH entry. Absent → resolve via PATH,
+ * then ~/.local/bin (see {@link resolveBinary}).
+ */
+export type BinaryPaths = Partial<Record<ProviderId, string>>;
+
+/**
  * Providers enabled out of the box. Everything else is available but off by
  * default — the user opts it in from the Providers settings tab. A provider that
  * already has profiles is also treated as enabled on first migration, so
@@ -82,6 +90,8 @@ export interface State {
   labels: LabelMap;
   autoSwitch: AutoSwitchMap;
   providers: ProvidersConfig;
+  /** Per-provider linked binary paths (empty unless the user linked one). */
+  binaryPaths: BinaryPaths;
   switchStrategy: SwitchStrategy;
   /** Whether the background daemon fires OS desktop notifications itself (for
    *  timeliness when the GUI is closed). Default false — opt-in. */
@@ -230,26 +240,34 @@ function normalizeProvidersMap(raw: unknown): ProvidersConfig {
   return out;
 }
 
+function normalizeBinaryPaths(raw: unknown): BinaryPaths {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const out: BinaryPaths = {};
+  for (const p of PROVIDER_IDS) if (typeof r[p] === "string" && r[p]) out[p] = r[p] as string;
+  return out;
+}
+
 export function readState(): State {
   try {
     const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
     const labels = normalizeLabels(raw?.labels);
     const autoSwitch = normalizeAutoSwitchMap(raw?.autoSwitch);
     const providers = normalizeProvidersMap(raw?.providers);
+    const binaryPaths = normalizeBinaryPaths(raw?.binaryPaths);
     const switchStrategy: SwitchStrategy = raw?.switchStrategy === "rotation-first" ? "rotation-first" : DEFAULT_SWITCH_STRATEGY;
     const osNotifications = raw?.osNotifications === true;
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch, providers, switchStrategy, osNotifications };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch, providers, binaryPaths, switchStrategy, osNotifications };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch, providers, switchStrategy, osNotifications };
+      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch, providers, binaryPaths, switchStrategy, osNotifications };
     }
-    return { active: emptyActive(), labels, autoSwitch, providers, switchStrategy, osNotifications };
+    return { active: emptyActive(), labels, autoSwitch, providers, binaryPaths, switchStrategy, osNotifications };
   } catch {
     /* absent / unparsable → default */
   }
-  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), switchStrategy: DEFAULT_SWITCH_STRATEGY, osNotifications: false };
+  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, switchStrategy: DEFAULT_SWITCH_STRATEGY, osNotifications: false };
 }
 
 export function readSwitchStrategy(): SwitchStrategy {
@@ -391,6 +409,26 @@ export function setProviderSurface(providerId: ProviderId, surface: ProviderSurf
   state.providers[providerId] = { ...state.providers[providerId], [surface]: enabled };
   writeState(state);
   return state.providers[providerId];
+}
+
+// ---------- linked binary paths (provider CLI not on PATH) ----------
+
+/** The user-linked absolute path to a provider's CLI binary, or null. */
+export function readBinaryPath(providerId: ProviderId): string | null {
+  return readState().binaryPaths[providerId] ?? null;
+}
+
+/** All linked binary paths (for `providers status` / the GUI tab). */
+export function readBinaryPaths(): BinaryPaths {
+  return readState().binaryPaths;
+}
+
+/** Link (set) or unlink (null) a provider's CLI binary path. */
+export function setBinaryPath(providerId: ProviderId, binPath: string | null): void {
+  const state = readState();
+  if (binPath) state.binaryPaths[providerId] = binPath;
+  else delete state.binaryPaths[providerId];
+  writeState(state);
 }
 
 // ---------- layout migration: v1 <ROOT>/<name> → <ROOT>/claude/<name> ----------

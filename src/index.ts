@@ -49,6 +49,9 @@ import {
   setOsNotifications,
   readProviders,
   setProviderSurface,
+  readBinaryPath,
+  readBinaryPaths,
+  setBinaryPath,
   type ProviderSurface,
   ROOT,
 } from "./profiles.js";
@@ -148,9 +151,9 @@ function launch(p: Provider, name: string, args: string[]): number {
     ensureAgyKeychain(home);
     env.CFFIXED_USER_HOME = home;
   }
-  const res = spawnSync(resolveBinary(p.binary), args, { env, stdio: "inherit" });
+  const res = spawnSync(resolveBinary(p.binary, readBinaryPath(p.id)), args, { env, stdio: "inherit" });
   if (res.error && (res.error as NodeJS.ErrnoException).code === "ENOENT") {
-    die(`\`${p.binary}\` binary not found on PATH. Install ${p.id} first.`);
+    die(`\`${p.binary}\` not found. Install ${p.id}, or link its binary: agent-switch providers link --provider ${p.id} --path <path> (Providers tab in the GUI).`);
   }
   return res.status ?? 1;
 }
@@ -1070,7 +1073,7 @@ function sessionsRmCodex(sessionId: string, flags: Record<string, string | boole
   const action = purge ? "delete" : "archive";
   const p = provider("codex");
   const env: NodeJS.ProcessEnv = { ...process.env, [p.envVar]: cfg };
-  const r = spawnSync(resolveBinary(p.binary), codexSessionCommand(action, sessionId), { env, encoding: "utf8" });
+  const r = spawnSync(resolveBinary(p.binary, readBinaryPath(p.id)), codexSessionCommand(action, sessionId), { env, encoding: "utf8" });
   const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
   if (/no .*session.*found/i.test(out)) die(`codex could not find session ${sessionId} in "${profile}": ${out}`);
   if (r.status && r.status !== 0) die(`codex ${action} failed: ${out || `exit ${r.status}`}`);
@@ -1112,7 +1115,7 @@ function cmdSessionsRestore(
     const profile = requireProfile("codex", flags.from, "sessions restore --from");
     const p = provider("codex");
     const env: NodeJS.ProcessEnv = { ...process.env, [p.envVar]: configDir("codex", profile) };
-    const r = spawnSync(resolveBinary(p.binary), codexSessionCommand("unarchive", handle), { env, encoding: "utf8" });
+    const r = spawnSync(resolveBinary(p.binary, readBinaryPath(p.id)), codexSessionCommand("unarchive", handle), { env, encoding: "utf8" });
     const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim();
     if (/no .*session.*found/i.test(out)) die(`codex could not find an archived session ${handle} in "${profile}": ${out}`);
     console.log(`Unarchived codex session ${handle} in "${profile}".`);
@@ -1504,24 +1507,41 @@ function cmdProviders(
     console.log(`${providerId}: cli ${cfg.cli ? "on" : "off"}, ui ${cfg.ui ? "on" : "off"}.`);
     return;
   }
+  // Link the provider's CLI binary when it isn't on PATH — the user points us at
+  // it (from the GUI Providers tab or here). `unlink` reverts to PATH resolution.
+  if (mode === "link") {
+    const binPath = typeof flags.path === "string" ? flags.path : undefined;
+    if (!binPath) die(`usage: agent-switch providers link --provider ${providerId} --path <path-to-binary>`);
+    if (!fs.existsSync(binPath)) die(`no file at "${binPath}" — pass the full path to the ${provider(providerId).binary} binary.`);
+    setBinaryPath(providerId, binPath);
+    console.log(`Linked ${providerId} binary → ${binPath}`);
+    return;
+  }
+  if (mode === "unlink") {
+    setBinaryPath(providerId, null);
+    console.log(`Unlinked ${providerId} binary (back to PATH resolution).`);
+    return;
+  }
   if (mode === undefined || mode === "status") {
     const all = readProviders();
+    const links = readBinaryPaths();
     if (flags.json) {
-      // The GUI needs every provider's enabled surfaces AND whether its binary
-      // is installed (so it can show but not enable a missing provider) at once.
+      // The GUI needs every provider's enabled surfaces, whether its binary is
+      // usable (installed on PATH or linked), and any linked path — so it can
+      // show, link, and enable a provider that isn't on PATH — all at once.
       const enriched = Object.fromEntries(
-        PROVIDER_IDS.map((p) => [p, { ...all[p], installed: isProviderInstalled(p) }]),
+        PROVIDER_IDS.map((p) => [p, { ...all[p], installed: isProviderInstalled(p, links[p]), binaryPath: links[p] ?? null }]),
       );
       console.log(JSON.stringify(enriched));
       return;
     }
     for (const p of providerExplicit ? [providerId] : PROVIDER_IDS) {
-      const inst = isProviderInstalled(p) ? "installed" : "not installed";
+      const inst = isProviderInstalled(p, links[p]) ? (links[p] ? `linked: ${links[p]}` : "installed") : "not installed";
       console.log(`${p}: cli ${all[p].cli ? "on" : "off"}, ui ${all[p].ui ? "on" : "off"} (${inst}).`);
     }
     return;
   }
-  die("usage: agent-switch providers enable|disable|status [--provider P] [--surface cli|ui] [--json]");
+  die("usage: agent-switch providers enable|disable|link|unlink|status [--provider P] [--surface cli|ui] [--path <bin>] [--json]");
 }
 
 /**

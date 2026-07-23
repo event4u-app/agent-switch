@@ -216,6 +216,16 @@ export async function getProviders(): Promise<ProvidersStatus> {
   return JSON.parse(await runCli(["providers", "status", "--json"]));
 }
 
+/** Link a provider's CLI binary (when it isn't on PATH) by absolute path, or
+ *  unlink it (path=null) to go back to PATH resolution. */
+export async function linkProviderBinary(provider: ProviderId, binPath: string): Promise<void> {
+  await runCli(["providers", "link", "--provider", provider, "--path", binPath]);
+}
+
+export async function unlinkProviderBinary(provider: ProviderId): Promise<void> {
+  await runCli(["providers", "unlink", "--provider", provider]);
+}
+
 export async function setProvider(provider: ProviderId, surface: ProviderSurface, enabled: boolean): Promise<void> {
   await runCli(["providers", enabled ? "enable" : "disable", "--provider", provider, "--surface", surface]);
 }
