@@ -6,7 +6,15 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/re
 const usageHistoryMock = vi.hoisted(() => vi.fn());
 vi.mock("./ipc.js", () => ({ usageHistory: usageHistoryMock }));
 
-import { UsageSection, pickHeadroom, weekSeries, polylinePoints, nearestReset, extraWindows, type UsageHistoryCache } from "./UsageSection.js";
+import {
+  UsageSection,
+  pickHeadroom,
+  biggestConstraint,
+  weekSeries,
+  polylinePoints,
+  extraWindows,
+  type UsageHistoryCache,
+} from "./UsageSection.js";
 import type { UsageHistoryProfile } from "./ipc.js";
 import type { ProfileRow, UsageSnapshot, UsageWindow } from "./transforms.js";
 import type { UsageEntry } from "./usage-cache.js";
@@ -98,7 +106,7 @@ describe("UsageSection — headroom summary", () => {
   it("names the account with the most week headroom and renders the free/used sentence", async () => {
     renderSection();
     expect(await screen.findByText(/most headroom right now/i)).toBeTruthy();
-    expect(screen.getByText("personal", { selector: ".text-sm" })).toBeTruthy(); // the summary name, not the table row
+    expect(screen.getByText("personal", { selector: ".text-sm" })).toBeTruthy(); // the summary name, not a tile
     expect(screen.getByText("85% of the week window free · 0% of the session window used")).toBeTruthy();
   });
 
@@ -152,37 +160,22 @@ describe("UsageSection — headroom summary", () => {
   });
 });
 
-describe("UsageSection — comparison table", () => {
-  it("renders one aligned row per account with label pill, percentages and resets countdown", async () => {
+describe("UsageSection — account tiles", () => {
+  it("renders one tile per profile with label pill, window bars and per-window resets", async () => {
     renderSection();
     expect(await screen.findByText(/by account/i)).toBeTruthy();
-    expect(screen.getByText(/session \(5h\)/i)).toBeTruthy();
+    const grid = screen.getByTestId("usage-tiles");
+    expect(grid.children).toHaveLength(2);
     expect(screen.getByText("Personal")).toBeTruthy(); // label pill
-    expect(screen.getByText("15%")).toBeTruthy(); // personal week
-    expect(screen.getByText("52%")).toBeTruthy(); // work week
-    expect(screen.getByText("2d 1h")).toBeTruthy(); // personal soonest reset (49h)
-    expect(screen.getByText("2h 0m")).toBeTruthy(); // work: 5h window resets sooner than the week one
+    expect(screen.getByText("15%")).toBeTruthy(); // personal week bar
+    expect(screen.getByText("52%")).toBeTruthy(); // work week bar
+    expect(screen.getByText("2d 1h")).toBeTruthy(); // personal week reset (49h)
+    expect(screen.getByText("2h 0m")).toBeTruthy(); // work 5h reset
+    expect(screen.getByText("1d 13h")).toBeTruthy(); // work week reset (37h)
   });
 
-  it("renders the no-readout copy for a profile without a snapshot", async () => {
-    renderSection({
-      rows: [...defaultRows, row("event4u")],
-    });
-    expect(await screen.findByText("No readout — sign in once to enable")).toBeTruthy();
-  });
-
-  it("marks a window at ≥90% utilization as near the limit", async () => {
-    renderSection({
-      usage: {
-        ...defaultUsage,
-        "claude/work": entry(snapWith([win("five_hour", "5h", 12), win("seven_day", "7d", 92, iso(6 * H + 20 * 60_000))])),
-      },
-    });
-    expect(await screen.findByText("92% — near the limit")).toBeTruthy();
-  });
-
-  it("keeps per-model windows out of the main row and expands them via the chevron", async () => {
-    renderSection({
+  it("shows per-model windows immediately — no expand affordance anywhere", async () => {
+    const { container } = renderSection({
       usage: {
         ...defaultUsage,
         "claude/personal": entry(
@@ -195,19 +188,86 @@ describe("UsageSection — comparison table", () => {
       },
     });
     await screen.findByText(/by account/i);
-    expect(screen.queryByText("7d Opus")).toBeNull(); // sub-row hidden until expanded
-    const toggle = screen.getByRole("button", { name: /show per-model usage for personal/i });
-    fireEvent.click(toggle);
-    expect(await screen.findByText("7d Opus")).toBeTruthy();
+    expect(screen.getByText("7d Opus")).toBeTruthy(); // visible without any interaction
     expect(screen.getByText("33%")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /hide per-model usage for personal/i }));
-    expect(screen.queryByText("7d Opus")).toBeNull();
+    expect(screen.queryByRole("button", { name: /per-model usage/i })).toBeNull();
+    expect(container.querySelector("[aria-expanded]")).toBeNull();
   });
 
-  it("accounts without extra windows get no expand affordance", async () => {
+  it("orders the active profile first, then input order", async () => {
+    renderSection(); // work is active, personal comes first in the rows
+    await screen.findByText(/by account/i);
+    const grid = screen.getByTestId("usage-tiles");
+    expect(grid.children[0].textContent).toContain("work");
+    expect(grid.children[1].textContent).toContain("personal");
+  });
+
+  it("marks the active profile with a Active indicator, not colour alone", async () => {
     renderSection();
     await screen.findByText(/by account/i);
-    expect(screen.queryByRole("button", { name: /per-model usage/i })).toBeNull();
+    const grid = screen.getByTestId("usage-tiles");
+    const active = screen.getByText("Active");
+    expect(grid.contains(active)).toBe(true);
+    expect(screen.getAllByText("Active")).toHaveLength(1); // only the active tile
+  });
+
+  it("headlines each tile with its biggest-constraint window", async () => {
+    renderSection();
+    expect(await screen.findByText("15% of week used")).toBeTruthy(); // personal: week 15 > session 0
+    expect(screen.getByText("52% of week used")).toBeTruthy(); // work: week 52 > session 30
+    cleanup();
+    // session-only snapshot → the session window is the constraint
+    renderSection({
+      usage: { "claude/personal": entry(snapWith([win("five_hour", "5h", 30, null)])) },
+    });
+    expect(await screen.findByText("30% of session used")).toBeTruthy();
+  });
+
+  it("headlines a window at ≥90% utilization with the near-limit warning", async () => {
+    renderSection({
+      usage: {
+        ...defaultUsage,
+        "claude/work": entry(snapWith([win("five_hour", "5h", 12), win("seven_day", "7d", 92, iso(6 * H + 20 * 60_000))])),
+      },
+    });
+    expect(await screen.findByText("92% — near the limit")).toBeTruthy();
+    expect(screen.getByText("92%")).toBeTruthy(); // the week bar itself stays a plain % readout
+  });
+
+  it("renders the no-readout slim tile for a profile without a snapshot", async () => {
+    renderSection({
+      rows: [...defaultRows, row("event4u")],
+    });
+    expect(await screen.findByText("No readout — sign in once to enable")).toBeTruthy();
+    expect(screen.queryByTestId("sparkline-event4u")).toBeNull(); // slim variant: no sparkline area
+  });
+
+  it("renders a per-profile sparkline from the cached history", async () => {
+    renderSection({
+      history: {
+        claude: [
+          { profile: "personal", samples: [
+            { at: iso(-10 * D), windows: [{ key: "seven_day", utilization: 30 }] },
+            { at: iso(-1 * D), windows: [{ key: "seven_day", utilization: 20 }] },
+          ] },
+        ],
+      },
+    });
+    await screen.findByText(/by account/i);
+    const spark = screen.getByTestId("sparkline-personal");
+    const line = spark.querySelector("polyline");
+    expect(line).toBeTruthy();
+    expect(line!.getAttribute("points")).not.toBe("");
+    // work has no samples → caption instead of a fake flat line
+    expect(screen.queryByTestId("sparkline-work")).toBeNull();
+    expect(screen.getByText("No history yet")).toBeTruthy();
+  });
+
+  it("shows the no-history caption for every profile when nothing is sampled yet", async () => {
+    renderSection({ history: { claude: [] } });
+    await screen.findByText(/by account/i);
+    expect(screen.getAllByText("No history yet")).toHaveLength(2);
+    expect(screen.queryByTestId("sparkline-personal")).toBeNull();
   });
 });
 
@@ -250,7 +310,10 @@ describe("UsageSection — history chart", () => {
   it("renders one polyline per profile with samples, plus the legend", async () => {
     const { container } = renderSection({ history: { claude: historyFixture } });
     await screen.findByText(/week window · last 30 days/i);
-    expect(container.querySelectorAll("polyline")).toHaveLength(2);
+    // Scoped to the comparison chart — the tiles render their own sparklines.
+    const chart = container.querySelector('svg[aria-label*="per account"]');
+    expect(chart).toBeTruthy();
+    expect(chart!.querySelectorAll("polyline")).toHaveLength(2);
     const legend = screen.getByTestId("history-legend");
     expect(legend.textContent).toContain("personal");
     expect(legend.textContent).toContain("work");
@@ -286,14 +349,18 @@ describe("UsageSection — footer + helpers", () => {
     expect(await screen.findByText("Own profiles only")).toBeTruthy();
   });
 
-  it("nearestReset picks the soonest upcoming reset; extraWindows excludes the two primaries", () => {
+  it("extraWindows excludes the two primaries; biggestConstraint picks the highest-utilization window", () => {
     const snap = snapWith([
       win("five_hour", "5h", 10, iso(2 * H)),
       win("seven_day", "7d", 20, iso(49 * H)),
       win("seven_day_opus", "7d Opus", 5, iso(30 * H)),
     ]);
-    expect(nearestReset(snap, NOW)).toBe("2h 0m");
     expect(extraWindows(snap).map((w) => w.key)).toEqual(["seven_day_opus"]);
-    expect(nearestReset(snapWith([win("five_hour", "5h", 10, null)]), NOW)).toBe("");
+    expect(biggestConstraint(snap)?.key).toBe("seven_day");
+    expect(biggestConstraint(null)).toBeNull();
+    expect(biggestConstraint(snapWith([win("five_hour", "5h", null, null)]))).toBeNull();
+    // tie → first window wins (stable)
+    const tie = snapWith([win("five_hour", "5h", 40), win("seven_day", "7d", 40)]);
+    expect(biggestConstraint(tie)?.key).toBe("five_hour");
   });
 });

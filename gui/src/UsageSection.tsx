@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -18,12 +17,12 @@ import type { UsageEntry } from "./usage-cache.js";
 
 /**
  * Usage section: the cross-account comparison the per-card bars can never
- * answer. One headroom sentence with a one-click switch, one aligned row per
- * account (session + week windows, resets countdown), per-model windows as an
- * expandable sub-row, and a 30-day week-window history chart fed by the
- * daemon's hourly samples. Data reuse: the table + summary read the SAME
- * per-profile snapshots App already fetches/caches for the profile cards —
- * only the history series has its own (cached-in-App) fetch.
+ * answer. One headroom sentence with a one-click switch, one tile per account
+ * (headline stat, every window as an always-visible bar, a per-profile week
+ * sparkline), and a 30-day week-window history chart fed by the daemon's
+ * hourly samples. Data reuse: the tiles + summary read the SAME per-profile
+ * snapshots App already fetches/caches for the profile cards — only the
+ * history series has its own (cached-in-App) fetch.
  */
 
 const PROVIDER_LABEL: Record<ProviderId, string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
@@ -60,8 +59,8 @@ export function weekWindow(snap: UsageSnapshot | null): UsageWindow | null {
   return snap?.windows.find((w) => isWeekKey(w.key)) ?? null;
 }
 
-/** Windows beyond the two primary ones (per-model entries etc.) — rendered as
- *  an expandable sub-row per account, never in the main comparison row. */
+/** Windows beyond the two primary ones (per-model entries etc.) — rendered on
+ *  the tile right after session + week, always visible. */
 export function extraWindows(snap: UsageSnapshot | null): UsageWindow[] {
   if (!snap) return [];
   const session = sessionWindow(snap);
@@ -94,21 +93,16 @@ export function pickHeadroom(entries: { name: string; snap: UsageSnapshot | null
   return bestWeek ?? bestSession;
 }
 
-/** Soonest upcoming reset across a snapshot's windows — the row's countdown. */
-export function nearestReset(snap: UsageSnapshot | null, now: number): string {
-  if (!snap) return "";
-  let best: string | null = null;
-  let bestT = Infinity;
+/** The window closest to its limit (highest known utilization; ties → first) —
+ *  the tile's one glanceable headline. Null when nothing has a readout. Pure. */
+export function biggestConstraint(snap: UsageSnapshot | null): UsageWindow | null {
+  if (!snap) return null;
+  let best: UsageWindow | null = null;
   for (const w of snap.windows) {
-    if (!w.resetsAt) continue;
-    const t = Date.parse(w.resetsAt);
-    if (!Number.isFinite(t) || t <= now) continue;
-    if (t < bestT) {
-      bestT = t;
-      best = w.resetsAt;
-    }
+    if (typeof w.utilization !== "number") continue;
+    if (!best || w.utilization > best.utilization!) best = w;
   }
-  return best ? formatReset(best, now) : "";
+  return best;
 }
 
 /** A profile's week-window utilization series from its history samples,
@@ -129,27 +123,130 @@ export function polylinePoints(points: { t: number; util: number }[], now: numbe
     .join(" ");
 }
 
-/** One aligned bar + % readout cell. `pct >= 90` appends the near-limit text
- *  (already red via utilColor — the same thresholds the daemon uses). */
-function WindowCell({ w }: { w: UsageWindow | null }) {
-  const known = typeof w?.utilization === "number";
-  const pct = Math.min(100, w?.utilization ?? 0);
+/** One compact labeled bar on a tile: label · thin bar · % · reset countdown.
+ *  `pct >= 90` is already red via utilColor — same thresholds as the daemon. */
+function TileWindowRow({ w, now }: { w: UsageWindow; now: number }) {
+  const known = typeof w.utilization === "number";
+  const pct = Math.min(100, w.utilization ?? 0);
+  const reset = known ? formatReset(w.resetsAt, now) : "";
   return (
-    <div className="min-w-0">
-      <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+    <div className="flex items-center gap-2 text-[11px]">
+      <span className="w-14 shrink-0 truncate text-muted-foreground" title={w.label}>
+        {w.label}
+      </span>
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
         {known && <div className="h-full rounded-full" style={{ width: `${pct}%`, background: utilColor(pct) }} />}
       </div>
-      <div
-        className={cn("mt-1 truncate text-[11px] tabular-nums", !known && "text-muted-foreground")}
+      <span
+        className={cn("w-9 shrink-0 text-right tabular-nums", !known && "text-muted-foreground")}
         style={known ? { color: utilColor(pct) } : undefined}
       >
-        {known ? `${pct}%${pct >= 90 ? " — near the limit" : ""}` : "N.A."}
-      </div>
+        {known ? `${pct}%` : "N.A."}
+      </span>
+      <span className="w-14 shrink-0 text-right tabular-nums text-muted-foreground">{reset || "—"}</span>
     </div>
   );
 }
 
-const ROW_GRID = "grid grid-cols-[minmax(0,1.1fr)_1fr_1fr_4.5rem] items-center gap-x-4";
+/** One account tile: header (name + label + active), headline stat, every
+ *  window as an always-visible bar, and a 30-day week sparkline. Informational
+ *  only — the headroom card above keeps the single switch action, so tiles
+ *  deliberately do NOT mirror the Profiles rows. */
+function ProfileTile({
+  row,
+  snap,
+  samples,
+  now,
+}: {
+  row: ProfileRow;
+  snap: UsageSnapshot | null;
+  samples: UsageHistorySample[];
+  now: number;
+}) {
+  const header = (
+    <div className="flex min-w-0 items-center gap-2">
+      <span className={cn("truncate text-[13px] font-semibold", !snap && "text-muted-foreground")}>{row.name}</span>
+      {row.label && (
+        <Badge variant="secondary" className="shrink-0">
+          {row.label}
+        </Badge>
+      )}
+      {row.active && (
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-[hsl(var(--success))]">
+          <span aria-hidden className="size-1.5 rounded-full bg-[hsl(var(--success))]" />
+          Active
+        </span>
+      )}
+    </div>
+  );
+
+  if (!snap) {
+    return (
+      <div className="rounded-[10px] border border-border bg-card px-4 py-3">
+        {header}
+        <p className="mt-1.5 text-[11px] text-muted-foreground">No readout — sign in once to enable</p>
+      </div>
+    );
+  }
+
+  const ordered = [sessionWindow(snap), weekWindow(snap), ...extraWindows(snap)].filter((w): w is UsageWindow => w !== null);
+  const big = biggestConstraint(snap);
+  const bigPct = big ? Math.min(100, big.utilization!) : null;
+  const week = weekWindow(snap);
+  const weekPct = typeof week?.utilization === "number" ? Math.min(100, week.utilization) : null;
+  const points = weekSeries(samples, now);
+
+  function windowNoun(w: UsageWindow): string {
+    if (w === sessionWindow(snap)) return "session";
+    if (w === weekWindow(snap)) return "week";
+    return w.label;
+  }
+
+  return (
+    <div className="flex flex-col rounded-[10px] border border-border bg-card px-4 py-3">
+      {header}
+      {big ? (
+        <div className="mt-1 text-xs font-medium tabular-nums" style={{ color: utilColor(bigPct!) }}>
+          {bigPct! >= 90 ? `${bigPct}% — near the limit` : `${bigPct}% of ${windowNoun(big)} used`}
+        </div>
+      ) : (
+        <div className="mt-1 text-xs text-muted-foreground">No utilization data yet</div>
+      )}
+      <div className="mt-2 space-y-1.5">
+        {ordered.map((w) => (
+          <TileWindowRow key={w.key} w={w} now={now} />
+        ))}
+      </div>
+      {/* Week sparkline — the profile's own 30-day trend, from the same history
+          fetch the comparison chart uses. Never a fake flat line: no samples →
+          a caption instead. */}
+      <div className="mt-auto pt-2">
+        {points.length > 0 ? (
+          <svg
+            data-testid={`sparkline-${row.name}`}
+            viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+            preserveAspectRatio="none"
+            className="h-7 w-full"
+            role="img"
+            aria-label={`${row.name} week-window utilization over the last ${HISTORY_DAYS} days`}
+          >
+            <polyline
+              points={polylinePoints(points, now)}
+              fill="none"
+              stroke={weekPct !== null ? utilColor(weekPct) : "hsl(var(--muted-foreground))"}
+              strokeWidth={1.5}
+              vectorEffect="non-scaling-stroke"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          </svg>
+        ) : (
+          <p className="text-[10px] text-muted-foreground">No history yet</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function UsageSection({
   rows,
@@ -172,7 +269,6 @@ export function UsageSection({
     (p) => hasUsageReadout(p) && rows.some((r) => r.provider === p),
   );
   const [provider, setProvider] = useState<ProviderId>("claude");
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // If the anchored provider has no profiles (e.g. codex-only setup), jump to
   // the first one that does.
@@ -198,6 +294,8 @@ export function UsageSection({
 
   const profs = rows.filter((r) => r.provider === provider);
   const entries = profs.map((r) => ({ row: r, snap: usage[`${provider}/${r.name}`]?.snap ?? null }));
+  // Tile order: active profile first, then input order (stable sort).
+  const tiles = [...entries].sort((a, b) => Number(b.row.active) - Number(a.row.active));
   const pick = pickHeadroom(entries.map((e) => ({ name: e.row.name, snap: e.snap })));
   const activeName = profs.find((r) => r.active)?.name ?? null;
 
@@ -219,15 +317,6 @@ export function UsageSection({
     if (typeof p.weekUtil === "number") parts.push(`${Math.round(100 - p.weekUtil)}% of the week window free`);
     if (typeof p.sessionUtil === "number") parts.push(`${Math.round(p.sessionUtil)}% of the session window used`);
     return parts.join(" · ");
-  }
-
-  function toggleExpanded(key: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
   }
 
   return (
@@ -287,78 +376,27 @@ export function UsageSection({
         )}
       </div>
 
-      {/* Comparison table — one row per account, aligned columns. */}
-      <div className="rounded-[10px] border border-border bg-card px-4 py-3">
-        <div className={cn(ROW_GRID, "border-b border-border pb-1.5 text-[10px] font-semibold uppercase tracking-[.09em] text-muted-foreground")}>
-          <span>By account</span>
-          <span>Session (5h)</span>
-          <span>Week</span>
-          <span>Resets</span>
+      {/* Account tiles — one per profile, everything visible at once: headline
+          stat, all windows (incl. per-model) as bars, and a week sparkline. */}
+      <div>
+        <div className="px-0.5 text-[10px] font-semibold uppercase tracking-[.09em] text-muted-foreground">
+          By account
         </div>
-        {entries.length === 0 && (
-          <p className="py-3 text-xs text-muted-foreground">No {PROVIDER_LABEL[provider]} profiles yet.</p>
+        {tiles.length === 0 ? (
+          <p className="mt-1.5 text-xs text-muted-foreground">No {PROVIDER_LABEL[provider]} profiles yet.</p>
+        ) : (
+          <div data-testid="usage-tiles" className="mt-1.5 grid gap-2.5 min-[900px]:grid-cols-2">
+            {tiles.map((e) => (
+              <ProfileTile
+                key={`${provider}/${e.row.name}`}
+                row={e.row}
+                snap={e.snap}
+                samples={(hist ?? []).find((h) => h.profile === e.row.name)?.samples ?? []}
+                now={nowTick}
+              />
+            ))}
+          </div>
         )}
-        {entries.map((e) => {
-          const key = `${provider}/${e.row.name}`;
-          const extras = extraWindows(e.snap);
-          const isOpen = expanded.has(key);
-          return (
-            <div key={key} className="border-b border-border py-2.5 last:border-0 last:pb-0.5">
-              <div className={ROW_GRID}>
-                <div className="flex min-w-0 items-center gap-1.5">
-                  {extras.length > 0 && (
-                    <button
-                      aria-label={`${isOpen ? "Hide" : "Show"} per-model usage for ${e.row.name}`}
-                      aria-expanded={isOpen}
-                      onClick={() => toggleExpanded(key)}
-                      className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      {isOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-                    </button>
-                  )}
-                  <div className="min-w-0">
-                    <span className={cn("block truncate text-[13px] font-semibold", !e.snap && "text-muted-foreground")}>
-                      {e.row.name}
-                    </span>
-                    {e.row.label && (
-                      <Badge variant="secondary" className="mt-0.5">
-                        {e.row.label}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-                {e.snap ? (
-                  <>
-                    <WindowCell w={sessionWindow(e.snap)} />
-                    <WindowCell w={weekWindow(e.snap)} />
-                    <span className="text-[11px] tabular-nums text-muted-foreground">
-                      {nearestReset(e.snap, nowTick) || "—"}
-                    </span>
-                  </>
-                ) : (
-                  <span className="col-span-3 text-[11px] text-muted-foreground">
-                    No readout — sign in once to enable
-                  </span>
-                )}
-              </div>
-              {isOpen && extras.length > 0 && (
-                <div className="mt-1.5 space-y-1.5 pl-5">
-                  {extras.map((w) => (
-                    <div key={w.key} className="grid grid-cols-[minmax(0,1.02fr)_2fr_4.5rem] items-center gap-x-4">
-                      <span className="truncate text-[11px] text-muted-foreground" title={w.label}>
-                        {w.label}
-                      </span>
-                      <WindowCell w={w} />
-                      <span className="text-[11px] tabular-nums text-muted-foreground">
-                        {formatReset(w.resetsAt, nowTick) || "—"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
       </div>
 
       {/* Week-window history — the daemon's hourly samples over the last 30 days. */}
