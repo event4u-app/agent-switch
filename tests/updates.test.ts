@@ -42,11 +42,12 @@ test("parseRelease falls back name→tag and url→releases page", () => {
 });
 
 test("npmSearchPath puts node's own bin dir first so a stripped GUI PATH still finds npm", () => {
-  const p = npmSearchPath("/opt/homebrew/bin", "/usr/bin:/bin", "/Users/x");
-  const parts = p.split(path.delimiter);
+  const home = path.join("/Users", "x");
+  const inherited = ["/usr/bin", "/bin"].join(path.delimiter); // delimiter is ; on Windows, : on POSIX
+  const parts = npmSearchPath("/opt/homebrew/bin", inherited, home).split(path.delimiter);
   assert.equal(parts[0], "/opt/homebrew/bin"); // node/npm co-located dir wins
   assert.ok(parts.includes("/usr/bin")); // inherited PATH preserved as fallback
-  assert.ok(parts.includes("/Users/x/.npm-global/bin")); // common global-install fallback
+  assert.ok(parts.includes(path.join(home, ".npm-global", "bin"))); // common global-install fallback
   assert.ok(parts.includes("/usr/local/bin"));
 });
 
