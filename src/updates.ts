@@ -12,6 +12,7 @@
 
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -115,9 +116,41 @@ export async function checkForUpdate(repo: string = UPDATE_REPO): Promise<Update
   }
 }
 
+/** Build a PATH that can locate `npm` even when this CLI was spawned from the
+ *  GUI with a minimal environment PATH (`/usr/bin:/bin:/usr/sbin:/sbin`) — the
+ *  case a macOS/Linux app launched from Finder or the menu bar inherits. `npm`
+ *  always ships in the same bin directory as the running `node`
+ *  (`process.execPath`), so that dir goes first; the current PATH and the common
+ *  global-install locations follow as fallbacks. Mirrors the GUI's Rust PATH
+ *  recovery so the deepest spawn (`npm`) resolves regardless of launch context.
+ *  Pure — every source is injectable for tests. */
+export function npmSearchPath(
+  nodeDir: string = path.dirname(process.execPath),
+  currentPath: string = process.env.PATH ?? "",
+  home: string = os.homedir(),
+): string {
+  return [
+    nodeDir,
+    currentPath,
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    path.join(home, ".npm-global", "bin"),
+    path.join(home, ".local", "bin"),
+  ]
+    .filter(Boolean)
+    .join(path.delimiter);
+}
+
 /** Self-update: reinstall the npm package at @latest (global). Streams npm's
- *  own output; returns its exit code (0 = success). */
+ *  own output; returns its exit code (0 = success). The spawn runs with a
+ *  PATH that can always find `npm` ({@link npmSearchPath}), so a GUI-triggered
+ *  update works from Finder/menu-bar launches with a stripped PATH; `shell` is
+ *  required on Windows, where `npm` is a `.cmd` shim. */
 export function selfUpdate(): number {
-  const r = spawnSync("npm", ["install", "-g", `${PACKAGE_NAME}@latest`], { stdio: "inherit" });
+  const r = spawnSync("npm", ["install", "-g", `${PACKAGE_NAME}@latest`], {
+    stdio: "inherit",
+    shell: process.platform === "win32",
+    env: { ...process.env, PATH: npmSearchPath() },
+  });
   return r.status ?? 1;
 }

@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as path from "node:path";
 
-import { parseVersion, compareVersions, isNewer, parseRelease } from "../src/updates.js";
+import { parseVersion, compareVersions, isNewer, parseRelease, npmSearchPath } from "../src/updates.js";
 
 test("parseVersion strips v-prefix and pre-release/build, pads missing with 0", () => {
   assert.deepEqual(parseVersion("v1.2.3"), [1, 2, 3]);
@@ -38,4 +39,19 @@ test("parseRelease falls back name→tag and url→releases page", () => {
   const r = parseRelease({ tag_name: "1.2.0" });
   assert.equal(r?.name, "1.2.0");
   assert.match(r?.url ?? "", /\/releases$/);
+});
+
+test("npmSearchPath puts node's own bin dir first so a stripped GUI PATH still finds npm", () => {
+  const p = npmSearchPath("/opt/homebrew/bin", "/usr/bin:/bin", "/Users/x");
+  const parts = p.split(path.delimiter);
+  assert.equal(parts[0], "/opt/homebrew/bin"); // node/npm co-located dir wins
+  assert.ok(parts.includes("/usr/bin")); // inherited PATH preserved as fallback
+  assert.ok(parts.includes("/Users/x/.npm-global/bin")); // common global-install fallback
+  assert.ok(parts.includes("/usr/local/bin"));
+});
+
+test("npmSearchPath drops empty segments (e.g. an unset inherited PATH)", () => {
+  const parts = npmSearchPath("/node/bin", "", "/home/y").split(path.delimiter);
+  assert.ok(!parts.includes("")); // no empty segment → no accidental CWD-in-PATH
+  assert.equal(parts[0], "/node/bin");
 });
