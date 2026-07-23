@@ -125,6 +125,29 @@ affected phase before it starts, not during.
 Feasibility: S0.1 is the go/no-go for the sidebar; S0.3 picks the button
 variant per OS from data, not hope.
 
+**Owner amendments after hands-on testing (2026-07-23, supersede where
+they conflict):**
+
+- **S0.3 amended — visible runs instead of copy-only.** The maintainer
+  wants one-click install/update for rtk, agent-config and the provider
+  CLIs. Mechanism: the GUI runs `agent-switch tooling install|upgrade
+  <id>` inside the **embedded terminal** — the run is user-initiated and
+  its output fully visible, which addresses the council's actual
+  objections (silent EACCES failures, PATH-invisible results), unlike
+  the unattended spawn the council rejected. Copy-command stays as the
+  fallback presentation where no verified command exists (agy).
+- **Six sidebar sections, not five.** The Usage section splits into
+  **Sessions** (the session manager, previously mislabeled Usage) and
+  **Usage** (the comparison view from `as-gui-02-usage.svg`). The
+  "five sections" acceptance criterion is superseded by the owner; the
+  sixth names what it replaces: the mislabel.
+- **Ecosystem per `as-gui-04-ecosystem.svg`:** shared-setup card with
+  toggle + source path + change-source + reset-to-default (moved out of
+  Settings), provider cards with per-surface (CLI/GUI) toggles (moved
+  out of Settings › Advanced), agent-config primary card with
+  active-in-profile facts. The link-out row is retired.
+- **Settings toggles** become the spec's pill switches.
+
 ## Phase 1 — Sidebar shell (structure only, zero new features)
 
 - [x] Introduce a left sidebar with exactly five sections: **Profiles**

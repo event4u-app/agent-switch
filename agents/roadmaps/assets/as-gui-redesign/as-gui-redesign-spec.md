@@ -99,10 +99,14 @@ New section. Owns everything comparative.
 New section. Renders the CLI's JSON readout; **never detects on its own**.
 - Row states: `ok` (58px) · `wrong-binary` (94px, amber accent) ·
   `missing` (76px). Height encodes urgency; rows sort by attention first.
-- Every unhealthy row carries a copyable command — **copy-command only,
-  no `Run` buttons** (council decision 2026-07-23: unattended installs
-  fail on stock macOS/Linux and stay PATH-invisible to the running GUI).
-  macOS/Linux npm commands carry an inline EACCES note.
+- Install/Update actions run `agent-switch tooling install|upgrade <id>`
+  **inside the embedded terminal** (owner amendment 2026-07-23,
+  superseding the copy-only stance: a terminal-visible, user-initiated
+  run answers the council's actual objections — silent EACCES failures
+  and PATH-invisible results — that only applied to unattended spawns).
+  Copy-command remains the fallback where no verified command exists
+  (agy) and on wrong-binary rows (auto-replacing a foreign tool is
+  invasive); those copy rows keep the EACCES note.
 - rtk must be probed for **identity**, not just presence — see the
   AC-side `road-to-rtk-onboarding-correctness` roadmap (agent-config
   repo); when agent-config is installed, the tooling readout delegates to

@@ -6,10 +6,10 @@
 
 ## Overall
 
-**40 / 77 steps done · 52%**
+**68 / 72 steps done · 94%**
 
 ```text
-█████████████████████░░░░░░░░░░░░░░░░░░░   52%
+██████████████████████████████████████░░   94%
 ```
 
 ## ⚠️ Iron Law 3 — unresolved deferred items
@@ -19,14 +19,16 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | Roadmap | Done | Deferred | Cancelled |
 |---|---:|---:|---:|
 | [road-to-1.0.1-review-followup.md](roadmaps/road-to-1.0.1-review-followup.md) | 8 | 1 | 0 |
+| [road-to-ac-embedded-settings.md](roadmaps/road-to-ac-embedded-settings.md) | 26 | 4 | 0 |
+| [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 29 | 1 | 0 |
 
 ## Open roadmaps
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-1.0.1-review-followup.md](roadmaps/road-to-1.0.1-review-followup.md) | 4 | 9 | 0 | 8 | 1 | 0 | 0 | ██████████ 100% |
-| 2 | [road-to-ac-embedded-settings.md](roadmaps/road-to-ac-embedded-settings.md) | 4 | 30 | 21 | 9 | 0 | 0 | [3](#blockers-road-to-ac-embedded-settings) | ███░░░░░░░ 30% |
-| 3 | [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 5 | 30 | 12 | 18 | 0 | 0 | [2](#blockers-road-to-agent-setup-hub) | ██████░░░░ 60% |
+| 2 | [road-to-ac-embedded-settings.md](roadmaps/road-to-ac-embedded-settings.md) | 4 | 30 | 0 | 26 | 4 | 0 | [3](#blockers-road-to-ac-embedded-settings) | ██████████ 100% |
+| 3 | [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 5 | 30 | 0 | 29 | 1 | 0 | [2](#blockers-road-to-agent-setup-hub) | ██████████ 100% |
 | 4 | [road-to-usage-reliability-and-portability.md](roadmaps/road-to-usage-reliability-and-portability.md) | 5 | 13 | 4 | 5 | 3 | 1 | 0 | ██████░░░░ 56% |
 
 ---
@@ -46,14 +48,14 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 ### [road-to-ac-embedded-settings.md](roadmaps/road-to-ac-embedded-settings.md)
 
-**embedded AC settings — an AS user never has to launch the agent-config GUI** — 9 / 30 done (30%)
+**embedded AC settings — an AS user never has to launch the agent-config GUI** — 26 / 26 done (100%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
-| 0 | Falsification spikes | 🟡 in progress | 1 | 3 | 0 | 0 | 75% |
-| 1 | Discovery + lifecycle (no UI yet) | 🟡 in progress | 2 | 6 | 0 | 0 | 75% |
-| 2 | The embedded view | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
-| 3 | Profile awareness (the piece only AS can do) | ⬜ not started | 10 | 0 | 0 | 0 | 0% |
+| 0 | Falsification spikes | ✅ done | 0 | 3 | 1 | 0 | 100% |
+| 1 | Discovery + lifecycle (no UI yet) | ✅ done | 0 | 8 | 0 | 0 | 100% |
+| 2 | The embedded view | ✅ done | 0 | 8 | 0 | 0 | 100% |
+| 3 | Profile awareness (the piece only AS can do) | ✅ done | 0 | 7 | 3 | 0 | 100% |
 
 <a id="blockers-road-to-ac-embedded-settings"></a>
 **Blockers**
@@ -70,15 +72,15 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 ### [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md)
 
-**agent setup hub — AS becomes the place the whole agent stack gets set up** — 18 / 30 done (60%)
+**agent setup hub — AS becomes the place the whole agent stack gets set up** — 29 / 29 done (100%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 0 | Falsification spikes (before any UI work) | ✅ done | 0 | 3 | 0 | 0 | 100% |
 | 1 | Sidebar shell (structure only, zero new features) | ✅ done | 0 | 6 | 0 | 0 | 100% |
 | 2 | Retire the banner into the Ecosystem section (net-negative chrome) | ✅ done | 0 | 6 | 0 | 0 | 100% |
-| 3 | Tooling section: detect → explain → fix | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
-| 4 | Record the non-goals (an asset, not paperwork) | 🟡 in progress | 6 | 3 | 0 | 0 | 33% |
+| 3 | Tooling section: detect → explain → fix | ✅ done | 0 | 5 | 1 | 0 | 100% |
+| 4 | Record the non-goals (an asset, not paperwork) | ✅ done | 0 | 9 | 0 | 0 | 100% |
 
 <a id="blockers-road-to-agent-setup-hub"></a>
 **Blockers**
