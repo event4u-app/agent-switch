@@ -35,6 +35,10 @@
 
   --success: 126 37% 45%; /* #499c54 active/live */
 
+  --warning: 43 65% 55%; /* ≈#d9a441 approaching-threshold amber */
+
+  --sidebar: 225 5% 15%; /* ≈#232427 — one elevation step between --background and --card */
+
   --border: 223 6% 24%; /* #393b40 */
   --input: 223 6% 28%;
   --ring: 15 63% 52%;
@@ -68,6 +72,10 @@
   --destructive-foreground: 0 0% 100%;
 
   --success: 130 45% 34%; /* #2f7d3a — darker green for white bg */
+
+  --warning: 43 74% 39%; /* ≈#ad7c1a — darker amber for white bg */
+
+  --sidebar: 220 20% 99%; /* between --background (white) and --card */
 
   --border: 220 13% 88%; /* #dbdfe6 */
   --input: 220 13% 84%;

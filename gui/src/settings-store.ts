@@ -212,6 +212,27 @@ export function setAgentConfigNotifiedVersion(version: string): void {
   }
 }
 
+const AGENT_CONFIG_CARD_DISMISSED_KEY = "agent-switch-agent-config-card-dismissed";
+
+/** Whether the first-run agent-config card on Profiles was dismissed. A
+ *  dismissal is permanent — the recommendation lives on in the Ecosystem
+ *  section, which the user visits deliberately. */
+export function getAgentConfigCardDismissed(): boolean {
+  try {
+    return localStorage.getItem(AGENT_CONFIG_CARD_DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setAgentConfigCardDismissed(): void {
+  try {
+    localStorage.setItem(AGENT_CONFIG_CARD_DISMISSED_KEY, "1");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const NOTIF_LAST_READ_KEY = "agent-switch-notif-last-read";
 
 /** Timestamp (unix ms) of the newest notification the user has seen. The bell's
@@ -299,6 +320,30 @@ export function getMutedKinds(): NotificationKind[] {
 export function setMutedKinds(kinds: NotificationKind[]): void {
   try {
     localStorage.setItem(MUTED_KINDS_KEY, JSON.stringify(kinds));
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PROVIDER_FILTER_KEY = "agent-switch-provider-filter";
+const PROVIDER_FILTER_CHOICES = ["claude", "codex", "antigravity"] as const;
+type StoredProviderFilter = (typeof PROVIDER_FILTER_CHOICES)[number];
+
+/** Last provider filter chosen in the Profiles section, so Profiles reopens on
+ *  the provider the user last worked with. Default "claude"; an unknown stored
+ *  value falls back to the default. */
+export function getProviderFilter(): StoredProviderFilter {
+  try {
+    const raw = localStorage.getItem(PROVIDER_FILTER_KEY) ?? "";
+    return (PROVIDER_FILTER_CHOICES as readonly string[]).includes(raw) ? (raw as StoredProviderFilter) : "claude";
+  } catch {
+    return "claude";
+  }
+}
+
+export function setProviderFilter(id: StoredProviderFilter): void {
+  try {
+    localStorage.setItem(PROVIDER_FILTER_KEY, id);
   } catch {
     /* no/blocked localStorage → in-memory only for this session */
   }
