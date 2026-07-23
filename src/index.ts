@@ -63,6 +63,7 @@ import { withProperLock } from "./locks.js";
 import { applySharing, removeSharing, syncSharing, sharedLinkHealth } from "./share.js";
 import { detectShell, shellenvScript } from "./shellenv.js";
 import { runDoctor } from "./doctor.js";
+import { checkTooling, formatToolingLines } from "./tooling.js";
 import { launchGui } from "./gui-launch.js";
 import { checkForUpdate, selfUpdate } from "./updates.js";
 import {
@@ -1779,6 +1780,19 @@ function cmdShellenv(shellArg?: string): void {
   console.log(shellenvScript(detectShell(shellArg)));
 }
 
+/** `agent-switch tooling` — ecosystem tool readout (agent-config, rtk, provider
+ *  CLIs). `--json` is the GUI IPC contract: the GUI renders this readout and
+ *  never shells out to detect on its own. */
+function cmdTooling(json = false): void {
+  const tools = checkTooling();
+  if (json) {
+    console.log(JSON.stringify(tools, null, 2));
+    return;
+  }
+  console.log(`agent-switch tooling — platform ${process.platform}\n`);
+  for (const l of formatToolingLines(tools)) console.log(l);
+}
+
 function usage(): void {
   console.log(`agent-switch — switch accounts for Claude Code, Codex, and Antigravity (macOS · Linux · Windows)
 
@@ -1821,6 +1835,7 @@ Provider defaults to claude; pass --provider codex|antigravity for the others.
   agent-switch notify --kind K --title T --message M [--json]   record a notification event
   agent-switch os-notify [on|off|status] [--json]   daemon-side OS desktop notifications (default off)
   agent-switch uninstall [--force]             remove all agent-switch data + daemon
+  agent-switch tooling [--json]                ecosystem tool readout (agent-config, rtk, provider CLIs)
   agent-switch doctor                          per-OS, per-provider self-check`);
 }
 
@@ -1893,6 +1908,7 @@ async function main(): Promise<void> {
     case "remove": case "rm": return cmdRemove(providerId, positional[0], !!flags.force);
     case "shellenv": return cmdShellenv((flags.shell as string) ?? positional[0]);
     case "service": return cmdService(positional[0]);
+    case "tooling": return cmdTooling(!!flags.json);
     case "doctor": return process.exit(await runDoctor());
     case "help": case "--help": case "-h": return usage();
     default: usage(); process.exit(cmd ? 1 : 0);
