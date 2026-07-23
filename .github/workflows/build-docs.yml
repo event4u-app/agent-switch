@@ -1,8 +1,20 @@
 name: Build docs
 
+# Build the Starlight docs site and deploy it to GitHub Pages
+# (https://event4u-app.github.io/agent-switch/).
+#
+# Triggered on a bare-numeric version tag push — the SAME tag that release.yml
+# and publish-npm.yml use — so the docs publish alongside every release. We do
+# NOT use `release: [published]`: release.yml creates the GitHub Release with
+# the GITHUB_TOKEN, and events emitted by GITHUB_TOKEN never trigger further
+# workflow runs, so a `release` trigger would silently never fire. The tag push
+# is done by scripts/release.mjs (a real push), so it does trigger workflows.
+# workflow_dispatch is kept for a one-off manual re-deploy of the current tag.
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+-*"
   workflow_dispatch:
 
 permissions:
@@ -10,10 +22,10 @@ permissions:
   pages: write
   id-token: write
 
-# Allow one concurrent deployment; a newer run cancels an in-progress one.
+# One live deploy at a time; never cancel an in-flight publish.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -38,8 +50,6 @@ jobs:
 
   deploy:
     needs: build
-    # Deploy to Pages only on a published release; workflow_dispatch just builds.
-    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
