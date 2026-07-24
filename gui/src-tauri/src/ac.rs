@@ -802,7 +802,7 @@ pub fn close_settings_window(app: &tauri::AppHandle) {
 pub async fn ac_open_in_browser(
     app: tauri::AppHandle,
     state: tauri::State<'_, AcState>,
-) -> Result<(), AcError> {
+) -> Result<AcStatus, AcError> {
     use tauri_plugin_shell::ShellExt;
 
     let st = state.inner().clone();
@@ -824,7 +824,9 @@ pub async fn ac_open_in_browser(
         .open(format!("http://127.0.0.1:{port}/?token={token}"), None)
         .map_err(|e| AcError::Request {
             message: format!("browser open failed: {e}"),
-        })
+        })?;
+    // The live status feeds the card's provenance line (version · port).
+    Ok(status)
 }
 
 #[cfg(test)]

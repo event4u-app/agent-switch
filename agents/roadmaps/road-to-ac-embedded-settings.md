@@ -102,6 +102,17 @@ from AC's schema) drifts silently the first time AC adds a widget; it
 stays the documented fallback, and its `/api/v1/schema` read is built in
 Phase 1 anyway as the health/version probe.
 
+**Owner decision 2026-07-24 — window entry parked, browser flow is the
+Settings entry.** After hands-on testing the Ecosystem card ships ONE
+"Settings" button that opens agent-config in the system browser (Rust
+builds the token URL; the server is ensured first; the live status feeds
+the provenance line). The separate WebviewWindow flow — `ac_open_settings_window`,
+parent-close propagation, keepalive module — stays implemented and tested
+in Rust/ipc but is deliberately not UI-wired until agent-config ships its
+embed contract (`?embed=1` + capability flag); re-wiring it then is one
+button. All discovery/lifecycle/security invariants below are unchanged
+and in active use by the browser flow.
+
 ## Phase 0 — Falsification spikes
 
 - [~] S0.1 — **Window-lifecycle QA (downgraded from a discovery spike by

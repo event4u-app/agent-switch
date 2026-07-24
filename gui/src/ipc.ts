@@ -94,15 +94,18 @@ export async function acRelease(): Promise<void> {
 /** Open (or focus) the separate settings WebviewWindow. The URL — including
  *  the bearer token — is built entirely in Rust; the token never enters this
  *  webview's JS context. Emits `ac-settings-closed` to this window when the
- *  settings window is destroyed (the keepalive stops on it). */
+ *  settings window is destroyed. Currently not UI-wired (owner decision
+ *  2026-07-24: the browser flow is the Settings entry) — returns to the UI
+ *  once agent-config ships its embed contract. */
 export async function acOpenSettingsWindow(theme: "light" | "dark", profile?: string): Promise<AcStatus> {
   return invoke<AcStatus>("ac_open_settings_window", { theme, profile: profile ?? null });
 }
 
-/** The permanent "Open in browser" escape hatch — AC's own browser bootstrap
- *  URL, built and opened entirely in Rust (token stays out of this webview). */
-export async function acOpenInBrowser(): Promise<void> {
-  return invoke("ac_open_in_browser");
+/** The "Settings" entry: opens AC's own browser bootstrap URL, built and
+ *  opened entirely in Rust (token stays out of this webview). Ensures a live
+ *  server first and returns its status for the card's provenance line. */
+export async function acOpenInBrowser(): Promise<AcStatus> {
+  return invoke<AcStatus>("ac_open_in_browser");
 }
 
 // ---- share: link the global (default ~/.claude) skills/commands/agents/CLAUDE.md

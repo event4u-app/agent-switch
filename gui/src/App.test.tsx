@@ -281,7 +281,7 @@ beforeEach(() => {
   ipc.agentConfigVersion.mockResolvedValue("9.2.0");
   ipc.runToolingAction.mockResolvedValue(undefined);
   ipc.acOpenSettingsWindow.mockResolvedValue({ status: "live", port: 41066, pid: 4242, version: "9.7.0" });
-  ipc.acOpenInBrowser.mockResolvedValue(undefined);
+  ipc.acOpenInBrowser.mockResolvedValue({ status: "live", port: 41066, pid: 4242, version: "9.7.0" });
   ipc.acForceRestart.mockResolvedValue({ status: "live", port: 41066, pid: 4243, version: "9.7.0" });
   ipc.acApi.mockResolvedValue({ status: 200, body: "{}" });
   ipc.acEnsure.mockResolvedValue({ status: "live", port: 41066, pid: 4242, version: "9.7.0" });
@@ -661,19 +661,20 @@ describe("App", () => {
     expect(screen.queryByRole("switch", { name: /codex cli/i })).toBeNull(); // providers moved to Ecosystem
   });
 
-  it("opens the embedded settings window via Rust (token never enters this webview) and shows provenance", async () => {
+  it("the Settings button opens agent-config in the browser via Rust and shows provenance", async () => {
     ipc.agentConfigVersion.mockResolvedValue("9.2.0");
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /open agent-config settings/i }));
-    await waitFor(() => expect(ipc.acOpenSettingsWindow).toHaveBeenCalledWith("dark"));
+    await waitFor(() => expect(ipc.acOpenInBrowser).toHaveBeenCalled());
+    expect(ipc.acOpenSettingsWindow).not.toHaveBeenCalled(); // window flow parked until the embed contract
     // Provenance: version, port, target — the user always sees whose settings they edit.
     expect(await screen.findByText(/v9\.7\.0 · port 41066 · target: global/i)).toBeTruthy();
   });
 
   it("wedged server → consent UI; Force restart is user-initiated, never silent", async () => {
     ipc.agentConfigVersion.mockResolvedValue("9.2.0");
-    ipc.acOpenSettingsWindow.mockRejectedValueOnce({ kind: "wedged", pid: 777 });
+    ipc.acOpenInBrowser.mockRejectedValueOnce({ kind: "wedged", pid: 777 });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /open agent-config settings/i }));
@@ -685,19 +686,19 @@ describe("App", () => {
 
   it("spawn failure surfaces the exit code, stderr and the manual command — actionable, never vague", async () => {
     ipc.agentConfigVersion.mockResolvedValue("9.2.0");
-    ipc.acOpenSettingsWindow.mockRejectedValueOnce({ kind: "spawnFailed", exitCode: 1, stderr: "EADDRINUSE" });
+    ipc.acOpenInBrowser.mockRejectedValueOnce({ kind: "spawnFailed", exitCode: 1, stderr: "EADDRINUSE" });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
     fireEvent.click(await screen.findByRole("button", { name: /open agent-config settings/i }));
     expect(await screen.findByText(/exit 1.*EADDRINUSE.*agent-config ui:serve/i)).toBeTruthy();
   });
 
-  it("the permanent Open-in-browser escape hatch goes through Rust", async () => {
+  it("there is exactly one settings entry — no separate Open-in-browser button remains", async () => {
     ipc.agentConfigVersion.mockResolvedValue("9.2.0");
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
-    fireEvent.click(await screen.findByRole("button", { name: /open in browser/i }));
-    await waitFor(() => expect(ipc.acOpenInBrowser).toHaveBeenCalled());
+    await screen.findByRole("button", { name: /open agent-config settings/i });
+    expect(screen.queryByRole("button", { name: /open in browser/i })).toBeNull();
   });
 
   it("fires an update notification only when agent-config is installed AND newer exists", async () => {

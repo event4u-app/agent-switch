@@ -45,7 +45,6 @@ import {
   switchProfile,
   agentConfigVersion,
   runToolingAction,
-  acOpenSettingsWindow,
   acOpenInBrowser,
   acForceRestart,
   type AcStatus,
@@ -112,8 +111,6 @@ import {
 } from "./settings-store.js";
 import { checkForUpdate, fetchLatestRelease, isNewer, releaseKind, type UpdateCheck, type UpdateKind } from "./updates.js";
 import { AgentConfigCard, AgentConfigMark } from "./AgentConfigCard.js";
-import { startKeepalive, stopKeepalive } from "./ac-keepalive.js";
-import { listen } from "@tauri-apps/api/event";
 import { ToolingSection, type ToolingCache } from "./ToolingSection.js";
 import { UsageSection, type UsageHistoryCache } from "./UsageSection.js";
 import { Sidebar, type Section } from "./Sidebar.js";
@@ -208,45 +205,24 @@ export default function App() {
   // First-run recommendation card on Profiles: a dismissal is permanent (the
   // recommendation lives on in the Ecosystem section, visited deliberately).
   const [acCardDismissed, setAcCardDismissed] = useState(() => getAgentConfigCardDismissed());
-  // Embedded settings window: last live status (provenance), pending error
-  // (failure states are explicit, incl. the consent-gated wedged case).
+  // agent-config settings entry (browser flow): last live status (provenance),
+  // pending error (failure states are explicit, incl. the consent-gated wedged
+  // case). The embedded WebviewWindow flow stays available in Rust/ipc but is
+  // deliberately not UI-wired until agent-config ships its embed contract.
   const [acLive, setAcLive] = useState<Extract<AcStatus, { status: "live" }> | null>(null);
   const [acOpenError, setAcOpenError] = useState<AcError | null>(null);
   const [acBusy, setAcBusy] = useState(false);
-
-  // The keepalive runs only while the settings window exists: started on a
-  // successful open, stopped when Rust reports the window destroyed (and on
-  // unmount). A ping failing while it runs triggers one transparent respawn
-  // inside the keepalive itself.
-  useEffect(() => {
-    const un = listen("ac-settings-closed", () => stopKeepalive());
-    return () => {
-      void un.then((f) => f());
-      stopKeepalive();
-    };
-  }, []);
 
   async function openAcSettings() {
     setAcBusy(true);
     setAcOpenError(null);
     try {
-      const effectiveTheme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
-      const status = await acOpenSettingsWindow(effectiveTheme);
+      const status = await acOpenInBrowser();
       if (status.status === "live") setAcLive(status);
-      startKeepalive();
     } catch (e) {
       setAcOpenError(e as AcError);
     } finally {
       setAcBusy(false);
-    }
-  }
-
-  async function openAcInBrowser() {
-    setAcOpenError(null);
-    try {
-      await acOpenInBrowser();
-    } catch (e) {
-      setAcOpenError(e as AcError);
     }
   }
 
@@ -1011,7 +987,6 @@ export default function App() {
               onOpenRepo={() => void openUrl(AGENT_CONFIG_REPO_URL)}
               onRun={runAgentConfigAction}
               onOpenSettings={() => void openAcSettings()}
-              onOpenInBrowser={() => void openAcInBrowser()}
               onForceRestart={() => void forceRestartAc()}
               onCancelError={() => setAcOpenError(null)}
             />
@@ -1517,7 +1492,6 @@ function AcPrimaryCard({
   onOpenRepo,
   onRun,
   onOpenSettings,
-  onOpenInBrowser,
   onForceRestart,
   onCancelError,
 }: {
@@ -1531,7 +1505,6 @@ function AcPrimaryCard({
   /** Background install/upgrade; never rejects (failures → notifications). */
   onRun: (action: "install" | "upgrade") => Promise<void>;
   onOpenSettings: () => void;
-  onOpenInBrowser: () => void;
   onForceRestart: () => void;
   onCancelError: () => void;
 }) {
@@ -1627,9 +1600,6 @@ function AcPrimaryCard({
               <Button size="sm" variant="outline" onClick={onOpenRepo}>
                 Open repo
               </Button>
-              <Button size="sm" variant="secondary" onClick={onOpenInBrowser}>
-                Open in browser
-              </Button>
               <Button size="sm" onClick={onOpenSettings} disabled={acBusy} aria-label="Open agent-config settings">
                 {acBusy ? "Opening…" : "Settings"}
               </Button>
@@ -1661,13 +1631,13 @@ function AcPrimaryCard({
                       ? "The server was restarted externally — try again."
                       : "message" in acOpenError
                         ? acOpenError.message
-                        : "The server is not reachable — try again or open in browser."}
+                        : "The server is not reachable — try again."}
               </p>
             ))}
           <p className="mt-1.5 text-[11px] text-muted-foreground">
             {acLive
               ? `v${acLive.version ?? status.current ?? "?"} · port ${acLive.port} · target: global configuration`
-              : "The window shows agent-config's real UI — releases without the embed contract include their own navigation inside it."}
+              : "Opens agent-config’s settings in your browser."}
           </p>
         </div>
       )}
