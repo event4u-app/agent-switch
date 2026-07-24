@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as path from "node:path";
 
 import { rebind, restoreRebind, readBinding, RebindError, FRESHEN_FLOOR_MS, type RebindDeps } from "../src/rebind.js";
 import { configDir } from "../src/profiles.js";
@@ -14,8 +15,8 @@ const pConfig = configDir("claude", "P");
 const aConfig = configDir("claude", "A");
 const pSvc = "svc:" + pConfig;
 const aSvc = "svc:" + aConfig;
-const aFile = aConfig + "/.credentials.json";
-const marker = pConfig + "/.agent-switch-rebind.json";
+// Build paths with path.join so keys match rebind.ts (backslashes on Windows).
+const aFile = path.join(aConfig, ".credentials.json");
 
 interface Fake {
   kc: Map<string, string>;
