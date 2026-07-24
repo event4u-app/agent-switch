@@ -1358,7 +1358,8 @@ function cmdLabel(providerId: ProviderId, name?: string, label?: string): void {
   console.log(`Labeled ${providerId}/${name} as ${label}.`);
 }
 
-/** Enable/disable opt-in auto-switch, or show the current setting. */
+/** Enable/disable opt-in near-limit notifications (notify + suggest, never an
+ *  automatic switch), or show the current setting. */
 /** Rename a profile (move its config dir + carry active/label/mappings). */
 function cmdRename(providerId: ProviderId, from?: string, to?: string): void {
   const n = requireProfile(providerId, from, "rename");
@@ -1403,7 +1404,10 @@ function cmdAutoswitch(
   flags: Record<string, string | boolean> = {},
   value?: string,
 ): void {
-  // `autoswitch strategy [reset-first|rotation-first]` — global switch behaviour.
+  // `autoswitch strategy [reset-first|rotation-first]` — DEPRECATED: the daemon
+  // no longer switches automatically, so this no longer chooses a rotation
+  // target. The setting is still read/written (plumbing kept), but has no effect
+  // on switching; the Codex reset-redeem-then-stay path still honours it.
   if (mode === "strategy") {
     if (value === "reset-first" || value === "rotation-first") {
       setSwitchStrategy(value as SwitchStrategy);
@@ -1413,7 +1417,7 @@ function cmdAutoswitch(
     if (flags.json) {
       console.log(JSON.stringify({ strategy: readSwitchStrategy() }));
     } else {
-      console.log(`Auto-switch strategy: ${readSwitchStrategy()}.`);
+      console.log(`Switch strategy: ${readSwitchStrategy()} (deprecated — no effect on switching; the daemon never switches automatically).`);
     }
     return;
   }
@@ -1444,25 +1448,14 @@ function cmdAutoswitch(
       ...(tag !== undefined ? { tag } : {}),
     });
     const tagNote = cfg.tag === "all" ? "" : `, tag ${cfg.tag}`;
-    console.log(`Auto-switch for ${providerId} ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%${tagNote}).`);
+    console.log(`Near-limit notifications for ${providerId} ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%${tagNote}).`);
     if (cfg.enabled) {
-      // Usage-policy disclosure — restored deliberately. Automated rotation on
-      // quota signals pools separate subscriptions to route around per-account
-      // rate limits; a prior review found this can violate the provider's usage
-      // policy. Enabling is the user's decision, but the risk must be stated.
-      console.warn(
-        "⚠️  Usage-policy warning: quota-triggered rotation across accounts can violate\n" +
-          "   the providers' usage policies — it pools separate subscriptions to route around\n" +
-          "   per-account rate limits. An internal review unanimously recommended removing it;\n" +
-          "   it ships off-by-default anyway. See the README before enabling. (Per-context\n" +
-          "   profile switching — private / work / client — is unaffected; this applies only\n" +
-          "   to automated quota-driven rotation.)",
-      );
       const strat = readSwitchStrategy();
       console.log(
-        `Strategy: ${strat}${strat === "reset-first" ? " (redeem a banked reset before switching, Codex)" : ""}.\n` +
-          `The daemon moves the active ${providerId} profile to the account with the most headroom once the\n` +
-          "active one hits the threshold. Run `agent-switch service start` so the daemon is watching.",
+        `Once the active ${providerId} profile hits the threshold, the daemon NOTIFIES you and SUGGESTS the\n` +
+          "account with the most headroom — it never switches automatically; switching stays a manual action.\n" +
+          (strat === "reset-first" ? "On Codex it redeems a banked reset first (and stays on the account) before suggesting a switch.\n" : "") +
+          "Run `agent-switch service start` so the daemon is watching.",
       );
     }
     return;
@@ -1473,11 +1466,11 @@ function cmdAutoswitch(
       console.log(JSON.stringify(readAutoSwitchAll()));
       return;
     }
-    console.log(`strategy: ${readSwitchStrategy()}`);
+    console.log(`strategy: ${readSwitchStrategy()} (deprecated — no effect on switching)`);
     for (const p of providerExplicit ? [providerId] : PROVIDER_IDS) {
       const cfg = readAutoSwitch(p);
       const tagNote = cfg.tag === "all" ? "" : `, tag ${cfg.tag}`;
-      console.log(`${p}: auto-switch ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%${tagNote}).`);
+      console.log(`${p}: near-limit notifications ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%${tagNote}).`);
     }
     return;
   }
@@ -1865,7 +1858,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
-  agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>]   per-provider auto-switch (default OFF)
+  agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>]   notify + suggest near a usage limit; never switches automatically (default OFF)
   agent-switch reset <profile> --provider codex                                redeem one banked Codex rate-limit reset
   agent-switch rename <old> <new> [--provider P]                               rename a profile (name & keep its tag)
   agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
@@ -1876,7 +1869,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch open <app> [profile]            launch a GUI app on a profile, isolated (macOS)
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
   agent-switch service run|start|stop|status|install|uninstall   background usage daemon
-  agent-switch notifications [clear] [--json]  recent notifications (auto-switches, fetch failures)
+  agent-switch notifications [clear] [--json]  recent notifications (usage-limit suggestions, fetch failures)
   agent-switch notify --kind K --title T --message M [--json]   record a notification event
   agent-switch os-notify [on|off|status] [--json]   daemon-side OS desktop notifications (default off)
   agent-switch uninstall [--force]             remove all agent-switch data + daemon

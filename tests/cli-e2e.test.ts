@@ -109,7 +109,7 @@ test("`label` tags a profile and surfaces it in `list --json`", gate, () => {
 test("`autoswitch on --threshold` persists and defaults OFF", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
-    assert.match(run(home, ["autoswitch", "status"]), /claude: auto-switch OFF/);
+    assert.match(run(home, ["autoswitch", "status"]), /claude: near-limit notifications OFF/);
     run(home, ["autoswitch", "on", "--threshold", "88"]); // defaults to claude
     const state = JSON.parse(fs.readFileSync(path.join(home, "state.json"), "utf8"));
     assert.equal(state.autoSwitch.claude.enabled, true);

@@ -1361,8 +1361,8 @@ export default function App() {
                   onClick={() => canAuto && act(() => setAutoSwitch(selected, !auto[selected].enabled))}
                   title={
                     canAuto
-                      ? `Auto-switch the active ${PROVIDER_LABEL[selected]} account to the one with the most headroom when it hits its limit (this provider only)`
-                      : `Auto-switch needs at least 2 ${PROVIDER_LABEL[selected]} profiles to switch between`
+                      ? `Notify when the active ${PROVIDER_LABEL[selected]} account hits its limit and suggest the one with the most headroom — no automatic switch (this provider only)`
+                      : `Near-limit notifications need at least 2 ${PROVIDER_LABEL[selected]} profiles to suggest between`
                   }
                 >
                   <span
@@ -1375,7 +1375,7 @@ export default function App() {
                           : "bg-[hsl(var(--destructive))]",
                     )}
                   />
-                  Auto-switch · {PROVIDER_LABEL[selected]}{" "}
+                  Notify near limit · {PROVIDER_LABEL[selected]}{" "}
                   {!canAuto ? "not available" : auto[selected].enabled ? `on (${auto[selected].threshold}%)` : "off"}
                 </button>
               </div>
@@ -2175,22 +2175,22 @@ function AutoSwitchSettings({
       <CardContent className="space-y-3 p-3">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <div className="text-[13px] font-medium">Auto-switch</div>
+            <div className="text-[13px] font-medium">Notify near limit</div>
             <div className="text-xs text-muted-foreground">
-              Allow switching the active account when it hits its limit. Turning this off hides the per-provider
-              toggles and disables all of them.
+              Notify you and suggest the best-headroom account when the active one hits its limit — never switches
+              automatically. Turning this off hides the per-provider toggles and disables all of them.
             </div>
           </div>
-          <Switch checked={enabled} onCheckedChange={onToggle} aria-label="Auto-switch globally" />
+          <Switch checked={enabled} onCheckedChange={onToggle} aria-label="Near-limit notifications globally" />
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
           <div className="min-w-0">
-            <div className="text-[13px] font-medium">Switch strategy</div>
+            <div className="text-[13px] font-medium">Switch strategy (deprecated)</div>
             <div className="text-xs text-muted-foreground">
-              When auto-switch fires: <span className="font-medium">reset first</span> redeems a banked Codex reset
-              before switching accounts; <span className="font-medium">rotation first</span> switches straight to the
-              account with the most headroom.
+              No longer switches automatically. <span className="font-medium">Reset first</span> still redeems a banked
+              Codex reset (and stays on the account) before suggesting a switch; <span className="font-medium">rotation
+              first</span> just suggests the account with the most headroom. Switching is always manual.
             </div>
           </div>
           <div className="flex shrink-0 gap-1">

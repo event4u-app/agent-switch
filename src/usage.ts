@@ -173,13 +173,14 @@ export interface SwitchCandidate {
 }
 
 /**
- * Opt-in auto-switch decision (pure, no I/O). Given the active profile and the
- * same-provider candidates with their usage, return the profile to switch to,
- * or null. Switches only when the active profile has hit `threshold`% on some
- * window AND another candidate has strictly more headroom (lower max
- * utilization) while itself staying below `threshold`. Ties keep the first
- * candidate. This is a single switch decision gated behind config — never a
- * display ranking.
+ * Opt-in switch SUGGESTION (pure, no I/O). Given the active profile and the
+ * same-provider candidates with their usage, return the profile to suggest
+ * switching to, or null. Suggests only when the active profile has hit
+ * `threshold`% on some window AND another candidate has strictly more headroom
+ * (lower max utilization) while itself staying below `threshold`. Ties keep the
+ * first candidate. This computes the suggestion the daemon notifies with and the
+ * user-clicked switch modal pre-selects — it never performs the switch itself,
+ * and is never a display ranking.
  */
 export function pickSwitchTarget(
   active: string,
