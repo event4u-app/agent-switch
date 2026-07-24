@@ -6,7 +6,7 @@
 
 ## Overall
 
-**68 / 72 steps done · 94%**
+**67 / 71 steps done · 94%**
 
 ```text
 ██████████████████████████████████████░░   94%
@@ -20,7 +20,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 |---|---:|---:|---:|
 | [road-to-1.0.1-review-followup.md](roadmaps/road-to-1.0.1-review-followup.md) | 8 | 1 | 0 |
 | [road-to-ac-embedded-settings.md](roadmaps/road-to-ac-embedded-settings.md) | 26 | 4 | 0 |
-| [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 29 | 1 | 0 |
+| [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 28 | 1 | 1 |
 
 ## Open roadmaps
 
@@ -28,7 +28,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-1.0.1-review-followup.md](roadmaps/road-to-1.0.1-review-followup.md) | 4 | 9 | 0 | 8 | 1 | 0 | 0 | ██████████ 100% |
 | 2 | [road-to-ac-embedded-settings.md](roadmaps/road-to-ac-embedded-settings.md) | 4 | 30 | 0 | 26 | 4 | 0 | [3](#blockers-road-to-ac-embedded-settings) | ██████████ 100% |
-| 3 | [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 5 | 30 | 0 | 29 | 1 | 0 | [2](#blockers-road-to-agent-setup-hub) | ██████████ 100% |
+| 3 | [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 5 | 30 | 0 | 28 | 1 | 1 | [2](#blockers-road-to-agent-setup-hub) | ██████████ 100% |
 | 4 | [road-to-usage-reliability-and-portability.md](roadmaps/road-to-usage-reliability-and-portability.md) | 5 | 13 | 4 | 5 | 3 | 1 | 0 | ██████░░░░ 56% |
 
 ---
@@ -72,13 +72,13 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 ### [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md)
 
-**agent setup hub — AS becomes the place the whole agent stack gets set up** — 29 / 29 done (100%)
+**agent setup hub — AS becomes the place the whole agent stack gets set up** — 28 / 28 done (100%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 0 | Falsification spikes (before any UI work) | ✅ done | 0 | 3 | 0 | 0 | 100% |
 | 1 | Sidebar shell (structure only, zero new features) | ✅ done | 0 | 6 | 0 | 0 | 100% |
-| 2 | Retire the banner into the Ecosystem section (net-negative chrome) | ✅ done | 0 | 6 | 0 | 0 | 100% |
+| 2 | Retire the banner into the Ecosystem section (net-negative chrome) | ✅ done | 0 | 5 | 0 | 1 | 100% |
 | 3 | Tooling section: detect → explain → fix | ✅ done | 0 | 5 | 1 | 0 | 100% |
 | 4 | Record the non-goals (an asset, not paperwork) | ✅ done | 0 | 9 | 0 | 0 | 100% |
 
