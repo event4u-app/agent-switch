@@ -44,6 +44,7 @@ import {
   unlinkProviderBinary,
   switchProfile,
   agentConfigVersion,
+  runToolingAction,
   acOpenSettingsWindow,
   acOpenInBrowser,
   acForceRestart,
@@ -110,12 +111,7 @@ import {
   setProviderFilter,
 } from "./settings-store.js";
 import { checkForUpdate, fetchLatestRelease, isNewer, releaseKind, type UpdateCheck, type UpdateKind } from "./updates.js";
-import {
-  AgentConfigCard,
-  AgentConfigMark,
-  AGENT_CONFIG_INSTALL_COMMAND,
-  AGENT_CONFIG_UPDATE_COMMAND,
-} from "./AgentConfigCard.js";
+import { AgentConfigCard, AgentConfigMark } from "./AgentConfigCard.js";
 import { startKeepalive, stopKeepalive } from "./ac-keepalive.js";
 import { listen } from "@tauri-apps/api/event";
 import { ToolingSection, type ToolingCache } from "./ToolingSection.js";
@@ -735,6 +731,23 @@ export default function App() {
     }
   }
 
+  // One-click background install/upgrade of the companion CLI (owner requirement:
+  // as simple as possible — no terminal, no copied commands). On success the
+  // detection re-runs so both cards flip to installed/current immediately; the
+  // Tooling cache is invalidated so that section's next visit re-sweeps too.
+  // Failures surface ONLY through the notification system — never inline — so
+  // this handler never rejects (the cards rely on that for their busy state).
+  async function runAgentConfigAction(action: "install" | "upgrade") {
+    try {
+      await runToolingAction(action, "agent-config");
+      setToolingCache(null);
+      await detectAgentConfig();
+    } catch (e) {
+      await recordNotification("error", "agent-config setup failed", e instanceof Error ? e.message : String(e));
+      await syncNotifications();
+    }
+  }
+
   // Initial load only. Tab switches do NOT refetch (they display cached/last-known
   // usage); the 5-minute timer and the manual button are the only refresh paths.
   useEffect(() => {
@@ -995,15 +1008,12 @@ export default function App() {
               acBusy={acBusy}
               activeProfile={grouped.claude.find((r) => r.active)?.name ?? null}
               sharedCount={shareProfiles.filter((p) => p.shared).length}
-              isWindows={IS_WINDOWS}
               onOpenRepo={() => void openUrl(AGENT_CONFIG_REPO_URL)}
+              onRun={runAgentConfigAction}
               onOpenSettings={() => void openAcSettings()}
               onOpenInBrowser={() => void openAcInBrowser()}
               onForceRestart={() => void forceRestartAc()}
               onCancelError={() => setAcOpenError(null)}
-              onNotifyError={(message) =>
-                void recordNotification("error", "agent-config setup failed", message).then(syncNotifications)
-              }
             />
             <SharedSetupCard
               active={shareActive}
@@ -1013,10 +1023,6 @@ export default function App() {
               onChangeSource={changeShareSource}
             />
             <ProvidersSettings onChange={refresh} providersWithUi={new Set(apps.map((a) => a.provider))} />
-            <p className="text-[11px] text-muted-foreground">
-              Nothing installs itself — agent-switch is not a proxy. Install commands are copied for your own
-              terminal, never run for you.
-            </p>
             <div className="mt-auto flex items-center justify-between border-t border-border pt-2 text-[11px] text-muted-foreground">
               <span>Profile: {grouped.claude.find((r) => r.active)?.name ?? "—"}</span>
               <span>1 companion tool</span>
@@ -1035,8 +1041,8 @@ export default function App() {
                   view={acView}
                   variant="first-run"
                   devMode={devMode}
-                  isWindows={IS_WINDOWS}
                   onOpenRepo={() => void openUrl(AGENT_CONFIG_REPO_URL)}
+                  onRun={runAgentConfigAction}
                   onDismiss={() => {
                     setAgentConfigCardDismissed();
                     setAcCardDismissed(true);
@@ -1493,11 +1499,13 @@ function EditProfileRow({
  * Ecosystem primary card — agent-config as the section's headline citizen.
  * Merges the former recommend/upgrade card and the separate "agent-config
  * settings" card into one surface: mark + name + version pill, description,
- * install/update copy-command row (never an unattended install), and — once
- * installed — the ACTIVE IN THIS PROFILE row with the shared-across chip and
- * the Open repo / Settings actions. Every embedded-settings failure state
- * (incl. the consent-gated wedged restart and the permanent Open-in-browser
- * escape hatch) is relocated here unchanged.
+ * a one-click Install/Update action (runs `tooling install|upgrade` in the
+ * background via `onRun` — the parent owns the run, the re-detection, and
+ * routes failures through the notification system, so `onRun` never
+ * rejects), and — once installed — the ACTIVE IN THIS PROFILE row with the
+ * shared-across chip and the Open repo / Settings actions. Every
+ * embedded-settings failure state (incl. the consent-gated wedged restart and
+ * the permanent Open-in-browser escape hatch) is relocated here unchanged.
  */
 function AcPrimaryCard({
   status,
@@ -1506,13 +1514,12 @@ function AcPrimaryCard({
   acBusy,
   activeProfile,
   sharedCount,
-  isWindows,
   onOpenRepo,
+  onRun,
   onOpenSettings,
   onOpenInBrowser,
   onForceRestart,
   onCancelError,
-  onNotifyError,
 }: {
   status: AgentConfigStatus | null;
   acLive: Extract<AcStatus, { status: "live" }> | null;
@@ -1520,15 +1527,15 @@ function AcPrimaryCard({
   acBusy: boolean;
   activeProfile: string | null;
   sharedCount: number;
-  isWindows: boolean;
   onOpenRepo: () => void;
+  /** Background install/upgrade; never rejects (failures → notifications). */
+  onRun: (action: "install" | "upgrade") => Promise<void>;
   onOpenSettings: () => void;
   onOpenInBrowser: () => void;
   onForceRestart: () => void;
   onCancelError: () => void;
-  onNotifyError: (message: string) => void;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [runBusy, setRunBusy] = useState(false);
   if (!status) return null; // detection pending — never flash a wrong state
 
   const mode: "install" | "update" | "current" = !status.installed
@@ -1536,15 +1543,13 @@ function AcPrimaryCard({
     : status.current && status.latest && isNewer(status.latest, status.current)
       ? "update"
       : "current";
-  const command = mode === "update" ? AGENT_CONFIG_UPDATE_COMMAND : AGENT_CONFIG_INSTALL_COMMAND;
 
-  async function copyCommand() {
+  async function run() {
+    setRunBusy(true);
     try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (e) {
-      onNotifyError(e instanceof Error ? e.message : String(e)); // notification only — nothing inline
+      await onRun(mode === "update" ? "upgrade" : "install");
+    } finally {
+      setRunBusy(false);
     }
   }
 
@@ -1591,21 +1596,17 @@ function AcPrimaryCard({
       </div>
 
       {mode !== "current" && (
-        <>
-          <div className="mt-2.5 flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-md bg-muted px-2 py-1 font-mono text-xs">{command}</code>
-            <Button size="sm" onClick={() => void copyCommand()}>
-              {copied ? <Check /> : <Copy />}
-              {copied ? "Copied" : mode === "update" ? "Copy update command" : "Copy install command"}
-            </Button>
-          </div>
-          {!isWindows && (
-            <p className="mt-1.5 text-[11px] text-muted-foreground">
-              Run it in your own terminal. If it fails with EACCES, see npm&apos;s permissions guide (or use a Node
-              version manager).
-            </p>
-          )}
-        </>
+        <div className="mt-2.5">
+          <Button size="sm" disabled={runBusy} onClick={() => void run()}>
+            {runBusy
+              ? mode === "update"
+                ? "Updating…"
+                : "Installing…"
+              : mode === "update"
+                ? `Update to v${status.latest}`
+                : "Install"}
+          </Button>
+        </div>
       )}
 
       {status.installed && (
@@ -1655,7 +1656,7 @@ function AcPrimaryCard({
                 {acOpenError.kind === "spawnFailed" || acOpenError.kind === "startTimeout"
                   ? `The agent-config server failed to start${"exitCode" in acOpenError && acOpenError.exitCode !== null ? ` (exit ${acOpenError.exitCode})` : ""}${acOpenError.stderr ? `: ${acOpenError.stderr}` : "."} Run it manually: agent-config ui:serve`
                   : acOpenError.kind === "notInstalled"
-                    ? "agent-config is not installed — copy the install command above."
+                    ? "agent-config is not installed — use the Install button above."
                     : acOpenError.kind === "tokenRotated"
                       ? "The server was restarted externally — try again."
                       : "message" in acOpenError

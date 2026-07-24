@@ -128,6 +128,14 @@ variant per OS from data, not hope.
 **Owner amendments after hands-on testing (2026-07-23, supersede where
 they conflict):**
 
+- **S0.3 amended again (2026-07-24) — agent-config installs go fully
+  background.** The agent-config cards (first-run + Ecosystem primary)
+  run `tooling install|upgrade agent-config` silently via the CLI
+  runner (PATH-augmented), button shows a busy state, success re-detects
+  and flips the card, failure surfaces as a notification — no terminal,
+  no copy row. The Tooling section keeps its terminal-visible runs. The
+  Ecosystem boundary footnote ("nothing installs itself…") is removed —
+  it became false; the no-proxy stance stays in NON-GOALS.md.
 - **S0.3 amended — visible runs instead of copy-only.** The maintainer
   wants one-click install/update for rtk, agent-config and the provider
   CLIs. Mechanism: the GUI runs `agent-switch tooling install|upgrade
@@ -204,8 +212,9 @@ one revert.
       into (`share.ts` links settings.json, **keybindings.json**, CLAUDE.md
       + skills/, commands/, agents/; the spec's file list must include all
       three files).
-- [x] One boundary line on the page: nothing installs itself; agent-switch
+- [-] One boundary line on the page: nothing installs itself; agent-switch
       is not a proxy.
+      <!-- cancelled 2026-07-24 (owner): the line shipped, then was removed — it became false once installs are one-click and run by agent-switch itself; the no-proxy boundary stays documented in NON-GOALS.md -->
 - [x] Tests: banner render-site test updated; first-run card self-retire
       state test.
       <!-- done 2026-07-23: AgentConfigBanner.tsx retired -> AgentConfigCard.tsx (ecosystem + dismissible first-run variants, copy-command only per S0.3); install/upgrade spawns removed from ipc.ts + capabilities allowlist; Ecosystem section = card + shared-setup row + provider link-outs + boundary line; dismissal persisted in settings-store; vitest 204/204, tsc clean -->

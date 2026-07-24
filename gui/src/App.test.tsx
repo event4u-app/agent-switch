@@ -53,6 +53,7 @@ const ipc = vi.hoisted(() => ({
   getOsNotify: vi.fn(),
   setOsNotify: vi.fn(),
   agentConfigVersion: vi.fn(),
+  runToolingAction: vi.fn(),
   acOpenSettingsWindow: vi.fn(),
   acOpenInBrowser: vi.fn(),
   acForceRestart: vi.fn(),
@@ -278,6 +279,7 @@ beforeEach(() => {
   // agent-config detected as installed + up to date → the first-run card is
   // hidden by default, so it never interferes with the existing assertions.
   ipc.agentConfigVersion.mockResolvedValue("9.2.0");
+  ipc.runToolingAction.mockResolvedValue(undefined);
   ipc.acOpenSettingsWindow.mockResolvedValue({ status: "live", port: 41066, pid: 4242, version: "9.7.0" });
   ipc.acOpenInBrowser.mockResolvedValue(undefined);
   ipc.acForceRestart.mockResolvedValue({ status: "live", port: 41066, pid: 4243, version: "9.7.0" });
@@ -581,13 +583,14 @@ describe("App", () => {
     await waitFor(() => expect(ipc.profileUsage).toHaveBeenCalled()); // manual click bypassed the cooldown
   });
 
-  it("shows the agent-config first-run card (copy-command, nothing spawned) when it is not installed", async () => {
+  it("shows the agent-config first-run card with a one-click Install (no copy commands) when it is not installed", async () => {
     ipc.agentConfigVersion.mockResolvedValue(null); // not installed
     render(<App />);
     expect(await screen.findByText(/supercharge your ai agents/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /copy install command/i })).toBeTruthy();
-    // Copy-command only — no unattended install button exists anywhere.
-    expect(screen.queryByRole("button", { name: /^install \(free\)$/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /^install$/i })).toBeTruthy();
+    // One-click only — the copy-command affordance is gone.
+    expect(screen.queryByRole("button", { name: /copy install command/i })).toBeNull();
+    expect(screen.queryByText(/EACCES/)).toBeNull();
   });
 
   it("hides the first-run card on other sections — Profiles only (Ecosystem has the primary card)", async () => {
@@ -597,9 +600,9 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /^usage$/i }));
     await waitFor(() => expect(screen.queryByText(/supercharge your ai agents/i)).toBeNull()); // gone
     fireEvent.click(screen.getByRole("button", { name: /^ecosystem$/i }));
-    // The Ecosystem primary card renders the install state (copy-command only).
+    // The Ecosystem primary card renders the install state (one-click button).
     expect(await screen.findByText(/not installed/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /copy install command/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^install$/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /dismiss agent-config recommendation/i })).toBeNull();
   });
 
@@ -631,19 +634,19 @@ describe("App", () => {
     expect(await screen.findByText(/v9\.2\.0 · current/i)).toBeTruthy(); // status pill
     expect(screen.getByText(/active in this profile/i)).toBeTruthy();
     expect(await screen.findByText(/shared across 2/i)).toBeTruthy(); // backed by shareStatus
-    expect(screen.getByText(/nothing installs itself/i)).toBeTruthy(); // the boundary line
     expect(screen.getByText(/shared setup/i)).toBeTruthy();
     expect(screen.getByText(/^Profile: work$/)).toBeTruthy(); // section footer
     expect(screen.getByText(/1 companion tool/i)).toBeTruthy();
   });
 
-  it("the Ecosystem primary card shows the update pill + copy-update command for an older install", async () => {
+  it("the Ecosystem primary card shows the update pill + one-click Update for an older install", async () => {
     ipc.agentConfigVersion.mockResolvedValue("9.1.0"); // installed, older
     fetchLatest.mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
     expect(await screen.findByText(/v9\.1\.0 → v9\.2\.0 available/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /copy update command/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Update to v9.2.0" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /copy update command/i })).toBeNull();
     // Installed → the settings entry point is still there alongside the update hint.
     expect(screen.getByRole("button", { name: /open agent-config settings/i })).toBeTruthy();
   });
@@ -1178,7 +1181,7 @@ describe("sidebar sections", () => {
     await waitFor(() => expect(ipc.toolingStatus).toHaveBeenCalled());
     expect((await screen.findAllByTestId("tooling-row")).length).toBe(5);
     fireEvent.click(within(nav).getByRole("button", { name: "Ecosystem" }));
-    expect(await screen.findByText(/nothing installs itself/i)).toBeTruthy();
+    expect(await screen.findByText(/shared setup/i)).toBeTruthy();
     fireEvent.click(within(nav).getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("tab", { name: /general/i })).toBeTruthy();
     fireEvent.click(within(nav).getByRole("button", { name: "Profiles" }));
@@ -1265,5 +1268,58 @@ describe("tooling actions (owner amendment: visible runs in the embedded termina
     fireEvent.click(await screen.findByRole("button", { name: "Update to v9.9.0" }));
     const term = await screen.findByTestId("term");
     expect(term.textContent).toContain("tooling upgrade agent-config");
+  });
+});
+
+describe("agent-config one-click install/update (owner requirement: fully in the background, no terminal)", () => {
+  it("first-run Install: busy state, exact args, no terminal, card retires after re-detection", async () => {
+    ipc.agentConfigVersion.mockResolvedValueOnce(null); // not installed at mount; 9.2.0 after the install
+    let finish!: () => void;
+    ipc.runToolingAction.mockImplementation(() => new Promise<void>((r) => (finish = r)));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^install$/i }));
+    expect(ipc.runToolingAction).toHaveBeenCalledWith("install", "agent-config");
+    // Background run: disabled busy button, and NO embedded terminal anywhere.
+    const busy = await screen.findByRole("button", { name: "Installing…" });
+    expect((busy as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByTestId("term")).toBeNull();
+    expect(ipc.agentConfigVersion).toHaveBeenCalledTimes(1); // mount detection only, so far
+    finish();
+    // Success → detection re-ran and the card retired (installed + current).
+    await waitFor(() => expect(ipc.agentConfigVersion).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText(/supercharge your ai agents/i)).toBeNull());
+  });
+
+  it("Ecosystem Install runs `tooling install agent-config` in the background and the pill flips to current", async () => {
+    ipc.agentConfigVersion.mockResolvedValueOnce(null); // not installed at mount
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    expect(await screen.findByText(/not installed/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^install$/i }));
+    await waitFor(() => expect(ipc.runToolingAction).toHaveBeenCalledWith("install", "agent-config"));
+    expect(screen.queryByTestId("term")).toBeNull(); // no terminal opened
+    expect(await screen.findByText(/v9\.2\.0 · current/i)).toBeTruthy(); // re-detected on success
+  });
+
+  it("Ecosystem Update runs `tooling upgrade agent-config` and re-detects to current", async () => {
+    ipc.agentConfigVersion.mockResolvedValueOnce("9.1.0"); // older at mount; 9.2.0 after the upgrade
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Update to v9.2.0" }));
+    await waitFor(() => expect(ipc.runToolingAction).toHaveBeenCalledWith("upgrade", "agent-config"));
+    expect(screen.queryByTestId("term")).toBeNull(); // no terminal opened
+    expect(await screen.findByText(/v9\.2\.0 · current/i)).toBeTruthy(); // pill flipped
+  });
+
+  it("a failed run routes the error through the notification system only — never inline", async () => {
+    ipc.agentConfigVersion.mockResolvedValue(null); // stays not installed
+    ipc.runToolingAction.mockRejectedValue(new Error("npm ERR! EACCES"));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^install$/i }));
+    await waitFor(() =>
+      expect(ipc.recordNotification).toHaveBeenCalledWith("error", "agent-config setup failed", "npm ERR! EACCES"),
+    );
+    expect(screen.queryByText(/EACCES/)).toBeNull(); // nothing inline
+    expect(await screen.findByRole("button", { name: /^install$/i })).toBeTruthy(); // busy cleared, retry possible
   });
 });

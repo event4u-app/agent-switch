@@ -121,8 +121,10 @@ Where the deleted footer banner goes.
 - Shared setup (`share on/off`) is surfaced here, since it is the tree
   agent-config installs into (`share.ts` links `settings.json`,
   `keybindings.json`, `CLAUDE.md` + `skills/`, `commands/`, `agents/`).
-- One boundary line on the page: nothing installs itself, agent-switch is
-  not a proxy.
+- No boundary footnote (owner amendment 2026-07-24: installs are
+  one-click and run by agent-switch itself — background for
+  agent-config, terminal-visible in Tooling — so "nothing installs
+  itself" would be false; the no-proxy stance lives in NON-GOALS.md).
 
 ### 5. Ecosystem › agent-config settings
 - Nested sub-item, not a sixth section.

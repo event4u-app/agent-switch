@@ -3,9 +3,10 @@
  *
  * The GUI recommends the companion CLI (`@event4u/agent-config`) via the
  * Ecosystem card and a dismissible first-run card on Profiles; the action is
- * copy-the-command (never an unattended install). Detection lives in `ipc.ts`
- * (Tauri shell); this module holds the pure view-derivation so it is
- * unit-testable, and reuses the version math from `updates.ts`.
+ * a one-click background `tooling install|upgrade agent-config` run (ipc's
+ * `runToolingAction`). Detection lives in `ipc.ts` (Tauri shell); this module
+ * holds the pure view-derivation so it is unit-testable, and reuses the
+ * version math from `updates.ts`.
  */
 
 import { isNewer } from "./updates.js";

@@ -31,10 +31,6 @@ export async function agentConfigVersion(): Promise<string | null> {
   }
 }
 
-// Install/upgrade are deliberately NOT spawned by the GUI (copy-command only):
-// unattended `npm i -g` fails on most stock macOS/Linux setups and even a
-// success stays invisible to the already-running process's PATH.
-
 // ---- agent-config local server (embedded settings — ac.rs Tauri commands) ----
 // All AC API traffic goes through Rust: a Rust request sends no Origin header,
 // so AC's browser-origin allow-list is skipped by design; a fetch() from this
@@ -172,6 +168,14 @@ export interface ToolingEntry {
  *  caches the result and shows its age rather than re-sweeping per render). */
 export async function toolingStatus(): Promise<ToolingEntry[]> {
   return JSON.parse(await runCli(["tooling", "--json"]));
+}
+
+/** Run `agent-switch tooling install|upgrade <id>` in the background (no
+ *  terminal). Rejects with the CLI's stderr on a non-zero exit. The CLI runner
+ *  augments PATH itself (npmSearchPath), so npm resolves even from the
+ *  stripped GUI environment. */
+export async function runToolingAction(action: "install" | "upgrade", id: ToolingId): Promise<void> {
+  await runCli(["tooling", action, id]);
 }
 
 export async function listProfiles(): Promise<ProfileRow[]> {

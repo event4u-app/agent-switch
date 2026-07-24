@@ -1,14 +1,7 @@
 import { useState } from "react";
-import { Copy, Check, Eye, X } from "lucide-react";
+import { Eye, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AgentConfigView } from "./agent-config.js";
-
-/** Copy-to-clipboard install/update commands. Installs are NEVER run by the
- *  GUI: unattended `npm i -g` fails on most stock macOS/Linux setups (EACCES,
- *  GUI-vs-shell PATH divergence) and even a success stays invisible to the
- *  already-running process — the user runs the command in their own shell. */
-export const AGENT_CONFIG_INSTALL_COMMAND = "npm install -g @event4u/agent-config";
-export const AGENT_CONFIG_UPDATE_COMMAND = "npm install -g @event4u/agent-config@latest";
 
 /**
  * Generated brand mark for the card — a gradient rounded square with a
@@ -54,9 +47,10 @@ function previewView(mode: (typeof PREVIEW_MODES)[number], real: VisibleView): V
  * Recommendation / upgrade card for the companion CLI. Two render sites:
  * the Ecosystem section (`variant="ecosystem"`, permanent, user-visited) and
  * a first-run variant on Profiles (`variant="first-run"`, dismissible — a
- * dismissal is permanent, persisted by the parent). The action copies the
- * install/update command to the clipboard; a copy failure is surfaced ONLY
- * through the notification system (`onNotifyError`) — never inline. In dev
+ * dismissal is permanent, persisted by the parent). The primary action runs
+ * the install/upgrade one-click in the background via `onRun`; the parent
+ * owns the run (IPC + re-detection) and routes any failure through the
+ * notification system — never inline, so `onRun` must not reject. In dev
  * mode a preview toggle cycles through every display, and a "Test error"
  * button exercises the error path.
  */
@@ -64,35 +58,35 @@ export function AgentConfigCard({
   view,
   variant,
   devMode,
-  isWindows,
   onOpenRepo,
+  onRun,
   onDismiss,
   onNotifyError,
 }: {
   view: VisibleView;
   variant: "ecosystem" | "first-run";
   devMode: boolean;
-  isWindows: boolean;
   onOpenRepo: () => void;
+  /** Runs `tooling install|upgrade agent-config` in the background. Never
+   *  rejects — the parent reports failures via the notification system. */
+  onRun: (action: "install" | "upgrade") => Promise<void>;
   /** first-run only: permanent dismissal, persisted by the parent. */
   onDismiss?: () => void;
   onNotifyError: (message: string) => void;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
   // Dev-only preview cursor over the 3 states — starts on the real (detected)
   // one, so cycling visits each display exactly once (no duplicate real state).
   const [previewIdx, setPreviewIdx] = useState(() => Math.max(0, PREVIEW_MODES.indexOf(view.mode)));
 
   const shown = devMode ? previewView(PREVIEW_MODES[previewIdx], view) : view;
-  const command = shown.mode === "update" ? AGENT_CONFIG_UPDATE_COMMAND : AGENT_CONFIG_INSTALL_COMMAND;
 
-  async function copyCommand() {
+  async function run() {
+    setBusy(true);
     try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (e) {
-      onNotifyError(e instanceof Error ? e.message : String(e)); // notification only — nothing inline
+      await onRun(shown.mode === "update" ? "upgrade" : "install");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -111,7 +105,7 @@ export function AgentConfigCard({
         ? `Installed v${shown.current} · v${shown.latest} available.`
         : `Installed v${shown.current} · ${shown.latest ? `latest is v${shown.latest}` : "latest unknown"}.`;
 
-  const showCommand = shown.mode === "install" || shown.mode === "update";
+  const showAction = shown.mode === "install" || shown.mode === "update";
 
   return (
     <div className="rounded-[10px] border border-border bg-card px-4 py-3">
@@ -153,6 +147,17 @@ export function AgentConfigCard({
               <Eye />
             </Button>
           )}
+          {showAction && (
+            <Button size="sm" disabled={busy} onClick={() => void run()}>
+              {busy
+                ? shown.mode === "update"
+                  ? "Updating…"
+                  : "Installing…"
+                : shown.mode === "update"
+                  ? `Update to v${shown.latest}`
+                  : "Install"}
+            </Button>
+          )}
           {variant === "first-run" && (
             <Button
               size="icon"
@@ -167,21 +172,6 @@ export function AgentConfigCard({
           )}
         </div>
       </div>
-      {showCommand && (
-        <div className="mt-2.5 flex items-center gap-2">
-          <code className="min-w-0 flex-1 truncate rounded-md bg-muted px-2 py-1 font-mono text-xs">{command}</code>
-          <Button size="sm" onClick={() => void copyCommand()}>
-            {copied ? <Check /> : <Copy />}
-            {copied ? "Copied" : shown.mode === "update" ? "Copy update command" : "Copy install command"}
-          </Button>
-        </div>
-      )}
-      {showCommand && !isWindows && (
-        <p className="mt-1.5 text-[11px] text-muted-foreground">
-          Run it in your own terminal. If it fails with EACCES, see npm&apos;s permissions guide (or use a Node
-          version manager).
-        </p>
-      )}
     </div>
   );
 }
