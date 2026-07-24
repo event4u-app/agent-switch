@@ -6,10 +6,10 @@
 
 ## Overall
 
-**83 / 102 steps done · 81%**
+**87 / 102 steps done · 85%**
 
 ```text
-████████████████████████████████░░░░░░░░   81%
+██████████████████████████████████░░░░░░   85%
 ```
 
 ## ⚠️ Iron Law 3 — unresolved deferred items
@@ -21,6 +21,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | [road-to-1.0.1-review-followup.md](roadmaps/road-to-1.0.1-review-followup.md) | 8 | 1 | 0 |
 | [road-to-ac-embedded-settings.md](roadmaps/road-to-ac-embedded-settings.md) | 26 | 4 | 0 |
 | [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 28 | 1 | 1 |
+| [road-to-usage-reliability-and-portability.md](roadmaps/road-to-usage-reliability-and-portability.md) | 9 | 3 | 1 |
 
 ## Open roadmaps
 
@@ -30,7 +31,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | 2 | [road-to-ac-embedded-settings.md](roadmaps/road-to-ac-embedded-settings.md) | 4 | 30 | 0 | 26 | 4 | 0 | [3](#blockers-road-to-ac-embedded-settings) | ██████████ 100% |
 | 3 | [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 5 | 30 | 0 | 28 | 1 | 1 | [2](#blockers-road-to-agent-setup-hub) | ██████████ 100% |
 | 4 | [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md) | 7 | 33 | 15 | 16 | 2 | 0 | 0 | █████░░░░░ 52% |
-| 5 | [road-to-usage-reliability-and-portability.md](roadmaps/road-to-usage-reliability-and-portability.md) | 5 | 13 | 4 | 5 | 3 | 1 | 0 | ██████░░░░ 56% |
+| 5 | [road-to-usage-reliability-and-portability.md](roadmaps/road-to-usage-reliability-and-portability.md) | 5 | 13 | 0 | 9 | 3 | 1 | 0 | ██████████ 100% |
 
 ---
 
@@ -109,13 +110,13 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 ### [road-to-usage-reliability-and-portability.md](roadmaps/road-to-usage-reliability-and-portability.md)
 
-**usage-reliability + portability adoptions (claude-swap comparison)** — 5 / 9 done (56%)
+**usage-reliability + portability adoptions (claude-swap comparison)** — 9 / 9 done (100%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 1 | Daemon poll discipline + fail-safe | ✅ done | 0 | 1 | 0 | 1 | 100% |
 | 2 | Dead-login / dead-token detection + surfacing | ✅ done | 0 | 2 | 1 | 0 | 100% |
 | 3 | MCP-OAuth allowlist scoping for `share` | ✅ done | 0 | 2 | 0 | 0 | 100% |
-| 4 | Cross-machine transfer export/import — SECURITY-GATED | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
+| 4 | Cross-machine transfer export/import — SECURITY-GATED | ✅ done | 0 | 4 | 0 | 0 | 100% |
 | 5 | CLI-first text dashboard (TUI) | ⏭️ skipped | 0 | 0 | 2 | 0 | 0% |
 
