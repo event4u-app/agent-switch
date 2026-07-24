@@ -31,18 +31,81 @@ export async function agentConfigVersion(): Promise<string | null> {
   }
 }
 
-/** Install agent-config via its README-recommended installer. `init` opens a
- *  browser setup wizard and writes to the global scope (v2.5+). Rejects on a
- *  non-zero exit so the caller can surface the failure. */
-export async function installAgentConfig(): Promise<void> {
-  const out = await Command.create("agent-config-install", ["-y", "@event4u/agent-config", "init"]).execute();
-  if (out.code !== 0) throw new Error(out.stderr || `agent-config install failed (exit ${out.code})`);
+// ---- agent-config local server (embedded settings — ac.rs Tauri commands) ----
+// All AC API traffic goes through Rust: a Rust request sends no Origin header,
+// so AC's browser-origin allow-list is skipped by design; a fetch() from this
+// webview (Origin tauri://localhost) would be 403'd. The webview only renders.
+
+/** Discovery status of the agent-config local server (mirrors Rust `AcStatus`). */
+export type AcStatus =
+  | { status: "notInstalled" }
+  | { status: "notRunning" }
+  | { status: "live"; port: number; pid: number; version: string | null }
+  | { status: "wedged"; pid: number; port: number };
+
+/** Typed error union (mirrors Rust `AcError`); `invoke` rejects with one of these. */
+export type AcError =
+  | { kind: "notInstalled" }
+  | { kind: "notRunning" }
+  | { kind: "wedged"; pid: number }
+  | { kind: "spawnFailed"; exitCode: number | null; stderr: string }
+  | { kind: "startTimeout"; waitedMs: number; exitCode: number | null; stderr: string }
+  | { kind: "tokenRotated" }
+  | { kind: "tokenUnreadable"; message: string }
+  | { kind: "request"; message: string };
+
+export interface AcApiResponse {
+  status: number;
+  body: string;
 }
 
-/** Upgrade an installed agent-config to the latest release. Rejects on non-zero. */
-export async function upgradeAgentConfig(): Promise<void> {
-  const out = await Command.create("agent-config-upgrade", ["upgrade"]).execute();
-  if (out.code !== 0) throw new Error(out.stderr || `agent-config upgrade failed (exit ${out.code})`);
+/** Read-only discovery: discovery file + pid liveness + authed ping. */
+export async function acDiscover(): Promise<AcStatus> {
+  return invoke<AcStatus>("ac_discover");
+}
+
+/** Discover; when not live, spawn `agent-config ui:serve --no-open` and wait
+ *  (bounded) for the discovery file + authed ping. Rejects with an AcError —
+ *  a wedged server is never killed here (see acForceRestart). */
+export async function acEnsure(): Promise<AcStatus> {
+  return invoke<AcStatus>("ac_ensure");
+}
+
+/** Loopback AC API call via Rust. Non-2xx resolves with its status (the caller
+ *  decides what a 404/422 means); a 401 that survives the built-in one-shot
+ *  recovery (re-discover + token re-read + retry) rejects with tokenRotated. */
+export async function acApi(method: string, path: string, body?: string): Promise<AcApiResponse> {
+  return invoke<AcApiResponse>("ac_api", { method, path, body: body ?? null });
+}
+
+/** Wedged case ONLY (pid alive, ping dead): kill the recorded pid, respawn,
+ *  take ownership. The UI must get explicit user consent before calling this. */
+export async function acForceRestart(): Promise<AcStatus> {
+  return invoke<AcStatus>("ac_force_restart");
+}
+
+/** Shut the server down if AS spawned it (POST /api/v1/shutdown, SIGTERM
+ *  fallback); a server AS merely found is left running. Also runs
+ *  automatically on app exit. */
+export async function acRelease(): Promise<void> {
+  return invoke("ac_release");
+}
+
+/** Open (or focus) the separate settings WebviewWindow. The URL — including
+ *  the bearer token — is built entirely in Rust; the token never enters this
+ *  webview's JS context. Emits `ac-settings-closed` to this window when the
+ *  settings window is destroyed. Currently not UI-wired (owner decision
+ *  2026-07-24: the browser flow is the Settings entry) — returns to the UI
+ *  once agent-config ships its embed contract. */
+export async function acOpenSettingsWindow(theme: "light" | "dark", profile?: string): Promise<AcStatus> {
+  return invoke<AcStatus>("ac_open_settings_window", { theme, profile: profile ?? null });
+}
+
+/** The "Settings" entry: opens AC's own browser bootstrap URL, built and
+ *  opened entirely in Rust (token stays out of this webview). Ensures a live
+ *  server first and returns its status for the card's provenance line. */
+export async function acOpenInBrowser(): Promise<AcStatus> {
+  return invoke<AcStatus>("ac_open_in_browser");
 }
 
 // ---- share: link the global (default ~/.claude) skills/commands/agents/CLAUDE.md
@@ -57,14 +120,19 @@ export interface ShareStatus {
   profiles: { name: string; shared: boolean }[];
 }
 
-/** Real share state (from each profile's link manifest, not a cached flag). */
+/** Real share state (from each profile's link manifest, not a cached flag).
+ *  No `--source` flag: the CLI's `share status` only ECHOES a passed source
+ *  back (it never persists one), so the GUI owns the source selection
+ *  (settings-store) and reads the plain link state here. */
 export async function shareStatus(): Promise<ShareStatus> {
-  return JSON.parse(await runCli(["share", "status", "--source", "default", "--json"]));
+  return JSON.parse(await runCli(["share", "status", "--json"]));
 }
 
-/** Link the global ~/.claude content into every profile. */
-export async function shareOn(): Promise<void> {
-  await runCli(["share", "on", "--source", "default"]);
+/** Link a source tree's content into every profile. `source` is a Claude
+ *  profile name or "default" (= the global ~/.claude), matching the CLI's
+ *  `share on --source <profile|default>`. */
+export async function shareOn(source = "default"): Promise<void> {
+  await runCli(["share", "on", "--source", source]);
 }
 
 /** Remove agent-switch-managed links from every profile (profile-own files untouched). */
@@ -72,9 +140,45 @@ export async function shareOff(): Promise<void> {
   await runCli(["share", "off"]);
 }
 
-/** Reconcile forked file-links (e.g. CLAUDE.md after an atomic write) back to links. */
-export async function shareSync(): Promise<void> {
-  await runCli(["share", "sync", "--source", "default"]);
+/** Reconcile forked file-links (e.g. CLAUDE.md after an atomic write) back to
+ *  links — against the same source the links were created from. */
+export async function shareSync(source = "default"): Promise<void> {
+  await runCli(["share", "sync", "--source", source]);
+}
+
+// ---- tooling readout (`agent-switch tooling --json`): the Tooling section's
+// ONLY data channel. Detection lives in the CLI (src/tooling.ts) — the GUI
+// renders the readout and never shells out to probe binaries on its own. ----
+
+export type ToolingId = "agent-config" | "rtk" | "claude" | "codex" | "agy";
+export type ToolingIdentity = "token-killer" | "unknown-rtk" | "unverified";
+
+/** Mirrors the CLI's ToolStatus (src/tooling.ts) exactly. Absence is encoded as
+ *  `present: false`; `identity` appears only for tools with a name-collision
+ *  risk (today: rtk). */
+export interface ToolingEntry {
+  id: ToolingId;
+  present: boolean;
+  version: string | null;
+  path: string | null;
+  healthy: boolean;
+  identity?: ToolingIdentity;
+  /** One actionable sentence when unhealthy; empty string when healthy. */
+  hint: string;
+}
+
+/** Full detection sweep, run by the CLI (measured ≈850 ms cold — the caller
+ *  caches the result and shows its age rather than re-sweeping per render). */
+export async function toolingStatus(): Promise<ToolingEntry[]> {
+  return JSON.parse(await runCli(["tooling", "--json"]));
+}
+
+/** Run `agent-switch tooling install|upgrade <id>` in the background (no
+ *  terminal). Rejects with the CLI's stderr on a non-zero exit. The CLI runner
+ *  augments PATH itself (npmSearchPath), so npm resolves even from the
+ *  stripped GUI environment. */
+export async function runToolingAction(action: "install" | "upgrade", id: ToolingId): Promise<void> {
+  await runCli(["tooling", action, id]);
 }
 
 export async function listProfiles(): Promise<ProfileRow[]> {
@@ -156,6 +260,29 @@ export async function profileUsage(provider: ProviderId, name: string): Promise<
     return (JSON.parse(out.stdout) as StatusJson).usage;
   } catch {
     return null;
+  }
+}
+
+/** One stored usage-history sample (written hourly by the background service). */
+export interface UsageHistorySample {
+  at: string;
+  windows: { key: string; utilization: number | null }[];
+}
+
+/** One profile's usage-history series from `usage history --provider <p> --json`. */
+export interface UsageHistoryProfile {
+  profile: string;
+  samples: UsageHistorySample[];
+}
+
+/** Per-profile usage history for the Usage section's 30-day chart. Read-only —
+ *  returns [] on any failure (including an older CLI without the subcommand)
+ *  so the chart degrades to its empty state instead of erroring. */
+export async function usageHistory(provider: ProviderId = "claude"): Promise<UsageHistoryProfile[]> {
+  try {
+    return JSON.parse(await runCli(["usage", "history", "--provider", provider, "--json"]));
+  } catch {
+    return [];
   }
 }
 

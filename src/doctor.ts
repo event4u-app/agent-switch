@@ -14,6 +14,7 @@ import { Provider, allProviders, provider } from "./providers.js";
 import { credentialStore } from "./credentials.js";
 import { sharedLinkHealth } from "./share.js";
 import { checkAuth, type AuthState } from "./api.js";
+import { checkTooling, doctorToolingLine } from "./tooling.js";
 
 const OK = "✅";
 const WARN = "⚠️";
@@ -114,6 +115,13 @@ export async function runDoctor(): Promise<number> {
       const parts = [forked.length ? `forked: ${forked.join(", ")}` : "", missing.length ? `missing: ${missing.join(", ")}` : ""].filter(Boolean);
       line(WARN, `claude/${n}: ${parts.join("; ")} — run \`agent-switch share sync\`.`);
     }
+  }
+
+  // Ecosystem tooling (agent-config + rtk) — same detection module as
+  // `agent-switch tooling`, never a second implementation. Both tools are
+  // optional, so an unhealthy row is a WARN, never a blocking error.
+  for (const t of checkTooling({ ids: ["agent-config", "rtk"] })) {
+    line(t.healthy ? OK : WARN, doctorToolingLine(t));
   }
 
   console.log(`\n  profile root: ${ROOT}`);

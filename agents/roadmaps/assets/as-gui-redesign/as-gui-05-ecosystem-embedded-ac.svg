@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 940" width="1040" height="940">
+<style>
+  text{font-family:-apple-system,'SF Pro Text','Inter',system-ui,sans-serif;fill:#dfe1e5}
+  .t-h{font-size:15px;font-weight:600}
+  .t-b{font-size:13px}
+  .t-n{font-size:13px;font-weight:600}
+  .t-m{font-size:12px;fill:#868a91}
+  .t-s{font-size:11px;fill:#868a91}
+  .t-l{font-size:10px;fill:#868a91;letter-spacing:.09em}
+  .t-btn{font-size:12px;font-weight:500}
+  .t-mono{font-size:11px;font-family:'SF Mono',ui-monospace,Menlo,monospace;fill:#a9b0ba}
+  .t-num{font-size:11px;font-weight:700;fill:#1e1f22}
+  .t-leg{font-size:12px}
+  .hair{stroke:#393b40;stroke-width:1}
+  .dash{stroke:#d15c38;stroke-width:1.5;stroke-dasharray:5 4;fill:none}
+</style>
+
+<rect x="0" y="0" width="1040" height="620" rx="10" fill="#1e1f22"/>
+<rect x="0" y="0" width="200" height="620" rx="10" fill="#232427"/>
+<rect x="190" y="0" width="10" height="620" fill="#232427"/>
+<line x1="200" y1="0" x2="200" y2="620" class="hair"/>
+<circle cx="20" cy="24" r="6" fill="#f0524d"/><circle cx="40" cy="24" r="6" fill="#d9a441"/><circle cx="60" cy="24" r="6" fill="#499c54"/>
+<rect x="16" y="56" width="26" height="26" rx="7" fill="#d15c38"/>
+<text x="50" y="74" class="t-h">agent-switch</text>
+<text x="50" y="124" class="t-b" fill="#868a91">Profiles</text>
+<rect x="150" y="110" width="30" height="18" rx="9" fill="#393b40"/><text x="165" y="123" class="t-s" text-anchor="middle">7</text>
+<text x="50" y="162" class="t-b" fill="#868a91">Usage</text>
+<text x="50" y="200" class="t-b" fill="#868a91">Tooling</text><circle cx="176" cy="195" r="4" fill="#d15c38"/>
+<rect x="10" y="216" width="180" height="34" rx="8" fill="#2f3134"/>
+<rect x="10" y="216" width="3" height="34" rx="1.5" fill="#d15c38"/>
+<text x="50" y="238" class="t-b">Ecosystem</text>
+<text x="66" y="270" class="t-s" fill="#dfe1e5">agent-config</text>
+<rect x="52" y="256" width="2" height="20" rx="1" fill="#d15c38"/>
+<text x="50" y="308" class="t-b" fill="#868a91">Settings</text>
+<line x1="16" y1="548" x2="184" y2="548" class="hair"/>
+<circle cx="24" cy="574" r="4" fill="#499c54"/><text x="38" y="578" class="t-s">Auto-switch on</text>
+<text x="16" y="600" class="t-s">v1.6.0</text><text x="184" y="600" class="t-s" text-anchor="end">Quit</text>
+
+<!-- header -->
+<line x1="200" y1="52" x2="1040" y2="52" class="hair"/>
+<text x="224" y="33" class="t-m">Ecosystem</text>
+<text x="296" y="33" class="t-m">›</text>
+<text x="312" y="33" class="t-h">agent-config settings</text>
+<rect x="792" y="14" width="120" height="26" rx="7" fill="none" stroke="#393b40"/>
+<text x="852" y="31" class="t-btn" fill="#868a91" text-anchor="middle">Open in browser</text>
+<g stroke="#868a91" stroke-width="1.6" fill="none" stroke-linecap="round">
+  <path d="M932 32 a7 7 0 1 1 4 -12 M936 16 v5 h-5"/>
+  <path d="M978 20 a7 7 0 0 1 14 0 v8 h-14z M981 32 h8"/>
+</g>
+
+<!-- provenance strip -->
+<rect x="224" y="66" width="792" height="28" rx="7" fill="#2b2d30"/>
+<circle cx="242" cy="80" r="4" fill="#499c54"/>
+<text x="256" y="84" class="t-s">Served by agent-config v9.7.0 on 127.0.0.1:41337 · writing to profile</text>
+<text x="616" y="84" class="t-s" fill="#dfe1e5">personal</text>
+<text x="1000" y="84" class="t-s" text-anchor="end">Restart</text>
+
+<!-- embedded frame -->
+<rect x="224" y="102" width="792" height="454" rx="10" fill="#141518"/>
+<rect x="224" y="102" width="792" height="454" rx="10" class="dash"/>
+<rect x="236" y="114" width="98" height="18" rx="9" fill="#232427"/>
+<text x="285" y="127" class="t-s" text-anchor="middle">embed=1</text>
+
+<!-- AC content (its own UI, AS accent) -->
+<text x="256" y="164" class="t-l">SETUP</text>
+<text x="256" y="196" class="t-b" fill="#868a91">Wizard</text>
+<text x="256" y="226" class="t-l">SETTINGS</text>
+<rect x="244" y="240" width="150" height="28" rx="7" fill="#212226"/>
+<rect x="244" y="240" width="3" height="28" rx="1.5" fill="#d15c38"/>
+<text x="260" y="259" class="t-b">Rules</text>
+<text x="260" y="291" class="t-b" fill="#868a91">Skills</text>
+<text x="260" y="321" class="t-b" fill="#868a91">Hosts</text>
+<text x="260" y="351" class="t-b" fill="#868a91">Tokens</text>
+<text x="260" y="381" class="t-b" fill="#868a91">Council</text>
+<line x1="410" y1="140" x2="410" y2="536" class="hair"/>
+
+<text x="440" y="164" class="t-h">Rules</text>
+<text x="440" y="186" class="t-s">Which governance rules compile into your agents.</text>
+
+<rect x="440" y="204" width="552" height="52" rx="8" fill="#1c1d21"/>
+<text x="458" y="226" class="t-n">Discipline profile</text>
+<text x="458" y="244" class="t-s">auto — resolves from host capabilities</text>
+<rect x="880" y="218" width="96" height="24" rx="6" fill="#2b2d30"/>
+<text x="928" y="234" class="t-btn" text-anchor="middle">auto ⌄</text>
+
+<rect x="440" y="266" width="552" height="52" rx="8" fill="#1c1d21"/>
+<text x="458" y="288" class="t-n">Consumer rule projection</text>
+<text x="458" y="306" class="t-s">Scoped — ships only what the host needs</text>
+<rect x="936" y="280" width="40" height="22" rx="11" fill="#d15c38"/>
+<circle cx="965" cy="291" r="8" fill="#fff"/>
+
+<rect x="440" y="328" width="552" height="52" rx="8" fill="#1c1d21"/>
+<text x="458" y="350" class="t-n">Wrap verbose commands with rtk</text>
+<text x="458" y="368" class="t-s" fill="#d9a441">Unavailable — the rtk on your PATH is a different tool</text>
+<rect x="936" y="342" width="40" height="22" rx="11" fill="#393b40"/>
+<circle cx="947" cy="353" r="8" fill="#6f7280"/>
+
+<rect x="440" y="390" width="552" height="52" rx="8" fill="#1c1d21"/>
+<text x="458" y="412" class="t-n">Claims ledger gate</text>
+<text x="458" y="430" class="t-s">Blocks unverified claims in CI</text>
+<rect x="936" y="404" width="40" height="22" rx="11" fill="#d15c38"/>
+<circle cx="965" cy="415" r="8" fill="#fff"/>
+
+<rect x="440" y="466" width="140" height="30" rx="7" fill="#d15c38"/>
+<text x="510" y="485" class="t-btn" fill="#fff" text-anchor="middle">Save changes</text>
+<text x="596" y="485" class="t-s">2 changes pending</text>
+
+<line x1="200" y1="588" x2="1040" y2="588" class="hair"/>
+<text x="224" y="608" class="t-s">Settings are written by agent-config to ~/.event4u/agent-config/</text>
+<text x="1016" y="608" class="t-s" text-anchor="end">Profile: personal</text>
+
+<circle cx="212" cy="80" r="10" fill="#d15c38"/><text x="212" y="84" class="t-num" text-anchor="middle">1</text>
+<circle cx="212" cy="124" r="10" fill="#d15c38"/><text x="212" y="128" class="t-num" text-anchor="middle">2</text>
+<circle cx="1006" cy="291" r="10" fill="#d15c38"/><text x="1006" y="295" class="t-num" text-anchor="middle">3</text>
+<circle cx="1006" cy="358" r="10" fill="#d15c38"/><text x="1006" y="362" class="t-num" text-anchor="middle">4</text>
+<circle cx="748" cy="27" r="10" fill="#d15c38"/><text x="748" y="31" class="t-num" text-anchor="middle">5</text>
+
+<text x="0" y="668" class="t-l">ECOSYSTEM › AGENT-CONFIG SETTINGS — AC'S OWN UI, RENDERED INSIDE AGENT-SWITCH</text>
+<line x1="0" y1="680" x2="1040" y2="680" class="hair"/>
+<g class="t-leg">
+  <text x="0" y="704" font-weight="600">1 · Provenance is always visible</text>
+  <text x="0" y="722" fill="#868a91">Which agent-config version is serving this, on which loopback port, writing to which profile.</text>
+  <text x="0" y="738" fill="#868a91">Two products in one window is only honest if the seam is labelled. "Restart" respawns the</text>
+  <text x="0" y="754" fill="#868a91">server after an agent-config update without leaving the page.</text>
+
+  <text x="0" y="784" font-weight="600">2 · agent-config gets a sub-item, not a sixth section</text>
+  <text x="0" y="802" fill="#868a91">Nesting keeps the five-section rule intact while making the embedded surface deep-linkable.</text>
+
+  <text x="0" y="832" font-weight="600">3 · This is agent-config's real UI, not a re-implementation</text>
+  <text x="0" y="850" fill="#868a91">Loaded from http://127.0.0.1:&lt;port&gt;/#/settings?embed=1&amp;theme=dark&amp;token=… — so a setting added</text>
+  <text x="0" y="866" fill="#868a91">to agent-config appears here the same day, with no agent-switch release. That is the whole point.</text>
+
+  <text x="530" y="704" font-weight="600">4 · Cross-tool state resolves to one story</text>
+  <text x="530" y="722" fill="#868a91">agent-switch's Tooling section found the wrong rtk; agent-config's rtk toggle is therefore</text>
+  <text x="530" y="738" fill="#868a91">disabled with the same explanation. Both read the same detection contract, so the two surfaces</text>
+  <text x="530" y="754" fill="#868a91">cannot contradict each other — the failure mode that makes bolted-together tools feel broken.</text>
+
+  <text x="530" y="784" font-weight="600">5 · The escape hatch is permanent</text>
+  <text x="530" y="802" fill="#868a91">"Open in browser" is always present. If the embed misbehaves on any platform, the user is one</text>
+  <text x="530" y="818" fill="#868a91">click from the known-good standalone surface — which stays first-class for non-agent-switch users.</text>
+
+  <text x="530" y="848" font-weight="600">Theming</text>
+  <text x="530" y="866" fill="#868a91">agent-config honours ?theme and the event4u accent at boot, before first paint — no flash on open.</text>
+</g>
+</svg>

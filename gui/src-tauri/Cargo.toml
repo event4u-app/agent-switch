@@ -16,6 +16,9 @@ tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 portable-pty = "0.8"
+# Loopback HTTP to the agent-config local server only (plain http, no TLS
+# needed). Blocking client — every call runs on the blocking pool (ac.rs).
+ureq = { version = "2", default-features = false }
 
 [profile.release]
 strip = true

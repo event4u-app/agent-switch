@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 960" width="1040" height="960">
+<style>
+  text{font-family:-apple-system,'SF Pro Text','Inter',system-ui,sans-serif;fill:#dfe1e5}
+  .t-h{font-size:15px;font-weight:600}
+  .t-b{font-size:13px}
+  .t-m{font-size:12px;fill:#868a91}
+  .t-s{font-size:11px;fill:#868a91}
+  .t-l{font-size:10px;fill:#868a91;letter-spacing:.09em}
+  .t-btn{font-size:12px;font-weight:500}
+  .t-num{font-size:11px;font-weight:700;fill:#1e1f22}
+  .t-leg{font-size:12px;fill:#dfe1e5}
+  .hair{stroke:#393b40;stroke-width:1}
+  .dash{stroke:#d15c38;stroke-width:1;stroke-dasharray:4 4;fill:none}
+</style>
+
+<!-- window -->
+<rect x="0" y="0" width="1040" height="620" rx="10" fill="#1e1f22"/>
+
+<!-- sidebar -->
+<rect x="0" y="0" width="200" height="620" rx="10" fill="#232427"/>
+<rect x="190" y="0" width="10" height="620" fill="#232427"/>
+<line x1="200" y1="0" x2="200" y2="620" class="hair"/>
+
+<!-- traffic lights (macOS overlay titlebar, trafficLightPosition x:12 y:24) -->
+<circle cx="20" cy="24" r="6" fill="#f0524d"/>
+<circle cx="40" cy="24" r="6" fill="#d9a441"/>
+<circle cx="60" cy="24" r="6" fill="#499c54"/>
+<rect x="4" y="8" width="188" height="34" rx="6" class="dash"/>
+<text x="84" y="28" class="t-s">reserved</text>
+
+<!-- brand -->
+<rect x="16" y="56" width="26" height="26" rx="7" fill="#d15c38"/>
+<path d="M23 69 a6 6 0 1 1 2 4" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>
+<text x="50" y="74" class="t-h">agent-switch</text>
+
+<!-- nav items -->
+<rect x="10" y="102" width="180" height="34" rx="8" fill="#2f3134"/>
+<rect x="10" y="102" width="3" height="34" rx="1.5" fill="#d15c38"/>
+<rect x="26" y="113" width="13" height="12" rx="2.5" fill="none" stroke="#dfe1e5" stroke-width="1.6"/>
+<text x="50" y="124" class="t-b">Profiles</text>
+<rect x="150" y="110" width="30" height="18" rx="9" fill="#393b40"/>
+<text x="165" y="123" class="t-s" text-anchor="middle">7</text>
+
+<g fill="none" stroke="#868a91" stroke-width="1.6" stroke-linecap="round">
+  <path d="M26 158 v10 M31 152 v16 M36 161 v7"/>
+  <path d="M26 196 h13 M26 202 h9 M26 190 h6"/>
+  <path d="M27 228 l6 6 6-6 M33 224 v10"/>
+  <path d="M26 268 a4 4 0 1 1 8 0 a4 4 0 1 1 -8 0 M33 264 h6"/>
+</g>
+<text x="50" y="166" class="t-b" fill="#868a91">Usage</text>
+<text x="50" y="204" class="t-b" fill="#868a91">Tooling</text>
+<circle cx="176" cy="199" r="4" fill="#d15c38"/>
+<text x="50" y="242" class="t-b" fill="#868a91">Ecosystem</text>
+<text x="50" y="280" class="t-b" fill="#868a91">Settings</text>
+
+<!-- sidebar footer -->
+<line x1="16" y1="548" x2="184" y2="548" class="hair"/>
+<circle cx="24" cy="574" r="4" fill="#499c54"/>
+<text x="38" y="578" class="t-s">Auto-switch on</text>
+<text x="16" y="600" class="t-s">v1.6.0</text>
+<text x="184" y="600" class="t-s" text-anchor="end">Quit</text>
+
+<!-- header -->
+<line x1="200" y1="52" x2="1040" y2="52" class="hair"/>
+<text x="224" y="33" class="t-h">Profiles</text>
+<text x="304" y="33" class="t-m">7 accounts across 3 providers</text>
+<rect x="836" y="14" width="76" height="26" rx="7" fill="#d15c38"/>
+<text x="874" y="31" class="t-btn" fill="#fff" text-anchor="middle">+ New</text>
+<g stroke="#868a91" stroke-width="1.6" fill="none" stroke-linecap="round">
+  <path d="M932 32 a7 7 0 1 1 4 -12 M936 16 v5 h-5"/>
+  <path d="M978 20 a7 7 0 0 1 14 0 v8 h-14z M981 32 h8"/>
+</g>
+
+<!-- content region -->
+<rect x="224" y="76" width="792" height="480" rx="10" fill="#2b2d30" opacity="0.55"/>
+<text x="620" y="310" class="t-m" text-anchor="middle">content region — one section at a time</text>
+<text x="620" y="332" class="t-s" text-anchor="middle">792 × 480 at the default 1040 × 620 window</text>
+
+<!-- content footer strip -->
+<line x1="200" y1="588" x2="1040" y2="588" class="hair"/>
+<text x="224" y="608" class="t-s">Refreshed 4:03 ago</text>
+<text x="1016" y="608" class="t-s" text-anchor="end">Claude · 4 profiles</text>
+
+<!-- callout badges -->
+<g>
+  <circle cx="100" cy="24" r="10" fill="#d15c38"/><text x="100" y="28" class="t-num" text-anchor="middle">1</text>
+  <circle cx="176" cy="119" r="10" fill="#d15c38"/><text x="176" y="123" class="t-num" text-anchor="middle" fill="#1e1f22">2</text>
+  <circle cx="176" cy="245" r="10" fill="#d15c38"/><text x="176" y="249" class="t-num" text-anchor="middle">3</text>
+  <circle cx="176" cy="577" r="10" fill="#d15c38"/><text x="176" y="581" class="t-num" text-anchor="middle">4</text>
+  <circle cx="790" cy="27" r="10" fill="#d15c38"/><text x="790" y="31" class="t-num" text-anchor="middle">5</text>
+  <circle cx="1000" cy="76" r="10" fill="#d15c38"/><text x="1000" y="80" class="t-num" text-anchor="middle">6</text>
+  <circle cx="1000" cy="604" r="10" fill="#d15c38"/><text x="1000" y="608" class="t-num" text-anchor="middle">7</text>
+</g>
+
+<!-- ================= legend ================= -->
+<text x="0" y="668" class="t-l">SHELL ANATOMY — REPLACES THE PROVIDER-TAB BAR AS TOP-LEVEL NAVIGATION</text>
+<line x1="0" y1="680" x2="1040" y2="680" class="hair"/>
+
+<g class="t-leg">
+  <text x="0" y="704" font-weight="600">1 · Traffic-light reserve</text>
+  <text x="0" y="722" fill="#868a91">tauri.conf sets titleBarStyle Overlay + trafficLightPosition x:12 y:24. The first 44px of the sidebar</text>
+  <text x="0" y="738" fill="#868a91">carry no interactive element. Windows/Linux reclaim it — the brand block shifts up.</text>
+
+  <text x="0" y="768" font-weight="600">2 · Five sections, count badge on Profiles only</text>
+  <text x="0" y="786" fill="#868a91">Profiles · Usage · Tooling · Ecosystem · Settings. A sixth requires naming what it replaces.</text>
+  <text x="0" y="802" fill="#868a91">Workspace/dev surfaces stay behind the existing dev-mode flag and render below Settings.</text>
+
+  <text x="0" y="832" font-weight="600">3 · Attention dot, not a banner</text>
+  <text x="0" y="850" fill="#868a91">A section needing action (missing tool, agent-config update) shows a 4px dot. This is what</text>
+  <text x="0" y="866" fill="#868a91">replaces the permanent footer promo strip — attention is requested once, in one place.</text>
+
+  <text x="530" y="704" font-weight="600">4 · Status + app actions leave the content footer</text>
+  <text x="530" y="722" fill="#868a91">Auto-switch state, version and Quit sit at the sidebar base. The old footer mixed status,</text>
+  <text x="530" y="738" fill="#868a91">a filter, a countdown and app actions in one strip.</text>
+
+  <text x="530" y="768" font-weight="600">5 · Header actions are section-scoped</text>
+  <text x="530" y="786" fill="#868a91">Title + subtitle left; primary action, refresh and notifications right. The gear is gone —</text>
+  <text x="530" y="802" fill="#868a91">Settings is a section now. Net −2 header icons.</text>
+
+  <text x="530" y="832" font-weight="600">6 · Content region · 7 · Contextual footer</text>
+  <text x="530" y="850" fill="#868a91">One section at a time, 24px gutters. Footer carries only refresh age and the active filter,</text>
+  <text x="530" y="866" fill="#868a91">so the reader always knows what the page is showing.</text>
+</g>
+
+<!-- responsive inset -->
+<line x1="0" y1="890" x2="1040" y2="890" class="hair"/>
+<text x="0" y="914" class="t-l">RESPONSIVE — SIDEBAR COLLAPSES TO AN ICON RAIL BELOW 820px (minWidth 640 must stay usable)</text>
+<rect x="0" y="926" width="56" height="30" rx="6" fill="#232427"/>
+<rect x="56" y="926" width="240" height="30" rx="0" fill="#1e1f22"/>
+<line x1="56" y1="926" x2="56" y2="956" class="hair"/>
+<circle cx="28" cy="936" r="3.5" fill="#d15c38"/><circle cx="28" cy="947" r="3.5" fill="#868a91"/>
+<text x="70" y="946" class="t-s">56px rail · labels become tooltips · verified by spike S0.1</text>
+<text x="330" y="946" class="t-s">If S0.1 falsifies the rail at 640px, ship the tab-bar variant and record the negative result.</text>
+</svg>

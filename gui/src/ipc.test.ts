@@ -21,8 +21,6 @@ import {
   activeStatus,
   switchProfile,
   agentConfigVersion,
-  installAgentConfig,
-  upgradeAgentConfig,
   shareStatus,
   shareOn,
   shareOff,
@@ -55,6 +53,12 @@ import {
   getNotifyConfig,
   setNotify,
   setTrayTooltip,
+  toolingStatus,
+  acDiscover,
+  acEnsure,
+  acApi,
+  acForceRestart,
+  acRelease,
 } from "./ipc.js";
 
 beforeEach(() => vi.clearAllMocks());
@@ -284,6 +288,71 @@ describe("ipc", () => {
     await setTrayTooltip("agent-switch — 82% context");
     expect(invoke).toHaveBeenCalledWith("set_tray_tooltip", { text: "agent-switch — 82% context" });
   });
+
+  it("toolingStatus runs `agent-switch tooling --json` and parses the readout", async () => {
+    execute.mockResolvedValue({
+      code: 0,
+      stdout:
+        '[{"id":"agent-config","present":true,"version":"9.7.0","path":"/usr/local/bin/agent-config","healthy":true,"hint":""},' +
+        '{"id":"rtk","present":true,"version":null,"path":"/usr/local/bin/rtk","healthy":false,"identity":"unknown-rtk","hint":"the `rtk` on PATH is not Token Killer (name collision) — install: `brew install rtk`"}]',
+      stderr: "",
+    });
+    const tools = await toolingStatus();
+    expect(create).toHaveBeenCalledWith("agent-switch", ["tooling", "--json"]);
+    expect(tools).toHaveLength(2);
+    expect(tools[0]).toEqual({
+      id: "agent-config",
+      present: true,
+      version: "9.7.0",
+      path: "/usr/local/bin/agent-config",
+      healthy: true,
+      hint: "",
+    });
+    expect(tools[1].identity).toBe("unknown-rtk");
+  });
+
+  it("toolingStatus throws with the stderr on a non-zero exit (the caller surfaces it)", async () => {
+    execute.mockResolvedValue({ code: 1, stdout: "", stderr: "tooling sweep failed" });
+    await expect(toolingStatus()).rejects.toThrow(/tooling sweep failed/);
+  });
+});
+
+describe("agent-config local server (ac_* Tauri commands)", () => {
+  it("acDiscover invokes ac_discover and returns the typed status", async () => {
+    invoke.mockResolvedValue({ status: "live", port: 41234, pid: 4321, version: "9.7.0" });
+    await expect(acDiscover()).resolves.toEqual({ status: "live", port: 41234, pid: 4321, version: "9.7.0" });
+    expect(invoke).toHaveBeenCalledWith("ac_discover");
+  });
+
+  it("acEnsure invokes ac_ensure; rejects with the typed error (spawn stderr surfaced)", async () => {
+    invoke.mockResolvedValueOnce({ status: "live", port: 41234, pid: 4321, version: null });
+    await expect(acEnsure()).resolves.toEqual({ status: "live", port: 41234, pid: 4321, version: null });
+    expect(invoke).toHaveBeenCalledWith("ac_ensure");
+    invoke.mockRejectedValueOnce({ kind: "startTimeout", waitedMs: 15000, exitCode: 1, stderr: "EADDRINUSE" });
+    await expect(acEnsure()).rejects.toEqual(expect.objectContaining({ kind: "startTimeout", stderr: "EADDRINUSE" }));
+  });
+
+  it("acApi passes method/path/body through (body null when omitted)", async () => {
+    invoke.mockResolvedValue({ status: 200, body: "{}" });
+    await expect(acApi("GET", "/api/v1/ping")).resolves.toEqual({ status: 200, body: "{}" });
+    expect(invoke).toHaveBeenCalledWith("ac_api", { method: "GET", path: "/api/v1/ping", body: null });
+    await acApi("POST", "/api/v1/settings", '{"a":1}');
+    expect(invoke).toHaveBeenCalledWith("ac_api", { method: "POST", path: "/api/v1/settings", body: '{"a":1}' });
+  });
+
+  it("acApi surfaces the tokenRotated rejection (401 after the built-in recovery)", async () => {
+    invoke.mockRejectedValue({ kind: "tokenRotated" });
+    await expect(acApi("GET", "/api/v1/ping")).rejects.toEqual({ kind: "tokenRotated" });
+  });
+
+  it("acForceRestart / acRelease invoke their commands", async () => {
+    invoke.mockResolvedValue({ status: "live", port: 41234, pid: 99, version: null });
+    await acForceRestart();
+    expect(invoke).toHaveBeenCalledWith("ac_force_restart");
+    invoke.mockResolvedValue(undefined);
+    await acRelease();
+    expect(invoke).toHaveBeenCalledWith("ac_release");
+  });
 });
 
 describe("agent-config companion CLI", () => {
@@ -300,33 +369,20 @@ describe("agent-config companion CLI", () => {
     expect(await agentConfigVersion()).toBeNull();
   });
 
-  it("installAgentConfig runs the exact scoped npx installer, throwing on failure", async () => {
-    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
-    await installAgentConfig();
-    expect(create).toHaveBeenCalledWith("agent-config-install", ["-y", "@event4u/agent-config", "init"]);
-    execute.mockResolvedValue({ code: 1, stdout: "", stderr: "network down" });
-    await expect(installAgentConfig()).rejects.toThrow(/network down/);
-  });
-
-  it("upgradeAgentConfig runs the scoped `agent-config upgrade`, throwing on failure", async () => {
-    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
-    await upgradeAgentConfig();
-    expect(create).toHaveBeenCalledWith("agent-config-upgrade", ["upgrade"]);
-    execute.mockResolvedValue({ code: 2, stdout: "", stderr: "boom" });
-    await expect(upgradeAgentConfig()).rejects.toThrow(/boom/);
-  });
+  // install/upgrade spawns were retired with the footer banner (copy-command
+  // only, per the setup-hub roadmap's S0.3 decision) — no scoped entries left.
 });
 
 describe("share (global-skill linking)", () => {
-  it("shareStatus reads real state via `share status --source default --json`", async () => {
+  it("shareStatus reads real state via `share status --json` (no --source: the CLI only echoes it)", async () => {
     execute.mockResolvedValue({ code: 0, stdout: '{"active":true,"source":"default","profiles":[{"name":"work","shared":true}]}', stderr: "" });
     const s = await shareStatus();
-    expect(create).toHaveBeenCalledWith("agent-switch", ["share", "status", "--source", "default", "--json"]);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["share", "status", "--json"]);
     expect(s.active).toBe(true);
     expect(s.profiles[0]).toEqual({ name: "work", shared: true });
   });
 
-  it("shareOn / shareOff / shareSync issue the right commands", async () => {
+  it("shareOn / shareOff / shareSync issue the right commands (default source)", async () => {
     execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
     await shareOn();
     expect(create).toHaveBeenCalledWith("agent-switch", ["share", "on", "--source", "default"]);
@@ -334,5 +390,13 @@ describe("share (global-skill linking)", () => {
     expect(create).toHaveBeenCalledWith("agent-switch", ["share", "off"]);
     await shareSync();
     expect(create).toHaveBeenCalledWith("agent-switch", ["share", "sync", "--source", "default"]);
+  });
+
+  it("shareOn / shareSync pass a profile source through as --source <profile>", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+    await shareOn("work");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["share", "on", "--source", "work"]);
+    await shareSync("work");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["share", "sync", "--source", "work"]);
   });
 });

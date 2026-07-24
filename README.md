@@ -27,6 +27,8 @@ Most naive switchers snapshot the macOS Keychain entry (`Claude Code-credentials
 
 `agent-switch` uses **`CLAUDE_CONFIG_DIR` isolation** instead. Each profile gets its own config directory under `~/.agent-switch/<name>/config`. Claude Code derives a *separate* keychain entry per config dir, so every account stays logged in **live and independently**. Switching only changes which directory new `claude` invocations point at — nothing is snapshotted, nothing goes stale, and each account logs in via browser exactly once.
 
+The same restraint governs the whole tool: no proxy, no traffic interception, no fingerprinting, no prompt rewriting — see [NON-GOALS.md](NON-GOALS.md) for the explicit list and the alternatives this ecosystem offers instead.
+
 ## Install
 
 **npm / npx** (any OS — needs Node ≥ 20). The package is published as

@@ -63,6 +63,8 @@ import { withProperLock } from "./locks.js";
 import { applySharing, removeSharing, syncSharing, sharedLinkHealth } from "./share.js";
 import { detectShell, shellenvScript } from "./shellenv.js";
 import { runDoctor } from "./doctor.js";
+import { TOOL_IDS, ToolAction, ToolId, checkTooling, formatToolingLines, runToolAction } from "./tooling.js";
+import { HistorySample, readHistory } from "./history.js";
 import { launchGui } from "./gui-launch.js";
 import { checkForUpdate, selfUpdate } from "./updates.js";
 import {
@@ -1779,6 +1781,62 @@ function cmdShellenv(shellArg?: string): void {
   console.log(shellenvScript(detectShell(shellArg)));
 }
 
+/** `agent-switch tooling` — ecosystem tool readout (agent-config, rtk, provider
+ *  CLIs). `--json` is the GUI IPC contract: the GUI renders this readout and
+ *  never shells out to detect on its own. */
+function cmdTooling(json = false): void {
+  const tools = checkTooling();
+  if (json) {
+    console.log(JSON.stringify(tools, null, 2));
+    return;
+  }
+  console.log(`agent-switch tooling — platform ${process.platform}\n`);
+  for (const l of formatToolingLines(tools)) console.log(l);
+}
+
+/** `agent-switch tooling install|upgrade <id>` — run the tool's per-platform
+ *  install/upgrade command as a visible child process (the GUI runs this inside
+ *  its embedded terminal). Exit code = the child's exit code. */
+function cmdToolingAction(action: ToolAction, id?: string): void {
+  if (!id || !TOOL_IDS.includes(id as ToolId)) {
+    die(`usage: agent-switch tooling ${action} <${TOOL_IDS.join("|")}>`);
+  }
+  process.exit(runToolAction(id as ToolId, action));
+}
+
+/**
+ * `agent-switch usage history [--provider claude] [--profile <name>] [--json]`
+ * — the daemon-recorded usage-history ring per profile (same file the daemon
+ * appends: `<profileDir>/usage-history.json`). `--json` is the GUI contract:
+ * `[{ profile, samples: [{ at, windows }] }]`. Own-profile data only.
+ */
+function cmdUsageHistory(providerId: ProviderId, sub?: string, flags: Record<string, string | boolean> = {}): void {
+  if (sub !== "history") die("usage: agent-switch usage history [--provider P] [--profile <name>] [--json]");
+  const profiles = typeof flags.profile === "string"
+    ? [requireProfile(providerId, flags.profile, "usage history --profile")]
+    : listProfiles(providerId);
+  if (profiles.length === 0) die(`no ${providerId} profiles`);
+
+  const rows: { profile: string; samples: HistorySample[] }[] = profiles.map((p) => ({
+    profile: p,
+    samples: readHistory(path.join(profileDir(providerId, p), "usage-history.json")),
+  }));
+
+  if (flags.json) {
+    console.log(JSON.stringify(rows, null, 2));
+    return;
+  }
+  for (const r of rows) {
+    if (r.samples.length === 0) {
+      console.log(`${providerId}/${r.profile}: no usage history yet (the daemon records samples — agent-switch service start)`);
+      continue;
+    }
+    const first = r.samples[0].at;
+    const last = r.samples[r.samples.length - 1].at;
+    console.log(`${providerId}/${r.profile}: ${r.samples.length} sample${r.samples.length === 1 ? "" : "s"} (${first} → ${last})`);
+  }
+}
+
 function usage(): void {
   console.log(`agent-switch — switch accounts for Claude Code, Codex, and Antigravity (macOS · Linux · Windows)
 
@@ -1821,6 +1879,9 @@ Provider defaults to claude; pass --provider codex|antigravity for the others.
   agent-switch notify --kind K --title T --message M [--json]   record a notification event
   agent-switch os-notify [on|off|status] [--json]   daemon-side OS desktop notifications (default off)
   agent-switch uninstall [--force]             remove all agent-switch data + daemon
+  agent-switch usage history [--provider P] [--profile <name>] [--json]   daemon-recorded usage samples per profile
+  agent-switch tooling [--json]                ecosystem tool readout (agent-config, rtk, provider CLIs)
+  agent-switch tooling install|upgrade <tool>  install/upgrade an ecosystem tool (agent-config, rtk, claude, codex)
   agent-switch doctor                          per-OS, per-provider self-check`);
 }
 
@@ -1893,6 +1954,15 @@ async function main(): Promise<void> {
     case "remove": case "rm": return cmdRemove(providerId, positional[0], !!flags.force);
     case "shellenv": return cmdShellenv((flags.shell as string) ?? positional[0]);
     case "service": return cmdService(positional[0]);
+    case "usage": return cmdUsageHistory(providerId, positional[0], flags);
+    case "tooling":
+      if (positional[0] === "install" || positional[0] === "upgrade") {
+        return cmdToolingAction(positional[0], positional[1]);
+      }
+      if (positional[0] !== undefined) {
+        die(`usage: agent-switch tooling [install|upgrade <${TOOL_IDS.join("|")}>] [--json]`);
+      }
+      return cmdTooling(!!flags.json);
     case "doctor": return process.exit(await runDoctor());
     case "help": case "--help": case "-h": return usage();
     default: usage(); process.exit(cmd ? 1 : 0);

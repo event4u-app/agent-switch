@@ -2,8 +2,12 @@
 // the `agent-switch` CLI via the shell plugin; this Rust side only owns the
 // tray icon, the window, the Dock presence, and launch-at-login. No profile
 // logic lives here.
-#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
+)]
 
+mod ac;
 mod pty;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -145,6 +149,7 @@ fn main() {
         ))
         .manage(pty::PtyState::default())
         .manage(DockPrefs::default())
+        .manage(ac::AcState::default())
         .invoke_handler(tauri::generate_handler![
             quit,
             show_window,
@@ -153,7 +158,14 @@ fn main() {
             pty::term_open,
             pty::term_write,
             pty::term_resize,
-            pty::term_close
+            pty::term_close,
+            ac::ac_discover,
+            ac::ac_ensure,
+            ac::ac_force_restart,
+            ac::ac_api,
+            ac::ac_release,
+            ac::ac_open_settings_window,
+            ac::ac_open_in_browser
         ])
         .on_window_event(|window, event| {
             if window.label() != "main" {
@@ -165,6 +177,9 @@ fn main() {
                 // explicit (UI button / tray menu).
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
+                    // The embedded agent-config settings window never outlives
+                    // the main surface that opened it.
+                    ac::close_settings_window(window.app_handle());
                     hide_from_dock(window);
                 }
                 // Minimizing (yellow) with "minimize into Dock" OFF (default)
@@ -216,7 +231,11 @@ fn main() {
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { button: MouseButton::Left, .. } = event {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        ..
+                    } = event
+                    {
                         show_main(tray.app_handle());
                     }
                 })
@@ -227,10 +246,14 @@ fn main() {
         .expect("error while running agent-switch GUI");
 
     app.run(|_app_handle, _event| {
-        // macOS: clicking the Dock icon when no window is visible re-shows it.
-        #[cfg(target_os = "macos")]
-        if let tauri::RunEvent::Reopen { .. } = _event {
-            show_main(_app_handle);
+        match _event {
+            // macOS: clicking the Dock icon when no window is visible re-shows it.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => show_main(_app_handle),
+            // Exit path: shut down an agent-config server AS spawned (never one
+            // it merely found), so a spawn-and-quit cycle leaves no orphan.
+            tauri::RunEvent::Exit => ac::release(&_app_handle.state::<ac::AcState>()),
+            _ => {}
         }
     });
 }
