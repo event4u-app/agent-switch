@@ -6,10 +6,10 @@
 
 ## Overall
 
-**73 / 104 steps done · 70%**
+**77 / 103 steps done · 75%**
 
 ```text
-████████████████████████████░░░░░░░░░░░░   70%
+██████████████████████████████░░░░░░░░░░   75%
 ```
 
 ## ⚠️ Iron Law 3 — unresolved deferred items
@@ -29,7 +29,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | 1 | [road-to-1.0.1-review-followup.md](roadmaps/road-to-1.0.1-review-followup.md) | 4 | 9 | 0 | 8 | 1 | 0 | 0 | ██████████ 100% |
 | 2 | [road-to-ac-embedded-settings.md](roadmaps/road-to-ac-embedded-settings.md) | 4 | 30 | 0 | 26 | 4 | 0 | [3](#blockers-road-to-ac-embedded-settings) | ██████████ 100% |
 | 3 | [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 5 | 30 | 0 | 28 | 1 | 1 | [2](#blockers-road-to-agent-setup-hub) | ██████████ 100% |
-| 4 | [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md) | 7 | 33 | 27 | 6 | 0 | 0 | 0 | ██░░░░░░░░ 18% |
+| 4 | [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md) | 7 | 33 | 22 | 10 | 1 | 0 | 0 | ███░░░░░░░ 31% |
 | 5 | [road-to-usage-reliability-and-portability.md](roadmaps/road-to-usage-reliability-and-portability.md) | 5 | 13 | 4 | 5 | 3 | 1 | 0 | ██████░░░░ 56% |
 
 ---
@@ -95,12 +95,12 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 ### [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md)
 
-**live account rebind (in-session switch, any terminal)** — 6 / 33 done (18%)
+**live account rebind (in-session switch, any terminal)** — 10 / 32 done (31%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
-| 0 | Falsification spikes (the gate; `scripts/spikes/r0*`) | 🟡 in progress | 6 | 1 | 0 | 0 | 14% |
-| 1 | ADR-003 gate (decide BEFORE the write path is built) | 🟡 in progress | 1 | 1 | 0 | 0 | 50% |
+| 0 | Falsification spikes (the gate; `scripts/spikes/r0*`) | 🟡 in progress | 2 | 4 | 1 | 0 | 67% |
+| 1 | ADR-003 gate (decide BEFORE the write path is built) | ✅ done | 0 | 2 | 0 | 0 | 100% |
 | 2 | `agent-switch rebind <account> [--profile <p>]` (the one write module) | ⬜ not started | 10 | 0 | 0 | 0 | 0% |
 | 3 | Retire the FULLY-automatic switch (keep notify + suggestion) | 🟡 in progress | 3 | 4 | 0 | 0 | 57% |
 | 4 | Limit dialog (CLI first) — user-interaction-gated | ⬜ not started | 5 | 0 | 0 | 0 | 0% |

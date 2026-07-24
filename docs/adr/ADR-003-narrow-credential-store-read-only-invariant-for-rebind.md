@@ -1,7 +1,11 @@
 # ADR-003 — Narrowing the read-only credential-store invariant to permit the `rebind` write path
 
-- **Status:** Proposed (pending Phase-0 falsification evidence — this ADR is not
-  Accepted until the r0* spikes pass against the installed Claude Code version)
+- **Status:** Accepted (2026-07-24) — Phase-0 spikes **R0.2 (macOS Keychain
+  pickup), R0.3 (lock protocol), R0.4 (freshening) PASSED** against CC 2.1.218: a
+  swap under CC's lock is adopted by the running session; the lock is a real
+  mutex; move-semantics hold; no old-token clobber. **Scope:** the macOS Keychain
+  path is validated; the Linux/Win `.credentials.json` path (R0.1) and
+  cross-version skew (R0.6) are NOT yet proven and gate shipping `rebind` there.
 - **Context roadmap:** `agents/roadmaps/road-to-live-rebind.md` (the feature that
   requires the write path) and
   `agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md` (Phase 4,

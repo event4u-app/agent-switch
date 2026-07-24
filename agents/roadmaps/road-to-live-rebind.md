@@ -131,21 +131,22 @@ projects touched.
       backed-up+restored via trap, arg2 read-only, honest-null exit codes;
       authored 2026-07-24, not run). The R0.* gates below stay open — they are the
       **runs**, which require two throwaway logged-in accounts against CC 2.1.218.
-- [ ] **R0.1 (Linux/Win live-reload):** two logged-in accounts, one running
-      session; write the target credential into `.credentials.json` under CC's
-      lock; send one message; assert usage is attributed to the **new** account on
-      the next message.
-- [ ] **R0.2 (macOS keychain pickup):** same via `security add-generic-password`;
-      assert pickup within ~30s; record that in the **manual** flow this latency
-      is non-critical (user clicks, keeps working, the next message runs on the
-      new account) — no proactive-switch timing pressure.
-- [ ] **R0.3 (lock-protocol correctness):** swap under CC's `proper-lockfile`
-      directory mutex; assert CC's double-checked re-read aborts its own refresh
-      (no old-token clobber); assert move-semantics keep one token family in one
-      store.
-- [ ] **R0.4 (freshening):** refresh the target token if < 10 min to expiry
-      **before** the swap (2× CC's own 5-min buffer); a dead refresh-token →
-      **quarantine**, never activate.
+- [~] **R0.1 (Linux/Win live-reload):** N/A on this macOS host — deferred to a
+      Linux/Win machine. `rebind` must not ship on those platforms until R0.1
+      passes there (the `.credentials.json` file backend is unproven).
+- [x] **R0.2 (macOS keychain pickup):** PASS (2026-07-24, CC 2.1.218) — two
+      distinct accounts (arg1 `matze.b@`, arg2 `m.berg@`); baseline ran on arg1;
+      the Keychain swap under CC's lock landed; the next turn ran on **arg2**.
+      Latency: fresh `claude -p` instant; long-lived session ≤ ~30s cache —
+      non-critical in the manual flow.
+- [x] **R0.3 (lock-protocol correctness):** PASS — (a) lock is a real mutex
+      (rejects a second acquire; a >10s-stale lock is taken over); (c)
+      move-semantics (store empty between move-out/in; one family in one store);
+      (b) no old-token clobber after a turn. Note: CC's own "abort my refresh"
+      branch is **inferred** from (b)'s effect, not observed directly.
+- [x] **R0.4 (freshening):** PASS — token >10 min → no freshen; profile endpoint
+      200; safe to swap directly. Dead-token quarantine branch drilled via
+      `--force-quarantine`.
 - [ ] **R0.6 (cross-CC-version skew, Council finding 4):** rebind lives across CC
       auto-updates, so R0.1–R0.4 only prove the *installed* version. Re-run them
       after a CC update, OR — if that cannot be scripted — declare version-skew an
@@ -158,9 +159,11 @@ projects touched.
       surface "CC credential layout changed, rebind disabled pending
       re-verification"). No silent degradation.
 
-Result matrix → consequence: all PASS → **accept ADR-003 (Phase 1), then build the
-write module (Phase 2)**. Any FAIL/null on R0.1–R0.3 → invariant A stands, roadmap
-ends with a documented honest null.
+Result matrix → consequence: **macOS gates R0.2–R0.4 PASSED (2026-07-24, CC
+2.1.218) → ADR-003 Accepted (Phase 1); the write module (Phase 2) may build for
+the macOS Keychain path.** No FAIL/null fired, so the honest-null fallback did not
+trigger. Linux/Win (R0.1) + cross-version skew (R0.6) remain open and gate
+shipping on those platforms.
 
 Security: read/write against CC's own store under its lock; throwaway accounts only.
 
@@ -176,8 +179,9 @@ it after merge. Drafted now; Accepted only once Phase 0 passes; the write module
       move+freshen+lock mechanics that neutralize the staleness rationale, the
       Phase-0 gate, and the honest-null fallback. (ADR index: N/A — agent-switch
       keeps no `docs/adr` index file; ADR-001/002/003 are standalone.)
-- [ ] On Phase-0 PASS, flip ADR-003 to **Accepted** and update the invariant text
-      in `src/credentials.ts` + the Phase-4 lock to name the single exception.
+- [x] Phase-0 (macOS) passed → ADR-003 flipped to **Accepted** (2026-07-24).
+      Deferred: update the invariant text in `src/credentials.ts` + the Phase-4
+      lock to name the single exception (ships with the Phase-2 write module).
 
 ### Phase 2 — `agent-switch rebind <account> [--profile <p>]` (the one write module)
 
