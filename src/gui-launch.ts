@@ -50,10 +50,47 @@ export function guiAssetSpec(
   return null;
 }
 
-/** Program + args to launch a prepared artifact. Pure. */
+/** Program + args to launch a prepared artifact. Pure.
+ *  macOS uses `open` WITHOUT `-n`: a bare `open` activates the already-running
+ *  app instead of forcing a second copy, so it is the OS-level half of the
+ *  single-instance guarantee (`isGuiRunning` is the other half). */
 export function guiLaunchArgv(kind: GuiKind, target: string): { program: string; args: string[] } {
-  if (kind === "app") return { program: "open", args: ["-n", target] };
+  if (kind === "app") return { program: "open", args: [target] };
   return { program: target, args: [] }; // AppImage runs directly; win-setup runs the installer
+}
+
+/** Substring that identifies a RUNNING GUI process for this kind inside a
+ *  process-list snapshot. Specific enough not to match the Node CLI itself
+ *  (whose command line is `node …/dist/index.js`). Pure. */
+export function guiProcessSignature(kind: GuiKind): string {
+  if (kind === "app") return "agent-switch.app/Contents/MacOS/agent-switch"; // the running .app binary
+  if (kind === "appimage") return "agent-switch.AppImage";
+  return "agent-switch.exe"; // win: the installed app process (not the -setup installer)
+}
+
+/** Whether `signature` appears in a process-list snapshot. Pure. */
+export function guiRunningIn(signature: string, processList: string): boolean {
+  return processList.includes(signature);
+}
+
+/** Live process-list snapshot for the host (full command line per process). */
+function processListSnapshot(platform: string = process.platform): string {
+  try {
+    if (platform === "win32") {
+      return spawnSync("tasklist", [], { encoding: "utf8" }).stdout ?? "";
+    }
+    return spawnSync("ps", ["ax", "-o", "command="], { encoding: "utf8" }).stdout ?? "";
+  } catch {
+    return ""; // ps/tasklist unavailable → treat as "not detectably running"
+  }
+}
+
+/** Whether the desktop GUI is already running on this host. Used to enforce
+ *  the single-instance rule before spawning a second copy. */
+export function isGuiRunning(): boolean {
+  const spec = guiAssetSpec();
+  if (!spec) return false;
+  return guiRunningIn(guiProcessSignature(spec.kind), processListSnapshot());
 }
 
 interface Asset {
@@ -125,14 +162,18 @@ async function ensureGuiArtifact(spec: { match: RegExp; kind: GuiKind }): Promis
   return launchPath;
 }
 
-/** Launch the desktop GUI (downloading + caching it on first use). */
-export async function launchGui(): Promise<void> {
+/** Launch the desktop GUI (downloading + caching it on first use).
+ *  Single-instance: if a GUI is already running, no second copy is started —
+ *  returns "already-running" so the caller can say so. */
+export async function launchGui(): Promise<"launched" | "already-running"> {
   const spec = guiAssetSpec();
   if (!spec) {
     throw new Error(`the desktop GUI has no prebuilt artifact for ${process.platform}/${process.arch} — build it from source with \`task gui:build\`.`);
   }
+  if (isGuiRunning()) return "already-running";
   const target = await ensureGuiArtifact(spec);
   const { program, args } = guiLaunchArgv(spec.kind, target);
   const child = spawn(program, args, { detached: true, stdio: "ignore" });
   child.unref();
+  return "launched";
 }

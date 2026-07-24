@@ -1712,8 +1712,8 @@ async function cmdGui(): Promise<void> {
   // Launch the tray/menubar GUI — downloads its prebuilt artifact from the
   // matching GitHub Release on first use, then caches it (see gui-launch.ts).
   try {
-    await launchGui();
-    console.log("Launched the agent-switch GUI.");
+    const result = await launchGui();
+    console.log(result === "already-running" ? "The agent-switch GUI is already running." : "Launched the agent-switch GUI.");
   } catch (err: any) {
     die(String(err?.message ?? err));
   }
@@ -1841,6 +1841,7 @@ function usage(): void {
   console.log(`agent-switch — switch accounts for Claude Code, Codex, and Antigravity (macOS · Linux · Windows)
 
 Provider defaults to claude; pass --provider codex|antigravity for the others.
+Run with no command to launch the tray/menubar GUI (single-instance).
 
   agent-switch add [--provider P] <name>       create a profile and log it in
   agent-switch import [--provider P] <name>    migrate the default install (no re-login)
@@ -1868,7 +1869,7 @@ Provider defaults to claude; pass --provider codex|antigravity for the others.
   agent-switch reset <profile> --provider codex                                redeem one banked Codex rate-limit reset
   agent-switch rename <old> <new> [--provider P]                               rename a profile (name & keep its tag)
   agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
-  agent-switch gui                             launch the tray/menubar GUI (bundled via npm)
+  agent-switch [gui]                           launch the tray/menubar GUI (the default with no command; won't start a second if one is running)
   agent-switch check-update [--json]           check GitHub Releases for a newer version
   agent-switch update                          self-update to the latest version (via npm)
   agent-switch apps                            list launchable GUI apps (macOS)
@@ -1901,7 +1902,9 @@ async function main(): Promise<void> {
   // profiles) skip it.
   if (cmd === "__hook-event") return cmdHookEvent(); // internal, silent, no migration
 
-  if (cmd && !["help", "--help", "-h", "shellenv"].includes(cmd)) {
+  // A bare `agent-switch` (no command) launches the GUI, which reads profiles —
+  // so it runs the migration too. Only pure help / shellenv skip it.
+  if (cmd === undefined || !["help", "--help", "-h", "shellenv"].includes(cmd)) {
     const moved = migrateLegacyLayout();
     if (moved.length > 0) {
       // stderr, not stdout: `dir` is machine-consumed by the shell wrapper
@@ -1965,7 +1968,12 @@ async function main(): Promise<void> {
       return cmdTooling(!!flags.json);
     case "doctor": return process.exit(await runDoctor());
     case "help": case "--help": case "-h": return usage();
-    default: usage(); process.exit(cmd ? 1 : 0);
+    // A bare `agent-switch` (no command) launches the GUI; an unknown command
+    // still prints usage and exits non-zero.
+    default:
+      if (cmd === undefined) return cmdGui();
+      usage();
+      process.exit(1);
   }
 }
 
