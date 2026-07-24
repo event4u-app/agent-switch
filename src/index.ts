@@ -56,6 +56,7 @@ import {
   ROOT,
 } from "./profiles.js";
 import { Provider, ProviderId, PROVIDER_IDS, provider, isProviderInstalled, resolveBinary } from "./providers.js";
+import { rebind, restoreRebind } from "./rebind.js";
 import { parseArgs, parseRun, resolveProviderValue } from "./args.js";
 import { extractBrief, writeBrief, sweepBriefs, seedPrompt } from "./handoff.js";
 import { credentialStore } from "./credentials.js";
@@ -1854,6 +1855,7 @@ Provider defaults to claude; pass --provider codex|antigravity for the others.
   agent-switch alerts on|off|status [--threshold 80,95]   record context/usage crossings to the notification log (off by default)
   agent-switch compact <profile> [--clear] [--dry-run] [--force]   type /compact (or /clear) into the profile's managed tmux pane
   agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place] [--print-only] [--force]   move a session to another profile and resume it
+  agent-switch rebind <account> [--profile <p>]   |   rebind --restore [--profile <p>]   point a RUNNING profile's session at another account (macOS; user-interaction switch)
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
@@ -1876,6 +1878,45 @@ Provider defaults to claude; pass --provider codex|antigravity for the others.
   agent-switch tooling [--json]                ecosystem tool readout (agent-config, rtk, provider CLIs)
   agent-switch tooling install|upgrade <tool>  install/upgrade an ecosystem tool (agent-config, rtk, claude, codex)
   agent-switch doctor                          per-OS, per-provider self-check`);
+}
+
+/**
+ * `agent-switch rebind <account> [--profile <p>]` — point a RUNNING profile's
+ * credential store at another account, so a live Claude session adopts it on its
+ * next message (macOS; the user-interaction switch, ADR-003). `--restore` reverses
+ * it. Claude only; the target + running profiles must be logged in.
+ */
+async function cmdRebind(
+  providerId: ProviderId,
+  providerExplicit: boolean,
+  account: string | undefined,
+  flags: Record<string, string | boolean>,
+): Promise<void> {
+  if (providerExplicit && providerId !== "claude") die(`rebind supports claude only (not ${providerId})`);
+  const profile = typeof flags.profile === "string" ? flags.profile : activeFor("claude") ?? undefined;
+
+  if (flags.restore) {
+    if (!profile) die("usage: agent-switch rebind --restore [--profile <p>] — no active claude profile to restore");
+    requireProfile("claude", profile, "rebind --restore --profile");
+    try {
+      const r = await restoreRebind({ profile });
+      console.log(`Restored "${r.restoredProfile}" to its own account (was rebound to "${r.wasBoundTo}").`);
+    } catch (e) {
+      die((e as Error).message);
+    }
+    return;
+  }
+
+  if (!account) die("usage: agent-switch rebind <account> [--profile <running-profile>]  (or: rebind --restore [--profile <p>])");
+  if (!profile) die("no running claude profile — pass --profile <name> or set one active with `asw <name>`.");
+  requireProfile("claude", account, "rebind");
+  requireProfile("claude", profile, "rebind --profile");
+  try {
+    const r = await rebind({ account, profile });
+    console.log(r.uxNote);
+  } catch (e) {
+    die((e as Error).message);
+  }
 }
 
 // ---------- main -------------------------------------------------------------
@@ -1943,6 +1984,7 @@ async function main(): Promise<void> {
     case "alerts": return cmdAlerts(positional[0], flags);
     case "compact": return cmdCompact(providerId, positional[0], flags);
     case "takeover": return cmdTakeover(providerId, providerExplicit, positional[0], flags);
+    case "rebind": return cmdRebind(providerId, providerExplicit, positional[0], flags);
     case "web": return cmdWeb(positional[0]);
     case "remove": case "rm": return cmdRemove(providerId, positional[0], !!flags.force);
     case "shellenv": return cmdShellenv((flags.shell as string) ?? positional[0]);

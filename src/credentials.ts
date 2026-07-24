@@ -2,10 +2,12 @@
  * Per-OS credential access — a read-only abstraction over where Claude Code
  * keeps a profile's OAuth credential.
  *
- * By design there is NO `write()`: agent-switch never writes Claude Code's
- * credential storage. The only supported way to place a credential is seeding
- * a plaintext `.credentials.json` file inside the config dir (see `import`),
- * which Claude Code then migrates into its own store on first use.
+ * By design this store has NO `write()`: agent-switch never writes Claude Code's
+ * credential storage **outside the `rebind` path** (ADR-003 — the single
+ * sanctioned exception, which writes the macOS Keychain entry directly under
+ * Claude Code's lock via `keychain.addPassword`). The only other way to place a
+ * credential is seeding a plaintext `.credentials.json` file inside the config
+ * dir (see `import`), which Claude Code migrates into its own store on first use.
  *
  * Backends:
  *   - darwin  → Keychain (hashed service per config dir), then the plaintext
