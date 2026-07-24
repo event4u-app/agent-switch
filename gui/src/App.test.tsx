@@ -402,7 +402,7 @@ describe("App", () => {
   it("toggles auto-switch for the SELECTED provider from the footer", async () => {
     render(<App />);
     // default tab is claude, and it was off → clicking turns claude on
-    fireEvent.click(await screen.findByRole("button", { name: /auto-switch/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /notify near limit/i }));
     expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", true);
   });
 
@@ -461,7 +461,7 @@ describe("App", () => {
     ]);
     render(<App />);
     fireEvent.click(await screen.findByRole("tab", { name: /codex/i }));
-    expect(await screen.findByText(/auto-switch ·/i)).toBeTruthy();
+    expect(await screen.findByText(/notify near limit ·/i)).toBeTruthy();
   });
 
   it("auto-switch UI is hidden by default (global master off)", async () => {
@@ -790,7 +790,7 @@ describe("App", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
     fireEvent.click(await screen.findByRole("tab", { name: /auto-switch/i }));
-    fireEvent.click(await screen.findByRole("switch", { name: /auto-switch globally/i })); // On → Off
+    fireEvent.click(await screen.findByRole("switch", { name: /near-limit notifications globally/i })); // On → Off
     await waitFor(() => expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", false));
     expect(ipc.setAutoSwitch).toHaveBeenCalledWith("codex", false);
     expect(ipc.setAutoSwitch).toHaveBeenCalledWith("antigravity", false);
@@ -798,7 +798,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /profiles/i }));
     await screen.findByRole("tab", { name: /claude/i });
     expect(screen.queryByLabelText(/auto-switch/i)).toBeNull();
-    expect(screen.queryByRole("button", { name: /auto-switch ·/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /notify near limit ·/i })).toBeNull();
   });
 
   it("toggles a provider surface from the Ecosystem providers card (moved out of Settings)", async () => {

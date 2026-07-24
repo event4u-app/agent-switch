@@ -1,24 +1,24 @@
 /**
- * Background usage daemon — poller, cache, and (opt-in) auto-switcher.
+ * Background usage daemon — poller, cache, and (opt-in) threshold notifier.
  *
  * It polls Claude profiles for their OWN usage, appends history, detects
  * active-profile threshold crossings, and writes `daemon-state.json` so
  * `status`/the GUI can read a fresh snapshot without hitting the API. When
- * `autoSwitch.enabled` (default OFF) it also watches every profile and moves the
- * active pointer to the account with the most headroom once the active one hits
- * the configured threshold — pooling accounts to route around limits, which the
- * operator opts into deliberately (see `AutoSwitchConfig`). With auto-switch off
- * it stays a pure poller/cache that never mutates the active profile.
+ * `autoSwitch.enabled` (default OFF) it also watches every profile and, once the
+ * active one hits the configured threshold, NOTIFIES the operator and SUGGESTS
+ * the account with the most headroom — it never switches automatically. The
+ * suggestion is a convenience; the actual switch is always a user interaction
+ * (see `AutoSwitchConfig`). The daemon never mutates the active profile.
  *
  * The pure helpers (single-instance, poll-target selection, backoff, state
- * freshness, switch decision in `usage.ts`) are exported for unit testing;
+ * freshness, suggestion decision in `usage.ts`) are exported for unit testing;
  * `runDaemon` is the loop.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { ROOT, activeFor, configDir, labelFor, listProfiles, readAutoSwitch, setActive, readSwitchStrategy, SwitchStrategy } from "./profiles.js";
+import { ROOT, activeFor, configDir, labelFor, listProfiles, readAutoSwitch, readSwitchStrategy, SwitchStrategy } from "./profiles.js";
 import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
 import { accessTokenOf, fetchUsage, liveSessionPids, readProfileCredential } from "./api.js";
@@ -52,8 +52,8 @@ function notify(event: Pick<Notification, "kind" | "title" | "message">): void {
   }
 }
 
-// Providers whose active profile the daemon may auto-switch (they expose a
-// usage readout to base a headroom decision on). Antigravity has none.
+// Providers the daemon may suggest a switch for on threshold (they expose a
+// usage readout to base a headroom suggestion on). Antigravity has none.
 const AUTO_PROVIDERS = ["claude", "codex"] as const;
 
 export const PIDFILE = path.join(ROOT, "daemon.pid");
@@ -353,10 +353,10 @@ async function pollProvider(
   if (activeMax === null || activeMax < autoSwitch.threshold) return failures; // still has headroom
 
   // reset-first (Codex only — banked resets are a Codex feature): redeem a reset
-  // instead of switching, but AT MOST ONCE per reset cycle. We record the
-  // window's resets_at BEFORE calling, so a buggy reset that doesn't actually
-  // clear usage can never loop and burn the whole balance — it falls through to
-  // a profile switch on the same poll's next-cycle.
+  // and STAY, but AT MOST ONCE per reset cycle. We record the window's resets_at
+  // BEFORE calling, so a buggy reset that doesn't actually clear usage can never
+  // loop and burn the whole balance — it falls through to a switch SUGGESTION on
+  // the same poll's next-cycle. Redeeming still stays on the active profile.
   if (strategy === "reset-first" && provider === "codex" && activeSnap) {
     const stuck = activeSnap.windows.find((w) => typeof w.utilization === "number" && w.utilization >= autoSwitch.threshold);
     const cycle = stuck?.resetsAt ?? "";
@@ -373,7 +373,7 @@ async function pollProvider(
         });
         return failures;
       }
-      log(`auto-switch: codex/${active} reset redeem failed (${r.reason ?? "?"}) → falling back to a profile switch`);
+      log(`auto-switch: codex/${active} reset redeem failed (${r.reason ?? "?"}) → falling back to a switch suggestion`);
     }
   }
 
@@ -382,12 +382,14 @@ async function pollProvider(
   const eligible = (name: string) => autoSwitch.tag === "all" || labelFor(provider, name) === autoSwitch.tag;
   const target = pickSwitchTarget(active, polled, autoSwitch.threshold, eligible);
   if (target && target !== active) {
-    setActive(provider, target);
-    log(`auto-switch: ${provider}/${active} out of headroom (≥${autoSwitch.threshold}%) → switched active to ${provider}/${target}`);
+    // Compliance: the daemon NEVER switches automatically. It only names the
+    // suggested account with the most headroom; switching stays a user
+    // interaction (CLI/GUI). No `setActive` call here.
+    log(`threshold: ${provider}/${active} out of headroom (≥${autoSwitch.threshold}%) → suggesting ${provider}/${target} (no automatic switch)`);
     notify({
-      kind: "success",
-      title: "Auto-switched account",
-      message: `${provider}/${active} hit ≥${autoSwitch.threshold}% — switched active to ${provider}/${target}.`,
+      kind: "warning",
+      title: "Usage limit near",
+      message: `${provider}/${active} hit ≥${autoSwitch.threshold}% — suggested profile: ${provider}/${target}. Switch manually (no automatic switch).`,
     });
   }
   return failures;
