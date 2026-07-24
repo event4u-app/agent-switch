@@ -313,7 +313,9 @@ The CLI is fully usable on its own. Two optional layers add convenience:
 - **Tray/menubar GUI** (`gui/`, Tauri) — a small panel to see per-profile usage
   and switch/open sessions. It is a **client of the CLI** (`agent-switch <cmd>
   --json`) and never re-implements profile logic; the CLI core stays
-  dependency-free. See [`gui/README.md`](gui/README.md).
+  dependency-free. See [`gui/README.md`](gui/README.md). Running `agent-switch`
+  **with no command** launches it (same as `agent-switch gui`); if the GUI is
+  already running, no second copy starts.
 
 Usage readout is per-provider: Claude exposes an OAuth `/usage` endpoint;
 **Codex and Gemini have no usage readout**, so they show identity only (never a
