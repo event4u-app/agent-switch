@@ -55,6 +55,20 @@ export function deletePassword(service: string): boolean {
   );
 }
 
+/**
+ * Upsert a generic password entry (`-U` overwrites an existing value). Returns
+ * true on success. This is the ONE credential-store WRITE in agent-switch — used
+ * ONLY by `src/rebind.ts` under Claude Code's lock (ADR-003). Elsewhere the
+ * credential store stays read-only.
+ *
+ * Note: the value is passed on argv (as `security` requires with `-w`), so it is
+ * briefly visible to `ps` — the same trade-off Claude Code's own tooling makes.
+ */
+export function addPassword(service: string, value: string): boolean {
+  if (!isMac()) return false;
+  return security(["add-generic-password", "-U", "-a", os.userInfo().username, "-s", service, "-w", value]) !== null;
+}
+
 /** The live credential of the default ~/.claude install (keychain, macOS). */
 export function readDefaultCredential(): string | null {
   return getPassword(DEFAULT_SERVICE);

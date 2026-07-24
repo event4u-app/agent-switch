@@ -131,21 +131,22 @@ projects touched.
       backed-up+restored via trap, arg2 read-only, honest-null exit codes;
       authored 2026-07-24, not run). The R0.* gates below stay open — they are the
       **runs**, which require two throwaway logged-in accounts against CC 2.1.218.
-- [ ] **R0.1 (Linux/Win live-reload):** two logged-in accounts, one running
-      session; write the target credential into `.credentials.json` under CC's
-      lock; send one message; assert usage is attributed to the **new** account on
-      the next message.
-- [ ] **R0.2 (macOS keychain pickup):** same via `security add-generic-password`;
-      assert pickup within ~30s; record that in the **manual** flow this latency
-      is non-critical (user clicks, keeps working, the next message runs on the
-      new account) — no proactive-switch timing pressure.
-- [ ] **R0.3 (lock-protocol correctness):** swap under CC's `proper-lockfile`
-      directory mutex; assert CC's double-checked re-read aborts its own refresh
-      (no old-token clobber); assert move-semantics keep one token family in one
-      store.
-- [ ] **R0.4 (freshening):** refresh the target token if < 10 min to expiry
-      **before** the swap (2× CC's own 5-min buffer); a dead refresh-token →
-      **quarantine**, never activate.
+- [~] **R0.1 (Linux/Win live-reload):** N/A on this macOS host — deferred to a
+      Linux/Win machine. `rebind` must not ship on those platforms until R0.1
+      passes there (the `.credentials.json` file backend is unproven).
+- [x] **R0.2 (macOS keychain pickup):** PASS (2026-07-24, CC 2.1.218) — two
+      distinct accounts (arg1 `matze.b@`, arg2 `m.berg@`); baseline ran on arg1;
+      the Keychain swap under CC's lock landed; the next turn ran on **arg2**.
+      Latency: fresh `claude -p` instant; long-lived session ≤ ~30s cache —
+      non-critical in the manual flow.
+- [x] **R0.3 (lock-protocol correctness):** PASS — (a) lock is a real mutex
+      (rejects a second acquire; a >10s-stale lock is taken over); (c)
+      move-semantics (store empty between move-out/in; one family in one store);
+      (b) no old-token clobber after a turn. Note: CC's own "abort my refresh"
+      branch is **inferred** from (b)'s effect, not observed directly.
+- [x] **R0.4 (freshening):** PASS — token >10 min → no freshen; profile endpoint
+      200; safe to swap directly. Dead-token quarantine branch drilled via
+      `--force-quarantine`.
 - [ ] **R0.6 (cross-CC-version skew, Council finding 4):** rebind lives across CC
       auto-updates, so R0.1–R0.4 only prove the *installed* version. Re-run them
       after a CC update, OR — if that cannot be scripted — declare version-skew an
@@ -158,9 +159,11 @@ projects touched.
       surface "CC credential layout changed, rebind disabled pending
       re-verification"). No silent degradation.
 
-Result matrix → consequence: all PASS → **accept ADR-003 (Phase 1), then build the
-write module (Phase 2)**. Any FAIL/null on R0.1–R0.3 → invariant A stands, roadmap
-ends with a documented honest null.
+Result matrix → consequence: **macOS gates R0.2–R0.4 PASSED (2026-07-24, CC
+2.1.218) → ADR-003 Accepted (Phase 1); the write module (Phase 2) may build for
+the macOS Keychain path.** No FAIL/null fired, so the honest-null fallback did not
+trigger. Linux/Win (R0.1) + cross-version skew (R0.6) remain open and gate
+shipping on those platforms.
 
 Security: read/write against CC's own store under its lock; throwaway accounts only.
 
@@ -176,42 +179,46 @@ it after merge. Drafted now; Accepted only once Phase 0 passes; the write module
       move+freshen+lock mechanics that neutralize the staleness rationale, the
       Phase-0 gate, and the honest-null fallback. (ADR index: N/A — agent-switch
       keeps no `docs/adr` index file; ADR-001/002/003 are standalone.)
-- [ ] On Phase-0 PASS, flip ADR-003 to **Accepted** and update the invariant text
-      in `src/credentials.ts` + the Phase-4 lock to name the single exception.
+- [x] Phase-0 (macOS) passed → ADR-003 flipped to **Accepted** (2026-07-24).
+      Deferred: update the invariant text in `src/credentials.ts` + the Phase-4
+      lock to name the single exception (ships with the Phase-2 write module).
 
 ### Phase 2 — `agent-switch rebind <account> [--profile <p>]` (the one write module)
 
-Gated on ADR-003 **Accepted** (Phase 1) + Phase 0 green.
+Gated on ADR-003 **Accepted** (Phase 1) + Phase 0 green. **Core slice landed
+2026-07-24** — `src/rebind.ts` (the single write path), `keychain.addPassword`
+(the one new write primitive), `credentials.ts` invariant comment updated to name
+the exception, wired into `index.ts`; 9 unit tests + tsc + suite green (54 pass).
+Follow-up slices stay open below.
 
-- [ ] Resolve the running session's config-home. `hooks.ts` provides only a
-      **config-dir→profile decode** (`profileFromConfigDir`, verified 2026-07-24
-      against CC 2.1.218) — there is **no live pid/process detection today**, so
-      that lookup is **net-new work**, not a reuse. **Fail-closed** if detection
-      throws.
-- [ ] Acquire CC's lock (`<config_home>.lock`, ~9s timeout, touch ~3s).
+- [~] Resolve the running session's config-home. Landed: `--profile <p>` explicit
+      + default to the active profile. Deferred: live pid/process **auto**-detection
+      (`hooks.ts` gives only a config-dir→profile decode; a live-process lookup is
+      net-new).
+- [x] Acquire CC's lock (`withProperLock` on the config dir; ~9s timeout) before
+      any mutation — unit-tested (lock precedes the first write).
 - [ ] **Global binding registry + global lock (Council finding 2):** the per-profile
       binding-marker cannot enforce the *global* "one token family, one store"
-      invariant — two concurrent `rebind`s could bind the same account to two
-      profiles. Add a cross-profile binding registry guarded by a global lock
-      **above** CC's per-profile lock, so an account is bound to at most one profile
-      at a time.
-- [ ] Freshen the target token (R0.4) before swapping.
-- [ ] **Move** the target credential into the profile store (macOS: `serviceNameFor()`
-      + `security add-generic-password -U`; Linux/Win: atomic `.credentials.json`
-      write); move the displaced credential **back** to its source slot.
-- [ ] **Provenance-fingerprint mismatch states (Council finding 5):** define the
-      #117 fingerprint error handling explicitly — `jti` changed mid-session →
-      **retry**; user/account claim changed → **quarantine**; claims missing →
-      **refuse**.
-- [ ] Write a per-profile **binding-marker** ("profile X currently on account Y")
-      alongside the global registry entry so the 1:1 mapping stays honest.
-- [ ] **Rollback / kill-switch (Council convergence):** a versioned feature flag to
-      disable rebind, plus a circuit-breaker that disables it after N consecutive
-      failures, with `rebind --restore` as the recovery path.
-- [ ] `agent-switch rebind --restore` to return a profile to its own account at
-      session end.
-- [ ] Set the UX expectation in output: Linux/Win = next message; macOS = ≤ ~30s
-      (the Keychain cache lives in CC, not forceable).
+      invariant — two concurrent `rebind`s could bind one account to two profiles.
+      Add a cross-profile registry guarded by a global lock above CC's per-profile
+      lock. *(deferred slice)*
+- [x] Freshen guard (R0.4): refuse a target < 10 min to expiry — no token minting;
+      unit-tested. *(a real refresh grant is a follow-up; the guard ships now.)*
+- [x] **Move-semantics** (macOS): target credential moved INTO the running store
+      (`serviceNameFor()` + `security add-generic-password -U`), the target store
+      emptied (Keychain entry deleted, plaintext file moved aside — never deleted),
+      both originals stashed in the marker BEFORE any mutation. Linux/Win backend
+      deferred (R0.1). Unit-tested.
+- [ ] **Provenance-fingerprint mismatch states (Council finding 5).** *(deferred slice)*
+- [x] Per-profile **binding-marker** stashing both originals — keeps the 1:1 mapping
+      honest + recoverable after a crash. Unit-tested.
+- [ ] **Rollback / kill-switch (Council convergence):** versioned feature-flag +
+      circuit-breaker after N failures. *(deferred; `--restore` is the manual
+      recovery path today.)*
+- [x] `agent-switch rebind --restore [--profile <p>]` — reverses the swap (both
+      stores restored, target file returned, marker cleared). Unit-tested.
+- [x] UX expectation printed: fresh process instant, long-lived session ≤ ~30s
+      (Keychain cache). macOS-only; **refuses on Linux/Win** (R0.1 unproven).
 
 Security: this is the narrowed-invariant write path — gated by ADR-003 Accepted + Phase 0.
 
