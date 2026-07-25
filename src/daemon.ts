@@ -386,10 +386,15 @@ async function pollProvider(
     // suggested account with the most headroom; switching stays a user
     // interaction (CLI/GUI). No `setActive` call here.
     log(`threshold: ${provider}/${active} out of headroom (≥${autoSwitch.threshold}%) → suggesting ${provider}/${target} (no automatic switch)`);
+    // Name the command that opens the limit dialog (claude only — rebind is
+    // claude-scoped). Wording only; the notify/suggest DECISION above is unchanged.
+    const how = provider === "claude"
+      ? "Run `agent-switch rebind` to switch (no automatic switch)."
+      : "Switch manually (no automatic switch).";
     notify({
       kind: "warning",
       title: "Usage limit near",
-      message: `${provider}/${active} hit ≥${autoSwitch.threshold}% — suggested profile: ${provider}/${target}. Switch manually (no automatic switch).`,
+      message: `${provider}/${active} hit ≥${autoSwitch.threshold}% — suggested profile: ${provider}/${target}. ${how}`,
     });
   }
   return failures;

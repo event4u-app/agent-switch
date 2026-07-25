@@ -14,6 +14,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as readline from "node:readline";
 import { spawn, spawnSync } from "node:child_process";
 
 import {
@@ -57,6 +58,7 @@ import {
 } from "./profiles.js";
 import { Provider, ProviderId, PROVIDER_IDS, provider, isProviderInstalled, resolveBinary } from "./providers.js";
 import { rebind, restoreRebind } from "./rebind.js";
+import { buildRebindDialog, resolveRebindChoice, selectableRows, type RebindDialogCandidate } from "./rebind-dialog.js";
 import { parseArgs, parseRun, resolveProviderValue } from "./args.js";
 import { extractBrief, writeBrief, sweepBriefs, seedPrompt } from "./handoff.js";
 import { credentialStore } from "./credentials.js";
@@ -1907,7 +1909,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch alerts on|off|status [--threshold 80,95]   record context/usage crossings to the notification log (off by default)
   agent-switch compact <profile> [--clear] [--dry-run] [--force]   type /compact (or /clear) into the profile's managed tmux pane
   agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place] [--print-only] [--force]   move a session to another profile and resume it
-  agent-switch rebind <account> [--profile <p>]   |   rebind --restore [--profile <p>]   point a RUNNING profile's session at another account (macOS; user-interaction switch)
+  agent-switch rebind [<account>] [--profile <p>]   |   rebind --restore [--profile <p>]   switch a RUNNING profile's account (macOS; no <account> = interactive picker; user-interaction switch)
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
@@ -1933,10 +1935,92 @@ Run with no command to launch the tray/menubar GUI (single-instance).
 }
 
 /**
+ * The interactive limit dialog (Phase 4) — `agent-switch rebind` with no account
+ * and no `--restore`. Gathers the OTHER claude profiles + their usage, pre-selects
+ * the best-headroom profile as a convenience, and prompts the user to pick. Only
+ * an explicit selection switches (via `rebind`); cancel stays put. The user
+ * interaction IS the compliance line — there is NO automatic switch anywhere in
+ * here. macOS-only for the actual switch; a non-TTY stdin prints the suggested
+ * command instead of hanging on a prompt no one can answer.
+ */
+async function rebindDialog(running: string): Promise<void> {
+  const others = listProfiles("claude").filter((n) => n !== running);
+  const candidates: RebindDialogCandidate[] = [];
+  for (const n of others) {
+    // Same usage read path `status` uses (daemon cache when fresh, else the
+    // OAuth /usage endpoint); null when unreadable — the row shows no %.
+    candidates.push({ name: n, snapshot: await claudeSnapshot(n), label: labelFor("claude", n) });
+  }
+  const dialog = buildRebindDialog(candidates, running);
+  const rows = selectableRows(dialog);
+  if (rows.length === 0) {
+    die(`no other claude profile to rebind "${running}" to — add one with \`agent-switch add <name>\`.`);
+  }
+
+  // Non-interactive stdin: never hang. Print the pre-selected profile + the exact
+  // command that performs the switch, then return (no switch — the user has to run it).
+  if (!process.stdin.isTTY) {
+    const sug = dialog.suggestedProfile;
+    if (sug) {
+      console.error(`Suggested profile (most headroom): ${sug}`);
+      console.error(`Switch "${running}" to it with:  agent-switch rebind ${sug} --profile ${running}`);
+    } else {
+      console.error(`No usage data to pre-select a profile. Switch with:  agent-switch rebind <account> --profile ${running}`);
+    }
+    return;
+  }
+
+  // The actual switch is macOS-only (the Linux/Windows credential backend is
+  // unproven — spike R0.1). Refuse before prompting rather than after a pick.
+  if (process.platform !== "darwin") {
+    die("rebind is macOS-only for now (the Linux/Windows credential backend is unproven — spike R0.1).");
+  }
+
+  console.log(`Rebind "${running}" to which account? A running Claude session adopts it on its next message.`);
+  rows.forEach((r, i) => {
+    const marker = r.profile === dialog.suggestedProfile ? "  ← suggested (most headroom)" : "";
+    const label = r.label ? ` [${r.label}]` : "";
+    const util = r.maxUtil === null ? "usage n/a" : `${r.maxUtil}% used`;
+    console.log(`  ${i + 1}) ${(r.profile + label).padEnd(24)} ${util}${marker}`);
+  });
+  const enterHint = dialog.suggestedProfile ?? "(no suggestion)";
+  console.log(`  [enter] = ${enterHint}   ·   q = cancel (stay on "${running}")`);
+
+  const SIGINT = "\u0003"; // sentinel distinct from empty input (empty = accept the suggestion)
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await new Promise<string>((resolve) => {
+    rl.on("SIGINT", () => resolve(SIGINT)); // Ctrl-C -> cancel, no switch
+    rl.question("> ", (a) => resolve(a));
+  });
+  rl.close();
+
+  if (answer === SIGINT) {
+    console.log(`\nStayed on "${running}" — no switch.`);
+    return;
+  }
+  const choice = resolveRebindChoice(answer, dialog);
+  if (choice.kind === "cancel") {
+    console.log(`Stayed on "${running}" — no switch.`);
+    return;
+  }
+  if (choice.kind === "invalid") {
+    console.log(`No valid selection — stayed on "${running}".`);
+    return;
+  }
+  try {
+    const r = await rebind({ account: choice.profile, profile: running });
+    console.log(r.uxNote);
+  } catch (e) {
+    die((e as Error).message);
+  }
+}
+
+/**
  * `agent-switch rebind <account> [--profile <p>]` — point a RUNNING profile's
  * credential store at another account, so a live Claude session adopts it on its
  * next message (macOS; the user-interaction switch, ADR-003). `--restore` reverses
- * it. Claude only; the target + running profiles must be logged in.
+ * it. With NO account and NO `--restore`, opens the interactive limit dialog
+ * ({@link rebindDialog}). Claude only; the target + running profiles must be logged in.
  */
 async function cmdRebind(
   providerId: ProviderId,
@@ -1959,7 +2043,14 @@ async function cmdRebind(
     return;
   }
 
-  if (!account) die("usage: agent-switch rebind <account> [--profile <running-profile>]  (or: rebind --restore [--profile <p>])");
+  if (!account) {
+    // No account + no --restore → the interactive limit dialog (Phase 4). The
+    // switch is user-interaction-gated: the picker pre-selects the best-headroom
+    // profile as a convenience, but only an explicit pick switches.
+    if (!profile) die("no running claude profile — pass --profile <name> or set one active with `asw <name>`.");
+    requireProfile("claude", profile, "rebind --profile");
+    return rebindDialog(profile);
+  }
   if (!profile) die("no running claude profile — pass --profile <name> or set one active with `asw <name>`.");
   requireProfile("claude", account, "rebind");
   requireProfile("claude", profile, "rebind --profile");
