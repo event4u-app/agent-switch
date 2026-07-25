@@ -522,7 +522,7 @@ export default function App() {
         .map((r) => ({ name: r.name, max: nearestLimit(usage[`${selected}/${r.name}`]?.snap ?? null) })),
     );
     if (!target) {
-      setError(`Auto-switch test needs a second ${PROVIDER_LABEL[selected]} profile to switch to.`);
+      setError(`Near-limit test needs a second ${PROVIDER_LABEL[selected]} profile to suggest.`);
       return;
     }
     const threshold = auto?.[selected]?.threshold ?? 95;
@@ -532,7 +532,10 @@ export default function App() {
         "Usage limit near",
         `claude/${active ?? "—"} hit ≥${threshold}% — suggested profile: claude/${target}. Switch with the Switch-account dialog or \`agent-switch rebind\`. (dev test trigger)`,
       );
+      await syncNotifications(); // reload the bell/flyout so the recorded notification is actually visible
     });
+    // Also open the switch-account dialog so the near-limit → switch flow is visible end-to-end.
+    setSwitchDialog(active ?? "");
   }
 
   // `force` = a manual refresh (footer button): bypass the per-profile fetch
