@@ -277,6 +277,38 @@ export interface RebindResult {
   uxNote: string;
 }
 
+// ---------- credential-store contract canary (Council finding 3) ----------
+
+/**
+ * Pinned Keychain service-name shape from the Phase-0 spikes (see keychain.ts):
+ * `"Claude Code-credentials-" + sha256(NFC(configDir)).hex[:8]`. rebind's whole
+ * swap targets the entry under this name — if Claude Code's naming drifted, the
+ * swap would read/write the wrong (or a non-existent) entry.
+ */
+export const PINNED_SERVICE_NAME_RE = /^Claude Code-credentials-[0-9a-f]{8}$/;
+
+/**
+ * Fail loud if Claude Code's credential-store naming contract drifted from what
+ * the Phase-0 spikes pinned. Runs BEFORE any read or mutation in {@link rebind} —
+ * a drift here means the swap could target the wrong Keychain entry, so we refuse
+ * rather than mutate blind. Deliberately bounded: it checks the keychain-naming
+ * shape only (the core Phase-0 contract), never Claude Code's version or install.
+ *
+ * Drift-response matrix (drift type → action → user message):
+ *   keychain-name format changed → rebind disabled pending re-verification →
+ *   "re-run the Phase-0 spikes to re-pin the contract before rebinding".
+ */
+export function canaryCheck(cfgDir: string, d: RebindDeps): void {
+  const svc = d.serviceNameFor(cfgDir);
+  if (!PINNED_SERVICE_NAME_RE.test(svc)) {
+    throw new RebindError(
+      `credential-store canary tripped: keychain-name format changed (${svc}) → ` +
+        `rebind disabled pending re-verification (Claude Code's credential layout may have changed; ` +
+        `re-run the Phase-0 spikes to re-pin the contract before rebinding).`,
+    );
+  }
+}
+
 /**
  * Rebind the running profile `profile` to serve `account`'s credential. macOS
  * only; both must be logged-in claude profiles. Throws {@link RebindError} on any
@@ -291,6 +323,11 @@ export async function rebind(
   opts: { account: string; profile: string },
   d: RebindDeps = defaultDeps(),
 ): Promise<RebindResult> {
+  // Council finding 3: verify Claude Code's credential-store naming contract has
+  // not drifted BEFORE any read or mutation (incl. the kill-switch read). A drift
+  // hard-refuses here, independent of the circuit-breaker — it is a config-drift
+  // stop, not a rebind failure.
+  canaryCheck(configDir("claude", opts.profile), d);
   const ks = d.readRebindState();
   if (ks.disabled) {
     throw new RebindError(

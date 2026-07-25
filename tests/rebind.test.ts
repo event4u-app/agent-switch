@@ -11,9 +11,12 @@ import {
   RebindError,
   FRESHEN_FLOOR_MS,
   REBIND_FAILURE_LIMIT,
+  canaryCheck,
+  PINNED_SERVICE_NAME_RE,
   type RebindDeps,
 } from "../src/rebind.js";
 import { configDir, ROOT, type RebindKillSwitch } from "../src/profiles.js";
+import { serviceNameFor as realServiceNameFor } from "../src/keychain.js";
 
 const NOW = 1_700_000_000_000;
 
@@ -28,13 +31,15 @@ function credWith(extra: Record<string, unknown>, token: string, expOffsetMs = 6
 
 const pConfig = configDir("claude", "P");
 const aConfig = configDir("claude", "A");
-const pSvc = "svc:" + pConfig;
-const aSvc = "svc:" + aConfig;
+// Use the REAL keychain derivation so service names carry the pinned canary
+// shape ("Claude Code-credentials-<8hex>"); the fake's serviceNameFor matches.
+const pSvc = realServiceNameFor(pConfig);
+const aSvc = realServiceNameFor(aConfig);
 // Build paths with path.join so keys match rebind.ts (backslashes on Windows).
 const aFile = path.join(aConfig, ".credentials.json");
 const pFile = path.join(pConfig, ".credentials.json");
 const qConfig = configDir("claude", "Q");
-const qSvc = "svc:" + qConfig;
+const qSvc = realServiceNameFor(qConfig);
 const registryFile = path.join(ROOT, ".agent-switch-rebind-registry.json");
 
 interface Fake {
@@ -53,7 +58,7 @@ function makeFake(opts: { platform?: NodeJS.Platform; rebindState?: RebindKillSw
   const deps: RebindDeps = {
     platform: opts.platform ?? "darwin",
     now: () => NOW,
-    serviceNameFor: (dir) => "svc:" + dir,
+    serviceNameFor: (dir) => realServiceNameFor(dir),
     kcGet: (s) => kc.get(s) ?? null,
     kcAdd: (s, v) => {
       calls.push("kcAdd:" + s);
@@ -386,4 +391,32 @@ test("resetting the kill-switch re-enables rebind (what `rebind --reset` does)",
   const r = await rebind({ account: "A", profile: "P" }, f.deps);
   assert.equal(r.boundToProfile, "A");
   assert.deepEqual(f.rebindState, { disabled: false, consecutiveFailures: 0 });
+});
+
+// ---------- Feature 4: credential-store contract canary (Council finding 3) ----------
+
+test("canary passes for the real Keychain service-name format", () => {
+  const f = makeFake();
+  // The fake derives service names via the REAL keychain derivation, which must
+  // carry the pinned shape and be accepted by canaryCheck without throwing.
+  assert.match(f.deps.serviceNameFor(pConfig), PINNED_SERVICE_NAME_RE);
+  assert.doesNotThrow(() => canaryCheck(pConfig, f.deps));
+});
+
+test("canary refuses rebind BEFORE any mutation when the service-name format drifted", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  // Simulate Claude Code's credential-store naming drifting away from the pinned
+  // "Claude Code-credentials-<8hex>" shape the Phase-0 spikes verified.
+  f.deps.serviceNameFor = () => "SomeOtherApp-credentials";
+
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /canary tripped/);
+  assert.equal(
+    f.calls.filter((c) => c.startsWith("kcAdd") || c.startsWith("kcDelete") || c.startsWith("writeFile")).length,
+    0,
+    "no credential mutation on a canary refusal",
+  );
+  assert.equal(readBinding(pConfig, f.deps), null, "no binding marker written on a canary refusal");
+  assert.equal(f.rebindState.consecutiveFailures, 0, "a canary refusal does not advance the circuit-breaker");
 });
