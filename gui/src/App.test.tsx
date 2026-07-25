@@ -75,6 +75,10 @@ vi.mock("./ipc.js", () => ipc);
 const desktopNotify = vi.hoisted(() => vi.fn().mockResolvedValue(false));
 const clearDesktopNotify = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const showAppWindow = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+// Hoisted so tests can drive the OS-permission state and assert the request was
+// (or wasn't) made when the single Desktop-notifications switch is toggled on.
+const desktopPermission = vi.hoisted(() => vi.fn().mockResolvedValue("default"));
+const requestDesktopPermission = vi.hoisted(() => vi.fn().mockResolvedValue("granted"));
 // Capture the click callback the app registers, so a test can fire it.
 const notifClick = vi.hoisted(() => ({ cb: null as null | (() => void) }));
 vi.mock("./notifications.js", () => ({
@@ -85,8 +89,8 @@ vi.mock("./notifications.js", () => ({
     notifClick.cb = cb;
     return Promise.resolve(() => {});
   },
-  desktopPermission: vi.fn().mockResolvedValue("default"),
-  requestDesktopPermission: vi.fn().mockResolvedValue("granted"),
+  desktopPermission,
+  requestDesktopPermission,
 }));
 
 // The embedded terminal renders real xterm/pty — stub it so tests assert the
@@ -305,6 +309,10 @@ beforeEach(() => {
   desktopNotify.mockResolvedValue(false);
   clearDesktopNotify.mockClear();
   showAppWindow.mockClear();
+  desktopPermission.mockClear();
+  desktopPermission.mockResolvedValue("default");
+  requestDesktopPermission.mockClear();
+  requestDesktopPermission.mockResolvedValue("granted");
   notifClick.cb = null;
 });
 
@@ -728,6 +736,7 @@ describe("App", () => {
   });
 
   it("shows an in-window toast when a fresh event cannot be delivered to the desktop", async () => {
+    ipc.getOsNotify.mockResolvedValue(true); // desktop notifications enabled → the fire path runs
     desktopNotify.mockResolvedValue(false); // permission denied / unavailable
     ipc.listNotifications.mockResolvedValue([
       { id: "t1", ts: Date.now() + 1_000_000, kind: "warning", title: "Usage fetch failed", message: "codex/oai" },
@@ -739,6 +748,7 @@ describe("App", () => {
   });
 
   it("does not show a toast when the desktop notification was delivered", async () => {
+    ipc.getOsNotify.mockResolvedValue(true); // desktop notifications enabled → the fire path runs
     desktopNotify.mockResolvedValue(true); // desktop delivered it
     ipc.listNotifications.mockResolvedValue([
       { id: "t2", ts: Date.now() + 1_000_000, kind: "success", title: "Auto-switched account", message: "→ privat" },
@@ -764,6 +774,7 @@ describe("App", () => {
 
   it("hides a muted kind from the flyout and the unread badge", async () => {
     store.mutedKinds = ["warning"];
+    ipc.getOsNotify.mockResolvedValue(true); // desktop enabled so delivery suppresses the toast
     desktopNotify.mockResolvedValue(true); // avoid toasts in this assertion
     const ts = Date.now() + 1_000_000;
     ipc.listNotifications.mockResolvedValue([
@@ -785,6 +796,65 @@ describe("App", () => {
     expect(await screen.findByText(/desktop notifications/i)).toBeTruthy();
     fireEvent.click(await screen.findByRole("switch", { name: /toggle fetch failures/i }));
     expect(store.mutedKinds).toContain("warning");
+  });
+
+  // Helper: open Settings → Notifications and return the single Desktop switch.
+  async function openDesktopSwitch() {
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /notifications/i }));
+    return (await screen.findByRole("switch", { name: /^desktop notifications$/i })) as HTMLButtonElement;
+  }
+
+  it("the single Desktop-notifications switch reflects osNotify and turning it off calls setOsNotify(false)", async () => {
+    ipc.getOsNotify.mockResolvedValue(true); // persisted flag = on
+    render(<App />);
+    const sw = await openDesktopSwitch();
+    await waitFor(() => expect(sw.getAttribute("aria-checked")).toBe("true")); // reflects the flag
+    fireEvent.click(sw);
+    await waitFor(() => expect(ipc.setOsNotify).toHaveBeenCalledWith(false));
+    await waitFor(() => expect(sw.getAttribute("aria-checked")).toBe("false"));
+    // Old two-control layout is gone: no separate Enable button, no "when closed" copy.
+    expect(screen.queryByRole("button", { name: /enable desktop notifications/i })).toBeNull();
+    expect(screen.queryByText(/notify when the app is closed/i)).toBeNull();
+  });
+
+  it("turning the Desktop switch ON requests OS permission (when not granted) then persists it", async () => {
+    ipc.getOsNotify.mockResolvedValue(false); // off to start
+    desktopPermission.mockResolvedValue("default"); // not yet granted
+    requestDesktopPermission.mockResolvedValue("granted"); // user allows
+    render(<App />);
+    const sw = await openDesktopSwitch();
+    await waitFor(() => expect(sw.getAttribute("aria-checked")).toBe("false"));
+    fireEvent.click(sw);
+    await waitFor(() => expect(requestDesktopPermission).toHaveBeenCalled()); // asked the OS first
+    await waitFor(() => expect(ipc.setOsNotify).toHaveBeenCalledWith(true)); // then persisted
+    await waitFor(() => expect(sw.getAttribute("aria-checked")).toBe("true"));
+  });
+
+  it("Desktop switch stays OFF with a hint when the OS denies permission (setOsNotify not called)", async () => {
+    ipc.getOsNotify.mockResolvedValue(false);
+    desktopPermission.mockResolvedValue("default");
+    requestDesktopPermission.mockResolvedValue("denied"); // user blocks it
+    render(<App />);
+    const sw = await openDesktopSwitch();
+    fireEvent.click(sw);
+    await waitFor(() => expect(requestDesktopPermission).toHaveBeenCalled());
+    expect(await screen.findByText(/blocked by the os/i)).toBeTruthy(); // inline hint
+    expect(ipc.setOsNotify).not.toHaveBeenCalled(); // never enabled
+    expect(sw.getAttribute("aria-checked")).toBe("false"); // left off
+  });
+
+  it("with Desktop notifications OFF the app-open fire path does not desktop-notify (bell/toast still work)", async () => {
+    ipc.getOsNotify.mockResolvedValue(false); // OFF → app-open desktop fire is gated
+    desktopNotify.mockResolvedValue(true); // would deliver, if it were ever called
+    ipc.listNotifications.mockResolvedValue([
+      { id: "g1", ts: Date.now() + 1_000_000, kind: "success", title: "Switched account", message: "→ privat" },
+    ]);
+    render(<App />);
+    // The in-window fallback (toast) still fires and the bell still lists it.
+    const toast = await screen.findByRole("status");
+    expect(toast.textContent).toContain("Switched account");
+    expect(desktopNotify).not.toHaveBeenCalled(); // OS desktop notification suppressed
   });
 
   it("global auto-switch off hides the badge colouring + footer toggle and deactivates every provider", async () => {

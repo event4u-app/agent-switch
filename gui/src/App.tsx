@@ -285,6 +285,16 @@ export default function App() {
   const [toasts, setToasts] = useState<AppNotification[]>([]);
   // Muted notification kinds — suppressed from desktop, toast, flyout, and badge.
   const [mutedKinds, setMutedKindsState] = useState<NotificationKind[]>(() => getMutedKinds());
+  // "Desktop notifications" master (persisted CLI flag). Lifted here — not just
+  // in the settings sub-component — because the App-level fire path below gates
+  // on it too, so turning it off stops BOTH the daemon-when-closed OS
+  // notifications AND the app-when-open desktop notifications. `null` = loading.
+  const [osNotify, setOsNotifyState] = useState<boolean | null>(null);
+  // The fire loop runs inside an async refresh with many awaits, so reading the
+  // state via a captured closure could go stale — mirror it into a ref (same
+  // pattern as refreshRef) and read that at fire time.
+  const osNotifyRef = useRef(false);
+  osNotifyRef.current = !!osNotify;
 
   // Usage auto-refresh: a configurable timer (default 10 min, set in General
   // settings), shown as a live countdown by the footer refresh button. Tab
@@ -415,6 +425,12 @@ export default function App() {
   // so the native window-event handler matches the UI from the first minimize.
   useEffect(() => {
     void setMinimizeToDock(getMinimizeToDock());
+  }, []);
+
+  // Load the persisted "Desktop notifications" flag once on mount so the fire
+  // path (and the settings switch) reflect the real CLI state.
+  useEffect(() => {
+    getOsNotify().then(setOsNotifyState).catch(() => setOsNotifyState(false));
   }, []);
 
   // Automatic updates. Runs once on open and then every 24h WHILE the app stays
@@ -624,7 +640,10 @@ export default function App() {
     for (const n of fresh.slice(0, 5)) {
       // Skip events the daemon already showed on the desktop, and muted kinds.
       if (n.osNotified || mutedSet.has(n.kind)) continue;
-      const shown = await sendDesktopNotification(n.title, n.message);
+      // Only fire an OS desktop notification when "Desktop notifications" is on;
+      // when off, treat it like an undeliverable desktop and fall back to the
+      // in-window toast (the bell/flyout always show it regardless).
+      const shown = osNotifyRef.current ? await sendDesktopNotification(n.title, n.message) : false;
       if (!shown) pushToast(n);
     }
   }
@@ -920,6 +939,8 @@ export default function App() {
             onToggleHideSummaries={toggleHideSummaries}
             mutedKinds={mutedKinds}
             onToggleMute={toggleMuteKind}
+            osNotify={osNotify}
+            onSetOsNotify={setOsNotifyState}
             devMode={devMode}
             onToggleDevMode={toggleDevMode}
           />
@@ -932,7 +953,6 @@ export default function App() {
               antigravity: grouped.antigravity.map((r) => r.name),
             }}
             hideSummaries={hideSummaries}
-            onClose={() => setSection("profiles")}
             onTakeover={(provider, sessionId, to, keepSource) =>
               setTerminal({
                 args: takeoverArgs(sessionId, to, keepSource, provider),
@@ -1817,6 +1837,8 @@ function SettingsView({
   onToggleHideSummaries,
   mutedKinds,
   onToggleMute,
+  osNotify,
+  onSetOsNotify,
   devMode,
   onToggleDevMode,
 }: {
@@ -1840,6 +1862,8 @@ function SettingsView({
   onToggleMinimizeToDock: (on: boolean) => void;
   mutedKinds: NotificationKind[];
   onToggleMute: (kind: NotificationKind) => void;
+  osNotify: boolean | null;
+  onSetOsNotify: (on: boolean) => void;
   devMode: boolean;
   onToggleDevMode: (on: boolean) => void;
 }) {
@@ -1882,7 +1906,14 @@ function SettingsView({
           <DesignSettings />
         </>
       )}
-      {tab === "notifications" && <NotificationSettings mutedKinds={mutedKinds} onToggleMute={onToggleMute} />}
+      {tab === "notifications" && (
+        <NotificationSettings
+          mutedKinds={mutedKinds}
+          onToggleMute={onToggleMute}
+          osNotify={osNotify}
+          onSetOsNotify={onSetOsNotify}
+        />
+      )}
       {tab === "autoswitch" && (
         <AutoSwitchSettings
           enabled={autoSwitchEnabled}
@@ -1920,25 +1951,31 @@ const PERMISSION_LABEL: Record<DesktopPermission, string> = {
   unavailable: "Unavailable",
 };
 
-/** Alerts tab: desktop-notification permission, background (daemon) OS
- *  notifications, and per-kind mute toggles. */
+/** Alerts tab: the single "Desktop notifications" master (OS permission +
+ *  persisted CLI flag, folded into one switch), context alerts, and per-kind
+ *  mute toggles. `osNotify` is lifted to App so the fire path gates on it too. */
 function NotificationSettings({
   mutedKinds,
   onToggleMute,
+  osNotify,
+  onSetOsNotify,
 }: {
   mutedKinds: NotificationKind[];
   onToggleMute: (kind: NotificationKind) => void;
+  osNotify: boolean | null;
+  onSetOsNotify: (on: boolean) => void;
 }) {
   const [perm, setPerm] = useState<DesktopPermission | null>(null);
-  const [osNotify, setOsNotifyState] = useState<boolean | null>(null);
   const [notify, setNotifyState] = useState<boolean | null>(null);
   const [notifyThresholds, setNotifyThresholds] = useState<number[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  // Inline hint when enabling can't proceed (OS denied / unavailable) — distinct
+  // from the destructive `err` styling.
+  const [hint, setHint] = useState<string | null>(null);
   const muted = new Set(mutedKinds);
 
   useEffect(() => {
     desktopPermission().then(setPerm).catch(() => setPerm("unavailable"));
-    getOsNotify().then(setOsNotifyState).catch(() => setOsNotifyState(false));
     getNotifyConfig()
       .then((c) => {
         setNotifyState(c.notify);
@@ -1946,10 +1983,6 @@ function NotificationSettings({
       })
       .catch(() => setNotifyState(false));
   }, []);
-
-  function requestPerm() {
-    requestDesktopPermission().then(setPerm).catch(() => setPerm("unavailable"));
-  }
 
   async function toggleNotify() {
     const next = !notify;
@@ -1962,13 +1995,44 @@ function NotificationSettings({
     }
   }
 
-  function toggleOsNotify() {
-    const next = !osNotify;
-    setOsNotifyState(next);
-    setOsNotify(next).catch((e) => {
-      setOsNotifyState(!next); // revert on failure
+  // The single "Desktop notifications" switch. ON requests OS permission first
+  // when it isn't granted; it only enables when permission ends up granted,
+  // otherwise it stays off with an inline hint. OFF just clears the flag.
+  // Optimistic with revert on a CLI failure (as the old toggle did).
+  async function toggleDesktop() {
+    setErr(null);
+    setHint(null);
+    if (osNotify) {
+      onSetOsNotify(false); // optimistic
+      try {
+        await setOsNotify(false);
+      } catch (e) {
+        onSetOsNotify(true); // revert
+        setErr(describeError(e));
+      }
+      return;
+    }
+    // Turning ON — ensure OS permission first.
+    let p = perm;
+    if (p !== "granted") {
+      p = await requestDesktopPermission();
+      setPerm(p);
+    }
+    if (p !== "granted") {
+      setHint(
+        p === "unavailable"
+          ? "Not available on this platform."
+          : "Blocked by the OS — allow notifications for agent-switch in System Settings.",
+      );
+      return; // leave the switch off
+    }
+    onSetOsNotify(true); // optimistic
+    try {
+      await setOsNotify(true);
+    } catch (e) {
+      onSetOsNotify(false); // revert
       setErr(describeError(e));
-    });
+    }
   }
 
   return (
@@ -1978,37 +2042,22 @@ function NotificationSettings({
           <div className="min-w-0">
             <div className="text-[13px] font-medium">Desktop notifications</div>
             <div className="text-xs text-muted-foreground">
-              OS permission: <span className="font-medium">{perm ? PERMISSION_LABEL[perm] : "…"}</span>. When denied,
-              alerts still appear in the bell and as in-window toasts.
+              Show OS notifications for alerts, including when the app is closed. When off or blocked, alerts still
+              appear in the bell and as in-window toasts.
             </div>
-          </div>
-          <Button
-            size="sm"
-            variant={perm === "granted" ? "default" : "outline"}
-            disabled={perm === null || perm === "granted" || perm === "unavailable"}
-            onClick={requestPerm}
-            aria-label="Enable desktop notifications"
-          >
-            {perm === "granted" ? "On" : "Enable"}
-          </Button>
-        </div>
-
-        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
-          <div className="min-w-0">
-            <div className="text-[13px] font-medium">Notify when the app is closed</div>
-            <div className="text-xs text-muted-foreground">
-              Let the background service post OS notifications too, so auto-switches reach you even when this window
-              isn't open.
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              OS permission: <span className="font-medium">{perm ? PERMISSION_LABEL[perm] : "…"}</span>
             </div>
           </div>
           <Switch
             checked={!!osNotify}
-            disabled={osNotify === null}
-            onCheckedChange={() => toggleOsNotify()}
-            aria-label="Notify when closed"
+            disabled={perm === "unavailable"}
+            onCheckedChange={() => void toggleDesktop()}
+            aria-label="Desktop notifications"
           />
         </div>
 
+        {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
         {err && <div className="text-xs text-destructive">{err}</div>}
 
         <div className="border-t border-border pt-3">
@@ -2981,7 +3030,6 @@ function SessionsView({
   enabledIds,
   profilesByProvider,
   hideSummaries,
-  onClose,
   onTakeover,
   onCompact,
   onDelete,
@@ -2992,7 +3040,6 @@ function SessionsView({
   enabledIds: ProviderId[];
   profilesByProvider: Record<ProviderId, string[]>;
   hideSummaries: boolean;
-  onClose: () => void;
   onTakeover: (provider: ProviderId, sessionId: string, to: string, keepSource: boolean) => void;
   onCompact: (profile: string) => void;
   onDelete: (provider: ProviderId, sessionId: string, profile: string) => Promise<{ mode: string; trashId: string | null }>;
@@ -3050,12 +3097,7 @@ function SessionsView({
 
   return (
     <div className="space-y-2.5">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold tracking-tight">Sessions</span>
-        <Button size="icon" variant="ghost" className="size-7" onClick={onClose} aria-label="Close sessions">
-          <X />
-        </Button>
-      </div>
+      <span className="text-sm font-semibold tracking-tight">Sessions</span>
 
       {tabs.length > 1 && (
         <div
