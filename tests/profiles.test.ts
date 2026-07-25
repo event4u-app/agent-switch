@@ -57,6 +57,7 @@ test("activeFor / setActive are per-provider", () => {
     binaryPaths: {},
     switchStrategy: "reset-first",
     osNotifications: false,
+    rebind: { disabled: false, consecutiveFailures: 0 },
   }); // clean baseline (shared STATE_FILE)
   P.setActive("codex", "work");
   P.setActive("antigravity", "priv");
@@ -137,6 +138,7 @@ test("legacy global auto-switch migrates onto every provider", () => {
     binaryPaths: {},
     switchStrategy: "reset-first",
     osNotifications: false,
+    rebind: { disabled: false, consecutiveFailures: 0 },
   });
   const all = P.readAutoSwitchAll();
   for (const p of ["claude", "codex", "antigravity"] as const) {
@@ -190,6 +192,7 @@ test("switchStrategy defaults to reset-first and persists a change", () => {
     binaryPaths: {},
     switchStrategy: "reset-first",
     osNotifications: false,
+    rebind: { disabled: false, consecutiveFailures: 0 },
   });
   assert.equal(P.readSwitchStrategy(), "reset-first");
   P.setSwitchStrategy("rotation-first");

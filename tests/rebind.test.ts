@@ -2,13 +2,28 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as path from "node:path";
 
-import { rebind, restoreRebind, readBinding, RebindError, FRESHEN_FLOOR_MS, type RebindDeps } from "../src/rebind.js";
-import { configDir } from "../src/profiles.js";
+import {
+  rebind,
+  restoreRebind,
+  readBinding,
+  readBindingRegistry,
+  accountFingerprint,
+  RebindError,
+  FRESHEN_FLOOR_MS,
+  REBIND_FAILURE_LIMIT,
+  type RebindDeps,
+} from "../src/rebind.js";
+import { configDir, ROOT, type RebindKillSwitch } from "../src/profiles.js";
 
 const NOW = 1_700_000_000_000;
 
 function cred(token: string, expOffsetMs = 60 * 60 * 1000): string {
   return JSON.stringify({ claudeAiOauth: { accessToken: token, expiresAt: NOW + expOffsetMs } });
+}
+
+/** A credential carrying an extra `claudeAiOauth` payload (stable claim, scopes, …). */
+function credWith(extra: Record<string, unknown>, token: string, expOffsetMs = 60 * 60 * 1000): string {
+  return JSON.stringify({ claudeAiOauth: { ...extra, accessToken: token, expiresAt: NOW + expOffsetMs } });
 }
 
 const pConfig = configDir("claude", "P");
@@ -17,18 +32,24 @@ const pSvc = "svc:" + pConfig;
 const aSvc = "svc:" + aConfig;
 // Build paths with path.join so keys match rebind.ts (backslashes on Windows).
 const aFile = path.join(aConfig, ".credentials.json");
+const pFile = path.join(pConfig, ".credentials.json");
+const qConfig = configDir("claude", "Q");
+const qSvc = "svc:" + qConfig;
+const registryFile = path.join(ROOT, ".agent-switch-rebind-registry.json");
 
 interface Fake {
   kc: Map<string, string>;
   files: Map<string, string>;
   calls: string[];
   deps: RebindDeps;
+  rebindState: RebindKillSwitch;
 }
 
-function makeFake(opts: { platform?: NodeJS.Platform } = {}): Fake {
+function makeFake(opts: { platform?: NodeJS.Platform; rebindState?: RebindKillSwitch } = {}): Fake {
   const kc = new Map<string, string>();
   const files = new Map<string, string>();
   const calls: string[] = [];
+  const rebindState: RebindKillSwitch = opts.rebindState ?? { disabled: false, consecutiveFailures: 0 };
   const deps: RebindDeps = {
     platform: opts.platform ?? "darwin",
     now: () => NOW,
@@ -63,8 +84,15 @@ function makeFake(opts: { platform?: NodeJS.Platform } = {}): Fake {
       calls.push("lock:" + target);
       return await fn();
     },
+    // Kill-switch state lives in an in-memory object shared across calls on this
+    // fake, mirroring readState()/writeState() persistence.
+    readRebindState: () => rebindState,
+    writeRebindState: (s) => {
+      rebindState.disabled = s.disabled;
+      rebindState.consecutiveFailures = s.consecutiveFailures;
+    },
   };
-  return { kc, files, calls, deps };
+  return { kc, files, calls, deps, rebindState };
 }
 
 test("rebind refuses on a non-macOS platform (R0.1 unproven)", async () => {
@@ -157,4 +185,205 @@ test("restore reverses the rebind: both stores restored, marker cleared, file re
 test("restore refuses when there is no active rebind", async () => {
   const f = makeFake();
   await assert.rejects(() => restoreRebind({ profile: "P" }, f.deps), /no active rebind/);
+});
+
+// ---------- Feature 1: global binding registry + global lock ----------
+
+test("rebind records the account in the global registry; restore removes it", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+
+  await rebind({ account: "A", profile: "P" }, f.deps);
+  assert.equal(readBindingRegistry(f.deps)["A"]?.runningProfile, "P", "registry gained the binding");
+  assert.ok(f.files.has(registryFile), "registry file written");
+
+  await restoreRebind({ profile: "P" }, f.deps);
+  assert.equal(readBindingRegistry(f.deps)["A"], undefined, "registry entry removed on restore");
+});
+
+test("the global registry acquires its lock OUTER to CC's per-profile lock", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+  const globalIdx = f.calls.findIndex((c) => c === "lock:" + path.join(ROOT, ".agent-switch-rebind-registry"));
+  const profileIdx = f.calls.findIndex((c) => c === "lock:" + pConfig);
+  assert.ok(globalIdx >= 0, "global registry lock acquired");
+  assert.ok(globalIdx < profileIdx, "global lock precedes (is outer to) the per-profile lock");
+});
+
+test("rebind refuses binding an account already bound into a different profile (global lock)", async () => {
+  const f = makeFake();
+  // A is already registered as bound INTO profile "P".
+  f.files.set(registryFile, JSON.stringify({ A: { runningProfile: "P", boundAt: "2026-07-24T00:00:00.000Z" } }) + "\n");
+  // Attempt to bind A into a SECOND profile "Q" (both stores readable, A never emptied).
+  f.kc.set(qSvc, cred("tokQ"));
+  f.kc.set(aSvc, cred("tokA"));
+
+  await assert.rejects(() => rebind({ account: "A", profile: "Q" }, f.deps), /already bound into running profile "P"/);
+  assert.equal(JSON.parse(f.kc.get(qSvc)!).claudeAiOauth.accessToken, "tokQ", "Q store untouched");
+  assert.equal(readBinding(qConfig, f.deps), null, "no marker on Q");
+  assert.equal(readBindingRegistry(f.deps)["A"].runningProfile, "P", "registry still shows only the P binding");
+});
+
+// ---------- Feature 2: provenance-fingerprint mismatch states ----------
+
+test("accountFingerprint: token rotation keeps identity; a different account changes it", () => {
+  const claimA = { account: { uuid: "acct-A" } };
+  assert.equal(
+    accountFingerprint(credWith(claimA, "tok1")).id,
+    accountFingerprint(credWith(claimA, "tok2")).id,
+    "same account, rotated token → same fingerprint",
+  );
+  assert.notEqual(
+    accountFingerprint(credWith(claimA, "tok1")).id,
+    accountFingerprint(credWith({ account: { uuid: "acct-B" } }, "tok1")).id,
+    "different account → different fingerprint",
+  );
+  assert.ok(accountFingerprint(credWith(claimA, "tok1")).id!.startsWith("claim:"), "stable claim wins");
+
+  // Fallback hash path (no stable claim): still rotation-stable, account-sensitive.
+  const s1 = credWith({ scopes: ["a", "b"] }, "tokX");
+  const s2 = credWith({ scopes: ["a", "b"] }, "tokY");
+  const s3 = credWith({ scopes: ["c"] }, "tokX");
+  assert.equal(accountFingerprint(s1).id, accountFingerprint(s2).id, "fallback hash ignores token rotation");
+  assert.notEqual(accountFingerprint(s1).id, accountFingerprint(s3).id, "fallback hash reflects the account payload");
+  assert.ok(accountFingerprint(s1).id!.startsWith("sha256:"), "fallback uses a hash id");
+
+  // Unparseable / missing claudeAiOauth → null id.
+  assert.equal(accountFingerprint(null).id, null);
+  assert.equal(accountFingerprint("{not-json").id, null);
+  assert.equal(accountFingerprint(JSON.stringify({ foo: 1 })).id, null, "no claudeAiOauth object → null");
+});
+
+/** Make aSvc return `first` on the pre-lock read, `second` on the under-lock re-read. */
+function withRotatingTarget(f: Fake, first: string, second: string): void {
+  const origGet = f.deps.kcGet;
+  let aReads = 0;
+  f.deps.kcGet = (s) => {
+    if (s === aSvc) {
+      aReads++;
+      return aReads === 1 ? first : second;
+    }
+    return origGet(s);
+  };
+}
+
+test("swap, same account with a rotated token → proceeds, moving the FRESH credential", async () => {
+  const f = makeFake();
+  const claim = { account: { uuid: "acct-A" } };
+  f.kc.set(pSvc, cred("tokP"));
+  withRotatingTarget(f, credWith(claim, "tok-old"), credWith(claim, "tok-new"));
+
+  await rebind({ account: "A", profile: "P" }, f.deps);
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tok-new", "moved the freshened token, not the stale pre-lock one");
+  assert.equal(JSON.parse(readBinding(pConfig, f.deps)!.targetOrigCredential).claudeAiOauth.accessToken, "tok-new", "marker stashed the credential actually moved");
+});
+
+test("swap, target now holds a DIFFERENT account → quarantine, no swap", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  withRotatingTarget(f, credWith({ account: { uuid: "acct-A" } }, "tok-A"), credWith({ account: { uuid: "acct-B" } }, "tok-B"));
+
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /re-logged/);
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokP", "running store not clobbered");
+  assert.equal(readBinding(pConfig, f.deps), null, "no marker written on quarantine");
+  assert.equal(readBindingRegistry(f.deps)["A"], undefined, "no phantom registry entry on quarantine");
+  assert.equal(JSON.parse(f.files.get(aFile + ".rebind-quarantine")!).claudeAiOauth.accessToken, "tok-B", "unexpected credential quarantined aside");
+});
+
+test("swap, target credential unparseable at swap time → refuse, no mutation", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  withRotatingTarget(f, credWith({ account: { uuid: "acct-A" } }, "tok-A"), "{corrupt-json");
+
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /unparseable/);
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokP", "running store untouched");
+  assert.equal(readBinding(pConfig, f.deps), null, "no marker written");
+  assert.equal(readBindingRegistry(f.deps)["A"], undefined, "no registry entry written");
+});
+
+test("restore refuses to clobber a running profile that was re-logged to a different account", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, credWith({ account: { uuid: "acct-A" } }, "tok-A"));
+  await rebind({ account: "A", profile: "P" }, f.deps); // P now serves acct-A
+
+  // Someone re-logs the RUNNING profile P into a brand-new account.
+  f.kc.set(pSvc, credWith({ account: { uuid: "acct-C" } }, "tok-C"));
+
+  await assert.rejects(() => restoreRebind({ profile: "P" }, f.deps), /re-logged/);
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tok-C", "the fresh login was NOT clobbered");
+  assert.ok(readBinding(pConfig, f.deps), "marker left in place for manual recovery");
+  assert.equal(JSON.parse(f.files.get(pFile + ".rebind-quarantine")!).claudeAiOauth.accessToken, "tok-C", "the fresh login was quarantined aside");
+});
+
+// ---------- Feature 3: rollback / kill-switch (circuit-breaker) ----------
+
+test("rebind refuses immediately when the kill-switch is disabled", async () => {
+  const f = makeFake({ rebindState: { disabled: true, consecutiveFailures: 3 } });
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /disabled/);
+  assert.equal(f.calls.filter((c) => c.startsWith("kcAdd")).length, 0, "no write attempted while disabled");
+  assert.equal(f.rebindState.consecutiveFailures, 3, "a disabled-refusal does not advance the breaker");
+});
+
+test("three consecutive rebind failures trip the circuit-breaker", async () => {
+  assert.equal(REBIND_FAILURE_LIMIT, 3, "this test assumes a limit of 3");
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA", FRESHEN_FLOOR_MS - 60_000)); // near-expiry → always refuses (before the lock)
+
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /expires in/);
+  assert.deepEqual(f.rebindState, { disabled: false, consecutiveFailures: 1 });
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /expires in/);
+  assert.deepEqual(f.rebindState, { disabled: false, consecutiveFailures: 2 });
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /Circuit-breaker tripped/);
+  assert.deepEqual(f.rebindState, { disabled: true, consecutiveFailures: 3 });
+
+  // Once tripped, the next attempt is refused up-front with the disabled message.
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /disabled/);
+});
+
+test("a successful rebind resets the failure counter", async () => {
+  const f = makeFake({ rebindState: { disabled: false, consecutiveFailures: 2 } });
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+  assert.deepEqual(f.rebindState, { disabled: false, consecutiveFailures: 0 }, "success clears the breaker counter");
+});
+
+test("restore still works while rebind is disabled (recovery path)", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  await rebind({ account: "A", profile: "P" }, f.deps); // succeed while enabled
+
+  // Trip the kill-switch.
+  f.rebindState.disabled = true;
+  f.rebindState.consecutiveFailures = 3;
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /disabled/);
+
+  // Restore (the recovery path) is exempt and still runs.
+  const r = await restoreRebind({ profile: "P" }, f.deps);
+  assert.equal(r.wasBoundTo, "A");
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokP", "running restored while disabled");
+  assert.equal(JSON.parse(f.kc.get(aSvc)!).claudeAiOauth.accessToken, "tokA", "target restored while disabled");
+  assert.equal(readBinding(pConfig, f.deps), null, "marker cleared");
+});
+
+test("resetting the kill-switch re-enables rebind (what `rebind --reset` does)", async () => {
+  const f = makeFake({ rebindState: { disabled: true, consecutiveFailures: 3 } });
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /disabled/);
+
+  // `rebind --reset` → resetRebindKillSwitch() clears disabled + counter.
+  f.deps.writeRebindState({ disabled: false, consecutiveFailures: 0 });
+
+  const r = await rebind({ account: "A", profile: "P" }, f.deps);
+  assert.equal(r.boundToProfile, "A");
+  assert.deepEqual(f.rebindState, { disabled: false, consecutiveFailures: 0 });
 });

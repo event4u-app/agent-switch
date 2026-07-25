@@ -23,17 +23,39 @@
  * circuit-breaker, and the Linux/Win backend.
  */
 
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 
 import * as keychain from "./keychain.js";
 import { withProperLock } from "./locks.js";
-import { configDir } from "./profiles.js";
+import { configDir, ROOT, readRebindKillSwitch, writeRebindKillSwitch, type RebindKillSwitch } from "./profiles.js";
 
 /** <10 min to expiry → refuse (2× Claude Code's own 5-min refresh buffer). */
 export const FRESHEN_FLOOR_MS = 10 * 60 * 1000;
 const MARKER_NAME = ".agent-switch-rebind.json";
 const LENT_SUFFIX = ".rebind-lent";
+const QUARANTINE_SUFFIX = ".rebind-quarantine";
+
+/** Circuit-breaker trip point: N consecutive `rebind()` failures → auto-disable. */
+export const REBIND_FAILURE_LIMIT = 3;
+
+/**
+ * Global cross-profile binding registry (Council finding 2). The per-profile
+ * marker cannot enforce the GLOBAL "one account bound to at most one profile"
+ * invariant — two concurrent `rebind`s could bind one account to two profiles.
+ * This registry (keyed by the target account/profile name) is read-checked and
+ * written under a GLOBAL lock acquired OUTER to Claude Code's per-profile lock.
+ */
+const REGISTRY_NAME = ".agent-switch-rebind-registry.json";
+/** Lock TARGET for the registry (withProperLock guards `<target>.lock`). */
+const REGISTRY_LOCK_BASENAME = ".agent-switch-rebind-registry";
+
+export interface RegistryEntry {
+  runningProfile: string; // the running profile this account is currently bound INTO
+  boundAt: string;
+}
+export type BindingRegistry = Record<string, RegistryEntry>;
 
 /** Per-profile record of an active rebind — stashes both originals for restore. */
 export interface BindingMarker {
@@ -58,6 +80,9 @@ export interface RebindDeps {
   renameFile: (from: string, to: string) => void;
   exists: (path: string) => boolean;
   withLock: <T>(target: string, fn: () => T | Promise<T>) => Promise<T>;
+  /** Read/persist the rebind rollback + circuit-breaker state (ADR-003). */
+  readRebindState: () => RebindKillSwitch;
+  writeRebindState: (s: RebindKillSwitch) => void;
 }
 
 export function defaultDeps(): RebindDeps {
@@ -86,6 +111,8 @@ export function defaultDeps(): RebindDeps {
     renameFile: (from, to) => fs.renameSync(from, to),
     exists: (p) => fs.existsSync(p),
     withLock: withProperLock,
+    readRebindState: readRebindKillSwitch,
+    writeRebindState: writeRebindKillSwitch,
   };
 }
 
@@ -119,6 +146,115 @@ function readCred(cfgDir: string, d: RebindDeps): string | null {
   return d.kcGet(d.serviceNameFor(cfgDir)) ?? d.readFile(credFile(cfgDir));
 }
 
+// ---------- global binding registry (Council finding 2) ----------
+
+function registryFile(): string {
+  return nodePath.join(ROOT, REGISTRY_NAME);
+}
+/** Lock target for the global registry (outer to CC's per-profile lock). */
+function registryLockTarget(): string {
+  return nodePath.join(ROOT, REGISTRY_LOCK_BASENAME);
+}
+
+/** Read the global binding registry (corrupt / absent → empty). */
+function readRegistry(d: RebindDeps): BindingRegistry {
+  const raw = d.readFile(registryFile());
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      const out: BindingRegistry = {};
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        const e = v as Partial<RegistryEntry> | null;
+        if (e && typeof e.runningProfile === "string" && typeof e.boundAt === "string") {
+          out[k] = { runningProfile: e.runningProfile, boundAt: e.boundAt };
+        }
+      }
+      return out;
+    }
+  } catch {
+    /* corrupt registry → treat as empty */
+  }
+  return {};
+}
+
+function writeRegistry(reg: BindingRegistry, d: RebindDeps): void {
+  d.writeFile(registryFile(), JSON.stringify(reg, null, 2) + "\n");
+}
+
+/** Read the whole registry (test/observability helper). */
+export function readBindingRegistry(d: RebindDeps = defaultDeps()): BindingRegistry {
+  return readRegistry(d);
+}
+
+// ---------- provenance fingerprint (Council finding 5) ----------
+
+/** Deterministic JSON: object keys sorted recursively, so the hash is stable. */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return "[" + value.map(stableStringify).join(",") + "]";
+  const keys = Object.keys(value as Record<string, unknown>).sort();
+  return "{" + keys.map((k) => JSON.stringify(k) + ":" + stableStringify((value as Record<string, unknown>)[k])).join(",") + "}";
+}
+
+/**
+ * Stable account identity for a credential. Prefers an explicit stable claim in
+ * `claudeAiOauth` (account/subscription id, email); otherwise a sha256 of the
+ * `claudeAiOauth` object EXCLUDING the volatile token material
+ * (`accessToken`/`refreshToken`/`expiresAt`) — so a token ROTATION keeps the same
+ * fingerprint while a different ACCOUNT changes it. `id` is null only when the
+ * credential is missing / unparseable / has no `claudeAiOauth` object.
+ */
+export function accountFingerprint(cred: string | null): { id: string | null } {
+  if (!cred) return { id: null };
+  let oauth: Record<string, unknown> | null;
+  try {
+    const parsed = JSON.parse(cred);
+    oauth = parsed && typeof parsed.claudeAiOauth === "object" ? (parsed.claudeAiOauth as Record<string, unknown>) : null;
+  } catch {
+    return { id: null };
+  }
+  if (!oauth) return { id: null };
+
+  // Prefer a stable identity claim, in precedence order.
+  const account = (oauth.account ?? null) as Record<string, unknown> | null;
+  const org = (oauth.organization ?? null) as Record<string, unknown> | null;
+  const candidates: unknown[] = [
+    oauth.accountUuid,
+    account?.uuid,
+    account?.account_uuid,
+    oauth.accountId,
+    account?.email_address,
+    oauth.emailAddress,
+    oauth.email,
+    oauth.subscriptionId,
+    oauth.organizationUuid,
+    org?.uuid,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.length > 0) return { id: "claim:" + c };
+  }
+
+  // Fallback: hash the account-stable subset of the oauth object.
+  const rest: Record<string, unknown> = { ...oauth };
+  delete rest.accessToken;
+  delete rest.refreshToken;
+  delete rest.expiresAt;
+  const digest = crypto.createHash("sha256").update(stableStringify(rest), "utf8").digest("hex").slice(0, 16);
+  return { id: "sha256:" + digest };
+}
+
+type FingerprintBranch = "same" | "rotated" | "different" | "unparseable";
+
+/** Classify `actual` (what a store holds NOW) against `recorded` (what we expect). */
+function fingerprintCompare(recorded: string | null, actual: string | null): FingerprintBranch {
+  const rid = accountFingerprint(recorded).id;
+  const aid = accountFingerprint(actual).id;
+  if (rid === null || aid === null) return "unparseable";
+  if (rid !== aid) return "different";
+  return accessToken(recorded) === accessToken(actual) ? "same" : "rotated";
+}
+
 /** The active binding on a running profile's config dir, or null. */
 export function readBinding(cfgDir: string, d: RebindDeps = defaultDeps()): BindingMarker | null {
   const raw = d.readFile(markerFile(cfgDir));
@@ -145,11 +281,45 @@ export interface RebindResult {
  * Rebind the running profile `profile` to serve `account`'s credential. macOS
  * only; both must be logged-in claude profiles. Throws {@link RebindError} on any
  * precondition failure — the store is never touched unless every guard passes.
+ *
+ * Wrapped by the ADR-003 rollback/circuit-breaker: a tripped or manually-disabled
+ * kill-switch hard-refuses here; every failure of {@link performRebind} advances
+ * the breaker (auto-disable at {@link REBIND_FAILURE_LIMIT}), and success resets
+ * it. `--restore` is deliberately exempt — it is the recovery path.
  */
 export async function rebind(
   opts: { account: string; profile: string },
   d: RebindDeps = defaultDeps(),
 ): Promise<RebindResult> {
+  const ks = d.readRebindState();
+  if (ks.disabled) {
+    throw new RebindError(
+      `rebind is disabled — the circuit-breaker tripped after ${ks.consecutiveFailures} consecutive failure(s). ` +
+        `Re-enable with \`agent-switch rebind --reset\` once the underlying issue is resolved. ` +
+        `(\`rebind --restore\` still works — it is the recovery path.)`,
+    );
+  }
+  try {
+    const result = await performRebind(opts, d);
+    if (ks.consecutiveFailures !== 0) d.writeRebindState({ disabled: false, consecutiveFailures: 0 });
+    return result;
+  } catch (e) {
+    const consecutiveFailures = ks.consecutiveFailures + 1;
+    const disabled = consecutiveFailures >= REBIND_FAILURE_LIMIT;
+    d.writeRebindState({ disabled, consecutiveFailures });
+    if (disabled) {
+      const base = e instanceof Error ? e.message : String(e);
+      throw new RebindError(
+        `${base}\n\nCircuit-breaker tripped: ${consecutiveFailures} consecutive rebind failures — rebind is now DISABLED. ` +
+          `Re-enable with \`agent-switch rebind --reset\`.`,
+      );
+    }
+    throw e;
+  }
+}
+
+/** The actual rebind write path (preconditions → global lock → CC lock → swap). */
+async function performRebind(opts: { account: string; profile: string }, d: RebindDeps): Promise<RebindResult> {
   const { account, profile } = opts;
 
   if (d.platform !== "darwin") {
@@ -191,28 +361,72 @@ export async function rebind(
   const aSvc = d.serviceNameFor(aConfig);
   const aFile = credFile(aConfig);
 
-  await d.withLock(pConfig, () => {
-    // 1. Recovery point BEFORE any mutation: stash both originals.
-    const marker: BindingMarker = {
-      boundToProfile: account,
-      boundAt: new Date(d.now()).toISOString(),
-      runningOwnCredential: pCred,
-      targetOrigCredential: aCred,
-      targetFileMoved: false,
-    };
-    // 2. Empty the target's store so its family is live in exactly one store:
-    //    delete its Keychain entry and move its plaintext file aside (never
-    //    delete — a rename is reversible).
-    if (d.exists(aFile)) {
-      d.renameFile(aFile, aFile + LENT_SUFFIX);
-      marker.targetFileMoved = true;
-    }
-    d.writeFile(markerFile(pConfig), JSON.stringify(marker, null, 2) + "\n");
-    d.kcDelete(aSvc);
-    // 3. Point the running profile's store at the target account.
-    if (!d.kcAdd(pSvc, aCred)) {
-      throw new RebindError(`failed to write the Keychain entry for "${profile}" — swap aborted (marker left for --restore).`);
-    }
+  // Lock order: GLOBAL registry lock (outer) → Claude Code's per-profile lock
+  // (inner) → swap. The registry check + record + swap all run under BOTH locks,
+  // so a concurrent rebind cannot bind the same account into a second profile.
+  await d.withLock(registryLockTarget(), async () => {
+    await d.withLock(pConfig, () => {
+      // Global invariant (Council finding 2): one account → at most one profile.
+      // Read-check the registry now; RECORD it only once every swap guard below
+      // has passed, so a quarantine/refuse leaves no phantom registry entry.
+      const reg = readRegistry(d);
+      const existing = reg[account];
+      if (existing && existing.runningProfile !== profile) {
+        throw new RebindError(
+          `account "${account}" is already bound into running profile "${existing.runningProfile}" ` +
+            `(one account → one profile). Restore it first: ` +
+            `\`agent-switch rebind --restore --profile ${existing.runningProfile}\`.`,
+        );
+      }
+
+      // Provenance re-read under the lock (Council finding 5): compare what the
+      // target store holds NOW against the credential we read before locking.
+      const liveTarget = readCred(aConfig, d);
+      const branch = fingerprintCompare(aCred, liveTarget);
+      if (branch === "unparseable") {
+        throw new RebindError(
+          `target "${account}"'s live credential is missing or unparseable at swap time — refusing (no credential mutation).`,
+        );
+      }
+      if (branch === "different") {
+        // Someone re-logged the target profile between our read and the swap.
+        // Do NOT move its (now foreign) credential — quarantine it and abort.
+        d.writeFile(aFile + QUARANTINE_SUFFIX, liveTarget as string);
+        throw new RebindError(
+          `target "${account}" now holds a DIFFERENT account than when rebind started — someone re-logged it. ` +
+            `Quarantined the unexpected credential to ${aFile + QUARANTINE_SUFFIX}; no swap performed.`,
+        );
+      }
+      // "rotated": a background refresh replaced the token in place — move the
+      // FRESH credential (same account), not the stale pre-lock read.
+      const credToMove = branch === "rotated" ? (liveTarget as string) : aCred;
+
+      // All guards passed — commit the global binding record.
+      reg[account] = { runningProfile: profile, boundAt: new Date(d.now()).toISOString() };
+      writeRegistry(reg, d);
+
+      // 1. Recovery point BEFORE any store mutation: stash both originals.
+      const marker: BindingMarker = {
+        boundToProfile: account,
+        boundAt: new Date(d.now()).toISOString(),
+        runningOwnCredential: pCred,
+        targetOrigCredential: credToMove,
+        targetFileMoved: false,
+      };
+      // 2. Empty the target's store so its family is live in exactly one store:
+      //    delete its Keychain entry and move its plaintext file aside (never
+      //    delete — a rename is reversible).
+      if (d.exists(aFile)) {
+        d.renameFile(aFile, aFile + LENT_SUFFIX);
+        marker.targetFileMoved = true;
+      }
+      d.writeFile(markerFile(pConfig), JSON.stringify(marker, null, 2) + "\n");
+      d.kcDelete(aSvc);
+      // 3. Point the running profile's store at the target account.
+      if (!d.kcAdd(pSvc, credToMove)) {
+        throw new RebindError(`failed to write the Keychain entry for "${profile}" — swap aborted (marker left for --restore).`);
+      }
+    });
   });
 
   return {
@@ -246,16 +460,48 @@ export async function restoreRebind(
   const pSvc = d.serviceNameFor(pConfig);
   const aSvc = d.serviceNameFor(aConfig);
   const aFile = credFile(aConfig);
+  const pFile = credFile(pConfig);
 
-  await d.withLock(pConfig, () => {
-    // Restore the running profile to its own account.
-    d.kcAdd(pSvc, marker.runningOwnCredential);
-    // Restore the target profile's own store.
-    d.kcAdd(aSvc, marker.targetOrigCredential);
-    if (marker.targetFileMoved && d.exists(aFile + LENT_SUFFIX)) {
-      d.renameFile(aFile + LENT_SUFFIX, aFile);
-    }
-    d.removeFile(markerFile(pConfig));
+  // Same lock order as rebind: GLOBAL registry lock (outer) → CC's per-profile
+  // lock (inner). Restore is exempt from the kill-switch by design — it is the
+  // recovery path and must work even when `rebind` is disabled.
+  await d.withLock(registryLockTarget(), async () => {
+    await d.withLock(pConfig, () => {
+      // Provenance (Council finding 5): the running store should still hold the
+      // account we bound INTO it. If someone re-logged the running profile, its
+      // store now holds a DIFFERENT account — never clobber that fresh login.
+      const liveRunning = readCred(pConfig, d);
+      const branch = fingerprintCompare(marker.targetOrigCredential, liveRunning);
+      if (branch === "unparseable") {
+        throw new RebindError(
+          `running profile "${profile}"'s live credential is missing or unparseable — refusing restore (no mutation). ` +
+            `The binding marker is left in place for manual recovery.`,
+        );
+      }
+      if (branch === "different") {
+        d.writeFile(pFile + QUARANTINE_SUFFIX, liveRunning as string);
+        throw new RebindError(
+          `running profile "${profile}" now holds a DIFFERENT account than the one it was rebound to — someone re-logged it. ` +
+            `Quarantined the unexpected credential to ${pFile + QUARANTINE_SUFFIX}; restore aborted to avoid clobbering it. ` +
+            `Resolve manually, then remove ${MARKER_NAME} from the profile's config dir.`,
+        );
+      }
+      // "same" / "rotated" → the bound account is still there → restore normally.
+      // Restore the running profile to its own account.
+      d.kcAdd(pSvc, marker.runningOwnCredential);
+      // Restore the target profile's own store.
+      d.kcAdd(aSvc, marker.targetOrigCredential);
+      if (marker.targetFileMoved && d.exists(aFile + LENT_SUFFIX)) {
+        d.renameFile(aFile + LENT_SUFFIX, aFile);
+      }
+      d.removeFile(markerFile(pConfig));
+      // Release the global binding-registry entry for the bound account.
+      const reg = readRegistry(d);
+      if (reg[marker.boundToProfile]) {
+        delete reg[marker.boundToProfile];
+        writeRegistry(reg, d);
+      }
+    });
   });
 
   return { restoredProfile: profile, wasBoundTo: marker.boundToProfile };
