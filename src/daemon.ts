@@ -18,10 +18,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { ROOT, activeFor, configDir, labelFor, listProfiles, readAutoSwitch, readSwitchStrategy, SwitchStrategy } from "./profiles.js";
+import { ROOT, activeFor, configDir, labelFor, listProfiles, readAutoSwitch, readBinaryPath, readSwitchStrategy, SwitchStrategy } from "./profiles.js";
 import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
-import { accessTokenOf, fetchUsage, liveSessionPids, readProfileCredential } from "./api.js";
+import { fetchUsage, liveSessionPids } from "./api.js";
+import { defaultFreshenDeps, freshAccessToken } from "./token-freshen.js";
 import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, SwitchCandidate, ThresholdState, UsageSnapshot } from "./usage.js";
 import { readCodexUsage } from "./codex-usage.js";
 import { redeemResetCredit } from "./codex-reset.js";
@@ -312,8 +313,10 @@ interface RunOptions {
  *  the live `wham/usage` read. null when unreadable (counts as a poll failure). */
 async function snapshotFor(provider: ProviderId, name: string): Promise<UsageSnapshot | null> {
   if (provider === "codex") return readCodexUsage(configDir("codex", name));
-  const creds = readProfileCredential(configDir("claude", name));
-  const token = creds ? accessTokenOf(creds) : null;
+  // An expired access token is the daemon's most common "usage stopped moving"
+  // cause — a profile nobody is running never refreshes itself. Let Claude Code
+  // refresh it first (cooldown-guarded, no-op while the token is still good).
+  const token = freshAccessToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")));
   if (!token) return null;
   const raw = await fetchUsage(token);
   return raw ? parseUsage(raw) : null;

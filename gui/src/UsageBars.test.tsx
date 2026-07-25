@@ -26,6 +26,16 @@ describe("UsageBars", () => {
     expect(screen.getByText(/\dh/)).toBeTruthy();
   });
 
+  // The row is percent + countdown only — no trailing annotation behind the
+  // number. An "ahead of pace" snapshot (82% used with most of the week still
+  // to run) must render exactly like any other.
+  it("renders no pace annotation behind the number", () => {
+    const resetsAt = new Date(Date.parse("2026-07-16T00:00:00.000Z") + 4 * 24 * 3600_000).toISOString();
+    render(<UsageBars usage={snap(resetsAt)} stale={false} />);
+    expect(screen.queryByText(/pace/i)).toBeNull();
+    expect(screen.queryByText(/↑/)).toBeNull();
+  });
+
   it("renders N.A. with no reset when the value is unknown", () => {
     render(<UsageBars usage={snap(null)} stale={false} />);
     // A null-utilization window (placeholder) → N.A., no percent, no reset.
