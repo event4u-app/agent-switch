@@ -185,6 +185,40 @@ export function nextIntervalMs(baseMs: number, consecutiveFailures: number, capM
   return Math.min(base * 2 ** consecutiveFailures, capMs);
 }
 
+// ---------- threshold action decision (pure, no side-effects) ----------
+
+export interface ThresholdAction {
+  /** NOTIFY the operator the active profile is out of headroom (with a suggestion). */
+  notify: boolean;
+  /** The account SUGGESTED (most headroom), or null when none qualifies. NEVER
+   *  switched to automatically — the switch is always a user interaction. */
+  suggestedTarget: string | null;
+}
+
+/**
+ * Compliance-locked threshold decision (Council follow-up). Given the active
+ * profile and the same-provider candidates polled this cycle, decide whether to
+ * NOTIFY and which account to SUGGEST. Pure — no I/O, and crucially NO `setActive`:
+ * the daemon never auto-switches. Returns `{ notify: false }` while the active
+ * profile still has headroom (or auto-switch is off / there is no active profile).
+ * `notify` fires only alongside a concrete suggestion, mirroring the behavior
+ * before this decision was extracted from `pollProvider`.
+ */
+export function decideThresholdAction(
+  active: string | null,
+  polled: SwitchCandidate[],
+  autoSwitch: { enabled: boolean; threshold: number },
+  isEligible: (name: string) => boolean = () => true,
+): ThresholdAction {
+  if (!autoSwitch.enabled || !active) return { notify: false, suggestedTarget: null };
+  const activeSnap = polled.find((p) => p.name === active)?.snapshot;
+  const activeMax = activeSnap ? maxUtilization(activeSnap) : null;
+  if (activeMax === null || activeMax < autoSwitch.threshold) return { notify: false, suggestedTarget: null };
+  const target = pickSwitchTarget(active, polled, autoSwitch.threshold, isEligible);
+  const suggestedTarget = target && target !== active ? target : null;
+  return { notify: suggestedTarget !== null, suggestedTarget };
+}
+
 // ---------- context monitoring (own-session; Phase 3) ----------
 
 let _claudeVer: string | null | undefined;
@@ -380,8 +414,12 @@ async function pollProvider(
   // Tag filter: only accounts carrying the configured label are eligible switch
   // targets ("all" = no filter). Lets the operator pool e.g. only Work accounts.
   const eligible = (name: string) => autoSwitch.tag === "all" || labelFor(provider, name) === autoSwitch.tag;
-  const target = pickSwitchTarget(active, polled, autoSwitch.threshold, eligible);
-  if (target && target !== active) {
+  // Compliance decision is a pure function (decideThresholdAction): it returns
+  // notify + a suggested target and NEVER a switch — see the daemon no-auto-switch
+  // regression test. pollProvider only turns that decision into log + notify I/O.
+  const action = decideThresholdAction(active, polled, autoSwitch, eligible);
+  const target = action.suggestedTarget;
+  if (action.notify && target) {
     // Compliance: the daemon NEVER switches automatically. It only names the
     // suggested account with the most headroom; switching stays a user
     // interaction (CLI/GUI). No `setActive` call here.

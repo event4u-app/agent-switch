@@ -43,6 +43,7 @@ import {
   linkProviderBinary,
   unlinkProviderBinary,
   switchProfile,
+  rebindTo,
   agentConfigVersion,
   runToolingAction,
   acOpenInBrowser,
@@ -115,6 +116,7 @@ import { ToolingSection, type ToolingCache } from "./ToolingSection.js";
 import { UsageSection, type UsageHistoryCache } from "./UsageSection.js";
 import { Sidebar, type Section } from "./Sidebar.js";
 import { UsageBars, utilColor } from "./UsageBars.js";
+import { buildRebindDialog, selectableRows, type RebindCandidate } from "./rebind-dialog.js";
 import { deriveAgentConfigView, AGENT_CONFIG_REPO, AGENT_CONFIG_REPO_URL, type AgentConfigStatus } from "./agent-config.js";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { loadUsageCache, saveUsageSnapshot, withStickyResets, isUsageStale, dropUsageSnapshot, getUsageAttempts, markUsageAttempt, fetchOnCooldown, type UsageEntry } from "./usage-cache.js";
@@ -257,6 +259,11 @@ export default function App() {
   const [editKey, setEditKey] = useState<string | null>(null);
   // The in-app pty terminal overlay (login / run), or null when none is open.
   const [terminal, setTerminal] = useState<{ args: string[]; title: string } | null>(null);
+  // The "Switch account" (live rebind) dialog, or null when closed. Carries the
+  // RUNNING (active claude) profile the live session serves; the dialog lists the
+  // OTHER claude accounts and switches ONLY on an explicit user pick (Phase 5 —
+  // no automatic switch anywhere in this flow).
+  const [switchDialog, setSwitchDialog] = useState<string | null>(null);
   // Tooling detection sweep cache (entries + timestamp). Owned here so it
   // survives section switches; the section itself decides when to re-sweep
   // (first open, manual refresh, window focus past the 60s threshold).
@@ -796,6 +803,30 @@ export default function App() {
   return (
     <div className="flex h-full">
       <Toaster toasts={toasts} onDismiss={dismissToast} />
+      {switchDialog && (
+        <SwitchAccountDialog
+          running={switchDialog}
+          candidates={grouped.claude
+            .filter((r) => r.name !== switchDialog)
+            .map((r) => ({
+              name: r.name,
+              max: nearestLimit(usage[`claude/${r.name}`]?.snap ?? null),
+              label: r.label,
+            }))}
+          onClose={() => setSwitchDialog(null)}
+          onSwitch={(account) => {
+            const running = switchDialog;
+            setSwitchDialog(null);
+            // The explicit click IS the compliance line — only here does a switch
+            // happen. Keep the shared file-links fresh for the now-active account,
+            // then act() refreshes the panel.
+            act(async () => {
+              await rebindTo(account, running);
+              if (shareActive) await shareSync(shareSource).catch(() => {});
+            });
+          }}
+        />
+      )}
       {/* The traffic-light reserve lives in the sidebar's top 44px on macOS, so
           the header no longer needs a left padding for it. */}
       <Sidebar section={section} onSelect={setSection} onQuit={() => quitApp()} isMac={IS_MAC} />
@@ -1045,8 +1076,8 @@ export default function App() {
                   count < 2 ? "unavailable" : auto?.[pid]?.enabled ? "on" : "off";
                 const autoLabel =
                   autoState === "unavailable"
-                    ? `Auto-switch unavailable for ${PROVIDER_LABEL[pid]} — needs 2+ profiles`
-                    : `Auto-switch ${autoState} for ${PROVIDER_LABEL[pid]}`;
+                    ? `Near-limit notifications unavailable for ${PROVIDER_LABEL[pid]} — needs 2+ profiles`
+                    : `Near-limit notifications ${autoState} for ${PROVIDER_LABEL[pid]} — notify + suggest, never switches automatically`;
                 return (
                   <button
                     key={pid}
@@ -1379,6 +1410,28 @@ export default function App() {
                   {!canAuto ? "not available" : auto[selected].enabled ? `on (${auto[selected].threshold}%)` : "off"}
                 </button>
               </div>
+            );
+          })()}
+        {/* Manual live-rebind (Phase 5) — switch the active Claude account of the
+            RUNNING session to another logged-in account. macOS-only (the CLI
+            refuses elsewhere); needs the active profile + a second account to
+            switch to. Opens a dialog; nothing switches until the user clicks. */}
+        {IS_MAC &&
+          section === "profiles" &&
+          selected === "claude" &&
+          !terminal &&
+          (() => {
+            const active = grouped.claude.find((r) => r.active)?.name ?? null;
+            if (!active || grouped.claude.length < 2) return null;
+            return (
+              <button
+                className="flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                onClick={() => setSwitchDialog(active)}
+                title={`Switch the live "${active}" Claude session to another account — you pick; nothing switches on its own`}
+              >
+                <ArrowRightLeft className="size-3" />
+                Switch account
+              </button>
             );
           })()}
         {devMode && globalAuto && hasUsageReadout(selected) && section !== "settings" && grouped[selected].length >= 2 && (
@@ -1737,7 +1790,7 @@ type SettingsTab = "general" | "notifications" | "autoswitch" | "updates" | "adv
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "notifications", label: "Notifications" },
-  { id: "autoswitch", label: "Auto-switch" },
+  { id: "autoswitch", label: "Notify near limit" },
   { id: "updates", label: "Updates" },
   { id: "advanced", label: "Advanced" },
 ];
@@ -3222,6 +3275,97 @@ function HandoffModal({
           </Button>
           <Button size="sm" variant="default" disabled={!ready} onClick={() => onSeed(tp, tprof, briefPath)}>
             <Send /> Seed {PROVIDER_LABEL[tp]} session
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/** The "Switch account" (live-rebind) dialog — the GUI mirror of the CLI's
+ *  interactive `agent-switch rebind` picker (Phase 5). Lists the OTHER Claude
+ *  accounts with their usage, pre-selects the best-headroom one (via the pure
+ *  `buildRebindDialog`), and switches ONLY when the user clicks Switch. Cancel /
+ *  close switches nothing — the explicit click is the compliance line. */
+function SwitchAccountDialog({
+  running,
+  candidates,
+  onClose,
+  onSwitch,
+}: {
+  running: string;
+  candidates: RebindCandidate[];
+  onClose: () => void;
+  onSwitch: (account: string) => void;
+}) {
+  const model = buildRebindDialog(candidates, running);
+  const rows = selectableRows(model);
+  // Pre-select the best-headroom suggestion (fallback: the first selectable row),
+  // mirroring the CLI picker's [enter] = suggestion default. The user may pick any.
+  const [choice, setChoice] = useState<string | null>(model.suggestedProfile ?? rows[0]?.profile ?? null);
+
+  return (
+    <div
+      className="fixed inset-0 z-20 flex items-center justify-center bg-background/80 p-4"
+      role="dialog"
+      aria-label="Switch account"
+    >
+      <Card className="w-full max-w-md space-y-3 p-4">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold">Switch account</span>
+          <Button size="icon" variant="ghost" className="size-6" onClick={onClose} aria-label="Close switch account">
+            <X />
+          </Button>
+        </div>
+
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          Points the live <strong>{running}</strong> Claude session at another account — it adopts the new account on its
+          next message. Nothing switches until you click Switch.
+        </p>
+
+        {rows.length === 0 ? (
+          <div className="text-xs text-muted-foreground">
+            No other Claude account to switch to — add one from the Profiles tab.
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {rows.map((r) => {
+              const suggested = r.profile === model.suggestedProfile;
+              const util = r.maxUtil === null ? "usage n/a" : `${r.maxUtil}% used`;
+              return (
+                <label
+                  key={r.profile}
+                  className={cn(
+                    "flex cursor-pointer items-center justify-between gap-2 rounded-md border px-3 py-2",
+                    choice === r.profile ? "border-primary bg-primary/5" : "border-border",
+                  )}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <input
+                      type="radio"
+                      name="switch-account"
+                      className="shrink-0"
+                      checked={choice === r.profile}
+                      onChange={() => setChoice(r.profile)}
+                      aria-label={`Switch to ${r.profile}`}
+                    />
+                    <span className="truncate text-[13px] font-medium">{r.profile}</span>
+                    {r.label && <Badge variant="secondary">{r.label}</Badge>}
+                    {suggested && <span className="text-[10px] text-[hsl(var(--success))]">most headroom</span>}
+                  </span>
+                  <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{util}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button size="sm" variant="default" disabled={!choice} onClick={() => choice && onSwitch(choice)}>
+            <ArrowRightLeft /> Switch account
           </Button>
         </div>
       </Card>

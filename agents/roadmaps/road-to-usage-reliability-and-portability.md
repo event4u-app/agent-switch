@@ -20,6 +20,11 @@ rate-limits mechanism a unanimous review found crosses the providers' usage
 policies (see `skipped/road-to-agent-switch-autoswitch-rejected.md` and the
 1.0.1 disclosure work). It is deliberately not built here.
 
+Reconciliation (2026-07-25): the **fully-automatic** rotation engine stays out
+of scope. A **user-interaction-gated** switch (the `rebind` command + the limit
+dialog shipped in `road-to-live-rebind.md`) is a different mechanism — it
+switches only on an explicit user action — and is NOT the rejected engine.
+
 ## Already shipped (1.0.1, do not re-plan)
 
 - **Weekly-pace indicator** — `windowPace()` + GUI badge (informational, measured
