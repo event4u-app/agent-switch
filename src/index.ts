@@ -80,13 +80,12 @@ import {
   setMapping,
 } from "./mappings.js";
 import {
-  accessTokenOf,
   checkAuth,
   fetchProfile,
   fetchUsage,
   liveSessionPids,
-  readProfileCredential,
 } from "./api.js";
+import { defaultFreshenDeps, freshAccessToken } from "./token-freshen.js";
 import { UsageSnapshot, formatSnapshot, parseUsage } from "./usage.js";
 import { readCodexUsage } from "./codex-usage.js";
 import { redeemResetCredit } from "./codex-reset.js";
@@ -382,8 +381,7 @@ async function claudeSnapshot(name: string): Promise<UsageSnapshot | null> {
     const cached = state.profiles[`claude/${name}`];
     if (cached) return cached;
   }
-  const creds = readProfileCredential(configDir("claude", name));
-  const token = creds ? accessTokenOf(creds) : null;
+  const token = freshAccessToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")));
   if (!token) return null;
   const raw = await fetchUsage(token);
   return raw ? parseUsage(raw) : null;
@@ -435,8 +433,7 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
       console.log("  (no usage readout for this provider — shows own usage only where available)");
       continue;
     }
-    const creds = readProfileCredential(configDir("claude", n));
-    const token = creds ? accessTokenOf(creds) : null;
+    const token = freshAccessToken(configDir("claude", n), defaultFreshenDeps(readBinaryPath("claude")));
     if (!token) {
       console.log("  (credential not readable — profile may not have run yet)");
       continue;

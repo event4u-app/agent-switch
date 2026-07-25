@@ -7,10 +7,11 @@
  * both with `Authorization: Bearer <accessToken>` and the
  * `anthropic-beta: oauth-2025-04-20` header.
  *
- * Deliberately NOT adopted from claude-swap: the token-refresh grant. Our
- * profiles are live logins — Claude Code refreshes its own tokens per config
- * dir. Refreshing from outside would rotate the refresh token underneath a
- * running session for no benefit.
+ * This module never refreshes a token. An out-of-band refresh grant rotates the
+ * refresh token underneath a running session and would strand Claude Code with
+ * a dead one (ADR-004 § Evidence — the rotation is confirmed, not theoretical).
+ * A spent access token is instead handed to `token-freshen.ts`, which lets
+ * Claude Code refresh its own store; this stays the low-level fetch layer.
  */
 
 import * as fs from "node:fs";

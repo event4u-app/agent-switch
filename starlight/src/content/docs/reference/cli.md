@@ -57,6 +57,17 @@ agent-switch run work -- --resume
 | `current` | `[--provider P]` | Show the active profile(s). |
 | `whoami [name]` | `[--provider P]` | Show a profile's account identity. |
 
+A Claude profile's OAuth access token lives about 8 hours, and a profile nobody
+is running never refreshes it — so its usage numbers used to freeze on the last
+cached values until you started the CLI on that account. When a token has
+expired, agent-switch now runs Claude Code's own local health check
+(`claude doctor`) against that profile's config dir first: Claude Code refreshes
+its own token, under its own lock, and the usage read then succeeds. The check
+consumes no quota, is skipped while the token is still valid, and runs at most
+once every 10 minutes per profile — so a genuinely dead login (one that needs
+`/login` again) never spawns a process per refresh cycle. agent-switch never
+performs the refresh itself.
+
 ## Sessions & handoff
 
 | Command | Args / flags | What it does |
