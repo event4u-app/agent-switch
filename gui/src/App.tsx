@@ -43,7 +43,6 @@ import {
   linkProviderBinary,
   unlinkProviderBinary,
   switchProfile,
-  rebindTo,
   agentConfigVersion,
   runToolingAction,
   acOpenInBrowser,
@@ -490,11 +489,12 @@ export default function App() {
     await syncNotifications();
   }
 
-  // Dev-mode: force the auto-switch the daemon would make for the selected
-  // provider — switch the active profile to the same-provider account with the
-  // most headroom and record the "Auto-switched account" event — without waiting
-  // for a real threshold crossing.
-  function triggerAutoSwitchTest() {
+  // Dev-mode: fire the near-limit notification the daemon would send for the
+  // selected provider — compute the same-provider account with the most headroom
+  // and record the "Usage limit near" event (NO switch — the daemon notifies +
+  // suggests, it no longer auto-switches) without waiting for a real threshold
+  // crossing.
+  function triggerNearLimitNotifyTest() {
     const profs = rows.filter((r) => r.provider === selected);
     const active = profs.find((r) => r.active)?.name ?? null;
     // Respect the configured tag filter — only accounts with that label (or all)
@@ -509,12 +509,12 @@ export default function App() {
       setError(`Auto-switch test needs a second ${PROVIDER_LABEL[selected]} profile to switch to.`);
       return;
     }
+    const threshold = auto?.[selected]?.threshold ?? 95;
     act(async () => {
-      await switchProfile(selected, target);
       await recordNotification(
-        "success",
-        "Auto-switched account",
-        `${selected}/${active ?? "—"} → ${selected}/${target} (dev test trigger).`,
+        "warning",
+        "Usage limit near",
+        `claude/${active ?? "—"} hit ≥${threshold}% — suggested profile: claude/${target}. Switch with the Switch-account dialog or \`agent-switch rebind\`. (dev test trigger)`,
       );
     });
   }
@@ -803,7 +803,7 @@ export default function App() {
   return (
     <div className="flex h-full">
       <Toaster toasts={toasts} onDismiss={dismissToast} />
-      {switchDialog && (
+      {switchDialog !== null && (
         <SwitchAccountDialog
           running={switchDialog}
           candidates={grouped.claude
@@ -815,13 +815,12 @@ export default function App() {
             }))}
           onClose={() => setSwitchDialog(null)}
           onSwitch={(account) => {
-            const running = switchDialog;
             setSwitchDialog(null);
-            // The explicit click IS the compliance line — only here does a switch
-            // happen. Keep the shared file-links fresh for the now-active account,
-            // then act() refreshes the panel.
+            // The explicit click IS the compliance line — only here does the
+            // active account change. Set the active claude account (new sessions
+            // use it), keep the shared file-links fresh, then act() refreshes.
             act(async () => {
-              await rebindTo(account, running);
+              await switchProfile("claude", account);
               if (shareActive) await shareSync(shareSource).catch(() => {});
             });
           }}
@@ -1412,22 +1411,20 @@ export default function App() {
               </div>
             );
           })()}
-        {/* Manual live-rebind (Phase 5) — switch the active Claude account of the
-            RUNNING session to another logged-in account. macOS-only (the CLI
-            refuses elsewhere); needs the active profile + a second account to
+        {/* Manual account switch — set the active Claude account (new sessions
+            use it). Works on every platform; needs a second logged-in account to
             switch to. Opens a dialog; nothing switches until the user clicks. */}
-        {IS_MAC &&
-          section === "profiles" &&
+        {section === "profiles" &&
           selected === "claude" &&
           !terminal &&
           (() => {
             const active = grouped.claude.find((r) => r.active)?.name ?? null;
-            if (!active || grouped.claude.length < 2) return null;
+            if (grouped.claude.length < 2) return null;
             return (
               <button
                 className="flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => setSwitchDialog(active)}
-                title={`Switch the live "${active}" Claude session to another account — you pick; nothing switches on its own`}
+                onClick={() => setSwitchDialog(active ?? "")}
+                title="Switch the active Claude account to the one you pick — new sessions use it; nothing switches on its own"
               >
                 <ArrowRightLeft className="size-3" />
                 Switch account
@@ -1437,8 +1434,8 @@ export default function App() {
         {devMode && globalAuto && hasUsageReadout(selected) && section !== "settings" && grouped[selected].length >= 2 && (
           <button
             className="flex items-center gap-1.5 text-[11px] text-primary transition-colors hover:opacity-80"
-            onClick={triggerAutoSwitchTest}
-            title={`Dev: force an auto-switch of the active ${PROVIDER_LABEL[selected]} account to the one with the most headroom, now`}
+            onClick={triggerNearLimitNotifyTest}
+            title="Dev: fire the near-limit notification the daemon would send (no switch)"
           >
             <ArrowRightLeft className="size-3" />
             Trigger (test)
@@ -3319,8 +3316,8 @@ function SwitchAccountDialog({
         </div>
 
         <p className="text-[11px] leading-snug text-muted-foreground">
-          Points the live <strong>{running}</strong> Claude session at another account — it adopts the new account on its
-          next message. Nothing switches until you click Switch.
+          Switches the active Claude account to the one you pick — new `claude` sessions use it. Nothing switches until
+          you click Switch.
         </p>
 
         {rows.length === 0 ? (
