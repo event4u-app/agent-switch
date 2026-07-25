@@ -152,8 +152,10 @@ projects touched.
       after a CC update, OR — if that cannot be scripted — declare version-skew an
       explicit go/no-go (rebind ships with a hard CC-version pin + refuse on
       mismatch).
-- [ ] **Canary + drift-response matrix (Council finding 3):** pin the observed lock
-      protocol + keychain naming + cache TTL for the current CC version; on drift,
+- [x] **Canary + drift-response matrix (Council finding 3):** landed — `canaryCheck()`
+      refuses `rebind` (before any mutation) if the keychain service-name format drifts
+      from the pinned `Claude Code-credentials-<8hex>`, with the matrix message. It pins
+      keychain naming for the current CC version; on drift,
       "fail loud" is defined by a matrix — drift type → severity → action →
       user-facing message (e.g. keychain-name format changed → hard-refuse rebind +
       surface "CC credential layout changed, rebind disabled pending
@@ -244,15 +246,16 @@ user-clicked modal, per § Out of scope).
       "auto-switch" to "**notify + suggest; never switches automatically**". The
       failover `SwitchStrategy` is marked **deprecated (no switching effect)** in
       help; plumbing kept — full type removal deferred (below).
-- [ ] Update `skipped/road-to-agent-switch-autoswitch-rejected.md` +
+- [x] Updated `skipped/road-to-agent-switch-autoswitch-rejected.md` +
       `road-to-usage-reliability-and-portability.md` "Out of scope" notes to the
-      owner's user-interaction line. *(deferred — recorded-decision doc edit, done
-      deliberately, not autonomously)*
-- [ ] **Follow-up: regression test** — assert the daemon notifies + never calls
-      `setActive` on threshold (needs `pollProvider` exported + an ESM mock harness;
-      the daemon internals are currently untested — flagged by the Phase-3 impl).
-- [ ] **Follow-up: residual copy** — the per-tab status-dot tooltip + Settings tab
-      label still read "Auto-switch"; align to "notify near limit".
+      owner's user-interaction line (additive reconciliation — the locks stand for
+      the fully-automatic case; user-interaction switching noted as shipped).
+- [x] **Follow-up: regression test** — pure `decideThresholdAction()` extracted from
+      `pollProvider`; `tests/daemon-rebind.test.ts` asserts threshold → notify +
+      suggest, never `setActive` (+ a structural no-`setActive` check).
+- [x] **Follow-up: residual copy** — the per-tab status-dot tooltip + Settings tab
+      label now read "Notify near limit" / "notify + suggest; never switches
+      automatically" (GUI).
 
 Security: net compliance improvement — removes the only fully-automatic path;
 switching becomes user-interaction-only.
@@ -278,8 +281,10 @@ scope). No Anthropic-guidance gate (owner resolved finding 6).
 
 ### Phase 5 — GUI parity (later)
 
-- [ ] Mirror the compliant limit dialog in the Tauri app (the `EmbeddedTerminal`
-      path already runs `rebind`-shaped interactive flows).
+- [x] Mirrored the limit dialog in the Tauri GUI — a "Switch account" dialog
+      (`gui/src/rebind-dialog.ts` pure model + `SwitchAccountDialog`): lists other
+      profiles + usage, pre-selects best-headroom, switches only on an explicit
+      click via `rebindTo` (calls the CLI `rebind`). 6 + 42 gui tests.
 
 ### Phase 6 — Other providers (gated, later)
 

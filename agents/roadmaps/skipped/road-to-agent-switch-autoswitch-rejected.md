@@ -35,6 +35,23 @@ for doing so.
   suggested again (forks, issues). A written lock with rationale is cheaper
   than re-arguing it each time.
 
+## Reconciliation — owner narrowed the line (2026-07-25)
+
+The owner's compliance decision (recorded in `../road-to-live-rebind.md`
+§ Out-of-scope + `docs/adr/ADR-003`) **narrows, does not lift, this lock**: the
+sole forbidden case is a **FULLY-automatic** switch (no user interaction). A
+switch the user explicitly triggers — the `rebind` command and the
+user-interaction-gated limit dialog — is allowed and now shipped. Accordingly:
+
+- The daemon's shipped opt-in **auto-rotation was REMOVED** (live-rebind Phase 3,
+  `feat(daemon)!`): the threshold path now only notifies + suggests; it never
+  calls `setActive`. The Phase-1 "Quota-watch auto-switch" / "switch-on-limit"
+  items below stay **cancelled and are now also absent from the code**.
+- `pickSwitchTarget` (headroom ranking) survives ONLY as the *suggestion* a
+  user-clicked dialog pre-selects — never as a silent-rotation driver.
+
+Everything below stays rejected for the **fully-automatic** case.
+
 ## Phase 1: Automated / assisted account rotation — REJECTED
 
 - [-] **Quota-watch auto-switch:** poll usage, switch to the account with the
