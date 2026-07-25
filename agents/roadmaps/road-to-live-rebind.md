@@ -255,15 +255,19 @@ switching becomes user-interaction-only.
 
 ### Phase 4 — Limit dialog (CLI first) — user-interaction-gated
 
-- [ ] Active-profile threshold-near → notify (reuse the daemon + `os-notify.ts`),
-      naming the suggested best-headroom profile.
-- [ ] Offer a switch via a modal/popup the **user clicks** → on accept, `rebind`
-      to the chosen profile. The user interaction IS the compliance line.
-- [ ] The modal MAY show per-profile usage and **pre-select the best-headroom
-      profile** (owner decision — user-interaction-gated, so the suggestion is a
-      convenience, not automated rotation). The user can pick any profile.
-- [ ] Cancel → stay on the current profile. The dialog never switches on its own.
-- [ ] Leave the separate `agent-switch status` / GUI usage panel as-is.
+CLI-first landed 2026-07-25 — `agent-switch rebind` (no `<account>` arg) is the
+interactive picker (`src/rebind-dialog.ts` = pure model + `readline` shell); 11 tests.
+
+- [x] Active-profile threshold-near → notify — the daemon's "Usage limit near"
+      message now names `agent-switch rebind` (the dialog) + the suggested profile.
+- [x] Offer a switch via a picker the **user selects** → on pick, `rebind` to the
+      chosen profile. The explicit selection IS the compliance line.
+- [x] The picker shows per-profile usage and **pre-selects the best-headroom
+      profile** (owner decision — user-interaction-gated). The user can pick any.
+- [x] Cancel (`q` / Ctrl-C / empty-with-no-suggestion) → stays on the current
+      profile; the dialog never switches on its own. Non-TTY → prints the exact
+      command, no hang.
+- [x] Left the separate `agent-switch status` / GUI usage panel untouched.
 
 Security: the one invariant — **no switch without a user interaction** (§ Out of
 scope). No Anthropic-guidance gate (owner resolved finding 6).

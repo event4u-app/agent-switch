@@ -6,10 +6,10 @@
 
 ## Overall
 
-**87 / 102 steps done · 85%**
+**92 / 102 steps done · 90%**
 
 ```text
-██████████████████████████████████░░░░░░   85%
+████████████████████████████████████░░░░   90%
 ```
 
 ## ⚠️ Iron Law 3 — unresolved deferred items
@@ -30,7 +30,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | 1 | [road-to-1.0.1-review-followup.md](roadmaps/road-to-1.0.1-review-followup.md) | 4 | 9 | 0 | 8 | 1 | 0 | 0 | ██████████ 100% |
 | 2 | [road-to-ac-embedded-settings.md](roadmaps/road-to-ac-embedded-settings.md) | 4 | 30 | 0 | 26 | 4 | 0 | [3](#blockers-road-to-ac-embedded-settings) | ██████████ 100% |
 | 3 | [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 5 | 30 | 0 | 28 | 1 | 1 | [2](#blockers-road-to-agent-setup-hub) | ██████████ 100% |
-| 4 | [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md) | 7 | 33 | 15 | 16 | 2 | 0 | 0 | █████░░░░░ 52% |
+| 4 | [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md) | 7 | 33 | 10 | 21 | 2 | 0 | 0 | ███████░░░ 68% |
 | 5 | [road-to-usage-reliability-and-portability.md](roadmaps/road-to-usage-reliability-and-portability.md) | 5 | 13 | 0 | 9 | 3 | 1 | 0 | ██████████ 100% |
 
 ---
@@ -96,7 +96,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 ### [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md)
 
-**live account rebind (in-session switch, any terminal)** — 16 / 31 done (52%)
+**live account rebind (in-session switch, any terminal)** — 21 / 31 done (68%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
@@ -104,7 +104,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | 1 | ADR-003 gate (decide BEFORE the write path is built) | ✅ done | 0 | 2 | 0 | 0 | 100% |
 | 2 | `agent-switch rebind <account> [--profile <p>]` (the one write module) | 🟡 in progress | 3 | 6 | 1 | 0 | 67% |
 | 3 | Retire the FULLY-automatic switch (keep notify + suggestion) | 🟡 in progress | 3 | 4 | 0 | 0 | 57% |
-| 4 | Limit dialog (CLI first) — user-interaction-gated | ⬜ not started | 5 | 0 | 0 | 0 | 0% |
+| 4 | Limit dialog (CLI first) — user-interaction-gated | ✅ done | 0 | 5 | 0 | 0 | 100% |
 | 5 | GUI parity (later) | ⬜ not started | 1 | 0 | 0 | 0 | 0% |
 | 6 | Other providers (gated, later) | ⬜ not started | 1 | 0 | 0 | 0 | 0% |
 
