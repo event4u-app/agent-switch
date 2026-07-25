@@ -55,6 +55,7 @@ import {
   setBinaryPath,
   type ProviderSurface,
   ROOT,
+  resetRebindKillSwitch,
 } from "./profiles.js";
 import { Provider, ProviderId, PROVIDER_IDS, provider, isProviderInstalled, resolveBinary } from "./providers.js";
 import { rebind, restoreRebind } from "./rebind.js";
@@ -1909,7 +1910,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch alerts on|off|status [--threshold 80,95]   record context/usage crossings to the notification log (off by default)
   agent-switch compact <profile> [--clear] [--dry-run] [--force]   type /compact (or /clear) into the profile's managed tmux pane
   agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place] [--print-only] [--force]   move a session to another profile and resume it
-  agent-switch rebind [<account>] [--profile <p>]   |   rebind --restore [--profile <p>]   switch a RUNNING profile's account (macOS; no <account> = interactive picker; user-interaction switch)
+  agent-switch rebind [<account>] [--profile <p>]   |   rebind --restore [--profile <p>]   |   rebind --reset   switch a RUNNING profile's account (macOS; no <account> = interactive picker; --restore reverses; --reset re-enables after a circuit-breaker trip)
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force]   delete a profile
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
@@ -2030,6 +2031,14 @@ async function cmdRebind(
 ): Promise<void> {
   if (providerExplicit && providerId !== "claude") die(`rebind supports claude only (not ${providerId})`);
   const profile = typeof flags.profile === "string" ? flags.profile : activeFor("claude") ?? undefined;
+
+  if (flags.reset) {
+    // Kill-switch reset (ADR-003): clear `disabled` + the failure counter so a
+    // circuit-breaker trip (or a manual disable) no longer refuses rebind.
+    resetRebindKillSwitch();
+    console.log("rebind re-enabled — circuit-breaker cleared (disabled=false, consecutiveFailures=0).");
+    return;
+  }
 
   if (flags.restore) {
     if (!profile) die("usage: agent-switch rebind --restore [--profile <p>] — no active claude profile to restore");

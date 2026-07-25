@@ -197,11 +197,10 @@ Follow-up slices stay open below.
       net-new).
 - [x] Acquire CC's lock (`withProperLock` on the config dir; ~9s timeout) before
       any mutation — unit-tested (lock precedes the first write).
-- [ ] **Global binding registry + global lock (Council finding 2):** the per-profile
-      binding-marker cannot enforce the *global* "one token family, one store"
-      invariant — two concurrent `rebind`s could bind one account to two profiles.
-      Add a cross-profile registry guarded by a global lock above CC's per-profile
-      lock. *(deferred slice)*
+- [x] **Global binding registry + global lock (Council finding 2):** registry at
+      `<ROOT>/.agent-switch-rebind-registry.json`, guarded by a **global** lock
+      (outer to CC's per-profile lock). `rebind()` refuses if the account is already
+      bound to another profile; `restoreRebind()` clears the entry. Unit-tested.
 - [x] Freshen guard (R0.4): refuse a target < 10 min to expiry — no token minting;
       unit-tested. *(a real refresh grant is a follow-up; the guard ships now.)*
 - [x] **Move-semantics** (macOS): target credential moved INTO the running store
@@ -209,12 +208,17 @@ Follow-up slices stay open below.
       emptied (Keychain entry deleted, plaintext file moved aside — never deleted),
       both originals stashed in the marker BEFORE any mutation. Linux/Win backend
       deferred (R0.1). Unit-tested.
-- [ ] **Provenance-fingerprint mismatch states (Council finding 5).** *(deferred slice)*
+- [x] **Provenance-fingerprint mismatch states (Council finding 5):**
+      `accountFingerprint()` (a stable claim, else a hash excluding volatile token
+      material). At swap + restore the live store content is re-read + compared:
+      same/rotated-token → proceed; different account → **quarantine** (stash aside,
+      no clobber, throw); unparseable → **refuse**. Unit-tested (all three).
 - [x] Per-profile **binding-marker** stashing both originals — keeps the 1:1 mapping
       honest + recoverable after a crash. Unit-tested.
-- [ ] **Rollback / kill-switch (Council convergence):** versioned feature-flag +
-      circuit-breaker after N failures. *(deferred; `--restore` is the manual
-      recovery path today.)*
+- [x] **Rollback / kill-switch (Council convergence):** `State.rebind =
+      {disabled, consecutiveFailures}`; `rebind()` refuses when disabled, trips at
+      3 consecutive failures, resets on success; `restoreRebind()` still works
+      (recovery). CLI `agent-switch rebind --reset` clears it. Unit-tested.
 - [x] `agent-switch rebind --restore [--profile <p>]` — reverses the swap (both
       stores restored, target file returned, marker cleared). Unit-tested.
 - [x] UX expectation printed: fresh process instant, long-lived session ≤ ~30s

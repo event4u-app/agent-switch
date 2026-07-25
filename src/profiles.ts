@@ -85,6 +85,20 @@ export type BinaryPaths = Partial<Record<ProviderId, string>>;
  */
 export const PROVIDERS_ON_BY_DEFAULT: readonly ProviderId[] = ["claude", "codex"];
 
+/**
+ * Rollback / kill-switch for the `rebind` credential-write path (ADR-003).
+ * `disabled` hard-refuses `rebind` (a manual off-switch, or a circuit-breaker
+ * that trips after {@link REBIND_FAILURE_LIMIT} consecutive failures);
+ * `consecutiveFailures` is the breaker's counter. `rebind --restore` is exempt —
+ * it is the recovery path and must work even while disabled. Cleared with
+ * `agent-switch rebind --reset` ({@link resetRebindKillSwitch}).
+ */
+export interface RebindKillSwitch {
+  disabled: boolean;
+  consecutiveFailures: number;
+}
+export const DEFAULT_REBIND_STATE: RebindKillSwitch = { disabled: false, consecutiveFailures: 0 };
+
 export interface State {
   active: ActiveMap;
   labels: LabelMap;
@@ -96,6 +110,8 @@ export interface State {
   /** Whether the background daemon fires OS desktop notifications itself (for
    *  timeliness when the GUI is closed). Default false — opt-in. */
   osNotifications: boolean;
+  /** Rollback / circuit-breaker for the `rebind` write path (ADR-003). */
+  rebind: RebindKillSwitch;
 }
 
 function emptyActive(): ActiveMap {
@@ -247,6 +263,12 @@ function normalizeBinaryPaths(raw: unknown): BinaryPaths {
   return out;
 }
 
+function normalizeRebindState(raw: unknown): RebindKillSwitch {
+  const r = (raw ?? {}) as Partial<RebindKillSwitch>;
+  const consecutiveFailures = typeof r.consecutiveFailures === "number" && r.consecutiveFailures >= 0 ? Math.floor(r.consecutiveFailures) : 0;
+  return { disabled: r.disabled === true, consecutiveFailures };
+}
+
 export function readState(): State {
   try {
     const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
@@ -256,18 +278,19 @@ export function readState(): State {
     const binaryPaths = normalizeBinaryPaths(raw?.binaryPaths);
     const switchStrategy: SwitchStrategy = raw?.switchStrategy === "rotation-first" ? "rotation-first" : DEFAULT_SWITCH_STRATEGY;
     const osNotifications = raw?.osNotifications === true;
+    const rebind = normalizeRebindState(raw?.rebind);
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch, providers, binaryPaths, switchStrategy, osNotifications };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch, providers, binaryPaths, switchStrategy, osNotifications, rebind };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch, providers, binaryPaths, switchStrategy, osNotifications };
+      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch, providers, binaryPaths, switchStrategy, osNotifications, rebind };
     }
-    return { active: emptyActive(), labels, autoSwitch, providers, binaryPaths, switchStrategy, osNotifications };
+    return { active: emptyActive(), labels, autoSwitch, providers, binaryPaths, switchStrategy, osNotifications, rebind };
   } catch {
     /* absent / unparsable → default */
   }
-  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, switchStrategy: DEFAULT_SWITCH_STRATEGY, osNotifications: false };
+  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, switchStrategy: DEFAULT_SWITCH_STRATEGY, osNotifications: false, rebind: { ...DEFAULT_REBIND_STATE } };
 }
 
 export function readSwitchStrategy(): SwitchStrategy {
@@ -288,6 +311,25 @@ export function setOsNotifications(on: boolean): void {
   const state = readState();
   state.osNotifications = on;
   writeState(state);
+}
+
+// ---------- rebind kill-switch / circuit-breaker (ADR-003) ----------
+
+/** Current rollback/circuit-breaker state for the `rebind` write path. */
+export function readRebindKillSwitch(): RebindKillSwitch {
+  return readState().rebind;
+}
+
+/** Persist the rebind kill-switch state (breaker counter + disabled flag). */
+export function writeRebindKillSwitch(next: RebindKillSwitch): void {
+  const state = readState();
+  state.rebind = normalizeRebindState(next);
+  writeState(state);
+}
+
+/** Re-enable `rebind`: clear `disabled` + reset the failure counter (`--reset`). */
+export function resetRebindKillSwitch(): void {
+  writeRebindKillSwitch({ ...DEFAULT_REBIND_STATE });
 }
 
 export function writeState(state: State): void {
