@@ -108,7 +108,7 @@ export function AgentConfigCard({
   const showAction = shown.mode === "install" || shown.mode === "update";
 
   return (
-    <div className="rounded-[10px] border border-border bg-card px-4 py-3">
+    <div className="rounded-[10px] border border-primary/30 bg-gradient-to-r from-primary/15 to-primary/5 px-4 py-3">
       <div className="flex items-center gap-3">
         {/* The card body is the repo link (a real button → keyboard-accessible);
          *  the controls are siblings, never nested inside it. */}
