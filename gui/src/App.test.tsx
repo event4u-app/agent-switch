@@ -16,6 +16,7 @@ const ipc = vi.hoisted(() => ({
   setProvider: vi.fn(),
   setProfileLabel: vi.fn(),
   switchProfile: vi.fn(),
+  rebindTo: vi.fn(),
   openWeb: vi.fn(),
   loginArgs: (p: string, n: string) => ["add", n, "--provider", p],
   sessionArgs: (p: string, n: string) => ["run", n, "--provider", p],
@@ -420,9 +421,9 @@ describe("App", () => {
       antigravity: { enabled: true, threshold: 95, tag: "all" },
     });
     render(<App />);
-    expect(await screen.findByLabelText(/auto-switch on for claude/i)).toBeTruthy();
-    expect(await screen.findByLabelText(/auto-switch off for codex/i)).toBeTruthy(); // Codex now has a usage readout
-    expect(screen.queryByLabelText(/auto-switch.*for antigravity/i)).toBeNull(); // no readout → no badge colour
+    expect(await screen.findByLabelText(/near-limit notifications on for claude/i)).toBeTruthy();
+    expect(await screen.findByLabelText(/near-limit notifications off for codex/i)).toBeTruthy(); // Codex now has a usage readout
+    expect(screen.queryByLabelText(/near-limit notifications.*for antigravity/i)).toBeNull(); // no readout → no badge colour
   });
 
   it("shows an auto-switch tag filter (Settings › Auto-switch) with only existing tags and applies the choice", async () => {
@@ -434,7 +435,7 @@ describe("App", () => {
     });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    fireEvent.click(await screen.findByRole("tab", { name: /auto-switch/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /notify near limit/i }));
     const select = (await screen.findByLabelText(/auto-switch accounts for claude/i)) as HTMLSelectElement;
     const opts = Array.from(select.options).map((o) => o.textContent);
     expect(opts).toContain("All accounts");
@@ -468,7 +469,7 @@ describe("App", () => {
     store.globalAuto = false; // production default
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i });
-    expect(screen.queryByLabelText(/auto-switch/i)).toBeNull(); // no per-tab dots
+    expect(screen.queryByLabelText(/near-limit notifications/i)).toBeNull(); // no per-tab dots
     expect(screen.queryByText(/auto-switch ·/i)).toBeNull(); // no footer toggle
   });
 
@@ -479,7 +480,7 @@ describe("App", () => {
     expect(screen.queryByRole("tab", { name: /claude/i })).toBeNull();
     expect(screen.getByRole("tab", { name: /general/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /notifications/i })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: /auto-switch/i })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /notify near limit/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /updates/i })).toBeTruthy();
     expect(screen.getByRole("tab", { name: /advanced/i })).toBeTruthy();
   });
@@ -789,7 +790,7 @@ describe("App", () => {
   it("global auto-switch off hides the badge colouring + footer toggle and deactivates every provider", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
-    fireEvent.click(await screen.findByRole("tab", { name: /auto-switch/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /notify near limit/i }));
     fireEvent.click(await screen.findByRole("switch", { name: /near-limit notifications globally/i })); // On → Off
     await waitFor(() => expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", false));
     expect(ipc.setAutoSwitch).toHaveBeenCalledWith("codex", false);
@@ -797,7 +798,7 @@ describe("App", () => {
     // back to the profile view: no per-tab dots, no footer toggle
     fireEvent.click(screen.getByRole("button", { name: /profiles/i }));
     await screen.findByRole("tab", { name: /claude/i });
-    expect(screen.queryByLabelText(/auto-switch/i)).toBeNull();
+    expect(screen.queryByLabelText(/near-limit notifications/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /notify near limit ·/i })).toBeNull();
   });
 

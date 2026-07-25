@@ -20,6 +20,8 @@ import {
   listProfiles,
   activeStatus,
   switchProfile,
+  rebindArgs,
+  rebindTo,
   agentConfigVersion,
   shareStatus,
   shareOn,
@@ -87,6 +89,18 @@ describe("ipc", () => {
     execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
     await switchProfile("codex", "work");
     expect(create).toHaveBeenCalledWith("agent-switch", ["use", "work", "--provider", "codex"]);
+  });
+
+  it("rebindArgs builds `rebind <account> --profile <running>` (pure); rebindTo runs it", async () => {
+    expect(rebindArgs("privat", "work")).toEqual(["rebind", "privat", "--profile", "work"]);
+    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+    await rebindTo("privat", "work");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["rebind", "privat", "--profile", "work"]);
+  });
+
+  it("rebindTo throws with the stderr on a non-zero exit (the caller surfaces it)", async () => {
+    execute.mockResolvedValue({ code: 1, stdout: "", stderr: "rebind is macOS-only for now" });
+    await expect(rebindTo("privat", "work")).rejects.toThrow(/macOS-only/);
   });
 
   it("throws with the stderr on a non-zero exit", async () => {

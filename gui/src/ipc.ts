@@ -199,6 +199,22 @@ export async function switchProfile(provider: ProviderId, name: string): Promise
   await runCli(["use", name, "--provider", provider]);
 }
 
+/** Args for `rebind <account> --profile <running>` — point the RUNNING claude
+ *  profile's credential store at another account (macOS live rebind, ADR-003).
+ *  Pure builder (testable); claude-only, matching the CLI default. */
+export function rebindArgs(account: string, profile: string): string[] {
+  return ["rebind", account, "--profile", profile];
+}
+
+/** Switch a RUNNING claude profile to another account via the CLI `rebind` path.
+ *  User-interaction-gated: only ever called on an explicit click in the
+ *  Switch-account dialog — there is NO automatic switch. The live session adopts
+ *  the new account on its next message. Rejects with the CLI stderr on failure
+ *  (e.g. the non-macOS refusal), which the caller surfaces. */
+export async function rebindTo(account: string, profile: string): Promise<void> {
+  await runCli(rebindArgs(account, profile));
+}
+
 /** Clear the active profile for a provider (no profile active afterwards). */
 export async function deactivateProfile(provider: ProviderId): Promise<void> {
   await runCli(["deactivate", "--provider", provider]);
