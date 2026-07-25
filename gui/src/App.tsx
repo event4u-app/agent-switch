@@ -932,7 +932,6 @@ export default function App() {
               antigravity: grouped.antigravity.map((r) => r.name),
             }}
             hideSummaries={hideSummaries}
-            onClose={() => setSection("profiles")}
             onTakeover={(provider, sessionId, to, keepSource) =>
               setTerminal({
                 args: takeoverArgs(sessionId, to, keepSource, provider),
@@ -2981,7 +2980,6 @@ function SessionsView({
   enabledIds,
   profilesByProvider,
   hideSummaries,
-  onClose,
   onTakeover,
   onCompact,
   onDelete,
@@ -2992,7 +2990,6 @@ function SessionsView({
   enabledIds: ProviderId[];
   profilesByProvider: Record<ProviderId, string[]>;
   hideSummaries: boolean;
-  onClose: () => void;
   onTakeover: (provider: ProviderId, sessionId: string, to: string, keepSource: boolean) => void;
   onCompact: (profile: string) => void;
   onDelete: (provider: ProviderId, sessionId: string, profile: string) => Promise<{ mode: string; trashId: string | null }>;
@@ -3050,12 +3047,7 @@ function SessionsView({
 
   return (
     <div className="space-y-2.5">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold tracking-tight">Sessions</span>
-        <Button size="icon" variant="ghost" className="size-7" onClick={onClose} aria-label="Close sessions">
-          <X />
-        </Button>
-      </div>
+      <span className="text-sm font-semibold tracking-tight">Sessions</span>
 
       {tabs.length > 1 && (
         <div
