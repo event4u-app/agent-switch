@@ -86,19 +86,25 @@ Security: yes (latent cross-profile leak) — now guarded.
 Concretely useful for one user with several accounts across machines. This is
 the same item deferred in the 1.0.1 roadmap; consolidated here.
 
-- [ ] **Threat-model first** (`security-sensitive-stop`) before any code.
-- [ ] Default export = config-only (reuse the `SHARED_ITEMS` allowlist as the
-  complement of the secret set); **strips** machine-bound state — the path-hashed
-  macOS Keychain entry (`src/keychain.ts` `serviceNameFor`) and device/MCP-OAuth
-  state are never exported.
-- [ ] `--full` opt-in only, and never writes credentials for the user —
-  encryption is left to the user (`| gpg -c`), matching the matured reference
-  design. Default export must exclude `.credentials.json`.
-- [ ] Tests: default export contains no credential/keychain material; `--full`
-  is refused without the explicit flag; round-trip import lands config only.
+- [x] **Threat-model first** (`security-sensitive-stop`) — done (abuse-cases →
+  controls: allowlist-only export, path-confinement/zip-slip guard on import,
+  `--full` refused; no prior incident in memory for this surface).
+- [x] Default export = config-only — `src/config-transfer.ts` walks ONLY the
+  `SHARED_ITEMS` allowlist; the secret/deny-set (`.claude.json`,
+  `.credentials.json`, `plugins/`, `sessions/`, `ide/`, `statsig/`) and the
+  path-hashed macOS Keychain entry (OS-managed, outside the config dir) are never
+  exported. Import re-checks the allowlist + confines paths.
+- [x] `--full` — **refused, not built** (SAFE subset, owner's call): it bundles
+  live OAuth tokens (account-takeover vector) and stays human-gated. The
+  config-only default excludes `.credentials.json` by construction; encryption is
+  the user's (`| gpg -c` the stdout bundle).
+- [x] Tests (`tests/config-transfer.test.ts`, 8): deny-set absent from the export
+  bundle; round-trip lands config only; import rejects `..`/absolute paths + never
+  writes a bundled `.credentials.json`; `--full` refused. tsc + full suite green.
 
-Security: YES — `--full` bundles live OAuth refresh/access tokens (account-
-takeover vector). Not an autonomous build. Feasibility: hard.
+Security: YES — `--full` (live-token bundling) remains **deliberately unbuilt**
+(account-takeover vector); only the config-only path shipped. Commands:
+`agent-switch config export <p>` (stdout bundle) · `config import <p>` (stdin).
 
 ## Phase 5 — CLI-first text dashboard (TUI)
 

@@ -62,6 +62,7 @@ import { extractBrief, writeBrief, sweepBriefs, seedPrompt } from "./handoff.js"
 import { credentialStore } from "./credentials.js";
 import { withProperLock } from "./locks.js";
 import { applySharing, removeSharing, syncSharing, sharedLinkHealth } from "./share.js";
+import { assertNotFull, exportConfig, importConfig } from "./config-transfer.js";
 import { detectShell, shellenvScript } from "./shellenv.js";
 import { runDoctor } from "./doctor.js";
 import { TOOL_IDS, ToolAction, ToolId, checkTooling, formatToolingLines, runToolAction } from "./tooling.js";
@@ -548,6 +549,55 @@ function cmdShare(mode?: string, flags: string[] = []): void {
   } else {
     die("usage: agent-switch share on|sync|off|status [--history] [--source <profile|default>]");
   }
+}
+
+/**
+ * `agent-switch config export|import <profile> [--full]` — move a Claude
+ * profile's SHARED config (settings.json, keybindings.json, CLAUDE.md, skills/,
+ * commands/, agents/) between machines as a JSON bundle. Config-ONLY — it never
+ * touches credentials. Claude-scoped (config lives under the Claude layout).
+ *
+ *   export → the bundle goes to STDOUT (pipe it: `| gpg -c > backup.gpg`), all
+ *            status on STDERR so stdout stays a clean bundle.
+ *   import → reads a bundle from STDIN into the profile's config dir.
+ *   --full → REFUSED (would bundle live OAuth tokens; account-takeover vector).
+ */
+function cmdConfig(sub?: string, name?: string, flags: Record<string, string | boolean> = {}): void {
+  try {
+    assertNotFull(!!flags.full);
+  } catch (e) {
+    die((e as Error).message);
+  }
+
+  if (sub === "export") {
+    const n = requireProfile("claude", name, "config export");
+    const bundle = exportConfig(configDir("claude", n));
+    // Status on stderr — stdout is the bundle (so `... | gpg -c > backup.gpg` works).
+    console.error(`Exported config-only bundle for claude/${n} (SHARED_ITEMS allowlist; no credentials).`);
+    process.stdout.write(bundle + "\n");
+    return;
+  }
+
+  if (sub === "import") {
+    const n = requireProfile("claude", name, "config import");
+    let input: string;
+    try {
+      input = fs.readFileSync(0, "utf8"); // stdin
+    } catch {
+      die("config import reads a bundle from stdin — pipe one in (e.g. `gpg -d backup.gpg | agent-switch config import <profile>`).");
+    }
+    let written: string[];
+    try {
+      written = importConfig(configDir("claude", n), input);
+    } catch (e) {
+      die((e as Error).message);
+    }
+    console.error(`Imported ${written.length} config file(s) into claude/${n} (config-only; no credentials):`);
+    for (const w of written) console.error(`  ${w}`);
+    return;
+  }
+
+  die("usage: agent-switch config export|import <profile>   (config-only; pipe export | gpg -c > backup.gpg)");
 }
 
 // ---------- session inventory + takeover (Claude; Codex lands per G0.3) ------
@@ -1851,6 +1901,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch unmap [--provider P] [dir]      remove a directory mapping
   agent-switch mappings                        list directory mappings
   agent-switch share on|sync|off|status [--history] [--source <profile|default>] [--json]   (Claude)
+  agent-switch config export|import <profile>   config-only cross-machine bundle to stdout / from stdin (settings, keybindings, CLAUDE.md, skills/, commands/, agents/ — NEVER credentials; pipe export | gpg -c)
   agent-switch sessions [profile] [--recent N] [--json]   recent + live Claude sessions per profile (with context %)
   agent-switch hooks install|uninstall|status [profile]   manage lifecycle push hooks in Claude settings.json
   agent-switch alerts on|off|status [--threshold 80,95]   record context/usage crossings to the notification log (off by default)
@@ -1978,6 +2029,7 @@ async function main(): Promise<void> {
     case "unmap": return cmdUnmap(providerExplicit ? providerId : undefined, positional[0]);
     case "mappings": return cmdMappings();
     case "share": return cmdShare(positional[0], rest.slice(1));
+    case "config": return cmdConfig(positional[0], positional[1], flags);
     case "sessions":
       if (positional[0] === "rm") return cmdSessionsRm(providerId, providerExplicit, positional[1], flags);
       if (positional[0] === "restore") return cmdSessionsRestore(providerId, providerExplicit, positional[1], flags);
