@@ -124,7 +124,6 @@ import {
   formatContextBadge,
   hasUsageReadout,
   nearestLimit,
-  pickMostHeadroom,
   relativeAge,
   worstLiveContextPct,
   contextTrayTooltip,
@@ -503,39 +502,6 @@ export default function App() {
       }
     }
     await syncNotifications();
-  }
-
-  // Dev-mode: fire the near-limit notification the daemon would send for the
-  // selected provider — compute the same-provider account with the most headroom
-  // and record the "Usage limit near" event (NO switch — the daemon notifies +
-  // suggests, it no longer auto-switches) without waiting for a real threshold
-  // crossing.
-  function triggerNearLimitNotifyTest() {
-    const profs = rows.filter((r) => r.provider === selected);
-    const active = profs.find((r) => r.active)?.name ?? null;
-    // Respect the configured tag filter — only accounts with that label (or all)
-    // are eligible targets, exactly like the daemon.
-    const tag = auto?.[selected]?.tag ?? "all";
-    const target = pickMostHeadroom(
-      profs
-        .filter((r) => r.name !== active && (tag === "all" || r.label === tag))
-        .map((r) => ({ name: r.name, max: nearestLimit(usage[`${selected}/${r.name}`]?.snap ?? null) })),
-    );
-    if (!target) {
-      setError(`Near-limit test needs a second ${PROVIDER_LABEL[selected]} profile to suggest.`);
-      return;
-    }
-    const threshold = auto?.[selected]?.threshold ?? 95;
-    act(async () => {
-      await recordNotification(
-        "warning",
-        "Usage limit near",
-        `claude/${active ?? "—"} hit ≥${threshold}% — suggested profile: claude/${target}. Switch with the Switch-account dialog or \`agent-switch rebind\`. (dev test trigger)`,
-      );
-      await syncNotifications(); // reload the bell/flyout so the recorded notification is actually visible
-    });
-    // Also open the switch-account dialog so the near-limit → switch flow is visible end-to-end.
-    setSwitchDialog(active ?? "");
   }
 
   // `force` = a manual refresh (footer button): bypass the per-profile fetch
@@ -1454,16 +1420,6 @@ export default function App() {
               </button>
             );
           })()}
-        {devMode && globalAuto && hasUsageReadout(selected) && section !== "settings" && grouped[selected].length >= 2 && (
-          <button
-            className="flex items-center gap-1.5 text-[11px] text-primary transition-colors hover:opacity-80"
-            onClick={triggerNearLimitNotifyTest}
-            title="Dev: fire the near-limit notification the daemon would send (no switch)"
-          >
-            <ArrowRightLeft className="size-3" />
-            Trigger (test)
-          </button>
-        )}
         <div className="ml-auto flex items-center gap-1.5">
           {autoRefresh && !terminal && (
             <span className="tabular-nums text-[11px] text-muted-foreground" title="Time until usage limits auto-refresh">
