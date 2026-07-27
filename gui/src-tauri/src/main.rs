@@ -8,6 +8,7 @@
 )]
 
 mod ac;
+mod pet;
 mod pty;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -155,6 +156,8 @@ fn main() {
             show_window,
             set_minimize_to_dock,
             set_tray_tooltip,
+            pet::pet_show,
+            pet::pet_hide,
             pty::term_open,
             pty::term_write,
             pty::term_resize,
@@ -240,6 +243,11 @@ fn main() {
                     }
                 })
                 .build(app)?;
+
+            // SPIKE (road-to-desktop-pet Phase 0): open the pet window on
+            // every launch so it can be evaluated. Phase 1 replaces this with
+            // the settings-gated pet_show/pet_hide flow (default off).
+            let _ = pet::show(app.handle());
             Ok(())
         })
         .build(tauri::generate_context!())

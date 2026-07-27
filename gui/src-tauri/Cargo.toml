@@ -9,7 +9,10 @@ rust-version = "1.77"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# macos-private-api: required for the transparent pet overlay window (SPIKE,
+# road-to-desktop-pet Phase 0). App-Store-incompatible; fine for the current
+# unsigned GitHub-Releases distribution. Decision to be recorded in ADR-005.
+tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-shell = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-notification = "2"

@@ -9,6 +9,14 @@ export default defineConfig({
   clearScreen: false,
   base: "./",
   server: { port: 1420, strictPort: true },
+  build: {
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        pet: fileURLToPath(new URL("./pet.html", import.meta.url)),
+      },
+    },
+  },
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],

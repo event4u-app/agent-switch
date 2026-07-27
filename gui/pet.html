@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>pet</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        overflow: hidden;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      /* Grab strip on top: dragging the window without eating sprite clicks. */
+      #drag {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 28px;
+        cursor: grab;
+      }
+      #stage {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding-top: 30px;
+      }
+      #sprite {
+        width: 192px;
+        height: 208px;
+        background-repeat: no-repeat;
+        background-position-x: 0px;
+        background-position-y: var(--row-y, 0px);
+        image-rendering: pixelated;
+        cursor: pointer;
+      }
+      @keyframes pet-frames {
+        from {
+          background-position-x: 0px;
+        }
+        to {
+          background-position-x: var(--end-x, -1152px);
+        }
+      }
+      #label {
+        font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #fff;
+        background: rgba(0, 0, 0, 0.55);
+        padding: 2px 8px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="drag" data-tauri-drag-region></div>
+    <div id="stage">
+      <div id="sprite"></div>
+      <div id="label"></div>
+    </div>
+    <script type="module" src="/src/pet-main.ts"></script>
+  </body>
+</html>

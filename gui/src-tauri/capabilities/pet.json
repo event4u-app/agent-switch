@@ -1,0 +1,7 @@
+{
+  "$schema": "gen/schemas/desktop-schema.json",
+  "identifier": "pet",
+  "description": "SPIKE: pet overlay window — window drag only, no shell/IPC access",
+  "windows": ["pet"],
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
+}
