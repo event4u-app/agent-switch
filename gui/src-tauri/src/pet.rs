@@ -13,14 +13,18 @@ const PET_H: f64 = 330.0;
 
 // Bottom-right of the primary work area, offset above the app's own toast
 // corner. Positioned from the monitor origin, not center() — the multi-monitor
-// lesson from the AC settings window applies here too.
+// lesson from the AC settings window applies here too. Uses the ACTUAL window
+// size: the pet webview resizes itself to the size setting after creation.
 fn position_bottom_right(win: &tauri::WebviewWindow) {
     if let Ok(Some(monitor)) = win.primary_monitor() {
         let size = monitor.size();
         let pos = monitor.position();
         let scale = monitor.scale_factor();
-        let x = pos.x + size.width as i32 - ((PET_W + 24.0) * scale) as i32;
-        let y = pos.y + size.height as i32 - ((PET_H + 60.0) * scale) as i32;
+        let win_size = win
+            .outer_size()
+            .unwrap_or(tauri::PhysicalSize::new((PET_W * scale) as u32, (PET_H * scale) as u32));
+        let x = pos.x + size.width as i32 - win_size.width as i32 - (24.0 * scale) as i32;
+        let y = pos.y + size.height as i32 - win_size.height as i32 - (60.0 * scale) as i32;
         let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
     }
 }

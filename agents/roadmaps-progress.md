@@ -6,7 +6,7 @@
 
 ## Overall
 
-**127 / 134 steps done · 95%**
+**128 / 135 steps done · 95%**
 
 ```text
 ██████████████████████████████████████░░   95%
@@ -30,7 +30,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | 1 | [road-to-1.0.1-review-followup.md](roadmaps/road-to-1.0.1-review-followup.md) | 4 | 9 | 0 | 8 | 1 | 0 | 0 | ██████████ 100% |
 | 2 | [road-to-ac-embedded-settings.md](roadmaps/road-to-ac-embedded-settings.md) | 4 | 30 | 0 | 26 | 4 | 0 | [3](#blockers-road-to-ac-embedded-settings) | ██████████ 100% |
 | 3 | [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 5 | 30 | 0 | 28 | 1 | 1 | [2](#blockers-road-to-agent-setup-hub) | ██████████ 100% |
-| 4 | [road-to-desktop-pet.md](roadmaps/road-to-desktop-pet.md) | 6 | 35 | 5 | 27 | 3 | 0 | 0 | ████████░░ 84% |
+| 4 | [road-to-desktop-pet.md](roadmaps/road-to-desktop-pet.md) | 6 | 36 | 5 | 28 | 3 | 0 | 0 | ████████░░ 85% |
 | 5 | [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md) | 7 | 33 | 2 | 29 | 2 | 0 | 0 | █████████░ 94% |
 | 6 | [road-to-usage-reliability-and-portability.md](roadmaps/road-to-usage-reliability-and-portability.md) | 5 | 13 | 0 | 9 | 3 | 1 | 0 | ██████████ 100% |
 
@@ -97,14 +97,14 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 ### [road-to-desktop-pet.md](roadmaps/road-to-desktop-pet.md)
 
-**desktop pet as a global notification surface** — 27 / 32 done (84%)
+**desktop pet as a global notification surface** — 28 / 33 done (85%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 0 | decisions + platform spike | ✅ done | 0 | 3 | 0 | 0 | 100% |
 | 1 | pet window foundation (hidden feature, default off) | ✅ done | 0 | 6 | 0 | 0 | 100% |
 | 2 | rendering: sprites + reactions | 🟡 in progress | 2 | 6 | 0 | 0 | 75% |
-| 3 | notification wiring (the actual feature) | ✅ done | 0 | 7 | 0 | 0 | 100% |
+| 3 | notification wiring (the actual feature) | ✅ done | 0 | 8 | 0 | 0 | 100% |
 | 4 | ambient status mood | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
 | 5 | hardening, docs, release | 🟡 in progress | 2 | 3 | 3 | 0 | 60% |
 

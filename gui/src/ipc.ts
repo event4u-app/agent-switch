@@ -705,3 +705,12 @@ export async function onPetOpenSwitch(cb: () => void): Promise<() => void> {
     return () => {};
   }
 }
+
+/** Dev-mode pose picker: make the pet hold one spritesheet row for QA. */
+export async function petEmitPose(reaction: string): Promise<void> {
+  try {
+    await emitTo("pet", "pet-pose", { reaction });
+  } catch {
+    /* pet window closed / non-Tauri env */
+  }
+}

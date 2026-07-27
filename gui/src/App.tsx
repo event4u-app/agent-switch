@@ -60,6 +60,7 @@ import {
   petResetPosition,
   petEmitNotification,
   petEmitContext,
+  petEmitPose,
   onPetOpenSwitch,
   type AppInfo,
   type AutoSwitchMap,
@@ -133,7 +134,7 @@ import {
   setPetMotionFlag,
   clearPetPos,
 } from "./settings-store.js";
-import { PET_IDS, decidePetRouting, isSwitchSuggestion, type BubbleDuration, type PetId, type PetMotion, type PetSize, type PetTier } from "./pet/model.js";
+import { ALL_REACTIONS, PET_IDS, decidePetRouting, isSwitchSuggestion, type BubbleDuration, type PetId, type PetMotion, type PetSize, type PetTier } from "./pet/model.js";
 import { checkForUpdate, fetchLatestRelease, isNewer, releaseKind, type UpdateCheck, type UpdateKind } from "./updates.js";
 import { AgentConfigCard, AgentConfigMark } from "./AgentConfigCard.js";
 import { ToolingSection, type ToolingCache } from "./ToolingSection.js";
@@ -995,6 +996,7 @@ export default function App() {
               onChangeTier={changePetTier}
               kinds={petKinds}
               onToggleKind={togglePetKind}
+              devMode={devMode}
             />
           </div>
         ) : section === "settings" ? (
@@ -2031,6 +2033,7 @@ function PetSettings({
   onChangeTier,
   kinds,
   onToggleKind,
+  devMode,
 }: {
   enabled: boolean;
   onToggle: (on: boolean) => void;
@@ -2038,7 +2041,11 @@ function PetSettings({
   onChangeTier: (tier: PetTier) => void;
   kinds: NotificationKind[];
   onToggleKind: (kind: NotificationKind) => void;
+  devMode: boolean;
 }) {
+  // Dev-mode pose picker: which row the pet is currently holding (view state
+  // only — the pet window owns the actual animation).
+  const [pose, setPose] = useState<string>("idle");
   const [choice, setChoiceState] = useState<PetId>(() => getPetChoice());
   const [bubbles, setBubblesState] = useState(() => getPetBubbles());
   const [bubbleDur, setBubbleDurState] = useState<BubbleDuration>(() => getPetBubbleDuration());
@@ -2238,6 +2245,31 @@ function PetSettings({
                 Reset position
               </Button>
             </div>
+
+            {devMode && (
+              <div className="border-t border-border pt-3">
+                <div className="text-[13px] font-medium">Pose (dev)</div>
+                <div className="mb-2 text-xs text-muted-foreground">
+                  Make the pet hold a spritesheet row for QA — it keeps looping until you pick another; "idle"
+                  restores normal behavior.
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {ALL_REACTIONS.map((r) => (
+                    <Button
+                      key={r}
+                      size="sm"
+                      variant={pose === r ? "secondary" : "outline"}
+                      onClick={() => {
+                        setPose(r);
+                        void petEmitPose(r);
+                      }}
+                    >
+                      {r}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
       </CardContent>

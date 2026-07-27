@@ -162,7 +162,10 @@ at ~100 ms perception granularity).
         same kind set as the OS-notification mutes, but independent keys,
         so "pet reacts to errors only" is expressible),
       - speech bubbles on/off + bubble duration (short/normal/long),
-      - pet size (small/medium/large → CSS scale),
+      - pet size (small/medium/large; medium = half the native frame size —
+        full size proved too dominant; the window resizes with the sprite
+        and re-anchors on the corner nearest the display edge, so growing
+        never pushes the pet off-screen),
       - animations full / reduced / off (off = static sprite + badge;
         default follows `prefers-reduced-motion`),
       - "Reset pet position" button (clears the persisted per-monitor
@@ -174,6 +177,9 @@ at ~100 ms perception granularity).
       (`generateTestNotifications`) records real events through the CLI log
       and `syncNotifications()`, so it drives the pet path end-to-end with
       no extra wiring (all four kinds exercised).
+- [x] Dev-mode pose picker (Pet section, gated by dev mode): one button per
+      spritesheet row; the pet holds the pose in a loop until the next pick
+      ("idle" restores normal behavior) — the visual-QA tool for the pack.
 
 ## Phase 4 — ambient status mood
 

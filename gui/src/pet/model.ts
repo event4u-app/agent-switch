@@ -68,11 +68,29 @@ export type PetSize = "small" | "medium" | "large";
 export type PetMotion = "auto" | "on" | "off";
 export type BubbleDuration = "short" | "normal" | "long";
 
+/** Sprite scale per size setting. Medium (default) renders at half the native
+ *  frame size — full 192×208 turned out much too dominant on screen; large
+ *  keeps the native 1:1 look available. */
 export const PET_SIZE_FACTOR: Record<PetSize, number> = {
-  small: 0.75,
-  medium: 1,
-  large: 1.25,
+  small: 0.35,
+  medium: 0.5,
+  large: 1,
 };
+
+/** All spritesheet rows, in a sensible demo order — drives the dev-mode pose
+ *  picker (Pet section) so every row can be inspected without waiting for a
+ *  matching notification. */
+export const ALL_REACTIONS: Reaction[] = [
+  "idle",
+  "review",
+  "running",
+  "running-left",
+  "running-right",
+  "waiting",
+  "waving",
+  "jumping",
+  "failed",
+];
 
 export const BUBBLE_DURATION_MS: Record<BubbleDuration, number> = {
   short: 4000,
