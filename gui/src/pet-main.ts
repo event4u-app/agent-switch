@@ -102,6 +102,7 @@ function react(reaction: Reaction) {
 function hideBubble() {
   bubble.classList.remove("show", "actionable");
   bubble.onclick = null;
+  void layoutWindow(); // shrink back to the base height
 }
 
 function showBubble(kind: NotificationKind, text: string, actionable: boolean) {
@@ -120,24 +121,45 @@ function showBubble(kind: NotificationKind, text: string, actionable: boolean) {
         void emitTo({ kind: "WebviewWindow", label: "main" }, "pet-open-switch", null).catch(() => {});
       }
     : null;
+  // Measure AFTER the browser laid the (possibly multi-line) text out, then
+  // grow the window to fit — a fixed bubble zone clips long texts.
+  requestAnimationFrame(() => void layoutWindow());
   // An actionable bubble gets at least the long TTL — it carries a decision.
   const ttl = Math.max(BUBBLE_DURATION_MS[getPetBubbleDuration()], actionable ? BUBBLE_DURATION_MS.long : 0);
   bubbleTimer = setTimeout(hideBubble, ttl);
 }
 
-/** Resize sprite AND window to the size setting. The window shrinks with the
- *  pet — leftover transparent area would still swallow clicks (the window is
- *  not click-through), so tight bounds matter more than looks here.
- *
- *  Quadrant anchor: the corner of the window nearest the display edge (judged
- *  by which quadrant of the monitor the window center sits in) stays FIXED
- *  while resizing — bottom-right of the screen → bottom-right corner pinned,
- *  top-right → top-right pinned, etc. Without this, growing the pet from the
- *  default corner pushes its lower part off-screen (setSize keeps top-left). */
 /** Dev-only state label — production builds never show it, dev builds only
  *  with dev mode AND the (default-off) label toggle on. */
 function labelVisible(): boolean {
   return import.meta.env.DEV && getDevMode() && getPetLabel();
+}
+
+/** Window bounds follow the content: base (sprite + paddings + dev label)
+ *  plus the MEASURED bubble height when one is visible — long bubble texts
+ *  wrap and must never be clipped by a fixed zone. Growth respects the
+ *  quadrant anchor read from the body classes: v-bottom grows UPWARD (bottom
+ *  edge pinned, the sprite stays put), v-top grows downward; h-right keeps
+ *  the right edge pinned. */
+async function layoutWindow() {
+  const f = PET_SIZE_FACTOR[getPetSize()];
+  const bubbleH = bubble.classList.contains("show") ? bubble.offsetHeight + 4 /* gap */ : 0;
+  const logicalW = Math.max(FRAME_W * f + 48, 220); // bubble stays readable
+  const logicalH = 8 + bubbleH + FRAME_H * f + 12 + (labelVisible() ? 22 : 0);
+  const win = getCurrentWindow();
+  try {
+    const [pos, size, scale] = await Promise.all([win.outerPosition(), win.outerSize(), win.scaleFactor()]);
+    const newW = Math.round(logicalW * scale);
+    const newH = Math.round(logicalH * scale);
+    if (newW === size.width && newH === size.height) return;
+    const x = document.body.classList.contains("h-right") ? pos.x + size.width - newW : pos.x;
+    const y = document.body.classList.contains("v-bottom") ? pos.y + size.height - newH : pos.y;
+    await win.setSize(new PhysicalSize(newW, newH));
+    if (x !== pos.x || y !== pos.y) await win.setPosition(new PhysicalPosition(x, y));
+  } catch {
+    // Metrics unavailable (tests / degraded env) → plain resize, no re-anchor.
+    void win.setSize(new LogicalSize(logicalW, logicalH)).catch(() => {});
+  }
 }
 
 async function applySize() {
@@ -146,32 +168,7 @@ async function applySize() {
   sprite.style.height = `${FRAME_H * f}px`;
   sprite.style.backgroundSize = `${FRAME_W * SHEET_COLS * f}px ${FRAME_H * SHEET_ROWS * f}px`;
   label.style.display = labelVisible() ? "" : "none";
-  const logicalW = Math.max(FRAME_W * f + 48, 220); // bubble stays readable
-  const logicalH = 8 /* top pad */ + 44 /* bubble zone */ + FRAME_H * f + 12 /* padding */ + (labelVisible() ? 22 : 0);
-  const win = getCurrentWindow();
-  try {
-    const [pos, size, monitor, scale] = await Promise.all([
-      win.outerPosition(),
-      win.outerSize(),
-      currentMonitor(),
-      win.scaleFactor(),
-    ]);
-    const newW = Math.round(logicalW * scale);
-    const newH = Math.round(logicalH * scale);
-    let x = pos.x;
-    let y = pos.y;
-    if (monitor) {
-      const centerX = monitor.position.x + monitor.size.width / 2;
-      const centerY = monitor.position.y + monitor.size.height / 2;
-      if (pos.x + size.width / 2 >= centerX) x = pos.x + size.width - newW; // right half → right edge pinned
-      if (pos.y + size.height / 2 >= centerY) y = pos.y + size.height - newH; // bottom half → bottom edge pinned
-    }
-    await win.setSize(new PhysicalSize(newW, newH));
-    if (x !== pos.x || y !== pos.y) await win.setPosition(new PhysicalPosition(x, y));
-  } catch {
-    // Metrics unavailable (tests / degraded env) → plain resize, no re-anchor.
-    void win.setSize(new LogicalSize(logicalW, logicalH)).catch(() => {});
-  }
+  await layoutWindow();
 }
 
 /** Quadrant classes on <body>: the whole content column (bubble, sprite,
@@ -392,6 +389,9 @@ let moveSaveTimer: ReturnType<typeof setTimeout> | null = null;
 void getCurrentWindow()
   .onMoved((e) => {
     if (moveSaveTimer) clearTimeout(moveSaveTimer);
+    // While a bubble is open the window is transiently grown — don't persist
+    // that shape's position; the shrink after hide triggers a clean save.
+    if (bubble.classList.contains("show")) return;
     const pos = { x: e.payload.x, y: e.payload.y };
     moveSaveTimer = setTimeout(() => {
       setPetPos(pos);
