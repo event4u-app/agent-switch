@@ -50,8 +50,10 @@ import {
   getPetLabel,
   getPetMotion,
   getPetPos,
+  getPetPosLock,
   getPetPresence,
   getPetSize,
+  clearPetPos,
   setPetPos,
   setPetPrevPos,
 } from "./settings-store.js";
@@ -326,6 +328,7 @@ let rafPending = false;
 
 sprite.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
+  const locked = getPetPosLock();
   const state: DragState = {
     startScreenX: e.screenX,
     startScreenY: e.screenY,
@@ -333,9 +336,12 @@ sprite.addEventListener("mousedown", (e) => {
     scale: 1,
     dragging: false,
     cancelled: false,
-    holdTimer: setTimeout(() => {
-      if (drag === state) state.dragging = true;
-    }, HOLD_TO_DRAG_MS),
+    // Position lock: never arm the drag — a quick click still waves.
+    holdTimer: locked
+      ? null
+      : setTimeout(() => {
+          if (drag === state) state.dragging = true;
+        }, HOLD_TO_DRAG_MS),
   };
   drag = state;
   const win = getCurrentWindow();
@@ -350,6 +356,7 @@ sprite.addEventListener("mousedown", (e) => {
 
 window.addEventListener("mousemove", (e) => {
   if (!drag || drag.cancelled || !drag.anchor || !(e.buttons & 1)) return;
+  if (getPetPosLock()) return; // locked: ignore movement entirely
   const dx = e.screenX - drag.startScreenX;
   const dy = e.screenY - drag.startScreenY;
   if (!drag.dragging && Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX) drag.dragging = true;
@@ -450,7 +457,58 @@ void getCurrentWindow()
 // keyframes explicitly instead of trusting the webview to stop compositing.
 document.addEventListener("visibilitychange", () => {
   sprite.style.animationPlayState = document.hidden ? "paused" : "running";
+  if (!document.hidden) void ensureOnScreen(); // displays may have changed while hidden
 });
+
+/* ---- display changes: re-anchor when the monitor set changes ----
+ * Unplugging the widescreen / docking the MacBook changes the monitor set;
+ * a pet parked on a gone display (or restored to its saved corner there)
+ * would be invisible. Poll the monitor signature and, when it changes, snap
+ * an off-screen pet back to the default corner (clearing the stale saved
+ * position so it is not restored later) and refresh the quadrant alignment. */
+
+let monitorSig = "";
+
+async function monitorsSignature(): Promise<string> {
+  const mons = await availableMonitors();
+  return mons.map((m) => `${m.position.x},${m.position.y},${m.size.width},${m.size.height}`).join("|");
+}
+
+async function ensureOnScreen() {
+  try {
+    const win = getCurrentWindow();
+    const [pos, size, monitors] = await Promise.all([win.outerPosition(), win.outerSize(), availableMonitors()]);
+    const cx = pos.x + size.width / 2;
+    const cy = pos.y + size.height / 2;
+    const visible = monitors.some(
+      (m) =>
+        cx >= m.position.x &&
+        cx < m.position.x + m.size.width &&
+        cy >= m.position.y &&
+        cy < m.position.y + m.size.height,
+    );
+    if (!visible) {
+      clearPetPos(); // the saved corner belongs to a display that is gone
+      await invoke("pet_reset_position");
+    }
+    await updateQuadrant();
+  } catch {
+    /* metrics unavailable → try again on the next tick */
+  }
+}
+
+setInterval(() => {
+  void (async () => {
+    try {
+      const sig = await monitorsSignature();
+      if (sig === monitorSig) return;
+      monitorSig = sig;
+      await ensureOnScreen();
+    } catch {
+      /* keep the previous signature */
+    }
+  })();
+}, 10_000);
 
 /* ---- boot ---- */
 
@@ -462,4 +520,5 @@ void (async () => {
   await applySize();
   await restorePosition();
   await updateQuadrant();
+  monitorSig = await monitorsSignature().catch(() => "");
 })();

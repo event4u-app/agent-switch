@@ -676,6 +676,26 @@ export function setToolNotifiedVersion(id: string, version: string): void {
   }
 }
 
+const PET_POS_LOCK_KEY = "agent-switch-pet-pos-lock";
+
+/** Lock the pet's position: dragging is disabled (the reset buttons still
+ *  work — they are deliberate). Default OFF — only the literal "on" locks. */
+export function getPetPosLock(): boolean {
+  try {
+    return localStorage.getItem(PET_POS_LOCK_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+export function setPetPosLockFlag(on: boolean): void {
+  try {
+    localStorage.setItem(PET_POS_LOCK_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const PET_PREV_POS_KEY = "agent-switch-pet-prev-pos";
 
 /** One-step position history: the position the pet had BEFORE the most recent

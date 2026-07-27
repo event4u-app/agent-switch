@@ -193,6 +193,10 @@ at ~100 ms perception granularity).
       the button is still down cancels the move (snap back); after release
       ESC is a no-op. Dev-only state label toggle (default off). One-step
       position history behind "Reset to last position" (toggles).
+- [x] Position lock toggle (default off): dragging disabled, resets stay
+      available. Display-change watcher (10 s monitor-signature poll + a
+      check on every un-hide): a pet parked on a display that is gone
+      snaps back to the default corner and clears its stale saved position.
 - [x] Onboarding + presence (owner request, 2026-07-27): pet enabled by
       default; one-time welcome bubble ("Agent Switch — companion on a
       secret mission") linking to the Pet section; new Presence setting —

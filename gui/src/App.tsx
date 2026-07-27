@@ -137,6 +137,8 @@ import {
   setPetLabelFlag,
   getPetPresence,
   setPetPresenceFlag,
+  getPetPosLock,
+  setPetPosLockFlag,
   getPetWelcomed,
   setPetWelcomedFlag,
   clearPetPos,
@@ -2134,6 +2136,7 @@ function PetSettings({
   // One-step position history (written by the pet window at drag start; the
   // cross-window storage event keeps this fresh). Drives "Reset to last".
   const [prevPos, setPrevPosState] = useState(() => getPetPrevPos());
+  const [posLock, setPosLockState] = useState(() => getPetPosLock());
   useEffect(() => {
     const sync = () => setPrevPosState(getPetPrevPos());
     window.addEventListener("storage", sync);
@@ -2370,6 +2373,24 @@ function PetSettings({
                   Reset position
                 </Button>
               </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+              <div>
+                <div className="text-[13px] font-medium">Lock position</div>
+                <div className="text-xs text-muted-foreground">
+                  Prevent dragging the pet (the reset buttons still work). If displays change — dock, unplug — the
+                  pet re-anchors itself either way.
+                </div>
+              </div>
+              <Switch
+                checked={posLock}
+                onCheckedChange={(on) => {
+                  setPetPosLockFlag(on);
+                  setPosLockState(on);
+                }}
+                aria-label="Lock position"
+              />
             </div>
 
             {devMode && (

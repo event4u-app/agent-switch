@@ -34,7 +34,8 @@ Everything lives under the **Pet** sidebar entry and applies live:
 - **Speech bubbles** on/off + display duration.
 - **Size** — small / medium / large.
 - **Animations** — Auto (follows your system's reduce-motion preference), On, Off (static sprite).
-- **Position** — click and hold the pet to drag it anywhere; its position is remembered. *Reset position* brings it back to the bottom-right corner. When you change the size, the corner nearest the screen edge stays fixed, so the pet never grows off-screen.
+- **Position** — click and hold the pet to drag it anywhere; its position is remembered. *Reset position* brings it back to the bottom-right corner, *Reset to last position* toggles back to where it was before the most recent move. When you change the size, the corner nearest the screen edge stays fixed, so the pet never grows off-screen.
+- **Lock position** — disables dragging (the reset buttons still work). Display changes are handled either way: unplug the widescreen or dock the MacBook and the pet re-anchors itself onto a visible screen automatically.
 
 ## Platform notes
 
