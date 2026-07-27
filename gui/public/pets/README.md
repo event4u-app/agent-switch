@@ -7,7 +7,7 @@ passend zu `event4u-app/agent-switch` und `event4u-app/agent-config`.
 
 | Pet | ID | Passt zu |
 |---|---|---|
-| **Agent 007 Switch** — Trenchcoat, Fedora, Profil-Badge, Toggle-Glyph | `agent-switch-007` | agent-switch (Profil-/Identitätswechsel) |
+| **Agent 007 Switch** — Trenchcoat, Fedora, Profil-Badge, Toggle-Glyph | `agent-switch` | agent-switch (Profil-/Identitätswechsel) |
 | **Iron Law Warden** — Helm mit Hörnern, Gürtelplatte, Bernstein-Visier | `agent-config-warden` | agent-config (Kernel, Iron Laws, Gates) |
 | **Recon Scout** — Cap, Feldjacke, grünes Visier | `agent-switch-scout` | agent-switch (Zweitfarbe / Multi-Session) |
 | **Festival Raver** — Cap rückwärts, Kopfhörer, Lanyard, Glowstick | `event4u-raver` | event4u (Besucher, Ticket-Scan) |
@@ -20,7 +20,7 @@ Zustandsbezogene Props pro Pet (`review` / `running` / `waving`):
 
 | Pet | review | running | waving |
 |---|---|---|---|
-| agent-switch-007 | Lupe + Profil-Toggle | Konsole | Funke |
+| agent-switch | Lupe + Profil-Toggle | Konsole | Funke |
 | agent-config-warden | Lupe | Konsole | Funke |
 | agent-switch-scout | Lupe + Profil-Toggle | Konsole | Funke |
 | event4u-raver | Ticket-Scanner | Konsole | Glowstick |
@@ -59,7 +59,7 @@ Reaction-Mapping des Hosts (Default): `thinking→review`, `working/editing/runn
 
 ```bash
 mkdir -p ~/.codex/pets
-for p in agent-switch-007 agent-config-warden agent-switch-scout \
+for p in agent-switch agent-config-warden agent-switch-scout \
          event4u-raver event4u-stage-crew event4u-bard dev-bot the-ceo; do
   cp -R "$p" ~/.codex/pets/
 done
@@ -70,7 +70,7 @@ Danach in OpenPets unter den Codex-Pets importieren. Wichtig: Ordnername == `id`
 **Variante B — ZIP-Import über die laufende App:**
 
 ```bash
-openpets install --from-zip "$(pwd)/agent-switch-007.zip"
+openpets install --from-zip "$(pwd)/agent-switch.zip"
 openpets install --from-folder "$(pwd)/agent-config-warden"
 ```
 

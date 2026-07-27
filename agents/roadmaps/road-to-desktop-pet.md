@@ -116,7 +116,7 @@ at ~100 ms perception granularity).
       `gui/public/pets/<id>/{pet.json,spritesheet.webp,thumbnail.png,states.png}`
       (Vite `public/` dir, bundled into the GUI build automatically) + pack
       README; all 8 pets, ids + 1536×1872 dimensions verified. Default =
-      `agent-switch-007`.
+      `agent-switch`.
 - [x] Asset provenance secured: generator + validator (`petgen.py`,
       `package_pets.py`, `validate.py`) recovered from the pack ZIP into
       `scripts/pets/`.

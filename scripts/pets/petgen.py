@@ -662,7 +662,7 @@ def build_sheet(p, kind, props=None):
 
 
 PETS = [
-    dict(id="agent-switch-007", kind="spy", pal=SPY,
+    dict(id="agent-switch", kind="spy", pal=SPY,
          displayName="Agent 007 Switch",
          description="A trench-coated field agent that swaps identities as fast as you swap Claude profiles. Ships with agent-switch."),
     dict(id="agent-config-warden", kind="warden", pal=WARDEN,

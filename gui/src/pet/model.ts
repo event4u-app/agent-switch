@@ -10,7 +10,7 @@
 import type { NotificationKind } from "../notifications.js";
 
 export const PET_IDS = [
-  "agent-switch-007",
+  "agent-switch",
   "agent-config-warden",
   "agent-switch-scout",
   "dev-bot",
@@ -21,7 +21,7 @@ export const PET_IDS = [
 ] as const;
 
 export type PetId = (typeof PET_IDS)[number];
-export const DEFAULT_PET: PetId = "agent-switch-007";
+export const DEFAULT_PET: PetId = "agent-switch";
 
 export const FRAME_W = 192;
 export const FRAME_H = 208;
@@ -129,10 +129,11 @@ export const BUBBLE_HINT: Record<BubbleAction, string> = {
   "pet-settings": "click for pet settings",
 };
 
-/** One-time onboarding bubble ("Agent Switch" is the pet's name — the spy on
- *  a secret mission). Sent directly to the pet, never through the log. */
+/** One-time onboarding bubble — the pet introduces itself Bond-style. Sent
+ *  directly to the pet, never through the log. Must stay under the 140-char
+ *  sanitizeBubble cap. */
 export const PET_WELCOME =
-  "agent-switch is installed! I'm Agent Switch — your companion on a secret mission. Toggle me anytime in the Pet settings.";
+  "agent-switch is installed! The name's Switch — Agent Switch. I like my AIs switched, not stirred. Toggle me anytime in the Pet settings.";
 
 /** One-line, length-capped speech-bubble text. Control characters and
  *  newlines collapse to spaces so a log-ish message can't deform the bubble. */
