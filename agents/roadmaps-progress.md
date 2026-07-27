@@ -2,14 +2,14 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change (timestamp lives in git history).
 >
-> 5 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/) · **5** open blockers
+> 6 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/) · **5** open blockers
 
 ## Overall
 
-**100 / 102 steps done · 98%**
+**102 / 134 steps done · 76%**
 
 ```text
-███████████████████████████████████████░   98%
+██████████████████████████████░░░░░░░░░░   76%
 ```
 
 ## ⚠️ Iron Law 3 — unresolved deferred items
@@ -30,8 +30,9 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | 1 | [road-to-1.0.1-review-followup.md](roadmaps/road-to-1.0.1-review-followup.md) | 4 | 9 | 0 | 8 | 1 | 0 | 0 | ██████████ 100% |
 | 2 | [road-to-ac-embedded-settings.md](roadmaps/road-to-ac-embedded-settings.md) | 4 | 30 | 0 | 26 | 4 | 0 | [3](#blockers-road-to-ac-embedded-settings) | ██████████ 100% |
 | 3 | [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 5 | 30 | 0 | 28 | 1 | 1 | [2](#blockers-road-to-agent-setup-hub) | ██████████ 100% |
-| 4 | [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md) | 7 | 33 | 2 | 29 | 2 | 0 | 0 | █████████░ 94% |
-| 5 | [road-to-usage-reliability-and-portability.md](roadmaps/road-to-usage-reliability-and-portability.md) | 5 | 13 | 0 | 9 | 3 | 1 | 0 | ██████████ 100% |
+| 4 | [road-to-desktop-pet.md](roadmaps/road-to-desktop-pet.md) | 6 | 35 | 30 | 2 | 3 | 0 | 0 | █░░░░░░░░░ 6% |
+| 5 | [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md) | 7 | 33 | 2 | 29 | 2 | 0 | 0 | █████████░ 94% |
+| 6 | [road-to-usage-reliability-and-portability.md](roadmaps/road-to-usage-reliability-and-portability.md) | 5 | 13 | 0 | 9 | 3 | 1 | 0 | ██████████ 100% |
 
 ---
 
@@ -93,6 +94,19 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 - **adoption-signal** (owner: user) — blocks knowing whether the Ecosystem section actually converts AS users into AC users
   - **What to do:**
   - **Resolved when:** ≥1 external AS user reports (issue/discussion/direct message) having installed agent-config through the hub.
+
+### [road-to-desktop-pet.md](roadmaps/road-to-desktop-pet.md)
+
+**desktop pet as a global notification surface** — 2 / 32 done (6%)
+
+| # | Phase | State | Open | Done | Deferred | Cancelled | % |
+|---|---|---|---:|---:|---:|---:|---:|
+| 0 | decisions + platform spike | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 1 | pet window foundation (hidden feature, default off) | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
+| 2 | rendering: sprites + reactions | 🟡 in progress | 6 | 2 | 0 | 0 | 25% |
+| 3 | notification wiring (the actual feature) | ⬜ not started | 7 | 0 | 0 | 0 | 0% |
+| 4 | ambient status mood | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 5 | hardening, docs, release | ⬜ not started | 5 | 0 | 3 | 0 | 0% |
 
 ### [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md)
 
