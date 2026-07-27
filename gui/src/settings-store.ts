@@ -5,6 +5,15 @@
  */
 
 import type { NotificationKind } from "./notifications.js";
+import {
+  DEFAULT_PET,
+  asPetId,
+  type BubbleDuration,
+  type PetId,
+  type PetMotion,
+  type PetSize,
+  type PetTier,
+} from "./pet/model.js";
 
 const AUTOSWITCH_GLOBAL_KEY = "agent-switch-autoswitch-global";
 
@@ -365,6 +374,348 @@ export function getProviderFilter(): StoredProviderFilter {
 export function setProviderFilter(id: StoredProviderFilter): void {
   try {
     localStorage.setItem(PROVIDER_FILTER_KEY, id);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+/* ------------------------------------------------------------------------ *
+ * Desktop pet. All keys are shared between the main window and the pet
+ * window (same origin → same localStorage); the pet window applies changes
+ * live via the cross-window `storage` event, so no restart is ever needed.
+ * ------------------------------------------------------------------------ */
+
+const PET_ENABLED_KEY = "agent-switch-pet-enabled";
+
+/** Desktop-pet master toggle. Default ON — only the literal "off" disables;
+ *  the default presence below keeps the pet invisible except around
+ *  notifications, so "on" is unobtrusive out of the box. */
+export function getPetEnabled(): boolean {
+  try {
+    return localStorage.getItem(PET_ENABLED_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setPetEnabledFlag(on: boolean): void {
+  try {
+    localStorage.setItem(PET_ENABLED_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_PRESENCE_KEY = "agent-switch-pet-presence";
+const PET_PRESENCES = ["message-only", "always"] as const;
+export type PetPresence = (typeof PET_PRESENCES)[number];
+
+/** When the pet is on screen: "message-only" (default) — it appears for a
+ *  notification and hides again once the bubble is gone; "always" — the
+ *  permanent companion. */
+export function getPetPresence(): PetPresence {
+  try {
+    const raw = localStorage.getItem(PET_PRESENCE_KEY) ?? "";
+    return (PET_PRESENCES as readonly string[]).includes(raw) ? (raw as PetPresence) : "message-only";
+  } catch {
+    return "message-only";
+  }
+}
+
+export function setPetPresenceFlag(p: PetPresence): void {
+  try {
+    localStorage.setItem(PET_PRESENCE_KEY, p);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_WELCOMED_KEY = "agent-switch-pet-welcomed";
+
+/** Whether the one-time welcome bubble was already shown. */
+export function getPetWelcomed(): boolean {
+  try {
+    return localStorage.getItem(PET_WELCOMED_KEY) === "1";
+  } catch {
+    return true; // no storage → never nag
+  }
+}
+
+export function setPetWelcomedFlag(): void {
+  try {
+    localStorage.setItem(PET_WELCOMED_KEY, "1");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_CHOICE_KEY = "agent-switch-pet-choice";
+
+/** Which bundled pet is shown. Unknown/legacy values fall back to the default. */
+export function getPetChoice(): PetId {
+  try {
+    return asPetId(localStorage.getItem(PET_CHOICE_KEY));
+  } catch {
+    return DEFAULT_PET;
+  }
+}
+
+export function setPetChoice(id: PetId): void {
+  try {
+    localStorage.setItem(PET_CHOICE_KEY, id);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_TIER_KEY = "agent-switch-pet-routing-tier";
+const PET_TIERS = ["pet-only", "hybrid", "os-only"] as const;
+
+/** Notification routing tier: pet-only (pet replaces desktop + toast),
+ *  hybrid (pet + the normal pipeline, default), os-only (pet is decoration). */
+export function getPetTier(): PetTier {
+  try {
+    const raw = localStorage.getItem(PET_TIER_KEY) ?? "";
+    return (PET_TIERS as readonly string[]).includes(raw) ? (raw as PetTier) : "hybrid";
+  } catch {
+    return "hybrid";
+  }
+}
+
+export function setPetTierFlag(tier: PetTier): void {
+  try {
+    localStorage.setItem(PET_TIER_KEY, tier);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_KINDS_KEY = "agent-switch-pet-react-kinds";
+const ALL_PET_KINDS: NotificationKind[] = ["success", "error", "warning", "info"];
+
+/** Kinds the pet reacts to — independent of the desktop mutes, so "pet reacts
+ *  to errors only" is expressible. Default: all four. */
+export function getPetReactKinds(): NotificationKind[] {
+  try {
+    const stored = localStorage.getItem(PET_KINDS_KEY);
+    if (stored === null) return [...ALL_PET_KINDS];
+    const raw: unknown = JSON.parse(stored);
+    return Array.isArray(raw)
+      ? (raw.filter((k) => (ALL_PET_KINDS as string[]).includes(k as string)) as NotificationKind[])
+      : [...ALL_PET_KINDS];
+  } catch {
+    return [...ALL_PET_KINDS];
+  }
+}
+
+export function setPetReactKinds(kinds: NotificationKind[]): void {
+  try {
+    localStorage.setItem(PET_KINDS_KEY, JSON.stringify(kinds));
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_BUBBLES_KEY = "agent-switch-pet-bubbles";
+
+/** Speech bubbles on notification events. Default ON — only "off" disables. */
+export function getPetBubbles(): boolean {
+  try {
+    return localStorage.getItem(PET_BUBBLES_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setPetBubblesFlag(on: boolean): void {
+  try {
+    localStorage.setItem(PET_BUBBLES_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_BUBBLE_DURATION_KEY = "agent-switch-pet-bubble-duration";
+const BUBBLE_DURATIONS = ["short", "normal", "long"] as const;
+
+export function getPetBubbleDuration(): BubbleDuration {
+  try {
+    const raw = localStorage.getItem(PET_BUBBLE_DURATION_KEY) ?? "";
+    return (BUBBLE_DURATIONS as readonly string[]).includes(raw) ? (raw as BubbleDuration) : "normal";
+  } catch {
+    return "normal";
+  }
+}
+
+export function setPetBubbleDurationFlag(d: BubbleDuration): void {
+  try {
+    localStorage.setItem(PET_BUBBLE_DURATION_KEY, d);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_SIZE_KEY = "agent-switch-pet-size";
+const PET_SIZES = ["small", "medium", "large"] as const;
+
+export function getPetSize(): PetSize {
+  try {
+    const raw = localStorage.getItem(PET_SIZE_KEY) ?? "";
+    return (PET_SIZES as readonly string[]).includes(raw) ? (raw as PetSize) : "medium";
+  } catch {
+    return "medium";
+  }
+}
+
+export function setPetSizeFlag(s: PetSize): void {
+  try {
+    localStorage.setItem(PET_SIZE_KEY, s);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_MOTION_KEY = "agent-switch-pet-motion";
+const PET_MOTIONS = ["auto", "on", "off"] as const;
+
+/** Animation mode: auto (default — animate unless the OS prefers reduced
+ *  motion), on (always animate), off (static sprite, reactions still switch
+ *  the shown row). */
+export function getPetMotion(): PetMotion {
+  try {
+    const raw = localStorage.getItem(PET_MOTION_KEY) ?? "";
+    return (PET_MOTIONS as readonly string[]).includes(raw) ? (raw as PetMotion) : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+export function setPetMotionFlag(m: PetMotion): void {
+  try {
+    localStorage.setItem(PET_MOTION_KEY, m);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_LABEL_KEY = "agent-switch-pet-label";
+
+/** Dev-only state label under the pet (`<pet> · <reaction>`). Default OFF —
+ *  only the literal "on" enables; production builds never show it regardless. */
+export function getPetLabel(): boolean {
+  try {
+    return localStorage.getItem(PET_LABEL_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+export function setPetLabelFlag(on: boolean): void {
+  try {
+    localStorage.setItem(PET_LABEL_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_POS_KEY = "agent-switch-pet-pos";
+
+/** Last dragged pet-window position (physical px), or null = default corner.
+ *  Written by the pet window on move; cleared by "Reset pet position". */
+export function getPetPos(): { x: number; y: number } | null {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(PET_POS_KEY) ?? "null");
+    if (raw && typeof raw === "object" && Number.isFinite((raw as { x: unknown }).x) && Number.isFinite((raw as { y: unknown }).y)) {
+      return { x: (raw as { x: number }).x, y: (raw as { y: number }).y };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function setPetPos(pos: { x: number; y: number }): void {
+  try {
+    localStorage.setItem(PET_POS_KEY, JSON.stringify(pos));
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+export function clearPetPos(): void {
+  try {
+    localStorage.removeItem(PET_POS_KEY);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const TOOL_NOTIFIED_KEY = "agent-switch-tool-notified-versions";
+
+/** Per-tool "update available" dedupe: the latest version already notified
+ *  about, keyed by tool id — the Tooling sweep fires at most one notification
+ *  per tool per version (mirrors the agent-config + self-update dedupes). */
+export function getToolNotifiedVersion(id: string): string {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(TOOL_NOTIFIED_KEY) ?? "{}");
+    const v = raw && typeof raw === "object" ? (raw as Record<string, unknown>)[id] : undefined;
+    return typeof v === "string" ? v : "";
+  } catch {
+    return "";
+  }
+}
+
+export function setToolNotifiedVersion(id: string, version: string): void {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(TOOL_NOTIFIED_KEY) ?? "{}");
+    const map = raw && typeof raw === "object" ? (raw as Record<string, string>) : {};
+    map[id] = version;
+    localStorage.setItem(TOOL_NOTIFIED_KEY, JSON.stringify(map));
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_POS_LOCK_KEY = "agent-switch-pet-pos-lock";
+
+/** Lock the pet's position: dragging is disabled (the reset buttons still
+ *  work — they are deliberate). Default OFF — only the literal "on" locks. */
+export function getPetPosLock(): boolean {
+  try {
+    return localStorage.getItem(PET_POS_LOCK_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+export function setPetPosLockFlag(on: boolean): void {
+  try {
+    localStorage.setItem(PET_POS_LOCK_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_PREV_POS_KEY = "agent-switch-pet-prev-pos";
+
+/** One-step position history: the position the pet had BEFORE the most recent
+ *  move/reset — written at drag start and before a corner reset, consumed by
+ *  "Reset to last position" (which swaps the two, so it toggles). */
+export function getPetPrevPos(): { x: number; y: number } | null {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(PET_PREV_POS_KEY) ?? "null");
+    if (raw && typeof raw === "object" && Number.isFinite((raw as { x: unknown }).x) && Number.isFinite((raw as { y: unknown }).y)) {
+      return { x: (raw as { x: number }).x, y: (raw as { y: number }).y };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function setPetPrevPos(pos: { x: number; y: number }): void {
+  try {
+    localStorage.setItem(PET_PREV_POS_KEY, JSON.stringify(pos));
   } catch {
     /* no/blocked localStorage → in-memory only for this session */
   }

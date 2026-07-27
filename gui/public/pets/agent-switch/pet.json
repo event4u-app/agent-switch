@@ -1,0 +1,6 @@
+{
+  "id": "agent-switch",
+  "displayName": "Agent Switch",
+  "description": "The name's Switch — Agent Switch. A trench-coated field agent that likes its AIs switched, not stirred. Ships with agent-switch.",
+  "spritesheetPath": "spritesheet.webp"
+}

@@ -12,7 +12,8 @@
  */
 
 import { fetchLatestRelease, isNewer } from "./updates.js";
-import type { ToolingEntry, ToolingId } from "./ipc.js";
+import { recordNotification, type ToolingEntry, type ToolingId } from "./ipc.js";
+import { getToolNotifiedVersion, setToolNotifiedVersion } from "./settings-store.js";
 
 /** The public repo whose GitHub Releases are rtk's update source of truth. */
 export const RTK_REPO = "rtk-ai/rtk";
@@ -81,4 +82,28 @@ export function toolUpdateAvailable(entry: Pick<ToolingEntry, "version">, latest
   const c = versionToken(entry.version);
   if (!l || !c) return false;
   return isNewer(l, c);
+}
+
+/** Record ONE "update available" notification per tool per version into the
+ *  shared log (bell + desktop + toast + pet all inherit it). Called by the
+ *  Tooling sweep with its fresh entries+latest pair; returns how many events
+ *  were recorded so the caller can refresh the notification sinks. */
+export async function notifyToolUpdates(
+  entries: ToolingEntry[],
+  latest: Partial<Record<ToolingId, string | null>>,
+): Promise<number> {
+  let recorded = 0;
+  for (const t of entries) {
+    const l = latest[t.id] ?? null;
+    if (!l || !toolUpdateAvailable(t, l)) continue;
+    if (getToolNotifiedVersion(t.id) === l) continue; // once per version
+    setToolNotifiedVersion(t.id, l);
+    await recordNotification(
+      "info",
+      `${t.id} update available`,
+      `v${versionToken(t.version ?? "") ?? t.version} → v${versionToken(l) ?? l} — open Tooling to update.`,
+    ).catch(() => {});
+    recorded++;
+  }
+  return recorded;
 }

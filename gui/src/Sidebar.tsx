@@ -1,9 +1,9 @@
 import { useRef } from "react";
-import { Blocks, Gauge, MessageSquare, Power, Settings, Users, Wrench, type LucideIcon } from "lucide-react";
+import { Blocks, Cat, Gauge, MessageSquare, Power, Settings, Users, Wrench, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
-export type Section = "profiles" | "sessions" | "usage" | "tooling" | "ecosystem" | "settings";
+export type Section = "profiles" | "sessions" | "usage" | "tooling" | "ecosystem" | "pet" | "settings";
 
 const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "profiles", label: "Profiles", icon: Users },
@@ -11,6 +11,7 @@ const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "usage", label: "Usage", icon: Gauge },
   { id: "tooling", label: "Tooling", icon: Wrench },
   { id: "ecosystem", label: "Ecosystem", icon: Blocks },
+  { id: "pet", label: "Pet", icon: Cat },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 

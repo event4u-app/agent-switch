@@ -8,6 +8,7 @@
 )]
 
 mod ac;
+mod pet;
 mod pty;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -155,6 +156,9 @@ fn main() {
             show_window,
             set_minimize_to_dock,
             set_tray_tooltip,
+            pet::pet_show,
+            pet::pet_hide,
+            pet::pet_reset_position,
             pty::term_open,
             pty::term_write,
             pty::term_resize,
@@ -240,6 +244,9 @@ fn main() {
                     }
                 })
                 .build(app)?;
+            // The pet window is settings-gated: the main webview shows it on
+            // mount when the persisted "Desktop pet" toggle is on (App.tsx) —
+            // Rust cannot read the GUI's localStorage, so no auto-open here.
             Ok(())
         })
         .build(tauri::generate_context!())

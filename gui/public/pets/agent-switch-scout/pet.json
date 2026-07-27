@@ -1,0 +1,6 @@
+{
+  "id": "agent-switch-scout",
+  "displayName": "Recon Scout",
+  "description": "Field scout for multi-profile work: quiet, fast and always watching which session is live.",
+  "spritesheetPath": "spritesheet.webp"
+}

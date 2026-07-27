@@ -1,0 +1,6 @@
+{
+  "id": "agent-config-warden",
+  "displayName": "Iron Law Warden",
+  "description": "Helmeted guardian of the kernel. Reviews, gates and enforces the Iron Laws while your agent works. Ships with agent-config.",
+  "spritesheetPath": "spritesheet.webp"
+}

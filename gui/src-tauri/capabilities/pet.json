@@ -1,0 +1,16 @@
+{
+  "$schema": "gen/schemas/desktop-schema.json",
+  "identifier": "pet",
+  "description": "Pet overlay window: drag + position/size self-management. No shell, no notification permissions.",
+  "windows": ["pet"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-outer-position",
+    "core:window:allow-outer-size",
+    "core:window:allow-available-monitors",
+    "core:window:allow-current-monitor",
+    "core:window:allow-scale-factor"
+  ]
+}

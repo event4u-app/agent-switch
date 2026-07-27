@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>pet</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+        overflow: hidden;
+        user-select: none;
+        -webkit-user-select: none;
+        font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      /* Quadrant classes (set from JS on every move): the bubble and label
+         align to the screen edge the pet sits nearest — right half → right-
+         aligned, bottom half → bubble above the sprite, top half → below. */
+      #stage {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 4px;
+        height: 100vh;
+        padding: 6px;
+        box-sizing: border-box;
+      }
+      body.v-top #stage {
+        justify-content: flex-start;
+      }
+      #bubble {
+        order: 0;
+      }
+      #spritebox {
+        order: 1;
+      }
+      #label {
+        order: 2;
+      }
+      body.v-top #bubble {
+        order: 2;
+      }
+      body.v-top #label {
+        order: 3;
+      }
+      /* The WHOLE column (bubble, sprite, label) aligns to the quadrant edge:
+         right-aligned means the bubble's right edge sits flush with the
+         sprite's right edge and grows toward the screen center — it can never
+         stick out past the pet toward a screen edge / second monitor. */
+      body.h-right #stage {
+        align-items: flex-end;
+      }
+      body.h-left #stage {
+        align-items: flex-start;
+      }
+      body.h-right #bubble,
+      body.h-right #label {
+        text-align: right;
+      }
+      body.h-left #bubble,
+      body.h-left #label {
+        text-align: left;
+      }
+      #bubble {
+        display: none;
+        max-width: 200px;
+        color: #fff;
+        background: rgba(20, 22, 28, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        padding: 5px 9px;
+        border-radius: 10px;
+        line-height: 1.35;
+        /* Per-kind accent on the alignment edge (right-aligned → right edge). */
+        --kind-color: rgba(255, 255, 255, 0.18);
+      }
+      #bubble[data-kind="success"] {
+        --kind-color: #22c55e;
+      }
+      #bubble[data-kind="error"] {
+        --kind-color: #ef4444;
+      }
+      #bubble[data-kind="warning"] {
+        --kind-color: #f0b429;
+      }
+      #bubble[data-kind="info"] {
+        --kind-color: #60a5fa;
+      }
+      body.h-right #bubble {
+        border-right: 3px solid var(--kind-color);
+      }
+      body.h-left #bubble {
+        border-left: 3px solid var(--kind-color);
+      }
+      #bubble.show {
+        display: block;
+      }
+      /* Actionable bubbles: blue ACCENT BAR only — the frame keeps the
+         standard gray border like every other bubble. Declared after the
+         data-kind rules so the blue wins on equal specificity. */
+      #bubble.actionable {
+        cursor: pointer;
+        --kind-color: #60a5fa;
+      }
+      #bubble.actionable::after {
+        content: attr(data-hint);
+        opacity: 0.7;
+      }
+      #spritebox {
+        position: relative;
+      }
+      #sprite {
+        width: 192px;
+        height: 208px;
+        background-repeat: no-repeat;
+        background-position-x: 0px;
+        background-position-y: var(--row-y, 0px);
+        image-rendering: pixelated;
+        cursor: pointer;
+      }
+      @keyframes pet-frames {
+        from {
+          background-position-x: 0px;
+        }
+        to {
+          background-position-x: var(--end-x, -1152px);
+        }
+      }
+      /* Ambient context mood (worst live-session context fill). */
+      #mood {
+        display: none;
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        border: 1.5px solid rgba(0, 0, 0, 0.5);
+      }
+      #mood.watch {
+        display: block;
+        background: #f0b429;
+      }
+      #mood.alarm {
+        display: block;
+        background: #ef4444;
+        animation: mood-pulse 1.2s ease-in-out infinite;
+      }
+      @keyframes mood-pulse {
+        50% {
+          transform: scale(1.35);
+        }
+      }
+      #label {
+        color: #fff;
+        background: rgba(0, 0, 0, 0.55);
+        padding: 2px 8px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body class="h-right v-bottom">
+    <div id="stage">
+      <div id="bubble"></div>
+      <div id="spritebox">
+        <div id="sprite"></div>
+        <div id="mood"></div>
+      </div>
+      <div id="label"></div>
+    </div>
+    <script type="module" src="/src/pet-main.ts"></script>
+  </body>
+</html>

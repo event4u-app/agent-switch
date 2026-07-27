@@ -67,6 +67,15 @@ const ipc = vi.hoisted(() => ({
   shareOn: vi.fn(),
   shareOff: vi.fn(),
   shareSync: vi.fn(),
+  petShow: vi.fn().mockResolvedValue(undefined),
+  petHide: vi.fn().mockResolvedValue(undefined),
+  petResetPosition: vi.fn().mockResolvedValue(undefined),
+  petEmitNotification: vi.fn().mockResolvedValue(undefined),
+  petEmitContext: vi.fn().mockResolvedValue(undefined),
+  petEmitPose: vi.fn().mockResolvedValue(undefined),
+  petDeliver: vi.fn().mockResolvedValue(undefined),
+  petMoveTo: vi.fn().mockResolvedValue(undefined),
+  onPetAction: vi.fn().mockResolvedValue(() => {}),
 }));
 vi.mock("./ipc.js", () => ipc);
 
@@ -106,7 +115,7 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, acCardDismissed: false, shareGlobal: true, shareSource: "default", hideSummaries: false, minimizeToDock: false, autoUpdateKinds: ["major", "minor", "patch"], providerFilter: "claude" }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, acCardDismissed: false, shareGlobal: true, shareSource: "default", hideSummaries: false, minimizeToDock: false, autoUpdateKinds: ["major", "minor", "patch"], providerFilter: "claude", petEnabled: false, petChoice: "agent-switch", petTier: "hybrid", petKinds: ["success", "error", "warning", "info"] as string[], petBubbles: true, petBubbleDuration: "normal", petSize: "medium", petMotion: "auto", petLabel: false, petPresence: "message-only", petWelcomed: true, petPosLock: false }));
 // Keep the update-check path inert in the App tests: uptodate → no toast, no
 // network. The update logic itself is covered by updates.test.ts.
 // Keep the real pure helpers (isNewer/compareVersions — used by agent-config.js)
@@ -199,6 +208,58 @@ vi.mock("./settings-store.js", () => ({
   getProviderFilter: () => store.providerFilter,
   setProviderFilter: (id: string) => {
     store.providerFilter = id;
+  },
+  getPetEnabled: () => store.petEnabled,
+  setPetEnabledFlag: (on: boolean) => {
+    store.petEnabled = on;
+  },
+  getPetChoice: () => store.petChoice,
+  setPetChoice: (id: string) => {
+    store.petChoice = id;
+  },
+  getPetTier: () => store.petTier,
+  setPetTierFlag: (tier: string) => {
+    store.petTier = tier;
+  },
+  getPetReactKinds: () => store.petKinds,
+  setPetReactKinds: (kinds: string[]) => {
+    store.petKinds = kinds;
+  },
+  getPetBubbles: () => store.petBubbles,
+  setPetBubblesFlag: (on: boolean) => {
+    store.petBubbles = on;
+  },
+  getPetBubbleDuration: () => store.petBubbleDuration,
+  setPetBubbleDurationFlag: (d: string) => {
+    store.petBubbleDuration = d;
+  },
+  getPetSize: () => store.petSize,
+  setPetSizeFlag: (s: string) => {
+    store.petSize = s;
+  },
+  getPetMotion: () => store.petMotion,
+  setPetMotionFlag: (m: string) => {
+    store.petMotion = m;
+  },
+  getPetLabel: () => store.petLabel,
+  setPetLabelFlag: (on: boolean) => {
+    store.petLabel = on;
+  },
+  clearPetPos: () => {},
+  getPetPos: () => null,
+  getPetPrevPos: () => null,
+  setPetPrevPos: () => {},
+  getPetPresence: () => store.petPresence,
+  setPetPresenceFlag: (p: string) => {
+    store.petPresence = p;
+  },
+  getPetWelcomed: () => store.petWelcomed,
+  setPetWelcomedFlag: () => {
+    store.petWelcomed = true;
+  },
+  getPetPosLock: () => store.petPosLock,
+  setPetPosLockFlag: (on: boolean) => {
+    store.petPosLock = on;
   },
 }));
 
@@ -1243,7 +1304,7 @@ describe("App", () => {
 });
 
 describe("sidebar sections", () => {
-  it("routes between the six sections from the sidebar nav", async () => {
+  it("routes between the seven sections from the sidebar nav", async () => {
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i }); // Profiles is the default section
     const nav = screen.getByRole("navigation", { name: /sections/i });
@@ -1253,6 +1314,7 @@ describe("sidebar sections", () => {
       "Usage",
       "Tooling",
       "Ecosystem",
+      "Pet",
       "Settings",
     ]);
     // Sessions = the (correctly named) sessions inventory; Usage = the new
@@ -1270,6 +1332,10 @@ describe("sidebar sections", () => {
     expect((await screen.findAllByTestId("tooling-row")).length).toBe(5);
     fireEvent.click(within(nav).getByRole("button", { name: "Ecosystem" }));
     expect(await screen.findByText(/shared setup/i)).toBeTruthy();
+    // Pet = the desktop-pet section (master toggle off by default → only the
+    // enable switch shows; the picker/tier controls are progressive).
+    fireEvent.click(within(nav).getByRole("button", { name: "Pet" }));
+    expect(await screen.findByRole("switch", { name: /desktop pet/i })).toBeTruthy();
     fireEvent.click(within(nav).getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("tab", { name: /general/i })).toBeTruthy();
     fireEvent.click(within(nav).getByRole("button", { name: "Profiles" }));
@@ -1287,13 +1353,13 @@ describe("sidebar sections", () => {
     expect(document.activeElement).toBe(items[1]);
     fireEvent.keyDown(items[1], { key: "ArrowUp" });
     expect(document.activeElement).toBe(items[0]);
-    fireEvent.keyDown(items[0], { key: "ArrowUp" }); // wraps to the last item (Settings, index 5 of 6)
-    expect(document.activeElement).toBe(items[5]);
-    fireEvent.keyDown(items[5], { key: "ArrowDown" }); // wraps back to the first
+    fireEvent.keyDown(items[0], { key: "ArrowUp" }); // wraps to the last item (Settings, index 6 of 7)
+    expect(document.activeElement).toBe(items[6]);
+    fireEvent.keyDown(items[6], { key: "ArrowDown" }); // wraps back to the first
     expect(document.activeElement).toBe(items[0]);
     fireEvent.keyDown(items[0], { key: "End" });
-    expect(document.activeElement).toBe(items[5]);
-    fireEvent.keyDown(items[5], { key: "Home" });
+    expect(document.activeElement).toBe(items[6]);
+    fireEvent.keyDown(items[6], { key: "Home" });
     expect(document.activeElement).toBe(items[0]);
   });
 

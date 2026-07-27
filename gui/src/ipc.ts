@@ -6,10 +6,14 @@
 
 import { Command } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
+import { emitTo } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
 import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, AutoSwitchTag, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow, SessionPreview } from "./transforms.js";
 import type { AppNotification, NotificationKind } from "./notifications.js";
 import { parseAgentConfigVersion } from "./agent-config.js";
+import type { BubbleAction } from "./pet/model.js";
+import { getPetPresence } from "./settings-store.js";
 
 async function runCli(args: string[]): Promise<string> {
   const out = await Command.create("agent-switch", args).execute();
@@ -644,4 +648,125 @@ export async function getOsNotify(): Promise<boolean> {
 
 export async function setOsNotify(on: boolean): Promise<void> {
   await runCli(["os-notify", on ? "on" : "off"]);
+}
+
+// ---- desktop pet (road-to-desktop-pet) --------------------------------------
+
+/** Show the pet overlay window. Resolves true when the window was freshly
+ *  CREATED (its webview boots asynchronously — give it a beat before emitting
+ *  events at it), false when an existing window was shown or nothing happened
+ *  (non-Tauri env). */
+export async function petShow(): Promise<boolean> {
+  try {
+    return await invoke<boolean>("pet_show");
+  } catch {
+    return false; // non-Tauri env / creation failed → the toggle has no effect
+  }
+}
+
+export async function petHide(): Promise<void> {
+  try {
+    await invoke("pet_hide");
+  } catch {
+    /* non-Tauri env */
+  }
+}
+
+/** Move the pet back to its default corner (Settings → Pet → Reset position).
+ *  The caller clears the persisted drag position first (shared localStorage). */
+export async function petResetPosition(): Promise<void> {
+  try {
+    await invoke("pet_reset_position");
+  } catch {
+    /* non-Tauri env */
+  }
+}
+
+// Events are addressed to the exact WebviewWindow target (and the pet listens
+// on its own window) — the unambiguous pairing in Tauri v2's event matching.
+const PET_TARGET = { kind: "WebviewWindow", label: "pet" } as const;
+
+/** Fan one notification event out to the pet window (fire-and-forget).
+ *  `action` marks the bubble clickable (navigation target, see BubbleAction);
+ *  `force` bypasses the pet-side reaction cooldown (dev bubble test). */
+export async function petEmitNotification(
+  kind: NotificationKind,
+  title: string,
+  action: BubbleAction | null,
+  force = false,
+): Promise<void> {
+  try {
+    await emitTo(PET_TARGET, "pet-notification", { kind, title, action, force });
+  } catch {
+    /* pet window closed / non-Tauri env */
+  }
+}
+
+/** Push the ambient context fill (tray-tooltip number) to the pet's mood dot. */
+export async function petEmitContext(pct: number | null): Promise<void> {
+  try {
+    await emitTo(PET_TARGET, "pet-context", { pct });
+  } catch {
+    /* pet window closed / non-Tauri env */
+  }
+}
+
+/** An actionable pet bubble was clicked → the main window navigates to the
+ *  matching surface (switch dialog / Settings-Updates / Ecosystem / Tooling).
+ *  Returns an unregister function; no-op outside Tauri. */
+export async function onPetAction(cb: (action: BubbleAction) => void): Promise<() => void> {
+  try {
+    const unlisten = await getCurrentWebviewWindow().listen<{ action: BubbleAction }>("pet-action", (e) =>
+      cb(e.payload.action),
+    );
+    return () => unlisten();
+  } catch {
+    return () => {};
+  }
+}
+
+/** Show the pet (creating it if needed) and wait for a FRESH webview to
+ *  register its listeners before anything is emitted at it. */
+async function petEnsureShown(): Promise<void> {
+  const created = await petShow();
+  if (created) await new Promise((r) => setTimeout(r, 900));
+}
+
+/** Deliver one event to the pet, presence-aware: in "message-only" the window
+ *  is normally hidden — show it first (the pet hides itself again once the
+ *  bubble and reaction settle). THE delivery path for notifications and the
+ *  dev bubble tests; raw petEmitNotification skips the show. */
+export async function petDeliver(
+  kind: NotificationKind,
+  title: string,
+  action: BubbleAction | null,
+  force = false,
+): Promise<void> {
+  try {
+    if (getPetPresence() === "message-only") await petEnsureShown();
+    await petEmitNotification(kind, title, action, force);
+  } catch {
+    /* non-Tauri env */
+  }
+}
+
+/** Dev-mode pose picker: make the pet hold one spritesheet row for QA. Shows
+ *  the window first — under "message-only" presence it is usually hidden. */
+export async function petEmitPose(reaction: string): Promise<void> {
+  try {
+    await petEnsureShown();
+    await emitTo(PET_TARGET, "pet-pose", { reaction });
+  } catch {
+    /* pet window closed / non-Tauri env */
+  }
+}
+
+/** Move the pet window to an absolute physical position ("Reset to last
+ *  position" in the Pet section). */
+export async function petMoveTo(pos: { x: number; y: number }): Promise<void> {
+  try {
+    await emitTo(PET_TARGET, "pet-move", pos);
+  } catch {
+    /* pet window closed / non-Tauri env */
+  }
 }
