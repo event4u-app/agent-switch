@@ -11,7 +11,10 @@ status: planned
 > context-threshold, switch-suggested, and daemon-error events become pet
 > reactions + speech bubbles the user sees without switching windows.
 > Secondary job: the fun/companion layer (idle animation, busy moods).
-> Default **off**; a settings toggle enables it.
+> Default **on** with presence "only for messages" (appears around a
+> notification, hides afterwards) — superseded the original default-off
+> plan on the owner's call, 2026-07-27; a one-time welcome bubble
+> introduces the pet and links to its settings.
 
 ## Why / enabling insight
 
@@ -190,6 +193,11 @@ at ~100 ms perception granularity).
       the button is still down cancels the move (snap back); after release
       ESC is a no-op. Dev-only state label toggle (default off). One-step
       position history behind "Reset to last position" (toggles).
+- [x] Onboarding + presence (owner request, 2026-07-27): pet enabled by
+      default; one-time welcome bubble ("Agent Switch — companion on a
+      secret mission") linking to the Pet section; new Presence setting —
+      "only for messages" (default: appear for a notification, auto-hide
+      2s after bubble + reaction settle) vs "always visible".
 - [x] Update awareness: ALL update events flow through the shared log — the
       app's own release check (was local-toast-only), agent-config (already
       logged), and NEW per-tool notifications from the Tooling sweep

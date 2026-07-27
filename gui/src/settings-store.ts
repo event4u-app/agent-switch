@@ -387,18 +387,63 @@ export function setProviderFilter(id: StoredProviderFilter): void {
 
 const PET_ENABLED_KEY = "agent-switch-pet-enabled";
 
-/** Desktop-pet master toggle. Default OFF — only the literal "on" enables. */
+/** Desktop-pet master toggle. Default ON — only the literal "off" disables;
+ *  the default presence below keeps the pet invisible except around
+ *  notifications, so "on" is unobtrusive out of the box. */
 export function getPetEnabled(): boolean {
   try {
-    return localStorage.getItem(PET_ENABLED_KEY) === "on";
+    return localStorage.getItem(PET_ENABLED_KEY) !== "off";
   } catch {
-    return false;
+    return true;
   }
 }
 
 export function setPetEnabledFlag(on: boolean): void {
   try {
     localStorage.setItem(PET_ENABLED_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_PRESENCE_KEY = "agent-switch-pet-presence";
+const PET_PRESENCES = ["message-only", "always"] as const;
+export type PetPresence = (typeof PET_PRESENCES)[number];
+
+/** When the pet is on screen: "message-only" (default) — it appears for a
+ *  notification and hides again once the bubble is gone; "always" — the
+ *  permanent companion. */
+export function getPetPresence(): PetPresence {
+  try {
+    const raw = localStorage.getItem(PET_PRESENCE_KEY) ?? "";
+    return (PET_PRESENCES as readonly string[]).includes(raw) ? (raw as PetPresence) : "message-only";
+  } catch {
+    return "message-only";
+  }
+}
+
+export function setPetPresenceFlag(p: PetPresence): void {
+  try {
+    localStorage.setItem(PET_PRESENCE_KEY, p);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_WELCOMED_KEY = "agent-switch-pet-welcomed";
+
+/** Whether the one-time welcome bubble was already shown. */
+export function getPetWelcomed(): boolean {
+  try {
+    return localStorage.getItem(PET_WELCOMED_KEY) === "1";
+  } catch {
+    return true; // no storage → never nag
+  }
+}
+
+export function setPetWelcomedFlag(): void {
+  try {
+    localStorage.setItem(PET_WELCOMED_KEY, "1");
   } catch {
     /* no/blocked localStorage → in-memory only for this session */
   }

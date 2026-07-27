@@ -110,7 +110,7 @@ export function isSwitchSuggestion(message: string): boolean {
  *  (agent-switch's own release) · "ecosystem" → the agent-config banner ·
  *  "tooling" → the Tooling section's Update buttons (rtk / provider CLIs).
  *  Detection runs on the notification titles this app itself writes. */
-export type BubbleAction = "switch" | "updates" | "ecosystem" | "tooling";
+export type BubbleAction = "switch" | "updates" | "ecosystem" | "tooling" | "pet-settings";
 
 export function bubbleAction(title: string, message: string): BubbleAction | null {
   if (isSwitchSuggestion(message)) return "switch";
@@ -126,7 +126,13 @@ export const BUBBLE_HINT: Record<BubbleAction, string> = {
   updates: "click to update",
   ecosystem: "click to update",
   tooling: "click to update",
+  "pet-settings": "click for pet settings",
 };
+
+/** One-time onboarding bubble ("Agent Switch" is the pet's name — the spy on
+ *  a secret mission). Sent directly to the pet, never through the log. */
+export const PET_WELCOME =
+  "agent-switch is installed! I'm Agent Switch — your companion on a secret mission. Toggle me anytime in the Pet settings.";
 
 /** One-line, length-capped speech-bubble text. Control characters and
  *  newlines collapse to spaces so a log-ish message can't deform the bubble. */

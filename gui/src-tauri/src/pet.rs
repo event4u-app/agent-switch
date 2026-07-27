@@ -29,10 +29,12 @@ fn position_bottom_right(win: &tauri::WebviewWindow) {
     }
 }
 
-pub fn show(app: &AppHandle) -> Result<(), String> {
+// Returns true when the window was freshly CREATED (its webview still has to
+// boot and register listeners), false when an existing one was just shown.
+pub fn show(app: &AppHandle) -> Result<bool, String> {
     if let Some(win) = app.get_webview_window(PET_WINDOW_LABEL) {
         win.show().map_err(|e| e.to_string())?;
-        return Ok(());
+        return Ok(false);
     }
     let win = WebviewWindowBuilder::new(app, PET_WINDOW_LABEL, WebviewUrl::App("pet.html".into()))
         .title("pet")
@@ -65,11 +67,11 @@ pub fn show(app: &AppHandle) -> Result<(), String> {
         });
     }
 
-    Ok(())
+    Ok(true)
 }
 
 #[tauri::command]
-pub fn pet_show(app: AppHandle) -> Result<(), String> {
+pub fn pet_show(app: AppHandle) -> Result<bool, String> {
     show(&app)
 }
 

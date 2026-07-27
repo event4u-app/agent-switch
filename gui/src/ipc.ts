@@ -651,13 +651,15 @@ export async function setOsNotify(on: boolean): Promise<void> {
 
 // ---- desktop pet (road-to-desktop-pet) --------------------------------------
 
-/** Show the pet overlay window (created on first call). Best-effort — a no-op
- *  outside a Tauri context (tests). */
-export async function petShow(): Promise<void> {
+/** Show the pet overlay window. Resolves true when the window was freshly
+ *  CREATED (its webview boots asynchronously — give it a beat before emitting
+ *  events at it), false when an existing window was shown or nothing happened
+ *  (non-Tauri env). */
+export async function petShow(): Promise<boolean> {
   try {
-    await invoke("pet_show");
+    return await invoke<boolean>("pet_show");
   } catch {
-    /* non-Tauri env / window creation failed → the toggle simply has no effect */
+    return false; // non-Tauri env / creation failed → the toggle has no effect
   }
 }
 

@@ -3,9 +3,9 @@ title: Desktop Pet
 description: An optional animated companion that floats above your windows and shows notifications as reactions and speech bubbles.
 ---
 
-The desktop pet is an **optional** companion window: a small pixel-art character that stays on top of all your windows and turns agent-switch notifications into something you notice out of the corner of your eye — without switching apps and without another notification-center entry.
+The desktop pet is a companion window: a small pixel-art character that stays on top of all your windows and turns agent-switch notifications into something you notice out of the corner of your eye — without switching apps and without another notification-center entry.
 
-It is **off by default**. Enable it under the **Pet** entry in the left sidebar.
+It is **on by default**, but unobtrusive: in the default *presence* mode the pet only appears when it has something to say and hides again once the bubble is gone. On first launch it introduces itself once ("Agent Switch — your companion on a secret mission") with a bubble that links straight to its settings. Turn it off entirely — or make it a permanent companion — under the **Pet** entry in the left sidebar.
 
 ## What it does
 
@@ -30,6 +30,7 @@ The pet's per-kind switches are **independent** of the desktop mutes, so "pet re
 Everything lives under the **Pet** sidebar entry and applies live:
 
 - **Pet picker** — eight bundled characters.
+- **Presence** — *Only for messages* (default): the pet appears for a notification and hides again afterwards. *Always visible*: the permanent companion.
 - **Speech bubbles** on/off + display duration.
 - **Size** — small / medium / large.
 - **Animations** — Auto (follows your system's reduce-motion preference), On, Off (static sprite).

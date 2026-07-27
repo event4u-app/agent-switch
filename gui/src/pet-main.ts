@@ -50,6 +50,7 @@ import {
   getPetLabel,
   getPetMotion,
   getPetPos,
+  getPetPresence,
   getPetSize,
   setPetPos,
   setPetPrevPos,
@@ -94,18 +95,43 @@ function idle() {
   paint("idle", "infinite");
 }
 
+/* Presence "message-only" (default): the pet appears around a notification
+ * and hides again once the bubble is gone and the reaction has settled. Never
+ * scheduled at boot — only after real activity — so "always" and manual shows
+ * are untouched. */
+let dismissTimer: ReturnType<typeof setTimeout> | null = null;
+
+function cancelDismiss() {
+  if (dismissTimer) clearTimeout(dismissTimer);
+  dismissTimer = null;
+}
+
+function scheduleDismiss() {
+  if (getPetPresence() !== "message-only") return;
+  cancelDismiss();
+  dismissTimer = setTimeout(() => {
+    dismissTimer = null;
+    if (bubble.classList.contains("show")) return; // still talking
+    void invoke("pet_hide").catch(() => {});
+  }, 2000);
+}
+
 /** Play a transient reaction, then fall back to idle. */
 function react(reaction: Reaction) {
   if (transientTimer) clearTimeout(transientTimer);
   currentReaction = reaction;
   paint(reaction, TRANSIENT_LOOPS);
-  transientTimer = setTimeout(idle, ROWS[reaction].durationMs * TRANSIENT_LOOPS);
+  transientTimer = setTimeout(() => {
+    idle();
+    scheduleDismiss();
+  }, ROWS[reaction].durationMs * TRANSIENT_LOOPS);
 }
 
 function hideBubble() {
   bubble.classList.remove("show", "actionable");
   bubble.onclick = null;
   void layoutWindow(); // shrink back to the base height
+  scheduleDismiss();
 }
 
 function showBubble(kind: NotificationKind, text: string, action: BubbleAction | null) {
@@ -242,6 +268,7 @@ void petWindow.listen<PetNotification>("pet-notification", (e) => {
   const now = Date.now();
   if (!e.payload.force && now - lastReactionAt < REACTION_COOLDOWN_MS) return;
   lastReactionAt = now;
+  cancelDismiss(); // fresh activity keeps a message-only pet on screen
   react(KIND_TO_REACTION[e.payload.kind] ?? "waving");
   showBubble(e.payload.kind, e.payload.title, e.payload.action ?? null);
 }).catch(() => {});

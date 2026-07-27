@@ -135,12 +135,17 @@ import {
   setPetMotionFlag,
   getPetLabel,
   setPetLabelFlag,
+  getPetPresence,
+  setPetPresenceFlag,
+  getPetWelcomed,
+  setPetWelcomedFlag,
   clearPetPos,
+  type PetPresence,
   getPetPos,
   getPetPrevPos,
   setPetPrevPos,
 } from "./settings-store.js";
-import { ALL_REACTIONS, PET_IDS, bubbleAction, decidePetRouting, type BubbleDuration, type PetId, type PetMotion, type PetSize, type PetTier } from "./pet/model.js";
+import { ALL_REACTIONS, PET_IDS, PET_WELCOME, bubbleAction, decidePetRouting, type BubbleAction, type BubbleDuration, type PetId, type PetMotion, type PetSize, type PetTier } from "./pet/model.js";
 import { checkForUpdate, fetchLatestRelease, isNewer, releaseKind, type UpdateCheck, type UpdateKind } from "./updates.js";
 import { AgentConfigCard, AgentConfigMark } from "./AgentConfigCard.js";
 import { ToolingSection, type ToolingCache } from "./ToolingSection.js";
@@ -328,6 +333,9 @@ export default function App() {
   const [petEnabled, setPetEnabledState] = useState(() => getPetEnabled());
   const [petTier, setPetTierState] = useState<PetTier>(() => getPetTier());
   const [petKinds, setPetKindsState] = useState<NotificationKind[]>(() => getPetReactKinds());
+  const [petPresence, setPetPresenceState] = useState<PetPresence>(() => getPetPresence());
+  const petPresenceRef = useRef<PetPresence>("message-only");
+  petPresenceRef.current = petPresence;
   const petEnabledRef = useRef(false);
   petEnabledRef.current = petEnabled;
   const petTierRef = useRef<PetTier>("hybrid");
@@ -670,7 +678,7 @@ export default function App() {
         kind: n.kind,
         osNotified: !!n.osNotified,
       });
-      if (routing.toPet) void petEmitNotification(n.kind, n.title, bubbleAction(n.title, n.message));
+      if (routing.toPet) void petDeliverRef.current(n.kind, n.title, bubbleAction(n.title, n.message));
       // Skip events the daemon already showed on the desktop, and muted kinds.
       if (n.osNotified || mutedSet.has(n.kind)) continue;
       if (routing.suppressDesktopAndToast) continue;
@@ -699,6 +707,14 @@ export default function App() {
   function changePetTier(tier: PetTier) {
     setPetTierFlag(tier);
     setPetTierState(tier);
+  }
+
+  function changePetPresence(p: PetPresence) {
+    setPetPresenceFlag(p);
+    setPetPresenceState(p);
+    // Apply immediately: permanent companion appears now; message-only hides
+    // until the next notification.
+    void (p === "always" ? petShow() : petHide());
   }
 
   function togglePetKind(kind: NotificationKind) {
@@ -839,8 +855,37 @@ export default function App() {
   // behind the dialog's explicit click, installs behind their own buttons.
   const rowsRef = useRef<ProfileRow[]>([]);
   rowsRef.current = rows;
+  // Deliver one event to the pet. In presence "message-only" the window is
+  // normally hidden — show it first, and give a FRESHLY created webview a
+  // beat to register its listeners before the event is emitted at it.
+  async function petDeliver(kind: NotificationKind, title: string, action: BubbleAction | null, force = false) {
+    if (petPresenceRef.current === "message-only") {
+      const created = await petShow();
+      if (created) await sleep(900);
+    }
+    await petEmitNotification(kind, title, action, force);
+  }
+  const petDeliverRef = useRef(petDeliver);
+  petDeliverRef.current = petDeliver;
+
   useEffect(() => {
-    if (getPetEnabled()) void petShow();
+    if (getPetEnabled()) {
+      const welcomed = getPetWelcomed();
+      if (getPetPresence() === "always") {
+        void petShow();
+      }
+      if (!welcomed) {
+        // One-time onboarding: the pet introduces itself, then (default
+        // presence) hides again once the bubble is gone. The bubble links to
+        // the Pet section, where it can be toggled off for good.
+        setPetWelcomedFlag();
+        void (async () => {
+          const created = await petShow();
+          await sleep(created ? 1200 : 200);
+          await petEmitNotification("info", PET_WELCOME, "pet-settings", true);
+        })();
+      }
+    }
     let unlisten = () => {};
     void onPetAction((action) => {
       void showAppWindow();
@@ -859,6 +904,8 @@ export default function App() {
         setSection("ecosystem"); // the agent-config update banner lives here
       } else if (action === "tooling") {
         setSection("tooling"); // per-tool Update buttons (rtk / provider CLIs)
+      } else if (action === "pet-settings") {
+        setSection("pet"); // the welcome bubble's "toggle me anytime" link
       } else {
         setNotifOpenNonce((n) => n + 1);
       }
@@ -1017,6 +1064,8 @@ export default function App() {
               onToggle={togglePet}
               tier={petTier}
               onChangeTier={changePetTier}
+              presence={petPresence}
+              onChangePresence={changePetPresence}
               kinds={petKinds}
               onToggleKind={togglePetKind}
               devMode={devMode}
@@ -2062,6 +2111,8 @@ function PetSettings({
   onToggle,
   tier,
   onChangeTier,
+  presence,
+  onChangePresence,
   kinds,
   onToggleKind,
   devMode,
@@ -2070,6 +2121,8 @@ function PetSettings({
   onToggle: (on: boolean) => void;
   tier: PetTier;
   onChangeTier: (tier: PetTier) => void;
+  presence: PetPresence;
+  onChangePresence: (p: PetPresence) => void;
   kinds: NotificationKind[];
   onToggleKind: (kind: NotificationKind) => void;
   devMode: boolean;
@@ -2135,6 +2188,24 @@ function PetSettings({
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+              <div className="min-w-0">
+                <div className="text-[13px] font-medium">Presence</div>
+                <div className="text-xs text-muted-foreground">
+                  Appear for a notification and hide again afterwards (default), or stay on screen permanently.
+                </div>
+              </div>
+              <select
+                value={presence}
+                onChange={(e) => onChangePresence(e.target.value as PetPresence)}
+                aria-label="Pet presence"
+                className="h-8 shrink-0 rounded-md border border-input bg-background px-2 text-[13px]"
+              >
+                <option value="message-only">Only for messages</option>
+                <option value="always">Always visible</option>
+              </select>
             </div>
 
             <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
@@ -2358,6 +2429,13 @@ function PetSettings({
                     onClick={() => void petEmitNotification("info", "Update available — v9.9.9 (test)", "updates", true)}
                   >
                     update
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void petEmitNotification("info", PET_WELCOME, "pet-settings", true)}
+                  >
+                    welcome
                   </Button>
                 </div>
               </div>
