@@ -1,0 +1,6 @@
+{
+  "id": "dev-bot",
+  "displayName": "Dev Bot",
+  "description": "Hoodie up, terminal-green visor, coffee in reach. The default companion for long refactor sessions.",
+  "spritesheetPath": "spritesheet.webp"
+}
