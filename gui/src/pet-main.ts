@@ -50,6 +50,7 @@ import {
   getPetPos,
   getPetSize,
   setPetPos,
+  setPetPrevPos,
 } from "./settings-store.js";
 
 const sprite = document.getElementById("sprite") as HTMLDivElement;
@@ -245,6 +246,16 @@ void petWindow.listen<{ pct: number | null }>("pet-context", (e) => {
   mood.className = m ?? "";
 }).catch(() => {});
 
+// "Reset to last position": the main window sends an absolute target.
+void petWindow
+  .listen<{ x: number; y: number }>("pet-move", (e) => {
+    void getCurrentWindow()
+      .setPosition(new PhysicalPosition(e.payload.x, e.payload.y))
+      .then(() => updateQuadrant())
+      .catch(() => {});
+  })
+  .catch(() => {});
+
 // Dev-mode pose picker (Pet section): hold the selected row until the next
 // pick so it can be inspected — a QA tool, so it bypasses the cooldown and
 // the transient return-to-idle. Picking "idle" restores normal behavior.
@@ -333,6 +344,9 @@ window.addEventListener("mouseup", (e) => {
   if (e.button !== 0 || !drag) return;
   if (drag.holdTimer) clearTimeout(drag.holdTimer);
   const wasClick = !drag.dragging && !drag.cancelled;
+  // A completed (uncancelled) move records where it started — the one-step
+  // history behind "Reset to last position".
+  if (drag.dragging && !drag.cancelled && drag.anchor) setPetPrevPos(drag.anchor);
   drag = null;
   if (wasClick && currentReaction === "idle") react("waving");
   void updateQuadrant(); // alignment updates only after the drag settles

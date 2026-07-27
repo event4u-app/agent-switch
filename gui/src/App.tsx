@@ -61,6 +61,7 @@ import {
   petEmitNotification,
   petEmitContext,
   petEmitPose,
+  petMoveTo,
   onPetOpenSwitch,
   type AppInfo,
   type AutoSwitchMap,
@@ -135,6 +136,9 @@ import {
   getPetLabel,
   setPetLabelFlag,
   clearPetPos,
+  getPetPos,
+  getPetPrevPos,
+  setPetPrevPos,
 } from "./settings-store.js";
 import { ALL_REACTIONS, PET_IDS, decidePetRouting, isSwitchSuggestion, type BubbleDuration, type PetId, type PetMotion, type PetSize, type PetTier } from "./pet/model.js";
 import { checkForUpdate, fetchLatestRelease, isNewer, releaseKind, type UpdateCheck, type UpdateKind } from "./updates.js";
@@ -2049,6 +2053,14 @@ function PetSettings({
   // only — the pet window owns the actual animation).
   const [pose, setPose] = useState<string>("idle");
   const [labelOn, setLabelOn] = useState(() => getPetLabel());
+  // One-step position history (written by the pet window at drag start; the
+  // cross-window storage event keeps this fresh). Drives "Reset to last".
+  const [prevPos, setPrevPosState] = useState(() => getPetPrevPos());
+  useEffect(() => {
+    const sync = () => setPrevPosState(getPetPrevPos());
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, []);
   const [choice, setChoiceState] = useState<PetId>(() => getPetChoice());
   const [bubbles, setBubblesState] = useState(() => getPetBubbles());
   const [bubbleDur, setBubbleDurState] = useState<BubbleDuration>(() => getPetBubbleDuration());
@@ -2224,19 +2236,44 @@ function PetSettings({
               <div>
                 <div className="text-[13px] font-medium">Position</div>
                 <div className="text-xs text-muted-foreground">
-                  Click and hold the pet to drag it; reset brings it back to the bottom-right corner.
+                  Click and hold the pet to drag it. Reset brings it back to the bottom-right corner; "last
+                  position" restores where it was before the most recent move (press again to toggle back).
                 </div>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  clearPetPos();
-                  void petResetPosition();
-                }}
-              >
-                Reset position
-              </Button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!prevPos}
+                  onClick={() => {
+                    const prev = getPetPrevPos();
+                    if (!prev) return;
+                    const cur = getPetPos();
+                    if (cur) {
+                      setPetPrevPos(cur); // swap → pressing again toggles back
+                      setPrevPosState(cur);
+                    }
+                    void petMoveTo(prev);
+                  }}
+                >
+                  Reset to last position
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const cur = getPetPos();
+                    if (cur) {
+                      setPetPrevPos(cur); // corner reset is undoable too
+                      setPrevPosState(cur);
+                    }
+                    clearPetPos();
+                    void petResetPosition();
+                  }}
+                >
+                  Reset position
+                </Button>
+              </div>
             </div>
 
             {devMode && (

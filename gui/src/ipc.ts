@@ -720,3 +720,13 @@ export async function petEmitPose(reaction: string): Promise<void> {
     /* pet window closed / non-Tauri env */
   }
 }
+
+/** Move the pet window to an absolute physical position ("Reset to last
+ *  position" in the Pet section). */
+export async function petMoveTo(pos: { x: number; y: number }): Promise<void> {
+  try {
+    await emitTo(PET_TARGET, "pet-move", pos);
+  } catch {
+    /* pet window closed / non-Tauri env */
+  }
+}

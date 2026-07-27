@@ -605,6 +605,31 @@ export function clearPetPos(): void {
   }
 }
 
+const PET_PREV_POS_KEY = "agent-switch-pet-prev-pos";
+
+/** One-step position history: the position the pet had BEFORE the most recent
+ *  move/reset — written at drag start and before a corner reset, consumed by
+ *  "Reset to last position" (which swaps the two, so it toggles). */
+export function getPetPrevPos(): { x: number; y: number } | null {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(PET_PREV_POS_KEY) ?? "null");
+    if (raw && typeof raw === "object" && Number.isFinite((raw as { x: unknown }).x) && Number.isFinite((raw as { y: unknown }).y)) {
+      return { x: (raw as { x: number }).x, y: (raw as { y: number }).y };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function setPetPrevPos(pos: { x: number; y: number }): void {
+  try {
+    localStorage.setItem(PET_PREV_POS_KEY, JSON.stringify(pos));
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const HIDE_SUMMARIES_KEY = "agent-switch-hide-summaries";
 
 /** Suppress session summaries in the Sessions list (the one pre-existing
