@@ -96,9 +96,12 @@
       #bubble.show {
         display: block;
       }
+      /* Actionable bubbles: blue ACCENT BAR only — the frame keeps the
+         standard gray border like every other bubble. Declared after the
+         data-kind rules so the blue wins on equal specificity. */
       #bubble.actionable {
         cursor: pointer;
-        border-color: rgba(120, 180, 255, 0.7);
+        --kind-color: #60a5fa;
       }
       #bubble.actionable::after {
         content: attr(data-hint);
