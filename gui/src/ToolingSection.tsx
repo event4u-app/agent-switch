@@ -3,7 +3,7 @@ import { AlertCircle, AlertTriangle, Check, Copy, Download, RefreshCw } from "lu
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toolingStatus, type ToolingEntry, type ToolingId } from "./ipc.js";
-import { latestToolVersion, toolUpdateAvailable, UPDATE_CHECK_TOOLS } from "./tool-updates.js";
+import { latestToolVersion, notifyToolUpdates, toolUpdateAvailable, UPDATE_CHECK_TOOLS } from "./tool-updates.js";
 import { relativeAge } from "./transforms.js";
 
 /**
@@ -315,6 +315,7 @@ export function ToolingSection({
   agentConfigUpdateTo,
   onRunTool,
   onNotifyError,
+  onUpdatesRecorded,
 }: {
   /** Sweep cache, owned by the parent so it survives section switches (and so
    *  the parent can null it after a tooling terminal run → remount re-sweeps). */
@@ -328,6 +329,9 @@ export function ToolingSection({
   /** Open the embedded terminal on `agent-switch tooling <action> <id>`. */
   onRunTool: (action: "install" | "upgrade", id: ToolingId) => void;
   onNotifyError: (message: string) => void;
+  /** A sweep recorded new "update available" events into the shared log —
+   *  the parent refreshes its notification sinks (bell / toast / pet). */
+  onUpdatesRecorded?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
@@ -350,6 +354,9 @@ export function ToolingSection({
       // registry never delays the readout itself.
       const latest = await fetchLatestVersions(entries);
       onCache({ entries, at, latest });
+      // Route fresh tool updates into the shared notification log (once per
+      // tool per version) so the bell / desktop / toast / pet all see them.
+      if ((await notifyToolUpdates(entries, latest)) > 0) onUpdatesRecorded?.();
     } catch (e) {
       onNotifyError(e instanceof Error ? e.message : String(e));
     } finally {

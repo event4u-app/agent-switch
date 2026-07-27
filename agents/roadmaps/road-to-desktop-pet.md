@@ -188,7 +188,15 @@ at ~100 ms perception granularity).
 - [x] Drag rework: manual drag (mousemove deltas, openpets approach) instead
       of the native OS drag — click waves, hold/move drags, and ESC while
       the button is still down cancels the move (snap back); after release
-      ESC is a no-op. Dev-only state label toggle (default off).
+      ESC is a no-op. Dev-only state label toggle (default off). One-step
+      position history behind "Reset to last position" (toggles).
+- [x] Update awareness: ALL update events flow through the shared log — the
+      app's own release check (was local-toast-only), agent-config (already
+      logged), and NEW per-tool notifications from the Tooling sweep
+      (rtk/claude/codex, once per version). Update bubbles are clickable
+      navigation: agent-switch → Settings › Updates, agent-config →
+      Ecosystem banner, tools → Tooling section — the pet never installs
+      anything itself (`bubbleAction` in the model, unit-tested).
 
 ## Phase 4 — ambient status mood
 

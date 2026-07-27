@@ -62,7 +62,7 @@ import {
   petEmitContext,
   petEmitPose,
   petMoveTo,
-  onPetOpenSwitch,
+  onPetAction,
   type AppInfo,
   type AutoSwitchMap,
 } from "./ipc.js";
@@ -140,7 +140,7 @@ import {
   getPetPrevPos,
   setPetPrevPos,
 } from "./settings-store.js";
-import { ALL_REACTIONS, PET_IDS, decidePetRouting, isSwitchSuggestion, type BubbleDuration, type PetId, type PetMotion, type PetSize, type PetTier } from "./pet/model.js";
+import { ALL_REACTIONS, PET_IDS, bubbleAction, decidePetRouting, type BubbleDuration, type PetId, type PetMotion, type PetSize, type PetTier } from "./pet/model.js";
 import { checkForUpdate, fetchLatestRelease, isNewer, releaseKind, type UpdateCheck, type UpdateKind } from "./updates.js";
 import { AgentConfigCard, AgentConfigMark } from "./AgentConfigCard.js";
 import { ToolingSection, type ToolingCache } from "./ToolingSection.js";
@@ -294,6 +294,12 @@ export default function App() {
   // OTHER claude accounts and switches ONLY on an explicit user pick (Phase 5 —
   // no automatic switch anywhere in this flow).
   const [switchDialog, setSwitchDialog] = useState<string | null>(null);
+  // Pet "update available" bubble → jump straight to Settings › Updates. The
+  // nonce forces the jump even when Settings is already the open section.
+  const [settingsOpenTab, setSettingsOpenTab] = useState<{ tab: "updates" | null; nonce: number }>({
+    tab: null,
+    nonce: 0,
+  });
   // Tooling detection sweep cache (entries + timestamp). Owned here so it
   // survives section switches; the section itself decides when to re-sweep
   // (first open, manual refresh, window focus past the 60s threshold).
@@ -503,22 +509,22 @@ export default function App() {
         // Dedupe only once the install actually succeeded — a failed self-update
         // must be retried on the next check, not silently marked handled forever.
         if (r.ok) setUpdateNotifiedVersion(tag);
-        pushToast({
-          id: `update-${tag}`,
-          ts: Date.now(),
-          kind: r.ok ? "success" : "warning",
-          title: r.ok ? `Updated to ${tag}` : `Update to ${tag} failed`,
-          message: r.ok ? "Restart agent-switch to apply." : "Open Settings › Updates to retry.",
-        });
+        // Through the shared log (not a local toast) so bell, desktop, toast
+        // AND the pet all carry it — the pet's bubble navigates to Updates.
+        await recordNotification(
+          r.ok ? "success" : "warning",
+          r.ok ? `Updated to ${tag}` : `Update to ${tag} failed`,
+          r.ok ? "Restart agent-switch to apply." : "Open Settings › Updates to retry.",
+        ).catch(() => {});
+        await syncNotifications();
       } else {
         setUpdateNotifiedVersion(tag); // notify-only: dedupe so we don't re-nag every interval
-        pushToast({
-          id: `update-${tag}`,
-          ts: Date.now(),
-          kind: "info",
-          title: `Update available — ${tag}`,
-          message: `Open Settings › Updates to install it${kind ? ` (${kind})` : ""}.`,
-        });
+        await recordNotification(
+          "info",
+          `Update available — ${tag}`,
+          `Open Settings › Updates to install it${kind ? ` (${kind})` : ""}.`,
+        ).catch(() => {});
+        await syncNotifications();
       }
     }
     void runCheck();
@@ -664,7 +670,7 @@ export default function App() {
         kind: n.kind,
         osNotified: !!n.osNotified,
       });
-      if (routing.toPet) void petEmitNotification(n.kind, n.title, isSwitchSuggestion(n.message));
+      if (routing.toPet) void petEmitNotification(n.kind, n.title, bubbleAction(n.title, n.message));
       // Skip events the daemon already showed on the desktop, and muted kinds.
       if (n.osNotified || mutedSet.has(n.kind)) continue;
       if (routing.suppressDesktopAndToast) continue;
@@ -829,22 +835,33 @@ export default function App() {
   }, []);
 
   // Desktop pet: settings-gated show on mount (Rust never auto-opens it), plus
-  // the bubble-click → confirm-dialog navigation. The pet can only NAVIGATE
-  // here — switching stays behind the dialog's explicit user click.
+  // bubble-click navigation. The pet can only NAVIGATE here — switching stays
+  // behind the dialog's explicit click, installs behind their own buttons.
   const rowsRef = useRef<ProfileRow[]>([]);
   rowsRef.current = rows;
   useEffect(() => {
     if (getPetEnabled()) void petShow();
     let unlisten = () => {};
-    void onPetOpenSwitch(() => {
+    void onPetAction((action) => {
       void showAppWindow();
-      const claude = rowsRef.current.filter((r) => r.provider === "claude");
-      const active = claude.find((r) => r.active)?.name;
-      // With a live candidate set, open the switch dialog directly (same path
-      // as the footer "Switch account" button); otherwise the bell flyout is
-      // the fallback surface for the suggestion text.
-      if (active && claude.length >= 2) setSwitchDialog(active);
-      else setNotifOpenNonce((n) => n + 1);
+      if (action === "switch") {
+        const claude = rowsRef.current.filter((r) => r.provider === "claude");
+        const active = claude.find((r) => r.active)?.name;
+        // With a live candidate set, open the switch dialog directly (same
+        // path as the footer "Switch account" button); otherwise the bell
+        // flyout is the fallback surface for the suggestion text.
+        if (active && claude.length >= 2) setSwitchDialog(active);
+        else setNotifOpenNonce((n) => n + 1);
+      } else if (action === "updates") {
+        setSection("settings");
+        setSettingsOpenTab((r) => ({ tab: "updates", nonce: r.nonce + 1 }));
+      } else if (action === "ecosystem") {
+        setSection("ecosystem"); // the agent-config update banner lives here
+      } else if (action === "tooling") {
+        setSection("tooling"); // per-tool Update buttons (rtk / provider CLIs)
+      } else {
+        setNotifOpenNonce((n) => n + 1);
+      }
     }).then((fn) => {
       unlisten = fn;
     });
@@ -1034,6 +1051,7 @@ export default function App() {
             onSetOsNotify={setOsNotifyState}
             devMode={devMode}
             onToggleDevMode={toggleDevMode}
+            openTab={settingsOpenTab}
           />
         ) : section === "sessions" ? (
           <SessionsView
@@ -1088,6 +1106,7 @@ export default function App() {
           <ToolingSection
             cache={toolingCache}
             onCache={setToolingCache}
+            onUpdatesRecorded={() => void syncNotifications()}
             isWindows={IS_WINDOWS}
             profileCounts={{
               claude: grouped.claude.length,
@@ -1923,6 +1942,7 @@ function SettingsView({
   onSetOsNotify,
   devMode,
   onToggleDevMode,
+  openTab,
 }: {
   onUninstall: () => void;
   autoSwitchEnabled: boolean;
@@ -1948,8 +1968,13 @@ function SettingsView({
   onSetOsNotify: (on: boolean) => void;
   devMode: boolean;
   onToggleDevMode: (on: boolean) => void;
+  /** External jump request (pet update bubble): switch to this tab. */
+  openTab?: { tab: SettingsTab | null; nonce: number };
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
+  useEffect(() => {
+    if (openTab?.tab) setTab(openTab.tab);
+  }, [openTab?.tab, openTab?.nonce]);
   return (
     <div className="space-y-2.5">
       <div className="flex items-center justify-between">
@@ -2308,7 +2333,7 @@ function PetSettings({
                       key={k}
                       size="sm"
                       variant="outline"
-                      onClick={() => void petEmitNotification(k, `Test ${k} bubble — looking good?`, false, true)}
+                      onClick={() => void petEmitNotification(k, `Test ${k} bubble — looking good?`, null, true)}
                     >
                       {k}
                     </Button>
@@ -2320,12 +2345,19 @@ function PetSettings({
                       void petEmitNotification(
                         "warning",
                         "Usage limit near — suggested profile: claude/test",
-                        true,
+                        "switch",
                         true,
                       )
                     }
                   >
                     switch suggestion
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void petEmitNotification("info", "Update available — v9.9.9 (test)", "updates", true)}
+                  >
+                    update
                   </Button>
                 </div>
               </div>

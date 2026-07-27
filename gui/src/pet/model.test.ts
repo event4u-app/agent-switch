@@ -4,6 +4,7 @@ import {
   PET_IDS,
   ROWS,
   asPetId,
+  bubbleAction,
   contextMood,
   decidePetRouting,
   isSwitchSuggestion,
@@ -71,6 +72,33 @@ describe("pet model", () => {
         toPet: false,
         suppressDesktopAndToast: false,
       });
+    });
+  });
+
+  describe("bubbleAction", () => {
+    it("routes the switch suggestion to the confirm dialog", () => {
+      expect(bubbleAction("Usage limit near", "claude/work hit ≥80% — suggested profile: claude/private.")).toBe(
+        "switch",
+      );
+    });
+
+    it("routes the app's own release events to Settings › Updates", () => {
+      expect(bubbleAction("Update available — v1.8.0", "Open Settings › Updates to install it.")).toBe("updates");
+      expect(bubbleAction("Updated to v1.8.0", "Restart agent-switch to apply.")).toBe("updates");
+      expect(bubbleAction("Update to v1.8.0 failed", "Open Settings › Updates to retry.")).toBe("updates");
+    });
+
+    it("routes agent-config events to Ecosystem and tool updates to Tooling", () => {
+      expect(bubbleAction("agent-config update available", "v1 → v2 — use the banner below to update.")).toBe(
+        "ecosystem",
+      );
+      expect(bubbleAction("rtk update available", "v0.4 → v0.5 — open Tooling to update.")).toBe("tooling");
+      expect(bubbleAction("claude update available", "v2.1 → v2.2 — open Tooling to update.")).toBe("tooling");
+    });
+
+    it("leaves ordinary notifications non-actionable", () => {
+      expect(bubbleAction("Usage fetch failed", "Could not fetch usage limits for claude/work.")).toBeNull();
+      expect(bubbleAction("Test notification 3 of 25", "Dev test event #3.")).toBeNull();
     });
   });
 

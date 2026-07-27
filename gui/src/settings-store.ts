@@ -605,6 +605,32 @@ export function clearPetPos(): void {
   }
 }
 
+const TOOL_NOTIFIED_KEY = "agent-switch-tool-notified-versions";
+
+/** Per-tool "update available" dedupe: the latest version already notified
+ *  about, keyed by tool id — the Tooling sweep fires at most one notification
+ *  per tool per version (mirrors the agent-config + self-update dedupes). */
+export function getToolNotifiedVersion(id: string): string {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(TOOL_NOTIFIED_KEY) ?? "{}");
+    const v = raw && typeof raw === "object" ? (raw as Record<string, unknown>)[id] : undefined;
+    return typeof v === "string" ? v : "";
+  } catch {
+    return "";
+  }
+}
+
+export function setToolNotifiedVersion(id: string, version: string): void {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(TOOL_NOTIFIED_KEY) ?? "{}");
+    const map = raw && typeof raw === "object" ? (raw as Record<string, string>) : {};
+    map[id] = version;
+    localStorage.setItem(TOOL_NOTIFIED_KEY, JSON.stringify(map));
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const PET_PREV_POS_KEY = "agent-switch-pet-prev-pos";
 
 /** One-step position history: the position the pet had BEFORE the most recent

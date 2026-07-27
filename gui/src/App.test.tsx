@@ -74,7 +74,7 @@ const ipc = vi.hoisted(() => ({
   petEmitContext: vi.fn().mockResolvedValue(undefined),
   petEmitPose: vi.fn().mockResolvedValue(undefined),
   petMoveTo: vi.fn().mockResolvedValue(undefined),
-  onPetOpenSwitch: vi.fn().mockResolvedValue(() => {}),
+  onPetAction: vi.fn().mockResolvedValue(() => {}),
 }));
 vi.mock("./ipc.js", () => ipc);
 

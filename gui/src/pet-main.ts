@@ -3,13 +3,13 @@
  * spritesheet (contract: gui/public/pets/README.md) and reacts to events the
  * main window emits from its notification fan-out:
  *
- *   "pet-notification" { kind, title, actionable }  → transient reaction + bubble
- *   "pet-context"      { pct }                      → ambient mood dot
+ *   "pet-notification" { kind, title, action }  → transient reaction + bubble
+ *   "pet-context"      { pct }                  → ambient mood dot
  *
  * Settings arrive via shared localStorage (same origin as the main window) and
- * apply live through the cross-window `storage` event. The one actionable
- * surface is the switch-suggestion bubble: clicking it NAVIGATES to the main
- * window's confirm dialog — the pet itself can never switch anything.
+ * apply live through the cross-window `storage` event. Actionable bubbles
+ * (switch suggestion, update available) only NAVIGATE to the matching surface
+ * in the main window — the pet itself never switches or installs anything.
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -26,6 +26,7 @@ import {
 import type { NotificationKind } from "./notifications.js";
 import {
   BUBBLE_DURATION_MS,
+  BUBBLE_HINT,
   FRAME_H,
   FRAME_W,
   KIND_TO_REACTION,
@@ -35,6 +36,7 @@ import {
   TRANSIENT_LOOPS,
   contextMood,
   sanitizeBubble,
+  type BubbleAction,
   type Reaction,
 } from "./pet/model.js";
 
@@ -106,27 +108,29 @@ function hideBubble() {
   void layoutWindow(); // shrink back to the base height
 }
 
-function showBubble(kind: NotificationKind, text: string, actionable: boolean) {
+function showBubble(kind: NotificationKind, text: string, action: BubbleAction | null) {
   if (!getPetBubbles()) return;
   if (bubbleTimer) clearTimeout(bubbleTimer);
   bubble.textContent = sanitizeBubble(text);
   bubble.dataset.kind = kind; // per-kind color accent on the alignment edge
   bubble.classList.add("show");
-  bubble.classList.toggle("actionable", actionable);
-  bubble.onclick = actionable
+  bubble.classList.toggle("actionable", action != null);
+  bubble.dataset.hint = action ? ` → ${BUBBLE_HINT[action]}` : "";
+  bubble.onclick = action
     ? () => {
         hideBubble();
-        // Navigation only: bring the main window up and let ITS confirm
-        // dialog own the switch — the compliance line stays a user click.
+        // Navigation only: bring the main window up and let IT own the
+        // action's surface (confirm dialog / Updates tab / Tooling) — the
+        // pet never executes a switch or an install itself.
         void invoke("show_window").catch(() => {});
-        void emitTo({ kind: "WebviewWindow", label: "main" }, "pet-open-switch", null).catch(() => {});
+        void emitTo({ kind: "WebviewWindow", label: "main" }, "pet-action", { action }).catch(() => {});
       }
     : null;
   // Measure AFTER the browser laid the (possibly multi-line) text out, then
   // grow the window to fit — a fixed bubble zone clips long texts.
   requestAnimationFrame(() => void layoutWindow());
   // An actionable bubble gets at least the long TTL — it carries a decision.
-  const ttl = Math.max(BUBBLE_DURATION_MS[getPetBubbleDuration()], actionable ? BUBBLE_DURATION_MS.long : 0);
+  const ttl = Math.max(BUBBLE_DURATION_MS[getPetBubbleDuration()], action ? BUBBLE_DURATION_MS.long : 0);
   bubbleTimer = setTimeout(hideBubble, ttl);
 }
 
@@ -224,7 +228,8 @@ async function updateQuadrant() {
 interface PetNotification {
   kind: NotificationKind;
   title: string;
-  actionable: boolean;
+  /** Navigation target of a clickable bubble, or null for a plain one. */
+  action: BubbleAction | null;
   /** Dev bubble test: skip the reaction cooldown. */
   force?: boolean;
 }
@@ -238,7 +243,7 @@ void petWindow.listen<PetNotification>("pet-notification", (e) => {
   if (!e.payload.force && now - lastReactionAt < REACTION_COOLDOWN_MS) return;
   lastReactionAt = now;
   react(KIND_TO_REACTION[e.payload.kind] ?? "waving");
-  showBubble(e.payload.kind, e.payload.title, e.payload.actionable);
+  showBubble(e.payload.kind, e.payload.title, e.payload.action ?? null);
 }).catch(() => {});
 
 void petWindow.listen<{ pct: number | null }>("pet-context", (e) => {

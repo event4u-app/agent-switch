@@ -105,6 +105,29 @@ export function isSwitchSuggestion(message: string): boolean {
   return /suggested profile/i.test(message);
 }
 
+/** Where a bubble click NAVIGATES to (the pet never executes anything):
+ *  "switch" → the confirm dialog · "updates" → Settings › Updates
+ *  (agent-switch's own release) · "ecosystem" → the agent-config banner ·
+ *  "tooling" → the Tooling section's Update buttons (rtk / provider CLIs).
+ *  Detection runs on the notification titles this app itself writes. */
+export type BubbleAction = "switch" | "updates" | "ecosystem" | "tooling";
+
+export function bubbleAction(title: string, message: string): BubbleAction | null {
+  if (isSwitchSuggestion(message)) return "switch";
+  if (/^agent-config (update available|setup failed)/i.test(title)) return "ecosystem";
+  if (/^(rtk|claude|codex|agy) update available/i.test(title)) return "tooling";
+  if (/^(update available|updated to|update to .+ failed)/i.test(title)) return "updates";
+  return null;
+}
+
+/** Bubble hint suffix per action (rendered after the text). */
+export const BUBBLE_HINT: Record<BubbleAction, string> = {
+  switch: "click to switch",
+  updates: "click to update",
+  ecosystem: "click to update",
+  tooling: "click to update",
+};
+
 /** One-line, length-capped speech-bubble text. Control characters and
  *  newlines collapse to spaces so a log-ish message can't deform the bubble. */
 export function sanitizeBubble(text: string, max = 140): string {

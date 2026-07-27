@@ -12,6 +12,7 @@ import { enable as autostartEnable, disable as autostartDisable, isEnabled as au
 import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, AutoSwitchTag, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow, SessionPreview } from "./transforms.js";
 import type { AppNotification, NotificationKind } from "./notifications.js";
 import { parseAgentConfigVersion } from "./agent-config.js";
+import type { BubbleAction } from "./pet/model.js";
 
 async function runCli(args: string[]): Promise<string> {
   const out = await Command.create("agent-switch", args).execute();
@@ -683,10 +684,16 @@ export async function petResetPosition(): Promise<void> {
 const PET_TARGET = { kind: "WebviewWindow", label: "pet" } as const;
 
 /** Fan one notification event out to the pet window (fire-and-forget).
+ *  `action` marks the bubble clickable (navigation target, see BubbleAction);
  *  `force` bypasses the pet-side reaction cooldown (dev bubble test). */
-export async function petEmitNotification(kind: NotificationKind, title: string, actionable: boolean, force = false): Promise<void> {
+export async function petEmitNotification(
+  kind: NotificationKind,
+  title: string,
+  action: BubbleAction | null,
+  force = false,
+): Promise<void> {
   try {
-    await emitTo(PET_TARGET, "pet-notification", { kind, title, actionable, force });
+    await emitTo(PET_TARGET, "pet-notification", { kind, title, action, force });
   } catch {
     /* pet window closed / non-Tauri env */
   }
@@ -701,11 +708,14 @@ export async function petEmitContext(pct: number | null): Promise<void> {
   }
 }
 
-/** The pet's switch-suggestion bubble was clicked → the main window opens its
- *  confirm dialog. Returns an unregister function; no-op outside Tauri. */
-export async function onPetOpenSwitch(cb: () => void): Promise<() => void> {
+/** An actionable pet bubble was clicked → the main window navigates to the
+ *  matching surface (switch dialog / Settings-Updates / Ecosystem / Tooling).
+ *  Returns an unregister function; no-op outside Tauri. */
+export async function onPetAction(cb: (action: BubbleAction) => void): Promise<() => void> {
   try {
-    const unlisten = await getCurrentWebviewWindow().listen("pet-open-switch", () => cb());
+    const unlisten = await getCurrentWebviewWindow().listen<{ action: BubbleAction }>("pet-action", (e) =>
+      cb(e.payload.action),
+    );
     return () => unlisten();
   } catch {
     return () => {};
