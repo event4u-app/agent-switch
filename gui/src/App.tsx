@@ -648,9 +648,14 @@ export default function App() {
         /* best-effort tray update */
       }
     })();
-    // The countdown is owned by the auto-refresh timer alone — a manual refresh
-    // does NOT restart it (that would just delay the next usage fetch, since the
-    // cooldown already blocks a re-fetch within the same interval).
+    // A manual refresh (footer button, force=true) bypasses the fetch cooldown
+    // and pulls fresh data on demand, so restart the countdown to a full
+    // interval — the next auto-refresh is a full interval away and the visible
+    // timer matches what the user just did. The auto-fire owns its own reset.
+    if (force) {
+      nextRefreshRef.current = Date.now() + REFRESH_MS;
+      setNextUsageRefreshAt(nextRefreshRef.current);
+    }
     await syncNotifications();
     setBusy(false);
   }
