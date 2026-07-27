@@ -29,11 +29,11 @@ The pet's per-kind switches are **independent** of the desktop mutes, so "pet re
 
 Everything lives under the **Pet** sidebar entry and applies live:
 
-- **Pet picker** — eight bundled characters; right-clicking the pet window cycles through them too.
+- **Pet picker** — eight bundled characters.
 - **Speech bubbles** on/off + display duration.
 - **Size** — small / medium / large.
 - **Animations** — Auto (follows your system's reduce-motion preference), On, Off (static sprite).
-- **Position** — drag the pet by its top edge; its position is remembered per monitor. *Reset position* brings it back to the bottom-right corner.
+- **Position** — click and hold the pet to drag it anywhere; its position is remembered. *Reset position* brings it back to the bottom-right corner. When you change the size, the corner nearest the screen edge stays fixed, so the pet never grows off-screen.
 
 ## Platform notes
 

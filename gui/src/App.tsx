@@ -132,6 +132,8 @@ import {
   setPetSizeFlag,
   getPetMotion,
   setPetMotionFlag,
+  getPetLabel,
+  setPetLabelFlag,
   clearPetPos,
 } from "./settings-store.js";
 import { ALL_REACTIONS, PET_IDS, decidePetRouting, isSwitchSuggestion, type BubbleDuration, type PetId, type PetMotion, type PetSize, type PetTier } from "./pet/model.js";
@@ -2046,19 +2048,12 @@ function PetSettings({
   // Dev-mode pose picker: which row the pet is currently holding (view state
   // only — the pet window owns the actual animation).
   const [pose, setPose] = useState<string>("idle");
+  const [labelOn, setLabelOn] = useState(() => getPetLabel());
   const [choice, setChoiceState] = useState<PetId>(() => getPetChoice());
   const [bubbles, setBubblesState] = useState(() => getPetBubbles());
   const [bubbleDur, setBubbleDurState] = useState<BubbleDuration>(() => getPetBubbleDuration());
   const [size, setSizeState] = useState<PetSize>(() => getPetSize());
   const [motion, setMotionState] = useState<PetMotion>(() => getPetMotion());
-
-  // Right-clicking the pet window cycles pets and persists the choice — mirror
-  // that back into the picker (storage events only fire across windows).
-  useEffect(() => {
-    const sync = () => setChoiceState(getPetChoice());
-    window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
-  }, []);
 
   return (
     <Card>
@@ -2077,9 +2072,7 @@ function PetSettings({
           <>
             <div className="border-t border-border pt-3">
               <div className="text-[13px] font-medium">Pet</div>
-              <div className="mb-2 text-xs text-muted-foreground">
-                Pick your companion (right-clicking the pet cycles through them too).
-              </div>
+              <div className="mb-2 text-xs text-muted-foreground">Pick your companion.</div>
               <div className="grid grid-cols-4 gap-1.5">
                 {PET_IDS.map((id) => (
                   <button
@@ -2231,7 +2224,7 @@ function PetSettings({
               <div>
                 <div className="text-[13px] font-medium">Position</div>
                 <div className="text-xs text-muted-foreground">
-                  Drag the pet by its top edge; reset brings it back to the bottom-right corner.
+                  Click and hold the pet to drag it; reset brings it back to the bottom-right corner.
                 </div>
               </div>
               <Button
@@ -2245,6 +2238,25 @@ function PetSettings({
                 Reset position
               </Button>
             </div>
+
+            {devMode && (
+              <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+                <div>
+                  <div className="text-[13px] font-medium">State label (dev)</div>
+                  <div className="text-xs text-muted-foreground">
+                    Show <code>pet · reaction</code> under the sprite. Dev builds only; never shown in production.
+                  </div>
+                </div>
+                <Switch
+                  checked={labelOn}
+                  onCheckedChange={(on) => {
+                    setPetLabelFlag(on);
+                    setLabelOn(on);
+                  }}
+                  aria-label="State label"
+                />
+              </div>
+            )}
 
             {devMode && (
               <div className="border-t border-border pt-3">

@@ -553,6 +553,26 @@ export function setPetMotionFlag(m: PetMotion): void {
   }
 }
 
+const PET_LABEL_KEY = "agent-switch-pet-label";
+
+/** Dev-only state label under the pet (`<pet> · <reaction>`). Default OFF —
+ *  only the literal "on" enables; production builds never show it regardless. */
+export function getPetLabel(): boolean {
+  try {
+    return localStorage.getItem(PET_LABEL_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+export function setPetLabelFlag(on: boolean): void {
+  try {
+    localStorage.setItem(PET_LABEL_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const PET_POS_KEY = "agent-switch-pet-pos";
 
 /** Last dragged pet-window position (physical px), or null = default corner.

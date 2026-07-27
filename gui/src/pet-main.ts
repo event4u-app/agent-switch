@@ -28,7 +28,6 @@ import {
   FRAME_H,
   FRAME_W,
   KIND_TO_REACTION,
-  PET_IDS,
   PET_SIZE_FACTOR,
   REACTION_COOLDOWN_MS,
   ROWS,
@@ -41,13 +40,14 @@ import {
 const SHEET_COLS = 8;
 const SHEET_ROWS = 9;
 import {
+  getDevMode,
   getPetBubbleDuration,
   getPetBubbles,
   getPetChoice,
+  getPetLabel,
   getPetMotion,
   getPetPos,
   getPetSize,
-  setPetChoice,
   setPetPos,
 } from "./settings-store.js";
 
@@ -132,13 +132,21 @@ function showBubble(text: string, actionable: boolean) {
  *  while resizing — bottom-right of the screen → bottom-right corner pinned,
  *  top-right → top-right pinned, etc. Without this, growing the pet from the
  *  default corner pushes its lower part off-screen (setSize keeps top-left). */
+/** Dev-only state label — production builds never show it, dev builds only
+ *  with dev mode AND the (default-off) label toggle on. */
+function labelVisible(): boolean {
+  return import.meta.env.DEV && getDevMode() && getPetLabel();
+}
+
 async function applySize() {
   const f = PET_SIZE_FACTOR[getPetSize()];
   sprite.style.width = `${FRAME_W * f}px`;
   sprite.style.height = `${FRAME_H * f}px`;
   sprite.style.backgroundSize = `${FRAME_W * SHEET_COLS * f}px ${FRAME_H * SHEET_ROWS * f}px`;
+  label.style.display = labelVisible() ? "" : "none";
   const logicalW = Math.max(FRAME_W * f + 48, 220); // bubble stays readable
-  const logicalH = 24 /* drag strip */ + 44 /* bubble zone */ + FRAME_H * f + 34 /* label + padding */;
+  const logicalH =
+    24 /* drag strip */ + 44 /* bubble zone */ + FRAME_H * f + 12 /* padding */ + (labelVisible() ? 22 : 0);
   const win = getCurrentWindow();
   try {
     const [pos, size, monitor, scale] = await Promise.all([
@@ -199,20 +207,39 @@ void listen<{ reaction: string }>("pet-pose", (e) => {
 
 /* ---- direct interaction ---- */
 
-// A click is a friendly ack (and a quick liveness check), never an action.
-sprite.addEventListener("click", () => {
-  if (currentReaction === "idle") react("waving");
+// Left button on the sprite: a quick click is a friendly ack (wave); press-
+// and-hold (or press-and-move) starts a window drag. Once startDragging()
+// hands the gesture to the OS no further mouse events reach the webview, so
+// the decision falls on a short hold timer / first movement.
+const HOLD_TO_DRAG_MS = 150;
+let holdTimer: ReturnType<typeof setTimeout> | null = null;
+
+function startDrag() {
+  if (holdTimer) clearTimeout(holdTimer);
+  holdTimer = null;
+  void getCurrentWindow()
+    .startDragging()
+    .catch(() => {});
+}
+
+sprite.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  holdTimer = setTimeout(startDrag, HOLD_TO_DRAG_MS);
 });
 
-// Right-click cycles through the bundled pets AND persists the choice, so the
-// settings picker reflects it (shared localStorage → storage event).
-document.addEventListener("contextmenu", (e) => {
-  e.preventDefault();
-  const ids = PET_IDS;
-  const next = ids[(ids.indexOf(getPetChoice()) + 1) % ids.length];
-  setPetChoice(next);
-  paint(currentReaction, currentReaction === "idle" ? "infinite" : TRANSIENT_LOOPS);
+sprite.addEventListener("mousemove", (e) => {
+  if (holdTimer && e.buttons & 1) startDrag(); // moving while pressed → drag now
 });
+
+sprite.addEventListener("mouseup", (e) => {
+  if (e.button !== 0 || !holdTimer) return;
+  clearTimeout(holdTimer);
+  holdTimer = null;
+  if (currentReaction === "idle") react("waving"); // it was a plain click
+});
+
+// No context menu on the overlay — pet choice lives in the Pet section only.
+document.addEventListener("contextmenu", (e) => e.preventDefault());
 
 /* ---- settings apply live (cross-window storage event) ---- */
 
