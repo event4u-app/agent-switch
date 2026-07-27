@@ -346,6 +346,22 @@ describe("App", () => {
     await waitFor(() => expect(ipc.listProfiles).toHaveBeenCalledTimes(2));
   });
 
+  it("the Switch-account dialog live-rebinds the running session (rebindTo), not switchProfile", async () => {
+    ipc.rebindTo.mockResolvedValue(undefined);
+    render(<App />);
+    await screen.findByRole("tab", { name: /claude/i });
+    // Open the Switch-account dialog from the profiles footer (only the trigger
+    // button carries this name until the dialog mounts).
+    fireEvent.click(await screen.findByRole("button", { name: /^switch account$/i }));
+    const dialog = await screen.findByRole("dialog", { name: /switch account/i });
+    // "privat" is the only other claude account → pre-selected; confirm switches.
+    fireEvent.click(within(dialog).getByRole("button", { name: /^switch account$/i }));
+    // The running profile ("work", active) is rebound to the picked account —
+    // the live-session swap, NOT a next-launch `use`.
+    await waitFor(() => expect(ipc.rebindTo).toHaveBeenCalledWith("privat", "work"));
+    expect(ipc.switchProfile).not.toHaveBeenCalled();
+  });
+
   it("deactivates the active profile via its Off button", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Off" }));
