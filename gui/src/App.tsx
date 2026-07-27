@@ -164,6 +164,7 @@ import {
   formatContextBadge,
   hasUsageReadout,
   nearestLimit,
+  pickMostHeadroom,
   relativeAge,
   worstLiveContextPct,
   contextTrayTooltip,
@@ -190,6 +191,11 @@ import { Switch } from "@/components/ui/switch";
 
 const PROVIDERS: ProviderId[] = ["claude", "codex", "antigravity"];
 const PROVIDER_LABEL: Record<ProviderId, string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
+
+// Selectable near-limit notify thresholds (percent, 5% steps). 95% is the
+// default; lower values exist to test the notification without waiting to run
+// the account down. The CLI accepts 1–100; this is the curated GUI set.
+const NOTIFY_THRESHOLD_CHOICES = [95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30] as const;
 
 // On macOS the window uses the Overlay title-bar style (native traffic lights,
 // content drawn into the title bar) — the header must leave room on the left so
@@ -381,6 +387,49 @@ export default function App() {
     fn()
       .then(() => refresh())
       .catch((e) => setError(describeError(e)));
+  }
+
+  // Set the near-limit notify threshold (5% steps) for the selected provider and,
+  // when notifications are on and the active account already sits at/above the
+  // new bar, surface the near-limit message immediately — so lowering the
+  // threshold to test produces a notification without running the account down.
+  function changeNotifyThreshold(next: number) {
+    if (!auto) return;
+    const cfg = auto[selected];
+    act(async () => {
+      await setAutoSwitch(selected, cfg.enabled, next, cfg.tag);
+      if (cfg.enabled) await fireNearLimitIfCrossed(next);
+    });
+  }
+
+  // Fire the SAME near-limit notification the daemon would (verbatim title +
+  // message) when the active account's current usage is already at/above
+  // `threshold` and an eligible same-provider account has more headroom. Matching
+  // the daemon's text lets the notification log's 30-min dedup coalesce this with
+  // the daemon's own fire instead of double-notifying.
+  async function fireNearLimitIfCrossed(threshold: number) {
+    const profs = rows.filter((r) => r.provider === selected);
+    const active = profs.find((r) => r.active)?.name ?? null;
+    if (!active) return;
+    const activeMax = nearestLimit(usage[`${selected}/${active}`]?.snap ?? null);
+    if (activeMax === null || activeMax < threshold) return;
+    const tag = auto?.[selected]?.tag ?? "all";
+    const target = pickMostHeadroom(
+      profs
+        .filter((r) => r.name !== active && (tag === "all" || r.label === tag))
+        .map((r) => ({ name: r.name, max: nearestLimit(usage[`${selected}/${r.name}`]?.snap ?? null) })),
+    );
+    if (!target) return;
+    const how =
+      selected === "claude"
+        ? "Run `agent-switch rebind` to switch (no automatic switch)."
+        : "Switch manually (no automatic switch).";
+    await recordNotification(
+      "warning",
+      "Usage limit near",
+      `${selected}/${active} hit ≥${threshold}% — suggested profile: ${selected}/${target}. ${how}`,
+    );
+    await syncNotifications();
   }
 
   // Change the Profiles provider filter AND persist it (like the other UI prefs).
@@ -1573,8 +1622,23 @@ export default function App() {
                     )}
                   />
                   Notify near limit · {PROVIDER_LABEL[selected]}{" "}
-                  {!canAuto ? "not available" : auto[selected].enabled ? `on (${auto[selected].threshold}%)` : "off"}
+                  {!canAuto ? "not available" : auto[selected].enabled ? "on" : "off"}
                 </button>
+                {canAuto && auto[selected].enabled && (
+                  <select
+                    value={auto[selected].threshold}
+                    onChange={(e) => changeNotifyThreshold(Number(e.target.value))}
+                    aria-label={`Near-limit notify threshold for ${PROVIDER_LABEL[selected]}`}
+                    title="Notify when the active account reaches this usage — lower it to test; a message fires immediately if you are already past it"
+                    className="h-6 rounded-md border border-input bg-background px-1 text-[11px]"
+                  >
+                    {NOTIFY_THRESHOLD_CHOICES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}%
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             );
           })()}
