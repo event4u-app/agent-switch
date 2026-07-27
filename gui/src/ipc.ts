@@ -6,6 +6,7 @@
 
 import { Command } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
 import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, AutoSwitchTag, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow, SessionPreview } from "./transforms.js";
 import type { AppNotification, NotificationKind } from "./notifications.js";
@@ -644,4 +645,63 @@ export async function getOsNotify(): Promise<boolean> {
 
 export async function setOsNotify(on: boolean): Promise<void> {
   await runCli(["os-notify", on ? "on" : "off"]);
+}
+
+// ---- desktop pet (road-to-desktop-pet) --------------------------------------
+
+/** Show the pet overlay window (created on first call). Best-effort — a no-op
+ *  outside a Tauri context (tests). */
+export async function petShow(): Promise<void> {
+  try {
+    await invoke("pet_show");
+  } catch {
+    /* non-Tauri env / window creation failed → the toggle simply has no effect */
+  }
+}
+
+export async function petHide(): Promise<void> {
+  try {
+    await invoke("pet_hide");
+  } catch {
+    /* non-Tauri env */
+  }
+}
+
+/** Move the pet back to its default corner (Settings → Pet → Reset position).
+ *  The caller clears the persisted drag position first (shared localStorage). */
+export async function petResetPosition(): Promise<void> {
+  try {
+    await invoke("pet_reset_position");
+  } catch {
+    /* non-Tauri env */
+  }
+}
+
+/** Fan one notification event out to the pet window (fire-and-forget). */
+export async function petEmitNotification(kind: NotificationKind, title: string, actionable: boolean): Promise<void> {
+  try {
+    await emitTo("pet", "pet-notification", { kind, title, actionable });
+  } catch {
+    /* pet window closed / non-Tauri env */
+  }
+}
+
+/** Push the ambient context fill (tray-tooltip number) to the pet's mood dot. */
+export async function petEmitContext(pct: number | null): Promise<void> {
+  try {
+    await emitTo("pet", "pet-context", { pct });
+  } catch {
+    /* pet window closed / non-Tauri env */
+  }
+}
+
+/** The pet's switch-suggestion bubble was clicked → the main window opens its
+ *  confirm dialog. Returns an unregister function; no-op outside Tauri. */
+export async function onPetOpenSwitch(cb: () => void): Promise<() => void> {
+  try {
+    const unlisten = await listen("pet-open-switch", () => cb());
+    return () => unlisten();
+  } catch {
+    return () => {};
+  }
 }

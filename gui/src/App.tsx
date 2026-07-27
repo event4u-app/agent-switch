@@ -55,6 +55,12 @@ import {
   shareOff,
   shareSync,
   uninstall,
+  petShow,
+  petHide,
+  petResetPosition,
+  petEmitNotification,
+  petEmitContext,
+  onPetOpenSwitch,
   type AppInfo,
   type AutoSwitchMap,
 } from "./ipc.js";
@@ -109,7 +115,25 @@ import {
   setNextUsageRefreshAt,
   getProviderFilter,
   setProviderFilter,
+  getPetEnabled,
+  setPetEnabledFlag,
+  getPetChoice,
+  setPetChoice,
+  getPetTier,
+  setPetTierFlag,
+  getPetReactKinds,
+  setPetReactKinds,
+  getPetBubbles,
+  setPetBubblesFlag,
+  getPetBubbleDuration,
+  setPetBubbleDurationFlag,
+  getPetSize,
+  setPetSizeFlag,
+  getPetMotion,
+  setPetMotionFlag,
+  clearPetPos,
 } from "./settings-store.js";
+import { PET_IDS, decidePetRouting, isSwitchSuggestion, type BubbleDuration, type PetId, type PetMotion, type PetSize, type PetTier } from "./pet/model.js";
 import { checkForUpdate, fetchLatestRelease, isNewer, releaseKind, type UpdateCheck, type UpdateKind } from "./updates.js";
 import { AgentConfigCard, AgentConfigMark } from "./AgentConfigCard.js";
 import { ToolingSection, type ToolingCache } from "./ToolingSection.js";
@@ -285,6 +309,18 @@ export default function App() {
   const [toasts, setToasts] = useState<AppNotification[]>([]);
   // Muted notification kinds — suppressed from desktop, toast, flyout, and badge.
   const [mutedKinds, setMutedKindsState] = useState<NotificationKind[]>(() => getMutedKinds());
+  // Desktop pet: master toggle, routing tier, and the pet's OWN per-kind set
+  // (independent of the desktop mutes). Mirrored into refs for the async fire
+  // path in syncNotifications (same pattern as osNotifyRef).
+  const [petEnabled, setPetEnabledState] = useState(() => getPetEnabled());
+  const [petTier, setPetTierState] = useState<PetTier>(() => getPetTier());
+  const [petKinds, setPetKindsState] = useState<NotificationKind[]>(() => getPetReactKinds());
+  const petEnabledRef = useRef(false);
+  petEnabledRef.current = petEnabled;
+  const petTierRef = useRef<PetTier>("hybrid");
+  petTierRef.current = petTier;
+  const petKindsRef = useRef<NotificationKind[]>([]);
+  petKindsRef.current = petKinds;
   // "Desktop notifications" master (persisted CLI flag). Lifted here — not just
   // in the settings sub-component — because the App-level fire path below gates
   // on it too, so turning it off stops BOTH the daemon-when-closed OS
@@ -582,7 +618,10 @@ export default function App() {
       try {
         const sess = await listSessions(undefined, 20);
         const activeClaude = loaded.filter((r) => r.provider === "claude" && r.active).map((r) => r.name);
-        await setTrayTooltip(contextTrayTooltip(worstLiveContextPct(sess, activeClaude)));
+        const pct = worstLiveContextPct(sess, activeClaude);
+        await setTrayTooltip(contextTrayTooltip(pct));
+        // Same one number feeds the pet's ambient mood dot (Phase 4).
+        if (petEnabledRef.current) void petEmitContext(pct);
       } catch {
         /* best-effort tray update */
       }
@@ -608,8 +647,20 @@ export default function App() {
     // so a persistent failure produces at most one toast per dedup window.
     const mutedSet = new Set(mutedKinds);
     for (const n of fresh.slice(0, 5)) {
+      // Third sink: the desktop pet. Gated by the pet's OWN per-kind set (not
+      // the desktop mutes) so "pet reacts to errors only" is expressible; in
+      // tier "pet-only" the pet REPLACES desktop + toast for events it handles.
+      const routing = decidePetRouting({
+        petEnabled: petEnabledRef.current,
+        tier: petTierRef.current,
+        petKinds: petKindsRef.current,
+        kind: n.kind,
+        osNotified: !!n.osNotified,
+      });
+      if (routing.toPet) void petEmitNotification(n.kind, n.title, isSwitchSuggestion(n.message));
       // Skip events the daemon already showed on the desktop, and muted kinds.
       if (n.osNotified || mutedSet.has(n.kind)) continue;
+      if (routing.suppressDesktopAndToast) continue;
       // Only fire an OS desktop notification when "Desktop notifications" is on;
       // when off, treat it like an undeliverable desktop and fall back to the
       // in-window toast (the bell/flyout always show it regardless).
@@ -622,6 +673,25 @@ export default function App() {
     setMutedKindsState((prev) => {
       const next = prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind];
       setMutedKinds(next);
+      return next;
+    });
+  }
+
+  function togglePet(on: boolean) {
+    setPetEnabledFlag(on);
+    setPetEnabledState(on);
+    void (on ? petShow() : petHide());
+  }
+
+  function changePetTier(tier: PetTier) {
+    setPetTierFlag(tier);
+    setPetTierState(tier);
+  }
+
+  function togglePetKind(kind: NotificationKind) {
+    setPetKindsState((prev) => {
+      const next = prev.includes(kind) ? prev.filter((k) => k !== kind) : [...prev, kind];
+      setPetReactKinds(next);
       return next;
     });
   }
@@ -749,6 +819,30 @@ export default function App() {
       unlisten = fn;
     });
     return () => unlisten();
+  }, []);
+
+  // Desktop pet: settings-gated show on mount (Rust never auto-opens it), plus
+  // the bubble-click → confirm-dialog navigation. The pet can only NAVIGATE
+  // here — switching stays behind the dialog's explicit user click.
+  const rowsRef = useRef<ProfileRow[]>([]);
+  rowsRef.current = rows;
+  useEffect(() => {
+    if (getPetEnabled()) void petShow();
+    let unlisten = () => {};
+    void onPetOpenSwitch(() => {
+      void showAppWindow();
+      const claude = rowsRef.current.filter((r) => r.provider === "claude");
+      const active = claude.find((r) => r.active)?.name;
+      // With a live candidate set, open the switch dialog directly (same path
+      // as the footer "Switch account" button); otherwise the bell flyout is
+      // the fallback surface for the suggestion text.
+      if (active && claude.length >= 2) setSwitchDialog(active);
+      else setNotifOpenNonce((n) => n + 1);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 1s ticker: drives the countdown and fires the auto-refresh when due.
@@ -918,6 +1012,12 @@ export default function App() {
             onSetOsNotify={setOsNotifyState}
             devMode={devMode}
             onToggleDevMode={toggleDevMode}
+            petEnabled={petEnabled}
+            onTogglePet={togglePet}
+            petTier={petTier}
+            onChangePetTier={changePetTier}
+            petKinds={petKinds}
+            onTogglePetKind={togglePetKind}
           />
         ) : section === "sessions" ? (
           <SessionsView
@@ -1769,10 +1869,11 @@ function SharedSetupCard({
   );
 }
 
-type SettingsTab = "general" | "notifications" | "autoswitch" | "updates" | "advanced";
+type SettingsTab = "general" | "notifications" | "pet" | "autoswitch" | "updates" | "advanced";
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "notifications", label: "Notifications" },
+  { id: "pet", label: "Pet" },
   { id: "autoswitch", label: "Notify near limit" },
   { id: "updates", label: "Updates" },
   { id: "advanced", label: "Advanced" },
@@ -1807,6 +1908,12 @@ function SettingsView({
   onSetOsNotify,
   devMode,
   onToggleDevMode,
+  petEnabled,
+  onTogglePet,
+  petTier,
+  onChangePetTier,
+  petKinds,
+  onTogglePetKind,
 }: {
   onUninstall: () => void;
   autoSwitchEnabled: boolean;
@@ -1832,6 +1939,12 @@ function SettingsView({
   onSetOsNotify: (on: boolean) => void;
   devMode: boolean;
   onToggleDevMode: (on: boolean) => void;
+  petEnabled: boolean;
+  onTogglePet: (on: boolean) => void;
+  petTier: PetTier;
+  onChangePetTier: (tier: PetTier) => void;
+  petKinds: NotificationKind[];
+  onTogglePetKind: (kind: NotificationKind) => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
   return (
@@ -1839,7 +1952,7 @@ function SettingsView({
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold tracking-tight">Settings</span>
       </div>
-      <div role="tablist" className="grid grid-cols-5 gap-1 rounded-lg bg-muted p-1">
+      <div role="tablist" className="grid grid-cols-6 gap-1 rounded-lg bg-muted p-1">
         {SETTINGS_TABS.map((t) => (
           <button
             key={t.id}
@@ -1880,6 +1993,16 @@ function SettingsView({
           onSetOsNotify={onSetOsNotify}
         />
       )}
+      {tab === "pet" && (
+        <PetSettings
+          enabled={petEnabled}
+          onToggle={onTogglePet}
+          tier={petTier}
+          onChangeTier={onChangePetTier}
+          kinds={petKinds}
+          onToggleKind={onTogglePetKind}
+        />
+      )}
       {tab === "autoswitch" && (
         <AutoSwitchSettings
           enabled={autoSwitchEnabled}
@@ -1909,6 +2032,232 @@ const KIND_LABELS: { kind: NotificationKind; label: string; hint: string }[] = [
   { kind: "info", label: "Threshold crossings", hint: "The active account passing a usage threshold." },
   { kind: "error", label: "Errors", hint: "Unexpected failures." },
 ];
+
+/** Pet tab: master toggle + (when on) pet picker, routing tier, per-kind
+ *  reactions, bubbles, size, motion, and position reset. Master/tier/kinds are
+ *  lifted to App (the notification fire path reads them); everything else is
+ *  written straight to settings-store — the pet window applies those live via
+ *  the cross-window `storage` event, no restart needed. */
+function PetSettings({
+  enabled,
+  onToggle,
+  tier,
+  onChangeTier,
+  kinds,
+  onToggleKind,
+}: {
+  enabled: boolean;
+  onToggle: (on: boolean) => void;
+  tier: PetTier;
+  onChangeTier: (tier: PetTier) => void;
+  kinds: NotificationKind[];
+  onToggleKind: (kind: NotificationKind) => void;
+}) {
+  const [choice, setChoiceState] = useState<PetId>(() => getPetChoice());
+  const [bubbles, setBubblesState] = useState(() => getPetBubbles());
+  const [bubbleDur, setBubbleDurState] = useState<BubbleDuration>(() => getPetBubbleDuration());
+  const [size, setSizeState] = useState<PetSize>(() => getPetSize());
+  const [motion, setMotionState] = useState<PetMotion>(() => getPetMotion());
+
+  // Right-clicking the pet window cycles pets and persists the choice — mirror
+  // that back into the picker (storage events only fire across windows).
+  useEffect(() => {
+    const sync = () => setChoiceState(getPetChoice());
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, []);
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-[13px] font-medium">Desktop pet</div>
+            <div className="text-xs text-muted-foreground">
+              An animated companion floating above your windows that reacts to notifications. Purely optional.
+            </div>
+          </div>
+          <Switch checked={enabled} onCheckedChange={onToggle} aria-label="Desktop pet" />
+        </div>
+
+        {enabled && (
+          <>
+            <div className="border-t border-border pt-3">
+              <div className="text-[13px] font-medium">Pet</div>
+              <div className="mb-2 text-xs text-muted-foreground">
+                Pick your companion (right-clicking the pet cycles through them too).
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {PET_IDS.map((id) => (
+                  <button
+                    key={id}
+                    onClick={() => {
+                      setPetChoice(id);
+                      setChoiceState(id);
+                    }}
+                    aria-label={`Pet ${id}`}
+                    aria-pressed={choice === id}
+                    className={cn(
+                      "flex flex-col items-center gap-1 rounded-md border p-1.5 transition-colors",
+                      choice === id ? "border-primary bg-primary/10" : "border-border hover:bg-muted",
+                    )}
+                  >
+                    <img
+                      src={`./pets/${id}/thumbnail.png`}
+                      alt=""
+                      className="size-10 [image-rendering:pixelated]"
+                      draggable={false}
+                    />
+                    <span className="w-full truncate text-center text-[10px] text-muted-foreground">{id}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+              <div className="min-w-0">
+                <div className="text-[13px] font-medium">Notification routing</div>
+                <div className="text-xs text-muted-foreground">
+                  Pet + system (default), pet replaces desktop notifications and toasts, or decoration only.
+                </div>
+              </div>
+              <select
+                value={tier}
+                onChange={(e) => onChangeTier(e.target.value as PetTier)}
+                aria-label="Notification routing"
+                className="h-8 shrink-0 rounded-md border border-input bg-background px-2 text-[13px]"
+              >
+                <option value="hybrid">Pet + system</option>
+                <option value="pet-only">Pet only</option>
+                <option value="os-only">Decoration only</option>
+              </select>
+            </div>
+
+            {tier !== "os-only" && (
+              <div className="border-t border-border pt-3">
+                <div className="text-[13px] font-medium">Pet reacts to</div>
+                <div className="mb-1 text-xs text-muted-foreground">
+                  Independent of the desktop mutes — the pet can cover kinds you muted there.
+                </div>
+                {KIND_LABELS.map(({ kind, label, hint }) => (
+                  <div key={kind} className="flex items-center justify-between gap-2 py-1">
+                    <div>
+                      <div className="text-[13px]">{label}</div>
+                      <div className="text-xs text-muted-foreground">{hint}</div>
+                    </div>
+                    <Switch
+                      checked={kinds.includes(kind)}
+                      onCheckedChange={() => onToggleKind(kind)}
+                      aria-label={`Pet reacts to ${label}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+              <div>
+                <div className="text-[13px] font-medium">Speech bubbles</div>
+                <div className="text-xs text-muted-foreground">
+                  Show the notification title as a bubble; the near-limit bubble opens the switch dialog on click.
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {bubbles && (
+                  <select
+                    value={bubbleDur}
+                    onChange={(e) => {
+                      const d = e.target.value as BubbleDuration;
+                      setPetBubbleDurationFlag(d);
+                      setBubbleDurState(d);
+                    }}
+                    aria-label="Bubble duration"
+                    className="h-8 rounded-md border border-input bg-background px-2 text-[13px]"
+                  >
+                    <option value="short">Short</option>
+                    <option value="normal">Normal</option>
+                    <option value="long">Long</option>
+                  </select>
+                )}
+                <Switch
+                  checked={bubbles}
+                  onCheckedChange={(on) => {
+                    setPetBubblesFlag(on);
+                    setBubblesState(on);
+                  }}
+                  aria-label="Speech bubbles"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+              <div>
+                <div className="text-[13px] font-medium">Size</div>
+                <div className="text-xs text-muted-foreground">How large the pet renders.</div>
+              </div>
+              <select
+                value={size}
+                onChange={(e) => {
+                  const s = e.target.value as PetSize;
+                  setPetSizeFlag(s);
+                  setSizeState(s);
+                }}
+                aria-label="Pet size"
+                className="h-8 shrink-0 rounded-md border border-input bg-background px-2 text-[13px]"
+              >
+                <option value="small">Small</option>
+                <option value="medium">Medium</option>
+                <option value="large">Large</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+              <div>
+                <div className="text-[13px] font-medium">Animations</div>
+                <div className="text-xs text-muted-foreground">
+                  Auto follows the system's reduce-motion preference; Off shows a static sprite.
+                </div>
+              </div>
+              <select
+                value={motion}
+                onChange={(e) => {
+                  const m = e.target.value as PetMotion;
+                  setPetMotionFlag(m);
+                  setMotionState(m);
+                }}
+                aria-label="Pet animations"
+                className="h-8 shrink-0 rounded-md border border-input bg-background px-2 text-[13px]"
+              >
+                <option value="auto">Auto</option>
+                <option value="on">On</option>
+                <option value="off">Off</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+              <div>
+                <div className="text-[13px] font-medium">Position</div>
+                <div className="text-xs text-muted-foreground">
+                  Drag the pet by its top edge; reset brings it back to the bottom-right corner.
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  clearPetPos();
+                  void petResetPosition();
+                }}
+              >
+                Reset position
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 const PERMISSION_LABEL: Record<DesktopPermission, string> = {
   granted: "Granted",

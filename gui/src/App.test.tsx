@@ -67,6 +67,12 @@ const ipc = vi.hoisted(() => ({
   shareOn: vi.fn(),
   shareOff: vi.fn(),
   shareSync: vi.fn(),
+  petShow: vi.fn().mockResolvedValue(undefined),
+  petHide: vi.fn().mockResolvedValue(undefined),
+  petResetPosition: vi.fn().mockResolvedValue(undefined),
+  petEmitNotification: vi.fn().mockResolvedValue(undefined),
+  petEmitContext: vi.fn().mockResolvedValue(undefined),
+  onPetOpenSwitch: vi.fn().mockResolvedValue(() => {}),
 }));
 vi.mock("./ipc.js", () => ipc);
 
@@ -106,7 +112,7 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, acCardDismissed: false, shareGlobal: true, shareSource: "default", hideSummaries: false, minimizeToDock: false, autoUpdateKinds: ["major", "minor", "patch"], providerFilter: "claude" }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, acCardDismissed: false, shareGlobal: true, shareSource: "default", hideSummaries: false, minimizeToDock: false, autoUpdateKinds: ["major", "minor", "patch"], providerFilter: "claude", petEnabled: false, petChoice: "agent-switch-007", petTier: "hybrid", petKinds: ["success", "error", "warning", "info"] as string[], petBubbles: true, petBubbleDuration: "normal", petSize: "medium", petMotion: "auto" }));
 // Keep the update-check path inert in the App tests: uptodate → no toast, no
 // network. The update logic itself is covered by updates.test.ts.
 // Keep the real pure helpers (isNewer/compareVersions — used by agent-config.js)
@@ -200,6 +206,39 @@ vi.mock("./settings-store.js", () => ({
   setProviderFilter: (id: string) => {
     store.providerFilter = id;
   },
+  getPetEnabled: () => store.petEnabled,
+  setPetEnabledFlag: (on: boolean) => {
+    store.petEnabled = on;
+  },
+  getPetChoice: () => store.petChoice,
+  setPetChoice: (id: string) => {
+    store.petChoice = id;
+  },
+  getPetTier: () => store.petTier,
+  setPetTierFlag: (tier: string) => {
+    store.petTier = tier;
+  },
+  getPetReactKinds: () => store.petKinds,
+  setPetReactKinds: (kinds: string[]) => {
+    store.petKinds = kinds;
+  },
+  getPetBubbles: () => store.petBubbles,
+  setPetBubblesFlag: (on: boolean) => {
+    store.petBubbles = on;
+  },
+  getPetBubbleDuration: () => store.petBubbleDuration,
+  setPetBubbleDurationFlag: (d: string) => {
+    store.petBubbleDuration = d;
+  },
+  getPetSize: () => store.petSize,
+  setPetSizeFlag: (s: string) => {
+    store.petSize = s;
+  },
+  getPetMotion: () => store.petMotion,
+  setPetMotionFlag: (m: string) => {
+    store.petMotion = m;
+  },
+  clearPetPos: () => {},
 }));
 
 import App from "./App.js";
