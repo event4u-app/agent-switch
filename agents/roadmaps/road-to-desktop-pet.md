@@ -90,7 +90,8 @@ at ~100 ms perception granularity).
       via `build.rollupOptions.input`; pet state fully out of `App.tsx`
       (pure model in `gui/src/pet/model.ts`).
 - [x] Settings: "Desktop pet" master toggle (default off) in the new
-      Settings → Pet tab; persisted in `settings-store.ts`; main webview
+      own "Pet" sidebar section (above Settings); persisted in
+      `settings-store.ts`; main webview
       shows the pet on mount when enabled (Rust never auto-opens).
 - [x] Windows: `set_always_on_top` re-asserted every 5 s from a Rust thread
       that ends itself when the window is gone.
@@ -149,8 +150,8 @@ at ~100 ms perception granularity).
       navigation; the dialog is the confirmation.
 - [x] Routing tiers: `hybrid` (default) / `pet-only` (pet replaces desktop
       + toast for kinds it handles) / `os-only` (decoration); in the
-      Settings → Pet tab.
-- [x] Dedicated "Desktop pet" settings section (Settings → Pet tab; keys in
+      Pet sidebar section.
+- [x] Dedicated "Desktop pet" settings surface (own sidebar entry; keys in
       `settings-store.ts`, applied live via the cross-window `storage`
       event — no restart required):
       - master enable/disable (Phase 1 toggle moves here),

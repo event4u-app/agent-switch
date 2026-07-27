@@ -983,6 +983,20 @@ export default function App() {
               void reconcileShare();
             }}
           />
+        ) : section === "pet" ? (
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold tracking-tight">Desktop Pet</span>
+            </div>
+            <PetSettings
+              enabled={petEnabled}
+              onToggle={togglePet}
+              tier={petTier}
+              onChangeTier={changePetTier}
+              kinds={petKinds}
+              onToggleKind={togglePetKind}
+            />
+          </div>
         ) : section === "settings" ? (
           <SettingsView
             onUninstall={() => act(() => uninstall().then(quitApp))}
@@ -1012,12 +1026,6 @@ export default function App() {
             onSetOsNotify={setOsNotifyState}
             devMode={devMode}
             onToggleDevMode={toggleDevMode}
-            petEnabled={petEnabled}
-            onTogglePet={togglePet}
-            petTier={petTier}
-            onChangePetTier={changePetTier}
-            petKinds={petKinds}
-            onTogglePetKind={togglePetKind}
           />
         ) : section === "sessions" ? (
           <SessionsView
@@ -1869,11 +1877,10 @@ function SharedSetupCard({
   );
 }
 
-type SettingsTab = "general" | "notifications" | "pet" | "autoswitch" | "updates" | "advanced";
+type SettingsTab = "general" | "notifications" | "autoswitch" | "updates" | "advanced";
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "notifications", label: "Notifications" },
-  { id: "pet", label: "Pet" },
   { id: "autoswitch", label: "Notify near limit" },
   { id: "updates", label: "Updates" },
   { id: "advanced", label: "Advanced" },
@@ -1908,12 +1915,6 @@ function SettingsView({
   onSetOsNotify,
   devMode,
   onToggleDevMode,
-  petEnabled,
-  onTogglePet,
-  petTier,
-  onChangePetTier,
-  petKinds,
-  onTogglePetKind,
 }: {
   onUninstall: () => void;
   autoSwitchEnabled: boolean;
@@ -1939,12 +1940,6 @@ function SettingsView({
   onSetOsNotify: (on: boolean) => void;
   devMode: boolean;
   onToggleDevMode: (on: boolean) => void;
-  petEnabled: boolean;
-  onTogglePet: (on: boolean) => void;
-  petTier: PetTier;
-  onChangePetTier: (tier: PetTier) => void;
-  petKinds: NotificationKind[];
-  onTogglePetKind: (kind: NotificationKind) => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>("general");
   return (
@@ -1952,7 +1947,7 @@ function SettingsView({
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold tracking-tight">Settings</span>
       </div>
-      <div role="tablist" className="grid grid-cols-6 gap-1 rounded-lg bg-muted p-1">
+      <div role="tablist" className="grid grid-cols-5 gap-1 rounded-lg bg-muted p-1">
         {SETTINGS_TABS.map((t) => (
           <button
             key={t.id}
@@ -1993,16 +1988,6 @@ function SettingsView({
           onSetOsNotify={onSetOsNotify}
         />
       )}
-      {tab === "pet" && (
-        <PetSettings
-          enabled={petEnabled}
-          onToggle={onTogglePet}
-          tier={petTier}
-          onChangeTier={onChangePetTier}
-          kinds={petKinds}
-          onToggleKind={onTogglePetKind}
-        />
-      )}
       {tab === "autoswitch" && (
         <AutoSwitchSettings
           enabled={autoSwitchEnabled}
@@ -2033,11 +2018,12 @@ const KIND_LABELS: { kind: NotificationKind; label: string; hint: string }[] = [
   { kind: "error", label: "Errors", hint: "Unexpected failures." },
 ];
 
-/** Pet tab: master toggle + (when on) pet picker, routing tier, per-kind
- *  reactions, bubbles, size, motion, and position reset. Master/tier/kinds are
- *  lifted to App (the notification fire path reads them); everything else is
- *  written straight to settings-store — the pet window applies those live via
- *  the cross-window `storage` event, no restart needed. */
+/** Pet section (own sidebar entry, above Settings): master toggle + (when on)
+ *  pet picker, routing tier, per-kind reactions, bubbles, size, motion, and
+ *  position reset. Master/tier/kinds are lifted to App (the notification fire
+ *  path reads them); everything else is written straight to settings-store —
+ *  the pet window applies those live via the cross-window `storage` event, no
+ *  restart needed. */
 function PetSettings({
   enabled,
   onToggle,

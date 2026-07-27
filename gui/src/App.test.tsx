@@ -1282,7 +1282,7 @@ describe("App", () => {
 });
 
 describe("sidebar sections", () => {
-  it("routes between the six sections from the sidebar nav", async () => {
+  it("routes between the seven sections from the sidebar nav", async () => {
     render(<App />);
     await screen.findByRole("tab", { name: /claude/i }); // Profiles is the default section
     const nav = screen.getByRole("navigation", { name: /sections/i });
@@ -1292,6 +1292,7 @@ describe("sidebar sections", () => {
       "Usage",
       "Tooling",
       "Ecosystem",
+      "Pet",
       "Settings",
     ]);
     // Sessions = the (correctly named) sessions inventory; Usage = the new
@@ -1309,6 +1310,10 @@ describe("sidebar sections", () => {
     expect((await screen.findAllByTestId("tooling-row")).length).toBe(5);
     fireEvent.click(within(nav).getByRole("button", { name: "Ecosystem" }));
     expect(await screen.findByText(/shared setup/i)).toBeTruthy();
+    // Pet = the desktop-pet section (master toggle off by default → only the
+    // enable switch shows; the picker/tier controls are progressive).
+    fireEvent.click(within(nav).getByRole("button", { name: "Pet" }));
+    expect(await screen.findByRole("switch", { name: /desktop pet/i })).toBeTruthy();
     fireEvent.click(within(nav).getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("tab", { name: /general/i })).toBeTruthy();
     fireEvent.click(within(nav).getByRole("button", { name: "Profiles" }));
@@ -1326,13 +1331,13 @@ describe("sidebar sections", () => {
     expect(document.activeElement).toBe(items[1]);
     fireEvent.keyDown(items[1], { key: "ArrowUp" });
     expect(document.activeElement).toBe(items[0]);
-    fireEvent.keyDown(items[0], { key: "ArrowUp" }); // wraps to the last item (Settings, index 5 of 6)
-    expect(document.activeElement).toBe(items[5]);
-    fireEvent.keyDown(items[5], { key: "ArrowDown" }); // wraps back to the first
+    fireEvent.keyDown(items[0], { key: "ArrowUp" }); // wraps to the last item (Settings, index 6 of 7)
+    expect(document.activeElement).toBe(items[6]);
+    fireEvent.keyDown(items[6], { key: "ArrowDown" }); // wraps back to the first
     expect(document.activeElement).toBe(items[0]);
     fireEvent.keyDown(items[0], { key: "End" });
-    expect(document.activeElement).toBe(items[5]);
-    fireEvent.keyDown(items[5], { key: "Home" });
+    expect(document.activeElement).toBe(items[6]);
+    fireEvent.keyDown(items[6], { key: "Home" });
     expect(document.activeElement).toBe(items[0]);
   });
 

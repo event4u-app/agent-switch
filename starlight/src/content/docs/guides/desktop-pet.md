@@ -5,7 +5,7 @@ description: An optional animated companion that floats above your windows and s
 
 The desktop pet is an **optional** companion window: a small pixel-art character that stays on top of all your windows and turns agent-switch notifications into something you notice out of the corner of your eye — without switching apps and without another notification-center entry.
 
-It is **off by default**. Enable it under **Settings → Pet**.
+It is **off by default**. Enable it under the **Pet** entry in the left sidebar.
 
 ## What it does
 
@@ -15,7 +15,7 @@ It is **off by default**. Enable it under **Settings → Pet**.
 
 ## Notification routing
 
-Settings → Pet → **Notification routing** decides how the pet relates to the normal pipeline:
+Pet → **Notification routing** (left sidebar) decides how the pet relates to the normal pipeline:
 
 | Mode | Behaviour |
 |---|---|
@@ -27,7 +27,7 @@ The pet's per-kind switches are **independent** of the desktop mutes, so "pet re
 
 ## Configuration
 
-Everything lives under **Settings → Pet** and applies live:
+Everything lives under the **Pet** sidebar entry and applies live:
 
 - **Pet picker** — eight bundled characters; right-clicking the pet window cycles through them too.
 - **Speech bubbles** on/off + display duration.
