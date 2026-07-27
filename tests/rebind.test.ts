@@ -96,6 +96,12 @@ function makeFake(opts: { platform?: NodeJS.Platform; rebindState?: RebindKillSw
       rebindState.disabled = s.disabled;
       rebindState.consecutiveFailures = s.consecutiveFailures;
     },
+    // Default: a no-op refresh that only records the call (a dead login that
+    // `claude doctor` cannot heal). Tests that model a successful refresh
+    // reassign this to update the target store.
+    freshen: (dir) => {
+      calls.push("freshen:" + dir);
+    },
   };
   return { kc, files, calls, deps, rebindState };
 }
@@ -156,12 +162,34 @@ test("rebind refuses when the profile is already rebound", async () => {
   await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /already rebound/);
 });
 
-test("rebind refuses a near-expiry target (dead-token guard, no minting)", async () => {
+test("rebind attempts a refresh on a near-expiry target, then refuses if it stays dead", async () => {
   const f = makeFake();
   f.kc.set(pSvc, cred("tokP"));
   f.kc.set(aSvc, cred("tokA", FRESHEN_FLOOR_MS - 60_000)); // < 10 min to expiry
-  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /expires in/);
+  // Default freshen is a no-op (a dead login `claude doctor` cannot heal), so the
+  // token is still spent after the attempt → refuse without minting.
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /still expires in/);
+  assert.ok(f.calls.includes("freshen:" + aConfig), "a refresh was delegated before refusing");
   assert.equal(f.kc.has(aSvc), true, "nothing mutated on refusal");
+});
+
+test("rebind proceeds when a refresh heals the near-expiry target token", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA", FRESHEN_FLOOR_MS - 60_000)); // < 10 min to expiry
+  // Model Claude Code refreshing the token in place: same account, fresh expiry.
+  f.deps.freshen = (dir) => {
+    f.calls.push("freshen:" + dir);
+    f.kc.set(aSvc, cred("tokA-fresh", 60 * 60 * 1000));
+  };
+  const r = await rebind({ account: "A", profile: "P" }, f.deps);
+  assert.equal(r.boundToProfile, "A");
+  assert.ok(f.calls.includes("freshen:" + aConfig), "the refresh was delegated");
+  assert.equal(
+    JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken,
+    "tokA-fresh",
+    "the freshened target token is what gets moved into the running store",
+  );
 });
 
 test("rebind is a no-op when the profile already runs that account", async () => {
