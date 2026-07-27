@@ -43,6 +43,7 @@ import {
   linkProviderBinary,
   unlinkProviderBinary,
   switchProfile,
+  rebindTo,
   agentConfigVersion,
   runToolingAction,
   acOpenInBrowser,
@@ -124,7 +125,6 @@ import {
   formatContextBadge,
   hasUsageReadout,
   nearestLimit,
-  pickMostHeadroom,
   relativeAge,
   worstLiveContextPct,
   contextTrayTooltip,
@@ -505,39 +505,6 @@ export default function App() {
     await syncNotifications();
   }
 
-  // Dev-mode: fire the near-limit notification the daemon would send for the
-  // selected provider — compute the same-provider account with the most headroom
-  // and record the "Usage limit near" event (NO switch — the daemon notifies +
-  // suggests, it no longer auto-switches) without waiting for a real threshold
-  // crossing.
-  function triggerNearLimitNotifyTest() {
-    const profs = rows.filter((r) => r.provider === selected);
-    const active = profs.find((r) => r.active)?.name ?? null;
-    // Respect the configured tag filter — only accounts with that label (or all)
-    // are eligible targets, exactly like the daemon.
-    const tag = auto?.[selected]?.tag ?? "all";
-    const target = pickMostHeadroom(
-      profs
-        .filter((r) => r.name !== active && (tag === "all" || r.label === tag))
-        .map((r) => ({ name: r.name, max: nearestLimit(usage[`${selected}/${r.name}`]?.snap ?? null) })),
-    );
-    if (!target) {
-      setError(`Near-limit test needs a second ${PROVIDER_LABEL[selected]} profile to suggest.`);
-      return;
-    }
-    const threshold = auto?.[selected]?.threshold ?? 95;
-    act(async () => {
-      await recordNotification(
-        "warning",
-        "Usage limit near",
-        `claude/${active ?? "—"} hit ≥${threshold}% — suggested profile: claude/${target}. Switch with the Switch-account dialog or \`agent-switch rebind\`. (dev test trigger)`,
-      );
-      await syncNotifications(); // reload the bell/flyout so the recorded notification is actually visible
-    });
-    // Also open the switch-account dialog so the near-limit → switch flow is visible end-to-end.
-    setSwitchDialog(active ?? "");
-  }
-
   // `force` = a manual refresh (footer button): bypass the per-profile fetch
   // cooldown so the user always gets fresh data on demand. Automatic paths
   // (mount, timer, rebuild) call refresh() with force=false and respect it.
@@ -837,12 +804,17 @@ export default function App() {
             }))}
           onClose={() => setSwitchDialog(null)}
           onSwitch={(account) => {
+            const running = switchDialog; // the profile the running session reads
             setSwitchDialog(null);
-            // The explicit click IS the compliance line — only here does the
-            // active account change. Set the active claude account (new sessions
-            // use it), keep the shared file-links fresh, then act() refreshes.
+            // The explicit click IS the compliance line — only a user click here
+            // rebinds. Live-rebind the RUNNING profile's credential store to the
+            // picked account (macOS): the already-running Claude session adopts it
+            // on its next message, no relaunch. Nothing switches on its own.
             act(async () => {
-              await switchProfile("claude", account);
+              if (!running) {
+                throw new Error("No active Claude profile to switch — activate one (click Use), then switch.");
+              }
+              await rebindTo(account, running);
               if (shareActive) await shareSync(shareSource).catch(() => {});
             });
           }}
@@ -1434,9 +1406,10 @@ export default function App() {
               </div>
             );
           })()}
-        {/* Manual account switch — set the active Claude account (new sessions
-            use it). Works on every platform; needs a second logged-in account to
-            switch to. Opens a dialog; nothing switches until the user clicks. */}
+        {/* Manual account switch — live-rebind the running Claude session to the
+            picked account (macOS); it adopts the new login on its next message.
+            Needs a second logged-in account. Opens a dialog; nothing switches
+            until the user clicks. */}
         {section === "profiles" &&
           selected === "claude" &&
           !terminal &&
@@ -1447,23 +1420,13 @@ export default function App() {
               <button
                 className="flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
                 onClick={() => setSwitchDialog(active ?? "")}
-                title="Switch the active Claude account to the one you pick — new sessions use it; nothing switches on its own"
+                title="Live-switch the running Claude session to the account you pick — it adopts it on its next message; nothing switches on its own"
               >
                 <ArrowRightLeft className="size-3" />
                 Switch account
               </button>
             );
           })()}
-        {devMode && globalAuto && hasUsageReadout(selected) && section !== "settings" && grouped[selected].length >= 2 && (
-          <button
-            className="flex items-center gap-1.5 text-[11px] text-primary transition-colors hover:opacity-80"
-            onClick={triggerNearLimitNotifyTest}
-            title="Dev: fire the near-limit notification the daemon would send (no switch)"
-          >
-            <ArrowRightLeft className="size-3" />
-            Trigger (test)
-          </button>
-        )}
         <div className="ml-auto flex items-center gap-1.5">
           {autoRefresh && !terminal && (
             <span className="tabular-nums text-[11px] text-muted-foreground" title="Time until usage limits auto-refresh">
@@ -3361,8 +3324,8 @@ function SwitchAccountDialog({
         </div>
 
         <p className="text-[11px] leading-snug text-muted-foreground">
-          Switches the active Claude account to the one you pick — new `claude` sessions use it. Nothing switches until
-          you click Switch.
+          Live-switches the running Claude session to the account you pick — it adopts the new login on its next message,
+          no relaunch (macOS). Nothing switches until you click Switch.
         </p>
 
         {rows.length === 0 ? (
