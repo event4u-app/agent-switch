@@ -2260,6 +2260,42 @@ function PetSettings({
 
             {devMode && (
               <div className="border-t border-border pt-3">
+                <div className="text-[13px] font-medium">Bubble test (dev)</div>
+                <div className="mb-2 text-xs text-muted-foreground">
+                  Sends one event of each kind straight to the pet — bypasses the notification log AND the reaction
+                  cooldown, so every click reacts immediately. "switch suggestion" tests the clickable bubble.
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {(["success", "error", "warning", "info"] as NotificationKind[]).map((k) => (
+                    <Button
+                      key={k}
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void petEmitNotification(k, `Test ${k} bubble — looking good?`, false, true)}
+                    >
+                      {k}
+                    </Button>
+                  ))}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      void petEmitNotification(
+                        "warning",
+                        "Usage limit near — suggested profile: claude/test",
+                        true,
+                        true,
+                      )
+                    }
+                  >
+                    switch suggestion
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {devMode && (
+              <div className="border-t border-border pt-3">
                 <div className="text-[13px] font-medium">Pose (dev)</div>
                 <div className="mb-2 text-xs text-muted-foreground">
                   Make the pet hold a spritesheet row for QA — it keeps looping until you pick another; "idle"

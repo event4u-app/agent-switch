@@ -6,7 +6,8 @@
 
 import { Command } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
-import { emitTo, listen } from "@tauri-apps/api/event";
+import { emitTo } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
 import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, AutoSwitchTag, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow, SessionPreview } from "./transforms.js";
 import type { AppNotification, NotificationKind } from "./notifications.js";
@@ -677,10 +678,15 @@ export async function petResetPosition(): Promise<void> {
   }
 }
 
-/** Fan one notification event out to the pet window (fire-and-forget). */
-export async function petEmitNotification(kind: NotificationKind, title: string, actionable: boolean): Promise<void> {
+// Events are addressed to the exact WebviewWindow target (and the pet listens
+// on its own window) — the unambiguous pairing in Tauri v2's event matching.
+const PET_TARGET = { kind: "WebviewWindow", label: "pet" } as const;
+
+/** Fan one notification event out to the pet window (fire-and-forget).
+ *  `force` bypasses the pet-side reaction cooldown (dev bubble test). */
+export async function petEmitNotification(kind: NotificationKind, title: string, actionable: boolean, force = false): Promise<void> {
   try {
-    await emitTo("pet", "pet-notification", { kind, title, actionable });
+    await emitTo(PET_TARGET, "pet-notification", { kind, title, actionable, force });
   } catch {
     /* pet window closed / non-Tauri env */
   }
@@ -689,7 +695,7 @@ export async function petEmitNotification(kind: NotificationKind, title: string,
 /** Push the ambient context fill (tray-tooltip number) to the pet's mood dot. */
 export async function petEmitContext(pct: number | null): Promise<void> {
   try {
-    await emitTo("pet", "pet-context", { pct });
+    await emitTo(PET_TARGET, "pet-context", { pct });
   } catch {
     /* pet window closed / non-Tauri env */
   }
@@ -699,7 +705,7 @@ export async function petEmitContext(pct: number | null): Promise<void> {
  *  confirm dialog. Returns an unregister function; no-op outside Tauri. */
 export async function onPetOpenSwitch(cb: () => void): Promise<() => void> {
   try {
-    const unlisten = await listen("pet-open-switch", () => cb());
+    const unlisten = await getCurrentWebviewWindow().listen("pet-open-switch", () => cb());
     return () => unlisten();
   } catch {
     return () => {};
@@ -709,7 +715,7 @@ export async function onPetOpenSwitch(cb: () => void): Promise<() => void> {
 /** Dev-mode pose picker: make the pet hold one spritesheet row for QA. */
 export async function petEmitPose(reaction: string): Promise<void> {
   try {
-    await emitTo("pet", "pet-pose", { reaction });
+    await emitTo(PET_TARGET, "pet-pose", { reaction });
   } catch {
     /* pet window closed / non-Tauri env */
   }

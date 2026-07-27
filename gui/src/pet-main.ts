@@ -13,7 +13,8 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { emitTo, listen } from "@tauri-apps/api/event";
+import { emitTo } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   LogicalSize,
   PhysicalPosition,
@@ -115,7 +116,7 @@ function showBubble(text: string, actionable: boolean) {
         // Navigation only: bring the main window up and let ITS confirm
         // dialog own the switch — the compliance line stays a user click.
         void invoke("show_window").catch(() => {});
-        void emitTo("main", "pet-open-switch", null).catch(() => {});
+        void emitTo({ kind: "WebviewWindow", label: "main" }, "pet-open-switch", null).catch(() => {});
       }
     : null;
   // An actionable bubble gets at least the long TTL — it carries a decision.
@@ -179,17 +180,23 @@ interface PetNotification {
   kind: NotificationKind;
   title: string;
   actionable: boolean;
+  /** Dev bubble test: skip the reaction cooldown. */
+  force?: boolean;
 }
 
-void listen<PetNotification>("pet-notification", (e) => {
+// All listeners are scoped to THIS webview window — the main side addresses
+// the exact WebviewWindow target, so the pairing is unambiguous.
+const petWindow = getCurrentWebviewWindow();
+
+void petWindow.listen<PetNotification>("pet-notification", (e) => {
   const now = Date.now();
-  if (now - lastReactionAt < REACTION_COOLDOWN_MS) return;
+  if (!e.payload.force && now - lastReactionAt < REACTION_COOLDOWN_MS) return;
   lastReactionAt = now;
   react(KIND_TO_REACTION[e.payload.kind] ?? "waving");
   showBubble(e.payload.title, e.payload.actionable);
 }).catch(() => {});
 
-void listen<{ pct: number | null }>("pet-context", (e) => {
+void petWindow.listen<{ pct: number | null }>("pet-context", (e) => {
   const m = contextMood(e.payload.pct);
   mood.className = m ?? "";
 }).catch(() => {});
@@ -197,7 +204,7 @@ void listen<{ pct: number | null }>("pet-context", (e) => {
 // Dev-mode pose picker (Pet section): hold the selected row until the next
 // pick so it can be inspected — a QA tool, so it bypasses the cooldown and
 // the transient return-to-idle. Picking "idle" restores normal behavior.
-void listen<{ reaction: string }>("pet-pose", (e) => {
+void petWindow.listen<{ reaction: string }>("pet-pose", (e) => {
   const reaction = e.payload.reaction as Reaction;
   if (!(reaction in ROWS)) return;
   if (transientTimer) clearTimeout(transientTimer);
@@ -213,18 +220,51 @@ void listen<{ reaction: string }>("pet-pose", (e) => {
 // the decision falls on a short hold timer / first movement.
 const HOLD_TO_DRAG_MS = 150;
 let holdTimer: ReturnType<typeof setTimeout> | null = null;
+// Position before the current/most recent drag — ESC jumps back to it
+// ("cancel the move"). Armed on every drag start, disarmed by ESC itself.
+let dragAnchor: { x: number; y: number } | null = null;
+let lastMoveAt = 0;
 
 function startDrag() {
   if (holdTimer) clearTimeout(holdTimer);
   holdTimer = null;
-  void getCurrentWindow()
-    .startDragging()
+  const win = getCurrentWindow();
+  void win
+    .outerPosition()
+    .then((p) => {
+      dragAnchor = { x: p.x, y: p.y };
+    })
     .catch(() => {});
+  void win.startDragging().catch(() => {});
 }
 
 sprite.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   holdTimer = setTimeout(startDrag, HOLD_TO_DRAG_MS);
+});
+
+// The top drag strip is a native drag region — arm the ESC anchor there too.
+document.getElementById("drag")?.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  void getCurrentWindow()
+    .outerPosition()
+    .then((p) => {
+      dragAnchor = { x: p.x, y: p.y };
+    })
+    .catch(() => {});
+});
+
+// ESC during (or right after) a move: cancel — snap back to where the drag
+// started. Native drags end only on mouse-up, so mid-drag key delivery is
+// best-effort; the 5s window after the last move event covers the drop case.
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !dragAnchor) return;
+  if (Date.now() - lastMoveAt > 5000) return;
+  const back = dragAnchor;
+  dragAnchor = null;
+  void getCurrentWindow()
+    .setPosition(new PhysicalPosition(back.x, back.y))
+    .catch(() => {});
 });
 
 sprite.addEventListener("mousemove", (e) => {
@@ -277,6 +317,7 @@ async function restorePosition() {
 let moveSaveTimer: ReturnType<typeof setTimeout> | null = null;
 void getCurrentWindow()
   .onMoved((e) => {
+    lastMoveAt = Date.now();
     if (moveSaveTimer) clearTimeout(moveSaveTimer);
     const pos = { x: e.payload.x, y: e.payload.y };
     moveSaveTimer = setTimeout(() => setPetPos(pos), 250);
