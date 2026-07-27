@@ -45,14 +45,22 @@
       body.v-top #label {
         order: 3;
       }
+      /* The WHOLE column (bubble, sprite, label) aligns to the quadrant edge:
+         right-aligned means the bubble's right edge sits flush with the
+         sprite's right edge and grows toward the screen center — it can never
+         stick out past the pet toward a screen edge / second monitor. */
+      body.h-right #stage {
+        align-items: flex-end;
+      }
+      body.h-left #stage {
+        align-items: flex-start;
+      }
       body.h-right #bubble,
       body.h-right #label {
-        align-self: flex-end;
         text-align: right;
       }
       body.h-left #bubble,
       body.h-left #label {
-        align-self: flex-start;
         text-align: left;
       }
       #bubble {

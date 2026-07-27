@@ -174,20 +174,48 @@ async function applySize() {
   }
 }
 
-/** Quadrant classes on <body>: bubble + label align to the screen edge the
- *  pet sits nearest (right half → right-aligned; bottom half → bubble above
- *  the sprite, top half → below). Recomputed on every move and resize. */
+/** Quadrant classes on <body>: the whole content column (bubble, sprite,
+ *  label) aligns to the screen edge the pet sits nearest — right half →
+ *  right-aligned, bottom half → bubble above the sprite, top half → below.
+ *
+ *  Judged by the SPRITE center (not the window center): when the alignment
+ *  flips, the window shifts to keep the sprite visually fixed, and a sprite-
+ *  based measure is invariant under that shift — no flip oscillation. */
+let prevQuadrant: { right: boolean; bottom: boolean } | null = null;
+
 async function updateQuadrant() {
+  if (drag) return; // never fight an active manual drag; runs again on release
   try {
     const win = getCurrentWindow();
-    const [pos, size, monitor] = await Promise.all([win.outerPosition(), win.outerSize(), currentMonitor()]);
+    const [pos, size, monitor, scale] = await Promise.all([
+      win.outerPosition(),
+      win.outerSize(),
+      currentMonitor(),
+      win.scaleFactor(),
+    ]);
     if (!monitor) return;
-    const right = pos.x + size.width / 2 >= monitor.position.x + monitor.size.width / 2;
-    const bottom = pos.y + size.height / 2 >= monitor.position.y + monitor.size.height / 2;
+    const rect = sprite.getBoundingClientRect();
+    const spriteCx = pos.x + (rect.x + rect.width / 2) * scale;
+    const spriteCy = pos.y + (rect.y + rect.height / 2) * scale;
+    const right = spriteCx >= monitor.position.x + monitor.size.width / 2;
+    const bottom = spriteCy >= monitor.position.y + monitor.size.height / 2;
     document.body.classList.toggle("h-right", right);
     document.body.classList.toggle("h-left", !right);
     document.body.classList.toggle("v-bottom", bottom);
     document.body.classList.toggle("v-top", !bottom);
+    // Alignment flip moves the content column INSIDE the window — shift the
+    // window by the leftover slack so the sprite stays where the user sees it.
+    if (prevQuadrant && (prevQuadrant.right !== right || prevQuadrant.bottom !== bottom)) {
+      const f = PET_SIZE_FACTOR[getPetSize()];
+      const slackX = Math.round(size.width - (FRAME_W * f + 12) * scale);
+      const slackY = Math.round(size.height - (FRAME_H * f + 12 + (labelVisible() ? 22 : 0)) * scale);
+      let dx = 0;
+      let dy = 0;
+      if (prevQuadrant.right !== right) dx = right ? -slackX : slackX;
+      if (prevQuadrant.bottom !== bottom) dy = bottom ? -slackY : slackY;
+      if (dx || dy) await win.setPosition(new PhysicalPosition(pos.x + dx, pos.y + dy));
+    }
+    prevQuadrant = { right, bottom };
   } catch {
     /* keep the previous alignment */
   }
@@ -310,6 +338,7 @@ window.addEventListener("mouseup", (e) => {
   const wasClick = !drag.dragging && !drag.cancelled;
   drag = null;
   if (wasClick && currentReaction === "idle") react("waving");
+  void updateQuadrant(); // alignment updates only after the drag settles
 });
 
 // ESC cancels ONLY an in-flight move (button still down): snap back to the
