@@ -1,7 +1,15 @@
 {
   "$schema": "gen/schemas/desktop-schema.json",
   "identifier": "pet",
-  "description": "SPIKE: pet overlay window — window drag only, no shell/IPC access",
+  "description": "Pet overlay window: drag + position/size self-management. No shell, no notification permissions.",
   "windows": ["pet"],
-  "permissions": ["core:default", "core:window:allow-start-dragging"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-outer-position",
+    "core:window:allow-available-monitors",
+    "core:window:allow-scale-factor"
+  ]
 }
