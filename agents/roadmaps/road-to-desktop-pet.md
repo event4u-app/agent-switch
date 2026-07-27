@@ -57,46 +57,43 @@ at ~100 ms perception granularity).
 
 ## Phase 0 — decisions + platform spike
 
-- [ ] ADR-005: transparent always-on-top pet window — record the
-      `macos-private-api` Cargo feature + `app.macOSPrivateApi: true`
-      requirement, the user-trust implications (unsigned app + private API),
-      and why in-app WebviewWindow beats a separate process. Include the
-      council transport verdict (file/event seam now, Rust watcher later,
-      WebSocket rejected for v1).
-- [ ] Spike (throwaway branch): minimal transparent, decorations-off,
-      always-on-top, skip-taskbar WebviewWindow with
-      `set_ignore_cursor_events(true)` on macOS **and** Windows; verify
-      click-through + a clickable region (bubble) can coexist
-      (toggle ignore-cursor-events on hover region). Document Linux caveats
-      (compositor-dependent; ship pet as best-effort there).
-- [ ] Verify the version-bump chain stays intact (4-file version sync via
-      `scripts/release.mjs`) when `tauri.conf.json` + `Cargo.toml` gain the
-      new feature flags.
+- [x] ADR-005 (`docs/adr/ADR-005-pet-overlay-window-inside-the-gui-shell.md`):
+      pet as in-app WebviewWindow, `macOSPrivateApi` accepted for the
+      unsigned GitHub-Releases distribution, v1 transport = third sink of
+      `syncNotifications()`, WebSocket rejected, minimal pet capability.
+- [x] Spike built (2026-07-27, kept in-branch instead of throwaway — user
+      evaluated and approved): transparent, decorations-off, always-on-top,
+      skip-taskbar WebviewWindow rendering all 8 pets; click cycles
+      reactions, right-click cycles pets, drag strip moves it. Click-through
+      (`set_ignore_cursor_events`) deferred to Phase 5 polish — the spike
+      showed the window is small enough that full click-through is not
+      needed for v1 (sprite clicks are a feature, not a bug).
+- [x] Version-bump chain verified: `scripts/release.mjs` patches the
+      `"version"` lines by regex; the added `macOSPrivateApi` key and
+      Cargo feature don't touch them.
 
 ## Phase 1 — pet window foundation (hidden feature, default off)
 
-- [ ] Rust: new `gui/src-tauri/src/pet.rs` modeled on the `ac.rs` satellite
-      precedent — `PET_WINDOW_LABEL`, `pet_show` / `pet_hide` commands,
-      window built with `.transparent(true).decorations(false)
-      .always_on_top(true).shadow(false).skip_taskbar(true)`, position
-      persisted per monitor (use `outer_position()` math, not `center()` —
-      known multi-monitor bug precedent in `ac.rs`).
-- [ ] Confirm the `on_window_event` guard (`main.rs`, non-`main` labels
-      early-return) leaves the pet alive on main-window `CloseRequested`;
-      pet must survive hide-on-close, die on `RunEvent::Exit`.
-- [ ] Capabilities: new capability file for the `pet` window —
-      `core:window:allow-set-always-on-top`, `allow-set-ignore-cursor-events`,
-      `allow-set-position`, `allow-set-size`, `allow-start-dragging`;
-      minimal grant, mirror the AC-satellite restraint.
-- [ ] Frontend: second Vite entry `gui/pet.html` + `gui/src/pet-main.tsx`
-      (add `build.rollupOptions.input` — currently defaults to `index.html`
-      only). Pet state stays out of `App.tsx`.
-- [ ] Settings: "Desktop pet" master toggle in Settings (default off),
-      persisted in `gui/src/settings-store.ts`; toggle calls
-      `pet_show`/`pet_hide`; re-show on app start when enabled. The toggle
-      is the anchor for the full pet-settings section in Phase 3.
-- [ ] Windows: re-assert `set_always_on_top` on a slow interval (openpets
-      does 1 s; pick the cheapest interval that works).
+- [x] Rust: `gui/src-tauri/src/pet.rs` (AC-satellite pattern) —
+      `PET_WINDOW_LABEL`, `pet_show` / `pet_hide` / `pet_reset_position`
+      commands, transparent/frameless/always-on-top/skip-taskbar window,
+      default bottom-right of the primary work area (monitor-origin math,
+      not `center()`). Drag position persisted webview-side (shared
+      localStorage) and restored with monitor validation.
+- [x] `on_window_event` guard confirmed: non-`main` labels early-return, so
+      the pet survives main-window hide-on-close and dies on `RunEvent::Exit`.
+- [x] Capabilities: `gui/src-tauri/capabilities/pet.json` — drag,
+      set-position/size, outer-position, available-monitors, scale-factor;
+      no shell, no notification permissions. (`set-ignore-cursor-events`
+      not granted — click-through deferred, sprite clicks are a feature.)
+- [x] Frontend: second Vite entry `gui/pet.html` + `gui/src/pet-main.ts`
+      via `build.rollupOptions.input`; pet state fully out of `App.tsx`
+      (pure model in `gui/src/pet/model.ts`).
+- [x] Settings: "Desktop pet" master toggle (default off) in the new
+      Settings → Pet tab; persisted in `settings-store.ts`; main webview
+      shows the pet on mount when enabled (Rust never auto-opens).
+- [x] Windows: `set_always_on_top` re-asserted every 5 s from a Rust thread
+      that ends itself when the window is gone.
 
 ## Phase 2 — rendering: sprites + reactions
 
@@ -106,11 +103,11 @@ at ~100 ms perception granularity).
 > the pack README). Imported 2026-07-27: assets tracked under
 > `gui/public/pets/<id>/`, generator + validator under `scripts/pets/`.
 
-- [ ] Adopt the openpets pet-package shape (MIT): `pet.json` manifest +
+- [x] Adopt the openpets pet-package shape (MIT): `pet.json` manifest +
       `spritesheet.webp`; render via CSS `background-position` +
-      `animation: steps(var(--frames))` with per-reaction CSS vars, row map
-      per the pack README (idle / running-right / running-left / waving /
-      jumping / failed / waiting / running / review).
+      `animation: steps(frames)` with per-reaction CSS vars, row map per
+      the pack README — `gui/src/pet/model.ts` (row table) +
+      `gui/src/pet-main.ts` (painter).
 - [x] Import the event4u pet pack into the repo as tracked assets —
       `gui/public/pets/<id>/{pet.json,spritesheet.webp,thumbnail.png,states.png}`
       (Vite `public/` dir, bundled into the GUI build automatically) + pack
@@ -125,39 +122,37 @@ at ~100 ms perception granularity).
 - [ ] Wire `scripts/pets/validate.py` as an optional CI gate for sprite
       geometry (needs Pillow — not available on the dev machine today;
       run it in CI or a venv).
-- [ ] Reaction set v1 mapped onto the pack rows: success→jumping,
-      error→failed, warning→waiting, info→waving, busy→running/review,
-      plus idle loop.
-- [ ] Idle behavior: subtle idle loop only (no wander/physics in v1 — keep
-      the ticker off unless a transient reaction is playing; pause all
-      animation when the pet is hidden).
-- [ ] Reduce-motion: respect `prefers-reduced-motion` → static sprite +
-      badge instead of animation (council accessibility finding).
+- [x] Reaction set v1 mapped onto the pack rows: success→jumping,
+      error→failed, warning→waiting, info→waving, plus idle loop
+      (`KIND_TO_REACTION` in `gui/src/pet/model.ts`, unit-tested).
+- [x] Idle behavior: idle loop only, no wander/physics, no JS ticker (pure
+      CSS keyframes); animation play-state paused while the window is
+      hidden (`visibilitychange`).
+- [x] Reduce-motion: Animations setting `auto` (default — follows
+      `prefers-reduced-motion`) / `on` / `off`; static first frame when off.
 
 ## Phase 3 — notification wiring (the actual feature)
 
-- [ ] Extend `syncNotifications()` in `gui/src/App.tsx` with a **third
-      sink**: after the desktop/toast decision, `emit_to("pet", …)` the
-      `AppNotification` (kind, title, message, id). Inherits dedup,
-      per-kind muting, `osNotified` suppression, and the storm cap —
-      do NOT duplicate the fan-out logic.
-- [ ] Kind→reaction mapping via the existing `KIND_META`
-      (`gui/src/notif-kind.tsx`): success→celebrating, error→error,
-      warning→waiting/alert, info→wave. Speech bubble shows the
-      notification title (sanitized, length-capped, ~6 s TTL, 10 s
-      reaction cooldown — openpets numbers as starting point).
-- [ ] Actionable bubble (the invariant-critical piece): bubble for
-      "usage limit near / switch suggested" is clickable → `show_main()` +
-      open `SwitchAccountDialog` with the suggested profile pre-selected
-      (reuse the `notifOpenNonce`-style handshake). Click is navigation;
-      the dialog is the confirmation. No other bubble is actionable in v1.
-- [ ] Routing tiers (setting, per council convergence): `pet-only` (pet
-      replaces OS notifications while enabled), `hybrid` (pet + OS, default),
-      `os-only` (pet ignores notifications = decoration mode). Wire into
-      the existing NotificationSettings panel next to per-kind mutes.
-- [ ] Dedicated "Desktop pet" settings section (all keys in
-      `gui/src/settings-store.ts`, applied live via `emit_to("pet", …)` —
-      no restart required):
+- [x] `syncNotifications()` third sink via `decidePetRouting()` +
+      `petEmitNotification()` — runs inside the existing fresh-events loop,
+      so dedup, `osNotified` suppression, and the storm cap are inherited;
+      the pet's per-kind gate is its own (see below), desktop mutes stay
+      untouched.
+- [x] Kind→reaction mapping (`KIND_TO_REACTION`): success→jumping,
+      error→failed, warning→waiting, info→waving. Speech bubble shows the
+      sanitized, 140-char-capped title; TTL short/normal/long
+      (4 s / 6.5 s / 10 s), 10 s reaction cooldown.
+- [x] Actionable bubble: only the switch-suggestion event
+      (`isSwitchSuggestion`) is clickable → `show_window` +
+      `pet-open-switch` event → main opens `SwitchAccountDialog` with the
+      active profile (flyout fallback when no candidate set). Click is
+      navigation; the dialog is the confirmation.
+- [x] Routing tiers: `hybrid` (default) / `pet-only` (pet replaces desktop
+      + toast for kinds it handles) / `os-only` (decoration); in the
+      Settings → Pet tab.
+- [x] Dedicated "Desktop pet" settings section (Settings → Pet tab; keys in
+      `settings-store.ts`, applied live via the cross-window `storage`
+      event — no restart required):
       - master enable/disable (Phase 1 toggle moves here),
       - pet picker: choose among the 8 bundled pets (thumbnails from the
         pack; live-swaps the spritesheet),
@@ -171,39 +166,44 @@ at ~100 ms perception granularity).
         default follows `prefers-reduced-motion`),
       - "Reset pet position" button (clears the persisted per-monitor
         position, pet returns to bottom-right default).
-- [ ] Every pet setting has a sane default so enabling the master toggle
+- [x] Every pet setting has a sane default so enabling the master toggle
       alone yields the intended v1 experience; the section renders only
       when the master toggle is on (progressive disclosure).
-- [ ] Dev-mode test trigger: extend `triggerNearLimitNotifyTest` so the
-      existing dev button also drives the pet path end-to-end (council
-      "testing multiplier" finding, adapted to the existing dev-mode gate).
+- [x] Dev-mode test trigger: the existing dev generator
+      (`generateTestNotifications`) records real events through the CLI log
+      and `syncNotifications()`, so it drives the pet path end-to-end with
+      no extra wiring (all four kinds exercised).
 
 ## Phase 4 — ambient status mood
 
-- [ ] Map `worstLiveContextPct` (`gui/src/transforms.ts`) to a persistent
-      pet mood/badge (calm → concerned → alarmed) so the pet mirrors the
-      tray tooltip as a glanceable usage meter.
+- [x] `worstLiveContextPct` → pet mood dot (`contextMood`: quiet <60 %,
+      amber watch 60–79 %, pulsing red alarm ≥80 %) — same number as the
+      tray tooltip, emitted from the same refresh block.
 - [ ] Busy states: while the active provider session is mid-work (context
-      snapshots updating), show a subtle "working" badge; clear on idle.
-- [ ] Screen placement: default bottom-right, draggable
-      (`allow-start-dragging`), avoid colliding with the app's own Toaster
-      corner; position persisted.
+      snapshots updating), show a subtle "working" badge (running/review
+      rows are ready in the row map); clear on idle.
+- [x] Screen placement: default bottom-right above the Toaster corner,
+      draggable via the top strip, position persisted + monitor-validated
+      on restore.
 
 ## Phase 5 — hardening, docs, release
 
-- [ ] Multi-monitor: position restore per display; fall back to primary
-      work area when the saved display is gone.
-- [ ] Perf pass: zero timers while idle-hidden; animation paused when the
-      window is occluded/hidden; measure webview memory and record it in
-      the ADR (council perf finding).
-- [ ] Cross-platform QA: macOS (private-api transparency), Windows
-      (always-on-top re-assert, click-through), Linux best-effort note in
-      docs.
-- [ ] Starlight docs page: what the pet is, the three routing tiers, the
-      click-to-switch flow, how to disable, Linux caveats.
-- [ ] CI: pet code covered by existing gates (`vitest`, `tsc --noEmit`,
-      `vite build`, `cargo check`); add unit tests for kind→reaction
-      mapping + bubble-sanitizer (pure functions).
+- [x] Multi-monitor: saved position validated against `availableMonitors()`
+      on restore; falls back to the Rust-side default corner when the saved
+      display is gone.
+- [ ] Perf pass: zero JS timers while idle and keyframes paused when hidden
+      are done; still open: measure webview memory of the pet window and
+      record it in ADR-005 (council perf finding).
+- [ ] Cross-platform QA: Windows (always-on-top re-assert, transparency)
+      and Linux (compositor caveats) need a real machine; macOS covered by
+      dev use.
+- [x] Starlight docs page (`guides/desktop-pet`): what the pet is, routing
+      tiers, click-to-switch flow, settings, platform notes, pet-author
+      format pointer.
+- [x] CI: pet code covered by the existing gates (`vitest`, `tsc --noEmit`,
+      `vite build`, `cargo check`); `gui/src/pet/model.test.ts` unit-tests
+      the row map, kind mapping, routing decision, sanitizer, and mood
+      thresholds (309 GUI tests green).
 
 ## Later / v2 candidates (explicitly deferred, not planned)
 
