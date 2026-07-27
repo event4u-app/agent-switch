@@ -13,6 +13,7 @@ import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, AutoSwitchTag, U
 import type { AppNotification, NotificationKind } from "./notifications.js";
 import { parseAgentConfigVersion } from "./agent-config.js";
 import type { BubbleAction } from "./pet/model.js";
+import { getPetPresence } from "./settings-store.js";
 
 async function runCli(args: string[]): Promise<string> {
   const out = await Command.create("agent-switch", args).execute();
@@ -724,9 +725,36 @@ export async function onPetAction(cb: (action: BubbleAction) => void): Promise<(
   }
 }
 
-/** Dev-mode pose picker: make the pet hold one spritesheet row for QA. */
+/** Show the pet (creating it if needed) and wait for a FRESH webview to
+ *  register its listeners before anything is emitted at it. */
+async function petEnsureShown(): Promise<void> {
+  const created = await petShow();
+  if (created) await new Promise((r) => setTimeout(r, 900));
+}
+
+/** Deliver one event to the pet, presence-aware: in "message-only" the window
+ *  is normally hidden — show it first (the pet hides itself again once the
+ *  bubble and reaction settle). THE delivery path for notifications and the
+ *  dev bubble tests; raw petEmitNotification skips the show. */
+export async function petDeliver(
+  kind: NotificationKind,
+  title: string,
+  action: BubbleAction | null,
+  force = false,
+): Promise<void> {
+  try {
+    if (getPetPresence() === "message-only") await petEnsureShown();
+    await petEmitNotification(kind, title, action, force);
+  } catch {
+    /* non-Tauri env */
+  }
+}
+
+/** Dev-mode pose picker: make the pet hold one spritesheet row for QA. Shows
+ *  the window first — under "message-only" presence it is usually hidden. */
 export async function petEmitPose(reaction: string): Promise<void> {
   try {
+    await petEnsureShown();
     await emitTo(PET_TARGET, "pet-pose", { reaction });
   } catch {
     /* pet window closed / non-Tauri env */

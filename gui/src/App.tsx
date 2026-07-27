@@ -61,6 +61,7 @@ import {
   petEmitNotification,
   petEmitContext,
   petEmitPose,
+  petDeliver,
   petMoveTo,
   onPetAction,
   type AppInfo,
@@ -147,7 +148,7 @@ import {
   getPetPrevPos,
   setPetPrevPos,
 } from "./settings-store.js";
-import { ALL_REACTIONS, PET_IDS, PET_WELCOME, bubbleAction, decidePetRouting, type BubbleAction, type BubbleDuration, type PetId, type PetMotion, type PetSize, type PetTier } from "./pet/model.js";
+import { ALL_REACTIONS, PET_IDS, PET_WELCOME, bubbleAction, decidePetRouting, type BubbleDuration, type PetId, type PetMotion, type PetSize, type PetTier } from "./pet/model.js";
 import { checkForUpdate, fetchLatestRelease, isNewer, releaseKind, type UpdateCheck, type UpdateKind } from "./updates.js";
 import { AgentConfigCard, AgentConfigMark } from "./AgentConfigCard.js";
 import { ToolingSection, type ToolingCache } from "./ToolingSection.js";
@@ -336,8 +337,6 @@ export default function App() {
   const [petTier, setPetTierState] = useState<PetTier>(() => getPetTier());
   const [petKinds, setPetKindsState] = useState<NotificationKind[]>(() => getPetReactKinds());
   const [petPresence, setPetPresenceState] = useState<PetPresence>(() => getPetPresence());
-  const petPresenceRef = useRef<PetPresence>("message-only");
-  petPresenceRef.current = petPresence;
   const petEnabledRef = useRef(false);
   petEnabledRef.current = petEnabled;
   const petTierRef = useRef<PetTier>("hybrid");
@@ -680,7 +679,7 @@ export default function App() {
         kind: n.kind,
         osNotified: !!n.osNotified,
       });
-      if (routing.toPet) void petDeliverRef.current(n.kind, n.title, bubbleAction(n.title, n.message));
+      if (routing.toPet) void petDeliver(n.kind, n.title, bubbleAction(n.title, n.message));
       // Skip events the daemon already showed on the desktop, and muted kinds.
       if (n.osNotified || mutedSet.has(n.kind)) continue;
       if (routing.suppressDesktopAndToast) continue;
@@ -857,19 +856,6 @@ export default function App() {
   // behind the dialog's explicit click, installs behind their own buttons.
   const rowsRef = useRef<ProfileRow[]>([]);
   rowsRef.current = rows;
-  // Deliver one event to the pet. In presence "message-only" the window is
-  // normally hidden — show it first, and give a FRESHLY created webview a
-  // beat to register its listeners before the event is emitted at it.
-  async function petDeliver(kind: NotificationKind, title: string, action: BubbleAction | null, force = false) {
-    if (petPresenceRef.current === "message-only") {
-      const created = await petShow();
-      if (created) await sleep(900);
-    }
-    await petEmitNotification(kind, title, action, force);
-  }
-  const petDeliverRef = useRef(petDeliver);
-  petDeliverRef.current = petDeliver;
-
   useEffect(() => {
     if (getPetEnabled()) {
       const welcomed = getPetWelcomed();
@@ -2425,7 +2411,7 @@ function PetSettings({
                       key={k}
                       size="sm"
                       variant="outline"
-                      onClick={() => void petEmitNotification(k, `Test ${k} bubble — looking good?`, null, true)}
+                      onClick={() => void petDeliver(k, `Test ${k} bubble — looking good?`, null, true)}
                     >
                       {k}
                     </Button>
@@ -2434,12 +2420,7 @@ function PetSettings({
                     size="sm"
                     variant="outline"
                     onClick={() =>
-                      void petEmitNotification(
-                        "warning",
-                        "Usage limit near — suggested profile: claude/test",
-                        "switch",
-                        true,
-                      )
+                      void petDeliver("warning", "Usage limit near — suggested profile: claude/test", "switch", true)
                     }
                   >
                     switch suggestion
@@ -2447,14 +2428,14 @@ function PetSettings({
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => void petEmitNotification("info", "Update available — v9.9.9 (test)", "updates", true)}
+                    onClick={() => void petDeliver("info", "Update available — v9.9.9 (test)", "updates", true)}
                   >
                     update
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => void petEmitNotification("info", PET_WELCOME, "pet-settings", true)}
+                    onClick={() => void petDeliver("info", PET_WELCOME, "pet-settings", true)}
                   >
                     welcome
                   </Button>
