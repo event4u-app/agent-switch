@@ -13,16 +13,9 @@
         -webkit-user-select: none;
         font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
       }
-      /* Grab strip on top: dragging the window without eating sprite clicks. */
-      #drag {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 24px;
-        cursor: grab;
-        z-index: 3;
-      }
+      /* Quadrant classes (set from JS on every move): the bubble and label
+         align to the screen edge the pet sits nearest — right half → right-
+         aligned, bottom half → bubble above the sprite, top half → below. */
       #stage {
         position: relative;
         display: flex;
@@ -31,8 +24,36 @@
         justify-content: flex-end;
         gap: 4px;
         height: 100vh;
-        padding-bottom: 6px;
+        padding: 6px;
         box-sizing: border-box;
+      }
+      body.v-top #stage {
+        justify-content: flex-start;
+      }
+      #bubble {
+        order: 0;
+      }
+      #spritebox {
+        order: 1;
+      }
+      #label {
+        order: 2;
+      }
+      body.v-top #bubble {
+        order: 2;
+      }
+      body.v-top #label {
+        order: 3;
+      }
+      body.h-right #bubble,
+      body.h-right #label {
+        align-self: flex-end;
+        text-align: right;
+      }
+      body.h-left #bubble,
+      body.h-left #label {
+        align-self: flex-start;
+        text-align: left;
       }
       #bubble {
         display: none;
@@ -43,6 +64,26 @@
         padding: 5px 9px;
         border-radius: 10px;
         line-height: 1.35;
+        /* Per-kind accent on the alignment edge (right-aligned → right edge). */
+        --kind-color: rgba(255, 255, 255, 0.18);
+      }
+      #bubble[data-kind="success"] {
+        --kind-color: #22c55e;
+      }
+      #bubble[data-kind="error"] {
+        --kind-color: #ef4444;
+      }
+      #bubble[data-kind="warning"] {
+        --kind-color: #f0b429;
+      }
+      #bubble[data-kind="info"] {
+        --kind-color: #60a5fa;
+      }
+      body.h-right #bubble {
+        border-right: 3px solid var(--kind-color);
+      }
+      body.h-left #bubble {
+        border-left: 3px solid var(--kind-color);
       }
       #bubble.show {
         display: block;
@@ -109,8 +150,7 @@
       }
     </style>
   </head>
-  <body>
-    <div id="drag" data-tauri-drag-region></div>
+  <body class="h-right v-bottom">
     <div id="stage">
       <div id="bubble"></div>
       <div id="spritebox">

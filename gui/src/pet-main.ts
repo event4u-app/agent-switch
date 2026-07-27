@@ -104,10 +104,11 @@ function hideBubble() {
   bubble.onclick = null;
 }
 
-function showBubble(text: string, actionable: boolean) {
+function showBubble(kind: NotificationKind, text: string, actionable: boolean) {
   if (!getPetBubbles()) return;
   if (bubbleTimer) clearTimeout(bubbleTimer);
   bubble.textContent = sanitizeBubble(text);
+  bubble.dataset.kind = kind; // per-kind color accent on the alignment edge
   bubble.classList.add("show");
   bubble.classList.toggle("actionable", actionable);
   bubble.onclick = actionable
@@ -146,8 +147,7 @@ async function applySize() {
   sprite.style.backgroundSize = `${FRAME_W * SHEET_COLS * f}px ${FRAME_H * SHEET_ROWS * f}px`;
   label.style.display = labelVisible() ? "" : "none";
   const logicalW = Math.max(FRAME_W * f + 48, 220); // bubble stays readable
-  const logicalH =
-    24 /* drag strip */ + 44 /* bubble zone */ + FRAME_H * f + 12 /* padding */ + (labelVisible() ? 22 : 0);
+  const logicalH = 8 /* top pad */ + 44 /* bubble zone */ + FRAME_H * f + 12 /* padding */ + (labelVisible() ? 22 : 0);
   const win = getCurrentWindow();
   try {
     const [pos, size, monitor, scale] = await Promise.all([
@@ -174,6 +174,25 @@ async function applySize() {
   }
 }
 
+/** Quadrant classes on <body>: bubble + label align to the screen edge the
+ *  pet sits nearest (right half → right-aligned; bottom half → bubble above
+ *  the sprite, top half → below). Recomputed on every move and resize. */
+async function updateQuadrant() {
+  try {
+    const win = getCurrentWindow();
+    const [pos, size, monitor] = await Promise.all([win.outerPosition(), win.outerSize(), currentMonitor()]);
+    if (!monitor) return;
+    const right = pos.x + size.width / 2 >= monitor.position.x + monitor.size.width / 2;
+    const bottom = pos.y + size.height / 2 >= monitor.position.y + monitor.size.height / 2;
+    document.body.classList.toggle("h-right", right);
+    document.body.classList.toggle("h-left", !right);
+    document.body.classList.toggle("v-bottom", bottom);
+    document.body.classList.toggle("v-top", !bottom);
+  } catch {
+    /* keep the previous alignment */
+  }
+}
+
 /* ---- events from the main window ---- */
 
 interface PetNotification {
@@ -193,7 +212,7 @@ void petWindow.listen<PetNotification>("pet-notification", (e) => {
   if (!e.payload.force && now - lastReactionAt < REACTION_COOLDOWN_MS) return;
   lastReactionAt = now;
   react(KIND_TO_REACTION[e.payload.kind] ?? "waving");
-  showBubble(e.payload.title, e.payload.actionable);
+  showBubble(e.payload.kind, e.payload.title, e.payload.actionable);
 }).catch(() => {});
 
 void petWindow.listen<{ pct: number | null }>("pet-context", (e) => {
@@ -212,70 +231,96 @@ void petWindow.listen<{ reaction: string }>("pet-pose", (e) => {
   paint(reaction, "infinite");
 }).catch(() => {});
 
-/* ---- direct interaction ---- */
+/* ---- direct interaction: click = wave, hold/move = manual drag ---- */
 
-// Left button on the sprite: a quick click is a friendly ack (wave); press-
-// and-hold (or press-and-move) starts a window drag. Once startDragging()
-// hands the gesture to the OS no further mouse events reach the webview, so
-// the decision falls on a short hold timer / first movement.
+// The drag is implemented manually (setPosition from mousemove deltas — the
+// openpets approach) instead of the native startDragging(): a native OS drag
+// swallows all input until mouse-up, so ESC-to-cancel would be impossible.
+// Manual dragging keeps the webview in the loop: ESC while the button is
+// still down snaps back to the start position and cancels the move; once the
+// button is released, `drag` is null and ESC does nothing.
+
 const HOLD_TO_DRAG_MS = 150;
-let holdTimer: ReturnType<typeof setTimeout> | null = null;
-// Position before the current/most recent drag — ESC jumps back to it
-// ("cancel the move"). Armed on every drag start, disarmed by ESC itself.
-let dragAnchor: { x: number; y: number } | null = null;
-let lastMoveAt = 0;
+const DRAG_THRESHOLD_PX = 3;
 
-function startDrag() {
-  if (holdTimer) clearTimeout(holdTimer);
-  holdTimer = null;
-  const win = getCurrentWindow();
-  void win
-    .outerPosition()
-    .then((p) => {
-      dragAnchor = { x: p.x, y: p.y };
-    })
-    .catch(() => {});
-  void win.startDragging().catch(() => {});
+interface DragState {
+  startScreenX: number;
+  startScreenY: number;
+  anchor: { x: number; y: number } | null; // window pos at press (filled async)
+  scale: number;
+  dragging: boolean;
+  cancelled: boolean;
+  holdTimer: ReturnType<typeof setTimeout> | null;
 }
+let drag: DragState | null = null;
+let pendingMove: PhysicalPosition | null = null;
+let rafPending = false;
 
 sprite.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
-  holdTimer = setTimeout(startDrag, HOLD_TO_DRAG_MS);
-});
-
-// The top drag strip is a native drag region — arm the ESC anchor there too.
-document.getElementById("drag")?.addEventListener("mousedown", (e) => {
-  if (e.button !== 0) return;
-  void getCurrentWindow()
-    .outerPosition()
-    .then((p) => {
-      dragAnchor = { x: p.x, y: p.y };
+  const state: DragState = {
+    startScreenX: e.screenX,
+    startScreenY: e.screenY,
+    anchor: null,
+    scale: 1,
+    dragging: false,
+    cancelled: false,
+    holdTimer: setTimeout(() => {
+      if (drag === state) state.dragging = true;
+    }, HOLD_TO_DRAG_MS),
+  };
+  drag = state;
+  const win = getCurrentWindow();
+  void Promise.all([win.outerPosition(), win.scaleFactor()])
+    .then(([pos, scale]) => {
+      if (drag !== state) return;
+      state.anchor = { x: pos.x, y: pos.y };
+      state.scale = scale;
     })
     .catch(() => {});
 });
 
-// ESC during (or right after) a move: cancel — snap back to where the drag
-// started. Native drags end only on mouse-up, so mid-drag key delivery is
-// best-effort; the 5s window after the last move event covers the drop case.
+window.addEventListener("mousemove", (e) => {
+  if (!drag || drag.cancelled || !drag.anchor || !(e.buttons & 1)) return;
+  const dx = e.screenX - drag.startScreenX;
+  const dy = e.screenY - drag.startScreenY;
+  if (!drag.dragging && Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX) drag.dragging = true;
+  if (!drag.dragging) return;
+  pendingMove = new PhysicalPosition(
+    drag.anchor.x + Math.round(dx * drag.scale),
+    drag.anchor.y + Math.round(dy * drag.scale),
+  );
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    const target = pendingMove;
+    pendingMove = null;
+    if (target && drag && drag.dragging && !drag.cancelled) {
+      void getCurrentWindow()
+        .setPosition(target)
+        .catch(() => {});
+    }
+  });
+});
+
+window.addEventListener("mouseup", (e) => {
+  if (e.button !== 0 || !drag) return;
+  if (drag.holdTimer) clearTimeout(drag.holdTimer);
+  const wasClick = !drag.dragging && !drag.cancelled;
+  drag = null;
+  if (wasClick && currentReaction === "idle") react("waving");
+});
+
+// ESC cancels ONLY an in-flight move (button still down): snap back to the
+// press position and ignore further movement until release.
 window.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape" || !dragAnchor) return;
-  if (Date.now() - lastMoveAt > 5000) return;
-  const back = dragAnchor;
-  dragAnchor = null;
+  if (e.key !== "Escape" || !drag || !drag.dragging || !drag.anchor) return;
+  drag.cancelled = true;
+  drag.dragging = false;
   void getCurrentWindow()
-    .setPosition(new PhysicalPosition(back.x, back.y))
+    .setPosition(new PhysicalPosition(drag.anchor.x, drag.anchor.y))
     .catch(() => {});
-});
-
-sprite.addEventListener("mousemove", (e) => {
-  if (holdTimer && e.buttons & 1) startDrag(); // moving while pressed → drag now
-});
-
-sprite.addEventListener("mouseup", (e) => {
-  if (e.button !== 0 || !holdTimer) return;
-  clearTimeout(holdTimer);
-  holdTimer = null;
-  if (currentReaction === "idle") react("waving"); // it was a plain click
 });
 
 // No context menu on the overlay — pet choice lives in the Pet section only.
@@ -317,10 +362,12 @@ async function restorePosition() {
 let moveSaveTimer: ReturnType<typeof setTimeout> | null = null;
 void getCurrentWindow()
   .onMoved((e) => {
-    lastMoveAt = Date.now();
     if (moveSaveTimer) clearTimeout(moveSaveTimer);
     const pos = { x: e.payload.x, y: e.payload.y };
-    moveSaveTimer = setTimeout(() => setPetPos(pos), 250);
+    moveSaveTimer = setTimeout(() => {
+      setPetPos(pos);
+      void updateQuadrant();
+    }, 250);
   })
   .catch(() => {});
 
@@ -339,4 +386,5 @@ void (async () => {
   // saved drag position must apply to the final window size.
   await applySize();
   await restorePosition();
+  await updateQuadrant();
 })();

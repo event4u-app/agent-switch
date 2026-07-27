@@ -180,6 +180,15 @@ at ~100 ms perception granularity).
 - [x] Dev-mode pose picker (Pet section, gated by dev mode): one button per
       spritesheet row; the pet holds the pose in a loop until the next pick
       ("idle" restores normal behavior) — the visual-QA tool for the pack.
+- [x] Bubble polish: quadrant-aligned (right/left-bound to the pet's screen
+      half; above the sprite in the bottom half, below in the top half) with
+      a per-kind color accent on the alignment edge; dev-mode bubble-test
+      buttons (one per kind + the clickable switch suggestion, cooldown
+      bypassed). Events pet↔main use exact WebviewWindow targets.
+- [x] Drag rework: manual drag (mousemove deltas, openpets approach) instead
+      of the native OS drag — click waves, hold/move drags, and ESC while
+      the button is still down cancels the move (snap back); after release
+      ESC is a no-op. Dev-only state label toggle (default off).
 
 ## Phase 4 — ambient status mood
 
