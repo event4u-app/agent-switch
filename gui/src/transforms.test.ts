@@ -10,6 +10,7 @@ import {
   formatTokensK,
   formatContextBadge,
   worstLiveContextPct,
+  isProviderWorking,
   contextTrayTooltip,
   relativeAge,
   windowPace,
@@ -162,6 +163,48 @@ describe("contextTrayTooltip", () => {
   it("shows one number for the active profile, or the bare name when unknown", () => {
     expect(contextTrayTooltip(82)).toBe("agent-switch — 82% context");
     expect(contextTrayTooltip(null)).toBe("agent-switch");
+  });
+});
+
+describe("isProviderWorking", () => {
+  const now = 1_000_000_000;
+  const sess = (over: Partial<SessionRow>): SessionRow => ({
+    provider: "claude",
+    profile: "work",
+    sessionId: "s",
+    projectDir: "p",
+    cwd: null,
+    mtimeMs: now,
+    live: true,
+    ...over,
+  });
+
+  it("is working when a live session on an active profile was touched within the window", () => {
+    expect(isProviderWorking([sess({ mtimeMs: now - 10_000 })], ["work"], now)).toBe(true);
+  });
+  it("clears once the freshest live session ages past the window", () => {
+    expect(isProviderWorking([sess({ mtimeMs: now - 120_000 })], ["work"], now)).toBe(false);
+  });
+  it("ignores non-live sessions and sessions on a non-active profile", () => {
+    expect(isProviderWorking([sess({ live: false })], ["work"], now)).toBe(false);
+    expect(isProviderWorking([sess({ profile: "privat" })], ["work"], now)).toBe(false);
+  });
+  it("treats a future mtime (forward clock skew) as not working", () => {
+    expect(isProviderWorking([sess({ mtimeMs: now + 30_000 })], ["work"], now)).toBe(false);
+  });
+  it("treats an impossibly-old mtime on a still-live row as not working", () => {
+    expect(isProviderWorking([sess({ mtimeMs: now - 7_200_000 })], ["work"], now)).toBe(false);
+  });
+  it("takes the freshest live session across the active set (one busy ⇒ working)", () => {
+    const rows = [sess({ mtimeMs: now - 300_000 }), sess({ mtimeMs: now - 5_000 })];
+    expect(isProviderWorking(rows, ["work"], now)).toBe(true);
+  });
+  it("honors a custom freshness window", () => {
+    expect(isProviderWorking([sess({ mtimeMs: now - 90_000 })], ["work"], now, 120_000)).toBe(true);
+  });
+  it("is not working with no sessions or no active profiles", () => {
+    expect(isProviderWorking([], ["work"], now)).toBe(false);
+    expect(isProviderWorking([sess({ mtimeMs: now })], [], now)).toBe(false);
   });
 });
 

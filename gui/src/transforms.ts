@@ -113,6 +113,36 @@ export function worstLiveContextPct(sessions: SessionRow[], activeProfiles: stri
   return pcts.length ? Math.max(...pcts) : null;
 }
 
+/** Whether any live session on an active profile was written to within the
+ *  freshness window — the pet's "working" signal (mid-work ⇒ subtle badge,
+ *  clears on idle). Pure so it is unit-testable; `nowMs` is passed in (never
+ *  `Date.now()` inside) so tests are deterministic and refresh-timer jitter
+ *  stays out of the logic. Guards, per the AI-council review (2026-07-28,
+ *  `agents/runtime/council/responses/pet-busy-signal.json`): a future mtime
+ *  (forward clock skew) and an impossibly-old mtime on a still-"live" row both
+ *  read as not-working, so a stray non-turn file touch can't pin the badge on.
+ *  Emitted on the usage-refresh cadence alongside the context mood — during
+ *  sustained work the session file's mtime is seconds-old at each tick, so the
+ *  badge lights; once work stops it ages past `freshnessMs` and clears within a
+ *  cycle. Option (A) from the review — context-delta tracking (B/C) was rejected
+ *  for needing prior-snapshot state and false-positiving on token-count jitter. */
+export function isProviderWorking(
+  sessions: SessionRow[],
+  activeProfiles: string[],
+  nowMs: number,
+  freshnessMs = 60_000,
+  maxReasonableAgeMs = 3_600_000,
+): boolean {
+  const active = new Set(activeProfiles);
+  return sessions.some((s) => {
+    if (!s.live || !active.has(s.profile)) return false;
+    const age = nowMs - s.mtimeMs;
+    if (age < 0) return false; // mtime in the future → clock skew, not a signal
+    if (age > maxReasonableAgeMs) return false; // "live" but ancient → not working
+    return age <= freshnessMs;
+  });
+}
+
 /** Tray tooltip for the active profile's worst live-session context fill. One
  *  number, active profile only — never a per-profile list. */
 export function contextTrayTooltip(pct: number | null): string {

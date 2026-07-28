@@ -62,6 +62,7 @@ const sprite = document.getElementById("sprite") as HTMLDivElement;
 const bubble = document.getElementById("bubble") as HTMLDivElement;
 const stage = document.getElementById("stage") as HTMLDivElement;
 const mood = document.getElementById("mood") as HTMLDivElement;
+const busy = document.getElementById("busy") as HTMLDivElement;
 const label = document.getElementById("label") as HTMLDivElement;
 
 let currentReaction: Reaction = "idle";
@@ -323,9 +324,27 @@ void petWindow.listen<PetNotification>("pet-notification", (e) => {
   showBubble(e.payload.kind, e.payload.title, e.payload.action ?? null);
 }).catch(() => {});
 
-void petWindow.listen<{ pct: number | null }>("pet-context", (e) => {
+// Whether the pet currently shows the "working" badge — tracked so the
+// visibilitychange handler can pause/resume its keyframes like the sprite's.
+let busyOn = false;
+
+/** Show/hide the subtle "working" badge. When motion is off (setting or
+ *  prefers-reduced-motion) the badge is a static dot — no breathe; while the
+ *  window is hidden the keyframes are paused (zero idle work, same invariant as
+ *  the sprite). The running/review spritesheet rows stay available for a future
+ *  pose-based busy variant — v1 keeps it to a non-intrusive badge. */
+function paintBusy(on: boolean): void {
+  busyOn = on;
+  busy.classList.toggle("working", on);
+  if (!on) return;
+  busy.style.animation = animationsOn() ? "" : "none";
+  busy.style.animationPlayState = document.hidden ? "paused" : "running";
+}
+
+void petWindow.listen<{ pct: number | null; busy?: boolean }>("pet-context", (e) => {
   const m = contextMood(e.payload.pct);
   mood.className = m ?? "";
+  paintBusy(!!e.payload.busy);
 }).catch(() => {});
 
 // "Reset to last position": the main window sends an absolute target.
@@ -512,6 +531,7 @@ void getCurrentWindow()
 // keyframes explicitly instead of trusting the webview to stop compositing.
 document.addEventListener("visibilitychange", () => {
   sprite.style.animationPlayState = document.hidden ? "paused" : "running";
+  if (busyOn) busy.style.animationPlayState = document.hidden ? "paused" : "running";
   if (!document.hidden) void ensureOnScreen(); // displays may have changed while hidden
 });
 
