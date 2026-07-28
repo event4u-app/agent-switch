@@ -152,6 +152,32 @@
           transform: scale(1.35);
         }
       }
+      /* "Working" badge — a subtle teal pip shown while an active-profile
+         session is mid-work (transforms.isProviderWorking). Top-LEFT so it
+         never overlaps the mood dot (top-right); teal reads as calm activity,
+         not an alert. The gentle breathe is gated by pet-main's animationsOn()
+         (motion setting / reduced-motion) and paused while hidden. */
+      #busy {
+        display: none;
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #2dd4bf;
+        border: 1.5px solid rgba(0, 0, 0, 0.5);
+        opacity: 0.9;
+      }
+      #busy.working {
+        display: block;
+        animation: busy-breathe 1.6s ease-in-out infinite;
+      }
+      @keyframes busy-breathe {
+        50% {
+          opacity: 0.3;
+        }
+      }
       #label {
         color: #fff;
         background: rgba(0, 0, 0, 0.55);
@@ -167,6 +193,7 @@
       <div id="spritebox">
         <div id="sprite"></div>
         <div id="mood"></div>
+        <div id="busy"></div>
       </div>
       <div id="label"></div>
     </div>

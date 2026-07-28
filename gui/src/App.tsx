@@ -170,6 +170,7 @@ import {
   pickMostHeadroom,
   relativeAge,
   worstLiveContextPct,
+  isProviderWorking,
   contextTrayTooltip,
   PROFILE_LABELS,
   type ProfileRow,
@@ -755,8 +756,11 @@ export default function App() {
         const activeClaude = loaded.filter((r) => r.provider === "claude" && r.active).map((r) => r.name);
         const pct = worstLiveContextPct(sess, activeClaude);
         await setTrayTooltip(contextTrayTooltip(pct));
-        // Same one number feeds the pet's ambient mood dot (Phase 4).
-        if (petEnabledRef.current) void petEmitContext(pct);
+        // Same one number feeds the pet's ambient mood dot; the busy flag drives
+        // the pet's "working" badge — true while an active-profile live session
+        // was written to within the last minute (mid-work), cleared once it goes
+        // idle. Both ride this one refresh-cadence emit — no extra IPC (Phase 4).
+        if (petEnabledRef.current) void petEmitContext(pct, isProviderWorking(sess, activeClaude, Date.now()));
       } catch {
         /* best-effort tray update */
       }

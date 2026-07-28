@@ -120,12 +120,24 @@ at ~100 ms perception granularity).
 - [x] Asset provenance secured: generator + validator (`petgen.py`,
       `package_pets.py`, `validate.py`) recovered from the pack ZIP into
       `scripts/pets/`.
-- [ ] Visually QA each pet's states once (the 5 newer pets were only
+- [~] Visually QA each pet's states once (the 5 newer pets were only
       geometrically validated, per the generation chat) — `states.png`
       per pet ships alongside the sprites for exactly this.
-- [ ] Wire `scripts/pets/validate.py` as an optional CI gate for sprite
+      <!-- partial 2026-07-28: geometric QA now AUTOMATED + green for all 8
+      pets (scripts/pets/validate.py in a Pillow venv: sheet size, per-row
+      frame counts, no empty/duplicate frames, no stray art in unused
+      columns, no side-edge clipping — all OK). The remaining human visual
+      sign-off (does each pose read as a coherent character on states.png)
+      needs eyes on the shipped states.png files — a reviewer task, cannot
+      run headless. -->
+- [x] Wire `scripts/pets/validate.py` as an optional CI gate for sprite
       geometry (needs Pillow — not available on the dev machine today;
       run it in CI or a venv).
+      <!-- done 2026-07-28: added the `pets` job to .github/workflows/ci.yml
+      (ubuntu, setup-python 3.12, pip install Pillow, run validate.py on
+      gui/public/pets/). Verified locally in a throwaway venv: all 8 pets
+      report OK. This is the CI home the step called for. -->
+
 - [x] Reaction set v1 mapped onto the pack rows: success→jumping,
       error→failed, warning→waiting, info→waving, plus idle loop
       (`KIND_TO_REACTION` in `gui/src/pet/model.ts`, unit-tested).
@@ -215,9 +227,21 @@ at ~100 ms perception granularity).
 - [x] `worstLiveContextPct` → pet mood dot (`contextMood`: quiet <60 %,
       amber watch 60–79 %, pulsing red alarm ≥80 %) — same number as the
       tray tooltip, emitted from the same refresh block.
-- [ ] Busy states: while the active provider session is mid-work (context
+- [x] Busy states: while the active provider session is mid-work (context
       snapshots updating), show a subtle "working" badge (running/review
       rows are ready in the row map); clear on idle.
+      <!-- done 2026-07-28: pure `isProviderWorking(sessions, activeProfiles,
+      nowMs, freshnessMs=60s, maxReasonableAgeMs=1h)` in transforms.ts (8 unit
+      tests) — a live active-profile session written to within the last minute
+      ⇒ working, with clock-skew (future mtime) + ancient-mtime guards. Emitted
+      on the usage-refresh cadence folded into the existing `pet-context` event
+      (petEmitContext(pct, busy) — no new IPC), rendered as a subtle teal
+      breathe pip (#busy, top-left, distinct from the mood dot) that respects
+      animationsOn() and pauses while hidden. Signal design (Option A over
+      context-delta B/C) came from the AI council review (see step evidence).
+      GUI: 328 tests green, tsc clean. running/review rows left available for a
+      future pose-based variant (v1 = badge only). -->
+
 - [x] Screen placement: default bottom-right above the Toaster corner,
       draggable via the top strip, position persisted + monitor-validated
       on restore.
@@ -227,12 +251,30 @@ at ~100 ms perception granularity).
 - [x] Multi-monitor: saved position validated against `availableMonitors()`
       on restore; falls back to the Rust-side default corner when the saved
       display is gone.
-- [ ] Perf pass: zero JS timers while idle and keyframes paused when hidden
+- [~] Perf pass: zero JS timers while idle and keyframes paused when hidden
       are done; still open: measure webview memory of the pet window and
       record it in ADR-005 (council perf finding).
-- [ ] Cross-platform QA: Windows (always-on-top re-assert, transparency)
+      <!-- partial 2026-07-28: the keyframe-paused-when-hidden invariant was
+      re-confirmed and EXTENDED to the new working badge (it honours
+      visibilitychange like the sprite + mood); the busy badge adds a CSS
+      keyframe only, no new JS timer, so the timer posture is unchanged.
+      ADR-005 Consequences now carries the memory measurement METHOD +
+      architecture-bounded estimate (a few tens of MB, dominated by one
+      decoded spritesheet). The live figure needs a real windowed WKWebView/
+      WebKitGTK/WebView2 run — cannot be captured headless — so it is deferred
+      to the same real-machine pass as the cross-platform QA step below. -->
+
+- [~] Cross-platform QA: Windows (always-on-top re-assert, transparency)
       and Linux (compositor caveats) need a real machine; macOS covered by
       dev use.
+      <!-- deferred 2026-07-28: STRUCTURAL coverage is in CI — the matrix builds
+      + typechecks + vitest + `cargo check` the Tauri shell on windows-latest
+      and ubuntu-latest (.github/workflows/ci.yml gui job), so a compile/logic
+      regression on those platforms is caught. But RUNTIME QA — always-on-top
+      re-assert, real transparency, Linux compositor behaviour — needs a real
+      windowed machine and cannot run headless. Remains a real-machine task,
+      same class as the perf live-memory reading above. -->
+
 - [x] Starlight docs page (`guides/desktop-pet`): what the pet is, routing
       tiers, click-to-switch flow, settings, platform notes, pet-author
       format pointer.

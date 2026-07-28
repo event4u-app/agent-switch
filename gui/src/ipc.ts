@@ -701,9 +701,9 @@ export async function petEmitNotification(
 }
 
 /** Push the ambient context fill (tray-tooltip number) to the pet's mood dot. */
-export async function petEmitContext(pct: number | null): Promise<void> {
+export async function petEmitContext(pct: number | null, busy = false): Promise<void> {
   try {
-    await emitTo(PET_TARGET, "pet-context", { pct });
+    await emitTo(PET_TARGET, "pet-context", { pct, busy });
   } catch {
     /* pet window closed / non-Tauri env */
   }
