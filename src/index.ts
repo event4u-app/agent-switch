@@ -66,7 +66,7 @@ import { assertNotFull, exportConfig, importConfig } from "./config-transfer.js"
 import { detectShell, shellenvScript } from "./shellenv.js";
 import { runDoctor } from "./doctor.js";
 import { TOOL_IDS, ToolAction, ToolId, checkTooling, formatToolingLines, runToolAction } from "./tooling.js";
-import { HistorySample, readHistory } from "./history.js";
+import { HistorySample, readHistory, recordHistorySample } from "./history.js";
 import { launchGui } from "./gui-launch.js";
 import { checkForUpdate, selfUpdate } from "./updates.js";
 import {
@@ -399,6 +399,11 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
       : pid === "codex"
         ? await readCodexUsage(configDir("codex", active))
         : null;
+    // Feed the 30-day usage history from the GUI's own fetches: the GUI polls
+    // every displayed profile on each refresh, so recording the fresh snapshot
+    // here (throttled to ~hourly) fills the chart for all profiles without
+    // depending on the background daemon or an "active" profile being set.
+    if (usage) recordHistorySample(path.join(profileDir(pid, active), "usage-history.json"), usage);
     const wc = worstLiveContext(pid, active);
     const context = wc
       ? { sessionId: wc.sessionId, pct: wc.pct, contextTokens: wc.contextTokens, windowTokens: wc.windowTokens, model: wc.model, confidence: wc.confidence }

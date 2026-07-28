@@ -25,6 +25,30 @@ export function readHistory(file: string): HistorySample[] {
   }
 }
 
+/** Minimum spacing between two recorded samples. The ring holds MAX_SAMPLES
+ *  (720) and the chart spans ~30 days, so ~one sample/hour fills it. Frequent
+ *  callers — a GUI refresh every few minutes, the 60s daemon poll — would
+ *  otherwise pack 720 samples into a few hours and shrink the window to that.
+ *  55 min (not a full 60) so a refresh landing slightly early still counts. */
+export const HISTORY_MIN_GAP_MS = 55 * 60 * 1000;
+
+/**
+ * Throttled append: record `snapshot` only when the newest existing sample is
+ * at least {@link HISTORY_MIN_GAP_MS} older (or there is none). This is the entry
+ * point every recorder uses so no caller's cadence can bloat the ring. Time is
+ * the snapshot's own `capturedAt`; an unparseable one always records.
+ */
+export function recordHistorySample(file: string, snapshot: UsageSnapshot): HistorySample[] {
+  const samples = readHistory(file);
+  const capturedMs = Date.parse(snapshot.capturedAt);
+  const last = samples[samples.length - 1];
+  if (last && Number.isFinite(capturedMs)) {
+    const lastMs = Date.parse(last.at);
+    if (Number.isFinite(lastMs) && capturedMs - lastMs < HISTORY_MIN_GAP_MS) return samples;
+  }
+  return appendSample(file, snapshot);
+}
+
 /** Append a snapshot as one sample, trimming to the newest MAX_SAMPLES. */
 export function appendSample(file: string, snapshot: UsageSnapshot): HistorySample[] {
   const samples = readHistory(file);
