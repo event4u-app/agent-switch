@@ -13,8 +13,8 @@
  *
  * SAFETY: a reset credit is scarce and non-refundable, and redeeming is known to
  * be occasionally buggy upstream. This module only redeems when the caller asks;
- * the daemon's reset-first path guards it to at most once per reset cycle so a
- * loop can never burn a user's whole balance. The redeem call itself cannot be
+ * the daemon's reset-redemption path guards it to at most once per reset cycle so
+ * a loop can never burn a user's whole balance. The redeem call itself cannot be
  * exercised in CI (it would consume a real credit) — the request construction is
  * unit-tested and it is validated live the first time a limit is hit.
  */

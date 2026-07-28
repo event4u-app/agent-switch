@@ -35,9 +35,6 @@ import {
   sessionArgs,
   setAutoSwitch,
   setAutostart,
-  getSwitchStrategy,
-  setSwitchStrategy,
-  type SwitchStrategy,
   setProfileLabel,
   setProvider,
   linkProviderBinary,
@@ -2781,20 +2778,6 @@ function AutoSwitchSettings({
   grouped: Record<ProviderId, ProfileRow[]>;
   onChangeTag: (pid: ProviderId, tag: AutoSwitchTag) => void;
 }) {
-  const [strategy, setStrategy] = useState<SwitchStrategy | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    getSwitchStrategy()
-      .then(setStrategy)
-      .catch(() => setStrategy("reset-first"));
-  }, []);
-
-  function pickStrategy(next: SwitchStrategy) {
-    setStrategy(next);
-    setSwitchStrategy(next).catch((e) => setErr(describeError(e)));
-  }
-
   // Scope is configurable per provider with a usage readout and 2+ profiles
   // carrying at least one tag (same conditions the old footer select used).
   const scopeProviders = PROVIDERS.filter(
@@ -2818,34 +2801,6 @@ function AutoSwitchSettings({
           <Switch checked={enabled} onCheckedChange={onToggle} aria-label="Near-limit notifications globally" />
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
-          <div className="min-w-0">
-            <div className="text-[13px] font-medium">Switch strategy (deprecated)</div>
-            <div className="text-xs text-muted-foreground">
-              No longer switches automatically. <span className="font-medium">Reset first</span> still redeems a banked
-              Codex reset (and stays on the account) before suggesting a switch; <span className="font-medium">rotation
-              first</span> just suggests the account with the most headroom. Switching is always manual.
-            </div>
-          </div>
-          <div className="flex shrink-0 gap-1">
-            <Button
-              size="sm"
-              variant={strategy === "reset-first" ? "default" : "outline"}
-              disabled={strategy === null}
-              onClick={() => pickStrategy("reset-first")}
-            >
-              Reset first
-            </Button>
-            <Button
-              size="sm"
-              variant={strategy === "rotation-first" ? "default" : "outline"}
-              disabled={strategy === null}
-              onClick={() => pickStrategy("rotation-first")}
-            >
-              Rotation first
-            </Button>
-          </div>
-        </div>
 
         {enabled && auto && (
           <div className="space-y-2 border-t border-border pt-3">
@@ -2888,8 +2843,6 @@ function AutoSwitchSettings({
             )}
           </div>
         )}
-
-        {err && <div className="text-xs text-destructive">{err}</div>}
       </CardContent>
     </Card>
   );

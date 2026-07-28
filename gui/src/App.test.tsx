@@ -38,8 +38,6 @@ const ipc = vi.hoisted(() => ({
   uninstall: vi.fn(),
   getAutostart: vi.fn(),
   setAutostart: vi.fn(),
-  getSwitchStrategy: vi.fn(),
-  setSwitchStrategy: vi.fn(),
   redeemReset: vi.fn(),
   listApps: vi.fn(),
   openApp: vi.fn(),
@@ -322,8 +320,6 @@ beforeEach(() => {
   ipc.uninstall.mockResolvedValue(undefined);
   ipc.getAutostart.mockResolvedValue(false);
   ipc.setAutostart.mockResolvedValue(undefined);
-  ipc.getSwitchStrategy.mockResolvedValue("reset-first");
-  ipc.setSwitchStrategy.mockResolvedValue(undefined);
   ipc.redeemReset.mockResolvedValue(undefined);
   ipc.listApps.mockResolvedValue([]);
   ipc.openApp.mockResolvedValue(undefined);

@@ -44,15 +44,6 @@ export interface AutoSwitchConfig {
 }
 export const DEFAULT_AUTOSWITCH: AutoSwitchConfig = { enabled: false, threshold: 95, tag: "all" };
 
-/**
- * How auto-switch reacts when the active profile is out of headroom:
- *   - `reset-first`  (default): redeem a banked rate-limit reset if one is
- *     available (Codex only), and only switch profiles once none remain.
- *   - `rotation-first`: switch to the account with the most headroom directly.
- */
-export type SwitchStrategy = "reset-first" | "rotation-first";
-export const DEFAULT_SWITCH_STRATEGY: SwitchStrategy = "reset-first";
-
 /** Auto-switch is configured PER PROVIDER (claude/codex/antigravity each on/off). */
 export type AutoSwitchMap = Record<ProviderId, AutoSwitchConfig>;
 
@@ -106,7 +97,6 @@ export interface State {
   providers: ProvidersConfig;
   /** Per-provider linked binary paths (empty unless the user linked one). */
   binaryPaths: BinaryPaths;
-  switchStrategy: SwitchStrategy;
   /** Whether the background daemon fires OS desktop notifications itself (for
    *  timeliness when the GUI is closed). Default false — opt-in. */
   osNotifications: boolean;
@@ -276,31 +266,20 @@ export function readState(): State {
     const autoSwitch = normalizeAutoSwitchMap(raw?.autoSwitch);
     const providers = normalizeProvidersMap(raw?.providers);
     const binaryPaths = normalizeBinaryPaths(raw?.binaryPaths);
-    const switchStrategy: SwitchStrategy = raw?.switchStrategy === "rotation-first" ? "rotation-first" : DEFAULT_SWITCH_STRATEGY;
     const osNotifications = raw?.osNotifications === true;
     const rebind = normalizeRebindState(raw?.rebind);
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch, providers, binaryPaths, switchStrategy, osNotifications, rebind };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch, providers, binaryPaths, osNotifications, rebind };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch, providers, binaryPaths, switchStrategy, osNotifications, rebind };
+      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch, providers, binaryPaths, osNotifications, rebind };
     }
-    return { active: emptyActive(), labels, autoSwitch, providers, binaryPaths, switchStrategy, osNotifications, rebind };
+    return { active: emptyActive(), labels, autoSwitch, providers, binaryPaths, osNotifications, rebind };
   } catch {
     /* absent / unparsable → default */
   }
-  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, switchStrategy: DEFAULT_SWITCH_STRATEGY, osNotifications: false, rebind: { ...DEFAULT_REBIND_STATE } };
-}
-
-export function readSwitchStrategy(): SwitchStrategy {
-  return readState().switchStrategy;
-}
-
-export function setSwitchStrategy(strategy: SwitchStrategy): void {
-  const state = readState();
-  state.switchStrategy = strategy;
-  writeState(state);
+  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, rebind: { ...DEFAULT_REBIND_STATE } };
 }
 
 export function readOsNotifications(): boolean {
