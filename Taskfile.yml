@@ -67,6 +67,15 @@ tasks:
     cmds:
       - npm test
 
+  test:switch:
+    desc: "Local-only E2E tests for the live account switch (rebind): real CLI + real macOS Keychain in a throw-away HOME. Never runs in CI."
+    env:
+      AGENT_SWITCH_SWITCH_TESTS: "1"
+    cmds:
+      - npm run build
+      - npx tsc -p tsconfig.test.json
+      - node --test dist-test/tests/switch-e2e.test.js
+
   test:gui:
     desc: Run the GUI unit tests (vitest)
     dir: gui
