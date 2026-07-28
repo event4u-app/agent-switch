@@ -56,6 +56,27 @@ export function setAutoRefreshLimitsFlag(on: boolean): void {
   }
 }
 
+const NOTIFY_ON_SWITCH_KEY = "agent-switch-notify-on-switch";
+
+/** Whether activating (Use) or deactivating (Off) a profile records a
+ *  notification — so the pet reacts and a desktop notification fires. Default ON
+ *  (only the literal "off" disables it). */
+export function getNotifyOnSwitch(): boolean {
+  try {
+    return localStorage.getItem(NOTIFY_ON_SWITCH_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setNotifyOnSwitchFlag(on: boolean): void {
+  try {
+    localStorage.setItem(NOTIFY_ON_SWITCH_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const REFRESH_INTERVAL_KEY = "agent-switch-refresh-interval-min";
 
 /** Allowed auto-refresh intervals (minutes): 5..60 in 5-minute steps. */
