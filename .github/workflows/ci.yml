@@ -73,3 +73,19 @@ jobs:
       # masked a missing icon asset + missing serde deps) — the shell compiles
       # with the generated icon set and standard Tauri deps.
       - run: cargo check --manifest-path gui/src-tauri/Cargo.toml
+
+  pets:
+    name: pet sprite geometry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Pillow is the only dep of scripts/pets/validate.py — not available on the
+      # dev machine, which is why sprite geometry is checked in CI (roadmap
+      # desktop-pet Phase 2). Validates all bundled pets against the OpenPets
+      # contract: sheet size, per-row frame counts, no empty/duplicate frames,
+      # no art in unused columns, no side-edge clipping.
+      - run: pip install Pillow
+      - run: python scripts/pets/validate.py gui/public/pets/
