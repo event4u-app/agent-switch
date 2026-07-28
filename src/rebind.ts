@@ -30,6 +30,7 @@ import * as nodePath from "node:path";
 import * as keychain from "./keychain.js";
 import { withProperLock } from "./locks.js";
 import { configDir, ROOT, readRebindKillSwitch, writeRebindKillSwitch, type RebindKillSwitch } from "./profiles.js";
+import { freshenToken } from "./token-freshen.js";
 
 /** <10 min to expiry → refuse (2× Claude Code's own 5-min refresh buffer). */
 export const FRESHEN_FLOOR_MS = 10 * 60 * 1000;
@@ -83,6 +84,9 @@ export interface RebindDeps {
   /** Read/persist the rebind rollback + circuit-breaker state (ADR-003). */
   readRebindState: () => RebindKillSwitch;
   writeRebindState: (s: RebindKillSwitch) => void;
+  /** Delegate a token refresh to Claude Code for the target's config dir when its
+   *  token is spent (`claude doctor`, no session/quota; ADR-004). */
+  freshen: (configDir: string) => void;
 }
 
 export function defaultDeps(): RebindDeps {
@@ -113,6 +117,9 @@ export function defaultDeps(): RebindDeps {
     withLock: withProperLock,
     readRebindState: readRebindKillSwitch,
     writeRebindState: writeRebindKillSwitch,
+    freshen: (cfg) => {
+      freshenToken(cfg);
+    },
   };
 }
 
@@ -378,7 +385,7 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
   }
 
   const pCred = readCred(pConfig, d);
-  const aCred = readCred(aConfig, d);
+  let aCred = readCred(aConfig, d);
   if (!pCred) throw new RebindError(`running profile "${profile}" has no readable credential — is it logged in?`);
   if (!aCred) throw new RebindError(`target profile "${account}" has no readable credential — is it logged in?`);
 
@@ -386,12 +393,26 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
     throw new RebindError(`profile "${profile}" is already running "${account}"'s account — nothing to do.`);
   }
 
-  const exp = expiresAt(aCred);
+  let exp = expiresAt(aCred);
   if (exp !== null && exp - d.now() < FRESHEN_FLOOR_MS) {
-    const mins = Math.max(0, Math.round((exp - d.now()) / 60000));
-    throw new RebindError(
-      `target "${account}"'s token expires in ${mins} min (< 10) — run \`agent-switch run ${account}\` to let Claude Code refresh it, then retry. rebind never mints or refreshes tokens itself.`,
-    );
+    // Target token is spent / near-spent. Rather than send the operator to the
+    // CLI, delegate the refresh to Claude Code (`claude doctor` — no session, no
+    // quota; ADR-004): it rotates the token under its own lock, in its own store.
+    // rebind still never mints a token itself — it asks the owner process to.
+    // Re-read the target credential and re-check the floor afterwards.
+    d.freshen(aConfig);
+    aCred = readCred(aConfig, d);
+    if (!aCred) {
+      throw new RebindError(`target profile "${account}" has no readable credential after a refresh attempt — is it logged in?`);
+    }
+    exp = expiresAt(aCred);
+    if (exp !== null && exp - d.now() < FRESHEN_FLOOR_MS) {
+      const mins = Math.max(0, Math.round((exp - d.now()) / 60000));
+      throw new RebindError(
+        `target "${account}"'s token still expires in ${mins} min after a refresh attempt — the login may be expired. ` +
+          `Run \`agent-switch run ${account}\` to re-authenticate, then retry.`,
+      );
+    }
   }
 
   const pSvc = d.serviceNameFor(pConfig);
