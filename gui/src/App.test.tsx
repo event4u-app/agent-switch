@@ -424,6 +424,45 @@ describe("App", () => {
     expect(ipc.switchProfile).not.toHaveBeenCalled();
   });
 
+  it("the notify-threshold select persists the value and fires a message when already crossed", async () => {
+    ipc.getAutoSwitch.mockResolvedValue({
+      claude: { enabled: true, threshold: 95, tag: "all" },
+      codex: { enabled: false, threshold: 95, tag: "all" },
+      antigravity: { enabled: false, threshold: 95, tag: "all" },
+    });
+    render(<App />);
+    await screen.findByRole("tab", { name: /claude/i });
+    await screen.findAllByText("42%"); // usage loaded → the 42% active reading is available
+    const select = await screen.findByRole("combobox", { name: /near-limit notify threshold for claude/i });
+    fireEvent.change(select, { target: { value: "40" } });
+    // persisted with the new threshold, keeping enabled + tag
+    await waitFor(() => expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", true, 40, "all"));
+    // active "work" at 42% ≥ 40 → an immediate near-limit notification suggesting privat,
+    // matching the daemon's verbatim title + message so the log dedup coalesces them
+    await waitFor(() =>
+      expect(ipc.recordNotification).toHaveBeenCalledWith(
+        "warning",
+        "Usage limit near",
+        expect.stringContaining("claude/work hit ≥40% — suggested profile: claude/privat"),
+      ),
+    );
+  });
+
+  it("lowering the threshold but staying above current usage does NOT fire a message", async () => {
+    ipc.getAutoSwitch.mockResolvedValue({
+      claude: { enabled: true, threshold: 95, tag: "all" },
+      codex: { enabled: false, threshold: 95, tag: "all" },
+      antigravity: { enabled: false, threshold: 95, tag: "all" },
+    });
+    render(<App />);
+    await screen.findByRole("tab", { name: /claude/i });
+    await screen.findAllByText("42%");
+    const select = await screen.findByRole("combobox", { name: /near-limit notify threshold for claude/i });
+    fireEvent.change(select, { target: { value: "45" } }); // 45 > 42 → not crossed
+    await waitFor(() => expect(ipc.setAutoSwitch).toHaveBeenCalledWith("claude", true, 45, "all"));
+    expect(ipc.recordNotification).not.toHaveBeenCalled();
+  });
+
   it("deactivates the active profile via its Off button", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Off" }));
