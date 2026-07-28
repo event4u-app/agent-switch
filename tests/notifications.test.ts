@@ -47,6 +47,17 @@ test("appendNotification deduplicates an identical event within the window", () 
   assert.equal(readNotifications(f).length, 1);
 });
 
+test("appendNotification with dedupe:false re-appends an identical event within the window", () => {
+  const f = tmpFile();
+  // Session-awareness events (Claude finished / waiting) pass dedupe:false so a
+  // solo session's repeated identical turns are each surfaced, never collapsed.
+  const first = appendNotification({ kind: "info", title: "Claude finished", message: "claude/w finished its turn." }, 1000, f, false);
+  const again = appendNotification({ kind: "info", title: "Claude finished", message: "claude/w finished its turn." }, 1000 + 5, f, false);
+  assert.ok(first);
+  assert.ok(again); // NOT deduped
+  assert.equal(readNotifications(f).length, 2);
+});
+
 test("appendNotification re-appends an identical event after the dedup window", () => {
   const f = tmpFile();
   appendNotification({ kind: "warning", title: "T", message: "same" }, 1000, f);

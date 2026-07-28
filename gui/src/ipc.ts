@@ -224,6 +224,17 @@ export async function deactivateProfile(provider: ProviderId): Promise<void> {
   await runCli(["deactivate", "--provider", provider]);
 }
 
+/** Session monitoring: install / remove the agent-switch lifecycle hooks in EVERY
+ *  Claude profile's settings.json (additive, idempotent, reversible). No profile
+ *  arg → the CLI applies it to all claude profiles. */
+export async function installSessionHooks(): Promise<void> {
+  await runCli(["hooks", "install"]);
+}
+
+export async function uninstallSessionHooks(): Promise<void> {
+  await runCli(["hooks", "uninstall"]);
+}
+
 /**
  * Delete a profile. `--force` makes the CLI deactivate it first when it is the
  * active one (and skip the live-session guard), so an active profile is

@@ -3,6 +3,8 @@ import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, 
 import {
   compactArgs,
   deactivateProfile,
+  installSessionHooks,
+  uninstallSessionHooks,
   getAutoSwitch,
   getAutostart,
   getNotifyConfig,
@@ -91,6 +93,8 @@ import {
   setNotifLastRead,
   getMutedKinds,
   setMutedKinds,
+  getSessionMonitoring,
+  setSessionMonitoringFlag,
   getNotifyOnSwitch,
   setNotifyOnSwitchFlag,
   getHideSummaries,
@@ -190,6 +194,10 @@ import { Switch } from "@/components/ui/switch";
 
 const PROVIDERS: ProviderId[] = ["claude", "codex", "antigravity"];
 const PROVIDER_LABEL: Record<ProviderId, string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
+
+/** How often to re-read the notification log while session monitoring is on, so
+ *  a Claude finished/waiting hook reaches the pet within a few seconds. */
+const SESSION_NOTIFY_POLL_MS = 5000;
 
 // Selectable near-limit notify thresholds (percent, 5% steps). 95% is the
 // default; lower values exist to test the notification without waiting to run
@@ -335,6 +343,12 @@ export default function App() {
   const [toasts, setToasts] = useState<AppNotification[]>([]);
   // Muted notification kinds — suppressed from desktop, toast, flyout, and badge.
   const [mutedKinds, setMutedKindsState] = useState<NotificationKind[]>(() => getMutedKinds());
+  // Session monitoring: watch all Claude sessions and alert (pet) when Claude
+  // finishes a turn or is waiting. The ref lets the fast notification poll below
+  // read the current value without re-subscribing.
+  const [sessionMonitoring, setSessionMonitoringState] = useState(() => getSessionMonitoring());
+  const sessionMonitoringRef = useRef(false);
+  sessionMonitoringRef.current = sessionMonitoring;
   // Whether activating/deactivating a profile records a notification (→ pet +
   // desktop). The ref mirrors it for the async act() closures below.
   const [notifyOnSwitch, setNotifyOnSwitchState] = useState(() => getNotifyOnSwitch());
@@ -472,6 +486,14 @@ export default function App() {
   function toggleNotifyOnSwitch(on: boolean) {
     setNotifyOnSwitchState(on);
     setNotifyOnSwitchFlag(on);
+  }
+
+  // Session monitoring on/off: persist, then install/remove the lifecycle hooks
+  // across every Claude profile (additive + reversible in settings.json).
+  function toggleSessionMonitoring(on: boolean) {
+    setSessionMonitoringState(on);
+    setSessionMonitoringFlag(on);
+    (on ? installSessionHooks() : uninstallSessionHooks()).catch((e) => setError(describeError(e)));
   }
 
   // Change the Profiles provider filter AND persist it (like the other UI prefs).
@@ -786,6 +808,22 @@ export default function App() {
       if (!shown) pushToast(n);
     }
   }
+
+  // Session monitoring, once on launch: if it was left enabled, re-ensure the
+  // hooks so any profile created since also gets them (install is idempotent).
+  useEffect(() => {
+    if (getSessionMonitoring()) void installSessionHooks().catch(() => {});
+  }, []);
+
+  // While session monitoring is on, poll the notification log fast so a "Claude
+  // finished / is waiting" hook reaches the pet within seconds — the normal sync
+  // only runs on the slow usage-refresh cadence.
+  useEffect(() => {
+    if (!sessionMonitoring) return;
+    const id = setInterval(() => void syncNotifications(), SESSION_NOTIFY_POLL_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionMonitoring]);
 
   function toggleMuteKind(kind: NotificationKind) {
     setMutedKindsState((prev) => {
@@ -1182,6 +1220,8 @@ export default function App() {
             onToggleMute={toggleMuteKind}
             notifyOnSwitch={notifyOnSwitch}
             onToggleNotifyOnSwitch={toggleNotifyOnSwitch}
+            sessionMonitoring={sessionMonitoring}
+            onToggleSessionMonitoring={toggleSessionMonitoring}
             osNotify={osNotify}
             onSetOsNotify={setOsNotifyState}
             devMode={devMode}
@@ -2072,6 +2112,8 @@ function SettingsView({
   onToggleMute,
   notifyOnSwitch,
   onToggleNotifyOnSwitch,
+  sessionMonitoring,
+  onToggleSessionMonitoring,
   osNotify,
   onSetOsNotify,
   devMode,
@@ -2100,6 +2142,8 @@ function SettingsView({
   onToggleMute: (kind: NotificationKind) => void;
   notifyOnSwitch: boolean;
   onToggleNotifyOnSwitch: (on: boolean) => void;
+  sessionMonitoring: boolean;
+  onToggleSessionMonitoring: (on: boolean) => void;
   osNotify: boolean | null;
   onSetOsNotify: (on: boolean) => void;
   devMode: boolean;
@@ -2155,6 +2199,8 @@ function SettingsView({
           onToggleMute={onToggleMute}
           notifyOnSwitch={notifyOnSwitch}
           onToggleNotifyOnSwitch={onToggleNotifyOnSwitch}
+          sessionMonitoring={sessionMonitoring}
+          onToggleSessionMonitoring={onToggleSessionMonitoring}
           osNotify={osNotify}
           onSetOsNotify={onSetOsNotify}
         />
@@ -2590,6 +2636,8 @@ function NotificationSettings({
   onToggleMute,
   notifyOnSwitch,
   onToggleNotifyOnSwitch,
+  sessionMonitoring,
+  onToggleSessionMonitoring,
   osNotify,
   onSetOsNotify,
 }: {
@@ -2597,6 +2645,8 @@ function NotificationSettings({
   onToggleMute: (kind: NotificationKind) => void;
   notifyOnSwitch: boolean;
   onToggleNotifyOnSwitch: (on: boolean) => void;
+  sessionMonitoring: boolean;
+  onToggleSessionMonitoring: (on: boolean) => void;
   osNotify: boolean | null;
   onSetOsNotify: (on: boolean) => void;
 }) {
@@ -2707,6 +2757,22 @@ function NotificationSettings({
             checked={notifyOnSwitch}
             onCheckedChange={onToggleNotifyOnSwitch}
             aria-label="Notify on profile switch"
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium">Monitor Claude sessions</div>
+            <div className="text-xs text-muted-foreground">
+              Watch every Claude session and let the pet alert you when Claude finishes a turn or is waiting on you —
+              handy when it runs in a terminal you are not watching. Installs additive, reversible hooks into each
+              Claude profile&apos;s settings; works while this app is open.
+            </div>
+          </div>
+          <Switch
+            checked={sessionMonitoring}
+            onCheckedChange={onToggleSessionMonitoring}
+            aria-label="Monitor Claude sessions"
           />
         </div>
 
