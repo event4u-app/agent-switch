@@ -804,6 +804,15 @@ function cmdHookEvent(): void {
       at: new Date().toISOString(),
     };
     appendEvent(eventFile(ROOT, who.provider, who.profile), rec);
+    // Session awareness: surface "Claude needs you / finished" as a notification
+    // the GUI routes to the pet. dedupe=false — each turn is a distinct moment,
+    // so a solo session's repeated turns are never collapsed. Best-effort; a hook
+    // must never throw.
+    if (rec.event === "Notification") {
+      appendNotification({ kind: "warning", title: "Claude is waiting", message: `${who.provider}/${who.profile} needs your input.` }, undefined, undefined, false);
+    } else if (rec.event === "Stop") {
+      appendNotification({ kind: "info", title: "Claude finished", message: `${who.provider}/${who.profile} finished its turn.` }, undefined, undefined, false);
+    }
   } catch {
     // never throw from a hook
   }

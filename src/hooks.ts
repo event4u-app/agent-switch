@@ -22,8 +22,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 /** The hook events we install. `source`/matcher values confirmed in spikes/t6
- *  (the stdin field is `source`, not `matcher`). */
-export const HOOK_EVENTS = ["SessionStart", "SessionEnd", "PreCompact", "PostCompact"] as const;
+ *  (the stdin field is `source`, not `matcher`). `Stop` fires when Claude ends a
+ *  turn (finished / now waiting on you); `Notification` fires when it needs your
+ *  attention (a permission prompt, or a long idle) — the two session-awareness
+ *  signals the pet surfaces. */
+export const HOOK_EVENTS = ["SessionStart", "SessionEnd", "PreCompact", "PostCompact", "Stop", "Notification"] as const;
 export type HookEvent = (typeof HOOK_EVENTS)[number];
 
 /** Marker stamped on every entry we add, so uninstall touches only our own. */

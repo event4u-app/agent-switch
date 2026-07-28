@@ -52,15 +52,21 @@ function writeNotifications(list: Notification[], file: string): void {
  * Append an event (kept newest-last). Deduplicates a byte-identical
  * kind+title+message against the most recent entry within DEDUP_WINDOW_MS.
  * Returns the created notification, or `null` when it was deduplicated.
+ *
+ * `dedupe: false` skips that collapse — for session-awareness events (Claude
+ * finished / is waiting) where each occurrence is a distinct moment the user
+ * wants surfaced, so a solo session's repeated turns are never swallowed.
  */
 export function appendNotification(
   event: Pick<Notification, "kind" | "title" | "message">,
   now: number = Date.now(),
   file: string = NOTIFICATIONS_FILE,
+  dedupe = true,
 ): Notification | null {
   const list = readNotifications(file);
   const last = list[list.length - 1];
   if (
+    dedupe &&
     last &&
     last.kind === event.kind &&
     last.title === event.title &&
