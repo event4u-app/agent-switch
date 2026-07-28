@@ -33,6 +33,8 @@ const ipc = vi.hoisted(() => ({
   setTrayTooltip: vi.fn(),
   assertValidName: () => {},
   deactivateProfile: vi.fn(),
+  installSessionHooks: vi.fn(),
+  uninstallSessionHooks: vi.fn(),
   removeProfile: vi.fn(),
   renameProfile: vi.fn(),
   uninstall: vi.fn(),
@@ -113,7 +115,7 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], notifyOnSwitch: true, devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, acCardDismissed: false, shareGlobal: true, shareSource: "default", hideSummaries: false, minimizeToDock: false, autoUpdateKinds: ["major", "minor", "patch"], providerFilter: "claude", petEnabled: false, petChoice: "agent-switch", petTier: "hybrid", petKinds: ["success", "error", "warning", "info"] as string[], petBubbles: true, petBubbleDuration: "normal", petSize: "medium", petMotion: "auto", petLabel: false, petPresence: "message-only", petWelcomed: true, petPosLock: false }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], notifyOnSwitch: true, sessionMonitoring: false, devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, acCardDismissed: false, shareGlobal: true, shareSource: "default", hideSummaries: false, minimizeToDock: false, autoUpdateKinds: ["major", "minor", "patch"], providerFilter: "claude", petEnabled: false, petChoice: "agent-switch", petTier: "hybrid", petKinds: ["success", "error", "warning", "info"] as string[], petBubbles: true, petBubbleDuration: "normal", petSize: "medium", petMotion: "auto", petLabel: false, petPresence: "message-only", petWelcomed: true, petPosLock: false }));
 // Keep the update-check path inert in the App tests: uptodate → no toast, no
 // network. The update logic itself is covered by updates.test.ts.
 // Keep the real pure helpers (isNewer/compareVersions — used by agent-config.js)
@@ -170,6 +172,10 @@ vi.mock("./settings-store.js", () => ({
   getMutedKinds: () => store.mutedKinds,
   setMutedKinds: (kinds: string[]) => {
     store.mutedKinds = kinds;
+  },
+  getSessionMonitoring: () => store.sessionMonitoring,
+  setSessionMonitoringFlag: (on: boolean) => {
+    store.sessionMonitoring = on;
   },
   getNotifyOnSwitch: () => store.notifyOnSwitch,
   setNotifyOnSwitchFlag: (on: boolean) => {
@@ -295,6 +301,7 @@ beforeEach(() => {
   store.notifLastRead = 0;
   store.mutedKinds = [];
   store.notifyOnSwitch = true;
+  store.sessionMonitoring = false;
   store.shareGlobal = true;
   store.shareSource = "default";
   store.agentConfigNotifiedVersion = "";
@@ -320,6 +327,8 @@ beforeEach(() => {
   ipc.setProfileLabel.mockResolvedValue(undefined);
   ipc.switchProfile.mockResolvedValue(undefined);
   ipc.deactivateProfile.mockResolvedValue(undefined);
+  ipc.installSessionHooks.mockResolvedValue(undefined);
+  ipc.uninstallSessionHooks.mockResolvedValue(undefined);
   ipc.removeProfile.mockResolvedValue(undefined);
   ipc.renameProfile.mockResolvedValue(undefined);
   ipc.uninstall.mockResolvedValue(undefined);
@@ -465,6 +474,19 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("tab", { name: /notifications/i }));
     fireEvent.click(await screen.findByRole("switch", { name: /notify on profile switch/i }));
     expect(store.notifyOnSwitch).toBe(false);
+  });
+
+  it("enabling session monitoring installs the hooks; disabling removes them", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /notifications/i }));
+    const sw = await screen.findByRole("switch", { name: /monitor claude sessions/i });
+    fireEvent.click(sw); // ON
+    expect(store.sessionMonitoring).toBe(true);
+    await waitFor(() => expect(ipc.installSessionHooks).toHaveBeenCalled());
+    fireEvent.click(sw); // OFF
+    expect(store.sessionMonitoring).toBe(false);
+    await waitFor(() => expect(ipc.uninstallSessionHooks).toHaveBeenCalled());
   });
 
   it("runs a session in the embedded terminal (no external window) when Term is clicked", async () => {

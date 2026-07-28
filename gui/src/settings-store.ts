@@ -77,6 +77,28 @@ export function setNotifyOnSwitchFlag(on: boolean): void {
   }
 }
 
+const SESSION_MONITORING_KEY = "agent-switch-session-monitoring";
+
+/** Whether to watch all Claude sessions and alert (pet) when Claude finishes a
+ *  turn or is waiting on you. OFF by default — it installs additive hooks into
+ *  each profile's Claude settings.json, so it is opt-in. Only the literal "on"
+ *  enables it. */
+export function getSessionMonitoring(): boolean {
+  try {
+    return localStorage.getItem(SESSION_MONITORING_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+export function setSessionMonitoringFlag(on: boolean): void {
+  try {
+    localStorage.setItem(SESSION_MONITORING_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const REFRESH_INTERVAL_KEY = "agent-switch-refresh-interval-min";
 
 /** Allowed auto-refresh intervals (minutes): 5..60 in 5-minute steps. */
