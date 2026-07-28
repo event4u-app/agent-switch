@@ -279,6 +279,16 @@ export function readBinding(cfgDir: string, d: RebindDeps = defaultDeps()): Bind
 
 export class RebindError extends Error {}
 
+/**
+ * A guard REFUSAL: rebind declined before/without mutating any credential store
+ * (wrong platform, not logged in, spent token, registry conflict, provenance
+ * mismatch, …). Distinct from a real swap FAILURE so the circuit-breaker only
+ * counts genuine write-path breakage — three refusals of a user retrying the
+ * same doomed switch must never disable rebind entirely (that was the failure
+ * mode: "already rebound" ×3 → breaker tripped → switching dead until --reset).
+ */
+export class RebindRefused extends RebindError {}
+
 export interface RebindResult {
   boundToProfile: string;
   uxNote: string;
@@ -348,6 +358,10 @@ export async function rebind(
     if (ks.consecutiveFailures !== 0) d.writeRebindState({ disabled: false, consecutiveFailures: 0 });
     return result;
   } catch (e) {
+    // A guard REFUSAL never advances the breaker — nothing was mutated, and a
+    // user retrying a refused switch must not talk the breaker into disabling
+    // rebind. Only genuine write-path failures count.
+    if (e instanceof RebindRefused) throw e;
     const consecutiveFailures = ks.consecutiveFailures + 1;
     const disabled = consecutiveFailures >= REBIND_FAILURE_LIMIT;
     d.writeRebindState({ disabled, consecutiveFailures });
@@ -367,30 +381,33 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
   const { account, profile } = opts;
 
   if (d.platform !== "darwin") {
-    throw new RebindError(
+    throw new RebindRefused(
       `rebind is validated on macOS only — the Linux/Windows credential backend (spike R0.1) is not yet proven, so rebind refuses on ${d.platform}.`,
     );
   }
   if (account === profile) {
-    throw new RebindError(`cannot rebind "${profile}" to itself`);
+    throw new RebindRefused(`cannot rebind "${profile}" to itself`);
   }
 
   const pConfig = configDir("claude", profile);
   const aConfig = configDir("claude", account);
 
+  // Already rebound → RE-SWITCH: put both profiles back on their own accounts
+  // first, then bind to the new target. Dead-ending in "already rebound" made
+  // every second switch from the GUI fail (and, before the RebindRefused split,
+  // three such refusals tripped the breaker and disabled switching entirely).
+  // restore runs BEFORE any lock below (the mkdir locks are not reentrant).
   if (readBinding(pConfig, d)) {
-    throw new RebindError(
-      `profile "${profile}" is already rebound — run \`agent-switch rebind --restore --profile ${profile}\` first.`,
-    );
+    await restoreRebind({ profile }, d);
   }
 
   const pCred = readCred(pConfig, d);
   let aCred = readCred(aConfig, d);
-  if (!pCred) throw new RebindError(`running profile "${profile}" has no readable credential — is it logged in?`);
-  if (!aCred) throw new RebindError(`target profile "${account}" has no readable credential — is it logged in?`);
+  if (!pCred) throw new RebindRefused(`running profile "${profile}" has no readable credential — is it logged in?`);
+  if (!aCred) throw new RebindRefused(`target profile "${account}" has no readable credential — is it logged in?`);
 
   if (accessToken(pCred) && accessToken(pCred) === accessToken(aCred)) {
-    throw new RebindError(`profile "${profile}" is already running "${account}"'s account — nothing to do.`);
+    throw new RebindRefused(`profile "${profile}" is already running "${account}"'s account — nothing to do.`);
   }
 
   let exp = expiresAt(aCred);
@@ -403,12 +420,12 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
     d.freshen(aConfig);
     aCred = readCred(aConfig, d);
     if (!aCred) {
-      throw new RebindError(`target profile "${account}" has no readable credential after a refresh attempt — is it logged in?`);
+      throw new RebindRefused(`target profile "${account}" has no readable credential after a refresh attempt — is it logged in?`);
     }
     exp = expiresAt(aCred);
     if (exp !== null && exp - d.now() < FRESHEN_FLOOR_MS) {
       const mins = Math.max(0, Math.round((exp - d.now()) / 60000));
-      throw new RebindError(
+      throw new RebindRefused(
         `target "${account}"'s token still expires in ${mins} min after a refresh attempt — the login may be expired. ` +
           `Run \`agent-switch run ${account}\` to re-authenticate, then retry.`,
       );
@@ -430,7 +447,7 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
       const reg = readRegistry(d);
       const existing = reg[account];
       if (existing && existing.runningProfile !== profile) {
-        throw new RebindError(
+        throw new RebindRefused(
           `account "${account}" is already bound into running profile "${existing.runningProfile}" ` +
             `(one account → one profile). Restore it first: ` +
             `\`agent-switch rebind --restore --profile ${existing.runningProfile}\`.`,
@@ -442,7 +459,7 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
       const liveTarget = readCred(aConfig, d);
       const branch = fingerprintCompare(aCred, liveTarget);
       if (branch === "unparseable") {
-        throw new RebindError(
+        throw new RebindRefused(
           `target "${account}"'s live credential is missing or unparseable at swap time — refusing (no credential mutation).`,
         );
       }
@@ -450,7 +467,7 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
         // Someone re-logged the target profile between our read and the swap.
         // Do NOT move its (now foreign) credential — quarantine it and abort.
         d.writeFile(aFile + QUARANTINE_SUFFIX, liveTarget as string);
-        throw new RebindError(
+        throw new RebindRefused(
           `target "${account}" now holds a DIFFERENT account than when rebind started — someone re-logged it. ` +
             `Quarantined the unexpected credential to ${aFile + QUARANTINE_SUFFIX}; no swap performed.`,
         );
@@ -508,11 +525,11 @@ export async function restoreRebind(
 ): Promise<RestoreResult> {
   const { profile } = opts;
   if (d.platform !== "darwin") {
-    throw new RebindError(`rebind --restore is macOS only (nothing to restore on ${d.platform}).`);
+    throw new RebindRefused(`rebind --restore is macOS only (nothing to restore on ${d.platform}).`);
   }
   const pConfig = configDir("claude", profile);
   const marker = readBinding(pConfig, d);
-  if (!marker) throw new RebindError(`no active rebind on profile "${profile}".`);
+  if (!marker) throw new RebindRefused(`no active rebind on profile "${profile}".`);
 
   const aConfig = configDir("claude", marker.boundToProfile);
   const pSvc = d.serviceNameFor(pConfig);
@@ -531,14 +548,14 @@ export async function restoreRebind(
       const liveRunning = readCred(pConfig, d);
       const branch = fingerprintCompare(marker.targetOrigCredential, liveRunning);
       if (branch === "unparseable") {
-        throw new RebindError(
+        throw new RebindRefused(
           `running profile "${profile}"'s live credential is missing or unparseable — refusing restore (no mutation). ` +
             `The binding marker is left in place for manual recovery.`,
         );
       }
       if (branch === "different") {
         d.writeFile(pFile + QUARANTINE_SUFFIX, liveRunning as string);
-        throw new RebindError(
+        throw new RebindRefused(
           `running profile "${profile}" now holds a DIFFERENT account than the one it was rebound to — someone re-logged it. ` +
             `Quarantined the unexpected credential to ${pFile + QUARANTINE_SUFFIX}; restore aborted to avoid clobbering it. ` +
             `Resolve manually, then remove ${MARKER_NAME} from the profile's config dir.`,
