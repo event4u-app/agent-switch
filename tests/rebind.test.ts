@@ -96,6 +96,12 @@ function makeFake(opts: { platform?: NodeJS.Platform; rebindState?: RebindKillSw
       rebindState.disabled = s.disabled;
       rebindState.consecutiveFailures = s.consecutiveFailures;
     },
+    // Default: a no-op refresh that only records the call (a dead login that
+    // `claude doctor` cannot heal). Tests that model a successful refresh
+    // reassign this to update the target store.
+    freshen: (dir) => {
+      calls.push("freshen:" + dir);
+    },
   };
   return { kc, files, calls, deps, rebindState };
 }
@@ -147,21 +153,66 @@ test("rebind moves the target's plaintext file aside (never deletes it)", async 
   assert.equal(readBinding(pConfig, f.deps)!.targetFileMoved, true);
 });
 
-test("rebind refuses when the profile is already rebound", async () => {
+test("rebind on an already-rebound profile RE-SWITCHES: restore first, then bind the new target", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  f.kc.set(qSvc, cred("tokQ"));
+  await rebind({ account: "A", profile: "P" }, f.deps); // P now serves A
+
+  // The user switches AGAIN (what the GUI's "Switch account" does) — to Q. This
+  // used to dead-end in "already rebound"; now it restores, then re-binds.
+  const r = await rebind({ account: "Q", profile: "P" }, f.deps);
+  assert.equal(r.boundToProfile, "Q");
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokQ", "running store now serves Q");
+  assert.equal(JSON.parse(f.kc.get(aSvc)!).claudeAiOauth.accessToken, "tokA", "A restored to its own account");
+  assert.equal(f.kc.has(qSvc), false, "Q's own store emptied — one live store");
+  assert.equal(readBinding(pConfig, f.deps)!.boundToProfile, "Q", "marker now records the Q binding");
+  const reg = readBindingRegistry(f.deps);
+  assert.equal(reg["A"], undefined, "old registry entry released");
+  assert.equal(reg["Q"]?.runningProfile, "P", "new registry entry recorded");
+});
+
+test("re-switching BACK to the same account works (restore + fresh bind, not an error)", async () => {
   const f = makeFake();
   f.kc.set(pSvc, cred("tokP"));
   f.kc.set(aSvc, cred("tokA"));
   await rebind({ account: "A", profile: "P" }, f.deps);
-  f.kc.set(aSvc, cred("tokA")); // pretend A logged in again
-  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /already rebound/);
+
+  const r = await rebind({ account: "A", profile: "P" }, f.deps);
+  assert.equal(r.boundToProfile, "A");
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokA", "P still serves A");
+  assert.equal(readBinding(pConfig, f.deps)!.boundToProfile, "A", "marker intact after the round-trip");
 });
 
-test("rebind refuses a near-expiry target (dead-token guard, no minting)", async () => {
+test("rebind attempts a refresh on a near-expiry target, then refuses if it stays dead", async () => {
   const f = makeFake();
   f.kc.set(pSvc, cred("tokP"));
   f.kc.set(aSvc, cred("tokA", FRESHEN_FLOOR_MS - 60_000)); // < 10 min to expiry
-  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /expires in/);
+  // Default freshen is a no-op (a dead login `claude doctor` cannot heal), so the
+  // token is still spent after the attempt → refuse without minting.
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /still expires in/);
+  assert.ok(f.calls.includes("freshen:" + aConfig), "a refresh was delegated before refusing");
   assert.equal(f.kc.has(aSvc), true, "nothing mutated on refusal");
+});
+
+test("rebind proceeds when a refresh heals the near-expiry target token", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA", FRESHEN_FLOOR_MS - 60_000)); // < 10 min to expiry
+  // Model Claude Code refreshing the token in place: same account, fresh expiry.
+  f.deps.freshen = (dir) => {
+    f.calls.push("freshen:" + dir);
+    f.kc.set(aSvc, cred("tokA-fresh", 60 * 60 * 1000));
+  };
+  const r = await rebind({ account: "A", profile: "P" }, f.deps);
+  assert.equal(r.boundToProfile, "A");
+  assert.ok(f.calls.includes("freshen:" + aConfig), "the refresh was delegated");
+  assert.equal(
+    JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken,
+    "tokA-fresh",
+    "the freshened target token is what gets moved into the running store",
+  );
 });
 
 test("rebind is a no-op when the profile already runs that account", async () => {
@@ -335,21 +386,42 @@ test("rebind refuses immediately when the kill-switch is disabled", async () => 
   assert.equal(f.rebindState.consecutiveFailures, 3, "a disabled-refusal does not advance the breaker");
 });
 
-test("three consecutive rebind failures trip the circuit-breaker", async () => {
+test("three consecutive swap FAILURES trip the circuit-breaker", async () => {
   assert.equal(REBIND_FAILURE_LIMIT, 3, "this test assumes a limit of 3");
   const f = makeFake();
   f.kc.set(pSvc, cred("tokP"));
-  f.kc.set(aSvc, cred("tokA", FRESHEN_FLOOR_MS - 60_000)); // near-expiry → always refuses (before the lock)
+  f.kc.set(aSvc, cred("tokA"));
+  f.files.set(aFile, cred("tokA"));
+  // A genuine write-path failure: moving the target's plaintext file aside dies
+  // mid-swap (before the marker is written, so every retry hits the same wall).
+  f.deps.renameFile = () => {
+    throw new Error("simulated rename failure (disk)");
+  };
 
-  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /expires in/);
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /simulated rename failure/);
   assert.deepEqual(f.rebindState, { disabled: false, consecutiveFailures: 1 });
-  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /expires in/);
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /simulated rename failure/);
   assert.deepEqual(f.rebindState, { disabled: false, consecutiveFailures: 2 });
   await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /Circuit-breaker tripped/);
   assert.deepEqual(f.rebindState, { disabled: true, consecutiveFailures: 3 });
 
   // Once tripped, the next attempt is refused up-front with the disabled message.
   await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /disabled/);
+});
+
+test("guard REFUSALS never advance the circuit-breaker (the Matze4u failure mode)", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  // Refusal class 1: target not logged in — retry it three times.
+  for (let i = 0; i < 3; i++) {
+    await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /no readable credential/);
+  }
+  // Refusal class 2: near-expiry target that a refresh cannot heal.
+  f.kc.set(aSvc, cred("tokA", FRESHEN_FLOOR_MS - 60_000));
+  for (let i = 0; i < 3; i++) {
+    await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /still expires in/);
+  }
+  assert.deepEqual(f.rebindState, { disabled: false, consecutiveFailures: 0 }, "six refusals, breaker untouched — rebind stays enabled");
 });
 
 test("a successful rebind resets the failure counter", async () => {

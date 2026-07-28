@@ -35,9 +35,6 @@ import {
   sessionArgs,
   setAutoSwitch,
   setAutostart,
-  getSwitchStrategy,
-  setSwitchStrategy,
-  type SwitchStrategy,
   setProfileLabel,
   setProvider,
   linkProviderBinary,
@@ -94,6 +91,8 @@ import {
   setNotifLastRead,
   getMutedKinds,
   setMutedKinds,
+  getNotifyOnSwitch,
+  setNotifyOnSwitchFlag,
   getHideSummaries,
   setHideSummariesFlag,
   getShareGlobal,
@@ -336,6 +335,11 @@ export default function App() {
   const [toasts, setToasts] = useState<AppNotification[]>([]);
   // Muted notification kinds — suppressed from desktop, toast, flyout, and badge.
   const [mutedKinds, setMutedKindsState] = useState<NotificationKind[]>(() => getMutedKinds());
+  // Whether activating/deactivating a profile records a notification (→ pet +
+  // desktop). The ref mirrors it for the async act() closures below.
+  const [notifyOnSwitch, setNotifyOnSwitchState] = useState(() => getNotifyOnSwitch());
+  const notifyOnSwitchRef = useRef(true);
+  notifyOnSwitchRef.current = notifyOnSwitch;
   // Desktop pet: master toggle, routing tier, and the pet's OWN per-kind set
   // (independent of the desktop mutes). Mirrored into refs for the async fire
   // path in syncNotifications (same pattern as osNotifyRef).
@@ -430,6 +434,44 @@ export default function App() {
       `${selected}/${active} hit ≥${threshold}% — suggested profile: ${selected}/${target}. ${how}`,
     );
     await syncNotifications();
+  }
+
+  // Record a profile-switch notification when the setting is on (default). Kind
+  // "success" = "Account switches", so it flows through the existing routing —
+  // the pet reacts (if pet-enabled and "success" is in its kinds) and a desktop
+  // notification fires — without a bespoke delivery path.
+  async function notifySwitch(title: string, message: string) {
+    if (!notifyOnSwitchRef.current) return;
+    await recordNotification("success", title, message);
+    await syncNotifications();
+  }
+
+  // Activate a profile (Use). Centralised so every call site notifies + keeps the
+  // shared file-links fresh identically.
+  function runUse(pid: ProviderId, name: string) {
+    act(async () => {
+      await switchProfile(pid, name);
+      if (shareActive) await shareSync(shareSource).catch(() => {});
+      await notifySwitch("Account switched", `${PROVIDER_LABEL[pid]} is now using ${name}.`);
+    });
+  }
+
+  // Deactivate the active profile (Off). Reads the name to report BEFORE the
+  // deactivate so the message can name it.
+  function runOff(pid: ProviderId) {
+    const name = grouped[pid].find((r) => r.active)?.name ?? null;
+    act(async () => {
+      await deactivateProfile(pid);
+      await notifySwitch(
+        "Account deactivated",
+        name ? `Deactivated the active ${PROVIDER_LABEL[pid]} account (${name}).` : `Deactivated the active ${PROVIDER_LABEL[pid]} account.`,
+      );
+    });
+  }
+
+  function toggleNotifyOnSwitch(on: boolean) {
+    setNotifyOnSwitchState(on);
+    setNotifyOnSwitchFlag(on);
   }
 
   // Change the Profiles provider filter AND persist it (like the other UI prefs).
@@ -697,9 +739,14 @@ export default function App() {
         /* best-effort tray update */
       }
     })();
-    // The countdown is owned by the auto-refresh timer alone — a manual refresh
-    // does NOT restart it (that would just delay the next usage fetch, since the
-    // cooldown already blocks a re-fetch within the same interval).
+    // A manual refresh (footer button, force=true) bypasses the fetch cooldown
+    // and pulls fresh data on demand, so restart the countdown to a full
+    // interval — the next auto-refresh is a full interval away and the visible
+    // timer matches what the user just did. The auto-fire owns its own reset.
+    if (force) {
+      nextRefreshRef.current = Date.now() + REFRESH_MS;
+      setNextUsageRefreshAt(nextRefreshRef.current);
+    }
     await syncNotifications();
     setBusy(false);
   }
@@ -1133,6 +1180,8 @@ export default function App() {
             onToggleHideSummaries={toggleHideSummaries}
             mutedKinds={mutedKinds}
             onToggleMute={toggleMuteKind}
+            notifyOnSwitch={notifyOnSwitch}
+            onToggleNotifyOnSwitch={toggleNotifyOnSwitch}
             osNotify={osNotify}
             onSetOsNotify={setOsNotifyState}
             devMode={devMode}
@@ -1179,14 +1228,7 @@ export default function App() {
             nowTick={nowTick}
             history={usageHistoryCache}
             onHistory={(pid, data) => setUsageHistoryCache((prev) => ({ ...prev, [pid]: data }))}
-            onSwitch={(pid, name) =>
-              // Same path as the profile card's Use button: switch, keep the
-              // shared file-links fresh, then the act() wrapper refreshes.
-              act(async () => {
-                await switchProfile(pid, name);
-                if (shareActive) await shareSync(shareSource).catch(() => {});
-              })
-            }
+            onSwitch={(pid, name) => runUse(pid, name)}
           />
         ) : section === "tooling" ? (
           <ToolingSection
@@ -1469,23 +1511,12 @@ export default function App() {
                                   size="sm"
                                   variant="ghost"
                                   className="text-muted-foreground hover:text-foreground"
-                                  onClick={() => act(() => deactivateProfile(selected))}
+                                  onClick={() => runOff(selected)}
                                 >
                                   <Power /> Off
                                 </Button>
                               ) : (
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() =>
-                                    act(async () => {
-                                      await switchProfile(selected, r.name);
-                                      // Keep the shared file-links (CLAUDE.md/settings) fresh for the
-                                      // now-active profile — no-op when sharing is off.
-                                      if (shareActive) await shareSync(shareSource).catch(() => {});
-                                    })
-                                  }
-                                >
+                                <Button size="sm" variant="secondary" onClick={() => runUse(selected, r.name)}>
                                   Use
                                 </Button>
                               )}
@@ -2039,6 +2070,8 @@ function SettingsView({
   onToggleHideSummaries,
   mutedKinds,
   onToggleMute,
+  notifyOnSwitch,
+  onToggleNotifyOnSwitch,
   osNotify,
   onSetOsNotify,
   devMode,
@@ -2065,6 +2098,8 @@ function SettingsView({
   onToggleMinimizeToDock: (on: boolean) => void;
   mutedKinds: NotificationKind[];
   onToggleMute: (kind: NotificationKind) => void;
+  notifyOnSwitch: boolean;
+  onToggleNotifyOnSwitch: (on: boolean) => void;
   osNotify: boolean | null;
   onSetOsNotify: (on: boolean) => void;
   devMode: boolean;
@@ -2118,6 +2153,8 @@ function SettingsView({
         <NotificationSettings
           mutedKinds={mutedKinds}
           onToggleMute={onToggleMute}
+          notifyOnSwitch={notifyOnSwitch}
+          onToggleNotifyOnSwitch={onToggleNotifyOnSwitch}
           osNotify={osNotify}
           onSetOsNotify={onSetOsNotify}
         />
@@ -2551,11 +2588,15 @@ const PERMISSION_LABEL: Record<DesktopPermission, string> = {
 function NotificationSettings({
   mutedKinds,
   onToggleMute,
+  notifyOnSwitch,
+  onToggleNotifyOnSwitch,
   osNotify,
   onSetOsNotify,
 }: {
   mutedKinds: NotificationKind[];
   onToggleMute: (kind: NotificationKind) => void;
+  notifyOnSwitch: boolean;
+  onToggleNotifyOnSwitch: (on: boolean) => void;
   osNotify: boolean | null;
   onSetOsNotify: (on: boolean) => void;
 }) {
@@ -2653,6 +2694,21 @@ function NotificationSettings({
 
         {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
         {err && <div className="text-xs text-destructive">{err}</div>}
+
+        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium">Notify on profile switch</div>
+            <div className="text-xs text-muted-foreground">
+              When you activate (Use) or deactivate (Off) a profile, record a notification — the pet reacts and a
+              desktop alert fires when that toggle above is on. Follows your Alert type and pet settings.
+            </div>
+          </div>
+          <Switch
+            checked={notifyOnSwitch}
+            onCheckedChange={onToggleNotifyOnSwitch}
+            aria-label="Notify on profile switch"
+          />
+        </div>
 
         <div className="border-t border-border pt-3">
           <div className="text-[13px] font-medium">Alert types</div>
@@ -2840,20 +2896,6 @@ function AutoSwitchSettings({
   grouped: Record<ProviderId, ProfileRow[]>;
   onChangeTag: (pid: ProviderId, tag: AutoSwitchTag) => void;
 }) {
-  const [strategy, setStrategy] = useState<SwitchStrategy | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    getSwitchStrategy()
-      .then(setStrategy)
-      .catch(() => setStrategy("reset-first"));
-  }, []);
-
-  function pickStrategy(next: SwitchStrategy) {
-    setStrategy(next);
-    setSwitchStrategy(next).catch((e) => setErr(describeError(e)));
-  }
-
   // Scope is configurable per provider with a usage readout and 2+ profiles
   // carrying at least one tag (same conditions the old footer select used).
   const scopeProviders = PROVIDERS.filter(
@@ -2877,34 +2919,6 @@ function AutoSwitchSettings({
           <Switch checked={enabled} onCheckedChange={onToggle} aria-label="Near-limit notifications globally" />
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
-          <div className="min-w-0">
-            <div className="text-[13px] font-medium">Switch strategy (deprecated)</div>
-            <div className="text-xs text-muted-foreground">
-              No longer switches automatically. <span className="font-medium">Reset first</span> still redeems a banked
-              Codex reset (and stays on the account) before suggesting a switch; <span className="font-medium">rotation
-              first</span> just suggests the account with the most headroom. Switching is always manual.
-            </div>
-          </div>
-          <div className="flex shrink-0 gap-1">
-            <Button
-              size="sm"
-              variant={strategy === "reset-first" ? "default" : "outline"}
-              disabled={strategy === null}
-              onClick={() => pickStrategy("reset-first")}
-            >
-              Reset first
-            </Button>
-            <Button
-              size="sm"
-              variant={strategy === "rotation-first" ? "default" : "outline"}
-              disabled={strategy === null}
-              onClick={() => pickStrategy("rotation-first")}
-            >
-              Rotation first
-            </Button>
-          </div>
-        </div>
 
         {enabled && auto && (
           <div className="space-y-2 border-t border-border pt-3">
@@ -2947,8 +2961,6 @@ function AutoSwitchSettings({
             )}
           </div>
         )}
-
-        {err && <div className="text-xs text-destructive">{err}</div>}
       </CardContent>
     </Card>
   );

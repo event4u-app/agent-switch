@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { appendSample, readHistory, seriesFor, MAX_SAMPLES } from "../src/history.js";
+import { appendSample, recordHistorySample, readHistory, seriesFor, MAX_SAMPLES } from "../src/history.js";
 import { parseUsage } from "../src/usage.js";
 
 function tmpFile(): string {
@@ -19,6 +19,18 @@ test("appendSample creates the file and reads back", () => {
   const h = readHistory(f);
   assert.equal(h.length, 1);
   assert.equal(h[0].windows[0].utilization, 10);
+});
+
+test("recordHistorySample throttles to ~hourly: near samples skipped, spaced ones kept", () => {
+  const f = tmpFile();
+  const at = (iso: string) => parseUsage({ five_hour: { utilization: 10, resets_at: "R" } }, iso);
+  recordHistorySample(f, at("2026-07-13T00:00:00Z")); // first → always recorded
+  recordHistorySample(f, at("2026-07-13T00:10:00Z")); // +10 min < 55 → skipped
+  recordHistorySample(f, at("2026-07-13T00:40:00Z")); // +40 min < 55 → skipped
+  recordHistorySample(f, at("2026-07-13T01:00:00Z")); // +60 min ≥ 55 → recorded
+  const h = readHistory(f);
+  assert.equal(h.length, 2, "only the first and the >55-min-later sample were recorded");
+  assert.equal(h[1].at, "2026-07-13T01:00:00Z");
 });
 
 test("appendSample rings at MAX_SAMPLES (keeps the newest)", () => {

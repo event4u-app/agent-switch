@@ -337,19 +337,6 @@ export async function setAutoSwitch(
   await runCli(args);
 }
 
-export type SwitchStrategy = "reset-first" | "rotation-first";
-
-/** Global auto-switch strategy: reset-first (redeem a banked Codex reset before
- *  switching) vs rotation-first (switch to the account with most headroom). */
-export async function getSwitchStrategy(): Promise<SwitchStrategy> {
-  const { strategy } = JSON.parse(await runCli(["autoswitch", "strategy", "--json"]));
-  return strategy === "rotation-first" ? "rotation-first" : "reset-first";
-}
-
-export async function setSwitchStrategy(strategy: SwitchStrategy): Promise<void> {
-  await runCli(["autoswitch", "strategy", strategy]);
-}
-
 /** Manually redeem one banked Codex rate-limit reset. Consumes a real credit —
  *  the caller confirms first. */
 export async function redeemReset(provider: ProviderId, name: string): Promise<void> {

@@ -38,8 +38,6 @@ const ipc = vi.hoisted(() => ({
   uninstall: vi.fn(),
   getAutostart: vi.fn(),
   setAutostart: vi.fn(),
-  getSwitchStrategy: vi.fn(),
-  setSwitchStrategy: vi.fn(),
   redeemReset: vi.fn(),
   listApps: vi.fn(),
   openApp: vi.fn(),
@@ -115,7 +113,7 @@ vi.mock("./EmbeddedTerminal.js", () => ({
 
 // The global auto-switch master lives in localStorage, which isn't reliably
 // available in this jsdom/node env — mock the store so the flag is controllable.
-const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, acCardDismissed: false, shareGlobal: true, shareSource: "default", hideSummaries: false, minimizeToDock: false, autoUpdateKinds: ["major", "minor", "patch"], providerFilter: "claude", petEnabled: false, petChoice: "agent-switch", petTier: "hybrid", petKinds: ["success", "error", "warning", "info"] as string[], petBubbles: true, petBubbleDuration: "normal", petSize: "medium", petMotion: "auto", petLabel: false, petPresence: "message-only", petWelcomed: true, petPosLock: false }));
+const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMin: 10, notifLastRead: 0, mutedKinds: [] as string[], notifyOnSwitch: true, devMode: false, autoUpdateCheck: true, updateNotifiedVersion: "", agentConfigNotifiedVersion: "", nextUsageRefreshAt: 0, acCardDismissed: false, shareGlobal: true, shareSource: "default", hideSummaries: false, minimizeToDock: false, autoUpdateKinds: ["major", "minor", "patch"], providerFilter: "claude", petEnabled: false, petChoice: "agent-switch", petTier: "hybrid", petKinds: ["success", "error", "warning", "info"] as string[], petBubbles: true, petBubbleDuration: "normal", petSize: "medium", petMotion: "auto", petLabel: false, petPresence: "message-only", petWelcomed: true, petPosLock: false }));
 // Keep the update-check path inert in the App tests: uptodate → no toast, no
 // network. The update logic itself is covered by updates.test.ts.
 // Keep the real pure helpers (isNewer/compareVersions — used by agent-config.js)
@@ -172,6 +170,10 @@ vi.mock("./settings-store.js", () => ({
   getMutedKinds: () => store.mutedKinds,
   setMutedKinds: (kinds: string[]) => {
     store.mutedKinds = kinds;
+  },
+  getNotifyOnSwitch: () => store.notifyOnSwitch,
+  setNotifyOnSwitchFlag: (on: boolean) => {
+    store.notifyOnSwitch = on;
   },
   getDevMode: () => store.devMode,
   setDevModeFlag: (on: boolean) => {
@@ -292,6 +294,7 @@ beforeEach(() => {
   store.globalAuto = true;
   store.notifLastRead = 0;
   store.mutedKinds = [];
+  store.notifyOnSwitch = true;
   store.shareGlobal = true;
   store.shareSource = "default";
   store.agentConfigNotifiedVersion = "";
@@ -322,8 +325,6 @@ beforeEach(() => {
   ipc.uninstall.mockResolvedValue(undefined);
   ipc.getAutostart.mockResolvedValue(false);
   ipc.setAutostart.mockResolvedValue(undefined);
-  ipc.getSwitchStrategy.mockResolvedValue("reset-first");
-  ipc.setSwitchStrategy.mockResolvedValue(undefined);
   ipc.redeemReset.mockResolvedValue(undefined);
   ipc.listApps.mockResolvedValue([]);
   ipc.openApp.mockResolvedValue(undefined);
@@ -466,6 +467,43 @@ describe("App", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Off" }));
     expect(ipc.deactivateProfile).toHaveBeenCalledWith("claude");
+  });
+
+  it("activating a profile records a switch notification when notify-on-switch is on", async () => {
+    render(<App />);
+    await screen.findByRole("tab", { name: /claude/i });
+    fireEvent.click((await screen.findAllByRole("button", { name: "Use" }))[0]);
+    expect(ipc.switchProfile).toHaveBeenCalledWith("claude", "privat");
+    // Kind "success" so the pet reacts + a desktop alert fires per the existing routing.
+    await waitFor(() =>
+      expect(ipc.recordNotification).toHaveBeenCalledWith("success", "Account switched", expect.stringContaining("privat")),
+    );
+  });
+
+  it("activating a profile records NO notification when notify-on-switch is off", async () => {
+    store.notifyOnSwitch = false;
+    render(<App />);
+    await screen.findByRole("tab", { name: /claude/i });
+    fireEvent.click((await screen.findAllByRole("button", { name: "Use" }))[0]);
+    await waitFor(() => expect(ipc.switchProfile).toHaveBeenCalledWith("claude", "privat"));
+    expect(ipc.recordNotification).not.toHaveBeenCalled();
+  });
+
+  it("deactivating a profile records a deactivation notification naming the account", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Off" }));
+    expect(ipc.deactivateProfile).toHaveBeenCalledWith("claude");
+    await waitFor(() =>
+      expect(ipc.recordNotification).toHaveBeenCalledWith("success", "Account deactivated", expect.stringContaining("work")),
+    );
+  });
+
+  it("the notify-on-switch setting toggle persists the choice", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /settings/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /notifications/i }));
+    fireEvent.click(await screen.findByRole("switch", { name: /notify on profile switch/i }));
+    expect(store.notifyOnSwitch).toBe(false);
   });
 
   it("runs a session in the embedded terminal (no external window) when Term is clicked", async () => {
