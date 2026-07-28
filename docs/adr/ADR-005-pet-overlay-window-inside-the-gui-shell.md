@@ -50,6 +50,32 @@ that disqualifies an App Store distribution.
   construction: the pet can only navigate to the existing confirmation UI,
   it holds no switch/rebind capability.
 
+### Perf — pet-window memory (council perf finding)
+
+The pet is a second `WebviewWindow` inside the same Tauri process, not a new
+process. Its steady-state footprint is bounded by construction:
+
+- **One decoded spritesheet** — the active pet's `spritesheet.webp`
+  (1536×1872 RGBA ≈ 11 MB decoded worst case; the bundled sheets are ~150–250 KB
+  on disk and the webview decodes one at a time — a pet swap frees the prior).
+- **A near-empty DOM** — the `pet.html` stage is a handful of nodes (sprite,
+  bubble, mood dot, working badge, label); no framework runtime is loaded in the
+  pet entry (`pet-main.ts` is plain TS, no React).
+- **No idle JS work** — animation is pure CSS `steps()`/keyframes, paused on
+  `visibilitychange` (sprite, mood, and the new working badge all honour it); the
+  only recurring JS timer is the 10 s monitor-signature poll for display changes.
+
+**Measurement method (to run once on a real windowed build):** open the pet,
+let it idle, then read the pet WebviewWindow's process/renderer memory — macOS
+Activity Monitor per-WKWebView, or `chrome://` / WebView2 task manager on
+Linux/Windows — and record the resident figure here. This needs a real GUI run
+(a WKWebView/WebKitGTK/WebView2 window); it cannot be captured in the headless
+CI/dev run, so the concrete number is pending the same real-machine pass as the
+cross-platform QA step in the roadmap. Expected order of magnitude on the
+architecture above: a few tens of MB over the main window, dominated by the one
+decoded sheet — flag for optimisation only if a real reading materially exceeds
+that.
+
 ## Alternatives considered
 
 - **Separate process/app** — full lifecycle + distribution cost (second
