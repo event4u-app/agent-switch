@@ -42,9 +42,6 @@ import {
   readAutoSwitch,
   readAutoSwitchAll,
   setAutoSwitch,
-  readSwitchStrategy,
-  setSwitchStrategy,
-  SwitchStrategy,
   type AutoSwitchTag,
   readOsNotifications,
   setOsNotifications,
@@ -1453,25 +1450,7 @@ function cmdAutoswitch(
   providerExplicit: boolean,
   mode?: string,
   flags: Record<string, string | boolean> = {},
-  value?: string,
 ): void {
-  // `autoswitch strategy [reset-first|rotation-first]` — DEPRECATED: the daemon
-  // no longer switches automatically, so this no longer chooses a rotation
-  // target. The setting is still read/written (plumbing kept), but has no effect
-  // on switching; the Codex reset-redeem-then-stay path still honours it.
-  if (mode === "strategy") {
-    if (value === "reset-first" || value === "rotation-first") {
-      setSwitchStrategy(value as SwitchStrategy);
-    } else if (value !== undefined) {
-      die("usage: agent-switch autoswitch strategy [reset-first|rotation-first]");
-    }
-    if (flags.json) {
-      console.log(JSON.stringify({ strategy: readSwitchStrategy() }));
-    } else {
-      console.log(`Switch strategy: ${readSwitchStrategy()} (deprecated — no effect on switching; the daemon never switches automatically).`);
-    }
-    return;
-  }
   const thresholdFlag = flags.threshold;
   const threshold = typeof thresholdFlag === "string" ? Number(thresholdFlag) : undefined;
   if (threshold !== undefined && (!Number.isFinite(threshold) || threshold < 1 || threshold > 100)) {
@@ -1501,11 +1480,10 @@ function cmdAutoswitch(
     const tagNote = cfg.tag === "all" ? "" : `, tag ${cfg.tag}`;
     console.log(`Near-limit notifications for ${providerId} ${cfg.enabled ? "ON" : "OFF"} (threshold ${cfg.threshold}%${tagNote}).`);
     if (cfg.enabled) {
-      const strat = readSwitchStrategy();
       console.log(
         `Once the active ${providerId} profile hits the threshold, the daemon NOTIFIES you and SUGGESTS the\n` +
           "account with the most headroom — it never switches automatically; switching stays a manual action.\n" +
-          (strat === "reset-first" ? "On Codex it redeems a banked reset first (and stays on the account) before suggesting a switch.\n" : "") +
+          "On Codex it redeems a banked reset first (and stays on the account) before suggesting a switch.\n" +
           "Run `agent-switch service start` so the daemon is watching.",
       );
     }
@@ -1517,7 +1495,6 @@ function cmdAutoswitch(
       console.log(JSON.stringify(readAutoSwitchAll()));
       return;
     }
-    console.log(`strategy: ${readSwitchStrategy()} (deprecated — no effect on switching)`);
     for (const p of providerExplicit ? [providerId] : PROVIDER_IDS) {
       const cfg = readAutoSwitch(p);
       const tagNote = cfg.tag === "all" ? "" : `, tag ${cfg.tag}`;
@@ -1525,7 +1502,7 @@ function cmdAutoswitch(
     }
     return;
   }
-  die("usage: agent-switch autoswitch on|off|status|strategy [reset-first|rotation-first] [--provider P] [--threshold <1-100>] [--tag all|work|personal|other] [--json]");
+  die("usage: agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>] [--tag all|work|personal|other] [--json]");
 }
 
 /**
@@ -2102,7 +2079,7 @@ async function main(): Promise<void> {
     case "use": return cmdUse(providerId, positional[0]);
     case "deactivate": return cmdDeactivate(providerId);
     case "label": return cmdLabel(providerId, positional[0], positional[1]);
-    case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags, positional[1]);
+    case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags);
     case "reset": return cmdReset(providerId, positional[0]);
     case "rename": return cmdRename(providerId, positional[0], positional[1]);
     case "providers": return cmdProviders(providerId, providerExplicit, positional[0], flags);

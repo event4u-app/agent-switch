@@ -18,7 +18,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { ROOT, activeFor, configDir, labelFor, listProfiles, readAutoSwitch, readBinaryPath, readSwitchStrategy, SwitchStrategy } from "./profiles.js";
+import { ROOT, activeFor, configDir, labelFor, listProfiles, readAutoSwitch, readBinaryPath } from "./profiles.js";
 import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
 import { fetchUsage, liveSessionPids } from "./api.js";
@@ -324,7 +324,6 @@ async function snapshotFor(provider: ProviderId, name: string): Promise<UsageSna
 
 async function pollProvider(
   provider: ProviderId,
-  strategy: SwitchStrategy,
   state: DaemonState,
   thresholds: Map<string, ThresholdState>,
   redeemed: Map<string, string>,
@@ -389,12 +388,12 @@ async function pollProvider(
   const activeMax = activeSnap ? maxUtilization(activeSnap) : null;
   if (activeMax === null || activeMax < autoSwitch.threshold) return failures; // still has headroom
 
-  // reset-first (Codex only — banked resets are a Codex feature): redeem a reset
-  // and STAY, but AT MOST ONCE per reset cycle. We record the window's resets_at
-  // BEFORE calling, so a buggy reset that doesn't actually clear usage can never
-  // loop and burn the whole balance — it falls through to a switch SUGGESTION on
-  // the same poll's next-cycle. Redeeming still stays on the active profile.
-  if (strategy === "reset-first" && provider === "codex" && activeSnap) {
+  // Codex only (banked resets are a Codex feature): redeem a reset and STAY, but
+  // AT MOST ONCE per reset cycle. We record the window's resets_at BEFORE calling,
+  // so a buggy reset that doesn't actually clear usage can never loop and burn the
+  // whole balance — it falls through to a switch SUGGESTION on the same poll's
+  // next-cycle. Redeeming still stays on the active profile.
+  if (provider === "codex" && activeSnap) {
     const stuck = activeSnap.windows.find((w) => typeof w.utilization === "number" && w.utilization >= autoSwitch.threshold);
     const cycle = stuck?.resetsAt ?? "";
     const guardKey = `codex/${active}`;
@@ -447,10 +446,9 @@ async function pollOnce(
   redeemed: Map<string, string>,
   log: (l: string) => void,
 ): Promise<number> {
-  const strategy = readSwitchStrategy();
   let failures = 0;
   for (const provider of AUTO_PROVIDERS) {
-    failures += await pollProvider(provider, strategy, state, thresholds, redeemed, log);
+    failures += await pollProvider(provider, state, thresholds, redeemed, log);
   }
   state.lastPoll = new Date().toISOString();
   state.lastError = failures > 0 ? `${failures} profile(s) failed to poll` : null;
@@ -485,8 +483,9 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
   // Load persisted usage-window fired state so crossings do NOT re-fire after a
   // daemon restart within the same window cycle (the pre-existing in-memory gap).
   const thresholds = new Map<string, ThresholdState>(Object.entries(state.usageThresholds ?? {}));
-  // Anti-loop guard for reset-first: `<provider>/<name>` → the window resets_at
-  // we last redeemed for, so we never redeem the same stuck cycle twice.
+  // Anti-loop guard for the Codex reset redemption: `<provider>/<name>` → the
+  // window resets_at we last redeemed for, so we never redeem the same stuck
+  // cycle twice.
   const redeemed = new Map<string, string>();
   let consecutiveFailures = 0;
   let cycles = 0;

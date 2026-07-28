@@ -55,7 +55,6 @@ test("activeFor / setActive are per-provider", () => {
       antigravity: { cli: false, ui: false },
     },
     binaryPaths: {},
-    switchStrategy: "reset-first",
     osNotifications: false,
     rebind: { disabled: false, consecutiveFailures: 0 },
   }); // clean baseline (shared STATE_FILE)
@@ -136,7 +135,6 @@ test("legacy global auto-switch migrates onto every provider", () => {
       antigravity: { cli: false, ui: false },
     },
     binaryPaths: {},
-    switchStrategy: "reset-first",
     osNotifications: false,
     rebind: { disabled: false, consecutiveFailures: 0 },
   });
@@ -173,33 +171,6 @@ test("providers: a provider with existing profiles is not hidden by default", ()
   fs.rmSync(P.STATE_FILE, { force: true });
   fs.mkdirSync(P.configDir("antigravity", "kept"), { recursive: true });
   assert.equal(P.readProviders().antigravity.cli, true);
-});
-
-test("switchStrategy defaults to reset-first and persists a change", () => {
-  P.writeState({
-    active: { claude: null, codex: null, antigravity: null },
-    labels: {},
-    autoSwitch: {
-      claude: { enabled: false, threshold: 95, tag: "all" },
-      codex: { enabled: false, threshold: 95, tag: "all" },
-      antigravity: { enabled: false, threshold: 95, tag: "all" },
-    },
-    providers: {
-      claude: { cli: true, ui: true },
-      codex: { cli: true, ui: true },
-      antigravity: { cli: false, ui: false },
-    },
-    binaryPaths: {},
-    switchStrategy: "reset-first",
-    osNotifications: false,
-    rebind: { disabled: false, consecutiveFailures: 0 },
-  });
-  assert.equal(P.readSwitchStrategy(), "reset-first");
-  P.setSwitchStrategy("rotation-first");
-  assert.equal(P.readSwitchStrategy(), "rotation-first");
-  // survives a state round-trip that doesn't mention it? setActive rewrites state
-  P.setActive("claude", null);
-  assert.equal(P.readSwitchStrategy(), "rotation-first");
 });
 
 test("osNotifications defaults OFF and persists a change", () => {
