@@ -60,12 +60,19 @@ import {
 
 const sprite = document.getElementById("sprite") as HTMLDivElement;
 const bubble = document.getElementById("bubble") as HTMLDivElement;
+const stage = document.getElementById("stage") as HTMLDivElement;
 const mood = document.getElementById("mood") as HTMLDivElement;
 const label = document.getElementById("label") as HTMLDivElement;
 
 let currentReaction: Reaction = "idle";
 let transientTimer: ReturnType<typeof setTimeout> | null = null;
 let bubbleTimer: ReturnType<typeof setTimeout> | null = null;
+// Auto-hide bookkeeping so a hover can PAUSE the bubble countdown: `bubbleDeadline`
+// is when it is due to hide, `bubbleRemaining` freezes what is left while paused,
+// and `hovering` is true while the pointer sits over the pet or its bubble.
+let bubbleDeadline = 0;
+let bubbleRemaining = 0;
+let hovering = false;
 let lastReactionAt = 0;
 
 function animationsOn(): boolean {
@@ -109,6 +116,7 @@ function cancelDismiss() {
 }
 
 function scheduleDismiss() {
+  if (hovering) return; // pointer on the pet → never dismiss it out from under the cursor
   if (getPetPresence() !== "message-only") return;
   cancelDismiss();
   dismissTimer = setTimeout(() => {
@@ -132,8 +140,48 @@ function react(reaction: Reaction) {
 function hideBubble() {
   bubble.classList.remove("show", "actionable");
   bubble.onclick = null;
+  if (bubbleTimer) {
+    clearTimeout(bubbleTimer);
+    bubbleTimer = null;
+  }
   void layoutWindow(); // shrink back to the base height
   scheduleDismiss();
+}
+
+/** (Re)start the bubble's auto-hide countdown for `ms`, recording its deadline
+ *  so a hover can pause and resume it. While the pointer is over the pet the
+ *  countdown is held: the deadline/remaining are tracked but no timeout is armed. */
+function armBubbleTimer(ms: number): void {
+  if (bubbleTimer) clearTimeout(bubbleTimer);
+  bubbleRemaining = ms;
+  bubbleDeadline = Date.now() + ms;
+  bubbleTimer = hovering ? null : setTimeout(hideBubble, ms);
+}
+
+/** Pointer entered the pet/bubble → freeze the auto-hide: stop the bubble
+ *  countdown (keeping what's left) and cancel any pending whole-pet dismiss. */
+function pauseAutoHide(): void {
+  if (hovering) return;
+  hovering = true;
+  if (bubbleTimer) {
+    clearTimeout(bubbleTimer);
+    bubbleTimer = null;
+    bubbleRemaining = Math.max(bubbleDeadline - Date.now(), 0);
+  }
+  cancelDismiss();
+}
+
+/** Pointer left the pet/bubble → resume: continue the bubble's frozen countdown
+ *  (with a small floor so it never blinks out instantly), or re-arm the whole-pet
+ *  dismiss when no bubble is showing. */
+function resumeAutoHide(): void {
+  if (!hovering) return;
+  hovering = false;
+  if (bubble.classList.contains("show")) {
+    armBubbleTimer(Math.max(bubbleRemaining, 800));
+  } else {
+    scheduleDismiss();
+  }
 }
 
 function showBubble(kind: NotificationKind, text: string, action: BubbleAction | null) {
@@ -159,7 +207,7 @@ function showBubble(kind: NotificationKind, text: string, action: BubbleAction |
   requestAnimationFrame(() => void layoutWindow());
   // An actionable bubble gets at least the long TTL — it carries a decision.
   const ttl = Math.max(BUBBLE_DURATION_MS[getPetBubbleDuration()], action ? BUBBLE_DURATION_MS.long : 0);
-  bubbleTimer = setTimeout(hideBubble, ttl);
+  armBubbleTimer(ttl);
 }
 
 /** Dev-only state label — production builds never show it, dev builds only
@@ -302,6 +350,13 @@ void petWindow.listen<{ reaction: string }>("pet-pose", (e) => {
 }).catch(() => {});
 
 /* ---- direct interaction: click = wave, hold/move = manual drag ---- */
+
+// Hover pauses the auto-hide: while the pointer is over the pet or its bubble
+// (the whole #stage, so moving between sprite and bubble never counts as a
+// leave) the bubble countdown and the whole-pet dismiss are frozen; leaving
+// resumes them.
+stage.addEventListener("mouseenter", pauseAutoHide);
+stage.addEventListener("mouseleave", resumeAutoHide);
 
 // The drag is implemented manually (setPosition from mousemove deltas — the
 // openpets approach) instead of the native startDragging(): a native OS drag
