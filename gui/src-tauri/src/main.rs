@@ -104,8 +104,15 @@ fn set_tray_tooltip(app: tauri::AppHandle, text: String) {
 // profile, so a non-interactive `-lc` misses them. Without a TTY the shell
 // skips prompt rendering, so stdout stays clean. A curated fallback is appended
 // unconditionally in case the shell recovery yields nothing usable.
+//
+// The INHERITED PATH stays in front: `task gui:dev` shadows `agent-switch`
+// with the repo's dev build via a PATH shim (scripts/dev-link.sh run-shim),
+// and replacing PATH outright would silently discard that shim and drive a
+// stale global install instead. From Finder the inherited PATH is the minimal
+// system set, which holds no agent-switch — keeping it in front is harmless.
 #[cfg(unix)]
 fn recover_user_path() {
+    let inherited = std::env::var("PATH").unwrap_or_default();
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
     let recovered = std::process::Command::new(&shell)
         .args(["-ilc", "printf %s \"$PATH\""])
@@ -115,7 +122,7 @@ fn recover_user_path() {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|p| p.trim().to_string())
         .filter(|p| !p.is_empty())
-        .unwrap_or_else(|| std::env::var("PATH").unwrap_or_default());
+        .unwrap_or_default();
 
     let home = std::env::var("HOME").unwrap_or_default();
     let fallbacks = [
@@ -126,7 +133,8 @@ fn recover_user_path() {
     ];
     // Duplicates in PATH are harmless; the fallback only matters when the shell
     // recovery came up short.
-    let path = std::iter::once(recovered)
+    let path = std::iter::once(inherited)
+        .chain(std::iter::once(recovered))
         .chain(fallbacks)
         .filter(|p| !p.is_empty())
         .collect::<Vec<_>>()

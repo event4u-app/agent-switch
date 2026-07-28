@@ -67,6 +67,15 @@ tasks:
     cmds:
       - npm test
 
+  test:switch:
+    desc: "Local-only E2E tests for the live account switch (rebind): real CLI + real macOS Keychain in a throw-away HOME. Never runs in CI."
+    env:
+      AGENT_SWITCH_SWITCH_TESTS: "1"
+    cmds:
+      - npm run build
+      - npx tsc -p tsconfig.test.json
+      - node --test dist-test/tests/switch-e2e.test.js
+
   test:gui:
     desc: Run the GUI unit tests (vitest)
     dir: gui
@@ -129,14 +138,15 @@ tasks:
   # ---------- GUI (Tauri: needs Rust + a desktop session) ----------
   gui:dev:
     # The GUI spawns the `agent-switch` CLI, so it must drive THIS repo's dev
-    # build, not a stale global one. dev-link.sh temporarily links the dev build
-    # (backing up any installed agent-switch) and restores the installed version
-    # on exit — including Ctrl-C — via a trap. See scripts/dev-link.sh.
-    desc: Run the tray GUI in dev — temporarily links the CLI dev build, restores the installed one on exit
+    # build, not a stale global one. run-shim puts the dev build FIRST on PATH
+    # for the GUI process only — the globally installed agent-switch is NEVER
+    # touched (no npm link, no backup/restore, nothing to lose on Ctrl-C or a
+    # crash). See scripts/dev-link.sh.
+    desc: Run the tray GUI in dev — dev CLI shadows the installed one via a PATH shim (global install untouched)
     deps: [gui:deps, deps]
     cmds:
       - npm run build
-      - bash scripts/dev-link.sh run 'cd gui && npm run tauri dev'
+      - bash scripts/dev-link.sh run-shim 'cd gui && npm run tauri dev'
 
   gui:build:
     desc: Build the GUI frontend bundle
