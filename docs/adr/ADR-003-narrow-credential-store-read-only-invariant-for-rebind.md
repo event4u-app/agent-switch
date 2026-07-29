@@ -6,7 +6,7 @@
   mutex; move-semantics hold; no old-token clobber. **Scope:** the macOS Keychain
   path is validated; the Linux/Win `.credentials.json` path (R0.1) and
   cross-version skew (R0.6) are NOT yet proven and gate shipping `rebind` there.
-- **Context roadmap:** `agents/roadmaps/road-to-live-rebind.md` (the feature that
+- **Context roadmap:** `agents/roadmaps/archive/road-to-live-rebind.md` (the feature that
   requires the write path) and
   `agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md` (Phase 4,
   where the read-only invariant was locked)
@@ -109,7 +109,7 @@ unchanged and `rebind` is not built.**
 
 ## References
 
-- `agents/roadmaps/road-to-live-rebind.md` — the feature that requires the write
+- `agents/roadmaps/archive/road-to-live-rebind.md` — the feature that requires the write
   path and defines the Phase-0 falsification spikes.
 - `agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md` (Phase 4)
   — the read-only invariant this ADR narrows.

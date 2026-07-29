@@ -87,6 +87,6 @@ that.
 
 ## References
 
-- `agents/roadmaps/road-to-desktop-pet.md` (plan + council convergence inline)
+- `agents/roadmaps/archive/road-to-desktop-pet.md` (plan + council convergence inline)
 - `docs/adr/ADR-003-narrow-credential-store-read-only-invariant-for-rebind.md`
   (the invariant the pet must not weaken)
