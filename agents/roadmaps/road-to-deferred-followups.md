@@ -23,16 +23,40 @@ stays visible and tracked instead of being buried in an archive.
 
 ## Phase 1 — macOS-doable now (no external blocker)
 
-- [ ] **Config-only export + opt-in `--full`** (from `road-to-1.0.1-review-followup`).
+- [-] **Config-only export + opt-in `--full`** (from `road-to-1.0.1-review-followup`).
       Config-only export reuses the `share.ts` allowlist; the `--full` variant
       bundles live OAuth refresh/access tokens, so it needs its own
       threat-modelled pass with mandatory user encryption and must never export
       the path-hashed macOS Keychain entry. A leaked `--full` bundle is an
       account-takeover vector — gate accordingly.
-- [ ] **rebind config-home live auto-detection** (from `road-to-live-rebind`
+      <!-- resolved 2026-07-29: config-only export ALREADY ships
+      (src/config-transfer.ts exportConfig/importConfig, wired in index.ts).
+      The `--full` half is the actual work, and the threat-modelled pass it
+      called for was run via the AI council
+      (agents/runtime/council/responses/full-export-decision.json) → verdict:
+      KEEP `--full` REFUSED. OAuth tokens are machine-bound session state, not
+      portable config; even AES-256-GCM + Argon2id can't fix the threat-model
+      shift (cloud-sync / malware+keylogger / phishing / offline brute-force);
+      the 30s `config import → auth login` path covers the real need; industry
+      practice (aws/gh/kubectl) never exports credentials. Reversing
+      assertNotFull() requires the repo OWNER's explicit sign-off, not agent
+      convergence — so this is marked [-] cancelled, not built. Shipped instead:
+      the FULL_REFUSAL message now points to the config-import→auth-login
+      migration path, and the assertNotFull() docstring records the council
+      re-affirmation. Owner may reopen as a separate audited capability. -->
+- [x] **rebind config-home live auto-detection** (from `road-to-live-rebind`
       Phase 2). `--profile <p>` + active-profile default already ship; the
       deferred piece is live pid/process → config-dir auto-detection (`hooks.ts`
       only decodes config-dir → profile today; a live-process lookup is net-new).
+      <!-- done 2026-07-29: pure detectRunningClaudeProfile(profiles, configDirOf,
+      livePidsOf) in src/sessions.ts — a profile is "running" when its config dir
+      carries a live session pid (liveSessionPids); returns single ONLY when
+      exactly one profile is running (a credential write must never guess across
+      ambiguity), else none/ambiguous. Wired into cmdRebind: with no --profile it
+      now prefers the profile whose session is actually LIVE (rebind's whole point
+      is the running session, which may differ from the active default) and prints
+      a note; ambiguous/none keep the prior active-profile fallback — strictly
+      non-regressing. 4 unit tests; task ci green (328). -->
 
 ## Phase 2 — cross-platform + real-machine QA (needs a non-macOS box / human eyes)
 
