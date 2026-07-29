@@ -10,6 +10,7 @@ import {
   codexSessionCommand,
   codexSessionId,
   deleteSession,
+  detectRunningClaudeProfile,
   encodeProjectDir,
   listSessions,
   listCodexSessions,
@@ -432,4 +433,39 @@ test("codexSessionCommand maps the native archive/delete/unarchive verbs", () =>
   assert.deepEqual(codexSessionCommand("archive", UID), ["archive", UID]);
   assert.deepEqual(codexSessionCommand("delete", UID), ["delete", UID]);
   assert.deepEqual(codexSessionCommand("unarchive", UID), ["unarchive", UID]);
+});
+
+// ---------- detectRunningClaudeProfile (rebind config-home auto-detection) ----
+
+test("detectRunningClaudeProfile returns the single profile whose session is live", () => {
+  const live = new Map<string, number[]>([["work", [1234]]]); // only 'work' has a live pid
+  const r = detectRunningClaudeProfile(
+    ["work", "privat", "test"],
+    (p) => `/cfg/${p}`,
+    (dir) => live.get(dir.replace("/cfg/", "")) ?? [],
+  );
+  assert.deepEqual(r, { kind: "single", profile: "work" });
+});
+
+test("detectRunningClaudeProfile reports ambiguity when more than one profile is running", () => {
+  const r = detectRunningClaudeProfile(
+    ["work", "privat"],
+    (p) => `/cfg/${p}`,
+    () => [999], // every profile looks live
+  );
+  assert.deepEqual(r, { kind: "ambiguous", profiles: ["work", "privat"] });
+});
+
+test("detectRunningClaudeProfile returns none when no profile has a live session", () => {
+  const r = detectRunningClaudeProfile(["work", "privat"], (p) => `/cfg/${p}`, () => []);
+  assert.deepEqual(r, { kind: "none" });
+});
+
+test("detectRunningClaudeProfile maps each profile through configDirOf", () => {
+  const seen: string[] = [];
+  detectRunningClaudeProfile(["a", "b"], (p) => `/home/${p}/.claude`, (dir) => {
+    seen.push(dir);
+    return [];
+  });
+  assert.deepEqual(seen, ["/home/a/.claude", "/home/b/.claude"]);
 });

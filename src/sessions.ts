@@ -189,6 +189,36 @@ export function markLive(configDir: string, rows: SessionRow[], cwdOf: (pid: num
   }
 }
 
+/** Result of {@link detectRunningClaudeProfile}: exactly one profile running
+ *  (safe to auto-target), more than one (ambiguous — caller must not guess), or
+ *  none. */
+export type RunningProfileResult =
+  | { kind: "single"; profile: string }
+  | { kind: "ambiguous"; profiles: string[] }
+  | { kind: "none" };
+
+/**
+ * Auto-detect which Claude profile has a live session, for `rebind`'s
+ * no-`--profile` resolution. A profile is "running" when its config dir carries
+ * a live session pid (`<configDir>/sessions/<pid>.json` whose pid is alive).
+ *
+ * Returns `single` ONLY when exactly one profile is running — rebind writes a
+ * credential store, so the caller must never guess a target across ambiguity;
+ * `none` / `ambiguous` leave the caller on its explicit-`--profile` / active
+ * fallback. Pure (`livePidsOf` injected) so every branch is unit-tested without
+ * touching real processes.
+ */
+export function detectRunningClaudeProfile(
+  profiles: string[],
+  configDirOf: (profile: string) => string,
+  livePidsOf: (configDir: string) => number[] = liveSessionPids,
+): RunningProfileResult {
+  const running = profiles.filter((p) => livePidsOf(configDirOf(p)).length > 0);
+  if (running.length === 1) return { kind: "single", profile: running[0] };
+  if (running.length > 1) return { kind: "ambiguous", profiles: running };
+  return { kind: "none" };
+}
+
 // ---------- takeover (per-session transfer) ----------------------------------
 
 export interface SessionLocation {
