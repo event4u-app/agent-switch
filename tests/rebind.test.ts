@@ -48,12 +48,15 @@ interface Fake {
   calls: string[];
   deps: RebindDeps;
   rebindState: RebindKillSwitch;
+  /** Access token → account id, as the profile endpoint would answer. */
+  accounts: Map<string, string>;
 }
 
 function makeFake(opts: { platform?: NodeJS.Platform; rebindState?: RebindKillSwitch } = {}): Fake {
   const kc = new Map<string, string>();
   const files = new Map<string, string>();
   const calls: string[] = [];
+  const accounts = new Map<string, string>();
   const rebindState: RebindKillSwitch = opts.rebindState ?? { disabled: false, consecutiveFailures: 0 };
   const deps: RebindDeps = {
     platform: opts.platform ?? "darwin",
@@ -102,8 +105,16 @@ function makeFake(opts: { platform?: NodeJS.Platform; rebindState?: RebindKillSw
     freshen: (dir) => {
       calls.push("freshen:" + dir);
     },
+    // Default: the account endpoint answers from `accounts` (token → account id).
+    // A token with no entry resolves to null, i.e. "cannot be established" —
+    // the offline case. Tests reassign or seed `accounts` as needed.
+    resolveAccount: async (cred) => {
+      const tok = JSON.parse(cred)?.claudeAiOauth?.accessToken ?? "";
+      calls.push("resolveAccount:" + tok);
+      return accounts.get(tok) ?? null;
+    },
   };
-  return { kc, files, calls, deps, rebindState };
+  return { kc, files, calls, deps, rebindState, accounts };
 }
 
 test("rebind refuses on a non-macOS platform (R0.1 unproven)", async () => {
@@ -491,4 +502,183 @@ test("canary refuses rebind BEFORE any mutation when the service-name format dri
   );
   assert.equal(readBinding(pConfig, f.deps), null, "no binding marker written on a canary refusal");
   assert.equal(f.rebindState.consecutiveFailures, 0, "a canary refusal does not advance the circuit-breaker");
+});
+
+// ---------- claim-less credentials: same-tier account collision ----------
+//
+// Real Claude Code credentials carry NO account claim — only tokens, scopes and
+// the plan tier. Every account on one tier therefore produces the SAME fallback
+// fingerprint, so "same fingerprint + different token" cannot mean "rotation"
+// on its own. These tests pin the escalation to the account endpoint.
+
+/** A credential shaped like a real one: no account claim, just tier + scopes. */
+function teamCred(token: string, expOffsetMs = 60 * 60 * 1000): string {
+  return credWith(
+    { scopes: ["user:inference", "user:profile"], subscriptionType: "team", rateLimitTier: "default_claude_max_5x" },
+    token,
+    expOffsetMs,
+  );
+}
+
+const ccFile = path.join(pConfig, ".claude.json");
+
+function stampedConfig(email: string, extra: Record<string, unknown> = {}): string {
+  return JSON.stringify({ oauthAccount: { emailAddress: email, accountUuid: "uuid-" + email }, ...extra });
+}
+
+function stampOf(f: Fake, file = ccFile): any {
+  return JSON.parse(f.files.get(file)!).oauthAccount;
+}
+
+test("claim-less credentials of two DIFFERENT accounts on one tier are locally indistinguishable", () => {
+  assert.equal(
+    accountFingerprint(teamCred("tok-A")).id,
+    accountFingerprint(teamCred("tok-B")).id,
+    "two accounts, same tier, no claim → identical fingerprints (why the endpoint escalation exists)",
+  );
+});
+
+test("swap, claim-less re-login to a DIFFERENT same-tier account → quarantine, no swap", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, teamCred("tokP"));
+  withRotatingTarget(f, teamCred("tok-A"), teamCred("tok-B"));
+  f.accounts.set("tok-A", "acct-A");
+  f.accounts.set("tok-B", "acct-B"); // a foreign account the local hash cannot see
+
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /re-logged/);
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokP", "running store not clobbered");
+  assert.equal(readBinding(pConfig, f.deps), null, "no marker written");
+  assert.equal(readBindingRegistry(f.deps)["A"], undefined, "no phantom registry entry");
+  assert.equal(
+    JSON.parse(f.files.get(aFile + ".rebind-quarantine")!).claudeAiOauth.accessToken,
+    "tok-B",
+    "the foreign credential is quarantined, not moved",
+  );
+});
+
+test("swap, claim-less genuine rotation → proceeds once the endpoint confirms one account", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, teamCred("tokP"));
+  withRotatingTarget(f, teamCred("tok-old"), teamCred("tok-new"));
+  f.accounts.set("tok-old", "acct-A");
+  f.accounts.set("tok-new", "acct-A"); // same account, rotated token
+
+  await rebind({ account: "A", profile: "P" }, f.deps);
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tok-new", "the freshened credential was moved");
+});
+
+test("swap refuses without mutating when the account cannot be verified (offline)", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, teamCred("tokP"));
+  withRotatingTarget(f, teamCred("tok-old"), teamCred("tok-new"));
+  // `accounts` stays empty → the endpoint answers nothing, as when offline.
+
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /could not be verified/);
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokP", "running store untouched");
+  assert.equal(readBinding(pConfig, f.deps), null, "no marker written");
+  assert.equal(readBindingRegistry(f.deps)["A"], undefined, "no registry entry written");
+  assert.equal(f.rebindState.consecutiveFailures, 0, "an unverifiable account is a refusal, not a write-path failure");
+});
+
+test("restore never writes a claim-less FOREIGN credential into the target's store", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, teamCred("tokP"));
+  f.kc.set(aSvc, teamCred("tok-A"));
+  await rebind({ account: "A", profile: "P" }, f.deps); // P now serves A's account
+
+  // P is re-logged into a different account — same tier, so locally identical.
+  f.kc.set(pSvc, teamCred("tok-C"));
+  f.accounts.set("tok-A", "acct-A");
+  f.accounts.set("tok-C", "acct-C");
+
+  await assert.rejects(() => restoreRebind({ profile: "P" }, f.deps), /re-logged/);
+  assert.equal(f.kc.get(aSvc), undefined, "the foreign credential was NOT handed to the target profile");
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tok-C", "the fresh login was not clobbered");
+  assert.ok(readBinding(pConfig, f.deps), "marker left in place for manual recovery");
+});
+
+test("restore refuses without mutating when the running account cannot be verified (offline)", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, teamCred("tokP"));
+  f.kc.set(aSvc, teamCred("tok-A"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+
+  f.kc.set(pSvc, teamCred("tok-rotated")); // token moved, account unverifiable
+
+  await assert.rejects(() => restoreRebind({ profile: "P" }, f.deps), /could not be verified/);
+  assert.equal(f.kc.get(aSvc), undefined, "target store untouched");
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tok-rotated", "running store untouched");
+  assert.ok(readBinding(pConfig, f.deps), "marker left in place — retry when online");
+});
+
+// ---------- identity stamp: `.claude.json` oauthAccount ----------
+
+test("restore puts the profile's own identity stamp back after Claude Code overwrote it", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, credWith({ account: { uuid: "acct-A" } }, "tok-A"));
+  f.files.set(ccFile, stampedConfig("own@example.com", { projects: { "/repo": { allowed: true } } }));
+
+  await rebind({ account: "A", profile: "P" }, f.deps);
+  // While rebound, Claude Code fetches the BORROWED account and stamps it here.
+  f.files.set(ccFile, stampedConfig("lender@example.com", { projects: { "/repo": { allowed: true } } }));
+
+  await restoreRebind({ profile: "P" }, f.deps);
+
+  assert.equal(stampOf(f).emailAddress, "own@example.com", "the profile reports its own account again");
+  assert.deepEqual(
+    JSON.parse(f.files.get(ccFile)!).projects,
+    { "/repo": { allowed: true } },
+    "the rest of Claude Code's config is preserved",
+  );
+  assert.ok(f.calls.includes("lock:" + ccFile), "the rewrite cooperates with Claude Code's lock on the config FILE");
+});
+
+test("restore leaves the stamp alone when the profile was re-logged to a different account", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, credWith({ account: { uuid: "acct-A" } }, "tok-A"));
+  f.files.set(ccFile, stampedConfig("own@example.com"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+
+  f.kc.set(pSvc, credWith({ account: { uuid: "acct-C" } }, "tok-C")); // genuine re-login
+  f.files.set(ccFile, stampedConfig("fresh@example.com"));
+
+  await assert.rejects(() => restoreRebind({ profile: "P" }, f.deps), /re-logged/);
+  assert.equal(stampOf(f).emailAddress, "fresh@example.com", "a genuine new login's stamp is never overwritten");
+});
+
+test("restore does not rewrite an identity stamp that is already correct", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, credWith({ account: { uuid: "acct-A" } }, "tok-A"));
+  f.files.set(ccFile, stampedConfig("own@example.com"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+
+  await restoreRebind({ profile: "P" }, f.deps); // stamp never got overwritten
+  assert.equal(f.calls.filter((c) => c === "writeFile:" + ccFile).length, 0, "no pointless write to Claude Code's config");
+  assert.equal(stampOf(f).emailAddress, "own@example.com");
+});
+
+test("restore works on a marker written before identity stamps were stashed", async () => {
+  const f = makeFake();
+  const own = cred("tokP");
+  const target = credWith({ account: { uuid: "acct-A" } }, "tok-A");
+  f.kc.set(pSvc, target); // as if P is serving A's account
+  f.files.set(
+    path.join(pConfig, ".agent-switch-rebind.json"),
+    JSON.stringify({
+      boundToProfile: "A",
+      boundAt: new Date(NOW).toISOString(),
+      runningOwnCredential: own,
+      targetOrigCredential: target,
+      targetFileMoved: false,
+    }),
+  );
+  f.files.set(ccFile, stampedConfig("stale@example.com"));
+
+  await restoreRebind({ profile: "P" }, f.deps);
+  assert.equal(f.kc.get(pSvc), own, "credentials still restore without a stashed stamp");
+  assert.equal(f.kc.get(aSvc), target, "the target got its own credential back");
+  assert.equal(stampOf(f).emailAddress, "stale@example.com", "nothing to restore → the stamp is left untouched");
 });

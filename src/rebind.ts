@@ -27,6 +27,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 
+import { fetchProfile } from "./api.js";
 import * as keychain from "./keychain.js";
 import { withProperLock } from "./locks.js";
 import { configDir, ROOT, readRebindKillSwitch, writeRebindKillSwitch, type RebindKillSwitch } from "./profiles.js";
@@ -37,6 +38,8 @@ export const FRESHEN_FLOOR_MS = 10 * 60 * 1000;
 const MARKER_NAME = ".agent-switch-rebind.json";
 const LENT_SUFFIX = ".rebind-lent";
 const QUARANTINE_SUFFIX = ".rebind-quarantine";
+/** Claude Code's own per-profile config file — carries the `oauthAccount` stamp. */
+const CC_CONFIG_NAME = ".claude.json";
 
 /** Circuit-breaker trip point: N consecutive `rebind()` failures → auto-disable. */
 export const REBIND_FAILURE_LIMIT = 3;
@@ -65,6 +68,11 @@ export interface BindingMarker {
   runningOwnCredential: string; // the running profile's own credential (to restore it)
   targetOrigCredential: string; // the target profile's own credential (to restore it)
   targetFileMoved: boolean; // whether the target's .credentials.json was moved aside
+  /** The running profile's OWN `.claude.json` `oauthAccount` stamp, snapshotted
+   *  before the swap. Claude Code overwrites that stamp with the BORROWED
+   *  account's identity while the rebind is live; restore puts this back.
+   *  Optional: markers written before this field existed restore without it. */
+  runningOwnIdentity?: unknown;
 }
 
 /** Injectable side-effects so the write path is unit-testable without real IO. */
@@ -87,6 +95,42 @@ export interface RebindDeps {
   /** Delegate a token refresh to Claude Code for the target's config dir when its
    *  token is spent (`claude doctor`, no session/quota; ADR-004). */
   freshen: (configDir: string) => void;
+  /** Authoritative account id behind a credential, or null when it cannot be
+   *  established (offline, endpoint unreachable, token rejected). Consulted ONLY
+   *  when the local fingerprint is inconclusive — see {@link compareAccounts}. */
+  resolveAccount: (cred: string) => Promise<string | null>;
+}
+
+/**
+ * Account ids already resolved in this process, keyed by a hash of the access
+ * token (never the token itself). Only successes are cached, so an offline
+ * failure is retried rather than remembered as "unknown".
+ */
+const resolvedAccounts = new Map<string, string>();
+
+/**
+ * Resolve the account behind a credential against Anthropic's profile endpoint —
+ * the same read-only GET Claude Code itself uses. This is the ONLY way to tell
+ * two accounts apart: a Claude Code credential carries no account claim at all
+ * (just tokens, scopes, subscription tier), so nothing local identifies its owner.
+ */
+async function resolveAccountViaApi(cred: string): Promise<string | null> {
+  const tok = accessToken(cred);
+  if (!tok) return null;
+  const key = crypto.createHash("sha256").update(tok).digest("hex");
+  const hit = resolvedAccounts.get(key);
+  if (hit) return hit;
+  let profile: any = null;
+  try {
+    profile = await fetchProfile(tok);
+  } catch {
+    return null;
+  }
+  const account = profile?.account ?? null;
+  const id = [account?.uuid, account?.email_address, account?.email].find((v) => typeof v === "string" && v.length > 0);
+  if (typeof id !== "string") return null;
+  resolvedAccounts.set(key, id);
+  return id;
 }
 
 export function defaultDeps(): RebindDeps {
@@ -120,6 +164,7 @@ export function defaultDeps(): RebindDeps {
     freshen: (cfg) => {
       freshenToken(cfg);
     },
+    resolveAccount: resolveAccountViaApi,
   };
 }
 
@@ -151,6 +196,62 @@ function expiresAt(cred: string | null): number | null {
 /** Read a profile's live credential: Keychain first, then the plaintext file. */
 function readCred(cfgDir: string, d: RebindDeps): string | null {
   return d.kcGet(d.serviceNameFor(cfgDir)) ?? d.readFile(credFile(cfgDir));
+}
+
+// ---------- identity stamp (`.claude.json` oauthAccount) ----------
+
+function ccConfigFile(cfgDir: string): string {
+  return nodePath.join(cfgDir, CC_CONFIG_NAME);
+}
+
+/**
+ * The `oauthAccount` block Claude Code stamps into a config dir's `.claude.json`
+ * whenever it fetches the account profile. This is the field `agent-switch list`
+ * reports as the profile's owner (providers.ts `readIdentity`).
+ */
+function readStampedIdentity(cfgDir: string, d: RebindDeps): unknown | null {
+  const raw = d.readFile(ccConfigFile(cfgDir));
+  if (!raw) return null;
+  try {
+    const stamp = JSON.parse(raw)?.oauthAccount;
+    return stamp && typeof stamp === "object" ? stamp : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Put a profile's OWN identity stamp back into its `.claude.json`.
+ *
+ * While a profile is rebound, Claude Code fetches the BORROWED account's profile
+ * under the running profile's config dir and stamps that account into this dir's
+ * `oauthAccount`. Nothing used to un-stamp it, so a restored profile kept
+ * reporting the lender's e-mail in `list` forever — the profile looked like it
+ * belonged to the wrong account long after the credential was correct again.
+ *
+ * Claude Code guards `.claude.json` writes with a lock on the FILE (locks.ts),
+ * not on the config dir, so the read-modify-write runs under that file lock —
+ * acquired INSIDE the caller's dir lock (distinct targets, no reentrancy).
+ * Best-effort by design: this runs on the recovery path, so a missing, corrupt,
+ * or already-correct config file is skipped and never throws.
+ */
+async function restoreStampedIdentity(cfgDir: string, own: unknown, d: RebindDeps): Promise<boolean> {
+  if (!own || typeof own !== "object") return false;
+  const file = ccConfigFile(cfgDir);
+  try {
+    return await d.withLock(file, () => {
+      const raw = d.readFile(file);
+      if (!raw) return false;
+      const cfg = JSON.parse(raw);
+      if (!cfg || typeof cfg !== "object") return false;
+      if (stableStringify(cfg.oauthAccount ?? null) === stableStringify(own)) return false;
+      cfg.oauthAccount = own;
+      d.writeFile(file, JSON.stringify(cfg, null, 2) + "\n");
+      return true;
+    });
+  } catch {
+    return false;
+  }
 }
 
 // ---------- global binding registry (Council finding 2) ----------
@@ -243,15 +344,19 @@ export function accountFingerprint(cred: string | null): { id: string | null } {
   }
 
   // Fallback: hash the account-stable subset of the oauth object.
+  // refreshTokenExpiresAt moves on every refresh-token rotation, so it is
+  // token material, not account identity — including it made a rotated
+  // credential of the SAME account fingerprint as "different".
   const rest: Record<string, unknown> = { ...oauth };
   delete rest.accessToken;
   delete rest.refreshToken;
   delete rest.expiresAt;
+  delete rest.refreshTokenExpiresAt;
   const digest = crypto.createHash("sha256").update(stableStringify(rest), "utf8").digest("hex").slice(0, 16);
   return { id: "sha256:" + digest };
 }
 
-type FingerprintBranch = "same" | "rotated" | "different" | "unparseable";
+type FingerprintBranch = "same" | "rotated" | "different" | "unparseable" | "indeterminate";
 
 /** Classify `actual` (what a store holds NOW) against `recorded` (what we expect). */
 function fingerprintCompare(recorded: string | null, actual: string | null): FingerprintBranch {
@@ -260,6 +365,34 @@ function fingerprintCompare(recorded: string | null, actual: string | null): Fin
   if (rid === null || aid === null) return "unparseable";
   if (rid !== aid) return "different";
   return accessToken(recorded) === accessToken(actual) ? "same" : "rotated";
+}
+
+/**
+ * The provenance verdict the write path acts on: {@link fingerprintCompare},
+ * escalated to the account endpoint where the local answer cannot be trusted.
+ *
+ * Why the escalation exists: the local "rotated" verdict means *same fingerprint,
+ * different access token*. That is conclusive only when the fingerprint came from
+ * a stable account CLAIM. Real Claude Code credentials carry NO claim, so the
+ * fallback hash covers only `scopes` + `subscriptionType` + `rateLimitTier` — every
+ * account on the same plan tier hashes IDENTICALLY. A re-login to a DIFFERENT
+ * account of the same tier was therefore indistinguishable from a token rotation,
+ * and "rotated" authorizes moving a credential (swap) or writing it into another
+ * profile's store (restore) — i.e. the blind spot let a foreign account's
+ * credential be handed to the wrong profile.
+ *
+ * `"indeterminate"` when the accounts cannot be established (offline, endpoint
+ * unreachable): callers must refuse WITHOUT mutating any store. Guessing "rotated"
+ * there is precisely the unsafe assumption this replaces.
+ */
+async function compareAccounts(recorded: string | null, actual: string | null, d: RebindDeps): Promise<FingerprintBranch> {
+  const local = fingerprintCompare(recorded, actual);
+  if (local !== "rotated") return local;
+  // A claim-backed fingerprint already proves the account — no lookup needed.
+  if (accountFingerprint(recorded).id?.startsWith("claim:")) return "rotated";
+  const [rid, aid] = await Promise.all([d.resolveAccount(recorded as string), d.resolveAccount(actual as string)]);
+  if (!rid || !aid) return "indeterminate";
+  return rid === aid ? "rotated" : "different";
 }
 
 /** The active binding on a running profile's config dir, or null. */
@@ -440,7 +573,7 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
   // (inner) → swap. The registry check + record + swap all run under BOTH locks,
   // so a concurrent rebind cannot bind the same account into a second profile.
   await d.withLock(registryLockTarget(), async () => {
-    await d.withLock(pConfig, () => {
+    await d.withLock(pConfig, async () => {
       // Global invariant (Council finding 2): one account → at most one profile.
       // Read-check the registry now; RECORD it only once every swap guard below
       // has passed, so a quarantine/refuse leaves no phantom registry entry.
@@ -457,10 +590,18 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
       // Provenance re-read under the lock (Council finding 5): compare what the
       // target store holds NOW against the credential we read before locking.
       const liveTarget = readCred(aConfig, d);
-      const branch = fingerprintCompare(aCred, liveTarget);
+      const branch = await compareAccounts(aCred, liveTarget, d);
       if (branch === "unparseable") {
         throw new RebindRefused(
           `target "${account}"'s live credential is missing or unparseable at swap time — refusing (no credential mutation).`,
+        );
+      }
+      if (branch === "indeterminate") {
+        throw new RebindRefused(
+          `target "${account}"'s token changed since rebind started and its account could not be verified ` +
+            `(the profile endpoint is unreachable — offline?). A rotation and a re-login to a DIFFERENT account ` +
+            `look identical locally, so rebind refuses rather than risk moving a foreign account's credential. ` +
+            `No credential was touched — retry once the account can be verified.`,
         );
       }
       if (branch === "different") {
@@ -487,6 +628,9 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
         runningOwnCredential: pCred,
         targetOrigCredential: credToMove,
         targetFileMoved: false,
+        // Snapshot the running profile's OWN identity stamp before the swap: from
+        // here on Claude Code will overwrite it with the borrowed account's.
+        runningOwnIdentity: readStampedIdentity(pConfig, d) ?? undefined,
       };
       // 2. Empty the target's store so its family is live in exactly one store:
       //    delete its Keychain entry and move its plaintext file aside (never
@@ -541,16 +685,24 @@ export async function restoreRebind(
   // lock (inner). Restore is exempt from the kill-switch by design — it is the
   // recovery path and must work even when `rebind` is disabled.
   await d.withLock(registryLockTarget(), async () => {
-    await d.withLock(pConfig, () => {
+    await d.withLock(pConfig, async () => {
       // Provenance (Council finding 5): the running store should still hold the
       // account we bound INTO it. If someone re-logged the running profile, its
       // store now holds a DIFFERENT account — never clobber that fresh login.
       const liveRunning = readCred(pConfig, d);
-      const branch = fingerprintCompare(marker.targetOrigCredential, liveRunning);
+      const branch = await compareAccounts(marker.targetOrigCredential, liveRunning, d);
       if (branch === "unparseable") {
         throw new RebindRefused(
           `running profile "${profile}"'s live credential is missing or unparseable — refusing restore (no mutation). ` +
             `The binding marker is left in place for manual recovery.`,
+        );
+      }
+      if (branch === "indeterminate") {
+        throw new RebindRefused(
+          `running profile "${profile}"'s token changed since the rebind and its account could not be verified ` +
+            `(the profile endpoint is unreachable — offline?). A rotation and a re-login to a DIFFERENT account ` +
+            `look identical locally, so restore refuses rather than risk writing a foreign credential into ` +
+            `"${marker.boundToProfile}"'s store. Nothing was touched; the marker is left in place — retry when online.`,
         );
       }
       if (branch === "different") {
@@ -564,11 +716,16 @@ export async function restoreRebind(
       // "same" / "rotated" → the bound account is still there → restore normally.
       // Restore the running profile to its own account.
       d.kcAdd(pSvc, marker.runningOwnCredential);
-      // Restore the target profile's own store.
-      d.kcAdd(aSvc, marker.targetOrigCredential);
+      // Restore the target profile's own store. On "rotated" the live credential
+      // is the same account with a FRESHER (rotated) refresh token — hand that
+      // back instead of the stale stash, or the target profile logs out.
+      d.kcAdd(aSvc, branch === "rotated" ? (liveRunning as string) : marker.targetOrigCredential);
       if (marker.targetFileMoved && d.exists(aFile + LENT_SUFFIX)) {
         d.renameFile(aFile + LENT_SUFFIX, aFile);
       }
+      // The credential is the running profile's own again — so must be the identity
+      // Claude Code stamped into its `.claude.json` while it served the other account.
+      await restoreStampedIdentity(pConfig, marker.runningOwnIdentity, d);
       d.removeFile(markerFile(pConfig));
       // Release the global binding-registry entry for the bound account.
       const reg = readRegistry(d);
