@@ -233,6 +233,17 @@ Follow-up slices stay open below.
       material). At swap + restore the live store content is re-read + compared:
       same/rotated-token → proceed; different account → **quarantine** (stash aside,
       no clobber, throw); unparseable → **refuse**. Unit-tested (all three).
+      Real Claude Code credentials carry NO account claim, so the hash fallback
+      covers only scopes + plan tier — every account on one tier hashes identically
+      and a re-login to a DIFFERENT same-tier account was indistinguishable from a
+      token rotation. A locally-inconclusive "rotated" is therefore resolved against
+      the account endpoint (`compareAccounts()`); unverifiable (offline) →
+      **refuse**, never a guessed rotation. Unit-tested.
+      Restore also puts the profile's own **identity stamp** back: while rebound,
+      Claude Code stamps the BORROWED account into the running config dir's
+      `.claude.json.oauthAccount` — the field `list` reports as the owner — so the
+      marker snapshots the profile's own stamp before the swap and restore writes it
+      back under CC's lock on the config *file*. Unit-tested.
 - [x] Per-profile **binding-marker** stashing both originals — keeps the 1:1 mapping
       honest + recoverable after a crash. Unit-tested.
 - [x] **Rollback / kill-switch (Council convergence):** `State.rebind =
