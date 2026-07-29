@@ -13,6 +13,9 @@ import {
   REBIND_FAILURE_LIMIT,
   canaryCheck,
   PINNED_SERVICE_NAME_RE,
+  parseCCVersion,
+  versionGuard,
+  PINNED_CC_VERSIONS,
   type RebindDeps,
 } from "../src/rebind.js";
 import { configDir, ROOT, type RebindKillSwitch } from "../src/profiles.js";
@@ -102,6 +105,9 @@ function makeFake(opts: { platform?: NodeJS.Platform; rebindState?: RebindKillSw
     freshen: (dir) => {
       calls.push("freshen:" + dir);
     },
+    // Default to a Phase-0-verified CC version so the R0.6 version canary passes
+    // for every existing test; the version-skew tests override this per-case.
+    claudeVersion: () => "2.1.218 (Claude Code)",
   };
   return { kc, files, calls, deps, rebindState };
 }
@@ -491,4 +497,50 @@ test("canary refuses rebind BEFORE any mutation when the service-name format dri
   );
   assert.equal(readBinding(pConfig, f.deps), null, "no binding marker written on a canary refusal");
   assert.equal(f.rebindState.consecutiveFailures, 0, "a canary refusal does not advance the circuit-breaker");
+});
+
+// ---------- Feature 5: CC-version-skew canary (Council finding 4 / R0.6) ----------
+
+test("parseCCVersion extracts the canonical semver from `claude --version` output", () => {
+  assert.equal(parseCCVersion("2.1.220 (Claude Code)"), "2.1.220");
+  assert.equal(parseCCVersion("2.1.218"), "2.1.218");
+  assert.equal(parseCCVersion(null), null);
+  assert.equal(parseCCVersion(""), null);
+  assert.equal(parseCCVersion("Claude Code"), null); // no semver present
+});
+
+test("versionGuard passes a version in the verified set, refuses one outside it", () => {
+  assert.equal(versionGuard("2.1.218 (Claude Code)", PINNED_CC_VERSIONS).ok, true);
+  const bad = versionGuard("2.1.220 (Claude Code)", PINNED_CC_VERSIONS);
+  assert.equal(bad.ok, false);
+  assert.match((bad as { reason: string }).reason, /not in rebind's verified set/);
+});
+
+test("versionGuard fails closed on an undetectable / unparsable version", () => {
+  const r = versionGuard(null, PINNED_CC_VERSIONS);
+  assert.equal(r.ok, false);
+  assert.match((r as { reason: string }).reason, /could not determine the running Claude Code version/);
+});
+
+test("versionGuard override bypasses set-membership ONLY for the running version", () => {
+  // An override naming the running version proceeds (operator re-verified it).
+  assert.equal(versionGuard("2.1.220 (Claude Code)", PINNED_CC_VERSIONS, "2.1.220").ok, true);
+  // An override naming a DIFFERENT version does not launder the running one.
+  assert.equal(versionGuard("2.1.221 (Claude Code)", PINNED_CC_VERSIONS, "2.1.220").ok, false);
+});
+
+test("version canary refuses rebind BEFORE any mutation on an unverified CC version", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  // CC auto-updated past the Phase-0-verified 2.1.218 → the contract is unproven.
+  f.deps.claudeVersion = () => "2.1.220 (Claude Code)";
+
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /canary tripped/);
+  assert.equal(
+    f.calls.filter((c) => c.startsWith("kcAdd") || c.startsWith("kcDelete") || c.startsWith("writeFile")).length,
+    0,
+    "no credential mutation on a version-canary refusal",
+  );
+  assert.equal(f.rebindState.consecutiveFailures, 0, "a version-canary refusal does not advance the circuit-breaker");
 });
