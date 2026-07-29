@@ -49,10 +49,20 @@ export interface ConfigBundle {
 }
 
 export const FULL_REFUSAL =
-  "--full (bundling live OAuth tokens) is intentionally not implemented — it is an account-takeover vector; export is config-only by design.";
+  "--full (bundling live OAuth tokens) is intentionally not implemented — it is an account-takeover vector; export is config-only by design. " +
+  "To move an account to another machine: `agent-switch config export` (config-only) → `config import` on the target → `agent-switch <profile>` and re-run `claude` to log in there — a fresh login is machine-specific by design.";
 
 /** Refuse the `--full` (credential-bundling) variant. Throws so callers can
- *  surface it via `die`; kept here because it is a config-transfer policy. */
+ *  surface it via `die`; kept here because it is a config-transfer policy.
+ *
+ *  Re-affirmed 2026-07-29: an AI-council threat-modelled review of whether to
+ *  build `--full` (with mandatory encryption) concluded KEEP IT REFUSED — even
+ *  AES-256-GCM + Argon2id cannot fix the threat-model shift (an exportable
+ *  credential bundle is a persistent cloud-sync / malware / phishing exfil
+ *  vector), the 30-second `config import → auth login` path covers the real
+ *  need, and industry practice (aws / gh / kubectl) never exports credentials.
+ *  Reversing this requires the repo owner's explicit sign-off, not agent
+ *  convergence. */
 export function assertNotFull(full: boolean): void {
   if (full) throw new Error(FULL_REFUSAL);
 }
