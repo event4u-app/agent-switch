@@ -147,11 +147,29 @@ projects touched.
 - [x] **R0.4 (freshening):** PASS — token >10 min → no freshen; profile endpoint
       200; safe to swap directly. Dead-token quarantine branch drilled via
       `--force-quarantine`.
-- [ ] **R0.6 (cross-CC-version skew, Council finding 4):** rebind lives across CC
+- [x] **R0.6 (cross-CC-version skew, Council finding 4):** rebind lives across CC
       auto-updates, so R0.1–R0.4 only prove the *installed* version. Re-run them
       after a CC update, OR — if that cannot be scripted — declare version-skew an
       explicit go/no-go (rebind ships with a hard CC-version pin + refuse on
       mismatch).
+      <!-- done 2026-07-29: took the go/no-go fallback (re-running R0.1–R0.4 needs
+      two live throwaway accounts + can't be scripted headless). Added a
+      CC-version-skew canary to src/rebind.ts: `PINNED_CC_VERSIONS = {2.1.218}`
+      (the only Phase-0-verified version), a pure `parseCCVersion()` +
+      `versionGuard()` (fail-closed on unparsable/unknown, verified-set membership,
+      env override `AGENT_SWITCH_CC_VERSION_OVERRIDE=<v>` bypassing set-membership
+      ONLY for the named running version), and `versionCanaryCheck(d)` wired into
+      `rebind()` right after the keychain canary — before any mutation, never
+      advances the circuit-breaker. `--restore` stays exempt (recovery path). This
+      is a real fail-closed win RIGHT NOW: the dev machine already runs CC 2.1.220
+      (auto-updated past 2.1.218), so rebind correctly refuses until re-verified.
+      Design (verified-set over exact-only / major.minor; override bypasses set
+      only; keep the keychain canary non-overridable) came from the AI council
+      (agents/runtime/council/responses/live-rebind-r06.json). The council's
+      SECONDARY runtime lock-roundtrip validator was deliberately NOT added — it
+      is invasive in the credential path and outside R0.6's ask; noted as a future
+      enhancement. 32 rebind tests green (5 new), tsc clean. -->
+
 - [x] **Canary + drift-response matrix (Council finding 3):** landed — `canaryCheck()`
       refuses `rebind` (before any mutation) if the keychain service-name format drifts
       from the pinned `Claude Code-credentials-<8hex>`, with the matrix message. It pins
@@ -299,9 +317,37 @@ scope). No Anthropic-guidance gate (owner resolved finding 6).
 
 ### Phase 6 — Other providers (gated, later)
 
-- [ ] Per-provider ground-truth table before any rebind parity. Codex has no
+- [x] Per-provider ground-truth table before any rebind parity. Codex has no
       usage readout (identity only) and different credential mechanics; Antigravity
       has no session store. No parity is assumed from the Claude spike.
+      <!-- done 2026-07-29: table below, built from the live code contracts in
+      src/providers.ts + src/codex-usage.ts (not memory). NOTE: this step's own
+      prose is now stale on one point — Codex DID gain a usage readout since it
+      was written (src/codex-usage.ts, `hasUsageReadout: true` via the ChatGPT
+      `wham/usage` endpoint). The rebind-parity conclusion is unchanged: only
+      Claude has a verified store contract; Codex + Antigravity have different,
+      unverified mechanics, so no parity is assumed. -->
+
+  **Ground truth per provider (source: `src/providers.ts`, `src/codex-usage.ts`;
+  Claude row also from this roadmap's § Ground truth). The rebind-relevant gate is
+  the "runtime credential re-read" row — the enabling insight rebind depends on.**
+
+  | Fact | claude | codex | antigravity |
+  |---|---|---|---|
+  | Isolation lever | `CLAUDE_CONFIG_DIR` = dir | `CODEX_HOME` = dir | `HOME` = home (nests `.gemini/`) |
+  | Credential store | macOS Keychain `Claude Code-credentials-<8hex>` + `.credentials.json` (Linux/Win) | `$dir/auth.json` (0600 plaintext file) | macOS Keychain via go-keyring (fixed service `gemini` / account `antigravity`), HOME-scoped |
+  | Identity source | `.claude.json` `oauthAccount.emailAddress` | `auth.json` `tokens.id_token` email / `account_id` | keychain `id_token` email (`security` under HOME) |
+  | **Runtime credential re-read** (rebind's enabling insight) | **YES — verified** (Phase 0 R0.2, CC 2.1.218) | **unverified** — no spike, no proof a running `codex` re-reads `auth.json` mid-session | **unverified** — no spike |
+  | Refresh-lock protocol | `proper-lockfile` dir mutex, verified (R0.3) | unknown — not proven to be `proper-lockfile`-shaped | unknown |
+  | Usage readout | yes (OAuth `/usage`) | **yes** — live via ChatGPT `wham/usage` (updates this step's "identity only" note) | no |
+  | Session / context store | yes (JSONL sessions; the pet/context features read it) | rollout files exist for usage; no CC-style live session-context contract proven | **no session store** |
+  | Rebind-parity verdict | **reference** (shipped, macOS Keychain path) | **no parity assumed** — file-based creds, no verified runtime re-read or lock contract | **no parity assumed** — go-keyring + no session store + different mechanics |
+
+  Consequence: extending `rebind` to Codex or Antigravity is **not** a config
+  change on the Claude path — each needs its own Phase-0-style falsification of the
+  "runtime re-read + safe swap under a lock" contract before any parity claim. This
+  step delivers the table that gate depends on; the falsification spikes themselves
+  stay out of scope for this Claude-focused roadmap (Phase 6 is "gated, later").
 
 ## Risks & rules
 

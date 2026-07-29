@@ -23,6 +23,7 @@
  * circuit-breaker, and the Linux/Win backend.
  */
 
+import { execFileSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
@@ -95,6 +96,9 @@ export interface RebindDeps {
   /** Delegate a token refresh to Claude Code for the target's config dir when its
    *  token is spent (`claude doctor`, no session/quota; ADR-004). */
   freshen: (configDir: string) => void;
+  /** Raw `claude --version` output (e.g. "2.1.220 (Claude Code)"), or null when
+   *  the binary can't be run. Feeds the CC-version-skew canary (R0.6). */
+  claudeVersion: () => string | null;
   /** Authoritative account id behind a credential, or null when it cannot be
    *  established (offline, endpoint unreachable, token rejected). Consulted ONLY
    *  when the local fingerprint is inconclusive — see {@link compareAccounts}. */
@@ -163,6 +167,13 @@ export function defaultDeps(): RebindDeps {
     writeRebindState: writeRebindKillSwitch,
     freshen: (cfg) => {
       freshenToken(cfg);
+    },
+    claudeVersion: () => {
+      try {
+        return execFileSync("claude", ["--version"], { encoding: "utf8", timeout: 5000 }).trim() || null;
+      } catch {
+        return null;
+      }
     },
     resolveAccount: resolveAccountViaApi,
   };
@@ -459,6 +470,75 @@ export function canaryCheck(cfgDir: string, d: RebindDeps): void {
   }
 }
 
+// ---------- CC-version-skew canary (Council finding 4 / R0.6) ----------
+
+/**
+ * Claude Code versions whose credential-store contract the Phase-0 spikes
+ * (R0.1–R0.4) actually verified. rebind's whole mechanism relies on CC's
+ * *undocumented, internal* store contract (keychain-name shape, refresh-lock
+ * protocol, cache TTL), which can change on ANY CC release — and CC auto-updates.
+ * So the pin is a **verified set**, not a range: only add a version here after
+ * re-running the Phase-0 spikes against it. (No major.minor tolerance — there is
+ * no evidence CC applies semver semantics to its internal keychain contract.)
+ */
+export const PINNED_CC_VERSIONS: ReadonlySet<string> = new Set(["2.1.218"]);
+
+/** Env var an operator sets, AFTER manually re-running the Phase-0 spikes
+ *  against the running CC version, to proceed without a code release. It bypasses
+ *  ONLY the verified-set membership check — never the keychain-name canary. */
+export const CC_VERSION_OVERRIDE_ENV = "AGENT_SWITCH_CC_VERSION_OVERRIDE";
+
+/** Canonical `major.minor.patch` from `claude --version` output
+ *  ("2.1.220 (Claude Code)" → "2.1.220"); null when no semver is present. Pure. */
+export function parseCCVersion(raw: string | null): string | null {
+  if (!raw) return null;
+  const m = raw.match(/\b(\d+\.\d+\.\d+)\b/);
+  return m ? m[1] : null;
+}
+
+/**
+ * Pure verified-set gate for the running CC version (R0.6). Fail-closed:
+ *  - unparsable / undetectable version → refuse (indistinguishable from risk);
+ *  - an `override` naming the SAME running version → pass (set-membership only);
+ *  - version in the verified set → pass; otherwise → refuse with a re-verify path.
+ * Kept pure (no deps, no env) so every branch is unit-tested directly.
+ */
+export function versionGuard(
+  running: string | null,
+  pinned: ReadonlySet<string> = PINNED_CC_VERSIONS,
+  override: string | null = null,
+): { ok: true } | { ok: false; reason: string } {
+  const v = parseCCVersion(running);
+  if (!v) {
+    return {
+      ok: false,
+      reason: `could not determine the running Claude Code version (\`claude --version\` failed or was unparsable) — rebind refuses (fail-closed).`,
+    };
+  }
+  if (override && parseCCVersion(override) === v) return { ok: true };
+  if (pinned.has(v)) return { ok: true };
+  return {
+    ok: false,
+    reason:
+      `Claude Code ${v} is not in rebind's verified set {${[...pinned].join(", ")}}. ` +
+      `rebind's credential-store contract is only proven for those versions, and a CC auto-update may have changed it. ` +
+      `Re-run the Phase-0 spikes against ${v}, then set ${CC_VERSION_OVERRIDE_ENV}=${v} to proceed (or add ${v} to PINNED_CC_VERSIONS).`,
+  };
+}
+
+/**
+ * Fail loud if the running Claude Code version is not one the Phase-0 spikes
+ * verified (R0.6). Runs BEFORE any read or mutation in {@link rebind}, alongside
+ * the keychain-name {@link canaryCheck} — a version the contract was never proven
+ * against is a config-drift stop, not a rebind failure, so it does not advance the
+ * circuit-breaker. The env override ({@link CC_VERSION_OVERRIDE_ENV}) bypasses only
+ * the set-membership check.
+ */
+export function versionCanaryCheck(d: RebindDeps): void {
+  const r = versionGuard(d.claudeVersion(), PINNED_CC_VERSIONS, process.env[CC_VERSION_OVERRIDE_ENV] ?? null);
+  if (!r.ok) throw new RebindError(`credential-store canary tripped: ${r.reason}`);
+}
+
 /**
  * Rebind the running profile `profile` to serve `account`'s credential. macOS
  * only; both must be logged-in claude profiles. Throws {@link RebindError} on any
@@ -478,6 +558,10 @@ export async function rebind(
   // hard-refuses here, independent of the circuit-breaker — it is a config-drift
   // stop, not a rebind failure.
   canaryCheck(configDir("claude", opts.profile), d);
+  // R0.6: also refuse if the running CC version is outside the Phase-0-verified
+  // set — the store contract is unproven there. Overridable per-version via env
+  // after manual re-verification; never advances the breaker (config-drift stop).
+  versionCanaryCheck(d);
   const ks = d.readRebindState();
   if (ks.disabled) {
     throw new RebindError(

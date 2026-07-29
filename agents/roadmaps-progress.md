@@ -6,10 +6,10 @@
 
 ## Overall
 
-**135 / 137 steps done · 99%**
+**137 / 137 steps done · 100%**
 
 ```text
-████████████████████████████████████████   99%
+████████████████████████████████████████   100%
 ```
 
 ## ⚠️ Iron Law 3 — unresolved deferred items
@@ -22,6 +22,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | [road-to-ac-embedded-settings.md](roadmaps/road-to-ac-embedded-settings.md) | 26 | 4 | 0 |
 | [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 28 | 1 | 1 |
 | [road-to-desktop-pet.md](roadmaps/road-to-desktop-pet.md) | 35 | 6 | 0 |
+| [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md) | 31 | 2 | 0 |
 | [road-to-usage-reliability-and-portability.md](roadmaps/road-to-usage-reliability-and-portability.md) | 9 | 3 | 1 |
 
 ## Open roadmaps
@@ -32,7 +33,7 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 | 2 | [road-to-ac-embedded-settings.md](roadmaps/road-to-ac-embedded-settings.md) | 4 | 30 | 0 | 26 | 4 | 0 | [3](#blockers-road-to-ac-embedded-settings) | ██████████ 100% |
 | 3 | [road-to-agent-setup-hub.md](roadmaps/road-to-agent-setup-hub.md) | 5 | 30 | 0 | 28 | 1 | 1 | [2](#blockers-road-to-agent-setup-hub) | ██████████ 100% |
 | 4 | [road-to-desktop-pet.md](roadmaps/road-to-desktop-pet.md) | 6 | 41 | 0 | 35 | 6 | 0 | 0 | ██████████ 100% |
-| 5 | [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md) | 7 | 33 | 2 | 29 | 2 | 0 | 0 | █████████░ 94% |
+| 5 | [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md) | 7 | 33 | 0 | 31 | 2 | 0 | 0 | ██████████ 100% |
 | 6 | [road-to-usage-reliability-and-portability.md](roadmaps/road-to-usage-reliability-and-portability.md) | 5 | 13 | 0 | 9 | 3 | 1 | 0 | ██████████ 100% |
 
 ---
@@ -111,17 +112,17 @@ These roadmaps have `count_open == 0` but carry `[~]` deferred items. Per `roadm
 
 ### [road-to-live-rebind.md](roadmaps/road-to-live-rebind.md)
 
-**live account rebind (in-session switch, any terminal)** — 29 / 31 done (94%)
+**live account rebind (in-session switch, any terminal)** — 31 / 31 done (100%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
-| 0 | Falsification spikes (the gate; `scripts/spikes/r0*`) | 🟡 in progress | 1 | 5 | 1 | 0 | 83% |
+| 0 | Falsification spikes (the gate; `scripts/spikes/r0*`) | ✅ done | 0 | 6 | 1 | 0 | 100% |
 | 1 | ADR-003 gate (decide BEFORE the write path is built) | ✅ done | 0 | 2 | 0 | 0 | 100% |
 | 2 | `agent-switch rebind <account> [--profile <p>]` (the one write module) | ✅ done | 0 | 9 | 1 | 0 | 100% |
 | 3 | Retire the FULLY-automatic switch (keep notify + suggestion) | ✅ done | 0 | 7 | 0 | 0 | 100% |
 | 4 | Limit dialog (CLI first) — user-interaction-gated | ✅ done | 0 | 5 | 0 | 0 | 100% |
 | 5 | GUI parity (later) | ✅ done | 0 | 1 | 0 | 0 | 100% |
-| 6 | Other providers (gated, later) | ⬜ not started | 1 | 0 | 0 | 0 | 0% |
+| 6 | Other providers (gated, later) | ✅ done | 0 | 1 | 0 | 0 | 100% |
 
 ### [road-to-usage-reliability-and-portability.md](roadmaps/road-to-usage-reliability-and-portability.md)
 
