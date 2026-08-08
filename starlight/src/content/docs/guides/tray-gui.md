@@ -5,6 +5,8 @@ description: Launch the tray/menubar desktop app — a Tauri client of the agent
 
 The tray/menubar GUI wraps the whole CLI in a desktop app. It's a client of the CLI's `--json` contract — it never re-implements profile or credential logic — with an embedded terminal so login, run, and takeover happen in-app.
 
+![Mock of the agent-switch tray GUI showing per-provider tabs (Claude active), and three anonymized profile cards with usage bars and active/live badges](/agent-switch/screenshots/gui-main.svg)
+
 ## Launching
 
 ```bash
@@ -36,6 +38,10 @@ The GUI is a **Tauri app**: a Rust tray/window shell with a React frontend. It i
 - **Notifications** — notification bell, toasts, and OS notifications.
 - **Codex "redeem reset"** — bank/redeem a rate-limit reset from the UI.
 - **Settings sub-tabs** — General, Alerts, Providers, Design (theme), Updates, Uninstall.
+
+The sessions panel lists each profile's sessions with a context-usage bar and inline actions (takeover, preview, compact, handoff):
+
+![Mock of the agent-switch sessions panel showing three sessions with context bars and a live session marked with a green dot](/agent-switch/screenshots/gui-sessions.svg)
 
 ## In-app updates
 

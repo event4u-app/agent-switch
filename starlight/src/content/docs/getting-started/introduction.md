@@ -31,6 +31,10 @@ The CLI defaults to `claude` throughout; pass `--provider codex|antigravity` to 
 | `codex` (OpenAI Codex) | `codex` | `CODEX_HOME` | `<dir>/auth.json` (`0600`) | Yes |
 | `antigravity` (Google Gemini `agy`) | `agy` | `HOME` (CLI nests `.gemini/`) | Per-profile keychain via go-keyring | No (identity only) |
 
+`agent-switch list` shows every profile grouped by provider, with the active one marked:
+
+![Terminal showing agent-switch list output grouped into Claude, Codex, and Antigravity sections, each with anonymized accounts](/agent-switch/screenshots/list-multiprovider.svg)
+
 ## Next
 
 Continue to [Installation & Setup](/agent-switch/getting-started/installation/).
