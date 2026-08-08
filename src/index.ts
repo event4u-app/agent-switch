@@ -92,6 +92,7 @@ import {
   cleanupForkVehicle,
   codexSessionCommand,
   deleteSession,
+  detectRunningClaudeProfile,
   listSessions,
   listCodexSessions,
   locateSession,
@@ -2018,7 +2019,27 @@ async function cmdRebind(
   flags: Record<string, string | boolean>,
 ): Promise<void> {
   if (providerExplicit && providerId !== "claude") die(`rebind supports claude only (not ${providerId})`);
-  const profile = typeof flags.profile === "string" ? flags.profile : activeFor("claude") ?? undefined;
+  // Resolve which running profile rebind targets: explicit --profile wins; else
+  // prefer the profile that actually has a LIVE session (rebind's whole point is
+  // the running session, which may not be the "active" default-for-new-processes
+  // profile). Only auto-target when exactly one profile is running — a credential
+  // write must never guess across ambiguity — otherwise keep the active fallback.
+  const explicitProfile = typeof flags.profile === "string" ? flags.profile : undefined;
+  let profile = explicitProfile ?? activeFor("claude") ?? undefined;
+  if (!explicitProfile) {
+    const running = detectRunningClaudeProfile(listProfiles("claude"), (p) => configDir("claude", p));
+    if (running.kind === "single") {
+      if (running.profile !== profile) {
+        console.log(`Auto-detected the running claude profile "${running.profile}" (its session is live) — targeting it. Pass --profile to override.`);
+      }
+      profile = running.profile;
+    } else if (running.kind === "ambiguous") {
+      console.log(
+        `Multiple running claude profiles (${running.profiles.join(", ")}) — ` +
+          `${profile ? `using the active profile "${profile}"` : "no active default"}; pass --profile <name> to target a specific one.`,
+      );
+    }
+  }
 
   if (flags.reset) {
     // Kill-switch reset (ADR-003): clear `disabled` + the failure counter so a
