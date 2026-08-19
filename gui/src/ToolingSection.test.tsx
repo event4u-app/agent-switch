@@ -27,6 +27,15 @@ import {
   type ToolingCache,
 } from "./ToolingSection.js";
 import type { ToolingEntry, ToolingId } from "./ipc.js";
+import type { ReleaseInfo } from "./updates.js";
+
+const release = (tag: string, notes = `### Fixes\n\n* **x:** something in ${tag}\n`): ReleaseInfo => ({
+  tag,
+  name: tag,
+  url: `https://example.test/${tag}`,
+  notes,
+  publishedAt: "2026-08-18T16:47:49Z",
+});
 
 const ok = (id: ToolingEntry["id"], over: Partial<ToolingEntry> = {}): ToolingEntry => ({
   id,
@@ -91,14 +100,18 @@ function Harness({
   isWindows = false,
   profileCounts = {},
   agentConfigUpdateTo = null,
+  agentConfigReleases = [],
   onRunTool = () => {},
+  onOpenUrl = () => {},
   onNotifyError = () => {},
 }: {
   initial?: ToolingCache | null;
   isWindows?: boolean;
   profileCounts?: Partial<Record<ToolingId, number>>;
   agentConfigUpdateTo?: string | null;
+  agentConfigReleases?: readonly ReleaseInfo[];
   onRunTool?: (action: "install" | "upgrade", id: ToolingId) => void;
+  onOpenUrl?: (url: string) => void;
   onNotifyError?: (message: string) => void;
 }) {
   const [cache, setCache] = React.useState<ToolingCache | null>(initial);
@@ -109,7 +122,9 @@ function Harness({
       isWindows={isWindows}
       profileCounts={profileCounts}
       agentConfigUpdateTo={agentConfigUpdateTo}
+      agentConfigReleases={agentConfigReleases}
       onRunTool={onRunTool}
+      onOpenUrl={onOpenUrl}
       onNotifyError={onNotifyError}
     />
   );
@@ -263,6 +278,35 @@ describe("ToolingSection", () => {
     render(<Harness agentConfigUpdateTo={null} />);
     await screen.findByText("agent-config");
     expect(screen.queryByRole("button", { name: /update/i })).toBeNull();
+  });
+
+  it("the agent-config row can read what the update contains, collapsed by default", async () => {
+    toolingStatus.mockResolvedValue([ok("agent-config", { version: "9.7.0" })]);
+    const onOpenUrl = vi.fn();
+    render(<Harness agentConfigUpdateTo="9.8.0" agentConfigReleases={[release("9.8.0")]} onOpenUrl={onOpenUrl} />);
+    const panel = await screen.findByTestId("release-notes");
+    expect(panel.hasAttribute("open")).toBe(false);
+    expect(screen.getByText(/what's new in 9\.8\.0/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /full release notes on github/i }));
+    expect(onOpenUrl).toHaveBeenCalledWith("https://example.test/9.8.0");
+  });
+
+  it("no notes panel on rows that have none, nor when the bodies are unknown", async () => {
+    // rtk has an Update button from the registry check but no release bodies here.
+    render(
+      <Harness
+        initial={{ entries: [ok("rtk", { version: "0.34.3" })], at: Date.now(), latest: { rtk: "0.43.0" } }}
+        agentConfigReleases={[release("9.8.0")]}
+      />,
+    );
+    expect(await screen.findByRole("button", { name: "Update to v0.43.0" })).toBeTruthy();
+    expect(screen.queryByTestId("release-notes")).toBeNull();
+    cleanup();
+    // agent-config with an update but unfetchable bodies → button, no panel.
+    toolingStatus.mockResolvedValue([ok("agent-config", { version: "9.7.0" })]);
+    render(<Harness agentConfigUpdateTo="9.8.0" agentConfigReleases={[]} />);
+    expect(await screen.findByRole("button", { name: "Update to v9.8.0" })).toBeTruthy();
+    expect(screen.queryByTestId("release-notes")).toBeNull();
   });
 
   it("caches the latest versions WITH the sweep — a fresh cache renders the button without any refetch", async () => {

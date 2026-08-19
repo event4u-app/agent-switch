@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Eye, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AgentConfigView } from "./agent-config.js";
+import { ReleaseNotesStack } from "./ReleaseNotes.js";
 
 /**
  * Generated brand mark for the card — a gradient rounded square with a
@@ -39,7 +40,12 @@ function previewView(mode: (typeof PREVIEW_MODES)[number], real: VisibleView): V
   const current = "current" in real ? real.current : "9.1.0";
   const latest = real.mode === "update" || real.mode === "installed" ? (real.latest ?? "9.2.0") : "9.2.0";
   if (mode === "install") return { visible: true, mode: "install" };
-  if (mode === "update") return { visible: true, mode: "update", current, latest };
+  // The preview keeps the REAL release bodies when there are any, so the
+  // what's-new disclosure is inspectable in dev mode instead of being a
+  // permanently empty box.
+  if (mode === "update") {
+    return { visible: true, mode: "update", current, latest, releases: real.mode === "update" ? real.releases : [] };
+  }
   return { visible: true, mode: "installed", current, latest };
 }
 
@@ -59,6 +65,7 @@ export function AgentConfigCard({
   variant,
   devMode,
   onOpenRepo,
+  onOpenUrl,
   onRun,
   onDismiss,
   onNotifyError,
@@ -67,6 +74,8 @@ export function AgentConfigCard({
   variant: "ecosystem" | "first-run";
   devMode: boolean;
   onOpenRepo: () => void;
+  /** Opens a release page in the browser (the what's-new footer link). */
+  onOpenUrl: (url: string) => void;
   /** Runs `tooling install|upgrade agent-config` in the background. Never
    *  rejects — the parent reports failures via the notification system. */
   onRun: (action: "install" | "upgrade") => Promise<void>;
@@ -172,6 +181,13 @@ export function AgentConfigCard({
           )}
         </div>
       </div>
+
+      {/* What the update contains, one click away. Collapsed by default so this
+       *  card keeps the height it has today until the user asks; silent when the
+       *  release bodies are unknown (offline / rate-limited). */}
+      {shown.mode === "update" && (
+        <ReleaseNotesStack releases={shown.releases} onOpenUrl={onOpenUrl} className="mt-2.5" />
+      )}
     </div>
   );
 }

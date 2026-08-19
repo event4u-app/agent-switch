@@ -59,8 +59,10 @@ export interface ReleaseInfo {
 }
 
 /** Reshape a raw GitHub `releases/latest` payload into {@link ReleaseInfo}, or
- *  null for a draft/prerelease or a payload without a tag. Pure — no network. */
-export function parseRelease(raw: unknown): ReleaseInfo | null {
+ *  null for a draft/prerelease or a payload without a tag. Pure — no network.
+ *  `repo` only supplies the fallback URL for a payload missing `html_url`; it
+ *  defaults to this app's own repo so existing callers are unaffected. */
+export function parseRelease(raw: unknown, repo: string = UPDATE_REPO): ReleaseInfo | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   if (r.draft === true || r.prerelease === true) return null;
@@ -69,10 +71,42 @@ export function parseRelease(raw: unknown): ReleaseInfo | null {
   return {
     tag,
     name: typeof r.name === "string" && r.name ? r.name : tag,
-    url: typeof r.html_url === "string" ? r.html_url : `https://github.com/${UPDATE_REPO}/releases`,
+    url: typeof r.html_url === "string" ? r.html_url : `https://github.com/${repo}/releases`,
     notes: typeof r.body === "string" ? r.body : "",
     publishedAt: typeof r.published_at === "string" ? r.published_at : "",
   };
+}
+
+/** Reshape a raw GitHub `/releases` array (drafts and prereleases dropped by
+ *  {@link parseRelease}'s existing rule) and order it newest version first, so
+ *  the ordering is the version math rather than GitHub's creation order. Pure. */
+export function parseReleases(raw: unknown, repo: string = UPDATE_REPO): ReleaseInfo[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((r) => parseRelease(r, repo))
+    .filter((r): r is ReleaseInfo => r !== null)
+    .sort((a, b) => compareVersions(b.tag, a.tag));
+}
+
+/** The releases strictly newer than `current`, newest first — i.e. everything
+ *  the user has not seen yet, which is what "what changed" actually means for
+ *  someone several versions behind. Pure. */
+export function releasesNewerThan(releases: readonly ReleaseInfo[], current: string): ReleaseInfo[] {
+  return releases.filter((r) => isNewer(r.tag, current)).sort((a, b) => compareVersions(b.tag, a.tag));
+}
+
+/** Recent releases for a repo, newest first. `[]` when the repo has none (404)
+ *  — a normal empty state. Throws on any other network/HTTP failure so the
+ *  caller can fall back to {@link fetchLatestRelease} rather than silently
+ *  reporting "nothing new". One request; the unauthenticated endpoint is
+ *  rate-limited (60/h per IP), ample for an hourly check. */
+export async function fetchReleases(repo: string = UPDATE_REPO, perPage = 20): Promise<ReleaseInfo[]> {
+  const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=${perPage}`, {
+    headers: { Accept: "application/vnd.github+json", "User-Agent": `${PACKAGE_NAME} cli-updater` },
+  });
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error(`GitHub API returned ${res.status}`);
+  return parseReleases(await res.json(), repo);
 }
 
 /** The running CLI's version, from the package's own package.json (one level up

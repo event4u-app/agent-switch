@@ -67,7 +67,18 @@ import { applySharing, removeSharing, syncSharing, sharedLinkHealth } from "./sh
 import { assertNotFull, exportConfig, importConfig } from "./config-transfer.js";
 import { detectShell, shellenvScript } from "./shellenv.js";
 import { runDoctor } from "./doctor.js";
-import { TOOL_IDS, ToolAction, ToolId, checkTooling, formatToolingLines, runToolAction } from "./tooling.js";
+import {
+  TOOL_IDS,
+  ToolAction,
+  ToolId,
+  checkTooling,
+  formatToolNotes,
+  formatToolingLines,
+  runToolAction,
+  toolNotesRefusal,
+  toolReleaseRepo,
+} from "./tooling.js";
+import { releaseNoteBlocks } from "./release-notes.js";
 import { HistorySample, readHistory, recordHistorySample } from "./history.js";
 import { launchGui } from "./gui-launch.js";
 import {
@@ -83,7 +94,7 @@ import {
   overrideFromEnv,
   renderGuardMessage,
 } from "./single-load.js";
-import { checkForUpdate, selfUpdate } from "./updates.js";
+import { checkForUpdate, fetchReleases, releasesNewerThan, selfUpdate, type ReleaseInfo } from "./updates.js";
 import {
   mappingRows,
   pruneMappings,
@@ -2009,6 +2020,66 @@ function cmdTooling(json = false): void {
   }
   console.log(`agent-switch tooling — platform ${process.platform}\n`);
   for (const l of formatToolingLines(tools)) console.log(l);
+  // This readout stays offline by contract; the notes command is where the
+  // network lives, so point at it rather than fetching here.
+  console.log("\nWhat changed in a release: `agent-switch tooling notes [<tool>]`");
+}
+
+/**
+ * `agent-switch tooling notes [<tool>] [--latest] [--json]` — read what an
+ * ecosystem update actually contains, in the terminal.
+ *
+ * Deliberately a SEPARATE subcommand: `tooling` (no args) is a local, offline
+ * readout the GUI consumes over `--json`, and that contract stays. This one
+ * fetches, and says so in the help.
+ *
+ * Default tool is `agent-config` (the one agent-switch announces updates for).
+ * Shown: every release newer than the installed version, newest first — so
+ * someone several versions behind reads all of them, not just the last. Up to
+ * date or not installed → the newest release, so the command always answers.
+ * A tool with no verified release source gets a named refusal, never an
+ * invented source.
+ */
+async function cmdToolingNotes(id: string | undefined, flags: Record<string, string | boolean>): Promise<void> {
+  const toolId = (id ?? "agent-config") as ToolId;
+  if (!TOOL_IDS.includes(toolId)) {
+    die(`usage: agent-switch tooling notes [<${TOOL_IDS.join("|")}>] [--latest] [--json]`);
+  }
+  const repo = toolReleaseRepo(toolId);
+  if (!repo) die(toolNotesRefusal(toolId));
+
+  const installed = checkTooling({ ids: [toolId] })[0]?.version ?? null;
+  let releases: ReleaseInfo[] = [];
+  let failure: string | null = null;
+  try {
+    releases = await fetchReleases(repo);
+  } catch (e) {
+    failure = e instanceof Error ? e.message : String(e);
+  }
+  const latest = releases[0]?.tag ?? null;
+  // Unread first; when there is nothing unread (up to date, not installed, or
+  // the list is empty) fall back to the newest release so the command answers.
+  const unread = installed ? releasesNewerThan(releases, installed) : [];
+  const selected = unread.length > 0 ? unread : releases.slice(0, 1);
+  const view = { id: toolId, installed, latest, releases: flags.latest ? selected.slice(0, 1) : selected };
+
+  if (flags.json) {
+    console.log(
+      JSON.stringify(
+        {
+          ...view,
+          repo,
+          error: failure,
+          releases: view.releases.map((r) => ({ ...r, blocks: releaseNoteBlocks(r.notes) })),
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  for (const line of formatToolNotes(view)) console.log(line);
+  if (failure) console.log(`\nCould not reach the release source (${failure}) — showing what was available.`);
 }
 
 /** `agent-switch tooling install|upgrade <id>` — run the tool's per-platform
@@ -2103,6 +2174,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch usage history [--provider P] [--profile <name>] [--json]   daemon-recorded usage samples per profile
   agent-switch tooling [--json]                ecosystem tool readout (agent-config, rtk, provider CLIs)
   agent-switch tooling install|upgrade <tool>  install/upgrade an ecosystem tool (agent-config, rtk, claude, codex)
+  agent-switch tooling notes [<tool>] [--latest] [--json]   read an ecosystem tool's release notes (default agent-config; fetches from GitHub)
   agent-switch doctor                          per-OS, per-provider self-check`);
 }
 
@@ -2343,8 +2415,9 @@ async function main(): Promise<void> {
       if (positional[0] === "install" || positional[0] === "upgrade") {
         return cmdToolingAction(positional[0], positional[1]);
       }
+      if (positional[0] === "notes") return cmdToolingNotes(positional[1], flags);
       if (positional[0] !== undefined) {
-        die(`usage: agent-switch tooling [install|upgrade <${TOOL_IDS.join("|")}>] [--json]`);
+        die(`usage: agent-switch tooling [install|upgrade <${TOOL_IDS.join("|")}>] [notes [<tool>]] [--json]`);
       }
       return cmdTooling(!!flags.json);
     case "doctor": return process.exit(await runDoctor());

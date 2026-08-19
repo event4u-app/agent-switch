@@ -21,7 +21,8 @@ import * as path from "node:path";
 
 import { ProviderId } from "./providers.js";
 import { readBinaryPath } from "./profiles.js";
-import { npmSearchPath } from "./updates.js";
+import { npmSearchPath, type ReleaseInfo } from "./updates.js";
+import { releaseNoteBlocks, releaseNotesText } from "./release-notes.js";
 
 export type ToolId = "agent-config" | "rtk" | "claude" | "codex" | "agy";
 export const TOOL_IDS: readonly ToolId[] = ["agent-config", "rtk", "claude", "codex", "agy"];
@@ -420,4 +421,92 @@ export function doctorToolingLine(t: ToolStatus): string {
     return `\`${t.id}\`${t.version ? ` ${t.version}` : ""} is installed${t.identity === "token-killer" ? " (Token Killer verified)" : ""}.`;
   }
   return `\`${t.id}\`: ${t.hint}`;
+}
+
+// ---------- release notes (`tooling notes <tool>`) --------------------------------
+
+/**
+ * Repos whose GitHub Releases are a tool's release-note source. Only tools with
+ * a source this repo has actually verified appear here — inventing a plausible
+ * repo for the rest would be worse than the refusal `toolNotesRefusal` prints.
+ * Same two sources the GUI uses (agent-config's release check, rtk's update
+ * check), so the CLI and the GUI can never describe a release differently.
+ */
+export const TOOL_RELEASE_REPOS = {
+  "agent-config": "event4u-app/agent-config",
+  rtk: "rtk-ai/rtk",
+} as const satisfies Partial<Record<ToolId, string>>;
+
+/** The release-notes source for a tool, or null when it has none. */
+export function toolReleaseRepo(id: ToolId): string | null {
+  return (TOOL_RELEASE_REPOS as Partial<Record<ToolId, string>>)[id] ?? null;
+}
+
+/** Why a tool has no readable release notes here — named, never guessed. */
+export function toolNotesRefusal(id: ToolId): string {
+  if (id === "claude" || id === "codex") {
+    return (
+      `\`${id}\` is distributed on npm and this repo has no verified GitHub release source for it, ` +
+      `so there are no notes to show rather than a guessed one.\n` +
+      `  Its installed version is in \`agent-switch tooling\`; upgrade with \`agent-switch tooling upgrade ${id}\`.`
+    );
+  }
+  return (
+    `\`${id}\` has no known release source — the Antigravity CLI ships with the Antigravity app and publishes no releases here.\n` +
+    `  Its installed version is in \`agent-switch tooling\`.`
+  );
+}
+
+export interface ToolNotesView {
+  id: ToolId;
+  /** Installed version, or null when the tool is not installed. */
+  installed: string | null;
+  /** Newest published tag, or null when unknown (offline / rate-limited). */
+  latest: string | null;
+  /** The releases to render, newest first (already selected by the caller). */
+  releases: readonly ReleaseInfo[];
+}
+
+/** The header line: what is installed, what is published, and whether anything
+ *  is waiting. Pure — every branch is unit-tested. */
+export function toolNotesHeader(view: ToolNotesView): string {
+  const { id, installed, latest } = view;
+  if (!installed) {
+    return `${id} — not installed · ${latest ? `latest ${latest}` : "latest unknown"}`;
+  }
+  if (!latest) {
+    return `${id} — installed ${installed} · latest unknown (offline or rate-limited)`;
+  }
+  const pending = view.releases.filter((r) => r.tag !== installed).length;
+  if (installed === latest || pending === 0) return `${id} — installed ${installed} · up to date`;
+  return `${id} — installed ${installed} · latest ${latest} · ${pending} update${pending === 1 ? "" : "s"} to read`;
+}
+
+/**
+ * The full `tooling notes` rendering: header, then each release as a dated
+ * block of normalised notes plus its URL. A release whose body normalises to
+ * nothing is listed with its URL and an explicit "no notes in this release" —
+ * unlike the GUI panel, a terminal command the user typed must answer rather
+ * than print nothing. `maxLinesPerRelease` caps a long body and says how much
+ * was left out. Pure.
+ */
+export function formatToolNotes(view: ToolNotesView, maxLinesPerRelease = 40): string[] {
+  const out: string[] = [toolNotesHeader(view)];
+  if (view.releases.length === 0) {
+    out.push("", "No release notes available.");
+    return out;
+  }
+  for (const r of view.releases) {
+    const date = /^\d{4}-\d{2}-\d{2}/.test(r.publishedAt) ? r.publishedAt.slice(0, 10) : null;
+    out.push("", `${r.name || r.tag}${date ? ` — ${date}` : ""}`);
+    const { lines, omitted } = releaseNotesText(releaseNoteBlocks(r.notes), {
+      maxLines: maxLinesPerRelease,
+      indent: "  ",
+    });
+    if (lines.length === 0) out.push("  (no notes in this release)");
+    else out.push(...lines);
+    if (omitted > 0) out.push(`  … ${omitted} more line${omitted === 1 ? "" : "s"}`);
+    out.push(`  ${r.url}`);
+  }
+  return out;
 }

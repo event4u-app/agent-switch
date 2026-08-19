@@ -123,10 +123,15 @@ const store = vi.hoisted(() => ({ globalAuto: true, autoRefresh: true, refreshMi
 const fetchLatest = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" }),
 );
+// The release LIST is the primary source for agent-config's what's-new panel;
+// `fetchLatestRelease` above is only the fallback when the list is unavailable.
+// Both must be stubbed or the suite reaches api.github.com for real.
+const fetchReleaseList = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 vi.mock("./updates.js", async (importActual) => ({
   ...(await importActual<typeof import("./updates.js")>()),
   checkForUpdate: () => Promise.resolve({ kind: "uptodate", current: "1.0.0", latest: "1.0.0" }),
   fetchLatestRelease: fetchLatest,
+  fetchReleases: fetchReleaseList,
 }));
 // Tooling latest-version lookups (rtk/claude/codex) stay off the network too.
 // Default: latest unknown → the Tooling section renders no Update buttons.
@@ -375,6 +380,10 @@ beforeEach(() => {
   ipc.shareOff.mockResolvedValue(undefined);
   ipc.shareSync.mockResolvedValue(undefined);
   fetchLatest.mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" });
+  // Default: no release list (the fallback path) — a test that wants the
+  // what's-new panel supplies one explicitly.
+  fetchReleaseList.mockReset();
+  fetchReleaseList.mockResolvedValue([]);
   latestToolVersion.mockResolvedValue(null);
   desktopNotify.mockClear();
   desktopNotify.mockResolvedValue(false);
@@ -897,6 +906,82 @@ describe("App", () => {
         expect.stringContaining("v9.1.0 → v9.2.0"),
       ),
     );
+  });
+
+  it("the Ecosystem card lets the update be READ, not just counted — newest expanded", async () => {
+    ipc.agentConfigVersion.mockResolvedValue("9.0.0"); // two versions behind
+    fetchReleaseList.mockResolvedValue([
+      {
+        tag: "9.2.0",
+        name: "9.2.0",
+        url: "https://example.test/9.2.0",
+        notes: "### Release highlights\n\n- **Behaviour changes:** stricter rule gate\n",
+        publishedAt: "2026-08-18T16:47:49Z",
+      },
+      {
+        tag: "9.1.0",
+        name: "9.1.0",
+        url: "https://example.test/9.1.0",
+        notes: "### Bug Fixes\n\n* **hooks:** stop double-firing ([abc1234](https://x/commit/abc1234))\n",
+        publishedAt: "2026-08-10T10:00:00Z",
+      },
+    ]);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    // Both skipped versions are offered, newest first and already open.
+    const panels = await screen.findAllByTestId("release-notes");
+    expect(panels.map((el) => el.getAttribute("data-tag"))).toEqual(["9.2.0", "9.1.0"]);
+    expect(panels[0].hasAttribute("open")).toBe(true);
+    expect(panels[1].hasAttribute("open")).toBe(false);
+    // Rendered through the normaliser: no commit-link or emphasis noise.
+    expect(screen.getByText("stricter rule gate")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("/commit/");
+  });
+
+  it("the update notification carries the release's own highlight and where to read the rest", async () => {
+    ipc.agentConfigVersion.mockResolvedValue("9.1.0");
+    fetchReleaseList.mockResolvedValue([
+      {
+        tag: "9.2.0",
+        name: "9.2.0",
+        url: "https://example.test/9.2.0",
+        notes: "### Release highlights\n\n- **Behaviour changes:** _none_\n- **Security:** tenant scope on exports\n",
+        publishedAt: "2026-08-18T16:47:49Z",
+      },
+    ]);
+    render(<App />);
+    await waitFor(() =>
+      expect(ipc.recordNotification).toHaveBeenCalledWith(
+        "info",
+        "agent-config update available",
+        // `_none_` is skipped as a placeholder; the real highlight is carried.
+        expect.stringContaining("Security: tenant scope on exports"),
+      ),
+    );
+    expect(ipc.recordNotification).toHaveBeenCalledWith(
+      "info",
+      "agent-config update available",
+      expect.stringContaining("Ecosystem → agent-config"),
+    );
+  });
+
+  it("a failing release-list lookup falls back to the single-release check: badge yes, panel no", async () => {
+    ipc.agentConfigVersion.mockResolvedValue("9.1.0");
+    fetchReleaseList.mockRejectedValue(new Error("rate limited"));
+    fetchLatest.mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    expect(await screen.findByText(/v9\.1\.0 → v9\.2\.0 available/i)).toBeTruthy();
+    expect(screen.queryByTestId("release-notes")).toBeNull(); // no speculative panel
+  });
+
+  it("an empty release list (drafts only) also falls back rather than reporting no update", async () => {
+    ipc.agentConfigVersion.mockResolvedValue("9.1.0");
+    fetchReleaseList.mockResolvedValue([]); // e.g. every entry filtered out as draft
+    fetchLatest.mockResolvedValue({ tag: "9.2.0", name: "", url: "", notes: "", publishedAt: "" });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^ecosystem$/i }));
+    expect(await screen.findByText(/v9\.1\.0 → v9\.2\.0 available/i)).toBeTruthy();
   });
 
   it("does NOT notify about an agent-config update when it is not installed", async () => {
