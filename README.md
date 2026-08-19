@@ -29,6 +29,39 @@ Most naive switchers snapshot the macOS Keychain entry (`Claude Code-credentials
 
 The same restraint governs the whole tool: no proxy, no traffic interception, no fingerprinting, no prompt rewriting — see [NON-GOALS.md](NON-GOALS.md) for the explicit list and the alternatives this ecosystem offers instead.
 
+## One profile, one session
+
+Because `agent-switch use` sets a **global** pointer that every shell re-reads,
+nothing used to stop two terminals from starting `claude` on the same account —
+sharing one set of rate limits and both refreshing one rotating OAuth token,
+while each terminal looked like a separate account.
+
+The single-load guard refuses that second start and says which session already
+holds the profile and which accounts are free:
+
+```
+$ claude
+agent-switch: profile "work" is already loaded by a running claude session.
+
+  pid 41234  started 12m ago  ~/projects/foo
+
+Two sessions on one account share its rate limits, and both refresh the
+same rotating OAuth token.
+
+Ways forward:
+  agent-switch use privat                switch to a free account — also free: event4u
+  AGENT_SWITCH_ALLOW_DUPLICATE=1 claude  start it anyway, this once
+  agent-switch guard warn                warn instead of refusing, from now on
+  agent-switch guard off                 turn the guard off entirely
+```
+
+It never gets in the way where it has no business being: a `claude` started
+*inside* a running session is a child, not a duplicate; a crashed session leaves
+nothing behind that can lock you out; and if `agent-switch` itself is missing or
+broken, the wrapper falls straight through to the real binary. Set the policy
+with `agent-switch guard <block|warn|off>` — see the
+[CLI reference](https://event4u-app.github.io/agent-switch/reference/cli/#single-load-guard).
+
 ## Install
 
 **npm / npx** (any OS — needs Node ≥ 20). The package is published as
