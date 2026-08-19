@@ -115,6 +115,26 @@ Registered apps: `claude-desktop`, `codex-ide` (VS Code), `codex-desktop`, `anti
 Auto-switch ships against a unanimous internal review and may cross the providers' usage policies. It is globally off by default; enable it only if you understand the implications.
 :::
 
+## Ecosystem tooling
+
+| Command | Args / flags | What it does |
+| --- | --- | --- |
+| `tooling` | `[--json]` | Readout of the ecosystem tools agent-switch knows about (`agent-config`, `rtk`, `claude`, `codex`, `agy`): present, version, path, health. Fully local — no network call; `--json` is the contract the GUI's Tooling section renders. |
+| `tooling install\|upgrade <tool>` | — | Run that tool's per-platform install/upgrade command as a visible child process. `agy` is refused (its CLI ships with the Antigravity app). |
+| `tooling notes [<tool>]` | `[--latest] [--json]` | Read what a release actually contains. Default tool: `agent-config`. Prints every release newer than the installed version, newest first, so several skipped versions are all readable; `--latest` limits it to one. |
+
+`tooling notes` **fetches from GitHub** — unlike `tooling`, which is offline by
+contract. Only tools with a verified release source are supported
+(`agent-config`, `rtk`); the others print why they have none instead of guessing
+a source. Offline or rate-limited (the GitHub API allows 60 unauthenticated
+requests per hour per IP), it says so and shows whatever it had.
+
+```bash
+agent-switch tooling notes                 # what's new in agent-config since your version
+agent-switch tooling notes rtk --latest    # just the newest rtk release
+agent-switch tooling notes --json          # structured blocks, for scripting
+```
+
 ## Notifications / daemon / maintenance
 
 | Command | Args / flags | What it does |

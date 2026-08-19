@@ -51,6 +51,32 @@ A 24-hour auto-check loop plus an **"Update now"** button (Settings › Updates)
 
 The GUI detects the companion `@event4u/agent-config` CLI (repo `event4u-app/agent-config`) and shows an install/update banner with one-click install/upgrade. The banner also includes a share toggle that links your global `~/.claude` skills, commands, and agents into every profile.
 
+### Reading what an update contains
+
+When an update is available, every surface that announces it also lets you read
+it — no browser round-trip:
+
+- **Ecosystem › agent-config** is its home: the release title, its publish date
+  and the highlights are already expanded when you arrive.
+- **Profiles first-run card** and the **Tooling row** carry the same panel,
+  collapsed, so neither grows until you open it.
+- The **notification** carries the release's own first highlight and points at
+  Ecosystem › agent-config for the rest.
+
+If you are several versions behind, each skipped release is listed separately
+(newest first) rather than only the last one. Every panel ends with a link to the
+full notes on GitHub.
+
+The notes come from that repo's GitHub Releases, fetched unauthenticated in the
+same hourly check that detects the update. When they cannot be fetched — offline,
+or the GitHub API's 60-requests-per-hour limit reached — **no panel is shown at
+all**: the update button behaves exactly as before, and nothing is invented. The
+same applies to a release published with an empty body.
+
+The CLI equivalent is `agent-switch tooling notes` (see the
+[CLI reference](/agent-switch/reference/cli/#ecosystem-tooling)); it renders the
+same content from the same source.
+
 ## Related desktop-app commands
 
 The CLI can also launch and isolate other apps per profile:
