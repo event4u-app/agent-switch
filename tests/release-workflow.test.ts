@@ -80,6 +80,27 @@ test("Linux apt step never lists a known-conflicting package pair", () => {
   }
 });
 
+test("every version-carrying manifest agrees, lockfiles included", () => {
+  // `scripts/release.mjs` bumps package.json, gui/package.json, tauri.conf.json
+  // and the Cargo files, then resyncs BOTH lockfiles. gui/package-lock.json was
+  // missing from that list, so it silently kept the previous release's version
+  // and any `npm install` under gui/ produced an unrelated two-line diff. The
+  // script is fixed; this is the guard that keeps it fixed.
+  const read = (...rel: string[]) => JSON.parse(fs.readFileSync(path.join(REPO, ...rel), "utf8"));
+  const root = read("package.json").version;
+  assert.equal(read("package-lock.json").version, root, "package-lock.json version drifted from package.json");
+  const gui = read("gui", "package.json").version;
+  assert.equal(gui, root, "gui/package.json version drifted from the root package.json");
+  const guiLock = read("gui", "package-lock.json");
+  assert.equal(guiLock.version, gui, "gui/package-lock.json version drifted from gui/package.json");
+  assert.equal(
+    guiLock.packages?.[""]?.version,
+    gui,
+    "gui/package-lock.json packages[''] version drifted from gui/package.json",
+  );
+  assert.equal(read("gui", "src-tauri", "tauri.conf.json").version, root, "tauri.conf.json version drifted");
+});
+
 test("Tauri bundle targets cover every platform (not a mac/windows-only list)", () => {
   const conf = JSON.parse(fs.readFileSync(TAURI_CONF, "utf8"));
   // "all" lets each OS emit its native bundles (incl. Linux deb/rpm/appimage).

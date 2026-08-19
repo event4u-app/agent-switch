@@ -163,7 +163,21 @@ each of them, without leaving agent-switch and without a browser round-trip.
 - Mirroring `release-notes.ts` into `src/` and `gui/src/` follows the
   established `updates.ts` / `transforms.ts` precedent, not a new pattern. It
   is duplication by design of the build boundary, and the tests are mirrored
-  with it — against **one** shared fixture, so the input cannot drift.
+  with it. The drift guard is a **byte comparison of the two sources** below
+  their header comment (`tests/release-notes.test.ts`), which is stronger than
+  the shared fixture this roadmap originally specified: a fix applied to one
+  mirror and not the other fails regardless of what any input happens to cover.
+- **Corrected after the first CI run — a local pass that was not a real pass.**
+  The GUI mirror's tests initially read the captured fixture with `node:fs`.
+  That typechecks in a full checkout because TypeScript walks up to the ROOT
+  `node_modules/@types/node`, and fails in CI, whose gui job runs `npm ci` with
+  `working-directory: gui` — the GUI project carries no `@types/node` on purpose
+  (`types: ["vitest/globals"]`, `lib: [ES2022, DOM]`; it is a browser bundle).
+  Six TS2307 errors on macOS and Windows. Fixed by removing filesystem access
+  from that project entirely; the real captured body is asserted on the CLI side,
+  where Node types are legitimate. Two guards now make the asymmetry
+  self-reporting instead of remembered: the mirror byte-comparison above, and a
+  test that fails if any file under `gui/src` imports a `node:` builtin.
 - **Request budget: unchanged in the normal case.** The hourly sweep now calls
   `/releases` instead of `/releases/latest` — one request either way. Only the
   fallback path (list unavailable or drafts-only) makes a second call, which is
@@ -175,9 +189,13 @@ each of them, without leaving agent-switch and without a browser round-trip.
   the CLI — a command the user typed has to answer. Same source, same
   normaliser, different silence rule; recorded here rather than left as an
   apparent inconsistency.
-- **Found while working, deliberately NOT fixed here** (out of scope, one line
-  of evidence): `scripts/release.mjs` bumps `gui/package.json` but stages only
-  the root `package-lock.json`, so `gui/package-lock.json` keeps the previous
-  release's version field (`1.7.0` against a 2.0.0 tree). Harmless — `npm ci`
-  does not gate on the own-version field — but any `npm install` under `gui/`
-  produces a two-line diff nobody asked for.
+- **Found while working, then fixed on the owner's say-so** (it was surfaced as
+  out of scope first): `scripts/release.mjs` bumped `gui/package.json` but
+  resynced and staged only the root `package-lock.json`, so
+  `gui/package-lock.json` kept the previous release's version field (`1.7.0`
+  against a 2.0.0 tree) and any `npm install` under `gui/` produced a two-line
+  diff nobody asked for. The script now resyncs both lockfiles and stages both;
+  the drifted file is synced in this change; and
+  `tests/release-workflow.test.ts` gained a version-parity assertion across
+  every version-carrying manifest — verified to fail against the drifted state
+  before the fix, so it is a real guard and not a decoration.

@@ -195,9 +195,16 @@ if (!(await confirm(`Release ${tag}${noPush ? " (local only)" : " and push → n
 
 if (isBump) {
   bumpAllFiles();
-  // Resync package-lock.json with the bumped package.json so CI `npm ci` stays happy.
+  // Resync both package-lock.json files with their bumped package.json so CI
+  // `npm ci` stays happy. The GUI lockfile was previously left out, so it kept
+  // the PREVIOUS release's version field and any `npm install` under gui/
+  // produced an unrelated two-line diff.
   execFileSync("npm", ["install", "--package-lock-only", "--ignore-scripts"], { cwd: ROOT, stdio: "ignore" });
-  git("add", "package.json", "package-lock.json", "gui/package.json", "gui/src-tauri/tauri.conf.json", "gui/src-tauri/Cargo.toml", "gui/src-tauri/Cargo.lock");
+  execFileSync("npm", ["install", "--package-lock-only", "--ignore-scripts"], {
+    cwd: path.join(ROOT, "gui"),
+    stdio: "ignore",
+  });
+  git("add", "package.json", "package-lock.json", "gui/package.json", "gui/package-lock.json", "gui/src-tauri/tauri.conf.json", "gui/src-tauri/Cargo.toml", "gui/src-tauri/Cargo.lock");
   git("commit", "-m", `chore(release): ${tag}`);
 } else {
   console.log(`  · tagging ${current} as-is (no version bump)`);
