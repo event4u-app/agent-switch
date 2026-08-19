@@ -2,7 +2,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as path from "node:path";
 
-import { parseVersion, compareVersions, isNewer, parseRelease, npmSearchPath } from "../src/updates.js";
+import {
+  parseVersion,
+  compareVersions,
+  isNewer,
+  parseRelease,
+  parseReleases,
+  releasesNewerThan,
+  npmSearchPath,
+} from "../src/updates.js";
 
 test("parseVersion strips v-prefix and pre-release/build, pads missing with 0", () => {
   assert.deepEqual(parseVersion("v1.2.3"), [1, 2, 3]);
@@ -55,4 +63,56 @@ test("npmSearchPath drops empty segments (e.g. an unset inherited PATH)", () => 
   const parts = npmSearchPath("/node/bin", "", "/home/y").split(path.delimiter);
   assert.ok(!parts.includes("")); // no empty segment → no accidental CWD-in-PATH
   assert.equal(parts[0], "/node/bin");
+});
+
+test("parseRelease uses the given repo for the url fallback, not the app's own", () => {
+  const r = parseRelease({ tag_name: "1.2.0" }, "owner/other-repo");
+  assert.equal(r?.url, "https://github.com/owner/other-repo/releases");
+});
+
+test("parseReleases drops drafts/prereleases/tagless and orders newest version first", () => {
+  const list = parseReleases([
+    { tag_name: "1.0.0", html_url: "a" },
+    { tag_name: "1.2.0", html_url: "c" },
+    { tag_name: "1.3.0", html_url: "d", draft: true },
+    { tag_name: "1.4.0", html_url: "e", prerelease: true },
+    { name: "no tag" },
+    { tag_name: "1.1.0", html_url: "b" },
+  ]);
+  assert.deepEqual(
+    list.map((r) => r.tag),
+    ["1.2.0", "1.1.0", "1.0.0"],
+  );
+});
+
+test("parseReleases sorts by version math, not by the order GitHub returned", () => {
+  // GitHub orders by creation date; a back-ported patch released later must not
+  // outrank a higher version.
+  const list = parseReleases([
+    { tag_name: "1.9.1", html_url: "late-backport" },
+    { tag_name: "1.10.0", html_url: "newer" },
+  ]);
+  assert.deepEqual(
+    list.map((r) => r.tag),
+    ["1.10.0", "1.9.1"],
+  );
+});
+
+test("parseReleases tolerates a non-array payload (404 body, error object)", () => {
+  assert.deepEqual(parseReleases(null), []);
+  assert.deepEqual(parseReleases({ message: "Not Found" }), []);
+});
+
+test("releasesNewerThan keeps only strictly newer releases, newest first", () => {
+  const list = parseReleases([
+    { tag_name: "14.0.0", html_url: "a" },
+    { tag_name: "14.1.0", html_url: "b" },
+    { tag_name: "14.2.0", html_url: "c" },
+  ]);
+  assert.deepEqual(
+    releasesNewerThan(list, "14.0.0").map((r) => r.tag),
+    ["14.2.0", "14.1.0"],
+  );
+  assert.deepEqual(releasesNewerThan(list, "14.2.0"), []); // up to date → nothing to read
+  assert.deepEqual(releasesNewerThan(list, "99.0.0"), []); // ahead of the registry → still nothing
 });

@@ -8,8 +8,11 @@ import {
   compareVersions,
   isNewer,
   parseRelease,
+  parseReleases,
+  releasesNewerThan,
   checkForUpdate,
   fetchLatestRelease,
+  fetchReleases,
   releaseKind,
 } from "./updates.js";
 
@@ -163,5 +166,80 @@ describe("checkForUpdate", () => {
     const r = await checkForUpdate("owner/repo");
     expect(r.kind).toBe("error");
     if (r.kind === "error") expect(r.message).toBe("offline");
+  });
+});
+
+describe("parseReleases / releasesNewerThan", () => {
+  it("drops drafts, prereleases and tagless entries and orders newest first", () => {
+    const list = parseReleases([
+      { tag_name: "1.0.0", html_url: "a" },
+      { tag_name: "1.2.0", html_url: "c" },
+      { tag_name: "1.3.0", html_url: "d", draft: true },
+      { tag_name: "1.4.0", html_url: "e", prerelease: true },
+      { name: "no tag" },
+      { tag_name: "1.1.0", html_url: "b" },
+    ]);
+    expect(list.map((r) => r.tag)).toEqual(["1.2.0", "1.1.0", "1.0.0"]);
+  });
+
+  it("orders by version math, not by GitHub's creation order", () => {
+    const list = parseReleases([
+      { tag_name: "1.9.1", html_url: "late-backport" },
+      { tag_name: "1.10.0", html_url: "newer" },
+    ]);
+    expect(list.map((r) => r.tag)).toEqual(["1.10.0", "1.9.1"]);
+  });
+
+  it("tolerates a non-array payload", () => {
+    expect(parseReleases(null)).toEqual([]);
+    expect(parseReleases({ message: "Not Found" })).toEqual([]);
+  });
+
+  it("uses the given repo for the url fallback rather than this app's own", () => {
+    expect(parseRelease({ tag_name: "1.0.0" }, "owner/other")?.url).toBe("https://github.com/owner/other/releases");
+  });
+
+  it("keeps only strictly newer releases, newest first", () => {
+    const list = parseReleases([
+      { tag_name: "14.0.0", html_url: "a" },
+      { tag_name: "14.1.0", html_url: "b" },
+      { tag_name: "14.2.0", html_url: "c" },
+    ]);
+    expect(releasesNewerThan(list, "14.0.0").map((r) => r.tag)).toEqual(["14.2.0", "14.1.0"]);
+    expect(releasesNewerThan(list, "14.2.0")).toEqual([]);
+  });
+});
+
+describe("fetchReleases", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("requests the releases list and returns it newest first", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      ok: true,
+      json: async () => [
+        { tag_name: "1.0.0", html_url: "a" },
+        { tag_name: "1.1.0", html_url: "b" },
+      ],
+    } as unknown as Response);
+    globalThis.fetch = fetchMock;
+    const list = await fetchReleases("owner/repo", 5);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/repos/owner/repo/releases?per_page=5",
+      expect.anything(),
+    );
+    expect(list.map((r) => r.tag)).toEqual(["1.1.0", "1.0.0"]);
+  });
+
+  it("treats a repo with no releases (404) as an empty list, not an error", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 404, ok: false } as Response);
+    await expect(fetchReleases("owner/repo")).resolves.toEqual([]);
+  });
+
+  it("throws on any other HTTP failure so the caller can fall back", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 403, ok: false } as Response);
+    await expect(fetchReleases("owner/repo")).rejects.toThrow("403");
   });
 });
