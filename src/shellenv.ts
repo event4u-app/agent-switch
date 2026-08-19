@@ -13,9 +13,30 @@
  * `asw` convenience: bare `asw` lists all providers' profiles; `asw <name>`
  * switches the active Claude profile; `asw <provider> <name>` switches that
  * provider's.
+ *
+ * SINGLE-LOAD GUARD. The wrapper is the one place every interactive start
+ * funnels through, so it is where the guard has to sit. `dir --guard` keeps the
+ * config path on stdout (unchanged) and writes the human message to stderr, so
+ * one invocation both feeds the wrapper and talks to the user — no second
+ * process launch per command.
+ *
+ * The wrapper blocks on EXACTLY ONE exit code (86, GUARD_REFUSED_EXIT) and on
+ * nothing else. That asymmetry is deliberate and load-bearing: a missing,
+ * older, or broken `agent-switch` exits 127 / 1 / 2 and the wrapper carries on
+ * to the real binary. This tool must never become the reason a user cannot
+ * reach their assistant.
+ *
+ * Each wrapper first checks that `agent-switch` exists at all and otherwise
+ * calls the real binary straight away. That check replaces the old
+ * `2>/dev/null`: the guard has to be able to SPEAK on stderr, so the blanket
+ * redirect had to go, and without the existence check an uninstalled
+ * `agent-switch` would print "command not found" on every single invocation.
+ * A side effect worth having: a genuinely broken agent-switch now surfaces its
+ * error instead of silently degrading the shell onto the default config dir.
  */
 
 import { allProviders } from "./providers.js";
+import { GUARD_REFUSED_EXIT } from "./single-load.js";
 
 export type Shell = "zsh" | "bash" | "fish" | "powershell";
 
@@ -44,8 +65,11 @@ export function detectShell(
 
 function posixWrapper(binary: string, envVar: string, id: string): string {
   return `${binary}() {
-  local dir
-  dir="$(command agent-switch dir --provider ${id} 2>/dev/null)"
+  local dir rc
+  command -v agent-switch >/dev/null 2>&1 || { command ${binary} "$@"; return; }
+  dir="$(command agent-switch dir --provider ${id} --guard)"
+  rc=$?
+  if [ $rc -eq ${GUARD_REFUSED_EXIT} ]; then return $rc; fi
   if [ -n "$dir" ]; then
     ${envVar}="$dir" command ${binary} "$@"
   else
@@ -56,7 +80,15 @@ function posixWrapper(binary: string, envVar: string, id: string): string {
 
 function fishWrapper(binary: string, envVar: string, id: string): string {
   return `function ${binary}
-    set -l dir (command agent-switch dir --provider ${id} 2>/dev/null)
+    if not type -q agent-switch
+        command ${binary} $argv
+        return
+    end
+    set -l dir (command agent-switch dir --provider ${id} --guard)
+    set -l rc $status
+    if test $rc -eq ${GUARD_REFUSED_EXIT}
+        return $rc
+    end
     if test -n "$dir"
         ${envVar}=$dir command ${binary} $argv
     else
@@ -69,7 +101,9 @@ function powershellWrapper(binary: string, envVar: string, id: string): string {
   return `function ${binary} {
     $exe = Get-Command ${binary} -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $exe) { Write-Error '${binary} not found on PATH.'; return }
-    $dir = (& agent-switch dir --provider ${id} 2>$null)
+    if (-not (Get-Command agent-switch -ErrorAction SilentlyContinue)) { & $exe.Source @args; return }
+    $dir = (& agent-switch dir --provider ${id} --guard)
+    if ($LASTEXITCODE -eq ${GUARD_REFUSED_EXIT}) { return }
     if ($dir) {
         $prev = Get-Item -Path Env:\\${envVar} -ErrorAction SilentlyContinue
         $env:${envVar} = $dir

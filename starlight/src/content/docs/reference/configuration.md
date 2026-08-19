@@ -39,11 +39,12 @@ Global state, JSON, `0600`:
   "autoSwitch": { "claude": { "enabled": false, "threshold": 95, "tag": "all" } },
   "providers":  { "claude": { "cli": true, "ui": true } },     // default on: claude+codex
   "switchStrategy": "reset-first"|"rotation-first",            // default reset-first
-  "osNotifications": false
+  "osNotifications": false,
+  "guard": "block"|"warn"|"off"                                // single-load guard, default block
 }
 ```
 
-Readers normalize and migrate legacy shapes — for example a v1 `active` stored as a bare string, or a single global `autoSwitch` object.
+Readers normalize and migrate legacy shapes — for example a v1 `active` stored as a bare string, or a single global `autoSwitch` object. An absent or unrecognized `guard` value resolves to `block`, so upgrading from a state file written before the guard existed enables it.
 
 ## `telemetry-config.json`
 
@@ -63,6 +64,7 @@ Kept separate from `state.json`:
 | `CODEX_HOME` | Per-provider isolation, injected at launch. |
 | `HOME` | Per-provider isolation, injected at launch. |
 | `CFFIXED_USER_HOME` | Pinned to `HOME` for the antigravity keychain. |
+| `AGENT_SWITCH_ALLOW_DUPLICATE` | Waive the [single-load guard](/reference/cli/#single-load-guard) for one invocation. Any value except empty, `0`, or `false`. |
 | `AGENT_SWITCH_CONTRACT_TESTS` | Opt-in live tests. |
 
 ## Profile-name validation

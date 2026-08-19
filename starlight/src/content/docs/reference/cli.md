@@ -37,8 +37,9 @@ Precedence: **directory mapping (nearest ancestor) > active profile > default.**
 
 | Command | Args / flags | What it does |
 | --- | --- | --- |
-| `run <name> [-- passthrough…]` | `[--provider P] [--tmux]` | Launch the provider CLI on a profile (one-shot, parallel). `--tmux` wraps it in a managed tmux session (POSIX). Args after `--` pass through, e.g. `run work -- --resume`. |
-| `dir` | `[--provider P]` | Resolve the config dir for the current directory (mapping > active). Machine-consumed by the shell wrapper. |
+| `run <name> [-- passthrough…]` | `[--provider P] [--tmux] [--force]` | Launch the provider CLI on a profile (one-shot, parallel). `--tmux` wraps it in a managed tmux session (POSIX). `--force` overrides the [single-load guard](#single-load-guard). Args after `--` pass through, e.g. `run work -- --resume`. |
+| `dir` | `[--provider P] [--guard]` | Resolve the config dir for the current directory (mapping > active). Machine-consumed by the shell wrapper. With `--guard`, also runs the [single-load guard](#single-load-guard): the path stays on stdout, the guard writes to stderr and exits `86` on a refusal. |
+| `guard [block\|warn\|off]` | `[--json]` | Read or set the [single-load guard](#single-load-guard) policy. The bare form also lists which profiles are loaded right now. |
 | `map <name> [dir]` | `[--provider P]` | Map a directory (default: CWD) to a profile. |
 | `unmap [dir]` | `[--provider P]` | Remove a directory mapping. |
 | `mappings` | — | List directory mappings. |
@@ -47,6 +48,52 @@ Precedence: **directory mapping (nearest ancestor) > active profile > default.**
 # Resume the last conversation on the "work" profile
 agent-switch run work -- --resume
 ```
+
+
+## Single-load guard
+
+One profile, one live session. Without it, `use` writes a **global** active
+pointer that every shell re-reads, so two terminals silently land on the same
+account — sharing its rate-limit windows and both refreshing one rotating OAuth
+token, while the user believes they are on two different accounts.
+
+```bash
+agent-switch guard              # current policy + what is loaded right now
+agent-switch guard warn         # report a second load, but allow it
+agent-switch guard off          # disable the check
+```
+
+| Policy | Behaviour |
+| --- | --- |
+| `block` *(default)* | A second session on a loaded profile is refused, naming the running session and the profiles that are free. |
+| `warn` | The same information is printed, then the session starts. |
+| `off` | No check at all. |
+
+Overrides, both named in the refusal itself:
+
+```bash
+AGENT_SWITCH_ALLOW_DUPLICATE=1 claude    # this one start, any shell
+agent-switch run work --force            # this one start, via run
+```
+
+### What it never does
+
+- **Never refuses a nested start.** A `claude` launched from inside a running
+  session inherits `CLAUDE_CONFIG_DIR`; when that already points at the profile
+  being loaded, the start is a child of that session, not a duplicate.
+- **Never refuses on a crashed session.** Liveness is `kill(pid, 0)` against
+  Claude Code's own `sessions/<pid>.json`, checked on every read, so a leftover
+  file from a crash is simply not counted. agent-switch holds no lock of its own.
+- **Never blocks a start because agent-switch itself failed.** The shell wrapper
+  blocks on exit code `86` and on nothing else — a missing, older, or broken
+  `agent-switch` falls straight through to the real binary.
+- **Codex and Antigravity are not covered.** Neither CLI registers a running
+  session on disk, so there is no signal to tell a second load from a first, and
+  the guard stays inert for them rather than guessing.
+
+The guard lives in the shell wrapper, so it applies to plain `claude` — not just
+to `agent-switch run`. Re-run your shell integration (a new shell is enough if
+you use `eval "$(agent-switch shellenv)"`) after upgrading.
 
 ## Listing / status
 
