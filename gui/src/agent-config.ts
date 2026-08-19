@@ -9,7 +9,7 @@
  * version math from `updates.ts`.
  */
 
-import { isNewer } from "./updates.js";
+import { isNewer, type ReleaseInfo } from "./updates.js";
 
 export const AGENT_CONFIG_REPO = "event4u-app/agent-config";
 export const AGENT_CONFIG_REPO_URL = "https://github.com/event4u-app/agent-config";
@@ -22,13 +22,21 @@ export interface AgentConfigStatus {
   current: string | null;
   /** Latest published release tag; null when unknown (offline / no releases). */
   latest: string | null;
+  /**
+   * Releases strictly newer than {@link current}, newest first — the bodies the
+   * user has not read yet. Empty when up to date, when the release list could
+   * not be fetched (offline / rate-limited), or when only the fallback
+   * single-release check succeeded and it is not newer. Optional so every
+   * existing construction site stays valid.
+   */
+  newer?: ReleaseInfo[];
 }
 
 /** What the banner should render this frame. `visible: false` → render nothing. */
 export type AgentConfigView =
   | { visible: false }
   | { visible: true; mode: "install" }
-  | { visible: true; mode: "update"; current: string; latest: string }
+  | { visible: true; mode: "update"; current: string; latest: string; releases: ReleaseInfo[] }
   | { visible: true; mode: "installed"; current: string; latest: string | null };
 
 /**
@@ -44,7 +52,15 @@ export function deriveAgentConfigView(status: AgentConfigStatus | null, devMode:
   if (!status) return { visible: false };
   if (!status.installed) return { visible: true, mode: "install" };
   if (status.current && status.latest && isNewer(status.latest, status.current)) {
-    return { visible: true, mode: "update", current: status.current, latest: status.latest };
+    return {
+      visible: true,
+      mode: "update",
+      current: status.current,
+      latest: status.latest,
+      // May legitimately be empty (release list unfetchable) — the notes panel
+      // then renders nothing rather than a placeholder.
+      releases: status.newer ?? [],
+    };
   }
   return devMode && status.current
     ? { visible: true, mode: "installed", current: status.current, latest: status.latest }
@@ -57,4 +73,17 @@ export function deriveAgentConfigView(status: AgentConfigStatus | null, devMode:
 export function parseAgentConfigVersion(stdout: string): string | null {
   const m = /(\d+\.\d+(?:\.\d+)?)/.exec(stdout);
   return m ? m[1] : null;
+}
+
+/**
+ * The releases whose notes a surface should offer, given a status: everything
+ * strictly newer than the installed version, newest first. Empty means "nothing
+ * to read" — offline, rate-limited, up to date, or a release body that is empty.
+ * Split out from the view so the Tooling row and the Ecosystem card read the
+ * same list without either one re-deriving it. Pure.
+ */
+export function agentConfigNotes(status: AgentConfigStatus | null): ReleaseInfo[] {
+  const current = status?.installed ? status.current : null;
+  if (!current) return [];
+  return (status?.newer ?? []).filter((r) => isNewer(r.tag, current));
 }

@@ -152,14 +152,32 @@ import {
   setPetPrevPos,
 } from "./settings-store.js";
 import { ALL_REACTIONS, PET_IDS, PET_WELCOME, bubbleAction, decidePetRouting, type BubbleDuration, type PetId, type PetMotion, type PetSize, type PetTier } from "./pet/model.js";
-import { checkForUpdate, fetchLatestRelease, isNewer, releaseKind, type UpdateCheck, type UpdateKind } from "./updates.js";
+import {
+  checkForUpdate,
+  fetchLatestRelease,
+  fetchReleases,
+  isNewer,
+  releaseKind,
+  releasesNewerThan,
+  type ReleaseInfo,
+  type UpdateCheck,
+  type UpdateKind,
+} from "./updates.js";
+import { ReleaseNotesStack } from "./ReleaseNotes.js";
+import { clampText, firstHighlight, releaseNoteBlocks } from "./release-notes.js";
 import { AgentConfigCard, AgentConfigMark } from "./AgentConfigCard.js";
 import { ToolingSection, type ToolingCache } from "./ToolingSection.js";
 import { UsageSection, type UsageHistoryCache } from "./UsageSection.js";
 import { Sidebar, type Section } from "./Sidebar.js";
 import { UsageBars, utilColor } from "./UsageBars.js";
 import { buildRebindDialog, selectableRows, type RebindCandidate } from "./rebind-dialog.js";
-import { deriveAgentConfigView, AGENT_CONFIG_REPO, AGENT_CONFIG_REPO_URL, type AgentConfigStatus } from "./agent-config.js";
+import {
+  agentConfigNotes,
+  deriveAgentConfigView,
+  AGENT_CONFIG_REPO,
+  AGENT_CONFIG_REPO_URL,
+  type AgentConfigStatus,
+} from "./agent-config.js";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { loadUsageCache, saveUsageSnapshot, withStickyResets, isUsageStale, dropUsageSnapshot, getUsageAttempts, markUsageAttempt, fetchOnCooldown, type UsageEntry } from "./usage-cache.js";
 import {
@@ -922,20 +940,42 @@ export default function App() {
   async function detectAgentConfig() {
     const current = await agentConfigVersion();
     let latest: string | null = null;
+    // Every release the user has not read yet — so someone three versions behind
+    // gets all three bodies, not just the newest. Empty means "nothing readable"
+    // (up to date, or the list could not be fetched), never a placeholder.
+    let newer: ReleaseInfo[] = [];
     try {
-      latest = (await fetchLatestRelease(AGENT_CONFIG_REPO))?.tag ?? null;
+      const releases = await fetchReleases(AGENT_CONFIG_REPO);
+      if (releases.length > 0) {
+        latest = releases[0].tag;
+        newer = current ? releasesNewerThan(releases, current) : [];
+      }
     } catch {
-      /* offline / rate-limited → latest unknown (banner still shows install/dev) */
+      /* rate-limited / offline → the fallback below decides */
     }
-    setAgentConfig({ installed: current !== null, current, latest });
+    if (!latest) {
+      // The list was unavailable (rate-limited, offline) or carried nothing
+      // usable (drafts only). The single-release check is the documented
+      // fallback, so the update badge behaves exactly as it did before the
+      // notes existed; the bodies stay unknown and no panel renders.
+      try {
+        latest = (await fetchLatestRelease(AGENT_CONFIG_REPO))?.tag ?? null;
+      } catch {
+        /* offline → latest unknown (banner still shows install/dev) */
+      }
+    }
+    setAgentConfig({ installed: current !== null, current, latest, newer });
     // Notify (once per version) ONLY when agent-config is installed AND a newer
-    // release exists — never a nag when it isn't installed.
+    // release exists — never a nag when it isn't installed. The body carries the
+    // release's own first highlight when it has one, and always names where the
+    // full notes can be read.
     if (current && latest && isNewer(latest, current) && getAgentConfigNotifiedVersion() !== latest) {
       setAgentConfigNotifiedVersion(latest);
+      const highlight = newer.length ? firstHighlight(releaseNoteBlocks(newer[0].notes)) : null;
       await recordNotification(
         "info",
         "agent-config update available",
-        `v${current} → v${latest} — use the banner below to update.`,
+        `v${current} → v${latest}${highlight ? ` — ${clampText(highlight, 90)}` : ""} · read what's new under Ecosystem → agent-config.`,
       );
       await syncNotifications();
     }
@@ -1290,6 +1330,8 @@ export default function App() {
                 ? agentConfig.latest
                 : null
             }
+            agentConfigReleases={agentConfigNotes(agentConfig)}
+            onOpenUrl={(u) => void openUrl(u)}
             onRunTool={(action, id) =>
               // Owner amendment: install/update run visibly in the embedded
               // terminal (user-initiated). Its onClose nulls the tooling cache,
@@ -1311,12 +1353,14 @@ export default function App() {
             </div>
             <AcPrimaryCard
               status={agentConfig}
+              notes={agentConfigNotes(agentConfig)}
               acLive={acLive}
               acOpenError={acOpenError}
               acBusy={acBusy}
               activeProfile={grouped.claude.find((r) => r.active)?.name ?? null}
               sharedCount={shareProfiles.filter((p) => p.shared).length}
               onOpenRepo={() => void openUrl(AGENT_CONFIG_REPO_URL)}
+              onOpenUrl={(u) => void openUrl(u)}
               onRun={runAgentConfigAction}
               onOpenSettings={() => void openAcSettings()}
               onForceRestart={() => void forceRestartAc()}
@@ -1349,6 +1393,7 @@ export default function App() {
                   variant="first-run"
                   devMode={devMode}
                   onOpenRepo={() => void openUrl(AGENT_CONFIG_REPO_URL)}
+                  onOpenUrl={(u) => void openUrl(u)}
                   onRun={runAgentConfigAction}
                   onDismiss={() => {
                     setAgentConfigCardDismissed();
@@ -1831,24 +1876,31 @@ function EditProfileRow({
  */
 function AcPrimaryCard({
   status,
+  notes,
   acLive,
   acOpenError,
   acBusy,
   activeProfile,
   sharedCount,
   onOpenRepo,
+  onOpenUrl,
   onRun,
   onOpenSettings,
   onForceRestart,
   onCancelError,
 }: {
   status: AgentConfigStatus | null;
+  /** Unread release bodies (newest first) — this card is their primary home, so
+   *  the newest is expanded on arrival. Empty → no panel at all. */
+  notes: readonly ReleaseInfo[];
   acLive: Extract<AcStatus, { status: "live" }> | null;
   acOpenError: AcError | null;
   acBusy: boolean;
   activeProfile: string | null;
   sharedCount: number;
   onOpenRepo: () => void;
+  /** Opens an arbitrary URL in the browser (the release page). */
+  onOpenUrl: (url: string) => void;
   /** Background install/upgrade; never rejects (failures → notifications). */
   onRun: (action: "install" | "upgrade") => Promise<void>;
   onOpenSettings: () => void;
@@ -1927,6 +1979,13 @@ function AcPrimaryCard({
                 : "Install"}
           </Button>
         </div>
+      )}
+
+      {/* What the update actually contains — the version number alone was the
+       *  whole readout before. Open on arrival here (a user on this card is here
+       *  because of the update) and silent when the bodies are unknown. */}
+      {mode === "update" && (
+        <ReleaseNotesStack releases={notes} defaultOpen onOpenUrl={onOpenUrl} className="mt-2.5" />
       )}
 
       {status.installed && (

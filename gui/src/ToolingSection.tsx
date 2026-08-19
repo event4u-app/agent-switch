@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 import { toolingStatus, type ToolingEntry, type ToolingId } from "./ipc.js";
 import { latestToolVersion, notifyToolUpdates, toolUpdateAvailable, UPDATE_CHECK_TOOLS } from "./tool-updates.js";
 import { relativeAge } from "./transforms.js";
+import { ReleaseNotesStack } from "./ReleaseNotes.js";
+import type { ReleaseInfo } from "./updates.js";
 
 /**
  * Tooling section: renders the CLI's `tooling --json` readout — the ONLY data
@@ -152,8 +154,10 @@ function ToolingRow({
   isWindows,
   profileCount,
   updateTo,
+  releases,
   latest,
   onRunTool,
+  onOpenUrl,
   onNotifyError,
 }: {
   entry: ToolingEntry;
@@ -164,10 +168,16 @@ function ToolingRow({
   /** agent-config only: the newer version App's update detection found (null =
    *  none known) — turns the Update label into "Update to vX". */
   updateTo: string | null;
+  /** agent-config only: the unread release bodies behind `updateTo`, from the
+   *  same App detection. Empty → no what's-new disclosure (offline, or another
+   *  tool's row). */
+  releases: readonly ReleaseInfo[];
   /** Latest known version from the sweep's registry check (rtk/claude/codex);
    *  null = unknown/unfetchable → no Update button (honest, not speculative). */
   latest: string | null;
   onRunTool: (action: "install" | "upgrade", id: ToolingId) => void;
+  /** Opens a release page in the browser (the what's-new footer link). */
+  onOpenUrl: (url: string) => void;
   onNotifyError: (message: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -277,6 +287,9 @@ function ToolingRow({
         )}
       </div>
       <p className="mt-0.5 text-[11px] text-muted-foreground">{meta}</p>
+      {/* The Update button used to be this row's whole story. Collapsed here so
+       *  the row keeps its height; silent when the bodies are unknown. */}
+      {showUpdate && <ReleaseNotesStack releases={releases} onOpenUrl={onOpenUrl} className="mt-1.5" />}
       {explanation && <HintText text={explanation} className="mt-1" />}
       {showCopy && command && !isWindows && command.startsWith("npm ") && (
         <p className="mt-1 text-[11px] text-muted-foreground">
@@ -313,7 +326,9 @@ export function ToolingSection({
   isWindows,
   profileCounts,
   agentConfigUpdateTo,
+  agentConfigReleases,
   onRunTool,
+  onOpenUrl,
   onNotifyError,
   onUpdatesRecorded,
 }: {
@@ -326,8 +341,14 @@ export function ToolingSection({
   profileCounts: Partial<Record<ToolingId, number>>;
   /** Newer agent-config version from App's update detection, or null. */
   agentConfigUpdateTo: string | null;
+  /** The unread agent-config release bodies behind `agentConfigUpdateTo`, from
+   *  the same detection — so this row and the Ecosystem card cannot describe the
+   *  same release differently. Empty → no what's-new disclosure. */
+  agentConfigReleases: readonly ReleaseInfo[];
   /** Open the embedded terminal on `agent-switch tooling <action> <id>`. */
   onRunTool: (action: "install" | "upgrade", id: ToolingId) => void;
+  /** Opens a release page in the browser (the what's-new footer link). */
+  onOpenUrl: (url: string) => void;
   onNotifyError: (message: string) => void;
   /** A sweep recorded new "update available" events into the shared log —
    *  the parent refreshes its notification sinks (bell / toast / pet). */
@@ -424,8 +445,10 @@ export function ToolingSection({
               isWindows={isWindows}
               profileCount={profileCounts[t.id]}
               updateTo={agentConfigUpdateTo}
+              releases={t.id === "agent-config" ? agentConfigReleases : []}
               latest={cache?.latest?.[t.id] ?? null}
               onRunTool={onRunTool}
+              onOpenUrl={onOpenUrl}
               onNotifyError={onNotifyError}
             />
           ))}

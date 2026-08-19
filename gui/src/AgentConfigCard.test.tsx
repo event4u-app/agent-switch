@@ -1,8 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 import { AgentConfigCard } from "./AgentConfigCard.js";
+import type { ReleaseInfo } from "./updates.js";
 
 beforeEach(() => cleanup());
+
+const release = (tag: string, notes = `### Fixes\n\n* **x:** something in ${tag}\n`): ReleaseInfo => ({
+  tag,
+  name: tag,
+  url: `https://example.test/${tag}`,
+  notes,
+  publishedAt: "2026-08-18T16:47:49Z",
+});
+
+/** The update view, with no release bodies unless a test supplies them. */
+const updateView = (releases: ReleaseInfo[] = []) => ({
+  visible: true as const,
+  mode: "update" as const,
+  current: "9.1.0",
+  latest: "9.2.0",
+  releases,
+});
 
 function setup(over: Partial<Parameters<typeof AgentConfigCard>[0]> = {}) {
   const props = {
@@ -10,6 +28,7 @@ function setup(over: Partial<Parameters<typeof AgentConfigCard>[0]> = {}) {
     variant: "ecosystem" as const,
     devMode: false,
     onOpenRepo: vi.fn(),
+    onOpenUrl: vi.fn(),
     onRun: vi.fn<(action: "install" | "upgrade") => Promise<void>>().mockResolvedValue(undefined),
     onDismiss: vi.fn(),
     onNotifyError: vi.fn(),
@@ -31,7 +50,7 @@ describe("AgentConfigCard", () => {
   });
 
   it("update mode shows current → latest and a version-naming one-click Update", async () => {
-    const p = setup({ view: { visible: true, mode: "update", current: "9.1.0", latest: "9.2.0" } });
+    const p = setup({ view: updateView() });
     expect(screen.getByText(/v9\.1\.0.*v9\.2\.0/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Update to v9.2.0" }));
     await waitFor(() => expect(p.onRun).toHaveBeenCalledWith("upgrade"));
@@ -52,7 +71,7 @@ describe("AgentConfigCard", () => {
   it("update mode busy label reads Updating…", async () => {
     let resolve!: () => void;
     const onRun = vi.fn(() => new Promise<void>((r) => (resolve = r)));
-    setup({ view: { visible: true, mode: "update", current: "9.1.0", latest: "9.2.0" }, onRun });
+    setup({ view: updateView(), onRun });
     fireEvent.click(screen.getByRole("button", { name: "Update to v9.2.0" }));
     expect(await screen.findByRole("button", { name: "Updating…" })).toBeTruthy();
     resolve();
@@ -96,6 +115,35 @@ describe("AgentConfigCard", () => {
     expect(screen.getByRole("button", { name: "Update to v9.2.0" })).toBeTruthy(); // update
     fireEvent.click(toggle);
     expect(screen.getByText(/agent-config is up to date/i)).toBeTruthy(); // full loop
+  });
+
+  it("update mode offers the release notes, collapsed so the card keeps its height", () => {
+    setup({ view: updateView([release("9.2.0")]) });
+    const panel = screen.getByTestId("release-notes");
+    expect(panel.hasAttribute("open")).toBe(false);
+    expect(screen.getByText(/what's new in 9\.2\.0/i)).toBeTruthy();
+  });
+
+  it("lists every skipped version, newest first", () => {
+    setup({ view: updateView([release("9.2.0"), release("9.1.5")]) });
+    expect(screen.getAllByTestId("release-notes").map((el) => el.getAttribute("data-tag"))).toEqual([
+      "9.2.0",
+      "9.1.5",
+    ]);
+  });
+
+  it("shows no notes panel when the bodies are unknown (offline / rate-limited)", () => {
+    setup({ view: updateView() });
+    expect(screen.queryByTestId("release-notes")).toBeNull();
+    expect(screen.getByRole("button", { name: "Update to v9.2.0" })).toBeTruthy(); // the update path is unaffected
+  });
+
+  it("install and installed modes carry no notes panel", () => {
+    setup();
+    expect(screen.queryByTestId("release-notes")).toBeNull();
+    cleanup();
+    setup({ view: { visible: true, mode: "installed", current: "9.2.0", latest: "9.2.0" }, devMode: true });
+    expect(screen.queryByTestId("release-notes")).toBeNull();
   });
 
   it("dev Test-error button routes to the notification system only", () => {
