@@ -1,8 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   ReleaseNotes,
@@ -16,19 +13,25 @@ import type { ReleaseInfo } from "./updates.js";
 
 beforeEach(() => cleanup());
 
-/** Same captured body the normaliser's tests use — the rendering is asserted
- *  against the release shape that actually ships, not a hand-written sample. */
-const FIXTURE_REL = path.join("tests", "fixtures", "agent-config-release-14.2.0.md");
-function fixturePath(): string {
-  let dir = path.dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 6; i++) {
-    const candidate = path.join(dir, FIXTURE_REL);
-    if (fs.existsSync(candidate)) return candidate;
-    dir = path.dirname(dir);
-  }
-  throw new Error(`fixture not found walking up from ${fileURLToPath(import.meta.url)}`);
-}
-const REAL_BODY = fs.readFileSync(fixturePath(), "utf8");
+/**
+ * A body shaped like the release template's real output. Not read from
+ * `tests/fixtures/` on disk on purpose: this project has no `@types/node` (it is
+ * a browser bundle), so a `node:fs` import here typechecks only where a parent
+ * `node_modules/@types/node` is reachable — true in a checkout, false in CI's
+ * gui-scoped `npm ci`. The captured 14.2.0 body is asserted in the CLI mirror's
+ * test; `tests/release-notes.test.ts` byte-compares the two mirror sources.
+ */
+const TEMPLATE_BODY = [
+  "### Release highlights",
+  "",
+  "<!-- Curated head: fill before merge. -->",
+  "- **Behaviour changes:** _none_",
+  "- **Security and correctness:** tenant scope on exports",
+  "",
+  "### Bug Fixes",
+  "",
+  "* **ci:** serialize the two publish triggers ([bbb60a8](https://github.com/o/r/commit/bbb60a895b65))",
+].join("\n");
 
 const release = (over: Partial<ReleaseInfo> = {}): ReleaseInfo => ({
   tag: "14.2.0",
@@ -107,8 +110,10 @@ describe("ReleaseNotes", () => {
     expect(screen.getByText(/what's new in 14\.2\.0/i)).toBeTruthy();
   });
 
-  it("shows the REAL 14.2.0 body with no template noise", () => {
-    const { container } = render(<ReleaseNotes release={release({ notes: REAL_BODY })} defaultOpen onOpenUrl={vi.fn()} />);
+  it("shows a template-shaped body with no template noise", () => {
+    const { container } = render(
+      <ReleaseNotes release={release({ notes: TEMPLATE_BODY })} defaultOpen onOpenUrl={vi.fn()} />,
+    );
     const text = container.textContent ?? "";
     expect(text).toContain("Release highlights");
     expect(text).toContain("Behaviour changes");

@@ -4,9 +4,11 @@
  *
  * Mirrored in `gui/src/release-notes.ts` (same boundary reason as updates.ts:
  * the GUI's tsconfig only includes `gui/src`, so pure helpers are duplicated
- * rather than imported across it). Both mirrors are tested against the SAME
- * captured fixture (`tests/fixtures/agent-config-release-14.2.0.md`), so the
- * one thing that must not drift — the input they claim to handle — cannot.
+ * rather than imported across it). `tests/release-notes.test.ts` byte-compares
+ * the two below their header comment, so a fix applied to one and not the other
+ * fails there — and it asserts against the real captured body
+ * (`tests/fixtures/agent-config-release-14.2.0.md`), which the GUI mirror's own
+ * suite cannot read: that project ships no `@types/node` on purpose.
  *
  * Why a normaliser and not `body.slice(0, 500)`: measured on agent-config
  * 14.2.0, the first 500 characters are a heading, an HTML comment addressed to

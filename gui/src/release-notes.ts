@@ -4,9 +4,9 @@
  *
  * Mirror of `src/release-notes.ts` (same boundary reason as updates.ts: the
  * GUI's tsconfig only includes `gui/src`, so pure helpers are duplicated rather
- * than imported across it). Both mirrors are tested against the SAME captured
- * fixture (`tests/fixtures/agent-config-release-14.2.0.md`), so the one thing
- * that must not drift — the input they claim to handle — cannot.
+ * than imported across it). KEEP THE BODY BYTE-IDENTICAL to that file — only
+ * this header may differ; `tests/release-notes.test.ts` compares the two and
+ * fails on any other difference.
  *
  * Why a normaliser and not `body.slice(0, 500)`: measured on agent-config
  * 14.2.0, the first 500 characters are a heading, an HTML comment addressed to

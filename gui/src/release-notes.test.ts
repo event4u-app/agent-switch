@@ -1,7 +1,4 @@
 import { describe, expect, it } from "vitest";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   stripHtmlComments,
@@ -12,21 +9,43 @@ import {
   clampText,
 } from "./release-notes.js";
 
-/** The SAME captured fixture the CLI mirror's test reads
- *  (`tests/release-notes.test.ts`) — one input, two mirrors, so the pair cannot
- *  drift on the shape they claim to handle. Resolved by walking up so the path
- *  holds regardless of where the runner is invoked from. */
-const FIXTURE_REL = path.join("tests", "fixtures", "agent-config-release-14.2.0.md");
-function fixturePath(): string {
-  let dir = path.dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 6; i++) {
-    const candidate = path.join(dir, FIXTURE_REL);
-    if (fs.existsSync(candidate)) return candidate;
-    dir = path.dirname(dir);
-  }
-  throw new Error(`fixture not found walking up from ${fileURLToPath(import.meta.url)}: ${FIXTURE_REL}`);
-}
-const FIXTURE = fs.readFileSync(fixturePath(), "utf8");
+/**
+ * A sample carrying every noisy construct agent-config's release template
+ * actually emits — curated highlights head, the author-facing HTML comment,
+ * `**bold**` scope prefixes, `_none_` placeholders, generated `([sha](url))`
+ * suffixes, a horizontal rule, trailing prose.
+ *
+ * Deliberately NOT read from `tests/fixtures/` on disk: this project compiles
+ * with `types: ["vitest/globals"]` and `lib: [ES2022, DOM]` — no `@types/node`
+ * — because it is a browser bundle. Importing `node:fs` here typechecks only
+ * where a parent `node_modules/@types/node` happens to be reachable, which is
+ * true in a full checkout and false in CI's `working-directory: gui` +
+ * `npm ci`. The real captured body is asserted in the CLI mirror's test, and
+ * `tests/release-notes.test.ts` byte-compares the two mirror sources — a
+ * stronger guarantee than a shared input, since it makes the implementations
+ * themselves unable to drift.
+ */
+const FIXTURE = [
+  "### Release highlights",
+  "",
+  "<!-- Curated head: fill before merge, keep it under 10 lines. -->",
+  "- **Behaviour changes:** _none_",
+  "- **Default changes + migration:** _none_",
+  "- **Security and correctness:** tenant scope on exports",
+  "",
+  "### Features",
+  "",
+  "* **hooks:** stop skill-route pointing at bare skills ([508bba9](https://github.com/o/r/commit/508bba908e07))",
+  "",
+  "### Bug Fixes",
+  "",
+  "* **ci:** serialize the two publish triggers ([bbb60a8](https://github.com/o/r/commit/bbb60a895b65))",
+  "",
+  "Tests: 14629 (+37 since 14.1.0)",
+  "",
+  "---",
+  "**MCP Worker deployed:** `v14.2.0-53e0661`",
+].join("\n");
 
 describe("release-note normalisation (GUI mirror of the CLI release-notes module)", () => {
   it("removes single- and multi-line HTML comments", () => {
@@ -61,10 +80,16 @@ describe("release-note normalisation (GUI mirror of the CLI release-notes module
     expect(releaseNoteBlocks("<!-- author instructions only -->\n")).toEqual([]);
   });
 
-  it("renders the real 14.2.0 body without comment, sha or emphasis noise", () => {
+  it("renders a template-shaped body without comment, sha or emphasis noise", () => {
     const blocks = releaseNoteBlocks(FIXTURE);
     const joined = blocks.map((b) => b.text).join("\n");
-    expect(blocks.length).toBeGreaterThan(10);
+    // The sample's shape, spelled out: 3 section headings, 5 bullets, 2 trailing
+    // prose lines. The comment and the horizontal rule contribute nothing.
+    expect({
+      heading: blocks.filter((b) => b.kind === "heading").length,
+      item: blocks.filter((b) => b.kind === "item").length,
+      text: blocks.filter((b) => b.kind === "text").length,
+    }).toEqual({ heading: 3, item: 5, text: 2 });
     expect(joined).not.toContain("<!--");
     expect(joined).not.toContain("Curated head");
     expect(joined).not.toContain("**");
@@ -74,7 +99,7 @@ describe("release-note normalisation (GUI mirror of the CLI release-notes module
     expect(blocks[0]).toEqual({ kind: "heading", text: "Release highlights" });
   });
 
-  it("picks the first non-placeholder highlight from the real body", () => {
+  it("picks the first non-placeholder highlight", () => {
     const h = firstHighlight(releaseNoteBlocks(FIXTURE));
     expect(h).toMatch(/^Security and correctness:/);
   });

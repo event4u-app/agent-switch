@@ -128,3 +128,62 @@ test("clampText cuts on a word boundary and marks the cut", () => {
   assert.equal(clampText("aaaaaaaaaaaaaaaaaaaa", 8), "aaaaaaaa…");
   assert.equal(clampText("  padded  ", 40), "padded");
 });
+
+// ---------- the mirror contract ----------
+//
+// `src/release-notes.ts` and `gui/src/release-notes.ts` are the same module
+// twice, because the GUI tsconfig includes only `gui/src` and cannot import
+// across that boundary. Two guards keep the duplication honest, and both live
+// HERE: this suite is the one that legitimately has Node types.
+
+function repoFile(rel: string): string {
+  // Walk up: the suite compiles into `dist-test/` and runs from there, so a
+  // path relative to this file would miss the repo root.
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 6; i++) {
+    const candidate = path.join(dir, rel);
+    if (fs.existsSync(candidate)) return candidate;
+    dir = path.dirname(dir);
+  }
+  throw new Error(`not found walking up from ${fileURLToPath(import.meta.url)}: ${rel}`);
+}
+
+/** Everything after the leading block comment — the header is the one part
+ *  allowed to differ (each mirror names the other one). */
+function bodyAfterHeader(source: string): string {
+  const end = source.indexOf("*/");
+  return end === -1 ? source : source.slice(end + 2).trim();
+}
+
+test("the two release-notes mirrors are byte-identical below their header", () => {
+  const cli = fs.readFileSync(repoFile(path.join("src", "release-notes.ts")), "utf8");
+  const gui = fs.readFileSync(repoFile(path.join("gui", "src", "release-notes.ts")), "utf8");
+  // Stronger than testing both against one shared fixture: a fix applied to one
+  // mirror and not the other fails here, whatever the inputs happen to cover.
+  assert.equal(
+    bodyAfterHeader(gui),
+    bodyAfterHeader(cli),
+    "gui/src/release-notes.ts drifted from src/release-notes.ts — copy the change across",
+  );
+});
+
+test("no gui/src file imports a node: builtin", () => {
+  // The GUI is a browser bundle: its tsconfig carries `types: ["vitest/globals"]`
+  // and no `@types/node`, so `import … from "node:fs"` typechecks in a full
+  // checkout (TS walks up to the ROOT node_modules/@types/node) and fails in
+  // CI, which installs inside `gui/` only. That asymmetry cost a red CI run on
+  // two files at once, so it is asserted rather than remembered.
+  const dir = repoFile(path.join("gui", "src"));
+  const offenders: string[] = [];
+  const walk = (d: string): void => {
+    for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, entry.name);
+      if (entry.isDirectory()) walk(p);
+      else if (/\.(ts|tsx)$/.test(entry.name) && /from\s+["']node:/.test(fs.readFileSync(p, "utf8"))) {
+        offenders.push(path.relative(dir, p));
+      }
+    }
+  };
+  walk(dir);
+  assert.deepEqual(offenders, [], `gui/src must not import node: builtins — found in ${offenders.join(", ")}`);
+});
