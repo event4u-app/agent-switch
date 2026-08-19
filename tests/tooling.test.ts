@@ -10,6 +10,7 @@ import {
   TOOL_IDS,
   checkTooling,
   findOnPath,
+  formatToolNotes,
   formatToolingLines,
   doctorToolingLine,
   parseVersionToken,
@@ -17,6 +18,9 @@ import {
   probeRtkIdentity,
   runToolAction,
   statusGlyph,
+  toolNotesHeader,
+  toolNotesRefusal,
+  toolReleaseRepo,
   type RunResult,
   type Runner,
   type ToolAction,
@@ -481,4 +485,112 @@ test("`doctor` includes the agent-config and rtk rows", gate, () => {
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
+});
+
+// ---------- release notes (`tooling notes`) ----------
+
+const rel = (tag: string, notes: string, publishedAt = "2026-08-18T16:47:49Z") => ({
+  tag,
+  name: tag,
+  url: `https://github.com/o/r/releases/tag/${tag}`,
+  notes,
+  publishedAt,
+});
+
+test("toolReleaseRepo knows only the verified sources", () => {
+  assert.equal(toolReleaseRepo("agent-config"), "event4u-app/agent-config");
+  assert.equal(toolReleaseRepo("rtk"), "rtk-ai/rtk");
+  // No invented source for the npm-distributed CLIs or for agy.
+  assert.equal(toolReleaseRepo("claude"), null);
+  assert.equal(toolReleaseRepo("codex"), null);
+  assert.equal(toolReleaseRepo("agy"), null);
+});
+
+test("toolNotesRefusal names WHY there are no notes and where the version is", () => {
+  const npmish = toolNotesRefusal("codex");
+  assert.match(npmish, /no verified GitHub release source/);
+  assert.match(npmish, /agent-switch tooling upgrade codex/);
+  assert.match(toolNotesRefusal("agy"), /ships with the Antigravity app/);
+});
+
+test("toolNotesHeader distinguishes behind / up-to-date / absent / unknown", () => {
+  assert.equal(
+    toolNotesHeader({
+      id: "agent-config",
+      installed: "14.0.0",
+      latest: "14.2.0",
+      releases: [rel("14.2.0", "x"), rel("14.1.0", "y")],
+    }),
+    "agent-config — installed 14.0.0 · latest 14.2.0 · 2 updates to read",
+  );
+  assert.equal(
+    toolNotesHeader({ id: "agent-config", installed: "14.1.0", latest: "14.2.0", releases: [rel("14.2.0", "x")] }),
+    "agent-config — installed 14.1.0 · latest 14.2.0 · 1 update to read",
+  );
+  assert.equal(
+    toolNotesHeader({ id: "agent-config", installed: "14.2.0", latest: "14.2.0", releases: [rel("14.2.0", "x")] }),
+    "agent-config — installed 14.2.0 · up to date",
+  );
+  assert.equal(
+    toolNotesHeader({ id: "rtk", installed: null, latest: "0.43.0", releases: [] }),
+    "rtk — not installed · latest 0.43.0",
+  );
+  assert.equal(
+    toolNotesHeader({ id: "rtk", installed: "0.42.0", latest: null, releases: [] }),
+    "rtk — installed 0.42.0 · latest unknown (offline or rate-limited)",
+  );
+});
+
+test("formatToolNotes renders each release dated, normalised and with its URL", () => {
+  const lines = formatToolNotes({
+    id: "agent-config",
+    installed: "14.1.0",
+    latest: "14.2.0",
+    releases: [
+      rel("14.2.0", "### Bug Fixes\n\n* **hooks:** stop double-firing ([abc1234](https://x/commit/abc1234))\n"),
+    ],
+  });
+  const out = lines.join("\n");
+  assert.match(out, /installed 14\.1\.0 · latest 14\.2\.0 · 1 update to read/);
+  assert.match(out, /^14\.2\.0 — 2026-08-18$/m);
+  assert.match(out, /^ {2}Bug Fixes$/m);
+  assert.match(out, /^ {4}• hooks: stop double-firing$/m);
+  assert.ok(!out.includes("/commit/"), "commit link leaked into the terminal output");
+  assert.match(out, /releases\/tag\/14\.2\.0/);
+});
+
+test("formatToolNotes answers even when a release body is empty (a typed command must not print nothing)", () => {
+  const out = formatToolNotes({
+    id: "agent-config",
+    installed: "14.1.0",
+    latest: "14.2.0",
+    releases: [rel("14.2.0", "<!-- author note only -->")],
+  }).join("\n");
+  assert.match(out, /\(no notes in this release\)/);
+  assert.match(out, /releases\/tag\/14\.2\.0/);
+});
+
+test("formatToolNotes says nothing is available rather than printing a bare header", () => {
+  const out = formatToolNotes({ id: "agent-config", installed: "14.2.0", latest: null, releases: [] }).join("\n");
+  assert.match(out, /No release notes available\./);
+});
+
+test("formatToolNotes caps a long body and reports how much it left out", () => {
+  const body = Array.from({ length: 30 }, (_, i) => `* item ${i}`).join("\n");
+  const out = formatToolNotes(
+    { id: "agent-config", installed: "1.0.0", latest: "1.1.0", releases: [rel("1.1.0", body)] },
+    5,
+  ).join("\n");
+  assert.match(out, /… 25 more lines/);
+  assert.ok(!out.includes("item 6"), "capped output kept a line past the limit");
+});
+
+test("formatToolNotes omits an unparseable publish date instead of printing garbage", () => {
+  const out = formatToolNotes({
+    id: "rtk",
+    installed: "0.42.0",
+    latest: "0.43.0",
+    releases: [rel("0.43.0", "* a fix", "")],
+  }).join("\n");
+  assert.match(out, /^0\.43\.0$/m);
 });
