@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -660,6 +660,218 @@ test("`handoff extract` rejects a traversal id before fs access", gate, () => {
   try {
     seed(home, "claude", "work");
     assert.match(runFail(home, ["handoff", "extract", "../../x", "--from", "work", "--to", "codex"]), /invalid session id/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// ---------- single-load guard, end to end over the built CLI -----------------
+//
+// These exercise the real wiring (state → provider → detection → exit code),
+// not the pure core. Liveness uses THIS test process's own pid, which is alive
+// by construction — the same `process.kill(pid, 0)` probe the CLI uses.
+
+/** Register a live session on a seeded profile, the way Claude Code does. */
+function seedLiveSession(home: string, name: string, pid: number): void {
+  const dir = path.join(home, "claude", name, "config", "sessions");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${pid}.json`), "{}");
+}
+
+/** Run the CLI and capture status + stdout + stderr instead of throwing. */
+function runRaw(home: string, args: string[], env: Record<string, string> = {}) {
+  const r = spawnSync("node", [CLI, ...args], {
+    env: { ...process.env, AGENT_SWITCH_HOME: home, ...env },
+    encoding: "utf8",
+  });
+  return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+}
+
+test("guard: `dir --guard` refuses a second load with exit 86, and still prints the path", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
+  try {
+    seed(home, "claude", "work");
+    run(home, ["use", "work"]);
+    seedLiveSession(home, "work", process.pid);
+
+    const r = runRaw(home, ["dir", "--guard"]);
+    assert.equal(r.status, 86, "the wrapper keys on this exact code");
+    // stdout stays the contract the wrapper reads — the guard speaks on stderr.
+    assert.match(r.stdout.trim(), /claude[/\\]work[/\\]config$/);
+    assert.match(r.stderr, /already loaded/);
+    assert.match(r.stderr, new RegExp(`pid ${process.pid}`));
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("guard: a free profile passes `dir --guard` untouched (exit 0, no noise)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
+  try {
+    seed(home, "claude", "work");
+    run(home, ["use", "work"]);
+    const r = runRaw(home, ["dir", "--guard"]);
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr.trim(), "");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("guard: a dead pid is not a load — the profile stays startable", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
+  try {
+    seed(home, "claude", "work");
+    run(home, ["use", "work"]);
+    // A pid that cannot be alive: a crashed session's leftover file must never
+    // lock the user out, which is why there is no lease of our own.
+    seedLiveSession(home, "work", 2 ** 31 - 1);
+    assert.equal(runRaw(home, ["dir", "--guard"]).status, 0);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("guard: the env override downgrades a refusal to a warning", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
+  try {
+    seed(home, "claude", "work");
+    run(home, ["use", "work"]);
+    seedLiveSession(home, "work", process.pid);
+    const r = runRaw(home, ["dir", "--guard"], { AGENT_SWITCH_ALLOW_DUPLICATE: "1" });
+    assert.equal(r.status, 0);
+    assert.match(r.stderr, /continuing anyway/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("guard: a nested start (env already on this profile) is never refused", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
+  try {
+    seed(home, "claude", "work");
+    run(home, ["use", "work"]);
+    seedLiveSession(home, "work", process.pid);
+    const r = runRaw(home, ["dir", "--guard"], {
+      CLAUDE_CONFIG_DIR: path.join(home, "claude", "work", "config"),
+    });
+    assert.equal(r.status, 0, "a sub-agent of the running session is a child, not a duplicate");
+    assert.equal(r.stderr.trim(), "");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("guard: policy off and warn never refuse", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
+  try {
+    seed(home, "claude", "work");
+    run(home, ["use", "work"]);
+    seedLiveSession(home, "work", process.pid);
+
+    run(home, ["guard", "warn"]);
+    const warned = runRaw(home, ["dir", "--guard"]);
+    assert.equal(warned.status, 0);
+    assert.match(warned.stderr, /continuing anyway/);
+
+    run(home, ["guard", "off"]);
+    const off = runRaw(home, ["dir", "--guard"]);
+    assert.equal(off.status, 0);
+    assert.equal(off.stderr.trim(), "");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("guard: plain `dir` (no --guard) is byte-for-byte unchanged by the feature", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
+  try {
+    seed(home, "claude", "work");
+    run(home, ["use", "work"]);
+    seedLiveSession(home, "work", process.pid);
+    const r = runRaw(home, ["dir"]);
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr.trim(), "");
+    assert.match(r.stdout.trim(), /claude[/\\]work[/\\]config$/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("guard: codex has no live-session signal, so it can never be refused", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
+  try {
+    seed(home, "codex", "work");
+    run(home, ["use", "--provider", "codex", "work"]);
+    // Even with a Claude-shaped pid file present, codex must not enforce.
+    const dir = path.join(home, "codex", "work", "config", "sessions");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${process.pid}.json`), "{}");
+    const r = runRaw(home, ["dir", "--provider", "codex", "--guard"]);
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr.trim(), "");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("guard: `run` refuses before launching, and --force gets through", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
+  try {
+    seed(home, "claude", "work");
+    seedLiveSession(home, "work", process.pid);
+    const refused = runRaw(home, ["run", "work"]);
+    assert.equal(refused.status, 86);
+    assert.match(refused.stderr, /already loaded/);
+    assert.match(refused.stderr, /--force/, "run CAN take --force, so it must be offered here");
+
+    // With --force it proceeds past the guard; it then fails only because the
+    // provider binary is absent in the test env — which is past the gate.
+    const forced = runRaw(home, ["run", "work", "--force"]);
+    assert.notEqual(forced.status, 86);
+    assert.match(forced.stderr, /continuing anyway/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("guard: `use` warns about a busy target but never blocks", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
+  try {
+    seed(home, "claude", "work");
+    seedLiveSession(home, "work", process.pid);
+    const r = runRaw(home, ["use", "work"]);
+    assert.equal(r.status, 0, "`use` loads nothing — it must never refuse");
+    assert.match(r.stdout, /Active claude profile: work/);
+    assert.match(r.stderr, /already loaded/);
+    // The pointer really was written.
+    assert.equal(JSON.parse(fs.readFileSync(path.join(home, "state.json"), "utf8")).active.claude, "work");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("guard: bare `guard` reports the policy and what is loaded right now", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
+  try {
+    seed(home, "claude", "work");
+    seedLiveSession(home, "work", process.pid);
+    const out = run(home, ["guard"]);
+    assert.match(out, /Single-load guard: block/);
+    assert.match(out, /claude\/work/);
+
+    const json = JSON.parse(run(home, ["guard", "--json"]));
+    assert.equal(json.policy, "block");
+    assert.deepEqual(json.loaded, [{ provider: "claude", name: "work", sessions: 1 }]);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("guard: an unknown policy value is refused with the valid choices", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
+  try {
+    assert.throws(() => run(home, ["guard", "maybe"]), /unknown guard policy/);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
