@@ -9,11 +9,11 @@
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 
-import { ROOT, activeFor, configDir, listProfiles, profileExists } from "./profiles.js";
+import { ROOT, activeFor, configDir, listProfiles, profileExists, readGuard } from "./profiles.js";
 import { Provider, allProviders, provider } from "./providers.js";
 import { credentialStore } from "./credentials.js";
 import { sharedLinkHealth } from "./share.js";
-import { checkAuth, type AuthState } from "./api.js";
+import { checkAuth, liveSessionPids, type AuthState } from "./api.js";
 import { checkTooling, doctorToolingLine } from "./tooling.js";
 
 const OK = "✅";
@@ -114,6 +114,26 @@ export async function runDoctor(): Promise<number> {
     } else {
       const parts = [forked.length ? `forked: ${forked.join(", ")}` : "", missing.length ? `missing: ${missing.join(", ")}` : ""].filter(Boolean);
       line(WARN, `claude/${n}: ${parts.join("; ")} — run \`agent-switch share sync\`.`);
+    }
+  }
+
+  // Single-load guard: the policy, and whether any profile is doubled RIGHT NOW.
+  // Reported even when the policy is `warn`/`off` — the point of doctor is to
+  // surface the state, and a silently tolerated duplicate is exactly the thing
+  // the user came here to find.
+  {
+    const policy = readGuard();
+    line(policy === "off" ? WARN : OK, `single-load guard: ${policy}${policy === "off" ? " — a profile can be loaded twice" : ""}.`);
+    const doubled: string[] = [];
+    for (const p of allProviders()) {
+      if (!p.hasLiveSessionSignal) continue;
+      for (const n of listProfiles(p.id)) {
+        const count = liveSessionPids(configDir(p.id, n)).length;
+        if (count > 1) doubled.push(`${p.id}/${n} (${count} sessions)`);
+      }
+    }
+    if (doubled.length > 0) {
+      line(WARN, `  loaded more than once: ${doubled.join(", ")} — they share one account's rate limits.`);
     }
   }
 

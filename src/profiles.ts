@@ -6,6 +6,7 @@ import * as path from "node:path";
 
 import { ProviderId, PROVIDER_IDS, provider, isProviderId } from "./providers.js";
 import { CredentialStore, credentialStore } from "./credentials.js";
+import { DEFAULT_GUARD_POLICY, GuardPolicy, isGuardPolicy } from "./single-load.js";
 
 export const HOME = os.homedir();
 export const ROOT = process.env.AGENT_SWITCH_HOME ?? path.join(HOME, ".agent-switch");
@@ -102,6 +103,13 @@ export interface State {
   osNotifications: boolean;
   /** Rollback / circuit-breaker for the `rebind` write path (ADR-003). */
   rebind: RebindKillSwitch;
+  /**
+   * Single-load guard: how to react when a profile that already carries a live
+   * session is about to be loaded again. Absent → {@link DEFAULT_GUARD_POLICY}
+   * (`block`) — the guard is on out of the box, and an unknown value degrades
+   * to that default rather than throwing on an unreadable state file.
+   */
+  guard: GuardPolicy;
 }
 
 function emptyActive(): ActiveMap {
@@ -259,6 +267,10 @@ function normalizeRebindState(raw: unknown): RebindKillSwitch {
   return { disabled: r.disabled === true, consecutiveFailures };
 }
 
+function normalizeGuard(raw: unknown): GuardPolicy {
+  return isGuardPolicy(raw) ? raw : DEFAULT_GUARD_POLICY;
+}
+
 export function readState(): State {
   try {
     const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
@@ -268,18 +280,19 @@ export function readState(): State {
     const binaryPaths = normalizeBinaryPaths(raw?.binaryPaths);
     const osNotifications = raw?.osNotifications === true;
     const rebind = normalizeRebindState(raw?.rebind);
+    const guard = normalizeGuard(raw?.guard);
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch, providers, binaryPaths, osNotifications, rebind };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch, providers, binaryPaths, osNotifications, rebind, guard };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch, providers, binaryPaths, osNotifications, rebind };
+      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch, providers, binaryPaths, osNotifications, rebind, guard };
     }
-    return { active: emptyActive(), labels, autoSwitch, providers, binaryPaths, osNotifications, rebind };
+    return { active: emptyActive(), labels, autoSwitch, providers, binaryPaths, osNotifications, rebind, guard };
   } catch {
     /* absent / unparsable → default */
   }
-  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, rebind: { ...DEFAULT_REBIND_STATE } };
+  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, rebind: { ...DEFAULT_REBIND_STATE }, guard: DEFAULT_GUARD_POLICY };
 }
 
 export function readOsNotifications(): boolean {
@@ -289,6 +302,20 @@ export function readOsNotifications(): boolean {
 export function setOsNotifications(on: boolean): void {
   const state = readState();
   state.osNotifications = on;
+  writeState(state);
+}
+
+// ---------- single-load guard policy ----------
+
+/** How the single-load guard reacts to a second load of one profile. */
+export function readGuard(): GuardPolicy {
+  return readState().guard;
+}
+
+/** Persist the guard policy. */
+export function setGuard(policy: GuardPolicy): void {
+  const state = readState();
+  state.guard = policy;
   writeState(state);
 }
 

@@ -60,6 +60,15 @@ export interface Provider {
    * ONLY for providers with a readout — there is nothing to trigger on otherwise.
    */
   readonly hasUsageReadout: boolean;
+  /**
+   * Whether a LIVE session of this provider is detectable on disk. Only Claude
+   * Code registers a running session (`<config>/sessions/<pid>.json`, read by
+   * `liveSessionPids`); codex writes date-partitioned rollouts with no live
+   * marker, and agy none at all. The single-load guard keys on this: without a
+   * signal there is no evidence a profile is loaded, and no-evidence must never
+   * become a refusal.
+   */
+  readonly hasLiveSessionSignal: boolean;
 }
 
 function readJson(p: string): any | null {
@@ -113,6 +122,7 @@ const claude: Provider = {
   oneShotArgs: (prompt) => ["-p", prompt],
   importFiles: [],
   hasUsageReadout: true,
+  hasLiveSessionSignal: true,
 };
 
 const codex: Provider = {
@@ -131,6 +141,7 @@ const codex: Provider = {
   oneShotArgs: (prompt) => ["exec", prompt],
   importFiles: ["auth.json"],
   hasUsageReadout: true, // live via wham/usage (ChatGPT backend)
+  hasLiveSessionSignal: false, // rollouts are date-partitioned; no live-pid marker
 };
 
 const antigravity: Provider = {
@@ -164,6 +175,7 @@ const antigravity: Provider = {
   oneShotArgs: (prompt) => ["--print", prompt],
   importFiles: [],
   hasUsageReadout: false,
+  hasLiveSessionSignal: false,
 };
 
 const PROVIDERS: Record<ProviderId, Provider> = { claude, codex, antigravity };

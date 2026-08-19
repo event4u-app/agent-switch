@@ -57,6 +57,7 @@ test("activeFor / setActive are per-provider", () => {
     binaryPaths: {},
     osNotifications: false,
     rebind: { disabled: false, consecutiveFailures: 0 },
+    guard: "block",
   }); // clean baseline (shared STATE_FILE)
   P.setActive("codex", "work");
   P.setActive("antigravity", "priv");
@@ -137,6 +138,7 @@ test("legacy global auto-switch migrates onto every provider", () => {
     binaryPaths: {},
     osNotifications: false,
     rebind: { disabled: false, consecutiveFailures: 0 },
+    guard: "block",
   });
   const all = P.readAutoSwitchAll();
   for (const p of ["claude", "codex", "antigravity"] as const) {
@@ -241,4 +243,32 @@ test("binary paths: link round-trips, readBinaryPaths reflects it, unlink clears
   P.setBinaryPath("claude", null);
   assert.equal(P.readBinaryPath("claude"), null);
   assert.equal(P.readBinaryPaths().claude, undefined);
+});
+
+// ---------- single-load guard policy ----------------------------------------
+
+test("guard defaults to block when the key is absent (upgrade from an older state)", () => {
+  fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: { claude: "work" } }));
+  assert.equal(P.readGuard(), "block");
+});
+
+test("an unknown guard value degrades to the default instead of throwing", () => {
+  fs.writeFileSync(P.STATE_FILE, JSON.stringify({ guard: "sometimes" }));
+  assert.equal(P.readGuard(), "block");
+});
+
+test("setGuard round-trips every policy and leaves the rest of the state alone", () => {
+  P.setActive("claude", "work");
+  P.setLabel("claude", "work", "Work");
+  for (const policy of ["warn", "off", "block"] as const) {
+    P.setGuard(policy);
+    assert.equal(P.readGuard(), policy);
+  }
+  assert.equal(P.activeFor("claude"), "work");
+  assert.equal(P.labelFor("claude", "work"), "Work");
+});
+
+test("a missing state file resolves the guard to the default", () => {
+  fs.rmSync(P.STATE_FILE, { force: true });
+  assert.equal(P.readGuard(), "block");
 });

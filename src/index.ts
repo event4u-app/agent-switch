@@ -48,6 +48,8 @@ import {
   readProviders,
   setProviderSurface,
   readBinaryPath,
+  readGuard,
+  setGuard,
   readBinaryPaths,
   setBinaryPath,
   type ProviderSurface,
@@ -68,6 +70,19 @@ import { runDoctor } from "./doctor.js";
 import { TOOL_IDS, ToolAction, ToolId, checkTooling, formatToolingLines, runToolAction } from "./tooling.js";
 import { HistorySample, readHistory, recordHistorySample } from "./history.js";
 import { launchGui } from "./gui-launch.js";
+import {
+  GUARD_POLICIES,
+  GUARD_REFUSED_EXIT,
+  GuardPolicy,
+  GuardVerdict,
+  LoadInspection,
+  OVERRIDE_ENV,
+  guardVerdict,
+  inspectLoad,
+  isGuardPolicy,
+  overrideFromEnv,
+  renderGuardMessage,
+} from "./single-load.js";
 import { checkForUpdate, selfUpdate } from "./updates.js";
 import {
   mappingRows,
@@ -139,6 +154,72 @@ import {
 const credentials = credentialStore();
 const CLAUDE_HOME = provider("claude").defaultConfigDir(); // ~/.claude
 const CLAUDE_JSON = path.join(HOME, ".claude.json");
+
+
+// ---------- single-load guard ------------------------------------------------
+//
+// One profile, one live session. Every enforcement point below resolves through
+// THIS function so the CLI, the shell-wrapper path, and `use` cannot drift into
+// three different answers. The pure half (detection, policy, wording) lives in
+// single-load.ts; this is only the composition with real state and processes.
+
+interface GuardCheck {
+  verdict: GuardVerdict;
+  inspection: LoadInspection;
+  /** Rendered message, or null when the verdict is `allow`. */
+  message: string | null;
+}
+
+/** Same-provider profiles that carry no live session — the concrete
+ *  alternatives a refusal names, so the user can act on it without first
+ *  running `list` themselves. */
+function freeProfiles(providerId: ProviderId, exclude: string): string[] {
+  return listProfiles(providerId).filter(
+    (n) => n !== exclude && liveSessionPids(configDir(providerId, n)).length === 0,
+  );
+}
+
+function checkSingleLoad(
+  providerId: ProviderId,
+  name: string,
+  opts: { forced?: boolean; offerForceFlag?: boolean; context?: "start" | "use" } = {},
+): GuardCheck {
+  const p = provider(providerId);
+
+  // Early-out before touching the filesystem: `dir --guard` runs on every
+  // interactive start, so a disabled guard (or a provider with no live-session
+  // signal at all) must cost a state read and nothing more.
+  const policy = readGuard();
+  if (policy === "off" || !p.hasLiveSessionSignal) {
+    return { verdict: "allow", inspection: { sessions: [], loaded: false, nested: false }, message: null };
+  }
+
+  const cfg = configDir(providerId, name);
+  const inspection = inspectLoad(cfg, p.envVar);
+  const verdict = guardVerdict({
+    policy,
+    inspection,
+    overridden: opts.forced === true || overrideFromEnv(),
+    detectable: p.hasLiveSessionSignal,
+  });
+  return {
+    verdict,
+    inspection,
+    message:
+      verdict === "allow"
+        ? null
+        : renderGuardMessage({
+            profile: name,
+            binary: p.binary,
+            verdict,
+            inspection,
+            offerForceFlag: opts.offerForceFlag === true,
+            context: opts.context ?? "start",
+            // Only worth computing on a message we are actually going to print.
+            alternatives: verdict === "refuse" ? freeProfiles(providerId, name) : [],
+          }),
+  };
+}
 
 // ---------- launcher ---------------------------------------------------------
 
@@ -262,6 +343,15 @@ function cmdUse(providerId: ProviderId, name?: string): void {
   const id = identity(providerId, n);
   console.log(`Active ${providerId} profile: ${n}${id ? ` (${id})` : ""}`);
   console.log(`New \`${provider(providerId).binary}\` sessions use this profile. Running sessions are unaffected.`);
+
+  // `use` loads nothing — it states an intent — so it NEVER blocks. But it is
+  // the cheapest possible moment to tell the user that the profile they just
+  // pointed at is already busy, before they type the command that gets refused.
+  const check = checkSingleLoad(providerId, n, { context: "use" });
+  if (check.message) {
+    console.log("");
+    console.warn(check.message);
+  }
 }
 
 function cmdDeactivate(providerId: ProviderId): void {
@@ -278,9 +368,17 @@ function cmdDeactivate(providerId: ProviderId): void {
 function cmdRun(providerId: ProviderId, name: string | undefined, args: string[]): void {
   const n = requireProfile(providerId, name, "run");
   const p = provider(providerId);
-  // `--tmux` is an agent-switch flag, not a passthrough flag — strip it.
+  // `--tmux` and `--force` are agent-switch flags, not passthrough flags — strip
+  // them before the rest reaches the provider binary.
   const wantTmux = args.includes("--tmux");
-  const passthrough = args.filter((a) => a !== "--tmux");
+  const forced = args.includes("--force");
+  const passthrough = args.filter((a) => a !== "--tmux" && a !== "--force");
+
+  // agent-switch spawns the binary itself here, so this is the strongest
+  // enforcement point: refuse before anything is launched.
+  const guard = checkSingleLoad(providerId, n, { forced, offerForceFlag: true });
+  if (guard.message) console.error(guard.verdict === "refuse" ? `error: ${guard.message}` : guard.message);
+  if (guard.verdict === "refuse") process.exit(GUARD_REFUSED_EXIT);
 
   if (wantTmux) {
     if (!tmuxAvailable()) {
@@ -304,7 +402,10 @@ function printProfileLine(providerId: ProviderId, name: string, showLive: boolea
   let live = "";
   if (showLive && providerId === "claude") {
     const pids = liveSessionPids(configDir("claude", name));
-    if (pids.length > 0) live = `  [${pids.length} live session${pids.length > 1 ? "s" : ""}]`;
+    // More than one session on one account is the state the single-load guard
+    // exists to prevent, so it is marked rather than blending into the count.
+    if (pids.length > 1) live = `  ⚠️  [loaded ${pids.length}× — ${pids.length} live sessions]`;
+    else if (pids.length === 1) live = "  [1 live session]";
   }
   console.log(`${mark} ${name.padEnd(16)} ${id}${live}`);
 }
@@ -460,16 +561,35 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
   }
 }
 
-function cmdDir(providerId: ProviderId): void {
-  // Precedence: directory mapping (nearest ancestor of CWD) > active-for-provider.
+/**
+ * Resolve which profile a shell wrapper should load: directory mapping (nearest
+ * ancestor of CWD) > active-for-provider. Empty output → the wrapper falls back
+ * to the default config dir.
+ *
+ * With `--guard`, stdout is unchanged (the wrapper still reads the path from
+ * it) and the guard speaks on STDERR, exiting {@link GUARD_REFUSED_EXIT} on a
+ * refusal. Splitting the streams is what lets one command both feed the wrapper
+ * and talk to the human; a distinct exit code is what lets the wrapper block on
+ * a refusal without ever blocking on a missing or older `agent-switch`.
+ */
+function cmdDir(providerId: ProviderId, guarded = false): void {
   const mapped = resolveMapping(process.cwd(), providerId);
-  if (mapped && profileExists(providerId, mapped.name)) {
-    console.log(configDir(providerId, mapped.name));
-    return;
-  }
-  const active = activeFor(providerId);
-  if (active && profileExists(providerId, active)) console.log(configDir(providerId, active));
-  // Empty output -> shell wrapper falls back to the default config dir.
+  const name =
+    mapped && profileExists(providerId, mapped.name)
+      ? mapped.name
+      : (() => {
+          const active = activeFor(providerId);
+          return active && profileExists(providerId, active) ? active : null;
+        })();
+  if (!name) return;
+  console.log(configDir(providerId, name));
+  if (!guarded) return;
+
+  // A wrapper cannot pass `--force` (it would reach the provider binary), so
+  // only the env override is offered here.
+  const guard = checkSingleLoad(providerId, name, { offerForceFlag: false });
+  if (guard.message) console.error(`agent-switch: ${guard.message}`);
+  if (guard.verdict === "refuse") process.exit(GUARD_REFUSED_EXIT);
 }
 
 function cmdMap(providerId: ProviderId, name?: string, dir?: string): void {
@@ -1813,6 +1933,67 @@ function cmdOpen(appId?: string, name?: string): void {
   }
 }
 
+
+/**
+ * `agent-switch guard [block|warn|off]` — read or set the single-load policy.
+ * The bare form also reports what is loaded RIGHT NOW, because "what is my
+ * policy" and "is anything currently doubled" are the same question in practice.
+ */
+function cmdGuard(value?: string, json = false): void {
+  if (value !== undefined) {
+    if (!isGuardPolicy(value)) {
+      die(`unknown guard policy "${value}" (choose: ${GUARD_POLICIES.join(", ")})`);
+    }
+    setGuard(value);
+  }
+  const policy = readGuard();
+
+  // Every profile of every provider that can report a live session.
+  const rows: { provider: ProviderId; name: string; sessions: number }[] = [];
+  for (const pid of PROVIDER_IDS) {
+    if (!provider(pid).hasLiveSessionSignal) continue;
+    for (const n of listProfiles(pid)) {
+      const count = liveSessionPids(configDir(pid, n)).length;
+      if (count > 0) rows.push({ provider: pid, name: n, sessions: count });
+    }
+  }
+
+  if (json) {
+    console.log(JSON.stringify({ policy, loaded: rows }, null, 2));
+    return;
+  }
+
+  const explain: Record<GuardPolicy, string> = {
+    block: "a second session on a profile that is already loaded is refused",
+    warn: "a second session is reported, then allowed",
+    off: "no check at all",
+  };
+  console.log(`Single-load guard: ${policy} — ${explain[policy]}.`);
+
+  if (rows.length === 0) {
+    console.log("No profile is currently loaded by a live session.");
+  } else {
+    console.log("");
+    for (const r of rows) {
+      const doubled = r.sessions > 1;
+      const mark = doubled ? "⚠️ " : "  ";
+      const detail = doubled ? `loaded ${r.sessions}× — this is what the guard exists to prevent` : "1 live session";
+      console.log(`${mark} ${`${r.provider}/${r.name}`.padEnd(24)} ${detail}`);
+    }
+  }
+
+  const inert = PROVIDER_IDS.filter((pid) => !provider(pid).hasLiveSessionSignal && listProfiles(pid).length > 0);
+  if (inert.length > 0) {
+    console.log("");
+    console.log(`Not covered: ${inert.join(", ")} — these CLIs do not register a running session on disk,`);
+    console.log("so agent-switch has no way to tell a second load from a first.");
+  }
+  if (policy !== "off") {
+    console.log("");
+    console.log(`Override once: ${OVERRIDE_ENV}=1 <binary>    ·    Change: agent-switch guard <${GUARD_POLICIES.join("|")}>`);
+  }
+}
+
 function cmdShellenv(shellArg?: string): void {
   console.log(shellenvScript(detectShell(shellArg)));
 }
@@ -1888,7 +2069,8 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch status [--provider P] [name] [--json]   identity (+ Claude usage); --json = active only
   agent-switch current [--provider P]          show the active profile(s)
   agent-switch whoami [--provider P] [name]    show a profile's account identity
-  agent-switch dir [--provider P]              resolve profile for CWD (mapping > active)
+  agent-switch dir [--provider P] [--guard]    resolve profile for CWD (mapping > active)
+  agent-switch guard [block|warn|off]          one profile, one live session (default block)
   agent-switch map [--provider P] <name> [dir] map a directory to a profile
   agent-switch unmap [--provider P] [dir]      remove a directory mapping
   agent-switch mappings                        list directory mappings
@@ -2102,8 +2284,10 @@ async function main(): Promise<void> {
     const moved = migrateLegacyLayout();
     if (moved.length > 0) {
       // stderr, not stdout: `dir` is machine-consumed by the shell wrapper
-      // (`dir="$(agent-switch dir 2>/dev/null)"`), so a status line on stdout
-      // would pollute the resolved config path.
+      // (`dir="$(agent-switch dir --provider … --guard)"`), so a status line on
+      // stdout would pollute the resolved config path. Since the single-load
+      // guard needs to speak, the wrapper no longer discards stderr — this
+      // one-time migration note is now visible to the user, which is right.
       console.error(`Migrated ${moved.length} Claude profile(s) to the new layout: ${moved.join(", ")}.`);
     }
   }
@@ -2133,7 +2317,8 @@ async function main(): Promise<void> {
     case "status": return cmdStatus(providerExplicit ? providerId : undefined, positional[0], !!flags.json);
     case "current": return cmdCurrent(providerExplicit ? providerId : undefined);
     case "whoami": return cmdWhoami(providerId, positional[0]);
-    case "dir": return cmdDir(providerId);
+    case "dir": return cmdDir(providerId, !!flags.guard);
+    case "guard": return cmdGuard(positional[0], !!flags.json);
     case "map": return cmdMap(providerId, positional[0], positional[1]);
     case "unmap": return cmdUnmap(providerExplicit ? providerId : undefined, positional[0]);
     case "mappings": return cmdMappings();
