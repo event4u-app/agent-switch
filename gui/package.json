@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest run",
+    "screenshots": "node scripts/screenshots/capture.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

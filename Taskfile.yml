@@ -154,6 +154,13 @@ tasks:
     cmds:
       - npm run build
 
+  gui:screenshots:
+    desc: "Render the README screenshots (.github/assets/screenshots/) from a seeded demo home — headless Chromium, real CLI, anonymised fixtures"
+    deps: [gui:deps, deps, build]
+    dir: gui
+    cmds:
+      - npm run screenshots
+
   gui:cargo-check:
     desc: Compile-check the Tauri Rust shell
     cmds:
