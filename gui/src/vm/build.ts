@@ -1,11 +1,22 @@
 /**
  * Pure builders: CLI `--json` rows (via ipc.ts types) → view-model entities.
  * No Tauri imports, so every mapping is unit-testable. Where the CLI reports
- * nothing (plan, auth health, pools, bindings, protection, surfaces) the field
- * stays null/empty — the screens render the design's honest unknown state.
+ * nothing (plan, a failed readout, surface capabilities) the field stays
+ * null/empty — the screens render the design's honest unknown state.
  */
 
-import type { AcStatus, AppInfo, ToolingEntry } from "../ipc.js";
+import type {
+  AcStatus,
+  ActivityEntry,
+  AppInfo,
+  AuthStatusRow,
+  DoctorReport,
+  GuardStatus,
+  MappingRow,
+  PoolListRow,
+  ProtectionRow,
+  ToolingEntry,
+} from "../ipc.js";
 import type { AppNotification } from "../notifications.js";
 import type { ProfileRow, ProvidersStatus, SessionRow, UsageSnapshot } from "../transforms.js";
 import { countdown } from "../ui/format.js";
@@ -13,10 +24,18 @@ import { bindingWindow, isStale, maxUtilization, toneFor, toolStatus } from "./r
 import type {
   Account,
   AccountState,
+  ActivityEvent,
+  ActivityKind,
   AgentConfigVm,
   Attention,
+  AuthHealth,
+  Binding,
+  Check,
+  GuardVm,
   IdentityColor,
   Notice,
+  Pool,
+  Protection,
   Provider,
   Readiness,
   Session,
@@ -48,21 +67,40 @@ function parseTime(iso: string | null | undefined): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
-/** limited at 100 %, near-limit inside the warn band, else ready. Sign-in
- *  states are never inferred — no CLI reports auth health yet. */
-export function accountState(usage: UsageSnapshot | null | undefined, threshold: number): AccountState {
+/** `claude/work` (the CLI's member key) → `claude:work`; null when it is not one. */
+export function accountIdFromMember(key: string | null | undefined): string | null {
+  const m = key ? /^(claude|codex|antigravity)\/(.+)$/.exec(key) : null;
+  return m ? accountId(m[1], m[2]) : null;
+}
+
+/** signed-out when the provider's store says sign-in is needed; else limited at
+ *  100 %, near-limit inside the warn band, ready otherwise. An unknown auth state
+ *  never demotes an account. */
+export function accountState(
+  usage: UsageSnapshot | null | undefined,
+  threshold: number,
+  auth: Pick<AuthHealth, "state"> | null = null,
+): AccountState {
+  if (auth?.state === "sign-in-needed") return "signed-out";
   const max = usage ? maxUtilization(usage.windows) : null;
   if (max != null && max >= 100) return "limited";
   const tone = toneFor(max, threshold);
   return tone === "warn" || tone === "alert" ? "near-limit" : "ready";
 }
 
-export function accountFromProfile(
-  row: ProfileRow,
-  usage: UsageSnapshot | null | undefined,
-  threshold: number = DEFAULT_THRESHOLD,
-): Account {
+/** What the per-account readouts beyond `list` contribute; each may be missing. */
+export interface AccountExtras {
+  protection?: Protection | null;
+  auth?: AuthHealth | null;
+  /** Ids of the pools listing this account. */
+  pools?: string[];
+}
+
+export function accountFromProfile(row: ProfileRow, usage: UsageSnapshot | null | undefined, extras: AccountExtras = {}): Account {
   const id = accountId(row.provider, row.name);
+  const protection = extras.protection ?? null;
+  const auth = extras.auth ?? null;
+  const threshold = protection?.thresholdPct ?? DEFAULT_THRESHOLD;
   return {
     id,
     tool: row.provider,
@@ -72,17 +110,123 @@ export function accountFromProfile(
     label: row.label,
     color: colorFor(id),
     isDefault: row.active,
-    state: accountState(usage, threshold),
+    state: accountState(usage, threshold, auth),
     windows: usage ? usage.windows.map((w) => ({ ...w })) : [],
     checkedAt: parseTime(usage?.capturedAt),
     resetCredits: usage?.resetCredits ?? null,
     threshold,
-    protection: null,
-    auth: null,
+    protection,
+    auth,
     surfaces: [],
     liveSessions: row.liveSessions,
-    pools: [],
+    pools: extras.pools ?? [],
   };
+}
+
+export function protectionFromRow(r: ProtectionRow): Protection {
+  return { enabled: r.enabled, thresholdPct: r.thresholdPct };
+}
+
+/** `auth-status` → AuthHealth. The CLI reads the store, never refreshes it, so
+ *  method / autoRefresh stay unknown; `checkedAt` is when the store was read. */
+export function authFromStatus(r: AuthStatusRow, checkedAt: number): AuthHealth {
+  return {
+    state: r.state,
+    expiresAt: parseTime(r.expiresAt),
+    lastRefreshAt: parseTime(r.lastRefreshAt),
+    checkedAt,
+    method: null,
+    autoRefresh: null,
+    keptFreshBy: r.keptFreshBy || null,
+    reason: r.detail || undefined,
+  };
+}
+
+/** `pool list --json` → Pools; members become account ids, unparseable keys drop. */
+export function poolsFromRows(rows: PoolListRow[]): Pool[] {
+  return rows.map((p) => ({
+    id: p.id,
+    label: p.name,
+    accountIds: p.members.map(accountIdFromMember).filter((x): x is string => x != null),
+    rules: p.rules ?? [],
+  }));
+}
+
+/** Pool ids per account id, for Account.pools. */
+export function poolMembership(pools: Pool[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const p of pools) for (const a of p.accountIds) out.set(a, [...(out.get(a) ?? []), p.id]);
+  return out;
+}
+
+/** Directory mappings → folder bindings. A mapping is always on and the CLI
+ *  counts no hits. `pool:<id>` targets a pool; anything else is a profile. */
+export function bindingsFromMappings(rows: MappingRow[]): Binding[] {
+  return rows.map((r) => ({
+    id: `${r.provider}:${r.path}`,
+    match: { kind: "folder", value: r.path },
+    tool: r.provider,
+    target: r.target.startsWith("pool:")
+      ? { kind: "pool", pool: r.target.slice("pool:".length) }
+      : { kind: "account", accountId: accountId(r.provider, r.target) },
+    enabled: true,
+    hits: null,
+  }));
+}
+
+const ACTIVITY_KIND: Record<ActivityEntry["kind"], ActivityKind> = {
+  switch: "switch",
+  rebind: "rebind",
+  login: "login",
+  redeem: "reset",
+  autostart: "autostart",
+  guard: "guard",
+  update: "update",
+  protection: "protection",
+  pool: "pool",
+  remove: "remove",
+};
+
+/** The CLI's activity log (oldest first) → events, newest first. Entries with an
+ *  unreadable time are dropped rather than dated 0. */
+export function activityFromEntries(entries: ActivityEntry[]): ActivityEvent[] {
+  const out: ActivityEvent[] = [];
+  entries.forEach((e, i) => {
+    const at = parseTime(e.at);
+    if (at == null) return;
+    const acct = accountIdFromMember(e.target);
+    out.push({
+      id: `${e.at}#${i}`,
+      at,
+      kind: ACTIVITY_KIND[e.kind] ?? "update",
+      text: e.target ? `${e.target}: ${e.action}` : e.action,
+      detail: e.reason || undefined,
+      ...(acct ? { accountId: acct } : {}),
+      ok: e.ok,
+    });
+  });
+  return out.sort((a, b) => b.at - a.at);
+}
+
+const CHECK_STATE: Record<DoctorReport["checks"][number]["status"], Check["state"]> = {
+  ok: "ok",
+  warn: "warn",
+  error: "fail",
+  info: "info",
+};
+
+export function checksFromDoctor(r: DoctorReport): Check[] {
+  return r.checks.map((c) => ({ id: c.id, title: c.title, detail: c.detail, state: CHECK_STATE[c.status] ?? "warn", fix: c.fix }));
+}
+
+/** The CLI's doctor vocabulary → the design's. */
+export function readinessFromDoctor(r: DoctorReport["readiness"]): Readiness {
+  return r === "blocked" ? "needs-action" : r === "attention" ? "degraded" : "ready";
+}
+
+export function guardFromStatus(g: GuardStatus | null): GuardVm {
+  if (!g) return { policy: null, loaded: [] };
+  return { policy: g.policy, loaded: g.loaded.map((l) => ({ accountId: accountId(l.provider, l.name), sessions: l.sessions })) };
 }
 
 function basename(path: string): string {
@@ -201,6 +345,18 @@ export function surfacesFromApps(apps: AppInfo[]): Surface[] {
 export function deriveAttention(accounts: Account[], tools: ToolEntry[], toolsCheckedAt: number | null, now: number): Attention[] {
   const out: Attention[] = [];
   for (const a of accounts) {
+    if (a.state === "signed-out" && a.auth?.checkedAt != null) {
+      out.push({
+        id: `signin:${a.id}`,
+        kind: "signed-out",
+        title: `${a.name} needs a new sign-in`,
+        detail: a.auth.reason ?? "The stored login can no longer be refreshed.",
+        accountId: a.id,
+        primary: "Sign in",
+        at: a.auth.checkedAt,
+      });
+      continue;
+    }
     if ((a.state !== "near-limit" && a.state !== "limited") || isStale(a.checkedAt, now)) continue;
     const w = bindingWindow(a.windows);
     if (!w || w.utilization == null || a.checkedAt == null) continue;
@@ -233,10 +389,21 @@ export function deriveAttention(accounts: Account[], tools: ToolEntry[], toolsCh
   return out.sort((x, y) => y.at - x.at);
 }
 
+const READINESS_RANK: Record<Readiness, number> = { starting: 0, ready: 1, degraded: 2, "needs-action": 3 };
+
 /** starting until the first load lands; needs-action when the CLI itself did
- *  not answer; degraded when some readout failed. */
-export function deriveReadiness(loaded: boolean, cliAnswered: boolean, partialFailure: boolean): Readiness {
+ *  not answer; degraded when some readout failed. `doctor` (when it answered)
+ *  can only make it worse, never better. */
+export function deriveReadiness(
+  loaded: boolean,
+  cliAnswered: boolean,
+  partialFailure: boolean,
+  doctor: DoctorReport["readiness"] | null = null,
+): Readiness {
   if (!loaded) return "starting";
   if (!cliAnswered) return "needs-action";
-  return partialFailure ? "degraded" : "ready";
+  const own: Readiness = partialFailure ? "degraded" : "ready";
+  if (doctor == null) return own;
+  const fromDoctor = readinessFromDoctor(doctor);
+  return READINESS_RANK[fromDoctor] > READINESS_RANK[own] ? fromDoctor : own;
 }

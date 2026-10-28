@@ -1,14 +1,25 @@
 import { describe, it, expect } from "vitest";
 import {
   accountFromProfile,
+  accountIdFromMember,
+  activityFromEntries,
   agentConfigFromStatus,
+  authFromStatus,
+  bindingsFromMappings,
+  checksFromDoctor,
   colorFor,
   deriveAttention,
   deriveReadiness,
+  guardFromStatus,
   noticeFromNotification,
+  poolMembership,
+  poolsFromRows,
+  readinessFromDoctor,
   sessionFromRow,
   toolFromEntry,
 } from "./build.js";
+import { nextInPools } from "./rules.js";
+import type { AuthStatusRow } from "../ipc.js";
 import type { ProfileRow, SessionRow, UsageSnapshot } from "../transforms.js";
 
 const NOW = Date.parse("2026-10-28T10:00:00Z");
@@ -49,7 +60,7 @@ describe("accountFromProfile", () => {
     expect(accountFromProfile(row(), usage([42, 61])).state).toBe("ready");
     expect(accountFromProfile(row(), usage([94, 70])).state).toBe("near-limit");
     expect(accountFromProfile(row(), usage([100, 77])).state).toBe("limited");
-    expect(accountFromProfile(row(), usage([70, 20]), 80).state).toBe("near-limit");
+    expect(accountFromProfile(row(), usage([70, 20]), { protection: { enabled: true, thresholdPct: 80 } }).state).toBe("near-limit");
   });
 
   it("carries capture time and unknown windows through", () => {
@@ -149,5 +160,136 @@ describe("noticeFromNotification / deriveReadiness", () => {
     expect(deriveReadiness(true, false, true)).toBe("needs-action");
     expect(deriveReadiness(true, true, true)).toBe("degraded");
     expect(deriveReadiness(true, true, false)).toBe("ready");
+  });
+});
+
+describe("protection and auth on an account", () => {
+  const authRow = (over: Partial<AuthStatusRow> = {}): AuthStatusRow => ({
+    provider: "claude",
+    name: "work",
+    state: "connected",
+    expiresAt: iso(NOW + 5 * 24 * 60 * MIN),
+    lastRefreshAt: iso(NOW - 60 * MIN),
+    keptFreshBy: "claude (refreshes the login when it runs)",
+    detail: "",
+    ...over,
+  });
+
+  it("takes the meter threshold from protection, else the CLI default 98", () => {
+    expect(accountFromProfile(row(), null).threshold).toBe(98);
+    const a = accountFromProfile(row(), usage([85]), { protection: { enabled: false, thresholdPct: 90 } });
+    expect(a.threshold).toBe(90);
+    expect(a.protection).toEqual({ enabled: false, thresholdPct: 90 });
+    expect(a.state).toBe("near-limit");
+  });
+
+  it("maps auth-status times and keeps what the store does not say unknown", () => {
+    const h = authFromStatus(authRow({ lastRefreshAt: null, detail: "" }), NOW);
+    expect(h).toMatchObject({ state: "connected", expiresAt: NOW + 5 * 24 * 60 * MIN, lastRefreshAt: null, checkedAt: NOW });
+    expect(h.method).toBeNull();
+    expect(h.autoRefresh).toBeNull();
+    expect(h.keptFreshBy).toBe("claude (refreshes the login when it runs)");
+    expect(h.reason).toBeUndefined();
+  });
+
+  it("derives signed-out only from sign-in-needed — expiring and unknown never demote", () => {
+    const at = (state: AuthStatusRow["state"]) => accountFromProfile(row(), usage([20]), { auth: authFromStatus(authRow({ state }), NOW) }).state;
+    expect(at("sign-in-needed")).toBe("signed-out");
+    expect(at("expiring")).toBe("ready");
+    expect(at("unknown")).toBe("ready");
+    expect(accountFromProfile(row(), usage([100]), { auth: authFromStatus(authRow({ state: "sign-in-needed" }), NOW) }).state).toBe("signed-out");
+  });
+
+  it("raises a sign-in attention item for a signed-out account", () => {
+    const a = accountFromProfile(row(), null, { auth: authFromStatus(authRow({ state: "sign-in-needed", detail: "Login ended." }), NOW) });
+    const [item] = deriveAttention([a], [], null, NOW);
+    expect(item).toMatchObject({ kind: "signed-out", accountId: "claude:work", detail: "Login ended.", at: NOW });
+  });
+});
+
+describe("pools and folder rules", () => {
+  const pools = poolsFromRows([
+    { id: "work", name: "Work", members: ["claude/work", "claude/side", "nonsense"], createdAt: "x", rules: ["/a (claude)"] },
+    { id: "solo", name: "Solo", members: ["codex/w"], createdAt: "x", rules: [] },
+  ]);
+
+  it("turns CLI member keys into account ids and drops unparseable ones", () => {
+    expect(accountIdFromMember("claude/work")).toBe("claude:work");
+    expect(accountIdFromMember("pool-id")).toBeNull();
+    expect(accountIdFromMember(null)).toBeNull();
+    expect(pools[0]).toEqual({ id: "work", label: "Work", accountIds: ["claude:work", "claude:side"], rules: ["/a (claude)"] });
+    expect(poolMembership(pools).get("claude:side")).toEqual(["work"]);
+  });
+
+  it("feeds Next in <pool> from the CLI-shaped pools", () => {
+    const accounts = [
+      accountFromProfile(row({ name: "work" }), usage([60])),
+      accountFromProfile(row({ name: "side", active: false }), usage([10])),
+    ];
+    expect([...nextInPools(accounts, "claude", pools, NOW).entries()]).toEqual([["claude:side", "Work"]]);
+  });
+
+  it("maps directory mappings to folder bindings with an account or a pool target", () => {
+    const b = bindingsFromMappings([
+      { path: "/x/repo", provider: "claude", target: "work" },
+      { path: "/x/repo", provider: "codex", target: "pool:solo" },
+    ]);
+    expect(b[0]).toEqual({
+      id: "claude:/x/repo",
+      match: { kind: "folder", value: "/x/repo" },
+      tool: "claude",
+      target: { kind: "account", accountId: "claude:work" },
+      enabled: true,
+      hits: null,
+    });
+    expect(b[1].target).toEqual({ kind: "pool", pool: "solo" });
+    expect(b[1].id).not.toBe(b[0].id);
+  });
+});
+
+describe("activity, health and guard", () => {
+  it("orders activity newest first, maps kinds, and drops undated entries", () => {
+    const ev = activityFromEntries([
+      { at: iso(NOW - 2 * MIN), kind: "redeem", target: "codex/w", action: "redeemed", reason: "user ran reset", ok: true },
+      { at: "garbage", kind: "switch", target: null, action: "x", reason: "", ok: true },
+      { at: iso(NOW - MIN), kind: "pool", target: "work", action: "created", reason: "", ok: false },
+    ]);
+    expect(ev.map((e) => e.kind)).toEqual(["pool", "reset"]);
+    expect(ev[0]).toMatchObject({ text: "work: created", ok: false });
+    expect(ev[0].accountId).toBeUndefined();
+    expect(ev[0].detail).toBeUndefined();
+    expect(ev[1]).toMatchObject({ accountId: "codex:w", detail: "user ran reset", at: NOW - 2 * MIN });
+  });
+
+  it("maps doctor checks and readiness onto the design's vocabulary", () => {
+    const checks = checksFromDoctor({
+      readiness: "attention",
+      platform: "darwin",
+      checks: [
+        { id: "a", status: "error", title: "A", detail: "d", fix: "do x" },
+        { id: "b", status: "info", title: "B", detail: "" },
+      ],
+    });
+    expect(checks.map((c) => c.state)).toEqual(["fail", "info"]);
+    expect(checks[0].fix).toBe("do x");
+    expect(readinessFromDoctor("ready")).toBe("ready");
+    expect(readinessFromDoctor("attention")).toBe("degraded");
+    expect(readinessFromDoctor("blocked")).toBe("needs-action");
+  });
+
+  it("lets doctor worsen readiness but never improve it", () => {
+    expect(deriveReadiness(true, true, false, "blocked")).toBe("needs-action");
+    expect(deriveReadiness(true, true, false, "attention")).toBe("degraded");
+    expect(deriveReadiness(true, true, true, "ready")).toBe("degraded");
+    expect(deriveReadiness(true, false, false, "ready")).toBe("needs-action");
+    expect(deriveReadiness(false, true, false, "blocked")).toBe("starting");
+  });
+
+  it("keeps the guard policy unknown when not read", () => {
+    expect(guardFromStatus(null)).toEqual({ policy: null, loaded: [] });
+    expect(guardFromStatus({ policy: "warn", loaded: [{ provider: "claude", name: "work", sessions: 2 }] })).toEqual({
+      policy: "warn",
+      loaded: [{ accountId: "claude:work", sessions: 2 }],
+    });
   });
 });

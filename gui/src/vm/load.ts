@@ -11,11 +11,19 @@ import { latestToolVersion, toolUpdateAvailable, UPDATE_CHECK_TOOLS, versionToke
 import { hasUsageReadout, type ProfileRow, type UsageSnapshot } from "../transforms.js";
 import {
   accountFromProfile,
+  accountIdFromMember,
+  activityFromEntries,
   agentConfigFromStatus,
-  DEFAULT_THRESHOLD,
+  authFromStatus,
+  bindingsFromMappings,
+  checksFromDoctor,
   deriveAttention,
   deriveReadiness,
+  guardFromStatus,
   noticeFromNotification,
+  poolMembership,
+  poolsFromRows,
+  protectionFromRow,
   providersFromStatus,
   sessionFromRow,
   surfacesFromApps,
@@ -45,6 +53,8 @@ export function emptyViewModel(now: number = Date.now()): ViewModel {
     surfaces: [],
     activity: [],
     readiness: "starting",
+    checksCheckedAt: null,
+    guard: { policy: null, loaded: [] },
     autostart: { desired: null, actual: null },
     providers: [],
     error: null,
@@ -69,7 +79,7 @@ async function toolWithLatest(e: ToolingEntry): Promise<ToolEntry> {
 
 export async function loadViewModel(): Promise<ViewModel> {
   const now = Date.now();
-  const [profilesR, sessionsR, toolingR, notifsR, providersR, acR, autostartR, autoswitchR, appsR] = await Promise.allSettled([
+  const [profilesR, sessionsR, toolingR, notifsR, providersR, acR, autostartR, appsR] = await Promise.allSettled([
     ipc.listProfiles(),
     ipc.listSessions(undefined, 50),
     ipc.toolingStatus(),
@@ -77,17 +87,39 @@ export async function loadViewModel(): Promise<ViewModel> {
     ipc.getProviders(),
     ipc.acDiscover(),
     ipc.getAutostart(),
-    ipc.getAutoSwitch(),
     ipc.listApps(),
   ]);
+  // The foundation readouts. Each degrades on its own: an older CLI without
+  // the command leaves that area unknown, never fakes it.
+  const [protectionR, authR, poolsR, mappingsR, doctorR, activityR, guardR] = await Promise.allSettled([
+    ipc.listProtection(),
+    ipc.authStatus(),
+    ipc.listPools(),
+    ipc.listMappings(),
+    ipc.doctor(),
+    ipc.listActivity(200),
+    ipc.getGuard(),
+  ]);
+  const readAt = Date.now();
 
   const profiles: ProfileRow[] = value(profilesR) ?? [];
-  const autoswitch = value(autoswitchR);
   const usageR = await Promise.allSettled(
     profiles.map((p) => (hasUsageReadout(p.provider) ? ipc.profileUsage(p.provider, p.name) : Promise.resolve(null))),
   );
   const usage = (i: number): UsageSnapshot | null => value(usageR[i]) ?? null;
-  const accounts = profiles.map((p, i) => accountFromProfile(p, usage(i), autoswitch?.[p.provider]?.threshold ?? DEFAULT_THRESHOLD));
+  const protection = new Map((value(protectionR) ?? []).map((r) => [accountIdFromMember(r.profile), protectionFromRow(r)]));
+  const auth = new Map((value(authR) ?? []).map((r) => [`${r.provider}:${r.name}`, authFromStatus(r, readAt)]));
+  const pools = poolsFromRows(value(poolsR) ?? []);
+  const membership = poolMembership(pools);
+  const accounts = profiles.map((p, i) => {
+    const id = `${p.provider}:${p.name}`;
+    return accountFromProfile(p, usage(i), {
+      protection: protection.get(id) ?? null,
+      auth: auth.get(id) ?? null,
+      pools: membership.get(id) ?? [],
+    });
+  });
+  const doctor = value(doctorR);
 
   const tooling = value(toolingR);
   const tools = tooling ? await Promise.all(tooling.map(toolWithLatest)) : [];
@@ -96,24 +128,26 @@ export async function loadViewModel(): Promise<ViewModel> {
 
   const lastRead = getNotifLastRead();
   const autostart = value(autostartR);
-  const failures = [profilesR, toolingR, providersR, autoswitchR].filter((r) => r.status === "rejected");
+  const failures = [profilesR, toolingR, providersR].filter((r) => r.status === "rejected");
   const cliError = profilesR.status === "rejected" ? String(profilesR.reason?.message ?? profilesR.reason) : null;
 
   return {
     now,
     accounts,
     sessions: (value(sessionsR) ?? []).map((s) => sessionFromRow(s, now)),
-    rules: [],
-    pools: [],
+    rules: bindingsFromMappings(value(mappingsR) ?? []),
+    pools,
     attention: deriveAttention(accounts, tools, toolsCheckedAt, now),
-    checks: [],
+    checks: doctor ? checksFromDoctor(doctor) : [],
     tools,
     toolsCheckedAt,
     agentConfig: agentConfigFromStatus(value(acR), acTool?.latest ?? null, acR.status === "fulfilled" ? now : null),
     notices: (value(notifsR) ?? []).map((n) => noticeFromNotification(n, lastRead)),
     surfaces: surfacesFromApps(value(appsR) ?? []),
-    activity: [],
-    readiness: deriveReadiness(true, profilesR.status === "fulfilled", failures.length > 0),
+    activity: activityFromEntries(value(activityR) ?? []),
+    readiness: deriveReadiness(true, profilesR.status === "fulfilled", failures.length > 0, doctor?.readiness ?? null),
+    checksCheckedAt: doctor ? readAt : null,
+    guard: guardFromStatus(value(guardR)),
     autostart: { desired: null, actual: autostart == null ? null : autostart ? "enabled" : "disabled" },
     providers: providersR.status === "fulfilled" ? providersFromStatus(providersR.value) : [],
     error: cliError ? `agent-switch didn't answer: ${cliError}` : null,

@@ -810,3 +810,250 @@ export async function petMoveTo(pos: { x: number; y: number }): Promise<void> {
     /* pet window closed / non-Tauri env */
   }
 }
+
+// ---- honest foundations: protection, pools, folder rules, auth, health, activity, guard ----
+// Each readout throws on a non-zero exit (an older CLI without the command
+// included) so the view model's allSettled degrades that one area to unknown.
+
+/** `<provider>/<name>` — the member key the CLI uses for protection and pools. */
+export function memberKey(provider: ProviderId, name: string): string {
+  return `${provider}/${name}`;
+}
+
+/** One profile's limit warning (`protection --json`). Warn-only: nothing is paused. */
+export interface ProtectionRow {
+  /** `provider/name` */
+  profile: string;
+  enabled: boolean;
+  thresholdPct: number;
+}
+
+export async function listProtection(): Promise<ProtectionRow[]> {
+  return JSON.parse(await runCli(["protection", "--json"]));
+}
+
+/** `protection set <provider/name> [--on|--off] [--threshold N] --json`. An empty
+ *  patch is a caller bug — the CLI refuses it too. */
+export async function setProtection(
+  provider: ProviderId,
+  name: string,
+  patch: { enabled?: boolean; thresholdPct?: number },
+): Promise<ProtectionRow> {
+  const args = ["protection", "set", memberKey(provider, name)];
+  if (patch.enabled !== undefined) args.push(patch.enabled ? "--on" : "--off");
+  if (patch.thresholdPct !== undefined) {
+    if (!Number.isInteger(patch.thresholdPct) || patch.thresholdPct < 1 || patch.thresholdPct > 100) {
+      throw new Error("Threshold must be a whole number between 1 and 100.");
+    }
+    args.push("--threshold", String(patch.thresholdPct));
+  }
+  if (args.length === 3) throw new Error("Nothing to change.");
+  return JSON.parse(await runCli([...args, "--json"]));
+}
+
+/** A pool as `pool --json` reports it. */
+export interface PoolRow {
+  id: string;
+  name: string;
+  /** `provider/name` keys, insertion order. */
+  members: string[];
+  createdAt: string;
+}
+
+/** `pool list --json` adds the folder rules that point at each pool. */
+export interface PoolListRow extends PoolRow {
+  /** `<path> (<provider>)` per rule. */
+  rules: string[];
+}
+
+export interface PoolProposal {
+  id: string;
+  name: string;
+  members: string[];
+  /** A pool with this id exists already — confirming skips it. */
+  exists: boolean;
+}
+
+export async function listPools(): Promise<PoolListRow[]> {
+  return JSON.parse(await runCli(["pool", "list", "--json"]));
+}
+
+export async function createPool(name: string): Promise<PoolRow> {
+  return JSON.parse(await runCli(["pool", "create", name, "--json"]));
+}
+
+export async function renamePool(id: string, name: string): Promise<PoolRow> {
+  return JSON.parse(await runCli(["pool", "rename", id, name, "--json"]));
+}
+
+/** Refused by the CLI while a folder rule still points at the pool. */
+export async function deletePool(id: string): Promise<void> {
+  await runCli(["pool", "delete", id, "--json"]);
+}
+
+export async function addPoolMember(id: string, provider: ProviderId, name: string): Promise<PoolRow> {
+  return JSON.parse(await runCli(["pool", "add", id, memberKey(provider, name), "--json"]));
+}
+
+export async function removePoolMember(id: string, provider: ProviderId, name: string): Promise<PoolRow> {
+  return JSON.parse(await runCli(["pool", "remove", id, memberKey(provider, name), "--json"]));
+}
+
+/** Preview of pools derived from profile labels — creates nothing. */
+export async function suggestPools(): Promise<PoolProposal[]> {
+  const out = JSON.parse(await runCli(["pool", "suggest", "--json"])) as { proposals?: PoolProposal[] };
+  return out.proposals ?? [];
+}
+
+/** Create the suggested pools; returns the ids actually created. */
+export async function confirmPoolSuggestions(): Promise<string[]> {
+  const out = JSON.parse(await runCli(["pool", "suggest", "--confirm", "--json"])) as { created?: string[] };
+  return out.created ?? [];
+}
+
+/** One directory mapping (folder rule). `target` is a profile name or `pool:<id>`. */
+export interface MappingRow {
+  path: string;
+  provider: ProviderId;
+  target: string;
+}
+
+const MAPPING_PROVIDERS: readonly string[] = ["claude", "codex", "antigravity"];
+
+/** Parse `agent-switch mappings` (text only — the CLI has no `--json` for it):
+ *  one `<path> -> <provider>/<target>` line per rule. Split on the LAST arrow so
+ *  a path containing " -> " survives; unparseable lines are skipped. */
+export function parseMappings(text: string): MappingRow[] {
+  const rows: MappingRow[] = [];
+  for (const line of text.split("\n")) {
+    const i = line.lastIndexOf(" -> ");
+    if (i < 0) continue;
+    const right = line.slice(i + 4).trim();
+    const slash = right.indexOf("/");
+    if (slash < 0) continue;
+    const provider = right.slice(0, slash);
+    if (!MAPPING_PROVIDERS.includes(provider)) continue;
+    rows.push({ path: line.slice(0, i), provider: provider as ProviderId, target: right.slice(slash + 1) });
+  }
+  return rows;
+}
+
+export async function listMappings(): Promise<MappingRow[]> {
+  return parseMappings(await runCli(["mappings"]));
+}
+
+/** Map a folder to a profile or a pool (`map <name|pool:<id>> <dir> --provider P`). */
+export async function mapFolder(
+  provider: ProviderId,
+  target: { profile: string } | { pool: string },
+  dir: string,
+): Promise<void> {
+  if ("profile" in target) assertValidName(target.profile);
+  const ref = "pool" in target ? `pool:${target.pool}` : target.profile;
+  await runCli(["map", ref, dir, "--provider", provider]);
+}
+
+/** Remove a folder's rule; without a provider every provider's rule there goes. */
+export async function unmapFolder(dir: string, provider?: ProviderId): Promise<void> {
+  await runCli(["unmap", dir, ...(provider ? ["--provider", provider] : [])]);
+}
+
+/** `dir --json` — which profile a start in `cwd` would load, and why. */
+export interface DirResolution {
+  /** `provider/name`, or null when the default config dir is used. */
+  profile: string | null;
+  configDir: string | null;
+  why: string[];
+}
+
+export async function resolveDir(provider: ProviderId, cwd: string): Promise<DirResolution> {
+  const out = await Command.create("agent-switch", ["dir", "--provider", provider, "--json"], { cwd }).execute();
+  if (out.code !== 0) throw new Error(out.stderr || "agent-switch dir failed");
+  return JSON.parse(out.stdout);
+}
+
+/** Per-profile login state from the provider's own store (no tokens). */
+export interface AuthStatusRow {
+  provider: ProviderId;
+  name: string;
+  state: "connected" | "expiring" | "sign-in-needed" | "unknown";
+  expiresAt: string | null;
+  lastRefreshAt: string | null;
+  keptFreshBy: string;
+  detail: string;
+}
+
+export async function authStatus(provider?: ProviderId): Promise<AuthStatusRow[]> {
+  return JSON.parse(await runCli(["auth-status", ...(provider ? ["--provider", provider] : []), "--json"]));
+}
+
+export interface DoctorCheckRow {
+  id: string;
+  status: "ok" | "warn" | "error" | "info";
+  title: string;
+  detail: string;
+  fix?: string;
+}
+
+export interface DoctorReport {
+  readiness: "ready" | "attention" | "blocked";
+  platform: string;
+  checks: DoctorCheckRow[];
+}
+
+/** `doctor --json`. Exit 1 means "blocked" and still carries the report, so a
+ *  non-zero exit is only an error when stdout is not the report. */
+export async function doctor(): Promise<DoctorReport> {
+  const out = await Command.create("agent-switch", ["doctor", "--json"]).execute();
+  try {
+    const report = JSON.parse(out.stdout) as DoctorReport;
+    if (report && Array.isArray(report.checks)) return report;
+  } catch {
+    /* fall through */
+  }
+  throw new Error(out.stderr || "agent-switch doctor failed");
+}
+
+export type ActivityEntryKind =
+  | "switch"
+  | "rebind"
+  | "login"
+  | "redeem"
+  | "autostart"
+  | "guard"
+  | "update"
+  | "protection"
+  | "pool"
+  | "remove";
+
+export interface ActivityEntry {
+  at: string;
+  kind: ActivityEntryKind;
+  /** `provider/name`, a pool id, or null. */
+  target: string | null;
+  action: string;
+  reason: string;
+  ok: boolean;
+}
+
+export async function listActivity(limit?: number): Promise<ActivityEntry[]> {
+  const args = ["activity", ...(limit !== undefined ? ["--limit", String(limit)] : []), "--json"];
+  const out = JSON.parse(await runCli(args)) as { entries?: ActivityEntry[] };
+  return out.entries ?? [];
+}
+
+export type GuardPolicy = "block" | "warn" | "off";
+
+export interface GuardStatus {
+  policy: GuardPolicy;
+  /** Profiles loaded by a live session right now (sessions > 1 = doubled). */
+  loaded: { provider: ProviderId; name: string; sessions: number }[];
+}
+
+export async function getGuard(): Promise<GuardStatus> {
+  return JSON.parse(await runCli(["guard", "--json"]));
+}
+
+export async function setGuard(policy: GuardPolicy): Promise<GuardStatus> {
+  return JSON.parse(await runCli(["guard", policy, "--json"]));
+}

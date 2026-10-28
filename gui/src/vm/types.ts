@@ -23,9 +23,11 @@ export interface UsageWindow {
 
 export type AccountState = "ready" | "near-limit" | "checking" | "limited" | "wrong-account" | "signed-out";
 
+/** The per-profile limit warning (`protection --json`). Warn-only today:
+ *  nothing is paused or switched when it fires. */
 export interface Protection {
   enabled: boolean;
-  threshold: number;
+  thresholdPct: number;
 }
 
 export type AuthState = "connected" | "refreshing" | "expiring" | "sign-in-needed" | "wrong-account" | "unknown";
@@ -38,6 +40,8 @@ export interface AuthHealth {
   method: string | null;
   /** null = the provider offers no keep-signed-in refresh. */
   autoRefresh: boolean | null;
+  /** Who keeps the login fresh, as the CLI states it; null = not reported. */
+  keptFreshBy: string | null;
   reason?: string;
 }
 
@@ -58,13 +62,15 @@ export interface Account {
   checkedAt: number | null;
   /** Codex banked resets; null = not reported. */
   resetCredits: number | null;
-  /** Near-limit threshold the meters tick at (the configured notify threshold). */
+  /** Near-limit threshold the meters tick at: the protection threshold, or the
+   *  CLI default (98) when protection was not read. */
   threshold: number;
-  /** No protection engine yet → null (UI shows it as unavailable). */
+  /** null = protection not read (older CLI / failed readout). */
   protection: Protection | null;
   auth: AuthHealth | null;
   surfaces: string[];
   liveSessions: number;
+  /** Ids of the pools this account is a member of. */
   pools: string[];
 }
 
@@ -118,7 +124,8 @@ export interface Check {
   id: string;
   title: string;
   detail: string;
-  state: "ok" | "warn" | "fail";
+  /** `info` = a neutral note from `doctor` (nothing to fix). */
+  state: "ok" | "warn" | "fail" | "info";
   fix?: string;
 }
 
@@ -181,7 +188,13 @@ export type ActivityKind =
   | "reset"
   | "repair"
   | "autostart"
-  | "update";
+  | "update"
+  // Kinds the CLI's own activity log reports beyond the design's set.
+  | "switch"
+  | "rebind"
+  | "guard"
+  | "pool"
+  | "remove";
 
 export interface ActivityEvent {
   id: string;
@@ -190,6 +203,8 @@ export interface ActivityEvent {
   text: string;
   detail?: string;
   accountId?: string;
+  /** false = the action did not complete (the log records failures too). */
+  ok?: boolean;
 }
 
 export interface Notice {
@@ -216,6 +231,9 @@ export interface Pool {
   id: string;
   label: string;
   accountIds: string[];
+  /** Folder rules pointing at this pool (`<path> (<provider>)`); the CLI refuses
+   *  to delete a pool while any remain. Absent = not reported. */
+  rules?: string[];
 }
 
 export interface Binding {
@@ -229,6 +247,15 @@ export interface Binding {
 }
 
 export type Readiness = "starting" | "ready" | "degraded" | "needs-action";
+
+export type GuardPolicy = "block" | "warn" | "off";
+
+export interface GuardVm {
+  /** null = the guard policy was not read. */
+  policy: GuardPolicy | null;
+  /** Accounts loaded by a live session right now; sessions > 1 = doubled. */
+  loaded: { accountId: string; sessions: number }[];
+}
 
 export interface ViewModel {
   now: number;
@@ -245,6 +272,9 @@ export interface ViewModel {
   surfaces: Surface[];
   activity: ActivityEvent[];
   readiness: Readiness;
+  /** Platform `doctor` reported; null = doctor not run / failed. */
+  checksCheckedAt: number | null;
+  guard: GuardVm;
   autostart: { desired: "enabled" | "disabled" | null; actual: "enabled" | "disabled" | null };
   providers: Provider[];
   error: string | null;
