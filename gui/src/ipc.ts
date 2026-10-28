@@ -13,7 +13,16 @@ import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, AutoSwitchTag, U
 import type { AppNotification, NotificationKind } from "./notifications.js";
 import { parseAgentConfigVersion } from "./agent-config.js";
 import type { BubbleAction } from "./pet/model.js";
-import { getPetPresence } from "./settings-store.js";
+import { getPetPresence, getPetWelcomed, setPetWelcomedFlag } from "./settings-store.js";
+import {
+  LEGACY_AUTOSTART_KEY,
+  reconcileAutostart,
+  setAutostartPreference,
+  type AutostartDeps,
+  type AutostartPref,
+  type AutostartStatus,
+} from "./autostart.js";
+import { claimPetWelcome as claimPetWelcomeWith } from "./pet/welcome.js";
 
 async function runCli(args: string[]): Promise<string> {
   const out = await Command.create("agent-switch", args).execute();
@@ -381,34 +390,67 @@ export async function uninstall(): Promise<void> {
   await runCli(["uninstall", "--force"]);
 }
 
+/** File-backed GUI preferences (`agent-switch gui-settings`, see the CLI's
+ *  gui-settings.ts) — the parts that must outlive the webview's localStorage. */
+interface GuiSettingsJson {
+  petWelcomed: boolean;
+  autostart: { state: "unset" | "enabled" | "disabled"; by?: "first-run" | "user" };
+}
+
+async function readGuiSettings(): Promise<GuiSettingsJson> {
+  return JSON.parse(await runCli(["gui-settings", "--json"]));
+}
+
+const autostartDeps: AutostartDeps = {
+  readPref: async () => {
+    const a = (await readGuiSettings()).autostart;
+    return (a.state === "unset" ? { state: "unset" } : { state: a.state, by: a.by }) as AutostartPref;
+  },
+  writePref: async (state, by) => {
+    await runCli(["gui-settings", "set", "autostart", state, "--by", by]);
+  },
+  markDegraded: async (reason) => {
+    await runCli(["gui-settings", "set", "autostart-degraded", "--reason", reason]);
+  },
+  osEnable: () => autostartEnable(),
+  osDisable: () => autostartDisable(),
+  osIsEnabled: () => autostartIsEnabled(),
+  legacyDefaulted: () => {
+    try {
+      return localStorage.getItem(LEGACY_AUTOSTART_KEY) === "1";
+    } catch {
+      return false;
+    }
+  },
+};
+
 /** Launch-at-login (Settings → General), backed by tauri-plugin-autostart. */
 export async function getAutostart(): Promise<boolean> {
   return autostartIsEnabled();
 }
+/** The Settings toggle — recorded as the user's own choice, so the first-run
+ *  default never overrides it later. */
 export async function setAutostart(on: boolean): Promise<void> {
-  if (on) await autostartEnable();
-  else await autostartDisable();
+  await setAutostartPreference(on, autostartDeps);
 }
 
-/** Enable autostart ON by default, but only on the very first run — a one-shot
- *  keyed on localStorage so a user who later turns it OFF is never overridden. */
-export async function applyAutostartDefault(): Promise<void> {
-  const KEY = "agent-switch-autostart-defaulted";
-  try {
-    if (localStorage.getItem(KEY) === "1") return;
-  } catch {
-    /* treat unreadable storage as not-yet-defaulted */
-  }
-  try {
-    localStorage.setItem(KEY, "1");
-  } catch {
-    /* best-effort */
-  }
-  try {
-    await autostartEnable();
-  } catch {
-    /* best-effort — the Settings toggle still reflects the real state */
-  }
+/** Per-launch reconcile: default ON for a fresh install (confirmed with the OS
+ *  before it is recorded), a stored user OFF is never overridden. Returns the
+ *  state for display; `degraded` = could not be confirmed, retried next launch. */
+export async function applyAutostartDefault(): Promise<AutostartStatus> {
+  return reconcileAutostart(autostartDeps);
+}
+
+/** True exactly once per install: whether to show the Pet intro now (D36). */
+export async function claimPetWelcome(): Promise<boolean> {
+  return claimPetWelcomeWith({
+    readFileFlag: async () => (await readGuiSettings()).petWelcomed,
+    writeFileFlag: async () => {
+      await runCli(["gui-settings", "set", "pet-welcomed"]);
+    },
+    legacyWelcomed: getPetWelcomed,
+    markLegacy: setPetWelcomedFlag,
+  });
 }
 
 export interface AppInfo {

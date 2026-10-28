@@ -9,6 +9,7 @@ import {
   uninstallSessionHooks,
   getAutoSwitch,
   getAutostart,
+  claimPetWelcome,
   getNotifyConfig,
   getProviders,
   listApps,
@@ -145,8 +146,6 @@ import {
   setPetPresenceFlag,
   getPetPosLock,
   setPetPosLockFlag,
-  getPetWelcomed,
-  setPetWelcomedFlag,
   clearPetPos,
   type PetPresence,
   getPetPos,
@@ -1045,21 +1044,19 @@ function LegacyApp() {
   rowsRef.current = rows;
   useEffect(() => {
     if (getPetEnabled()) {
-      const welcomed = getPetWelcomed();
       if (getPetPresence() === "always") {
         void petShow();
       }
-      if (!welcomed) {
-        // One-time onboarding: the pet introduces itself, then (default
-        // presence) hides again once the bubble is gone. The bubble links to
-        // the Pet section, where it can be toggled off for good.
-        setPetWelcomedFlag();
-        void (async () => {
-          const created = await petShow();
-          await sleep(created ? 1200 : 200);
-          await petEmitNotification("info", PET_WELCOME, "pet-settings", true);
-        })();
-      }
+      // One-time onboarding: the pet introduces itself, then (default
+      // presence) hides again once the bubble is gone. The bubble links to
+      // the Pet section, where it can be toggled off for good. The once-flag
+      // lives in the GUI settings file (claimPetWelcome).
+      void (async () => {
+        if (!(await claimPetWelcome())) return;
+        const created = await petShow();
+        await sleep(created ? 1200 : 200);
+        await petEmitNotification("info", PET_WELCOME, "pet-settings", true);
+      })();
     }
     let unlisten = () => {};
     void onPetAction((action) => {
@@ -2301,7 +2298,7 @@ function SettingsView({
 
 // Friendly labels for the per-kind mute toggles.
 const KIND_LABELS: { kind: NotificationKind; label: string; hint: string }[] = [
-  { kind: "success", label: "Account switches", hint: "Auto-switches and redeemed Codex resets." },
+  { kind: "success", label: "Account switches", hint: "Account switches you made and Codex resets you redeemed." },
   { kind: "warning", label: "Fetch failures", hint: "A usage-limit fetch that did not succeed." },
   { kind: "info", label: "Threshold crossings", hint: "The active account passing a usage threshold." },
   { kind: "error", label: "Errors", hint: "Unexpected failures." },

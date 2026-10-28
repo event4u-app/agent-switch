@@ -272,14 +272,17 @@ describe("ipc", () => {
     await expect(listApps()).resolves.toEqual([]);
   });
 
-  it("getAutostart / setAutostart wrap the autostart plugin", async () => {
+  it("getAutostart / setAutostart wrap the autostart plugin and record the user's choice", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: "{}", stderr: "" });
     asIsEnabled.mockResolvedValue(true);
     expect(await getAutostart()).toBe(true);
     expect(asIsEnabled).toHaveBeenCalled();
     await setAutostart(true);
     expect(asEnable).toHaveBeenCalled();
+    expect(create).toHaveBeenLastCalledWith("agent-switch", ["gui-settings", "set", "autostart", "enabled", "--by", "user"]);
     await setAutostart(false);
     expect(asDisable).toHaveBeenCalled();
+    expect(create).toHaveBeenLastCalledWith("agent-switch", ["gui-settings", "set", "autostart", "disabled", "--by", "user"]);
   });
 
   it("compactArgs builds `compact <profile>` (embedded-terminal builder, like takeoverArgs)", () => {

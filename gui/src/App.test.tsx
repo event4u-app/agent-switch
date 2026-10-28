@@ -39,6 +39,11 @@ const ipc = vi.hoisted(() => ({
   renameProfile: vi.fn(),
   uninstall: vi.fn(),
   getAutostart: vi.fn(),
+  claimPetWelcome: vi.fn(async () => {
+    if (store.petWelcomed) return false;
+    store.petWelcomed = true;
+    return true;
+  }),
   setAutostart: vi.fn(),
   redeemReset: vi.fn(),
   listApps: vi.fn(),
