@@ -995,6 +995,8 @@ test("pools: dir --json resolves a pool rule to the freshest member and explains
     const plain = execFileSync("node", [CLI, "dir"], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8", cwd: repo }).trim();
     assert.equal(plain, path.join(home, "claude", "b", "config"));
 
+    const rules = JSON.parse(run(home, ["mappings", "--json"]));
+    assert.deepEqual(rules, [{ path: fs.realpathSync(repo), provider: "claude", target: "pool:work" }]);
     assert.throws(() => run(home, ["pool", "delete", "work"]), /used by folder rules/);
     const preview = JSON.parse(run(home, ["pool", "suggest", "--json"]));
     assert.equal(preview.preview, true);
@@ -1031,6 +1033,16 @@ test("gui-settings: set/get round-trip; a first-run default never overrides a us
     const s = JSON.parse(run(home, ["gui-settings", "set", "pet-welcomed"]));
     assert.equal(s.autostart.state, "disabled");
     assert.equal(s.petWelcomed, true);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("run --cwd refuses a folder that does not exist, before launching anything", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "a");
+    assert.throws(() => run(home, ["run", "a", "--cwd", path.join(home, "nope")]), /no such folder/);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

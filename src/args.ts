@@ -88,7 +88,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
  * provider binary (including its own `--flags`), so it can't go through the
  * general parser. Strip only `--provider <val>`, take the name, pass the rest.
  */
-export function parseRun(rest: string[]): { providerId: ProviderId; name?: string; args: string[] } {
+export function parseRun(rest: string[]): { providerId: ProviderId; name?: string; args: string[]; cwd?: string } {
   const args = [...rest];
   let providerId: ProviderId = "claude";
   const pi = args.indexOf("--provider");
@@ -96,6 +96,13 @@ export function parseRun(rest: string[]): { providerId: ProviderId; name?: strin
     providerId = resolveProviderValue(args[pi + 1]);
     args.splice(pi, 2);
   }
+  let cwd: string | undefined;
+  const ci = args.indexOf("--cwd");
+  if (ci >= 0) {
+    cwd = args[ci + 1];
+    if (!cwd) throw new Error("--cwd needs a folder");
+    args.splice(ci, 2);
+  }
   const name = args.shift();
-  return { providerId, name, args };
+  return cwd === undefined ? { providerId, name, args } : { providerId, name, args, cwd };
 }

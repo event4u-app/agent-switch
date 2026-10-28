@@ -412,8 +412,12 @@ function cmdDeactivate(providerId: ProviderId): void {
   console.log(`New \`${provider(providerId).binary}\` sessions fall back to the default install until you \`use\` one.`);
 }
 
-function cmdRun(providerId: ProviderId, name: string | undefined, args: string[]): void {
+function cmdRun(providerId: ProviderId, name: string | undefined, args: string[], cwd?: string): void {
   const n = requireProfile(providerId, name, "run");
+  if (cwd !== undefined) {
+    if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) die(`no such folder: ${cwd}`);
+    process.chdir(cwd);
+  }
   const p = provider(providerId);
   // `--tmux` and `--force` are agent-switch flags, not passthrough flags — strip
   // them before the rest reaches the provider binary.
@@ -703,8 +707,12 @@ function cmdUnmap(providerId: ProviderId | undefined, dir?: string): void {
   else die(`no mapping for ${target}${providerId ? ` (${providerId})` : ""}`);
 }
 
-function cmdMappings(): void {
+function cmdMappings(json = false): void {
   const rows = mappingRows();
+  if (json) {
+    console.log(JSON.stringify(rows.map((r) => ({ path: r.path, provider: r.provider, target: r.name }))));
+    return;
+  }
   if (rows.length === 0) {
     console.log("No directory mappings. Create one with: agent-switch map <profile> [dir]");
     return;
@@ -2709,7 +2717,11 @@ async function main(): Promise<void> {
     case "notifications": return cmdNotifications(positional[0], !!flags.json);
     case "os-notify": return cmdOsNotify(positional[0], !!flags.json);
     case "uninstall": return cmdUninstall(flags);
-    case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
+    case "run": {
+      let r: ReturnType<typeof parseRun>;
+      try { r = parseRun(rest); } catch (e) { die((e as Error).message); }
+      return cmdRun(r.providerId, r.name, r.args, r.cwd);
+    }
     case "handoff": return cmdHandoff(providerId, positional[0], positional.slice(1), flags);
     case "list": case "ls": return cmdList(providerExplicit ? providerId : undefined, !!flags.json);
     case "status": return cmdStatus(providerExplicit ? providerId : undefined, positional[0], !!flags.json);
@@ -2719,7 +2731,7 @@ async function main(): Promise<void> {
     case "guard": return cmdGuard(positional[0], !!flags.json);
     case "map": return cmdMap(providerId, positional[0], positional[1]);
     case "unmap": return cmdUnmap(providerExplicit ? providerId : undefined, positional[0]);
-    case "mappings": return cmdMappings();
+    case "mappings": return cmdMappings(rest.includes("--json"));
     case "share": return cmdShare(positional[0], rest.slice(1));
     case "config": return cmdConfig(positional[0], positional[1], flags);
     case "sessions":

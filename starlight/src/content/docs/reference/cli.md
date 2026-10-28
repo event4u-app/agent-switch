@@ -37,12 +37,12 @@ Precedence: **directory mapping (nearest ancestor) > active profile > default.**
 
 | Command | Args / flags | What it does |
 | --- | --- | --- |
-| `run <name> [-- passthrough…]` | `[--provider P] [--tmux] [--force]` | Launch the provider CLI on a profile (one-shot, parallel). `--tmux` wraps it in a managed tmux session (POSIX). `--force` overrides the [single-load guard](#single-load-guard). Args after `--` pass through, e.g. `run work -- --resume`. |
+| `run <name> [-- passthrough…]` | `[--provider P] [--tmux] [--force] [--cwd DIR]` | Launch the provider CLI on a profile (one-shot, parallel). `--cwd` starts it in that folder. `--tmux` wraps it in a managed tmux session (POSIX). `--force` overrides the [single-load guard](#single-load-guard). Args after `--` pass through, e.g. `run work -- --resume`. |
 | `dir` | `[--provider P] [--guard] [--json]` | Resolve the config dir for the current directory (folder rule > active). A rule may point at a pool: it resolves to the member with the most headroom on usage checked within 10 minutes; stale, unknown and signed-out members are skipped, and with none left the active profile is used. `--json` prints `{profile, configDir, why[]}`. Machine-consumed by the shell wrapper. With `--guard`, also runs the [single-load guard](#single-load-guard): the path stays on stdout, the guard writes to stderr and exits `86` on a refusal. |
 | `guard [block\|warn\|off]` | `[--json]` | Read or set the [single-load guard](#single-load-guard) policy. The bare form also lists which profiles are loaded right now. |
 | `map <name\|pool:<id>> [dir]` | `[--provider P]` | Map a directory (default: CWD) to a profile or to a [pool](#pools). |
 | `unmap [dir]` | `[--provider P]` | Remove a directory mapping. |
-| `mappings` | — | List directory mappings. |
+| `mappings` | `[--json]` | List directory mappings; `--json` gives `[{path, provider, target}]` (`target` is a profile or `pool:<id>`). |
 
 ```bash
 # Resume the last conversation on the "work" profile
