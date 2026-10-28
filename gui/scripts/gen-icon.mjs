@@ -1,105 +1,83 @@
 /**
- * Generate the source app icon (1024×1024 RGBA PNG) with zero dependencies.
+ * Generate the macOS menu-bar template icon (1024×1024 RGBA PNG) with zero
+ * dependencies, from the geometry of the app mark.
  *
- * Brand mark: an event4u-orange rounded-square with a white rotating-arrows
- * "refresh" glyph (a broken ring + two clockwise arrowheads — the reset/switch
- * motif). Edit the palette or glyph below, then re-run
- * `npm run tauri icon <this-output>` to regenerate the platform set.
+ * The coloured app icon is not generated: its source is the designed artwork
+ * `src-tauri/icons/source/agent-switch-icon-{dark,light}.svg` (+ the rendered
+ * `icon-source.png`). Regenerate the platform set with
+ * `npm run tauri icon icon-source.png`.
  *
- * Two modes:
- *   node scripts/gen-icon.mjs [outfile]              → colored app/bundle icon
- *   node scripts/gen-icon.mjs --template [outfile]   → macOS menu-bar template
+ * The template must be monochrome-by-alpha: macOS renders it by its alpha
+ * channel alone (black on a light menu bar, white on a dark one), so the
+ * gradients and glow of the app mark cannot be used. This draws the same
+ * strokes — the two switch arcs, their arrowheads and the check — opaque on
+ * transparent, with 4×4 supersampling for clean edges at 22 pt.
  *
- * The `--template` icon is monochrome-by-alpha: the body is opaque (black),
- * the arrows are cut out to full transparency. macOS renders a template image
- * by its alpha channel alone — painting the opaque body black on a light menu
- * bar and white on a dark one, so it matches the other menu-bar icons, while
- * the transparent arrows show the bar through. Default outfile: tray.png.
+ *   node scripts/gen-icon.mjs [outfile]   (default: src-tauri/icons/tray.png)
  */
 import * as zlib from "node:zlib";
 import * as fs from "node:fs";
 
-const args = process.argv.slice(2);
-const template = args.includes("--template");
-const out = args.find((a) => !a.startsWith("--")) ?? (template ? "tray.png" : "icon-source.png");
-
+const out = process.argv[2] ?? "src-tauri/icons/tray.png";
 const S = 1024;
+const SS = 4;
+const DEG = Math.PI / 180;
 
-// --- palette ---
-// Colored mode: event4u-orange body + white glyph. Template mode: opaque body
-// (color is ignored by macOS; black is the correct neutral for other
-// platforms) and the glyph cut out to transparency.
-const BG = template ? [0, 0, 0, 255] : [209, 92, 56, 255]; // #d15c38 event4u orange
-const FG = [255, 255, 255, 255]; // white glyph (colored mode only)
-const CLEAR = [0, 0, 0, 0];
+// Geometry in the 1024 viewBox of the app mark. Strokes are slightly heavier
+// than the artwork so the glyph survives the 22 pt menu-bar size.
+const C = 512, R = 286, ARC_W = 92, CHECK_W = 64;
+const ARCS = [
+  [218, 325], // warm arc, upper half, clockwise
+  [38, 145], // cool arc, lower half, clockwise
+];
+const TRIS = [
+  [720, 245, 821, 357, 657, 370],
+  [304, 781, 203, 669, 367, 656],
+];
+const CHECK = [[414, 510], [476, 573], [610, 438]];
 
-// --- geometry helpers ---
-const inRoundedRect = (x, y, x0, y0, x1, y1, r) => {
-  if (x < x0 || x > x1 || y < y0 || y > y1) return false;
-  const cx = Math.min(Math.max(x, x0 + r), x1 - r);
-  const cy = Math.min(Math.max(y, y0 + r), y1 - r);
-  return (x - cx) ** 2 + (y - cy) ** 2 <= r * r || (x >= x0 + r && x <= x1 - r) || (y >= y0 + r && y <= y1 - r);
+const angleOf = (x, y) => {
+  const a = Math.atan2(y - C, x - C) / DEG;
+  return a < 0 ? a + 360 : a;
+};
+const capsOf = ([a0, a1]) => [a0, a1].map((a) => [C + R * Math.cos(a * DEG), C + R * Math.sin(a * DEG)]);
+const inArc = (x, y, [a0, a1]) => {
+  const d = Math.hypot(x - C, y - C);
+  if (Math.abs(d - R) <= ARC_W / 2) {
+    const a = angleOf(x, y);
+    if (a >= a0 && a <= a1) return true;
+  }
+  // Round cap only at the tail; the head end runs into its arrowhead.
+  const [[cx, cy]] = capsOf([a0, a1]);
+  return Math.hypot(x - cx, y - cy) <= ARC_W / 2;
 };
 const sign = (px, py, ax, ay, bx, by) => (px - bx) * (ay - by) - (ax - bx) * (py - by);
-const inTri = (px, py, ax, ay, bx, by, cx, cy) => {
+const inTri = (px, py, [ax, ay, bx, by, cx, cy]) => {
   const d1 = sign(px, py, ax, ay, bx, by);
   const d2 = sign(px, py, bx, by, cx, cy);
   const d3 = sign(px, py, cx, cy, ax, ay);
-  const neg = d1 < 0 || d2 < 0 || d3 < 0;
-  const pos = d1 > 0 || d2 > 0 || d3 > 0;
-  return !(neg && pos);
+  return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
 };
-
-// A "refresh" mark: two clockwise arcs (a broken ring with two ~10° gaps) plus
-// an arrowhead at each arc's leading end — the rotating-arrows / recycle glyph.
-const CX = 512, CY = 512;
-const R_IN = 262, R_OUT = 340; // ~78px stroke
-const R_MID = (R_IN + R_OUT) / 2;
-const DEG = Math.PI / 180;
-// Two ~170° arcs (clockwise; image y grows down), gaps at ~205° (lower-left)
-// and ~25° (right) where the arrowheads sit.
-const inArc = (x, y) => {
-  const dx = x - CX, dy = y - CY;
-  const d = Math.hypot(dx, dy);
-  if (d < R_IN || d > R_OUT) return false;
-  let a = Math.atan2(dy, dx) / DEG;
-  if (a < 0) a += 360;
-  return (a >= 30 && a <= 200) || a >= 210 || a <= 20;
+const segDist = (px, py, [ax, ay], [bx, by]) => {
+  const dx = bx - ax, dy = by - ay;
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 };
-// Arrowhead triangle at the leading (clockwise) end of an arc — [tip, outer,
-// inner] vertices flaring past the stroke and pointing along the tangent.
-const head = (deg) => {
-  const a = deg * DEG;
-  const rx = Math.cos(a), ry = Math.sin(a);
-  const tx = -Math.sin(a), ty = Math.cos(a); // clockwise tangent
-  const flare = 52, len = 132;
-  return [
-    CX + R_MID * rx + tx * len, CY + R_MID * ry + ty * len,
-    CX + (R_OUT + flare) * rx, CY + (R_OUT + flare) * ry,
-    CX + (R_IN - flare) * rx, CY + (R_IN - flare) * ry,
-  ];
-};
-const H1 = head(200), H2 = head(20);
-const glyph = (x, y) =>
-  inArc(x, y) ||
-  inTri(x, y, H1[0], H1[1], H1[2], H1[3], H1[4], H1[5]) ||
-  inTri(x, y, H2[0], H2[1], H2[2], H2[3], H2[4], H2[5]);
+const inCheck = (x, y) =>
+  segDist(x, y, CHECK[0], CHECK[1]) <= CHECK_W / 2 || segDist(x, y, CHECK[1], CHECK[2]) <= CHECK_W / 2;
 
-function pixel(x, y) {
-  // Template mode cuts the arrows out (transparent) instead of filling them.
-  if (glyph(x, y)) return template ? CLEAR : FG;
-  if (inRoundedRect(x, y, 64, 64, 960, 960, 180)) return BG;
-  return CLEAR;
-}
+const covered = (x, y) => ARCS.some((a) => inArc(x, y, a)) || TRIS.some((t) => inTri(x, y, t)) || inCheck(x, y);
 
-// --- encode PNG ---
 const raw = Buffer.alloc(S * (S * 4 + 1));
 let o = 0;
 for (let y = 0; y < S; y++) {
   raw[o++] = 0; // filter: none
   for (let x = 0; x < S; x++) {
-    const [r, g, b, a] = pixel(x, y);
-    raw[o++] = r; raw[o++] = g; raw[o++] = b; raw[o++] = a;
+    let hits = 0;
+    for (let sy = 0; sy < SS; sy++)
+      for (let sx = 0; sx < SS; sx++) if (covered(x + (sx + 0.5) / SS, y + (sy + 0.5) / SS)) hits++;
+    raw[o++] = 0; raw[o++] = 0; raw[o++] = 0;
+    raw[o++] = Math.round((255 * hits) / (SS * SS));
   }
 }
 
