@@ -22,6 +22,7 @@ export function Select({
   mono,
   id,
   ariaLabel,
+  disabled,
 }: {
   label?: ReactNode;
   value: string;
@@ -30,6 +31,7 @@ export function Select({
   mono?: boolean;
   id?: string;
   ariaLabel?: string;
+  disabled?: boolean;
 }) {
   const container = usePortalContainer();
   const current = options.find((o) => o.value === value);
@@ -42,13 +44,13 @@ export function Select({
           {label}
         </label>
       )}
-      <SelectPrimitive.Root value={value} onValueChange={onChange}>
+      <SelectPrimitive.Root value={value} onValueChange={onChange} disabled={disabled}>
         <SelectPrimitive.Trigger
           id={fieldId}
           aria-label={label ? undefined : ariaLabel}
           className={cn(
             "group flex h-9 w-full min-w-0 items-center gap-2 rounded-md border border-ac-line2 bg-ac-bg px-2.5 text-left text-[13px] text-ac-text transition-colors",
-            "hover:border-ac-faint data-[state=open]:border-ac-brand-line data-[state=open]:bg-ac-raise",
+            "hover:border-ac-faint data-[state=open]:border-ac-brand-line data-[state=open]:bg-ac-raise disabled:pointer-events-none disabled:opacity-45",
             mono && "font-ac-mono text-xs",
           )}
         >
