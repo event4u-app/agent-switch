@@ -34,15 +34,23 @@ using the vendor's own client.
 Aggregating free tiers across providers whose terms prohibit proxy/relay
 use is a ToS minefield that shifts risk onto the user. **Instead:**
 agent-switch pools *your own* accounts — the ones you already pay for
-and are entitled to use — and only switches which one is active.
+and are entitled to use — and only switches which one is active, when
+you tell it to.
 
 ## No request-level routing
 
 Routing individual requests between providers requires intercepting
 them (see MITM above). **Instead:** agent-switch's honest form of
-routing is account-level: the opt-in, default-off auto-switch moves the
-active profile to the account with the most headroom
-(`src/daemon.ts`), own profiles only, no traffic touched.
+routing is account-level and explicit. The background daemon
+(`src/daemon.ts`) never switches anything on its own: with the opt-in,
+default-off near-limit notifications it *notifies* you and *suggests* the
+account with the most headroom; on Codex it tells you when a banked reset
+is available but never redeems one. A new session can be placed by a
+folder rule, including a rule that points at a pool you created yourself
+(`agent-switch pool`), which picks the member with the most fresh headroom
+and says why (`agent-switch dir --json`). Own profiles only, no traffic
+touched, and a running session changes its account only when you confirm
+it.
 
 ## No bundled dashboard server
 

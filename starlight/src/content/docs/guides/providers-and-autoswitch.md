@@ -1,9 +1,9 @@
 ---
 title: Providers & Auto-switch
-description: Enable or disable provider surfaces and configure opt-in, quota-driven profile rotation.
+description: Enable or disable provider surfaces and configure opt-in near-limit notifications.
 ---
 
-agent-switch is multi-provider. You can enable or disable each provider's surfaces, and optionally turn on quota-driven rotation between profiles. Auto-switch is **off by default** — read the caution below before enabling it.
+agent-switch is multi-provider. You can enable or disable each provider's surfaces, and optionally turn on near-limit notifications that suggest another profile. They are **off by default**, and nothing ever switches on its own.
 
 ## Managing providers
 
@@ -22,32 +22,27 @@ agent-switch providers enable --provider codex
 
 Disabling a provider **hides** it without deleting anything. **Claude and Codex are enabled by default.**
 
-## Auto-switch — opt-in quota rotation
+## Near-limit notifications (`autoswitch`)
 
-Auto-switch rotates between profiles based on quota usage, so a rate-limited account hands off to another. It is **Claude/Codex only** and **globally OFF by default**.
+Despite the command name, nothing switches automatically. With `autoswitch on`, the background daemon watches your profiles and, once the active one crosses the threshold, **notifies** you and **suggests** the profile with the most headroom. Switching stays your action (`agent-switch use`, `agent-switch rebind`, or the app). Claude/Codex only, **off by default**.
 
 ```bash
 agent-switch autoswitch status --json
 agent-switch autoswitch on --threshold 90 --tag work
-agent-switch autoswitch strategy reset-first
 agent-switch autoswitch off
 ```
 
 | Argument | Purpose |
 | --- | --- |
-| `on` / `off` / `status` | Toggle or inspect auto-switch |
-| `strategy [reset-first\|rotation-first]` | Set the rotation strategy |
-| `--threshold 1-100` | Usage % that triggers a switch |
-| `--tag all\|work\|personal\|other` | Which profiles participate |
+| `on` / `off` / `status` | Toggle or inspect the notifications |
+| `--threshold 1-100` | Usage % that triggers the notice (default 95) |
+| `--tag all\|work\|personal\|other` | Which profiles may be suggested |
 | `--provider P` / `--json` | Target provider / machine-readable output |
 
-- **`reset-first`** tries a banked reset before rotating to another profile.
-- **`rotation-first`** rotates to another profile first.
-- **`--tag`** filters which profiles participate in rotation.
+On Codex, when the active profile is over the threshold and holds a banked reset, the notice also says a reset is available. It is never redeemed for you.
 
-:::caution[Usage-policy caveat]
-Auto-switch pools subscriptions to route around rate limits. It ships **opt-in and OFF by default**, against a unanimous internal review that found it crosses the providers' usage policies. It is documented here as a feature — enabling it prints a usage-policy warning, and you are responsible for whether its use complies with your providers' terms. This documentation does not endorse using it to evade limits.
-:::
+Separate from this, **session protection** (`agent-switch protection`) is on for every profile at 98 % and warns when a profile reaches it. It does not pause sessions.
+
 
 ## Redeeming a Codex reset
 
@@ -55,7 +50,7 @@ Auto-switch pools subscriptions to route around rate limits. It ships **opt-in a
 agent-switch reset work --provider codex
 ```
 
-`reset` redeems **one banked Codex rate-limit reset**, which consumes a real credit. `reset-first` auto-switch uses this same mechanism before rotating.
+`reset` redeems **one banked Codex rate-limit reset**, which consumes a real credit, so it asks first on a terminal (`--yes` skips the question). Redeeming is always your action: when the active Codex profile is near its limit and holds a reset, the background daemon only *tells* you one is available — it never redeems it.
 
 ## See also
 

@@ -6,6 +6,7 @@ import {
   rebind,
   restoreRebind,
   readBinding,
+  bindingCredentials,
   readBindingRegistry,
   accountFingerprint,
   RebindError,
@@ -144,8 +145,35 @@ test("rebind moves the target credential into the running store and empties the 
   const m = readBinding(pConfig, f.deps);
   assert.ok(m, "binding marker written");
   assert.equal(m!.boundToProfile, "A");
-  assert.equal(JSON.parse(m!.runningOwnCredential).claudeAiOauth.accessToken, "tokP", "own cred stashed");
-  assert.equal(JSON.parse(m!.targetOrigCredential).claudeAiOauth.accessToken, "tokA", "target orig stashed");
+  const orig = bindingCredentials(m!, f.deps)!;
+  assert.equal(JSON.parse(orig.runningOwn).claudeAiOauth.accessToken, "tokP", "own cred stashed");
+  assert.equal(JSON.parse(orig.targetOrig).claudeAiOauth.accessToken, "tokA", "target orig stashed");
+});
+
+test("D16: the binding marker file never carries a token — the originals live in the Keychain", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+  const raw = f.files.get(path.join(pConfig, ".agent-switch-rebind.json"))!;
+  assert.ok(raw, "marker written");
+  assert.doesNotMatch(raw, /tokP|tokA|accessToken|refreshToken/, "no credential material in the plain file");
+  await restoreRebind({ profile: "P" }, f.deps);
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokP", "restore read the stash");
+  assert.equal(JSON.parse(f.kc.get(aSvc)!).claudeAiOauth.accessToken, "tokA");
+  assert.equal([...f.kc.keys()].filter((k) => k.includes("agent-switch-rebind")).length, 0, "stash entries removed on restore");
+});
+
+test("D16: a legacy marker with inline credentials still restores", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokA"));
+  f.files.set(
+    path.join(pConfig, ".agent-switch-rebind.json"),
+    JSON.stringify({ boundToProfile: "A", boundAt: "x", runningOwnCredential: cred("tokP"), targetOrigCredential: cred("tokA"), targetFileMoved: false }),
+  );
+  await restoreRebind({ profile: "P" }, f.deps);
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokP");
+  assert.equal(JSON.parse(f.kc.get(aSvc)!).claudeAiOauth.accessToken, "tokA");
 });
 
 test("rebind takes the lock BEFORE any credential mutation", async () => {
@@ -351,7 +379,7 @@ test("swap, same account with a rotated token → proceeds, moving the FRESH cre
 
   await rebind({ account: "A", profile: "P" }, f.deps);
   assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tok-new", "moved the freshened token, not the stale pre-lock one");
-  assert.equal(JSON.parse(readBinding(pConfig, f.deps)!.targetOrigCredential).claudeAiOauth.accessToken, "tok-new", "marker stashed the credential actually moved");
+  assert.equal(JSON.parse(bindingCredentials(readBinding(pConfig, f.deps)!, f.deps)!.targetOrig).claudeAiOauth.accessToken, "tok-new", "marker stashed the credential actually moved");
 });
 
 test("swap, target now holds a DIFFERENT account → quarantine, no swap", async () => {

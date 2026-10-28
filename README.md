@@ -36,8 +36,10 @@ nothing used to stop two terminals from starting `claude` on the same account �
 sharing one set of rate limits and both refreshing one rotating OAuth token,
 while each terminal looked like a separate account.
 
-The single-load guard refuses that second start and says which session already
-holds the profile and which accounts are free:
+The single-load guard notices that second start and says which session already
+holds the profile and which accounts are free. New installs start on `warn`
+(it reports, then lets the session start); with `agent-switch guard block` it
+refuses instead, as shown here:
 
 ```
 $ claude
@@ -72,7 +74,7 @@ project):
 npm install -g @event4u/agent-switch    # puts `agent-switch` on your PATH
 # or run without installing:
 npx @event4u/agent-switch --help
-npx @event4u/agent-switch setup
+npx @event4u/agent-switch doctor     # self-check: CLI, shell integration, logins
 ```
 
 `npx` is handy for a one-off or first run; for daily use install globally so the
@@ -137,13 +139,17 @@ agent-switch add event4u
 | `agent-switch sessions` | recent + live Claude sessions per profile |
 | `agent-switch takeover <id> --to work` | move a session to another account and resume it there (see below) |
 | `agent-switch web work` | claude.ai in a persistent per-profile browser (see below) |
-| `agent-switch remove old --force` | delete a profile incl. its keychain entry |
+| `agent-switch remove old --force` | delete a profile incl. its keychain entry (asks on a terminal; `--yes` skips) |
 | `agent-switch label work Work` | tag a profile (`Work` / `Personal` / `Other`, or `none` to clear) |
 | `agent-switch providers status` | which providers are enabled (default: Claude + Codex; others off) |
 | `agent-switch providers enable --provider gemini` | enable a provider (or `disable`; `--surface cli\|ui` for one surface) |
 | `agent-switch autoswitch on --threshold 90` | opt-in auto-switch on limit (Claude-only; globally off by default; see below) |
 | `agent-switch uninstall --force` | remove all agent-switch data, keychain entries, and the daemon |
-| `agent-switch doctor` | per-OS self-check (claude on PATH, config, creds, share links) |
+| `agent-switch doctor [--json]` | self-check (CLI on PATH, shell integration, start at login, API-key overrides, logins, share links) |
+| `agent-switch auth-status --json` | per-profile login state from the provider's store — never a token |
+| `agent-switch activity` | what agent-switch itself did, and why |
+| `agent-switch protection set claude/work --threshold 95` | per-profile limit warning (default on, 98 %); warns, never pauses |
+| `agent-switch pool create Work` · `pool add work claude/a` · `map pool:work ~/x` | optional pools: a folder rule starts on the member with the most fresh headroom (`dir --json` says why) |
 
 ## Per-repo accounts (directory mappings)
 

@@ -140,7 +140,7 @@ end`;
     const header = `# agent-switch shell integration — add to $PROFILE:  agent-switch shellenv --shell powershell | Out-String | Invoke-Expression`;
     const asw = `# Convenience: "asw" lists all; "asw work" switches claude; "asw codex work" switches a provider
 function asw {
-    if ($args.Count -eq 0) { command agent-switch list; return }
+    if ($args.Count -eq 0) { & agent-switch list; return }
     if (@('claude','codex','antigravity') -contains $args[0]) { & agent-switch use $args[1] --provider $args[0] }
     else { & agent-switch use @args }
 }`;

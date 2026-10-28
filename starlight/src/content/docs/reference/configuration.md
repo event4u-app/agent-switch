@@ -38,13 +38,14 @@ Global state, JSON, `0600`:
   "labels":   { "claude/work": "Work"|"Personal"|"Other" },   // flat "provider/name" keys
   "autoSwitch": { "claude": { "enabled": false, "threshold": 95, "tag": "all" } },
   "providers":  { "claude": { "cli": true, "ui": true } },     // default on: claude+codex
-  "switchStrategy": "reset-first"|"rotation-first",            // default reset-first
   "osNotifications": false,
-  "guard": "block"|"warn"|"off"                                // single-load guard, default block
+  "guard": "block"|"warn"|"off"                                // single-load guard: warn on new installs, block when absent from an older file
 }
 ```
 
-Readers normalize and migrate legacy shapes — for example a v1 `active` stored as a bare string, or a single global `autoSwitch` object. An absent or unrecognized `guard` value resolves to `block`, so upgrading from a state file written before the guard existed enables it.
+Readers normalize and migrate legacy shapes — for example a v1 `active` stored as a bare string, or a single global `autoSwitch` object. When there is no `state.json` yet (a fresh install), `guard` resolves to `warn` and is written on the first save. In an existing file an absent or unrecognized `guard` resolves to `block`, so an upgrade never changes the guard a user already had.
+
+Additive files next to it, all `0600`: `protection.json` (per-profile session protection; absent entry = on at 98 %), `pools.json` (optional pools; absent = none), `gui-settings.json` (the desktop app's Pet-intro flag and start-at-login preference), and `activity.jsonl` (the activity log, newest 2000 entries).
 
 ## `telemetry-config.json`
 

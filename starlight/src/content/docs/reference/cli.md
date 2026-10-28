@@ -27,7 +27,7 @@ agent-switch use work --provider codex
 | `import <name>` | `[--provider P]` | Migrate the default install into a profile — no re-login. |
 | `use <name>` | `[--provider P]` | Set the active profile for a provider. |
 | `deactivate` | `[--provider P]` | Clear the active profile — new sessions fall back to the default install. |
-| `remove` / `rm <name>` | `[--provider P] [--force]` | Delete the profile, its Claude keychain entry, and prune mappings. Refuses if active or live without `--force`. |
+| `remove` / `rm <name>` | `[--provider P] [--force] [--yes]` | Delete the profile, its Claude keychain entry, and prune mappings. Refuses if active or live without `--force`. Asks for confirmation on a terminal; `--yes` skips it. Off a terminal it proceeds as before and notes on stderr that `--yes` makes it explicit. |
 | `rename <old> <new>` | `[--provider P]` | Rename a profile, carrying credential, active state, label, and mappings across. |
 | `label <name> [Work\|Personal\|Other\|none]` | `[--provider P]` | Tag a profile. |
 
@@ -38,9 +38,9 @@ Precedence: **directory mapping (nearest ancestor) > active profile > default.**
 | Command | Args / flags | What it does |
 | --- | --- | --- |
 | `run <name> [-- passthrough…]` | `[--provider P] [--tmux] [--force]` | Launch the provider CLI on a profile (one-shot, parallel). `--tmux` wraps it in a managed tmux session (POSIX). `--force` overrides the [single-load guard](#single-load-guard). Args after `--` pass through, e.g. `run work -- --resume`. |
-| `dir` | `[--provider P] [--guard]` | Resolve the config dir for the current directory (mapping > active). Machine-consumed by the shell wrapper. With `--guard`, also runs the [single-load guard](#single-load-guard): the path stays on stdout, the guard writes to stderr and exits `86` on a refusal. |
+| `dir` | `[--provider P] [--guard] [--json]` | Resolve the config dir for the current directory (folder rule > active). A rule may point at a pool: it resolves to the member with the most headroom on usage checked within 10 minutes; stale, unknown and signed-out members are skipped, and with none left the active profile is used. `--json` prints `{profile, configDir, why[]}`. Machine-consumed by the shell wrapper. With `--guard`, also runs the [single-load guard](#single-load-guard): the path stays on stdout, the guard writes to stderr and exits `86` on a refusal. |
 | `guard [block\|warn\|off]` | `[--json]` | Read or set the [single-load guard](#single-load-guard) policy. The bare form also lists which profiles are loaded right now. |
-| `map <name> [dir]` | `[--provider P]` | Map a directory (default: CWD) to a profile. |
+| `map <name\|pool:<id>> [dir]` | `[--provider P]` | Map a directory (default: CWD) to a profile or to a [pool](#pools). |
 | `unmap [dir]` | `[--provider P]` | Remove a directory mapping. |
 | `mappings` | — | List directory mappings. |
 
@@ -65,8 +65,8 @@ agent-switch guard off          # disable the check
 
 | Policy | Behaviour |
 | --- | --- |
-| `block` *(default)* | A second session on a loaded profile is refused, naming the running session and the profiles that are free. |
-| `warn` | The same information is printed, then the session starts. |
+| `block` | A second session on a loaded profile is refused, naming the running session and the profiles that are free. The default for installs that predate 2.2. |
+| `warn` *(default on new installs)* | The same information is printed, then the session starts. |
 | `off` | No check at all. |
 
 Overrides, both named in the refusal itself:
@@ -155,12 +155,26 @@ Registered apps: `claude-desktop`, `codex-ide` (VS Code), `codex-desktop`, `anti
 | Command | Args / flags | What it does |
 | --- | --- | --- |
 | `providers enable\|disable\|status` | `[--provider P] [--surface cli\|ui] [--json]` | Enable or disable a provider's surfaces. Enabled by default: Claude + Codex. |
-| `autoswitch on\|off\|status\|strategy` | `[--provider P] [--threshold 1-100] [--tag all\|work\|personal\|other] [--json]`; `strategy [reset-first\|rotation-first]` | Opt-in quota-driven rotation (globally OFF by default, Claude/Codex only). Prints a usage-policy warning. |
-| `reset <profile> --provider codex` | — | Redeem one banked Codex rate-limit reset (consumes a credit). |
+| `autoswitch on\|off\|status` | `[--provider P] [--threshold 1-100] [--tag all\|work\|personal\|other] [--json]` | Opt-in near-limit notifications (OFF by default, Claude/Codex only): the daemon notifies and suggests the profile with the most headroom; it never switches on its own. |
+| `reset <profile> --provider codex` | `[--yes]` | Redeem one banked Codex rate-limit reset (consumes a credit). Asks on a terminal. The daemon never redeems on its own — it only notifies. |
+| `protection` | `[--json]`; `set <provider/name> [--on\|--off] [--threshold 1-100]` | Session protection per profile — default on at 98 %, separate from `autoswitch`. The daemon warns when a profile reaches its threshold; it does not pause sessions. |
 
-:::caution
-Auto-switch ships against a unanimous internal review and may cross the providers' usage policies. It is globally off by default; enable it only if you understand the implications.
+:::note
+`autoswitch` only notifies and suggests; it never changes an account on its own. Switching stays a user action (`use`, `rebind`).
 :::
+
+## Pools
+
+Pools are optional groups of profiles a folder rule can point at. There are none until you create one; labels and `autoswitch --tag` are unaffected.
+
+| Command | Args / flags | What it does |
+| --- | --- | --- |
+| `pool [list]` | `[--json]` | List pools, their members and the folder rules that use them. |
+| `pool create <name>` | `[--json]` | Create a pool; its id is the slug of the name. |
+| `pool rename <id> <name>` | `[--json]` | Change the display name; the id and rules stay. |
+| `pool delete <id>` | `[--json]` | Delete a pool. Refused while a folder rule points at it. |
+| `pool add\|remove <id> <provider/name>` | `[--json]` | Change membership. A profile may be in several pools. |
+| `pool suggest` | `[--confirm] [--json]` | Preview one pool per label in use; nothing is created until `--confirm`. |
 
 ## Ecosystem tooling
 
@@ -194,6 +208,8 @@ agent-switch tooling notes --json          # structured blocks, for scripting
 | `check-update` / `check-updates` | `[--json]` | Compare the running version against the latest GitHub release. |
 | `update` / `upgrade` | — | Self-update via `npm install -g @latest`. |
 | `shellenv` | `[--shell zsh\|bash\|fish\|powershell]` | Print the shell integration snippet. |
-| `doctor` | — | Per-OS / per-provider self-check. Exits `1` on a hard error. |
+| `doctor` | `[--json]` | Per-OS / per-provider self-check: CLI on PATH, shell integration, start at login, API-key env vars that override profile logins, Antigravity support on this OS, logins, guard. `--json` prints `{readiness, platform, checks[{id, status, title, detail, fix?}]}`. Exits `1` on a hard error. |
+| `auth-status` | `[--provider P] [--json]` | Per-profile login state from the provider's own store (`connected`, `expiring`, `sign-in-needed`, `unknown`) with `expiresAt`, `lastRefreshAt`, `keptFreshBy`. Never prints a token. |
+| `activity` | `[--limit N] [--json]` | What agent-switch itself did and why (switch, rebind, login, redeem, autostart, guard, update, protection, pool, remove). Kept to the newest 2000 entries; never contains a token. |
 | `uninstall` | `[--force]` | Remove all agent-switch data, keychain entries, and the daemon. Does **not** touch provider installs. |
 | `help` / `--help` / `-h` | — | Show usage. |

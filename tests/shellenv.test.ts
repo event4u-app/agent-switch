@@ -94,3 +94,10 @@ test("an uninstalled agent-switch falls straight through to the real binary", ()
   assert.match(shellenvScript("fish"), /if not type -q agent-switch/);
   assert.match(shellenvScript("powershell"), /if \(-not \(Get-Command agent-switch -ErrorAction SilentlyContinue\)\)/);
 });
+
+test("D29: the PowerShell asw has no POSIX `command` builtin", () => {
+  const ps = shellenvScript("powershell");
+  const asw = ps.slice(ps.indexOf("function asw {"));
+  assert.doesNotMatch(asw, /\bcommand agent-switch\b/, "`command` is not a PowerShell builtin");
+  assert.match(asw, /& agent-switch list/);
+});

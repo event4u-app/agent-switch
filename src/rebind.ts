@@ -13,9 +13,10 @@
  *
  * Move-semantics + safety: the target account's credential is moved INTO the
  * running profile's store and the target's own store is emptied, so the family
- * is live in exactly one store. Both original credentials are stashed in a
- * per-profile binding-marker BEFORE any mutation, so `--restore` fully reverses
- * it and a crash leaves a recoverable marker. Nothing is deleted without a stash.
+ * is live in exactly one store. Both original credentials are stashed in the
+ * Keychain BEFORE any mutation and a per-profile binding-marker names those
+ * entries (never the tokens), so `--restore` fully reverses it and a crash
+ * leaves a recoverable marker. Nothing is deleted without a stash.
  *
  * Deferred to later Phase-2 slices (see road-to-live-rebind.md), not built here:
  * live pid/process auto-detection, a global cross-profile binding registry +
@@ -62,12 +63,21 @@ export interface RegistryEntry {
 }
 export type BindingRegistry = Record<string, RegistryEntry>;
 
-/** Per-profile record of an active rebind — stashes both originals for restore. */
+/**
+ * Per-profile record of an active rebind. The two original credentials it needs
+ * for restore live in the Keychain (D16): the marker is a plain 0600 file, so it
+ * only names the stash entries and never carries a token itself.
+ */
 export interface BindingMarker {
   boundToProfile: string; // the profile whose account the running profile now serves
   boundAt: string;
-  runningOwnCredential: string; // the running profile's own credential (to restore it)
-  targetOrigCredential: string; // the target profile's own credential (to restore it)
+  /** Keychain service holding the running profile's own credential. */
+  runningOwnStash?: string;
+  /** Keychain service holding the target profile's own credential. */
+  targetOrigStash?: string;
+  /** Legacy (pre-D16) markers stored the credentials inline; read, never written. */
+  runningOwnCredential?: string;
+  targetOrigCredential?: string;
   targetFileMoved: boolean; // whether the target's .credentials.json was moved aside
   /** The running profile's OWN `.claude.json` `oauthAccount` stamp, snapshotted
    *  before the swap. Claude Code overwrites that stamp with the BORROWED
@@ -412,13 +422,31 @@ export function readBinding(cfgDir: string, d: RebindDeps = defaultDeps()): Bind
   if (!raw) return null;
   try {
     const m = JSON.parse(raw);
-    if (m && typeof m.boundToProfile === "string" && typeof m.runningOwnCredential === "string" && typeof m.targetOrigCredential === "string") {
-      return m as BindingMarker;
-    }
+    if (!m || typeof m.boundToProfile !== "string") return null;
+    const stashed = typeof m.runningOwnStash === "string" && typeof m.targetOrigStash === "string";
+    const legacy = typeof m.runningOwnCredential === "string" && typeof m.targetOrigCredential === "string";
+    if (stashed || legacy) return m as BindingMarker;
   } catch {
     /* corrupt marker → treat as none */
   }
   return null;
+}
+
+/** Keychain services that hold a binding's originals while the rebind is live. */
+function stashServices(pConfig: string, d: RebindDeps): { own: string; target: string } {
+  const base = d.serviceNameFor(pConfig);
+  return { own: `${base}-agent-switch-rebind-own`, target: `${base}-agent-switch-rebind-target` };
+}
+
+/** The two original credentials a binding needs for restore — from the Keychain
+ *  stash, or inline for a marker written before D16. Null when unreadable. */
+export function bindingCredentials(
+  m: BindingMarker,
+  d: RebindDeps = defaultDeps(),
+): { runningOwn: string; targetOrig: string } | null {
+  const runningOwn = m.runningOwnStash ? d.kcGet(m.runningOwnStash) : (m.runningOwnCredential ?? null);
+  const targetOrig = m.targetOrigStash ? d.kcGet(m.targetOrigStash) : (m.targetOrigCredential ?? null);
+  return runningOwn && targetOrig ? { runningOwn, targetOrig } : null;
 }
 
 export class RebindError extends Error {}
@@ -705,12 +733,21 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
       reg[account] = { runningProfile: profile, boundAt: new Date(d.now()).toISOString() };
       writeRegistry(reg, d);
 
-      // 1. Recovery point BEFORE any store mutation: stash both originals.
+      // 1. Recovery point BEFORE any store mutation: stash both originals in the
+      //    Keychain (never in the marker file), then point the marker at them.
+      const stash = stashServices(pConfig, d);
+      if (!d.kcAdd(stash.own, pCred) || !d.kcAdd(stash.target, credToMove)) {
+        d.kcDelete(stash.own);
+        d.kcDelete(stash.target);
+        delete reg[account];
+        writeRegistry(reg, d);
+        throw new RebindError(`could not stash the original credentials in the Keychain — no swap performed.`);
+      }
       const marker: BindingMarker = {
         boundToProfile: account,
         boundAt: new Date(d.now()).toISOString(),
-        runningOwnCredential: pCred,
-        targetOrigCredential: credToMove,
+        runningOwnStash: stash.own,
+        targetOrigStash: stash.target,
         targetFileMoved: false,
         // Snapshot the running profile's OWN identity stamp before the swap: from
         // here on Claude Code will overwrite it with the borrowed account's.
@@ -758,6 +795,13 @@ export async function restoreRebind(
   const pConfig = configDir("claude", profile);
   const marker = readBinding(pConfig, d);
   if (!marker) throw new RebindRefused(`no active rebind on profile "${profile}".`);
+  const originals = bindingCredentials(marker, d);
+  if (!originals) {
+    throw new RebindRefused(
+      `the stashed credentials for profile "${profile}"'s rebind are not readable — refusing restore (no mutation). ` +
+        `The binding marker is left in place for manual recovery.`,
+    );
+  }
 
   const aConfig = configDir("claude", marker.boundToProfile);
   const pSvc = d.serviceNameFor(pConfig);
@@ -774,7 +818,7 @@ export async function restoreRebind(
       // account we bound INTO it. If someone re-logged the running profile, its
       // store now holds a DIFFERENT account — never clobber that fresh login.
       const liveRunning = readCred(pConfig, d);
-      const branch = await compareAccounts(marker.targetOrigCredential, liveRunning, d);
+      const branch = await compareAccounts(originals.targetOrig, liveRunning, d);
       if (branch === "unparseable") {
         throw new RebindRefused(
           `running profile "${profile}"'s live credential is missing or unparseable — refusing restore (no mutation). ` +
@@ -799,11 +843,11 @@ export async function restoreRebind(
       }
       // "same" / "rotated" → the bound account is still there → restore normally.
       // Restore the running profile to its own account.
-      d.kcAdd(pSvc, marker.runningOwnCredential);
+      d.kcAdd(pSvc, originals.runningOwn);
       // Restore the target profile's own store. On "rotated" the live credential
       // is the same account with a FRESHER (rotated) refresh token — hand that
       // back instead of the stale stash, or the target profile logs out.
-      d.kcAdd(aSvc, branch === "rotated" ? (liveRunning as string) : marker.targetOrigCredential);
+      d.kcAdd(aSvc, branch === "rotated" ? (liveRunning as string) : originals.targetOrig);
       if (marker.targetFileMoved && d.exists(aFile + LENT_SUFFIX)) {
         d.renameFile(aFile + LENT_SUFFIX, aFile);
       }
@@ -811,6 +855,8 @@ export async function restoreRebind(
       // Claude Code stamped into its `.claude.json` while it served the other account.
       await restoreStampedIdentity(pConfig, marker.runningOwnIdentity, d);
       d.removeFile(markerFile(pConfig));
+      if (marker.runningOwnStash) d.kcDelete(marker.runningOwnStash);
+      if (marker.targetOrigStash) d.kcDelete(marker.targetOrigStash);
       // Release the global binding-registry entry for the bound account.
       const reg = readRegistry(d);
       if (reg[marker.boundToProfile]) {

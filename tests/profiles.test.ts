@@ -268,7 +268,20 @@ test("setGuard round-trips every policy and leaves the rest of the state alone",
   assert.equal(P.labelFor("claude", "work"), "Work");
 });
 
-test("a missing state file resolves the guard to the default", () => {
+test("a fresh install (no state file) resolves the guard to warn", () => {
   fs.rmSync(P.STATE_FILE, { force: true });
+  assert.equal(P.readGuard(), "warn");
+});
+
+test("the fresh-install warn default is persisted on the first state write", () => {
+  fs.rmSync(P.STATE_FILE, { force: true });
+  P.setActive("claude", "work");
+  assert.equal(JSON.parse(fs.readFileSync(P.STATE_FILE, "utf8")).guard, "warn");
+});
+
+test("an explicitly stored guard mode survives (upgrade keeps block)", () => {
+  fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: { claude: "work" }, guard: "block" }));
   assert.equal(P.readGuard(), "block");
+  fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: { claude: "work" }, guard: "off" }));
+  assert.equal(P.readGuard(), "off");
 });

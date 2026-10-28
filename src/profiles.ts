@@ -6,7 +6,7 @@ import * as path from "node:path";
 
 import { ProviderId, PROVIDER_IDS, provider, isProviderId } from "./providers.js";
 import { CredentialStore, credentialStore } from "./credentials.js";
-import { DEFAULT_GUARD_POLICY, GuardPolicy, isGuardPolicy } from "./single-load.js";
+import { DEFAULT_GUARD_POLICY, FRESH_INSTALL_GUARD_POLICY, GuardPolicy, isGuardPolicy } from "./single-load.js";
 
 export const HOME = os.homedir();
 export const ROOT = process.env.AGENT_SWITCH_HOME ?? path.join(HOME, ".agent-switch");
@@ -105,9 +105,10 @@ export interface State {
   rebind: RebindKillSwitch;
   /**
    * Single-load guard: how to react when a profile that already carries a live
-   * session is about to be loaded again. Absent → {@link DEFAULT_GUARD_POLICY}
-   * (`block`) — the guard is on out of the box, and an unknown value degrades
-   * to that default rather than throwing on an unreadable state file.
+   * session is about to be loaded again. No state file yet (fresh install) →
+   * {@link FRESH_INSTALL_GUARD_POLICY} (`warn`), persisted on the first write.
+   * A state file without the key predates the setting → {@link DEFAULT_GUARD_POLICY}
+   * (`block`, what it meant then); an unknown value degrades the same way.
    */
   guard: GuardPolicy;
 }
@@ -292,7 +293,8 @@ export function readState(): State {
   } catch {
     /* absent / unparsable → default */
   }
-  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, rebind: { ...DEFAULT_REBIND_STATE }, guard: DEFAULT_GUARD_POLICY };
+  const fresh = !fs.existsSync(STATE_FILE);
+  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
 }
 
 export function readOsNotifications(): boolean {

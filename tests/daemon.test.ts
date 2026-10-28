@@ -56,3 +56,28 @@ test("nextIntervalMs floors at the minimum and backs off exponentially, capped",
   assert.equal(D.nextIntervalMs(60_000, 2), 240_000);
   assert.equal(D.nextIntervalMs(60_000, 100), D.MAX_BACKOFF_MS); // capped
 });
+
+// D3: the daemon never redeems a Codex reset credit on its own — it only says
+// one is available, once per reset cycle.
+test("D3: daemon source never calls the Codex redeem endpoint", () => {
+  const src = fs.readFileSync(path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../src/daemon.ts"), "utf8");
+  assert.doesNotMatch(src, /redeemResetCredit/, "the daemon must not import or call the redeem path");
+});
+
+test("D3: codexResetNotice fires once per cycle, only over the threshold with a credit", () => {
+  const snap = (util: number, credits: number | null, resetsAt = "2026-11-01T00:00:00Z") => ({
+    windows: [{ key: "primary", label: "5h", utilization: util, resetsAt }],
+    routines: null,
+    capturedAt: "2026-10-28T00:00:00Z",
+    resetCredits: credits,
+  });
+  const n = D.codexResetNotice("work", snap(97, 2), 95, undefined);
+  assert.ok(n);
+  assert.match(n!.message, /Nothing was redeemed/);
+  assert.match(n!.message, /agent-switch reset work --provider codex/);
+  assert.equal(D.codexResetNotice("work", snap(97, 2), 95, n!.cycle), null, "same cycle → silent");
+  assert.ok(D.codexResetNotice("work", snap(97, 2, "2026-11-02T00:00:00Z"), 95, n!.cycle), "new cycle → notify again");
+  assert.equal(D.codexResetNotice("work", snap(90, 2), 95, undefined), null, "under threshold");
+  assert.equal(D.codexResetNotice("work", snap(99, 0), 95, undefined), null, "no credit");
+  assert.equal(D.codexResetNotice("work", snap(99, null), 95, undefined), null, "credit unknown");
+});

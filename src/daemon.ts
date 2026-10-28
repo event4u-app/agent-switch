@@ -10,6 +10,13 @@
  * suggestion is a convenience; the actual switch is always a user interaction
  * (see `AutoSwitchConfig`). The daemon never mutates the active profile.
  *
+ * Codex banked resets: when the active Codex profile is over the threshold and
+ * holds a reset credit, the daemon NOTIFIES that one is available (once per
+ * reset cycle). It never redeems one — that is an explicit user action
+ * (`agent-switch reset`, or the GUI's confirmed button). It also fires the
+ * per-profile protection notice (see `protection.ts`): a warning only, nothing
+ * is paused or switched.
+ *
  * The pure helpers (single-instance, poll-target selection, backoff, state
  * freshness, suggestion decision in `usage.ts`) are exported for unit testing;
  * `runDaemon` is the loop.
@@ -25,7 +32,6 @@ import { fetchUsage, liveSessionPids } from "./api.js";
 import { defaultFreshenDeps, freshAccessToken } from "./token-freshen.js";
 import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, SwitchCandidate, ThresholdState, UsageSnapshot } from "./usage.js";
 import { readCodexUsage } from "./codex-usage.js";
-import { redeemResetCredit } from "./codex-reset.js";
 import { recordHistorySample } from "./history.js";
 import { appendNotification, markOsNotified, Notification } from "./notifications.js";
 import { readOsNotifications } from "./profiles.js";
@@ -40,6 +46,7 @@ import {
   ContextSample,
 } from "./notify.js";
 import { readEvents, eventFile } from "./hooks.js";
+import { protectionNotice, readProtection } from "./protection.js";
 import { execFileSync } from "node:child_process";
 
 /** Append an event to the shared log and, when the operator opted into
@@ -89,6 +96,8 @@ export interface DaemonState {
   /** "provider/<name>" → true while a usage-fetch failure has already been
    *  notified, so the daemon warns ONCE per outage instead of every cycle. */
   notifiedFetchFail?: Record<string, boolean>;
+  /** "provider/<name>" → the window cycle the protection warning last fired for. */
+  protectionNotified?: Record<string, string>;
 }
 
 // ---------- state file (the cache) ----------
@@ -220,6 +229,32 @@ export function decideThresholdAction(
   return { notify: suggestedTarget !== null, suggestedTarget };
 }
 
+/**
+ * The "a banked Codex reset is available" notice (D3). Pure: returns the notice
+ * when the active profile is at/over the threshold, holds a reset credit, and
+ * this reset cycle was not announced yet — else null. Redeeming stays an
+ * explicit user action (`agent-switch reset`, the GUI's confirmed button).
+ */
+export function codexResetNotice(
+  active: string,
+  snap: UsageSnapshot,
+  threshold: number,
+  lastNotifiedCycle: string | undefined,
+): { cycle: string; title: string; message: string } | null {
+  if ((snap.resetCredits ?? 0) <= 0) return null;
+  const stuck = snap.windows.find((w) => typeof w.utilization === "number" && w.utilization >= threshold);
+  if (!stuck) return null;
+  const cycle = stuck.resetsAt ?? "";
+  if (lastNotifiedCycle === cycle) return null;
+  return {
+    cycle,
+    title: "Codex reset available",
+    message:
+      `codex/${active} hit ≥${threshold}% and has ${snap.resetCredits} banked reset(s). ` +
+      `Nothing was redeemed — to use one: agent-switch reset ${active} --provider codex`,
+  };
+}
+
 // ---------- context monitoring (own-session; Phase 3) ----------
 
 let _claudeVer: string | null | undefined;
@@ -326,7 +361,7 @@ async function pollProvider(
   provider: ProviderId,
   state: DaemonState,
   thresholds: Map<string, ThresholdState>,
-  redeemed: Map<string, string>,
+  notifiedReset: Map<string, string>,
   log: (l: string) => void,
 ): Promise<number> {
   const names = listProfiles(provider);
@@ -362,6 +397,15 @@ async function pollProvider(
     }
     state.profiles[key] = snapshot;
     polled.push({ name, snapshot });
+    // Session protection (per profile, default on at 98 %): a warning only.
+    const pNotice = protectionNotice(key, snapshot, readProtection(provider, name), state.protectionNotified?.[key]);
+    if (pNotice) {
+      state.protectionNotified = { ...(state.protectionNotified ?? {}), [key]: pNotice.cycle };
+      log(`protection: ${pNotice.message}`);
+      // "info", not "warning": the GUI mutes warnings by default (fetch-failure
+      // noise), and a default-on protection notice must actually be seen.
+      notify({ kind: "info", title: pNotice.title, message: pNotice.message });
+    }
     recordHistorySample(path.join(profileDir(provider, name), "usage-history.json"), snapshot);
     if (name === active) {
       const prev = thresholds.get(`${provider}/${name}`) ?? {};
@@ -388,28 +432,15 @@ async function pollProvider(
   const activeMax = activeSnap ? maxUtilization(activeSnap) : null;
   if (activeMax === null || activeMax < autoSwitch.threshold) return failures; // still has headroom
 
-  // Codex only (banked resets are a Codex feature): redeem a reset and STAY, but
-  // AT MOST ONCE per reset cycle. We record the window's resets_at BEFORE calling,
-  // so a buggy reset that doesn't actually clear usage can never loop and burn the
-  // whole balance — it falls through to a switch SUGGESTION on the same poll's
-  // next-cycle. Redeeming still stays on the active profile.
+  // Codex only (banked resets are a Codex feature): a reset credit is scarce and
+  // redeeming it is the user's call (D3) — the daemon only says one is there,
+  // once per reset cycle, and never calls the redeem endpoint itself.
   if (provider === "codex" && activeSnap) {
-    const stuck = activeSnap.windows.find((w) => typeof w.utilization === "number" && w.utilization >= autoSwitch.threshold);
-    const cycle = stuck?.resetsAt ?? "";
-    const guardKey = `codex/${active}`;
-    if ((activeSnap.resetCredits ?? 0) > 0 && redeemed.get(guardKey) !== cycle) {
-      redeemed.set(guardKey, cycle);
-      const r = await redeemResetCredit(configDir("codex", active));
-      if (r.ok) {
-        log(`auto-switch: codex/${active} over ≥${autoSwitch.threshold}% → redeemed a reset (windows_reset=${r.windowsReset ?? "?"}); staying on ${active}`);
-        notify({
-          kind: "success",
-          title: "Codex reset redeemed",
-          message: `codex/${active} hit ≥${autoSwitch.threshold}% — redeemed a banked reset and stayed on ${active}.`,
-        });
-        return failures;
-      }
-      log(`auto-switch: codex/${active} reset redeem failed (${r.reason ?? "?"}) → falling back to a switch suggestion`);
+    const notice = codexResetNotice(active, activeSnap, autoSwitch.threshold, notifiedReset.get(`codex/${active}`));
+    if (notice) {
+      notifiedReset.set(`codex/${active}`, notice.cycle);
+      log(`threshold: codex/${active} over ≥${autoSwitch.threshold}% with a banked reset available → notifying (no automatic redeem)`);
+      notify({ kind: "info", title: notice.title, message: notice.message });
     }
   }
 
@@ -443,12 +474,12 @@ async function pollProvider(
 async function pollOnce(
   state: DaemonState,
   thresholds: Map<string, ThresholdState>,
-  redeemed: Map<string, string>,
+  notifiedReset: Map<string, string>,
   log: (l: string) => void,
 ): Promise<number> {
   let failures = 0;
   for (const provider of AUTO_PROVIDERS) {
-    failures += await pollProvider(provider, state, thresholds, redeemed, log);
+    failures += await pollProvider(provider, state, thresholds, notifiedReset, log);
   }
   state.lastPoll = new Date().toISOString();
   state.lastError = failures > 0 ? `${failures} profile(s) failed to poll` : null;
@@ -483,17 +514,16 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
   // Load persisted usage-window fired state so crossings do NOT re-fire after a
   // daemon restart within the same window cycle (the pre-existing in-memory gap).
   const thresholds = new Map<string, ThresholdState>(Object.entries(state.usageThresholds ?? {}));
-  // Anti-loop guard for the Codex reset redemption: `<provider>/<name>` → the
-  // window resets_at we last redeemed for, so we never redeem the same stuck
-  // cycle twice.
-  const redeemed = new Map<string, string>();
+  // `<provider>/<name>` → the window resets_at we last announced a banked reset
+  // for, so the "reset available" notice fires once per cycle, not every poll.
+  const notifiedReset = new Map<string, string>();
   let consecutiveFailures = 0;
   let cycles = 0;
 
   log(`started (pid ${process.pid}, base interval ${baseInterval}ms).`);
   while (running) {
     try {
-      const failures = await pollOnce(state, thresholds, redeemed, log);
+      const failures = await pollOnce(state, thresholds, notifiedReset, log);
       consecutiveFailures = failures > 0 ? consecutiveFailures + 1 : 0;
     } catch (err: any) {
       consecutiveFailures++;

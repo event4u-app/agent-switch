@@ -691,6 +691,7 @@ test("guard: `dir --guard` refuses a second load with exit 86, and still prints 
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
   try {
     seed(home, "claude", "work");
+    run(home, ["guard", "block"]); // fresh installs start on warn; this exercises block
     run(home, ["use", "work"]);
     seedLiveSession(home, "work", process.pid);
 
@@ -819,6 +820,7 @@ test("guard: `run` refuses before launching, and --force gets through", gate, ()
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
   try {
     seed(home, "claude", "work");
+    run(home, ["guard", "block"]); // fresh installs start on warn; this exercises block
     seedLiveSession(home, "work", process.pid);
     const refused = runRaw(home, ["run", "work"]);
     assert.equal(refused.status, 86);
@@ -855,6 +857,7 @@ test("guard: bare `guard` reports the policy and what is loaded right now", gate
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
   try {
     seed(home, "claude", "work");
+    run(home, ["guard", "block"]); // fresh installs start on warn; this exercises block
     seedLiveSession(home, "work", process.pid);
     const out = run(home, ["guard"]);
     assert.match(out, /Single-load guard: block/);
@@ -872,6 +875,162 @@ test("guard: an unknown policy value is refused with the valid choices", gate, (
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
   try {
     assert.throws(() => run(home, ["guard", "maybe"]), /unknown guard policy/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// ---------- honest foundations (road-to-honest-foundations) ----------
+
+function runFull(home: string, args: string[], cwd?: string) {
+  return spawnSync("node", [CLI, ...args], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8", cwd });
+}
+
+const TOKEN = "sk-ant-oat01-" + "Z".repeat(64);
+const REFRESH = "sk-ant-ort01-" + "Y".repeat(64);
+
+test("upgrade from a 2.1.0 config: labels, mappings, alerts, autoswitch, guard untouched; zero pools", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work");
+    seed(home, "claude", "home");
+    const state = {
+      active: { claude: "work", codex: null, antigravity: null },
+      labels: { "claude/work": "Work" },
+      autoSwitch: { claude: { enabled: true, threshold: 90, tag: "Work" }, codex: { enabled: false, threshold: 95, tag: "all" }, antigravity: { enabled: false, threshold: 95, tag: "all" } },
+      providers: { claude: { cli: true, ui: true }, codex: { cli: true, ui: true }, antigravity: { cli: false, ui: false } },
+      binaryPaths: {},
+      osNotifications: false,
+      rebind: { disabled: false, consecutiveFailures: 0 },
+      guard: "block",
+    };
+    fs.writeFileSync(path.join(home, "state.json"), JSON.stringify(state, null, 2) + "\n");
+    fs.writeFileSync(path.join(home, ".layout-v2"), "2\n");
+    const mappings = { schema: 2, mappings: { "/tmp/some-repo": { claude: "work" } } };
+    fs.writeFileSync(path.join(home, "mappings.json"), JSON.stringify(mappings));
+    const alerts = path.join(home, "telemetry-config.json");
+    fs.writeFileSync(alerts, JSON.stringify({ notify: true, contextThresholds: [70] }));
+
+    assert.deepEqual(JSON.parse(run(home, ["pool", "--json"])), []);
+    run(home, ["list"]);
+    run(home, ["protection", "--json"]);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, "state.json"), "utf8")), state);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, "mappings.json"), "utf8")), mappings);
+    assert.deepEqual(JSON.parse(fs.readFileSync(alerts, "utf8")), { notify: true, contextThresholds: [70] });
+    assert.equal(JSON.parse(run(home, ["guard", "--json"])).policy, "block");
+    assert.equal(fs.existsSync(path.join(home, "pools.json")), false, "no pools file is created by an upgrade");
+    const prot = JSON.parse(run(home, ["protection", "--json"]));
+    assert.deepEqual(prot.find((r: any) => r.profile === "claude/work"), { profile: "claude/work", enabled: true, thresholdPct: 98 });
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a fresh install starts with the guard on warn", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    assert.equal(JSON.parse(run(home, ["guard", "--json"])).policy, "warn");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("auth-status --json, doctor --json and activity --json never contain a token", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    const ccfg = path.join(home, "claude", "work", "config");
+    fs.mkdirSync(ccfg, { recursive: true });
+    fs.writeFileSync(path.join(ccfg, ".claude.json"), "{}");
+    fs.writeFileSync(path.join(ccfg, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: TOKEN, refreshToken: REFRESH, expiresAt: Date.now() + 3600e3 } }));
+    const xcfg = path.join(home, "codex", "w", "config");
+    fs.mkdirSync(xcfg, { recursive: true });
+    fs.writeFileSync(path.join(xcfg, "auth.json"), JSON.stringify({ tokens: { access_token: TOKEN, refresh_token: REFRESH }, last_refresh: "2026-10-27T10:00:00Z" }));
+
+    const auth = run(home, ["auth-status", "--json"]);
+    const rows = JSON.parse(auth);
+    assert.equal(rows.find((r: any) => r.provider === "codex").state, "connected");
+    assert.ok(["connected", "unknown"].includes(rows.find((r: any) => r.provider === "claude").state));
+
+    run(home, ["use", "work"]);
+    run(home, ["protection", "set", "claude/work", "--threshold", "95"]);
+    const activity = run(home, ["activity", "--json"]);
+    const entries = JSON.parse(activity).entries;
+    assert.deepEqual(entries.map((e: any) => e.kind), ["switch", "protection"]);
+
+    const doctor = runFull(home, ["doctor", "--json"], undefined);
+    const report = JSON.parse(doctor.stdout);
+    assert.ok(["ready", "attention", "blocked"].includes(report.readiness));
+    for (const c of report.checks) assert.ok(c.id && c.status && typeof c.title === "string");
+
+    for (const out of [auth, activity, doctor.stdout, fs.readFileSync(path.join(home, "activity.jsonl"), "utf8")]) {
+      assert.doesNotMatch(out, /ZZZZZZZZ|YYYYYYYY/, "no token value in any output or log");
+    }
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("pools: dir --json resolves a pool rule to the freshest member and explains why", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
+  try {
+    for (const n of ["a", "b"]) {
+      const cfg = path.join(home, "claude", n, "config");
+      fs.mkdirSync(cfg, { recursive: true });
+      fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: `${n}@example.com` } }));
+    }
+    const sample = (util: number) => ({ samples: [{ at: new Date(Date.now() - 60_000).toISOString(), windows: [{ key: "five_hour", utilization: util }] }] });
+    fs.writeFileSync(path.join(home, "claude", "a", "usage-history.json"), JSON.stringify(sample(90)));
+    fs.writeFileSync(path.join(home, "claude", "b", "usage-history.json"), JSON.stringify(sample(20)));
+
+    run(home, ["pool", "create", "Work"]);
+    run(home, ["pool", "add", "work", "claude/a"]);
+    run(home, ["pool", "add", "work", "claude/b"]);
+    run(home, ["map", "pool:work", repo]);
+
+    const r = JSON.parse(execFileSync("node", [CLI, "dir", "--json"], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8", cwd: repo }));
+    assert.equal(r.profile, "claude/b");
+    assert.match(r.why[0], /^Rule: folder .* → pool work$/);
+    assert.match(r.why[r.why.length - 1], /^Most left in pool work · claude\/b at 20% · usage checked/);
+    const plain = execFileSync("node", [CLI, "dir"], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8", cwd: repo }).trim();
+    assert.equal(plain, path.join(home, "claude", "b", "config"));
+
+    assert.throws(() => run(home, ["pool", "delete", "work"]), /used by folder rules/);
+    const preview = JSON.parse(run(home, ["pool", "suggest", "--json"]));
+    assert.equal(preview.preview, true);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("D22: remove off a terminal proceeds with a stderr note; --yes is silent", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "codex", "a");
+    seed(home, "codex", "b");
+    const r1 = runFull(home, ["remove", "a", "--provider", "codex"]);
+    assert.equal(r1.status, 0);
+    assert.match(r1.stderr, /not a terminal — proceeding without confirmation/);
+    assert.equal(fs.existsSync(path.join(home, "codex", "a")), false);
+    const r2 = runFull(home, ["remove", "b", "--provider", "codex", "--yes"]);
+    assert.equal(r2.status, 0);
+    assert.equal(r2.stderr, "");
+    assert.equal(fs.existsSync(path.join(home, "codex", "b")), false);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("gui-settings: set/get round-trip; a first-run default never overrides a user off", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    assert.equal(JSON.parse(run(home, ["gui-settings", "--json"])).autostart.state, "unset");
+    run(home, ["gui-settings", "set", "autostart", "disabled", "--by", "user"]);
+    run(home, ["gui-settings", "set", "autostart", "enabled", "--by", "first-run"]);
+    const s = JSON.parse(run(home, ["gui-settings", "set", "pet-welcomed"]));
+    assert.equal(s.autostart.state, "disabled");
+    assert.equal(s.petWelcomed, true);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

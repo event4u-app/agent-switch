@@ -35,59 +35,63 @@ tools start. Every new readout says how old it is and what it does not know.
 
 ## Phase 0 — Truth (docs and defaults that say the wrong thing)
 
-- [ ] D20: README advertises `agent-switch setup`, which does not exist — remove the
+- [x] D20: README advertises `agent-switch setup`, which does not exist — remove the
       claim (README is rewritten in the redesign roadmap anyway).
-- [ ] `src/daemon.ts` header and `NON-GOALS.md` describe what the daemon really does
+- [x] `src/daemon.ts` header and `NON-GOALS.md` describe what the daemon really does
       (notify/suggest, Codex reset handling after D3, no automatic switch).
-- [ ] `PET_WELCOME` byte-exact regression test.
+- [x] `PET_WELCOME` byte-exact regression test.
 
 ## Phase 1 — Verified defects
 
-- [ ] D3: the daemon redeems Codex reset credits on its own (`src/daemon.ts:396-411`) —
+- [x] D3: the daemon redeems Codex reset credits on its own (`src/daemon.ts:396-411`) —
       becomes an explicit user action (CLI + GUI "Redeem one", confirmed); the daemon
       only notifies.
-- [ ] D16: rebind marker stores tokens in plaintext — store only what the restore
+- [x] D16: rebind marker stores tokens in plaintext — store only what the restore
       needs outside the keychain; tokens never land in a plain file.
-- [ ] D22: `remove` deletes without confirmation — confirm on a TTY, `--yes` for scripts.
-- [ ] D29: PowerShell `asw` wrapper uses the POSIX `command` builtin.
-- [ ] D36: Pet intro once-flag moves out of `localStorage` into the GUI settings file,
+- [x] D22: `remove` deletes without confirmation — confirm on a TTY, `--yes` for scripts.
+- [x] D29: PowerShell `asw` wrapper uses the POSIX `command` builtin.
+- [x] D36: Pet intro once-flag moves out of `localStorage` into the GUI settings file,
       with migration of the old flag.
-- [ ] D5: an API-key env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) silently
+- [x] D5: an API-key env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …) silently
       overrides the profile login — `doctor` reports it.
 
 ## Phase 2 — Start at login, done right
 
-- [ ] Autostart preference model `unset | enabled(first-run|user) | disabled(user)`;
+- [x] Autostart preference model `unset | enabled(first-run|user) | disabled(user)`;
       first-run transaction enables, reads the OS state back, and only then persists;
       a failure stays retryable and shows as `degraded`; legacy
       `agent-switch-autostart-defaulted` migrated without overriding a user `off`.
-- [ ] Silent start: the main window stays hidden on an autostart launch.
+- [x] Silent start: the main window stays hidden on an autostart launch. (Already
+      true — the window is created hidden and only a user action shows it; now
+      locked by `gui/src/silent-start.test.ts`.)
 
 ## Phase 3 — Readouts the screens need (CLI `--json`, no secrets)
 
-- [ ] `doctor --json`: readiness + checks (`id, status, title, detail, fix?`) — CLI on
+- [x] `doctor --json`: readiness + checks (`id, status, title, detail, fix?`) — CLI on
       PATH, shell integration, autostart, sign-in isolation, API-key overrides,
       Antigravity on this OS.
-- [ ] `auth-status --json`: per profile `state` (connected / expiring / sign-in-needed /
+- [x] `auth-status --json`: per profile `state` (connected / expiring / sign-in-needed /
       unknown), `expiresAt`, `lastRefreshAt`, `keptFreshBy` — read from the provider
       store metadata, never a token value.
-- [ ] Activity log: append-only, size-capped JSONL of AS's own events (switch, rebind,
+- [x] Activity log: append-only, size-capped JSONL of AS's own events (switch, rebind,
       login, redeem, autostart, guard, update) with a reason; `activity --json`.
 
 ## Phase 4 — Protection and pools (data model + resolver)
 
-- [ ] Session protection policy per profile `{enabled: true, thresholdPct: 98}`,
+- [x] Session protection policy per profile `{enabled: true, thresholdPct: 98}`,
       `protection` CLI (`--json`, `set`), independent from `autoswitch`/alerts; the
-      threshold is shown as the meter tick. The daemon notifies at the threshold with
+      threshold is shown as the meter tick (data via `protection --json`; the tick
+      itself is drawn by the redesign roadmap). The daemon notifies at the threshold with
       "pause" wording only where a pause really happens (Claude native auto-continue);
-      everywhere else it says "warn".
-- [ ] Pools: additive store, zero pools after upgrade, many-to-many membership,
+      everywhere else it says "warn". (Claude's native auto-continue cannot be
+      verified from here, so every notice says "warn" for now.)
+- [x] Pools: additive store, zero pools after upgrade, many-to-many membership,
       `pool` CLI (list/create/rename/delete/add/remove, `--json`); labels and
       `autoSwitch.tag` untouched; "suggest from tags" is a preview until confirmed.
-- [ ] Bindings: existing folder mappings may target a pool; `dir` resolves a pool to
+- [x] Bindings: existing folder mappings may target a pool; `dir` resolves a pool to
       the member with the most fresh headroom, skipping stale/unknown and signed-out
       members, and explains why (`dir --json` → `{profile, why[]}`).
-- [ ] Single-load guard default `warn` for new installs; an explicitly stored mode is kept.
+- [x] Single-load guard default `warn` for new installs; an explicitly stored mode is kept.
 
 ## Acceptance
 
