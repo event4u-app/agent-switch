@@ -51,11 +51,11 @@ $ asw             # list all profiles, active one marked *
 
 ### What it does — and what it deliberately doesn't
 
-- **Isolated logins** — every account gets its own config folder and keychain entry; nothing is snapshotted or swapped behind a running tool.
+- **Isolated logins** — every account gets its own config folder and keychain entry; nothing is snapshotted, and a running tool's login is only swapped when you ask for it (`agent-switch rebind`, undone with `rebind --restore`).
 - **Usage per account** — 5-hour and weekly windows for Claude and Codex, always with their age; unknown is shown as unknown, never as free.
-- **Session protection** — on for every account at 98 %; today it **warns** at the threshold, it does not pause a running session.
+- **Session protection** — on by default at 98 % for every Claude and Codex account; it **warns** at the threshold and does not pause a running session. The warning comes from the background service (`agent-switch service install`), so it only covers the accounts that service polls: the active one, Claude accounts with a live session, members of pools a folder rule points at, and — with `autoswitch on` — every account of that provider. Antigravity has no usage readout and gets no warning.
 - **Explicit switching only** — a running session moves to another account only when you choose it (live switch, take over or hand off). Nothing switches on its own.
-- **Pools and project rules** — optional: a folder can start on the member of a pool with the most fresh headroom, and `dir --json` tells you why.
+- **Pools and project rules** — optional: a folder can start on the member of a pool with the most fresh headroom, and `dir --json` tells you why. The pick uses cached usage only — written by the background service (`agent-switch service install`, which refreshes pool members every 5 minutes) or by the desktop app's own refresh; with neither running, or no member checked in the last 10 minutes, the folder starts on the active profile and `dir --json` says so. Under `guard block` a member that already has a live session is skipped.
 - **Health, activity, sign-in state** — `doctor --json`, `activity`, `auth-status` — readouts without tokens.
 - **Switch, the desktop pet** — introduces itself once, on the very first start. Never again.
 
@@ -378,8 +378,11 @@ Full per-mechanism contract (verified/degraded/broken with sources) lives in
 The CLI is fully usable on its own. Two optional layers add convenience:
 
 - **Usage daemon** — a background service polls each profile's **own** usage
-  (only profiles with a live session + the active one), caches it, and notifies
-  on the active profile's threshold crossings (75% / 90% by default):
+  (the active one, Claude profiles with a live session, and members of pools a
+  folder rule points at — those every 5 minutes; with `autoswitch on`, every
+  profile of that provider), caches it, and notifies on the active profile's
+  threshold crossings (75% / 90% by default). Pool picks (`dir`) and session
+  protection warnings depend on it running:
 
   ```bash
   agent-switch service install    # launchd (macOS) / systemd --user (Linux) / Task Scheduler (Windows)
@@ -447,6 +450,17 @@ info → Run anyway**.
 To remove these prompts entirely, the builds need Apple Developer-ID signing +
 notarization (macOS) and an Authenticode certificate (Windows) — wired via
 release secrets when certificates are available.
+
+### Behaviour changes in this release
+
+- **Codex resets are no longer redeemed automatically.** Up to 2.1.0, with
+  `autoswitch on` for Codex, the daemon redeemed a banked reset on its own once
+  the active profile crossed the threshold. It now only notifies you that a
+  reset is available (once per reset cycle); redeeming is your action —
+  `agent-switch reset <profile> --provider codex`, or the confirmed button in
+  the app.
+- **The single-load guard starts on `warn` for new installs.** Existing installs
+  (a `state.json` or any profile) keep `block`.
 
 ### Near-limit notifications (opt-in, off by default)
 

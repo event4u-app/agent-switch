@@ -778,6 +778,56 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
   };
 }
 
+/**
+ * Drop an active rebind on `profile` WITHOUT restoring it — the `remove --force`
+ * path, where the running profile is about to be deleted. Deletes both Keychain
+ * stash entries (they would otherwise outlive the profile), releases the
+ * registry entry and the marker, and hands the borrowed account back to its own
+ * profile: the stashed original goes back into that store only while it is
+ * empty (a store that holds a login again is never overwritten), and a lent
+ * plaintext file is returned. Returns false when there was no rebind.
+ */
+export function discardBinding(profile: string, d: RebindDeps = defaultDeps()): boolean {
+  const pConfig = configDir("claude", profile);
+  const marker = readBinding(pConfig, d);
+  if (!marker) return false;
+  const originals = bindingCredentials(marker, d);
+  const aConfig = configDir("claude", marker.boundToProfile);
+  const aSvc = d.serviceNameFor(aConfig);
+  if (originals && d.kcGet(aSvc) === null) d.kcAdd(aSvc, originals.targetOrig);
+  const aFile = credFile(aConfig);
+  if (marker.targetFileMoved && d.exists(aFile + LENT_SUFFIX) && !d.exists(aFile)) d.renameFile(aFile + LENT_SUFFIX, aFile);
+  const stash = stashServices(pConfig, d);
+  d.kcDelete(marker.runningOwnStash ?? stash.own);
+  d.kcDelete(marker.targetOrigStash ?? stash.target);
+  const reg = readRegistry(d);
+  if (reg[marker.boundToProfile]?.runningProfile === profile) {
+    delete reg[marker.boundToProfile];
+    writeRegistry(reg, d);
+  }
+  d.removeFile(markerFile(pConfig));
+  return true;
+}
+
+/** The profile currently serving `account`'s login through a rebind, or null. */
+export function borrowerOf(account: string, d: RebindDeps = defaultDeps()): string | null {
+  return readRegistry(d)[account]?.runningProfile ?? null;
+}
+
+/**
+ * Before `account`'s profile is deleted (`remove --force`): put the profile
+ * borrowing it back on its own login through the normal restore path, so both
+ * stores stay consistent and the stash is cleared. Restore's provenance checks
+ * still apply — a refusal propagates and nothing is released. Returns the
+ * borrower that was restored, or null when nothing borrowed the account.
+ */
+export async function releaseBorrowedAccount(account: string, d: RebindDeps = defaultDeps()): Promise<string | null> {
+  const holder = borrowerOf(account, d);
+  if (!holder) return null;
+  await restoreRebind({ profile: holder }, d);
+  return holder;
+}
+
 export interface RestoreResult {
   restoredProfile: string;
   wasBoundTo: string;
@@ -843,11 +893,27 @@ export async function restoreRebind(
       }
       // "same" / "rotated" → the bound account is still there → restore normally.
       // Restore the running profile to its own account.
-      d.kcAdd(pSvc, originals.runningOwn);
+      if (!d.kcAdd(pSvc, originals.runningOwn)) {
+        throw new RebindError(
+          `could not write profile "${profile}"'s own credential back to the Keychain — restore aborted. ` +
+            `Nothing was changed; the marker and the stashed credentials are kept — retry the restore.`,
+        );
+      }
       // Restore the target profile's own store. On "rotated" the live credential
       // is the same account with a FRESHER (rotated) refresh token — hand that
       // back instead of the stale stash, or the target profile logs out.
-      d.kcAdd(aSvc, branch === "rotated" ? (liveRunning as string) : originals.targetOrig);
+      if (!d.kcAdd(aSvc, branch === "rotated" ? (liveRunning as string) : originals.targetOrig)) {
+        // Put the running store back on the bound account, so the provenance
+        // check of a retry still sees the account it was rebound to (otherwise
+        // the retry would read its own credential as a foreign re-login).
+        const rolledBack = d.kcAdd(pSvc, liveRunning as string);
+        throw new RebindError(
+          `could not write "${marker.boundToProfile}"'s credential back to the Keychain — restore aborted. ` +
+            (rolledBack
+              ? `Profile "${profile}" still serves "${marker.boundToProfile}"; the marker and the stashed credentials are kept — retry the restore.`
+              : `Profile "${profile}" could not be rolled back either; the marker and the stashed credentials are kept for manual recovery.`),
+        );
+      }
       if (marker.targetFileMoved && d.exists(aFile + LENT_SUFFIX)) {
         d.renameFile(aFile + LENT_SUFFIX, aFile);
       }

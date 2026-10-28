@@ -39,9 +39,9 @@ agent-switch autoswitch off
 | `--tag all\|work\|personal\|other` | Which profiles may be suggested |
 | `--provider P` / `--json` | Target provider / machine-readable output |
 
-On Codex, when the active profile is over the threshold and holds a banked reset, the notice also says a reset is available. It is never redeemed for you.
+On Codex, when the active profile is over the threshold and holds a banked reset, the notice also says a reset is available. It is never redeemed for you. (Up to 2.1.0 the daemon redeemed it on its own; that behaviour is gone.)
 
-Separate from this, **session protection** (`agent-switch protection`) is on for every profile at 98 % and warns when a profile reaches it. It does not pause sessions.
+Separate from this, **session protection** (`agent-switch protection`) is on by default at 98 % and warns when a profile reaches it. It does not pause sessions. The warning comes from the background service (`agent-switch service install`), so it covers only the profiles that service polls: the active Claude and Codex profile, Claude profiles with a live session, members of pools a folder rule points at, and — with `autoswitch on` — every profile of that provider. Antigravity has no usage readout and is never covered; nothing warns while the service is stopped.
 
 
 ## Redeeming a Codex reset

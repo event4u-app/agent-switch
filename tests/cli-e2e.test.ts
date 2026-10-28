@@ -935,6 +935,28 @@ test("a fresh install starts with the guard on warn", gate, () => {
   }
 });
 
+test("a 2.1.0 install with profiles but no state.json keeps the guard on block", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work"); // `add` without `use` never wrote state.json
+    assert.equal(fs.existsSync(path.join(home, "state.json")), false);
+    assert.equal(JSON.parse(run(home, ["guard", "--json"])).policy, "block");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a fresh install keeps warn after its first profile appears", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    run(home, ["pool", "create", "Work"]); // the first write creates the root on a fresh install
+    seed(home, "claude", "work"); // then a profile arrives without `use`
+    assert.equal(JSON.parse(run(home, ["guard", "--json"])).policy, "warn");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("auth-status --json, doctor --json and activity --json never contain a token", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
@@ -1043,6 +1065,60 @@ test("run --cwd refuses a folder that does not exist, before launching anything"
   try {
     seed(home, "claude", "a");
     assert.throws(() => run(home, ["run", "a", "--cwd", path.join(home, "nope")]), /no such folder/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("remove refuses a profile with an active rebind; --force drops it (stash cleaned)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "p");
+    const marker = path.join(home, "claude", "p", "config", ".agent-switch-rebind.json");
+    // Stash names that exist in no Keychain: the --force cleanup deletes nothing real.
+    fs.writeFileSync(marker, JSON.stringify({ boundToProfile: "a", boundAt: "x", runningOwnStash: "asw-e2e-none-own", targetOrigStash: "asw-e2e-none-target", targetFileMoved: false }));
+    const r1 = runFull(home, ["remove", "p", "--yes"]);
+    assert.notEqual(r1.status, 0);
+    assert.match(r1.stderr, /rebind --restore --profile p/);
+    assert.equal(fs.existsSync(path.join(home, "claude", "p")), true, "nothing removed");
+    const r2 = runFull(home, ["remove", "p", "--yes", "--force"]);
+    assert.equal(r2.status, 0, r2.stderr);
+    assert.equal(fs.existsSync(path.join(home, "claude", "p")), false);
+    assert.match(r2.stdout, /Dropped its active rebind/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("mappings renders a pool rule as a pool; activity --limit 0 is rejected", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
+  try {
+    seed(home, "claude", "a");
+    run(home, ["pool", "create", "Work"]);
+    run(home, ["map", "pool:work", repo]);
+    const text = run(home, ["mappings"]);
+    assert.match(text, /-> pool:work \(claude\)$/m);
+    assert.doesNotMatch(text, /claude\/pool:/);
+    const r = runFull(home, ["activity", "--limit", "0"]);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /--limit must be a whole number of at least 1/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("remove refuses a profile whose account another profile currently borrows", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "a");
+    seed(home, "claude", "p");
+    fs.writeFileSync(path.join(home, ".agent-switch-rebind-registry.json"), JSON.stringify({ a: { runningProfile: "p", boundAt: "x" } }));
+    const r = runFull(home, ["remove", "a", "--yes"]);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /rebind --restore --profile p/);
+    assert.equal(fs.existsSync(path.join(home, "claude", "a")), true, "nothing removed");
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

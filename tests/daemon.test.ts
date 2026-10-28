@@ -49,6 +49,34 @@ test("selectPollTargets = active + live-session profiles, never idle ones", () =
   assert.deepEqual(D.selectPollTargets(names, null, (n) => live.has(n)), ["client"]);
 });
 
+test("poolTargetedMembers = same-provider members of pools a folder rule points at", () => {
+  const pools = [
+    { id: "work", name: "Work", members: ["claude/a", "claude/b", "codex/x"], createdAt: "" },
+    { id: "idle", name: "Idle", members: ["claude/c"], createdAt: "" },
+  ];
+  const rules = [
+    { path: "/r1", provider: "claude" as const, name: "pool:work" },
+    { path: "/r2", provider: "claude" as const, name: "a" }, // plain profile rule, not a pool
+    { path: "/r3", provider: "claude" as const, name: "pool:gone" }, // deleted pool
+  ];
+  assert.deepEqual(D.poolTargetedMembers("claude", rules, pools), ["a", "b"]); // not c: no rule points at "idle"
+  assert.deepEqual(D.poolTargetedMembers("codex", rules, pools), []); // the rule is a claude rule
+  assert.deepEqual(D.poolTargetedMembers("codex", [{ provider: "codex", name: "pool:work" }], pools), ["x"]);
+});
+
+test("selectPollTargets also polls pool-targeted members, spaced by POOL_POLL_INTERVAL_MS", () => {
+  const names = ["work", "a", "b", "c"];
+  const now = Date.parse("2026-10-28T12:00:00Z");
+  const last: Record<string, number | null> = { a: now - 60_000, b: now - D.POOL_POLL_INTERVAL_MS, c: null };
+  const targets = D.selectPollTargets(names, "work", () => false, false, ["a", "b", "c", "ghost"], (n) => last[n] ?? null, now);
+  // a was polled a minute ago → not due; b is due; c was never polled; ghost is not a profile
+  assert.deepEqual(targets.sort(), ["b", "c", "work"]);
+  // the default (no pools) keeps the old behaviour
+  assert.deepEqual(D.selectPollTargets(names, "work", () => false), ["work"]);
+  // FRESH_USAGE_MS must outlast the pool cadence, or `dir` would see every member as stale
+  assert.ok(D.POOL_POLL_INTERVAL_MS < 10 * 60_000);
+});
+
 test("nextIntervalMs floors at the minimum and backs off exponentially, capped", () => {
   assert.equal(D.nextIntervalMs(60_000, 0), 60_000); // no failures → base
   assert.equal(D.nextIntervalMs(30_000, 0), D.MIN_INTERVAL_MS); // base floored to the minimum

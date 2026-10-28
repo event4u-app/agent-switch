@@ -34,6 +34,29 @@ test("activity: append + read round-trips, newest last, limit keeps the newest",
   assert.deepEqual(A.readActivity(1, f).map((e) => e.kind), ["guard"]);
 });
 
+test("activity: limit 0 returns nothing (not everything)", () => {
+  const f = tmp("activity.jsonl");
+  A.appendActivity({ kind: "switch", target: "claude/a", action: "x", reason: "user", ok: true }, f);
+  assert.deepEqual(A.readActivity(0, f), []);
+});
+
+test("activity: trimActivity keeps the newest entries and leaves a file under the cap untouched", () => {
+  const f = tmp("activity.jsonl");
+  const line = (i: number) => JSON.stringify({ at: new Date(i).toISOString(), kind: "switch", target: null, action: `#${i}`, reason: "r", ok: true });
+  const small = [line(1), line(2)].join("\n") + "\n";
+  fs.writeFileSync(f, small);
+  const before = fs.statSync(f).mtimeMs;
+  A.trimActivity(f);
+  assert.equal(fs.readFileSync(f, "utf8"), small);
+  assert.equal(fs.statSync(f).mtimeMs, before);
+  fs.writeFileSync(f, Array.from({ length: A.ACTIVITY_MAX_LINES + 3 }, (_, i) => line(i)).join("\n") + "\n");
+  A.trimActivity(f);
+  const kept = A.readActivity(undefined, f);
+  assert.equal(kept.length, A.ACTIVITY_MAX_LINES);
+  assert.equal(kept[0].action, "#3");
+  assert.equal(kept[kept.length - 1].action, `#${A.ACTIVITY_MAX_LINES + 2}`);
+});
+
 test("activity: a token in any field never reaches the file", () => {
   const f = tmp("activity.jsonl");
   A.appendActivity({ kind: "rebind", target: `claude/${SECRET}`, action: `failed with ${JWT}`, reason: `token ${SECRET} rejected`, ok: false }, f);
@@ -185,6 +208,29 @@ test("dir: unknown usage is never free — no fresh member falls back to the act
   assert.equal(r.name, "a");
   assert.ok(r.why.includes("No member of pool work has fresh usage"));
   assert.equal(r.why[r.why.length - 1], "Using the active profile claude/a");
+});
+
+test("dir: with guard block, a pool member that already holds a live session is skipped", () => {
+  const r = R.resolveForDir(inputs({ live: (n: string) => n === "b", guard: "block" }));
+  assert.equal(r.name, "a");
+  assert.ok(r.why.includes("Skipped claude/b: already has a live session (guard: block would refuse it)"));
+});
+
+test("dir: with guard warn, a live member is still eligible but a free one wins a tie", () => {
+  const tie = () => ({ snapshot: snap(30, "2026-10-28T11:59:00Z"), capturedMs: Date.parse("2026-10-28T11:59:00Z") });
+  const pool = () => ({ id: "work", name: "Work", members: ["claude/a", "claude/b"], createdAt: "" });
+  const r = R.resolveForDir(inputs({ pool, usage: tie, live: (n: string) => n === "a", guard: "warn" }));
+  assert.equal(r.name, "b");
+  assert.ok(r.why.includes("Preferred claude/b over claude/a: same headroom, claude/a already has a live session"));
+  // A live member with strictly more headroom still wins under warn, and says so.
+  const live = R.resolveForDir(inputs({ live: (n: string) => n === "b", guard: "warn" }));
+  assert.equal(live.name, "b");
+  assert.ok(live.why.includes("Note: claude/b already has a live session (guard: warn)"));
+});
+
+test("dir: the no-fresh-usage fallback names the background service", () => {
+  const r = R.resolveForDir(inputs({ pool: () => ({ id: "work", name: "Work", members: ["claude/stale"], createdAt: "" }) }));
+  assert.ok(r.why.some((l: string) => /agent-switch service/.test(l)), r.why.join("\n"));
 });
 
 test("dir: a deleted pool and a plain profile rule", () => {

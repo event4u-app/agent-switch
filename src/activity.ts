@@ -82,7 +82,7 @@ export function appendActivity(
   }
 }
 
-function trimActivity(file: string): void {
+export function trimActivity(file: string): void {
   const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
   if (lines.length <= ACTIVITY_MAX_LINES) return;
   const tmp = `${file}.${process.pid}.tmp`;
@@ -108,5 +108,6 @@ export function readActivity(limit?: number, file: string = ACTIVITY_FILE): Acti
       /* skip */
     }
   }
-  return limit !== undefined && limit >= 0 ? out.slice(-limit) : out;
+  if (limit === undefined || limit < 0) return out;
+  return limit === 0 ? [] : out.slice(-limit);
 }

@@ -127,7 +127,12 @@ export function die(msg: string): never {
 }
 
 export function ensureRoot(): void {
+  // A fresh install pins its fresh-install defaults (guard: warn) on the first
+  // write, so the first profile it gets cannot flip it into looking like an
+  // upgraded 2.1.0 install (profiles, no state.json → block).
+  const fresh = !fs.existsSync(STATE_FILE) && listAllProfiles().length === 0;
   fs.mkdirSync(ROOT, { recursive: true, mode: 0o700 });
+  if (fresh) fs.writeFileSync(STATE_FILE, JSON.stringify(readState(), null, 2) + "\n", { mode: 0o600 });
 }
 
 function validateName(name: string): void {
@@ -293,7 +298,10 @@ export function readState(): State {
   } catch {
     /* absent / unparsable → default */
   }
-  const fresh = !fs.existsSync(STATE_FILE);
+  // Fresh = nothing at all yet. `add` without `use` writes no state.json, so a
+  // 2.1.0 install can have profiles and no state file — that user must keep the
+  // pre-2.2 default (block), not be treated as new.
+  const fresh = !fs.existsSync(STATE_FILE) && listAllProfiles().length === 0;
   return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
 }
 

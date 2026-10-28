@@ -33,7 +33,7 @@ export const GUARD_POLICIES: readonly GuardPolicy[] = ["block", "warn", "off"];
 /** What a state file without a `guard` key meant before 2.2 — kept so an
  *  upgrade never changes a user's effective guard. */
 export const DEFAULT_GUARD_POLICY: GuardPolicy = "block";
-/** A fresh install (no state file yet) starts on `warn`: a second load is
+/** A fresh install (no state file and no profile yet) starts on `warn`: a second load is
  *  reported, never refused, so nothing changes how a tool starts. */
 export const FRESH_INSTALL_GUARD_POLICY: GuardPolicy = "warn";
 

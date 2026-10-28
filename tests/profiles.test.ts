@@ -268,13 +268,26 @@ test("setGuard round-trips every policy and leaves the rest of the state alone",
   assert.equal(P.labelFor("claude", "work"), "Work");
 });
 
-test("a fresh install (no state file) resolves the guard to warn", () => {
+/** A fresh install: no state file AND no profile of any provider. */
+function wipeToFresh(): void {
   fs.rmSync(P.STATE_FILE, { force: true });
+  for (const p of ["claude", "codex", "antigravity"]) fs.rmSync(path.join(HOME, p), { recursive: true, force: true });
+}
+
+test("a fresh install (no state file, no profiles) resolves the guard to warn", () => {
+  wipeToFresh();
   assert.equal(P.readGuard(), "warn");
 });
 
+test("profiles without a state file are an upgraded install (2.1.0 `add` without `use`), not a fresh one", () => {
+  wipeToFresh();
+  fs.mkdirSync(P.configDir("claude", "old"), { recursive: true });
+  assert.equal(P.readGuard(), "block");
+  wipeToFresh();
+});
+
 test("the fresh-install warn default is persisted on the first state write", () => {
-  fs.rmSync(P.STATE_FILE, { force: true });
+  wipeToFresh();
   P.setActive("claude", "work");
   assert.equal(JSON.parse(fs.readFileSync(P.STATE_FILE, "utf8")).guard, "warn");
 });

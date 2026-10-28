@@ -1,7 +1,10 @@
 /**
  * Background usage daemon — poller, cache, and (opt-in) threshold notifier.
  *
- * It polls Claude profiles for their OWN usage, appends history, detects
+ * It polls Claude and Codex profiles for their OWN usage — the active one, any
+ * with a live session, and the members of pools a folder rule targets (spaced
+ * to {@link POOL_POLL_INTERVAL_MS}, so `dir`'s pool pick has fresh numbers) —
+ * appends history, detects
  * active-profile threshold crossings, and writes `daemon-state.json` so
  * `status`/the GUI can read a fresh snapshot without hitting the API. When
  * `autoSwitch.enabled` (default OFF) it also watches every profile and, once the
@@ -48,6 +51,8 @@ import {
 import { readEvents, eventFile } from "./hooks.js";
 import { protectionNotice, readProtection } from "./protection.js";
 import { execFileSync } from "node:child_process";
+import { isPoolRef, parseMember, poolIdOf, readPools, type Pool } from "./pools.js";
+import { mappingRows } from "./mappings.js";
 
 /** Append an event to the shared log and, when the operator opted into
  *  daemon-side OS notifications, fire a desktop notification too — marking the
@@ -168,22 +173,61 @@ export function releaseSingleInstance(myPid: number, file: string = PIDFILE): vo
 
 // ---------- poll discipline ----------
 
+/** How often a profile that is polled ONLY because a pool rule targets it is
+ *  refreshed. Below {@link FRESH_USAGE_MS} (10 min) so `dir` keeps seeing pool
+ *  members as fresh, yet five times sparser than the active profile's cadence —
+ *  idle pool members cost one usage read per profile every 5 minutes. */
+export const POOL_POLL_INTERVAL_MS = 5 * 60_000;
+
 /**
- * Which Claude profiles to poll this cycle. Normally the active one plus any
- * with a live session — never a busy-poll of idle accounts. With `watchAll`
+ * Same-provider members of every pool that at least one folder rule for that
+ * provider points at. A pool nobody routes to is not polled. Pure.
+ */
+export function poolTargetedMembers(
+  provider: ProviderId,
+  rules: readonly { provider: ProviderId; name: string }[],
+  pools: readonly Pool[],
+): string[] {
+  const out: string[] = [];
+  for (const r of rules) {
+    if (r.provider !== provider || !isPoolRef(r.name)) continue;
+    const pool = pools.find((p) => p.id === poolIdOf(r.name));
+    for (const m of pool?.members ?? []) {
+      const parsed = parseMember(m);
+      if (parsed && parsed.provider === provider && !out.includes(parsed.name)) out.push(parsed.name);
+    }
+  }
+  return out;
+}
+
+/**
+ * Which profiles to poll this cycle. Normally the active one plus any with a
+ * live session — never a busy-poll of idle accounts. With `watchAll`
  * (auto-switch enabled) every profile is polled, since the switch decision
- * needs each candidate's headroom. `liveCheck` is injected for testability.
+ * needs each candidate's headroom. Members of pools a folder rule targets
+ * (`pooled`) are added too, but only once their last capture is at least
+ * {@link POOL_POLL_INTERVAL_MS} old — that is what keeps `dir`'s pool pick on
+ * fresh numbers without polling idle accounts every minute. `liveCheck` and
+ * `lastCapturedMs` are injected for testability.
  */
 export function selectPollTargets(
   claudeNames: string[],
   active: string | null,
   liveCheck: (name: string) => boolean,
   watchAll = false,
+  pooled: readonly string[] = [],
+  lastCapturedMs: (name: string) => number | null = () => null,
+  now: number = Date.now(),
 ): string[] {
   if (watchAll) return [...claudeNames];
   const targets = new Set<string>();
   if (active && claudeNames.includes(active)) targets.add(active);
   for (const n of claudeNames) if (liveCheck(n)) targets.add(n);
+  for (const n of pooled) {
+    if (!claudeNames.includes(n) || targets.has(n)) continue;
+    const last = lastCapturedMs(n);
+    if (last === null || now - last >= POOL_POLL_INTERVAL_MS) targets.add(n);
+  }
   return [...targets];
 }
 
@@ -368,7 +412,12 @@ async function pollProvider(
   const active = activeFor(provider);
   const autoSwitch = readAutoSwitch(provider);
   const isLive = (n: string) => (provider === "claude" ? liveSessionPids(configDir("claude", n)).length > 0 : false);
-  const targets = selectPollTargets(names, active, isLive, autoSwitch.enabled);
+  const pooled = poolTargetedMembers(provider, mappingRows(), readPools());
+  const lastCaptured = (n: string) => {
+    const t = Date.parse(state.profiles[`${provider}/${n}`]?.capturedAt ?? "");
+    return isNaN(t) ? null : t;
+  };
+  const targets = selectPollTargets(names, active, isLive, autoSwitch.enabled, pooled, lastCaptured);
   let failures = 0;
   const polled: SwitchCandidate[] = [];
 

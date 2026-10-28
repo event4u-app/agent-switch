@@ -43,9 +43,9 @@ Global state, JSON, `0600`:
 }
 ```
 
-Readers normalize and migrate legacy shapes — for example a v1 `active` stored as a bare string, or a single global `autoSwitch` object. When there is no `state.json` yet (a fresh install), `guard` resolves to `warn` and is written on the first save. In an existing file an absent or unrecognized `guard` resolves to `block`, so an upgrade never changes the guard a user already had.
+Readers normalize and migrate legacy shapes — for example a v1 `active` stored as a bare string, or a single global `autoSwitch` object. When there is no `state.json` and no profile yet (a fresh install), `guard` resolves to `warn` and is written on the first write to `~/.agent-switch`. Profiles without a `state.json` (a 2.1.0 install where `add` ran but `use` never did) count as an upgrade and resolve to `block`. In an existing file an absent or unrecognized `guard` resolves to `block`, so an upgrade never changes the guard a user already had.
 
-Additive files next to it, all `0600`: `protection.json` (per-profile session protection; absent entry = on at 98 %), `pools.json` (optional pools; absent = none), `gui-settings.json` (the desktop app's Pet-intro flag and start-at-login preference), and `activity.jsonl` (the activity log, newest 2000 entries).
+Additive files next to it, all `0600`: `protection.json` (per-profile session protection; absent entry = on at 98 %; the warning fires only for profiles the background service polls — see [`protection`](/agent-switch/reference/cli/)), `pools.json` (optional pools; absent = none), `gui-settings.json` (the desktop app's Pet-intro flag and start-at-login preference), and `activity.jsonl` (the activity log, newest 2000 entries).
 
 ## `telemetry-config.json`
 

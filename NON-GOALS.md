@@ -48,7 +48,9 @@ account with the most headroom; on Codex it tells you when a banked reset
 is available but never redeems one. A new session can be placed by a
 folder rule, including a rule that points at a pool you created yourself
 (`agent-switch pool`), which picks the member with the most fresh headroom
-and says why (`agent-switch dir --json`). Own profiles only, no traffic
+and says why (`agent-switch dir --json`). That pick reads cached usage only
+(the background service refreshes pool members every 5 minutes); with no
+member checked in the last 10 minutes it falls back to the active profile. Own profiles only, no traffic
 touched, and a running session changes its account only when you confirm
 it.
 

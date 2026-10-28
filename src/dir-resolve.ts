@@ -8,11 +8,18 @@
  * {@link FRESH_USAGE_MS}, missing, or who is signed out is skipped, and when no
  * member qualifies the rule falls back to the active profile and says so. No
  * network call happens here — only the cache the daemon / `status` already wrote.
+ * The background service (`agent-switch service`) is what keeps that cache
+ * fresh for pool members: it polls every member of a pool a folder rule targets.
+ *
+ * Live sessions: under guard `block` a member that already holds a live
+ * session is skipped (starting there would be refused). Otherwise a free member
+ * wins a headroom tie over a busy one, and a busy pick is called out.
  */
 
 import { maxUtilization, type UsageSnapshot } from "./usage.js";
 import { ProviderId } from "./providers.js";
 import { isPoolRef, poolIdOf, parseMember, type Pool } from "./pools.js";
+import type { GuardPolicy } from "./single-load.js";
 
 export const FRESH_USAGE_MS = 10 * 60_000;
 
@@ -31,6 +38,10 @@ export interface ResolveInputs {
   signedIn: (name: string) => boolean;
   pool: (id: string) => Pool | null;
   usage: (name: string) => CachedUsage;
+  /** True when the profile already holds a live session (default: never). */
+  live?: (name: string) => boolean;
+  /** The single-load guard policy (default `off` → live sessions only break ties). */
+  guard?: GuardPolicy;
   now: number;
   /** Display form of a folder path (e.g. `~/x`). */
   displayPath?: (p: string) => string;
@@ -72,7 +83,10 @@ export function resolveForDir(i: ResolveInputs): Resolution {
       why.push(`Pool ${id} no longer exists`);
       return fallbackToActive(i, why);
     }
-    let best: { name: string; headroom: number; ageMs: number } | null = null;
+    const isLive = i.live ?? (() => false);
+    const guard = i.guard ?? "off";
+    let best: { name: string; headroom: number; ageMs: number; live: boolean } | null = null;
+    let tieLoser: string | null = null;
     const considered = pool.members.map(parseMember).filter((m) => m && m.provider === i.providerId) as {
       provider: ProviderId;
       name: string;
@@ -91,6 +105,11 @@ export function resolveForDir(i: ResolveInputs): Resolution {
         why.push(`Skipped ${key}: signed out`);
         continue;
       }
+      const live = isLive(name);
+      if (live && guard === "block") {
+        why.push(`Skipped ${key}: already has a live session (guard: block would refuse it)`);
+        continue;
+      }
       const u = i.usage(name);
       const max = u.snapshot ? maxUtilization(u.snapshot) : null;
       if (u.capturedMs === null || max === null) {
@@ -103,12 +122,23 @@ export function resolveForDir(i: ResolveInputs): Resolution {
         continue;
       }
       const headroom = 100 - max;
-      if (!best || headroom > best.headroom) best = { name, headroom, ageMs };
+      if (!best || headroom > best.headroom) {
+        best = { name, headroom, ageMs, live };
+        tieLoser = null;
+      } else if (headroom === best.headroom && best.live && !live) {
+        tieLoser = best.name;
+        best = { name, headroom, ageMs, live };
+      }
     }
     if (!best) {
       why.push(`No member of pool ${id} has fresh usage`);
+      why.push("Pool picks use the background service's cached usage — keep it running: agent-switch service install");
       return fallbackToActive(i, why);
     }
+    if (tieLoser) {
+      why.push(`Preferred ${i.providerId}/${best.name} over ${i.providerId}/${tieLoser}: same headroom, ${i.providerId}/${tieLoser} already has a live session`);
+    }
+    if (best.live) why.push(`Note: ${i.providerId}/${best.name} already has a live session (guard: ${guard})`);
     why.push(`Most left in pool ${id} · ${i.providerId}/${best.name} at ${100 - best.headroom}% · usage checked ${ago(best.ageMs)}`);
     return { name: best.name, why };
   }

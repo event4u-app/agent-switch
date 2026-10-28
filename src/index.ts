@@ -57,7 +57,7 @@ import {
   resetRebindKillSwitch,
 } from "./profiles.js";
 import { Provider, ProviderId, PROVIDER_IDS, provider, isProviderInstalled, resolveBinary } from "./providers.js";
-import { rebind, restoreRebind } from "./rebind.js";
+import { borrowerOf, discardBinding, readBinding, rebind, releaseBorrowedAccount, restoreRebind } from "./rebind.js";
 import { buildRebindDialog, resolveRebindChoice, selectableRows, type RebindDialogCandidate } from "./rebind-dialog.js";
 import { parseArgs, parseRun, resolveProviderValue } from "./args.js";
 import { extractBrief, writeBrief, sweepBriefs, seedPrompt } from "./handoff.js";
@@ -612,17 +612,6 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
   }
 }
 
-/**
- * Resolve which profile a shell wrapper should load: directory mapping (nearest
- * ancestor of CWD) > active-for-provider. Empty output → the wrapper falls back
- * to the default config dir.
- *
- * With `--guard`, stdout is unchanged (the wrapper still reads the path from
- * it) and the guard speaks on STDERR, exiting {@link GUARD_REFUSED_EXIT} on a
- * refusal. Splitting the streams is what lets one command both feed the wrapper
- * and talk to the human; a distinct exit code is what lets the wrapper block on
- * a refusal without ever blocking on a missing or older `agent-switch`.
- */
 /** Cached usage for one profile: the daemon's snapshot or the newest history
  *  sample, whichever is newer. Local reads only — `dir` runs on every start. */
 function cachedUsage(providerId: ProviderId, name: string): CachedUsage {
@@ -657,11 +646,26 @@ function resolveDir(providerId: ProviderId): { name: string | null; why: string[
     signedIn: (n) => identity(providerId, n) !== null,
     pool: (id) => findPool(id),
     usage: (n) => cachedUsage(providerId, n),
+    // Only providers that write a live-session signal can report one; the
+    // check runs for pool members only.
+    live: (n) => provider(providerId).hasLiveSessionSignal && liveSessionPids(configDir(providerId, n)).length > 0,
+    guard: readGuard(),
     now: Date.now(),
     displayPath: tildePath,
   });
 }
 
+/**
+ * Resolve which profile a shell wrapper should load: directory mapping (nearest
+ * ancestor of CWD) > active-for-provider. Empty output → the wrapper falls back
+ * to the default config dir.
+ *
+ * With `--guard`, stdout is unchanged (the wrapper still reads the path from
+ * it) and the guard speaks on STDERR, exiting {@link GUARD_REFUSED_EXIT} on a
+ * refusal. Splitting the streams is what lets one command both feed the wrapper
+ * and talk to the human; a distinct exit code is what lets the wrapper block on
+ * a refusal without ever blocking on a missing or older `agent-switch`.
+ */
 function cmdDir(providerId: ProviderId, guarded = false, json = false): void {
   const r = resolveDir(providerId);
   if (json) {
@@ -717,7 +721,7 @@ function cmdMappings(json = false): void {
     console.log("No directory mappings. Create one with: agent-switch map <profile> [dir]");
     return;
   }
-  for (const r of rows) console.log(`${r.path} -> ${r.provider}/${r.name}`);
+  for (const r of rows) console.log(isPoolRef(r.name) ? `${r.path} -> ${r.name} (${r.provider})` : `${r.path} -> ${r.provider}/${r.name}`);
 }
 
 // share + web are Claude-config concepts and stay Claude-scoped.
@@ -1632,6 +1636,25 @@ async function cmdRemove(providerId: ProviderId, name?: string, force = false, y
       die(`profile "${n}" has live Claude Code sessions (PIDs ${pids.join(", ")}). Close them or use --force.`);
     }
   }
+  // An active rebind keeps both original credentials in two Keychain stash
+  // entries. Deleting the profile would orphan them — restore first.
+  const binding = providerId === "claude" ? readBinding(configDir("claude", n)) : null;
+  if (binding && !force) {
+    die(
+      `profile "${n}" is rebound to "${binding.boundToProfile}"'s account. Restore it first: ` +
+        `agent-switch rebind --restore --profile ${n} — or use --force to drop the rebind (its stashed credentials are deleted).`,
+    );
+  }
+
+  // The reverse case: another profile is serving THIS profile's account. Its
+  // restore would write into the store of a profile that no longer exists.
+  const borrower = providerId === "claude" ? borrowerOf(n) : null;
+  if (borrower && !force) {
+    die(
+      `profile "${n}"'s account is currently borrowed by "${borrower}" (rebind). Restore it first: ` +
+        `agent-switch rebind --restore --profile ${borrower} — or use --force to restore "${borrower}" and then remove "${n}".`,
+    );
+  }
 
   const who = identity(providerId, n);
   if (!(await confirmAction(`Remove ${providerId} profile "${n}"${who ? ` (${who})` : ""} and its login? This cannot be undone.`, yes))) {
@@ -1641,6 +1664,16 @@ async function cmdRemove(providerId: ProviderId, name?: string, force = false, y
 
   // Keychain entries exist only for claude (darwin); codex/antigravity are file-based,
   // so computing a Claude hash for them would be a conceptual no-op — skip it.
+  let restoredBorrower: string | null = null;
+  if (borrower) {
+    try {
+      restoredBorrower = await releaseBorrowedAccount(n);
+    } catch (e) {
+      die(`could not restore "${borrower}" first, so "${n}" was not removed: ${(e as Error).message}`);
+    }
+    if (restoredBorrower) logActivity("rebind", `claude/${restoredBorrower}`, `restored own account (was on ${n})`, "user ran `agent-switch remove --force`");
+  }
+  const droppedRebind = binding ? discardBinding(n) : false;
   const removedEntry = providerId === "claude" ? credentials.removeEntry(configDir(providerId, n)) : false;
   fs.rmSync(profileDir(providerId, n), { recursive: true, force: true });
   if (activeFor(providerId) === n) setActive(providerId, null);
@@ -1651,6 +1684,8 @@ async function cmdRemove(providerId: ProviderId, name?: string, force = false, y
   logActivity("remove", `${providerId}/${n}`, "profile removed", yes ? "user ran `agent-switch remove --yes`" : "user ran `agent-switch remove`");
 
   console.log(`Removed ${providerId} profile "${n}".`);
+  if (restoredBorrower) console.log(`Restored "${restoredBorrower}" to its own account first (it was borrowing "${n}").`);
+  if (droppedRebind) console.log(`Dropped its active rebind (stashed credentials deleted; "${binding!.boundToProfile}" keeps its own login).`);
   if (removedEntry) console.log("Removed its keychain credential entry.");
   if (pruned.length > 0) console.log(`Removed ${pruned.length} directory mapping(s).`);
 }
@@ -2515,7 +2550,7 @@ function cmdGuiSettings(sub: string | undefined, args: string[], flags: Record<s
 
 function cmdActivity(flags: Record<string, string | boolean>): void {
   const limit = typeof flags.limit === "string" ? Number(flags.limit) : undefined;
-  if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) die("--limit must be a whole number");
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) die("--limit must be a whole number of at least 1");
   const entries = readActivity(limit ?? (flags.json ? undefined : 50));
   if (flags.json) {
     console.log(JSON.stringify({ entries, capacity: ACTIVITY_MAX_LINES }, null, 2));
