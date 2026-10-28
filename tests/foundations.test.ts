@@ -306,10 +306,10 @@ test("doctor: API-key overrides are reported by NAME only (D5)", () => {
 });
 
 test("doctor: shell integration, CLI on PATH, autostart, antigravity OS, isolation", () => {
-  const rc: Record<string, string> = { "/h/.zshrc": 'eval "$(agent-switch shellenv)"' };
+  const rc: Record<string, string> = { [path.join("/h", ".zshrc")]: 'eval "$(agent-switch shellenv)"' };
   assert.equal(DR.shellIntegrationCheck("/h", (p) => rc[p] ?? null).status, "ok");
   assert.equal(DR.shellIntegrationCheck("/h", () => null).status, "warn");
-  assert.equal(DR.cliOnPathCheck({ PATH: "/a:/b" }, "darwin", (p) => p === "/b/agent-switch").status, "ok");
+  assert.equal(DR.cliOnPathCheck({ PATH: "/a:/b" }, "darwin", (p) => p === path.join("/b", "agent-switch")).status, "ok");
   assert.equal(DR.cliOnPathCheck({ PATH: "/a" }, "darwin", () => false).status, "warn");
   assert.equal(DR.autostartCheck({ petWelcomed: false, autostart: { state: "unset" }, autostartDegraded: { at: "", reason: "os said no" } }).status, "warn");
   assert.equal(DR.autostartCheck({ petWelcomed: false, autostart: { state: "disabled", by: "user", at: "" }, autostartDegraded: null }).status, "info");

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
 process.env.AGENT_SWITCH_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "asw-daemon-"));
 const D = await import("../src/daemon.js");
@@ -88,7 +89,7 @@ test("nextIntervalMs floors at the minimum and backs off exponentially, capped",
 // D3: the daemon never redeems a Codex reset credit on its own — it only says
 // one is available, once per reset cycle.
 test("D3: daemon source never calls the Codex redeem endpoint", () => {
-  const src = fs.readFileSync(path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../src/daemon.ts"), "utf8");
+  const src = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../src/daemon.ts"), "utf8");
   assert.doesNotMatch(src, /redeemResetCredit/, "the daemon must not import or call the redeem path");
 });
 
