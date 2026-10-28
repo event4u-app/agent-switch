@@ -1057,3 +1057,11 @@ export async function getGuard(): Promise<GuardStatus> {
 export async function setGuard(policy: GuardPolicy): Promise<GuardStatus> {
   return JSON.parse(await runCli(["guard", policy, "--json"]));
 }
+
+/** The stored start-at-login preference (what the user / first run wanted) and
+ *  why the last attempt could not be confirmed — read-only, unlike
+ *  {@link applyAutostartDefault}, which reconciles. */
+export async function getAutostartPreference(): Promise<{ state: "unset" | "enabled" | "disabled"; degradedReason: string | null }> {
+  const raw = (await readGuiSettings()) as GuiSettingsJson & { autostartDegraded?: { reason?: string } | null };
+  return { state: raw.autostart.state, degradedReason: raw.autostartDegraded?.reason ?? null };
+}
