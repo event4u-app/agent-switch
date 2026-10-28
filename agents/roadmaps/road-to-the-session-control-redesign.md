@@ -64,26 +64,26 @@ the real CLI `--json` contract. README and screenshots show the result.
 
 ## Phase 2 — Screens
 
-- [ ] Overview: "What's going on?", Needs you (attention queue), Running now, What's
+- [x] Overview: "What's going on?", Needs you (attention queue), Running now, What's
       left; first-run state; agent-config promo (no-AC).
-- [ ] Sessions list + Session sheet (preview, why, protection note, Switch live / Take
+- [x] Sessions list + Session sheet (preview, why, protection note, Switch live / Take
       over / Hand off with the explicit confirm, trash/restore/compact).
-- [ ] Accounts (+ Usage history, Projects & pools), Account detail sheet, Add account
+- [x] Accounts (+ Usage history, Projects & pools), Account detail sheet, Add account
       (4 steps, login in the built-in terminal), Sign in again (reauth) dialog.
-- [ ] Tools (agent-config card, shared setup, tools list) + Apps + Update sheet
+- [x] Tools (agent-config card, shared setup, tools list) + Apps + Update sheet
       (streams the real terminal).
-- [ ] Start session dialog and Near-limit sheet (decisions limited to what the backend
+- [x] Start session dialog and Near-limit sheet (decisions limited to what the backend
       can do; unavailable options carry their reason).
-- [ ] Health (readiness, autostart desired vs actual, checks + Fix dialog), Activity,
+- [x] Health (readiness, autostart desired vs actual, checks + Fix dialog), Activity,
       Notifications sheet.
-- [ ] Settings shell + General, Sign-ins, Protection, Distribution, Notifications,
+- [x] Settings shell + General, Sign-ins, Protection, Distribution, Notifications,
       Desktop pet, Providers, Updates, Advanced.
 - [ ] Old `App.tsx` page tree retired once every function has a new home; parity
       checklist: every existing ipc action still reachable.
 
 ## Phase 3 — Tray popover + icon
 
-- [ ] Tray popover window (340 px, hides on blur) with attention, ranked accounts,
+- [x] Tray popover window (340 px, hides on blur) with attention, ranked accounts,
       status bar, Start session / Open / Quit; native menu kept as fallback.
 - [x] New icon: app bundle icons regenerated from the dark SVG (`tauri icon`),
       `icon-source.png`, monochrome macOS tray template derived from the mark,
