@@ -36,5 +36,3 @@ another `<label>@<something>.example` address.
 | `status.svg` | `agent-switch status` (usage + context bars) |
 | `sessions.svg` | `agent-switch sessions` (context %) |
 | `doctor.svg` | `agent-switch doctor` self-check |
-| `gui-main.svg` | Tray-GUI main window mock |
-| `gui-sessions.svg` | Tray-GUI sessions panel mock |

@@ -180,7 +180,7 @@ Pools are optional groups of profiles a folder rule can point at. There are none
 
 | Command | Args / flags | What it does |
 | --- | --- | --- |
-| `tooling` | `[--json]` | Readout of the ecosystem tools agent-switch knows about (`agent-config`, `rtk`, `claude`, `codex`, `agy`): present, version, path, health. Fully local — no network call; `--json` is the contract the GUI's Tooling section renders. |
+| `tooling` | `[--json]` | Readout of the ecosystem tools agent-switch knows about (`agent-config`, `rtk`, `claude`, `codex`, `agy`): present, version, path, health. Fully local — no network call; `--json` is the contract the app's Tools page renders. |
 | `tooling install\|upgrade <tool>` | — | Run that tool's per-platform install/upgrade command as a visible child process. `agy` is refused (its CLI ships with the Antigravity app). |
 | `tooling notes [<tool>]` | `[--latest] [--json]` | Read what a release actually contains. Default tool: `agent-config`. Prints every release newer than the installed version, newest first, so several skipped versions are all readable; `--latest` limits it to one. |
 

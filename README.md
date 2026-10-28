@@ -1,25 +1,63 @@
-<p align="center"><a href="https://event4u.app"><img alt="agent-switch" src=".github/assets/banner.png"></a></p>
+<p align="center"><a href="https://event4u.app"><img alt="event4u Agent Switch" src=".github/assets/info-banner.png"></a></p>
 
-# agent-switch
+# Agent Switch — the right account for every session
 
 <p align="center">
+  <a href="https://github.com/event4u-app/agent-switch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/event4u-app/agent-switch/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://www.npmjs.com/package/@event4u/agent-switch"><img alt="npm" src="https://img.shields.io/npm/v/@event4u/agent-switch?style=flat-square&color=orange"></a>
+  <a href="https://www.npmjs.com/package/@event4u/agent-switch"><img alt="downloads" src="https://img.shields.io/npm/dm/@event4u/agent-switch?style=flat-square&label=downloads%2Fmonth&color=orange"></a>
   <a href="https://event4u-app.github.io/agent-switch/"><img alt="Documentation" src="https://img.shields.io/badge/docs-event4u--app.github.io-orange?style=flat-square"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-orange?style=flat-square"></a>
 </p>
 
-Switch between multiple Claude Code accounts on macOS, Linux, and Windows with a single shell command — no repeated login/logout, no browser round-trips after the initial setup.
+Keep several **Claude Code, Codex and Antigravity** accounts signed in side by side on
+macOS, Linux and Windows — each in its own folder, each with its own login. Start a
+session on the account you mean, see what every account has left, and get warned
+before one runs out. Your tools keep starting exactly as before.
 
-📖 **[Read the documentation →](https://event4u-app.github.io/agent-switch/)**
+📖 **[Read the documentation →](https://event4u-app.github.io/agent-switch/)** · **Try it:** `npx @event4u/agent-switch doctor`
+
+![Overview — what needs you, what runs, what's left](.github/assets/screenshots/overview.png)
+
+### One window for every account and session
+
+The desktop app shows which session runs on which account and why, how much each
+account has left (with how old that number is), and the one thing that needs you
+next. Sign-ins, protection thresholds, pools and project rules live next to the
+account they belong to.
+
+<details><summary><b>More views</b></summary>
+
+| ![Sessions — every session with its account and why it got it](.github/assets/screenshots/sessions.png) | ![Accounts — sign-in, capacity, protection](.github/assets/screenshots/accounts.png) |
+|---|---|
+| ![Tools — agent-config, rtk and the agent CLIs](.github/assets/screenshots/tools.png) | ![Health — readiness and checks with repairs](.github/assets/screenshots/health.png) |
+| ![Session — preview, why this account, explicit move](.github/assets/screenshots/session-sheet.png) | ![Near limit — you decide](.github/assets/screenshots/near-limit.png) |
+| ![Start session — folder, tool, account](.github/assets/screenshots/start-session.png) | ![Settings — protection per account](.github/assets/screenshots/settings-protection.png) |
+
+<p align="center"><img alt="Menu-bar popover" src=".github/assets/screenshots/tray.png" width="360"></p>
+
+</details>
+
+### Or stay in the terminal
 
 ```
-$ asw work        # switch active account
-$ claude         # runs on the "work" account
-$ asw            # list all profiles, active one marked *
-* work             matze@company.example
-  privat           matze@personal.example
-  event4u          dev@event4u.example
+$ asw work        # make "work" the account plain `claude` starts on
+$ claude          # runs on the "work" account
+$ asw             # list all profiles, active one marked *
+* work             work@example.com
+  privat           me@example.com
+  event4u          dev@example.com
 ```
+
+### What it does — and what it deliberately doesn't
+
+- **Isolated logins** — every account gets its own config folder and keychain entry; nothing is snapshotted or swapped behind a running tool.
+- **Usage per account** — 5-hour and weekly windows for Claude and Codex, always with their age; unknown is shown as unknown, never as free.
+- **Session protection** — on for every account at 98 %; today it **warns** at the threshold, it does not pause a running session.
+- **Explicit switching only** — a running session moves to another account only when you choose it (live switch, take over or hand off). Nothing switches on its own.
+- **Pools and project rules** — optional: a folder can start on the member of a pool with the most fresh headroom, and `dir --json` tells you why.
+- **Health, activity, sign-in state** — `doctor --json`, `activity`, `auth-status` — readouts without tokens.
+- **Switch, the desktop pet** — introduces itself once, on the very first start. Never again.
 
 ## Why not keychain snapshot swapping?
 
@@ -142,8 +180,8 @@ agent-switch add event4u
 | `agent-switch remove old --force` | delete a profile incl. its keychain entry (asks on a terminal; `--yes` skips) |
 | `agent-switch label work Work` | tag a profile (`Work` / `Personal` / `Other`, or `none` to clear) |
 | `agent-switch providers status` | which providers are enabled (default: Claude + Codex; others off) |
-| `agent-switch providers enable --provider gemini` | enable a provider (or `disable`; `--surface cli\|ui` for one surface) |
-| `agent-switch autoswitch on --threshold 90` | opt-in auto-switch on limit (Claude-only; globally off by default; see below) |
+| `agent-switch providers enable --provider antigravity` | enable a provider (or `disable`; `--surface cli\|ui` for one surface) |
+| `agent-switch autoswitch on --threshold 90` | near-limit notification that suggests another profile (off by default; never switches) |
 | `agent-switch uninstall --force` | remove all agent-switch data, keychain entries, and the daemon |
 | `agent-switch doctor [--json]` | self-check (CLI on PATH, shell integration, start at login, API-key overrides, logins, share links) |
 | `agent-switch auth-status --json` | per-profile login state from the provider's store — never a token |
@@ -349,15 +387,16 @@ The CLI is fully usable on its own. Two optional layers add convenience:
   agent-switch service start|stop # manual control (no install)
   ```
 
-- **Tray/menubar GUI** (`gui/`, Tauri) — a small panel to see per-profile usage
-  and switch/open sessions. It is a **client of the CLI** (`agent-switch <cmd>
-  --json`) and never re-implements profile logic; the CLI core stays
-  dependency-free. See [`gui/README.md`](gui/README.md). Running `agent-switch`
-  **with no command** launches it (same as `agent-switch gui`); if the GUI is
-  already running, no second copy starts.
+- **Desktop app** (`gui/`, Tauri) — Overview, Sessions, Accounts and Tools in one
+  window, Health / Activity / Notifications / Settings on the right of the top bar,
+  and a menu-bar popover with the accounts that need you. It is a **client of the
+  CLI** (`agent-switch <cmd> --json`) and never re-implements profile logic; the CLI
+  core stays dependency-free. See [`gui/README.md`](gui/README.md). Running
+  `agent-switch` **with no command** launches it (same as `agent-switch gui`); if
+  the app is already running, no second copy starts.
 
-Usage readout is per-provider: Claude exposes an OAuth `/usage` endpoint;
-**Codex and Gemini have no usage readout**, so they show identity only (never a
+Usage readout is per-provider: Claude and Codex report their own usage windows;
+**Antigravity has no usage readout**, so it shows identity only (never a
 fabricated number).
 
 ### Run it all automatically (on login)
@@ -409,35 +448,15 @@ To remove these prompts entirely, the builds need Apple Developer-ID signing +
 notarization (macOS) and an Authenticode certificate (Windows) — wired via
 release secrets when certificates are available.
 
-### Automatic account rotation (opt-in, off by default)
+### Near-limit notifications (opt-in, off by default)
 
 By default `agent-switch` only switches when **you** ask, and shows **your own**
-usage per profile (the same information the vendors' native `/usage` surfaces
-show). It never nags or ranks unless you turn rotation on.
-
-> **Usage-policy warning.** Quota-triggered rotation across accounts can violate
-> the providers' usage policies: it pools separate subscriptions to route around
-> per-account rate limits. Enabling it is your decision — but the risk is real,
-> and this notice states it plainly. Plain per-context profile switching
-> (private / work / client) and viewing your own usage are **not** affected;
-> this warning is specific to automated quota-driven rotation.
-
-Auto-switch is **globally off by default** and must be explicitly enabled. It is
-available **only for Claude** — the one provider with a usage readout to trigger
-on; Codex and Gemini have none, so they are profile-switch only and never show an
-auto-switch control. When enabled (`agent-switch autoswitch on [--threshold N]`),
-the background daemon moves the active Claude profile to the account with the most
-headroom once the active one hits the threshold. Switching only affects **new**
-sessions; running ones keep their environment.
-
-**On the record:** this capability was reviewed and **rejected** — first in the
-v1 adoption analysis, then in a two-round AI-council review that was **unanimous**
-that quota-triggered cross-account rotation crosses the providers' usage policies
-and recommended removal. It ships here anyway, off by default, as a deliberate
-decision that **overrode** that recommendation — not a relitigation that resolved
-it. The full rejection rationale is preserved verbatim in
-[`agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md`](agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md);
-read it before enabling.
+usage per profile — the same information the vendors' own `/usage` surfaces show.
+`agent-switch autoswitch on [--threshold N]` adds a notification when the active
+profile nears its limit, with a suggested profile to switch to. It **never
+switches by itself**: accepting the suggestion is your action. The earlier
+automatic quota rotation was removed; its review record stays in
+[`agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md`](agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md).
 
 ## Layout
 

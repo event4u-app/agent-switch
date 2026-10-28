@@ -1,11 +1,11 @@
 ---
-title: Tray GUI
-description: Launch the tray/menubar desktop app — a Tauri client of the agent-switch CLI with an embedded terminal, usage bars, and in-app updates.
+title: Desktop app
+description: The agent-switch desktop app — what needs you, which session runs on which account, what is left — a Tauri client of the CLI with a menu-bar popover.
 ---
 
-The tray/menubar GUI wraps the whole CLI in a desktop app. It's a client of the CLI's `--json` contract — it never re-implements profile or credential logic — with an embedded terminal so login, run, and takeover happen in-app.
+The desktop app wraps the whole CLI in one window plus a menu-bar popover. It's a client of the CLI's `--json` contract — it never re-implements profile or credential logic — with an embedded terminal so login, run, and takeover happen in-app.
 
-![Mock of the agent-switch tray GUI showing per-provider tabs (Claude active), and three anonymized profile cards with usage bars and active/live badges](/agent-switch/screenshots/gui-main.svg)
+![The Overview: what needs you, what runs right now, and what each account has left](/agent-switch/screenshots/app-overview.png)
 
 ## Launching
 
@@ -31,17 +31,30 @@ The GUI is a **Tauri app**: a Rust tray/window shell with a React frontend. It i
 
 ## Features
 
-- **Per-provider tabs** — Claude / Codex / Antigravity (only enabled providers are shown), each with usage bars.
-- **Profile management** — create, use, deactivate, rename, label, delete.
-- **Embedded terminal** — in-app login/run/takeover via the Rust pty.
-- **Sessions panel** — preview, takeover, compact, delete, restore, handoff.
-- **Notifications** — notification bell, toasts, and OS notifications.
-- **Codex "redeem reset"** — bank/redeem a rate-limit reset from the UI.
-- **Settings sub-tabs** — General, Alerts, Providers, Design (theme), Updates, Uninstall.
+The window has four places in the top bar — **Overview**, **Sessions**, **Accounts**,
+**Tools** — and on the right **Health**, **Activity**, **Notifications** and
+**Settings**. `⌘K` searches sessions, accounts, projects and pages; `⌘N` starts a
+session; `⌘,` opens Settings.
 
-The sessions panel lists each profile's sessions with a context-usage bar and inline actions (takeover, preview, compact, handoff):
+- **Overview** — what needs you (near-limit, sign-in, updates), what runs now, and
+  what each account has left, ranked by fresh headroom. Every number says how old it is.
+- **Sessions** — every session with its account; the session sheet shows a preview,
+  why it got that account, and an explicit **Move to another account** (switch live,
+  take over, hand off). Nothing moves on its own.
+- **Accounts** — sign-in state, capacity windows, session protection per account,
+  usage history, and **Projects & pools** (folder rules that start on an account or
+  on the pool member with the most left).
+- **Tools** — agent-config, rtk and the agent CLIs: installed, current, what's new;
+  installs and updates run in the built-in terminal so you see every line.
+- **Health** — readiness, start-at-login state and checks, with a repair where
+  agent-switch can make the change itself.
+- **Activity** — what agent-switch did, and why.
+- **Menu-bar popover** — a left click on the menu-bar icon shows the accounts that
+  need you and starts sessions; a right click keeps the classic Show / Quit menu.
 
-![Mock of the agent-switch sessions panel showing three sessions with context bars and a live session marked with a green dot](/agent-switch/screenshots/gui-sessions.svg)
+The session sheet lists the details of one session and the explicit ways to move it:
+
+![The session sheet: details, preview, why this account, and moving it to another account](/agent-switch/screenshots/app-session.png)
 
 ## In-app updates
 
@@ -49,19 +62,17 @@ A 24-hour auto-check loop plus an **"Update now"** button (Settings › Updates)
 
 ## agent-config companion banner
 
-The GUI detects the companion `@event4u/agent-config` CLI (repo `event4u-app/agent-config`) and shows an install/update banner with one-click install/upgrade. The banner also includes a share toggle that links your global `~/.claude` skills, commands, and agents into every profile.
+The app detects the companion `@event4u/agent-config` CLI (repo `event4u-app/agent-config`) and shows an install/update banner with one-click install/upgrade. The banner also includes a share toggle that links your global `~/.claude` skills, commands, and agents into every profile.
 
 ### Reading what an update contains
 
 When an update is available, every surface that announces it also lets you read
 it — no browser round-trip:
 
-- **Ecosystem › agent-config** is its home: the release title, its publish date
-  and the highlights are already expanded when you arrive.
-- **Profiles first-run card** and the **Tooling row** carry the same panel,
-  collapsed, so neither grows until you open it.
+- **Tools › agent-config** is its home: "What's new" with the release highlights.
+- The **Overview** lists the update under *Needs you* with a **See updates** button.
 - The **notification** carries the release's own first highlight and points at
-  Ecosystem › agent-config for the rest.
+  Tools for the rest.
 
 If you are several versions behind, each skipped release is listed separately
 (newest first) rather than only the last one. Every panel ends with a link to the
