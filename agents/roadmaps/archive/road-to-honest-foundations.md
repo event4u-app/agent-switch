@@ -10,9 +10,9 @@ status: in-progress
 > (defect register, pinned at `60bb238` = current `main`), the ChatGPT transcript, and
 > the redesign bundle. Verified against the tree on 2026-10-28.
 >
-> Sibling: [`road-to-the-session-control-redesign.md`](road-to-the-session-control-redesign.md)
+> Sibling: [`road-to-the-session-control-redesign.md`](../road-to-the-session-control-redesign.md)
 > renders what this roadmap produces. Everything that needs real multi-OS / provider
-> runs is parked in [`later/road-to-session-orchestration.md`](later/road-to-session-orchestration.md).
+> runs is parked in [`later/road-to-session-orchestration.md`](../later/road-to-session-orchestration.md).
 
 ## Goal
 

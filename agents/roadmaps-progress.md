@@ -2,14 +2,14 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change. A repository that does not commit this file has no git history for it — regenerate to see the current state.
 >
-> 3 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 2 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**1 / 48 steps done · 2%**
+**18 / 30 steps done · 60%**
 
 ```text
-█░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   2%
+████████████████████████░░░░░░░░░░░░░░░░   60%
 ```
 
 ## Open roadmaps
@@ -17,8 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-deferred-followups.md](roadmaps/road-to-deferred-followups.md) | 3 | 10 | 8 | 1 | 0 | 1 | 0 | █░░░░░░░░░ 11% |
-| 2 | [road-to-honest-foundations.md](roadmaps/road-to-honest-foundations.md) | 5 | 18 | 18 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
-| 3 | [road-to-the-session-control-redesign.md](roadmaps/road-to-the-session-control-redesign.md) | 5 | 21 | 21 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
+| 2 | [road-to-the-session-control-redesign.md](roadmaps/road-to-the-session-control-redesign.md) | 5 | 21 | 4 | 17 | 0 | 0 | 0 | ████████░░ 81% |
 
 ---
 
@@ -50,28 +49,16 @@
 | 2 | cross-platform + real-machine QA (needs a non-macOS box / human eyes) | ⬜ not started | 5 | 0 | 0 | 0 | 0% |
 | 3 | blocked on agent-config (AC) ecosystem contracts | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
 
-### [road-to-honest-foundations.md](roadmaps/road-to-honest-foundations.md)
-
-**honest foundations for the session-control redesign** — 0 / 18 done (0%)
-
-| # | Phase | State | Open | Done | Deferred | Cancelled | % |
-|---|---|---|---:|---:|---:|---:|---:|
-| 0 | Truth (docs and defaults that say the wrong thing) | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
-| 1 | Verified defects | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
-| 2 | Start at login, done right | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
-| 3 | Readouts the screens need (CLI `--json`, no secrets) | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
-| 4 | Protection and pools (data model + resolver) | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
-
 ### [road-to-the-session-control-redesign.md](roadmaps/road-to-the-session-control-redesign.md)
 
-**the session-control redesign (GUI, icon, README)** — 0 / 21 done (0%)
+**the session-control redesign (GUI, icon, README)** — 17 / 21 done (81%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
-| 0 | Foundation: tokens, fonts, primitives | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
-| 1 | View model + shell | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
-| 2 | Screens | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
-| 3 | Tray popover + icon | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
+| 0 | Foundation: tokens, fonts, primitives | ✅ done | 0 | 4 | 0 | 0 | 100% |
+| 1 | View model + shell | ✅ done | 0 | 4 | 0 | 0 | 100% |
+| 2 | Screens | 🟡 in progress | 1 | 7 | 0 | 0 | 88% |
+| 3 | Tray popover + icon | ✅ done | 0 | 2 | 0 | 0 | 100% |
 | 4 | README, banner, screenshots | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
 
 ## Age
@@ -81,6 +68,5 @@ Days since each active roadmap landed at its path and since its last ticked step
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
 | [road-to-deferred-followups.md](roadmaps/road-to-deferred-followups.md) | 91 | 91 |
-| [road-to-honest-foundations.md](roadmaps/road-to-honest-foundations.md) | — | — |
-| [road-to-the-session-control-redesign.md](roadmaps/road-to-the-session-control-redesign.md) | — | — |
+| [road-to-the-session-control-redesign.md](roadmaps/road-to-the-session-control-redesign.md) | 0 | 0 |
 

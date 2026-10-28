@@ -11,7 +11,7 @@ status: in-progress
 > the screenshots*, the new icon, an updated README with the new `info-banner.png`,
 > and AC-style screenshots with a hero section.
 >
-> Sibling: [`road-to-honest-foundations.md`](road-to-honest-foundations.md) supplies
+> Sibling: [`road-to-honest-foundations.md`](archive/road-to-honest-foundations.md) supplies
 > the backend data the new screens show. Where a screen needs data no backend
 > produces yet, the screen ships with the redesign's own honest empty/unknown state
 > (`Usage unknown`, `Monitor only`, `Planned`, `Liveness unknown`) — never demo data.

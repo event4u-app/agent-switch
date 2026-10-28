@@ -10,7 +10,7 @@ status: planned
 > because every item here needs real multi-OS runs, live provider logins or a soak
 > window that a single session cannot provide honestly.
 >
-> Pull trigger: [`road-to-honest-foundations.md`](../road-to-honest-foundations.md)
+> Pull trigger: [`road-to-honest-foundations.md`](../archive/road-to-honest-foundations.md)
 > closed (data model, readouts and defects in place).
 
 ## Phase 1 — Real session protection (pause and resume)
