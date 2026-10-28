@@ -24,7 +24,7 @@ function cssVar(name: string, fallback: string): string {
 
 /** xterm bound to the Rust pty, sized to its box (same wiring as the legacy
  *  EmbeddedTerminal). */
-function XtermBox({ args, backend, onExit }: { args: string[]; backend: TermBackend; onExit: (code: number | null) => void }) {
+export function XtermBox({ args, backend, onExit }: { args: string[]; backend: TermBackend; onExit: (code: number | null) => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const host = hostRef.current;

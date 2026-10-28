@@ -48,6 +48,8 @@ export interface Actions {
   /** Metadata-only handoff brief of a session for a target account; writes the
    *  brief file the seed command references by path. */
   handoffBrief?(sessionId: string, targetAccountId: string): Promise<{ brief: string; briefPath: string }>;
+  /** Relink drifted shared-setup links (`share sync`) against a source. */
+  shareSync?(source: string): Promise<void>;
 }
 
 /** `claude:work` → ["claude", "work"]. Names never contain ":" (PROFILE_NAME_RE). */
@@ -125,5 +127,19 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
       const p = session(id);
       return ipc.extractHandoffBrief(p.provider, p.profile, p.sessionId, splitAccountId(target)[0]);
     },
+    shareSync: thenReload((source: string) => ipc.shareSync(source)),
   };
+}
+
+// ---- Accounts lane: the foundation readouts on the same `act`, plus the
+// account extras. Interface merging keeps the declaration above untouched.
+
+export interface Actions extends Partial<import("./actions-foundations.js").FoundationActions> {
+  /** claude.ai in the account's own browser profile (`agent-switch web`); its
+   *  Settings › Usage page shows a free reset when Claude offers one. */
+  openUsagePage?(accountId: string): Promise<void>;
+}
+
+export function createAccountActions(): Pick<Actions, "openUsagePage"> {
+  return { openUsagePage: (id: string) => ipc.openWeb(splitAccountId(id)[1]) };
 }
