@@ -170,7 +170,8 @@ function makeBridge(seed) {
     },
     async dispatch({ program, args, options }) {
       if (process.env.SHOTS_DEBUG) log(`exec ${program} ${(args ?? []).join(" ")}`);
-      if (program === "agent-switch") return agentSwitch(args ?? [], options);
+      // The tray window runs read-only commands under its own scope names (as-read-*).
+      if (program === "agent-switch" || program.startsWith("as-read-")) return agentSwitch(args ?? [], options);
       if (program === "agent-config-version") return ok("18.2.0\n");
       unknown.add(`${program} ${(args ?? []).join(" ")}`);
       return fail(`${program}: not available in the screenshot harness`);
