@@ -6,7 +6,7 @@
 
 import * as ipc from "../ipc.js";
 import type { ToolingEntry } from "../ipc.js";
-import { getHideSummaries, getNextUsageRefreshAt, getNotifLastRead } from "../settings-store.js";
+import { getHideSummaries, getMutedKinds, getNextUsageRefreshAt, getNotifLastRead } from "../settings-store.js";
 import { latestToolVersion, toolUpdateAvailable, UPDATE_CHECK_TOOLS, versionToken } from "../tool-updates.js";
 import { hasUsageReadout, type ProfileRow, type UsageSnapshot } from "../transforms.js";
 import {
@@ -30,6 +30,7 @@ import {
   toolFromEntry,
 } from "./build.js";
 import type { ToolEntry, ViewModel } from "./types.js";
+import { loadUsage } from "./usage-loader.js";
 
 export function detectPlatform(): ViewModel["platform"] {
   const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
@@ -103,10 +104,10 @@ export async function loadViewModel(): Promise<ViewModel> {
   const readAt = Date.now();
 
   const profiles: ProfileRow[] = value(profilesR) ?? [];
-  const usageR = await Promise.allSettled(
-    profiles.map((p) => (hasUsageReadout(p.provider) ? ipc.profileUsage(p.provider, p.name) : Promise.resolve(null))),
-  );
-  const usage = (i: number): UsageSnapshot | null => value(usageR[i]) ?? null;
+  // Cached + cooldown-gated (usage-loader.ts): a reload after every action must
+  // not re-hit the rate-limited usage endpoint.
+  const usageSnaps = await loadUsage(profiles).catch(() => profiles.map(() => null));
+  const usage = (i: number): UsageSnapshot | null => (hasUsageReadout(profiles[i].provider) ? (usageSnaps[i] ?? null) : null);
   const protection = new Map((value(protectionR) ?? []).map((r) => [accountIdFromMember(r.profile), protectionFromRow(r)]));
   const auth = new Map((value(authR) ?? []).map((r) => [`${r.provider}:${r.name}`, authFromStatus(r, readAt)]));
   const pools = poolsFromRows(value(poolsR) ?? []);
@@ -127,6 +128,8 @@ export async function loadViewModel(): Promise<ViewModel> {
   const acTool = tools.find((t) => t.id === "agent-config");
 
   const lastRead = getNotifLastRead();
+  // Muted kinds stay out of the sheet and the unread badge (classic semantics).
+  const muted = new Set(getMutedKinds());
   const autostart = value(autostartR);
   const failures = [profilesR, toolingR, providersR].filter((r) => r.status === "rejected");
   const cliError = profilesR.status === "rejected" ? String(profilesR.reason?.message ?? profilesR.reason) : null;
@@ -142,7 +145,7 @@ export async function loadViewModel(): Promise<ViewModel> {
     tools,
     toolsCheckedAt,
     agentConfig: agentConfigFromStatus(value(acR), acTool?.latest ?? null, acR.status === "fulfilled" ? now : null),
-    notices: (value(notifsR) ?? []).map((n) => noticeFromNotification(n, lastRead)),
+    notices: (value(notifsR) ?? []).filter((n) => !muted.has(n.kind)).map((n) => noticeFromNotification(n, lastRead)),
     surfaces: surfacesFromApps(value(appsR) ?? []),
     activity: activityFromEntries(value(activityR) ?? []),
     readiness: deriveReadiness(true, profilesR.status === "fulfilled", failures.length > 0, doctor?.readiness ?? null),

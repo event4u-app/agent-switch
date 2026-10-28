@@ -281,8 +281,9 @@ export function loginArgs(provider: ProviderId, name: string): string[] {
   return ["add", name, "--provider", provider];
 }
 
-export function sessionArgs(provider: ProviderId, name: string): string[] {
-  return ["run", name, "--provider", provider];
+export function sessionArgs(provider: ProviderId, name: string, cwd?: string): string[] {
+  const args = ["run", name, "--provider", provider];
+  return cwd ? [...args, "--cwd", cwd] : args;
 }
 
 /** claude.ai in the persistent per-profile browser — a browser window, not a
@@ -920,9 +921,10 @@ export interface MappingRow {
 
 const MAPPING_PROVIDERS: readonly string[] = ["claude", "codex", "antigravity"];
 
-/** Parse `agent-switch mappings` (text only — the CLI has no `--json` for it):
- *  one `<path> -> <provider>/<target>` line per rule. Split on the LAST arrow so
- *  a path containing " -> " survives; unparseable lines are skipped. */
+/** Parse the TEXT form of `agent-switch mappings` — only for a CLI older than
+ *  `mappings --json`, which ignores the flag and prints text: one
+ *  `<path> -> <provider>/<target>` line per rule. Split on the LAST arrow so a
+ *  path containing " -> " survives; unparseable lines are skipped. */
 export function parseMappings(text: string): MappingRow[] {
   const rows: MappingRow[] = [];
   for (const line of text.split("\n")) {
@@ -938,8 +940,24 @@ export function parseMappings(text: string): MappingRow[] {
   return rows;
 }
 
+/** Folder rules via `mappings --json` → `[{path, provider, target}]`. A CLI
+ *  without `--json` prints the text form instead, which {@link parseMappings} reads. */
 export async function listMappings(): Promise<MappingRow[]> {
-  return parseMappings(await runCli(["mappings"]));
+  const out = await runCli(["mappings", "--json"]);
+  let rows: unknown;
+  try {
+    rows = JSON.parse(out);
+  } catch {
+    return parseMappings(out);
+  }
+  if (!Array.isArray(rows)) return [];
+  return rows.filter(
+    (r): r is MappingRow =>
+      !!r &&
+      typeof r.path === "string" &&
+      typeof r.target === "string" &&
+      MAPPING_PROVIDERS.includes(r.provider),
+  );
 }
 
 /** Map a folder to a profile or a pool (`map <name|pool:<id>> <dir> --provider P`). */

@@ -1,20 +1,22 @@
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
 import { cn } from "../../lib/utils.js";
 import type { DirResolution } from "../../ipc.js";
 import { AccountDot } from "../../ui/AccountDot.js";
 import { Badge } from "../../ui/Badge.js";
-import { Button } from "../../ui/Button.js";
+import { Button, IconButton } from "../../ui/Button.js";
 import { Card } from "../../ui/Card.js";
+import { RowMenu } from "../../ui/RowMenu.js";
 import { shortPath } from "../../ui/format.js";
 import { Segmented } from "../../ui/Segmented.js";
 import { Select } from "../../ui/Select.js";
 import { Switch } from "../../ui/Switch.js";
+import { TextInput } from "../../ui/TextInput.js";
 import { SectionHeader } from "../../ui/Typography.js";
 import { accountIdFromMember } from "../../vm/build.js";
 import { TOOL_LABEL } from "../../vm/rules.js";
 import { useAS } from "../../vm/store.js";
-import type { Tool } from "../../vm/types.js";
+import type { Account, Binding, Pool, Tool } from "../../vm/types.js";
 import { RowList } from "./rows.js";
 import { recentFolders } from "./logic.js";
 
@@ -43,6 +45,130 @@ function useExplain(dir: string, tool: Tool): Explain {
   return out;
 }
 
+/** Tools a folder binding can be made for (Gemini has no backend). */
+export const BINDING_TOOLS: Tool[] = ["claude", "codex"];
+
+/** Targets of a new binding for one tool: that tool's accounts, then the pools. */
+export function bindingTargets(accounts: readonly Account[], pools: readonly Pool[], tool: Tool): { value: string; label: string }[] {
+  return [
+    ...accounts.filter((a) => a.tool === tool).map((a) => ({ value: `account:${a.id}`, label: `${TOOL_LABEL[a.tool]} · ${a.name}` })),
+    ...pools.map((p) => ({ value: `pool:${p.id}`, label: `Pool · ${p.label}` })),
+  ];
+}
+
+/** `account:<id>` / `pool:<id>` → the `mapFolder` target. */
+export function bindingTarget(value: string, tool: Tool): { accountId: string } | { pool: string; tool: Tool } | null {
+  if (value.startsWith("account:")) return { accountId: value.slice("account:".length) };
+  if (value.startsWith("pool:")) return { pool: value.slice("pool:".length), tool };
+  return null;
+}
+
+/** Inline "Add binding" form: folder + tool + account or pool (`agent-switch map`). */
+function AddBinding({ initialDir, onDone }: { initialDir: string; onDone: () => void }) {
+  const s = useAS();
+  const [dir, setDir] = useState(initialDir);
+  const [tool, setTool] = useState<Tool>("claude");
+  const targets = bindingTargets(s.accounts, s.pools, tool);
+  const [target, setTarget] = useState("");
+  const [busy, setBusy] = useState(false);
+  const chosen = targets.some((t) => t.value === target) ? target : (targets[0]?.value ?? "");
+  const parsed = bindingTarget(chosen, tool);
+  const canSave = !!dir.trim() && !!parsed && !!s.act.mapFolder && !busy;
+
+  const save = () => {
+    if (!canSave || !parsed || !s.act.mapFolder) return;
+    setBusy(true);
+    s.act
+      .mapFolder(dir.trim(), parsed)
+      .then(() => {
+        s.toast({ text: `Bound ${shortPath(dir.trim())} for ${TOOL_LABEL[tool]}.`, tone: "ok" });
+        onDone();
+      })
+      .catch((e: unknown) => s.toast({ text: `Couldn't add the binding: ${e instanceof Error ? e.message : String(e)}`, tone: "alert" }))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <Card className="mb-2 flex flex-col gap-3 p-4" aria-label="Add binding">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex min-w-[220px] flex-1 flex-col gap-1.5">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-ac-muted">Folder</span>
+          <TextInput
+            mono
+            autoFocus
+            aria-label="Folder to bind"
+            placeholder="/full/path/to/project"
+            value={dir}
+            onChange={(e) => setDir(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") save();
+              if (e.key === "Escape") onDone();
+            }}
+          />
+        </label>
+        <Segmented label="Binding tool" value={tool} onChange={setTool} options={BINDING_TOOLS.map((t) => ({ value: t, label: TOOL_LABEL[t] }))} />
+        <div className="min-w-[200px]">
+          <Select
+            label="Starts on"
+            value={chosen}
+            onChange={setTarget}
+            disabled={targets.length === 0}
+            options={targets.length ? targets : [{ value: "", label: `No ${TOOL_LABEL[tool]} account or pool yet`, disabled: true }]}
+          />
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] text-ac-muted">The folder and its subfolders start on this account — or, for a pool, on its account with the most left.</p>
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" onClick={onDone}>
+            Cancel
+          </Button>
+          <Button size="sm" variant="primary" disabled={!canSave} onClick={save}>
+            Add binding
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/** Row ⋯ menu: remove the binding (`agent-switch unmap <folder> --provider P`). */
+function BindingMenu({ rule }: { rule: Binding }) {
+  const s = useAS();
+  const unmap = s.act.unmapFolder;
+  if (!unmap) return null;
+  return (
+    <RowMenu
+      items={[
+        {
+          id: "remove",
+          label: "Remove binding",
+          icon: <Trash2 />,
+          danger: true,
+          onSelect: () =>
+            s.open({
+              kind: "confirm",
+              title: "Remove this binding?",
+              body: `${shortPath(rule.match.value)} stops starting on its bound ${rule.tool === "any" ? "" : `${TOOL_LABEL[rule.tool]} `}target. You can add it again any time.`,
+              confirm: "Remove binding",
+              danger: true,
+              onConfirm: () => {
+                unmap(rule.match.value, rule.tool === "any" ? undefined : rule.tool).catch((e: unknown) =>
+                  s.toast({ text: `Couldn't remove the binding: ${e instanceof Error ? e.message : String(e)}`, tone: "alert" }),
+                );
+              },
+            }),
+        },
+      ]}
+      trigger={
+        <IconButton label={`Binding menu for ${rule.match.value}`}>
+          <MoreHorizontal />
+        </IconButton>
+      }
+    />
+  );
+}
+
 /** Accounts › Projects & pools. Bundle `VP`. */
 export function ProjectsPools() {
   const s = useAS();
@@ -50,6 +176,7 @@ export function ProjectsPools() {
   const [dir, setDir] = useState(folders[0] ?? "");
   const [tool, setTool] = useState<Tool>("claude");
   const ex = useExplain(dir, tool);
+  const [adding, setAdding] = useState(false);
   const account = ex.state === "done" ? s.accountById(accountIdFromMember(ex.res.profile) ?? "") : undefined;
   const why = ex.state === "done" ? ex.res.why : ex.state === "error" ? [ex.message] : [];
 
@@ -108,7 +235,13 @@ export function ProjectsPools() {
           title="Project bindings"
           count={s.rules.length}
           actions={
-            <Button size="sm" variant="ghost" disabled title="Not in this window yet — bind a folder with `agent-switch map <account> <folder>`.">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!s.act.mapFolder || adding}
+              title={s.act.mapFolder ? undefined : "Binding folders isn't available in this window."}
+              onClick={() => setAdding(true)}
+            >
               <Plus /> Add binding
             </Button>
           }
@@ -116,6 +249,7 @@ export function ProjectsPools() {
         <p className="px-1 pb-2 text-xs text-ac-muted">
           First match wins. A binding to a pool lets the pool pick the account with the most left — work and personal never mix.
         </p>
+        {adding && <AddBinding initialDir={dir} onDone={() => setAdding(false)} />}
         <Card className="p-1">
           <RowList>
             {s.rules.map((r) => {
@@ -146,8 +280,11 @@ export function ProjectsPools() {
                   <span className="hidden text-right font-ac-mono text-[11px] text-ac-faint md:block" title="Matches in the last 7 days">
                     {r.hits == null ? "—" : `${r.hits}×`}
                   </span>
-                  <span className="col-start-2 row-start-1 flex justify-end md:col-start-auto md:row-start-auto" title="Pausing a binding isn't supported yet.">
-                    <Switch label={`Binding ${r.match.value}`} checked={r.enabled} onChange={() => {}} disabled />
+                  <span className="col-start-2 row-start-1 flex items-center justify-end gap-2 md:col-start-auto md:row-start-auto">
+                    <span title="Pausing a binding isn't supported yet.">
+                      <Switch label={`Binding ${r.match.value}`} checked={r.enabled} onChange={() => {}} disabled />
+                    </span>
+                    <BindingMenu rule={r} />
                   </span>
                 </div>
               );

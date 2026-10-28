@@ -20,7 +20,7 @@ import type {
 import type { AppNotification } from "../notifications.js";
 import type { ProfileRow, ProvidersStatus, SessionRow, UsageSnapshot } from "../transforms.js";
 import { countdown } from "../ui/format.js";
-import { bindingWindow, isStale, maxUtilization, toneFor, toolStatus } from "./rules.js";
+import { TOOL_LABEL, bindingWindow, isStale, maxUtilization, toneFor, toolStatus } from "./rules.js";
 import type {
   Account,
   AccountState,
@@ -349,7 +349,7 @@ export function deriveAttention(accounts: Account[], tools: ToolEntry[], toolsCh
       out.push({
         id: `signin:${a.id}`,
         kind: "signed-out",
-        title: `${a.name} needs a new sign-in`,
+        title: `${TOOL_LABEL[a.tool]} · ${a.name} needs a new sign-in`,
         detail: a.auth.reason ?? "The stored login can no longer be refreshed.",
         accountId: a.id,
         primary: "Sign in",

@@ -6,6 +6,7 @@ import { Button, IconButton } from "../ui/Button.js";
 import { updateCount } from "../vm/rules.js";
 import { useAS, type Screen } from "../vm/store.js";
 import { CommandSearch } from "./CommandSearch.js";
+import { checksToLook } from "./screens/health.js";
 
 const PLACES: { id: Exclude<Screen, "activity" | "health" | "settings">; label: string; icon: typeof House }[] = [
   { id: "home", label: "Overview", icon: House },
@@ -30,7 +31,7 @@ function useWindowWidth(): number {
 export function TopBar({ isMac }: { isMac: boolean }) {
   const s = useAS();
   const width = useWindowWidth();
-  const toCheck = s.checks.filter((c) => c.state !== "ok").length;
+  const toCheck = checksToLook(s.checks).length;
   const label = READINESS_LABEL[s.readiness];
   const tone =
     s.readiness === "ready" ? (toCheck ? "warn" : "ok") : s.readiness === "starting" ? "neutral" : s.readiness === "degraded" ? "warn" : "alert";

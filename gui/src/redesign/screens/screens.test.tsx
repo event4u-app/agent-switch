@@ -6,6 +6,7 @@ import { emptyViewModel } from "../../vm/load.js";
 import { ASProvider, useAS, type Overlay, type Screen } from "../../vm/store.js";
 import type { Account, Session, ViewModel } from "../../vm/types.js";
 import { OverlayHost, ScreenHost } from "../Hosts.js";
+import { startPlan, startPreview } from "./start-session.js";
 import { terminalRun } from "./terminal-sheet.js";
 
 // jsdom has no canvas/matchMedia for xterm and no Tauri pty: stub both.
@@ -118,7 +119,7 @@ afterEach(cleanup);
 describe("Overview", () => {
   it("shows needs, running sessions and what is left", () => {
     mount(fixture());
-    expect(screen.getByText("2 of 2 accounts ready · 1 sessions working · 1 needs you")).toBeTruthy();
+    expect(screen.getByText("2 of 2 accounts ready · 1 session working · 1 needs you")).toBeTruthy();
     expect(screen.getByText("side is at 94 % of its 5h window")).toBeTruthy();
     expect(screen.getByText("agent-config")).toBeTruthy();
     expect(screen.queryByText("old")).toBeNull();
@@ -190,9 +191,21 @@ describe("Start session", () => {
     expect(screen.getByText("Automatic → work")).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Gemini" }).getAttribute("aria-disabled")).toBe("true");
     expect(screen.getByRole("radio", { name: "Claude app" }).getAttribute("title")).toBe("No Claude app found on this computer");
-    expect(screen.getByText("agent-switch run work --provider claude")).toBeTruthy();
+    const preview = document.querySelector('[title^="agent-switch run work --provider claude --cwd "]');
+    expect(preview?.textContent).toMatch(/ \$ claude$/);
+    expect(screen.queryByText(/Not available here: starting in/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Start Claude/ }));
     expect(screen.getByTestId("where").textContent).toBe("home/terminal");
+  });
+
+  it("starts the terminal in the chosen folder via --cwd and previews `<folder> $ claude`", () => {
+    const work = acc("work");
+    const ready = { ...work, isDefault: true };
+    const plan = startPlan(ready, "claude", "terminal", null, "/Users/x/dev/app");
+    expect(plan).toEqual({ kind: "terminal", args: ["run", "work", "--provider", "claude", "--cwd", "/Users/x/dev/app"] });
+    expect(startPreview("codex", "terminal", "/tmp/app", null, "work")).toEqual({ prompt: "/tmp/app", command: "codex" });
+    expect(startPreview("claude", "terminal", "  ", null, "work").prompt).toBe("~/.agent-switch");
+    expect(startPreview("claude", "desktop-app", "/tmp/app", "claude-desktop", "work").command).toBe("agent-switch open claude-desktop work");
   });
 
   it("cannot start without a default account", () => {

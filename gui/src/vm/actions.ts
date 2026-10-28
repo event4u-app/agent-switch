@@ -15,6 +15,8 @@ import * as ipc from "../ipc.js";
 import { requestDesktopPermission, type DesktopPermission } from "../notifications.js";
 import type { ProfileLabel, ProviderId, ProviderSurface } from "../transforms.js";
 import { checkForUpdate, type UpdateCheck } from "../updates.js";
+import { dropUsageSnapshot } from "../usage-cache.js";
+import { forceUsageOnNextLoad, restartUsageCountdown } from "./usage-loader.js";
 import type { Session, ViewModel } from "./types.js";
 
 export interface Actions {
@@ -83,10 +85,21 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
     updateAccount: thenReload(async (id: string, patch: { name?: string; label?: ProfileLabel | null }) => {
       const [provider, name] = splitAccountId(id);
       if (patch.label !== undefined) await ipc.setProfileLabel(provider, name, patch.label);
-      if (patch.name && patch.name !== name) await ipc.renameProfile(provider, name, patch.name);
+      if (patch.name && patch.name !== name) {
+        await ipc.renameProfile(provider, name, patch.name);
+        // A reused name must never show a prior account's numbers; dropping the
+        // attempt stamps also lets the renamed account fetch right away.
+        dropUsageSnapshot(`${provider}/${name}`);
+        dropUsageSnapshot(`${provider}/${patch.name}`);
+      }
     }),
     redeemReset: thenReload((id: string) => ipc.redeemReset(...splitAccountId(id))),
-    refreshUsage: reload,
+    // Manual refresh: past the per-account cooldown, and the countdown restarts.
+    refreshUsage: async () => {
+      forceUsageOnNextLoad();
+      restartUsageCountdown();
+      await reload();
+    },
     recheckTools: reload,
     trashSession: async (id: string) => {
       const p = session(id);

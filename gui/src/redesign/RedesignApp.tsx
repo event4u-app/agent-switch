@@ -6,14 +6,20 @@ import { createFoundationActions } from "../vm/actions-foundations.js";
 import { emptyViewModel, loadViewModel } from "../vm/load.js";
 import { ASProvider, useAS } from "../vm/store.js";
 import type { ViewModel } from "../vm/types.js";
+import { useEngines } from "./engines/index.js";
+import { withSwitchEffects } from "./engines/switch-effects.js";
 import { OverlayHost, ScreenHost } from "./Hosts.js";
 import { Shell } from "./Shell.js";
 import { useTrayRequests } from "./tray/bridge.js";
 
 /** One `act`: the session/tool actions, the foundation readouts (protection,
- *  pools, folder rules) and the account extras. */
+ *  pools, folder rules) and the account extras — switches carry their
+ *  notification and shared-setup relink (engines/switch-effects.ts). */
 function allActions(getVm: () => ViewModel, reload: () => Promise<void>): Actions {
-  return { ...createActions(getVm, reload), ...createFoundationActions(getVm, reload), ...createAccountActions() };
+  return withSwitchEffects(
+    { ...createActions(getVm, reload), ...createFoundationActions(getVm, reload), ...createAccountActions() },
+    getVm,
+  );
 }
 
 function StoreToaster() {
@@ -24,6 +30,7 @@ function StoreToaster() {
 function Frame() {
   const s = useAS();
   useTrayRequests(s.open);
+  useEngines();
   return (
     <>
       <Shell isMac={s.platform === "mac"}>
@@ -35,8 +42,8 @@ function Frame() {
   );
 }
 
-/** The redesigned window, fed by the real CLI (bundle `jR`). Mounted only
- *  behind the redesign flag — see flag.ts. */
+/** The main window, fed by the real CLI (bundle `jR`), with its background
+ *  engines (engines/*). */
 export default function RedesignApp() {
   return (
     <AcRoot className="h-full">

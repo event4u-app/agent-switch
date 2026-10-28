@@ -6,6 +6,8 @@ import { AcRoot } from "../../ui/AcRoot.js";
 import { createActions } from "../../vm/actions.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
 import { ASProvider, useAS } from "../../vm/store.js";
+import type { ViewModel } from "../../vm/types.js";
+import { withSwitchEffects } from "../engines/switch-effects.js";
 import { forwardable, forwardToMain, openMainWindow } from "./bridge.js";
 import { Tray } from "./Tray.js";
 
@@ -81,11 +83,16 @@ function TrayFrame() {
   );
 }
 
+/** Switching from the tray carries the same notice + relink as in the window. */
+function trayActions(getVm: () => ViewModel, reload: () => Promise<void>) {
+  return withSwitchEffects(createActions(getVm, reload), getVm);
+}
+
 /** Second entry (tray.html): the tray popover over the same view model. */
 export default function TrayApp() {
   return (
     <AcRoot>
-      <ASProvider initial={emptyViewModel()} load={loadViewModel} actions={createActions}>
+      <ASProvider initial={emptyViewModel()} load={loadViewModel} actions={trayActions}>
         <TrayFrame />
       </ASProvider>
     </AcRoot>

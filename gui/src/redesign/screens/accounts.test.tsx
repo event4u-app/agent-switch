@@ -225,6 +225,54 @@ describe("Projects & pools", () => {
   });
 });
 
+describe("Projects & pools — bindings", () => {
+  const rule = { id: "claude:/x/a", match: { kind: "folder" as const, value: "/x/a" }, tool: "claude" as const, target: { kind: "account" as const, accountId: "claude:side" }, enabled: true, hits: null };
+
+  it("adds a binding through an inline form (folder + tool + account or pool)", async () => {
+    const mapFolder = vi.fn(async () => {});
+    mount(fixture({ sessions: [] }), { tab: "projects", act: { mapFolder, explainFolder: vi.fn(async () => ({ profile: null, configDir: null, why: [] })) } });
+    fireEvent.click(screen.getByRole("button", { name: /Add binding/ }));
+    fireEvent.change(screen.getByLabelText("Folder to bind"), { target: { value: " /x/new " } });
+    const buttons = screen.getAllByRole("button", { name: "Add binding" });
+    fireEvent.click(buttons[buttons.length - 1]);
+    await waitFor(() => expect(mapFolder).toHaveBeenCalledWith("/x/new", { accountId: "claude:work" }));
+    await waitFor(() => expect(screen.queryByLabelText("Folder to bind")).toBeNull());
+  });
+
+  it("lists pools as targets and maps a pool for the chosen tool", async () => {
+    const { bindingTargets, bindingTarget } = await import("./projects-pools.js");
+    const vm = fixture();
+    expect(bindingTargets(vm.accounts, vm.pools, "codex")).toEqual([{ value: "pool:clients", label: "Pool · Clients" }]);
+    expect(bindingTargets(vm.accounts, vm.pools, "claude").map((t) => t.value)).toEqual([
+      "account:claude:work",
+      "account:claude:side",
+      "account:claude:personal",
+      "pool:clients",
+    ]);
+    expect(bindingTarget("pool:clients", "codex")).toEqual({ pool: "clients", tool: "codex" });
+    expect(bindingTarget("account:claude:side", "claude")).toEqual({ accountId: "claude:side" });
+    expect(bindingTarget("", "claude")).toBeNull();
+  });
+
+  it("removes a binding from its row menu after a confirm", async () => {
+    const unmapFolder = vi.fn(async () => {});
+    mount(fixture({ rules: [rule] }), { tab: "projects", act: { unmapFolder } });
+    const trigger = screen.getByRole("button", { name: "Binding menu for /x/a" });
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Remove binding/ }));
+    expect(screen.getByText("Remove this binding?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove binding" }));
+    await waitFor(() => expect(unmapFolder).toHaveBeenCalledWith("/x/a", "claude"));
+  });
+
+  it("keeps the per-binding switch disabled with its reason", () => {
+    mount(fixture({ rules: [rule] }), { tab: "projects" });
+    const sw = screen.getByRole("switch", { name: "Binding /x/a" });
+    expect(sw.hasAttribute("disabled") || sw.getAttribute("aria-disabled") === "true").toBe(true);
+    expect(sw.closest("[title]")?.getAttribute("title")).toBe("Pausing a binding isn't supported yet.");
+  });
+});
+
 function sessionAt(cwd: string): ViewModel["sessions"][number] {
   return {
     id: "claude:s1",

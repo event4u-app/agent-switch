@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import * as ipc from "../../../ipc.js";
 import type { AutoSwitchMap } from "../../../ipc.js";
 import { getAutoSwitchGlobal, setAutoSwitchGlobalFlag } from "../../../settings-store.js";
+import { fireNearLimitIfCrossed } from "../../engines/near-limit.js";
 import type { AutoSwitchTag, ProviderId } from "../../../transforms.js";
 import { AccountDot } from "../../../ui/AccountDot.js";
 import { Segmented } from "../../../ui/Segmented.js";
@@ -178,7 +179,11 @@ export function ProtectionSettings() {
                       <Select
                         ariaLabel={`Near-limit notify threshold for ${name}`}
                         value={String(cfg.threshold)}
-                        onChange={(v) => void writeAuto(pid, cfg.enabled, Number(v), cfg.tag)}
+                        onChange={(v) =>
+                          void writeAuto(pid, cfg.enabled, Number(v), cfg.tag).then(() =>
+                            cfg.enabled ? fireNearLimitIfCrossed(s.accounts, pid, Number(v), cfg.tag) : false,
+                          )
+                        }
                         options={NOTIFY_THRESHOLD_CHOICES.map((t) => ({ value: String(t), label: `${t}%` }))}
                       />
                     </div>

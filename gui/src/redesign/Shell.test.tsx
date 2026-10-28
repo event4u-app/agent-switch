@@ -12,13 +12,15 @@ function ScreenName() {
   return <p data-testid="where">{`${s.screen}/${s.overlay.kind}`}</p>;
 }
 
-function renderShell() {
+function renderShell(over: Partial<ReturnType<typeof emptyViewModel>> = {}) {
   const vm = {
     ...emptyViewModel(),
+    ...over,
     accounts: [
       accountFromProfile({ provider: "claude", name: "work", identity: null, label: null, active: true, liveSessions: 0 }, null),
     ],
     readiness: "ready" as const,
+    ...(over.readiness ? { readiness: over.readiness } : {}),
   };
   return render(
     <AcRoot>
@@ -39,6 +41,21 @@ describe("redesign shell", () => {
     const bar = document.querySelector("header[data-tauri-drag-region]")!;
     expect(bar.className).toContain("pl-[84px]");
     expect(screen.getByRole("navigation", { name: "Places" }).querySelectorAll("button")).toHaveLength(4);
+    expect(screen.getByRole("button", { name: "Health: Ready" })).toBeTruthy();
+  });
+
+  it("the Health pill counts only warn + fail checks, like the Health screen", () => {
+    renderShell({
+      checks: [
+        { id: "a", title: "A", detail: "", state: "ok" },
+        { id: "b", title: "B", detail: "", state: "info" },
+        { id: "c", title: "C", detail: "", state: "warn" },
+        { id: "d", title: "D", detail: "", state: "fail" },
+      ],
+    });
+    expect(screen.getByRole("button", { name: "Health: Ready, 2 to check" })).toBeTruthy();
+    cleanup();
+    renderShell({ checks: [{ id: "b", title: "B", detail: "", state: "info" }] });
     expect(screen.getByRole("button", { name: "Health: Ready" })).toBeTruthy();
   });
 

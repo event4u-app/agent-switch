@@ -16,16 +16,25 @@ import type { Account, Tool } from "../../vm/types.js";
 import { appFor, appUnavailableReason, AUTO, canStartOn, recentFolders, resolveStart, START_TOOLS, toolCanTakeWork } from "./logic.js";
 
 const PICK = "__pick";
-/** The built-in terminal's pty starts here (src-tauri pty.rs) — it cannot cd. */
+/** The built-in terminal's pty starts here (src-tauri pty.rs); a start with a
+ *  folder runs there via `--cwd` instead. */
 export const TERMINAL_HOME = "~/.agent-switch";
 
 type OpenIn = "terminal" | "desktop-app";
 
-/** What the Start button runs; null when it can't start. */
-export function startPlan(account: Account | null, tool: Tool, openIn: OpenIn, appId: string | null) {
+/** What the Start button runs; null when it can't start. A terminal start runs
+ *  in `folder` (`agent-switch run … --cwd`); the desktop apps take no folder. */
+export function startPlan(account: Account | null, tool: Tool, openIn: OpenIn, appId: string | null, folder = "") {
   if (!canStartOn(account) || !account || tool === "gemini") return null;
   if (openIn === "desktop-app") return appId ? { kind: "app" as const, appId, accountId: account.id } : null;
-  return { kind: "terminal" as const, args: sessionArgs(tool as ProviderId, account.name) };
+  return { kind: "terminal" as const, args: sessionArgs(tool as ProviderId, account.name, folder.trim() || undefined) };
+}
+
+/** The preview line: `<folder> $ claude` for a terminal start (the built-in
+ *  terminal's home when no folder is chosen), the open command for an app. */
+export function startPreview(tool: Tool, openIn: OpenIn, folder: string, appId: string | null, accountName: string | null) {
+  if (openIn === "desktop-app") return { prompt: "~", command: `agent-switch open ${appId ?? "?"} ${accountName ?? "?"}` };
+  return { prompt: folder.trim() ? shortPath(folder.trim()) : TERMINAL_HOME, command: tool };
 }
 
 /** Bundle `gR`, dialog 580. */
@@ -52,9 +61,9 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
   const account = pick === AUTO ? resolution.account : (s.accountById(pick) ?? null);
   const appWhy = appUnavailableReason(s, tool);
   const effectiveOpenIn: OpenIn = appWhy ? "terminal" : openIn;
-  const plan = startPlan(account, tool, effectiveOpenIn, appFor(s, tool));
+  const plan = startPlan(account, tool, effectiveOpenIn, appFor(s, tool), folder);
   const folders = Array.from(new Set([...(cwd ? [cwd] : []), ...recent]));
-  const command = effectiveOpenIn === "desktop-app" ? `agent-switch open ${appFor(s, tool)} ${account?.name ?? "?"}` : `agent-switch run ${account?.name ?? "?"} --provider ${tool}`;
+  const preview = startPreview(tool, effectiveOpenIn, folder, appFor(s, tool), account?.name ?? null);
   const why = pick === AUTO ? resolution.why : [`Picked by you: ${account?.name ?? "?"}`];
 
   const start = () => {
@@ -169,9 +178,9 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
           />
         </div>
         <div className="flex flex-col gap-2 rounded-lg border border-ac-line bg-ac-bg p-3">
-          <span className="font-ac-mono text-xs text-ac-text">
-            <span className="text-ac-faint">{effectiveOpenIn === "terminal" ? TERMINAL_HOME : "~"} $ </span>
-            {command}
+          <span className="font-ac-mono text-xs text-ac-text" title={plan?.kind === "terminal" ? `agent-switch ${plan.args.join(" ")}` : undefined}>
+            <span className="text-ac-faint">{preview.prompt} $ </span>
+            {preview.command}
           </span>
           <ul className="flex flex-col gap-1">
             {why.map((w) => (
@@ -179,11 +188,8 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
                 · {w}
               </li>
             ))}
-            {folder && (
-              <li className="text-[11px] text-ac-muted">
-                · Not available here: starting in {shortPath(folder)} —{" "}
-                {effectiveOpenIn === "terminal" ? `the built-in terminal opens in ${TERMINAL_HOME}.` : "the app opens without a folder."}
-              </li>
+            {folder && effectiveOpenIn === "desktop-app" && (
+              <li className="text-[11px] text-ac-muted">· The {TOOL_LABEL[tool]} app opens without a folder.</li>
             )}
           </ul>
         </div>

@@ -254,8 +254,8 @@ fn main() {
                     "show" => show_main(app),
                     _ => {}
                 })
-                // Left click: the tray popover when the frontend enabled it,
-                // else the main window. Right click keeps the native menu.
+                // Left click: the tray popover once the main window enabled it
+                // (on mount), else the main window. Right click keeps the native menu.
                 .on_tray_icon_event(|tray_icon, event| {
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,

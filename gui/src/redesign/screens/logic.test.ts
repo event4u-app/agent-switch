@@ -185,7 +185,7 @@ describe("near-limit options", () => {
 describe("overview subtitle", () => {
   it("counts ready accounts, working sessions and needs", () => {
     expect(overviewSub({ accounts: [acc("a"), acc("b", { state: "signed-out" })], sessions: [ses("x"), ses("y", { state: "idle" })], attention: [] })).toBe(
-      "1 of 2 accounts ready · 1 sessions working · nothing needs you",
+      "1 of 2 accounts ready · 1 session working · nothing needs you",
     );
   });
 });

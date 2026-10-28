@@ -139,6 +139,7 @@ describe("ipc", () => {
   it("loginArgs / sessionArgs build the args the embedded terminal runs (no external window)", () => {
     expect(loginArgs("codex", "work")).toEqual(["add", "work", "--provider", "codex"]);
     expect(sessionArgs("antigravity", "g")).toEqual(["run", "g", "--provider", "antigravity"]);
+    expect(sessionArgs("claude", "w", "/a b")).toEqual(["run", "w", "--provider", "claude", "--cwd", "/a b"]);
   });
 
   it("loginArgs / assertValidName reject an unsafe profile name (injection guard)", () => {
@@ -506,10 +507,15 @@ describe("foundations (protection, pools, folder rules, auth, doctor, activity, 
     ]);
   });
 
-  it("listMappings runs `mappings`; mapFolder / unmapFolder build the rule commands", async () => {
+  it("listMappings runs `mappings --json` (text fallback); mapFolder / unmapFolder build the rule commands", async () => {
+    ok('[{"path":"/a","provider":"claude","target":"work"},{"path":"/g","provider":"gemini","target":"x"}]');
+    expect(await listMappings()).toEqual([{ path: "/a", provider: "claude", target: "work" }]);
+    expect(create).toHaveBeenLastCalledWith("agent-switch", ["mappings", "--json"]);
+    // An older CLI ignores --json and prints the text rows.
     ok("/a -> claude/work\n");
     expect(await listMappings()).toEqual([{ path: "/a", provider: "claude", target: "work" }]);
-    expect(create).toHaveBeenLastCalledWith("agent-switch", ["mappings"]);
+    ok("No directory mappings. Create one with: agent-switch map <profile> [dir]\n");
+    expect(await listMappings()).toEqual([]);
 
     ok("");
     await mapFolder("claude", { profile: "work" }, "/a");

@@ -256,7 +256,7 @@ export function overviewSub(vm: Pick<ViewModel, "accounts" | "sessions" | "atten
   const ready = vm.accounts.filter((a) => a.state === "ready" || a.state === "near-limit").length;
   const working = vm.sessions.filter((s) => s.state === "working").length;
   const n = vm.attention.length;
-  return [`${ready} of ${vm.accounts.length} accounts ready`, `${working} sessions working`, n ? `${n} need${n === 1 ? "s" : ""} you` : "nothing needs you"].join(
+  return [`${ready} of ${vm.accounts.length} accounts ready`, `${working} session${working === 1 ? "" : "s"} working`, n ? `${n} need${n === 1 ? "s" : ""} you` : "nothing needs you"].join(
     " · ",
   );
 }

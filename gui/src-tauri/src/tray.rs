@@ -3,9 +3,9 @@
 // native menu (Show / Quit) stays on right click as the fallback. Only the
 // window shell lives here — the popover's content is the React side.
 //
-// The popover is opt-in from the frontend: the redesigned main window calls
-// `set_tray_popover(true)` on mount. Until then (classic window, or a frontend
-// that never says so) a left click keeps showing the main window as before.
+// The main window enables the popover with `set_tray_popover(true)` on mount
+// (always — it is the only window tree). Before that call lands, a left click
+// shows the main window, so a frontend that failed to load is still reachable.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;

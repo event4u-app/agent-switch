@@ -203,7 +203,7 @@ describe("protection and auth on an account", () => {
   it("raises a sign-in attention item for a signed-out account", () => {
     const a = accountFromProfile(row(), null, { auth: authFromStatus(authRow({ state: "sign-in-needed", detail: "Login ended." }), NOW) });
     const [item] = deriveAttention([a], [], null, NOW);
-    expect(item).toMatchObject({ kind: "signed-out", accountId: "claude:work", detail: "Login ended.", at: NOW });
+    expect(item).toMatchObject({ kind: "signed-out", title: "Claude · work needs a new sign-in", accountId: "claude:work", detail: "Login ended.", at: NOW });
   });
 });
 
