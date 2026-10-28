@@ -30,6 +30,12 @@ export interface ConfirmRequest {
   onConfirm: () => void;
 }
 
+export interface TerminalRun {
+  args: string[];
+  title: string;
+  kicker?: string;
+}
+
 export type Overlay =
   | { kind: "none" }
   | { kind: "session"; id: string }
@@ -41,6 +47,9 @@ export type Overlay =
   | { kind: "reauth"; accountId: string }
   | { kind: "fix"; checkId: string }
   | { kind: "terminal"; toolId: string; action: "install" | "update" }
+  /** Any `agent-switch <args>` run in the built-in terminal (start, take over,
+   *  hand off, compact). Narrow with `"run" in overlay`. */
+  | { kind: "terminal"; run: TerminalRun }
   | ({ kind: "confirm" } & ConfirmRequest);
 
 export interface Toast {

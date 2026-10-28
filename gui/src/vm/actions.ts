@@ -43,6 +43,11 @@ export interface Actions {
   selfUpdate?(): Promise<ipc.SelfUpdateResult>;
   uninstall?(): Promise<void>;
   quit?(): Promise<void>;
+  /** First turns of a session, read on demand (ADR-002). */
+  previewSession?(sessionId: string): Promise<{ role: "you" | "agent"; text: string }[]>;
+  /** Metadata-only handoff brief of a session for a target account; writes the
+   *  brief file the seed command references by path. */
+  handoffBrief?(sessionId: string, targetAccountId: string): Promise<{ brief: string; briefPath: string }>;
 }
 
 /** `claude:work` → ["claude", "work"]. Names never contain ":" (PROFILE_NAME_RE). */
@@ -111,5 +116,14 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
     selfUpdate: () => ipc.selfUpdate(),
     uninstall: () => ipc.uninstall(),
     quit: () => ipc.quitApp(),
+    previewSession: async (id: string) => {
+      const p = session(id);
+      const res = await ipc.sessionPreview(p.provider, p.sessionId, p.profile);
+      return res.messages.map((m) => ({ role: m.role === "user" ? ("you" as const) : ("agent" as const), text: m.text }));
+    },
+    handoffBrief: (id: string, target: string) => {
+      const p = session(id);
+      return ipc.extractHandoffBrief(p.provider, p.profile, p.sessionId, splitAccountId(target)[0]);
+    },
   };
 }
