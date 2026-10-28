@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import trayCapability from "../src-tauri/capabilities/tray.json?raw";
 // Vitest runs from gui/.
 import { describe, expect, it } from "vitest";
 import { trayScope } from "./ipc.js";
@@ -10,7 +10,7 @@ interface Entry {
   args: Arg[] | boolean;
 }
 
-const cap = JSON.parse(readFileSync("src-tauri/capabilities/tray.json", "utf8")) as {
+const cap = JSON.parse(trayCapability) as {
   description: string;
   permissions: (string | { identifier: string; allow: Entry[] })[];
 };
