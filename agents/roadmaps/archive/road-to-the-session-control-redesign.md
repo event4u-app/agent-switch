@@ -11,7 +11,7 @@ status: in-progress
 > the screenshots*, the new icon, an updated README with the new `info-banner.png`,
 > and AC-style screenshots with a hero section.
 >
-> Sibling: [`road-to-honest-foundations.md`](archive/road-to-honest-foundations.md) supplies
+> Sibling: [`road-to-honest-foundations.md`](road-to-honest-foundations.md) supplies
 > the backend data the new screens show. Where a screen needs data no backend
 > produces yet, the screen ships with the redesign's own honest empty/unknown state
 > (`Usage unknown`, `Monitor only`, `Planned`, `Liveness unknown`) — never demo data.
@@ -78,7 +78,7 @@ the real CLI `--json` contract. README and screenshots show the result.
       Notifications sheet.
 - [x] Settings shell + General, Sign-ins, Protection, Distribution, Notifications,
       Desktop pet, Providers, Updates, Advanced.
-- [ ] Old `App.tsx` page tree retired once every function has a new home; parity
+- [x] Old `App.tsx` page tree retired once every function has a new home; parity
       checklist: every existing ipc action still reachable.
 
 ## Phase 3 — Tray popover + icon
@@ -91,12 +91,12 @@ the real CLI `--json` contract. README and screenshots show the result.
 
 ## Phase 4 — README, banner, screenshots
 
-- [ ] Screenshot pipeline: Vite + Playwright with a mocked Tauri IPC answering
+- [x] Screenshot pipeline: Vite + Playwright with a mocked Tauri IPC answering
       anonymised fixtures; 1600×1000 dark captures under `.github/assets/screenshots/`.
-- [ ] README rewritten AC-style: centred linked `info-banner.png`, H1 + tagline,
+- [x] README rewritten AC-style: centred linked `info-banner.png`, H1 + tagline,
       badges, hero screenshot, "More views" collapsible 2×2 table, multi-provider
       wording, feature list matching the shipped capabilities.
-- [ ] Starlight GUI screenshots and docs pages updated to the new UI.
+- [x] Starlight GUI screenshots and docs pages updated to the new UI.
 
 ## Acceptance
 
