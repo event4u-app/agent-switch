@@ -116,3 +116,260 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.5);
 }
+
+/* ---- Session-control redesign: the `--ac-*` token layer --------------------
+ * Ported verbatim from the redesign bundle (`.as-ac{` in its compiled CSS).
+ * Scoped to `.as-ac` (the redesign root) so the legacy shadcn tokens above keep
+ * serving the old page tree until it is retired. Light follows the same
+ * `data-theme` stamp `theme.ts` writes on <html>; `data-mode` is the design's
+ * own per-root override. Fonts ship locally because the Tauri app runs offline
+ * (OFL — see assets/fonts/OFL.txt). */
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("./assets/fonts/inter-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("./assets/fonts/inter-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("./assets/fonts/inter-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: Anton;
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("./assets/fonts/anton-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("./assets/fonts/ibm-plex-mono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("./assets/fonts/ibm-plex-mono-500.woff2") format("woff2");
+}
+
+.as-ac {
+  --ac-bg: #070b12;
+  --ac-panel: #0d131d;
+  --ac-rail: #0a1018;
+  --ac-raise: #131c2a;
+  --ac-line: #1c2738;
+  --ac-line2: #2a3445;
+  --ac-text: #e8eef7;
+  --ac-soft: #c3cedd;
+  --ac-muted: #93a1b5;
+  --ac-faint: #6f7d92;
+  --ac-brand: #ff8c2a;
+  --ac-brand-text: #ff9d47;
+  --ac-brand-tint: rgba(255, 140, 42, 0.16);
+  --ac-brand-line: rgba(255, 140, 42, 0.55);
+  --ac-on-color: #0d1522;
+  --ac-info: #3ec5ff;
+  --ac-info-text: #8adcff;
+  --ac-info-tint: rgba(62, 197, 255, 0.13);
+  --ac-ok: #3ddc84;
+  --ac-ok-text: #3ddc84;
+  --ac-ok-tint: rgba(61, 220, 132, 0.14);
+  --ac-warn: #ffc14d;
+  --ac-warn-text: #ffc14d;
+  --ac-warn-tint: rgba(255, 193, 77, 0.14);
+  --ac-alert: #ff5d6c;
+  --ac-alert-text: #ff8a95;
+  --ac-alert-tint: rgba(255, 93, 108, 0.14);
+  --ac-violet: #c9a2ff;
+  --ac-violet-text: #d9bdff;
+  --ac-violet-tint: rgba(201, 162, 255, 0.14);
+  --ac-scrim: rgba(3, 6, 10, 0.62);
+  --ac-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  --ac-id-orange: #ff8c2a;
+  --ac-id-red: #ff5d6c;
+  --ac-id-yellow: #ffc14d;
+  --ac-id-green: #3ddc84;
+  --ac-id-teal: #2dd4bf;
+  --ac-id-blue: #3ec5ff;
+  --ac-id-purple: #c9a2ff;
+  --ac-id-pink: #ff7ac6;
+  color-scheme: dark;
+  background: var(--ac-bg);
+  color: var(--ac-text);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+:root[data-theme="light"] .as-ac,
+.as-ac[data-mode="light"] {
+  --ac-bg: #f3f5f9;
+  --ac-panel: #ffffff;
+  --ac-rail: #fafbfd;
+  --ac-raise: #eef2f7;
+  --ac-line: #dde3ec;
+  --ac-line2: #c3ccd9;
+  --ac-text: #0d1522;
+  --ac-soft: #334155;
+  --ac-muted: #536074;
+  --ac-faint: #8592a5;
+  --ac-brand: #f47a12;
+  --ac-brand-text: #b4530a;
+  --ac-brand-tint: rgba(244, 122, 18, 0.12);
+  --ac-brand-line: rgba(244, 122, 18, 0.6);
+  --ac-on-color: #0d1522;
+  --ac-info: #0ea5e9;
+  --ac-info-text: #0369a1;
+  --ac-info-tint: rgba(14, 165, 233, 0.12);
+  --ac-ok: #16a34a;
+  --ac-ok-text: #15803d;
+  --ac-ok-tint: rgba(22, 163, 74, 0.12);
+  --ac-warn: #f5b324;
+  --ac-warn-text: #92580a;
+  --ac-warn-tint: rgba(245, 179, 36, 0.16);
+  --ac-alert: #e11d48;
+  --ac-alert-text: #be123c;
+  --ac-alert-tint: rgba(225, 29, 72, 0.1);
+  --ac-violet: #8b5cf6;
+  --ac-violet-text: #6d28d9;
+  --ac-violet-tint: rgba(139, 92, 246, 0.12);
+  --ac-scrim: rgba(13, 21, 34, 0.32);
+  --ac-shadow: 0 18px 48px rgba(13, 21, 34, 0.18);
+  --ac-id-orange: #f47a12;
+  --ac-id-red: #e11d48;
+  --ac-id-yellow: #d99a06;
+  --ac-id-green: #16a34a;
+  --ac-id-teal: #0d9488;
+  --ac-id-blue: #0284c7;
+  --ac-id-purple: #7c3aed;
+  --ac-id-pink: #db2777;
+  color-scheme: light;
+}
+
+.as-ac :focus-visible {
+  outline: 2px solid var(--ac-info);
+  outline-offset: 2px;
+}
+.as-ac button {
+  cursor: pointer;
+}
+.as-ac button:disabled {
+  cursor: not-allowed;
+}
+.as-ac .ac-caps {
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ac-muted);
+}
+.as-ac * {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ac-muted) 45%, transparent) transparent;
+}
+
+@keyframes ac-pulse {
+  0% {
+    box-shadow: 0 0 color-mix(in srgb, currentColor 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  to {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.as-ac .ac-pulse {
+  animation: ac-pulse 1.8s ease-out infinite;
+}
+@keyframes ac-slide-in {
+  0% {
+    transform: translate(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes ac-fade-in {
+  0% {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ac-pop-in {
+  0% {
+    transform: translateY(6px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.ac-sheet[data-state="open"] {
+  animation: ac-slide-in 0.16s ease-out;
+}
+.ac-scrim[data-state="open"] {
+  animation: ac-fade-in 0.16s ease-out;
+}
+.ac-dialog[data-state="open"] {
+  animation: ac-pop-in 0.14s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .as-ac .ac-pulse,
+  .ac-sheet[data-state="open"],
+  .ac-scrim[data-state="open"],
+  .ac-dialog[data-state="open"] {
+    animation: none;
+  }
+}
+
+/* Equal specificity to the legacy `*` rule above; source order makes it win. */
+:where(.as-ac) *,
+:where(.as-ac) *::before,
+:where(.as-ac) *::after {
+  border-color: var(--ac-line);
+}
+.as-ac [role="dialog"]:focus-visible,
+.as-ac [role="menu"]:focus-visible,
+.as-ac [role="listbox"]:focus-visible {
+  outline: none;
+}
+.as-ac input[role="combobox"]:focus-visible {
+  outline: none;
+}
+.as-ac .as-icon-light {
+  display: none;
+}
+:root[data-theme="light"] .as-ac .as-icon-light,
+.as-ac[data-mode="light"] .as-icon-light {
+  display: block;
+}
+:root[data-theme="light"] .as-ac .as-icon-dark,
+.as-ac[data-mode="light"] .as-icon-dark {
+  display: none;
+}
+.as-ac p {
+  text-wrap: pretty;
+}

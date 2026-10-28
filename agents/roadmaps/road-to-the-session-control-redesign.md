@@ -37,30 +37,30 @@ the real CLI `--json` contract. README and screenshots show the result.
 
 ## Phase 0 — Foundation: tokens, fonts, primitives
 
-- [ ] `--ac-*` token layer (dark default, light via `data-theme`) in `gui/src/index.css`,
+- [x] `--ac-*` token layer (dark default, light via `data-theme`) in `gui/src/index.css`,
       Tailwind colour + `font-display` / `font-ac-mono` entries, `.ac-caps`, the four
       animations with `prefers-reduced-motion` off-switch.
-- [ ] Fonts shipped locally (offline Tauri): Inter 400/500/600, Anton 400, IBM Plex
+- [x] Fonts shipped locally (offline Tauri): Inter 400/500/600, Anton 400, IBM Plex
       Mono 400/500 as woff2 under `gui/src/assets/fonts/` with their OFL licence.
-- [ ] Primitives ported from the bundle into `gui/src/ui/`: Button, IconButton, Caps,
+- [x] Primitives ported from the bundle into `gui/src/ui/`: Button, IconButton, Caps,
       Kbd, PageHeader, SectionHeader, Badge, Card, AccountDot, SessionStateIcon,
       UsageWindowRow, CapacityMeter (10-min staleness rule), Switch, EmptyState,
       DefinitionList, TextInput, AppLogo, Sheet, Dialog, RowMenu, Select, Segmented,
       SettingRow/SettingGroup, SheetSection, Toaster.
-- [ ] Format helpers (`ago`, duration, countdown, expiry, `~/` paths) with tests.
+- [x] Format helpers (`ago`, duration, countdown, expiry, `~/` paths) with tests.
 
 ## Phase 1 — View model + shell
 
-- [ ] `gui/src/vm/` — typed view model (Account, Session, Attention, Check, Tool,
+- [x] `gui/src/vm/` — typed view model (Account, Session, Attention, Check, Tool,
       Surface, ActivityEvent, Notice, Provider, Pool, Binding) built from the existing
       `ipc.ts` calls; ranking (`state → fresh → headroom`), "Next in <pool>", tone rule.
       Unit-tested; unknown values stay `null`, never `0`.
-- [ ] Store/context with `go / open / close / toast / act`; every `act.*` maps to an
+- [x] Store/context with `go / open / close / toast / act`; every `act.*` maps to an
       `ipc.ts` function or is absent (button hidden or disabled with its reason).
-- [ ] Shell: 52 px top bar (Tauri drag region, 84 px macOS inset), places with counts,
+- [x] Shell: 52 px top bar (Tauri drag region, 84 px macOS inset), places with counts,
       Health pill, Activity, Notifications bell, Settings, ⌘K / ⌘N / ⌘, shortcuts,
       error banner, overlay host.
-- [ ] ⌘K command search over the loaded view model.
+- [x] ⌘K command search over the loaded view model.
 
 ## Phase 2 — Screens
 
@@ -85,7 +85,7 @@ the real CLI `--json` contract. README and screenshots show the result.
 
 - [ ] Tray popover window (340 px, hides on blur) with attention, ranked accounts,
       status bar, Start session / Open / Quit; native menu kept as fallback.
-- [ ] New icon: app bundle icons regenerated from the dark SVG (`tauri icon`),
+- [x] New icon: app bundle icons regenerated from the dark SVG (`tauri icon`),
       `icon-source.png`, monochrome macOS tray template derived from the mark,
       Starlight favicon/logo, in-app `AppLogo` dark/light.
 

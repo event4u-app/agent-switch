@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import RedesignApp from "./redesign/RedesignApp.js";
+import { isRedesignEnabled } from "./redesign/flag.js";
 import { Plus, RefreshCw, Terminal, LogIn, X, AlertCircle, Info, Power, Trash2, AlertTriangle, AppWindow, ArrowRightLeft, RotateCcw, Minimize2, Pencil, Check, Download, Send, ChevronRight, ChevronDown, MessageSquare, Folder, Hash, Clock, Copy, Loader2, Link2 } from "lucide-react";
 import {
   compactArgs,
@@ -223,6 +225,8 @@ const SESSION_NOTIFY_POLL_MS = 5000;
 // the account down. The CLI accepts 1–100; this is the curated GUI set.
 const NOTIFY_THRESHOLD_CHOICES = [95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30] as const;
 
+const REDESIGN = isRedesignEnabled();
+
 // On macOS the window uses the Overlay title-bar style (native traffic lights,
 // content drawn into the title bar) — the header must leave room on the left so
 // its content doesn't sit under the traffic lights.
@@ -240,7 +244,12 @@ function describeError(e: unknown): string {
   return msg;
 }
 
+/** Picks the window tree: the redesign only behind its flag (redesign/flag.ts). */
 export default function App() {
+  return REDESIGN ? <RedesignApp /> : <LegacyApp />;
+}
+
+function LegacyApp() {
   const [rows, setRows] = useState<ProfileRow[]>([]);
   // Provider filter inside the Profiles section (persisted so Profiles reopens
   // on the provider the user last worked with).
