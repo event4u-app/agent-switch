@@ -45,11 +45,12 @@ fn rect_physical(rect: &Rect, scale: f64) -> (f64, f64, f64, f64) {
 }
 
 // Centre under the icon (macOS menu bar, top) or above it (a bottom taskbar),
-// clamped to the monitor the icon sits on.
-fn place(win: &tauri::WebviewWindow, anchor: (f64, f64, f64, f64)) {
+// clamped to the monitor the icon sits on. `size` is the window's physical
+// size — passed in, because right after `set_size` the reported outer size can
+// still be the old one.
+fn place(win: &tauri::WebviewWindow, anchor: (f64, f64, f64, f64), size: (f64, f64)) {
     let (ax, ay, aw, ah) = anchor;
-    let Ok(size) = win.outer_size() else { return };
-    let (w, h) = (size.width as f64, size.height as f64);
+    let (w, h) = size;
     let monitor = win
         .monitor_from_point(ax + aw / 2.0, ay + ah / 2.0)
         .ok()
@@ -110,13 +111,18 @@ pub fn toggle(app: &AppHandle, rect: &Rect) {
     if recently_hidden {
         return;
     }
-    let Ok(win) = ensure_window(app) else { return };
+    // No popover window (creation failed): the click still has to show something.
+    let Ok(win) = ensure_window(app) else {
+        crate::show_main(app);
+        return;
+    };
     let scale = win.scale_factor().unwrap_or(1.0);
     let anchor = rect_physical(rect, scale);
     if let Ok(mut a) = state.anchor.lock() {
         *a = Some(anchor);
     }
-    place(&win, anchor);
+    let Ok(size) = win.outer_size() else { return };
+    place(&win, anchor, (size.width as f64, size.height as f64));
     let _ = win.show();
     let _ = win.set_focus();
 }
@@ -150,11 +156,9 @@ pub fn tray_resize(app: AppHandle, state: tauri::State<TrayState>, height: f64) 
     };
     let scale = win.scale_factor().unwrap_or(1.0);
     let h = height.clamp(1.0, TRAY_MAX_H);
-    let _ = win.set_size(PhysicalSize::new(
-        (TRAY_W * scale).round() as u32,
-        (h * scale).round() as u32,
-    ));
+    let size = PhysicalSize::new((TRAY_W * scale).round() as u32, (h * scale).round() as u32);
+    let _ = win.set_size(size);
     if let Some(anchor) = state.anchor.lock().ok().and_then(|a| *a) {
-        place(&win, anchor);
+        place(&win, anchor, (size.width as f64, size.height as f64));
     }
 }

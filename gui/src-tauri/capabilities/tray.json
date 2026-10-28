@@ -1,8 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "tray",
-  "description": "Tray popover window: reads the view model through the agent-switch CLI (same scoped shell entries as main), forwards overlays to the main window via events. No autostart writes, no notifications.",
-  "windows": ["tray"],
+  "description": "Tray popover window: reads the view model through a fixed set of read-only agent-switch calls (each under its own shell-scope name, exact arguments; see trayScope in src/ipc.ts) and forwards overlays to the main window via events. No writes through the CLI, no agent-config, no autostart writes, no notifications.",
+  "windows": [
+    "tray"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-hide",
@@ -13,14 +15,133 @@
       "identifier": "shell:allow-execute",
       "allow": [
         {
-          "name": "agent-switch",
+          "name": "as-read-list",
           "cmd": "agent-switch",
-          "args": true
+          "args": [
+            "list",
+            "--json"
+          ]
         },
         {
-          "name": "agent-config-version",
-          "cmd": "agent-config",
-          "args": ["--version"]
+          "name": "as-read-sessions",
+          "cmd": "agent-switch",
+          "args": [
+            "sessions",
+            "--recent",
+            {
+              "validator": "[0-9]{1,4}"
+            },
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-tooling",
+          "cmd": "agent-switch",
+          "args": [
+            "tooling",
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-notifications",
+          "cmd": "agent-switch",
+          "args": [
+            "notifications",
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-providers",
+          "cmd": "agent-switch",
+          "args": [
+            "providers",
+            "status",
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-apps",
+          "cmd": "agent-switch",
+          "args": [
+            "apps",
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-protection",
+          "cmd": "agent-switch",
+          "args": [
+            "protection",
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-auth-status",
+          "cmd": "agent-switch",
+          "args": [
+            "auth-status",
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-pools",
+          "cmd": "agent-switch",
+          "args": [
+            "pool",
+            "list",
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-mappings",
+          "cmd": "agent-switch",
+          "args": [
+            "mappings",
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-doctor",
+          "cmd": "agent-switch",
+          "args": [
+            "doctor",
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-activity",
+          "cmd": "agent-switch",
+          "args": [
+            "activity",
+            "--limit",
+            {
+              "validator": "[0-9]{1,4}"
+            },
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-guard",
+          "cmd": "agent-switch",
+          "args": [
+            "guard",
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-usage",
+          "cmd": "agent-switch",
+          "args": [
+            "status",
+            "--provider",
+            {
+              "validator": "(claude|codex|antigravity)"
+            },
+            {
+              "validator": "[A-Za-z0-9._][A-Za-z0-9._-]*"
+            },
+            "--json"
+          ]
         }
       ]
     }

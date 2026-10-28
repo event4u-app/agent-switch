@@ -4,6 +4,7 @@ import { getShareSource } from "../../settings-store.js";
 import { Button, IconButton } from "../../ui/Button.js";
 import { Dialog } from "../../ui/Overlay.js";
 import type { Actions } from "../../vm/actions.js";
+import { forceDoctorOnNextLoad } from "../../vm/slow-cache.js";
 import { useAS } from "../../vm/store.js";
 import type { Check } from "../../vm/types.js";
 
@@ -30,6 +31,8 @@ export function commandInFix(fix: string | undefined): string | null {
 export const CHECK_STATE_LABEL: Record<Check["state"], string> = { ok: "Passes", warn: "Needs a look", fail: "Fails", info: "Note" };
 
 async function runRepair(repair: Repair, act: Actions) {
+  // The reload after the write must re-run `doctor` to show the after state.
+  forceDoctorOnNextLoad();
   if (repair === "autostart") await act.setAutostart?.(true);
   else await act.shareSync?.(getShareSource());
 }
@@ -74,7 +77,15 @@ export function FixDialog({ checkId }: { checkId: string }) {
     ) : (
       <>
         {!repair && (
-          <Button size="sm" variant="ghost" onClick={() => void s.reload()} disabled={s.loading}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              forceDoctorOnNextLoad();
+              void s.reload();
+            }}
+            disabled={s.loading}
+          >
             {s.loading ? "Checking …" : "Check again"}
           </Button>
         )}

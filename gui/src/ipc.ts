@@ -24,8 +24,50 @@ import {
 } from "./autostart.js";
 import { claimPetWelcome as claimPetWelcomeWith } from "./pet/welcome.js";
 
+/** The read-only calls the tray popover makes, each under its own shell-scope
+ *  name with its exact arguments (src-tauri/capabilities/tray.json — the tray
+ *  window has no blanket `agent-switch` entry). Keep the two in step. */
+const TRAY_READ_SCOPES: readonly [string, RegExp][] = [
+  ["as-read-list", /^list --json$/],
+  ["as-read-sessions", /^sessions --recent [0-9]{1,4} --json$/],
+  ["as-read-tooling", /^tooling --json$/],
+  ["as-read-notifications", /^notifications --json$/],
+  ["as-read-providers", /^providers status --json$/],
+  ["as-read-apps", /^apps --json$/],
+  ["as-read-protection", /^protection --json$/],
+  ["as-read-auth-status", /^auth-status --json$/],
+  ["as-read-pools", /^pool list --json$/],
+  ["as-read-mappings", /^mappings --json$/],
+  ["as-read-doctor", /^doctor --json$/],
+  ["as-read-activity", /^activity --limit [0-9]{1,4} --json$/],
+  ["as-read-guard", /^guard --json$/],
+  ["as-read-usage", /^status --provider (claude|codex|antigravity) [A-Za-z0-9._][A-Za-z0-9._-]* --json$/],
+];
+
+/** The tray scope name for `args`, or null when the tray may not run it. */
+export function trayScope(args: readonly string[]): string | null {
+  if (args.some((a) => /\s/.test(a) || a === "")) return null;
+  const line = args.join(" ");
+  return TRAY_READ_SCOPES.find(([, re]) => re.test(line))?.[0] ?? null;
+}
+
+function inTrayWindow(): boolean {
+  try {
+    return getCurrentWebviewWindow().label === "tray";
+  } catch {
+    return false; // not in Tauri (tests)
+  }
+}
+
+/** The shell-scope name to run `agent-switch <args>` under in this window. In
+ *  the tray a call outside its read-only list keeps the plain name, which the
+ *  tray capability does not allow — it fails closed. */
+function cli(args: string[]) {
+  return Command.create((inTrayWindow() && trayScope(args)) || "agent-switch", args);
+}
+
 async function runCli(args: string[]): Promise<string> {
-  const out = await Command.create("agent-switch", args).execute();
+  const out = await cli(args).execute();
   if (out.code !== 0) throw new Error(out.stderr || `agent-switch ${args.join(" ")} failed`);
   return out.stdout;
 }
@@ -295,7 +337,7 @@ export async function openWeb(name: string): Promise<void> {
 /** A single profile's own usage snapshot (Claude only; null for others or when
  *  no credential/usage is available). Per-profile — the GUI composes the view. */
 export async function profileUsage(provider: ProviderId, name: string): Promise<UsageSnapshot | null> {
-  const out = await Command.create("agent-switch", ["status", "--provider", provider, name, "--json"]).execute();
+  const out = await cli(["status", "--provider", provider, name, "--json"]).execute();
   if (out.code !== 0) return null;
   try {
     return (JSON.parse(out.stdout) as StatusJson).usage;
@@ -1022,7 +1064,7 @@ export interface DoctorReport {
 /** `doctor --json`. Exit 1 means "blocked" and still carries the report, so a
  *  non-zero exit is only an error when stdout is not the report. */
 export async function doctor(): Promise<DoctorReport> {
-  const out = await Command.create("agent-switch", ["doctor", "--json"]).execute();
+  const out = await cli(["doctor", "--json"]).execute();
   try {
     const report = JSON.parse(out.stdout) as DoctorReport;
     if (report && Array.isArray(report.checks)) return report;

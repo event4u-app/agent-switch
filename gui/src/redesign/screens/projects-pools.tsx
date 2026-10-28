@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { typedFolder, useHomeDir } from "../../lib/paths.js";
 import { cn } from "../../lib/utils.js";
 import type { DirResolution } from "../../ipc.js";
 import { AccountDot } from "../../ui/AccountDot.js";
@@ -71,17 +72,20 @@ function AddBinding({ initialDir, onDone }: { initialDir: string; onDone: () => 
   const targets = bindingTargets(s.accounts, s.pools, tool);
   const [target, setTarget] = useState("");
   const [busy, setBusy] = useState(false);
+  const home = useHomeDir();
   const chosen = targets.some((t) => t.value === target) ? target : (targets[0]?.value ?? "");
   const parsed = bindingTarget(chosen, tool);
-  const canSave = !!dir.trim() && !!parsed && !!s.act.mapFolder && !busy;
+  const folder = typedFolder(dir, home);
+  const problem = !folder.ok && dir.trim() ? folder.reason : null;
+  const canSave = folder.ok && !!parsed && !!s.act.mapFolder && !busy;
 
   const save = () => {
-    if (!canSave || !parsed || !s.act.mapFolder) return;
+    if (!canSave || !folder.ok || !parsed || !s.act.mapFolder) return;
     setBusy(true);
     s.act
-      .mapFolder(dir.trim(), parsed)
+      .mapFolder(folder.path, parsed)
       .then(() => {
-        s.toast({ text: `Bound ${shortPath(dir.trim())} for ${TOOL_LABEL[tool]}.`, tone: "ok" });
+        s.toast({ text: `Bound ${shortPath(folder.path)} for ${TOOL_LABEL[tool]}.`, tone: "ok" });
         onDone();
       })
       .catch((e: unknown) => s.toast({ text: `Couldn't add the binding: ${e instanceof Error ? e.message : String(e)}`, tone: "alert" }))
@@ -99,12 +103,23 @@ function AddBinding({ initialDir, onDone }: { initialDir: string; onDone: () => 
             aria-label="Folder to bind"
             placeholder="/full/path/to/project"
             value={dir}
+            aria-invalid={problem ? true : undefined}
+            aria-describedby={problem ? "add-binding-folder-error" : undefined}
             onChange={(e) => setDir(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") save();
-              if (e.key === "Escape") onDone();
+              // First Escape clears what was typed; an empty field closes the form.
+              if (e.key === "Escape") {
+                if (dir) setDir("");
+                else onDone();
+              }
             }}
           />
+          {problem && (
+            <span id="add-binding-folder-error" role="alert" className="text-[11px] text-ac-alert-text">
+              {problem}
+            </span>
+          )}
         </label>
         <Segmented label="Binding tool" value={tool} onChange={setTool} options={BINDING_TOOLS.map((t) => ({ value: t, label: TOOL_LABEL[t] }))} />
         <div className="min-w-[200px]">

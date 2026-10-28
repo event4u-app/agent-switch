@@ -30,13 +30,16 @@ function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** Restore a trashed session; it leaves the Trash only once the CLI restored it. */
 export function restoreSessionFrom(s: Store, session: Session) {
   const handle = trashHandles.get(session.id) ?? sessionHandle(session);
   s.act
     .restoreSession?.(session.id, handle)
-    .then(() => trashHandles.delete(session.id))
+    .then(() => {
+      trashHandles.delete(session.id);
+      s.update((vm) => ({ sessions: vm.sessions.map((x) => (x.id === session.id ? { ...x, trashed: false } : x)) }));
+    })
     .catch((e) => s.toast({ text: `Restore failed: ${errorText(e)}`, tone: "alert" }));
-  s.update((vm) => ({ sessions: vm.sessions.map((x) => (x.id === session.id ? { ...x, trashed: false } : x)) }));
 }
 
 function trash(s: Store, session: Session) {

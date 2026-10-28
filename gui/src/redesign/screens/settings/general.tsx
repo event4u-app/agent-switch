@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LogOut } from "lucide-react";
 import * as ipc from "../../../ipc.js";
 import {
@@ -46,6 +46,14 @@ export function GeneralSettings() {
     s.autostart.actual == null ? null : s.autostart.actual === "enabled",
   );
   const [autostartFailed, setAutostartFailed] = useState(false);
+  // Follow the system state as reloads bring it (switched off in System
+  // Settings, or on again) — except while our own toggle is in flight.
+  const toggling = useRef(false);
+  const actual = s.autostart.actual;
+  useEffect(() => {
+    if (toggling.current || actual == null) return;
+    setAutostartState(actual === "enabled");
+  }, [actual]);
   const [minimizeToDock, setMinimizeToDock] = usePref(getMinimizeToDock, writeMinimizeToDock);
   const [theme, setTheme] = usePref<Theme>(getTheme, applyTheme);
   const [autoRefresh, setAutoRefresh] = usePref(getAutoRefreshLimits, writeAutoRefresh);
@@ -56,10 +64,13 @@ export function GeneralSettings() {
   async function toggleAutostart(next: boolean) {
     setAutostartState(next);
     setAutostartFailed(false);
+    toggling.current = true;
     const ok = await run(async () => {
       if (!s.act.setAutostart) throw new Error("Start at login is not available.");
       await s.act.setAutostart(next);
       return true;
+    }).finally(() => {
+      toggling.current = false;
     });
     if (!ok) {
       setAutostartState(!next);

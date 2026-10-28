@@ -5,10 +5,11 @@ import * as ipc from "../../ipc.js";
 import { AcRoot } from "../../ui/AcRoot.js";
 import { createActions } from "../../vm/actions.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
+import { resweepToolsIfStale } from "../../vm/slow-cache.js";
 import { ASProvider, useAS } from "../../vm/store.js";
 import type { ViewModel } from "../../vm/types.js";
 import { withSwitchEffects } from "../engines/switch-effects.js";
-import { forwardable, forwardToMain, openMainWindow } from "./bridge.js";
+import { forwardedOverlay, forwardToMain, goInMain, openMainWindow } from "./bridge.js";
 import { Tray } from "./Tray.js";
 
 export const TRAY_MAX_HEIGHT = 720;
@@ -19,13 +20,16 @@ function TrayBridge() {
   const { overlay, close } = s;
   useEffect(() => {
     if (overlay.kind === "none") return;
-    if (forwardable(overlay)) void forwardToMain(overlay);
+    const o = forwardedOverlay(overlay);
+    if (o) void forwardToMain(o);
     close();
   }, [overlay, close]);
   return null;
 }
 
-/** Re-read on every show; Escape hides the popover. */
+/** Re-read on every show — the slow parts (tooling sweep, latest versions,
+ *  doctor) come from the cache, the sweep re-runs only when a minute old;
+ *  Escape hides the popover. */
 function TrayLifecycle() {
   const { reload } = useAS();
   useEffect(() => {
@@ -34,7 +38,9 @@ function TrayLifecycle() {
     try {
       getCurrentWebviewWindow()
         .onFocusChanged(({ payload: focused }) => {
-          if (focused) void reload();
+          if (!focused) return;
+          resweepToolsIfStale();
+          void reload();
         })
         .then((u) => (gone ? u() : (unlisten = u)))
         .catch(() => {});
@@ -78,7 +84,11 @@ function TrayFrame() {
     <div ref={ref} className="w-[340px]">
       <TrayBridge />
       <TrayLifecycle />
-      <Tray onOpenApp={() => void openMainWindow()} onQuit={() => void ipc.quitApp().catch(() => {})} />
+      <Tray
+        onOpenApp={() => void openMainWindow()}
+        onGo={(screen) => void goInMain(screen)}
+        onQuit={() => void ipc.quitApp().catch(() => {})}
+      />
     </div>
   );
 }

@@ -4,7 +4,10 @@
  * `vR` L947). No React, no I/O — every screen reads its answers from here.
  */
 
+import type { DirResolution } from "../../ipc.js";
+import { expandHome } from "../../lib/paths.js";
 import { shortPath } from "../../ui/format.js";
+import { accountIdFromMember } from "../../vm/build.js";
 import { rankAccounts, TOOL_LABEL, type RankedAccount } from "../../vm/rules.js";
 import type { Account, Attention, Binding, Pool, Session, SessionState, Tool, ViewModel } from "../../vm/types.js";
 
@@ -102,25 +105,52 @@ export interface Resolution {
   why: string[];
 }
 
-/** Which account a plain start in `cwd` gets: first matching enabled binding,
- *  else the tool's default account. Design `C0`; repo/org bindings need a repo
- *  lookup (`repoOf`) — without one they never match. */
+/** How specifically a folder binding covers `cwd`: the matched prefix length,
+ *  or null. Bindings are the CLI's absolute mapping paths (a subfolder is
+ *  covered too); a `~`/glob value from older data still matches. */
+function folderSpecificity(value: string, cwd: string, home: string | null): number | null {
+  const norm = (p: string) => expandHome(p, home).replace(/(.)\/+$/, "$1");
+  const c = norm(cwd);
+  const v = norm(value);
+  if (v.includes("*")) {
+    const short = shortPath(c);
+    const hit = [c, short].some((x) => glob(v, x) || glob(v, `${x}/x`) || glob(value, x) || glob(value, `${x}/x`));
+    return hit ? v.indexOf("*") : null;
+  }
+  return c === v || c.startsWith(`${v}/`) ? v.length : null;
+}
+
+/** Which account a plain start in `cwd` gets: the most specific enabled folder
+ *  binding (longest prefix), else a repo/org binding, else the tool's default
+ *  account. Design `C0`. This is the OFFLINE fallback — the dialog asks the CLI
+ *  (`dir --json`, `resolutionFromCli`) whenever it can. Repo/org bindings need
+ *  a repo lookup (`repoOf`); without one they never match. */
 export function resolveStart(
   cwd: string,
   tool: Tool,
   rules: readonly Binding[],
   accounts: readonly Account[],
   pools: readonly Pool[],
-  repoOf: (cwd: string) => { repo: string; org: string } | null = () => null,
+  opts: { repoOf?: (cwd: string) => { repo: string; org: string } | null; home?: string | null } = {},
 ): Resolution {
-  const short = shortPath(cwd);
-  const repo = repoOf(cwd);
-  const rule =
-    rules.find((r) => {
-      if (!r.enabled || (r.tool !== "any" && r.tool !== tool)) return false;
-      if (r.match.kind === "folder") return glob(r.match.value, short) || glob(r.match.value, `${short}/x`);
+  const home = opts.home ?? null;
+  const repo = opts.repoOf?.(cwd) ?? null;
+  const usable = rules.filter((r) => r.enabled && (r.tool === "any" || r.tool === tool));
+  let rule: Binding | null = null;
+  let best = -1;
+  for (const r of usable) {
+    if (r.match.kind !== "folder") continue;
+    const score = folderSpecificity(r.match.value, cwd, home);
+    if (score != null && score > best) {
+      best = score;
+      rule = r;
+    }
+  }
+  rule ??=
+    usable.find((r) => {
       if (r.match.kind === "repo") return repo != null && glob(r.match.value, repo.repo);
-      return repo != null && glob(r.match.value, repo.org);
+      if (r.match.kind === "org") return repo != null && glob(r.match.value, repo.org);
+      return false;
     }) ?? null;
   if (rule && rule.target.kind === "account") {
     const id = rule.target.accountId;
@@ -146,6 +176,19 @@ export function resolveStart(
     rule: null,
     why: [def ? `No rule matches — default ${tool} account ${def.name}` : `No rule matches and no default ${tool} account`],
   };
+}
+
+/** Automatic, as the CLI resolves it (`dir --json`): its profile and its
+ *  reasons. No profile (the default config dir) → the tool's default account,
+ *  which is what `run` would load there. */
+export function resolutionFromCli(res: DirResolution, tool: Tool, accounts: readonly Account[]): Resolution {
+  if (res.profile) {
+    const id = accountIdFromMember(res.profile) ?? `${tool}:${res.profile}`;
+    const account = accounts.find((a) => a.id === id) ?? null;
+    return { account, rule: null, why: res.why.length ? res.why : [`agent-switch picks ${res.profile}`] };
+  }
+  const def = accounts.find((a) => a.tool === tool && a.isDefault) ?? null;
+  return { account: def, rule: null, why: res.why.length ? res.why : [`No rule matches — default ${tool} account ${def?.name ?? "none"}`] };
 }
 
 /** Start is possible only for a known account that can take work. */

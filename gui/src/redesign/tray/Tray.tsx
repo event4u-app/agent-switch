@@ -5,14 +5,44 @@ import { Badge } from "../../ui/Badge.js";
 import { Button } from "../../ui/Button.js";
 import { SessionStateIcon } from "../../ui/SessionStateIcon.js";
 import { nextInPools, rankAccounts, TOOL_LABEL, updateCount } from "../../vm/rules.js";
-import { useAS } from "../../vm/store.js";
+import { useAS, type Overlay } from "../../vm/store.js";
+import type { Attention } from "../../vm/types.js";
+import type { ForwardedScreen } from "./bridge.js";
 import { accountTools } from "../screens/logic.js";
 import { CompactAccountRow } from "../screens/rows.js";
 
+export type AttentionTarget = { overlay: Overlay } | { screen: ForwardedScreen };
+
+/** Where an attention item leads: its decision sheet, the account to sign in
+ *  again, or the screen that resolves it. null → just the window. */
+export function attentionTarget(a: Attention): AttentionTarget | null {
+  switch (a.kind) {
+    case "near-limit":
+      return { overlay: { kind: "limit", attentionId: a.id } };
+    case "signed-out":
+    case "reauth":
+      return a.accountId ? { overlay: { kind: "account", id: a.accountId } } : null;
+    case "update":
+      return { screen: "tools" };
+    case "health":
+      return { screen: "health" };
+    default:
+      return null;
+  }
+}
+
 /** Tray popover, 340 px card (bundle `CR`, artboard 16). Rendered in its own
- *  borderless window next to the menu-bar icon. */
-export function Tray({ onOpenApp, onQuit }: { onOpenApp?: () => void; onQuit?: () => void }) {
+ *  borderless window next to the menu-bar icon. An attention item opens what
+ *  resolves it (overlays reach the main window through TrayBridge; screens via
+ *  `onGo`). */
+export function Tray({ onOpenApp, onQuit, onGo }: { onOpenApp?: () => void; onQuit?: () => void; onGo?: (screen: ForwardedScreen) => void }) {
   const s = useAS();
+  const follow = (a: Attention) => {
+    const t = attentionTarget(a);
+    if (t && "overlay" in t) s.open(t.overlay);
+    else if (t && onGo) onGo(t.screen);
+    else onOpenApp?.();
+  };
   const tools = accountTools(s.accounts);
   const open = s.sessions.filter((x) => x.state !== "done");
   const ready = s.readiness === "ready";
@@ -36,7 +66,7 @@ export function Tray({ onOpenApp, onQuit }: { onOpenApp?: () => void; onQuit?: (
             <button
               key={a.id}
               type="button"
-              onClick={() => onOpenApp?.()}
+              onClick={() => follow(a)}
               className="flex items-center gap-2.5 rounded-md bg-ac-warn-tint px-2.5 py-2 text-left"
             >
               <span className="size-2 shrink-0 rounded-full bg-ac-warn" />

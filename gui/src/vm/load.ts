@@ -30,6 +30,7 @@ import {
   toolFromEntry,
 } from "./build.js";
 import type { ToolEntry, ViewModel } from "./types.js";
+import { cachedDoctor, cachedLatest, cachedTooling } from "./slow-cache.js";
 import { loadUsage } from "./usage-loader.js";
 
 export function detectPlatform(): ViewModel["platform"] {
@@ -72,7 +73,8 @@ function value<T>(r: PromiseSettledResult<T>): T | null {
 async function toolWithLatest(e: ToolingEntry): Promise<ToolEntry> {
   const version = e.version ? (versionToken(e.version) ?? e.version) : null;
   if (!e.present || !UPDATE_CHECK_TOOLS.has(e.id)) return toolFromEntry({ ...e, version }, null);
-  const latest = await latestToolVersion(e.id);
+  // Hourly at most (slow-cache.ts): the GitHub check is unauthenticated, 60/h.
+  const latest = await cachedLatest(e.id, () => latestToolVersion(e.id));
   // Normalise to comparable tokens; an installed build newer than "latest" is up to date.
   const shown = latest == null ? null : toolUpdateAvailable(e, latest) ? (versionToken(latest) ?? latest) : version;
   return toolFromEntry({ ...e, version }, shown);
@@ -83,7 +85,8 @@ export async function loadViewModel(): Promise<ViewModel> {
   const [profilesR, sessionsR, toolingR, notifsR, providersR, acR, autostartR, appsR] = await Promise.allSettled([
     ipc.listProfiles(),
     ipc.listSessions(undefined, 50),
-    ipc.toolingStatus(),
+    // Slow + cached between reloads (slow-cache.ts); see the cadence there.
+    cachedTooling(() => ipc.toolingStatus()),
     ipc.listNotifications(),
     ipc.getProviders(),
     ipc.acDiscover(),
@@ -97,7 +100,7 @@ export async function loadViewModel(): Promise<ViewModel> {
     ipc.authStatus(),
     ipc.listPools(),
     ipc.listMappings(),
-    ipc.doctor(),
+    cachedDoctor(() => ipc.doctor()),
     ipc.listActivity(200),
     ipc.getGuard(),
   ]);
@@ -120,11 +123,13 @@ export async function loadViewModel(): Promise<ViewModel> {
       pools: membership.get(id) ?? [],
     });
   });
-  const doctor = value(doctorR);
+  const doctorRun = value(doctorR);
+  const doctor = doctorRun?.value ?? null;
 
-  const tooling = value(toolingR);
+  const toolingRun = value(toolingR);
+  const tooling = toolingRun?.value ?? null;
   const tools = tooling ? await Promise.all(tooling.map(toolWithLatest)) : [];
-  const toolsCheckedAt = tooling ? Date.now() : null;
+  const toolsCheckedAt = toolingRun ? toolingRun.at : null;
   const acTool = tools.find((t) => t.id === "agent-config");
 
   const lastRead = getNotifLastRead();
@@ -149,7 +154,7 @@ export async function loadViewModel(): Promise<ViewModel> {
     surfaces: surfacesFromApps(value(appsR) ?? []),
     activity: activityFromEntries(value(activityR) ?? []),
     readiness: deriveReadiness(true, profilesR.status === "fulfilled", failures.length > 0, doctor?.readiness ?? null),
-    checksCheckedAt: doctor ? readAt : null,
+    checksCheckedAt: doctorRun ? doctorRun.at : null,
     guard: guardFromStatus(value(guardR)),
     autostart: { desired: null, actual: autostart == null ? null : autostart ? "enabled" : "disabled" },
     providers: providersR.status === "fulfilled" ? providersFromStatus(providersR.value) : [],

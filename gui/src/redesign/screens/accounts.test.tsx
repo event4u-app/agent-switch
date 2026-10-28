@@ -1,3 +1,5 @@
+vi.mock("@tauri-apps/api/path", () => ({ homeDir: async () => "/Users/x" }));
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AcRoot } from "../../ui/AcRoot.js";
@@ -237,6 +239,31 @@ describe("Projects & pools — bindings", () => {
     fireEvent.click(buttons[buttons.length - 1]);
     await waitFor(() => expect(mapFolder).toHaveBeenCalledWith("/x/new", { accountId: "claude:work" }));
     await waitFor(() => expect(screen.queryByLabelText("Folder to bind")).toBeNull());
+  });
+
+  it("expands ~ in a typed folder, refuses a flag-shaped one, and Escape clears before it closes", async () => {
+    const mapFolder = vi.fn(async () => {});
+    mount(fixture({ sessions: [] }), { tab: "projects", act: { mapFolder, explainFolder: vi.fn(async () => ({ profile: null, configDir: null, why: [] })) } });
+    fireEvent.click(screen.getByRole("button", { name: /Add binding/ }));
+    const field = screen.getByLabelText("Folder to bind");
+    const submit = () => {
+      const buttons = screen.getAllByRole("button", { name: "Add binding" });
+      return buttons[buttons.length - 1] as HTMLButtonElement;
+    };
+    fireEvent.change(field, { target: { value: "--help" } });
+    expect(screen.getByRole("alert").textContent).toMatch(/can't start with/);
+    expect(submit().disabled).toBe(true);
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect((screen.getByLabelText("Folder to bind") as HTMLInputElement).value).toBe("");
+    fireEvent.change(field, { target: { value: "~/dev/new" } });
+    await waitFor(() => expect(submit().disabled).toBe(false));
+    // home dir resolves asynchronously (mocked below as /Users/x)
+    await new Promise((r) => setTimeout(r, 0));
+    fireEvent.click(submit());
+    await waitFor(() => expect(mapFolder).toHaveBeenCalledWith("/Users/x/dev/new", { accountId: "claude:work" }));
+    fireEvent.click(screen.getByRole("button", { name: /Add binding/ }));
+    fireEvent.keyDown(screen.getByLabelText("Folder to bind"), { key: "Escape" });
+    expect(screen.queryByLabelText("Folder to bind")).toBeNull();
   });
 
   it("lists pools as targets and maps a pool for the chosen tool", async () => {

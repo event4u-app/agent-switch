@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { PET_WELCOME } from "../../../pet/model.js";
 import { AcRoot } from "../../../ui/AcRoot.js";
 import type { Actions } from "../../../vm/actions.js";
@@ -15,6 +15,9 @@ import {
 } from "./prefs.js";
 import { providerRows } from "./providers.js";
 import { Settings, SETTINGS_GROUPS } from "./Settings.js";
+
+const nearLimit = vi.hoisted(() => ({ fireNearLimitIfCrossed: vi.fn(async () => false) }));
+vi.mock("../../engines/near-limit.js", () => nearLimit);
 
 const ipcMock = vi.hoisted(() => ({
   getAutoSwitch: vi.fn(),
@@ -209,6 +212,28 @@ describe("General", () => {
     expect((screen.getByRole("switch", { name: "Open the window on start" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("the Start at login switch follows the system state when the store updates", () => {
+    let store: ReturnType<typeof useAS> | null = null;
+    function Grab() {
+      store = useAS();
+      return null;
+    }
+    render(
+      <AcRoot>
+        <ASProvider initial={fixture()} startScreen="settings" startSettingsTab="general">
+          <Settings />
+          <Grab />
+        </ASProvider>
+      </AcRoot>,
+    );
+    const sw = () => screen.getByRole("switch", { name: "Start at login" });
+    expect(sw().getAttribute("aria-checked")).toBe("true");
+    act(() => store!.update({ autostart: { desired: null, actual: "disabled" } }));
+    expect(sw().getAttribute("aria-checked")).toBe("false");
+    act(() => store!.update({ autostart: { desired: null, actual: "enabled" } }));
+    expect(sw().getAttribute("aria-checked")).toBe("true");
+  });
+
   it("pushes minimize-into-Dock to Rust", () => {
     mount("general");
     fireEvent.click(screen.getByRole("switch", { name: "Minimize into Dock" }));
@@ -238,6 +263,28 @@ describe("Protection", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Notify near limit" }));
     await waitFor(() => expect(ipcMock.setAutoSwitch).toHaveBeenCalledWith("claude", false));
     expect(localStorage.getItem("agent-switch-autoswitch-global")).toBe("off");
+  });
+
+  it("fires the near-limit test notice only when the threshold write succeeded", async () => {
+    localStorage.setItem("agent-switch-autoswitch-global", "on");
+    mount("protection");
+    const pick = async (value: string) => {
+      fireEvent.click(await screen.findByRole("combobox", { name: "Near-limit notify threshold for Claude" }));
+      fireEvent.click(screen.getByRole("option", { name: value }));
+    };
+    ipcMock.setAutoSwitch.mockRejectedValueOnce(new Error("nope"));
+    await pick("80%");
+    await waitFor(() => expect(ipcMock.setAutoSwitch).toHaveBeenCalledWith("claude", true, 80, "all"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(nearLimit.fireNearLimitIfCrossed).not.toHaveBeenCalled();
+    ipcMock.setAutoSwitch.mockResolvedValueOnce(undefined);
+    await pick("80%");
+    await waitFor(() => expect(nearLimit.fireNearLimitIfCrossed).toHaveBeenCalledTimes(1));
+  });
+
+  it("describes Protect new accounts as the warning it is, not a pause", () => {
+    mount("protection");
+    expect(screen.queryByText(/Sessions pause at a safe point/)).toBeNull();
   });
 });
 

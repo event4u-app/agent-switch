@@ -4,8 +4,8 @@ import { AcRoot } from "../../ui/AcRoot.js";
 import { emptyViewModel } from "../../vm/load.js";
 import { ASProvider, useAS } from "../../vm/store.js";
 import type { Account, ViewModel } from "../../vm/types.js";
-import { forwardable, forwardToMain, TRAY_OPEN_EVENT } from "./bridge.js";
-import { Tray } from "./Tray.js";
+import { forwardable, forwardedOverlay, forwardedScreen, forwardToMain, TRAY_OPEN_EVENT } from "./bridge.js";
+import { attentionTarget, Tray } from "./Tray.js";
 
 const tauri = vi.hoisted(() => ({ emitTo: vi.fn(() => Promise.resolve()), invoke: vi.fn(() => Promise.resolve()) }));
 vi.mock("@tauri-apps/api/event", () => ({ emitTo: tauri.emitTo, listen: vi.fn(() => Promise.resolve(() => {})) }));
@@ -93,8 +93,10 @@ describe("Tray popover", () => {
     expect(screen.getByText("work")).toBeTruthy();
     expect(screen.getByText("side")).toBeTruthy();
     expect(screen.getByText("ctx 81%")).toBeTruthy();
+    // A near-limit item opens its decision (forwarded to the main window).
     fireEvent.click(screen.getByText("side is at 94 %"));
-    expect(onOpenApp).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("overlay").textContent).toBe("limit");
+    expect(onOpenApp).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Quit Agent Switch" }));
     expect(onQuit).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /Start session/ }));
@@ -119,6 +121,38 @@ describe("tray bridge", () => {
     expect(forwardable({ kind: "account", id: "claude:work" })).toBe(true);
     expect(forwardable({ kind: "none" })).toBe(false);
     expect(forwardable({ kind: "confirm", title: "t", body: "b", confirm: "c", onConfirm: () => {} })).toBe(false);
+  });
+
+  it("whitelists the overlay kinds and validates their shape", () => {
+    expect(forwardable({ kind: "session", id: "claude:a" })).toBe(true);
+    expect(forwardable({ kind: "limit", attentionId: "x" })).toBe(true);
+    expect(forwardable({ kind: "notifications" })).toBe(true);
+    expect(forwardable({ kind: "start", cwd: "/x", tool: "claude" })).toBe(true);
+    // Never a terminal (it would run a command) or anything else.
+    expect(forwardable({ kind: "terminal", run: { args: ["uninstall"], title: "x" } })).toBe(false);
+    expect(forwardable({ kind: "terminal", toolId: "rtk", action: "install" })).toBe(false);
+    expect(forwardable({ kind: "reauth", accountId: "claude:work" })).toBe(false);
+    expect(forwardable({ kind: "fix", checkId: "a" })).toBe(false);
+    // Wrong shapes.
+    expect(forwardedOverlay({ kind: "account" })).toBeNull();
+    expect(forwardedOverlay({ kind: "account", id: 5 })).toBeNull();
+    expect(forwardedOverlay({ kind: "start", cwd: ["x"] })).toBeNull();
+    expect(forwardedOverlay(null)).toBeNull();
+    expect(forwardedOverlay("start")).toBeNull();
+    // Extra keys are dropped.
+    expect(forwardedOverlay({ kind: "account", id: "claude:work", run: { args: ["x"] } })).toEqual({ kind: "account", id: "claude:work" });
+    expect(forwardedScreen("tools")).toBe("tools");
+    expect(forwardedScreen("settings")).toBeNull();
+  });
+
+  it("an attention item leads to its overlay or screen", () => {
+    const base = { title: "t", detail: "", primary: "p", at: NOW };
+    expect(attentionTarget({ ...base, id: "l", kind: "near-limit", accountId: "claude:side" })).toEqual({ overlay: { kind: "limit", attentionId: "l" } });
+    expect(attentionTarget({ ...base, id: "s", kind: "signed-out", accountId: "claude:side" })).toEqual({ overlay: { kind: "account", id: "claude:side" } });
+    expect(attentionTarget({ ...base, id: "r", kind: "reauth", accountId: "claude:side" })).toEqual({ overlay: { kind: "account", id: "claude:side" } });
+    expect(attentionTarget({ ...base, id: "u", kind: "update" })).toEqual({ screen: "tools" });
+    expect(attentionTarget({ ...base, id: "h", kind: "health" })).toEqual({ screen: "health" });
+    expect(attentionTarget({ ...base, id: "s2", kind: "signed-out" })).toBeNull();
   });
 
   it("emits to the main window, shows it and hides the popover", async () => {

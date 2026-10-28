@@ -12,6 +12,7 @@ import {
   overviewSub,
   recentFolders,
   resolveStart,
+  resolutionFromCli,
   sessionHandle,
   toolCanTakeWork,
 } from "./logic.js";
@@ -126,6 +127,42 @@ describe("start resolution", () => {
     const r = resolveStart("/Users/x/dev/a", "claude", [rule], accounts, []);
     expect(r.account?.name).toBe("side");
     expect(r.why[0]).toBe("Rule: folder ~/dev/* → side");
+  });
+  const folderRule = (value: string, accountId: string, id = value): Binding => ({
+    id,
+    match: { kind: "folder", value },
+    tool: "claude",
+    target: { kind: "account", accountId },
+    enabled: true,
+    hits: null,
+  });
+  it("matches the CLI's absolute mapping paths, subfolders included", () => {
+    const rule = folderRule("/Users/x/dev/proj", "claude:side");
+    expect(resolveStart("/Users/x/dev/proj", "claude", [rule], accounts, []).account?.name).toBe("side");
+    expect(resolveStart("/Users/x/dev/proj/src/deep", "claude", [rule], accounts, []).account?.name).toBe("side");
+    expect(resolveStart("/Users/x/dev/proj/", "claude", [rule], accounts, []).account?.name).toBe("side");
+    // A sibling sharing the prefix is not inside the folder.
+    expect(resolveStart("/Users/x/dev/projX", "claude", [rule], accounts, []).account?.name).toBe("work");
+  });
+  it("the most specific (longest) folder mapping wins, whatever the rule order", () => {
+    const rules = [folderRule("/Users/x/dev", "claude:work"), folderRule("/Users/x/dev/proj", "claude:side")];
+    expect(resolveStart("/Users/x/dev/proj/a", "claude", rules, accounts, []).account?.name).toBe("side");
+    expect(resolveStart("/Users/x/dev/proj/a", "claude", [...rules].reverse(), accounts, []).account?.name).toBe("side");
+    expect(resolveStart("/Users/x/dev/other", "claude", rules, accounts, []).rule?.match.value).toBe("/Users/x/dev");
+  });
+  it("expands ~ in a typed folder against the home dir", () => {
+    const rule = folderRule("/Users/x/dev/proj", "claude:side");
+    expect(resolveStart("~/dev/proj/a", "claude", [rule], accounts, [], { home: "/Users/x" }).account?.name).toBe("side");
+  });
+  it("takes the CLI's answer for Automatic", () => {
+    const r = resolutionFromCli({ profile: "claude/side", configDir: "/c", why: ["mapped /Users/x/dev → side"] }, "claude", accounts);
+    expect(r.account?.name).toBe("side");
+    expect(r.why).toEqual(["mapped /Users/x/dev → side"]);
+    const none = resolutionFromCli({ profile: null, configDir: null, why: ["no mapping"] }, "claude", accounts);
+    expect(none.account?.name).toBe("work");
+    expect(none.why[0]).toBe("no mapping");
+    const unknown = resolutionFromCli({ profile: "claude/gone", configDir: null, why: [] }, "claude", accounts);
+    expect(unknown.account).toBeNull();
   });
   it("only starts on accounts that can take work", () => {
     expect(canStartOn(acc("a", { state: "signed-out" }))).toBe(false);

@@ -6,6 +6,7 @@ import { emptyViewModel } from "../vm/load.js";
 import { ASProvider, useAS } from "../vm/store.js";
 import { CommandSearch } from "./CommandSearch.js";
 import { Shell } from "./Shell.js";
+import { isAppShortcut } from "./shortcuts.js";
 
 function ScreenName() {
   const s = useAS();
@@ -97,5 +98,48 @@ describe("redesign shell", () => {
     expect(screen.getByRole("option", { name: /Claude · work/ })).toBeTruthy();
     fireEvent.keyDown(input, { key: "Enter" });
     expect(screen.getByTestId("where").textContent).toBe("home/account");
+  });
+
+  it("app shortcuts use ⌘ on macOS and Ctrl elsewhere, never with keys typed into the terminal", () => {
+    const key = (init: KeyboardEventInit, target?: Element) => {
+      const e = new KeyboardEvent("keydown", init);
+      if (target) Object.defineProperty(e, "target", { value: target });
+      return e;
+    };
+    expect(isAppShortcut(key({ key: "n", metaKey: true }), true)).toBe(true);
+    expect(isAppShortcut(key({ key: "n", ctrlKey: true }), true)).toBe(false);
+    expect(isAppShortcut(key({ key: "n", ctrlKey: true }), false)).toBe(true);
+    expect(isAppShortcut(key({ key: "n", metaKey: true }), false)).toBe(false);
+    expect(isAppShortcut(key({ key: "n", metaKey: true, shiftKey: true }), true)).toBe(false);
+    const term = document.createElement("div");
+    term.setAttribute("data-terminal", "");
+    const textarea = document.createElement("textarea");
+    term.appendChild(textarea);
+    expect(isAppShortcut(key({ key: "n", ctrlKey: true }, textarea), false)).toBe(false);
+  });
+
+  it("Ctrl+N on macOS and ⌘K/⌘N typed inside the terminal do nothing", () => {
+    renderShell();
+    act(() => {
+      fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+    });
+    expect(screen.getByTestId("where").textContent).toBe("home/none");
+    const term = document.createElement("div");
+    term.setAttribute("data-terminal", "");
+    const ta = document.createElement("textarea");
+    term.appendChild(ta);
+    document.body.appendChild(term);
+    act(() => {
+      fireEvent.keyDown(ta, { key: "n", metaKey: true });
+      fireEvent.keyDown(ta, { key: "k", metaKey: true });
+    });
+    expect(screen.getByTestId("where").textContent).toBe("home/none");
+    // Collapsed search (jsdom is narrower than 1240): ⌘K would expand it.
+    expect(screen.queryByRole("combobox")).toBeNull();
+    term.remove();
+    act(() => {
+      fireEvent.keyDown(window, { key: "k", metaKey: true });
+    });
+    expect(screen.getByRole("combobox")).toBeTruthy();
   });
 });

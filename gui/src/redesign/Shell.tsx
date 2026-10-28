@@ -6,6 +6,7 @@ import { Button, IconButton } from "../ui/Button.js";
 import { updateCount } from "../vm/rules.js";
 import { useAS, type Screen } from "../vm/store.js";
 import { CommandSearch } from "./CommandSearch.js";
+import { isAppShortcut } from "./shortcuts.js";
 import { checksToLook } from "./screens/health.js";
 
 const PLACES: { id: Exclude<Screen, "activity" | "health" | "settings">; label: string; icon: typeof House }[] = [
@@ -101,7 +102,7 @@ export function TopBar({ isMac }: { isMac: boolean }) {
         })}
       </nav>
       <div data-tauri-drag-region className="min-w-2 flex-1 self-stretch" />
-      <CommandSearch collapsed={width < 1240} />
+      <CommandSearch collapsed={width < 1240} isMac={isMac} />
       <Button variant="primary" size="md" onClick={() => s.open({ kind: "start" })} aria-label="Start session" title={"Start session (⌘N)"}>
         <Plus />
         {width >= 760 && <span>Start session</span>}
@@ -166,12 +167,12 @@ export function ErrorBanner() {
 }
 
 /** ⌘N start session, ⌘, settings (⌘K lives in CommandSearch). Bundle `CP`. */
-export function useGlobalShortcuts() {
+export function useGlobalShortcuts(isMac: boolean) {
   const s = useAS();
   const { open, go } = s;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (!isAppShortcut(e, isMac)) return;
       if (e.key === "n") {
         e.preventDefault();
         open({ kind: "start" });
@@ -182,12 +183,12 @@ export function useGlobalShortcuts() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, go]);
+  }, [open, go, isMac]);
 }
 
 /** Top bar + scrolling content column (bundle `NP`). */
 export function Shell({ isMac, children }: { isMac: boolean; children: ReactNode }) {
-  useGlobalShortcuts();
+  useGlobalShortcuts(isMac);
   return (
     <div className="flex h-full min-h-0 flex-col bg-ac-bg">
       <TopBar isMac={isMac} />

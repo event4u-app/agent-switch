@@ -77,7 +77,12 @@ export interface Store extends ViewModel {
   toasts: Toast[];
   toast: (t: Omit<Toast, "id">) => void;
   dismissToast: (id: number) => void;
-  /** Re-read everything from the CLI; no-op when the provider has no loader. */
+  /** The terminal overlay reports whether its command is still running. While
+   *  it is, `open`/`go` refuse to replace it (that would kill the process) and
+   *  toast instead; the terminal's own `close` always works. */
+  setTerminalBusy: (busy: boolean) => void;
+  /** Re-read everything from the CLI; no-op when the provider has no loader.
+   *  Only the latest call's result applies (an older one landing later is dropped). */
   reload: () => Promise<void>;
   loading: boolean;
 }
@@ -87,6 +92,8 @@ const StoreContext = createContext<Store | null>(null);
 const TOAST_MS = 6000;
 const MAX_TOASTS = 3;
 const CLOCK_MS = 30_000;
+
+export const TERMINAL_BUSY_TOAST = "A command is running in the terminal — close it first";
 
 export interface ASProviderProps {
   initial: ViewModel;
@@ -123,8 +130,12 @@ export function ASProvider({
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [loading, setLoading] = useState(false);
   const toastSeq = useRef(0);
+  const reloadSeq = useRef(0);
   const vmRef = useRef(vm);
   vmRef.current = vm;
+  const overlayRef = useRef(overlay);
+  overlayRef.current = overlay;
+  const terminalBusy = useRef(false);
 
   const dismissToast = useCallback((id: number) => setToasts((ts) => ts.filter((t) => t.id !== id)), []);
   const toast = useCallback(
@@ -138,15 +149,29 @@ export function ASProvider({
 
   const reload = useCallback(async () => {
     if (!load) return;
+    const seq = ++reloadSeq.current;
+    const latest = () => seq === reloadSeq.current;
     setLoading(true);
     try {
-      setVm(await load());
+      const next = await load();
+      if (latest()) setVm(next);
     } catch (e) {
-      setVm((prev) => ({ ...prev, error: e instanceof Error ? e.message : String(e) }));
+      if (latest()) setVm((prev) => ({ ...prev, error: e instanceof Error ? e.message : String(e) }));
     } finally {
-      setLoading(false);
+      if (latest()) setLoading(false);
     }
   }, [load]);
+
+  const setTerminalBusy = useCallback((busy: boolean) => {
+    terminalBusy.current = busy;
+  }, []);
+
+  /** True (and toasts) when a running terminal holds the overlay slot. */
+  const terminalHolds = useCallback(() => {
+    if (overlayRef.current.kind !== "terminal" || !terminalBusy.current) return false;
+    toast({ text: TERMINAL_BUSY_TOAST, tone: "warn" });
+    return true;
+  }, [toast]);
 
   const act = useMemo<Actions>(() => (actions ? actions(() => vmRef.current, reload) : {}), [actions, reload]);
 
@@ -169,13 +194,21 @@ export function ASProvider({
       toolsTab,
       setToolsTab,
       go: (s, tab) => {
+        if (terminalHolds()) return;
         setScreen(s);
         if (tab) setSettingsTab(tab);
         setOverlay({ kind: "none" });
       },
       overlay,
-      open: setOverlay,
-      close: () => setOverlay({ kind: "none" }),
+      open: (o) => {
+        if (terminalHolds()) return;
+        setOverlay(o);
+      },
+      close: () => {
+        terminalBusy.current = false;
+        setOverlay({ kind: "none" });
+      },
+      setTerminalBusy,
       act,
       accountById: (id) => vm.accounts.find((a) => a.id === id),
       markNoticesRead: () => {
@@ -189,7 +222,7 @@ export function ASProvider({
       reload,
       loading,
     }),
-    [vm, screen, settingsTab, accountsTab, toolsTab, overlay, act, toasts, toast, dismissToast, reload, loading, onNoticesRead],
+    [vm, screen, settingsTab, accountsTab, toolsTab, overlay, act, toasts, toast, dismissToast, reload, loading, onNoticesRead, terminalHolds],
   );
 
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;

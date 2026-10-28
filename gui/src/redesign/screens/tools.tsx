@@ -104,28 +104,49 @@ export function openExternal(url: string) {
   shellOpen(url).catch(() => window.open(url, "_blank", "noopener"));
 }
 
-const releaseCache = new Map<string, Promise<ReturnType<typeof acReleaseFrom>>>();
+type AcRelease = ReturnType<typeof acReleaseFrom>;
+
+/** A failed (or empty) release lookup is retried after this long — or right
+ *  away after "Check now". A hit is kept for the installed version. */
+export const RELEASE_RETRY_MS = 10 * 60_000;
+
+const releaseCache = new Map<string, { at: number; p: Promise<AcRelease>; failed: boolean }>();
+
+/** agent-config's latest release + notes for the installed `current`, cached. */
+export function releaseLookup(current: string, fetcher: () => Promise<AcRelease>, now: number = Date.now()): Promise<AcRelease> {
+  const hit = releaseCache.get(current);
+  if (hit && (!hit.failed || now - hit.at < RELEASE_RETRY_MS)) return hit.p;
+  const entry = { at: now, failed: false, p: Promise.resolve<AcRelease>(null) };
+  entry.p = fetcher()
+    .catch(() => null)
+    .then((rel) => {
+      entry.failed = rel == null;
+      return rel;
+    });
+  releaseCache.set(current, entry);
+  return entry.p;
+}
+
+/** "Check now": failed lookups run again on the next render. */
+export function forgetFailedReleaseLookups(): void {
+  for (const [k, v] of releaseCache) if (v.failed) releaseCache.delete(k);
+}
 
 /** The load path checks rtk/claude/codex only; agent-config's latest comes from
  *  its GitHub releases (as the classic window does) and is patched into the
- *  view model once per installed version. */
+ *  view model once per installed version. A failed lookup is retried on a
+ *  later re-sweep (focus, "Check now") once RELEASE_RETRY_MS passed. */
 function useAgentConfigLatest(s: Store) {
   const ac = s.tools.find((t) => t.id === "agent-config");
   const current = ac?.present ? ac.version : null;
   const known = ac?.latest != null;
+  const checkedAt = s.toolsCheckedAt;
   const update = useRef(s.update);
   update.current = s.update;
   useEffect(() => {
     if (!current || known) return;
     let alive = true;
-    let p = releaseCache.get(current);
-    if (!p) {
-      p = fetchReleases(AGENT_CONFIG_REPO)
-        .then((r) => acReleaseFrom(r, current))
-        .catch(() => null);
-      releaseCache.set(current, p);
-    }
-    void p.then((rel) => {
+    void releaseLookup(current, () => fetchReleases(AGENT_CONFIG_REPO).then((r) => acReleaseFrom(r, current))).then((rel) => {
       if (!alive || !rel) return;
       update.current((vm) => ({
         tools: vm.tools.map((t) => (t.id === "agent-config" && t.version === current ? { ...t, latest: rel.latest, notes: rel.notes } : t)),
@@ -135,7 +156,7 @@ function useAgentConfigLatest(s: Store) {
     return () => {
       alive = false;
     };
-  }, [current, known]);
+  }, [current, known, checkedAt]);
 }
 
 // ---------------------------------------------------------------- screens
@@ -167,7 +188,10 @@ export function Tools() {
         {s.toolsTab === "tools" && (
           <span className="flex items-center gap-2 text-xs text-ac-faint">
             {s.toolsCheckedAt != null ? `checked ${ago(s.toolsCheckedAt, s.now)}` : "not checked yet"}
-            <Button size="sm" variant="ghost" onClick={() => void s.act.recheckTools?.()} disabled={!s.act.recheckTools || s.loading}>
+            <Button size="sm" variant="ghost" onClick={() => {
+                forgetFailedReleaseLookups();
+                void s.act.recheckTools?.();
+              }} disabled={!s.act.recheckTools || s.loading}>
               <RefreshCw /> Check now
             </Button>
           </span>

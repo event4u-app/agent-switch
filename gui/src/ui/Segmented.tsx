@@ -1,11 +1,11 @@
-import { useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useId, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "../lib/utils.js";
 
 export interface SegmentedOption<V extends string> {
   value: V;
   label: ReactNode;
   disabled?: boolean;
-  /** Tooltip explaining why a disabled option is unavailable. */
+  /** Why a disabled option is unavailable (tooltip + accessible description). */
   why?: string;
 }
 
@@ -26,7 +26,11 @@ export function Segmented<V extends string>({
   size?: "sm" | "md";
 }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const uid = useId();
   const enabled = options.map((o, i) => (o.disabled ? -1 : i)).filter((i) => i >= 0);
+  // Exactly one stop in the tab order: the selected option, or — when the value
+  // matches none — the first enabled one.
+  const tabStop = options.some((o) => o.value === value) ? options.findIndex((o) => o.value === value) : (enabled[0] ?? 0);
 
   function onKeyDown(e: KeyboardEvent, index: number) {
     const step =
@@ -51,6 +55,7 @@ export function Segmented<V extends string>({
     >
       {options.map((o, i) => {
         const selected = o.value === value;
+        const whyId = o.disabled && o.why ? `${uid}-why-${i}` : undefined;
         return (
           <button
             key={o.value}
@@ -61,8 +66,9 @@ export function Segmented<V extends string>({
             role="radio"
             aria-checked={selected}
             aria-disabled={o.disabled || undefined}
-            tabIndex={selected ? 0 : -1}
+            tabIndex={i === tabStop ? 0 : -1}
             title={o.disabled ? o.why : undefined}
+            aria-describedby={whyId}
             onClick={() => !o.disabled && onChange(o.value)}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cn(
@@ -79,6 +85,15 @@ export function Segmented<V extends string>({
           </button>
         );
       })}
+      {/* Disabled reasons, referenced by aria-describedby (outside the buttons,
+          so they describe without becoming part of the option's name). */}
+      {options.map((o, i) =>
+        o.disabled && o.why ? (
+          <span key={`why-${o.value}`} id={`${uid}-why-${i}`} className="sr-only">
+            {o.why}
+          </span>
+        ) : null,
+      )}
     </div>
   );
 }

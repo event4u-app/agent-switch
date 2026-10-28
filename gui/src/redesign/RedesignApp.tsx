@@ -29,7 +29,7 @@ function StoreToaster() {
 
 function Frame() {
   const s = useAS();
-  useTrayRequests(s.open);
+  useTrayRequests(s.open, s.go);
   useEngines();
   return (
     <>

@@ -11,11 +11,14 @@ import {
   type SearchKind,
 } from "../vm/search.js";
 import { useAS } from "../vm/store.js";
+import { isAppShortcut } from "./shortcuts.js";
 
 /** ⌘K palette in the top bar (bundle `oP`, app L193–288). `collapsed` = icon
- *  button that expands into an overlaying field (narrow windows). */
-export function CommandSearch({ collapsed }: { collapsed: boolean }) {
+ *  button that expands into an overlaying field (narrow windows). `isMac`
+ *  picks the chord (⌘K vs Ctrl+K); defaults to the view model's platform. */
+export function CommandSearch({ collapsed, isMac }: { collapsed: boolean; isMac?: boolean }) {
   const s = useAS();
+  const mac = isMac ?? s.platform === "mac";
   const { accounts, sessions, rules, tools } = s;
   const index = useMemo(() => buildSearchIndex({ accounts, sessions, rules, tools }), [accounts, sessions, rules, tools]);
   const [query, setQuery] = useState("");
@@ -32,7 +35,7 @@ export function CommandSearch({ collapsed }: { collapsed: boolean }) {
 
   useEffect(() => {
     function onKey(e: globalThis.KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if (isAppShortcut(e, mac) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setExpanded(true);
         requestAnimationFrame(() => input.current?.focus());
@@ -40,7 +43,7 @@ export function CommandSearch({ collapsed }: { collapsed: boolean }) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [mac]);
 
   function reset() {
     setQuery("");

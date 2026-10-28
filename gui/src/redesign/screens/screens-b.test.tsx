@@ -175,7 +175,7 @@ describe("Health + Fix", () => {
     mount(fixture({ checks, checksCheckedAt: NOW, autostart: { desired: null, actual: "disabled" } }), { screen: "health" });
     expect(screen.getByText("Runs in the menu bar. Usage is watched in the background.")).toBeTruthy();
     expect(screen.getByText("2 to check")).toBeTruthy();
-    await waitFor(() => expect(screen.getByText("Couldn't turn it on.")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Off — switched off in System Settings.")).toBeTruthy());
     expect(screen.getAllByRole("button", { name: /Fix/ })).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Open Tools" }));
     expect(screen.getByTestId("where").textContent).toBe("tools/none");

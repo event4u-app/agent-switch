@@ -12,10 +12,11 @@
  */
 
 import * as ipc from "../ipc.js";
-import { requestDesktopPermission, type DesktopPermission } from "../notifications.js";
+import { clearDesktopNotifications, requestDesktopPermission, type DesktopPermission } from "../notifications.js";
 import type { ProfileLabel, ProviderId, ProviderSurface } from "../transforms.js";
 import { checkForUpdate, type UpdateCheck } from "../updates.js";
 import { dropUsageSnapshot } from "../usage-cache.js";
+import { forceDoctorOnNextLoad, forceToolsOnNextLoad } from "./slow-cache.js";
 import { forceUsageOnNextLoad, restartUsageCountdown } from "./usage-loader.js";
 import type { Session, ViewModel } from "./types.js";
 
@@ -100,7 +101,11 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
       restartUsageCountdown();
       await reload();
     },
-    recheckTools: reload,
+    // "Check now": a fresh tooling sweep (latest versions stay hourly).
+    recheckTools: async () => {
+      forceToolsOnNextLoad();
+      await reload();
+    },
     trashSession: async (id: string) => {
       const p = session(id);
       const res = await ipc.deleteSession(p.provider, p.sessionId, p.profile);
@@ -120,12 +125,23 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
       await ipc.acOpenInBrowser();
     },
     restartAgentConfig: thenReload(() => ipc.acForceRestart()),
-    setSharedSetup: thenReload((enabled: boolean, source?: string) => (enabled ? ipc.shareOn(source) : ipc.shareOff())),
-    setAutostart: thenReload((on: boolean) => ipc.setAutostart(on)),
+    // These change what `doctor` checks, so the reload re-runs it.
+    setSharedSetup: thenReload((enabled: boolean, source?: string) => {
+      forceDoctorOnNextLoad();
+      return enabled ? ipc.shareOn(source) : ipc.shareOff();
+    }),
+    setAutostart: thenReload((on: boolean) => {
+      forceDoctorOnNextLoad();
+      return ipc.setAutostart(on);
+    }),
     setProvider: thenReload((tool: ProviderId, surface: ProviderSurface, on: boolean) => ipc.setProvider(tool, surface, on)),
     linkProviderBinary: thenReload((tool: ProviderId, path: string) => ipc.linkProviderBinary(tool, path)),
     unlinkProviderBinary: thenReload((tool: ProviderId) => ipc.unlinkProviderBinary(tool)),
-    clearNotifications: thenReload(() => ipc.clearNotifications()),
+    // The log, then this app's delivered desktop notifications (classic window).
+    clearNotifications: thenReload(async () => {
+      await ipc.clearNotifications();
+      await clearDesktopNotifications();
+    }),
     requestNotifyPermission: () => requestDesktopPermission(),
     checkForUpdate: () => checkForUpdate(),
     selfUpdate: () => ipc.selfUpdate(),
@@ -140,7 +156,10 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
       const p = session(id);
       return ipc.extractHandoffBrief(p.provider, p.profile, p.sessionId, splitAccountId(target)[0]);
     },
-    shareSync: thenReload((source: string) => ipc.shareSync(source)),
+    shareSync: thenReload((source: string) => {
+      forceDoctorOnNextLoad();
+      return ipc.shareSync(source);
+    }),
   };
 }
 

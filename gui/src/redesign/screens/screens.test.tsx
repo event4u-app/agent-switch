@@ -208,6 +208,51 @@ describe("Start session", () => {
     expect(startPreview("claude", "desktop-app", "/tmp/app", "claude-desktop", "work").command).toBe("agent-switch open claude-desktop work");
   });
 
+  it("Automatic runs with the account the CLI resolves for the folder, and shows its why", async () => {
+    const explainFolder = vi.fn(async () => ({ profile: "claude/side", configDir: "/c", why: ["Mapped /Users/x/dev → side"] }));
+    mount(fixture({ accounts: [acc("work", { isDefault: true }), acc("side")] }), {
+      overlay: { kind: "start", cwd: "/Users/x/dev/app/sub" },
+      act: { explainFolder },
+    });
+    expect(await screen.findByText("Automatic → side")).toBeTruthy();
+    expect(explainFolder).toHaveBeenCalledWith("/Users/x/dev/app/sub", "claude");
+    expect(screen.getByText("· Mapped /Users/x/dev → side")).toBeTruthy();
+    expect(document.querySelector('[title^="agent-switch run side --provider claude --cwd /Users/x/dev/app/sub"]')).toBeTruthy();
+  });
+
+  it("falls back to the local match when the CLI doesn't answer", async () => {
+    const explainFolder = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    const rule = {
+      id: "r",
+      match: { kind: "folder" as const, value: "/Users/x/dev/app" },
+      tool: "claude" as const,
+      target: { kind: "account" as const, accountId: "claude:side" },
+      enabled: true,
+      hits: null,
+    };
+    mount(fixture({ accounts: [acc("work", { isDefault: true }), acc("side")], rules: [rule] }), {
+      overlay: { kind: "start", cwd: "/Users/x/dev/app/sub" },
+      act: { explainFolder },
+    });
+    expect(await screen.findByText("Automatic → side")).toBeTruthy();
+    expect(screen.getByText(/agent-switch didn't answer \(offline\)/)).toBeTruthy();
+  });
+
+  it("a typed folder starting with - is refused; Escape in the field does not close the dialog", () => {
+    mount(fixture(), { overlay: { kind: "start" } });
+    fireEvent.click(screen.getByRole("combobox", { name: "Folder" }));
+    fireEvent.click(screen.getByRole("option", { name: "Choose another folder …" }));
+    const field = screen.getByRole("textbox", { name: "Folder path" });
+    fireEvent.change(field, { target: { value: "-rf" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(screen.getByRole("alert").textContent).toMatch(/can't start with/);
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(screen.getByTestId("where").textContent).toBe("home/start");
+    expect((screen.getByRole("textbox", { name: "Folder path" }) as HTMLInputElement).value).toBe("");
+  });
+
   it("cannot start without a default account", () => {
     mount(fixture({ accounts: [acc("work")] }), { overlay: { kind: "start" } });
     expect((screen.getByRole("button", { name: /Start Claude/ }) as HTMLButtonElement).disabled).toBe(true);

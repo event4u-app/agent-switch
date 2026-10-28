@@ -91,9 +91,10 @@ export function NotificationsSheet() {
               s.open({
                 kind: "confirm",
                 title: "Clear all notifications?",
-                // `notifications clear` empties the log only; the OS notification
-                // centre is not touched, so the design's claim about it is dropped.
-                body: "Empties this list. Nothing else changes.",
+                // `notifications clear` empties the log; the action also removes
+                // the desktop notifications this app delivered (the daemon's own
+                // OS notifications belong to another process and stay).
+                body: "Empties this list and removes the desktop notifications Agent Switch showed.",
                 confirm: "Clear all",
                 onConfirm: () => {
                   s.update({ notices: [] });

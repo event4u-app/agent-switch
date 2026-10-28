@@ -17,6 +17,8 @@ Paths are relative to `gui/src/`.
 | Muted kinds hidden from sheet + badge | `vm/load.ts`, `redesign/engines/notifications.ts` |
 | Session monitoring: hooks re-ensured on open, 5 s log poll while on | `redesign/engines/notifications.ts` |
 | Desktop-notification click → window + notifications sheet | `redesign/engines/notifications.ts` |
+| Clear all → also removes this app's delivered desktop notifications (`clearDesktopNotifications`, classic `clearNotifs`) | `vm/actions.ts` (`clearNotifications`). The redesign missed this until now: it cleared the log only and its confirm text said nothing else changes. |
+| Slow readouts cached between reloads: tooling sweep (re-run on "Check now", on tray focus when ≥ 60 s old, after a tooling terminal run), latest-version lookups (at most hourly per tool), `doctor` (re-run on Health open, "Check again", a repair, autostart / shared-setup writes) | `vm/slow-cache.ts` (used by `vm/load.ts`). Before, every reload — after each action and each tray focus — re-ran all three and spent the unauthenticated GitHub budget. |
 | Record-and-sync from any writer (incl. the tray window via a Tauri event) | `redesign/engines/bus.ts` |
 | Tray tooltip (`setTrayTooltip`) + pet mood/working (`petEmitContext`) after every load | `redesign/engines/pet.ts` (`pushContext`) |
 | Pet show-on-open (presence "always") + one-time `PET_WELCOME` (`claimPetWelcome`) | `redesign/engines/pet.ts` (`petStartup`) |
@@ -85,7 +87,7 @@ Paths are relative to `gui/src/`.
 | `selfUpdate` | `vm/actions.ts` → `screens/settings/updates.tsx`; `engines/updates.ts` | |
 | `listNotifications` | `vm/load.ts`, `engines/notifications.ts` | |
 | `recordNotification` | `engines/bus.ts` (every notice the window records) | |
-| `clearNotifications` | `vm/actions.ts` → `screens/notifications-sheet.tsx` | |
+| `clearNotifications` | `vm/actions.ts` → `screens/notifications-sheet.tsx` | Followed by `notifications.ts` `clearDesktopNotifications`. |
 | `getOsNotify`, `setOsNotify` | `screens/settings/notifications.tsx`; `getOsNotify` also `engines/notifications.ts` | |
 | `petShow`, `petHide`, `petResetPosition`, `petEmitPose`, `petMoveTo` | `screens/settings/pet.tsx`; `petShow` also `engines/pet.ts` | |
 | `petEmitNotification`, `petEmitContext`, `onPetAction` | `engines/pet.ts` | |

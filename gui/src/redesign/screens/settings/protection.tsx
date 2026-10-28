@@ -88,9 +88,14 @@ export function ProtectionSettings() {
     void readAuto();
   }, []);
 
-  async function writeAuto(pid: ProviderId, enabled: boolean, threshold?: number, tag?: AutoSwitchTag) {
-    await run(() => ipc.setAutoSwitch(pid, enabled, threshold, tag));
+  /** True when the CLI took the write (a failure is toasted by `run`). */
+  async function writeAuto(pid: ProviderId, enabled: boolean, threshold?: number, tag?: AutoSwitchTag): Promise<boolean> {
+    const ok = await run(async () => {
+      await ipc.setAutoSwitch(pid, enabled, threshold, tag);
+      return true;
+    });
     await readAuto();
+    return ok === true;
   }
 
   async function toggleMaster(on: boolean) {
@@ -114,7 +119,7 @@ export function ProtectionSettings() {
           title="Protect new accounts"
           detail={
             <WithReason
-              detail="Sessions pause at a safe point before the limit and continue after the reset. Each account can change this on its own."
+              detail="New accounts get the limit warning: a notice at the threshold — nothing is paused or switched. Each account can change this on its own."
               reason={PROTECT_NEW_UNAVAILABLE}
             />
           }
@@ -180,8 +185,8 @@ export function ProtectionSettings() {
                         ariaLabel={`Near-limit notify threshold for ${name}`}
                         value={String(cfg.threshold)}
                         onChange={(v) =>
-                          void writeAuto(pid, cfg.enabled, Number(v), cfg.tag).then(() =>
-                            cfg.enabled ? fireNearLimitIfCrossed(s.accounts, pid, Number(v), cfg.tag) : false,
+                          void writeAuto(pid, cfg.enabled, Number(v), cfg.tag).then((ok) =>
+                            ok && cfg.enabled ? fireNearLimitIfCrossed(s.accounts, pid, Number(v), cfg.tag) : false,
                           )
                         }
                         options={NOTIFY_THRESHOLD_CHOICES.map((t) => ({ value: String(t), label: `${t}%` }))}

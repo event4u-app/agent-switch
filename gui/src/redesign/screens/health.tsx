@@ -7,6 +7,7 @@ import { Button } from "../../ui/Button.js";
 import { Card, EmptyState } from "../../ui/Card.js";
 import { PageHeader, SectionHeader } from "../../ui/Typography.js";
 import { updateCount } from "../../vm/rules.js";
+import { forceDoctorOnNextLoad } from "../../vm/slow-cache.js";
 import { useAS } from "../../vm/store.js";
 import type { Check, Readiness } from "../../vm/types.js";
 import { rowClick } from "./rows.js";
@@ -47,7 +48,9 @@ export function autostartText(desired: AutostartDesired, actual: AutostartActual
   if (desired === "disabled") return "Off — you switched it off. Updates keep it off.";
   if (actual === "enabled") return "On — registered with the system and checked.";
   if (actual == null) return "Couldn't read the system state.";
-  if (desired === "enabled") return `Couldn't turn it on${reason ? ` (${reason})` : ""}.`;
+  // Wanted on, the OS has it off: a failed attempt leaves a reason; without one
+  // the login item was switched off outside the app (System Settings).
+  if (desired === "enabled") return reason ? `Couldn't turn it on (${reason}).` : "Off — switched off in System Settings.";
   // Never decided (or the preference is unreadable) and the OS says off.
   return "Off — not registered with the system yet.";
 }
@@ -55,6 +58,13 @@ export function autostartText(desired: AutostartDesired, actual: AutostartActual
 /** "Try again" only where the user wants it on and the OS does not have it. */
 export function autostartRetry(desired: AutostartDesired, actual: AutostartActual): boolean {
   return desired === "enabled" && actual !== "enabled";
+}
+
+/** The button for that state: "Turn on" after an outside switch-off, "Try
+ *  again" after a failed attempt, none otherwise. */
+export function autostartAction(desired: AutostartDesired, actual: AutostartActual, reason: string | null): "Turn on" | "Try again" | null {
+  if (!autostartRetry(desired, actual) || actual == null) return null;
+  return reason ? "Try again" : "Turn on";
 }
 
 /** Bundle `JP`. */
@@ -74,7 +84,14 @@ export function Health() {
   useEffect(readPref, [readPref, s.autostart.actual]);
 
   const actual = s.autostart.actual;
-  const retry = autostartRetry(pref.state, actual);
+  const retry = autostartAction(pref.state, actual, pref.reason);
+
+  // Opening Health re-runs `doctor` (cached between other reloads, slow-cache.ts).
+  const { reload } = s;
+  useEffect(() => {
+    forceDoctorOnNextLoad();
+    void reload();
+  }, [reload]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -108,7 +125,7 @@ export function Health() {
                   .finally(readPref);
               }}
             >
-              Try again
+              {retry}
             </Button>
           ) : (
             <Button size="sm" variant="ghost" onClick={() => s.go("settings", "general")}>
@@ -159,7 +176,14 @@ export function Health() {
             title={s.checksCheckedAt == null ? "The checks could not be run." : "No checks reported."}
             detail={s.checksCheckedAt == null ? "`agent-switch doctor` did not answer. Check again after the CLI is reachable." : undefined}
             action={
-              <Button size="sm" onClick={() => void s.reload()} disabled={s.loading}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  forceDoctorOnNextLoad();
+                  void s.reload();
+                }}
+                disabled={s.loading}
+              >
                 Check again
               </Button>
             }

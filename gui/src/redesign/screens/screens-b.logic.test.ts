@@ -4,9 +4,18 @@ import type { ActivityEvent, Check, Notice, Surface, ToolEntry } from "../../vm/
 import { filterActivity } from "./activity.js";
 import { foundLine, surfaceSub } from "./apps.js";
 import { commandInFix, repairFor } from "./fix-dialog.js";
-import { autostartRetry, autostartText, checksToLook, orderChecks } from "./health.js";
+import { autostartAction, autostartRetry, autostartText, checksToLook, orderChecks } from "./health.js";
 import { splitNotices } from "./notifications-sheet.js";
-import { acReleaseFrom, agentConfigMissing, copyCommand, isolatedLabel, sortTools } from "./tools.js";
+import {
+  acReleaseFrom,
+  agentConfigMissing,
+  copyCommand,
+  forgetFailedReleaseLookups,
+  isolatedLabel,
+  RELEASE_RETRY_MS,
+  releaseLookup,
+  sortTools,
+} from "./tools.js";
 import { updateRun } from "./update-sheet.js";
 
 // update-sheet pulls in xterm, which needs a canvas jsdom lacks.
@@ -102,6 +111,12 @@ describe("health logic", () => {
     expect(autostartRetry("enabled", "disabled")).toBe(true);
     expect(autostartRetry("disabled", "disabled")).toBe(false);
     expect(autostartRetry("enabled", "enabled")).toBe(false);
+    // Enabled once, then switched off in System Settings (no failed attempt on record).
+    expect(autostartText("enabled", "disabled")).toBe("Off — switched off in System Settings.");
+    expect(autostartAction("enabled", "disabled", null)).toBe("Turn on");
+    expect(autostartAction("enabled", "disabled", "login item rejected")).toBe("Try again");
+    expect(autostartAction("enabled", "enabled", null)).toBeNull();
+    expect(autostartAction("disabled", "disabled", null)).toBeNull();
   });
 
   it("counts only warn/fail as to check and orders problems first", () => {
@@ -142,5 +157,30 @@ describe("activity + notifications logic", () => {
     const { today, earlier } = splitNotices([n("a", NOW - 60_000), n("b", NOW - 4 * 3_600_000)], NOW);
     expect(today.map((x) => x.id)).toEqual(["a"]);
     expect(earlier.map((x) => x.id)).toEqual(["b"]);
+  });
+});
+
+describe("agent-config release-notes lookup", () => {
+  it("caches a hit, retries a failure after the backoff or on a manual check", async () => {
+    const rel = { latest: "2.0.0", notes: [] };
+    let answer: typeof rel | null = null;
+    const fetcher = vi.fn(async () => answer);
+    let now = 1_000;
+    expect(await releaseLookup("1.0.0-a", fetcher, now)).toBeNull();
+    now += RELEASE_RETRY_MS - 1;
+    answer = rel;
+    expect(await releaseLookup("1.0.0-a", fetcher, now)).toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    now += 2;
+    expect(await releaseLookup("1.0.0-a", fetcher, now)).toEqual(rel);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(await releaseLookup("1.0.0-a", fetcher, now + 10 * RELEASE_RETRY_MS)).toEqual(rel);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+
+    answer = null;
+    await releaseLookup("1.0.0-b", fetcher, now);
+    forgetFailedReleaseLookups();
+    answer = rel;
+    expect(await releaseLookup("1.0.0-b", fetcher, now)).toEqual(rel);
   });
 });
