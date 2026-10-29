@@ -314,6 +314,14 @@ export function noticeFromNotification(n: AppNotification, lastRead: number): No
   return { id: n.id, title: n.title, detail: n.message, at: n.ts, unread: n.ts > lastRead, tone: NOTICE_TONE[n.kind] };
 }
 
+/** Whether the stored login matters at all. A disabled account is never used,
+ *  and auth-status reads the provider CLI's login, so with that CLI switched
+ *  off it is never used either — neither may show "sign-in needed". An
+ *  unreadable provider status hides nothing. */
+export function loginInUse(row: Pick<ProfileRow, "provider" | "disabled">, ps: ProvidersStatus | null): boolean {
+  return row.disabled !== true && ps?.[row.provider as keyof ProvidersStatus]?.cli !== false;
+}
+
 export const BIN_NAME: Record<keyof ProvidersStatus, string> = { claude: "claude", codex: "codex", antigravity: "agy" };
 
 export function providersFromStatus(ps: ProvidersStatus): Provider[] {
@@ -350,6 +358,7 @@ export function surfacesFromApps(apps: AppInfo[]): Surface[] {
 export function deriveAttention(accounts: Account[], tools: ToolEntry[], toolsCheckedAt: number | null, now: number): Attention[] {
   const out: Attention[] = [];
   for (const a of accounts) {
+    if (a.disabled) continue;
     if (a.state === "signed-out" && a.auth?.checkedAt != null) {
       out.push({
         id: `signin:${a.id}`,

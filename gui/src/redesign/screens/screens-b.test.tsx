@@ -128,6 +128,12 @@ describe("Tools", () => {
     expect(screen.getByText("$ agent-switch tooling upgrade agent-config")).toBeTruthy();
   });
 
+  it("shows no status badge while agent-config is simply not started", () => {
+    mount(fixture({ agentConfig: { status: "not-running", port: null, pid: null, version: "18.1.0", latest: null, checkedAt: NOW } }), { screen: "tools" });
+    expect(screen.getAllByText("agent-config").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Not running")).toBeNull();
+  });
+
   it("offers agent-config when it is not installed", () => {
     mount(fixture({ agentConfig: { status: "not-installed", port: null, pid: null, version: null, latest: null, checkedAt: NOW } }), { screen: "tools" });
     expect(screen.getByText("What you get with both")).toBeTruthy();

@@ -65,9 +65,10 @@ export function isolatedLabel(toolId: string, accounts: readonly Account[]): str
   return n ? `${n} account${n === 1 ? "" : "s"} isolated` : null;
 }
 
-export const AC_STATUS: Record<AgentConfigStatus, { label: (port: number | null) => string; tone: Tone }> = {
+/** null = no badge: agent-config not being started is its normal state, not a finding. */
+export const AC_STATUS: Record<AgentConfigStatus, { label: (port: number | null) => string; tone: Tone } | null> = {
   live: { label: (port) => `Running · port ${port}`, tone: "ok" },
-  "not-running": { label: () => "Not running", tone: "neutral" },
+  "not-running": null,
   wedged: { label: () => "Not responding", tone: "alert" },
   "not-installed": { label: () => "Not installed", tone: "neutral" },
   unknown: { label: () => "Status unknown", tone: "neutral" },
@@ -402,9 +403,11 @@ export function AgentConfigCard() {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[15px] font-semibold text-ac-text">agent-config</span>
-            <Badge tone={status.tone} dot>
-              {status.label(t.port)}
-            </Badge>
+            {status && (
+              <Badge tone={status.tone} dot>
+                {status.label(t.port)}
+              </Badge>
+            )}
             {hasUpdate && <Badge tone="info">{latest} available</Badge>}
           </div>
           <p className="mt-1 text-xs text-ac-muted">

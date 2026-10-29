@@ -16,6 +16,7 @@ import {
   activityFromEntries,
   agentConfigFromStatus,
   authFromStatus,
+  loginInUse,
   bindingsFromMappings,
   checksFromDoctor,
   deriveAttention,
@@ -122,7 +123,7 @@ export async function loadViewModel(): Promise<ViewModel> {
     const id = `${p.provider}:${p.name}`;
     const a = accountFromProfile(p, usage(i), {
       protection: protection.get(id) ?? null,
-      auth: auth.get(id) ?? null,
+      auth: loginInUse(p, value(providersR)) ? (auth.get(id) ?? null) : null,
       pools: membership.get(id) ?? [],
     });
     return foreign.has(id) ? { ...a, desktopForeign: foreign.get(id) } : a;
