@@ -1,6 +1,6 @@
 ---
 complexity: large
-status: in-progress
+status: complete
 ---
 
 # Roadmap: honest foundations for the session-control redesign
@@ -25,8 +25,11 @@ tools start. Every new readout says how old it is and what it does not know.
 - Tools keep working undisturbed; nothing automatic changes how a tool starts.
 - Session protection: per account, **default on, 98 %**, separate from the existing
   95 % near-limit notification.
-- New sessions are placed sensibly by remaining capacity — inside explicitly created
-  pools only; unknown usage is never "free".
+- New sessions are placed sensibly by remaining capacity; unknown usage is never "free".
+  *Superseded 2026-10-29:* plain starts without a folder rule balance across the enabled
+  accounts — owner: "Warum musste ich sagen agent-switch use ArturB ??? Das soll AS doch
+  automatisch machen" (`road-to-a-start-the-user-can-predict.md`, D1). A pool rule never
+  leaves its pool (D3 there).
 - Start at login: **default on**, a user's `off` survives every update.
 - Logins should lapse as rarely as the provider allows — never by storing passwords.
 - The Pet intro stays byte-exact and once-only.
@@ -104,6 +107,6 @@ tools start. Every new readout says how old it is and what it does not know.
 
 | Risk | Mitigation |
 |---|---|
-| Pool routing read as subscription pooling | opt-in pools only, never across labels implicitly, no added-up limits, explanation per pick |
+| Pool routing read as subscription pooling | pools are opt-in and a pool rule never leaves its pool; plain starts balance across enabled accounts by owner decision (2026-10-29); no added-up limits, explanation per pick |
 | Auth expiry metadata differs per provider/version | `unknown` is first-class; no state inferred from usage |
 | Changing defaults surprises existing users | defaults apply to fresh installs; stored values migrate untouched |

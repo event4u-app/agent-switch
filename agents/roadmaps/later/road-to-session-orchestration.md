@@ -10,6 +10,9 @@ status: planned
 > because every item here needs real multi-OS runs, live provider logins or a soak
 > window that a single session cannot provide honestly.
 >
+> **Arrivals:** 2 — latest `inbox-2026-10-b` (2026-10-29, release hardening from the
+> PR #102 review → Phase 6); earlier: `inbox-2026-10-a`.
+>
 > Pull trigger: [`road-to-honest-foundations.md`](../archive/road-to-honest-foundations.md)
 > closed (data model, readouts and defects in place).
 
@@ -59,3 +62,25 @@ status: planned
 - [ ] German/English localisation of the GUI.
 - [ ] Quiet hours for notifications; KPIs from v6 measured against real tasks.
 - [ ] Per-profile GitHub/MCP sharing matrix.
+
+## Phase 6 — Release hardening carried from the PR #102 review
+
+> From `inbox-2026-10-b`; the executable part went to `road-to-a-start-the-user-can-predict.md`.
+
+- [ ] Team / Enterprise seats are never balanced: needs the plan from the stored
+      credential's metadata (not read by any probe so far — unverified); unknown
+      plan counts as not balanceable.
+- [ ] Eligibility before scoring across orgs (same email in two orgs) and a
+      conservative capacity score where the reset time is unknown (`src/balance.ts`
+      assumes 7 days).
+- [ ] Desktop sessions: `live` is a transcript touched in the last 2 minutes
+      (`src/desktop-sessions.ts` `DESKTOP_LIVE_MS`) — label it "recently active"
+      unless a process proves it.
+- [ ] `gui/src/redesign/PARITY.md` as executable journeys; a11y/axe and screenshot
+      baselines; tray and main window read one timestamped cache.
+- [ ] Autostart on macOS/Windows/Linux login, upgrade and OS denial; versioned,
+      scrubbed shapes for `doctor`, `auth-status` and `activity` (fake-token tests).
+- [ ] Upgrade fixtures from 2.1.0 (labels, alerts, protection, guard, history,
+      bindings, pet flag); desktop/security smoke per OS; a final threat review of
+      tray IPC, process spawning and shell integration.
+
