@@ -188,33 +188,47 @@ export function allProviders(): Provider[] {
   return PROVIDER_IDS.map((id) => PROVIDERS[id]);
 }
 
-/** Where an installer may drop a binary off the default PATH. Some CLIs (e.g.
- *  agy, installed via `curl … | bash`) land in ~/.local/bin, which a GUI app's
- *  minimal PATH frequently omits. */
-function localBinary(binary: string): string {
-  return path.join(os.homedir(), ".local", "bin", binary);
+/**
+ * Where an installer may drop a binary off the minimal PATH a GUI app (and the
+ * service it starts) runs with on macOS — `/usr/bin:/bin:/usr/sbin:/sbin`.
+ * ~/.local/bin (e.g. agy via `curl … | bash`) first, then Homebrew on Apple
+ * silicon and Intel. The first existing path, or null.
+ */
+export function offPathBinary(
+  binary: string,
+  home: string = os.homedir(),
+  exists: (file: string) => boolean = fs.existsSync,
+  platform: NodeJS.Platform = process.platform,
+): string | null {
+  const p = platform === "win32" ? path.win32 : path.posix;
+  const dirs = [p.join(home, ".local", "bin")];
+  if (platform !== "win32") dirs.push("/opt/homebrew/bin", "/usr/local/bin");
+  for (const dir of dirs) {
+    const file = p.join(dir, binary);
+    if (exists(file)) return file;
+  }
+  return null;
 }
 
 /**
  * Resolve a CLI binary to an invocable command: a user-linked path when set and
  * present (the CLI is not on PATH but the user pointed us at it), otherwise its
- * bare name when it is on PATH, otherwise its ~/.local/bin path when the binary
- * lives there (GUI apps often run with a minimal PATH that omits it), otherwise
- * the bare name so the caller surfaces a clean "not found" error.
+ * bare name when it is on PATH, otherwise its path in one of the
+ * {@link offPathBinary} dirs, otherwise the bare name so the caller surfaces a
+ * clean "not found" error.
  */
 export function resolveBinary(binary: string, linked?: string | null): string {
   if (linked && fs.existsSync(linked)) return linked;
   const probe = spawnSync(binary, ["--version"], { stdio: "ignore", timeout: 5000 });
   if ((probe.error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") return binary;
-  const local = localBinary(binary);
-  return fs.existsSync(local) ? local : binary;
+  return offPathBinary(binary) ?? binary;
 }
 
 /**
  * Best-effort: is this provider's CLI binary usable? True when a user-linked
  * path is set and present, else when `<binary> --version` resolves on PATH
  * (only ENOENT counts as not-installed — a non-zero exit or a timeout still
- * means the binary exists), else when it lives in ~/.local/bin. Used to gate
+ * means the binary exists), else when it lives in an {@link offPathBinary} dir. Used to gate
  * enabling a provider the user hasn't installed (or hasn't linked).
  */
 export function isProviderInstalled(id: ProviderId, linked?: string | null): boolean {
@@ -222,5 +236,5 @@ export function isProviderInstalled(id: ProviderId, linked?: string | null): boo
   const bin = PROVIDERS[id].binary;
   const probe = spawnSync(bin, ["--version"], { stdio: "ignore", timeout: 5000 });
   if ((probe.error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") return true;
-  return fs.existsSync(localBinary(bin));
+  return offPathBinary(bin) !== null;
 }

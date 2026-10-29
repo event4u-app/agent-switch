@@ -118,13 +118,24 @@ function recordAttemptFile(configDir: string, at: number): void {
 }
 
 /**
+ * The PATH `claude doctor` runs with: the resolved binary's dir and this node's
+ * dir ahead of the inherited PATH. An npm-installed `claude` is a
+ * `#!/usr/bin/env node` script, and the service's minimal PATH has no node.
+ */
+export function doctorPath(bin: string, execPath: string, inherited: string | undefined): string {
+  const dirs = [path.isAbsolute(bin) ? path.dirname(bin) : null, path.dirname(execPath), ...(inherited ?? "").split(path.delimiter)];
+  return [...new Set(dirs.filter((d): d is string => !!d))].join(path.delimiter);
+}
+
+/**
  * `claude doctor` against one profile's config dir. stdout/stderr are dropped —
  * this is a side-effect call, not a readout. Any completed run returns true;
  * whether the token actually got refreshed is decided by re-reading the store.
  */
 function runClaudeDoctor(configDir: string, linkedBinary: string | null): boolean {
-  const res = spawnSync(resolveBinary("claude", linkedBinary), ["doctor"], {
-    env: { ...process.env, CLAUDE_CONFIG_DIR: configDir },
+  const bin = resolveBinary("claude", linkedBinary);
+  const res = spawnSync(bin, ["doctor"], {
+    env: { ...process.env, CLAUDE_CONFIG_DIR: configDir, PATH: doctorPath(bin, process.execPath, process.env.PATH) },
     // Claude Code reads settings from the CWD; run it somewhere neutral so a
     // project's config can never influence a background health check.
     cwd: os.tmpdir(),
@@ -170,8 +181,13 @@ export function freshenToken(configDir: string, deps: FreshenDeps = defaultFresh
  * no readable credential at all); a freshen that could not heal the login just
  * means the caller's read fails as it did before.
  */
-export function freshAccessToken(configDir: string, deps: FreshenDeps = defaultFreshenDeps()): string | null {
-  freshenToken(configDir, deps);
+export function freshAccessToken(
+  configDir: string,
+  deps: FreshenDeps = defaultFreshenDeps(),
+  onOutcome?: (outcome: FreshenOutcome) => void,
+): string | null {
+  const outcome = freshenToken(configDir, deps);
+  onOutcome?.(outcome);
   const creds = deps.readCredential(configDir);
   return creds ? accessTokenOf(creds) : null;
 }
@@ -181,8 +197,13 @@ export function freshAccessToken(configDir: string, deps: FreshenDeps = defaultF
  * install (seeded by `import`) is never refreshed: whichever side refreshes
  * first invalidates the other, so its stored token is used only while valid.
  */
-export function usageToken(configDir: string, deps: FreshenDeps, sharesDefaultLogin: boolean): string | null {
-  if (!sharesDefaultLogin) return freshAccessToken(configDir, deps);
+export function usageToken(
+  configDir: string,
+  deps: FreshenDeps,
+  sharesDefaultLogin: boolean,
+  onOutcome?: (outcome: FreshenOutcome) => void,
+): string | null {
+  if (!sharesDefaultLogin) return freshAccessToken(configDir, deps, onOutcome);
   const creds = deps.readCredential(configDir);
   return creds && !needsFreshen(creds, deps.now(), deps.bufferMs) ? accessTokenOf(creds) : null;
 }
