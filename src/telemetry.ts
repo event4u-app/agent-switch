@@ -47,6 +47,10 @@ export const SUPPORTED_CLAUDE = ["2.1"];
  *  tokens, never guess a percentage). User overrides via state.json merge on
  *  top. Codex needs no table — its rollout carries model_context_window. */
 export const CONTEXT_WINDOWS: Record<string, number> = {
+  "claude-fable-5-1": 1_000_000,
+  "claude-opus-5-5": 1_000_000,
+  "claude-sonnet-5-5": 1_000_000,
+  "claude-haiku-5-5": 200_000,
   "claude-fable-5": 1_000_000,
   "claude-opus-4-8": 1_000_000,
   "claude-opus-4-7": 1_000_000,

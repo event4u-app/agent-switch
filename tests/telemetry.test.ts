@@ -57,6 +57,13 @@ test("contextWindowFor: known models, override, unknown → null", () => {
   assert.equal(contextWindowFor("claude-opus-4-8", { "claude-opus-4-8": 42 }), 42);
 });
 
+test("contextWindowFor: the 5.x model ids Claude Code ships today have a window", () => {
+  assert.equal(contextWindowFor("claude-opus-5-5"), 1_000_000);
+  assert.equal(contextWindowFor("claude-sonnet-5-5"), 1_000_000);
+  assert.equal(contextWindowFor("claude-fable-5-1"), 1_000_000);
+  assert.equal(contextWindowFor("claude-haiku-5-5"), 200_000);
+});
+
 // ---------- readClaudeContext: the core formula ----------
 
 test("readClaudeContext: sums input side, excludes output, computes pct", () => {
