@@ -1615,7 +1615,8 @@ test("import: a seeded import is marked as sharing the default login, and doctor
   try {
     fs.mkdirSync(path.join(fakeHome, ".codex"), { recursive: true });
     fs.writeFileSync(path.join(fakeHome, ".codex", "auth.json"), JSON.stringify({ OPENAI_API_KEY: null, tokens: { id_token: "x", access_token: "y", refresh_token: "z" } }));
-    const env = { ...process.env, AGENT_SWITCH_HOME: home, HOME: fakeHome, CODEX_HOME: "" };
+    // Windows reads the home dir from USERPROFILE, not HOME.
+    const env = { ...process.env, AGENT_SWITCH_HOME: home, HOME: fakeHome, USERPROFILE: fakeHome, CODEX_HOME: "" };
     execFileSync("node", [CLI, "import", "--provider", "codex", "imp"], { env, encoding: "utf8" });
     assert.ok(fs.existsSync(path.join(home, "codex", "imp", "shares-default-login")), "seeded import is marked");
     const doc = JSON.parse(spawnSync("node", [CLI, "doctor", "--json"], { env, encoding: "utf8" }).stdout);

@@ -112,7 +112,14 @@ export function withFileLockSync<T>(target: string, fn: () => T, timeoutMs = DEF
       fs.mkdirSync(lockDir);
       break;
     } catch (err: any) {
-      if (err?.code !== "EEXIST") throw err;
+      // Windows answers EPERM while another process is removing the lock dir.
+      const busy = err?.code === "EEXIST" || (process.platform === "win32" && err?.code === "EPERM");
+      if (!busy) throw err;
+      if (err.code === "EPERM") {
+        if (Date.now() > deadline) throw err;
+        Atomics.wait(nap, 0, 0, 10);
+        continue;
+      }
       let stale = false;
       try {
         stale = Date.now() - fs.statSync(lockDir).mtimeMs > STALENESS_MS;
