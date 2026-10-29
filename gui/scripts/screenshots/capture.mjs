@@ -99,7 +99,11 @@ function makeBridge(seed) {
   const ok = (stdout) => ({ code: 0, signal: null, stdout: typeof stdout === "string" ? stdout : JSON.stringify(stdout, null, 2), stderr: "" });
   const fail = (stderr) => ({ code: 1, signal: null, stdout: "", stderr });
   const tilde = (s) => s.split(home).join("~");
-  const untilde = (s) => (typeof s === "string" && s.startsWith("~") ? home + s.slice(1) : s);
+  // Session folders stay absolute, like real output — the start dialog offers
+  // them as folders and refuses a `~/…` one; the GUI still shows them as `~/…`.
+  const absolute = (s) => s.split(home).join(fx.DEMO_HOME);
+  const untilde = (s) =>
+    typeof s !== "string" ? s : s.startsWith(fx.DEMO_HOME) ? home + s.slice(fx.DEMO_HOME.length) : s.startsWith("~") ? home + s.slice(1) : s;
 
   const profiles = () =>
     JSON.parse(execFileSync(process.execPath, [CLI, "list", "--json"], { env, encoding: "utf8", cwd: home })).map((r) => ({ provider: r.provider, name: r.name }));
@@ -121,7 +125,8 @@ function makeBridge(seed) {
       cwd: untilde(options?.cwd) || home,
       timeout: 20_000,
     });
-    return { code: r.status ?? 1, signal: null, stdout: tilde(r.stdout ?? ""), stderr: tilde(r.stderr ?? "") };
+    const shown = args[0] === "sessions" ? absolute : tilde;
+    return { code: r.status ?? 1, signal: null, stdout: shown(r.stdout ?? ""), stderr: tilde(r.stderr ?? "") };
   }
 
   function agentSwitch(args, options) {
@@ -195,7 +200,7 @@ function privacyPatterns(home) {
 }
 
 async function assertAnonymous(page, home, shot) {
-  const text = await page.evaluate(() => {
+  const shown = await page.evaluate(() => {
     const parts = [document.body.innerText];
     for (const el of document.querySelectorAll("[title],[aria-label],[placeholder],input,textarea")) {
       for (const a of ["title", "aria-label", "placeholder"]) {
@@ -206,6 +211,8 @@ async function assertAnonymous(page, home, shot) {
     }
     return parts.join("\n");
   });
+  // The demo home is a stand-in by construction (fixtures.DEMO_HOME), not a leak.
+  const text = shown.split(fx.DEMO_HOME).join("~");
   const problems = [];
   for (const p of privacyPatterns(home)) {
     const m = text.match(p.re);

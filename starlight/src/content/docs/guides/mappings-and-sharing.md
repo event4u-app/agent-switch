@@ -30,7 +30,7 @@ agent-switch mappings
 
 ### Resolution precedence
 
-When resolving which account applies, agent-switch checks sources in order and uses the first match. A directory mapping on the **nearest ancestor** of your CWD wins over the active profile, which wins over the default install.
+When resolving which account applies, agent-switch checks sources in order and uses the first match. A directory mapping on the **nearest ancestor** of your CWD wins over the active profile, which wins over the default install. A mapping that points at a **pool** never leaves it: without fresh usage it still starts on a member, and when the pool is gone or has no usable member the start is refused with the reason instead of running on another account.
 
 ```mermaid
 flowchart TD
