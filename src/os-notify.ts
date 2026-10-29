@@ -2,7 +2,9 @@
  * Best-effort OS desktop notifications for the background daemon, so an
  * auto-switch is visible even when the GUI is closed. Per-platform native
  * command, no external dependency:
- *   - macOS   → `osascript -e 'display notification …'`
+ *   - macOS   → nothing: an `osascript` notification is attributed to Script
+ *               Editor. The Agent Switch app shows the notice itself when it
+ *               runs (records not marked OS-notified), otherwise no one does.
  *   - Linux   → `notify-send <title> <body>`
  *   - Windows → PowerShell balloon tip via System.Windows.Forms.NotifyIcon
  *
@@ -17,11 +19,6 @@ export interface OsNotifyCommand {
   args: string[];
 }
 
-/** AppleScript string literal escaping: backslash and double-quote only. */
-function escAppleScript(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
 /** PowerShell single-quoted string literal escaping: double the single quote. */
 function escPowerShellSingle(s: string): string {
   return s.replace(/'/g, "''");
@@ -32,10 +29,6 @@ function escPowerShellSingle(s: string): string {
  * `platform` matches `process.platform` values (`darwin` / `linux` / `win32`).
  */
 export function buildOsNotifyCommand(platform: string, title: string, body: string): OsNotifyCommand | null {
-  if (platform === "darwin") {
-    const script = `display notification "${escAppleScript(body)}" with title "${escAppleScript(title)}"`;
-    return { program: "osascript", args: ["-e", script] };
-  }
   if (platform === "linux") {
     // notify-send treats the first arg as summary, the second as body.
     return { program: "notify-send", args: [title, body] };
