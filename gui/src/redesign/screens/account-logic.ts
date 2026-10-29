@@ -5,13 +5,28 @@
  */
 
 import type { UsageHistorySample } from "../../ipc.js";
-import { loginArgs, sessionArgs } from "../../ipc.js";
+import { loginArgs, reloginArgs } from "../../ipc.js";
 import type { ProviderId } from "../../transforms.js";
 import type { Account, Protection, Tool } from "../../vm/types.js";
 
-/** The design's account-name rule (`KP`/`GP`). Stricter than the CLI's
- *  PROFILE_NAME_RE, so a valid name is always a valid CLI argument. */
-export const ACCOUNT_NAME_RE = /^[a-z0-9][a-z0-9-]{0,23}$/;
+/** The CLI's rule for a profile name (`assertProfileName`: letters in either
+ *  case, digits, - and _), minus a leading `-`, which argv would read as a
+ *  flag. The design's lowercase-only rule is not used: it refused names the
+ *  CLI accepts and existing profiles already have. */
+export const ACCOUNT_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
+
+/** Why a typed name can't be used, in words; null when it can. */
+export function nameProblem(name: string): string | null {
+  const n = name.trim();
+  if (!n) return null;
+  if (/\s/.test(name)) return "No spaces — use - or _ instead.";
+  if (n.startsWith("-")) return "A name can't start with “-”.";
+  if (!ACCOUNT_NAME_RE.test(n)) return "Only letters, digits, - and _.";
+  return null;
+}
+
+/** The hint under a name field when nothing is wrong. */
+export const NAME_HINT = "Letters, digits, - and _.";
 
 /** Names that existed before the design rule (dots, capitals) stay savable
  *  unchanged; a NEW name must follow the design rule. */
@@ -113,11 +128,10 @@ export function addBlocked(tool: Tool): string | null {
   return null;
 }
 
-/** `add` refuses an existing profile; a profile that exists signs in by
- *  launching its tool (Codex: `codex login`, the others prompt on their own). */
-export function signInArgs(provider: ProviderId, name: string, exists: boolean): string[] {
-  if (!exists) return loginArgs(provider, name);
-  return provider === "codex" ? [...sessionArgs(provider, name), "login"] : sessionArgs(provider, name);
+/** `add` creates a profile and signs it in; a profile that exists signs in again
+ *  with `login`, which exits non-zero unless the stored login is back. */
+export function signInArgs(provider: ProviderId, name: string, exists: boolean, browser?: string): string[] {
+  return exists ? reloginArgs(provider, name, browser) : loginArgs(provider, name, browser);
 }
 
 export type SignInOutcome = "verified" | "mismatch" | "unfinished";

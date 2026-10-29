@@ -50,8 +50,13 @@ const TOAST_TONE: Record<NotificationKind, NonNullable<Toast["tone"]>> = {
   info: "info",
 };
 
+/** Title plus message: the title alone ("Account switched") drops the detail. */
+export function noticeText(n: AppNotification): string {
+  return n.message ? `${n.title} — ${n.message}` : n.title;
+}
+
 export function toastFor(n: AppNotification): Omit<Toast, "id"> {
-  return { text: n.message ? `${n.title} — ${n.message}` : n.title, tone: TOAST_TONE[n.kind] };
+  return { text: noticeText(n), tone: TOAST_TONE[n.kind] };
 }
 
 /** Events newer than `since`, and the new high-water mark. */
@@ -112,7 +117,7 @@ export function useNotificationEngine(): void {
       sinceRef.current = since;
       if (fresh.length === 0) return;
       await deliver(fresh, await readFireContext(), {
-        pet: (n) => void petDeliver(n.kind, n.title, bubbleAction(n.title, n.message)),
+        pet: (n) => void petDeliver(n.kind, noticeText(n), bubbleAction(n.title, n.message)),
         desktop: sendDesktopNotification,
         toast: (n) => sRef.current.toast(toastFor(n)),
       });

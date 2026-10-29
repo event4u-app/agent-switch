@@ -18,7 +18,9 @@ export interface RowMenuItem {
 export function RowMenu({ trigger, items, align = "end" }: { trigger: ReactElement; items: RowMenuItem[]; align?: "start" | "center" | "end" }) {
   const container = usePortalContainer();
   return (
-    <Menu.Root>
+    // Non-modal: a modal menu whose item opens a dialog leaves the body at
+    // pointer-events: none once that dialog closes (nothing clickable).
+    <Menu.Root modal={false}>
       <Menu.Trigger asChild>{trigger}</Menu.Trigger>
       <Menu.Portal container={container}>
         <Menu.Content

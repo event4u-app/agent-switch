@@ -7,26 +7,27 @@ import { AccountDot } from "../../ui/AccountDot.js";
 import { Badge } from "../../ui/Badge.js";
 import { Button } from "../../ui/Button.js";
 import { Card } from "../../ui/Card.js";
-import { Dialog } from "../../ui/Overlay.js";
+import { Copyable } from "../../ui/CopyButton.js";
+import { Sheet } from "../../ui/Overlay.js";
 import { Segmented } from "../../ui/Segmented.js";
 import { Switch } from "../../ui/Switch.js";
 import { TextInput } from "../../ui/TextInput.js";
 import { colorFor } from "../../vm/build.js";
 import { TOOL_LABEL } from "../../vm/rules.js";
 import { useAS } from "../../vm/store.js";
-import type { Tool } from "../../vm/types.js";
+import type { IdentityColor, Tool } from "../../vm/types.js";
 import { attempt } from "./account-actions.js";
-import { ACCOUNT_NAME_RE, ACCOUNT_TOOLS, addBlocked, providerOf, SIGN_IN_TEXT, signInArgs } from "./account-logic.js";
+import { ACCOUNT_NAME_RE, ACCOUNT_TOOLS, addBlocked, NAME_HINT, nameProblem, providerOf, SIGN_IN_TEXT, signInArgs } from "./account-logic.js";
 import { ColourPicker, PoolsPicker, TagPicker } from "./account-sheet.js";
-import { readIdentity } from "./reauth.js";
+import { LoginBrowserField, readIdentity, useLoginBrowser } from "./reauth.js";
 import { XtermBox } from "./terminal-sheet.js";
 
 const STEPS = ["Provider", "Name", "Sign in", "Use in"];
 const TITLES = ["Which provider?", "What should we call it?", "Sign in with the provider", "Where should it be used?"];
 
-type SignIn = { state: "idle" } | { state: "pending"; run: number } | { state: "verified"; identity: string | null };
+type SignIn = { state: "idle" } | { state: "pending"; run: number } | { state: "verified"; identity: string };
 
-/** Add account wizard. Bundle `KP` (dialog 600). Step 3 runs `agent-switch add`
+/** Add account wizard, a flyout like the account itself. Bundle `KP`. Step 3 runs `agent-switch add`
  *  in the built-in terminal; the account exists once it finishes. */
 export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
   const s = useAS();
@@ -35,15 +36,22 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
   const [tool, setTool] = useState<Tool>(preset ?? "claude");
   const [name, setName] = useState("");
   const [label, setLabel] = useState<ProfileLabel | null>(null);
+  const [picked, setPicked] = useState<IdentityColor | null>(null);
   const [pools, setPools] = useState<string[]>([]);
   const [method, setMethod] = useState<"browser" | "device">("browser");
   const [signIn, setSignIn] = useState<SignIn>({ state: "idle" });
   const [created, setCreated] = useState(false);
   const [runs, setRuns] = useState(0);
+  const login = useLoginBrowser(tool);
 
   const provider = providerOf(tool);
-  const taken = s.accounts.some((a) => a.tool === tool && a.name === name);
+  const color = picked ?? colorFor(`${tool}:${name}`);
+  // Case-insensitive: on a default macOS / Windows disk `Work` and `work` are
+  // the same profile folder, and the CLI refuses the second.
+  const twin = s.accounts.find((a) => a.tool === tool && a.name.toLowerCase() === name.trim().toLowerCase());
+  const taken = !!twin;
   const nameOk = ACCOUNT_NAME_RE.test(name) && (!taken || created);
+  const problem = nameProblem(name);
   const blocked = addBlocked(tool);
 
   function begin() {
@@ -56,8 +64,10 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
     if (!provider) return;
     try {
       const r = await readIdentity(provider, name);
+      // The profile can exist with the sign-in unfinished; the next try then
+      // signs that profile in instead of adding it a second time.
       if (r.exists) setCreated(true);
-      if (r.exists) setSignIn({ state: "verified", identity: r.identity });
+      if (r.exists && r.identity) setSignIn({ state: "verified", identity: r.identity });
       else {
         setSignIn({ state: "idle" });
         s.toast({ tone: "warn", text: "The sign-in didn't finish — try again." });
@@ -74,7 +84,7 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
     attempt(
       s,
       (async () => {
-        if (label) await s.act.updateAccount?.(id, { label });
+        if (label || picked) await s.act.updateAccount?.(id, { ...(label ? { label } : {}), ...(picked ? { color: picked } : {}) });
         for (const p of pools) await s.act.setPoolMembership?.(p, id, true);
       })(),
       `Couldn't finish ${name}`,
@@ -89,12 +99,12 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
   };
 
   return (
-    <Dialog
+    <Sheet
       open
       onOpenChange={(o) => !o && close()}
       kicker={`Add account · step ${step + 1} of ${STEPS.length}`}
       title={TITLES[step]}
-      width={600}
+      width={480}
       footer={
         <>
           {step > 0 && (
@@ -174,17 +184,15 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
               value={name}
               placeholder="e.g. client-acme"
               disabled={created}
-              onChange={(e) => setName(e.target.value.toLowerCase())}
+              onChange={(e) => setName(e.target.value)}
             />
-            <span className={cn("text-[11px]", taken && !created ? "text-ac-warn-text" : "text-ac-faint")}>
-              {taken && !created ? `There is already a ${TOOL_LABEL[tool]} account named ${name}.` : "Lowercase letters, digits and dashes."}
+            <span className={cn("text-[11px]", (taken && !created) || problem ? "text-ac-warn-text" : "text-ac-faint")}>
+              {taken && !created ? `There is already a ${TOOL_LABEL[tool]} account named ${twin?.name ?? name}.` : (problem ?? NAME_HINT)}
             </span>
           </div>
           <TagPicker value={label} onChange={setLabel} />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <ColourPicker value={colorFor(`${tool}:${name}`)} />
-            <PoolsPicker value={pools} onChange={setPools} />
-          </div>
+          <ColourPicker value={color} onChange={setPicked} />
+          <PoolsPicker value={pools} onChange={setPools} />
         </div>
       )}
 
@@ -207,8 +215,9 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
               },
             ]}
           />
+          <LoginBrowserField tool={tool} login={login} />
           <Card className="flex items-center gap-3 p-3">
-            <AccountDot color={colorFor(`${tool}:${name}`)} size={12} />
+            <AccountDot color={color} size={12} />
             <span className="min-w-0 flex-1">
               <span className="block font-ac-mono text-xs text-ac-text">
                 {TOOL_LABEL[tool]} · {name}
@@ -216,7 +225,11 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
               <span className="block text-[11px] text-ac-muted">
                 {signIn.state === "idle" && "Not started"}
                 {signIn.state === "pending" && "Waiting for the browser … you can switch windows."}
-                {signIn.state === "verified" && (signIn.identity ? `Verified: ${signIn.identity}` : "Added — the sign-in can't be read yet; check it in the account.")}
+                {signIn.state === "verified" && (
+                  <>
+                    Verified: <Copyable text={signIn.identity} />
+                  </>
+                )}
               </span>
             </span>
             {signIn.state === "idle" && (
@@ -237,7 +250,7 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
           </Card>
           {signIn.state === "pending" && (
             <div className="flex h-[240px] overflow-hidden rounded-lg border border-ac-line bg-ac-bg p-3">
-              <XtermBox key={signIn.run} args={signInArgs(provider, name, created)} backend={tauriBackend} onExit={() => void finished()} />
+              <XtermBox key={signIn.run} args={signInArgs(provider, name, created, login.browser || undefined)} backend={tauriBackend} onExit={() => void finished()} />
             </div>
           )}
         </div>
@@ -269,6 +282,6 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
           <p className="text-[11px] text-ac-faint">Session protection is on (98 %). You can change everything later in the account.</p>
         </div>
       )}
-    </Dialog>
+    </Sheet>
   );
 }

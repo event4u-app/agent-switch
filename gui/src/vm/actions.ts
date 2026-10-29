@@ -17,16 +17,18 @@ import type { ProfileLabel, ProviderId, ProviderSurface } from "../transforms.js
 import { checkForUpdate, type UpdateCheck } from "../updates.js";
 import { dropUsageSnapshot } from "../usage-cache.js";
 import { forceDoctorOnNextLoad, forceToolsOnNextLoad } from "./slow-cache.js";
-import { forceUsageOnNextLoad, restartUsageCountdown } from "./usage-loader.js";
-import type { Session, ViewModel } from "./types.js";
+import { forceUsageFor, forceUsageOnNextLoad, restartUsageCountdown } from "./usage-loader.js";
+import type { IdentityColor, Session, ViewModel } from "./types.js";
 
 export interface Actions {
   setDefault?(accountId: string): Promise<void>;
   deactivate?(tool: ProviderId): Promise<void>;
   removeAccount?(accountId: string): Promise<void>;
-  updateAccount?(accountId: string, patch: { name?: string; label?: ProfileLabel | null }): Promise<void>;
+  updateAccount?(accountId: string, patch: { name?: string; label?: ProfileLabel | null; color?: IdentityColor }): Promise<void>;
   redeemReset?(accountId: string): Promise<void>;
   refreshUsage?(): Promise<void>;
+  /** One account's usage, past its cooldown. */
+  refreshAccountUsage?(accountId: string): Promise<void>;
   recheckTools?(): Promise<void>;
   trashSession?(sessionId: string): Promise<{ trashId: string | null }>;
   restoreSession?(sessionId: string, handle: string): Promise<void>;
@@ -37,6 +39,8 @@ export interface Actions {
   restartAgentConfig?(): Promise<void>;
   setSharedSetup?(enabled: boolean, source?: string): Promise<void>;
   setAutostart?(on: boolean): Promise<void>;
+  setAccountDisabled?(accountId: string, disabled: boolean): Promise<void>;
+  installShellIntegration?(): Promise<void>;
   setProvider?(tool: ProviderId, surface: ProviderSurface, on: boolean): Promise<void>;
   linkProviderBinary?(tool: ProviderId, path: string): Promise<void>;
   unlinkProviderBinary?(tool: ProviderId): Promise<void>;
@@ -83,9 +87,10 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
     setDefault: thenReload((id: string) => ipc.switchProfile(...splitAccountId(id))),
     deactivate: thenReload((tool: ProviderId) => ipc.deactivateProfile(tool)),
     removeAccount: thenReload((id: string) => ipc.removeProfile(...splitAccountId(id))),
-    updateAccount: thenReload(async (id: string, patch: { name?: string; label?: ProfileLabel | null }) => {
+    updateAccount: thenReload(async (id: string, patch: { name?: string; label?: ProfileLabel | null; color?: IdentityColor }) => {
       const [provider, name] = splitAccountId(id);
       if (patch.label !== undefined) await ipc.setProfileLabel(provider, name, patch.label);
+      if (patch.color !== undefined) await ipc.setProfileColor(provider, name, patch.color);
       if (patch.name && patch.name !== name) {
         await ipc.renameProfile(provider, name, patch.name);
         // A reused name must never show a prior account's numbers; dropping the
@@ -94,11 +99,17 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
         dropUsageSnapshot(`${provider}/${patch.name}`);
       }
     }),
+    setAccountDisabled: thenReload((id: string, disabled: boolean) => ipc.setProfileDisabled(...splitAccountId(id), disabled)),
     redeemReset: thenReload((id: string) => ipc.redeemReset(...splitAccountId(id))),
     // Manual refresh: past the per-account cooldown, and the countdown restarts.
     refreshUsage: async () => {
       forceUsageOnNextLoad();
       restartUsageCountdown();
+      await reload();
+    },
+    refreshAccountUsage: async (id: string) => {
+      const [provider, profile] = splitAccountId(id);
+      forceUsageFor(`${provider}/${profile}`);
       await reload();
     },
     // "Check now": a fresh tooling sweep (latest versions stay hourly).
@@ -133,6 +144,10 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
     setAutostart: thenReload((on: boolean) => {
       forceDoctorOnNextLoad();
       return ipc.setAutostart(on);
+    }),
+    installShellIntegration: thenReload(async () => {
+      forceDoctorOnNextLoad();
+      await ipc.installShellIntegration();
     }),
     setProvider: thenReload((tool: ProviderId, surface: ProviderSurface, on: boolean) => ipc.setProvider(tool, surface, on)),
     linkProviderBinary: thenReload((tool: ProviderId, path: string) => ipc.linkProviderBinary(tool, path)),

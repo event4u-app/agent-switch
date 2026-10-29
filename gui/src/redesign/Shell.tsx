@@ -48,7 +48,7 @@ export function TopBar({ isMac }: { isMac: boolean }) {
     <header
       data-tauri-drag-region
       className={cn(
-        "relative flex h-[52px] shrink-0 items-center gap-2 border-b border-ac-line bg-ac-panel pr-3",
+        "relative flex h-[52px] shrink-0 items-center gap-2 border-b border-ac-line bg-ac-panel pr-3 pt-1",
         isMac ? "pl-[84px]" : "pl-3",
       )}
     >
@@ -166,6 +166,48 @@ export function ErrorBanner() {
   );
 }
 
+/** Without the shell integration a plain `claude` in a terminal ignores every
+ *  profile, rule and pool, so this stays up, in red, until it is set up. */
+export function ShellIntegrationBanner() {
+  const s = useAS();
+  const [busy, setBusy] = useState(false);
+  const check = s.checks.find((c) => c.id === "shell-integration");
+  if (!check || check.state === "ok" || check.state === "info") return null;
+  const install = s.act.installShellIntegration;
+  return (
+    <div role="alert" className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ac-alert bg-ac-alert-tint px-4 py-3">
+      <span className="flex min-w-0 flex-1 items-start gap-2.5 text-ac-alert-text">
+        <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+        <span className="min-w-0">
+          <span className="block text-[13px] font-medium">Shell integration missing — Agent Switch can't pick the account in a terminal</span>
+          <span className="block text-xs">A plain `claude`, `codex` or `agy` ignores your accounts, folder rules and pools until it is set up.</span>
+        </span>
+      </span>
+      <span className="flex items-center gap-2">
+        <Button size="sm" variant="ghost" onClick={() => s.open({ kind: "fix", checkId: check.id })}>
+          Details
+        </Button>
+        {install && (
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              install()
+                .then(() => s.toast({ tone: "ok", text: "Shell integration set up. Open a new terminal to use it." }))
+                .catch((e: unknown) => s.toast({ tone: "alert", text: `Couldn't set it up: ${e instanceof Error ? e.message : String(e)}` }))
+                .finally(() => setBusy(false));
+            }}
+          >
+            <Wrench /> {busy ? "Setting up …" : "Set up now"}
+          </Button>
+        )}
+      </span>
+    </div>
+  );
+}
+
 /** ⌘N start session, ⌘, settings (⌘K lives in CommandSearch). Bundle `CP`. */
 export function useGlobalShortcuts(isMac: boolean) {
   const s = useAS();
@@ -195,6 +237,7 @@ export function Shell({ isMac, children }: { isMac: boolean; children: ReactNode
       <main className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[1180px] px-4 pb-10 pt-6 sm:px-6">
           <ErrorBanner />
+          <ShellIntegrationBanner />
           {children}
         </div>
       </main>

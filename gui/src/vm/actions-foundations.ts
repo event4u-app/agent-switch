@@ -28,6 +28,8 @@ export interface FoundationActions {
   mapFolder(dir: string, target: { accountId: string } | { pool: string; tool: Tool }): Promise<void>;
   /** Remove a folder rule; without a tool every tool's rule on that folder goes. */
   unmapFolder(dir: string, tool?: Tool): Promise<void>;
+  /** Pause (kept, but skipped) or resume a folder rule for one tool. */
+  setBindingPaused(dir: string, tool: Tool, paused: boolean): Promise<void>;
   /** Which account a start in `dir` would use for `tool`, and why. */
   explainFolder(dir: string, tool: Tool): Promise<ipc.DirResolution>;
   setGuard(policy: GuardPolicy): Promise<void>;
@@ -76,6 +78,7 @@ export function createFoundationActions(_getVm: () => ViewModel, reload: () => P
       }
     }),
     unmapFolder: thenReload((dir: string, tool?: Tool) => ipc.unmapFolder(dir, tool ? providerOf(tool) : undefined)),
+    setBindingPaused: thenReload((dir: string, tool: Tool, paused: boolean) => ipc.setMappingPaused(providerOf(tool), dir, paused)),
     explainFolder: (dir: string, tool: Tool) => ipc.resolveDir(providerOf(tool), dir),
     setGuard: thenReload(async (policy: GuardPolicy) => {
       await ipc.setGuard(policy);

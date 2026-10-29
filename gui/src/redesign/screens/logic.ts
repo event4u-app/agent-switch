@@ -7,7 +7,7 @@
 import type { DirResolution } from "../../ipc.js";
 import { expandHome } from "../../lib/paths.js";
 import { shortPath } from "../../ui/format.js";
-import { accountIdFromMember } from "../../vm/build.js";
+import { accountIdFromMember, BIN_NAME } from "../../vm/build.js";
 import { rankAccounts, TOOL_LABEL, type RankedAccount } from "../../vm/rules.js";
 import type { Account, Attention, Binding, Pool, Session, SessionState, Tool, ViewModel } from "../../vm/types.js";
 
@@ -193,7 +193,7 @@ export function resolutionFromCli(res: DirResolution, tool: Tool, accounts: read
 
 /** Start is possible only for a known account that can take work. */
 export function canStartOn(a: Account | null | undefined): boolean {
-  return !!a && a.state !== "signed-out" && a.state !== "limited" && a.state !== "wrong-account";
+  return !!a && !a.disabled && a.state !== "signed-out" && a.state !== "limited" && a.state !== "wrong-account";
 }
 
 /** The design's tool row; a tool is selectable when any of its accounts ranks. */
@@ -307,4 +307,71 @@ export function overviewSub(vm: Pick<ViewModel, "accounts" | "sessions" | "atten
 /** Tools in first-seen account order (the "What's left" groups). */
 export function accountTools(accounts: readonly Account[]): Tool[] {
   return Array.from(new Set(accounts.map((a) => a.tool)));
+}
+
+export interface PlainStart {
+  command: string;
+  /** The account a plain start uses; null = the tool's own login. */
+  account: Account | null;
+  /** Enabled folder rules for this tool, which pick their own account. */
+  rules: number;
+  /** The whole answer as one sentence (tooltip / accessible name). */
+  text: string;
+  /** Why agent-switch picked it, short (from `dir --plain`); null = not asked. */
+  reason: string | null;
+  /** agent-switch's full reasoning, one line each. */
+  why: string[];
+  /** Set when that account can't take work right now. */
+  warn: string | null;
+}
+
+/** What a plain `claude` / `codex` / `agy` does where no folder rule applies:
+ *  the account set for plain starts, or the tool's own login. Folder rules
+ *  (and the pools they name) decide for their folders, so they're only counted. */
+export function plainStart(accounts: readonly Account[], tool: Tool, rules: readonly Binding[]): PlainStart {
+  const command = tool === "gemini" ? "gemini" : BIN_NAME[tool];
+  const def = accounts.find((a) => a.tool === tool && a.isDefault && !a.disabled) ?? null;
+  const ruleCount = rules.filter((r) => r.enabled && (r.tool === tool || r.tool === "any")).length;
+  const rulesNote = ruleCount ? ` ${ruleCount} folder rule${ruleCount > 1 ? "s" : ""} pick their own.` : "";
+  const base = `A plain \`${command}\` outside a folder rule starts on`;
+  if (!def) {
+    return {
+      command,
+      account: null,
+      rules: ruleCount,
+      text: `${base} your original ${TOOL_LABEL[tool]} login — no account is set for plain starts.${rulesNote}`,
+      warn: null,
+      reason: null,
+      why: [],
+    };
+  }
+  const warn =
+    def.state === "signed-out"
+      ? `${def.name} is signed out — sign in again or pick another account for plain starts.`
+      : def.state === "wrong-account"
+        ? `${def.name} is signed in to a different account than expected.`
+        : def.state === "limited"
+          ? `${def.name} is at its limit — pick another account for plain starts.`
+          : null;
+  return { command, account: def, rules: ruleCount, text: `${base} ${def.name}.${rulesNote}`, warn, reason: null, why: [] };
+}
+
+/** The same answer from agent-switch itself (`dir --plain`), which balances a
+ *  plain start across the accounts; the local guess is only the fallback. */
+export function plainStartFromCli(accounts: readonly Account[], tool: Tool, rules: readonly Binding[], r: DirResolution): PlainStart {
+  const id = r.profile ? accountIdFromMember(r.profile) : null;
+  const local = plainStart(
+    accounts.map((a) => ({ ...a, isDefault: a.tool === tool ? a.id === id : a.isDefault })),
+    tool,
+    rules,
+  );
+  const picked = r.why.find((w) => w.startsWith("Picked "));
+  const reason = picked
+    ? picked.replace(/^Picked [^:]+: /, "").replace(/ \(.*$/, "")
+    : r.why.some((w) => w.includes("are level"))
+      ? "level with the others — the starred account"
+      : r.why.some((w) => w.startsWith("No account has fresh usage"))
+        ? "no fresh usage to weigh — the starred account"
+        : null;
+  return { ...local, reason, why: r.why };
 }

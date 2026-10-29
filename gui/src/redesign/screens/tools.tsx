@@ -497,7 +497,7 @@ export function AgentConfigCard() {
         <div className="flex min-w-[260px] flex-1 items-center justify-between gap-4">
           <div className="min-w-0">
             <p className="text-[13px] text-ac-text">Share one setup across Claude accounts</p>
-            <p className="mt-0.5 text-xs text-ac-muted">Skills, rules and settings come from one place; sign-ins stay separate.</p>
+            <p className="mt-0.5 text-xs text-ac-muted">Skills, rules, settings and your prompt history (↑ and Ctrl+R) come from one place; sign-ins stay separate.</p>
             {shared && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {sharedAccounts.map((id) => {

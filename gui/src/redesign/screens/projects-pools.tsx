@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MoreHorizontal, Plus, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { typedFolder, useHomeDir } from "../../lib/paths.js";
 import { cn } from "../../lib/utils.js";
 import type { DirResolution } from "../../ipc.js";
@@ -18,6 +18,7 @@ import { accountIdFromMember } from "../../vm/build.js";
 import { TOOL_LABEL } from "../../vm/rules.js";
 import { useAS } from "../../vm/store.js";
 import type { Account, Binding, Pool, Tool } from "../../vm/types.js";
+import { PoolsSection } from "./pools-panel.js";
 import { RowList } from "./rows.js";
 import { recentFolders } from "./logic.js";
 
@@ -64,13 +65,19 @@ export function bindingTarget(value: string, tool: Tool): { accountId: string } 
   return null;
 }
 
-/** Inline "Add binding" form: folder + tool + account or pool (`agent-switch map`). */
-function AddBinding({ initialDir, onDone }: { initialDir: string; onDone: () => void }) {
+/** The form's `account:<id>` / `pool:<id>` value for a binding's target. */
+const targetValue = (b: Binding) => (b.target.kind === "account" ? `account:${b.target.accountId}` : `pool:${b.target.pool}`);
+
+/** Inline binding form: folder + tool + account or pool (`agent-switch map`).
+ *  With `editing` it changes that binding: the same folder and tool are simply
+ *  mapped again (a paused rule stays paused); a new folder or tool is mapped,
+ *  the old rule removed, and a paused binding paused again in its new place. */
+function BindingForm({ initialDir, editing, onDone }: { initialDir: string; editing?: Binding; onDone: () => void }) {
   const s = useAS();
-  const [dir, setDir] = useState(initialDir);
-  const [tool, setTool] = useState<Tool>("claude");
+  const [dir, setDir] = useState(editing?.match.value ?? initialDir);
+  const [tool, setTool] = useState<Tool>(editing && editing.tool !== "any" ? editing.tool : "claude");
   const targets = bindingTargets(s.accounts, s.pools, tool);
-  const [target, setTarget] = useState("");
+  const [target, setTarget] = useState(editing ? targetValue(editing) : "");
   const [busy, setBusy] = useState(false);
   const home = useHomeDir();
   const chosen = targets.some((t) => t.value === target) ? target : (targets[0]?.value ?? "");
@@ -79,21 +86,31 @@ function AddBinding({ initialDir, onDone }: { initialDir: string; onDone: () => 
   const problem = !folder.ok && dir.trim() ? folder.reason : null;
   const canSave = folder.ok && !!parsed && !!s.act.mapFolder && !busy;
 
+  const write = async (path: string, to: NonNullable<typeof parsed>) => {
+    await s.act.mapFolder!(path, to);
+    if (!editing) return;
+    const moved = path !== editing.match.value || tool !== editing.tool;
+    if (!moved) return;
+    await s.act.unmapFolder?.(editing.match.value, editing.tool === "any" ? undefined : editing.tool);
+    if (!editing.enabled) await s.act.setBindingPaused?.(path, tool, true);
+  };
+
   const save = () => {
     if (!canSave || !folder.ok || !parsed || !s.act.mapFolder) return;
     setBusy(true);
-    s.act
-      .mapFolder(folder.path, parsed)
+    write(folder.path, parsed)
       .then(() => {
-        s.toast({ text: `Bound ${shortPath(folder.path)} for ${TOOL_LABEL[tool]}.`, tone: "ok" });
+        s.toast({ text: editing ? `Binding for ${shortPath(folder.path)} saved.` : `Bound ${shortPath(folder.path)} for ${TOOL_LABEL[tool]}.`, tone: "ok" });
         onDone();
       })
-      .catch((e: unknown) => s.toast({ text: `Couldn't add the binding: ${e instanceof Error ? e.message : String(e)}`, tone: "alert" }))
+      .catch((e: unknown) =>
+        s.toast({ text: `Couldn't ${editing ? "save" : "add"} the binding: ${e instanceof Error ? e.message : String(e)}`, tone: "alert" }),
+      )
       .finally(() => setBusy(false));
   };
 
   return (
-    <Card className="mb-2 flex flex-col gap-3 p-4" aria-label="Add binding">
+    <Card className="mb-2 flex flex-col gap-3 p-4" aria-label={editing ? "Edit binding" : "Add binding"}>
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex min-w-[220px] flex-1 flex-col gap-1.5">
           <span className="text-[11px] font-medium uppercase tracking-wide text-ac-muted">Folder</span>
@@ -139,7 +156,7 @@ function AddBinding({ initialDir, onDone }: { initialDir: string; onDone: () => 
             Cancel
           </Button>
           <Button size="sm" variant="primary" disabled={!canSave} onClick={save}>
-            Add binding
+            {editing ? "Save binding" : "Add binding"}
           </Button>
         </div>
       </div>
@@ -147,19 +164,21 @@ function AddBinding({ initialDir, onDone }: { initialDir: string; onDone: () => 
   );
 }
 
-/** Row ⋯ menu: remove the binding (`agent-switch unmap <folder> --provider P`). */
-function BindingMenu({ rule }: { rule: Binding }) {
+/** Row ⋯ menu: edit the binding inline, or remove it (`agent-switch unmap <folder> --provider P`). */
+function BindingMenu({ rule, onEdit }: { rule: Binding; onEdit: () => void }) {
   const s = useAS();
   const unmap = s.act.unmapFolder;
-  if (!unmap) return null;
+  if (!unmap && !s.act.mapFolder) return null;
   return (
     <RowMenu
       items={[
+        { id: "edit", label: "Edit binding", icon: <Pencil />, disabled: !s.act.mapFolder, onSelect: onEdit },
         {
           id: "remove",
           label: "Remove binding",
           icon: <Trash2 />,
           danger: true,
+          disabled: !unmap,
           onSelect: () =>
             s.open({
               kind: "confirm",
@@ -168,7 +187,7 @@ function BindingMenu({ rule }: { rule: Binding }) {
               confirm: "Remove binding",
               danger: true,
               onConfirm: () => {
-                unmap(rule.match.value, rule.tool === "any" ? undefined : rule.tool).catch((e: unknown) =>
+                unmap?.(rule.match.value, rule.tool === "any" ? undefined : rule.tool)?.catch((e: unknown) =>
                   s.toast({ text: `Couldn't remove the binding: ${e instanceof Error ? e.message : String(e)}`, tone: "alert" }),
                 );
               },
@@ -188,10 +207,21 @@ function BindingMenu({ rule }: { rule: Binding }) {
 export function ProjectsPools() {
   const s = useAS();
   const folders = recentFolders(s.sessions);
-  const [dir, setDir] = useState(folders[0] ?? "");
+  const [picked, setPicked] = useState(folders[0] ?? "");
+  const [typed, setTyped] = useState("");
+  const home = useHomeDir();
+  const typedDir = typedFolder(typed, home);
+  const dir = typed.trim() ? (typedDir.ok ? typedDir.path : "") : picked;
   const [tool, setTool] = useState<Tool>("claude");
   const ex = useExplain(dir, tool);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const togglePaused = (r: Binding) => {
+    if (r.tool === "any" || !s.act.setBindingPaused) return;
+    s.act
+      .setBindingPaused(r.match.value, r.tool, r.enabled)
+      .catch((e: unknown) => s.toast({ tone: "alert", text: `Couldn't ${r.enabled ? "pause" : "resume"} the binding: ${e instanceof Error ? e.message : String(e)}` }));
+  };
   const account = ex.state === "done" ? s.accountById(accountIdFromMember(ex.res.profile) ?? "") : undefined;
   const why = ex.state === "done" ? ex.res.why : ex.state === "error" ? [ex.message] : [];
 
@@ -200,7 +230,22 @@ export function ProjectsPools() {
       <Card className="flex flex-col gap-4 p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[220px] flex-1">
-            <Select label="Try a folder" mono value={dir} onChange={setDir} options={folders.map((f) => ({ value: f, label: shortPath(f) }))} />
+            <Select
+              label="Try a folder"
+              mono
+              value={picked}
+              onChange={(v) => {
+                setPicked(v);
+                setTyped("");
+              }}
+              options={folders.map((f) => ({ value: f, label: shortPath(f) }))}
+            />
+          </div>
+          <div className="flex min-w-[200px] flex-1 flex-col gap-1.5">
+            <label className="ac-caps" htmlFor="try-folder">
+              Or type a folder
+            </label>
+            <TextInput id="try-folder" mono className="h-9" placeholder="~/projects/…" value={typed} onChange={(e) => setTyped(e.target.value)} />
           </div>
           <Segmented
             label="Tool"
@@ -225,7 +270,7 @@ export function ProjectsPools() {
                   </b>
                 </>
               ) : !dir ? (
-                "No folder to try yet — folders show up here once a session ran in them."
+                "No folder to try yet — type one, or pick one once a session ran in it."
               ) : ex.state === "loading" || ex.state === "idle" ? (
                 "Checking …"
               ) : ex.state === "done" && ex.res.profile == null ? (
@@ -262,13 +307,14 @@ export function ProjectsPools() {
           }
         />
         <p className="px-1 pb-2 text-xs text-ac-muted">
-          First match wins. A binding to a pool lets the pool pick the account with the most left — work and personal never mix.
+          The nearest bound folder wins. Bind to an account to always start there, or to a pool to let its accounts share the work — work and personal never mix.
         </p>
-        {adding && <AddBinding initialDir={dir} onDone={() => setAdding(false)} />}
+        {adding && <BindingForm initialDir={dir} onDone={() => setAdding(false)} />}
         <Card className="p-1">
           <RowList>
             {s.rules.map((r) => {
               const a = r.target.kind === "account" ? s.accountById(r.target.accountId) : undefined;
+              if (editing === r.id) return <BindingForm key={r.id} initialDir={dir} editing={r} onDone={() => setEditing(null)} />;
               return (
                 <div
                   key={r.id}
@@ -288,7 +334,7 @@ export function ProjectsPools() {
                         <AccountDot color={a.color} size={8} /> {TOOL_LABEL[a.tool]} · {a.name}
                       </>
                     ) : (
-                      <>pool {r.target.kind === "pool" ? r.target.pool : ""}</>
+                      <>pool {r.target.kind === "pool" ? (s.pools.find((p) => p.id === (r.target as { pool: string }).pool)?.label ?? r.target.pool) : ""}</>
                     )}
                     {r.tool !== "any" && <span className="text-ac-faint">({TOOL_LABEL[r.tool]} only)</span>}
                   </span>
@@ -296,10 +342,15 @@ export function ProjectsPools() {
                     {r.hits == null ? "—" : `${r.hits}×`}
                   </span>
                   <span className="col-start-2 row-start-1 flex items-center justify-end gap-2 md:col-start-auto md:row-start-auto">
-                    <span title="Pausing a binding isn't supported yet.">
-                      <Switch label={`Binding ${r.match.value}`} checked={r.enabled} onChange={() => {}} disabled />
+                    <span title={r.enabled ? "On — pause to keep the binding but stop using it" : "Paused — starts here ignore it until you turn it back on"}>
+                      <Switch
+                        label={`Binding ${r.match.value}`}
+                        checked={r.enabled}
+                        disabled={!s.act.setBindingPaused || r.tool === "any"}
+                        onChange={() => togglePaused(r)}
+                      />
                     </span>
-                    <BindingMenu rule={r} />
+                    <BindingMenu rule={r} onEdit={() => setEditing(r.id)} />
                   </span>
                 </div>
               );
@@ -308,35 +359,7 @@ export function ProjectsPools() {
         </Card>
       </section>
 
-      <section className="flex flex-col gap-2">
-        <SectionHeader title="Pools" count={s.pools.length} />
-        <div className="grid gap-3 md:grid-cols-2">
-          {s.pools.map((p) => (
-            <Card key={p.id} className="flex flex-col gap-3 p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[13px] font-medium text-ac-text">{p.label}</span>
-                <span className="text-[11px] text-ac-muted">{p.accountIds.length} accounts</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {p.accountIds.map((id) => {
-                  const a = s.accountById(id);
-                  return a ? (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => s.open({ kind: "account", id })}
-                      className="inline-flex h-7 items-center gap-2 rounded-md border border-ac-line px-2 text-xs text-ac-soft hover:border-ac-line2 hover:text-ac-text"
-                    >
-                      <AccountDot color={a.color} size={8} />
-                      {TOOL_LABEL[a.tool]} · {a.name}
-                    </button>
-                  ) : null;
-                })}
-              </div>
-            </Card>
-          ))}
-        </div>
-      </section>
+      <PoolsSection />
     </div>
   );
 }

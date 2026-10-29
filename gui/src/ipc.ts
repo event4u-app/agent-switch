@@ -172,7 +172,8 @@ export async function acOpenInBrowser(): Promise<AcStatus> {
 export interface ShareStatus {
   active: boolean;
   source: string;
-  profiles: { name: string; shared: boolean }[];
+  /** `prompts`: history.jsonl (↑ / Ctrl+R) is linked too; absent from older CLIs. */
+  profiles: { name: string; shared: boolean; prompts?: boolean }[];
 }
 
 /** Real share state (from each profile's link manifest, not a cached flag).
@@ -318,9 +319,35 @@ export function assertValidName(name: string): void {
  * Both are TTY-interactive, so they run in the in-app pty rather than a
  * headless spawn or a Terminal.app window.
  */
-export function loginArgs(provider: ProviderId, name: string): string[] {
+const BROWSER_ID_RE = /^[a-z0-9-]+$/;
+
+export function loginArgs(provider: ProviderId, name: string, browser?: string): string[] {
   assertValidName(name);
-  return ["add", name, "--provider", provider];
+  const args = ["add", name, "--provider", provider];
+  return browser && BROWSER_ID_RE.test(browser) ? [...args, "--browser", browser] : args;
+}
+
+export function reloginArgs(provider: ProviderId, name: string, browser?: string): string[] {
+  assertValidName(name);
+  const args = ["login", name, "--provider", provider];
+  return browser && BROWSER_ID_RE.test(browser) ? [...args, "--browser", browser] : args;
+}
+
+export interface BrowserInfo {
+  id: string;
+  name: string;
+}
+
+/** Browsers `login --browser` can open (macOS / Linux; empty elsewhere). */
+export async function listBrowsers(): Promise<BrowserInfo[]> {
+  const out = await cli(["browsers", "--json"]).execute();
+  if (out.code !== 0) return [];
+  try {
+    const list = JSON.parse(out.stdout) as BrowserInfo[];
+    return Array.isArray(list) ? list.filter((b) => typeof b?.id === "string" && BROWSER_ID_RE.test(b.id) && typeof b.name === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 export function sessionArgs(provider: ProviderId, name: string, cwd?: string): string[] {
@@ -372,6 +399,25 @@ export async function usageHistory(provider: ProviderId = "claude"): Promise<Usa
 /** Set or clear a profile's label (Work / Personal / Other). */
 export async function setProfileLabel(provider: ProviderId, name: string, label: ProfileLabel | null): Promise<void> {
   await runCli(["label", name, label ?? "none", "--provider", provider]);
+}
+
+/** `activate`: terminals and the background service use the CLI this window
+ *  runs — the dev build under `task gui:dev`, the installed one otherwise. */
+export async function activateCli(): Promise<{ cli: string; service: "repointed" | "unchanged" | "not-installed" }> {
+  return JSON.parse(await runCli(["activate", "--json"]));
+}
+
+/** `shellenv install`: add the loader line to the user's shell startup file. */
+export async function installShellIntegration(): Promise<{ shell: string; file: string; alreadyInstalled: boolean }> {
+  return JSON.parse(await runCli(["shellenv", "install", "--json"]));
+}
+
+export async function setProfileDisabled(provider: ProviderId, name: string, disabled: boolean): Promise<void> {
+  await runCli([disabled ? "disable" : "enable", name, "--provider", provider]);
+}
+
+export async function setProfileColor(provider: ProviderId, name: string, color: string | null): Promise<void> {
+  await runCli(["color", name, color ?? "none", "--provider", provider]);
 }
 
 export interface AutoSwitch {
@@ -714,8 +760,8 @@ export async function listNotifications(): Promise<AppNotification[]> {
 }
 
 /** Record a notification event in the shared log (the daemon appends its own). */
-export async function recordNotification(kind: NotificationKind, title: string, message: string): Promise<void> {
-  await runCli(["notify", "--kind", kind, "--title", title, "--message", message]);
+export async function recordNotification(kind: NotificationKind, title: string, message: string, repeat = false): Promise<void> {
+  await runCli(["notify", "--kind", kind, "--title", title, "--message", message, ...(repeat ? ["--repeat"] : [])]);
 }
 
 /** Empty the notification log. */
@@ -959,6 +1005,8 @@ export interface MappingRow {
   path: string;
   provider: ProviderId;
   target: string;
+  /** Kept but skipped when resolving (`map --pause`); absent from older CLIs. */
+  paused?: boolean;
 }
 
 const MAPPING_PROVIDERS: readonly string[] = ["claude", "codex", "antigravity"];
@@ -1013,6 +1061,11 @@ export async function mapFolder(
   await runCli(["map", ref, dir, "--provider", provider]);
 }
 
+/** Pause or resume a folder's rule (`map --pause|--resume <dir> --provider P`). */
+export async function setMappingPaused(provider: ProviderId, dir: string, paused: boolean): Promise<void> {
+  await runCli(["map", paused ? "--pause" : "--resume", dir, "--provider", provider]);
+}
+
 /** Remove a folder's rule; without a provider every provider's rule there goes. */
 export async function unmapFolder(dir: string, provider?: ProviderId): Promise<void> {
   await runCli(["unmap", dir, ...(provider ? ["--provider", provider] : [])]);
@@ -1024,6 +1077,24 @@ export interface DirResolution {
   profile: string | null;
   configDir: string | null;
   why: string[];
+}
+
+/** One Claude Desktop instance from `desktop --json`: the accounts that ran
+ *  sessions in it; `profile` null = the regular app. */
+export interface DesktopInstanceRow {
+  profile: string | null;
+  dir: string;
+  accounts: { accountUuid: string; profile: string | null }[];
+  mismatch: boolean;
+}
+
+export async function desktopInstances(): Promise<DesktopInstanceRow[]> {
+  return JSON.parse(await runCli(["desktop", "--json"]));
+}
+
+/** `dir --plain`: where a start with no folder rule would go (balanced across accounts). */
+export async function resolvePlainStart(provider: ProviderId): Promise<DirResolution> {
+  return JSON.parse(await runCli(["dir", "--provider", provider, "--plain", "--json"]));
 }
 
 export async function resolveDir(provider: ProviderId, cwd: string): Promise<DirResolution> {

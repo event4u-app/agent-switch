@@ -11,6 +11,7 @@ const ipc = vi.hoisted(() => ({
   confirmPoolSuggestions: vi.fn(async () => ["work"]),
   mapFolder: vi.fn(async () => {}),
   unmapFolder: vi.fn(async () => {}),
+  setMappingPaused: vi.fn(async () => {}),
   resolveDir: vi.fn(async () => ({ profile: null, configDir: null, why: [] })),
   setGuard: vi.fn(async () => ({})),
   listActivity: vi.fn(async () => [{ at: "2026-10-28T10:00:00Z", kind: "guard", target: null, action: "set warn", reason: "r", ok: true }]),
@@ -45,6 +46,13 @@ describe("createFoundationActions", () => {
     ipc.deletePool.mockRejectedValueOnce(new Error("used by folder rules"));
     await expect(act().deletePool("work")).rejects.toThrow(/folder rules/);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("pauses and resumes a folder rule for its tool", async () => {
+    await act().setBindingPaused("/a", "claude", true);
+    expect(ipc.setMappingPaused).toHaveBeenCalledWith("claude", "/a", true);
+    await act().setBindingPaused("/a", "codex", false);
+    expect(ipc.setMappingPaused).toHaveBeenCalledWith("codex", "/a", false);
   });
 
   it("maps a folder to an account or a tool's pool, and refuses gemini", async () => {

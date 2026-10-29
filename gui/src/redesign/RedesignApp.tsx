@@ -10,7 +10,7 @@ import { useEngines } from "./engines/index.js";
 import { withSwitchEffects } from "./engines/switch-effects.js";
 import { OverlayHost, ScreenHost } from "./Hosts.js";
 import { Shell } from "./Shell.js";
-import { useTrayRequests } from "./tray/bridge.js";
+import { appRequest, useTrayRequests } from "./tray/bridge.js";
 
 /** One `act`: the session/tool actions, the foundation readouts (protection,
  *  pools, folder rules) and the account extras — switches carry their
@@ -29,7 +29,14 @@ function StoreToaster() {
 
 function Frame() {
   const s = useAS();
-  useTrayRequests(s.open, s.go);
+  useTrayRequests(s.open, s.go, (payload) => {
+    const req = appRequest(s, payload);
+    if (!req || !s.act.openApp) return;
+    const name = s.accountById(req.accountId)?.name ?? "this account";
+    s.act.openApp(req.appId, req.accountId).catch((e: unknown) =>
+      s.toast({ tone: "alert", text: `Couldn't open the app as ${name}: ${e instanceof Error ? e.message : String(e)}` }),
+    );
+  });
   useEngines();
   return (
     <>

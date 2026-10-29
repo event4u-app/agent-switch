@@ -6,6 +6,7 @@ import { emptyViewModel } from "../../vm/load.js";
 import { ASProvider, useAS, type Overlay, type Screen } from "../../vm/store.js";
 import type { Account, ToolEntry, ViewModel } from "../../vm/types.js";
 import { OverlayHost, ScreenHost } from "../Hosts.js";
+import { ShellIntegrationBanner } from "../Shell.js";
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
@@ -197,6 +198,47 @@ describe("Health + Fix", () => {
     });
     expect(setAutostart).toHaveBeenCalledWith(true);
     expect(screen.getByRole("status").textContent).toContain("Before: Needs a look");
+  });
+});
+
+describe("Shell integration", () => {
+  const missing = [{ id: "shell-integration", title: "Shell integration not found", detail: "Without it …", state: "warn" as const, fix: "Run `agent-switch shellenv install`." }];
+
+  function mountBanner(vm: ViewModel, act?: Actions) {
+    return render(
+      <AcRoot>
+        <ASProvider initial={vm} actions={act ? () => act : undefined}>
+          <ShellIntegrationBanner />
+          <OverlayHost />
+          <Where />
+        </ASProvider>
+      </AcRoot>,
+    );
+  }
+
+  it("shows a red alert while it is missing, and sets it up from there", async () => {
+    const installShellIntegration = vi.fn(async () => {});
+    mountBanner(fixture({ checks: missing }), { installShellIntegration });
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toMatch(/plain `claude`/);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Set up now/ }));
+    });
+    expect(installShellIntegration).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays away once the check passes", () => {
+    mountBanner(fixture({ checks: [{ ...missing[0], state: "ok" }] }), { installShellIntegration: async () => {} });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("the Health fix repairs it too", async () => {
+    const installShellIntegration = vi.fn(async () => {});
+    mount(fixture({ checks: missing }), { screen: "health", overlay: { kind: "fix", checkId: "shell-integration" }, act: { installShellIntegration } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Repair/ }));
+    });
+    expect(installShellIntegration).toHaveBeenCalledTimes(1);
   });
 });
 

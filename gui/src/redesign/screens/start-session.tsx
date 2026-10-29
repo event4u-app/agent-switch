@@ -39,7 +39,29 @@ type OpenIn = "terminal" | "desktop-app";
 export function startPlan(account: Account | null, tool: Tool, openIn: OpenIn, appId: string | null, folder = "") {
   if (!canStartOn(account) || !account || tool === "gemini") return null;
   if (openIn === "desktop-app") return appId ? { kind: "app" as const, appId, accountId: account.id } : null;
-  return { kind: "terminal" as const, args: sessionArgs(tool as ProviderId, account.name, folder.trim() || undefined) };
+  const dir = folder.trim();
+  if (dir && !isAbsoluteFolder(dir)) return null;
+  return { kind: "terminal" as const, args: sessionArgs(tool as ProviderId, account.name, dir || undefined) };
+}
+
+/** POSIX `/…`, Windows `C:\\…` / `C:/…` and UNC `\\\\server\\…`. The CLI checks
+ *  the folder exists, which only an absolute path can pass. */
+export function isAbsoluteFolder(dir: string): boolean {
+  return /^(\/|[A-Za-z]:[\\/]|\\\\)/.test(dir);
+}
+
+/** Why Start is off, in words; null when it can start (or another rule already
+ *  explains it, e.g. the desktop app being unavailable). */
+export function startProblem(account: Account | null, tool: Tool, openIn: OpenIn, folder: string): string | null {
+  if (tool === "gemini") return null;
+  if (!account) return `No ${TOOL_LABEL[tool]} account to start on.`;
+  if (account.disabled) return `${account.name} is disabled — turn it back on first (Accounts → ${account.name} → ⋯ → Turn back on).`;
+  if (account.state === "signed-out") return `${account.name} is signed out — sign in again first (Accounts → ${account.name} → Sign in again).`;
+  if (account.state === "limited") return `${account.name} is at its limit — pick another account.`;
+  if (account.state === "wrong-account") return `${account.name} is signed in to a different account than expected.`;
+  const dir = folder.trim();
+  if (openIn === "terminal" && dir && !isAbsoluteFolder(dir)) return `“${dir}” is not a full folder path — choose another folder.`;
+  return null;
 }
 
 /** The preview line: `<folder> $ claude` for a terminal start (the built-in
@@ -119,6 +141,7 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
   const folders = Array.from(new Set([...(cwd ? [cwd] : []), ...recent]));
   const preview = startPreview(tool, effectiveOpenIn, folder, appFor(s, tool), account?.name ?? null);
   const why = pick === AUTO ? resolution.why : [`Picked by you: ${account?.name ?? "?"}`];
+  const problem = resolving ? null : startProblem(account, tool, effectiveOpenIn, expandHome(folder.trim(), home));
 
   const start = () => {
     if (!plan || !account) return;
@@ -262,6 +285,11 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
                 · {w}
               </li>
             ))}
+            {problem && (
+              <li role="alert" className="text-[11px] text-ac-alert-text">
+                · {problem}
+              </li>
+            )}
             {folder && effectiveOpenIn === "desktop-app" && (
               <li className="text-[11px] text-ac-muted">· The {TOOL_LABEL[tool]} app opens without a folder.</li>
             )}

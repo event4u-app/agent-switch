@@ -125,9 +125,9 @@ export function Dialog({ open, onOpenChange, title, kicker, width = 560, footer,
 }
 
 /** Caps title + aside, divided from the previous section. Bundle `Hn`. */
-export function SheetSection({ title, aside, children }: { title: ReactNode; aside?: ReactNode; children: ReactNode }) {
+export function SheetSection({ id, title, aside, children }: { id?: string; title: ReactNode; aside?: ReactNode; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 border-t border-ac-line pt-5 first:border-t-0 first:pt-0">
+    <section id={id} className="flex flex-col gap-3 border-t border-ac-line pt-5 first:border-t-0 first:pt-0">
       <div className="flex items-center justify-between gap-3">
         <Caps>{title}</Caps>
         {aside}

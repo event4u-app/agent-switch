@@ -17,10 +17,11 @@ import type {
   ProtectionRow,
   ToolingEntry,
 } from "../ipc.js";
+import type { DesktopInstanceRow } from "../ipc.js";
 import type { AppNotification } from "../notifications.js";
 import type { ProfileRow, ProvidersStatus, SessionRow, UsageSnapshot } from "../transforms.js";
 import { countdown } from "../ui/format.js";
-import { TOOL_LABEL, bindingWindow, isStale, maxUtilization, toneFor, toolStatus } from "./rules.js";
+import { TOOL_LABEL, bindingWindow, isStale, maxUtilization, rankAccounts, toneFor, toolStatus } from "./rules.js";
 import type {
   Account,
   AccountState,
@@ -108,8 +109,9 @@ export function accountFromProfile(row: ProfileRow, usage: UsageSnapshot | null 
     identity: row.identity,
     plan: null,
     label: row.label,
-    color: colorFor(id),
+    color: IDENTITY_COLORS.find((c) => c === row.color) ?? colorFor(id),
     isDefault: row.active,
+    disabled: row.disabled === true,
     state: accountState(usage, threshold, auth),
     windows: usage ? usage.windows.map((w) => ({ ...w })) : [],
     checkedAt: parseTime(usage?.capturedAt),
@@ -159,8 +161,8 @@ export function poolMembership(pools: Pool[]): Map<string, string[]> {
   return out;
 }
 
-/** Directory mappings → folder bindings. A mapping is always on and the CLI
- *  counts no hits. `pool:<id>` targets a pool; anything else is a profile. */
+/** Directory mappings → folder bindings. A paused mapping is a switched-off
+ *  binding; the CLI counts no hits. `pool:<id>` targets a pool; anything else is a profile. */
 export function bindingsFromMappings(rows: MappingRow[]): Binding[] {
   return rows.map((r) => ({
     id: `${r.provider}:${r.path}`,
@@ -169,7 +171,7 @@ export function bindingsFromMappings(rows: MappingRow[]): Binding[] {
     target: r.target.startsWith("pool:")
       ? { kind: "pool", pool: r.target.slice("pool:".length) }
       : { kind: "account", accountId: accountId(r.provider, r.target) },
-    enabled: true,
+    enabled: !r.paused,
     hits: null,
   }));
 }
@@ -235,15 +237,17 @@ function basename(path: string): string {
 }
 
 export function sessionFromRow(row: SessionRow, now: number): Session {
-  const cwd = row.cwd ?? row.projectDir;
+  // Never the encoded projectDir: its `-` stands for every non-alphanumeric, so
+  // it is not a path and cannot be decoded into one.
+  const cwd = row.cwd ?? null;
   const fresh = now - row.mtimeMs;
-  const state = !row.live ? "done" : fresh >= 0 && fresh <= WORKING_FRESH_MS ? "working" : "idle";
+  const state = !row.live ? "done" : row.waiting ? "needs-you" : fresh >= 0 && fresh <= WORKING_FRESH_MS ? "working" : "idle";
   const summary = row.summary ?? null;
   return {
     id: `${row.provider}:${row.sessionId}`,
     tool: row.provider,
     accountId: accountId(row.provider, row.profile),
-    project: basename(cwd),
+    project: cwd ? basename(cwd) : "Unknown folder",
     cwd,
     branch: null,
     title: summary ?? `Session ${row.sessionId.slice(0, 8)}`,
@@ -255,7 +259,8 @@ export function sessionFromRow(row: SessionRow, now: number): Session {
     summary,
     why: [],
     protectionNote: null,
-    surface: null,
+    surface: row.surface === "desktop-app" ? "desktop-app" : null,
+    waitingFor: row.waiting ? (row.waitingFor ?? null) : null,
   };
 }
 
@@ -309,7 +314,7 @@ export function noticeFromNotification(n: AppNotification, lastRead: number): No
   return { id: n.id, title: n.title, detail: n.message, at: n.ts, unread: n.ts > lastRead, tone: NOTICE_TONE[n.kind] };
 }
 
-const BIN_NAME: Record<keyof ProvidersStatus, string> = { claude: "claude", codex: "codex", antigravity: "agy" };
+export const BIN_NAME: Record<keyof ProvidersStatus, string> = { claude: "claude", codex: "codex", antigravity: "agy" };
 
 export function providersFromStatus(ps: ProvidersStatus): Provider[] {
   return (Object.keys(ps) as (keyof ProvidersStatus)[]).map((id) => ({
@@ -358,6 +363,11 @@ export function deriveAttention(accounts: Account[], tools: ToolEntry[], toolsCh
       continue;
     }
     if ((a.state !== "near-limit" && a.state !== "limited") || isStale(a.checkedAt, now)) continue;
+    // "Decide" only when there is something to decide: a running session to
+    // move, and another account of the same tool that can take it. Otherwise
+    // the row's own Near-limit badge says it all.
+    const elsewhere = rankAccounts(accounts, a.tool, now).some((r) => r.account.id !== a.id && r.rank != null);
+    if (a.liveSessions === 0 || !elsewhere) continue;
     const w = bindingWindow(a.windows);
     if (!w || w.utilization == null || a.checkedAt == null) continue;
     const resets = countdown(w.resetsAt, now);
@@ -406,4 +416,16 @@ export function deriveReadiness(
   if (doctor == null) return own;
   const fromDoctor = readinessFromDoctor(doctor);
   return READINESS_RANK[fromDoctor] > READINESS_RANK[own] ? fromDoctor : own;
+}
+
+/** accountId → the other accounts its own Claude Desktop window ran sessions
+ *  on (`desktop --json`). Sessions there count against those accounts. */
+export function desktopForeign(instances: readonly DesktopInstanceRow[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const i of instances) {
+    if (!i.profile || !i.mismatch) continue;
+    const others = i.accounts.filter((a) => a.profile !== i.profile).map((a) => a.profile ?? "an account without a profile");
+    if (others.length) out.set(accountId("claude", i.profile), others);
+  }
+  return out;
 }

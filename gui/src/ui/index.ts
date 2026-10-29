@@ -4,6 +4,7 @@ export { AppLogo } from "./AppLogo.js";
 export { Badge } from "./Badge.js";
 export { Button, IconButton, buttonVariants } from "./Button.js";
 export { Card, DefinitionList, EmptyState } from "./Card.js";
+export { Copyable, CopyButton } from "./CopyButton.js";
 export { CapacityMeter, UsageWindowRow } from "./Meters.js";
 export { Dialog, Sheet, SheetSection } from "./Overlay.js";
 export { RowMenu, type RowMenuItem } from "./RowMenu.js";

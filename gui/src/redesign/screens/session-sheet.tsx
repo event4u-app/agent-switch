@@ -133,6 +133,9 @@ export function SessionSheet({ id }: { id: string }) {
 
   const account = s.accountById(n.accountId);
   const running = isRunning(n);
+  // Its transcript is Desktop's (~/.claude), not the profile's: the CLI's
+  // trash / move / compact can't reach it.
+  const desktop = n.surface === "desktop-app";
   const handle = sessionHandle(n);
   const profile = splitAccountId(n.accountId)[1];
   const options = targetOptions(sameTool);
@@ -222,8 +225,14 @@ export function SessionSheet({ id }: { id: string }) {
             <Button
               variant="ghost"
               size="sm"
-              disabled={running || !s.act.trashSession}
-              title={running ? "Stop the session first — a running session can't be moved to the trash" : undefined}
+              disabled={desktop || running || !s.act.trashSession}
+              title={
+                desktop
+                  ? "Started in Claude Desktop — delete it there."
+                  : running
+                    ? "Stop the session first — a running session can't be moved to the trash"
+                    : undefined
+              }
               onClick={() =>
                 s.open({
                   kind: "confirm",
@@ -243,8 +252,8 @@ export function SessionSheet({ id }: { id: string }) {
             {n.tool === "claude" && (
               <Button
                 size="sm"
-                disabled={!running}
-                title={running ? "Runs /compact in this session" : "Only a running session can be compacted"}
+                disabled={desktop || !running}
+                title={desktop ? "Started in Claude Desktop — compact it there." : running ? "Runs /compact in this session" : "Only a running session can be compacted"}
                 onClick={() => s.open({ kind: "terminal", run: { kicker: "Compact", title: `${n.project} · /compact`, args: compactArgs(profile) } })}
               >
                 <Minimize2 /> Compact
@@ -277,7 +286,7 @@ export function SessionSheet({ id }: { id: string }) {
                 "?"
               ),
             ],
-            ["Folder", <span className="font-ac-mono text-xs">{shortPath(n.cwd)}</span>],
+            ["Folder", n.cwd ? <span className="font-ac-mono text-xs">{shortPath(n.cwd)}</span> : "Unknown"],
             ["Branch", n.branch ?? "—"],
             ["Opened in", n.surface === "desktop-app" ? `${TOOL_LABEL[n.tool]} app` : n.surface === "ide" ? "IDE" : n.surface === "terminal" ? "Terminal" : "—"],
             ["Context", n.contextPct == null ? "—" : `${n.contextPct} % of the window${n.model ? ` · ${n.model}` : ""}`],
@@ -314,7 +323,12 @@ export function SessionSheet({ id }: { id: string }) {
             )}
           </ol>
         </div>
-        {!n.trashed && (
+        {!n.trashed && desktop && (
+          <p className="rounded-lg border border-ac-line bg-ac-bg p-4 text-xs text-ac-muted">
+            Started in Claude Desktop — it runs on that Desktop window's sign-in. Move, compact or delete it in Claude Desktop.
+          </p>
+        )}
+        {!n.trashed && !desktop && (
           <div className="flex flex-col gap-3 rounded-lg border border-ac-line bg-ac-bg p-4">
             <div className="flex items-center gap-2">
               <ArrowLeftRight className="size-4 text-ac-brand-text" />

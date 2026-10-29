@@ -23,6 +23,15 @@ export function forceUsageOnNextLoad(): void {
   forceNext = true;
 }
 
+const forcedKeys = new Set<string>();
+
+/** The next load fetches this one account (`provider/name`) past its cooldown;
+ *  the others keep theirs, so one refresh doesn't hit the rate-limited endpoint
+ *  for every account. */
+export function forceUsageFor(key: string): void {
+  forcedKeys.add(key);
+}
+
 function takeForce(): boolean {
   const f = forceNext;
   forceNext = false;
@@ -57,11 +66,13 @@ const defaultDeps: UsageDeps = {
 /** Usage per profile (same order). On cooldown or failure the cached snapshot
  *  stands in — its own capturedAt carries its age. */
 export async function loadUsage(
-  profiles: readonly { provider: ProviderId; name: string }[],
+  profiles: readonly { provider: ProviderId; name: string; disabled?: boolean }[],
   opts: { force?: boolean; cooldownMs?: number; staggerMs?: number } = {},
   deps: UsageDeps = defaultDeps,
 ): Promise<(UsageSnapshot | null)[]> {
   const force = opts.force ?? takeForce();
+  const forcedOne = new Set(forcedKeys);
+  forcedKeys.clear();
   const cooldown = opts.cooldownMs ?? refreshIntervalMs();
   const stagger = opts.staggerMs ?? USAGE_FETCH_STAGGER_MS;
   const cache = loadUsageCache();
@@ -84,7 +95,14 @@ export async function loadUsage(
 
   const due = profiles
     .map((p, i) => ({ p, i }))
-    .filter(({ p }) => hasUsageReadout(p.provider) && (force || !fetchOnCooldown(attempts[`${p.provider}/${p.name}`], cooldown, deps.now())));
+    // A disabled account is read only when that one account is refreshed by
+    // hand — never on the timer or a refresh-all; its last readout stays on show.
+    .filter(({ p }) => {
+      if (!hasUsageReadout(p.provider)) return false;
+      const key = `${p.provider}/${p.name}`;
+      if (forcedOne.has(key)) return true;
+      return !p.disabled && (force || !fetchOnCooldown(attempts[key], cooldown, deps.now()));
+    });
   const claude = due.filter(({ p }) => p.provider === "claude");
   const rest = due.filter(({ p }) => p.provider !== "claude");
 

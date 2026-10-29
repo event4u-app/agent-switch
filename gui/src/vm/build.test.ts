@@ -9,6 +9,7 @@ import {
   checksFromDoctor,
   colorFor,
   deriveAttention,
+  desktopForeign,
   deriveReadiness,
   guardFromStatus,
   noticeFromNotification,
@@ -93,6 +94,16 @@ describe("sessionFromRow", () => {
     expect(sessionFromRow(s({ live: false }), NOW).state).toBe("done");
   });
 
+  it("a live session waiting on a prompt needs you; a dead one is done", () => {
+    expect(sessionFromRow(s({ waiting: true }), NOW).state).toBe("needs-you");
+    expect(sessionFromRow(s({ waiting: true, live: false }), NOW).state).toBe("done");
+  });
+
+  it("marks a session started in Claude Desktop as such", () => {
+    expect(sessionFromRow(s({ surface: "desktop-app" }), NOW).surface).toBe("desktop-app");
+    expect(sessionFromRow(s(), NOW).surface).toBeNull();
+  });
+
   it("keeps ids, project and unknown context", () => {
     const v = sessionFromRow(s({ summary: "Edge filter" }), NOW);
     expect(v.id).toBe("claude:7f3c2a91-4b1e");
@@ -103,9 +114,13 @@ describe("sessionFromRow", () => {
     expect(v.why).toEqual([]);
   });
 
-  it("falls back to the project dir and a handle title", () => {
-    const v = sessionFromRow(s({ cwd: null, summary: null }), NOW);
-    expect(v.cwd).toBe("/Users/x/.claude/projects/-Users-x-dev-agent-config");
+  it("never turns the encoded project dir into a folder when the cwd is unknown", () => {
+    // What the CLI really sends: the encoded transcript dir name. `-` stands for
+    // every non-alphanumeric, so it cannot be decoded back into a path — a start
+    // in it ran `run … --cwd -Users-x-dev-agent-config`.
+    const v = sessionFromRow(s({ cwd: null, summary: null, projectDir: "-Users-x-dev-agent-config" }), NOW);
+    expect(v.cwd).toBeNull();
+    expect(v.project).toBe("Unknown folder");
     expect(v.title).toBe("Session 7f3c2a91");
   });
 });
@@ -118,7 +133,7 @@ describe("deriveAttention", () => {
   ];
 
   it("raises near-limit for fresh readouts and one update item", () => {
-    const near = accountFromProfile(row({ name: "side" }), usage([94]));
+    const near = accountFromProfile(row({ name: "side", liveSessions: 1 }), usage([94]));
     const fine = accountFromProfile(row(), usage([20]));
     const items = deriveAttention([near, fine], tools, NOW - 6 * MIN, NOW);
     expect(items.map((i) => i.kind)).toEqual(["near-limit", "update"]);
@@ -126,6 +141,15 @@ describe("deriveAttention", () => {
     expect(items[0].detail).toBe("Resets in 1h 18m.");
     expect(items[1].title).toBe("agent-config 18.2.0 is out");
     expect(items[1].detail).toBe("You have 18.1.0. Codex CLI has an update too. Running sessions are not touched.");
+  });
+
+  it("asks for a decision only when there is one: a running session and another account to go to", () => {
+    const fine = accountFromProfile(row(), usage([20]));
+    const idle = accountFromProfile(row({ name: "side", liveSessions: 0 }), usage([94]));
+    expect(deriveAttention([idle, fine], [], null, NOW)).toEqual([]);
+    const alone = accountFromProfile(row({ name: "side", liveSessions: 1 }), usage([94]));
+    const off = accountFromProfile(row({ disabled: true }), usage([20]));
+    expect(deriveAttention([alone, off], [], null, NOW)).toEqual([]);
   });
 
   it("stays quiet on stale usage and on unchecked tools", () => {
@@ -291,5 +315,29 @@ describe("activity, health and guard", () => {
       policy: "warn",
       loaded: [{ accountId: "claude:work", sessions: 2 }],
     });
+  });
+});
+
+describe("desktopForeign", () => {
+  it("names the other accounts a profile's own Desktop window is signed in with", () => {
+    const m = desktopForeign([
+      { profile: null, dir: "/app", accounts: [{ accountUuid: "a", profile: "side" }], mismatch: false },
+      { profile: "work", dir: "/w", accounts: [{ accountUuid: "b", profile: "work" }, { accountUuid: "c", profile: "side" }, { accountUuid: "d", profile: null }], mismatch: true },
+      { profile: "side", dir: "/s", accounts: [{ accountUuid: "c", profile: "side" }], mismatch: false },
+    ]);
+    expect([...m.entries()]).toEqual([["claude:work", ["side", "an account without a profile"]]]);
+  });
+});
+
+
+describe("bindingsFromMappings — paused", () => {
+  it("a paused rule is a switched-off binding; an older CLI without the field stays on", async () => {
+    const { bindingsFromMappings } = await import("./build.js");
+    const [paused, plain] = bindingsFromMappings([
+      { path: "/a", provider: "claude", target: "work", paused: true },
+      { path: "/b", provider: "claude", target: "work" },
+    ]);
+    expect(paused.enabled).toBe(false);
+    expect(plain.enabled).toBe(true);
   });
 });

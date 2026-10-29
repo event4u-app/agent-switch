@@ -6,9 +6,9 @@ import { Button } from "../../ui/Button.js";
 import { SessionStateIcon } from "../../ui/SessionStateIcon.js";
 import { nextInPools, rankAccounts, TOOL_LABEL, updateCount } from "../../vm/rules.js";
 import { useAS, type Overlay } from "../../vm/store.js";
-import type { Attention } from "../../vm/types.js";
+import type { Account, Attention } from "../../vm/types.js";
 import type { ForwardedScreen } from "./bridge.js";
-import { accountTools } from "../screens/logic.js";
+import { accountTools, appFor } from "../screens/logic.js";
 import { CompactAccountRow } from "../screens/rows.js";
 
 export type AttentionTarget = { overlay: Overlay } | { screen: ForwardedScreen };
@@ -35,7 +35,18 @@ export function attentionTarget(a: Attention): AttentionTarget | null {
  *  borderless window next to the menu-bar icon. An attention item opens what
  *  resolves it (overlays reach the main window through TrayBridge; screens via
  *  `onGo`). */
-export function Tray({ onOpenApp, onQuit, onGo }: { onOpenApp?: () => void; onQuit?: () => void; onGo?: (screen: ForwardedScreen) => void }) {
+export function Tray({
+  onOpenApp,
+  onQuit,
+  onGo,
+  onOpenAccountApp,
+}: {
+  onOpenApp?: () => void;
+  onQuit?: () => void;
+  onGo?: (screen: ForwardedScreen) => void;
+  /** Launch an account's desktop app (Claude Desktop, …) without the window. */
+  onOpenAccountApp?: (appId: string, accountId: string) => void;
+}) {
   const s = useAS();
   const follow = (a: Attention) => {
     const t = attentionTarget(a);
@@ -79,11 +90,20 @@ export function Tray({ onOpenApp, onQuit, onGo }: { onOpenApp?: () => void; onQu
       <div className="max-h-[360px] overflow-y-auto p-1">
         {tools.map((tool) => {
           const nextIn = nextInPools(s.accounts, tool, s.pools, s.now);
+          const appId = onOpenAccountApp ? appFor(s, tool) : null;
+          const appName = s.surfaces.find((x) => x.id === appId)?.name ?? "app";
+          const usable = (a: Account) => !a.disabled && a.state !== "signed-out" && a.state !== "wrong-account";
           return (
             <div key={tool} className="flex flex-col">
               <span className="ac-caps px-3 pb-0.5 pt-2.5">{TOOL_LABEL[tool]}</span>
               {rankAccounts(s.accounts, tool, s.now).map((r) => (
-                <CompactAccountRow key={r.account.id} account={r.account} ranked={r} nextIn={nextIn.get(r.account.id)} />
+                <CompactAccountRow
+                  key={r.account.id}
+                  account={r.account}
+                  ranked={r}
+                  nextIn={nextIn.get(r.account.id)}
+                  app={appId && onOpenAccountApp && usable(r.account) ? { name: appName, onOpen: () => onOpenAccountApp(appId, r.account.id) } : undefined}
+                />
               ))}
             </div>
           );

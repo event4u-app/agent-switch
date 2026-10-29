@@ -35,4 +35,13 @@ describe("command search", () => {
   it("groups sessions by folder as projects", () => {
     expect(index.find((i) => i.kind === "project")).toMatchObject({ text: "agent-config", meta: "~/dev/agent-config" });
   });
+  it("offers no project start for a session whose folder is unknown, but keeps the session", () => {
+    const unknown = sessionFromRow(
+      { provider: "claude", profile: "work", sessionId: "def67890", projectDir: "-Users-m-dev-x", cwd: null, mtimeMs: NOW, live: false, summary: "Old" },
+      NOW,
+    );
+    const idx = buildSearchIndex({ accounts, sessions: [unknown], rules: [], tools: [] });
+    expect(idx.filter((i) => i.kind === "project")).toEqual([]);
+    expect(idx.some((i) => i.kind === "session" && i.text.includes("Old"))).toBe(true);
+  });
 });

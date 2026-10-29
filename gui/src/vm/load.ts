@@ -11,6 +11,7 @@ import { latestToolVersion, toolUpdateAvailable, UPDATE_CHECK_TOOLS, versionToke
 import { hasUsageReadout, type ProfileRow, type UsageSnapshot } from "../transforms.js";
 import {
   accountFromProfile,
+  desktopForeign,
   accountIdFromMember,
   activityFromEntries,
   agentConfigFromStatus,
@@ -95,7 +96,7 @@ export async function loadViewModel(): Promise<ViewModel> {
   ]);
   // The foundation readouts. Each degrades on its own: an older CLI without
   // the command leaves that area unknown, never fakes it.
-  const [protectionR, authR, poolsR, mappingsR, doctorR, activityR, guardR] = await Promise.allSettled([
+  const [protectionR, authR, poolsR, mappingsR, doctorR, activityR, guardR, desktopR] = await Promise.allSettled([
     ipc.listProtection(),
     ipc.authStatus(),
     ipc.listPools(),
@@ -103,6 +104,7 @@ export async function loadViewModel(): Promise<ViewModel> {
     cachedDoctor(() => ipc.doctor()),
     ipc.listActivity(200),
     ipc.getGuard(),
+    ipc.desktopInstances(),
   ]);
   const readAt = Date.now();
 
@@ -115,13 +117,15 @@ export async function loadViewModel(): Promise<ViewModel> {
   const auth = new Map((value(authR) ?? []).map((r) => [`${r.provider}:${r.name}`, authFromStatus(r, readAt)]));
   const pools = poolsFromRows(value(poolsR) ?? []);
   const membership = poolMembership(pools);
+  const foreign = desktopForeign(value(desktopR) ?? []);
   const accounts = profiles.map((p, i) => {
     const id = `${p.provider}:${p.name}`;
-    return accountFromProfile(p, usage(i), {
+    const a = accountFromProfile(p, usage(i), {
       protection: protection.get(id) ?? null,
       auth: auth.get(id) ?? null,
       pools: membership.get(id) ?? [],
     });
+    return foreign.has(id) ? { ...a, desktopForeign: foreign.get(id) } : a;
   });
   const doctorRun = value(doctorR);
   const doctor = doctorRun?.value ?? null;

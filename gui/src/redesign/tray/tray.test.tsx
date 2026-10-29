@@ -3,8 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { AcRoot } from "../../ui/AcRoot.js";
 import { emptyViewModel } from "../../vm/load.js";
 import { ASProvider, useAS } from "../../vm/store.js";
-import type { Account, ViewModel } from "../../vm/types.js";
-import { forwardable, forwardedOverlay, forwardedScreen, forwardToMain, TRAY_OPEN_EVENT } from "./bridge.js";
+import type { Account, Surface, ViewModel } from "../../vm/types.js";
+import { appRequest, forwardable, forwardedOverlay, forwardedScreen, forwardToMain, openAppFromTray, TRAY_APP_EVENT, TRAY_OPEN_EVENT } from "./bridge.js";
 import { attentionTarget, Tray } from "./Tray.js";
 
 const tauri = vi.hoisted(() => ({ emitTo: vi.fn(() => Promise.resolve()), invoke: vi.fn(() => Promise.resolve()) }));
@@ -67,6 +67,19 @@ function fixture(over: Partial<ViewModel> = {}): ViewModel {
   };
 }
 
+const desktop: Surface = {
+  id: "claude-desktop",
+  tool: "claude",
+  name: "Claude Desktop",
+  kind: "desktop",
+  detected: true,
+  capability: null,
+  protection: null,
+  identitySeen: null,
+  launcher: true,
+  checkedAt: null,
+};
+
 function Where() {
   return <p data-testid="overlay">{useAS().overlay.kind}</p>;
 }
@@ -101,6 +114,30 @@ describe("Tray popover", () => {
     expect(onQuit).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /Start session/ }));
     expect(screen.getByTestId("overlay").textContent).toBe("start");
+  });
+
+  it("offers each account's desktop app and starts it without opening the account", () => {
+    const onOpenAccountApp = vi.fn();
+    const vm = fixture({
+      attention: [],
+      surfaces: [desktop],
+      accounts: [acc("work"), acc("off", { disabled: true }), acc("out", { state: "signed-out" }), acc("cx", { id: "codex:cx", tool: "codex" })],
+    });
+    render(
+      <AcRoot>
+        <ASProvider initial={vm}>
+          <Tray onOpenAccountApp={onOpenAccountApp} />
+          <Where />
+        </ASProvider>
+      </AcRoot>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open Claude Desktop as work" }));
+    expect(onOpenAccountApp).toHaveBeenCalledWith("claude-desktop", "claude:work");
+    expect(screen.getByTestId("overlay").textContent).toBe("none");
+    // No app for a disabled or signed-out account, nor for a tool without one.
+    expect(screen.queryByRole("button", { name: /as off$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /as out$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /as cx$/ })).toBeNull();
   });
 
   it("says Check health when not ready", () => {
@@ -153,6 +190,23 @@ describe("tray bridge", () => {
     expect(attentionTarget({ ...base, id: "u", kind: "update" })).toEqual({ screen: "tools" });
     expect(attentionTarget({ ...base, id: "h", kind: "health" })).toEqual({ screen: "health" });
     expect(attentionTarget({ ...base, id: "s2", kind: "signed-out" })).toBeNull();
+  });
+
+  it("accepts an app request only for a usable account whose tool has that app", () => {
+    const vm = fixture({ surfaces: [desktop], accounts: [acc("work"), acc("off", { disabled: true })] });
+    expect(appRequest(vm, { appId: "claude-desktop", accountId: "claude:work" })).toEqual({ appId: "claude-desktop", accountId: "claude:work" });
+    expect(appRequest(vm, { appId: "claude-desktop", accountId: "claude:off" })).toBeNull();
+    expect(appRequest(vm, { appId: "claude-desktop", accountId: "claude:nobody" })).toBeNull();
+    expect(appRequest(vm, { appId: "codex-desktop", accountId: "claude:work" })).toBeNull();
+    expect(appRequest(vm, { appId: "claude-desktop" })).toBeNull();
+    expect(appRequest(vm, "claude-desktop")).toBeNull();
+  });
+
+  it("sends an app request to the main window and only hides the popover", async () => {
+    await openAppFromTray("claude-desktop", "claude:work");
+    expect(tauri.emitTo).toHaveBeenCalledWith("main", TRAY_APP_EVENT, { appId: "claude-desktop", accountId: "claude:work" });
+    await waitFor(() => expect(tauri.invoke).toHaveBeenCalledWith("tray_hide"));
+    expect(tauri.invoke).not.toHaveBeenCalledWith("show_window");
   });
 
   it("emits to the main window, shows it and hides the popover", async () => {

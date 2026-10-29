@@ -1,9 +1,10 @@
 import type { MouseEvent, ReactNode } from "react";
-import { Download, KeyRound, LogIn, Stethoscope, TriangleAlert } from "lucide-react";
+import { AppWindow, Download, KeyRound, LogIn, Stethoscope, TriangleAlert } from "lucide-react";
 import { cn } from "../../lib/utils.js";
 import { AccountDot } from "../../ui/AccountDot.js";
 import { Badge } from "../../ui/Badge.js";
-import { Button } from "../../ui/Button.js";
+import { Button, IconButton } from "../../ui/Button.js";
+import { CopyButton } from "../../ui/CopyButton.js";
 import { CapacityMeter } from "../../ui/Meters.js";
 import { SessionStateIcon } from "../../ui/SessionStateIcon.js";
 import { ago, duration, shortPath } from "../../ui/format.js";
@@ -13,6 +14,25 @@ import type { Account, Attention, AttentionKind, Session, SessionState } from ".
 
 const ROW_STOP =
   'button:not([data-row-main]), a, input, select, textarea, label, [role="switch"], [role="menuitem"], [role="combobox"], [role="listbox"], [data-row-stop]';
+
+/** Email (with a copy icon), plan and tag under an account's name. */
+export function AccountSubline({ account: a, signedOut }: { account: Account; signedOut: boolean }) {
+  if (signedOut && !a.identity) {
+    return <span className="truncate text-[11px] text-ac-muted">{["Not signed in yet", a.label].filter(Boolean).join(" · ")}</span>;
+  }
+  const rest = [a.plan, a.label].filter(Boolean).join(" · ");
+  return (
+    <span className="flex min-w-0 items-center gap-1 text-[11px] text-ac-muted">
+      {a.identity && (
+        <>
+          <span className="truncate">{a.identity}</span>
+          <CopyButton text={a.identity} nested />
+        </>
+      )}
+      {rest && <span className="truncate">{a.identity ? `· ${rest}` : rest}</span>}
+    </span>
+  );
+}
 
 /** Whole row clickable except its own interactive children. Bundle `yo`. */
 export function rowClick(run: () => void) {
@@ -63,13 +83,26 @@ function hasStateBadge(a: Account): boolean {
 }
 
 /** Compact account row for Overview "What's left" and the tray. Bundle `Bd` (compact). */
-export function CompactAccountRow({ account: a, nextIn }: { account: Account; ranked?: RankedAccount; nextIn?: string }) {
+export function CompactAccountRow({
+  account: a,
+  nextIn,
+  app,
+}: {
+  account: Account;
+  ranked?: RankedAccount;
+  nextIn?: string;
+  /** A trailing button that opens the account's desktop app (tray). */
+  app?: { name: string; onOpen: () => void };
+}) {
   const s = useAS();
   const signedOut = a.state === "signed-out";
   return (
     <div
       {...rowClick(() => s.open({ kind: "account", id: a.id }))}
-      className="grid cursor-pointer grid-cols-[minmax(0,1fr)_minmax(120px,168px)] items-center gap-x-4 gap-y-2 rounded-lg px-3 py-2.5 transition-colors hover:bg-ac-raise"
+      className={cn(
+        "grid cursor-pointer items-center gap-x-4 gap-y-2 rounded-lg px-3 py-2.5 transition-colors hover:bg-ac-raise",
+        app ? "grid-cols-[minmax(0,1fr)_minmax(110px,150px)_auto] gap-x-3" : "grid-cols-[minmax(0,1fr)_minmax(120px,168px)]",
+      )}
     >
       <button type="button" data-row-main className="flex min-w-0 items-center gap-3 text-left">
         <AccountDot color={a.color} ring={a.liveSessions > 0} />
@@ -83,11 +116,7 @@ export function CompactAccountRow({ account: a, nextIn }: { account: Account; ra
               {nextIn && <Badge tone="info">Next in {nextIn}</Badge>}
             </span>
           ) : (
-            <span className="truncate text-[11px] text-ac-muted">
-              {signedOut && !a.identity
-                ? ["Not signed in yet", a.label].filter(Boolean).join(" · ")
-                : [a.identity, a.plan, a.label].filter(Boolean).join(" · ")}
-            </span>
+            <AccountSubline account={a} signedOut={signedOut} />
           )}
         </span>
       </button>
@@ -98,6 +127,11 @@ export function CompactAccountRow({ account: a, nextIn }: { account: Account; ra
           <CapacityMeter window={bindingWindow(a.windows)} threshold={a.threshold} checkedAt={a.checkedAt} now={s.now} compact />
         )}
       </div>
+      {app && (
+        <IconButton label={`Open ${app.name} as ${a.name}`} onClick={app.onOpen}>
+          <AppWindow />
+        </IconButton>
+      )}
     </div>
   );
 }
@@ -142,6 +176,7 @@ export function SessionRow({ session: e, compact }: { session: Session; compact?
         <span className="flex min-w-0 flex-col">
           <span className="flex min-w-0 items-center gap-2">
             <span className="truncate text-[13px] font-medium text-ac-text">{e.project}</span>
+            {e.surface === "desktop-app" && <Badge>Desktop</Badge>}
           </span>
           <span className="truncate text-[11px] text-ac-muted">
             {SECONDARY_STATES.has(e.state) && (
@@ -168,7 +203,7 @@ export function SessionRow({ session: e, compact }: { session: Session; compact?
       <span className={cn("hidden text-right font-ac-mono text-[11px] tabular-nums", !compact && "md:block", ctxTone)} title="Context window used">
         {e.contextPct == null ? "—" : `${e.contextPct}%`}
       </span>
-      <span className="hidden text-right text-[11px] text-ac-faint md:block" title={shortPath(e.cwd)}>
+      <span className="hidden text-right text-[11px] text-ac-faint md:block" title={e.cwd ? shortPath(e.cwd) : undefined}>
         {e.state === "working" ? duration(e.startedAt, s.now) : ago(e.lastActiveAt, s.now)}
       </span>
       <div className="flex min-w-[68px] items-center justify-end gap-1">

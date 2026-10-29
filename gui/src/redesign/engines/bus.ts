@@ -49,10 +49,11 @@ export function requestNotificationSync(): void {
   if (label && label !== MAIN) void emitTo(MAIN, SYNC_EVENT).catch(() => {});
 }
 
-/** Best-effort: a failed record never throws into the caller's flow. */
-export async function notify(kind: NotificationKind, title: string, message: string): Promise<void> {
+/** Best-effort: a failed record never throws into the caller's flow.
+ *  `repeat`: an identical notice is still its own moment (not collapsed). */
+export async function notify(kind: NotificationKind, title: string, message: string, opts: { repeat?: boolean } = {}): Promise<void> {
   try {
-    await recordNotification(kind, title, message);
+    await recordNotification(kind, title, message, opts.repeat);
   } catch {
     /* best-effort — the log is the source of truth */
   }

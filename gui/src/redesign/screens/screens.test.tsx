@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { AcRoot } from "../../ui/AcRoot.js";
 import type { Actions } from "../../vm/actions.js";
 import { emptyViewModel } from "../../vm/load.js";
 import { ASProvider, useAS, type Overlay, type Screen } from "../../vm/store.js";
 import type { Account, Session, ViewModel } from "../../vm/types.js";
 import { OverlayHost, ScreenHost } from "../Hosts.js";
-import { startPlan, startPreview } from "./start-session.js";
+import { startPlan, startPreview, startProblem } from "./start-session.js";
 import { terminalRun } from "./terminal-sheet.js";
 
 // jsdom has no canvas/matchMedia for xterm and no Tauri pty: stub both.
@@ -117,6 +117,15 @@ function mount(vm: ViewModel, opts: { screen?: Screen; overlay?: Overlay; act?: 
 afterEach(cleanup);
 
 describe("Overview", () => {
+  it("lists a session waiting on you under Needs you", () => {
+    const vm = fixture();
+    vm.sessions = vm.sessions.map((x) => (x.id === "claude:budmigo" ? { ...x, state: "needs-you" as const } : x));
+    mount(vm);
+    const section = screen.getByRole("region", { name: /Needs you/ });
+    expect(within(section).getByText("budmigo")).toBeTruthy();
+    expect(within(section).getByText(String(vm.attention.length + 1))).toBeTruthy();
+  });
+
   it("shows needs, running sessions and what is left", () => {
     mount(fixture());
     expect(screen.getByText("2 of 2 accounts ready · 1 session working · 1 needs you")).toBeTruthy();
@@ -169,6 +178,17 @@ describe("Session sheet", () => {
     expect(rebind).toHaveBeenCalledWith("claude:agent-config", "claude:side");
   });
 
+  it("leaves a Claude Desktop session to Desktop: no trash, no move, and says so", () => {
+    const vm = fixture();
+    vm.sessions = vm.sessions.map((x) => (x.id === "claude:old" ? { ...x, surface: "desktop-app" as const } : x));
+    mount(vm, { overlay: { kind: "session", id: "claude:old" }, act: { trashSession: vi.fn() } });
+    const trash = screen.getByRole("button", { name: /Move to trash/ }) as HTMLButtonElement;
+    expect(trash.disabled).toBe(true);
+    expect(trash.title).toBe("Started in Claude Desktop — delete it there.");
+    expect(screen.getByText(/Started in Claude Desktop/, { selector: "p" })).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: "Take over" })).toBeNull();
+  });
+
   it("disables live switching off macOS with the reason", () => {
     mount(fixture({ platform: "linux" }), { overlay: { kind: "session", id: "claude:agent-config" } });
     const sw = screen.getByRole("radio", { name: "Switch live" });
@@ -203,6 +223,28 @@ describe("Start session", () => {
     const ready = { ...work, isDefault: true };
     const plan = startPlan(ready, "claude", "terminal", null, "/Users/x/dev/app");
     expect(plan).toEqual({ kind: "terminal", args: ["run", "work", "--provider", "claude", "--cwd", "/Users/x/dev/app"] });
+    // Only an absolute folder is passed on: anything else (an unexpanded `~`, an
+    // encoded transcript dir) can't be found by the CLI, so Start stays off.
+    expect(startPlan(ready, "claude", "terminal", null, "-Users-x-dev-app")).toBeNull();
+    expect(startPlan(ready, "claude", "terminal", null, "~/dev/app")).toBeNull();
+    expect(startPlan(ready, "claude", "terminal", null, "")).toEqual({ kind: "terminal", args: ["run", "work", "--provider", "claude"] });
+    expect(startPlan(ready, "claude", "terminal", null, "C:\\dev\\app")?.kind).toBe("terminal");
+    expect(startPlan(ready, "claude", "terminal", null, "\\\\srv\\share")?.kind).toBe("terminal");
+  });
+
+  it("won't start on a disabled account, and says how to get it back", () => {
+    const off = { ...acc("work"), disabled: true };
+    expect(startPlan(off, "claude", "terminal", null, "")).toBeNull();
+    expect(startProblem(off, "claude", "terminal", "")).toBe("work is disabled — turn it back on first (Accounts → work → ⋯ → Turn back on).");
+  });
+
+  it("says why Start is off instead of a silently disabled button", () => {
+    const work = acc("work");
+    expect(startProblem({ ...work, state: "signed-out" }, "claude", "terminal", "/x")).toMatch(/work is signed out — sign in again/);
+    expect(startProblem(work, "claude", "terminal", "-Users-x-dev-app")).toMatch(/not a full folder path/);
+    expect(startProblem(null, "codex", "terminal", "")).toBe("No Codex account to start on.");
+    expect(startProblem(work, "claude", "terminal", "/Users/x/dev/app")).toBeNull();
+    expect(startProblem(work, "claude", "desktop-app", "-x")).toBeNull();
     expect(startPreview("codex", "terminal", "/tmp/app", null, "work")).toEqual({ prompt: "/tmp/app", command: "codex" });
     expect(startPreview("claude", "terminal", "  ", null, "work").prompt).toBe("~/.agent-switch");
     expect(startPreview("claude", "desktop-app", "/tmp/app", "claude-desktop", "work").command).toBe("agent-switch open claude-desktop work");

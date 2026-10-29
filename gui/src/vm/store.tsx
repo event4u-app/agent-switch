@@ -36,10 +36,13 @@ export interface TerminalRun {
   kicker?: string;
 }
 
+/** Where an account flyout opens: the top, or the section a menu entry named. */
+export type AccountSection = "usage" | "edit";
+
 export type Overlay =
   | { kind: "none" }
   | { kind: "session"; id: string }
-  | { kind: "account"; id: string }
+  | { kind: "account"; id: string; section?: AccountSection }
   | { kind: "start"; cwd?: string; tool?: string; accountId?: string }
   | { kind: "add-account"; tool?: string }
   | { kind: "limit"; attentionId: string }

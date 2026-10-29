@@ -6,6 +6,7 @@
 
 import { useNotificationEngine } from "./notifications.js";
 import { usePetAndTray } from "./pet.js";
+import { useSessionsPoll } from "./sessions-poll.js";
 import { useStartupEngines } from "./startup.js";
 import { useUpdateWatchers } from "./updates.js";
 import { useUsageAutoRefresh } from "./usage-refresh.js";
@@ -13,6 +14,7 @@ import { useUsageAutoRefresh } from "./usage-refresh.js";
 export function useEngines(): void {
   useNotificationEngine();
   useUsageAutoRefresh();
+  useSessionsPoll();
   useUpdateWatchers();
   usePetAndTray();
   useStartupEngines();

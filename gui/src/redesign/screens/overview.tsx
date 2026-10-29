@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CircleCheck, Download, X } from "lucide-react";
-import { getAgentConfigCardDismissed, setAgentConfigCardDismissed } from "../../settings-store.js";
+import { getAgentConfigCardDismissed, getSessionMonitoring, setAgentConfigCardDismissed } from "../../settings-store.js";
 import { Button, IconButton } from "../../ui/Button.js";
 import { Card } from "../../ui/Card.js";
 import { PageHeader, SectionHeader } from "../../ui/Typography.js";
@@ -114,25 +114,39 @@ export function Overview() {
     return <FirstRun />;
   }
   const running = s.sessions.filter((x) => x.state !== "done" && !x.trashed);
+  const waiting = running.filter((x) => x.state === "needs-you");
+  const needs = s.attention.length + waiting.length;
   const tools = accountTools(s.accounts);
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="What's going on?" sub={overviewSub(s)} />
       <section aria-labelledby="needs-you" className="flex flex-col gap-3">
         <div id="needs-you">
-          <SectionHeader title="Needs you" count={s.attention.length} />
+          <SectionHeader title="Needs you" count={needs} />
         </div>
-        {s.attention.length ? (
+        {needs ? (
           <Card className="overflow-hidden">
             <div className="flex flex-col divide-y divide-ac-line">
+              {waiting.map((x) => (
+                <SessionRow key={x.id} session={x} />
+              ))}
               {s.attention.map((item) => (
                 <AttentionRow key={item.id} item={item} />
               ))}
             </div>
           </Card>
         ) : (
-          <p className="flex items-center gap-2 text-[13px] text-ac-muted">
+          <p className="flex flex-wrap items-center gap-2 text-[13px] text-ac-muted">
             <CircleCheck className="size-4 text-ac-ok" /> Nothing needs you. Sessions keep running on their accounts.
+            {!getSessionMonitoring() && running.length > 0 && (
+              <span className="text-xs text-ac-faint">
+                Questions a session asks show here; a permission prompt only with{" "}
+                <button type="button" className="underline underline-offset-2 hover:text-ac-text" onClick={() => s.go("settings", "notifications")}>
+                  session monitoring on
+                </button>
+                .
+              </span>
+            )}
           </p>
         )}
       </section>

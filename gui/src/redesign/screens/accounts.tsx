@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { resolvePlainStart, type DirResolution } from "../../ipc.js";
 import { Ellipsis, LogIn, Plus, RefreshCw, ShieldCheck, ShieldOff, SquareTerminal } from "lucide-react";
 import { cn } from "../../lib/utils.js";
 import { AccountDot } from "../../ui/AccountDot.js";
@@ -11,11 +12,12 @@ import { Segmented } from "../../ui/Segmented.js";
 import { PageHeader, SectionHeader } from "../../ui/Typography.js";
 import { bindingWindow, nextInPools, rankAccounts, TOOL_LABEL, type RankedAccount } from "../../vm/rules.js";
 import { useAS } from "../../vm/store.js";
-import type { Account } from "../../vm/types.js";
+import type { Account, Tool } from "../../vm/types.js";
 import { ACCOUNT_TOOLS, protectTitle, usedIn } from "./account-logic.js";
 import { accountMenu, startAs, makeDefault } from "./account-actions.js";
+import { plainStart, plainStartFromCli } from "./logic.js";
 import { ProjectsPools } from "./projects-pools.js";
-import { AccountStateBadge, RowList, rowClick } from "./rows.js";
+import { AccountStateBadge, AccountSubline, RowList, rowClick } from "./rows.js";
 import { UsageHistory } from "./usage-history.js";
 
 // -------------------------------------------------------------------- rows
@@ -41,10 +43,13 @@ export function AccountRow({ account: a, ranked, showRank, nextIn }: { account: 
   return (
     <div
       {...rowClick(() => s.open({ kind: "account", id: a.id }))}
+      data-account-row
+      data-disabled={a.disabled ? "true" : undefined}
       className={cn(
         "grid cursor-pointer items-center gap-x-4 gap-y-2 rounded-lg px-3 py-2.5 transition-colors hover:bg-ac-raise",
         "grid-cols-[minmax(0,1fr)_auto]",
         ACCOUNT_GRID,
+        a.disabled && "opacity-55",
       )}
     >
       <button type="button" data-row-main className="flex min-w-0 items-center gap-3 text-left">
@@ -57,15 +62,19 @@ export function AccountRow({ account: a, ranked, showRank, nextIn }: { account: 
         <span className="flex min-w-0 flex-col">
           <span className="flex min-w-0 items-center gap-2">
             <span className="truncate text-[13px] font-medium text-ac-text">{a.name}</span>
+            {a.disabled && <Badge>Disabled</Badge>}
+            {a.desktopForeign && (
+              <span title={`Its Claude Desktop window is signed in as ${a.desktopForeign.join(", ")} — sessions there count against that account.`}>
+                <Badge tone="warn" dot>
+                  Desktop: {a.desktopForeign.join(", ")}
+                </Badge>
+              </span>
+            )}
             {a.isDefault && <Badge tone="brand">Default</Badge>}
             {nextIn && <Badge tone="info">Next in {nextIn}</Badge>}
-            <AccountStateBadge account={a} />
+            {!a.disabled && <AccountStateBadge account={a} />}
           </span>
-          <span className="truncate text-[11px] text-ac-muted">
-            {signedOut && !a.identity
-              ? ["Not signed in yet", a.label].filter(Boolean).join(" · ")
-              : [a.identity, a.plan, a.label].filter(Boolean).join(" · ")}
-          </span>
+          <AccountSubline account={a} signedOut={signedOut} />
         </span>
       </button>
       <span className="hidden min-w-0 flex-col md:flex">
@@ -161,7 +170,61 @@ function RefreshControl() {
   );
 }
 
-type Order = "headroom" | "yours";
+/** What a plain `claude` does where no folder rule applies (the general case). */
+function PlainStartLine({ tool }: { tool: Tool }) {
+  const s = useAS();
+  const [answer, setAnswer] = useState<DirResolution | null>(null);
+  // Re-ask whenever the readouts change: the pick follows usage and resets.
+  const key = s.accounts
+    .filter((a) => a.tool === tool)
+    .map((a) => `${a.id}:${a.isDefault}:${a.disabled}:${a.state}:${a.checkedAt}`)
+    .join("|");
+  useEffect(() => {
+    if (tool === "gemini") return;
+    let alive = true;
+    resolvePlainStart(tool).then(
+      (r) => alive && setAnswer(r),
+      () => alive && setAnswer(null),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [tool, key]);
+  const p = answer ? plainStartFromCli(s.accounts, tool, s.rules, answer) : plainStart(s.accounts, tool, s.rules);
+  return (
+    <div
+      role="note"
+      aria-label={p.text}
+      title={[p.text, ...p.why].join("\n")}
+      className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-ac-line bg-ac-panel px-3 py-2"
+    >
+      <span className="flex min-w-0 flex-1 items-center gap-2 text-xs text-ac-muted">
+        <SquareTerminal className="size-3.5 shrink-0 text-ac-faint" />
+        <span className="shrink-0">
+          Plain <code className="font-ac-mono text-[11px] text-ac-soft">{p.command}</code> starts on
+        </span>
+        {p.account ? (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <AccountDot color={p.account.color} size={8} />
+            <span className="truncate text-[13px] font-medium text-ac-text">{p.account.name}</span>
+          </span>
+        ) : (
+          <span className="truncate text-ac-soft">your original {TOOL_LABEL[tool]} login</span>
+        )}
+        {p.warn && (
+          <Badge tone="warn" dot>
+            <span title={p.warn}>{p.account?.state === "signed-out" ? "Signed out" : p.account?.state === "limited" ? "At its limit" : "Check this account"}</span>
+          </Badge>
+        )}
+      </span>
+      <span className="text-[11px] text-ac-faint">
+        {p.reason ?? (p.rules ? `Folders with a rule (${p.rules}) use their own` : p.account ? "No folder rules" : "Pick one: ⋯ → Use for plain starts")}
+      </span>
+    </div>
+  );
+}
+
+type Order = "headroom" | "name";
 
 /** Accounts per provider. Bundle `WP`. */
 function AccountGroups({ order }: { order: Order }) {
@@ -186,7 +249,10 @@ function AccountGroups({ order }: { order: Order }) {
         const rows =
           order === "headroom"
             ? ranked
-            : s.accounts.filter((a) => a.tool === tool).map((a) => ranked.find((r) => r.account.id === a.id) as RankedAccount);
+            : s.accounts
+                .filter((a) => a.tool === tool)
+                .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+                .map((a) => ranked.find((r) => r.account.id === a.id) as RankedAccount);
         const next = nextInPools(s.accounts, tool, s.pools, s.now);
         const threshold = ranked[0]?.account.threshold ?? 98;
         return (
@@ -200,6 +266,7 @@ function AccountGroups({ order }: { order: Order }) {
                 </Button>
               }
             />
+            <PlainStartLine tool={tool} />
             <AccountColumns ranked={order === "headroom"} threshold={threshold} />
             <Card className="p-1">
               <RowList>
@@ -251,7 +318,7 @@ export function Accounts() {
                 onChange={setOrder}
                 options={[
                   { value: "headroom", label: "Most left first" },
-                  { value: "yours", label: "Your order" },
+                  { value: "name", label: "A–Z" },
                 ]}
               />
             )}

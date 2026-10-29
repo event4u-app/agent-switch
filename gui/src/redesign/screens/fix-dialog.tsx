@@ -8,12 +8,13 @@ import { forceDoctorOnNextLoad } from "../../vm/slow-cache.js";
 import { useAS } from "../../vm/store.js";
 import type { Check } from "../../vm/types.js";
 
-export type Repair = "autostart" | "share-sync";
+export type Repair = "autostart" | "share-sync" | "shell-integration";
 
 /** The checks Agent Switch can repair itself — only where a real backend call
  *  exists. Everything else is explained, never faked. */
-export function repairFor(check: Pick<Check, "id">, act: Pick<Actions, "setAutostart" | "shareSync">): Repair | null {
+export function repairFor(check: Pick<Check, "id">, act: Pick<Actions, "setAutostart" | "shareSync" | "installShellIntegration">): Repair | null {
   if (check.id === "autostart" && act.setAutostart) return "autostart";
+  if (check.id === "shell-integration" && act.installShellIntegration) return "shell-integration";
   if (check.id.startsWith("share-") && act.shareSync) return "share-sync";
   return null;
 }
@@ -34,6 +35,7 @@ async function runRepair(repair: Repair, act: Actions) {
   // The reload after the write must re-run `doctor` to show the after state.
   forceDoctorOnNextLoad();
   if (repair === "autostart") await act.setAutostart?.(true);
+  else if (repair === "shell-integration") await act.installShellIntegration?.();
   else await act.shareSync?.(getShareSource());
 }
 

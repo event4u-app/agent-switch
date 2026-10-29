@@ -80,6 +80,20 @@ describe("bindingWindow / headroom", () => {
 });
 
 describe("rankAccounts", () => {
+  it("never ranks a disabled account and lists it last", () => {
+    const ranked = rankAccounts(
+      [account({ id: "claude:off", disabled: true, windows: [win(1)] }), account({ id: "claude:on", windows: [win(60)] }), account({ id: "claude:out", state: "signed-out" })],
+      "claude",
+      NOW,
+    );
+    expect(ranked.map((r) => [r.account.id, r.rank])).toEqual([
+      ["claude:on", 1],
+      ["claude:out", null],
+      ["claude:off", null],
+    ]);
+    expect(ranked[2].reason).toBe("Disabled — turn it back on to use it");
+  });
+
   it("orders by state, then fresh before stale, then headroom; ranks only usable accounts", () => {
     const accounts = [
       account({ id: "claude:signed", state: "signed-out", windows: [win(1)] }),

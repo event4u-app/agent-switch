@@ -1,11 +1,12 @@
-import { useState } from "react";
-import { AppWindow, Check, ExternalLink, Power, Star, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AppWindow, Check, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
 import { cn } from "../../lib/utils.js";
-import type { ProfileLabel } from "../../transforms.js";
+import { hasUsageReadout, type ProfileLabel } from "../../transforms.js";
 import { AccountDot, identityColor } from "../../ui/AccountDot.js";
 import { Badge } from "../../ui/Badge.js";
-import { Button } from "../../ui/Button.js";
+import { Button, IconButton } from "../../ui/Button.js";
 import { DefinitionList } from "../../ui/Card.js";
+import { Copyable } from "../../ui/CopyButton.js";
 import { ago, expiry } from "../../ui/format.js";
 import { UsageWindowRow } from "../../ui/Meters.js";
 import { Sheet, SheetSection } from "../../ui/Overlay.js";
@@ -14,10 +15,10 @@ import { SessionStateIcon } from "../../ui/SessionStateIcon.js";
 import { Switch } from "../../ui/Switch.js";
 import { TextInput } from "../../ui/TextInput.js";
 import { isStale, nextInPools, TOOL_LABEL } from "../../vm/rules.js";
-import { useAS } from "../../vm/store.js";
+import { useAS, type AccountSection } from "../../vm/store.js";
 import { IDENTITY_COLORS, type AuthHealth, type AuthState, type IdentityColor } from "../../vm/types.js";
-import { attempt, confirmRedeem, confirmRemove, makeDefault, turnOffPlainStarts } from "./account-actions.js";
-import { canSaveName, hasReadout } from "./account-logic.js";
+import { attempt, confirmRedeem, confirmRemove, makeDefault, PlainStartStar, refreshOne, turnOffPlainStarts } from "./account-actions.js";
+import { canSaveName, hasReadout, NAME_HINT, nameProblem } from "./account-logic.js";
 import { appFor } from "./logic.js";
 import { AccountStateBadge } from "./rows.js";
 import { Sparkline, useUsageHistory } from "./usage-history.js";
@@ -43,13 +44,10 @@ const UNKNOWN_AUTH: AuthHealth = {
   keptFreshBy: null,
 };
 
-const DERIVED_COLOUR = "The colour follows the account's name — Agent Switch can't store a chosen colour yet.";
-
-/** Colour swatches. Bundle `_0`. No backend stores a colour: the swatches show
- *  the derived one and stay read-only. */
-export function ColourPicker({ value }: { value: IdentityColor }) {
+/** Colour swatches. Bundle `_0`. */
+export function ColourPicker({ value, onChange }: { value: IdentityColor; onChange: (c: IdentityColor) => void }) {
   return (
-    <div className="flex flex-col gap-1.5" title={DERIVED_COLOUR}>
+    <div className="flex flex-col gap-1.5">
       <span className="ac-caps">Colour</span>
       <div role="radiogroup" aria-label="Account colour" className="flex flex-wrap gap-2">
         {IDENTITY_COLORS.map((c) => (
@@ -60,10 +58,10 @@ export function ColourPicker({ value }: { value: IdentityColor }) {
             aria-checked={value === c}
             aria-label={c}
             title={c}
-            disabled
+            onClick={() => onChange(c)}
             className={cn(
-              "inline-flex size-8 items-center justify-center rounded-md border transition-colors disabled:cursor-default",
-              value === c ? "border-ac-brand-line bg-ac-brand-tint" : "border-ac-line opacity-60",
+              "inline-flex size-8 items-center justify-center rounded-md border transition-colors",
+              value === c ? "border-ac-brand-line bg-ac-brand-tint" : "border-ac-line hover:border-ac-line2",
             )}
           >
             <span className="inline-flex size-4 items-center justify-center rounded-full" style={{ background: identityColor(c) }}>
@@ -123,16 +121,32 @@ export function PoolsPicker({ value, onChange }: { value: string[]; onChange: (v
 }
 
 /** Account detail sheet. Bundle `GP` (sheet 500). */
-export function AccountSheet({ id }: { id: string }) {
+export function AccountSheet({ id, section }: { id: string; section?: AccountSection }) {
   const s = useAS();
   const a = s.accountById(id);
   const [protOn, setProtOn] = useState(a?.protection?.enabled ?? true);
   const [name, setName] = useState(a?.name ?? "");
   const [label, setLabel] = useState<ProfileLabel | null>(a?.label ?? null);
+  const [color, setColor] = useState<IdentityColor>(a?.color ?? "blue");
   const [pools, setPools] = useState<string[]>(a?.pools ?? []);
   const history = useUsageHistory(a ? [a] : [], s.now);
+  const [refreshing, setRefreshing] = useState(false);
+  const exists = !!a;
+  // A menu entry names a section: open there, with the name ready to edit.
+  // Runs after the sheet's own open-focus, so the name field keeps the focus.
+  useEffect(() => {
+    if (!section || !exists) return;
+    document.getElementById(`account-${section}`)?.scrollIntoView?.({ block: "start" });
+    if (section === "edit") {
+      const input = document.getElementById("acc-name") as HTMLInputElement | null;
+      input?.focus({ preventScroll: true });
+      input?.select();
+    }
+  }, [section, exists]);
   if (!a) return null;
   const acc = a;
+  const readout = a.tool !== "gemini" && hasUsageReadout(a.tool);
+  const signedOut = a.state === "signed-out";
   const auth = a.auth ?? UNKNOWN_AUTH;
   const app = appFor(s, a.tool);
   const next = nextInPools(s.accounts, a.tool, s.pools, s.now).get(a.id);
@@ -148,6 +162,7 @@ export function AccountSheet({ id }: { id: string }) {
     const added = pools.filter((p) => !acc.pools.includes(p));
     const removed = acc.pools.filter((p) => !pools.includes(p));
     const labelChanged = label !== acc.label;
+    const colorChanged = color !== acc.color;
     attempt(
       s,
       (async () => {
@@ -155,8 +170,12 @@ export function AccountSheet({ id }: { id: string }) {
         if (protChanged) await act.setProtection?.(acc.id, { enabled: protOn });
         for (const p of added) await act.setPoolMembership?.(p, acc.id, true);
         for (const p of removed) await act.setPoolMembership?.(p, acc.id, false);
-        if (labelChanged || nextName !== acc.name) {
-          await act.updateAccount?.(acc.id, { ...(labelChanged ? { label } : {}), ...(nextName !== acc.name ? { name: nextName } : {}) });
+        if (labelChanged || colorChanged || nextName !== acc.name) {
+          await act.updateAccount?.(acc.id, {
+            ...(labelChanged ? { label } : {}),
+            ...(colorChanged ? { color } : {}),
+            ...(nextName !== acc.name ? { name: nextName } : {}),
+          });
         }
       })(),
       `Couldn't save ${acc.name}`,
@@ -164,7 +183,7 @@ export function AccountSheet({ id }: { id: string }) {
     s.update((vm) => ({
       accounts: vm.accounts.map((m) =>
         m.id === acc.id
-          ? { ...m, name: nextName, label, pools, protection: m.protection ? { ...m.protection, enabled: protOn } : m.protection }
+          ? { ...m, name: nextName, label, color, pools, protection: m.protection ? { ...m.protection, enabled: protOn } : m.protection }
           : m,
       ),
       pools: vm.pools.map((p) => ({
@@ -207,15 +226,16 @@ export function AccountSheet({ id }: { id: string }) {
                   <AppWindow /> Open {TOOL_LABEL[a.tool]} app
                 </Button>
               )}
-              {a.isDefault ? (
-                <Button size="sm" variant="ghost" onClick={() => turnOffPlainStarts(a, s)} title="Plain starts use your original login">
-                  <Power /> Turn off
-                </Button>
-              ) : (
-                <Button size="sm" variant="ghost" onClick={() => makeDefault(a, s)} disabled={a.state === "signed-out"}>
-                  <Star /> Use for plain starts
-                </Button>
-              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-pressed={a.isDefault}
+                onClick={() => (a.isDefault ? turnOffPlainStarts(a, s) : makeDefault(a, s))}
+                disabled={!a.isDefault && (a.state === "signed-out" || !!a.disabled)}
+                title={a.isDefault ? "Used for plain starts — click to go back to your original login" : "Use for plain starts"}
+              >
+                <PlainStartStar on={a.isDefault} /> Use for plain starts
+              </Button>
             </span>
           }
         >
@@ -226,12 +246,18 @@ export function AccountSheet({ id }: { id: string }) {
           </div>
           <DefinitionList
             rows={[
-              ["Signed in as", a.identity ?? "—"],
+              ["Signed in as", a.identity ? <Copyable text={a.identity} /> : "—"],
               ["Plan", a.plan ?? "—"],
               ["Tag", a.label ?? "—"],
               ["Pools", a.pools.map((p) => s.pools.find((x) => x.id === p)?.label ?? p).join(", ") || "—"],
             ]}
           />
+          {a.desktopForeign && (
+            <p className="text-xs text-ac-warn-text">
+              Its Claude Desktop window is signed in as {a.desktopForeign.join(", ")} — chats and Code sessions there count against that account, not{" "}
+              {a.name}. Sign out in that window and sign in as {a.name}.
+            </p>
+          )}
         </SheetSection>
 
         <SheetSection title="Sign-in">
@@ -292,15 +318,35 @@ export function AccountSheet({ id }: { id: string }) {
           )}
         </SheetSection>
 
-        {a.windows.length > 0 && (
+        {(a.windows.length > 0 || readout) && (
           <SheetSection
+            id="account-usage"
             title="Capacity"
             aside={
-              <span className={cn("text-[11px]", isStale(a.checkedAt, s.now) ? "text-ac-warn-text" : "text-ac-faint")}>
-                checked {a.checkedAt ? ago(a.checkedAt, s.now) : "never"}
+              <span className="flex items-center gap-1">
+                <span className={cn("text-[11px]", isStale(a.checkedAt, s.now) ? "text-ac-warn-text" : "text-ac-faint")}>
+                  checked {a.checkedAt ? ago(a.checkedAt, s.now) : "never"}
+                </span>
+                {readout && (
+                  <IconButton
+                    label="Refresh usage"
+                    title={signedOut ? "Sign in first" : a.disabled ? "Refresh usage — disabled accounts are only checked when you ask" : "Refresh usage"}
+                    className="size-7 disabled:cursor-not-allowed disabled:opacity-45"
+                    disabled={signedOut || refreshing || !s.act.refreshAccountUsage}
+                    onClick={() => {
+                      setRefreshing(true);
+                      void refreshOne(a, s).finally(() => setRefreshing(false));
+                    }}
+                  >
+                    <RefreshCw className={cn(refreshing && "animate-spin")} />
+                  </IconButton>
+                )}
               </span>
             }
           >
+            {a.windows.length === 0 && (
+              <span className="text-xs text-ac-muted">{signedOut ? "Usage resumes after the sign-in." : "No usage read yet."}</span>
+            )}
             {a.windows.map((w) => (
               <UsageWindowRow key={w.key} window={w} threshold={a.threshold} now={s.now} />
             ))}
@@ -353,7 +399,7 @@ export function AccountSheet({ id }: { id: string }) {
           )}
         </SheetSection>
 
-        <SheetSection title="Name, colour, tag & pools">
+        <SheetSection id="account-edit" title="Name, colour, tag & pools">
           <div className="flex flex-col gap-1.5">
             <label className="ac-caps" htmlFor="acc-name">
               Name
@@ -363,12 +409,14 @@ export function AccountSheet({ id }: { id: string }) {
               mono
               className="h-9"
               value={name}
-              onChange={(e) => setName(e.target.value.toLowerCase())}
+              onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && save()}
             />
-            <span className="text-[11px] text-ac-faint">Lowercase letters, digits and dashes. Renaming keeps the sign-in and the sessions.</span>
+            <span className={cn("text-[11px]", nameProblem(name) && name.trim() !== a.name ? "text-ac-warn-text" : "text-ac-faint")}>
+              {(name.trim() !== a.name && nameProblem(name)) || `${NAME_HINT} Renaming keeps the sign-in and the sessions.`}
+            </span>
           </div>
-          <ColourPicker value={a.color} />
+          <ColourPicker value={color} onChange={setColor} />
           <TagPicker value={label} onChange={setLabel} />
           <PoolsPicker value={pools} onChange={setPools} />
         </SheetSection>

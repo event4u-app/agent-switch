@@ -5,10 +5,10 @@ import type { ReleaseInfo, UpdateCheck } from "../../updates.js";
 import type { Actions } from "../../vm/actions.js";
 import { emptyViewModel } from "../../vm/load.js";
 import type { Account, ViewModel } from "../../vm/types.js";
-import { loadUsage, type UsageDeps } from "../../vm/usage-loader.js";
+import { forceUsageFor, loadUsage, type UsageDeps } from "../../vm/usage-loader.js";
 import { getUsageAttempts, loadUsageCache, markUsageAttempt, saveUsageSnapshot } from "../../usage-cache.js";
 import { nearLimitMessage } from "./near-limit.js";
-import { deliver, freshSince, toastFor, type FireContext, type FireSinks } from "./notifications.js";
+import { deliver, freshSince, noticeText, toastFor, type FireContext, type FireSinks } from "./notifications.js";
 import { petRoute, petStartup } from "./pet.js";
 import { reconcileShare } from "./startup.js";
 import { withSwitchEffects } from "./switch-effects.js";
@@ -101,6 +101,13 @@ describe("notification fire path", () => {
     expect(log.toast).toHaveLength(5);
     expect(toastFor(n("x", 1, { kind: "error" }))).toEqual({ text: "Tx — Mx", tone: "alert" });
   });
+
+  it("gives the pet the whole notice, so a switch names the account", () => {
+    expect(noticeText(n("s", 1, { title: "Account switched", message: "Claude is now using side." }))).toBe(
+      "Account switched — Claude is now using side.",
+    );
+    expect(noticeText(n("t", 1, { message: "" }))).toBe("Tt");
+  });
 });
 
 const snap = (pct: number, capturedAt = "2026-10-01T00:00:00Z", resetsAt: string | null = null): UsageSnapshot => ({
@@ -127,6 +134,18 @@ describe("usage loading (cache + cooldown)", () => {
     return { d, calls, failures };
   }
 
+  it("polls a disabled account only when it is refreshed by hand, and keeps its last readout otherwise", async () => {
+    saveUsageSnapshot("claude/off", snap(70));
+    const { d, calls } = deps(() => snap(10));
+    const rows = [{ provider: "claude" as const, name: "off", disabled: true }, { provider: "claude" as const, name: "on" }];
+    const out = await loadUsage(rows, { force: true, cooldownMs: 600_000 }, d);
+    expect(calls).toEqual(["claude/on"]); // a refresh-all skips it
+    expect(out[0]?.windows[0].utilization).toBe(70);
+    forceUsageFor("claude/off");
+    await loadUsage(rows, { force: false, cooldownMs: 600_000 }, d);
+    expect(calls).toEqual(["claude/on", "claude/off"]);
+  });
+
   it("fetches due accounts, caches the snapshot and records the attempt", async () => {
     const { d, calls } = deps(() => snap(40));
     const out = await loadUsage([{ provider: "claude", name: "a" }, { provider: "antigravity", name: "g" }], { force: false, cooldownMs: 600_000 }, d);
@@ -147,6 +166,21 @@ describe("usage loading (cache + cooldown)", () => {
     const forced = await loadUsage([{ provider: "claude", name: "a" }], { force: true, cooldownMs: 600_000 }, d);
     expect(calls).toEqual(["claude/a"]);
     expect(forced[0]?.windows[0].utilization).toBe(70);
+  });
+
+  it("a single-account refresh fetches only that account past its cooldown, once", async () => {
+    saveUsageSnapshot("claude/a", snap(10));
+    saveUsageSnapshot("claude/b", snap(20));
+    markUsageAttempt("claude/a", 999_000);
+    markUsageAttempt("claude/b", 999_000);
+    const { d, calls } = deps(() => snap(90));
+    const profiles = [{ provider: "claude" as const, name: "a" }, { provider: "claude" as const, name: "b" }];
+    forceUsageFor("claude/b");
+    const out = await loadUsage(profiles, { cooldownMs: 600_000 }, d);
+    expect(calls).toEqual(["claude/b"]);
+    expect(out.map((s) => s?.windows[0].utilization)).toEqual([10, 90]);
+    await loadUsage(profiles, { cooldownMs: 600_000 }, d);
+    expect(calls).toEqual(["claude/b"]); // spent, not sticky
   });
 
   it("records a warning per failed fetch and keeps the last snapshot (with its own age)", async () => {
@@ -373,7 +407,7 @@ describe("account switch side effects", () => {
 });
 
 describe("shared setup reconcile", () => {
-  function deps(profiles: { name: string; shared: boolean }[], active: boolean, pref: boolean) {
+  function deps(profiles: { name: string; shared: boolean; prompts?: boolean }[], active: boolean, pref: boolean) {
     const ran: string[] = [];
     return {
       ran,
@@ -390,6 +424,16 @@ describe("shared setup reconcile", () => {
     const { d, ran } = deps([{ name: "a", shared: true }, { name: "b", shared: false }], true, true);
     expect(await reconcileShare(d)).toBe("linked");
     expect(ran).toEqual(["on:work"]);
+  });
+  it("links again when a shared profile still keeps its own prompt history", async () => {
+    const { d, ran } = deps([{ name: "a", shared: true, prompts: true }, { name: "b", shared: true, prompts: false }], true, true);
+    expect(await reconcileShare(d)).toBe("linked");
+    expect(ran).toEqual(["on:work"]);
+  });
+  it("leaves an older CLI that does not report prompt history alone", async () => {
+    const { d, ran } = deps([{ name: "a", shared: true }], true, true);
+    expect(await reconcileShare(d)).toBe("none");
+    expect(ran).toEqual([]);
   });
   it("removes the links when the preference is off", async () => {
     const { d, ran } = deps([{ name: "a", shared: true }], true, false);

@@ -3,6 +3,7 @@ import type { UsageHistorySample } from "../../ipc.js";
 import {
   addBlocked,
   canSaveName,
+  nameProblem,
   dailyPeaks,
   hasReadout,
   lastValue,
@@ -22,12 +23,18 @@ function sample(at: number, util: number | null, key = "seven_day"): UsageHistor
 }
 
 describe("account names", () => {
-  it("requires the design rule for new names but keeps an old one savable", () => {
+  it("follows the CLI's rule: letters in either case, digits, - and _, no spaces", () => {
     expect(canSaveName("client-acme", "work")).toBe(true);
-    expect(canSaveName("-bad", "work")).toBe(false);
-    expect(canSaveName("a".repeat(25), "work")).toBe(false);
-    expect(canSaveName("My.Work", "My.Work")).toBe(true);
-    expect(canSaveName("my.work", "My.Work")).toBe(false);
+    expect(canSaveName("MatneX", "work")).toBe(true);
+    expect(canSaveName("Matze_4u", "work")).toBe(true);
+    expect(canSaveName("a".repeat(40), "work")).toBe(true);
+    expect(canSaveName("my work", "work")).toBe(false);
+    expect(canSaveName("my.work", "work")).toBe(false); // `add` refuses dots
+    expect(canSaveName("-bad", "work")).toBe(false); // would read as a flag
+    expect(canSaveName("My.Work", "My.Work")).toBe(true); // an existing name stays savable
+    expect(nameProblem("my work")).toBe("No spaces — use - or _ instead.");
+    expect(nameProblem("MatneX ")).toBe("No spaces — use - or _ instead.");
+    expect(nameProblem("MatneX")).toBeNull();
   });
 });
 
@@ -75,8 +82,12 @@ describe("usage history", () => {
 describe("sign-in", () => {
   it("adds a new profile and signs an existing one in through its tool", () => {
     expect(signInArgs("claude", "work", false)).toEqual(["add", "work", "--provider", "claude"]);
-    expect(signInArgs("claude", "work", true)).toEqual(["run", "work", "--provider", "claude"]);
-    expect(signInArgs("codex", "side", true)).toEqual(["run", "side", "--provider", "codex", "login"]);
+    // An existing profile signs in with `login`: the provider's own sign-in
+    // (`claude auth login`, `codex login`), confirmed by the stored credential.
+    expect(signInArgs("claude", "work", true)).toEqual(["login", "work", "--provider", "claude"]);
+    expect(signInArgs("codex", "side", true)).toEqual(["login", "side", "--provider", "codex"]);
+    expect(signInArgs("claude", "work", true, "arc")).toEqual(["login", "work", "--provider", "claude", "--browser", "arc"]);
+    expect(signInArgs("claude", "work", false, "arc")).toEqual(["add", "work", "--provider", "claude", "--browser", "arc"]);
   });
 
   it("calls a different identity a mismatch only when one was known", () => {

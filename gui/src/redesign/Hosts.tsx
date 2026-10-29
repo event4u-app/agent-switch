@@ -78,7 +78,7 @@ export function OverlayHost() {
     return "run" in o ? <TerminalSheet run={terminalRun(o)} /> : <UpdateSheet key={`${o.toolId}:${o.action}`} toolId={o.toolId} action={o.action} />;
   if (o.kind === "fix") return <FixDialog key={o.checkId} checkId={o.checkId} />;
   if (o.kind === "notifications") return <NotificationsSheet />;
-  if (o.kind === "account") return <AccountSheet key={o.id} id={o.id} />;
+  if (o.kind === "account") return <AccountSheet key={o.id} id={o.id} section={o.section} />;
   if (o.kind === "add-account") return <AddAccountDialog tool={o.tool} />;
   return <ReauthDialog key={o.accountId} accountId={o.accountId} />;
 }

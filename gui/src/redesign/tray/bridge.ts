@@ -13,9 +13,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef } from "react";
 import type { Overlay, Screen } from "../../vm/store.js";
+import type { ViewModel } from "../../vm/types.js";
+import { appFor } from "../screens/logic.js";
 
 export const TRAY_OPEN_EVENT = "tray:open";
 export const TRAY_GO_EVENT = "tray:go";
+export const TRAY_APP_EVENT = "tray:app";
 export const MAIN_WINDOW = "main";
 
 export type ForwardedOverlay = Extract<Overlay, { kind: "start" | "account" | "session" | "limit" | "notifications" }>;
@@ -58,6 +61,18 @@ export function forwardable(o: unknown): o is ForwardedOverlay {
   return forwardedOverlay(o) !== null;
 }
 
+/** Main side: the app request `x` stands for, or null. Trusts nothing in the
+ *  payload — the account must exist, be usable, and its tool's detected desktop
+ *  app must be exactly `appId`; the CLI then launches only a registered app. */
+export function appRequest(vm: Pick<ViewModel, "accounts" | "surfaces">, x: unknown): { appId: string; accountId: string } | null {
+  if (!x || typeof x !== "object") return null;
+  const { appId, accountId } = x as Record<string, unknown>;
+  if (!str(appId) || !str(accountId)) return null;
+  const a = vm.accounts.find((acc) => acc.id === accountId);
+  if (!a || a.disabled || a.state === "signed-out" || a.state === "wrong-account") return null;
+  return appFor(vm, a.tool) === appId ? { appId, accountId } : null;
+}
+
 export function forwardedScreen(x: unknown): ForwardedScreen | null {
   return FORWARDED_SCREENS.find((s) => s === x) ?? null;
 }
@@ -82,6 +97,17 @@ export async function goInMain(screen: ForwardedScreen): Promise<void> {
   try {
     await emitTo(MAIN_WINDOW, TRAY_GO_EVENT, screen);
     await showMainAndHide();
+  } catch {
+    /* non-Tauri env */
+  }
+}
+
+/** Tray side: have the main window launch `appId` on the account. The app opens
+ *  on its own, so only the popover goes away. */
+export async function openAppFromTray(appId: string, accountId: string): Promise<void> {
+  try {
+    await emitTo(MAIN_WINDOW, TRAY_APP_EVENT, { appId, accountId });
+    await invoke("tray_hide");
   } catch {
     /* non-Tauri env */
   }
@@ -114,7 +140,7 @@ function useListen<T>(event: string, handle: (payload: T) => void): void {
 
 /** Main side: open what the tray forwarded (validated), and tell Rust the
  *  popover exists (left click on the tray icon opens it instead of the window). */
-export function useTrayRequests(open: (o: Overlay) => void, go?: (screen: Screen) => void): void {
+export function useTrayRequests(open: (o: Overlay) => void, go?: (screen: Screen) => void, openApp?: (payload: unknown) => void): void {
   useEffect(() => {
     void invoke("set_tray_popover", { enabled: true }).catch(() => {});
   }, []);
@@ -126,7 +152,9 @@ export function useTrayRequests(open: (o: Overlay) => void, go?: (screen: Screen
     const screen = forwardedScreen(payload);
     if (screen && go) go(screen);
   });
+  const onApp = useCallbackRef((payload: unknown) => openApp?.(payload));
   useListen(TRAY_OPEN_EVENT, onOpen);
+  useListen(TRAY_APP_EVENT, onApp);
   useListen(TRAY_GO_EVENT, onGo);
 }
 

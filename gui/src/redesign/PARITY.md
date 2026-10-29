@@ -55,9 +55,13 @@ Paths are relative to `gui/src/`.
 | `deactivateProfile` | `vm/actions.ts` (`deactivate`) → `screens/account-actions.tsx` | |
 | `installSessionHooks`, `uninstallSessionHooks` | `screens/settings/notifications.tsx`; install also `engines/notifications.ts` | |
 | `removeProfile`, `renameProfile`, `setProfileLabel` | `vm/actions.ts` → account menu / sheet | |
+| `setProfileDisabled` | `vm/actions.ts` (`setAccountDisabled`: row menu Disable / Turn back on) | |
+| `installShellIntegration` | `vm/actions.ts` (red banner in `Shell.tsx`, Health fix) | |
+| `setProfileColor` | `vm/actions.ts` (`updateAccount`: colour picked in Add account and the account flyout) | |
 | `PROFILE_NAME_RE`, `assertValidName` | `screens/account-logic.ts`; internal | |
-| `loginArgs` | `screens/account-logic.ts` (add account, sign in again) | |
-| `sessionArgs` | `screens/start-session.tsx` (now with `--cwd`), `screens/account-logic.ts` | |
+| `loginArgs` | `screens/account-logic.ts` (add account) | |
+| `reloginArgs` | `screens/account-logic.ts` (sign in again — `agent-switch login`) | |
+| `sessionArgs` | `screens/start-session.tsx` (now with `--cwd`) | |
 | `openWeb` | `vm/actions.ts` (`openUsagePage`) | |
 | `profileUsage` | `vm/usage-loader.ts` | |
 | `usageHistory` | `screens/usage-history.tsx` | |
@@ -72,7 +76,7 @@ Paths are relative to `gui/src/`.
 | `applyAutostartDefault` | `main.tsx` | |
 | `claimPetWelcome` | `engines/pet.ts` | |
 | `listApps` | `vm/load.ts` | |
-| `openApp` | `vm/actions.ts` → apps, account sheet/menu, start session | |
+| `openApp` | `vm/actions.ts` → apps, account sheet/menu, start session; tray account rows via `bridge.ts` `TRAY_APP_EVENT` (validated by `appRequest`, run in the main window — the tray stays read-only) | |
 | `listSessions` | `vm/load.ts`, `engines/pet.ts` | |
 | `sessionPreview` | `vm/actions.ts` (`previewSession`) → session sheet | |
 | `deleteSession`, `deleteSessionArgs` | `vm/actions.ts` (`trashSession`) | |
@@ -98,10 +102,12 @@ Paths are relative to `gui/src/`.
 | `listPools` | `vm/load.ts` | |
 | `createPool`, `addPoolMember` | `screens/settings/distribution.tsx`; via `act` | |
 | `removePoolMember` | `vm/actions-foundations.ts` (`setPoolMembership`) → account sheet | |
-| `renamePool`, `deletePool`, `suggestPools`, `confirmPoolSuggestions` | `vm/actions-foundations.ts` seam only | No control yet. Not a classic-window function (pools are new), so not a parity gap; reachable via the CLI `pool` commands. |
+| `createPool`, `renamePool`, `deletePool`, `addPoolMember`, `removePoolMember` | `screens/pools-panel.tsx` (Accounts › Projects & pools: New pool, rename / delete in the card's ⋯ menu, member chips) | |
+| `suggestPools`, `confirmPoolSuggestions` | `vm/actions-foundations.ts` seam only | No control yet; reachable via `agent-switch pool suggest`. |
 | `listMappings` | `vm/load.ts` | Now `mappings --json`. |
 | `parseMappings` | `listMappings` fallback | Only for a CLI older than `mappings --json`, which ignores the flag and prints text. |
-| `mapFolder`, `unmapFolder` | `vm/actions-foundations.ts` → **Accounts › Projects & pools: Add binding form + row menu "Remove binding"** (new) | |
+| `mapFolder`, `unmapFolder` | `vm/actions-foundations.ts` → **Accounts › Projects & pools: Add binding form + row menu "Edit binding" (inline, same form) and "Remove binding"** (new) | |
+| `setMappingPaused` | `vm/actions-foundations.ts` `setBindingPaused` → the per-binding switch (`map --pause/--resume`) | |
 | `resolveDir` | `vm/actions-foundations.ts` (`explainFolder`) → Projects & pools "Try a folder" | |
 | `authStatus` | `vm/load.ts` | |
 | `doctor` | `vm/load.ts`, `screens/health.tsx`, `screens/fix-dialog.tsx` | |

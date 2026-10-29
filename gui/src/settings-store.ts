@@ -103,7 +103,10 @@ const REFRESH_INTERVAL_KEY = "agent-switch-refresh-interval-min";
 
 /** Allowed auto-refresh intervals (minutes): 5..60 in 5-minute steps. */
 export const REFRESH_INTERVAL_CHOICES = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60] as const;
-export const DEFAULT_REFRESH_MINUTES = 10;
+/** One read per account per 5 min: polls at 30–60 s draw lasting 429s from
+ *  /api/oauth/usage (anthropics/claude-code#31637), and CodexBar uses the same
+ *  5-minute fallback and 429 cooldown. */
+export const DEFAULT_REFRESH_MINUTES = 5;
 
 /** Auto-refresh interval in minutes. Drives both the countdown timer and the
  *  per-profile usage-fetch cooldown. Default 10; a stored value is clamped to
@@ -347,6 +350,27 @@ export function setShareSourceFlag(source: string): void {
     localStorage.setItem(SHARE_SOURCE_KEY, source);
   } catch {
     /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const LOGIN_BROWSER_KEY = "agent-switch-login-browser";
+
+/** The browser id (`agent-switch browsers`) the last sign-in opened in; "" =
+ *  the system default. */
+export function getLoginBrowser(): string {
+  try {
+    return localStorage.getItem(LOGIN_BROWSER_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setLoginBrowser(id: string): void {
+  try {
+    if (id) localStorage.setItem(LOGIN_BROWSER_KEY, id);
+    else localStorage.removeItem(LOGIN_BROWSER_KEY);
+  } catch {
+    /* no/blocked localStorage → the default browser next time */
   }
 }
 

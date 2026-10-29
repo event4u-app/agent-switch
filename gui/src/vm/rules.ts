@@ -87,6 +87,8 @@ export function rankAccounts(accounts: readonly Account[], tool: Tool, now?: num
   const sorted = accounts
     .filter((a) => a.tool === tool)
     .sort((a, b) => {
+      const byDisabled = Number(!!a.disabled) - Number(!!b.disabled);
+      if (byDisabled !== 0) return byDisabled;
       const byState = STATE_ORDER[a.state] - STATE_ORDER[b.state];
       if (byState !== 0) return byState;
       const byFresh = Number(fresh(b)) - Number(fresh(a));
@@ -96,9 +98,10 @@ export function rankAccounts(accounts: readonly Account[], tool: Tool, now?: num
   let next = 0;
   return sorted.map((account) => {
     const left = headroom(account);
-    const rank = account.state === "ready" || account.state === "near-limit" ? ++next : null;
-    const reason =
-      account.state === "signed-out"
+    const rank = !account.disabled && (account.state === "ready" || account.state === "near-limit") ? ++next : null;
+    const reason = account.disabled
+      ? "Disabled — turn it back on to use it"
+      : account.state === "signed-out"
         ? "Sign-in needed"
         : account.state === "wrong-account"
           ? "Signed in with the wrong account"

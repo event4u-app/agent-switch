@@ -16,6 +16,7 @@ const ipc = vi.hoisted(() => ({
   doctor: vi.fn(async () => ({ readiness: "ready", checks: [] })),
   listActivity: vi.fn(async () => []),
   getGuard: vi.fn(async () => null),
+  desktopInstances: vi.fn(async () => []),
 }));
 const latest = vi.hoisted(() => vi.fn(async () => "0.2.0"));
 

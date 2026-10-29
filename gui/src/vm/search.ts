@@ -77,17 +77,19 @@ export function buildSearchIndex(vm: {
   });
   const projects = new Map<string, SearchItem & { kids: SearchItem[] }>();
   for (const s of vm.sessions) {
-    const existing = projects.get(s.cwd);
+    const cwd = s.cwd;
+    if (!cwd) continue;
+    const existing = projects.get(cwd);
     const item = sessionItem(s);
     if (existing) existing.kids.push(item);
     else
-      projects.set(s.cwd, {
-        id: `p:${s.cwd}`,
+      projects.set(cwd, {
+        id: `p:${cwd}`,
         kind: "project",
         text: s.project,
-        meta: shortPath(s.cwd),
+        meta: shortPath(cwd),
         kids: [item],
-        target: { type: "start", cwd: s.cwd },
+        target: { type: "start", cwd },
       });
   }
   const rules = vm.rules.map(

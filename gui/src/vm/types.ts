@@ -56,6 +56,10 @@ export interface Account {
   color: IdentityColor;
   /** "Use for plain starts" — today's active profile. */
   isDefault: boolean;
+  /** Kept with its sign-in, but never picked, ranked or polled (`agent-switch disable`). */
+  disabled?: boolean;
+  /** Other accounts this account's own Claude Desktop window is signed in with. */
+  desktopForeign?: string[];
   state: AccountState;
   windows: UsageWindow[];
   /** Epoch ms of the usage readout; null = never read. */
@@ -91,7 +95,8 @@ export interface Session {
   tool: Tool;
   accountId: string;
   project: string;
-  cwd: string;
+  /** The folder the session ran in; null when the transcript does not say. */
+  cwd: string | null;
   branch: string | null;
   title: string;
   state: SessionState;
@@ -103,6 +108,8 @@ export interface Session {
   why: string[];
   protectionNote: string | null;
   surface: SessionSurface | null;
+  /** What a needs-you session waits on; a new value is a new question. */
+  waitingFor?: string | null;
   livenessUnknown?: boolean;
   trashed?: boolean;
 }

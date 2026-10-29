@@ -10,6 +10,7 @@ import {
   limitTargets,
   liveSwitch,
   overviewSub,
+  plainStart,
   recentFolders,
   resolveStart,
   resolutionFromCli,
@@ -93,6 +94,8 @@ describe("session filters", () => {
   it("derives recent folders newest first without duplicates", () => {
     const list = [ses("x", { cwd: "/a", lastActiveAt: 1 }), ses("y", { cwd: "/b", lastActiveAt: 3 }), ses("z", { cwd: "/a", lastActiveAt: 2 })];
     expect(recentFolders(list)).toEqual(["/b", "/a"]);
+    // A session whose folder is unknown offers nothing to start in.
+    expect(recentFolders([ses("n", { cwd: null, lastActiveAt: 9 }), ...list])).toEqual(["/b", "/a"]);
     expect(sessionHandle(ses("abc"))).toBe("abc");
   });
 });
@@ -224,5 +227,28 @@ describe("overview subtitle", () => {
     expect(overviewSub({ accounts: [acc("a"), acc("b", { state: "signed-out" })], sessions: [ses("x"), ses("y", { state: "idle" })], attention: [] })).toBe(
       "1 of 2 accounts ready · 1 session working · nothing needs you",
     );
+  });
+});
+
+describe("plainStart", () => {
+  const rule = (tool: Binding["tool"]): Binding => ({ id: "r", match: { kind: "folder", value: "/x" }, tool, target: { kind: "pool", pool: "p" }, enabled: true, hits: null });
+
+  it("names the account a plain start uses outside any folder rule", () => {
+    const p = plainStart([acc("work", { isDefault: true }), acc("side")], "claude", []);
+    expect(p).toMatchObject({ command: "claude", rules: 0, text: "A plain `claude` outside a folder rule starts on work.", warn: null });
+    expect(p.account?.name).toBe("work");
+  });
+
+  it("says when no account is set and the tool's own login is used", () => {
+    const p = plainStart([acc("work")], "codex", []);
+    expect(p.account).toBeNull();
+    expect(p.text).toBe("A plain `codex` outside a folder rule starts on your original Codex login — no account is set for plain starts.");
+  });
+
+  it("warns when that account can't take work, and counts the folder rules for this tool", () => {
+    const p = plainStart([acc("work", { isDefault: true, state: "signed-out" })], "claude", [rule("claude"), rule("any"), rule("codex"), { ...rule("claude"), enabled: false }]);
+    expect(p.warn).toBe("work is signed out — sign in again or pick another account for plain starts.");
+    expect(p.rules).toBe(2);
+    expect(p.text).toBe("A plain `claude` outside a folder rule starts on work. 2 folder rules pick their own.");
   });
 });

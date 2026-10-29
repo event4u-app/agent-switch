@@ -9,7 +9,7 @@ import { resweepToolsIfStale } from "../../vm/slow-cache.js";
 import { ASProvider, useAS } from "../../vm/store.js";
 import type { ViewModel } from "../../vm/types.js";
 import { withSwitchEffects } from "../engines/switch-effects.js";
-import { forwardedOverlay, forwardToMain, goInMain, openMainWindow } from "./bridge.js";
+import { forwardedOverlay, forwardToMain, goInMain, openAppFromTray, openMainWindow } from "./bridge.js";
 import { Tray } from "./Tray.js";
 
 export const TRAY_MAX_HEIGHT = 720;
@@ -87,6 +87,7 @@ function TrayFrame() {
       <Tray
         onOpenApp={() => void openMainWindow()}
         onGo={(screen) => void goInMain(screen)}
+        onOpenAccountApp={(appId, accountId) => void openAppFromTray(appId, accountId)}
         onQuit={() => void ipc.quitApp().catch(() => {})}
       />
     </div>
