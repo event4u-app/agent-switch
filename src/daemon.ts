@@ -25,13 +25,14 @@
  * `runDaemon` is the loop.
  */
 
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { ROOT, activeFor, configDir, isDisabled, labelFor, listProfiles, readAutoSwitch, readBinaryPath, sharesDefaultLogin } from "./profiles.js";
 import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
-import { fetchUsage, liveSessionPids } from "./api.js";
+import { fetchUsage, liveSessionPids, readProfileCredential } from "./api.js";
 import { defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, SwitchCandidate, ThresholdState, UsageSnapshot } from "./usage.js";
 import { readCodexUsage } from "./codex-usage.js";
@@ -142,14 +143,6 @@ export function writeDaemonState(state: DaemonState, file: string = STATE_FILE):
   fs.writeFileSync(file, JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
 }
 
-/** True when the state's lastPoll is within maxAgeMs of `now` — the CLI/GUI use
- *  this to decide whether to trust the cache instead of hitting the API. */
-export function isFresh(state: DaemonState | null, maxAgeMs: number, now: number = Date.now()): boolean {
-  if (!state?.lastPoll) return false;
-  const t = Date.parse(state.lastPoll);
-  return !isNaN(t) && now - t <= maxAgeMs;
-}
-
 // ---------- single instance (pidfile) ----------
 
 export function processAlive(pid: number): boolean {
@@ -239,6 +232,78 @@ export function nextIntervalMs(baseMs: number, consecutiveFailures: number, capM
   const base = Math.max(baseMs, MIN_INTERVAL_MS);
   if (consecutiveFailures <= 0) return base;
   return Math.min(base * 2 ** consecutiveFailures, capMs);
+}
+
+/** One profile's own backoff: a dead login must not slow the healthy ones. */
+export interface ProfileBackoff {
+  failures: number;
+  /** Epoch ms before which this profile is not read again. */
+  nextAt: number;
+  /** {@link loginStamp} of the stored login at the failure; a different one
+   *  (signed in again, refreshed) lifts the backoff. Absent = time only. */
+  stamp?: string | null;
+}
+
+/** The profile's backoff after a read — undefined once a read succeeds. */
+export function nextProfileBackoff(
+  prev: ProfileBackoff | undefined,
+  ok: boolean,
+  baseMs: number,
+  now: number,
+  stamp?: string | null,
+): ProfileBackoff | undefined {
+  if (ok) return undefined;
+  const failures = (prev?.failures ?? 0) + 1;
+  return { failures, nextAt: now + nextIntervalMs(baseMs, failures), ...(stamp !== undefined ? { stamp } : {}) };
+}
+
+export function backoffBlocks(b: ProfileBackoff | undefined, now: number, stamp?: string | null): boolean {
+  if (b === undefined) return false;
+  if (b.stamp !== undefined && stamp !== b.stamp) return false;
+  return now < b.nextAt;
+}
+
+/** A fingerprint of a stored login, so a change can be noticed without the
+ *  service holding on to the credential. */
+export function loginStamp(raw: string | null): string | null {
+  return raw === null ? null : crypto.createHash("sha256").update(raw, "utf8").digest("hex").slice(0, 16);
+}
+
+/** The targets a cycle reads: those not held back by their own backoff. The
+ *  login is read only for a profile that has a backoff entry. */
+export function dueTargets(
+  provider: ProviderId,
+  targets: readonly string[],
+  backoff: ReadonlyMap<string, ProfileBackoff>,
+  now: number,
+  stampOf: (name: string) => string | null,
+): string[] {
+  return targets.filter((n) => {
+    const b = backoff.get(`${provider}/${n}`);
+    return !b || !backoffBlocks(b, now, b.stamp !== undefined ? stampOf(n) : undefined);
+  });
+}
+
+/** The loop-wide failure count after a cycle: it grows only when every read
+ *  failed (offline, API down) — single failures are handled by
+ *  {@link nextProfileBackoff}. A cycle that read nothing leaves it unchanged. */
+export function nextConsecutiveFailures(prev: number, failures: number, attempted: number): number {
+  if (attempted === 0) return prev;
+  return failures >= attempted ? prev + 1 : 0;
+}
+
+/** How old a cached snapshot may be and still be served instead of a live read:
+ *  the daemon's slowest cadence (an idle account, or its current interval when
+ *  that is longer) plus one loop wake. A healthy daemon answers from cache; a
+ *  profile whose reads keep failing ages out and is read live. */
+export function cacheMaxAgeMs(pollIntervalMs: number | undefined): number {
+  return Math.max(POOL_POLL_INTERVAL_MS, pollIntervalMs ?? 0) + MIN_INTERVAL_MS;
+}
+
+export function snapshotFresh(snap: UsageSnapshot | undefined | null, now: number = Date.now(), maxAgeMs = cacheMaxAgeMs(undefined)): boolean {
+  if (!snap) return false;
+  const t = Date.parse(snap.capturedAt);
+  return !isNaN(t) && now - t <= maxAgeMs;
 }
 
 // ---------- threshold action decision (pure, no side-effects) ----------
@@ -392,16 +457,36 @@ interface RunOptions {
  *  the number of failures this cycle (for backoff). */
 /** One profile's own usage snapshot: Claude via its OAuth endpoint, Codex via
  *  the live `wham/usage` read. null when unreadable (counts as a poll failure). */
-async function snapshotFor(provider: ProviderId, name: string): Promise<UsageSnapshot | null> {
+async function snapshotFor(provider: ProviderId, name: string, log: (l: string) => void): Promise<UsageSnapshot | null> {
   if (provider === "codex") return readCodexUsage(configDir("codex", name));
   // An expired access token is the daemon's most common "usage stopped moving"
   // cause — a profile nobody is running never refreshes itself. Let Claude Code
   // refresh it first (cooldown-guarded, no-op while the token is still good) —
   // never for a profile sharing the default install's login.
-  const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), sharesDefaultLogin("claude", name));
+  const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), sharesDefaultLogin("claude", name), (outcome) => {
+    if (outcome === "unavailable") log(`freshen: claude/${name} — could not start \`claude doctor\` (not found on this service's PATH; link it in the app)`);
+    else if (outcome === "still-expired") log(`freshen: claude/${name} — Claude Code could not refresh the login (sign in again)`);
+  });
   if (!token) return null;
   const raw = await fetchUsage(token);
   return raw ? parseUsage(raw) : null;
+}
+
+/** The stored login behind a profile, fingerprinted: Claude's credential
+ *  store, Codex's auth.json. Read after a failure, so a refresh the failed
+ *  read already triggered counts as the baseline, not as a change. */
+function loginStampFor(provider: ProviderId, name: string): string | null {
+  if (provider === "claude") return loginStamp(readProfileCredential(configDir("claude", name)));
+  try {
+    return loginStamp(fs.readFileSync(path.join(configDir(provider, name), "auth.json"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+interface CycleResult {
+  failures: number;
+  attempted: number;
 }
 
 async function pollProvider(
@@ -409,8 +494,10 @@ async function pollProvider(
   state: DaemonState,
   thresholds: Map<string, ThresholdState>,
   notifiedReset: Map<string, string>,
+  backoff: Map<string, ProfileBackoff>,
+  baseMs: number,
   log: (l: string) => void,
-): Promise<number> {
+): Promise<CycleResult> {
   const names = listProfiles(provider).filter((n) => !isDisabled(provider, n));
   const active = activeFor(provider);
   const autoSwitch = readAutoSwitch(provider);
@@ -422,7 +509,9 @@ async function pollProvider(
     const t = Date.parse(state.profiles[`${provider}/${n}`]?.capturedAt ?? "");
     return isNaN(t) ? null : t;
   };
-  const targets = selectPollTargets(names, active, isLive, autoSwitch.enabled, pooled, lastCaptured);
+  const targets = dueTargets(provider, selectPollTargets(names, active, isLive, autoSwitch.enabled, pooled, lastCaptured), backoff, Date.now(), (n) =>
+    loginStampFor(provider, n),
+  );
   let failures = 0;
   const polled: SwitchCandidate[] = [];
 
@@ -430,7 +519,10 @@ async function pollProvider(
   state.fetchFailingSince = state.fetchFailingSince ?? {};
   for (const name of targets) {
     const key = `${provider}/${name}`;
-    const snapshot = await snapshotFor(provider, name);
+    const snapshot = await snapshotFor(provider, name, log);
+    const nextBackoff = snapshot ? undefined : nextProfileBackoff(backoff.get(key), false, baseMs, Date.now(), loginStampFor(provider, name));
+    if (nextBackoff) backoff.set(key, nextBackoff);
+    else backoff.delete(key);
     if (!snapshot) {
       failures++;
       // Fail-safe: the last-known snapshot in state.profiles[key] is left intact
@@ -480,11 +572,12 @@ async function pollProvider(
   // profile even when the usage API poll failed (expired token, offline).
   if (active) monitorContext(provider, active, state, log);
 
-  if (!autoSwitch.enabled || !active) return failures;
+  const result = { failures, attempted: targets.length };
+  if (!autoSwitch.enabled || !active) return result;
 
   const activeSnap = polled.find((p) => p.name === active)?.snapshot;
   const activeMax = activeSnap ? maxUtilization(activeSnap) : null;
-  if (activeMax === null || activeMax < autoSwitch.threshold) return failures; // still has headroom
+  if (activeMax === null || activeMax < autoSwitch.threshold) return result; // still has headroom
 
   // Codex only (banked resets are a Codex feature): a reset credit is scarce and
   // redeeming it is the user's call (D3) — the daemon only says one is there,
@@ -522,22 +615,26 @@ async function pollProvider(
       message: `${provider}/${active} hit ≥${autoSwitch.threshold}% — suggested profile: ${provider}/${target}. ${how}`,
     });
   }
-  return failures;
+  return result;
 }
 
 async function pollOnce(
   state: DaemonState,
   thresholds: Map<string, ThresholdState>,
   notifiedReset: Map<string, string>,
+  backoff: Map<string, ProfileBackoff>,
+  baseMs: number,
   log: (l: string) => void,
-): Promise<number> {
-  let failures = 0;
+): Promise<CycleResult> {
+  const total: CycleResult = { failures: 0, attempted: 0 };
   for (const provider of AUTO_PROVIDERS) {
-    failures += await pollProvider(provider, state, thresholds, notifiedReset, log);
+    const r = await pollProvider(provider, state, thresholds, notifiedReset, backoff, baseMs, log);
+    total.failures += r.failures;
+    total.attempted += r.attempted;
   }
   state.lastPoll = new Date().toISOString();
-  state.lastError = failures > 0 ? `${failures} profile(s) failed to poll` : null;
-  return failures;
+  state.lastError = total.failures > 0 ? `${total.failures} profile(s) failed to poll` : null;
+  return total;
 }
 
 /** Run the daemon loop. Single-instance; SIGTERM-clean. */
@@ -571,14 +668,15 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
   // `<provider>/<name>` → the window resets_at we last announced a banked reset
   // for, so the "reset available" notice fires once per cycle, not every poll.
   const notifiedReset = new Map<string, string>();
+  const backoff = new Map<string, ProfileBackoff>();
   let consecutiveFailures = 0;
   let cycles = 0;
 
   log(`started (pid ${process.pid}, base interval ${baseInterval}ms).`);
   while (running) {
     try {
-      const failures = await pollOnce(state, thresholds, notifiedReset, log);
-      consecutiveFailures = failures > 0 ? consecutiveFailures + 1 : 0;
+      const { failures, attempted } = await pollOnce(state, thresholds, notifiedReset, backoff, baseInterval, log);
+      consecutiveFailures = nextConsecutiveFailures(consecutiveFailures, failures, attempted);
     } catch (err: any) {
       consecutiveFailures++;
       state.lastError = String(err?.message ?? err);

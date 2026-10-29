@@ -172,7 +172,7 @@ import {
   transferCodexSession,
   trashedSessionExists,
 } from "./sessions.js";
-import { isFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daemon.js";
+import { cacheMaxAgeMs, snapshotFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daemon.js";
 import { cmdService, serviceAfterUpdate, serviceInstall, serviceInstallFromDisk, serviceTarget, serviceUninstall } from "./service.js";
 import { fileURLToPath } from "node:url";
 import { ContextReading, readContext, turnInFlight } from "./telemetry.js";
@@ -653,13 +653,12 @@ function cmdWhoami(providerId: ProviderId, name?: string): void {
  *  credential is unreadable or the API shape is unknown. Codex/Antigravity have no
  *  usage readout (verified), so this is Claude-only. */
 async function claudeSnapshot(name: string): Promise<UsageSnapshot | null> {
-  // Prefer the daemon's cache when it's fresh (< its own poll interval) — the
-  // daemon is a cache, and the CLI works with or without it.
+  // Prefer the daemon's cache while THIS profile's snapshot is fresh — the
+  // daemon is a cache, and the CLI works with or without it. The age of the
+  // last poll says nothing about a profile whose reads have been failing.
   const state = readDaemonState();
-  if (state && isFresh(state, state.pollIntervalMs)) {
-    const cached = state.profiles[`claude/${name}`];
-    if (cached) return cached;
-  }
+  const cached = state?.profiles?.[`claude/${name}`];
+  if (snapshotFresh(cached, Date.now(), cacheMaxAgeMs(state?.pollIntervalMs))) return cached!;
   const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), sharesDefaultLogin("claude", name));
   if (!token) return null;
   const raw = await fetchUsage(token);
