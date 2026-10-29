@@ -16,6 +16,9 @@ const FIGURE: Record<MeterTone, string> = {
   neutral: "text-ac-faint",
 };
 
+/** "checked 4m ago" — but "checked just now" for a fresh readout. */
+const checkedLine = (age: string, prefix = "checked ") => (age === "now" ? `${prefix}just now` : `${prefix}${age} ago`);
+
 /** Label · meter with a threshold tick · mono % · reset countdown. Bundle `s0`. */
 export function UsageWindowRow({
   window: w,
@@ -60,6 +63,60 @@ export function UsageWindowRow({
           {resets ? `↻ ${resets}` : ""}
         </span>
       )}
+    </div>
+  );
+}
+
+/** Every usage window of an account under each other (5 h, week, a model
+ *  window …) in one aligned grid, then the data age once. Same unknown / stale
+ *  rules as {@link CapacityMeter}. */
+export function UsageWindowStack({
+  windows,
+  threshold,
+  checkedAt,
+  now,
+}: {
+  windows: readonly UsageWindow[];
+  threshold: number;
+  checkedAt: number | null;
+  now: number;
+}) {
+  const known = windows.filter((w) => w.utilization != null);
+  if (known.length === 0) return <CapacityMeter window={null} threshold={threshold} checkedAt={checkedAt} now={now} />;
+  const stale = isStale(checkedAt, now);
+  const age = shortAge(checkedAt, now);
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <div className="grid grid-cols-[auto_minmax(48px,1fr)_34px_auto] items-center gap-x-2 gap-y-1">
+        {known.map((w) => {
+          const tone = stale ? "neutral" : toneFor(w.utilization, threshold);
+          const resets = countdown(w.resetsAt, now);
+          return (
+            <div key={w.key} className="contents">
+              <span className="whitespace-nowrap text-[11px] text-ac-muted">{w.label}</span>
+              <span
+                className="relative h-1.5 overflow-hidden rounded-full bg-ac-line"
+                role="meter"
+                aria-label={`${w.label} window used`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={w.utilization ?? undefined}
+              >
+                <span className="absolute inset-y-0 w-px bg-ac-faint opacity-70" style={{ left: `${threshold}%` }} aria-hidden />
+                <span
+                  className={cn("absolute inset-y-0 left-0 rounded-full", BAR[tone], stale && "opacity-60")}
+                  style={{ width: `${Math.min(100, w.utilization ?? 0)}%` }}
+                />
+              </span>
+              <span className={cn("text-right font-ac-mono text-[11px] tabular-nums", FIGURE[tone])}>{w.utilization}%</span>
+              <span className="whitespace-nowrap text-right text-[11px] tabular-nums text-ac-faint">{resets ? `↻ ${resets}` : ""}</span>
+            </div>
+          );
+        })}
+      </div>
+      <span className="truncate text-[11px] text-ac-faint" title={checkedLine(age)}>
+        {stale ? <span className="text-ac-warn-text">{age} old</span> : checkedLine(age)}
+      </span>
     </div>
   );
 }
@@ -110,10 +167,10 @@ export function CapacityMeter({
         </span>
         <span className={cn("text-right font-ac-mono text-[11px] tabular-nums", FIGURE[tone])}>{w.utilization}%</span>
       </div>
-      <span className="truncate text-[11px] text-ac-faint" title={`${w.label} window · checked ${age} ago`}>
+      <span className="truncate text-[11px] text-ac-faint" title={`${w.label} window · ${checkedLine(age)}`}>
         {compact ? "" : `${w.label} · `}
         {resets ? `↻ ${resets} · ` : ""}
-        {stale ? <span className="text-ac-warn-text">{age} old</span> : `${compact ? "" : "checked "}${age} ago`}
+        {stale ? <span className="text-ac-warn-text">{age} old</span> : checkedLine(age, compact ? "" : "checked ")}
       </span>
     </div>
   );

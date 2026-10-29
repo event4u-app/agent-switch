@@ -6,11 +6,11 @@ import { AccountDot } from "../../ui/AccountDot.js";
 import { Badge } from "../../ui/Badge.js";
 import { Button, IconButton } from "../../ui/Button.js";
 import { Card } from "../../ui/Card.js";
-import { CapacityMeter } from "../../ui/Meters.js";
+import { UsageWindowStack } from "../../ui/Meters.js";
 import { RowMenu } from "../../ui/RowMenu.js";
 import { Segmented } from "../../ui/Segmented.js";
 import { PageHeader, SectionHeader } from "../../ui/Typography.js";
-import { bindingWindow, nextInPools, rankAccounts, TOOL_LABEL, type RankedAccount } from "../../vm/rules.js";
+import { nextInPools, rankAccounts, TOOL_LABEL, type RankedAccount } from "../../vm/rules.js";
 import { useAS } from "../../vm/store.js";
 import type { Account, Tool } from "../../vm/types.js";
 import { ACCOUNT_TOOLS, protectTitle, usedIn } from "./account-logic.js";
@@ -34,7 +34,7 @@ function ProtectCell({ account: a }: { account: Account }) {
   );
 }
 
-const ACCOUNT_GRID = "md:grid-cols-[minmax(0,1fr)_112px_minmax(150px,200px)_52px_150px]";
+const ACCOUNT_GRID = "md:grid-cols-[minmax(0,1fr)_112px_minmax(190px,250px)_52px_150px]";
 
 /** Full account row of the Accounts screen. Bundle `Bd` (non-compact). */
 export function AccountRow({ account: a, ranked, showRank, nextIn }: { account: Account; ranked?: RankedAccount; showRank?: boolean; nextIn?: string }) {
@@ -85,7 +85,7 @@ export function AccountRow({ account: a, ranked, showRank, nextIn }: { account: 
         {signedOut ? (
           <span className="text-[11px] text-ac-faint">{a.windows.length ? "Usage resumes after the sign-in" : "No usage before the first sign-in"}</span>
         ) : (
-          <CapacityMeter window={bindingWindow(a.windows)} threshold={a.threshold} checkedAt={a.checkedAt} now={s.now} />
+          <UsageWindowStack windows={a.windows} threshold={a.threshold} checkedAt={a.checkedAt} now={s.now} />
         )}
       </div>
       <span className="hidden md:block">

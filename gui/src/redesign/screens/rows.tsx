@@ -101,7 +101,7 @@ export function CompactAccountRow({
       {...rowClick(() => s.open({ kind: "account", id: a.id }))}
       className={cn(
         "grid cursor-pointer items-center gap-x-4 gap-y-2 rounded-lg px-3 py-2.5 transition-colors hover:bg-ac-raise",
-        app ? "grid-cols-[minmax(0,1fr)_minmax(110px,150px)_auto] gap-x-3" : "grid-cols-[minmax(0,1fr)_minmax(120px,168px)]",
+        app ? "grid-cols-[minmax(0,1fr)_minmax(92px,118px)_auto] gap-x-2.5" : "grid-cols-[minmax(0,1fr)_minmax(120px,168px)]",
       )}
     >
       <button type="button" data-row-main className="flex min-w-0 items-center gap-3 text-left">

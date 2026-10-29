@@ -247,6 +247,23 @@ describe("Accounts", () => {
   });
 });
 
+describe("Accounts — every usage window", () => {
+  it("shows each window of an account (5 h, week, model) under each other, not only the fullest", () => {
+    const windows = [
+      { key: "five_hour", label: "5h", utilization: 72, resetsAt: new Date(NOW + 2 * 3_600_000).toISOString() },
+      { key: "seven_day", label: "Week", utilization: 31, resetsAt: new Date(NOW + 3 * 86_400_000).toISOString() },
+      { key: "seven_day_opus", label: "Opus", utilization: 5, resetsAt: null },
+    ];
+    mount(fixture({ accounts: [acc("work", { windows, checkedAt: NOW })] }));
+    const row = document.querySelector("[data-account-row]") as HTMLElement;
+    expect(within(row).getByText("checked just now")).toBeTruthy();
+    const meters = within(row).getAllByRole("meter");
+    expect(meters.map((m) => m.getAttribute("aria-label"))).toEqual(["5h window used", "Week window used", "Opus window used"]);
+    expect(meters.map((m) => m.getAttribute("aria-valuenow"))).toEqual(["72", "31", "5"]);
+    expect(within(row).getByText("↻ 2h 0m")).toBeTruthy();
+  });
+});
+
 describe("Usage history", () => {
   it("charts accounts with a readout and names the ones without", async () => {
     ipcMock.history = [{ profile: "work", samples: [{ at: new Date(NOW - 3_600_000).toISOString(), windows: [{ key: "seven_day", utilization: 62 }] }] }];
