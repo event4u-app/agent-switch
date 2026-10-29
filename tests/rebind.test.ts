@@ -881,3 +881,15 @@ test("releaseBorrowedAccount propagates a refused restore (nothing released)", a
   await assert.rejects(() => releaseBorrowedAccount("A", f.deps), /refusing restore/);
   assert.equal(borrowerOf("A", f.deps), "P");
 });
+
+test("rebind refuses a profile sharing the default install's login, on either side, before any refresh", async () => {
+  for (const marked of ["A", "P"]) {
+    const f = makeFake();
+    f.kc.set(pSvc, cred("tokP"));
+    f.kc.set(aSvc, cred("tokA", FRESHEN_FLOOR_MS - 60_000)); // near expiry: a refresh would run
+    f.deps.sharesDefaultLogin = (name) => name === marked;
+    await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), new RegExp(`"${marked}" shares its login with the default install`));
+    assert.ok(!f.calls.some((c) => c.startsWith("freshen:")), "no refresh may run for a shared login");
+    assert.ok(!f.calls.some((c) => c.startsWith("kcAdd:")), "nothing moved");
+  }
+});

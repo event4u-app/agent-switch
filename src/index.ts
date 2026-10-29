@@ -38,6 +38,8 @@ import {
   clearLabel,
   colorOf,
   isDisabled,
+  setSharesDefaultLogin,
+  sharesDefaultLogin,
   setDisabled,
   setColor,
   isProfileColor,
@@ -101,6 +103,7 @@ import {
   fileMtimeMs,
   readText,
   type AuthStatus,
+  keptFreshByFor,
 } from "./auth-status.js";
 import {
   TOOL_IDS,
@@ -114,7 +117,7 @@ import {
   toolReleaseRepo,
 } from "./tooling.js";
 import { releaseNoteBlocks } from "./release-notes.js";
-import { HistorySample, readHistory, recordHistorySample } from "./history.js";
+import { HistorySample, LATEST_FILE, readHistory, readLatestSnapshot, recordHistorySample, writeLatestSnapshot } from "./history.js";
 import { launchGui } from "./gui-launch.js";
 import {
   GUARD_POLICIES,
@@ -145,7 +148,7 @@ import {
   fetchUsage,
   liveSessionPids,
 } from "./api.js";
-import { defaultFreshenDeps, freshAccessToken } from "./token-freshen.js";
+import { defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { UsageSnapshot, formatSnapshot, parseUsage } from "./usage.js";
 import { readCodexUsage } from "./codex-usage.js";
 import { redeemResetCredit } from "./codex-reset.js";
@@ -170,7 +173,7 @@ import {
   trashedSessionExists,
 } from "./sessions.js";
 import { isFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daemon.js";
-import { cmdService, serviceInstall, serviceTarget, serviceUninstall } from "./service.js";
+import { cmdService, serviceAfterUpdate, serviceInstall, serviceInstallFromDisk, serviceTarget, serviceUninstall } from "./service.js";
 import { fileURLToPath } from "node:url";
 import { ContextReading, readContext, turnInFlight } from "./telemetry.js";
 import { readPreview, type SessionPreview } from "./session-preview.js";
@@ -189,6 +192,18 @@ import {
 import { readTelemetryConfig, writeTelemetryConfig } from "./notify.js";
 import { appendNotification, readNotifications, clearNotifications, NotificationKind } from "./notifications.js";
 import { APPS, buildLaunch, findApp, guiDataDir, isInstalled } from "./apps.js";
+import { copyDesktopSettings, DEFAULT_DATA_DIR, hasSettingsLayout } from "./desktop-settings.js";
+import {
+  createLauncher,
+  findRunning,
+  focusRunning,
+  readLaunchers,
+  removeAllLaunchers,
+  removeLauncher,
+  removeLaunchersFor,
+  renameLaunchersFor,
+  repairLaunchers,
+} from "./launchers.js";
 import { scanDesktop, type DesktopInstance } from "./desktop-sessions.js";
 import { ensureAgyKeychain } from "./agy-keychain.js";
 import {
@@ -407,6 +422,8 @@ function cmdLogin(providerId: ProviderId, name: string | undefined, browserId?: 
     console.error(`${providerId}/${n} is still not signed in (${after.detail})${code !== 0 ? ` — ${p.binary} exited with ${code}` : ""}.`);
     process.exit(1);
   }
+  // Its own sign-in ends the lineage it shared with the default install.
+  if (sharesDefaultLogin(providerId, n)) setSharesDefaultLogin(providerId, n, false);
   const id = identity(providerId, n);
   console.log(`${providerId}/${n} is signed in${id ? ` as ${id}` : ""}.`);
 }
@@ -442,6 +459,7 @@ async function importClaude(name: string): Promise<void> {
       return creds !== null;
     }),
   );
+  if (seeded) setSharesDefaultLogin("claude", name, true);
 
   console.log(`Imported default Claude setup into profile "${name}".`);
   console.log(
@@ -471,6 +489,7 @@ function importFileProvider(p: Provider, name: string): void {
     fs.chmodSync(path.join(dstDir, file), 0o600);
     if (path.join(srcDir, file) === p.credentialPath(srcDir)) seeded = true;
   }
+  if (seeded) setSharesDefaultLogin(p.id, name, true);
 
   console.log(`Imported default ${p.binary} setup into profile "${name}".`);
   console.log(
@@ -641,7 +660,7 @@ async function claudeSnapshot(name: string): Promise<UsageSnapshot | null> {
     const cached = state.profiles[`claude/${name}`];
     if (cached) return cached;
   }
-  const token = freshAccessToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")));
+  const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), sharesDefaultLogin("claude", name));
   if (!token) return null;
   const raw = await fetchUsage(token);
   return raw ? parseUsage(raw) : null;
@@ -666,7 +685,11 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
     // every displayed profile on each refresh, so recording the fresh snapshot
     // here (throttled to ~hourly) fills the chart for all profiles without
     // depending on the background daemon or an "active" profile being set.
-    if (usage) recordHistorySample(path.join(profileDir(pid, active), "usage-history.json"), usage);
+    if (usage) {
+      recordHistorySample(path.join(profileDir(pid, active), "usage-history.json"), usage);
+      // Unthrottled: `dir` balances on usage only while it is minutes old.
+      writeLatestSnapshot(path.join(profileDir(pid, active), LATEST_FILE), usage);
+    }
     const wc = worstLiveContext(pid, active);
     const context = wc
       ? { sessionId: wc.sessionId, pct: wc.pct, contextTokens: wc.contextTokens, windowTokens: wc.windowTokens, model: wc.model, confidence: wc.confidence }
@@ -698,7 +721,7 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
       console.log("  (no usage readout for this provider — shows own usage only where available)");
       continue;
     }
-    const token = freshAccessToken(configDir("claude", n), defaultFreshenDeps(readBinaryPath("claude")));
+    const token = usageToken(configDir("claude", n), defaultFreshenDeps(readBinaryPath("claude")), sharesDefaultLogin("claude", n));
     if (!token) {
       const auth = authStatusFor("claude", n);
       console.log(
@@ -730,6 +753,13 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
 /** Cached usage for one profile: the daemon's snapshot or the newest history
  *  sample, whichever is newer. Local reads only — `dir` runs on every start. */
 function cachedUsage(providerId: ProviderId, name: string): CachedUsage {
+  const fromDaemonOrHistory = cachedUsageFromDaemonOrHistory(providerId, name);
+  // The app's own reads land here unthrottled; take whichever source is newest.
+  const latest = readLatestSnapshot(path.join(profileDir(providerId, name), LATEST_FILE));
+  return latest && (fromDaemonOrHistory.capturedMs === null || latest.capturedMs > fromDaemonOrHistory.capturedMs) ? latest : fromDaemonOrHistory;
+}
+
+function cachedUsageFromDaemonOrHistory(providerId: ProviderId, name: string): CachedUsage {
   const daemonSnap = readDaemonState()?.profiles?.[`${providerId}/${name}`] ?? null;
   const daemonMs = daemonSnap ? Date.parse(daemonSnap.capturedAt) : NaN;
   const hist = readHistory(path.join(profileDir(providerId, name), "usage-history.json"));
@@ -758,7 +788,7 @@ function profileExistsSafe(providerId: ProviderId, name: string): boolean {
   return /^[A-Za-z0-9_-]+$/.test(name) && profileExists(providerId, name);
 }
 
-function resolveDir(providerId: ProviderId, plain = false): { name: string | null; why: string[] } {
+function resolveDir(providerId: ProviderId, plain = false): { name: string | null; why: string[]; blocked?: string } {
   return resolveForDir({
     providerId,
     mapping: plain ? null : resolveMapping(process.cwd(), providerId),
@@ -768,6 +798,7 @@ function resolveDir(providerId: ProviderId, plain = false): { name: string | nul
     exists: (n) => profileExistsSafe(providerId, n),
     signedIn: (n) => identity(providerId, n) !== null,
     disabled: (n) => isDisabled(providerId, n),
+    sharesDefaultLogin: (n) => profileExistsSafe(providerId, n) && sharesDefaultLogin(providerId, n),
     pool: (id) => findPool(id),
     usage: (n) => cachedUsage(providerId, n),
     // Only providers that write a live-session signal can report one; the
@@ -795,12 +826,24 @@ function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = f
   if (json) {
     console.log(
       JSON.stringify(
-        { profile: r.name ? `${providerId}/${r.name}` : null, configDir: r.name ? configDir(providerId, r.name) : null, why: r.why },
+        {
+          profile: r.name ? `${providerId}/${r.name}` : null,
+          configDir: r.name ? configDir(providerId, r.name) : null,
+          why: r.why,
+          ...(r.blocked ? { blocked: r.blocked } : {}),
+        },
         null,
         2,
       ),
     );
+    if (r.blocked) process.exit(GUARD_REFUSED_EXIT);
     return;
+  }
+  // A folder rule that cannot be served refuses — starting on an account
+  // outside the rule is the one outcome the rule exists to prevent.
+  if (r.blocked) {
+    console.error(`agent-switch: not starting here — ${r.blocked}.`);
+    process.exit(GUARD_REFUSED_EXIT);
   }
   const name = r.name;
   if (!name) return;
@@ -1869,6 +1912,7 @@ async function cmdRemove(providerId: ProviderId, name?: string, force = false, y
   }
   const droppedRebind = binding ? discardBinding(n) : false;
   const removedEntry = providerId === "claude" ? credentials.removeEntry(configDir(providerId, n)) : false;
+  removeLaunchersFor(providerId, n); // they would start a profile that no longer exists
   fs.rmSync(profileDir(providerId, n), { recursive: true, force: true });
   if (activeFor(providerId) === n) setActive(providerId, null);
   clearLabel(providerId, n); // drop its label so it can't linger as an orphan
@@ -1905,6 +1949,18 @@ function cmdLabel(providerId: ProviderId, name?: string, label?: string): void {
 
 /** Disable keeps a profile (login, history, settings) but takes it out of every
  *  pick: no active slot, no pool or folder rule, no background polling. */
+/** `mark-shared <name> [--off]`: mark (or unmark) a profile as sharing the
+ *  default install's login — for imports made before `import` set the mark. */
+function cmdMarkShared(providerId: ProviderId, name: string | undefined, off: boolean): void {
+  const n = requireProfile(providerId, name, "mark-shared");
+  setSharesDefaultLogin(providerId, n, !off);
+  console.log(
+    off
+      ? `${providerId}/${n} no longer counts as sharing the default install's login.`
+      : `${providerId}/${n} now counts as sharing the default install's login: agent-switch never refreshes it and never starts it by balancing. \`agent-switch login ${n}\` gives it its own login.`,
+  );
+}
+
 function cmdDisable(providerId: ProviderId, name: string | undefined, disabled: boolean): void {
   const n = requireProfile(providerId, name, disabled ? "disable" : "enable");
   const wasActive = activeFor(providerId) === n;
@@ -1972,6 +2028,7 @@ function cmdRename(providerId: ProviderId, from?: string, to?: string): void {
   }
   renameProtection(providerId, n, to);
   renamePoolMember(`${providerId}/${n}`, `${providerId}/${to}`);
+  renameLaunchersFor(providerId, n, to);
   console.log(`Renamed ${providerId} profile "${n}" → "${to}".`);
 }
 
@@ -2129,6 +2186,7 @@ function cmdUninstall(flags: Record<string, string | boolean> = {}): void {
     console.log(`  - ${allProfiles.length} profile(s) and their configs under ${ROOT}`);
     console.log(`  - ${claudeProfiles.length} Claude keychain credential entr(y/ies) (macOS)`);
     console.log("  - directory mappings, active-profile state, and the background daemon/service");
+    console.log("  - app launchers it created in ~/Applications/Agent Switch");
     console.log("It does NOT touch your default claude/codex/antigravity installs.");
     console.log("\nRe-run with --force to proceed:  agent-switch uninstall --force");
     return;
@@ -2155,9 +2213,12 @@ function cmdUninstall(flags: Record<string, string | boolean> = {}): void {
     if (credentials.removeEntry(configDir("claude", n))) removedEntries++;
   }
 
+  // Launchers live in ~/Applications, outside ROOT, and are listed in its manifest.
+  const removedLaunchers = removeAllLaunchers();
   fs.rmSync(ROOT, { recursive: true, force: true });
 
   console.log(`Removed ${allProfiles.length} profile(s) and all agent-switch data under ${ROOT}.`);
+  if (removedLaunchers > 0) console.log(`Removed ${removedLaunchers} app launcher(s) from ~/Applications/Agent Switch.`);
   if (removedEntries > 0) console.log(`Removed ${removedEntries} Claude keychain entr(y/ies).`);
   console.log("Follow-ups (manual, if you set them up):");
   console.log("  - `npm uninstall -g agent-switch`  (or `npm unlink -g agent-switch`)");
@@ -2208,6 +2269,7 @@ function cmdApps(json = false): void {
       provider: a.provider,
       strategy: a.strategy,
       installed: isInstalled(a),
+      copiesSettings: hasSettingsLayout(a.id),
     }));
     console.log(JSON.stringify(rows, null, 2));
     return;
@@ -2323,7 +2385,29 @@ async function cmdUpdate(): Promise<void> {
   else console.log(`Update check failed (${c.message}); attempting \`npm install\` anyway…`);
   const code = selfUpdate();
   logActivity("update", null, code === 0 ? "self-update installed" : `self-update failed (exit ${code})`, "user ran `agent-switch update`", code === 0);
+  if (code === 0) await serviceAfterSelfUpdate();
   process.exit(code);
+}
+
+/** Keeps the usage service on the version just installed. Without it the
+ *  balanced start has no fresh usage to weigh. */
+async function serviceAfterSelfUpdate(): Promise<void> {
+  switch (serviceAfterUpdate(serviceTarget(), !!process.stdin.isTTY)) {
+    case "reinstall":
+      console.log("Restarting the background service on the new version…");
+      if (serviceInstallFromDisk() !== 0) console.error("Couldn't restart the service — run `agent-switch service install`.");
+      return;
+    case "ask":
+      if (await confirmAction("Install the background service that keeps usage fresh (starts at login)?", false)) {
+        if (serviceInstallFromDisk() !== 0) console.error("Couldn't install the service — run `agent-switch service install`.");
+      } else console.log("Skipped. Install it any time with `agent-switch service install`.");
+      return;
+    case "hint":
+      console.log("Tip: `agent-switch service install` keeps usage fresh so starts can be balanced.");
+      return;
+    case "leave":
+      console.log("The background service runs another agent-switch build — left as it is.");
+  }
 }
 
 function cmdOpen(appId?: string, name?: string): void {
@@ -2335,6 +2419,12 @@ function cmdOpen(appId?: string, name?: string): void {
   if (!n) die(`no profile given and none active for ${app.provider} — pass a profile name.`);
   requireProfile(app.provider, n, "open");
   if (!isInstalled(app)) die(`${app.displayName} is not installed.`);
+  // A second launch on the same data dir would only hit the app's single-instance
+  // lock — bring the window that profile already has to the front instead.
+  if (app.strategy !== "env" && focusRunning(guiDataDir(app, n))) {
+    console.log(`${app.displayName} on ${app.provider}/${n} is already open — brought it to the front.`);
+    return;
+  }
   let firstLaunch = false;
   if (app.strategy === "user-data-dir") {
     const dir = guiDataDir(app, n);
@@ -2350,6 +2440,77 @@ function cmdOpen(appId?: string, name?: string): void {
   }
 }
 
+
+/** `agent-switch launcher add|remove <app> <profile>` · `list [--json]` · `repair`. */
+function cmdLauncher(sub: string | undefined, args: string[], flags: Record<string, string | boolean>): void {
+  const target = (verb: string) => {
+    const app = findApp(args[0] ?? "");
+    if (!app) die(`usage: agent-switch launcher ${verb} <app> <profile>   (see \`agent-switch apps\`)`);
+    const n = requireProfile(app.provider, args[1], `launcher ${verb}`);
+    return { app, n };
+  };
+  switch (sub) {
+    case "add": {
+      const { app, n } = target("add");
+      try {
+        const e = createLauncher(app, n);
+        logActivity("launcher", `${app.provider}/${n}`, `created ${app.displayName} launcher`, "user ran `agent-switch launcher add`");
+        console.log(`Created ${e.path}`);
+        console.log("Start it from Spotlight or drag it into the Dock. It opens the app on this account only.");
+      } catch (err) {
+        die(err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
+    case "remove": case "rm": {
+      const { app, n } = target("remove");
+      if (!removeLauncher(app.id, n)) die(`no ${app.displayName} launcher for ${app.provider}/${n}.`);
+      logActivity("launcher", `${app.provider}/${n}`, `removed ${app.displayName} launcher`, "user ran `agent-switch launcher remove`");
+      console.log(`Removed the ${app.displayName} launcher for ${app.provider}/${n}.`);
+      return;
+    }
+    case "repair": {
+      const r = repairLaunchers();
+      for (const e of r.rebuilt) console.log(`Rebuilt ${e.path}`);
+      for (const f of r.failed) console.error(`Couldn't rebuild ${f.entry.path}: ${f.reason}`);
+      if (!r.rebuilt.length && !r.failed.length) console.log("No launchers to repair.");
+      if (r.failed.length) process.exit(1);
+      return;
+    }
+    case "list": case undefined: {
+      const rows = readLaunchers().map((e) => ({ ...e, exists: fs.existsSync(e.path) }));
+      if (flags.json) return void console.log(JSON.stringify(rows, null, 2));
+      if (!rows.length) return void console.log("No launchers. Create one with `agent-switch launcher add <app> <profile>`.");
+      for (const r of rows) console.log(`${r.exists ? "●" : "○ missing"} ${r.app.padEnd(16)} ${r.provider}/${r.profile}  ${r.path}`);
+      return;
+    }
+    default:
+      die("usage: agent-switch launcher add|remove <app> <profile> | list [--json] | repair");
+  }
+}
+
+/** `agent-switch app-settings copy <app> --from <profile|default> --to <profile>`. */
+function cmdAppSettings(sub: string | undefined, args: string[], flags: Record<string, string | boolean>): void {
+  const app = findApp(args[0] ?? "");
+  const from = typeof flags.from === "string" ? flags.from : null;
+  const to = typeof flags.to === "string" ? flags.to : null;
+  if (sub !== "copy" || !app || !from || !to) die("usage: agent-switch app-settings copy <app> --from <profile|default> --to <profile>");
+  if (!hasSettingsLayout(app.id)) die(`copying settings is not supported for ${app.displayName}.`);
+  if (from === to) die("--from and --to are the same profile.");
+  const toProfile = requireProfile(app.provider, to, "app-settings copy");
+  const fromDir = from === "default" ? DEFAULT_DATA_DIR[app.id] : guiDataDir(app, requireProfile(app.provider, from, "app-settings copy"));
+  const toDir = guiDataDir(app, toProfile);
+  if (!fs.existsSync(fromDir)) die(`${from === "default" ? `The default ${app.displayName}` : `${app.provider}/${from}`} has no ${app.displayName} data yet.`);
+  // The running app rewrites its own files on quit and would undo the copy.
+  if (findRunning(toDir)) die(`${app.displayName} is open on ${app.provider}/${toProfile} — quit it first, then copy.`);
+  const r = copyDesktopSettings(app.id, fromDir, toDir);
+  logActivity("settings", `${app.provider}/${toProfile}`, `copied ${app.displayName} settings from ${from}`, "user ran `agent-switch app-settings copy`");
+  if (flags.json) return void console.log(JSON.stringify({ app: app.id, from, to: toProfile, ...r }, null, 2));
+  if (!r.copied.length) return void console.log(`Nothing to copy — ${from} has no ${app.displayName} settings yet.`);
+  console.log(`Copied ${r.copied.join(", ")} from ${from} to ${app.provider}/${toProfile}.`);
+  if (r.backups.length) console.log(`Previous files kept as ${r.backups.map((b) => path.basename(b)).join(", ")}.`);
+  console.log("Logins, chats and account-bound preferences were not copied.");
+}
 
 /**
  * `agent-switch guard [block|warn|off]` — read or set the single-load policy.
@@ -2551,6 +2712,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch login [--provider P] <name> [--browser <id>]   sign an existing profile in again (after a sign-out / expired login); --browser opens the Claude sign-in in that browser
   agent-switch browsers [--json]               browsers --browser can open (macOS / Linux)
   agent-switch import [--provider P] <name>    migrate the default install (no re-login)
+  agent-switch mark-shared [--provider P] <name> [--off]   mark a profile as sharing the default install's login (never refreshed or balanced)
   agent-switch use [--provider P] <name>       set the active profile for a provider
   agent-switch deactivate [--provider P]       clear the active profile for a provider
   agent-switch run [--provider P] <name> [--tmux] [..]  launch the provider's CLI (--tmux = managed tmux session, POSIX)
@@ -2589,9 +2751,11 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
   agent-switch [gui]                           launch the tray/menubar GUI (the default with no command; won't start a second if one is running)
   agent-switch check-update [--json]           check GitHub Releases for a newer version
-  agent-switch update                          self-update to the latest version (via npm)
+  agent-switch update                          self-update to the latest version (via npm); restarts the service on it, or offers to install one
   agent-switch apps                            list launchable GUI apps (macOS)
-  agent-switch open <app> [profile]            launch a GUI app on a profile, isolated (macOS)
+  agent-switch open <app> [profile]            launch a GUI app on a profile, isolated; focuses it if already open (macOS)
+  agent-switch launcher add|remove <app> <profile> | list [--json] | repair   Dock/Spotlight launcher per account in ~/Applications/Agent Switch (macOS)
+  agent-switch app-settings copy <app> --from <profile|default> --to <profile> [--json]   copy desktop settings (MCP, preferences, extensions) — never logins
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
   agent-switch shellenv install [--shell S] [--json]   add it to your shell's startup file
   agent-switch service run|start|stop|status|install|uninstall   background usage daemon
@@ -2823,6 +2987,12 @@ function cmdActivity(flags: Record<string, string | boolean>): void {
 }
 
 function authStatusFor(providerId: ProviderId, name: string): AuthStatus {
+  const s = rawAuthStatusFor(providerId, name);
+  const keptFreshBy = keptFreshByFor(providerId, { shared: sharesDefaultLogin(providerId, name), serviceInstalled: serviceTarget() !== "not-installed" }, s.keptFreshBy);
+  return { ...s, keptFreshBy };
+}
+
+function rawAuthStatusFor(providerId: ProviderId, name: string): AuthStatus {
   const now = Date.now();
   const cfg = provider(providerId).configDirFor(configDir(providerId, name));
   if (providerId === "claude") {
@@ -3003,6 +3173,7 @@ async function main(): Promise<void> {
     case "desktop": return cmdDesktop(!!flags.json);
     case "disable": return cmdDisable(providerId, positional[0], true);
     case "enable": return cmdDisable(providerId, positional[0], false);
+    case "mark-shared": return cmdMarkShared(providerId, positional[0], !!flags.off);
     case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags);
     case "reset": return cmdReset(providerId, positional[0], !!flags.yes);
     case "rename": return cmdRename(providerId, positional[0], positional[1]);
@@ -3011,6 +3182,8 @@ async function main(): Promise<void> {
     case "update": case "upgrade": return cmdUpdate();
     case "check-update": case "check-updates": return cmdCheckUpdate(!!flags.json);
     case "open": return cmdOpen(positional[0], positional[1]);
+    case "launcher": case "launchers": return cmdLauncher(positional[0], positional.slice(1), flags);
+    case "app-settings": return cmdAppSettings(positional[0], positional.slice(1), flags);
     case "apps": return cmdApps(!!flags.json);
     case "notify": return cmdNotify(flags);
     case "notifications": return cmdNotifications(positional[0], !!flags.json);

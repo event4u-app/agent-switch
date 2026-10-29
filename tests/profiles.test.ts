@@ -302,3 +302,13 @@ test("an explicitly stored guard mode survives (upgrade keeps block)", () => {
   fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: { claude: "work" }, guard: "off" }));
   assert.equal(P.readGuard(), "off");
 });
+
+test("writeState keeps keys this version does not know, so an older CLI cannot drop a newer one's settings", () => {
+  const file = path.join(HOME, "state.json");
+  fs.writeFileSync(file, JSON.stringify({ active: { claude: null }, laterSetting: { kept: true } }));
+  P.setActive("claude", "work");
+  const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.deepEqual(raw.laterSetting, { kept: true });
+  assert.equal(raw.active.claude, "work");
+  fs.rmSync(file);
+});

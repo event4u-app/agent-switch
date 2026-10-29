@@ -32,7 +32,7 @@ import * as nodePath from "node:path";
 import { fetchProfile } from "./api.js";
 import * as keychain from "./keychain.js";
 import { withProperLock } from "./locks.js";
-import { configDir, ROOT, readRebindKillSwitch, writeRebindKillSwitch, type RebindKillSwitch } from "./profiles.js";
+import { configDir, ROOT, readRebindKillSwitch, sharesDefaultLogin, writeRebindKillSwitch, type RebindKillSwitch } from "./profiles.js";
 import { freshenToken } from "./token-freshen.js";
 
 /** <10 min to expiry → refuse (2× Claude Code's own 5-min refresh buffer). */
@@ -113,6 +113,9 @@ export interface RebindDeps {
    *  established (offline, endpoint unreachable, token rejected). Consulted ONLY
    *  when the local fingerprint is inconclusive — see {@link compareAccounts}. */
   resolveAccount: (cred: string) => Promise<string | null>;
+  /** True for a profile seeded from the default install by `import` — moving or
+   *  refreshing its login would sign the default install out. Default: never. */
+  sharesDefaultLogin?: (name: string) => boolean;
 }
 
 /**
@@ -186,6 +189,7 @@ export function defaultDeps(): RebindDeps {
       }
     },
     resolveAccount: resolveAccountViaApi,
+    sharesDefaultLogin: (name) => sharesDefaultLogin("claude", name),
   };
 }
 
@@ -632,6 +636,13 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
   }
   if (account === profile) {
     throw new RebindRefused(`cannot rebind "${profile}" to itself`);
+  }
+  for (const name of [profile, account]) {
+    if (d.sharesDefaultLogin?.(name)) {
+      throw new RebindRefused(
+        `"${name}" shares its login with the default install — rebinding would refresh or move it and sign the default install out. Give it its own login first: agent-switch login ${name}`,
+      );
+    }
   }
 
   const pConfig = configDir("claude", profile);

@@ -9,7 +9,7 @@ import { expandHome } from "../../lib/paths.js";
 import { shortPath } from "../../ui/format.js";
 import { accountIdFromMember, BIN_NAME } from "../../vm/build.js";
 import { rankAccounts, TOOL_LABEL, type RankedAccount } from "../../vm/rules.js";
-import type { Account, Attention, Binding, Pool, Session, SessionState, Tool, ViewModel } from "../../vm/types.js";
+import type { Account, Attention, Binding, Launcher, Pool, Session, SessionState, Tool, ViewModel } from "../../vm/types.js";
 
 // ---------------------------------------------------------------- sessions
 
@@ -182,6 +182,7 @@ export function resolveStart(
  *  reasons. No profile (the default config dir) → the tool's default account,
  *  which is what `run` would load there. */
 export function resolutionFromCli(res: DirResolution, tool: Tool, accounts: readonly Account[]): Resolution {
+  if (res.blocked) return { account: null, rule: null, why: res.why.length ? res.why : [`Refused: ${res.blocked}`] };
   if (res.profile) {
     const id = accountIdFromMember(res.profile) ?? `${tool}:${res.profile}`;
     const account = accounts.find((a) => a.id === id) ?? null;
@@ -191,13 +192,31 @@ export function resolutionFromCli(res: DirResolution, tool: Tool, accounts: read
   return { account: def, rule: null, why: res.why.length ? res.why : [`No rule matches — default ${tool} account ${def?.name ?? "none"}`] };
 }
 
+/** Why a tool cannot be picked in the start dialog; null when it can. */
+export function toolUnavailableReason(tool: Tool, accounts: readonly Account[], platform: ViewModel["platform"]): string | null {
+  if (tool === "antigravity" && platform !== "mac") return "Antigravity profiles need macOS for now";
+  return toolCanTakeWork(accounts, tool) ? null : `No ${TOOL_LABEL[tool]} account can take work`;
+}
+
+/** A reason line split so an `agent-switch …` command renders unbroken. */
+export function reasonParts(line: string): { text: string; code: boolean }[] {
+  const m = line.match(/agent-switch(?: [\w-]+)+(?=$|[),.;]|\s)/);
+  if (!m || m.index === undefined) return [{ text: line, code: false }];
+  const parts = [
+    { text: line.slice(0, m.index), code: false },
+    { text: m[0], code: true },
+    { text: line.slice(m.index + m[0].length), code: false },
+  ];
+  return parts.filter((p) => p.text !== "");
+}
+
 /** Start is possible only for a known account that can take work. */
 export function canStartOn(a: Account | null | undefined): boolean {
   return !!a && !a.disabled && a.state !== "signed-out" && a.state !== "limited" && a.state !== "wrong-account";
 }
 
 /** The design's tool row; a tool is selectable when any of its accounts ranks. */
-export const START_TOOLS: Tool[] = ["claude", "codex", "gemini"];
+export const START_TOOLS: Tool[] = ["claude", "codex", "antigravity"];
 
 export function toolCanTakeWork(accounts: readonly Account[], tool: Tool): boolean {
   return rankAccounts(accounts, tool).some((r) => r.rank != null);
@@ -206,6 +225,10 @@ export function toolCanTakeWork(accounts: readonly Account[], tool: Tool): boole
 /** The desktop app to open for a tool, if one is registered and installed. */
 export function appFor(vm: Pick<ViewModel, "surfaces">, tool: Tool): string | null {
   return vm.surfaces.find((s) => s.tool === tool && s.kind === "desktop" && s.detected)?.id ?? null;
+}
+
+export function hasLauncher(launchers: readonly Launcher[], appId: string, accountId: string): boolean {
+  return launchers.some((l) => l.appId === appId && l.accountId === accountId && l.exists);
 }
 
 export function appUnavailableReason(vm: Pick<ViewModel, "surfaces">, tool: Tool): string | null {

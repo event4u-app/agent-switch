@@ -1,6 +1,6 @@
 ---
 complexity: large
-status: in-progress
+status: complete
 ---
 
 # Roadmap: the session-control redesign (GUI, icon, README)

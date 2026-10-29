@@ -1588,3 +1588,105 @@ test("browsers --json lists installed browsers as {id, name}", gate, () => {
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("dir: a folder bound to a pool that no longer exists is refused with exit 86, never started elsewhere", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-pool-gone-"));
+  const folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-pool-folder-")));
+  try {
+    seed(home, "claude", "personal");
+    run(home, ["use", "personal"]);
+    fs.writeFileSync(path.join(home, "mappings.json"), JSON.stringify({ schema: 2, mappings: { [folder]: { claude: "pool:gone" } } }));
+    const r = spawnSync("node", [CLI, "dir", "--guard"], { cwd: folder, env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
+    assert.equal(r.status, 86, "the wrapper blocks on exactly this code");
+    assert.equal(r.stdout.trim(), "", "no config dir — the active personal account must not be used");
+    assert.match(r.stderr, /pool gone no longer exists/);
+    const j = spawnSync("node", [CLI, "dir", "--json"], { cwd: folder, env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
+    assert.equal(j.status, 86);
+    assert.match(JSON.parse(j.stdout).blocked, /pool gone no longer exists/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("import: a seeded import is marked as sharing the default login, and doctor names it with the way out", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-shared-"));
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "asw-shared-home-"));
+  try {
+    fs.mkdirSync(path.join(fakeHome, ".codex"), { recursive: true });
+    fs.writeFileSync(path.join(fakeHome, ".codex", "auth.json"), JSON.stringify({ OPENAI_API_KEY: null, tokens: { id_token: "x", access_token: "y", refresh_token: "z" } }));
+    // Windows reads the home dir from USERPROFILE, not HOME.
+    const env = { ...process.env, AGENT_SWITCH_HOME: home, HOME: fakeHome, USERPROFILE: fakeHome, CODEX_HOME: "" };
+    execFileSync("node", [CLI, "import", "--provider", "codex", "imp"], { env, encoding: "utf8" });
+    assert.ok(fs.existsSync(path.join(home, "codex", "imp", "shares-default-login")), "seeded import is marked");
+    const doc = JSON.parse(spawnSync("node", [CLI, "doctor", "--json"], { env, encoding: "utf8" }).stdout);
+    const c = doc.checks.find((x: { id: string }) => x.id === "shared-login");
+    assert.equal(c.status, "warn");
+    assert.match(c.detail, /codex\/imp/);
+    assert.equal(c.fix, "agent-switch login imp --provider codex");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test("dir: a folder bound to a disabled account is refused with exit 86, never started on another one", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bound-off-"));
+  const folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-bound-folder-")));
+  try {
+    seed(home, "claude", "work");
+    seed(home, "claude", "personal");
+    run(home, ["use", "personal"]);
+    fs.writeFileSync(path.join(home, "mappings.json"), JSON.stringify({ schema: 2, mappings: { [folder]: { claude: "work" } } }));
+    run(home, ["disable", "work"]);
+    const r = spawnSync("node", [CLI, "dir", "--guard"], { cwd: folder, env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
+    assert.equal(r.status, 86);
+    assert.equal(r.stdout.trim(), "", "personal must not be used for a folder bound to work");
+    assert.match(r.stderr, /claude\/work is disabled/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("dir: balances on the app's latest usage read without the background service", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-latest-dir-"));
+  const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-latest-cwd-")));
+  try {
+    const now = Date.now();
+    const reset = new Date(now + 3 * 3600e3).toISOString();
+    for (const [name, util] of [["full", 90], ["roomy", 10]] as const) {
+      const cfg = path.join(home, "claude", name, "config");
+      fs.mkdirSync(cfg, { recursive: true });
+      fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: `${name}@example.com` } }));
+      fs.writeFileSync(
+        path.join(home, "claude", name, "usage-latest.json"),
+        JSON.stringify({ windows: [{ key: "five_hour", label: "5h", utilization: util, resetsAt: reset }], routines: null, capturedAt: new Date(now - 2 * 60e3).toISOString() }),
+      );
+    }
+    run(home, ["use", "full"]);
+    const r = spawnSync("node", [CLI, "dir", "--json"], { cwd, env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
+    const j = JSON.parse(r.stdout);
+    assert.equal(j.profile, "claude/roomy", j.why.join("\n"));
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("mark-shared: marking a profile by hand makes balancing skip it, --off clears it", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-mark-"));
+  const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-mark-cwd-")));
+  try {
+    seed(home, "claude", "work");
+    run(home, ["mark-shared", "work"]);
+    assert.ok(fs.existsSync(path.join(home, "claude", "work", "shares-default-login")));
+    const j = JSON.parse(spawnSync("node", [CLI, "dir", "--json"], { cwd, env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" }).stdout);
+    assert.ok(j.why.includes("Skipped claude/work: shares its login with the default install"), j.why.join("\n"));
+    run(home, ["mark-shared", "work", "--off"]);
+    assert.equal(fs.existsSync(path.join(home, "claude", "work", "shares-default-login")), false);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});

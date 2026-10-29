@@ -94,3 +94,57 @@ export async function withProperLock<T>(
     }
   }
 }
+
+/**
+ * Synchronous twin of {@link withProperLock} for agent-switch's own small
+ * stores (pools, protection): one read-modify-write at a time across every
+ * CLI and GUI process, so two writers cannot drop each other's change. Same
+ * directory-lock protocol and staleness rule; short waits block the thread
+ * (the critical section is a JSON read and write).
+ */
+export function withFileLockSync<T>(target: string, fn: () => T, timeoutMs = DEFAULT_TIMEOUT_MS): T {
+  const lockDir = lockDirFor(target);
+  const deadline = Date.now() + timeoutMs;
+  const nap = new Int32Array(new SharedArrayBuffer(4));
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  for (;;) {
+    try {
+      fs.mkdirSync(lockDir);
+      break;
+    } catch (err: any) {
+      // Windows answers EPERM while another process is removing the lock dir.
+      const busy = err?.code === "EEXIST" || (process.platform === "win32" && err?.code === "EPERM");
+      if (!busy) throw err;
+      if (err.code === "EPERM") {
+        if (Date.now() > deadline) throw err;
+        Atomics.wait(nap, 0, 0, 10);
+        continue;
+      }
+      let stale = false;
+      try {
+        stale = Date.now() - fs.statSync(lockDir).mtimeMs > STALENESS_MS;
+      } catch {
+        continue;
+      }
+      if (stale) {
+        try {
+          fs.rmdirSync(lockDir);
+        } catch {
+          /* raced with another taker — loop */
+        }
+        continue;
+      }
+      if (Date.now() > deadline) throw new Error(`timed out waiting for the lock at ${lockDir}`);
+      Atomics.wait(nap, 0, 0, 10 + Math.floor(Math.random() * 15));
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    try {
+      fs.rmdirSync(lockDir);
+    } catch {
+      /* already gone */
+    }
+  }
+}

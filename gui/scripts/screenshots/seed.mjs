@@ -256,7 +256,7 @@ export function seedHome(cliPath, now = Date.now()) {
   run("gui-settings", "set", "autostart", "enabled", "--by", "first-run");
   run("gui-settings", "set", "pet-welcomed");
 
-  run("notify", "--kind", "warning", "--title", "side is at 94 % of its 5h window", "--message", "Protection pauses it at 98 %. Resets in 1h 18m.");
+  run("notify", "--kind", "warning", "--title", "side is at 94 % of its 5h window", "--message", "Agent Switch warns at 98 %. Resets in 1h 18m.");
   run("notify", "--kind", "success", "--title", "Switched to work", "--message", "~/dev/agent-config starts on work (pool work, most headroom).");
   run("notify", "--kind", "info", "--title", "Codex CLI 0.150.0 is out", "--message", "You have 0.148.0. Running sessions are not touched.");
 

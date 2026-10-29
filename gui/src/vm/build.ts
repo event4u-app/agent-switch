@@ -17,7 +17,7 @@ import type {
   ProtectionRow,
   ToolingEntry,
 } from "../ipc.js";
-import type { DesktopInstanceRow } from "../ipc.js";
+import type { DesktopInstanceRow, LauncherRow } from "../ipc.js";
 import type { AppNotification } from "../notifications.js";
 import type { ProfileRow, ProvidersStatus, SessionRow, UsageSnapshot } from "../transforms.js";
 import { countdown } from "../ui/format.js";
@@ -34,6 +34,7 @@ import type {
   Check,
   GuardVm,
   IdentityColor,
+  Launcher,
   Notice,
   Pool,
   Protection,
@@ -187,6 +188,8 @@ const ACTIVITY_KIND: Record<ActivityEntry["kind"], ActivityKind> = {
   protection: "protection",
   pool: "pool",
   remove: "remove",
+  launcher: "launcher",
+  settings: "settings",
 };
 
 /** The CLI's activity log (oldest first) → events, newest first. Entries with an
@@ -314,6 +317,14 @@ export function noticeFromNotification(n: AppNotification, lastRead: number): No
   return { id: n.id, title: n.title, detail: n.message, at: n.ts, unread: n.ts > lastRead, tone: NOTICE_TONE[n.kind] };
 }
 
+/** Whether the stored login matters at all. A disabled account is never used,
+ *  and auth-status reads the provider CLI's login, so with that CLI switched
+ *  off it is never used either — neither may show "sign-in needed". An
+ *  unreadable provider status hides nothing. */
+export function loginInUse(row: Pick<ProfileRow, "provider" | "disabled">, ps: ProvidersStatus | null): boolean {
+  return row.disabled !== true && ps?.[row.provider as keyof ProvidersStatus]?.cli !== false;
+}
+
 export const BIN_NAME: Record<keyof ProvidersStatus, string> = { claude: "claude", codex: "codex", antigravity: "agy" };
 
 export function providersFromStatus(ps: ProvidersStatus): Provider[] {
@@ -336,12 +347,14 @@ export function surfacesFromApps(apps: AppInfo[]): Surface[] {
     name: a.displayName,
     kind: "desktop",
     detected: a.installed,
-    capability: null,
-    protection: null,
+    copiesSettings: a.copiesSettings === true,
     identitySeen: null,
-    launcher: null,
     checkedAt: null,
   }));
+}
+
+export function launchersFromRows(rows: readonly LauncherRow[]): Launcher[] {
+  return rows.map((r) => ({ appId: r.app, accountId: accountId(r.provider, r.profile), exists: r.exists }));
 }
 
 /** The attention queue from what the backend reports today: fresh near-limit /
@@ -350,6 +363,7 @@ export function surfacesFromApps(apps: AppInfo[]): Surface[] {
 export function deriveAttention(accounts: Account[], tools: ToolEntry[], toolsCheckedAt: number | null, now: number): Attention[] {
   const out: Attention[] = [];
   for (const a of accounts) {
+    if (a.disabled) continue;
     if (a.state === "signed-out" && a.auth?.checkedAt != null) {
       out.push({
         id: `signin:${a.id}`,

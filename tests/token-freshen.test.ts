@@ -8,6 +8,7 @@ import {
   freshenToken,
   needsFreshen,
   tokenExpiresAt,
+  usageToken,
 } from "../src/token-freshen.js";
 
 const NOW = Date.parse("2026-07-25T12:00:00.000Z");
@@ -135,4 +136,16 @@ test("freshAccessToken: no credential at all → null, and nothing is spawned", 
   const h = harness({ store: null });
   assert.equal(freshAccessToken("/cfg", h.deps), null);
   assert.deepEqual(h.runs, []);
+});
+
+test("usageToken: a profile sharing the default install's login is never refreshed — a valid token is used, an expired one is not", () => {
+  const valid = harness({ store: cred(NOW + 60 * 60 * 1000), refreshTo: cred(NOW + 9e9, "tok-b") });
+  assert.equal(usageToken("/p", valid.deps, true), "tok-a");
+  const expired = harness({ store: cred(NOW - 1000), refreshTo: cred(NOW + 9e9, "tok-b") });
+  assert.equal(usageToken("/p", expired.deps, true), null);
+  assert.deepEqual(expired.runs, [], "no refresh may run for a shared login");
+  // An own login still refreshes as before.
+  const own = harness({ store: cred(NOW - 1000), refreshTo: cred(NOW + 9e9, "tok-b") });
+  assert.equal(usageToken("/p", own.deps, false), "tok-b");
+  assert.deepEqual(own.runs, ["/p"]);
 });

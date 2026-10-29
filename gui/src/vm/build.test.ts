@@ -12,11 +12,14 @@ import {
   desktopForeign,
   deriveReadiness,
   guardFromStatus,
+  launchersFromRows,
+  loginInUse,
   noticeFromNotification,
   poolMembership,
   poolsFromRows,
   readinessFromDoctor,
   sessionFromRow,
+  surfacesFromApps,
   toolFromEntry,
 } from "./build.js";
 import { nextInPools } from "./rules.js";
@@ -229,6 +232,30 @@ describe("protection and auth on an account", () => {
     const [item] = deriveAttention([a], [], null, NOW);
     expect(item).toMatchObject({ kind: "signed-out", title: "Claude · work needs a new sign-in", accountId: "claude:work", detail: "Login ended.", at: NOW });
   });
+
+  it("never asks a disabled account to sign in", () => {
+    const signedOut = { auth: authFromStatus(authRow({ state: "sign-in-needed" }), NOW) };
+    const off = accountFromProfile(row({ disabled: true }), null, signedOut);
+    expect(deriveAttention([off], [], null, NOW)).toEqual([]);
+    const on = accountFromProfile(row({ name: "side" }), null, signedOut);
+    expect(deriveAttention([off, on], [], null, NOW).map((i) => i.accountId)).toEqual(["claude:side"]);
+  });
+
+  it("counts the stored login only where its CLI is switched on", () => {
+    const status = (cli: boolean) => ({ cli, ui: true, installed: true, binaryPath: null });
+    const ps = { claude: status(true), codex: status(true), antigravity: status(false) };
+    expect(loginInUse({ provider: "antigravity" }, ps)).toBe(false);
+    expect(loginInUse({ provider: "claude" }, ps)).toBe(true);
+    // An unreadable provider status hides nothing.
+    expect(loginInUse({ provider: "antigravity" }, null)).toBe(true);
+  });
+
+  it("drops the login of a disabled account even with its CLI on, so no row says sign-in needed", () => {
+    const status = (cli: boolean) => ({ cli, ui: true, installed: true, binaryPath: null });
+    const ps = { claude: status(true), codex: status(true), antigravity: status(true) };
+    expect(loginInUse({ provider: "antigravity", disabled: true }, ps)).toBe(false);
+    expect(loginInUse({ provider: "antigravity", disabled: false }, ps)).toBe(true);
+  });
 });
 
 describe("pools and folder rules", () => {
@@ -339,5 +366,28 @@ describe("bindingsFromMappings — paused", () => {
     ]);
     expect(paused.enabled).toBe(false);
     expect(plain.enabled).toBe(true);
+  });
+});
+
+describe("desktop apps", () => {
+  it("maps launchers to account ids and keeps a deleted bundle visible as such", () => {
+    expect(
+      launchersFromRows([
+        { app: "claude-desktop", provider: "claude", profile: "work", path: "/a.app", exists: true },
+        { app: "codex-desktop", provider: "codex", profile: "w", path: "/b.app", exists: false },
+      ]),
+    ).toEqual([
+      { appId: "claude-desktop", accountId: "claude:work", exists: true },
+      { appId: "codex-desktop", accountId: "codex:w", exists: false },
+    ]);
+  });
+
+  it("offers settings copy only where the CLI says it knows the layout", () => {
+    const [claude, codex] = surfacesFromApps([
+      { id: "claude-desktop", displayName: "Claude Desktop", provider: "claude", strategy: "user-data-dir", installed: true, copiesSettings: true },
+      { id: "codex-desktop", displayName: "Codex", provider: "codex", strategy: "env+user-data-dir", installed: true },
+    ]);
+    expect(claude.copiesSettings).toBe(true);
+    expect(codex.copiesSettings).toBe(false);
   });
 });

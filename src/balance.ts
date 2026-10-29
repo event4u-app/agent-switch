@@ -21,7 +21,7 @@ const UNKNOWN_RESET_H = 7 * 24;
 export const LEVEL_TOLERANCE = 0.05;
 
 export type Weighed =
-  | { usable: true; need: number; rest: number; resetH: number | null; window: string; key: string }
+  | { usable: true; need: number; rest: number; resetH: number | null; window: string; key: string; peak: number }
   | { usable: false; why: string };
 
 function longest(windows: UsageWindow[]): UsageWindow | null {
@@ -39,7 +39,10 @@ export function weigh(snapshot: UsageSnapshot, now: number, thresholdPct: number
   if (!w) return { usable: false, why: "usage unknown" };
   const rest = Math.max(0, 100 - (w.utilization as number));
   const resetH = w.resetsAt && !isNaN(Date.parse(w.resetsAt)) ? Math.max(1, (Date.parse(w.resetsAt) - now) / HOUR_MS) : null;
-  return { usable: true, need: rest / (resetH ?? UNKNOWN_RESET_H), rest, resetH, window: windowName(w), key: w.key };
+  // The fullest window breaks a level tie: equal room this week, but one is about
+  // to hit its 5h limit.
+  const peak = Math.max(...snapshot.windows.map((x) => (typeof x.utilization === "number" ? x.utilization : 0)));
+  return { usable: true, need: rest / (resetH ?? UNKNOWN_RESET_H), rest, resetH, window: windowName(w), key: w.key, peak };
 }
 
 const WINDOW_NAME: Record<string, string> = { five_hour: "5h", seven_day: "7d", monthly: "30d" };

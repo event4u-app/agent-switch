@@ -77,6 +77,9 @@ Paths are relative to `gui/src/`.
 | `claimPetWelcome` | `engines/pet.ts` | |
 | `listApps` | `vm/load.ts` | |
 | `openApp` | `vm/actions.ts` → apps, account sheet/menu, start session; tray account rows via `bridge.ts` `TRAY_APP_EVENT` (validated by `appRequest`, run in the main window — the tray stays read-only) | |
+| `listLaunchers` | `vm/load.ts` → `ViewModel.launchers` | |
+| `setLauncher` | `vm/actions.ts` → Tools › Apps, one switch per app × account (macOS only) | |
+| `copyAppSettings` | `vm/actions.ts` → Tools › Apps, account row menu (apps whose layout the CLI knows) | |
 | `listSessions` | `vm/load.ts`, `engines/pet.ts` | |
 | `sessionPreview` | `vm/actions.ts` (`previewSession`) → session sheet | |
 | `deleteSession`, `deleteSessionArgs` | `vm/actions.ts` (`trashSession`) | |

@@ -35,6 +35,7 @@
  * error instead of silently degrading the shell onto the default config dir.
  */
 
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { allProviders } from "./providers.js";
@@ -221,12 +222,39 @@ export const SHELLENV_LINE: Record<Shell, string> = {
 };
 
 /** The startup file `shellenv install` writes to. macOS opens login shells,
- *  which read ~/.bash_profile rather than ~/.bashrc. */
-export function rcFileFor(shell: Shell, home: string, platform: NodeJS.Platform = process.platform): string {
+ *  which read ~/.bash_profile rather than ~/.bashrc. For PowerShell only the
+ *  shell knows its profile — Windows PowerShell 5.1 and a Documents folder
+ *  redirected to OneDrive both live elsewhere — so it is asked first. */
+export function rcFileFor(
+  shell: Shell,
+  home: string,
+  platform: NodeJS.Platform = process.platform,
+  askProfile: () => string | null = powershellProfile,
+): string {
   if (shell === "zsh") return path.join(home, ".zshrc");
   if (shell === "bash") return path.join(home, platform === "darwin" ? ".bash_profile" : ".bashrc");
   if (shell === "fish") return path.join(home, ".config", "fish", "config.fish");
-  return path.join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1");
+  return askProfile() ?? path.join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1");
+}
+
+/** Which PowerShell to ask first: the one this command runs under. Windows
+ *  PowerShell 5.1 puts only `WindowsPowerShell` paths on PSModulePath; pwsh adds
+ *  its own `PowerShell\7` (or `Documents\PowerShell`) ones. */
+export function powershellOrder(env: NodeJS.ProcessEnv = process.env): ["pwsh", "powershell"] | ["powershell", "pwsh"] {
+  const p = env.PSModulePath ?? "";
+  const pwsh = /[\\/]PowerShell[\\/](7|Modules)/i.test(p);
+  return !pwsh && /WindowsPowerShell/i.test(p) ? ["powershell", "pwsh"] : ["pwsh", "powershell"];
+}
+
+/** `$PROFILE` from the PowerShell the user runs, then the other one; null when
+ *  neither answers. */
+export function powershellProfile(): string | null {
+  for (const exe of powershellOrder()) {
+    const r = spawnSync(exe, ["-NoProfile", "-NonInteractive", "-Command", "$PROFILE"], { encoding: "utf8", timeout: 5000, windowsHide: true });
+    const out = r.status === 0 ? r.stdout.trim() : "";
+    if (out) return out;
+  }
+  return null;
 }
 
 export interface ShellenvInstall {

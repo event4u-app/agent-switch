@@ -108,6 +108,25 @@ export function serviceTarget(): "not-installed" | "this-cli" | "other-cli" {
   return m.invocation && m.invocation.exec === me.exec && m.invocation.args.join("\0") === me.args.join("\0") ? "this-cli" : "other-cli";
 }
 
+/** What `update` does with the service once the new version is on disk. Our
+ *  own service is re-installed so it restarts on the new code; one that runs
+ *  another CLI (a dev checkout) is not ours to re-point. */
+export function serviceAfterUpdate(
+  target: ReturnType<typeof serviceTarget>,
+  interactive: boolean,
+): "reinstall" | "ask" | "hint" | "leave" {
+  if (target === "this-cli") return "reinstall";
+  if (target === "other-cli") return "leave";
+  return interactive ? "ask" : "hint";
+}
+
+/** Runs `service install` through the CLI file on disk — after a self-update
+ *  that is the new version, while this process is still the old one. */
+export function serviceInstallFromDisk(): number {
+  const { exec, args } = runInvocation();
+  return spawnSync(exec, [args[0], "service", "install"], { stdio: "inherit" }).status ?? 1;
+}
+
 // ---------- install / uninstall ----------
 
 export function serviceInstall(log: (line: string) => void = console.log): void {

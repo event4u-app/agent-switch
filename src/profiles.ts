@@ -1,5 +1,6 @@
 /** Profile roots, per-provider state, layout migration, and shared helpers. */
 
+import { withFileLockSync } from "./locks.js";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -175,6 +176,22 @@ export function browserDir(providerId: ProviderId, name: string): string {
   return path.join(profileDir(providerId, name), "browser");
 }
 
+/** Present in a profile dir when `import` seeded it with the default install's
+ *  credential: both now share one OAuth lineage, and whichever side refreshes
+ *  first signs the other out. Holds a date only, never a credential. */
+export const SHARED_LOGIN_MARKER = "shares-default-login";
+
+export function sharesDefaultLogin(providerId: ProviderId, name: string): boolean {
+  return fs.existsSync(path.join(profileDir(providerId, name), SHARED_LOGIN_MARKER));
+}
+
+export function setSharesDefaultLogin(providerId: ProviderId, name: string, on: boolean): void {
+  const file = path.join(profileDir(providerId, name), SHARED_LOGIN_MARKER);
+  if (!on) return void fs.rmSync(file, { force: true });
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `imported ${new Date().toISOString()}\n`, { mode: 0o600 });
+}
+
 export function profileExists(providerId: ProviderId, name: string): boolean {
   return fs.existsSync(configDir(providerId, name));
 }
@@ -335,9 +352,11 @@ export function readOsNotifications(): boolean {
 }
 
 export function setOsNotifications(on: boolean): void {
-  const state = readState();
-  state.osNotifications = on;
-  writeState(state);
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    state.osNotifications = on;
+    writeState(state);
+  });
 }
 
 // ---------- single-load guard policy ----------
@@ -349,9 +368,11 @@ export function readGuard(): GuardPolicy {
 
 /** Persist the guard policy. */
 export function setGuard(policy: GuardPolicy): void {
-  const state = readState();
-  state.guard = policy;
-  writeState(state);
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    state.guard = policy;
+    writeState(state);
+  });
 }
 
 // ---------- rebind kill-switch / circuit-breaker (ADR-003) ----------
@@ -363,9 +384,11 @@ export function readRebindKillSwitch(): RebindKillSwitch {
 
 /** Persist the rebind kill-switch state (breaker counter + disabled flag). */
 export function writeRebindKillSwitch(next: RebindKillSwitch): void {
-  const state = readState();
-  state.rebind = normalizeRebindState(next);
-  writeState(state);
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    state.rebind = normalizeRebindState(next);
+    writeState(state);
+  });
 }
 
 /** Re-enable `rebind`: clear `disabled` + reset the failure counter (`--reset`). */
@@ -373,9 +396,21 @@ export function resetRebindKillSwitch(): void {
   writeRebindKillSwitch({ ...DEFAULT_REBIND_STATE });
 }
 
+/** Keys this version does not know are carried over: an older CLI still on
+ *  PATH must not drop a newer one's settings (2.1.0 dropped `disabled`, which
+ *  silently re-enabled disabled accounts). */
 export function writeState(state: State): void {
   ensureRoot();
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
+  let previous: Record<string, unknown> = {};
+  try {
+    const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) previous = raw;
+  } catch {
+    /* absent / unparsable — nothing to keep */
+  }
+  const tmp = `${STATE_FILE}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ ...previous, ...state }, null, 2) + "\n", { mode: 0o600 });
+  fs.renameSync(tmp, STATE_FILE);
 }
 
 export function activeFor(providerId: ProviderId): string | null {
@@ -383,9 +418,11 @@ export function activeFor(providerId: ProviderId): string | null {
 }
 
 export function setActive(providerId: ProviderId, name: string | null): void {
-  const state = readState();
-  state.active[providerId] = name;
-  writeState(state);
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    state.active[providerId] = name;
+    writeState(state);
+  });
 }
 
 export function labelFor(providerId: ProviderId, name: string): ProfileLabel | null {
@@ -394,11 +431,13 @@ export function labelFor(providerId: ProviderId, name: string): ProfileLabel | n
 
 /** Set (or clear, with null) a profile's label. */
 export function setLabel(providerId: ProviderId, name: string, label: ProfileLabel | null): void {
-  const state = readState();
-  const key = labelKey(providerId, name);
-  if (label) state.labels[key] = label;
-  else delete state.labels[key];
-  writeState(state);
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    const key = labelKey(providerId, name);
+    if (label) state.labels[key] = label;
+    else delete state.labels[key];
+    writeState(state);
+  });
 }
 
 /** Drop a removed profile's label, colour and disabled flag so they can't
@@ -415,14 +454,16 @@ export function isDisabled(providerId: ProviderId, name: string): boolean {
 
 /** Disable (or re-enable) a profile. Disabling the active one clears the slot. */
 export function setDisabled(providerId: ProviderId, name: string, disabled: boolean): void {
-  const state = readState();
-  const key = labelKey(providerId, name);
-  state.disabled = state.disabled.filter((k) => k !== key);
-  if (disabled) {
-    state.disabled.push(key);
-    if (state.active[providerId] === name) state.active[providerId] = null;
-  }
-  writeState(state);
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    const key = labelKey(providerId, name);
+    state.disabled = state.disabled.filter((k) => k !== key);
+    if (disabled) {
+      state.disabled.push(key);
+      if (state.active[providerId] === name) state.active[providerId] = null;
+    }
+    writeState(state);
+  });
 }
 
 export function colorOf(providerId: ProviderId, name: string): ProfileColor | null {
@@ -431,11 +472,13 @@ export function colorOf(providerId: ProviderId, name: string): ProfileColor | nu
 
 /** Set (or clear, with null) a profile's colour. */
 export function setColor(providerId: ProviderId, name: string, color: ProfileColor | null): void {
-  const state = readState();
-  const key = labelKey(providerId, name);
-  if (color) state.colors[key] = color;
-  else delete state.colors[key];
-  writeState(state);
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    const key = labelKey(providerId, name);
+    if (color) state.colors[key] = color;
+    else delete state.colors[key];
+    writeState(state);
+  });
 }
 
 /**
@@ -454,38 +497,40 @@ export function setColor(providerId: ProviderId, name: string, color: ProfileCol
  * keychain ops are no-ops, so the re-seed is a harmless same-content rewrite.
  */
 export function renameProfile(providerId: ProviderId, from: string, to: string, store: CredentialStore = credentialStore()): void {
-  if (!profileExists(providerId, from)) throw new Error(`profile "${from}" does not exist`);
-  if (profileExists(providerId, to)) throw new Error(`profile "${to}" already exists`);
+  return withFileLockSync(STATE_FILE, () => {
+    if (!profileExists(providerId, from)) throw new Error(`profile "${from}" does not exist`);
+    if (profileExists(providerId, to)) throw new Error(`profile "${to}" already exists`);
 
-  const fromConfig = configDir(providerId, from);
-  const toConfig = configDir(providerId, to);
-  // Capture the credential while the old path (and thus the darwin keychain hash)
-  // still resolves. Only Claude uses this store; codex/antigravity keep auth inside
-  // the config dir, which simply moves with the rename.
-  const cred = providerId === "claude" ? store.read(fromConfig) : null;
+    const fromConfig = configDir(providerId, from);
+    const toConfig = configDir(providerId, to);
+    // Capture the credential while the old path (and thus the darwin keychain hash)
+    // still resolves. Only Claude uses this store; codex/antigravity keep auth inside
+    // the config dir, which simply moves with the rename.
+    const cred = providerId === "claude" ? store.read(fromConfig) : null;
 
-  fs.renameSync(profileDir(providerId, from), profileDir(providerId, to));
+    fs.renameSync(profileDir(providerId, from), profileDir(providerId, to));
 
-  if (cred) {
-    store.clearStale(toConfig); // a stale hashed entry at the new path would shadow the seed (darwin)
-    fs.writeFileSync(path.join(toConfig, ".credentials.json"), cred, { mode: 0o600 });
-    store.removeEntry(fromConfig); // drop the orphaned old-path keychain entry (darwin)
-  }
+    if (cred) {
+      store.clearStale(toConfig); // a stale hashed entry at the new path would shadow the seed (darwin)
+      fs.writeFileSync(path.join(toConfig, ".credentials.json"), cred, { mode: 0o600 });
+      store.removeEntry(fromConfig); // drop the orphaned old-path keychain entry (darwin)
+    }
 
-  const state = readState();
-  if (state.active[providerId] === from) state.active[providerId] = to;
-  const fromKey = labelKey(providerId, from);
-  const toKey = labelKey(providerId, to);
-  if (state.labels[fromKey] !== undefined) {
-    state.labels[toKey] = state.labels[fromKey];
-    delete state.labels[fromKey];
-  }
-  if (state.colors[fromKey] !== undefined) {
-    state.colors[toKey] = state.colors[fromKey];
-    delete state.colors[fromKey];
-  }
-  state.disabled = state.disabled.map((k) => (k === fromKey ? toKey : k));
-  writeState(state);
+    const state = readState();
+    if (state.active[providerId] === from) state.active[providerId] = to;
+    const fromKey = labelKey(providerId, from);
+    const toKey = labelKey(providerId, to);
+    if (state.labels[fromKey] !== undefined) {
+      state.labels[toKey] = state.labels[fromKey];
+      delete state.labels[fromKey];
+    }
+    if (state.colors[fromKey] !== undefined) {
+      state.colors[toKey] = state.colors[fromKey];
+      delete state.colors[fromKey];
+    }
+    state.disabled = state.disabled.map((k) => (k === fromKey ? toKey : k));
+    writeState(state);
+  });
 }
 
 export function readAutoSwitch(providerId: ProviderId): AutoSwitchConfig {
@@ -498,10 +543,12 @@ export function readAutoSwitchAll(): AutoSwitchMap {
 }
 
 export function setAutoSwitch(providerId: ProviderId, cfg: Partial<AutoSwitchConfig>): AutoSwitchConfig {
-  const state = readState();
-  state.autoSwitch[providerId] = normalizeAutoSwitch({ ...state.autoSwitch[providerId], ...cfg });
-  writeState(state);
-  return state.autoSwitch[providerId];
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    state.autoSwitch[providerId] = normalizeAutoSwitch({ ...state.autoSwitch[providerId], ...cfg });
+    writeState(state);
+    return state.autoSwitch[providerId];
+  });
 }
 
 // ---------- provider enable/disable (per surface) ----------
@@ -525,10 +572,12 @@ export function enabledProviders(surface: ProviderSurface = "cli"): ProviderId[]
 
 /** Enable/disable one surface of a provider; returns its new surface state. */
 export function setProviderSurface(providerId: ProviderId, surface: ProviderSurface, enabled: boolean): ProviderSurfaces {
-  const state = readState();
-  state.providers[providerId] = { ...state.providers[providerId], [surface]: enabled };
-  writeState(state);
-  return state.providers[providerId];
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    state.providers[providerId] = { ...state.providers[providerId], [surface]: enabled };
+    writeState(state);
+    return state.providers[providerId];
+  });
 }
 
 // ---------- linked binary paths (provider CLI not on PATH) ----------
@@ -545,10 +594,12 @@ export function readBinaryPaths(): BinaryPaths {
 
 /** Link (set) or unlink (null) a provider's CLI binary path. */
 export function setBinaryPath(providerId: ProviderId, binPath: string | null): void {
-  const state = readState();
-  if (binPath) state.binaryPaths[providerId] = binPath;
-  else delete state.binaryPaths[providerId];
-  writeState(state);
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    if (binPath) state.binaryPaths[providerId] = binPath;
+    else delete state.binaryPaths[providerId];
+    writeState(state);
+  });
 }
 
 // ---------- layout migration: v1 <ROOT>/<name> → <ROOT>/claude/<name> ----------

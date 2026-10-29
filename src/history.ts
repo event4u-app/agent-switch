@@ -68,3 +68,25 @@ export function seriesFor(samples: HistorySample[], windowKey: string): number[]
     .map((s) => s.windows.find((w) => w.key === windowKey)?.utilization)
     .filter((u): u is number => typeof u === "number");
 }
+
+/** The last snapshot read for a profile, kept unthrottled next to the history:
+ *  `dir` trusts usage only while it is minutes old, and the history keeps at
+ *  most one sample an hour. Holds the snapshot only, never a token. */
+export const LATEST_FILE = "usage-latest.json";
+
+export function writeLatestSnapshot(file: string, snapshot: UsageSnapshot): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(snapshot) + "\n", { mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
+
+export function readLatestSnapshot(file: string): { snapshot: UsageSnapshot; capturedMs: number } | null {
+  try {
+    const snapshot = JSON.parse(fs.readFileSync(file, "utf8")) as UsageSnapshot;
+    const capturedMs = Date.parse(snapshot?.capturedAt);
+    return Array.isArray(snapshot?.windows) && !isNaN(capturedMs) ? { snapshot, capturedMs } : null;
+  } catch {
+    return null;
+  }
+}

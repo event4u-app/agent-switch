@@ -145,6 +145,8 @@ describe("Accounts", () => {
   it("ranks accounts per provider with their badges and states", () => {
     mount(fixture());
     expect(screen.getByText("Who is signed in where?")).toBeTruthy();
+    expect(screen.queryByText(/whether its sessions are protected/)).toBeNull();
+    expect(screen.getByText(/at what share it warns/)).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Accounts 3" })).toBeTruthy();
     expect(screen.getByText("#1")).toBeTruthy();
     expect(screen.getByText("Default")).toBeTruthy();

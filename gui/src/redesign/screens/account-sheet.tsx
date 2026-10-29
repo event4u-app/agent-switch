@@ -19,7 +19,7 @@ import { useAS, type AccountSection } from "../../vm/store.js";
 import { IDENTITY_COLORS, type AuthHealth, type AuthState, type IdentityColor } from "../../vm/types.js";
 import { attempt, confirmRedeem, confirmRemove, makeDefault, PlainStartStar, refreshOne, turnOffPlainStarts } from "./account-actions.js";
 import { canSaveName, hasReadout, NAME_HINT, nameProblem } from "./account-logic.js";
-import { appFor } from "./logic.js";
+import { appFor, hasLauncher } from "./logic.js";
 import { AccountStateBadge } from "./rows.js";
 import { Sparkline, useUsageHistory } from "./usage-history.js";
 
@@ -284,19 +284,20 @@ export function AccountSheet({ id, section }: { id: string; section?: AccountSec
           )}
         </SheetSection>
 
-        <SheetSection title="Used in">
-          <div className="flex flex-col gap-1.5">
-            {surfaces.map((x) => {
-              const used = a.surfaces.includes(x.name);
-              return (
+        {surfaces.length > 0 && (
+          <SheetSection title="Desktop apps">
+            <div className="flex flex-col gap-1.5">
+              {surfaces.map((x) => (
                 <div key={x.id} className="flex items-center justify-between gap-3 text-xs">
-                  <span className={used ? "text-ac-text" : "text-ac-faint"}>{x.name}</span>
-                  <span className="text-ac-muted">{used ? (x.kind === "desktop" ? (x.launcher ? "Own launcher" : "Via Agent Switch") : "Yes") : "—"}</span>
+                  <span className={x.detected ? "text-ac-text" : "text-ac-faint"}>{x.name}</span>
+                  <span className="text-ac-muted">
+                    {!x.detected ? "Not installed" : hasLauncher(s.launchers, x.id, a.id) ? "Own launcher" : "Open from Agent Switch"}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-        </SheetSection>
+              ))}
+            </div>
+          </SheetSection>
+        )}
 
         <SheetSection title="Session protection" aside={<Switch label="Session protection" checked={protOn} onChange={setProtOn} disabled={!s.act.setProtection} />}>
           <p className="text-xs text-ac-muted">
@@ -304,18 +305,6 @@ export function AccountSheet({ id, section }: { id: string; section?: AccountSec
               ? `At ${a.threshold} % of the binding window, Agent Switch warns you — it doesn't pause sessions yet. A running session is never moved to another account on its own.`
               : "Off — sessions run until the provider stops them."}
           </p>
-          {protOn && (
-            <div className="flex flex-col gap-1">
-              {surfaces
-                .filter((x) => a.surfaces.includes(x.name))
-                .map((x) => (
-                  <div key={x.id} className="flex items-center justify-between gap-3 text-xs">
-                    <span className="text-ac-soft">{x.name}</span>
-                    <span className={x.capability === "native" ? "text-ac-ok-text" : "text-ac-muted"}>{x.protection}</span>
-                  </div>
-                ))}
-            </div>
-          )}
         </SheetSection>
 
         {(a.windows.length > 0 || readout) && (

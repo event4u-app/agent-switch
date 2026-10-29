@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { detectShell, shellenvScript } from "../src/shellenv.js";
+import * as path from "node:path";
+import { detectShell, powershellOrder, rcFileFor, shellenvScript } from "../src/shellenv.js";
 
 // Shell detection is pure over (requested, env, platform), so it is fully
 // unit-testable without a real shell. The generated snippets are syntax-checked
@@ -107,4 +108,22 @@ test("D29: the PowerShell asw has no POSIX `command` builtin", () => {
   const asw = ps.slice(ps.indexOf("function asw {"));
   assert.doesNotMatch(asw, /\bcommand agent-switch\b/, "`command` is not a PowerShell builtin");
   assert.match(asw, /__agent_switch list/);
+});
+
+test("PowerShell: the profile the shell itself reports wins over the guessed Documents path", () => {
+  const home = "/h";
+  // OneDrive-redirected Documents, or Windows PowerShell 5.1 — only the shell knows.
+  const asked = "C:\\Users\\x\\OneDrive\\Documents\\WindowsPowerShell\\Microsoft.PowerShell_profile.ps1";
+  assert.equal(rcFileFor("powershell", home, "win32", () => asked), asked);
+  assert.equal(rcFileFor("powershell", home, "win32", () => null), path.join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1"));
+  // Other shells never ask.
+  assert.equal(rcFileFor("zsh", home, "darwin", () => "/nope"), path.join(home, ".zshrc"));
+});
+
+test("PowerShell: the shell the user runs is asked first", () => {
+  const v51 = { PSModulePath: "C:\\Users\\x\\Documents\\WindowsPowerShell\\Modules;C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules" };
+  const v7 = { PSModulePath: "C:\\Users\\x\\Documents\\PowerShell\\Modules;C:\\Program Files\\PowerShell\\7\\Modules;C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\Modules" };
+  assert.deepEqual(powershellOrder(v51), ["powershell", "pwsh"]);
+  assert.deepEqual(powershellOrder(v7), ["pwsh", "powershell"]);
+  assert.deepEqual(powershellOrder({}), ["pwsh", "powershell"]);
 });

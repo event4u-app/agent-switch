@@ -10,6 +10,7 @@
  * verify from here, so every notice says "warn" — never "paused".
  */
 
+import { withFileLockSync } from "./locks.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -68,30 +69,36 @@ export function setProtection(
   patch: Partial<ProtectionPolicy>,
   file: string = PROTECTION_FILE,
 ): ProtectionPolicy {
-  if (patch.thresholdPct !== undefined && !validThreshold(patch.thresholdPct)) {
-    throw new Error("threshold must be a whole number between 1 and 100");
-  }
-  const all = load(file);
-  const next = normalize({ ...normalize(all[key(providerId, name)]), ...patch });
-  all[key(providerId, name)] = next;
-  save(all, file);
-  return next;
+  return withFileLockSync(file, () => {
+    if (patch.thresholdPct !== undefined && !validThreshold(patch.thresholdPct)) {
+      throw new Error("threshold must be a whole number between 1 and 100");
+    }
+    const all = load(file);
+    const next = normalize({ ...normalize(all[key(providerId, name)]), ...patch });
+    all[key(providerId, name)] = next;
+    save(all, file);
+    return next;
+  });
 }
 
 /** Carry a profile's policy across a rename; drop it on remove. */
 export function renameProtection(providerId: ProviderId, from: string, to: string, file: string = PROTECTION_FILE): void {
-  const all = load(file);
-  if (!(key(providerId, from) in all)) return;
-  all[key(providerId, to)] = all[key(providerId, from)];
-  delete all[key(providerId, from)];
-  save(all, file);
+  return withFileLockSync(file, () => {
+    const all = load(file);
+    if (!(key(providerId, from) in all)) return;
+    all[key(providerId, to)] = all[key(providerId, from)];
+    delete all[key(providerId, from)];
+    save(all, file);
+  });
 }
 
 export function forgetProtection(providerId: ProviderId, name: string, file: string = PROTECTION_FILE): void {
-  const all = load(file);
-  if (!(key(providerId, name) in all)) return;
-  delete all[key(providerId, name)];
-  save(all, file);
+  return withFileLockSync(file, () => {
+    const all = load(file);
+    if (!(key(providerId, name) in all)) return;
+    delete all[key(providerId, name)];
+    save(all, file);
+  });
 }
 
 /**

@@ -7,6 +7,7 @@
  * and a lookup only ever considers members of the provider being started.
  */
 
+import { withFileLockSync } from "./locks.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -83,60 +84,72 @@ function mustFind(pools: Pool[], id: string): Pool {
 }
 
 export function createPool(name: string, file: string = POOLS_FILE, now: Date = new Date()): Pool {
-  const display = name.trim();
-  const id = slugify(display);
-  if (!id) throw new Error("pool name needs at least one letter or digit");
-  const pools = readPools(file);
-  if (pools.some((p) => p.id === id)) throw new Error(`a pool "${id}" already exists`);
-  const pool: Pool = { id, name: display, members: [], createdAt: now.toISOString() };
-  save([...pools, pool], file);
-  return pool;
+  return withFileLockSync(file, () => {
+    const display = name.trim();
+    const id = slugify(display);
+    if (!id) throw new Error("pool name needs at least one letter or digit");
+    const pools = readPools(file);
+    if (pools.some((p) => p.id === id)) throw new Error(`a pool "${id}" already exists`);
+    const pool: Pool = { id, name: display, members: [], createdAt: now.toISOString() };
+    save([...pools, pool], file);
+    return pool;
+  });
 }
 
 /** Renames the display name only — the id stays, so folder rules keep working. */
 export function renamePool(id: string, name: string, file: string = POOLS_FILE): Pool {
-  const pools = readPools(file);
-  const p = mustFind(pools, id);
-  if (!name.trim()) throw new Error("pool name must not be empty");
-  p.name = name.trim();
-  save(pools, file);
-  return p;
+  return withFileLockSync(file, () => {
+    const pools = readPools(file);
+    const p = mustFind(pools, id);
+    if (!name.trim()) throw new Error("pool name must not be empty");
+    p.name = name.trim();
+    save(pools, file);
+    return p;
+  });
 }
 
 export function deletePool(id: string, file: string = POOLS_FILE): void {
-  const pools = readPools(file);
-  mustFind(pools, id);
-  save(pools.filter((p) => p.id !== id), file);
+  return withFileLockSync(file, () => {
+    const pools = readPools(file);
+    mustFind(pools, id);
+    save(pools.filter((p) => p.id !== id), file);
+  });
 }
 
 export function addPoolMember(id: string, member: string, file: string = POOLS_FILE): Pool {
-  if (!parseMember(member)) throw new Error(`"${member}" is not a profile key (expected provider/name, e.g. claude/work)`);
-  const pools = readPools(file);
-  const p = mustFind(pools, id);
-  if (!p.members.includes(member)) p.members.push(member);
-  save(pools, file);
-  return p;
+  return withFileLockSync(file, () => {
+    if (!parseMember(member)) throw new Error(`"${member}" is not a profile key (expected provider/name, e.g. claude/work)`);
+    const pools = readPools(file);
+    const p = mustFind(pools, id);
+    if (!p.members.includes(member)) p.members.push(member);
+    save(pools, file);
+    return p;
+  });
 }
 
 export function removePoolMember(id: string, member: string, file: string = POOLS_FILE): Pool {
-  const pools = readPools(file);
-  const p = mustFind(pools, id);
-  p.members = p.members.filter((m) => m !== member);
-  save(pools, file);
-  return p;
+  return withFileLockSync(file, () => {
+    const pools = readPools(file);
+    const p = mustFind(pools, id);
+    p.members = p.members.filter((m) => m !== member);
+    save(pools, file);
+    return p;
+  });
 }
 
 /** Keep memberships pointing at a profile across a rename / drop them on remove. */
 export function renamePoolMember(from: string, to: string | null, file: string = POOLS_FILE): void {
-  const pools = readPools(file);
-  let changed = false;
-  for (const p of pools) {
-    if (!p.members.includes(from)) continue;
-    p.members = p.members.filter((m) => m !== from);
-    if (to && !p.members.includes(to)) p.members.push(to);
-    changed = true;
-  }
-  if (changed) save(pools, file);
+  return withFileLockSync(file, () => {
+    const pools = readPools(file);
+    let changed = false;
+    for (const p of pools) {
+      if (!p.members.includes(from)) continue;
+      p.members = p.members.filter((m) => m !== from);
+      if (to && !p.members.includes(to)) p.members.push(to);
+      changed = true;
+    }
+    if (changed) save(pools, file);
+  });
 }
 
 /**

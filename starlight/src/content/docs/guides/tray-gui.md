@@ -99,7 +99,9 @@ The CLI can also launch and isolate other apps per profile:
 | Command | What it does |
 | --- | --- |
 | `agent-switch apps` | List launchable desktop apps |
-| `agent-switch open <app> [profile]` | Launch a desktop app isolated on a profile (macOS-only) |
+| `agent-switch open <app> [profile]` | Launch a desktop app isolated on a profile, or bring its window to the front (macOS-only) |
+| `agent-switch launcher add <app> <profile>` | A Dock/Spotlight launcher for that account — also a switch per account in **Tools → Apps** (macOS) |
+| `agent-switch app-settings copy claude-desktop --from default --to <profile>` | Copy Claude Desktop's MCP servers, preferences and extensions into an account — also in the account's ⋯ menu under **Tools → Apps** |
 | `agent-switch web <name>` | Open claude.ai in a persistent per-profile Playwright Chromium |
 
 :::note

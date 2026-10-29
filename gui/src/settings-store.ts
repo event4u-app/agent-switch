@@ -4,6 +4,7 @@
  * lives in the CLI; these are view-level toggles only.
  */
 
+import type { Corner, PetAnchor } from "./pet-anchor.js";
 import type { NotificationKind } from "./notifications.js";
 import {
   DEFAULT_PET,
@@ -712,6 +713,32 @@ export function setPetPos(pos: { x: number; y: number }): void {
 export function clearPetPos(): void {
   try {
     localStorage.removeItem(PET_POS_KEY);
+    localStorage.removeItem(PET_ANCHOR_KEY);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const PET_ANCHOR_KEY = "agent-switch-pet-anchor";
+
+/** The dragged position as an offset from the nearest screen corner (see
+ *  pet-anchor.ts) — what the pet is restored from; null = none saved yet. */
+export function getPetAnchor(): PetAnchor | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PET_ANCHOR_KEY) ?? "null") as Partial<PetAnchor> | null;
+    const corners: Corner[] = ["top-left", "top-right", "bottom-left", "bottom-right"];
+    if (raw && corners.includes(raw.corner as Corner) && Number.isFinite(raw.dx) && Number.isFinite(raw.dy)) {
+      return { corner: raw.corner as Corner, dx: raw.dx!, dy: raw.dy!, screen: typeof raw.screen === "string" ? raw.screen : null };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function setPetAnchor(anchor: PetAnchor): void {
+  try {
+    localStorage.setItem(PET_ANCHOR_KEY, JSON.stringify(anchor));
   } catch {
     /* no/blocked localStorage → in-memory only for this session */
   }

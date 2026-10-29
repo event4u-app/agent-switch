@@ -6,7 +6,7 @@
  *
  * Absent today: addAccount, signIn, startSession, takeOver, handOff, compact,
  * runTool (these run in the built-in terminal — wired by the screens lane via
- * the existing *Args builders), decideLimit, setProtection, setLauncher,
+ * the existing *Args builders), decideLimit, setProtection,
  * toggleRule, runFix, pickFolder, exportDiagnostics, openUsagePage, setSetting,
  * petTest, movePet.
  */
@@ -35,6 +35,10 @@ export interface Actions {
   /** Live switch of a running Claude session's account (macOS, ADR-003). */
   rebind?(sessionId: string, targetAccountId: string): Promise<void>;
   openApp?(appId: string, accountId: string): Promise<void>;
+  /** Create or remove the account's Dock/Spotlight launcher for an app (macOS). */
+  setLauncher?(appId: string, accountId: string, on: boolean): Promise<void>;
+  /** Copy desktop settings into `toAccountId`; `from` is an account id or "default". */
+  copyAppSettings?(appId: string, from: string, toAccountId: string): Promise<void>;
   openAgentConfig?(): Promise<void>;
   restartAgentConfig?(): Promise<void>;
   setSharedSetup?(enabled: boolean, source?: string): Promise<void>;
@@ -132,6 +136,10 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
       await ipc.rebindTo(splitAccountId(target)[1], p.profile);
     }),
     openApp: (appId: string, id: string) => ipc.openApp(appId, splitAccountId(id)[1]),
+    setLauncher: thenReload((appId: string, id: string, on: boolean) => ipc.setLauncher(appId, splitAccountId(id)[1], on)),
+    copyAppSettings: thenReload((appId: string, from: string, to: string) =>
+      ipc.copyAppSettings(appId, from === "default" ? "default" : splitAccountId(from)[1], splitAccountId(to)[1]),
+    ),
     openAgentConfig: async () => {
       await ipc.acOpenInBrowser();
     },

@@ -9,6 +9,9 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
+/** Stand-in home the temp home is rewritten to; never rendered (the GUI shows `~`). */
+export const DEMO_HOME = "/Users/you";
+
 export const EMAILS = {
   "claude/work": "work@example.com",
   "claude/side": "side@example.com",
@@ -151,6 +154,9 @@ export function invokeStatic(now) {
     "plugin:app|identifier": "dev.agent-switch.app",
     "plugin:shell|spawn": 4243,
     "plugin:shell|open": null,
+    // The app's home dir: the CLI's absolute paths are rewritten onto it, so the
+    // GUI shows them as `~/…` and a start in that folder is valid.
+    "plugin:path|resolve_directory": DEMO_HOME,
     pet_show: false,
     set_tray_popover: null,
     set_tray_tooltip: null,

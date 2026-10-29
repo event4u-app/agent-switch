@@ -5,7 +5,6 @@ import { getAutoSwitchGlobal, setAutoSwitchGlobalFlag } from "../../../settings-
 import { fireNearLimitIfCrossed } from "../../engines/near-limit.js";
 import type { AutoSwitchTag, ProviderId } from "../../../transforms.js";
 import { AccountDot } from "../../../ui/AccountDot.js";
-import { Segmented } from "../../../ui/Segmented.js";
 import { Select } from "../../../ui/Select.js";
 import { SettingGroup, SettingRow } from "../../../ui/Setting.js";
 import { Switch } from "../../../ui/Switch.js";
@@ -23,9 +22,9 @@ import {
 } from "./prefs.js";
 import { WithReason } from "./shared.js";
 
-export const PROTECT_NEW_UNAVAILABLE = "Not adjustable yet — the CLI has no default for new accounts; set each account below.";
+export const PROTECT_NEW_UNAVAILABLE = "On for every new account (98 %) — not adjustable here yet; change it per account below.";
 export const AUTO_RESUME_UNAVAILABLE = "Needs the protection engine — Agent Switch only warns at the threshold today.";
-export const UNKNOWN_USAGE_UNAVAILABLE = "Not adjustable yet — unknown usage is never counted as free, and nothing is paused.";
+export const UNKNOWN_USAGE_UNAVAILABLE = "Today no warning is sent while usage is unknown — it is never counted as free, and nothing is paused. Not adjustable yet.";
 
 function AccountProtectionRow({ account: a }: { account: Account }) {
   const fa = useFoundation();
@@ -124,7 +123,7 @@ export function ProtectionSettings() {
             />
           }
         >
-          <Switch label="Protect new accounts" checked={false} disabled onChange={() => {}} />
+          <Switch label="Protect new accounts" checked disabled onChange={() => {}} />
         </SettingRow>
         {s.accounts.map((a) => (
           <AccountProtectionRow key={a.id} account={a} />
@@ -140,18 +139,8 @@ export function ProtectionSettings() {
         >
           <Switch label="Continue after the reset" checked={false} disabled onChange={() => {}} />
         </SettingRow>
-        <SettingRow title="When usage is unknown" detail={<WithReason reason={UNKNOWN_USAGE_UNAVAILABLE} />}>
-          <Segmented
-            label="When usage is unknown"
-            size="sm"
-            value=""
-            onChange={() => {}}
-            options={[
-              { value: "warn", label: "Warn me", disabled: true, why: UNKNOWN_USAGE_UNAVAILABLE },
-              { value: "pause", label: "Pause", disabled: true, why: UNKNOWN_USAGE_UNAVAILABLE },
-            ]}
-          />
-        </SettingRow>
+        {/* No option is in force yet, so this is a statement, not a choice. */}
+        <SettingRow title="When usage is unknown" detail={UNKNOWN_USAGE_UNAVAILABLE} />
       </SettingGroup>
 
       <SettingGroup title="Near limit">

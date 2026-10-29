@@ -43,10 +43,11 @@ export function providerOf(tool: Tool): ProviderId | null {
   return tool === "gemini" ? null : tool;
 }
 
-/** "CLI · Desktop" from an account's surfaces (bundle `Bd`). */
-export function usedIn(account: Pick<Account, "surfaces">): string {
+/** "CLI · Desktop" from an account's surfaces (bundle `Bd`); null when none is
+ *  known, so the cell shows only running/idle instead of a placeholder. */
+export function usedIn(account: Pick<Account, "surfaces">): string | null {
   const kinds = account.surfaces.map((u) => (/Desktop/.test(u) ? "Desktop" : /VS Code|IDE/.test(u) ? "IDE" : "CLI"));
-  return kinds.length ? Array.from(new Set(kinds)).join(" · ") : "—";
+  return kinds.length ? Array.from(new Set(kinds)).join(" · ") : null;
 }
 
 /** Tooltip of the Protect column. The backend only warns at the threshold, so

@@ -54,9 +54,12 @@ import {
   getPetPresence,
   getPetSize,
   clearPetPos,
+  getPetAnchor,
+  setPetAnchor,
   setPetPos,
   setPetPrevPos,
 } from "./settings-store.js";
+import { anchorFor, placeFromAnchor } from "./pet-anchor.js";
 
 const sprite = document.getElementById("sprite") as HTMLDivElement;
 const bubble = document.getElementById("bubble") as HTMLDivElement;
@@ -488,7 +491,26 @@ window.addEventListener("storage", () => {
 
 /* ---- position: restore once, persist on drag ---- */
 
+/** Puts the pet at its saved corner offset, on its screen when connected,
+ *  else on the screen it is on now. false = no anchor saved. */
+async function placeAtAnchor(): Promise<boolean> {
+  const anchor = getPetAnchor();
+  if (!anchor) return false;
+  const win = getCurrentWindow();
+  const [size, monitors, here] = await Promise.all([win.outerSize(), availableMonitors(), currentMonitor()]);
+  const fallback = here ?? monitors[0];
+  if (!fallback) return false;
+  const p = placeFromAnchor(anchor, size, monitors, fallback);
+  await win.setPosition(new PhysicalPosition(p.x, p.y));
+  return true;
+}
+
 async function restorePosition() {
+  try {
+    if (await placeAtAnchor()) return;
+  } catch {
+    /* fall through to the absolute position */
+  }
   const saved = getPetPos();
   if (!saved) {
     // No drag position yet → re-anchor to the default corner AFTER the
@@ -522,6 +544,13 @@ void getCurrentWindow()
     const pos = { x: e.payload.x, y: e.payload.y };
     moveSaveTimer = setTimeout(() => {
       setPetPos(pos);
+      const win = getCurrentWindow();
+      void Promise.all([win.outerSize(), availableMonitors()])
+        .then(([size, monitors]) => {
+          const anchor = anchorFor(pos, size, monitors);
+          if (anchor) setPetAnchor(anchor);
+        })
+        .catch(() => {});
       void updateQuadrant();
     }, 250);
   })
@@ -551,6 +580,12 @@ async function monitorsSignature(): Promise<string> {
 
 async function ensureOnScreen() {
   try {
+    // A saved corner is kept across screen changes: same offset from the same
+    // corner, whatever the new screen's size.
+    if (await placeAtAnchor()) {
+      await updateQuadrant();
+      return;
+    }
     const win = getCurrentWindow();
     const [pos, size, monitors] = await Promise.all([win.outerPosition(), win.outerSize(), availableMonitors()]);
     const cx = pos.x + size.width / 2;
