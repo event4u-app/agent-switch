@@ -42,8 +42,10 @@ session; `⌘,` opens Settings.
   why it got that account, and an explicit **Move to another account** (switch live,
   take over, hand off). Nothing moves on its own.
 - **Accounts** — sign-in state, capacity windows, session protection per account,
-  usage history, and **Projects & pools** (folder rules that start on an account or
-  on the pool member with the most left).
+  usage history, and **Projects & pools**: folder rules that start on an account or a
+  pool, and the pools themselves — create one with **New pool**, add or remove its
+  accounts on its card, rename or delete it from the card's ⋯ menu. A pool's start goes
+  to the member that would lose the most at its next reset.
 - **Tools** — agent-config, rtk and the agent CLIs: installed, current, what's new;
   installs and updates run in the built-in terminal so you see every line.
 - **Health** — readiness, start-at-login state and checks, with a repair where
@@ -51,6 +53,8 @@ session; `⌘,` opens Settings.
 - **Activity** — what agent-switch did, and why.
 - **Menu-bar popover** — a left click on the menu-bar icon shows the accounts that
   need you and starts sessions; a right click keeps the classic Show / Quit menu.
+  Each signed-in account whose tool has a desktop app (Claude Desktop, Codex,
+  Antigravity) gets a button that opens that app as the account, isolated from the others.
 
 The session sheet lists the details of one session and the explicit ways to move it:
 

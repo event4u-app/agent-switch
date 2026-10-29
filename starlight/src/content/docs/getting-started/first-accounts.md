@@ -19,7 +19,12 @@ Create a new profile and open the provider CLI for a one-time login. Repeat per 
 agent-switch add client
 ```
 
-Each account logs in via the browser exactly once, then stays live thanks to config-dir isolation.
+Each account logs in via the browser once and stays signed in while it is used: the provider renews the login when it runs. A profile that sits unused past the provider's refresh window (or that you sign out of) needs a new sign-in — `auth-status` and the app say `Sign-in needed`, and one command fixes it:
+
+```bash
+agent-switch login client
+agent-switch login client --browser firefox   # Claude: open the sign-in in that browser (see `agent-switch browsers`)
+```
 
 ## Switch the active profile
 

@@ -55,7 +55,7 @@ $ asw             # list all profiles, active one marked *
 - **Usage per account** — 5-hour and weekly windows for Claude and Codex, always with their age; unknown is shown as unknown, never as free.
 - **Session protection** — on by default at 98 % for every Claude and Codex account; it **warns** at the threshold and does not pause a running session. The warning comes from the background service (`agent-switch service install`), so it only covers the accounts that service polls: the active one, Claude accounts with a live session, members of pools a folder rule points at, and — with `autoswitch on` — every account of that provider. Antigravity has no usage readout and gets no warning.
 - **Explicit switching only** — a running session moves to another account only when you choose it (live switch, take over or hand off). Nothing switches on its own.
-- **Pools and project rules** — optional: a folder can start on the member of a pool with the most fresh headroom, and `dir --json` tells you why. The pick uses cached usage only — written by the background service (`agent-switch service install`, which refreshes pool members every 5 minutes) or by the desktop app's own refresh; with neither running, or no member checked in the last 10 minutes, the folder starts on the active profile and `dir --json` says so. Under `guard block` a member that already has a live session is skipped.
+- **Balanced starts, pools and project rules** — a plain `claude` with no folder rule is spread across your enabled accounts: it starts on the one that would lose the most at its next reset (its rest divided by the hours until its weekly window resets), so every account gets used up by its reset instead of one running dry while another resets unused. An account at its protection limit is never picked; when the best accounts are level, or nothing can be weighed, the account set for plain starts (the star) is used. A folder can also point at one account, or at a pool that is balanced the same way. `dir --json` tells you why. The weighing uses cached usage only — written by the background service (`agent-switch service install`, which refreshes every enabled account every 5 minutes) or by the desktop app's own refresh; usage older than 10 minutes is not trusted and `dir --json` says so. Under `guard block` an account that already has a live session is skipped.
 - **Health, activity, sign-in state** — `doctor --json`, `activity`, `auth-status` — readouts without tokens.
 - **Switch, the desktop pet** — introduces itself once, on the very first start. Never again.
 
@@ -129,8 +129,11 @@ npm link             # puts `agent-switch` on your PATH (npm creates a .cmd shim
 Native package managers (Homebrew / Scoop / winget) are planned; `npm i -g`
 above is the supported install path on every OS in the meantime.
 
-Then add the shell integration — `agent-switch shellenv` auto-detects your shell,
-or pass `--shell`:
+Then add the shell integration. `agent-switch shellenv install` does it for you:
+it detects your shell and adds the line below to its startup file (once — a second
+run changes nothing). The desktop app shows a red banner until it is set up and
+offers the same step. To do it by hand — `agent-switch shellenv` auto-detects your
+shell, or pass `--shell`:
 
 | Shell | One-time setup |
 |---|---|
@@ -172,13 +175,16 @@ agent-switch add event4u
 | `agent-switch run event4u` | one-shot session on another account **without** switching — all accounts can run in parallel |
 | `agent-switch run work -- --resume` | pass any flags through to `claude` |
 | `agent-switch status` | identity + 5h/7d usage for every profile |
+| `agent-switch login work` | sign a profile in again after a sign-out or an expired login (`--browser arc` opens the Claude sign-in in a specific browser; `agent-switch browsers` lists them) |
 | `agent-switch map work ~/projects/kunde-a` | `claude` in that repo always uses this account — no switching |
-| `agent-switch share on` | one settings/skills/commands/agents tree for all profiles |
+| `agent-switch share on` | one settings/skills/commands/agents tree and one prompt history for all profiles |
 | `agent-switch sessions` | recent + live Claude sessions per profile |
 | `agent-switch takeover <id> --to work` | move a session to another account and resume it there (see below) |
 | `agent-switch web work` | claude.ai in a persistent per-profile browser (see below) |
 | `agent-switch remove old --force` | delete a profile incl. its keychain entry (asks on a terminal; `--yes` skips) |
 | `agent-switch label work Work` | tag a profile (`Work` / `Personal` / `Other`, or `none` to clear) |
+| `agent-switch disable work` | keep the profile but stop using it (`enable` turns it back on) |
+| `agent-switch color work teal` | pick the profile's colour in the app (`none` clears it) |
 | `agent-switch providers status` | which providers are enabled (default: Claude + Codex; others off) |
 | `agent-switch providers enable --provider antigravity` | enable a provider (or `disable`; `--surface cli\|ui` for one surface) |
 | `agent-switch autoswitch on --threshold 90` | near-limit notification that suggests another profile (off by default; never switches) |
@@ -187,24 +193,25 @@ agent-switch add event4u
 | `agent-switch auth-status --json` | per-profile login state from the provider's store — never a token |
 | `agent-switch activity` | what agent-switch itself did, and why |
 | `agent-switch protection set claude/work --threshold 95` | per-profile limit warning (default on, 98 %); warns, never pauses |
-| `agent-switch pool create Work` · `pool add work claude/a` · `map pool:work ~/x` | optional pools: a folder rule starts on the member with the most fresh headroom (`dir --json` says why) |
+| `agent-switch pool create Work` · `pool add work claude/a` · `map pool:work ~/x` | optional pools (also in the app: Accounts › Projects & pools › New pool): a folder rule starts on the member that would lose the most at its next reset (`dir --json` says why) |
 
 ## Per-repo accounts (directory mappings)
 
 ```bash
 agent-switch map work ~/projects/firma
 agent-switch map privat ~/projects/hobby
+agent-switch map --pause ~/projects/hobby    # keep the rule, skip it for now (--resume turns it back on)
 ```
 
 The `claude` shell wrapper resolves the current directory to the nearest mapped
-ancestor. Precedence: **mapping > active profile > default**. `agent-switch mappings`
+ancestor. Precedence: **mapping > balanced pick across your accounts > active profile (the star) > default**. `agent-switch mappings`
 lists, `agent-switch unmap` removes.
 
 ## Shared settings across accounts
 
 ```bash
-agent-switch share on             # settings.json, CLAUDE.md, skills/, commands/, agents/
-agent-switch share on --history   # additionally share conversation history + plans/ (--resume, POSIX only)
+agent-switch share on             # settings.json, CLAUDE.md, skills/, commands/, agents/ + prompt history (history.jsonl)
+agent-switch share on --history   # additionally share conversations + plans/ (--resume, POSIX only)
 agent-switch share sync           # re-link any file a /config edit forked (see below)
 agent-switch share off            # removes only agent-switch-created links
 ```
