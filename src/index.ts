@@ -2313,7 +2313,10 @@ function cmdOsNotify(sub: string | undefined, json = false): void {
   else if (sub && sub !== "status") die("usage: agent-switch os-notify [on|off|status] [--json]");
   const enabled = readOsNotifications();
   if (json) console.log(JSON.stringify({ enabled }));
-  else console.log(`Daemon OS notifications ${enabled ? "ON" : "OFF"}.`);
+  else {
+    console.log(`Daemon OS notifications ${enabled ? "ON" : "OFF"}.`);
+    if (enabled && process.platform === "darwin") console.log("On macOS the daemon shows none itself — the Agent Switch app shows them while it runs.");
+  }
 }
 
 /** `agent-switch notifications [clear] [--json]` — list the recent
@@ -2761,7 +2764,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch service run|start|stop|status|install|uninstall   background usage daemon
   agent-switch notifications [clear] [--json]  recent notifications (usage-limit suggestions, fetch failures)
   agent-switch notify --kind K --title T --message M [--json]   record a notification event
-  agent-switch os-notify [on|off|status] [--json]   daemon-side OS desktop notifications (default off)
+  agent-switch os-notify [on|off|status] [--json]   daemon-side OS desktop notifications, Linux/Windows (default off; macOS: the app shows them)
   agent-switch uninstall [--force]             remove all agent-switch data + daemon
   agent-switch usage history [--provider P] [--profile <name>] [--json]   daemon-recorded usage samples per profile
   agent-switch tooling [--json]                ecosystem tool readout (agent-config, rtk, provider CLIs)
