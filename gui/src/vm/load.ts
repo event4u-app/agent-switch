@@ -28,6 +28,7 @@ import {
   protectionFromRow,
   providersFromStatus,
   sessionFromRow,
+  launchersFromRows,
   surfacesFromApps,
   toolFromEntry,
 } from "./build.js";
@@ -55,6 +56,7 @@ export function emptyViewModel(now: number = Date.now()): ViewModel {
     agentConfig: { status: "unknown", port: null, pid: null, version: null, latest: null, checkedAt: null },
     notices: [],
     surfaces: [],
+    launchers: [],
     activity: [],
     readiness: "starting",
     checksCheckedAt: null,
@@ -97,7 +99,7 @@ export async function loadViewModel(): Promise<ViewModel> {
   ]);
   // The foundation readouts. Each degrades on its own: an older CLI without
   // the command leaves that area unknown, never fakes it.
-  const [protectionR, authR, poolsR, mappingsR, doctorR, activityR, guardR, desktopR] = await Promise.allSettled([
+  const [protectionR, authR, poolsR, mappingsR, doctorR, activityR, guardR, desktopR, launchersR] = await Promise.allSettled([
     ipc.listProtection(),
     ipc.authStatus(),
     ipc.listPools(),
@@ -106,6 +108,7 @@ export async function loadViewModel(): Promise<ViewModel> {
     ipc.listActivity(200),
     ipc.getGuard(),
     ipc.desktopInstances(),
+    ipc.listLaunchers(),
   ]);
   const readAt = Date.now();
 
@@ -157,6 +160,7 @@ export async function loadViewModel(): Promise<ViewModel> {
     agentConfig: agentConfigFromStatus(value(acR), acTool?.latest ?? null, acR.status === "fulfilled" ? now : null),
     notices: (value(notifsR) ?? []).filter((n) => !muted.has(n.kind)).map((n) => noticeFromNotification(n, lastRead)),
     surfaces: surfacesFromApps(value(appsR) ?? []),
+    launchers: launchersFromRows(value(launchersR) ?? []),
     activity: activityFromEntries(value(activityR) ?? []),
     readiness: deriveReadiness(true, profilesR.status === "fulfilled", failures.length > 0, doctor?.readiness ?? null),
     checksCheckedAt: doctorRun ? doctorRun.at : null,

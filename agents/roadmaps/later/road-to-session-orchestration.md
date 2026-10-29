@@ -47,7 +47,16 @@ status: planned
 - [ ] Antigravity stop-the-line: macOS keychain audit (empty-password keychain, D34);
       Linux/Windows isolation spikes before any credential-changing `add`/`run`.
 - [ ] Claude Desktop extra instance without `CLAUDE_CONFIG_DIR` (D21); Desktop chat vs
-      code identity; opt-in managed launchers with undo.
+      code identity.
+- [x] Opt-in managed launchers with undo — macOS: `launcher add|remove|list|repair`,
+      a switch per app × account in Tools › Apps; `open` focuses a running instance.
+- [ ] Windows launchers: blocked while Claude Desktop ships as MSIX — its packaged exe
+      cannot be started with its own arguments, and the community workaround needs
+      admin rights plus a portable copy per update. Revisit on a supported launch path.
+- [ ] Moving Desktop Code / Cowork sessions between accounts: they are local
+      (`claude-code-sessions/`, `local-agent-mode-sessions/`) but filed per account id;
+      needs a two-account spike before any copy. Chats, Projects and memory are
+      server-side and cannot move.
 - [ ] Gemini: re-check the Google-login availability claimed shut down (proposal,
       18.06.2026) before any adapter; until then "Planned".
 - [ ] IDE surfaces (VS Code / JetBrains / Antigravity extensions) only after tests.

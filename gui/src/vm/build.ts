@@ -17,7 +17,7 @@ import type {
   ProtectionRow,
   ToolingEntry,
 } from "../ipc.js";
-import type { DesktopInstanceRow } from "../ipc.js";
+import type { DesktopInstanceRow, LauncherRow } from "../ipc.js";
 import type { AppNotification } from "../notifications.js";
 import type { ProfileRow, ProvidersStatus, SessionRow, UsageSnapshot } from "../transforms.js";
 import { countdown } from "../ui/format.js";
@@ -34,6 +34,7 @@ import type {
   Check,
   GuardVm,
   IdentityColor,
+  Launcher,
   Notice,
   Pool,
   Protection,
@@ -187,6 +188,8 @@ const ACTIVITY_KIND: Record<ActivityEntry["kind"], ActivityKind> = {
   protection: "protection",
   pool: "pool",
   remove: "remove",
+  launcher: "launcher",
+  settings: "settings",
 };
 
 /** The CLI's activity log (oldest first) → events, newest first. Entries with an
@@ -344,12 +347,14 @@ export function surfacesFromApps(apps: AppInfo[]): Surface[] {
     name: a.displayName,
     kind: "desktop",
     detected: a.installed,
-    capability: null,
-    protection: null,
+    copiesSettings: a.copiesSettings === true,
     identitySeen: null,
-    launcher: null,
     checkedAt: null,
   }));
+}
+
+export function launchersFromRows(rows: readonly LauncherRow[]): Launcher[] {
+  return rows.map((r) => ({ appId: r.app, accountId: accountId(r.provider, r.profile), exists: r.exists }));
 }
 
 /** The attention queue from what the backend reports today: fresh near-limit /

@@ -192,6 +192,18 @@ import {
 import { readTelemetryConfig, writeTelemetryConfig } from "./notify.js";
 import { appendNotification, readNotifications, clearNotifications, NotificationKind } from "./notifications.js";
 import { APPS, buildLaunch, findApp, guiDataDir, isInstalled } from "./apps.js";
+import { copyDesktopSettings, DEFAULT_DATA_DIR, hasSettingsLayout } from "./desktop-settings.js";
+import {
+  createLauncher,
+  findRunning,
+  focusRunning,
+  readLaunchers,
+  removeAllLaunchers,
+  removeLauncher,
+  removeLaunchersFor,
+  renameLaunchersFor,
+  repairLaunchers,
+} from "./launchers.js";
 import { scanDesktop, type DesktopInstance } from "./desktop-sessions.js";
 import { ensureAgyKeychain } from "./agy-keychain.js";
 import {
@@ -1889,6 +1901,7 @@ async function cmdRemove(providerId: ProviderId, name?: string, force = false, y
   }
   const droppedRebind = binding ? discardBinding(n) : false;
   const removedEntry = providerId === "claude" ? credentials.removeEntry(configDir(providerId, n)) : false;
+  removeLaunchersFor(providerId, n); // they would start a profile that no longer exists
   fs.rmSync(profileDir(providerId, n), { recursive: true, force: true });
   if (activeFor(providerId) === n) setActive(providerId, null);
   clearLabel(providerId, n); // drop its label so it can't linger as an orphan
@@ -1992,6 +2005,7 @@ function cmdRename(providerId: ProviderId, from?: string, to?: string): void {
   }
   renameProtection(providerId, n, to);
   renamePoolMember(`${providerId}/${n}`, `${providerId}/${to}`);
+  renameLaunchersFor(providerId, n, to);
   console.log(`Renamed ${providerId} profile "${n}" → "${to}".`);
 }
 
@@ -2149,6 +2163,7 @@ function cmdUninstall(flags: Record<string, string | boolean> = {}): void {
     console.log(`  - ${allProfiles.length} profile(s) and their configs under ${ROOT}`);
     console.log(`  - ${claudeProfiles.length} Claude keychain credential entr(y/ies) (macOS)`);
     console.log("  - directory mappings, active-profile state, and the background daemon/service");
+    console.log("  - app launchers it created in ~/Applications/Agent Switch");
     console.log("It does NOT touch your default claude/codex/antigravity installs.");
     console.log("\nRe-run with --force to proceed:  agent-switch uninstall --force");
     return;
@@ -2175,9 +2190,12 @@ function cmdUninstall(flags: Record<string, string | boolean> = {}): void {
     if (credentials.removeEntry(configDir("claude", n))) removedEntries++;
   }
 
+  // Launchers live in ~/Applications, outside ROOT, and are listed in its manifest.
+  const removedLaunchers = removeAllLaunchers();
   fs.rmSync(ROOT, { recursive: true, force: true });
 
   console.log(`Removed ${allProfiles.length} profile(s) and all agent-switch data under ${ROOT}.`);
+  if (removedLaunchers > 0) console.log(`Removed ${removedLaunchers} app launcher(s) from ~/Applications/Agent Switch.`);
   if (removedEntries > 0) console.log(`Removed ${removedEntries} Claude keychain entr(y/ies).`);
   console.log("Follow-ups (manual, if you set them up):");
   console.log("  - `npm uninstall -g agent-switch`  (or `npm unlink -g agent-switch`)");
@@ -2228,6 +2246,7 @@ function cmdApps(json = false): void {
       provider: a.provider,
       strategy: a.strategy,
       installed: isInstalled(a),
+      copiesSettings: hasSettingsLayout(a.id),
     }));
     console.log(JSON.stringify(rows, null, 2));
     return;
@@ -2377,6 +2396,12 @@ function cmdOpen(appId?: string, name?: string): void {
   if (!n) die(`no profile given and none active for ${app.provider} — pass a profile name.`);
   requireProfile(app.provider, n, "open");
   if (!isInstalled(app)) die(`${app.displayName} is not installed.`);
+  // A second launch on the same data dir would only hit the app's single-instance
+  // lock — bring the window that profile already has to the front instead.
+  if (app.strategy !== "env" && focusRunning(guiDataDir(app, n))) {
+    console.log(`${app.displayName} on ${app.provider}/${n} is already open — brought it to the front.`);
+    return;
+  }
   let firstLaunch = false;
   if (app.strategy === "user-data-dir") {
     const dir = guiDataDir(app, n);
@@ -2392,6 +2417,77 @@ function cmdOpen(appId?: string, name?: string): void {
   }
 }
 
+
+/** `agent-switch launcher add|remove <app> <profile>` · `list [--json]` · `repair`. */
+function cmdLauncher(sub: string | undefined, args: string[], flags: Record<string, string | boolean>): void {
+  const target = (verb: string) => {
+    const app = findApp(args[0] ?? "");
+    if (!app) die(`usage: agent-switch launcher ${verb} <app> <profile>   (see \`agent-switch apps\`)`);
+    const n = requireProfile(app.provider, args[1], `launcher ${verb}`);
+    return { app, n };
+  };
+  switch (sub) {
+    case "add": {
+      const { app, n } = target("add");
+      try {
+        const e = createLauncher(app, n);
+        logActivity("launcher", `${app.provider}/${n}`, `created ${app.displayName} launcher`, "user ran `agent-switch launcher add`");
+        console.log(`Created ${e.path}`);
+        console.log("Start it from Spotlight or drag it into the Dock. It opens the app on this account only.");
+      } catch (err) {
+        die(err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
+    case "remove": case "rm": {
+      const { app, n } = target("remove");
+      if (!removeLauncher(app.id, n)) die(`no ${app.displayName} launcher for ${app.provider}/${n}.`);
+      logActivity("launcher", `${app.provider}/${n}`, `removed ${app.displayName} launcher`, "user ran `agent-switch launcher remove`");
+      console.log(`Removed the ${app.displayName} launcher for ${app.provider}/${n}.`);
+      return;
+    }
+    case "repair": {
+      const r = repairLaunchers();
+      for (const e of r.rebuilt) console.log(`Rebuilt ${e.path}`);
+      for (const f of r.failed) console.error(`Couldn't rebuild ${f.entry.path}: ${f.reason}`);
+      if (!r.rebuilt.length && !r.failed.length) console.log("No launchers to repair.");
+      if (r.failed.length) process.exit(1);
+      return;
+    }
+    case "list": case undefined: {
+      const rows = readLaunchers().map((e) => ({ ...e, exists: fs.existsSync(e.path) }));
+      if (flags.json) return void console.log(JSON.stringify(rows, null, 2));
+      if (!rows.length) return void console.log("No launchers. Create one with `agent-switch launcher add <app> <profile>`.");
+      for (const r of rows) console.log(`${r.exists ? "●" : "○ missing"} ${r.app.padEnd(16)} ${r.provider}/${r.profile}  ${r.path}`);
+      return;
+    }
+    default:
+      die("usage: agent-switch launcher add|remove <app> <profile> | list [--json] | repair");
+  }
+}
+
+/** `agent-switch app-settings copy <app> --from <profile|default> --to <profile>`. */
+function cmdAppSettings(sub: string | undefined, args: string[], flags: Record<string, string | boolean>): void {
+  const app = findApp(args[0] ?? "");
+  const from = typeof flags.from === "string" ? flags.from : null;
+  const to = typeof flags.to === "string" ? flags.to : null;
+  if (sub !== "copy" || !app || !from || !to) die("usage: agent-switch app-settings copy <app> --from <profile|default> --to <profile>");
+  if (!hasSettingsLayout(app.id)) die(`copying settings is not supported for ${app.displayName}.`);
+  if (from === to) die("--from and --to are the same profile.");
+  const toProfile = requireProfile(app.provider, to, "app-settings copy");
+  const fromDir = from === "default" ? DEFAULT_DATA_DIR[app.id] : guiDataDir(app, requireProfile(app.provider, from, "app-settings copy"));
+  const toDir = guiDataDir(app, toProfile);
+  if (!fs.existsSync(fromDir)) die(`${from === "default" ? `The default ${app.displayName}` : `${app.provider}/${from}`} has no ${app.displayName} data yet.`);
+  // The running app rewrites its own files on quit and would undo the copy.
+  if (findRunning(toDir)) die(`${app.displayName} is open on ${app.provider}/${toProfile} — quit it first, then copy.`);
+  const r = copyDesktopSettings(app.id, fromDir, toDir);
+  logActivity("settings", `${app.provider}/${toProfile}`, `copied ${app.displayName} settings from ${from}`, "user ran `agent-switch app-settings copy`");
+  if (flags.json) return void console.log(JSON.stringify({ app: app.id, from, to: toProfile, ...r }, null, 2));
+  if (!r.copied.length) return void console.log(`Nothing to copy — ${from} has no ${app.displayName} settings yet.`);
+  console.log(`Copied ${r.copied.join(", ")} from ${from} to ${app.provider}/${toProfile}.`);
+  if (r.backups.length) console.log(`Previous files kept as ${r.backups.map((b) => path.basename(b)).join(", ")}.`);
+  console.log("Logins, chats and account-bound preferences were not copied.");
+}
 
 /**
  * `agent-switch guard [block|warn|off]` — read or set the single-load policy.
@@ -2633,7 +2729,9 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch check-update [--json]           check GitHub Releases for a newer version
   agent-switch update                          self-update to the latest version (via npm); restarts the service on it, or offers to install one
   agent-switch apps                            list launchable GUI apps (macOS)
-  agent-switch open <app> [profile]            launch a GUI app on a profile, isolated (macOS)
+  agent-switch open <app> [profile]            launch a GUI app on a profile, isolated; focuses it if already open (macOS)
+  agent-switch launcher add|remove <app> <profile> | list [--json] | repair   Dock/Spotlight launcher per account in ~/Applications/Agent Switch (macOS)
+  agent-switch app-settings copy <app> --from <profile|default> --to <profile> [--json]   copy desktop settings (MCP, preferences, extensions) — never logins
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
   agent-switch shellenv install [--shell S] [--json]   add it to your shell's startup file
   agent-switch service run|start|stop|status|install|uninstall   background usage daemon
@@ -3059,6 +3157,8 @@ async function main(): Promise<void> {
     case "update": case "upgrade": return cmdUpdate();
     case "check-update": case "check-updates": return cmdCheckUpdate(!!flags.json);
     case "open": return cmdOpen(positional[0], positional[1]);
+    case "launcher": case "launchers": return cmdLauncher(positional[0], positional.slice(1), flags);
+    case "app-settings": return cmdAppSettings(positional[0], positional.slice(1), flags);
     case "apps": return cmdApps(!!flags.json);
     case "notify": return cmdNotify(flags);
     case "notifications": return cmdNotifications(positional[0], !!flags.json);

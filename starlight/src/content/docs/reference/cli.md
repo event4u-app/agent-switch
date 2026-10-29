@@ -154,7 +154,9 @@ Registered apps: `claude-desktop`, `codex-ide` (VS Code), `codex-desktop`, `anti
 | --- | --- | --- |
 | `web <name>` | — | Open claude.ai in a persistent per-profile Playwright Chromium. Needs the optional `playwright` dependency. |
 | `apps` | `[--json]` | List registered launchable desktop apps and their installed state. |
-| `open <app> [profile]` | — | Launch a desktop app isolated on a profile (macOS-only). |
+| `open <app> [profile]` | — | Launch a desktop app isolated on a profile (macOS-only). When that profile's instance already runs, its window is brought to the front instead. |
+| `launcher add\|remove <app> <profile>` · `list` · `repair` | `[--json]` (list) | macOS. A Dock/Spotlight app per account in `~/Applications/Agent Switch/` that runs `open <app> <profile>`. Built locally with `osacompile`, signed ad hoc, carries the app's icon; the original app is untouched. Every launcher is recorded, so `remove`, profile `remove`/`rename` and `uninstall` touch exactly those; `repair` rebuilds them after Node or agent-switch moved. |
+| `app-settings copy <app>` | `--from <profile\|default> --to <profile> [--json]` | Copy desktop settings into a profile — Claude Desktop: MCP servers, preferences, installed extensions. Never the token cache (`config.json`), cookies, web storage, session folders or preferences scoped to one account. Replaced files are kept as `*.pre-copy`. Refuses while the app runs on the target profile. |
 | `gui` | — | Launch the tray/menubar GUI. Downloads the prebuilt binary from GitHub Releases on first use and caches it under `~/.agent-switch/gui/<version>/`. |
 
 ## Providers / auto-switch / rotation

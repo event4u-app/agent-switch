@@ -12,12 +12,14 @@ import {
   desktopForeign,
   deriveReadiness,
   guardFromStatus,
+  launchersFromRows,
   loginInUse,
   noticeFromNotification,
   poolMembership,
   poolsFromRows,
   readinessFromDoctor,
   sessionFromRow,
+  surfacesFromApps,
   toolFromEntry,
 } from "./build.js";
 import { nextInPools } from "./rules.js";
@@ -364,5 +366,28 @@ describe("bindingsFromMappings — paused", () => {
     ]);
     expect(paused.enabled).toBe(false);
     expect(plain.enabled).toBe(true);
+  });
+});
+
+describe("desktop apps", () => {
+  it("maps launchers to account ids and keeps a deleted bundle visible as such", () => {
+    expect(
+      launchersFromRows([
+        { app: "claude-desktop", provider: "claude", profile: "work", path: "/a.app", exists: true },
+        { app: "codex-desktop", provider: "codex", profile: "w", path: "/b.app", exists: false },
+      ]),
+    ).toEqual([
+      { appId: "claude-desktop", accountId: "claude:work", exists: true },
+      { appId: "codex-desktop", accountId: "codex:w", exists: false },
+    ]);
+  });
+
+  it("offers settings copy only where the CLI says it knows the layout", () => {
+    const [claude, codex] = surfacesFromApps([
+      { id: "claude-desktop", displayName: "Claude Desktop", provider: "claude", strategy: "user-data-dir", installed: true, copiesSettings: true },
+      { id: "codex-desktop", displayName: "Codex", provider: "codex", strategy: "env+user-data-dir", installed: true },
+    ]);
+    expect(claude.copiesSettings).toBe(true);
+    expect(codex.copiesSettings).toBe(false);
   });
 });

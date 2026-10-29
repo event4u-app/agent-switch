@@ -10,7 +10,6 @@ import { Card } from "../../ui/Card.js";
 import { Copyable } from "../../ui/CopyButton.js";
 import { Sheet } from "../../ui/Overlay.js";
 import { Segmented } from "../../ui/Segmented.js";
-import { Switch } from "../../ui/Switch.js";
 import { TextInput } from "../../ui/TextInput.js";
 import { colorFor } from "../../vm/build.js";
 import { TOOL_LABEL } from "../../vm/rules.js";
@@ -265,19 +264,10 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
             </span>
             <Badge tone="ok">Always</Badge>
           </label>
-          {tool !== "gemini" && (
-            <div
-              className="flex items-center justify-between gap-3 rounded-lg border border-ac-line p-3"
-              title="Own launchers aren't available yet — open the app as this account from its ⋯ menu."
-            >
-              <span>
-                <span className="block text-[13px] text-ac-text">{TOOL_LABEL[tool]} desktop app — own launcher</span>
-                <span className="block text-[11px] text-ac-muted">
-                  Opt-in. Adds a separate launcher in the account colour; your normal app icon stays as it is.
-                </span>
-              </span>
-              <Switch label="Own desktop launcher" checked={false} onChange={() => {}} disabled />
-            </div>
+          {tool !== "gemini" && s.platform === "mac" && (
+            <p className="text-[11px] text-ac-muted">
+              Want a Dock icon that opens the {TOOL_LABEL[tool]} desktop app as this account? Switch on its launcher in Tools → Apps once it's added.
+            </p>
           )}
           <p className="text-[11px] text-ac-faint">Session protection is on (98 %). You can change everything later in the account.</p>
         </div>

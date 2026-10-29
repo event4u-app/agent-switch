@@ -168,21 +168,25 @@ export interface AgentConfigVm {
   checkedAt: number | null;
 }
 
-export type Capability = "native" | "opt-in-launch" | "monitor-only" | "unsupported" | "planned";
-
 export interface Surface {
   id: string;
   tool: Tool;
   name: string;
   kind: "cli" | "desktop" | "ide";
   detected: boolean;
-  /** null = no backend states what the app supports. */
-  capability: Capability | null;
-  protection: string | null;
+  /** `app-settings copy` knows this app's settings layout. */
+  copiesSettings: boolean;
   identitySeen: string | null;
-  launcher: boolean | null;
   checkedAt: number | null;
   note?: string;
+}
+
+/** A managed Dock/Spotlight launcher: one app opened on one account (macOS). */
+export interface Launcher {
+  appId: string;
+  accountId: string;
+  /** False when the bundle was deleted outside agent-switch. */
+  exists: boolean;
 }
 
 export type ActivityKind =
@@ -201,7 +205,9 @@ export type ActivityKind =
   | "rebind"
   | "guard"
   | "pool"
-  | "remove";
+  | "remove"
+  | "launcher"
+  | "settings";
 
 export interface ActivityEvent {
   id: string;
@@ -277,6 +283,7 @@ export interface ViewModel {
   agentConfig: AgentConfigVm;
   notices: Notice[];
   surfaces: Surface[];
+  launchers: Launcher[];
   activity: ActivityEvent[];
   readiness: Readiness;
   /** Platform `doctor` reported; null = doctor not run / failed. */

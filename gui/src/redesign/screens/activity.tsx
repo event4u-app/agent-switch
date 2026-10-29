@@ -9,7 +9,9 @@ import {
   Power,
   RefreshCw,
   Repeat,
+  Rocket,
   RotateCcw,
+  SlidersHorizontal,
   ShieldCheck,
   Signpost,
   Trash2,
@@ -45,6 +47,8 @@ export const ACTIVITY_ICON: Record<ActivityKind, ReactNode> = {
   guard: <ShieldCheck className="size-3.5 text-ac-soft" />,
   pool: <Layers className="size-3.5 text-ac-muted" />,
   remove: <Trash2 className="size-3.5 text-ac-muted" />,
+  launcher: <Rocket className="size-3.5 text-ac-muted" />,
+  settings: <SlidersHorizontal className="size-3.5 text-ac-muted" />,
 };
 
 /** Design `XP`, extended the same way. */
@@ -64,6 +68,8 @@ export const ACTIVITY_GROUP: Record<ActivityKind, Exclude<ActivityFilter, "all">
   autostart: "system",
   update: "system",
   guard: "system",
+  launcher: "system",
+  settings: "accounts",
 };
 
 export function filterActivity(events: readonly ActivityEvent[], filter: ActivityFilter): ActivityEvent[] {

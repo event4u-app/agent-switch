@@ -1,6 +1,5 @@
-import { CircleCheck, EyeOff, Info, MoreHorizontal, Rocket } from "lucide-react";
-import { Badge } from "../../ui/Badge.js";
-import { IconButton } from "../../ui/Button.js";
+import { CircleCheck, EyeOff, Info, MoreHorizontal, Rocket, SlidersHorizontal } from "lucide-react";
+import { Button, IconButton } from "../../ui/Button.js";
 import { Card, EmptyState } from "../../ui/Card.js";
 import { AccountDot } from "../../ui/AccountDot.js";
 import { RowMenu } from "../../ui/RowMenu.js";
@@ -8,23 +7,12 @@ import { Switch } from "../../ui/Switch.js";
 import { SectionHeader } from "../../ui/Typography.js";
 import { ago } from "../../ui/format.js";
 import { TOOL_LABEL } from "../../vm/rules.js";
-import { useAS } from "../../vm/store.js";
-import type { Capability, Surface, Tone, Tool } from "../../vm/types.js";
-
-/** Design `sP`, plus the honest unknown for a capability no backend reports. */
-export const CAPABILITY: Record<Capability | "unknown", { label: string; tone: Tone; hint: string }> = {
-  native: { label: "Full", tone: "ok", hint: "Accounts, bindings and protection work here." },
-  "opt-in-launch": { label: "With launcher", tone: "info", hint: "Works when opened through its own launcher. The normal app stays as it is." },
-  "monitor-only": { label: "Monitor only", tone: "neutral", hint: "Agent Switch shows status and warns, but changes nothing." },
-  unsupported: { label: "Not supported", tone: "neutral", hint: "Agent Switch can't work with this yet." },
-  planned: { label: "Planned", tone: "violet", hint: "On the roadmap." },
-  unknown: { label: "Unknown", tone: "neutral", hint: "No backend reports yet what Agent Switch can do in this app." },
-};
+import { useAS, type Store } from "../../vm/store.js";
+import type { Account, Surface, Tool } from "../../vm/types.js";
+import { hasLauncher } from "./logic.js";
 
 /** Design `aP`. */
 export const APP_TOOLS: Tool[] = ["claude", "codex", "gemini", "antigravity"];
-
-export const LAUNCHER_UNAVAILABLE = "Own launchers are not available yet — Agent Switch has no launcher backend.";
 
 /** "Found 2 of 3: Claude Desktop, Codex." */
 export function foundLine(surfaces: readonly Surface[]): string {
@@ -38,9 +26,78 @@ export function surfaceSub(o: Surface, now: number): string {
   return o.checkedAt != null ? `${what} · checked ${ago(o.checkedAt, now)}` : what;
 }
 
-/** Bundle `iP`. */
+function failed(s: Store, what: string) {
+  return (e: unknown) => s.toast({ tone: "alert", text: `${what}: ${e instanceof Error ? e.message : String(e)}` });
+}
+
+/** One account of one app: open it, its launcher (macOS), copy settings into it. */
+function AppAccountRow({ app, account: a, accounts }: { app: Surface; account: Account; accounts: Account[] }) {
+  const s = useAS();
+  const mac = s.platform === "mac";
+  const on = hasLauncher(s.launchers, app.id, a.id);
+  const who = `${TOOL_LABEL[a.tool]} · ${a.name}`;
+  const copyFrom = (from: string, label: string) =>
+    s.open({
+      kind: "confirm",
+      title: `Copy ${app.name} settings into ${a.name}?`,
+      body: `Takes the MCP servers, preferences and extensions of ${label}. Logins, chats and account-bound preferences are not copied; the files it replaces are kept as a backup. Quit ${app.name} on ${a.name} first.`,
+      confirm: "Copy settings",
+      onConfirm: () => {
+        s.act.copyAppSettings?.(app.id, from, a.id).then(
+          () => s.toast({ tone: "ok", text: `${app.name} settings copied into ${a.name}.` }),
+          failed(s, "Couldn't copy the settings"),
+        );
+      },
+    });
+  const menu = [
+    ...(s.act.openApp ? [{ id: "open", label: `Open as ${who}`, icon: <AccountDot color={a.color} size={8} />, onSelect: () => s.act.openApp?.(app.id, a.id).catch(failed(s, `Couldn't open ${app.name}`)) }] : []),
+    ...(app.copiesSettings && s.act.copyAppSettings
+      ? [
+          { id: "copy:default", label: `Copy settings from the default ${app.name}`, icon: <SlidersHorizontal />, onSelect: () => copyFrom("default", `the default ${app.name}`) },
+          ...accounts
+            .filter((x) => x.id !== a.id)
+            .map((x) => ({ id: `copy:${x.id}`, label: `Copy settings from ${TOOL_LABEL[x.tool]} · ${x.name}`, icon: <SlidersHorizontal />, onSelect: () => copyFrom(x.id, x.name) })),
+        ]
+      : []),
+  ];
+  return (
+    <div className="flex items-center gap-3 px-3 py-2">
+      <AccountDot color={a.color} size={8} />
+      <span className="min-w-0 flex-1 truncate text-[13px] text-ac-text">{a.name}</span>
+      {app.detected && s.act.openApp && (
+        <Button size="sm" variant="ghost" onClick={() => s.act.openApp?.(app.id, a.id).catch(failed(s, `Couldn't open ${app.name}`))}>
+          Open
+        </Button>
+      )}
+      {mac && app.detected && (
+        <span className="flex items-center gap-2 text-[11px] text-ac-muted">
+          Launcher
+          <Switch
+            label={`Launcher for ${app.name} as ${a.name}`}
+            checked={on}
+            disabled={!s.act.setLauncher}
+            onChange={(next) => void s.act.setLauncher?.(app.id, a.id, next).catch(failed(s, next ? "Couldn't create the launcher" : "Couldn't remove the launcher"))}
+          />
+        </span>
+      )}
+      {app.detected && menu.length > 0 && (
+        <RowMenu
+          items={menu}
+          trigger={
+            <IconButton label={`More for ${app.name} as ${a.name}`}>
+              <MoreHorizontal />
+            </IconButton>
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/** Bundle `iP`: the desktop apps agent-switch can open on an account. */
 export function Apps() {
   const s = useAS();
+  const mac = s.platform === "mac";
   return (
     <div className="flex flex-col gap-6">
       <Card className="flex items-start gap-3 p-4" style={{ boxShadow: "inset 3px 0 0 var(--ac-info)" }}>
@@ -48,97 +105,57 @@ export function Apps() {
         <div className="min-w-0">
           <p className="text-[13px] text-ac-text">{s.surfaces.length ? foundLine(s.surfaces) : "No desktop apps are registered yet."}</p>
           <p className="mt-1 text-xs text-ac-muted">
-            Nothing was changed. Your Dock, Start menu and app icons are untouched — launchers are added only when you switch them on.
+            {mac
+              ? "Nothing was changed. Your Dock and app icons are untouched — a launcher is added only when you switch it on."
+              : "Nothing was changed. Launchers are available on macOS only; open an app on an account from its row here."}
           </p>
         </div>
       </Card>
       {!s.surfaces.length && (
         <EmptyState title="No apps to show." detail="Desktop apps appear here once agent-switch knows how to open them on an account." />
       )}
-      {APP_TOOLS.map((tool) => {
-        const rows = s.surfaces.filter((o) => o.tool === tool);
-        if (!rows.length) return null;
-        const accounts = s.accounts.filter((a) => a.tool === tool);
+      {APP_TOOLS.flatMap((tool) => s.surfaces.filter((o) => o.tool === tool)).map((app) => {
+        const accounts = s.accounts.filter((a) => a.tool === app.tool && !a.disabled);
         return (
-          <section key={tool} className="flex flex-col gap-1">
-            <SectionHeader title={TOOL_LABEL[tool]} count={rows.length} />
-            <div className="hidden grid-cols-[minmax(0,1fr)_120px_minmax(150px,1fr)_120px] gap-x-4 px-3 pb-1 md:grid">
-              <span className="ac-caps">App</span>
-              <span className="ac-caps">Works</span>
-              <span className="ac-caps">Protection</span>
-              <span className="ac-caps text-right">Launcher</span>
-            </div>
+          <section key={app.id} className="flex flex-col gap-1">
+            <SectionHeader title={app.name} count={accounts.length} />
             <Card className="p-1">
-              <div className="flex flex-col divide-y divide-ac-line">
-                {rows.map((o) => {
-                  const cap = CAPABILITY[o.capability ?? "unknown"];
-                  return (
-                    <div
-                      key={o.id}
-                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 px-3 py-2.5 md:grid-cols-[minmax(0,1fr)_120px_minmax(150px,1fr)_120px]"
-                    >
-                      <span className="flex min-w-0 flex-col">
-                        <span className="flex items-center gap-2">
-                          <span className="truncate text-[13px] font-medium text-ac-text">{o.name}</span>
-                          {!o.detected && (
-                            <span className="inline-flex items-center gap-1 text-[11px] text-ac-faint">
-                              <EyeOff className="size-3" /> not found
-                            </span>
-                          )}
-                        </span>
-                        <span className="truncate text-[11px] text-ac-muted">{surfaceSub(o, s.now)}</span>
-                      </span>
-                      <span title={cap.hint}>
-                        <Badge tone={cap.tone}>{cap.label}</Badge>
-                      </span>
-                      <span className="col-span-2 text-xs text-ac-soft md:col-span-1">
-                        {o.protection ?? <span className="text-ac-faint">Not reported</span>}
-                      </span>
-                      <span className="col-start-2 row-start-1 flex items-center justify-end gap-2 md:col-start-auto md:row-start-auto">
-                        {o.detected && accounts.length > 0 && s.act.openApp && (
-                          <RowMenu
-                            items={accounts.map((a) => ({
-                              id: a.id,
-                              label: `Open as ${TOOL_LABEL[a.tool]} · ${a.name}`,
-                              icon: <AccountDot color={a.color} size={8} />,
-                              onSelect: () => {
-                                s.act.openApp?.(o.id, a.id).catch((e) => s.toast({ text: e instanceof Error ? e.message : String(e), tone: "alert" }));
-                              },
-                            }))}
-                            trigger={
-                              <IconButton label={`Open ${o.name} on an account`}>
-                                <MoreHorizontal />
-                              </IconButton>
-                            }
-                          />
-                        )}
-                        <span title={LAUNCHER_UNAVAILABLE}>
-                          <Switch label={`Own launcher for ${o.name}`} checked={o.launcher ?? false} disabled onChange={() => {}} />
-                        </span>
-                      </span>
-                    </div>
-                  );
-                })}
+              <div className="flex items-center gap-2 px-3 pb-1 pt-2 text-[11px] text-ac-muted">
+                {!app.detected && (
+                  <span className="inline-flex items-center gap-1 text-ac-faint">
+                    <EyeOff className="size-3" /> not found on this computer
+                  </span>
+                )}
+                {app.detected && <span>{surfaceSub(app, s.now)}</span>}
               </div>
+              {accounts.length ? (
+                <div className="flex flex-col divide-y divide-ac-line">
+                  {accounts.map((a) => (
+                    <AppAccountRow key={a.id} app={app} account={a} accounts={accounts} />
+                  ))}
+                </div>
+              ) : (
+                <p className="px-3 pb-2.5 text-xs text-ac-faint">No {TOOL_LABEL[app.tool]} accounts yet.</p>
+              )}
             </Card>
           </section>
         );
       })}
-      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-        <div className="flex items-start gap-3">
+      {mac && (
+        <Card className="flex items-start gap-3 p-4">
           <Rocket className="mt-0.5 size-4 text-ac-brand-text" />
           <div>
             <p className="text-[13px] text-ac-text">What does a launcher do?</p>
             <p className="mt-1 max-w-[560px] text-xs text-ac-muted">
-              It opens the original app with one account's own folder, in that account's colour. Clicking it again focuses the open window. Switch it
-              off and it's removed — nothing else to undo.
+              It puts an app into ~/Applications/Agent Switch that opens the original app on one account — start it from Spotlight or drag it into the
+              Dock. Clicking it again brings that account's window to the front. Switch it off and it's removed — nothing else to undo.
             </p>
             <p className="mt-1 flex items-center gap-1.5 text-[11px] text-ac-faint">
-              <Info className="size-3" /> {LAUNCHER_UNAVAILABLE}
+              <Info className="size-3" /> The open window still shows the app's own icon and name; only the launcher carries the account.
             </p>
           </div>
-        </div>
-      </Card>
+        </Card>
+      )}
     </div>
   );
 }

@@ -85,10 +85,8 @@ describe("apps logic", () => {
     name: "Claude Desktop",
     kind: "desktop",
     detected: true,
-    capability: null,
-    protection: null,
+    copiesSettings: true,
     identitySeen: null,
-    launcher: null,
     checkedAt: null,
     ...over,
   });

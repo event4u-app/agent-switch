@@ -31,6 +31,8 @@ export const ACTIVITY_KINDS = [
   "protection",
   "pool",
   "remove",
+  "launcher",
+  "settings",
 ] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 

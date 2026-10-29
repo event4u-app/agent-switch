@@ -546,8 +546,10 @@ export interface AppInfo {
   id: string;
   displayName: string;
   provider: ProviderId;
-  strategy: "env" | "user-data-dir";
+  strategy: "env" | "user-data-dir" | "env+user-data-dir";
   installed: boolean;
+  /** Older CLIs don't report it — treated as false. */
+  copiesSettings?: boolean;
 }
 
 /** Launchable GUI apps registered in the CLI (empty until clients register). */
@@ -563,6 +565,33 @@ export async function listApps(): Promise<AppInfo[]> {
  *  detached and returns immediately). */
 export async function openApp(appId: string, name: string): Promise<void> {
   await runCli(["open", appId, name]);
+}
+
+export interface LauncherRow {
+  app: string;
+  provider: ProviderId;
+  profile: string;
+  path: string;
+  exists: boolean;
+}
+
+/** Managed Dock/Spotlight launchers (`launcher list --json`); [] when unknown. */
+export async function listLaunchers(): Promise<LauncherRow[]> {
+  try {
+    return JSON.parse(await runCli(["launcher", "list", "--json"]));
+  } catch {
+    return [];
+  }
+}
+
+export async function setLauncher(appId: string, name: string, on: boolean): Promise<void> {
+  await runCli(["launcher", on ? "add" : "remove", appId, name]);
+}
+
+/** Copy desktop settings (MCP, preferences, extensions) into a profile; `from`
+ *  is a profile name or "default" (the plain, unprofiled install). */
+export async function copyAppSettings(appId: string, from: string, to: string): Promise<void> {
+  await runCli(["app-settings", "copy", appId, "--from", from, "--to", to]);
 }
 
 /** Claude sessions inventory (`sessions [profile] --recent N --json`). Read-only
@@ -1158,7 +1187,9 @@ export type ActivityEntryKind =
   | "update"
   | "protection"
   | "pool"
-  | "remove";
+  | "remove"
+  | "launcher"
+  | "settings";
 
 export interface ActivityEntry {
   at: string;

@@ -327,8 +327,32 @@ profile. Two strategies, picked per app:
 
 ```bash
 agent-switch apps                 # list launchable GUI apps + installed state
-agent-switch open <app> [profile] # launch an app on a profile (active if omitted)
+agent-switch open <app> [profile] # launch an app on a profile (active if omitted);
+                                  # if that profile already runs, its window comes to the front
+agent-switch launcher add <app> <profile>     # a Dock/Spotlight app for that account
+agent-switch launcher remove <app> <profile>  # remove it again (list / repair as well)
+agent-switch app-settings copy claude-desktop --from default --to <profile>
+                                  # MCP servers, preferences, extensions — never logins
 ```
+
+**Launchers.** `launcher add` puts a small app into `~/Applications/Agent Switch/`
+(e.g. `Claude Desktop – Work.app`) that runs `agent-switch open` for that
+account — drag it into the Dock or start it from Spotlight. It is built locally
+with `osacompile` and signed ad hoc, so Gatekeeper does not prompt; the
+original app is never copied, patched or re-signed. The launcher carries the
+app's icon; the open window still shows the app's own icon and name. Removing
+or renaming a profile removes or rebuilds its launchers, `uninstall` removes
+them all, and `launcher repair` rebuilds them after Node or agent-switch moved.
+macOS only: Claude Desktop on Windows is an MSIX package whose executable
+cannot be started with its own arguments.
+
+**Copying Claude Desktop settings.** Chats, Projects and memory belong to the
+account on Anthropic's servers and cannot be moved. What lives on the Mac can:
+`app-settings copy` takes the MCP servers, preferences and installed extensions
+from the default install (`default`) or another profile. It never copies
+`config.json` (it holds the login's token cache), cookies, web storage,
+session folders or preferences scoped to one account; replaced files are kept
+as `*.pre-copy`. Quit Claude Desktop on the target profile first.
 
 **Supported now:**
 
@@ -343,8 +367,8 @@ agent-switch open <app> [profile] # launch an app on a profile (active if omitte
 More clients land via their roadmaps in `agents/roadmaps/`.
 
 Caveats (why this is experimental):
-- **macOS-only for now**; launched via the `open` command, not a Finder/Dock
-  double-click (a plain launch doesn't carry the flag/env → no isolation).
+- **macOS-only for now**; a plain Finder/Dock start of the app itself doesn't
+  carry the flag/env (→ no isolation) — use `agent-switch open` or a launcher.
 - **Unofficial / version-fragile** — no vendor ships a built-in account
   switcher; an app update can change launcher behaviour. Re-verify per app.
 - The profile's data dir is never swapped on a live app (that risks

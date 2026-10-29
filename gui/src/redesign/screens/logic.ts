@@ -9,7 +9,7 @@ import { expandHome } from "../../lib/paths.js";
 import { shortPath } from "../../ui/format.js";
 import { accountIdFromMember, BIN_NAME } from "../../vm/build.js";
 import { rankAccounts, TOOL_LABEL, type RankedAccount } from "../../vm/rules.js";
-import type { Account, Attention, Binding, Pool, Session, SessionState, Tool, ViewModel } from "../../vm/types.js";
+import type { Account, Attention, Binding, Launcher, Pool, Session, SessionState, Tool, ViewModel } from "../../vm/types.js";
 
 // ---------------------------------------------------------------- sessions
 
@@ -207,6 +207,10 @@ export function toolCanTakeWork(accounts: readonly Account[], tool: Tool): boole
 /** The desktop app to open for a tool, if one is registered and installed. */
 export function appFor(vm: Pick<ViewModel, "surfaces">, tool: Tool): string | null {
   return vm.surfaces.find((s) => s.tool === tool && s.kind === "desktop" && s.detected)?.id ?? null;
+}
+
+export function hasLauncher(launchers: readonly Launcher[], appId: string, accountId: string): boolean {
+  return launchers.some((l) => l.appId === appId && l.accountId === accountId && l.exists);
 }
 
 export function appUnavailableReason(vm: Pick<ViewModel, "surfaces">, tool: Tool): string | null {

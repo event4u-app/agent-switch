@@ -155,19 +155,41 @@ describe("Tools", () => {
 });
 
 describe("Apps", () => {
-  it("lists apps with an honest capability and a disabled launcher", () => {
+  const claudeApp = { id: "claude-desktop", tool: "claude" as const, name: "Claude Desktop", kind: "desktop" as const, detected: true, copiesSettings: true, identitySeen: null, checkedAt: null };
+  const twoAccounts = [acc("work", { isDefault: true }), acc("home")];
+
+  it("gives every account its own launcher switch on macOS, with no placeholder columns", () => {
+    const setLauncher = vi.fn(async () => {});
     mount(
-      fixture({
-        surfaces: [
-          { id: "claude-desktop", tool: "claude", name: "Claude Desktop", kind: "desktop", detected: true, capability: null, protection: null, identitySeen: null, launcher: null, checkedAt: null },
-        ],
-      }),
-      { screen: "tools", toolsTab: "apps" },
+      fixture({ accounts: twoAccounts, surfaces: [claudeApp], launchers: [{ appId: "claude-desktop", accountId: "claude:work", exists: true }] }),
+      { screen: "tools", toolsTab: "apps", act: { setLauncher } },
     );
     expect(screen.getByText("Found 1 of 1: Claude Desktop.")).toBeTruthy();
-    expect(screen.getByText("Unknown")).toBeTruthy();
-    const sw = screen.getByRole("switch", { name: "Own launcher for Claude Desktop" }) as HTMLButtonElement;
-    expect(sw.disabled).toBe(true);
+    expect(screen.queryByText("Works")).toBeNull();
+    expect(screen.queryByText("Unknown")).toBeNull();
+    expect(screen.queryByText("Not reported")).toBeNull();
+    const work = screen.getByRole("switch", { name: "Launcher for Claude Desktop as work" }) as HTMLButtonElement;
+    const home = screen.getByRole("switch", { name: "Launcher for Claude Desktop as home" }) as HTMLButtonElement;
+    expect(work.getAttribute("aria-checked")).toBe("true");
+    expect(home.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(home);
+    expect(setLauncher).toHaveBeenCalledWith("claude-desktop", "claude:home", true);
+  });
+
+  it("offers no launcher switch off macOS, and says why", () => {
+    mount(fixture({ platform: "windows", accounts: twoAccounts, surfaces: [claudeApp] }), { screen: "tools", toolsTab: "apps", act: { setLauncher: vi.fn() } });
+    expect(screen.queryByRole("switch", { name: /Launcher for/ })).toBeNull();
+    expect(screen.getByText(/Launchers are available on macOS only/)).toBeTruthy();
+  });
+
+  it("copies Claude Desktop settings from the plain install into an account after a confirmation", async () => {
+    const copyAppSettings = vi.fn(async () => {});
+    mount(fixture({ accounts: twoAccounts, surfaces: [claudeApp] }), { screen: "tools", toolsTab: "apps", act: { copyAppSettings } });
+    fireEvent.keyDown(screen.getByRole("button", { name: "More for Claude Desktop as home" }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Copy settings from the default Claude Desktop" }));
+    expect(screen.getByText("Copy Claude Desktop settings into home?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Copy settings" }));
+    await waitFor(() => expect(copyAppSettings).toHaveBeenCalledWith("claude-desktop", "default", "claude:home"));
   });
 });
 

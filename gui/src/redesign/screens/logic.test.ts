@@ -188,7 +188,7 @@ describe("start resolution", () => {
     expect(appUnavailableReason({ surfaces: [] }, "claude")).toBe("No Claude app found on this computer");
     expect(
       appUnavailableReason(
-        { surfaces: [{ id: "claude-desktop", tool: "claude", name: "Claude", kind: "desktop", detected: true, capability: null, protection: null, identitySeen: null, launcher: null, checkedAt: null }] },
+        { surfaces: [{ id: "claude-desktop", tool: "claude", name: "Claude", kind: "desktop", detected: true, copiesSettings: true, identitySeen: null, checkedAt: null }] },
         "claude",
       ),
     ).toBeNull();

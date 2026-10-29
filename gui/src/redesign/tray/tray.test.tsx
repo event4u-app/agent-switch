@@ -73,10 +73,8 @@ const desktop: Surface = {
   name: "Claude Desktop",
   kind: "desktop",
   detected: true,
-  capability: null,
-  protection: null,
+  copiesSettings: true,
   identitySeen: null,
-  launcher: true,
   checkedAt: null,
 };
 
