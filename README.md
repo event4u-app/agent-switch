@@ -1,6 +1,6 @@
 <p align="center"><a href="https://event4u.app"><img alt="event4u Agent Switch" src=".github/assets/info-banner.png"></a></p>
 
-# Agent Switch — the right account for every session
+# <img src=".github/assets/icon.png" alt="" width="44" align="top"> Agent Switch — the right account for every session
 
 <p align="center">
   <a href="https://github.com/event4u-app/agent-switch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/event4u-app/agent-switch/actions/workflows/ci.yml/badge.svg"></a>
@@ -15,20 +15,22 @@ macOS, Linux and Windows — each in its own folder, each with its own login. St
 session on the account you mean, see what every account has left, and get warned
 before one runs out. Your tools keep starting exactly as before.
 
-📖 **[Read the documentation →](https://event4u-app.github.io/agent-switch/)** · **Try it:** `npx @event4u/agent-switch doctor`
+📖 **[Read the documentation →](https://event4u-app.github.io/agent-switch/)** · **Try it in 30 seconds:** [quickstart ↓](#try-it-in-30-seconds)
+
+### See what needs you, what runs where, and what every account has left
 
 ![Overview — what needs you, what runs, what's left](.github/assets/screenshots/overview.png)
 
-### One window for every account and session
-
-The desktop app shows which session runs on which account and why, how much each
-account has left (with how old that number is), and the one thing that needs you
-next. Sign-ins, protection thresholds, pools and project rules live next to the
-account they belong to.
+One window for every account and session: which session runs on which account and
+why, what each account has left in its 5-hour and weekly window (with how old that
+number is), and the one thing that needs you next — a session waiting for your
+answer, a sign-in, an account near its limit. Claude Desktop sessions are filed
+under the account that ran them. The menu-bar popover shows the same at a glance
+and opens Claude Desktop (or Codex, Antigravity) as any account in one click.
 
 <details><summary><b>More views</b></summary>
 
-| ![Sessions — every session with its account and why it got it](.github/assets/screenshots/sessions.png) | ![Accounts — sign-in, capacity, protection](.github/assets/screenshots/accounts.png) |
+| ![Accounts — every usage window, next plain start, protection](.github/assets/screenshots/accounts.png) | ![Sessions — every session with its account and why it got it](.github/assets/screenshots/sessions.png) |
 |---|---|
 | ![Tools — agent-config, rtk and the agent CLIs](.github/assets/screenshots/tools.png) | ![Health — readiness and checks with repairs](.github/assets/screenshots/health.png) |
 | ![Session — preview, why this account, explicit move](.github/assets/screenshots/session-sheet.png) | ![Near limit — you decide](.github/assets/screenshots/near-limit.png) |
@@ -38,12 +40,26 @@ account they belong to.
 
 </details>
 
+## Try it in 30 seconds
+
+```bash
+npm install -g @event4u/agent-switch     # Node ≥ 20, macOS / Linux / Windows
+agent-switch shellenv install            # once: `claude` now starts on the right account
+agent-switch add work                    # sign in each account once (opens the browser)
+agent-switch add personal
+agent-switch                             # open the desktop app
+```
+
+Open a new terminal and run `claude` as always — Agent Switch picks the account.
+`agent-switch doctor` checks the setup; details in [Install](#install).
+
 ### Or stay in the terminal
 
 ```
-$ asw work        # make "work" the account plain `claude` starts on
-$ claude          # runs on the "work" account
-$ asw             # list all profiles, active one marked *
+$ claude          # starts on the account with the most to lose before its reset
+$ agent-switch run work   # this one session on "work", whatever the balance says
+$ asw work        # star "work": it takes plain starts when accounts are level
+$ asw             # list all profiles, the starred one marked *
 * work             work@example.com
   privat           me@example.com
   event4u          dev@example.com
@@ -53,7 +69,10 @@ $ asw             # list all profiles, active one marked *
 
 - **Isolated logins** — every account gets its own config folder and keychain entry; nothing is snapshotted, and a running tool's login is only swapped when you ask for it (`agent-switch rebind`, undone with `rebind --restore`).
 - **Usage per account** — 5-hour and weekly windows for Claude and Codex, always with their age; unknown is shown as unknown, never as free.
-- **Session protection** — on by default at 98 % for every Claude and Codex account; it **warns** at the threshold and does not pause a running session. The warning comes from the background service (`agent-switch service install`), so it only covers the accounts that service polls: the active one, Claude accounts with a live session, members of pools a folder rule points at, and — with `autoswitch on` — every account of that provider. Antigravity has no usage readout and gets no warning.
+- **Session protection** — on by default at 98 % for every Claude and Codex account; it **warns** at the threshold and does not pause a running session. The warning comes from the background service (`agent-switch service install`), which reads every enabled account at least every 5 minutes. Antigravity has no usage readout and gets no warning.
+- **Sessions that wait for you** — a session asking a question (or waiting on a permission prompt) shows in *Needs you*, and the desktop pet tells you, even while the window is in the background. Claude Desktop sessions (Code tab and agent mode) appear under the account they ran on.
+- **Disable instead of delete** — a disabled account keeps its login and history but is never picked and not polled; refresh it by hand when you want to look.
+- **One prompt history** — with the shared setup (`agent-switch share on`, the app's default) ↑ and Ctrl+R in Claude Code find your old prompts on every account.
 - **Explicit switching only** — a running session moves to another account only when you choose it (live switch, take over or hand off). Nothing switches on its own.
 - **Balanced starts, pools and project rules** — a plain `claude` with no folder rule is spread across your enabled accounts: it starts on the one that would lose the most at its next reset (its rest divided by the hours until its weekly window resets), so every account gets used up by its reset instead of one running dry while another resets unused. An account at its protection limit is never picked; when the best accounts are level, or nothing can be weighed, the account set for plain starts (the star) is used. A folder can also point at one account, or at a pool that is balanced the same way. `dir --json` tells you why. The weighing uses cached usage only — written by the background service (`agent-switch service install`, which refreshes every enabled account every 5 minutes) or by the desktop app's own refresh; usage older than 10 minutes is not trusted and `dir --json` says so. Under `guard block` an account that already has a live session is skipped.
 - **Health, activity, sign-in state** — `doctor --json`, `activity`, `auth-status` — readouts without tokens.
@@ -63,7 +82,7 @@ $ asw             # list all profiles, active one marked *
 
 Most naive switchers snapshot the macOS Keychain entry (`Claude Code-credentials`) per account and restore it on switch. This breaks: Claude Code's OAuth **refresh tokens rotate on every refresh**, so a stored snapshot goes stale within hours and you're back to browser logins.
 
-`agent-switch` uses **`CLAUDE_CONFIG_DIR` isolation** instead. Each profile gets its own config directory under `~/.agent-switch/<name>/config`. Claude Code derives a *separate* keychain entry per config dir, so every account stays logged in **live and independently**. Switching only changes which directory new `claude` invocations point at — nothing is snapshotted, nothing goes stale, and each account logs in via browser exactly once.
+`agent-switch` uses **`CLAUDE_CONFIG_DIR` isolation** instead. Each profile gets its own config directory under `~/.agent-switch/claude/<name>/config`. Claude Code derives a *separate* keychain entry per config dir, so every account stays logged in **live and independently**. Switching only changes which directory new `claude` invocations point at — nothing is snapshotted, nothing goes stale, and each account logs in via browser exactly once.
 
 The same restraint governs the whole tool: no proxy, no traffic interception, no fingerprinting, no prompt rewriting — see [NON-GOALS.md](NON-GOALS.md) for the explicit list and the alternatives this ecosystem offers instead.
 
@@ -170,7 +189,7 @@ agent-switch add event4u
 
 | Command | Effect |
 |---|---|
-| `asw work` | switch active account (new sessions) |
+| `asw work` | star an account: it takes plain starts when the accounts are level (or nothing can be weighed) |
 | `asw` | list profiles (live sessions shown) |
 | `agent-switch run event4u` | one-shot session on another account **without** switching — all accounts can run in parallel |
 | `agent-switch run work -- --resume` | pass any flags through to `claude` |
@@ -385,11 +404,10 @@ Full per-mechanism contract (verified/degraded/broken with sources) lives in
 The CLI is fully usable on its own. Two optional layers add convenience:
 
 - **Usage daemon** — a background service polls each profile's **own** usage
-  (the active one, Claude profiles with a live session, and members of pools a
-  folder rule points at — those every 5 minutes; with `autoswitch on`, every
-  profile of that provider), caches it, and notifies on the active profile's
-  threshold crossings (75% / 90% by default). Pool picks (`dir`) and session
-  protection warnings depend on it running:
+  (every enabled account at least every 5 minutes, the active one and accounts
+  with a live session more often; disabled accounts never), caches it, and
+  notifies on the active profile's threshold crossings (75% / 90% by default).
+  Balanced starts (`dir`) and session protection warnings depend on it running:
 
   ```bash
   agent-switch service install    # launchd (macOS) / systemd --user (Linux) / Task Scheduler (Windows)
@@ -483,12 +501,17 @@ automatic quota rotation was removed; its review record stays in
 
 ```
 ~/.agent-switch/
-  state.json               # { "active": "work" }
-  work/
-    config/                # CLAUDE_CONFIG_DIR for this account (.claude.json, settings, history)
-    browser/               # persistent Playwright profile for claude.ai
-  privat/
-    config/
-  event4u/
-    config/
+  state.json               # active profile per provider, labels, colours, disabled
+  mappings.json            # folder rules (and which are paused)
+  claude/
+    work/
+      config/              # CLAUDE_CONFIG_DIR for this account (.claude.json, settings, history)
+      browser/             # persistent Playwright profile for claude.ai
+      gui/claude-desktop/  # this account's own Claude Desktop data
+      usage-history.json   # the usage samples behind the history charts
+    privat/
+      config/
+  codex/
+    work/
+      config/              # CODEX_HOME for this account
 ```
