@@ -175,3 +175,14 @@ export function freshAccessToken(configDir: string, deps: FreshenDeps = defaultF
   const creds = deps.readCredential(configDir);
   return creds ? accessTokenOf(creds) : null;
 }
+
+/**
+ * The token for a usage read. A profile that shares its login with the default
+ * install (seeded by `import`) is never refreshed: whichever side refreshes
+ * first invalidates the other, so its stored token is used only while valid.
+ */
+export function usageToken(configDir: string, deps: FreshenDeps, sharesDefaultLogin: boolean): string | null {
+  if (!sharesDefaultLogin) return freshAccessToken(configDir, deps);
+  const creds = deps.readCredential(configDir);
+  return creds && !needsFreshen(creds, deps.now(), deps.bufferMs) ? accessTokenOf(creds) : null;
+}

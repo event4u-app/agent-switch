@@ -175,6 +175,22 @@ export function browserDir(providerId: ProviderId, name: string): string {
   return path.join(profileDir(providerId, name), "browser");
 }
 
+/** Present in a profile dir when `import` seeded it with the default install's
+ *  credential: both now share one OAuth lineage, and whichever side refreshes
+ *  first signs the other out. Holds a date only, never a credential. */
+export const SHARED_LOGIN_MARKER = "shares-default-login";
+
+export function sharesDefaultLogin(providerId: ProviderId, name: string): boolean {
+  return fs.existsSync(path.join(profileDir(providerId, name), SHARED_LOGIN_MARKER));
+}
+
+export function setSharesDefaultLogin(providerId: ProviderId, name: string, on: boolean): void {
+  const file = path.join(profileDir(providerId, name), SHARED_LOGIN_MARKER);
+  if (!on) return void fs.rmSync(file, { force: true });
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `imported ${new Date().toISOString()}\n`, { mode: 0o600 });
+}
+
 export function profileExists(providerId: ProviderId, name: string): boolean {
   return fs.existsSync(configDir(providerId, name));
 }
@@ -373,9 +389,19 @@ export function resetRebindKillSwitch(): void {
   writeRebindKillSwitch({ ...DEFAULT_REBIND_STATE });
 }
 
+/** Keys this version does not know are carried over: an older CLI still on
+ *  PATH must not drop a newer one's settings (2.1.0 dropped `disabled`, which
+ *  silently re-enabled disabled accounts). */
 export function writeState(state: State): void {
   ensureRoot();
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + "\n", { mode: 0o600 });
+  let previous: Record<string, unknown> = {};
+  try {
+    const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) previous = raw;
+  } catch {
+    /* absent / unparsable — nothing to keep */
+  }
+  fs.writeFileSync(STATE_FILE, JSON.stringify({ ...previous, ...state }, null, 2) + "\n", { mode: 0o600 });
 }
 
 export function activeFor(providerId: ProviderId): string | null {

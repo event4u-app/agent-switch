@@ -5,8 +5,10 @@
  * Order: folder rule (to a profile, or to a pool) > active profile > none.
  * A pool resolves to the member with the most headroom on FRESH cached usage.
  * Unknown usage is never treated as free: a member whose usage is older than
- * {@link FRESH_USAGE_MS}, missing, or who is signed out is skipped, and when no
- * member qualifies the rule falls back to the active profile and says so. No
+ * {@link FRESH_USAGE_MS}, missing, or who is signed out is skipped. A pool rule
+ * never leaves its pool: with no fresh member it takes a usable member anyway,
+ * and when the pool is gone or has no usable member the start is refused
+ * (`blocked`) rather than run on an account outside it. No
  * network call happens here — only the cache the daemon / `status` already wrote.
  * The background service (`agent-switch service`) is what keeps that cache
  * fresh for pool members: it polls every member of a pool a folder rule targets.
@@ -40,6 +42,8 @@ export interface ResolveInputs {
   signedIn: (name: string) => boolean;
   /** True for a disabled profile (default: none is). */
   disabled?: (name: string) => boolean;
+  /** True when the profile shares its login with the default install (default: none does). */
+  sharesDefaultLogin?: (name: string) => boolean;
   /** All of this provider's profiles. Given → a start without a folder rule is
    *  balanced across them; absent → it uses the active profile. */
   names?: string[];
@@ -60,6 +64,9 @@ export interface Resolution {
   /** Resolved profile name (same provider), or null → provider default dir. */
   name: string | null;
   why: string[];
+  /** Set when a folder rule forbids every start it could make — the caller
+   *  refuses instead of falling back to an account outside the rule. */
+  blocked?: string;
 }
 
 export function ago(ms: number): string {
@@ -80,6 +87,11 @@ function fallbackToActive(i: ResolveInputs, why: string[]): Resolution {
   return { name: null, why };
 }
 
+function refuse(why: string[], reason: string): Resolution {
+  why.push(`Refused: ${reason}`);
+  return { name: null, why, blocked: reason };
+}
+
 export function resolveForDir(i: ResolveInputs): Resolution {
   const shown = (p: string) => (i.displayPath ? i.displayPath(p) : p);
   const why: string[] = [];
@@ -88,25 +100,27 @@ export function resolveForDir(i: ResolveInputs): Resolution {
     const id = poolIdOf(i.mapping.name);
     why.push(`Rule: folder ${shown(i.mapping.path)} → pool ${id}`);
     const pool = i.pool(id);
-    if (!pool) {
-      why.push(`Pool ${id} no longer exists`);
-      return fallbackToActive(i, why);
-    }
+    if (!pool) return refuse(why, `pool ${id} no longer exists — bind the folder anew or remove the rule (agent-switch unmap)`);
     const considered = pool.members.map(parseMember).filter((m) => m && m.provider === i.providerId) as {
       provider: ProviderId;
       name: string;
     }[];
-    if (considered.length === 0) {
-      why.push(`Pool ${id} has no ${i.providerId} profile`);
-      return fallbackToActive(i, why);
+    if (considered.length === 0) return refuse(why, `pool ${id} has no ${i.providerId} profile — add one with agent-switch pool add`);
+    const members = considered.map((m) => m.name);
+    const best = pickBalanced(i, members, why, null);
+    if (best) return { name: best, why };
+    // No fresh numbers to weigh: still a member — the rule is a boundary first.
+    const usable = (n: string) => i.exists(n) && !i.disabled?.(n) && i.signedIn(n) && !(i.guard === "block" && (i.live?.(n) ?? false));
+    const anyone = members.filter(usable);
+    if (!anyone.length) return refuse(why, `pool ${id} has no usable ${i.providerId} member (signed out, disabled or busy)`);
+    why.push(`No member of pool ${id} has fresh usage`);
+    why.push("Pool picks use the background service's cached usage — keep it running: agent-switch service install");
+    if (i.active && anyone.includes(i.active)) {
+      why.push(`Using the plain-start account ${i.providerId}/${i.active}, a member of pool ${id}`);
+      return { name: i.active, why };
     }
-    const best = pickBalanced(i, considered.map((m) => m.name), why, null);
-    if (!best) {
-      why.push(`No member of pool ${id} has fresh usage`);
-      why.push("Pool picks use the background service's cached usage — keep it running: agent-switch service install");
-      return fallbackToActive(i, why);
-    }
-    return { name: best, why };
+    why.push(`Using ${i.providerId}/${anyone[0]}, the first usable member of pool ${id}`);
+    return { name: anyone[0], why };
   }
 
   if (i.mapping && i.exists(i.mapping.name) && i.disabled?.(i.mapping.name)) {
@@ -150,6 +164,10 @@ function pickBalanced(i: ResolveInputs, names: string[], why: string[], prefer: 
     }
     if (i.disabled?.(name)) {
       why.push(`Skipped ${key}: disabled`);
+      continue;
+    }
+    if (i.sharesDefaultLogin?.(name)) {
+      why.push(`Skipped ${key}: shares its login with the default install`);
       continue;
     }
     if (!i.signedIn(name)) {

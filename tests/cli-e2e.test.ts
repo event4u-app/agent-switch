@@ -1588,3 +1588,43 @@ test("browsers --json lists installed browsers as {id, name}", gate, () => {
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("dir: a folder bound to a pool that no longer exists is refused with exit 86, never started elsewhere", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-pool-gone-"));
+  const folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-pool-folder-")));
+  try {
+    seed(home, "claude", "personal");
+    run(home, ["use", "personal"]);
+    fs.writeFileSync(path.join(home, "mappings.json"), JSON.stringify({ schema: 2, mappings: { [folder]: { claude: "pool:gone" } } }));
+    const r = spawnSync("node", [CLI, "dir", "--guard"], { cwd: folder, env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
+    assert.equal(r.status, 86, "the wrapper blocks on exactly this code");
+    assert.equal(r.stdout.trim(), "", "no config dir — the active personal account must not be used");
+    assert.match(r.stderr, /pool gone no longer exists/);
+    const j = spawnSync("node", [CLI, "dir", "--json"], { cwd: folder, env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
+    assert.equal(j.status, 86);
+    assert.match(JSON.parse(j.stdout).blocked, /pool gone no longer exists/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("import: a seeded import is marked as sharing the default login, and doctor names it with the way out", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-shared-"));
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "asw-shared-home-"));
+  try {
+    fs.mkdirSync(path.join(fakeHome, ".codex"), { recursive: true });
+    fs.writeFileSync(path.join(fakeHome, ".codex", "auth.json"), JSON.stringify({ OPENAI_API_KEY: null, tokens: { id_token: "x", access_token: "y", refresh_token: "z" } }));
+    const env = { ...process.env, AGENT_SWITCH_HOME: home, HOME: fakeHome, CODEX_HOME: "" };
+    execFileSync("node", [CLI, "import", "--provider", "codex", "imp"], { env, encoding: "utf8" });
+    assert.ok(fs.existsSync(path.join(home, "codex", "imp", "shares-default-login")), "seeded import is marked");
+    const doc = JSON.parse(spawnSync("node", [CLI, "doctor", "--json"], { env, encoding: "utf8" }).stdout);
+    const c = doc.checks.find((x: { id: string }) => x.id === "shared-login");
+    assert.equal(c.status, "warn");
+    assert.match(c.detail, /codex\/imp/);
+    assert.equal(c.fix, "agent-switch login imp --provider codex");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  }
+});

@@ -48,3 +48,12 @@ test("rotateLog moves an oversized log to .1 and leaves a small one alone", () =
   assert.equal(fs.existsSync(log + ".1"), true);
   assert.equal(fs.existsSync(log), false);
 });
+
+test("after an update: re-install our own service, ask (terminal) or hint (no terminal) when there is none, leave a foreign one", () => {
+  assert.equal(S.serviceAfterUpdate("this-cli", true), "reinstall");
+  assert.equal(S.serviceAfterUpdate("this-cli", false), "reinstall");
+  assert.equal(S.serviceAfterUpdate("not-installed", true), "ask");
+  assert.equal(S.serviceAfterUpdate("not-installed", false), "hint");
+  assert.equal(S.serviceAfterUpdate("other-cli", true), "leave");
+  assert.equal(S.serviceAfterUpdate("other-cli", false), "leave");
+});

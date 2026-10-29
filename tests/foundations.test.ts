@@ -15,6 +15,7 @@ const R = await import("../src/dir-resolve.js");
 const AU = await import("../src/auth-status.js");
 const G = await import("../src/gui-settings.js");
 const DR = await import("../src/doctor.js");
+const PF = await import("../src/profiles.js");
 
 function tmp(name: string): string {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), "asw-f-")), name);
@@ -215,11 +216,29 @@ test("dir: a disabled pool member is skipped, and a rule naming a disabled accou
   assert.ok(direct.why.includes("Rule: folder ~/x → claude/b, but that account is disabled"));
 });
 
-test("dir: unknown usage is never free — no fresh member falls back to the active profile", () => {
-  const r = R.resolveForDir(inputs({ pool: () => ({ id: "work", name: "Work", members: ["claude/stale", "claude/unknown"], createdAt: "" }) }));
-  assert.equal(r.name, "a");
+test("dir: unknown usage is never free — with no fresh member the pick stays inside the pool, never the active account", () => {
+  const pool = () => ({ id: "work", name: "Work", members: ["claude/stale", "claude/unknown"], createdAt: "" });
+  // active "a" is not a member: the first usable member is taken.
+  const r = R.resolveForDir(inputs({ pool }));
+  assert.equal(r.name, "stale");
+  assert.equal(r.blocked, undefined);
   assert.ok(r.why.includes("No member of pool work has fresh usage"));
-  assert.equal(r.why[r.why.length - 1], "Using the active profile claude/a");
+  assert.equal(r.why[r.why.length - 1], "Using claude/stale, the first usable member of pool work");
+  // the plain-start account wins when it is a usable member.
+  const own = R.resolveForDir(inputs({ pool, active: "unknown" }));
+  assert.equal(own.name, "unknown");
+  assert.equal(own.why[own.why.length - 1], "Using the plain-start account claude/unknown, a member of pool work");
+});
+
+test("dir: a pool that cannot serve refuses the start instead of using an account outside it", () => {
+  const gone = R.resolveForDir(inputs({ pool: () => null }));
+  assert.equal(gone.name, null);
+  assert.match(gone.blocked ?? "", /pool work no longer exists/);
+  const noneUsable = R.resolveForDir(inputs({ pool: () => ({ id: "work", name: "Work", members: ["claude/out"], createdAt: "" }) }));
+  assert.equal(noneUsable.name, null);
+  assert.match(noneUsable.blocked ?? "", /no usable claude member/);
+  const otherProvider = R.resolveForDir(inputs({ pool: () => ({ id: "work", name: "Work", members: ["codex/zz"], createdAt: "" }) }));
+  assert.match(otherProvider.blocked ?? "", /no claude profile/);
 });
 
 test("dir: with guard block, a pool member that already holds a live session is skipped", () => {
@@ -246,7 +265,7 @@ test("dir: the no-fresh-usage fallback names the background service", () => {
 });
 
 test("dir: a deleted pool and a plain profile rule", () => {
-  assert.equal(R.resolveForDir(inputs({ pool: () => null })).name, "a");
+  assert.equal(R.resolveForDir(inputs({ pool: () => null })).name, null);
   const plain = R.resolveForDir(inputs({ mapping: { path: "/home/u/y", name: "b" } }));
   assert.deepEqual(plain, { name: "b", why: ["Rule: folder ~/y → claude/b"] });
   const none = R.resolveForDir(inputs({ mapping: null, active: null }));
@@ -413,4 +432,38 @@ test("plain start: with nothing to weigh it falls back to the plain-start accoun
   assert.equal(r.name, "star");
   assert.ok(r.why.includes("No account has fresh usage to weigh — using the plain-start account"));
   assert.ok(r.why.includes("Using the active profile claude/star"));
+});
+
+// ---------- a login shared with the default install ----------
+
+test("shared login: the marker is set and cleared per profile, and holds no credential", () => {
+  fs.mkdirSync(path.join(PF.ROOT, "claude", "imp", "config"), { recursive: true });
+  assert.equal(PF.sharesDefaultLogin("claude", "imp"), false);
+  PF.setSharesDefaultLogin("claude", "imp", true);
+  assert.equal(PF.sharesDefaultLogin("claude", "imp"), true);
+  assert.doesNotMatch(fs.readFileSync(path.join(PF.profileDir("claude", "imp"), PF.SHARED_LOGIN_MARKER), "utf8"), /tok|sk-ant|refresh/i);
+  PF.setSharesDefaultLogin("claude", "imp", false);
+  assert.equal(PF.sharesDefaultLogin("claude", "imp"), false);
+});
+
+test("dir: balancing never picks a profile that shares the default install's login", () => {
+  const r = R.resolveForDir(inputs({ mapping: null, names: ["a", "b"], sharesDefaultLogin: (n: string) => n === "b" }));
+  assert.equal(r.name, "a");
+  assert.ok(r.why.includes("Skipped claude/b: shares its login with the default install"), r.why.join("\n"));
+});
+
+test("doctor: profiles sharing the default install's login are named with the way out", () => {
+  assert.equal(DR.sharedLoginCheck([]).status, "ok");
+  const c = DR.sharedLoginCheck([{ provider: "claude", name: "imp" }]);
+  assert.equal(c.status, "warn");
+  assert.match(c.detail, /claude\/imp/);
+  assert.equal(c.fix, "agent-switch login imp");
+});
+
+test("auth-status: who keeps a login fresh", () => {
+  const base = "claude (refreshes the login when it runs)";
+  assert.equal(AU.keptFreshByFor("claude", { shared: true, serviceInstalled: true }, base), "only you, by using it — it shares its login with the default install");
+  assert.equal(AU.keptFreshByFor("claude", { shared: false, serviceInstalled: true }, base), "the agent-switch service (Claude Code's own refresh)");
+  assert.equal(AU.keptFreshByFor("claude", { shared: false, serviceInstalled: false }, base), base);
+  assert.equal(AU.keptFreshByFor("codex", { shared: false, serviceInstalled: true }, "codex (x)"), "codex (x)");
 });

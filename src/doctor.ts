@@ -12,7 +12,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { ROOT, activeFor, configDir, identity, listProfiles, profileExists, readGuard } from "./profiles.js";
+import { ROOT, activeFor, configDir, identity, listProfiles, profileExists, readGuard, sharesDefaultLogin } from "./profiles.js";
 import { Provider, ProviderId, allProviders } from "./providers.js";
 import { credentialStore } from "./credentials.js";
 import { sharedLinkHealth } from "./share.js";
@@ -240,6 +240,20 @@ async function providerChecks(checks: DoctorCheck[]): Promise<void> {
   }
 }
 
+/** Profiles that share their login with the default install: agent-switch
+ *  never refreshes or balances onto them; a separate sign-in ends that. */
+export function sharedLoginCheck(rows: { provider: ProviderId; name: string }[]): DoctorCheck {
+  if (!rows.length) return { id: "shared-login", status: "ok", title: "No profile shares its login with the default install", detail: "" };
+  const names = rows.map((r) => `${r.provider}/${r.name}`).join(", ");
+  return {
+    id: "shared-login",
+    status: "warn",
+    title: `${rows.length === 1 ? "A profile shares" : `${rows.length} profiles share`} the default install's login`,
+    detail: `${names} — imported with the default install's credential. agent-switch never refreshes ${rows.length === 1 ? "it" : "them"} (that would sign the other side out) and never starts ${rows.length === 1 ? "it" : "them"} by balancing.`,
+    fix: `agent-switch login ${rows[0].name}${rows[0].provider === "claude" ? "" : ` --provider ${rows[0].provider}`}`,
+  };
+}
+
 export async function collectDoctorReport(): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
   checks.push(cliOnPathCheck());
@@ -252,6 +266,7 @@ export async function collectDoctorReport(): Promise<DoctorReport> {
 
   const identities = allProviders().flatMap((p) => listProfiles(p.id).map((n) => ({ provider: p.id, name: n, identity: identity(p.id, n) })));
   checks.push(signInIsolationCheck(identities));
+  checks.push(sharedLoginCheck(identities.filter((r) => sharesDefaultLogin(r.provider, r.name))));
 
   // Share-link health (Claude-config sharing).
   for (const n of listProfiles("claude")) {

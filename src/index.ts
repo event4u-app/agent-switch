@@ -38,6 +38,8 @@ import {
   clearLabel,
   colorOf,
   isDisabled,
+  setSharesDefaultLogin,
+  sharesDefaultLogin,
   setDisabled,
   setColor,
   isProfileColor,
@@ -101,6 +103,7 @@ import {
   fileMtimeMs,
   readText,
   type AuthStatus,
+  keptFreshByFor,
 } from "./auth-status.js";
 import {
   TOOL_IDS,
@@ -145,7 +148,7 @@ import {
   fetchUsage,
   liveSessionPids,
 } from "./api.js";
-import { defaultFreshenDeps, freshAccessToken } from "./token-freshen.js";
+import { defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { UsageSnapshot, formatSnapshot, parseUsage } from "./usage.js";
 import { readCodexUsage } from "./codex-usage.js";
 import { redeemResetCredit } from "./codex-reset.js";
@@ -170,7 +173,7 @@ import {
   trashedSessionExists,
 } from "./sessions.js";
 import { isFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daemon.js";
-import { cmdService, serviceInstall, serviceTarget, serviceUninstall } from "./service.js";
+import { cmdService, serviceAfterUpdate, serviceInstall, serviceInstallFromDisk, serviceTarget, serviceUninstall } from "./service.js";
 import { fileURLToPath } from "node:url";
 import { ContextReading, readContext, turnInFlight } from "./telemetry.js";
 import { readPreview, type SessionPreview } from "./session-preview.js";
@@ -407,6 +410,8 @@ function cmdLogin(providerId: ProviderId, name: string | undefined, browserId?: 
     console.error(`${providerId}/${n} is still not signed in (${after.detail})${code !== 0 ? ` — ${p.binary} exited with ${code}` : ""}.`);
     process.exit(1);
   }
+  // Its own sign-in ends the lineage it shared with the default install.
+  if (sharesDefaultLogin(providerId, n)) setSharesDefaultLogin(providerId, n, false);
   const id = identity(providerId, n);
   console.log(`${providerId}/${n} is signed in${id ? ` as ${id}` : ""}.`);
 }
@@ -442,6 +447,7 @@ async function importClaude(name: string): Promise<void> {
       return creds !== null;
     }),
   );
+  if (seeded) setSharesDefaultLogin("claude", name, true);
 
   console.log(`Imported default Claude setup into profile "${name}".`);
   console.log(
@@ -471,6 +477,7 @@ function importFileProvider(p: Provider, name: string): void {
     fs.chmodSync(path.join(dstDir, file), 0o600);
     if (path.join(srcDir, file) === p.credentialPath(srcDir)) seeded = true;
   }
+  if (seeded) setSharesDefaultLogin(p.id, name, true);
 
   console.log(`Imported default ${p.binary} setup into profile "${name}".`);
   console.log(
@@ -641,7 +648,7 @@ async function claudeSnapshot(name: string): Promise<UsageSnapshot | null> {
     const cached = state.profiles[`claude/${name}`];
     if (cached) return cached;
   }
-  const token = freshAccessToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")));
+  const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), sharesDefaultLogin("claude", name));
   if (!token) return null;
   const raw = await fetchUsage(token);
   return raw ? parseUsage(raw) : null;
@@ -698,7 +705,7 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
       console.log("  (no usage readout for this provider — shows own usage only where available)");
       continue;
     }
-    const token = freshAccessToken(configDir("claude", n), defaultFreshenDeps(readBinaryPath("claude")));
+    const token = usageToken(configDir("claude", n), defaultFreshenDeps(readBinaryPath("claude")), sharesDefaultLogin("claude", n));
     if (!token) {
       const auth = authStatusFor("claude", n);
       console.log(
@@ -758,7 +765,7 @@ function profileExistsSafe(providerId: ProviderId, name: string): boolean {
   return /^[A-Za-z0-9_-]+$/.test(name) && profileExists(providerId, name);
 }
 
-function resolveDir(providerId: ProviderId, plain = false): { name: string | null; why: string[] } {
+function resolveDir(providerId: ProviderId, plain = false): { name: string | null; why: string[]; blocked?: string } {
   return resolveForDir({
     providerId,
     mapping: plain ? null : resolveMapping(process.cwd(), providerId),
@@ -768,6 +775,7 @@ function resolveDir(providerId: ProviderId, plain = false): { name: string | nul
     exists: (n) => profileExistsSafe(providerId, n),
     signedIn: (n) => identity(providerId, n) !== null,
     disabled: (n) => isDisabled(providerId, n),
+    sharesDefaultLogin: (n) => profileExistsSafe(providerId, n) && sharesDefaultLogin(providerId, n),
     pool: (id) => findPool(id),
     usage: (n) => cachedUsage(providerId, n),
     // Only providers that write a live-session signal can report one; the
@@ -795,12 +803,24 @@ function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = f
   if (json) {
     console.log(
       JSON.stringify(
-        { profile: r.name ? `${providerId}/${r.name}` : null, configDir: r.name ? configDir(providerId, r.name) : null, why: r.why },
+        {
+          profile: r.name ? `${providerId}/${r.name}` : null,
+          configDir: r.name ? configDir(providerId, r.name) : null,
+          why: r.why,
+          ...(r.blocked ? { blocked: r.blocked } : {}),
+        },
         null,
         2,
       ),
     );
+    if (r.blocked) process.exit(GUARD_REFUSED_EXIT);
     return;
+  }
+  // A folder rule that cannot be served refuses — starting on an account
+  // outside the rule is the one outcome the rule exists to prevent.
+  if (r.blocked) {
+    console.error(`agent-switch: not starting here — ${r.blocked}.`);
+    process.exit(GUARD_REFUSED_EXIT);
   }
   const name = r.name;
   if (!name) return;
@@ -2323,7 +2343,29 @@ async function cmdUpdate(): Promise<void> {
   else console.log(`Update check failed (${c.message}); attempting \`npm install\` anyway…`);
   const code = selfUpdate();
   logActivity("update", null, code === 0 ? "self-update installed" : `self-update failed (exit ${code})`, "user ran `agent-switch update`", code === 0);
+  if (code === 0) await serviceAfterSelfUpdate();
   process.exit(code);
+}
+
+/** Keeps the usage service on the version just installed. Without it the
+ *  balanced start has no fresh usage to weigh. */
+async function serviceAfterSelfUpdate(): Promise<void> {
+  switch (serviceAfterUpdate(serviceTarget(), !!process.stdin.isTTY)) {
+    case "reinstall":
+      console.log("Restarting the background service on the new version…");
+      if (serviceInstallFromDisk() !== 0) console.error("Couldn't restart the service — run `agent-switch service install`.");
+      return;
+    case "ask":
+      if (await confirmAction("Install the background service that keeps usage fresh (starts at login)?", false)) {
+        if (serviceInstallFromDisk() !== 0) console.error("Couldn't install the service — run `agent-switch service install`.");
+      } else console.log("Skipped. Install it any time with `agent-switch service install`.");
+      return;
+    case "hint":
+      console.log("Tip: `agent-switch service install` keeps usage fresh so starts can be balanced.");
+      return;
+    case "leave":
+      console.log("The background service runs another agent-switch build — left as it is.");
+  }
 }
 
 function cmdOpen(appId?: string, name?: string): void {
@@ -2589,7 +2631,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
   agent-switch [gui]                           launch the tray/menubar GUI (the default with no command; won't start a second if one is running)
   agent-switch check-update [--json]           check GitHub Releases for a newer version
-  agent-switch update                          self-update to the latest version (via npm)
+  agent-switch update                          self-update to the latest version (via npm); restarts the service on it, or offers to install one
   agent-switch apps                            list launchable GUI apps (macOS)
   agent-switch open <app> [profile]            launch a GUI app on a profile, isolated (macOS)
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
@@ -2823,6 +2865,12 @@ function cmdActivity(flags: Record<string, string | boolean>): void {
 }
 
 function authStatusFor(providerId: ProviderId, name: string): AuthStatus {
+  const s = rawAuthStatusFor(providerId, name);
+  const keptFreshBy = keptFreshByFor(providerId, { shared: sharesDefaultLogin(providerId, name), serviceInstalled: serviceTarget() !== "not-installed" }, s.keptFreshBy);
+  return { ...s, keptFreshBy };
+}
+
+function rawAuthStatusFor(providerId: ProviderId, name: string): AuthStatus {
   const now = Date.now();
   const cfg = provider(providerId).configDirFor(configDir(providerId, name));
   if (providerId === "claude") {

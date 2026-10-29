@@ -28,11 +28,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { ROOT, activeFor, configDir, isDisabled, labelFor, listProfiles, readAutoSwitch, readBinaryPath } from "./profiles.js";
+import { ROOT, activeFor, configDir, isDisabled, labelFor, listProfiles, readAutoSwitch, readBinaryPath, sharesDefaultLogin } from "./profiles.js";
 import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
 import { fetchUsage, liveSessionPids } from "./api.js";
-import { defaultFreshenDeps, freshAccessToken } from "./token-freshen.js";
+import { defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, SwitchCandidate, ThresholdState, UsageSnapshot } from "./usage.js";
 import { readCodexUsage } from "./codex-usage.js";
 import { recordHistorySample } from "./history.js";
@@ -372,8 +372,9 @@ async function snapshotFor(provider: ProviderId, name: string): Promise<UsageSna
   if (provider === "codex") return readCodexUsage(configDir("codex", name));
   // An expired access token is the daemon's most common "usage stopped moving"
   // cause — a profile nobody is running never refreshes itself. Let Claude Code
-  // refresh it first (cooldown-guarded, no-op while the token is still good).
-  const token = freshAccessToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")));
+  // refresh it first (cooldown-guarded, no-op while the token is still good) —
+  // never for a profile sharing the default install's login.
+  const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), sharesDefaultLogin("claude", name));
   if (!token) return null;
   const raw = await fetchUsage(token);
   return raw ? parseUsage(raw) : null;
