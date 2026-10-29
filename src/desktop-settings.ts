@@ -31,7 +31,7 @@ const LAYOUTS: Record<string, SettingsLayout> = {
 
 /** The app's own data dir outside agent-switch (the plain, unprofiled install). */
 export const DEFAULT_DATA_DIR: Record<string, string> = {
-  "claude-desktop": path.join(os.homedir(), "Library", "Application Support", "Claude"),
+  "claude-desktop": path.posix.join(os.homedir(), "Library", "Application Support", "Claude"),
 };
 
 export function hasSettingsLayout(appId: string): boolean {

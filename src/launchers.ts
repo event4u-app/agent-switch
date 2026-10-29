@@ -32,12 +32,13 @@ export interface LauncherEntry {
   path: string;
 }
 
+/** macOS-only paths: built with path.posix so they are right on any host. */
 export function launchersDir(home: string = os.homedir()): string {
-  return path.join(home, "Applications", "Agent Switch");
+  return path.posix.join(home, "Applications", "Agent Switch");
 }
 
 export function launcherPath(app: AppDescriptor, profile: string, home: string = os.homedir()): string {
-  return path.join(launchersDir(home), `${app.displayName} – ${profile}.app`);
+  return path.posix.join(launchersDir(home), `${app.displayName} – ${profile}.app`);
 }
 
 function asLiteral(s: string): string {
