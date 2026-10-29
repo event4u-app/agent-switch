@@ -57,8 +57,9 @@ export function locateBrowser(id: string, deps: BrowserDeps): string | null {
   if (deps.platform === "darwin") {
     const b = MAC.find((x) => x.id === id);
     if (!b) return null;
-    for (const dir of ["/Applications", path.join(deps.home, "Applications")]) {
-      const app = path.join(dir, `${b.app}.app`);
+    // macOS paths are POSIX whatever platform runs this (tests run on Windows too).
+    for (const dir of ["/Applications", path.posix.join(deps.home, "Applications")]) {
+      const app = path.posix.join(dir, `${b.app}.app`);
       if (deps.exists(app)) return app;
     }
     return null;
