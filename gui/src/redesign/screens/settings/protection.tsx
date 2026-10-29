@@ -5,7 +5,6 @@ import { getAutoSwitchGlobal, setAutoSwitchGlobalFlag } from "../../../settings-
 import { fireNearLimitIfCrossed } from "../../engines/near-limit.js";
 import type { AutoSwitchTag, ProviderId } from "../../../transforms.js";
 import { AccountDot } from "../../../ui/AccountDot.js";
-import { Segmented } from "../../../ui/Segmented.js";
 import { Select } from "../../../ui/Select.js";
 import { SettingGroup, SettingRow } from "../../../ui/Setting.js";
 import { Switch } from "../../../ui/Switch.js";
@@ -140,18 +139,8 @@ export function ProtectionSettings() {
         >
           <Switch label="Continue after the reset" checked={false} disabled onChange={() => {}} />
         </SettingRow>
-        <SettingRow title="When usage is unknown" detail={<WithReason reason={UNKNOWN_USAGE_UNAVAILABLE} />}>
-          <Segmented
-            label="When usage is unknown"
-            size="sm"
-            value=""
-            onChange={() => {}}
-            options={[
-              { value: "warn", label: "Warn me", disabled: true, why: UNKNOWN_USAGE_UNAVAILABLE },
-              { value: "pause", label: "Pause", disabled: true, why: UNKNOWN_USAGE_UNAVAILABLE },
-            ]}
-          />
-        </SettingRow>
+        {/* No option is in force yet, so this is a statement, not a choice. */}
+        <SettingRow title="When usage is unknown" detail={UNKNOWN_USAGE_UNAVAILABLE} />
       </SettingGroup>
 
       <SettingGroup title="Near limit">

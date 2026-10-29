@@ -294,6 +294,8 @@ describe("Protection", () => {
     expect(screen.queryByText(/the CLI has no default for new accounts/)).toBeNull();
     // Unknown usage: no option is in force today, and the text says what happens instead.
     expect(screen.getAllByText(/no warning is sent while usage is unknown/).length).toBeGreaterThan(0);
+    // No choice offered while no option is in force.
+    expect(screen.queryByRole("radiogroup", { name: "When usage is unknown" })).toBeNull();
   });
 });
 

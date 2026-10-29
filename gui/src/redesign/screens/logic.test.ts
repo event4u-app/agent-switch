@@ -13,7 +13,9 @@ import {
   plainStart,
   recentFolders,
   resolveStart,
+  reasonParts,
   resolutionFromCli,
+  toolUnavailableReason,
   START_TOOLS,
   sessionHandle,
   toolCanTakeWork,
@@ -157,6 +159,21 @@ describe("start resolution", () => {
   it("expands ~ in a typed folder against the home dir", () => {
     const rule = folderRule("/Users/x/dev/proj", "claude:side");
     expect(resolveStart("~/dev/proj/a", "claude", [rule], accounts, [], { home: "/Users/x" }).account?.name).toBe("side");
+  });
+  it("names the OS when a tool cannot start here", () => {
+    expect(toolUnavailableReason("antigravity", [], "linux")).toBe("Antigravity profiles need macOS for now");
+    expect(toolUnavailableReason("antigravity", [], "mac")).toBe("No Antigravity account can take work");
+    expect(toolUnavailableReason("claude", [], "windows")).toBe("No Claude account can take work");
+  });
+  it("keeps commands in a reason on one line", () => {
+    expect(reasonParts("keep one running (agent-switch service install)")).toEqual([
+      { text: "keep one running (", code: false },
+      { text: "agent-switch service install", code: true },
+      { text: ")", code: false },
+    ]);
+    expect(reasonParts("plain text")).toEqual([{ text: "plain text", code: false }]);
+    // Prose that merely starts with the name is not a command.
+    expect(reasonParts("agent-switch didn't answer (offline)")).toEqual([{ text: "agent-switch didn't answer (offline)", code: false }]);
   });
   it("offers only tools agent-switch can start", () => {
     expect(START_TOOLS).toEqual(["claude", "codex", "antigravity"]);

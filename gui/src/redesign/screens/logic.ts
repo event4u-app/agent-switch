@@ -192,6 +192,24 @@ export function resolutionFromCli(res: DirResolution, tool: Tool, accounts: read
   return { account: def, rule: null, why: res.why.length ? res.why : [`No rule matches — default ${tool} account ${def?.name ?? "none"}`] };
 }
 
+/** Why a tool cannot be picked in the start dialog; null when it can. */
+export function toolUnavailableReason(tool: Tool, accounts: readonly Account[], platform: ViewModel["platform"]): string | null {
+  if (tool === "antigravity" && platform !== "mac") return "Antigravity profiles need macOS for now";
+  return toolCanTakeWork(accounts, tool) ? null : `No ${TOOL_LABEL[tool]} account can take work`;
+}
+
+/** A reason line split so an `agent-switch …` command renders unbroken. */
+export function reasonParts(line: string): { text: string; code: boolean }[] {
+  const m = line.match(/agent-switch(?: [\w-]+)+(?=$|[),.;]|\s)/);
+  if (!m || m.index === undefined) return [{ text: line, code: false }];
+  const parts = [
+    { text: line.slice(0, m.index), code: false },
+    { text: m[0], code: true },
+    { text: line.slice(m.index + m[0].length), code: false },
+  ];
+  return parts.filter((p) => p.text !== "");
+}
+
 /** Start is possible only for a known account that can take work. */
 export function canStartOn(a: Account | null | undefined): boolean {
   return !!a && !a.disabled && a.state !== "signed-out" && a.state !== "limited" && a.state !== "wrong-account";

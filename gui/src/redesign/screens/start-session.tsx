@@ -23,7 +23,8 @@ import {
   resolutionFromCli,
   resolveStart,
   START_TOOLS,
-  toolCanTakeWork,
+  reasonParts,
+  toolUnavailableReason,
   type Resolution,
 } from "./logic.js";
 
@@ -237,8 +238,8 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
             options={START_TOOLS.map((t) => ({
               value: t,
               label: TOOL_LABEL[t],
-              disabled: !toolCanTakeWork(s.accounts, t),
-              why: `No ${TOOL_LABEL[t]} account can take work`,
+              disabled: toolUnavailableReason(t, s.accounts, s.platform) !== null,
+              why: toolUnavailableReason(t, s.accounts, s.platform) ?? undefined,
             }))}
           />
         </div>
@@ -282,7 +283,22 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
           <ul className="flex flex-col gap-1">
             {why.map((w) => (
               <li key={w} className="text-[11px] text-ac-muted">
-                · {w}
+                {reasonParts(w).some((p) => p.code) ? (
+                  <>
+                    ·{" "}
+                    {reasonParts(w).map((p, i) =>
+                      p.code ? (
+                        <span key={i} className="whitespace-nowrap font-ac-mono">
+                          {p.text}
+                        </span>
+                      ) : (
+                        <span key={i}>{p.text}</span>
+                      ),
+                    )}
+                  </>
+                ) : (
+                  `· ${w}`
+                )}
               </li>
             ))}
             {problem && (
