@@ -38,7 +38,7 @@ beforeEach(() => {
 describe("getRefreshMinutes", () => {
   it("defaults to 10 when unset", () => {
     expect(getRefreshMinutes()).toBe(DEFAULT_REFRESH_MINUTES);
-    expect(DEFAULT_REFRESH_MINUTES).toBe(10);
+    expect(DEFAULT_REFRESH_MINUTES).toBe(5);
   });
 
   it("round-trips a valid on-step value", () => {

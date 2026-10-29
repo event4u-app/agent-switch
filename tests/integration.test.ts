@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { serviceNameFor } from "../src/keychain.js";
 
@@ -90,7 +91,7 @@ test("takeover: canary session moves between two logged-in profiles and resumes"
     src && tgt,
     "set AGENT_SWITCH_CONTRACT_SRC_PROFILE and AGENT_SWITCH_CONTRACT_TGT_PROFILE to two logged-in claude profiles",
   );
-  const CLI = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../dist/index.js");
+  const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../dist/index.js");
   assert.ok(fs.existsSync(CLI), "run `npm run build` first");
   const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-contract-takeover-"));
   const canary = `asw-contract-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
 process.env.AGENT_SWITCH_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "asw-daemon-"));
 const D = await import("../src/daemon.js");
@@ -49,10 +50,48 @@ test("selectPollTargets = active + live-session profiles, never idle ones", () =
   assert.deepEqual(D.selectPollTargets(names, null, (n) => live.has(n)), ["client"]);
 });
 
+test("selectPollTargets also polls pool-targeted members, spaced by POOL_POLL_INTERVAL_MS", () => {
+  const names = ["work", "a", "b", "c"];
+  const now = Date.parse("2026-10-28T12:00:00Z");
+  const last: Record<string, number | null> = { a: now - 60_000, b: now - D.POOL_POLL_INTERVAL_MS, c: null };
+  const targets = D.selectPollTargets(names, "work", () => false, false, ["a", "b", "c", "ghost"], (n) => last[n] ?? null, now);
+  // a was polled a minute ago → not due; b is due; c was never polled; ghost is not a profile
+  assert.deepEqual(targets.sort(), ["b", "c", "work"]);
+  // the default (no pools) keeps the old behaviour
+  assert.deepEqual(D.selectPollTargets(names, "work", () => false), ["work"]);
+  // FRESH_USAGE_MS must outlast the pool cadence, or `dir` would see every member as stale
+  assert.ok(D.POOL_POLL_INTERVAL_MS < 10 * 60_000);
+});
+
 test("nextIntervalMs floors at the minimum and backs off exponentially, capped", () => {
   assert.equal(D.nextIntervalMs(60_000, 0), 60_000); // no failures → base
   assert.equal(D.nextIntervalMs(30_000, 0), D.MIN_INTERVAL_MS); // base floored to the minimum
   assert.equal(D.nextIntervalMs(60_000, 1), 120_000);
   assert.equal(D.nextIntervalMs(60_000, 2), 240_000);
   assert.equal(D.nextIntervalMs(60_000, 100), D.MAX_BACKOFF_MS); // capped
+});
+
+// D3: the daemon never redeems a Codex reset credit on its own — it only says
+// one is available, once per reset cycle.
+test("D3: daemon source never calls the Codex redeem endpoint", () => {
+  const src = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../src/daemon.ts"), "utf8");
+  assert.doesNotMatch(src, /redeemResetCredit/, "the daemon must not import or call the redeem path");
+});
+
+test("D3: codexResetNotice fires once per cycle, only over the threshold with a credit", () => {
+  const snap = (util: number, credits: number | null, resetsAt = "2026-11-01T00:00:00Z") => ({
+    windows: [{ key: "primary", label: "5h", utilization: util, resetsAt }],
+    routines: null,
+    capturedAt: "2026-10-28T00:00:00Z",
+    resetCredits: credits,
+  });
+  const n = D.codexResetNotice("work", snap(97, 2), 95, undefined);
+  assert.ok(n);
+  assert.match(n!.message, /Nothing was redeemed/);
+  assert.match(n!.message, /agent-switch reset work --provider codex/);
+  assert.equal(D.codexResetNotice("work", snap(97, 2), 95, n!.cycle), null, "same cycle → silent");
+  assert.ok(D.codexResetNotice("work", snap(97, 2, "2026-11-02T00:00:00Z"), 95, n!.cycle), "new cycle → notify again");
+  assert.equal(D.codexResetNotice("work", snap(90, 2), 95, undefined), null, "under threshold");
+  assert.equal(D.codexResetNotice("work", snap(99, 0), 95, undefined), null, "no credit");
+  assert.equal(D.codexResetNotice("work", snap(99, null), 95, undefined), null, "credit unknown");
 });

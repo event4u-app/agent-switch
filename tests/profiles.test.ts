@@ -44,6 +44,8 @@ test("activeFor / setActive are per-provider", () => {
   P.writeState({
     active: { claude: null, codex: null, antigravity: null },
     labels: {},
+    colors: {},
+    disabled: [],
     autoSwitch: {
       claude: { enabled: false, threshold: 95, tag: "all" },
       codex: { enabled: false, threshold: 95, tag: "all" },
@@ -128,6 +130,8 @@ test("legacy global auto-switch migrates onto every provider", () => {
   P.writeState({
     active: { claude: null, codex: null, antigravity: null },
     labels: {},
+    colors: {},
+    disabled: [],
     // deliberately the OLD global shape, cast through unknown for the test
     autoSwitch: { enabled: true, threshold: 70 } as unknown as ReturnType<typeof P.readAutoSwitchAll>,
     providers: {
@@ -268,7 +272,33 @@ test("setGuard round-trips every policy and leaves the rest of the state alone",
   assert.equal(P.labelFor("claude", "work"), "Work");
 });
 
-test("a missing state file resolves the guard to the default", () => {
+/** A fresh install: no state file AND no profile of any provider. */
+function wipeToFresh(): void {
   fs.rmSync(P.STATE_FILE, { force: true });
+  for (const p of ["claude", "codex", "antigravity"]) fs.rmSync(path.join(HOME, p), { recursive: true, force: true });
+}
+
+test("a fresh install (no state file, no profiles) resolves the guard to warn", () => {
+  wipeToFresh();
+  assert.equal(P.readGuard(), "warn");
+});
+
+test("profiles without a state file are an upgraded install (2.1.0 `add` without `use`), not a fresh one", () => {
+  wipeToFresh();
+  fs.mkdirSync(P.configDir("claude", "old"), { recursive: true });
   assert.equal(P.readGuard(), "block");
+  wipeToFresh();
+});
+
+test("the fresh-install warn default is persisted on the first state write", () => {
+  wipeToFresh();
+  P.setActive("claude", "work");
+  assert.equal(JSON.parse(fs.readFileSync(P.STATE_FILE, "utf8")).guard, "warn");
+});
+
+test("an explicitly stored guard mode survives (upgrade keeps block)", () => {
+  fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: { claude: "work" }, guard: "block" }));
+  assert.equal(P.readGuard(), "block");
+  fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: { claude: "work" }, guard: "off" }));
+  assert.equal(P.readGuard(), "off");
 });

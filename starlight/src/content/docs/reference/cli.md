@@ -23,13 +23,18 @@ agent-switch use work --provider codex
 
 | Command | Args / flags | What it does |
 | --- | --- | --- |
-| `add <name>` | `[--provider P]` | Create a profile and launch the binary for first login. |
+| `add <name>` | `[--provider P] [--browser B]` | Create a profile and sign it in with the provider's own sign-in (`claude auth login`, `codex login`); Claude's first-run setup screens are skipped. `--browser` opens Claude's sign-in in that browser (see `browsers`). An unfinished sign-in keeps the profile and exits `1`; finish it with `login`. |
+| `login <name>` | `[--provider P] [--browser <id>]` | Sign an existing profile in again with the provider's own sign-in (`claude auth login`, `codex login`; Antigravity: `agy` prompts on start). Exits non-zero unless a stored login is back afterwards. Use it when `auth-status` says `sign-in-needed`. `--browser` opens the Claude sign-in in that browser (ids from `browsers`; macOS and Linux). Codex opens the system default itself — its printed link works in any browser. |
+| `browsers` | `[--json]` | Browsers `login --browser` can open: installed apps on macOS, binaries on PATH on Linux, none on Windows. |
 | `import <name>` | `[--provider P]` | Migrate the default install into a profile — no re-login. |
 | `use <name>` | `[--provider P]` | Set the active profile for a provider. |
 | `deactivate` | `[--provider P]` | Clear the active profile — new sessions fall back to the default install. |
-| `remove` / `rm <name>` | `[--provider P] [--force]` | Delete the profile, its Claude keychain entry, and prune mappings. Refuses if active or live without `--force`. |
+| `remove` / `rm <name>` | `[--provider P] [--force] [--yes]` | Delete the profile, its Claude keychain entry, and prune mappings. Refuses if active, live, carrying an active `rebind`, or if its account is currently borrowed by another profile's `rebind`, without `--force` (restore first with `rebind --restore --profile <holder>`). With `--force`: a rebind on this profile is dropped (stashed Keychain credentials deleted, the borrowed login handed back to its own profile); a profile borrowing this account is restored to its own login first — if that restore refuses, nothing is removed. Asks for confirmation on a terminal; `--yes` skips it. Off a terminal it proceeds as before and notes on stderr that `--yes` makes it explicit. |
 | `rename <old> <new>` | `[--provider P]` | Rename a profile, carrying credential, active state, label, and mappings across. |
 | `label <name> [Work\|Personal\|Other\|none]` | `[--provider P]` | Tag a profile. |
+| `activate` | `[--json]` | Make this CLI the one terminals and the background service use: writes its path to `~/.agent-switch/active-cli`, which the shell wrapper calls (falling back to `agent-switch` on `PATH` when the file is missing or the path is gone), and re-installs a background service that runs another CLI onto this one. The desktop app runs it on every start, so the dev build (`task gui:dev`) and the installed app each bring their own CLI. `--json` prints `{cli, service}` with `service` one of `repointed`, `unchanged`, `not-installed`. |
+| `disable <name>` / `enable <name>` | `[--provider P]` | Keep a profile (login, history, settings) but stop using it: it leaves the active slot, `use` refuses it, pools and folder rules skip it (`dir --json` says so), and the background service stops polling it. `enable` turns it back on. `list --json` reports `disabled`. Follows a rename. |
+| `color <name> [orange\|red\|yellow\|green\|teal\|blue\|purple\|pink\|none]` | `[--provider P]` | Pick a profile's colour in the app (`colour` works too). Unset, the app derives one from the name. Follows a rename; `list --json` reports it as `color`. |
 
 ## Running / switching context
 
@@ -37,12 +42,13 @@ Precedence: **directory mapping (nearest ancestor) > active profile > default.**
 
 | Command | Args / flags | What it does |
 | --- | --- | --- |
-| `run <name> [-- passthrough…]` | `[--provider P] [--tmux] [--force]` | Launch the provider CLI on a profile (one-shot, parallel). `--tmux` wraps it in a managed tmux session (POSIX). `--force` overrides the [single-load guard](#single-load-guard). Args after `--` pass through, e.g. `run work -- --resume`. |
-| `dir` | `[--provider P] [--guard]` | Resolve the config dir for the current directory (mapping > active). Machine-consumed by the shell wrapper. With `--guard`, also runs the [single-load guard](#single-load-guard): the path stays on stdout, the guard writes to stderr and exits `86` on a refusal. |
+| `run <name> [-- passthrough…]` | `[--provider P] [--tmux] [--force] [--cwd DIR]` | Launch the provider CLI on a profile (one-shot, parallel). `--cwd` starts it in that folder. `--tmux` wraps it in a managed tmux session (POSIX). `--force` overrides the [single-load guard](#single-load-guard). Args after `--` pass through, e.g. `run work -- --resume`. |
+| `dir` | `[--provider P] [--guard] [--json] [--plain]` | Resolve the config dir for the current directory: a folder rule first; without one, the start is balanced across every enabled account, and only then the active profile. Balancing (also for a rule that points at a pool) picks the account that would lose the most at its next reset — the rest of its longest window divided by the hours until that window resets — on usage checked within 10 minutes; stale, unknown, signed-out, disabled and at-limit accounts (any window at its protection threshold) are skipped, under `guard block` so is one that already has a live session. Accounts within 5 % of each other are level: the active profile wins a level tie (then one without a live session); with none left the active profile is used. `--plain` ignores folder rules (what a start outside any rule would do). No network call is made: the usage comes from the cache the background service writes (`service install`; it refreshes every enabled account every 5 minutes) or the desktop app's refresh — without either, starts fall back to the active profile. `--json` prints `{profile, configDir, why[]}`. Machine-consumed by the shell wrapper. With `--guard`, also runs the [single-load guard](#single-load-guard): the path stays on stdout, the guard writes to stderr and exits `86` on a refusal. |
 | `guard [block\|warn\|off]` | `[--json]` | Read or set the [single-load guard](#single-load-guard) policy. The bare form also lists which profiles are loaded right now. |
-| `map <name> [dir]` | `[--provider P]` | Map a directory (default: CWD) to a profile. |
+| `map <name\|pool:<id>> [dir]` | `[--provider P]` | Map a directory (default: CWD) to a profile or to a [pool](#pools). |
+| `map --pause\|--resume [dir]` | `[--provider P]` | Pause a mapping without removing it — it stays in `mappings` (`paused: true` in `--json`, `[paused]` in text) but resolution skips it — or resume it. Re-mapping a paused folder keeps it paused. |
 | `unmap [dir]` | `[--provider P]` | Remove a directory mapping. |
-| `mappings` | — | List directory mappings. |
+| `mappings` | `[--json]` | List directory mappings; `--json` gives `[{path, provider, target}]` (`target` is a profile or `pool:<id>`). |
 
 ```bash
 # Resume the last conversation on the "work" profile
@@ -65,8 +71,8 @@ agent-switch guard off          # disable the check
 
 | Policy | Behaviour |
 | --- | --- |
-| `block` *(default)* | A second session on a loaded profile is refused, naming the running session and the profiles that are free. |
-| `warn` | The same information is printed, then the session starts. |
+| `block` | A second session on a loaded profile is refused, naming the running session and the profiles that are free. The default for installs that predate 2.2. |
+| `warn` *(default on new installs)* | The same information is printed, then the session starts. |
 | `off` | No check at all. |
 
 Overrides, both named in the refusal itself:
@@ -119,7 +125,8 @@ performs the refresh itself.
 
 | Command | Args / flags | What it does |
 | --- | --- | --- |
-| `sessions [profile]` | `[--recent N] [--json]` | Recent and live sessions per profile, with context %. |
+| `sessions [profile]` | `[--recent N] [--json]` | Recent and live sessions per profile, with context %. Claude also lists sessions run from Claude Desktop (the Code tab and agent mode, `surface: "desktop-app"`), filed under the account they ran on — matched through the account folder Desktop stores them under, not through which Desktop window ran them. Their transcripts stay Desktop's: `rm`, `takeover` and `compact` don't apply to them. |
+| `desktop` | `[--json]` | Which accounts ran sessions in each Claude Desktop window — the regular app and every profile's own instance (`app open`). `mismatch: true` = a profile's own window is signed in with another account, so its sessions count against that one. |
 | `sessions preview <id>` | `[--provider claude\|codex] [--from <profile>]` | Show the first few turns of a session. |
 | `sessions rm <id>` | `[--provider] [--from] [--purge] [--yes] [--ack <id>] [--json]` | Delete a session (Claude trash-move; `--purge` hard-deletes; Codex native). `--yes` is mandatory and the command is live-guarded. |
 | `sessions restore <handle>` | `[--provider codex] [--from <profile>]` | Undo a delete. |
@@ -137,7 +144,7 @@ Cross-provider handoff via `handoff extract` is metadata-only and lossy by desig
 
 | Command | Args / flags | What it does |
 | --- | --- | --- |
-| `share on\|sync\|off\|status` | `[--history] [--source <profile\|default>] [--json]` | Link `settings.json`, `CLAUDE.md`, skills, commands, and agents from a source into every profile. Directories write through; files fork on edit. `share sync` re-links. `--history` shares conversation history (POSIX only). |
+| `share on\|sync\|off\|status` | `[--history] [--source <profile\|default>] [--json]` | Link `settings.json`, `CLAUDE.md`, skills, commands, and agents from a source into every profile. Directories write through; files fork on edit. `share sync` re-links. The prompt history (`history.jsonl`, what ↑ and Ctrl+R search) is always shared; a profile's own file is merged in and kept as `history.jsonl.pre-share`. `--history` also shares conversations and plans (POSIX only). `status --json` reports `prompts` per profile. |
 
 ## Browser / GUI apps
 
@@ -155,18 +162,32 @@ Registered apps: `claude-desktop`, `codex-ide` (VS Code), `codex-desktop`, `anti
 | Command | Args / flags | What it does |
 | --- | --- | --- |
 | `providers enable\|disable\|status` | `[--provider P] [--surface cli\|ui] [--json]` | Enable or disable a provider's surfaces. Enabled by default: Claude + Codex. |
-| `autoswitch on\|off\|status\|strategy` | `[--provider P] [--threshold 1-100] [--tag all\|work\|personal\|other] [--json]`; `strategy [reset-first\|rotation-first]` | Opt-in quota-driven rotation (globally OFF by default, Claude/Codex only). Prints a usage-policy warning. |
-| `reset <profile> --provider codex` | — | Redeem one banked Codex rate-limit reset (consumes a credit). |
+| `autoswitch on\|off\|status` | `[--provider P] [--threshold 1-100] [--tag all\|work\|personal\|other] [--json]` | Opt-in near-limit notifications (OFF by default, Claude/Codex only): the daemon notifies and suggests the profile with the most headroom; it never switches on its own. |
+| `reset <profile> --provider codex` | `[--yes]` | Redeem one banked Codex rate-limit reset (consumes a credit). Asks on a terminal. The daemon never redeems on its own — it only notifies. |
+| `protection` | `[--json]`; `set <provider/name> [--on\|--off] [--threshold 1-100]` | Session protection per profile — default on at 98 %, separate from `autoswitch`. The background service (`service install`) warns when a profile it polls reaches its threshold — the active Claude/Codex profile, Claude profiles with a live session, members of pools a folder rule points at, and with `autoswitch on` every profile of that provider. Antigravity is never covered (no usage readout), and nothing warns while the service is stopped. It does not pause sessions. |
 
-:::caution
-Auto-switch ships against a unanimous internal review and may cross the providers' usage policies. It is globally off by default; enable it only if you understand the implications.
+:::note
+`autoswitch` only notifies and suggests; it never changes an account on its own. Switching stays a user action (`use`, `rebind`).
 :::
+
+## Pools
+
+Pools are optional groups of profiles a folder rule can point at. There are none until you create one; labels and `autoswitch --tag` are unaffected.
+
+| Command | Args / flags | What it does |
+| --- | --- | --- |
+| `pool [list]` | `[--json]` | List pools, their members and the folder rules that use them. |
+| `pool create <name>` | `[--json]` | Create a pool; its id is the slug of the name. |
+| `pool rename <id> <name>` | `[--json]` | Change the display name; the id and rules stay. |
+| `pool delete <id>` | `[--json]` | Delete a pool. Refused while a folder rule points at it. |
+| `pool add\|remove <id> <provider/name>` | `[--json]` | Change membership. A profile may be in several pools. |
+| `pool suggest` | `[--confirm] [--json]` | Preview one pool per label in use; nothing is created until `--confirm`. |
 
 ## Ecosystem tooling
 
 | Command | Args / flags | What it does |
 | --- | --- | --- |
-| `tooling` | `[--json]` | Readout of the ecosystem tools agent-switch knows about (`agent-config`, `rtk`, `claude`, `codex`, `agy`): present, version, path, health. Fully local — no network call; `--json` is the contract the GUI's Tooling section renders. |
+| `tooling` | `[--json]` | Readout of the ecosystem tools agent-switch knows about (`agent-config`, `rtk`, `claude`, `codex`, `agy`): present, version, path, health. Fully local — no network call; `--json` is the contract the app's Tools page renders. |
 | `tooling install\|upgrade <tool>` | — | Run that tool's per-platform install/upgrade command as a visible child process. `agy` is refused (its CLI ships with the Antigravity app). |
 | `tooling notes [<tool>]` | `[--latest] [--json]` | Read what a release actually contains. Default tool: `agent-config`. Prints every release newer than the installed version, newest first, so several skipped versions are all readable; `--latest` limits it to one. |
 
@@ -187,13 +208,16 @@ agent-switch tooling notes --json          # structured blocks, for scripting
 | Command | Args / flags | What it does |
 | --- | --- | --- |
 | `notifications [clear]` | `[--json]` | List or clear the notification log. |
-| `notify --kind K --title T --message M` | `[--json]` | Record a notification event. Kinds: `success`, `error`, `warning`, `info`. |
+| `notify --kind K --title T --message M` | `[--json] [--repeat]` | Record a notification event. Kinds: `success`, `error`, `warning`, `info`. A notice identical to the last one within 30 minutes is collapsed into it; `--repeat` records it anyway (each occurrence is its own moment, e.g. a session waiting again). |
 | `os-notify [on\|off\|status]` | `[--json]` | Toggle daemon OS desktop notifications (default off). |
 | `hooks install\|uninstall\|status [profile]` | — | Manage lifecycle push-hooks in Claude `settings.json` (additive, share-aware). |
 | `service run\|start\|stop\|status\|install\|uninstall` | — | Background usage daemon. `install` wires launchd / systemd-user / Task Scheduler autostart. |
 | `check-update` / `check-updates` | `[--json]` | Compare the running version against the latest GitHub release. |
 | `update` / `upgrade` | — | Self-update via `npm install -g @latest`. |
 | `shellenv` | `[--shell zsh\|bash\|fish\|powershell]` | Print the shell integration snippet. |
-| `doctor` | — | Per-OS / per-provider self-check. Exits `1` on a hard error. |
+| `shellenv install` | `[--shell S] [--json]` | Add the loader line to the shell's startup file (`~/.zshrc`; bash: `~/.bash_profile` on macOS, `~/.bashrc` elsewhere; fish: `~/.config/fish/config.fish`; PowerShell: `Documents/PowerShell/Microsoft.PowerShell_profile.ps1`). Does nothing when any of those already loads it. `--json` prints `{shell, file, alreadyInstalled}`. |
+| `doctor` | `[--json]` | Per-OS / per-provider self-check: CLI on PATH, shell integration, start at login, API-key env vars that override profile logins, Antigravity support on this OS, logins, guard. `--json` prints `{readiness, platform, checks[{id, status, title, detail, fix?}]}`. Exits `1` on a hard error. |
+| `auth-status` | `[--provider P] [--json]` | Per-profile login state from the provider's own store (`connected`, `expiring`, `sign-in-needed`, `unknown`) with `expiresAt`, `lastRefreshAt`, `keptFreshBy`. Never prints a token. |
+| `activity` | `[--limit N] [--json]` (`N` ≥ 1) | What agent-switch itself did and why (switch, rebind, login, redeem, autostart, guard, update, protection, pool, remove). Kept to the newest 2000 entries; never contains a token. |
 | `uninstall` | `[--force]` | Remove all agent-switch data, keychain entries, and the daemon. Does **not** touch provider installs. |
 | `help` / `--help` / `-h` | — | Show usage. |

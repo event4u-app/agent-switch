@@ -56,7 +56,7 @@ export default defineConfig({
 						{ label: 'Per-Repo Mappings & Sharing', slug: 'guides/mappings-and-sharing' },
 						{ label: 'Sessions, Context & Handoff', slug: 'guides/sessions-and-handoff' },
 						{ label: 'Providers & Auto-Switch', slug: 'guides/providers-and-autoswitch' },
-						{ label: 'The Tray GUI', slug: 'guides/tray-gui' },
+						{ label: 'The desktop app', slug: 'guides/tray-gui' },
 						{ label: 'Desktop Pet', slug: 'guides/desktop-pet' },
 					],
 				},

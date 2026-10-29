@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App.js";
+import RedesignApp from "./redesign/RedesignApp.js";
 import "./index.css";
 import { applyTheme, getTheme } from "./theme.js";
 import { applyAutostartDefault } from "./ipc.js";
@@ -12,6 +12,6 @@ void applyAutostartDefault();
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <RedesignApp />
   </React.StrictMode>,
 );

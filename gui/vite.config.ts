@@ -14,6 +14,7 @@ export default defineConfig({
       input: {
         main: fileURLToPath(new URL("./index.html", import.meta.url)),
         pet: fileURLToPath(new URL("./pet.html", import.meta.url)),
+        tray: fileURLToPath(new URL("./tray.html", import.meta.url)),
       },
     },
   },

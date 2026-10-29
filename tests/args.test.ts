@@ -83,3 +83,27 @@ test("parseRun strips --provider but passes the rest through verbatim", () => {
     args: ["--", "--resume"],
   });
 });
+
+test("parseRun takes --cwd as an agent-switch flag, never a passthrough one", () => {
+  assert.deepEqual(parseRun(["work", "--cwd", "/tmp/repo", "--resume"]), {
+    providerId: "claude",
+    name: "work",
+    args: ["--resume"],
+    cwd: "/tmp/repo",
+  });
+  assert.throws(() => parseRun(["work", "--cwd"]), /--cwd needs a folder/);
+});
+
+test("parseRun leaves --cwd and --provider after `--` to the provider binary", () => {
+  assert.deepEqual(parseRun(["work", "--", "--cwd", "/x", "--provider", "y"]), {
+    providerId: "claude",
+    name: "work",
+    args: ["--", "--cwd", "/x", "--provider", "y"],
+  });
+  assert.deepEqual(parseRun(["work", "--cwd", "/r", "--", "--cwd", "/x"]), {
+    providerId: "claude",
+    name: "work",
+    args: ["--", "--cwd", "/x"],
+    cwd: "/r",
+  });
+});

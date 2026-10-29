@@ -36,6 +36,12 @@ import {
   labelFor,
   setLabel,
   clearLabel,
+  colorOf,
+  isDisabled,
+  setDisabled,
+  setColor,
+  isProfileColor,
+  PROFILE_COLORS,
   renameProfile,
   isProfileLabel,
   PROFILE_LABELS,
@@ -56,17 +62,46 @@ import {
   ROOT,
   resetRebindKillSwitch,
 } from "./profiles.js";
+import { browserWrapperScript, defaultBrowserDeps, listBrowsers, locateBrowser } from "./browsers.js";
 import { Provider, ProviderId, PROVIDER_IDS, provider, isProviderInstalled, resolveBinary } from "./providers.js";
-import { rebind, restoreRebind } from "./rebind.js";
+import { borrowerOf, discardBinding, readBinding, rebind, releaseBorrowedAccount, restoreRebind } from "./rebind.js";
 import { buildRebindDialog, resolveRebindChoice, selectableRows, type RebindDialogCandidate } from "./rebind-dialog.js";
 import { parseArgs, parseRun, resolveProviderValue } from "./args.js";
 import { extractBrief, writeBrief, sweepBriefs, seedPrompt } from "./handoff.js";
 import { credentialStore } from "./credentials.js";
 import { withProperLock } from "./locks.js";
-import { applySharing, removeSharing, syncSharing, sharedLinkHealth } from "./share.js";
+import { applySharing, removeSharing, syncSharing, sharedLinkHealth, PROMPT_HISTORY } from "./share.js";
 import { assertNotFull, exportConfig, importConfig } from "./config-transfer.js";
-import { detectShell, shellenvScript } from "./shellenv.js";
-import { runDoctor } from "./doctor.js";
+import { detectShell, installShellIntegration, shellenvScript } from "./shellenv.js";
+import { runDoctor, shellIntegrationCheck } from "./doctor.js";
+import { appendActivity, readActivity, ACTIVITY_MAX_LINES, type ActivityKind } from "./activity.js";
+import { readGuiSettings, writeGuiSettings, applyGuiSetting, type GuiSettingUpdate } from "./gui-settings.js";
+import { readProtection, setProtection, renameProtection, forgetProtection } from "./protection.js";
+import {
+  POOL_PREFIX,
+  addPoolMember,
+  createPool,
+  deletePool,
+  findPool,
+  isPoolRef,
+  parseMember,
+  poolIdOf,
+  readPools,
+  removePoolMember,
+  renamePool,
+  renamePoolMember,
+  suggestPoolsFromLabels,
+} from "./pools.js";
+import { resolveForDir, type CachedUsage } from "./dir-resolve.js";
+import {
+  antigravityAuthStatus,
+  claudeAuthStatus,
+  claudeCredentialFile,
+  codexAuthStatus,
+  fileMtimeMs,
+  readText,
+  type AuthStatus,
+} from "./auth-status.js";
 import {
   TOOL_IDS,
   ToolAction,
@@ -101,6 +136,8 @@ import {
   removeMapping,
   resolveMapping,
   setMapping,
+  setPaused,
+  normalizePath,
 } from "./mappings.js";
 import {
   checkAuth,
@@ -124,6 +161,7 @@ import {
   locateSession,
   locateCodexSession,
   markLive,
+  openQuestion,
   restoreSession,
   sharedHistory,
   sweepTrash,
@@ -132,7 +170,8 @@ import {
   trashedSessionExists,
 } from "./sessions.js";
 import { isFresh, readDaemonState, readPid, PIDFILE, processAlive } from "./daemon.js";
-import { cmdService, serviceUninstall } from "./service.js";
+import { cmdService, serviceInstall, serviceTarget, serviceUninstall } from "./service.js";
+import { fileURLToPath } from "node:url";
 import { ContextReading, readContext, turnInFlight } from "./telemetry.js";
 import { readPreview, type SessionPreview } from "./session-preview.js";
 import {
@@ -143,11 +182,14 @@ import {
   appendEvent,
   eventFile,
   profileFromConfigDir,
+  readEvents,
+  waitingSessions,
   HookEventRecord,
 } from "./hooks.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "./notify.js";
 import { appendNotification, readNotifications, clearNotifications, NotificationKind } from "./notifications.js";
 import { APPS, buildLaunch, findApp, guiDataDir, isInstalled } from "./apps.js";
+import { scanDesktop, type DesktopInstance } from "./desktop-sessions.js";
 import { ensureAgyKeychain } from "./agy-keychain.js";
 import {
   currentManagedSession,
@@ -165,6 +207,11 @@ import {
 const credentials = credentialStore();
 const CLAUDE_HOME = provider("claude").defaultConfigDir(); // ~/.claude
 const CLAUDE_JSON = path.join(HOME, ".claude.json");
+
+/** Record one of agent-switch's own actions in the activity log (never a token). */
+function logActivity(kind: ActivityKind, target: string | null, action: string, reason: string, ok = true): void {
+  appendActivity({ kind, target, action, reason, ok });
+}
 
 
 // ---------- single-load guard ------------------------------------------------
@@ -234,9 +281,9 @@ function checkSingleLoad(
 
 // ---------- launcher ---------------------------------------------------------
 
-function launch(p: Provider, name: string, args: string[]): number {
+function launch(p: Provider, name: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}): number {
   const home = configDir(p.id, name);
-  const env: NodeJS.ProcessEnv = { ...process.env, [p.envVar]: home };
+  const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv, [p.envVar]: home };
   // Antigravity's agy CLI stores its token in the macOS keychain (fixed key) —
   // seed a per-profile keychain under this HOME so the token is isolated per
   // account (and macOS doesn't pop its "no keychain found" dialog). No-op off mac.
@@ -256,18 +303,112 @@ function launch(p: Provider, name: string, args: string[]): number {
 
 // ---------- commands ---------------------------------------------------------
 
-function cmdAdd(providerId: ProviderId, name?: string): void {
-  if (!name) die(`usage: agent-switch add [--provider ${providerId}] <profile>`);
+function cmdAdd(providerId: ProviderId, name: string | undefined, browserId?: string): void {
+  if (!name) die(`usage: agent-switch add [--provider ${providerId}] <profile> [--browser B]`);
   if (profileExists(providerId, name)) die(`profile "${name}" already exists for ${providerId}`);
   const p = provider(providerId);
+  const env = browserId ? browserEnv(browserId, providerId) : {};
   ensureRoot();
-  fs.mkdirSync(configDir(providerId, name), { recursive: true, mode: 0o700 });
+  const dir = configDir(providerId, name);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // A bare `claude` in a fresh config dir opens Claude Code's setup screens, not
+  // the sign-in; skip them the way `import` does and run the sign-in itself.
+  if (providerId === "claude") seedClaudeOnboarding(dir);
   console.log(`Created ${providerId} profile "${name}".`);
-  console.log(`Launching ${p.binary} for first login (log in inside if prompted)...`);
-  launch(p, name, []);
+  const loginArgs = LOGIN_ARGS[providerId];
+  console.log(
+    loginArgs.length
+      ? `Signing it in with \`${[p.binary, ...loginArgs].join(" ")}\` (finish it in the browser if one opens)...`
+      : `Launching ${p.binary} for first login (log in inside if prompted)...`,
+  );
+  const code = launch(p, name, loginArgs, env);
   const id = identity(providerId, name);
-  console.log(id ? `Profile "${name}" is linked to ${id}.` : `Profile "${name}" created.`);
-  console.log(`Activate it with: agent-switch use ${name}${providerId === "claude" ? "" : ` --provider ${providerId}`}`);
+  const after = authStatusFor(providerId, name);
+  const ok = !!id || after.state === "connected" || after.state === "expiring";
+  logActivity("login", `${providerId}/${name}`, ok ? "signed in (new profile)" : "created, sign-in not confirmed", "user ran `agent-switch add`", ok);
+  const flag = providerId === "claude" ? "" : ` --provider ${providerId}`;
+  if (!ok && loginArgs.length) {
+    console.error(
+      `Profile "${name}" was created but is not signed in yet${code !== 0 ? ` (${p.binary} exited with ${code})` : ""}. Finish it with: agent-switch login ${name}${flag}`,
+    );
+    process.exit(1);
+  }
+  console.log(id ? `Profile "${name}" is signed in as ${id}.` : ok ? `Profile "${name}" is signed in.` : `Profile "${name}" created.`);
+  console.log(`Activate it with: agent-switch use ${name}${flag}`);
+}
+
+/** Mark Claude Code's first-run setup as done in a new profile (theme taken
+ *  from the default install), so its first start goes straight to work. */
+function seedClaudeOnboarding(dir: string): void {
+  const file = path.join(dir, ".claude.json");
+  const config = (fs.existsSync(file) && readJson(file)) || {};
+  const theme = (fs.existsSync(CLAUDE_JSON) && readJson(CLAUDE_JSON)?.theme) || "dark";
+  config.hasCompletedOnboarding = true;
+  config.theme = config.theme || theme;
+  fs.writeFileSync(file, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
+}
+
+/**
+ * `$BROWSER` for a sign-in in one specific browser. Only Claude Code is verified
+ * to follow it; codex on macOS opens the system default regardless, so it is
+ * told rather than silently ignored.
+ */
+function browserEnv(browserId: string, providerId: ProviderId): NodeJS.ProcessEnv {
+  if (process.platform === "win32") die("--browser is not supported on Windows yet.");
+  const deps = defaultBrowserDeps(HOME);
+  const located = locateBrowser(browserId, deps);
+  if (!located) {
+    const installed = listBrowsers(deps).map((b) => b.id).join(", ") || "(none found)";
+    die(`browser "${browserId}" is not installed. Installed: ${installed}`);
+  }
+  if (providerId !== "claude") {
+    console.log(`Note: ${provider(providerId).binary} opens your default browser itself. If that is the wrong one, open the link it prints in ${browserId} — the sign-in works from any browser.`);
+  }
+  if (process.platform !== "darwin") return { BROWSER: located };
+  const wrapper = path.join(ROOT, "browsers", browserId);
+  fs.mkdirSync(path.dirname(wrapper), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(wrapper, browserWrapperScript(located), { mode: 0o700 });
+  fs.chmodSync(wrapper, 0o700);
+  return { BROWSER: wrapper };
+}
+
+function cmdBrowsers(json: boolean): void {
+  const list = listBrowsers(defaultBrowserDeps(HOME));
+  if (json) return void console.log(JSON.stringify(list, null, 2));
+  if (list.length === 0) return void console.log("No supported browsers found.");
+  for (const b of list) console.log(`${b.id.padEnd(16)} ${b.name}`);
+}
+
+/** The provider's own sign-in command for an existing profile. Antigravity's
+ *  agy has no separate login command; it prompts when it starts signed out. */
+const LOGIN_ARGS: Record<ProviderId, string[]> = {
+  claude: ["auth", "login"],
+  codex: ["login"],
+  antigravity: [],
+};
+
+/**
+ * Sign an existing profile in again — `add` refuses a name that exists, and a
+ * login the provider cleared (signed out, refresh window ended) needs exactly
+ * this. Runs the provider's own sign-in under the profile's config dir, then
+ * reads the stored login back: the identity in the config outlives a sign-out,
+ * so only the credential proves the sign-in happened.
+ */
+function cmdLogin(providerId: ProviderId, name: string | undefined, browserId?: string): void {
+  const n = requireProfile(providerId, name, "login");
+  const p = provider(providerId);
+  const env = browserId ? browserEnv(browserId, providerId) : {};
+  console.log(`Signing ${providerId}/${n} in with \`${[p.binary, ...LOGIN_ARGS[providerId]].join(" ")}\` (finish it in the browser if one opens)...`);
+  const code = launch(p, n, LOGIN_ARGS[providerId], env);
+  const after = authStatusFor(providerId, n);
+  const ok = after.state === "connected" || after.state === "expiring";
+  logActivity("login", `${providerId}/${n}`, ok ? "signed in again" : "sign-in not confirmed", "user ran `agent-switch login`", ok);
+  if (!ok) {
+    console.error(`${providerId}/${n} is still not signed in (${after.detail})${code !== 0 ? ` — ${p.binary} exited with ${code}` : ""}.`);
+    process.exit(1);
+  }
+  const id = identity(providerId, n);
+  console.log(`${providerId}/${n} is signed in${id ? ` as ${id}` : ""}.`);
 }
 
 /**
@@ -350,7 +491,9 @@ async function cmdImport(providerId: ProviderId, name?: string): Promise<void> {
 
 function cmdUse(providerId: ProviderId, name?: string): void {
   const n = requireProfile(providerId, name, "use");
+  if (isDisabled(providerId, n)) die(`${n} is disabled — turn it back on first: agent-switch enable ${n}${providerId === "claude" ? "" : ` --provider ${providerId}`}`);
   setActive(providerId, n);
+  logActivity("switch", `${providerId}/${n}`, "set as active profile", "user ran `agent-switch use`");
   const id = identity(providerId, n);
   console.log(`Active ${providerId} profile: ${n}${id ? ` (${id})` : ""}`);
   console.log(`New \`${provider(providerId).binary}\` sessions use this profile. Running sessions are unaffected.`);
@@ -372,12 +515,17 @@ function cmdDeactivate(providerId: ProviderId): void {
     return;
   }
   setActive(providerId, null);
+  logActivity("switch", `${providerId}/${active}`, "deactivated", "user ran `agent-switch deactivate`");
   console.log(`Deactivated ${providerId} profile "${active}". No ${providerId} profile is active.`);
   console.log(`New \`${provider(providerId).binary}\` sessions fall back to the default install until you \`use\` one.`);
 }
 
-function cmdRun(providerId: ProviderId, name: string | undefined, args: string[]): void {
+function cmdRun(providerId: ProviderId, name: string | undefined, args: string[], cwd?: string): void {
   const n = requireProfile(providerId, name, "run");
+  if (cwd !== undefined) {
+    if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) die(`no such folder: ${cwd}`);
+    process.chdir(cwd);
+  }
   const p = provider(providerId);
   // `--tmux` and `--force` are agent-switch flags, not passthrough flags — strip
   // them before the rest reaches the provider binary.
@@ -438,6 +586,8 @@ function cmdList(providerId?: ProviderId, json = false): void {
         name: n,
         identity: identity(pid, n),
         label: labelFor(pid, n),
+        color: colorOf(pid, n),
+        disabled: isDisabled(pid, n),
         active: activeFor(pid) === n,
         liveSessions: pid === "claude" ? liveSessionPids(configDir("claude", n)).length : 0,
       })),
@@ -550,7 +700,12 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
     }
     const token = freshAccessToken(configDir("claude", n), defaultFreshenDeps(readBinaryPath("claude")));
     if (!token) {
-      console.log("  (credential not readable — profile may not have run yet)");
+      const auth = authStatusFor("claude", n);
+      console.log(
+        auth.state === "sign-in-needed"
+          ? `  (signed out — sign in again: agent-switch login ${n})`
+          : "  (credential not readable — profile may not have run yet)",
+      );
       continue;
     }
     const [profileInfo, raw] = await Promise.all([fetchProfile(token), fetchUsage(token)]);
@@ -572,6 +727,58 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
   }
 }
 
+/** Cached usage for one profile: the daemon's snapshot or the newest history
+ *  sample, whichever is newer. Local reads only — `dir` runs on every start. */
+function cachedUsage(providerId: ProviderId, name: string): CachedUsage {
+  const daemonSnap = readDaemonState()?.profiles?.[`${providerId}/${name}`] ?? null;
+  const daemonMs = daemonSnap ? Date.parse(daemonSnap.capturedAt) : NaN;
+  const hist = readHistory(path.join(profileDir(providerId, name), "usage-history.json"));
+  const last = hist.length ? hist[hist.length - 1] : null;
+  const histMs = last ? Date.parse(last.at) : NaN;
+  if (last && !isNaN(histMs) && (isNaN(daemonMs) || histMs > daemonMs)) {
+    // History samples keep no reset time; the daemon's last one still holds
+    // while it lies ahead (a window's reset only moves once it has passed).
+    const resetOf = (key: string) => {
+      const r = daemonSnap?.windows.find((d) => d.key === key)?.resetsAt ?? null;
+      return r && Date.parse(r) > histMs ? r : null;
+    };
+    const windows = last.windows.map((w) => ({ key: w.key, label: w.key, utilization: w.utilization, resetsAt: resetOf(w.key) }));
+    return { snapshot: { windows, routines: null, capturedAt: last.at }, capturedMs: histMs };
+  }
+  return { snapshot: daemonSnap, capturedMs: isNaN(daemonMs) ? null : daemonMs };
+}
+
+function tildePath(p: string): string {
+  return p === HOME || p.startsWith(HOME + path.sep) ? "~" + p.slice(HOME.length) : p;
+}
+
+/** Profile names are validated by `profileDir`, which exits on a bad name —
+ *  a pool ref or a stale mapping must never kill the shell wrapper's hot path. */
+function profileExistsSafe(providerId: ProviderId, name: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(name) && profileExists(providerId, name);
+}
+
+function resolveDir(providerId: ProviderId, plain = false): { name: string | null; why: string[] } {
+  return resolveForDir({
+    providerId,
+    mapping: plain ? null : resolveMapping(process.cwd(), providerId),
+    names: listProfiles(providerId),
+    threshold: (n) => readProtection(providerId, n).thresholdPct,
+    active: activeFor(providerId),
+    exists: (n) => profileExistsSafe(providerId, n),
+    signedIn: (n) => identity(providerId, n) !== null,
+    disabled: (n) => isDisabled(providerId, n),
+    pool: (id) => findPool(id),
+    usage: (n) => cachedUsage(providerId, n),
+    // Only providers that write a live-session signal can report one; the
+    // check runs for pool members only.
+    live: (n) => provider(providerId).hasLiveSessionSignal && liveSessionPids(configDir(providerId, n)).length > 0,
+    guard: readGuard(),
+    now: Date.now(),
+    displayPath: tildePath,
+  });
+}
+
 /**
  * Resolve which profile a shell wrapper should load: directory mapping (nearest
  * ancestor of CWD) > active-for-provider. Empty output → the wrapper falls back
@@ -583,15 +790,19 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
  * and talk to the human; a distinct exit code is what lets the wrapper block on
  * a refusal without ever blocking on a missing or older `agent-switch`.
  */
-function cmdDir(providerId: ProviderId, guarded = false): void {
-  const mapped = resolveMapping(process.cwd(), providerId);
-  const name =
-    mapped && profileExists(providerId, mapped.name)
-      ? mapped.name
-      : (() => {
-          const active = activeFor(providerId);
-          return active && profileExists(providerId, active) ? active : null;
-        })();
+function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = false): void {
+  const r = resolveDir(providerId, plain);
+  if (json) {
+    console.log(
+      JSON.stringify(
+        { profile: r.name ? `${providerId}/${r.name}` : null, configDir: r.name ? configDir(providerId, r.name) : null, why: r.why },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  const name = r.name;
   if (!name) return;
   console.log(configDir(providerId, name));
   if (!guarded) return;
@@ -603,8 +814,26 @@ function cmdDir(providerId: ProviderId, guarded = false): void {
   if (guard.verdict === "refuse") process.exit(GUARD_REFUSED_EXIT);
 }
 
-function cmdMap(providerId: ProviderId, name?: string, dir?: string): void {
-  const n = requireProfile(providerId, name, `map [--provider ${providerId}] <profile> [dir]`);
+function cmdMap(providerId: ProviderId, name?: string, dir?: string, flags: Record<string, string | boolean> = {}): void {
+  if (flags.pause || flags.resume) {
+    // `map --pause [dir]`: the positional is the folder, there is no profile.
+    const target = name ?? process.cwd();
+    const on = !!flags.pause;
+    if (!setPaused(target, providerId, on)) die(`no mapping for ${target} (${providerId})`);
+    console.log(on
+      ? `Paused the ${providerId} rule for ${normalizePath(target)} — it stays listed but no longer picks the account. Resume: agent-switch map --resume ${target}`
+      : `Resumed the ${providerId} rule for ${normalizePath(target)}.`);
+    return;
+  }
+  if (name && isPoolRef(name)) {
+    const pool = findPool(poolIdOf(name));
+    if (!pool) die(`no pool "${poolIdOf(name)}" — create it with: agent-switch pool create <name>`);
+    const key = setMapping(dir ?? process.cwd(), providerId, `${POOL_PREFIX}${pool.id}`);
+    console.log(`Mapped ${key} -> pool ${pool.id} (${providerId})`);
+    console.log(`\`${provider(providerId).binary}\` here starts on the ${providerId} member of "${pool.name}" with the most fresh headroom. See why: agent-switch dir --json`);
+    return;
+  }
+  const n = requireProfile(providerId, name, `map [--provider ${providerId}] <profile|pool:<id>> [dir]`);
   const key = setMapping(dir ?? process.cwd(), providerId, n);
   console.log(`Mapped ${key} -> ${providerId}/${n}`);
   console.log(`\`${provider(providerId).binary}\` in this directory (and subdirectories) now uses this profile.`);
@@ -616,13 +845,20 @@ function cmdUnmap(providerId: ProviderId | undefined, dir?: string): void {
   else die(`no mapping for ${target}${providerId ? ` (${providerId})` : ""}`);
 }
 
-function cmdMappings(): void {
+function cmdMappings(json = false): void {
   const rows = mappingRows();
+  if (json) {
+    console.log(JSON.stringify(rows.map((r) => ({ path: r.path, provider: r.provider, target: r.name, paused: r.paused }))));
+    return;
+  }
   if (rows.length === 0) {
     console.log("No directory mappings. Create one with: agent-switch map <profile> [dir]");
     return;
   }
-  for (const r of rows) console.log(`${r.path} -> ${r.provider}/${r.name}`);
+  for (const r of rows) {
+    const line = isPoolRef(r.name) ? `${r.path} -> ${r.name} (${r.provider})` : `${r.path} -> ${r.provider}/${r.name}`;
+    console.log(r.paused ? `${line}  [paused]` : line);
+  }
 }
 
 // share + web are Claude-config concepts and stay Claude-scoped.
@@ -650,7 +886,9 @@ function cmdShare(mode?: string, flags: string[] = []): void {
       console.log(`  ${p}: ${actions.length > 0 ? actions.join(", ") : "up to date"}`);
     }
     console.log(
-      "Shared directories (skills/, commands/, agents/) write through the link. Shared files\n" +
+      "Prompt history (history.jsonl — what ↑ and Ctrl+R search) is shared too; a profile's own\n" +
+        "file was merged in and kept as history.jsonl.pre-share.\n" +
+        "Shared directories (skills/, commands/, agents/) write through the link. Shared files\n" +
         "(settings.json, ...) fork on an in-profile /config edit — run `agent-switch share sync`\n" +
         "to push a fork back to the source and re-link.",
     );
@@ -672,14 +910,18 @@ function cmdShare(mode?: string, flags: string[] = []): void {
     // flag: sharing is active when any profile carries agent-switch-managed links.
     const rows = profiles
       .filter((p) => configDir("claude", p) !== source)
-      .map((p) => ({ name: p, shared: sharedLinkHealth(configDir("claude", p)).length > 0 }));
+      .map((p) => {
+        const links = sharedLinkHealth(configDir("claude", p));
+        const prompts = links.some((l) => l.name === PROMPT_HISTORY && l.state === "linked");
+        return { name: p, shared: links.length > 0, prompts };
+      });
     const active = rows.some((r) => r.shared);
     if (flags.includes("--json")) {
       console.log(JSON.stringify({ active, source: sourceName ?? "default", profiles: rows }));
       return;
     }
     console.log(`share: ${active ? "on" : "off"} (source ${sourceName ?? "default"})`);
-    for (const r of rows) console.log(`  ${r.name}: ${r.shared ? "shared" : "own"}`);
+    for (const r of rows) console.log(`  ${r.name}: ${r.shared ? "shared" : "own"}${r.shared && !r.prompts ? " (prompt history not linked — run share on)" : ""}`);
   } else {
     die("usage: agent-switch share on|sync|off|status [--history] [--source <profile|default>]");
   }
@@ -956,6 +1198,40 @@ function cmdHookEvent(): void {
  * GUI contract: a flat array, metadata only — transcript content never leaves
  * the profile dir (only the guarded first-line header is read).
  */
+/** The regular Desktop app's data dir, then every profile's own instance. */
+function desktopInstances(): DesktopInstance[] {
+  const app = findApp("claude-desktop");
+  const regular =
+    process.platform === "darwin"
+      ? path.join(HOME, "Library", "Application Support", "Claude")
+      : process.platform === "win32"
+        ? path.join(process.env.APPDATA ?? path.join(HOME, "AppData", "Roaming"), "Claude")
+        : path.join(HOME, ".config", "Claude");
+  return [{ profile: null, dir: regular }, ...(app ? listProfiles("claude").map((p) => ({ profile: p, dir: guiDataDir(app, p) })) : [])];
+}
+
+function desktopScan() {
+  const byAccount = new Map<string, string>();
+  for (const p of listProfiles("claude")) {
+    const uuid = readJson(path.join(configDir("claude", p), ".claude.json"))?.oauthAccount?.accountUuid;
+    if (typeof uuid === "string") byAccount.set(uuid, p);
+  }
+  return scanDesktop({ instances: desktopInstances(), claudeHome: CLAUDE_HOME, profileOf: (u) => byAccount.get(u) ?? null, now: Date.now() });
+}
+
+/** Which accounts ran sessions in each Claude Desktop instance; `mismatch` =
+ *  a profile's own instance signed in with another account. */
+function cmdDesktop(json: boolean): void {
+  const { instances } = desktopScan();
+  const shown = instances.filter((i) => i.accounts.length > 0);
+  if (json) return void console.log(JSON.stringify(shown, null, 2));
+  if (!shown.length) return void console.log("No Claude Desktop sessions found.");
+  for (const i of shown) {
+    console.log(`${i.profile ? `${i.profile}'s instance` : "Claude Desktop"} (${tildePath(i.dir)})`);
+    for (const a of i.accounts) console.log(`  ${a.profile ?? "an account without a profile"} (${a.accountUuid.slice(0, 8)})${i.profile && a.profile !== i.profile ? "  <- not this profile's account" : ""}`);
+  }
+}
+
 function cmdSessions(
   providerId: ProviderId,
   providerExplicit: boolean,
@@ -972,15 +1248,32 @@ function cmdSessions(
   const profiles = name ? [requireProfile(providerId, name, "sessions")] : listProfiles(providerId);
   if (profiles.length === 0) die(`no ${providerId} profiles`);
 
-  const all: (SessionRow & { profile: string })[] = [];
+  const all: (SessionRow & { profile: string; surface?: string })[] = [];
+  // Claude Desktop's own sessions, filed by account (see desktop-sessions.ts).
+  const desktop = providerId === "claude" ? desktopScan().rows : [];
   for (const p of profiles) {
     const cfg = configDir(providerId, p);
     // Codex stores date-partitioned rollout files (no encoded-cwd dir); its live
     // detection is not available via the Claude pid-file mechanism, so codex rows
     // stay recent-only (no live marking).
-    const rows = providerId === "codex" ? listCodexSessions(cfg, limit) : listSessions(cfg, limit);
+    const rows: (SessionRow & { surface?: string })[] = providerId === "codex" ? listCodexSessions(cfg, limit) : listSessions(cfg, limit);
     if (providerId === "claude") markLive(cfg, rows); // POSIX: pid→cwd→dir match; win32: recent-only
-    all.push(...rows.map((r) => ({ ...r, profile: p })));
+    if (providerId === "claude") {
+      const mtime = new Map(rows.map((r) => [r.sessionId, r.mtimeMs]));
+      const waiting = waitingSessions(readEvents(eventFile(ROOT, providerId, p)), (id) => mtime.get(id) ?? null);
+      // Hooks report a prompt; an open question also shows in the transcript itself.
+      for (const r of rows) {
+        const why = (r.file ? openQuestion(r.file) : null) ?? waiting.get(r.sessionId) ?? null;
+        if (why) Object.assign(r, { waiting: true, waitingFor: why });
+      }
+    }
+    const own = new Set(rows.map((r) => r.sessionId));
+    for (const d of desktop) if (d.profile === p && !own.has(d.sessionId)) {
+      const q = d.file ? openQuestion(d.file) : null;
+      rows.push(q ? { ...d, waiting: true, waitingFor: q } : d);
+    }
+    rows.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    all.push(...rows.slice(0, limit).map((r) => ({ ...r, profile: p })));
   }
 
   if (flags.json) {
@@ -1508,7 +1801,25 @@ function takeoverCodex(
   if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("codex"), target, resumeArgs));
 }
 
-function cmdRemove(providerId: ProviderId, name?: string, force = false): void {
+/**
+ * Ask before a destructive or scarce-credit action. `--yes` skips the question.
+ * Off a terminal there is nobody to ask, so the action proceeds as it always
+ * did (scripts and the GUI, which confirms in its own UI, keep working) and a
+ * note on stderr says how to make that explicit.
+ */
+async function confirmAction(question: string, yes: boolean): Promise<boolean> {
+  if (yes) return true;
+  if (!process.stdin.isTTY) {
+    console.error("agent-switch: not a terminal — proceeding without confirmation (pass --yes to make this explicit).");
+    return true;
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer: string = await new Promise((resolve) => rl.question(`${question} [y/N] `, resolve));
+  rl.close();
+  return /^y(es)?$/i.test(answer.trim());
+}
+
+async function cmdRemove(providerId: ProviderId, name?: string, force = false, yes = false): Promise<void> {
   const n = requireProfile(providerId, name, "remove");
   if (activeFor(providerId) === n && !force) {
     die(`"${n}" is the active ${providerId} profile. Switch away first or use --force.`);
@@ -1519,16 +1830,56 @@ function cmdRemove(providerId: ProviderId, name?: string, force = false): void {
       die(`profile "${n}" has live Claude Code sessions (PIDs ${pids.join(", ")}). Close them or use --force.`);
     }
   }
+  // An active rebind keeps both original credentials in two Keychain stash
+  // entries. Deleting the profile would orphan them — restore first.
+  const binding = providerId === "claude" ? readBinding(configDir("claude", n)) : null;
+  if (binding && !force) {
+    die(
+      `profile "${n}" is rebound to "${binding.boundToProfile}"'s account. Restore it first: ` +
+        `agent-switch rebind --restore --profile ${n} — or use --force to drop the rebind (its stashed credentials are deleted).`,
+    );
+  }
+
+  // The reverse case: another profile is serving THIS profile's account. Its
+  // restore would write into the store of a profile that no longer exists.
+  const borrower = providerId === "claude" ? borrowerOf(n) : null;
+  if (borrower && !force) {
+    die(
+      `profile "${n}"'s account is currently borrowed by "${borrower}" (rebind). Restore it first: ` +
+        `agent-switch rebind --restore --profile ${borrower} — or use --force to restore "${borrower}" and then remove "${n}".`,
+    );
+  }
+
+  const who = identity(providerId, n);
+  if (!(await confirmAction(`Remove ${providerId} profile "${n}"${who ? ` (${who})` : ""} and its login? This cannot be undone.`, yes))) {
+    console.log("Cancelled — nothing removed.");
+    return;
+  }
 
   // Keychain entries exist only for claude (darwin); codex/antigravity are file-based,
   // so computing a Claude hash for them would be a conceptual no-op — skip it.
+  let restoredBorrower: string | null = null;
+  if (borrower) {
+    try {
+      restoredBorrower = await releaseBorrowedAccount(n);
+    } catch (e) {
+      die(`could not restore "${borrower}" first, so "${n}" was not removed: ${(e as Error).message}`);
+    }
+    if (restoredBorrower) logActivity("rebind", `claude/${restoredBorrower}`, `restored own account (was on ${n})`, "user ran `agent-switch remove --force`");
+  }
+  const droppedRebind = binding ? discardBinding(n) : false;
   const removedEntry = providerId === "claude" ? credentials.removeEntry(configDir(providerId, n)) : false;
   fs.rmSync(profileDir(providerId, n), { recursive: true, force: true });
   if (activeFor(providerId) === n) setActive(providerId, null);
   clearLabel(providerId, n); // drop its label so it can't linger as an orphan
   const pruned = pruneMappings(providerId, n);
+  forgetProtection(providerId, n);
+  renamePoolMember(`${providerId}/${n}`, null);
+  logActivity("remove", `${providerId}/${n}`, "profile removed", yes ? "user ran `agent-switch remove --yes`" : "user ran `agent-switch remove`");
 
   console.log(`Removed ${providerId} profile "${n}".`);
+  if (restoredBorrower) console.log(`Restored "${restoredBorrower}" to its own account first (it was borrowing "${n}").`);
+  if (droppedRebind) console.log(`Dropped its active rebind (stashed credentials deleted; "${binding!.boundToProfile}" keeps its own login).`);
   if (removedEntry) console.log("Removed its keychain credential entry.");
   if (pruned.length > 0) console.log(`Removed ${pruned.length} directory mapping(s).`);
 }
@@ -1550,6 +1901,50 @@ function cmdLabel(providerId: ProviderId, name?: string, label?: string): void {
   }
   setLabel(providerId, name, label);
   console.log(`Labeled ${providerId}/${name} as ${label}.`);
+}
+
+/** Disable keeps a profile (login, history, settings) but takes it out of every
+ *  pick: no active slot, no pool or folder rule, no background polling. */
+function cmdDisable(providerId: ProviderId, name: string | undefined, disabled: boolean): void {
+  const n = requireProfile(providerId, name, disabled ? "disable" : "enable");
+  const wasActive = activeFor(providerId) === n;
+  setDisabled(providerId, n, disabled);
+  if (!disabled) return void console.log(`Turned ${providerId}/${n} back on.`);
+  console.log(`Disabled ${providerId}/${n}. Nothing was deleted; \`agent-switch enable ${n}\` turns it back on.`);
+  if (wasActive) console.log(`It was the active ${providerId} profile — new sessions now use the default login until you pick another.`);
+}
+
+/**
+ * Make this CLI the one terminals and the background service use. Each app runs
+ * it on start, so a dev build and an installed app each bring their own CLI:
+ * the shell wrapper reads <home>/active-cli, and a service installed from the
+ * other CLI is re-installed onto this one. An uninstalled service stays so.
+ */
+function cmdActivate(json: boolean): void {
+  const cli = fs.realpathSync(fileURLToPath(import.meta.url));
+  ensureRoot();
+  fs.writeFileSync(path.join(ROOT, "active-cli"), `${cli}\n`, { mode: 0o600 });
+  const before = serviceTarget();
+  if (before === "other-cli") serviceInstall(() => {});
+  const service = before === "other-cli" ? "repointed" : before === "this-cli" ? "unchanged" : "not-installed";
+  if (json) return void console.log(JSON.stringify({ cli, service }));
+  console.log(`Terminals now use ${cli}.`);
+  if (service === "repointed") console.log("The background service was moved onto it.");
+  if (service === "not-installed") console.log("The background service isn't installed (agent-switch service install).");
+}
+
+function cmdColor(providerId: ProviderId, name?: string, color?: string): void {
+  // Like a label, independent state keyed by provider/name: the GUI picks the
+  // colour before `add` has created the profile.
+  if (!name) die(`usage: agent-switch color <profile> [${PROFILE_COLORS.join("|")}|none] [--provider P]`);
+  if (color === undefined || color === "none" || color === "clear") {
+    setColor(providerId, name, null);
+    console.log(`Cleared the colour of ${providerId}/${name}.`);
+    return;
+  }
+  if (!isProfileColor(color)) die(`invalid colour "${color}" (choose: ${PROFILE_COLORS.join(", ")}, or "none" to clear)`);
+  setColor(providerId, name, color);
+  console.log(`Coloured ${providerId}/${name} ${color}.`);
 }
 
 /** Enable/disable opt-in near-limit notifications (notify + suggest, never an
@@ -1575,15 +1970,22 @@ function cmdRename(providerId: ProviderId, from?: string, to?: string): void {
   for (const m of mappingRows()) {
     if (m.provider === providerId && m.name === n) setMapping(m.path, providerId, to);
   }
+  renameProtection(providerId, n, to);
+  renamePoolMember(`${providerId}/${n}`, `${providerId}/${to}`);
   console.log(`Renamed ${providerId} profile "${n}" → "${to}".`);
 }
 
 /** Manually redeem one banked rate-limit reset for a Codex profile. Consumes a
  *  real, scarce credit — the GUI gates this behind a confirmation. */
-async function cmdReset(providerId: ProviderId, name?: string): Promise<void> {
+async function cmdReset(providerId: ProviderId, name?: string, yes = false): Promise<void> {
   if (providerId !== "codex") die("reset is only available for codex (banked rate-limit resets).");
   const n = requireProfile("codex", name, "reset");
+  if (!(await confirmAction(`Redeem one banked rate-limit reset for codex/${n}? Credits are scarce and cannot be returned.`, yes))) {
+    console.log("Cancelled — nothing redeemed.");
+    return;
+  }
   const r = await redeemResetCredit(configDir("codex", n));
+  logActivity("redeem", `codex/${n}`, r.ok ? "redeemed one banked reset" : `redeem failed: ${r.reason ?? "unknown"}`, "user ran `agent-switch reset`", r.ok);
   if (r.ok) {
     console.log(`Redeemed a reset for codex/${n} (windows_reset=${r.windowsReset ?? "?"}).`);
   } else {
@@ -1629,7 +2031,7 @@ function cmdAutoswitch(
       console.log(
         `Once the active ${providerId} profile hits the threshold, the daemon NOTIFIES you and SUGGESTS the\n` +
           "account with the most headroom — it never switches automatically; switching stays a manual action.\n" +
-          "On Codex it redeems a banked reset first (and stays on the account) before suggesting a switch.\n" +
+          "On Codex it also tells you when a banked reset is available — redeeming one stays your call (`agent-switch reset`).\n" +
           "Run `agent-switch service start` so the daemon is watching.",
       );
     }
@@ -1835,7 +2237,9 @@ function cmdNotify(flags: Record<string, string | boolean>): void {
     die(`usage: agent-switch notify --kind <${NOTIFICATION_KINDS.join("|")}> --title <t> --message <m> [--json]`);
   }
   if (!title && !message) die("agent-switch notify needs at least --title or --message");
-  const created = appendNotification({ kind: kind as NotificationKind, title, message });
+  // --repeat: each occurrence is its own moment (a session waiting again), so
+  // an identical notice is not collapsed into the last one.
+  const created = appendNotification({ kind: kind as NotificationKind, title, message }, undefined, undefined, !flags.repeat);
   if (flags.json) console.log(JSON.stringify(created));
 }
 
@@ -1917,7 +2321,9 @@ async function cmdUpdate(): Promise<void> {
   if (c.kind === "no-releases") return void console.log("No releases published yet — nothing to update to.");
   if (c.kind === "available") console.log(`Updating ${c.current} → ${c.release.tag} via npm…`);
   else console.log(`Update check failed (${c.message}); attempting \`npm install\` anyway…`);
-  process.exit(selfUpdate());
+  const code = selfUpdate();
+  logActivity("update", null, code === 0 ? "self-update installed" : `self-update failed (exit ${code})`, "user ran `agent-switch update`", code === 0);
+  process.exit(code);
 }
 
 function cmdOpen(appId?: string, name?: string): void {
@@ -1956,6 +2362,7 @@ function cmdGuard(value?: string, json = false): void {
       die(`unknown guard policy "${value}" (choose: ${GUARD_POLICIES.join(", ")})`);
     }
     setGuard(value);
+    logActivity("guard", null, `set ${value}`, "user ran `agent-switch guard`");
   }
   const policy = readGuard();
 
@@ -2005,8 +2412,17 @@ function cmdGuard(value?: string, json = false): void {
   }
 }
 
-function cmdShellenv(shellArg?: string): void {
-  console.log(shellenvScript(detectShell(shellArg)));
+function cmdShellenv(shellArg?: string, sub?: string, json = false): void {
+  if (sub !== "install") return void console.log(shellenvScript(detectShell(shellArg)));
+  const shell = detectShell(shellArg);
+  const present = shellIntegrationCheck(HOME).status === "ok";
+  const r = installShellIntegration(shell, HOME, present);
+  if (json) return void console.log(JSON.stringify(r));
+  console.log(
+    r.alreadyInstalled
+      ? "The shell integration is already installed."
+      : `Added the shell integration to ${r.file}. Open a new terminal (or run: source ${r.file}) and \`${shell === "powershell" ? "claude" : "type claude"}\` uses agent-switch.`,
+  );
 }
 
 /** `agent-switch tooling` — ecosystem tool readout (agent-config, rtk, provider
@@ -2131,7 +2547,9 @@ function usage(): void {
 Provider defaults to claude; pass --provider codex|antigravity for the others.
 Run with no command to launch the tray/menubar GUI (single-instance).
 
-  agent-switch add [--provider P] <name>       create a profile and log it in
+  agent-switch add [--provider P] <name> [--browser B]   create a profile and sign it in
+  agent-switch login [--provider P] <name> [--browser <id>]   sign an existing profile in again (after a sign-out / expired login); --browser opens the Claude sign-in in that browser
+  agent-switch browsers [--json]               browsers --browser can open (macOS / Linux)
   agent-switch import [--provider P] <name>    migrate the default install (no re-login)
   agent-switch use [--provider P] <name>       set the active profile for a provider
   agent-switch deactivate [--provider P]       clear the active profile for a provider
@@ -2140,9 +2558,10 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch status [--provider P] [name] [--json]   identity (+ Claude usage); --json = active only
   agent-switch current [--provider P]          show the active profile(s)
   agent-switch whoami [--provider P] [name]    show a profile's account identity
-  agent-switch dir [--provider P] [--guard]    resolve profile for CWD (mapping > active)
-  agent-switch guard [block|warn|off]          one profile, one live session (default block)
-  agent-switch map [--provider P] <name> [dir] map a directory to a profile
+  agent-switch dir [--provider P] [--guard] [--json] [--plain]   resolve profile for CWD (rule > balanced pick > active); --json adds why
+  agent-switch guard [block|warn|off]          one profile, one live session (default warn on new installs)
+  agent-switch map [--provider P] <name|pool:<id>> [dir]   map a directory to a profile or a pool
+  agent-switch map --pause|--resume [--provider P] [dir]   pause a folder rule (kept, but skipped) or turn it back on
   agent-switch unmap [--provider P] [dir]      remove a directory mapping
   agent-switch mappings                        list directory mappings
   agent-switch share on|sync|off|status [--history] [--source <profile|default>] [--json]   (Claude)
@@ -2154,10 +2573,18 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place] [--print-only] [--force]   move a session to another profile and resume it
   agent-switch rebind [<account>] [--profile <p>]   |   rebind --restore [--profile <p>]   |   rebind --reset   switch a RUNNING profile's account (macOS; no <account> = interactive picker; --restore reverses; --reset re-enables after a circuit-breaker trip)
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
-  agent-switch remove [--provider P] <name> [--force]   delete a profile
+  agent-switch remove [--provider P] <name> [--force] [--yes]   delete a profile (asks on a terminal; --yes skips)
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
+  agent-switch desktop [--json]                which accounts ran sessions in each Claude Desktop instance
+  agent-switch activate [--json]               make this CLI the one terminals and the background service use
+  agent-switch disable|enable [--provider P] <name>   keep a profile but stop using it / turn it back on
+  agent-switch color [--provider P] <name> [orange|red|yellow|green|teal|blue|purple|pink|none]   pick a profile's colour
   agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>]   notify + suggest near a usage limit; never switches automatically (default OFF)
-  agent-switch reset <profile> --provider codex                                redeem one banked Codex rate-limit reset
+  agent-switch reset <profile> --provider codex [--yes]                        redeem one banked Codex rate-limit reset (asks on a terminal)
+  agent-switch protection [--json] | protection set <provider/name> [--on|--off] [--threshold N]   per-profile limit warning (default on, 98%)
+  agent-switch pool [list|create|rename|delete|add|remove|suggest] [--json]    optional groups a folder rule can point at
+  agent-switch auth-status [--provider P] [--json]   per-profile login state from the provider's store (no tokens)
+  agent-switch activity [--limit N] [--json]   what agent-switch itself did, and why
   agent-switch rename <old> <new> [--provider P]                               rename a profile (name & keep its tag)
   agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
   agent-switch [gui]                           launch the tray/menubar GUI (the default with no command; won't start a second if one is running)
@@ -2166,6 +2593,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch apps                            list launchable GUI apps (macOS)
   agent-switch open <app> [profile]            launch a GUI app on a profile, isolated (macOS)
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
+  agent-switch shellenv install [--shell S] [--json]   add it to your shell's startup file
   agent-switch service run|start|stop|status|install|uninstall   background usage daemon
   agent-switch notifications [clear] [--json]  recent notifications (usage-limit suggestions, fetch failures)
   agent-switch notify --kind K --title T --message M [--json]   record a notification event
@@ -2175,7 +2603,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch tooling [--json]                ecosystem tool readout (agent-config, rtk, provider CLIs)
   agent-switch tooling install|upgrade <tool>  install/upgrade an ecosystem tool (agent-config, rtk, claude, codex)
   agent-switch tooling notes [<tool>] [--latest] [--json]   read an ecosystem tool's release notes (default agent-config; fetches from GitHub)
-  agent-switch doctor                          per-OS, per-provider self-check`);
+  agent-switch doctor [--json]                  per-OS, per-provider self-check`);
 }
 
 /**
@@ -2253,6 +2681,7 @@ async function rebindDialog(running: string): Promise<void> {
   }
   try {
     const r = await rebind({ account: choice.profile, profile: running });
+    logActivity("rebind", `claude/${running}`, `now serves ${choice.profile}'s account`, "user picked it in the rebind dialog");
     console.log(r.uxNote);
   } catch (e) {
     die((e as Error).message);
@@ -2308,6 +2737,7 @@ async function cmdRebind(
     requireProfile("claude", profile, "rebind --restore --profile");
     try {
       const r = await restoreRebind({ profile });
+      logActivity("rebind", `claude/${profile}`, `restored own account (was on ${r.wasBoundTo})`, "user ran `agent-switch rebind --restore`");
       console.log(`Restored "${r.restoredProfile}" to its own account (was rebound to "${r.wasBoundTo}").`);
     } catch (e) {
       die((e as Error).message);
@@ -2328,7 +2758,203 @@ async function cmdRebind(
   requireProfile("claude", profile, "rebind --profile");
   try {
     const r = await rebind({ account, profile });
+    logActivity("rebind", `claude/${profile}`, `now serves ${account}'s account`, "user ran `agent-switch rebind`");
     console.log(r.uxNote);
+  } catch (e) {
+    die((e as Error).message);
+  }
+}
+
+// ---------- gui-settings / activity / auth-status / protection / pool ----------
+
+/** `gui-settings [--json]` · `gui-settings set pet-welcomed` ·
+ *  `gui-settings set autostart enabled|disabled --by first-run|user` ·
+ *  `gui-settings set autostart-degraded --reason <text>|none`. The GUI's
+ *  file-backed preferences (see gui-settings.ts); prints the result as JSON. */
+function cmdGuiSettings(sub: string | undefined, args: string[], flags: Record<string, string | boolean>): void {
+  const usageLine = "usage: agent-switch gui-settings [--json] | gui-settings set pet-welcomed | set autostart enabled|disabled --by first-run|user | set autostart-degraded --reason <text>|none";
+  if (sub === undefined || sub === "get" || sub === "status") {
+    console.log(JSON.stringify(readGuiSettings(), null, 2));
+    return;
+  }
+  if (sub !== "set") die(usageLine);
+  const [key, value] = args;
+  let u: GuiSettingUpdate;
+  if (key === "pet-welcomed") u = { key };
+  else if (key === "autostart" && (value === "enabled" || value === "disabled")) {
+    const by = flags.by === "first-run" || flags.by === "user" ? flags.by : die(usageLine);
+    u = { key, state: value, by };
+  } else if (key === "autostart-degraded") {
+    const reason = typeof flags.reason === "string" ? flags.reason : die(usageLine);
+    u = { key, reason: reason === "none" ? null : reason };
+  } else die(usageLine);
+  const before = readGuiSettings();
+  let after;
+  try {
+    after = applyGuiSetting(before, u);
+  } catch (e) {
+    die((e as Error).message);
+  }
+  writeGuiSettings(after);
+  if (u.key === "autostart" && JSON.stringify(after.autostart) !== JSON.stringify(before.autostart)) {
+    logActivity("autostart", null, `start at login ${u.state}`, u.by === "user" ? "user changed it in the desktop app" : "first-run default, confirmed with the OS");
+  }
+  if (u.key === "autostart-degraded" && u.reason) {
+    logActivity("autostart", null, "start at login could not be confirmed", "first-run default; retried next launch", false);
+  }
+  console.log(JSON.stringify(after, null, 2));
+}
+
+function cmdActivity(flags: Record<string, string | boolean>): void {
+  const limit = typeof flags.limit === "string" ? Number(flags.limit) : undefined;
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) die("--limit must be a whole number of at least 1");
+  const entries = readActivity(limit ?? (flags.json ? undefined : 50));
+  if (flags.json) {
+    console.log(JSON.stringify({ entries, capacity: ACTIVITY_MAX_LINES }, null, 2));
+    return;
+  }
+  if (entries.length === 0) {
+    console.log("No activity recorded yet.");
+    return;
+  }
+  for (const e of entries) {
+    console.log(`${e.at}  ${e.ok ? " " : "!"} ${e.kind.padEnd(10)} ${e.target ?? "-"}  ${e.action} — ${e.reason}`);
+  }
+}
+
+function authStatusFor(providerId: ProviderId, name: string): AuthStatus {
+  const now = Date.now();
+  const cfg = provider(providerId).configDirFor(configDir(providerId, name));
+  if (providerId === "claude") {
+    const file = claudeCredentialFile(cfg);
+    const fromFile = readText(file);
+    return claudeAuthStatus(name, credentials.read(cfg), fromFile !== null ? fileMtimeMs(file) : null, now);
+  }
+  if (providerId === "codex") return codexAuthStatus(name, readText(provider("codex").credentialPath(cfg)), now);
+  return antigravityAuthStatus(name, fs.existsSync(provider("antigravity").credentialPath(cfg)));
+}
+
+function cmdAuthStatus(providerId: ProviderId | undefined, json: boolean): void {
+  const rows = (providerId ? listProfiles(providerId).map((n) => ({ provider: providerId, name: n })) : listAllProfiles()).map((r) =>
+    authStatusFor(r.provider, r.name),
+  );
+  if (json) {
+    console.log(JSON.stringify(rows, null, 2));
+    return;
+  }
+  if (rows.length === 0) return void console.log("No profiles.");
+  for (const r of rows) {
+    const exp = r.expiresAt ? `, ends ${r.expiresAt}` : "";
+    console.log(`${`${r.provider}/${r.name}`.padEnd(24)} ${r.state}${exp} — ${r.detail}`);
+  }
+}
+
+function parseMemberArg(v: string | undefined, usageLine: string): { provider: ProviderId; name: string } {
+  const m = v ? parseMember(v) : null;
+  if (!m) die(usageLine);
+  return m;
+}
+
+function cmdProtection(sub: string | undefined, args: string[], flags: Record<string, string | boolean>): void {
+  const usageLine = "usage: agent-switch protection [--json] | protection set <provider/name> [--on|--off] [--threshold <1-100>]";
+  if (sub === undefined || sub === "status" || sub === "list") {
+    const rows = listAllProfiles().map((p) => ({ profile: `${p.provider}/${p.name}`, ...readProtection(p.provider, p.name) }));
+    if (flags.json) return void console.log(JSON.stringify(rows, null, 2));
+    if (rows.length === 0) return void console.log("No profiles.");
+    for (const r of rows) console.log(`${r.profile.padEnd(24)} ${r.enabled ? "on " : "off"}  at ${r.thresholdPct}%`);
+    console.log("\nA warning when a profile reaches its threshold — nothing is paused or switched.");
+    return;
+  }
+  if (sub !== "set") die(usageLine);
+  const m = parseMemberArg(args[0], usageLine);
+  requireProfile(m.provider, m.name, "protection set");
+  if (flags.on && flags.off) die("pass either --on or --off, not both");
+  const threshold = typeof flags.threshold === "string" ? Number(flags.threshold) : undefined;
+  if (threshold !== undefined && !(Number.isInteger(threshold) && threshold >= 1 && threshold <= 100)) die("--threshold must be a whole number between 1 and 100");
+  if (!flags.on && !flags.off && threshold === undefined) die(usageLine);
+  const next = setProtection(m.provider, m.name, {
+    ...(flags.on ? { enabled: true } : {}),
+    ...(flags.off ? { enabled: false } : {}),
+    ...(threshold !== undefined ? { thresholdPct: threshold } : {}),
+  });
+  logActivity("protection", `${m.provider}/${m.name}`, `${next.enabled ? "on" : "off"} at ${next.thresholdPct}%`, "user ran `agent-switch protection set`");
+  if (flags.json) return void console.log(JSON.stringify({ profile: `${m.provider}/${m.name}`, ...next }, null, 2));
+  console.log(`Session protection for ${m.provider}/${m.name}: ${next.enabled ? "on" : "off"} at ${next.thresholdPct}%.`);
+}
+
+function poolMappings(id: string): string[] {
+  return mappingRows().filter((r) => r.name === `${POOL_PREFIX}${id}`).map((r) => `${r.path} (${r.provider})`);
+}
+
+function cmdPool(sub: string | undefined, args: string[], flags: Record<string, string | boolean>): void {
+  const usageLine =
+    "usage: agent-switch pool [list] [--json] | pool create <name> | pool rename <id> <name> | pool delete <id> | pool add <id> <provider/name> | pool remove <id> <provider/name> | pool suggest [--confirm] [--json]";
+  const json = !!flags.json;
+  const out = (v: unknown, text: string) => console.log(json ? JSON.stringify(v, null, 2) : text);
+  try {
+    switch (sub) {
+      case undefined:
+      case "list": {
+        const pools = readPools().map((p) => ({ ...p, rules: poolMappings(p.id) }));
+        if (json) return void console.log(JSON.stringify(pools, null, 2));
+        if (pools.length === 0) return void console.log("No pools. Pools are optional — create one with: agent-switch pool create <name>");
+        for (const p of pools) {
+          console.log(`${p.id}  "${p.name}"  ${p.members.length ? p.members.join(", ") : "(no members)"}${p.rules.length ? `  · folders: ${p.rules.join(", ")}` : ""}`);
+        }
+        return;
+      }
+      case "create": {
+        if (!args[0]) die(usageLine);
+        const p = createPool(args.join(" "));
+        logActivity("pool", p.id, "created", "user ran `agent-switch pool create`");
+        return out(p, `Created pool ${p.id} ("${p.name}"). Add members: agent-switch pool add ${p.id} <provider/name>`);
+      }
+      case "rename": {
+        if (!args[0] || !args[1]) die(usageLine);
+        const p = renamePool(args[0], args.slice(1).join(" "));
+        logActivity("pool", p.id, `renamed to "${p.name}"`, "user ran `agent-switch pool rename`");
+        return out(p, `Pool ${p.id} is now called "${p.name}" (its id and folder rules are unchanged).`);
+      }
+      case "delete": {
+        if (!args[0]) die(usageLine);
+        const rules = poolMappings(args[0]);
+        if (rules.length > 0) die(`pool "${args[0]}" is used by folder rules: ${rules.join(", ")}. Remove them first (agent-switch unmap <dir>).`);
+        deletePool(args[0]);
+        logActivity("pool", args[0], "deleted", "user ran `agent-switch pool delete`");
+        return out({ deleted: args[0] }, `Deleted pool ${args[0]}. Its profiles are untouched.`);
+      }
+      case "add":
+      case "remove": {
+        if (!args[0]) die(usageLine);
+        const m = parseMemberArg(args[1], usageLine);
+        if (sub === "add") requireProfile(m.provider, m.name, "pool add");
+        const key = `${m.provider}/${m.name}`;
+        const p = sub === "add" ? addPoolMember(args[0], key) : removePoolMember(args[0], key);
+        logActivity("pool", p.id, `${sub === "add" ? "added" : "removed"} ${key}`, `user ran \`agent-switch pool ${sub}\``);
+        return out(p, `${sub === "add" ? "Added" : "Removed"} ${key} ${sub === "add" ? "to" : "from"} pool ${p.id}.`);
+      }
+      case "suggest": {
+        const proposals = suggestPoolsFromLabels();
+        if (!flags.confirm) {
+          if (json) return void console.log(JSON.stringify({ preview: true, proposals }, null, 2));
+          if (proposals.length === 0) return void console.log("No labelled profiles — nothing to suggest.");
+          console.log("Preview — nothing is created until you run `agent-switch pool suggest --confirm`:");
+          for (const p of proposals) console.log(`  ${p.id}  ${p.members.join(", ")}${p.exists ? "  (exists — skipped)" : ""}`);
+          return;
+        }
+        const created: string[] = [];
+        for (const prop of proposals) {
+          if (prop.exists) continue;
+          const pool = createPool(prop.name);
+          for (const m of prop.members) addPoolMember(pool.id, m);
+          created.push(pool.id);
+          logActivity("pool", pool.id, `created from label ${prop.name}`, "user confirmed `agent-switch pool suggest`");
+        }
+        return out({ created }, created.length ? `Created pools: ${created.join(", ")}.` : "Nothing to create.");
+      }
+      default:
+        die(usageLine);
+    }
   } catch (e) {
     die((e as Error).message);
   }
@@ -2365,13 +2991,20 @@ async function main(): Promise<void> {
   }
 
   switch (cmd) {
-    case "add": return cmdAdd(providerId, positional[0]);
+    case "add": return cmdAdd(providerId, positional[0], typeof flags.browser === "string" ? flags.browser : undefined);
+    case "login": return cmdLogin(providerId, positional[0], typeof flags.browser === "string" ? flags.browser : undefined);
+    case "browsers": return cmdBrowsers(!!flags.json);
     case "import": return cmdImport(providerId, positional[0]);
     case "use": return cmdUse(providerId, positional[0]);
     case "deactivate": return cmdDeactivate(providerId);
     case "label": return cmdLabel(providerId, positional[0], positional[1]);
+    case "color": case "colour": return cmdColor(providerId, positional[0], positional[1]);
+    case "activate": return cmdActivate(!!flags.json);
+    case "desktop": return cmdDesktop(!!flags.json);
+    case "disable": return cmdDisable(providerId, positional[0], true);
+    case "enable": return cmdDisable(providerId, positional[0], false);
     case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags);
-    case "reset": return cmdReset(providerId, positional[0]);
+    case "reset": return cmdReset(providerId, positional[0], !!flags.yes);
     case "rename": return cmdRename(providerId, positional[0], positional[1]);
     case "providers": return cmdProviders(providerId, providerExplicit, positional[0], flags);
     case "gui": return cmdGui();
@@ -2383,17 +3016,21 @@ async function main(): Promise<void> {
     case "notifications": return cmdNotifications(positional[0], !!flags.json);
     case "os-notify": return cmdOsNotify(positional[0], !!flags.json);
     case "uninstall": return cmdUninstall(flags);
-    case "run": { const r = parseRun(rest); return cmdRun(r.providerId, r.name, r.args); }
+    case "run": {
+      let r: ReturnType<typeof parseRun>;
+      try { r = parseRun(rest); } catch (e) { die((e as Error).message); }
+      return cmdRun(r.providerId, r.name, r.args, r.cwd);
+    }
     case "handoff": return cmdHandoff(providerId, positional[0], positional.slice(1), flags);
     case "list": case "ls": return cmdList(providerExplicit ? providerId : undefined, !!flags.json);
     case "status": return cmdStatus(providerExplicit ? providerId : undefined, positional[0], !!flags.json);
     case "current": return cmdCurrent(providerExplicit ? providerId : undefined);
     case "whoami": return cmdWhoami(providerId, positional[0]);
-    case "dir": return cmdDir(providerId, !!flags.guard);
+    case "dir": return cmdDir(providerId, !!flags.guard, !!flags.json, !!flags.plain);
     case "guard": return cmdGuard(positional[0], !!flags.json);
-    case "map": return cmdMap(providerId, positional[0], positional[1]);
+    case "map": return cmdMap(providerId, positional[0], positional[1], flags);
     case "unmap": return cmdUnmap(providerExplicit ? providerId : undefined, positional[0]);
-    case "mappings": return cmdMappings();
+    case "mappings": return cmdMappings(rest.includes("--json"));
     case "share": return cmdShare(positional[0], rest.slice(1));
     case "config": return cmdConfig(positional[0], positional[1], flags);
     case "sessions":
@@ -2407,8 +3044,11 @@ async function main(): Promise<void> {
     case "takeover": return cmdTakeover(providerId, providerExplicit, positional[0], flags);
     case "rebind": return cmdRebind(providerId, providerExplicit, positional[0], flags);
     case "web": return cmdWeb(positional[0]);
-    case "remove": case "rm": return cmdRemove(providerId, positional[0], !!flags.force);
-    case "shellenv": return cmdShellenv((flags.shell as string) ?? positional[0]);
+    case "remove": case "rm": return cmdRemove(providerId, positional[0], !!flags.force, !!flags.yes);
+    case "shellenv":
+      return positional[0] === "install"
+        ? cmdShellenv(flags.shell as string | undefined, "install", !!flags.json)
+        : cmdShellenv((flags.shell as string) ?? positional[0]);
     case "service": return cmdService(positional[0]);
     case "usage": return cmdUsageHistory(providerId, positional[0], flags);
     case "tooling":
@@ -2420,7 +3060,12 @@ async function main(): Promise<void> {
         die(`usage: agent-switch tooling [install|upgrade <${TOOL_IDS.join("|")}>] [notes [<tool>]] [--json]`);
       }
       return cmdTooling(!!flags.json);
-    case "doctor": return process.exit(await runDoctor());
+    case "doctor": return process.exit(await runDoctor(!!flags.json));
+    case "auth-status": return cmdAuthStatus(providerExplicit ? providerId : undefined, !!flags.json);
+    case "activity": return cmdActivity(flags);
+    case "protection": return cmdProtection(positional[0], positional.slice(1), flags);
+    case "pool": case "pools": return cmdPool(positional[0], positional.slice(1), flags);
+    case "gui-settings": return cmdGuiSettings(positional[0], positional.slice(1), flags);
     case "help": case "--help": case "-h": return usage();
     // A bare `agent-switch` (no command) launches the GUI; an unknown command
     // still prints usage and exits non-zero.

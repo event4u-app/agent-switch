@@ -33,13 +33,16 @@ export interface TerminalController {
 /**
  * Attach `term` to `backend` running `agent-switch <args>`. Streams pty output
  * into the terminal, forwards keystrokes to the pty, and calls `onExit` when
- * the process ends. Returns a controller for resize + teardown.
+ * the process ends. A pty that cannot be started (`term_open` rejects) is
+ * reported through `onError` — never left as an unhandled rejection. Returns a
+ * controller for resize + teardown.
  */
 export function attachTerminal(
   term: TerminalLike,
   backend: TermBackend,
   args: string[],
   onExit: (code: number | null) => void,
+  onError?: (message: string) => void,
 ): TerminalController {
   let id: number | null = null;
   let closed = false;
@@ -49,10 +52,16 @@ export function attachTerminal(
       if (e.kind === "data") term.write(e.data);
       else if (!closed) onExit(e.code);
     })
-    .then((newId) => {
-      id = newId;
-      return newId;
-    });
+    .then(
+      (newId) => {
+        id = newId;
+        return newId;
+      },
+      (e: unknown) => {
+        if (!closed) onError?.(e instanceof Error ? e.message : String(e));
+        return null;
+      },
+    );
 
   term.onData((data) => {
     if (id !== null) void backend.write(id, data);
@@ -64,7 +73,7 @@ export function attachTerminal(
     },
     async dispose() {
       closed = true;
-      await opened.catch(() => undefined);
+      await opened;
       if (id !== null) await backend.close(id).catch(() => undefined);
     },
   };

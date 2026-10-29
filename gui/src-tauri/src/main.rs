@@ -10,12 +10,13 @@
 mod ac;
 mod pet;
 mod pty;
+mod tray;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager, WindowEvent,
 };
 
@@ -159,6 +160,7 @@ fn main() {
         .manage(pty::PtyState::default())
         .manage(DockPrefs::default())
         .manage(ac::AcState::default())
+        .manage(tray::TrayState::default())
         .invoke_handler(tauri::generate_handler![
             quit,
             show_window,
@@ -167,6 +169,9 @@ fn main() {
             pet::pet_show,
             pet::pet_hide,
             pet::pet_reset_position,
+            tray::set_tray_popover,
+            tray::tray_hide,
+            tray::tray_resize,
             pty::term_open,
             pty::term_write,
             pty::term_resize,
@@ -180,6 +185,13 @@ fn main() {
             ac::ac_open_in_browser
         ])
         .on_window_event(|window, event| {
+            // The tray popover closes as soon as it loses focus.
+            if window.label() == tray::TRAY_WINDOW_LABEL {
+                if let WindowEvent::Focused(false) = event {
+                    tray::on_blur(window);
+                }
+                return;
+            }
             if window.label() != "main" {
                 return;
             }
@@ -242,13 +254,22 @@ fn main() {
                     "show" => show_main(app),
                     _ => {}
                 })
-                .on_tray_icon_event(|tray, event| {
+                // Left click: the tray popover once the main window enabled it
+                // (on mount), else the main window. Right click keeps the native menu.
+                .on_tray_icon_event(|tray_icon, event| {
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        rect,
                         ..
                     } = event
                     {
-                        show_main(tray.app_handle());
+                        let app = tray_icon.app_handle();
+                        if tray::enabled(app) {
+                            tray::toggle(app, &rect);
+                        } else {
+                            show_main(app);
+                        }
                     }
                 })
                 .build(app)?;

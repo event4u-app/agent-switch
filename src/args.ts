@@ -17,6 +17,7 @@ import { ProviderId, PROVIDER_IDS, isProviderId } from "./providers.js";
  *  (the bug behind `notify`/`providers --surface` silently losing their args). */
 const VALUE_FLAGS = new Set([
   "provider",
+  "browser",
   "shell",
   "source",
   "threshold",
@@ -31,6 +32,9 @@ const VALUE_FLAGS = new Set([
   "ack",
   "brief",
   "profile",
+  "by",
+  "reason",
+  "limit",
 ]);
 
 export interface ParsedArgs {
@@ -83,16 +87,31 @@ export function parseArgs(argv: string[]): ParsedArgs {
 /**
  * `run` is special: everything after the profile name is passed THROUGH to the
  * provider binary (including its own `--flags`), so it can't go through the
- * general parser. Strip only `--provider <val>`, take the name, pass the rest.
+ * general parser. Strip only `--provider <val>` and `--cwd <dir>` (before any
+ * bare `--`), take the name, pass the rest.
  */
-export function parseRun(rest: string[]): { providerId: ProviderId; name?: string; args: string[] } {
+export function parseRun(rest: string[]): { providerId: ProviderId; name?: string; args: string[]; cwd?: string } {
   const args = [...rest];
+  // Everything after a bare `--` belongs to the provider binary, so our own
+  // flags are only looked for before it.
+  const own = (flag: string) => {
+    const end = args.indexOf("--");
+    const i = args.indexOf(flag);
+    return i >= 0 && (end < 0 || i < end) ? i : -1;
+  };
   let providerId: ProviderId = "claude";
-  const pi = args.indexOf("--provider");
+  const pi = own("--provider");
   if (pi >= 0) {
     providerId = resolveProviderValue(args[pi + 1]);
     args.splice(pi, 2);
   }
+  let cwd: string | undefined;
+  const ci = own("--cwd");
+  if (ci >= 0) {
+    cwd = args[ci + 1];
+    if (!cwd) throw new Error("--cwd needs a folder");
+    args.splice(ci, 2);
+  }
   const name = args.shift();
-  return { providerId, name, args };
+  return cwd === undefined ? { providerId, name, args } : { providerId, name, args, cwd };
 }

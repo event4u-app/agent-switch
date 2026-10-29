@@ -13,10 +13,61 @@ import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, AutoSwitchTag, U
 import type { AppNotification, NotificationKind } from "./notifications.js";
 import { parseAgentConfigVersion } from "./agent-config.js";
 import type { BubbleAction } from "./pet/model.js";
-import { getPetPresence } from "./settings-store.js";
+import { getPetPresence, getPetWelcomed, setPetWelcomedFlag } from "./settings-store.js";
+import {
+  LEGACY_AUTOSTART_KEY,
+  reconcileAutostart,
+  setAutostartPreference,
+  type AutostartDeps,
+  type AutostartPref,
+  type AutostartStatus,
+} from "./autostart.js";
+import { claimPetWelcome as claimPetWelcomeWith } from "./pet/welcome.js";
+
+/** The read-only calls the tray popover makes, each under its own shell-scope
+ *  name with its exact arguments (src-tauri/capabilities/tray.json — the tray
+ *  window has no blanket `agent-switch` entry). Keep the two in step. */
+const TRAY_READ_SCOPES: readonly [string, RegExp][] = [
+  ["as-read-list", /^list --json$/],
+  ["as-read-sessions", /^sessions --recent [0-9]{1,4} --json$/],
+  ["as-read-tooling", /^tooling --json$/],
+  ["as-read-notifications", /^notifications --json$/],
+  ["as-read-providers", /^providers status --json$/],
+  ["as-read-apps", /^apps --json$/],
+  ["as-read-protection", /^protection --json$/],
+  ["as-read-auth-status", /^auth-status --json$/],
+  ["as-read-pools", /^pool list --json$/],
+  ["as-read-mappings", /^mappings --json$/],
+  ["as-read-doctor", /^doctor --json$/],
+  ["as-read-activity", /^activity --limit [0-9]{1,4} --json$/],
+  ["as-read-guard", /^guard --json$/],
+  ["as-read-usage", /^status --provider (claude|codex|antigravity) [A-Za-z0-9._][A-Za-z0-9._-]* --json$/],
+];
+
+/** The tray scope name for `args`, or null when the tray may not run it. */
+export function trayScope(args: readonly string[]): string | null {
+  if (args.some((a) => /\s/.test(a) || a === "")) return null;
+  const line = args.join(" ");
+  return TRAY_READ_SCOPES.find(([, re]) => re.test(line))?.[0] ?? null;
+}
+
+function inTrayWindow(): boolean {
+  try {
+    return getCurrentWebviewWindow().label === "tray";
+  } catch {
+    return false; // not in Tauri (tests)
+  }
+}
+
+/** The shell-scope name to run `agent-switch <args>` under in this window. In
+ *  the tray a call outside its read-only list keeps the plain name, which the
+ *  tray capability does not allow — it fails closed. */
+function cli(args: string[]) {
+  return Command.create((inTrayWindow() && trayScope(args)) || "agent-switch", args);
+}
 
 async function runCli(args: string[]): Promise<string> {
-  const out = await Command.create("agent-switch", args).execute();
+  const out = await cli(args).execute();
   if (out.code !== 0) throw new Error(out.stderr || `agent-switch ${args.join(" ")} failed`);
   return out.stdout;
 }
@@ -121,7 +172,8 @@ export async function acOpenInBrowser(): Promise<AcStatus> {
 export interface ShareStatus {
   active: boolean;
   source: string;
-  profiles: { name: string; shared: boolean }[];
+  /** `prompts`: history.jsonl (↑ / Ctrl+R) is linked too; absent from older CLIs. */
+  profiles: { name: string; shared: boolean; prompts?: boolean }[];
 }
 
 /** Real share state (from each profile's link manifest, not a cached flag).
@@ -267,13 +319,40 @@ export function assertValidName(name: string): void {
  * Both are TTY-interactive, so they run in the in-app pty rather than a
  * headless spawn or a Terminal.app window.
  */
-export function loginArgs(provider: ProviderId, name: string): string[] {
+const BROWSER_ID_RE = /^[a-z0-9-]+$/;
+
+export function loginArgs(provider: ProviderId, name: string, browser?: string): string[] {
   assertValidName(name);
-  return ["add", name, "--provider", provider];
+  const args = ["add", name, "--provider", provider];
+  return browser && BROWSER_ID_RE.test(browser) ? [...args, "--browser", browser] : args;
 }
 
-export function sessionArgs(provider: ProviderId, name: string): string[] {
-  return ["run", name, "--provider", provider];
+export function reloginArgs(provider: ProviderId, name: string, browser?: string): string[] {
+  assertValidName(name);
+  const args = ["login", name, "--provider", provider];
+  return browser && BROWSER_ID_RE.test(browser) ? [...args, "--browser", browser] : args;
+}
+
+export interface BrowserInfo {
+  id: string;
+  name: string;
+}
+
+/** Browsers `login --browser` can open (macOS / Linux; empty elsewhere). */
+export async function listBrowsers(): Promise<BrowserInfo[]> {
+  const out = await cli(["browsers", "--json"]).execute();
+  if (out.code !== 0) return [];
+  try {
+    const list = JSON.parse(out.stdout) as BrowserInfo[];
+    return Array.isArray(list) ? list.filter((b) => typeof b?.id === "string" && BROWSER_ID_RE.test(b.id) && typeof b.name === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export function sessionArgs(provider: ProviderId, name: string, cwd?: string): string[] {
+  const args = ["run", name, "--provider", provider];
+  return cwd ? [...args, "--cwd", cwd] : args;
 }
 
 /** claude.ai in the persistent per-profile browser — a browser window, not a
@@ -285,7 +364,7 @@ export async function openWeb(name: string): Promise<void> {
 /** A single profile's own usage snapshot (Claude only; null for others or when
  *  no credential/usage is available). Per-profile — the GUI composes the view. */
 export async function profileUsage(provider: ProviderId, name: string): Promise<UsageSnapshot | null> {
-  const out = await Command.create("agent-switch", ["status", "--provider", provider, name, "--json"]).execute();
+  const out = await cli(["status", "--provider", provider, name, "--json"]).execute();
   if (out.code !== 0) return null;
   try {
     return (JSON.parse(out.stdout) as StatusJson).usage;
@@ -320,6 +399,25 @@ export async function usageHistory(provider: ProviderId = "claude"): Promise<Usa
 /** Set or clear a profile's label (Work / Personal / Other). */
 export async function setProfileLabel(provider: ProviderId, name: string, label: ProfileLabel | null): Promise<void> {
   await runCli(["label", name, label ?? "none", "--provider", provider]);
+}
+
+/** `activate`: terminals and the background service use the CLI this window
+ *  runs — the dev build under `task gui:dev`, the installed one otherwise. */
+export async function activateCli(): Promise<{ cli: string; service: "repointed" | "unchanged" | "not-installed" }> {
+  return JSON.parse(await runCli(["activate", "--json"]));
+}
+
+/** `shellenv install`: add the loader line to the user's shell startup file. */
+export async function installShellIntegration(): Promise<{ shell: string; file: string; alreadyInstalled: boolean }> {
+  return JSON.parse(await runCli(["shellenv", "install", "--json"]));
+}
+
+export async function setProfileDisabled(provider: ProviderId, name: string, disabled: boolean): Promise<void> {
+  await runCli([disabled ? "disable" : "enable", name, "--provider", provider]);
+}
+
+export async function setProfileColor(provider: ProviderId, name: string, color: string | null): Promise<void> {
+  await runCli(["color", name, color ?? "none", "--provider", provider]);
 }
 
 export interface AutoSwitch {
@@ -381,34 +479,67 @@ export async function uninstall(): Promise<void> {
   await runCli(["uninstall", "--force"]);
 }
 
+/** File-backed GUI preferences (`agent-switch gui-settings`, see the CLI's
+ *  gui-settings.ts) — the parts that must outlive the webview's localStorage. */
+interface GuiSettingsJson {
+  petWelcomed: boolean;
+  autostart: { state: "unset" | "enabled" | "disabled"; by?: "first-run" | "user" };
+}
+
+async function readGuiSettings(): Promise<GuiSettingsJson> {
+  return JSON.parse(await runCli(["gui-settings", "--json"]));
+}
+
+const autostartDeps: AutostartDeps = {
+  readPref: async () => {
+    const a = (await readGuiSettings()).autostart;
+    return (a.state === "unset" ? { state: "unset" } : { state: a.state, by: a.by }) as AutostartPref;
+  },
+  writePref: async (state, by) => {
+    await runCli(["gui-settings", "set", "autostart", state, "--by", by]);
+  },
+  markDegraded: async (reason) => {
+    await runCli(["gui-settings", "set", "autostart-degraded", "--reason", reason]);
+  },
+  osEnable: () => autostartEnable(),
+  osDisable: () => autostartDisable(),
+  osIsEnabled: () => autostartIsEnabled(),
+  legacyDefaulted: () => {
+    try {
+      return localStorage.getItem(LEGACY_AUTOSTART_KEY) === "1";
+    } catch {
+      return false;
+    }
+  },
+};
+
 /** Launch-at-login (Settings → General), backed by tauri-plugin-autostart. */
 export async function getAutostart(): Promise<boolean> {
   return autostartIsEnabled();
 }
+/** The Settings toggle — recorded as the user's own choice, so the first-run
+ *  default never overrides it later. */
 export async function setAutostart(on: boolean): Promise<void> {
-  if (on) await autostartEnable();
-  else await autostartDisable();
+  await setAutostartPreference(on, autostartDeps);
 }
 
-/** Enable autostart ON by default, but only on the very first run — a one-shot
- *  keyed on localStorage so a user who later turns it OFF is never overridden. */
-export async function applyAutostartDefault(): Promise<void> {
-  const KEY = "agent-switch-autostart-defaulted";
-  try {
-    if (localStorage.getItem(KEY) === "1") return;
-  } catch {
-    /* treat unreadable storage as not-yet-defaulted */
-  }
-  try {
-    localStorage.setItem(KEY, "1");
-  } catch {
-    /* best-effort */
-  }
-  try {
-    await autostartEnable();
-  } catch {
-    /* best-effort — the Settings toggle still reflects the real state */
-  }
+/** Per-launch reconcile: default ON for a fresh install (confirmed with the OS
+ *  before it is recorded), a stored user OFF is never overridden. Returns the
+ *  state for display; `degraded` = could not be confirmed, retried next launch. */
+export async function applyAutostartDefault(): Promise<AutostartStatus> {
+  return reconcileAutostart(autostartDeps);
+}
+
+/** True exactly once per install: whether to show the Pet intro now (D36). */
+export async function claimPetWelcome(): Promise<boolean> {
+  return claimPetWelcomeWith({
+    readFileFlag: async () => (await readGuiSettings()).petWelcomed,
+    writeFileFlag: async () => {
+      await runCli(["gui-settings", "set", "pet-welcomed"]);
+    },
+    legacyWelcomed: getPetWelcomed,
+    markLegacy: setPetWelcomedFlag,
+  });
 }
 
 export interface AppInfo {
@@ -629,8 +760,8 @@ export async function listNotifications(): Promise<AppNotification[]> {
 }
 
 /** Record a notification event in the shared log (the daemon appends its own). */
-export async function recordNotification(kind: NotificationKind, title: string, message: string): Promise<void> {
-  await runCli(["notify", "--kind", kind, "--title", title, "--message", message]);
+export async function recordNotification(kind: NotificationKind, title: string, message: string, repeat = false): Promise<void> {
+  await runCli(["notify", "--kind", kind, "--title", title, "--message", message, ...(repeat ? ["--repeat"] : [])]);
 }
 
 /** Empty the notification log. */
@@ -767,4 +898,301 @@ export async function petMoveTo(pos: { x: number; y: number }): Promise<void> {
   } catch {
     /* pet window closed / non-Tauri env */
   }
+}
+
+// ---- honest foundations: protection, pools, folder rules, auth, health, activity, guard ----
+// Each readout throws on a non-zero exit (an older CLI without the command
+// included) so the view model's allSettled degrades that one area to unknown.
+
+/** `<provider>/<name>` — the member key the CLI uses for protection and pools. */
+export function memberKey(provider: ProviderId, name: string): string {
+  return `${provider}/${name}`;
+}
+
+/** One profile's limit warning (`protection --json`). Warn-only: nothing is paused. */
+export interface ProtectionRow {
+  /** `provider/name` */
+  profile: string;
+  enabled: boolean;
+  thresholdPct: number;
+}
+
+export async function listProtection(): Promise<ProtectionRow[]> {
+  return JSON.parse(await runCli(["protection", "--json"]));
+}
+
+/** `protection set <provider/name> [--on|--off] [--threshold N] --json`. An empty
+ *  patch is a caller bug — the CLI refuses it too. */
+export async function setProtection(
+  provider: ProviderId,
+  name: string,
+  patch: { enabled?: boolean; thresholdPct?: number },
+): Promise<ProtectionRow> {
+  const args = ["protection", "set", memberKey(provider, name)];
+  if (patch.enabled !== undefined) args.push(patch.enabled ? "--on" : "--off");
+  if (patch.thresholdPct !== undefined) {
+    if (!Number.isInteger(patch.thresholdPct) || patch.thresholdPct < 1 || patch.thresholdPct > 100) {
+      throw new Error("Threshold must be a whole number between 1 and 100.");
+    }
+    args.push("--threshold", String(patch.thresholdPct));
+  }
+  if (args.length === 3) throw new Error("Nothing to change.");
+  return JSON.parse(await runCli([...args, "--json"]));
+}
+
+/** A pool as `pool --json` reports it. */
+export interface PoolRow {
+  id: string;
+  name: string;
+  /** `provider/name` keys, insertion order. */
+  members: string[];
+  createdAt: string;
+}
+
+/** `pool list --json` adds the folder rules that point at each pool. */
+export interface PoolListRow extends PoolRow {
+  /** `<path> (<provider>)` per rule. */
+  rules: string[];
+}
+
+export interface PoolProposal {
+  id: string;
+  name: string;
+  members: string[];
+  /** A pool with this id exists already — confirming skips it. */
+  exists: boolean;
+}
+
+export async function listPools(): Promise<PoolListRow[]> {
+  return JSON.parse(await runCli(["pool", "list", "--json"]));
+}
+
+export async function createPool(name: string): Promise<PoolRow> {
+  return JSON.parse(await runCli(["pool", "create", name, "--json"]));
+}
+
+export async function renamePool(id: string, name: string): Promise<PoolRow> {
+  return JSON.parse(await runCli(["pool", "rename", id, name, "--json"]));
+}
+
+/** Refused by the CLI while a folder rule still points at the pool. */
+export async function deletePool(id: string): Promise<void> {
+  await runCli(["pool", "delete", id, "--json"]);
+}
+
+export async function addPoolMember(id: string, provider: ProviderId, name: string): Promise<PoolRow> {
+  return JSON.parse(await runCli(["pool", "add", id, memberKey(provider, name), "--json"]));
+}
+
+export async function removePoolMember(id: string, provider: ProviderId, name: string): Promise<PoolRow> {
+  return JSON.parse(await runCli(["pool", "remove", id, memberKey(provider, name), "--json"]));
+}
+
+/** Preview of pools derived from profile labels — creates nothing. */
+export async function suggestPools(): Promise<PoolProposal[]> {
+  const out = JSON.parse(await runCli(["pool", "suggest", "--json"])) as { proposals?: PoolProposal[] };
+  return out.proposals ?? [];
+}
+
+/** Create the suggested pools; returns the ids actually created. */
+export async function confirmPoolSuggestions(): Promise<string[]> {
+  const out = JSON.parse(await runCli(["pool", "suggest", "--confirm", "--json"])) as { created?: string[] };
+  return out.created ?? [];
+}
+
+/** One directory mapping (folder rule). `target` is a profile name or `pool:<id>`. */
+export interface MappingRow {
+  path: string;
+  provider: ProviderId;
+  target: string;
+  /** Kept but skipped when resolving (`map --pause`); absent from older CLIs. */
+  paused?: boolean;
+}
+
+const MAPPING_PROVIDERS: readonly string[] = ["claude", "codex", "antigravity"];
+
+/** Parse the TEXT form of `agent-switch mappings` — only for a CLI older than
+ *  `mappings --json`, which ignores the flag and prints text: one
+ *  `<path> -> <provider>/<target>` line per rule. Split on the LAST arrow so a
+ *  path containing " -> " survives; unparseable lines are skipped. */
+export function parseMappings(text: string): MappingRow[] {
+  const rows: MappingRow[] = [];
+  for (const line of text.split("\n")) {
+    const i = line.lastIndexOf(" -> ");
+    if (i < 0) continue;
+    const right = line.slice(i + 4).trim();
+    const slash = right.indexOf("/");
+    if (slash < 0) continue;
+    const provider = right.slice(0, slash);
+    if (!MAPPING_PROVIDERS.includes(provider)) continue;
+    rows.push({ path: line.slice(0, i), provider: provider as ProviderId, target: right.slice(slash + 1) });
+  }
+  return rows;
+}
+
+/** Folder rules via `mappings --json` → `[{path, provider, target}]`. A CLI
+ *  without `--json` prints the text form instead, which {@link parseMappings} reads. */
+export async function listMappings(): Promise<MappingRow[]> {
+  const out = await runCli(["mappings", "--json"]);
+  let rows: unknown;
+  try {
+    rows = JSON.parse(out);
+  } catch {
+    return parseMappings(out);
+  }
+  if (!Array.isArray(rows)) return [];
+  return rows.filter(
+    (r): r is MappingRow =>
+      !!r &&
+      typeof r.path === "string" &&
+      typeof r.target === "string" &&
+      MAPPING_PROVIDERS.includes(r.provider),
+  );
+}
+
+/** Map a folder to a profile or a pool (`map <name|pool:<id>> <dir> --provider P`). */
+export async function mapFolder(
+  provider: ProviderId,
+  target: { profile: string } | { pool: string },
+  dir: string,
+): Promise<void> {
+  if ("profile" in target) assertValidName(target.profile);
+  const ref = "pool" in target ? `pool:${target.pool}` : target.profile;
+  await runCli(["map", ref, dir, "--provider", provider]);
+}
+
+/** Pause or resume a folder's rule (`map --pause|--resume <dir> --provider P`). */
+export async function setMappingPaused(provider: ProviderId, dir: string, paused: boolean): Promise<void> {
+  await runCli(["map", paused ? "--pause" : "--resume", dir, "--provider", provider]);
+}
+
+/** Remove a folder's rule; without a provider every provider's rule there goes. */
+export async function unmapFolder(dir: string, provider?: ProviderId): Promise<void> {
+  await runCli(["unmap", dir, ...(provider ? ["--provider", provider] : [])]);
+}
+
+/** `dir --json` — which profile a start in `cwd` would load, and why. */
+export interface DirResolution {
+  /** `provider/name`, or null when the default config dir is used. */
+  profile: string | null;
+  configDir: string | null;
+  why: string[];
+}
+
+/** One Claude Desktop instance from `desktop --json`: the accounts that ran
+ *  sessions in it; `profile` null = the regular app. */
+export interface DesktopInstanceRow {
+  profile: string | null;
+  dir: string;
+  accounts: { accountUuid: string; profile: string | null }[];
+  mismatch: boolean;
+}
+
+export async function desktopInstances(): Promise<DesktopInstanceRow[]> {
+  return JSON.parse(await runCli(["desktop", "--json"]));
+}
+
+/** `dir --plain`: where a start with no folder rule would go (balanced across accounts). */
+export async function resolvePlainStart(provider: ProviderId): Promise<DirResolution> {
+  return JSON.parse(await runCli(["dir", "--provider", provider, "--plain", "--json"]));
+}
+
+export async function resolveDir(provider: ProviderId, cwd: string): Promise<DirResolution> {
+  const out = await Command.create("agent-switch", ["dir", "--provider", provider, "--json"], { cwd }).execute();
+  if (out.code !== 0) throw new Error(out.stderr || "agent-switch dir failed");
+  return JSON.parse(out.stdout);
+}
+
+/** Per-profile login state from the provider's own store (no tokens). */
+export interface AuthStatusRow {
+  provider: ProviderId;
+  name: string;
+  state: "connected" | "expiring" | "sign-in-needed" | "unknown";
+  expiresAt: string | null;
+  lastRefreshAt: string | null;
+  keptFreshBy: string;
+  detail: string;
+}
+
+export async function authStatus(provider?: ProviderId): Promise<AuthStatusRow[]> {
+  return JSON.parse(await runCli(["auth-status", ...(provider ? ["--provider", provider] : []), "--json"]));
+}
+
+export interface DoctorCheckRow {
+  id: string;
+  status: "ok" | "warn" | "error" | "info";
+  title: string;
+  detail: string;
+  fix?: string;
+}
+
+export interface DoctorReport {
+  readiness: "ready" | "attention" | "blocked";
+  platform: string;
+  checks: DoctorCheckRow[];
+}
+
+/** `doctor --json`. Exit 1 means "blocked" and still carries the report, so a
+ *  non-zero exit is only an error when stdout is not the report. */
+export async function doctor(): Promise<DoctorReport> {
+  const out = await cli(["doctor", "--json"]).execute();
+  try {
+    const report = JSON.parse(out.stdout) as DoctorReport;
+    if (report && Array.isArray(report.checks)) return report;
+  } catch {
+    /* fall through */
+  }
+  throw new Error(out.stderr || "agent-switch doctor failed");
+}
+
+export type ActivityEntryKind =
+  | "switch"
+  | "rebind"
+  | "login"
+  | "redeem"
+  | "autostart"
+  | "guard"
+  | "update"
+  | "protection"
+  | "pool"
+  | "remove";
+
+export interface ActivityEntry {
+  at: string;
+  kind: ActivityEntryKind;
+  /** `provider/name`, a pool id, or null. */
+  target: string | null;
+  action: string;
+  reason: string;
+  ok: boolean;
+}
+
+export async function listActivity(limit?: number): Promise<ActivityEntry[]> {
+  const args = ["activity", ...(limit !== undefined ? ["--limit", String(limit)] : []), "--json"];
+  const out = JSON.parse(await runCli(args)) as { entries?: ActivityEntry[] };
+  return out.entries ?? [];
+}
+
+export type GuardPolicy = "block" | "warn" | "off";
+
+export interface GuardStatus {
+  policy: GuardPolicy;
+  /** Profiles loaded by a live session right now (sessions > 1 = doubled). */
+  loaded: { provider: ProviderId; name: string; sessions: number }[];
+}
+
+export async function getGuard(): Promise<GuardStatus> {
+  return JSON.parse(await runCli(["guard", "--json"]));
+}
+
+export async function setGuard(policy: GuardPolicy): Promise<GuardStatus> {
+  return JSON.parse(await runCli(["guard", policy, "--json"]));
+}
+
+/** The stored start-at-login preference (what the user / first run wanted) and
+ *  why the last attempt could not be confirmed — read-only, unlike
+ *  {@link applyAutostartDefault}, which reconciles. */
+export async function getAutostartPreference(): Promise<{ state: "unset" | "enabled" | "disabled"; degradedReason: string | null }> {
+  const raw = (await readGuiSettings()) as GuiSettingsJson & { autostartDegraded?: { reason?: string } | null };
+  return { state: raw.autostart.state, degradedReason: raw.autostartDegraded?.reason ?? null };
 }

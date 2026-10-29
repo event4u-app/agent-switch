@@ -5,7 +5,7 @@ description: An optional animated companion that floats above your windows and s
 
 The desktop pet is a companion window: a small pixel-art character that stays on top of all your windows and turns agent-switch notifications into something you notice out of the corner of your eye — without switching apps and without another notification-center entry.
 
-It is **on by default**, but unobtrusive: in the default *presence* mode the pet only appears when it has something to say and hides again once the bubble is gone. On first launch it introduces itself once ("Agent Switch — your companion on a secret mission") with a bubble that links straight to its settings. Turn it off entirely — or make it a permanent companion — under the **Pet** entry in the left sidebar.
+It is **on by default**, but unobtrusive: in the default *presence* mode the pet only appears when it has something to say and hides again once the bubble is gone. On the very first start it introduces itself once — "agent-switch is installed! The name's Switch — Agent Switch. I like my AIs switched, not stirred. Toggle me anytime in the Pet settings." — and never again at login. Turn it off entirely — or make it a permanent companion — under **Settings › Desktop pet**.
 
 ## What it does
 
@@ -15,7 +15,7 @@ It is **on by default**, but unobtrusive: in the default *presence* mode the pet
 
 ## Notification routing
 
-Pet → **Notification routing** (left sidebar) decides how the pet relates to the normal pipeline:
+Settings › Desktop pet → **Notification routing** decides how the pet relates to the normal pipeline:
 
 | Mode | Behaviour |
 |---|---|
@@ -27,7 +27,7 @@ The pet's per-kind switches are **independent** of the desktop mutes, so "pet re
 
 ## Configuration
 
-Everything lives under the **Pet** sidebar entry and applies live:
+Everything lives under **Settings › Desktop pet** and applies live:
 
 - **Pet picker** — eight bundled characters.
 - **Presence** — *Only for messages* (default): the pet appears for a notification and hides again afterwards. *Always visible*: the permanent companion.

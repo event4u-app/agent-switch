@@ -10,7 +10,7 @@
  *
  * Iron rules (roadmap: road-to-session-handoff):
  *   - Transcripts are OPAQUE, version-unstable blobs FOR TRANSFER. The only
- *     read in THIS module is `readSessionHeader` — first line, capped,
+ *     read in THIS module is `readSessionHeader` — first 64 KiB, capped,
  *     try/catch. There are exactly TWO sanctioned body readers, both guarded +
  *     capped + fenced + degraded-mode, and NO others: read-only TELEMETRY
  *     (context/token counts, `src/telemetry.ts`, road-to-agent-switch-session-
@@ -37,9 +37,9 @@ export function encodeProjectDir(cwd: string): string {
   return cwd.replace(/[^A-Za-z0-9]/g, "-");
 }
 
-/** Best-effort metadata from a transcript's FIRST line only. The line is
- *  capped (a >64 KiB first line counts as unparseable), the parse is fenced,
- *  and absence degrades to nulls — the format is internal and version-unstable,
+/** Best-effort metadata (cwd, summary) from the complete lines in a
+ *  transcript's first 64 KiB. Each parse is fenced, a line cut by the cap is
+ *  ignored, and absence degrades to nulls — the format is internal and version-unstable,
  *  so a failed parse must never fail a listing. */
 const HEADER_CAP = 64 * 1024;
 
@@ -60,19 +60,81 @@ export function readSessionHeader(file: string): SessionHeader {
     const buf = Buffer.alloc(HEADER_CAP);
     const n = fs.readSync(fd, buf, 0, HEADER_CAP, 0);
     const chunk = buf.subarray(0, n).toString("utf8");
-    const nl = chunk.indexOf("\n");
-    if (nl < 0 && n === HEADER_CAP) return none; // first line larger than the cap
-    const line = nl >= 0 ? chunk.slice(0, nl) : chunk;
-    const parsed = JSON.parse(line);
-    return {
-      cwd: typeof parsed?.cwd === "string" ? parsed.cwd : null,
-      summary: typeof parsed?.summary === "string" ? parsed.summary : null,
-    };
+    // Claude Code 2.1.x opens with metadata lines that carry no cwd, so scan the
+    // complete lines inside the cap. A trailing partial line (cut by the cap) is
+    // dropped rather than guessed at.
+    const lines = chunk.split("\n");
+    if (n === HEADER_CAP) lines.pop();
+    let cwd: string | null = null;
+    let summary: string | null = null;
+    for (const line of lines) {
+      if (cwd !== null && summary !== null) break;
+      let parsed: any;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (cwd === null && typeof parsed?.cwd === "string") cwd = parsed.cwd;
+      if (summary === null && typeof parsed?.summary === "string") summary = parsed.summary;
+    }
+    return { cwd, summary };
   } catch {
     return none;
   } finally {
     fs.closeSync(fd);
   }
+}
+
+/** Tools that always stop for the user's answer. Other tools can't be told
+ *  apart from one that is still running. */
+const QUESTION_TOOLS = new Set(["AskUserQuestion", "ExitPlanMode"]);
+const TAIL_CAP = 64 * 1024;
+
+/** Whether the transcript ends on an open question to the user. */
+export function awaitingAnswer(file: string): boolean {
+  return openQuestion(file) !== null;
+}
+
+/**
+ * The id of the question the transcript ends on — an AskUserQuestion /
+ * ExitPlanMode call with no tool_result after it — or null. The id tells one
+ * question from the next, so two in a row are two moments. Reads only the
+ * last {@link TAIL_CAP} bytes.
+ */
+export function openQuestion(file: string): string | null {
+  let text: string;
+  try {
+    const fd = fs.openSync(file, "r");
+    try {
+      const size = fs.fstatSync(fd).size;
+      const len = Math.min(size, TAIL_CAP);
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, size - len);
+      text = buf.toString("utf8");
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+  const open = new Set<string>();
+  // The first line may be cut off by the tail window; it fails to parse and is skipped.
+  for (const line of text.split("\n")) {
+    let d: { message?: { content?: unknown } };
+    try {
+      d = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const content = d?.message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const p of content as { type?: string; name?: string; id?: string; tool_use_id?: string }[]) {
+      if (p?.type === "tool_use" && p.id && p.name && QUESTION_TOOLS.has(p.name)) open.add(p.id);
+      else if (p?.type === "tool_result" && p.tool_use_id) open.delete(p.tool_use_id);
+    }
+  }
+  return open.size ? [...open][open.size - 1] : null;
 }
 
 export interface SessionRow {
@@ -88,6 +150,11 @@ export interface SessionRow {
    *  not report a birthtime. */
   birthtimeMs: number;
   live: boolean;
+  /** Waiting on the user: an open question in the transcript, or a hook prompt. */
+  waiting?: boolean;
+  /** What it waits on — the open question's id, or the prompt's time — so the
+   *  next wait in the same session is a new one. */
+  waitingFor?: string;
   /** Absolute transcript/rollout path — the sanctioned telemetry reader
    *  (src/telemetry.ts) consumes this. Optional so seeded fakes need not set it. */
   file?: string;

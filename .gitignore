@@ -8,6 +8,7 @@ dist-test/
 # agent-layer scratch (local-only)
 agents/runtime/
 agents/tmp/
+agents/tmp.old/
 agents/state/
 gui/node_modules/
 gui/dist/

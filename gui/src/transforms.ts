@@ -39,6 +39,10 @@ export interface ProfileRow {
   name: string;
   identity: string | null;
   label: ProfileLabel | null;
+  /** Colour picked with `agent-switch color`; absent from older CLIs. */
+  color?: string | null;
+  /** `agent-switch disable`; absent from older CLIs. */
+  disabled?: boolean;
   active: boolean;
   liveSessions: number;
 }
@@ -68,6 +72,12 @@ export interface SessionRow {
   live: boolean;
   summary?: string | null;
   context?: SessionContext | null;
+  /** "desktop-app" = run from Claude Desktop (`sessions` attributes it by account). */
+  surface?: string;
+  /** Waiting on a prompt (last hook event Notification, nothing written since). */
+  waiting?: boolean;
+  /** What it waits on (the open question's id, or the prompt's time). */
+  waitingFor?: string;
 }
 
 /** One turn of a session content preview (ADR-002 bounded reader). */

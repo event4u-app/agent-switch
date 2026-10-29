@@ -102,6 +102,8 @@ function seed(home: string, name: string, opts: { store?: "keychain" | "file" } 
   fs.mkdirSync(config, { recursive: true });
   const svc = serviceNameFor(config);
   createdServices.add(svc); // rebind may write here even when we seed the file
+  createdServices.add(`${svc}-agent-switch-rebind-own`); // D16 stash entries
+  createdServices.add(`${svc}-agent-switch-rebind-target`);
   if ((opts.store ?? "keychain") === "keychain") {
     kcAdd(svc, cred(name, "tok-" + name));
   } else {
@@ -175,8 +177,9 @@ test("switch A→B: the full credential swap over the real CLI + real Keychain",
   const m = marker(home, "A");
   assert.ok(m, "binding marker written");
   assert.equal(m.boundToProfile, "B");
-  assert.equal(tokenIn(m.runningOwnCredential), "tok-A", "A's own credential stashed for restore");
-  assert.equal(tokenIn(m.targetOrigCredential), "tok-B", "B's original credential stashed for restore");
+  assert.equal(tokenIn(kcGet(m.runningOwnStash)), "tok-A", "A's own credential stashed (Keychain) for restore");
+  assert.equal(tokenIn(kcGet(m.targetOrigStash)), "tok-B", "B's original credential stashed (Keychain) for restore");
+  assert.doesNotMatch(JSON.stringify(m), /tok-A|tok-B/, "the marker file carries no token (D16)");
 
   const reg = JSON.parse(fs.readFileSync(path.join(home, ".agent-switch-rebind-registry.json"), "utf8"));
   assert.equal(reg.B?.runningProfile, "A", "global registry records the binding");

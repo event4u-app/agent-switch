@@ -5,7 +5,11 @@ import * as path from "node:path";
 import {
   rebind,
   restoreRebind,
+  discardBinding,
+  borrowerOf,
+  releaseBorrowedAccount,
   readBinding,
+  bindingCredentials,
   readBindingRegistry,
   accountFingerprint,
   RebindError,
@@ -144,8 +148,35 @@ test("rebind moves the target credential into the running store and empties the 
   const m = readBinding(pConfig, f.deps);
   assert.ok(m, "binding marker written");
   assert.equal(m!.boundToProfile, "A");
-  assert.equal(JSON.parse(m!.runningOwnCredential).claudeAiOauth.accessToken, "tokP", "own cred stashed");
-  assert.equal(JSON.parse(m!.targetOrigCredential).claudeAiOauth.accessToken, "tokA", "target orig stashed");
+  const orig = bindingCredentials(m!, f.deps)!;
+  assert.equal(JSON.parse(orig.runningOwn).claudeAiOauth.accessToken, "tokP", "own cred stashed");
+  assert.equal(JSON.parse(orig.targetOrig).claudeAiOauth.accessToken, "tokA", "target orig stashed");
+});
+
+test("D16: the binding marker file never carries a token — the originals live in the Keychain", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+  const raw = f.files.get(path.join(pConfig, ".agent-switch-rebind.json"))!;
+  assert.ok(raw, "marker written");
+  assert.doesNotMatch(raw, /tokP|tokA|accessToken|refreshToken/, "no credential material in the plain file");
+  await restoreRebind({ profile: "P" }, f.deps);
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokP", "restore read the stash");
+  assert.equal(JSON.parse(f.kc.get(aSvc)!).claudeAiOauth.accessToken, "tokA");
+  assert.equal([...f.kc.keys()].filter((k) => k.includes("agent-switch-rebind")).length, 0, "stash entries removed on restore");
+});
+
+test("D16: a legacy marker with inline credentials still restores", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokA"));
+  f.files.set(
+    path.join(pConfig, ".agent-switch-rebind.json"),
+    JSON.stringify({ boundToProfile: "A", boundAt: "x", runningOwnCredential: cred("tokP"), targetOrigCredential: cred("tokA"), targetFileMoved: false }),
+  );
+  await restoreRebind({ profile: "P" }, f.deps);
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokP");
+  assert.equal(JSON.parse(f.kc.get(aSvc)!).claudeAiOauth.accessToken, "tokA");
 });
 
 test("rebind takes the lock BEFORE any credential mutation", async () => {
@@ -351,7 +382,7 @@ test("swap, same account with a rotated token → proceeds, moving the FRESH cre
 
   await rebind({ account: "A", profile: "P" }, f.deps);
   assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tok-new", "moved the freshened token, not the stale pre-lock one");
-  assert.equal(JSON.parse(readBinding(pConfig, f.deps)!.targetOrigCredential).claudeAiOauth.accessToken, "tok-new", "marker stashed the credential actually moved");
+  assert.equal(JSON.parse(bindingCredentials(readBinding(pConfig, f.deps)!, f.deps)!.targetOrig).claudeAiOauth.accessToken, "tok-new", "marker stashed the credential actually moved");
 });
 
 test("swap, target now holds a DIFFERENT account → quarantine, no swap", async () => {
@@ -733,4 +764,120 @@ test("restore works on a marker written before identity stamps were stashed", as
   assert.equal(f.kc.get(pSvc), own, "credentials still restore without a stashed stamp");
   assert.equal(f.kc.get(aSvc), target, "the target got its own credential back");
   assert.equal(stampOf(f).emailAddress, "stale@example.com", "nothing to restore → the stamp is left untouched");
+});
+
+// ---------- Keychain write failures ----------
+
+test("rebind: a failed stash write rolls back — no swap, no stash, no registry entry", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  const realAdd = f.deps.kcAdd;
+  f.deps.kcAdd = (s, v) => (s.endsWith("-agent-switch-rebind-target") ? false : realAdd(s, v));
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /could not stash/);
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokP", "running store untouched");
+  assert.equal(JSON.parse(f.kc.get(aSvc)!).claudeAiOauth.accessToken, "tokA", "target store untouched");
+  assert.equal([...f.kc.keys()].filter((k) => k.includes("agent-switch-rebind")).length, 0, "partial stash removed");
+  assert.equal(readBinding(pConfig, f.deps), null, "no marker");
+  assert.equal(readBindingRegistry(f.deps)["A"], undefined, "registry entry released");
+});
+
+test("restore: a failed Keychain write keeps marker + stash and leaves the running store retryable", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  f.files.set(aFile, cred("tokA"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+
+  const realAdd = f.deps.kcAdd;
+  f.deps.kcAdd = (s, v) => (s === aSvc ? false : realAdd(s, v)); // the target-store write fails
+  await assert.rejects(() => restoreRebind({ profile: "P" }, f.deps), /could not write/);
+  assert.ok(readBinding(pConfig, f.deps), "marker kept for a retry");
+  assert.equal([...f.kc.keys()].filter((k) => k.includes("agent-switch-rebind")).length, 2, "both stash entries kept");
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokA", "running store rolled back to the bound account");
+  assert.equal(f.files.has(aFile + ".rebind-lent"), true, "lent file not returned yet");
+  assert.equal(readBindingRegistry(f.deps)["A"]?.runningProfile, "P", "registry entry kept");
+
+  f.deps.kcAdd = realAdd; // the retry succeeds
+  await restoreRebind({ profile: "P" }, f.deps);
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokP");
+  assert.equal(JSON.parse(f.kc.get(aSvc)!).claudeAiOauth.accessToken, "tokA");
+  assert.equal(readBinding(pConfig, f.deps), null);
+});
+
+test("restore: a failed write to the running store touches nothing else", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+  const realAdd = f.deps.kcAdd;
+  f.deps.kcAdd = (s, v) => (s === pSvc ? false : realAdd(s, v));
+  await assert.rejects(() => restoreRebind({ profile: "P" }, f.deps), /could not write/);
+  assert.equal(f.kc.has(aSvc), false, "target store not written");
+  assert.ok(readBinding(pConfig, f.deps), "marker kept");
+});
+
+// ---------- removing a profile mid-rebind (remove --force) ----------
+
+test("discardBinding drops the stash + registry entry and hands the lent account back", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  f.files.set(aFile, cred("tokA"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+
+  assert.equal(discardBinding("P", f.deps), true);
+  assert.equal([...f.kc.keys()].filter((k) => k.includes("agent-switch-rebind")).length, 0, "no stash entry left behind");
+  assert.equal(readBindingRegistry(f.deps)["A"], undefined, "registry entry released");
+  assert.equal(readBinding(pConfig, f.deps), null, "marker gone");
+  assert.equal(JSON.parse(f.kc.get(aSvc)!).claudeAiOauth.accessToken, "tokA", "A gets its own login back");
+  assert.equal(f.files.has(aFile), true, "lent file returned");
+  assert.equal(discardBinding("P", f.deps), false, "nothing to discard twice");
+});
+
+test("discardBinding never overwrites a target store that holds a login again", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+  f.kc.set(aSvc, cred("tokA-relogged"));
+  discardBinding("P", f.deps);
+  assert.equal(JSON.parse(f.kc.get(aSvc)!).claudeAiOauth.accessToken, "tokA-relogged");
+});
+
+// ---------- removing a rebind TARGET (its account is borrowed by another profile) ----------
+
+test("borrowerOf names the profile that currently serves an account", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  assert.equal(borrowerOf("A", f.deps), null);
+  await rebind({ account: "A", profile: "P" }, f.deps);
+  assert.equal(borrowerOf("A", f.deps), "P");
+  assert.equal(borrowerOf("P", f.deps), null);
+});
+
+test("releaseBorrowedAccount restores the borrower to its own login before the target goes away", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  f.files.set(aFile, cred("tokA"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+
+  assert.equal(await releaseBorrowedAccount("A", f.deps), "P");
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokP", "borrower back on its own account");
+  assert.equal(readBinding(pConfig, f.deps), null, "borrower's marker cleared");
+  assert.equal(readBindingRegistry(f.deps)["A"], undefined, "registry released");
+  assert.equal([...f.kc.keys()].filter((k) => k.includes("agent-switch-rebind")).length, 0, "no stash left");
+  assert.equal(await releaseBorrowedAccount("A", f.deps), null, "nothing borrowed any more");
+});
+
+test("releaseBorrowedAccount propagates a refused restore (nothing released)", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+  f.kc.delete(pSvc); // running store unreadable → restore refuses
+  await assert.rejects(() => releaseBorrowedAccount("A", f.deps), /refusing restore/);
+  assert.equal(borrowerOf("A", f.deps), "P");
 });

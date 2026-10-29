@@ -100,4 +100,33 @@ describe("attachTerminal", () => {
     emit({ kind: "exit", code: null }); // exit racing with teardown
     expect(onExit).not.toHaveBeenCalled();
   });
+
+  it("reports a failed term_open through onError instead of an unhandled rejection", async () => {
+    const { term } = fakeTerm();
+    const { backend } = fakeBackend();
+    backend.open = vi.fn(async () => {
+      throw new Error("pty spawn failed");
+    });
+    const onError = vi.fn();
+    const onExit = vi.fn();
+    const ctrl = attachTerminal(term, backend, ["run", "work"], onExit, onError);
+    await flush();
+    expect(onError).toHaveBeenCalledWith("pty spawn failed");
+    expect(onExit).not.toHaveBeenCalled();
+    await ctrl.dispose();
+    expect(backend.close).not.toHaveBeenCalled();
+  });
+
+  it("does not report an open failure after dispose", async () => {
+    const { term } = fakeTerm();
+    const { backend } = fakeBackend();
+    let reject: (e: unknown) => void = () => {};
+    backend.open = vi.fn(() => new Promise<number>((_, r) => (reject = r)));
+    const onError = vi.fn();
+    const ctrl = attachTerminal(term, backend, ["run"], () => {}, onError);
+    const disposed = ctrl.dispose();
+    reject("gone");
+    await disposed;
+    expect(onError).not.toHaveBeenCalled();
+  });
 });

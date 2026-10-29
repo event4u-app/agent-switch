@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en" class="tray">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>agent-switch tray</title>
+    <style>
+      /* Transparent, content-sized window: only the rounded card is visible. */
+      html.tray,
+      html.tray body,
+      html.tray #root {
+        height: auto;
+        background: transparent;
+        overflow: hidden;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/tray-main.tsx"></script>
+  </body>
+</html>
