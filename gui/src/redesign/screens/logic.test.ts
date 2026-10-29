@@ -14,6 +14,7 @@ import {
   recentFolders,
   resolveStart,
   resolutionFromCli,
+  START_TOOLS,
   sessionHandle,
   toolCanTakeWork,
 } from "./logic.js";
@@ -157,6 +158,9 @@ describe("start resolution", () => {
     const rule = folderRule("/Users/x/dev/proj", "claude:side");
     expect(resolveStart("~/dev/proj/a", "claude", [rule], accounts, [], { home: "/Users/x" }).account?.name).toBe("side");
   });
+  it("offers only tools agent-switch can start", () => {
+    expect(START_TOOLS).toEqual(["claude", "codex", "antigravity"]);
+  });
   it("takes the CLI's answer for Automatic", () => {
     const r = resolutionFromCli({ profile: "claude/side", configDir: "/c", why: ["mapped /Users/x/dev → side"] }, "claude", accounts);
     expect(r.account?.name).toBe("side");
@@ -166,6 +170,10 @@ describe("start resolution", () => {
     expect(none.why[0]).toBe("no mapping");
     const unknown = resolutionFromCli({ profile: "claude/gone", configDir: null, why: [] }, "claude", accounts);
     expect(unknown.account).toBeNull();
+     // A refused folder rule offers no account at all — the shell would refuse too.
+    const refused = resolutionFromCli({ profile: null, configDir: null, why: ["Refused: pool work no longer exists"], blocked: "pool work no longer exists" }, "claude", accounts);
+    expect(refused.account).toBeNull();
+    expect(refused.why).toEqual(["Refused: pool work no longer exists"]);
   });
   it("only starts on accounts that can take work", () => {
     expect(canStartOn(acc("a", { state: "signed-out" }))).toBe(false);

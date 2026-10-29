@@ -23,9 +23,9 @@ import {
 } from "./prefs.js";
 import { WithReason } from "./shared.js";
 
-export const PROTECT_NEW_UNAVAILABLE = "Not adjustable yet — the CLI has no default for new accounts; set each account below.";
+export const PROTECT_NEW_UNAVAILABLE = "On for every new account (98 %) — not adjustable here yet; change it per account below.";
 export const AUTO_RESUME_UNAVAILABLE = "Needs the protection engine — Agent Switch only warns at the threshold today.";
-export const UNKNOWN_USAGE_UNAVAILABLE = "Not adjustable yet — unknown usage is never counted as free, and nothing is paused.";
+export const UNKNOWN_USAGE_UNAVAILABLE = "Today no warning is sent while usage is unknown — it is never counted as free, and nothing is paused. Not adjustable yet.";
 
 function AccountProtectionRow({ account: a }: { account: Account }) {
   const fa = useFoundation();
@@ -124,7 +124,7 @@ export function ProtectionSettings() {
             />
           }
         >
-          <Switch label="Protect new accounts" checked={false} disabled onChange={() => {}} />
+          <Switch label="Protect new accounts" checked disabled onChange={() => {}} />
         </SettingRow>
         {s.accounts.map((a) => (
           <AccountProtectionRow key={a.id} account={a} />

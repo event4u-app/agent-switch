@@ -182,6 +182,7 @@ export function resolveStart(
  *  reasons. No profile (the default config dir) → the tool's default account,
  *  which is what `run` would load there. */
 export function resolutionFromCli(res: DirResolution, tool: Tool, accounts: readonly Account[]): Resolution {
+  if (res.blocked) return { account: null, rule: null, why: res.why.length ? res.why : [`Refused: ${res.blocked}`] };
   if (res.profile) {
     const id = accountIdFromMember(res.profile) ?? `${tool}:${res.profile}`;
     const account = accounts.find((a) => a.id === id) ?? null;
@@ -197,7 +198,7 @@ export function canStartOn(a: Account | null | undefined): boolean {
 }
 
 /** The design's tool row; a tool is selectable when any of its accounts ranks. */
-export const START_TOOLS: Tool[] = ["claude", "codex", "gemini"];
+export const START_TOOLS: Tool[] = ["claude", "codex", "antigravity"];
 
 export function toolCanTakeWork(accounts: readonly Account[], tool: Tool): boolean {
   return rankAccounts(accounts, tool).some((r) => r.rank != null);

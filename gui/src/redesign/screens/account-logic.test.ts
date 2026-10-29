@@ -40,7 +40,7 @@ describe("account names", () => {
 
 describe("row readouts", () => {
   it("summarises surfaces and protection", () => {
-    expect(usedIn({ surfaces: [] })).toBe("—");
+    expect(usedIn({ surfaces: [] })).toBeNull();
     expect(usedIn({ surfaces: ["Claude CLI", "Claude Desktop", "VS Code"] })).toBe("CLI · Desktop · IDE");
     expect(protectTitle(null)).toBe("Session protection not read");
     expect(protectTitle({ enabled: true, thresholdPct: 90 })).toBe("Session protection on: warns at 90 % of the binding window");

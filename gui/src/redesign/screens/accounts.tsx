@@ -28,7 +28,7 @@ function ProtectCell({ account: a }: { account: Account }) {
   const on = !!p?.enabled;
   return (
     <span className={cn("inline-flex items-center gap-1 whitespace-nowrap text-[11px]", on ? "text-ac-soft" : "text-ac-faint")} title={protectTitle(p)}>
-      {p == null ? "—" : on ? <ShieldCheck className="size-3.5 text-ac-ok" /> : <ShieldOff className="size-3.5" />}
+      {p == null ? "—" : on ? <ShieldCheck className="size-3.5 text-ac-soft" /> : <ShieldOff className="size-3.5" />}
       {p == null ? null : on ? `${p.thresholdPct} %` : "Off"}
     </span>
   );
@@ -78,7 +78,7 @@ export function AccountRow({ account: a, ranked, showRank, nextIn }: { account: 
         </span>
       </button>
       <span className="hidden min-w-0 flex-col md:flex">
-        <span className="truncate text-xs text-ac-soft">{usedIn(a)}</span>
+        {usedIn(a) && <span className="truncate text-xs text-ac-soft">{usedIn(a)}</span>}
         <span className="text-[11px] text-ac-faint">{a.liveSessions ? `${a.liveSessions} running` : "idle"}</span>
       </span>
       <div className="col-span-2 md:col-span-1">
@@ -290,7 +290,7 @@ export function Accounts() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Who is signed in where?"
-        sub="Each account with its sign-in, where it is used, what is left and whether its sessions are protected."
+        sub="Each account with its sign-in, where it is used, what is left and at what share it warns."
         actions={
           <Button variant="primary" onClick={() => s.open({ kind: "add-account" })}>
             <Plus /> Add account

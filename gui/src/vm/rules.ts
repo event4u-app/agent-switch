@@ -108,7 +108,7 @@ export function rankAccounts(accounts: readonly Account[], tool: Tool, now?: num
           : account.state === "checking"
             ? "Checking sign-in"
             : account.state === "limited"
-              ? "Paused at its limit"
+              ? "At its limit"
               : left == null
                 ? "Usage unknown — not counted as free"
                 : fresh(account)

@@ -209,7 +209,8 @@ describe("Start session", () => {
     mount(fixture(), { overlay: { kind: "start" } });
     expect(screen.getByText("Where and with what?")).toBeTruthy();
     expect(screen.getByText("Automatic → work")).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Gemini" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.queryByRole("radio", { name: "Gemini" })).toBeNull();
+    expect(screen.getByRole("radio", { name: "Antigravity" }).getAttribute("aria-disabled")).toBe("true");
     expect(screen.getByRole("radio", { name: "Claude app" }).getAttribute("title")).toBe("No Claude app found on this computer");
     const preview = document.querySelector('[title^="agent-switch run work --provider claude --cwd "]');
     expect(preview?.textContent).toMatch(/ \$ claude$/);

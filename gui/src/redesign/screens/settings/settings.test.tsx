@@ -286,6 +286,15 @@ describe("Protection", () => {
     mount("protection");
     expect(screen.queryByText(/Sessions pause at a safe point/)).toBeNull();
   });
+
+  it("shows the values in force on its disabled controls", () => {
+    mount("protection");
+    // New accounts are protected by default (DEFAULT_PROTECTION, 98 %).
+    expect(screen.getByRole("switch", { name: "Protect new accounts" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByText(/the CLI has no default for new accounts/)).toBeNull();
+    // Unknown usage: no option is in force today, and the text says what happens instead.
+    expect(screen.getAllByText(/no warning is sent while usage is unknown/).length).toBeGreaterThan(0);
+  });
 });
 
 describe("Distribution", () => {

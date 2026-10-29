@@ -1077,6 +1077,8 @@ export interface DirResolution {
   profile: string | null;
   configDir: string | null;
   why: string[];
+  /** A folder rule refused every start it could make (the CLI exits 86). */
+  blocked?: string;
 }
 
 /** One Claude Desktop instance from `desktop --json`: the accounts that ran
@@ -1099,7 +1101,8 @@ export async function resolvePlainStart(provider: ProviderId): Promise<DirResolu
 
 export async function resolveDir(provider: ProviderId, cwd: string): Promise<DirResolution> {
   const out = await Command.create("agent-switch", ["dir", "--provider", provider, "--json"], { cwd }).execute();
-  if (out.code !== 0) throw new Error(out.stderr || "agent-switch dir failed");
+  // 86 = a folder rule refused the start; the JSON still says why.
+  if (out.code !== 0 && out.code !== 86) throw new Error(out.stderr || "agent-switch dir failed");
   return JSON.parse(out.stdout);
 }
 

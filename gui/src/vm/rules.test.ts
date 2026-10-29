@@ -116,7 +116,7 @@ describe("rankAccounts", () => {
     expect(ranked.map((r) => r.rank)).toEqual([1, 2, 3, 4, null, null]);
     expect(ranked[0].reason).toBe("80% left in its binding window");
     expect(ranked[2].reason).toBe("95% left · usage is stale");
-    expect(ranked[4].reason).toBe("Paused at its limit");
+    expect(ranked[4].reason).toBe("At its limit");
     expect(ranked[5].reason).toBe("Sign-in needed");
   });
 
