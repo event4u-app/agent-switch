@@ -137,7 +137,7 @@ After 2.2.0, four things should hold that do not hold at the pin:
 | Balancing scoped by label, Team seats excluded (draft D1 b, 2.2) | `owner-decision` resolved as D1; Team-seat detection needs plan metadata from the credential store, which no read-only probe here may open — parked in `later/road-to-session-orchestration.md` Phase 6 |
 | Prompt history opt-in, never across labels (draft D2 b, 3.1-3.5) | `already-satisfied` by the owner's D2 |
 | `mergePromptHistory` race (draft 3.3) | `declined`: the merge runs only on `share on`/`sync`, re-checks the size and retries three times; the remaining window is the rename itself, and deferring merges until no session runs would leave an always-busy machine unmerged |
-| Exact mapping to a disabled profile rebalances (P0-02) | `declined`: falling back to balancing for a disabled target is documented behaviour that keeps the folder usable; D3 covers the pool case |
+| Exact mapping to a disabled profile rebalances (P0-02) | ~~`declined`~~ — **reversed 2026-10-29** (`inbox-2026-10-c`, second arrival): the decline contradicted this roadmap's own D3 (a rule is a boundary first); now refused, see `archive/road-to-a-balance-with-numbers-to-weigh.md` D1 |
 | Eligibility by org, conservative capacity, shared-email (P0-04, P0-05) | `already-satisfied` in part (any window at its threshold is skipped, `cli.md` `dir`); the rest needs provider org metadata — parked in Phase 6 there |
 | Rebind on a shared profile, Antigravity keychain (P0-07, P0-08) | `already-satisfied`: owned by `later/road-to-session-orchestration.md` Phase 4 |
 | Desktop "live" from transcript age (P1-02) | parked in Phase 6 there |
@@ -156,7 +156,7 @@ After 2.2.0, four things should hold that do not hold at the pin:
 | Rank | Item | Risk type | Description | Mitigation | Anchored under |
 |------|------|-----------|-------------|------------|----------------|
 | 1 | Refusal blocks real work | product | A deleted pool still bound to a folder now refuses starts | The message names the binding and the fix (`unmap` or a new pool); only exit 86 blocks, any other failure still starts the tool | Phase 1 |
-| 2 | Old imports carry no marker | implementation | Profiles imported before 2.1 keep being refreshed | Doctor names marked profiles; old imports can be marked by signing in separately; release note | Phase 2 |
+| 2 | Old imports carry no marker | implementation | Profiles imported before 2.1 keep being refreshed | *Corrected 2026-10-29:* a sign-in clears the mark, it does not set it. Doctor names unmarked profiles with the default install's account, and `agent-switch mark-shared <name>` sets the mark (`archive/road-to-a-balance-with-numbers-to-weigh.md` D4) | Phase 2 |
 | 3 | Marked profile shows no usage | product | A dormant marked profile reports nothing once its token lapses | The reason is shown; one `login` clears the marker | Phase 2 |
 
 ## Acceptance Criteria

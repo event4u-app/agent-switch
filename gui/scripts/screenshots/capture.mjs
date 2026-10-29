@@ -138,7 +138,10 @@ function makeBridge(seed) {
         const provider = flags.provider ?? "claude";
         const name = positional[0] ?? activeOf(provider);
         if (!name) return fail(`no active ${provider} profile for --json`);
-        return ok(fx.statusJson(provider, name, now));
+        const status = fx.statusJson(provider, name, now);
+        // Like the real CLI: every read also lands in the latest snapshot `dir` balances on.
+        if (status?.usage) fs.writeFileSync(path.join(seed.ash, provider, name, "usage-latest.json"), JSON.stringify(status.usage));
+        return ok(status);
       }
       case "auth-status": {
         const all = profiles();

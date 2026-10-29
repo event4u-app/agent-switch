@@ -10,8 +10,9 @@ status: planned
 > because every item here needs real multi-OS runs, live provider logins or a soak
 > window that a single session cannot provide honestly.
 >
-> **Arrivals:** 2 — latest `inbox-2026-10-b` (2026-10-29, release hardening from the
-> PR #102 review → Phase 6); earlier: `inbox-2026-10-a`.
+> **Arrivals:** 3 — latest `inbox-2026-10-c` (2026-10-29, PR #103 review: start
+> admission, lock crash tests, reasons on every surface → Phases 2 and 6); earlier:
+> `inbox-2026-10-b`, `inbox-2026-10-a`.
 >
 > Pull trigger: [`road-to-honest-foundations.md`](../archive/road-to-honest-foundations.md)
 > closed (data model, readouts and defects in place).
@@ -28,6 +29,8 @@ status: planned
 ## Phase 2 — Scheduling of new sessions
 
 - [ ] Multi-session leases per profile with fencing; `openSessions` vs `modelActive`.
+- [ ] Start admission: profile, guard or usage can change between `dir --guard` and the
+      spawn — fail on a changed identity, or state that routing is advisory.
 - [ ] Repo / org bindings (`git remote` match) next to folder bindings; first match wins.
 - [ ] "Ask me" and "default account" policies for unbound starts; plain `claude`
       profile resolution documented end to end (v5 AS-018).
@@ -92,4 +95,7 @@ status: planned
 - [ ] Upgrade fixtures from 2.1.0 (labels, alerts, protection, guard, history,
       bindings, pet flag); desktop/security smoke per OS; a final threat review of
       tray IPC, process spawning and shell integration.
-
+- [ ] Lock crash tests on real macOS/Linux/Windows: abrupt exit, orphan and stale lock,
+      permission denied (`withFileLockSync`).
+- [ ] The reason for a pick on every surface — tray and project bindings too, not only
+      `dir --json` and the start dialog.
