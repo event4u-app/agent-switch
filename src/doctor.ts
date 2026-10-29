@@ -242,15 +242,40 @@ async function providerChecks(checks: DoctorCheck[]): Promise<void> {
 
 /** Profiles that share their login with the default install: agent-switch
  *  never refreshes or balances onto them; a separate sign-in ends that. */
-export function sharedLoginCheck(rows: { provider: ProviderId; name: string }[]): DoctorCheck {
-  if (!rows.length) return { id: "shared-login", status: "ok", title: "No profile shares its login with the default install", detail: "" };
-  const names = rows.map((r) => `${r.provider}/${r.name}`).join(", ");
+/** The account the provider's own default install is signed into, where it can
+ *  be read without touching a credential (Antigravity's needs the keychain). */
+function defaultIdentity(p: Provider): string | null {
+  if (p.id === "antigravity") return null;
+  // Claude keeps .claude.json in the home dir, next to (not inside) ~/.claude.
+  return p.readIdentity(p.id === "claude" ? os.homedir() : p.defaultConfigDir());
+}
+
+export function sharedLoginCheck(
+  rows: { provider: ProviderId; name: string }[],
+  likely: { provider: ProviderId; name: string }[] = [],
+): DoctorCheck {
+  if (!rows.length && !likely.length) return { id: "shared-login", status: "ok", title: "No profile shares its login with the default install", detail: "" };
+  const key = (r: { provider: ProviderId; name: string }) => `${r.provider}/${r.name}`;
+  const flag = (p: ProviderId) => (p === "claude" ? "" : ` --provider ${p}`);
+  const parts: string[] = [];
+  if (rows.length) {
+    parts.push(
+      `${rows.map(key).join(", ")} — imported with the default install's credential. agent-switch never refreshes ${rows.length === 1 ? "it" : "them"} (that would sign the other side out) and never starts ${rows.length === 1 ? "it" : "them"} by balancing.`,
+    );
+  }
+  // Imports from before the marker existed: same account as the default install.
+  if (likely.length) {
+    parts.push(
+      `${likely.map(key).join(", ")} may share ${likely.length === 1 ? "its" : "their"} login with the default install (same account, no mark) — if imported, mark ${likely.length === 1 ? "it" : "them"}; if signed in on ${likely.length === 1 ? "its" : "their"} own, ignore this.`,
+    );
+  }
+  const n = rows.length + likely.length;
   return {
     id: "shared-login",
     status: "warn",
-    title: `${rows.length === 1 ? "A profile shares" : `${rows.length} profiles share`} the default install's login`,
-    detail: `${names} — imported with the default install's credential. agent-switch never refreshes ${rows.length === 1 ? "it" : "them"} (that would sign the other side out) and never starts ${rows.length === 1 ? "it" : "them"} by balancing.`,
-    fix: `agent-switch login ${rows[0].name}${rows[0].provider === "claude" ? "" : ` --provider ${rows[0].provider}`}`,
+    title: rows.length ? `${n === 1 ? "A profile shares" : `${n} profiles share`} the default install's login` : "A profile may share the default install's login",
+    detail: parts.join(" "),
+    fix: rows.length ? `agent-switch login ${rows[0].name}${flag(rows[0].provider)}` : `agent-switch mark-shared ${likely[0].name}${flag(likely[0].provider)}`,
   };
 }
 
@@ -266,7 +291,13 @@ export async function collectDoctorReport(): Promise<DoctorReport> {
 
   const identities = allProviders().flatMap((p) => listProfiles(p.id).map((n) => ({ provider: p.id, name: n, identity: identity(p.id, n) })));
   checks.push(signInIsolationCheck(identities));
-  checks.push(sharedLoginCheck(identities.filter((r) => sharesDefaultLogin(r.provider, r.name))));
+  const defaults = new Map(allProviders().map((p) => [p.id, defaultIdentity(p)]));
+  checks.push(
+    sharedLoginCheck(
+      identities.filter((r) => sharesDefaultLogin(r.provider, r.name)),
+      identities.filter((r) => !sharesDefaultLogin(r.provider, r.name) && r.identity !== null && r.identity === defaults.get(r.provider)),
+    ),
+  );
 
   // Share-link health (Claude-config sharing).
   for (const n of listProfiles("claude")) {

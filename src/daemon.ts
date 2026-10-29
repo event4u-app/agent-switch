@@ -35,7 +35,7 @@ import { fetchUsage, liveSessionPids } from "./api.js";
 import { defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, SwitchCandidate, ThresholdState, UsageSnapshot } from "./usage.js";
 import { readCodexUsage } from "./codex-usage.js";
-import { recordHistorySample } from "./history.js";
+import { LATEST_FILE, recordHistorySample, writeLatestSnapshot } from "./history.js";
 import { appendNotification, markOsNotified, Notification } from "./notifications.js";
 import { readOsNotifications } from "./profiles.js";
 import { osNotify } from "./os-notify.js";
@@ -437,6 +437,7 @@ async function pollProvider(
       notify({ kind: "info", title: pNotice.title, message: pNotice.message });
     }
     recordHistorySample(path.join(profileDir(provider, name), "usage-history.json"), snapshot);
+    writeLatestSnapshot(path.join(profileDir(provider, name), LATEST_FILE), snapshot);
     if (name === active) {
       const prev = thresholds.get(`${provider}/${name}`) ?? {};
       const { crossings, state: next } = detectCrossings(snapshot, prev);

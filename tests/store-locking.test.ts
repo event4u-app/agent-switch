@@ -38,3 +38,15 @@ test("protection: concurrent per-profile writes from separate processes lose no 
   await race(8, (i) => `const P = await import(${JSON.stringify(protUrl)}); for (let k = 0; k < 5; k++) P.setProtection("claude", "p${i}x" + k, { thresholdPct: 90 }, ${JSON.stringify(file)});`);
   for (let i = 0; i < 8; i++) for (let k = 0; k < 5; k++) assert.equal(PR.readProtection("claude", `p${i}x${k}`, file).thresholdPct, 90);
 });
+
+const profilesUrl = pathToFileURL(path.join(here, "../src/profiles.js")).href;
+
+test("state: concurrent label and disabled writes from separate processes lose nothing", async () => {
+  for (let i = 0; i < 8; i++) fs.mkdirSync(path.join(HOME, "claude", `s${i}`, "config"), { recursive: true });
+  await race(8, (i) => `const P = await import(${JSON.stringify(profilesUrl)}); for (let k = 0; k < 3; k++) { P.setLabel("claude", "s${i}", "Work"); P.setDisabled("claude", "s${i}", true); }`);
+  const PF = await import("../src/profiles.js");
+  for (let i = 0; i < 8; i++) {
+    assert.equal(PF.labelFor("claude", `s${i}`), "Work", `label of s${i}`);
+    assert.equal(PF.isDisabled("claude", `s${i}`), true, `disabled s${i}`);
+  }
+});

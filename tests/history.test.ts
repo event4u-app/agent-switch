@@ -5,6 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { appendSample, recordHistorySample, readHistory, seriesFor, MAX_SAMPLES } from "../src/history.js";
+import * as H from "../src/history.js";
 import { parseUsage } from "../src/usage.js";
 
 function tmpFile(): string {
@@ -52,4 +53,19 @@ test("seriesFor extracts one window's utilization series, dropping nulls", () =>
 
 test("readHistory returns [] for a missing file", () => {
   assert.deepEqual(readHistory(path.join(os.tmpdir(), "nope-asw-hist.json")), []);
+});
+
+test("latest snapshot: every read is kept unthrottled, atomically, and read back with its age", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-latest-"));
+  const file = path.join(dir, "usage-latest.json");
+  const snap = (at: string, util: number) => ({ windows: [{ key: "five_hour", label: "5h", utilization: util, resetsAt: "2026-10-29T15:00:00Z" }], routines: null, capturedAt: at });
+  assert.equal(H.readLatestSnapshot(file), null);
+  H.writeLatestSnapshot(file, snap("2026-10-29T10:00:00Z", 10) as any);
+  H.writeLatestSnapshot(file, snap("2026-10-29T10:05:00Z", 20) as any);
+  const got = H.readLatestSnapshot(file)!;
+  assert.equal(got.capturedMs, Date.parse("2026-10-29T10:05:00Z"));
+  assert.equal(got.snapshot.windows[0].utilization, 20);
+  assert.equal(got.snapshot.windows[0].resetsAt, "2026-10-29T15:00:00Z", "unlike history, the reset time is kept");
+  if (process.platform !== "win32") assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  assert.deepEqual(fs.readdirSync(dir), ["usage-latest.json"], "no temp file left behind");
 });

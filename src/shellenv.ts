@@ -237,9 +237,19 @@ export function rcFileFor(
   return askProfile() ?? path.join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1");
 }
 
-/** `$PROFILE` from pwsh, then Windows PowerShell; null when neither answers. */
+/** Which PowerShell to ask first: the one this command runs under. Windows
+ *  PowerShell 5.1 puts only `WindowsPowerShell` paths on PSModulePath; pwsh adds
+ *  its own `PowerShell\7` (or `Documents\PowerShell`) ones. */
+export function powershellOrder(env: NodeJS.ProcessEnv = process.env): ["pwsh", "powershell"] | ["powershell", "pwsh"] {
+  const p = env.PSModulePath ?? "";
+  const pwsh = /[\\/]PowerShell[\\/](7|Modules)/i.test(p);
+  return !pwsh && /WindowsPowerShell/i.test(p) ? ["powershell", "pwsh"] : ["pwsh", "powershell"];
+}
+
+/** `$PROFILE` from the PowerShell the user runs, then the other one; null when
+ *  neither answers. */
 export function powershellProfile(): string | null {
-  for (const exe of ["pwsh", "powershell"]) {
+  for (const exe of powershellOrder()) {
     const r = spawnSync(exe, ["-NoProfile", "-NonInteractive", "-Command", "$PROFILE"], { encoding: "utf8", timeout: 5000, windowsHide: true });
     const out = r.status === 0 ? r.stdout.trim() : "";
     if (out) return out;

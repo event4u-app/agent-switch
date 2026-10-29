@@ -117,7 +117,7 @@ import {
   toolReleaseRepo,
 } from "./tooling.js";
 import { releaseNoteBlocks } from "./release-notes.js";
-import { HistorySample, readHistory, recordHistorySample } from "./history.js";
+import { HistorySample, LATEST_FILE, readHistory, readLatestSnapshot, recordHistorySample, writeLatestSnapshot } from "./history.js";
 import { launchGui } from "./gui-launch.js";
 import {
   GUARD_POLICIES,
@@ -685,7 +685,11 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
     // every displayed profile on each refresh, so recording the fresh snapshot
     // here (throttled to ~hourly) fills the chart for all profiles without
     // depending on the background daemon or an "active" profile being set.
-    if (usage) recordHistorySample(path.join(profileDir(pid, active), "usage-history.json"), usage);
+    if (usage) {
+      recordHistorySample(path.join(profileDir(pid, active), "usage-history.json"), usage);
+      // Unthrottled: `dir` balances on usage only while it is minutes old.
+      writeLatestSnapshot(path.join(profileDir(pid, active), LATEST_FILE), usage);
+    }
     const wc = worstLiveContext(pid, active);
     const context = wc
       ? { sessionId: wc.sessionId, pct: wc.pct, contextTokens: wc.contextTokens, windowTokens: wc.windowTokens, model: wc.model, confidence: wc.confidence }
@@ -749,6 +753,13 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
 /** Cached usage for one profile: the daemon's snapshot or the newest history
  *  sample, whichever is newer. Local reads only — `dir` runs on every start. */
 function cachedUsage(providerId: ProviderId, name: string): CachedUsage {
+  const fromDaemonOrHistory = cachedUsageFromDaemonOrHistory(providerId, name);
+  // The app's own reads land here unthrottled; take whichever source is newest.
+  const latest = readLatestSnapshot(path.join(profileDir(providerId, name), LATEST_FILE));
+  return latest && (fromDaemonOrHistory.capturedMs === null || latest.capturedMs > fromDaemonOrHistory.capturedMs) ? latest : fromDaemonOrHistory;
+}
+
+function cachedUsageFromDaemonOrHistory(providerId: ProviderId, name: string): CachedUsage {
   const daemonSnap = readDaemonState()?.profiles?.[`${providerId}/${name}`] ?? null;
   const daemonMs = daemonSnap ? Date.parse(daemonSnap.capturedAt) : NaN;
   const hist = readHistory(path.join(profileDir(providerId, name), "usage-history.json"));
@@ -1938,6 +1949,18 @@ function cmdLabel(providerId: ProviderId, name?: string, label?: string): void {
 
 /** Disable keeps a profile (login, history, settings) but takes it out of every
  *  pick: no active slot, no pool or folder rule, no background polling. */
+/** `mark-shared <name> [--off]`: mark (or unmark) a profile as sharing the
+ *  default install's login — for imports made before `import` set the mark. */
+function cmdMarkShared(providerId: ProviderId, name: string | undefined, off: boolean): void {
+  const n = requireProfile(providerId, name, "mark-shared");
+  setSharesDefaultLogin(providerId, n, !off);
+  console.log(
+    off
+      ? `${providerId}/${n} no longer counts as sharing the default install's login.`
+      : `${providerId}/${n} now counts as sharing the default install's login: agent-switch never refreshes it and never starts it by balancing. \`agent-switch login ${n}\` gives it its own login.`,
+  );
+}
+
 function cmdDisable(providerId: ProviderId, name: string | undefined, disabled: boolean): void {
   const n = requireProfile(providerId, name, disabled ? "disable" : "enable");
   const wasActive = activeFor(providerId) === n;
@@ -2689,6 +2712,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch login [--provider P] <name> [--browser <id>]   sign an existing profile in again (after a sign-out / expired login); --browser opens the Claude sign-in in that browser
   agent-switch browsers [--json]               browsers --browser can open (macOS / Linux)
   agent-switch import [--provider P] <name>    migrate the default install (no re-login)
+  agent-switch mark-shared [--provider P] <name> [--off]   mark a profile as sharing the default install's login (never refreshed or balanced)
   agent-switch use [--provider P] <name>       set the active profile for a provider
   agent-switch deactivate [--provider P]       clear the active profile for a provider
   agent-switch run [--provider P] <name> [--tmux] [..]  launch the provider's CLI (--tmux = managed tmux session, POSIX)
@@ -3149,6 +3173,7 @@ async function main(): Promise<void> {
     case "desktop": return cmdDesktop(!!flags.json);
     case "disable": return cmdDisable(providerId, positional[0], true);
     case "enable": return cmdDisable(providerId, positional[0], false);
+    case "mark-shared": return cmdMarkShared(providerId, positional[0], !!flags.off);
     case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags);
     case "reset": return cmdReset(providerId, positional[0], !!flags.yes);
     case "rename": return cmdRename(providerId, positional[0], positional[1]);

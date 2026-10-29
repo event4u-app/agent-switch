@@ -207,13 +207,17 @@ test("dir: a pool rule picks the member that would lose the most at its reset (F
   );
 });
 
-test("dir: a disabled pool member is skipped, and a rule naming a disabled account falls back", () => {
+test("dir: a disabled pool member is skipped, and a rule naming a disabled or missing account refuses", () => {
   const pooled = R.resolveForDir(inputs({ disabled: (n) => n === "b" }));
   assert.equal(pooled.name, "a");
   assert.ok(pooled.why.includes("Skipped claude/b: disabled"));
+  // A rule to one account is a boundary: disabled or gone refuses, never another account.
   const direct = R.resolveForDir(inputs({ mapping: { path: "/home/u/x", name: "b" }, disabled: (n) => n === "b" }));
-  assert.equal(direct.name, "a");
-  assert.ok(direct.why.includes("Rule: folder ~/x → claude/b, but that account is disabled"));
+  assert.equal(direct.name, null);
+  assert.match(direct.blocked ?? "", /claude\/b is disabled — turn it back on \(agent-switch enable b\)/);
+  const gone = R.resolveForDir(inputs({ mapping: { path: "/home/u/x", name: "gone" }, exists: (n) => n !== "gone" }));
+  assert.equal(gone.name, null);
+  assert.match(gone.blocked ?? "", /claude\/gone no longer exists/);
 });
 
 test("dir: unknown usage is never free — with no fresh member the pick stays inside the pool, never the active account", () => {
@@ -466,4 +470,43 @@ test("auth-status: who keeps a login fresh", () => {
   assert.equal(AU.keptFreshByFor("claude", { shared: false, serviceInstalled: true }, base), "the agent-switch service (Claude Code's own refresh)");
   assert.equal(AU.keptFreshByFor("claude", { shared: false, serviceInstalled: false }, base), base);
   assert.equal(AU.keptFreshByFor("codex", { shared: false, serviceInstalled: true }, "codex (x)"), "codex (x)");
+});
+
+test("dir: the stale-usage pool fallback never takes a profile sharing the default login", () => {
+  const pool = () => ({ id: "work", name: "Work", members: ["claude/stale", "claude/unknown"], createdAt: "" });
+  const r = R.resolveForDir(inputs({ pool, sharesDefaultLogin: (n: string) => n === "stale" }));
+  assert.equal(r.name, "unknown");
+  const only = R.resolveForDir(inputs({ pool: () => ({ id: "work", name: "Work", members: ["claude/stale"], createdAt: "" }), sharesDefaultLogin: () => true }));
+  assert.equal(only.name, null);
+  assert.match(only.blocked ?? "", /no usable claude member/);
+});
+
+test("doctor: an unmarked profile with the default install's account may be an old import — named with mark-shared", () => {
+  const c = DR.sharedLoginCheck([], [{ provider: "claude", name: "old" }]);
+  assert.equal(c.status, "warn");
+  assert.match(c.detail, /claude\/old may share its login with the default install/);
+  assert.equal(c.fix, "agent-switch mark-shared old");
+  // Marked profiles still lead the check.
+  const both = DR.sharedLoginCheck([{ provider: "claude", name: "imp" }], [{ provider: "codex", name: "old" }]);
+  assert.match(both.detail, /claude\/imp/);
+  assert.match(both.detail, /codex\/old may share/);
+});
+
+test("dir: on a level tie the account with the most room in its fullest window wins, not the first listed", () => {
+  const at = "2026-10-28T11:59:00Z";
+  const week = "2026-11-01T12:00:00Z";
+  const usage = (n: string) => ({
+    snapshot: {
+      windows: [
+        { key: "five_hour", label: "5h", utilization: n === "busy" ? 94 : 20, resetsAt: "2026-10-28T13:00:00Z" },
+        { key: "seven_day", label: "All", utilization: 50, resetsAt: week },
+      ],
+      routines: null,
+      capturedAt: at,
+    },
+    capturedMs: Date.parse(at),
+  });
+  const r = R.resolveForDir(inputs({ mapping: null, names: ["busy", "calm"], active: null, usage }));
+  assert.equal(r.name, "calm", r.why.join("\n"));
+  assert.ok(r.why.some((w) => /taking the one with the most room right now, claude\/calm/.test(w)), r.why.join("\n"));
 });
