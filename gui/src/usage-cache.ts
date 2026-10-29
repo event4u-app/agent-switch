@@ -48,14 +48,20 @@ export function loadUsageCache(): Record<string, UsageEntry> {
  * Backfill reset timestamps we already knew but a newer snapshot dropped, so a
  * reset time is never LOST once seen (the API omits `resets_at` for some
  * windows / at 0%). Per-window by key: if `next` has no `resetsAt` for a window
- * but `prev` did, carry the previous one forward. Pure — unit-testable.
+ * but `prev` did, carry the previous one forward — unless it already lay behind
+ * `next`'s capture (that window has reset since). Pure — unit-testable.
  */
 export function withStickyResets(prev: UsageSnapshot | undefined, next: UsageSnapshot): UsageSnapshot {
   if (!prev) return next;
   const prevReset = new Map(prev.windows.map((w) => [w.key, w.resetsAt]));
+  const capturedMs = Date.parse(next.capturedAt);
+  const stillAhead = (r: string) => isNaN(capturedMs) || Date.parse(r) > capturedMs;
   return {
     ...next,
-    windows: next.windows.map((w) => (w.resetsAt == null && prevReset.get(w.key) ? { ...w, resetsAt: prevReset.get(w.key)! } : w)),
+    windows: next.windows.map((w) => {
+      const r = prevReset.get(w.key);
+      return w.resetsAt == null && r && stillAhead(r) ? { ...w, resetsAt: r } : w;
+    }),
   };
 }
 

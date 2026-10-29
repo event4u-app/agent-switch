@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  doctorPath,
   EXPIRY_BUFFER_MS,
   FreshenDeps,
   freshAccessToken,
@@ -119,6 +120,24 @@ test("freshenToken: health check ran but the token is still spent", () => {
   const h = harness({ store: cred(NOW - 1_000), refreshTo: cred(NOW - 500) });
   assert.equal(freshenToken("/cfg", h.deps), "still-expired");
   assert.deepEqual(h.runs, ["/cfg"]);
+});
+
+test("doctorPath lets an npm-installed claude find its node under the service's minimal PATH", { skip: process.platform === "win32" }, () => {
+  const minimal = "/usr/bin:/bin:/usr/sbin:/sbin";
+  assert.equal(
+    doctorPath("/opt/homebrew/bin/claude", "/opt/homebrew/Cellar/node/26.7.0/bin/node", minimal),
+    `/opt/homebrew/bin:/opt/homebrew/Cellar/node/26.7.0/bin:${minimal}`,
+  );
+  // A bare name resolved on PATH adds nothing but node; duplicates are dropped.
+  assert.equal(doctorPath("claude", "/usr/bin/node", minimal), minimal);
+  assert.equal(doctorPath("/usr/local/bin/claude", "/usr/local/bin/node", undefined), "/usr/local/bin");
+});
+
+test("usageToken reports why a spent token was not refreshed, so the service can log it", () => {
+  const seen: string[] = [];
+  const h = harness({ store: cred(NOW - 1_000), healthCheckOk: false });
+  usageToken("/cfg", h.deps, false, (o) => seen.push(o));
+  assert.deepEqual(seen, ["unavailable"]);
 });
 
 test("freshAccessToken: returns the token the store holds AFTER the freshen", () => {

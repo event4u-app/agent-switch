@@ -12,17 +12,11 @@ function tmp(name: string): string {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), "asw-d-")), name);
 }
 
-test("daemon state round-trips and reports freshness against its poll interval", () => {
+test("daemon state round-trips", () => {
   const f = tmp("state.json");
   const state = { lastPoll: "2026-07-13T12:00:00.000Z", pollIntervalMs: 60_000, profiles: {}, lastError: null };
   D.writeDaemonState(state, f);
   assert.deepEqual(D.readDaemonState(f), state);
-
-  const now = Date.parse("2026-07-13T12:00:30.000Z"); // 30s later, interval 60s → fresh
-  assert.equal(D.isFresh(state, state.pollIntervalMs, now), true);
-  const later = Date.parse("2026-07-13T12:02:00.000Z"); // 120s later → stale
-  assert.equal(D.isFresh(state, state.pollIntervalMs, later), false);
-  assert.equal(D.isFresh(null, 60_000, now), false);
 });
 
 test("single-instance: acquire when free, refuse when a live pid holds it, take over a stale pidfile", () => {
@@ -69,6 +63,103 @@ test("nextIntervalMs floors at the minimum and backs off exponentially, capped",
   assert.equal(D.nextIntervalMs(60_000, 1), 120_000);
   assert.equal(D.nextIntervalMs(60_000, 2), 240_000);
   assert.equal(D.nextIntervalMs(60_000, 100), D.MAX_BACKOFF_MS); // capped
+});
+
+test("a failing profile backs off on its own; a good read clears it", () => {
+  const now = 1_000_000;
+  const one = D.nextProfileBackoff(undefined, false, 60_000, now)!;
+  assert.deepEqual(one, { failures: 1, nextAt: now + 120_000 });
+  const two = D.nextProfileBackoff(one, false, 60_000, now)!;
+  assert.deepEqual(two, { failures: 2, nextAt: now + 240_000 });
+  assert.equal(D.nextProfileBackoff(two, true, 60_000, now), undefined);
+
+  assert.equal(D.backoffBlocks(two, now + 239_999), true);
+  assert.equal(D.backoffBlocks(two, now + 240_000), false);
+  assert.equal(D.backoffBlocks(undefined, now), false);
+});
+
+test("a changed login lifts a profile's backoff at once", () => {
+  const now = 1_000_000;
+  const b = D.nextProfileBackoff(undefined, false, 60_000, now, "login-1")!;
+  assert.equal(D.backoffBlocks(b, now + 1, "login-1"), true);
+  assert.equal(D.backoffBlocks(b, now + 1, "login-2"), false); // signed in again
+  assert.equal(D.backoffBlocks(b, now + 1, null), false); // signed out: let the read report it
+  // No stamp recorded (a provider without one): time alone decides.
+  const plain = D.nextProfileBackoff(undefined, false, 60_000, now)!;
+  assert.equal(D.backoffBlocks(plain, now + 1, "anything"), true);
+});
+
+test("loginStamp fingerprints a stored login without keeping it", () => {
+  assert.equal(D.loginStamp(null), null);
+  assert.equal(D.loginStamp("{a}"), D.loginStamp("{a}"));
+  assert.notEqual(D.loginStamp("{a}"), D.loginStamp("{b}"));
+  assert.doesNotMatch(D.loginStamp('{"refreshToken":"secret"}')!, /secret/);
+});
+
+test("dueTargets over several cycles: a dead login waits, a healthy one never does, a re-login retries", () => {
+  const backoff = new Map<string, any>();
+  const stamps: Record<string, string> = { dead: "s1", ok: "t1" };
+  const stampOf = (n: string) => stamps[n];
+  const read = (n: string, now: number) => {
+    const ok = n === "ok";
+    const b = D.nextProfileBackoff(backoff.get(`claude/${n}`), ok, 60_000, now, stampOf(n));
+    if (b) backoff.set(`claude/${n}`, b);
+    else backoff.delete(`claude/${n}`);
+  };
+  let now = 0;
+  const cycle = () => {
+    const due = D.dueTargets("claude", ["dead", "ok"], backoff, now, stampOf);
+    for (const n of due) read(n, now);
+    return due;
+  };
+  assert.deepEqual(cycle(), ["dead", "ok"]);
+  now += 60_000;
+  assert.deepEqual(cycle(), ["ok"]); // dead waits 2 min
+  now += 60_000;
+  assert.deepEqual(cycle(), ["dead", "ok"]);
+  now += 60_000;
+  assert.deepEqual(cycle(), ["ok"]); // dead now waits 4 min
+  stamps.dead = "s2"; // the user signed in again
+  now += 1_000;
+  assert.deepEqual(cycle(), ["dead", "ok"]);
+});
+
+test("pollProvider is wired through dueTargets and stamps each failure with the login", () => {
+  const src = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../src/daemon.ts"), "utf8");
+  const body = src.slice(src.indexOf("async function pollProvider("), src.indexOf("async function pollOnce("));
+  assert.match(body, /dueTargets\(provider, selectPollTargets\(/);
+  assert.match(body, /nextProfileBackoff\(.*loginStampFor\(provider, name\)\)/);
+});
+
+test("the poll loop backs off only when every read of the cycle failed", () => {
+  // Three expired logins next to a healthy one must not slow the healthy one.
+  assert.equal(D.nextConsecutiveFailures(2, 3, 4), 0);
+  assert.equal(D.nextConsecutiveFailures(2, 4, 4), 3); // offline / API down
+  // Nothing due (every target sits in its own backoff): no evidence either way.
+  assert.equal(D.nextConsecutiveFailures(2, 0, 0), 2);
+});
+
+test("the cache bound covers the daemon's cadence plus one loop wake, and stretches with its backoff", () => {
+  assert.equal(D.cacheMaxAgeMs(60_000), D.POOL_POLL_INTERVAL_MS + D.MIN_INTERVAL_MS);
+  // A configured 10-min interval: the active profile's snapshot is ~10 min old.
+  assert.equal(D.cacheMaxAgeMs(10 * 60_000), 10 * 60_000 + D.MIN_INTERVAL_MS);
+  // A loop-wide outage backoff: no point reading live past the daemon.
+  assert.equal(D.cacheMaxAgeMs(D.MAX_BACKOFF_MS), D.MAX_BACKOFF_MS + D.MIN_INTERVAL_MS);
+  assert.equal(D.cacheMaxAgeMs(undefined), D.POOL_POLL_INTERVAL_MS + D.MIN_INTERVAL_MS);
+});
+
+test("a cached snapshot is fresh by its OWN capture time, not by the last poll", () => {
+  const now = Date.parse("2026-10-29T15:45:00.000Z");
+  const snap = (at: string) => ({ windows: [], routines: null, capturedAt: at });
+  assert.equal(D.snapshotFresh(snap("2026-10-29T15:44:00.000Z"), now), true);
+  // 4 h old while another profile was polled a minute ago: stale.
+  assert.equal(D.snapshotFresh(snap("2026-10-29T11:34:24.988Z"), now), false);
+  assert.equal(D.snapshotFresh(snap("2026-10-29T15:45:00.000Z"), now - 1), true);
+  assert.equal(D.snapshotFresh(snap("garbage"), now), false);
+  assert.equal(D.snapshotFresh(undefined, now), false);
+  const bound = 6 * 60_000;
+  assert.equal(D.snapshotFresh(snap(new Date(now - bound).toISOString()), now, bound), true);
+  assert.equal(D.snapshotFresh(snap(new Date(now - bound - 1).toISOString()), now, bound), false);
 });
 
 // D3: the daemon never redeems a Codex reset credit on its own — it only says

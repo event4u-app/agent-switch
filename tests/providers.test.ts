@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { provider, allProviders, isProviderId, PROVIDER_IDS, decodeGoKeyringEmail, resolveBinary, isProviderInstalled } from "../src/providers.js";
+import { provider, allProviders, isProviderId, PROVIDER_IDS, decodeGoKeyringEmail, resolveBinary, isProviderInstalled, offPathBinary } from "../src/providers.js";
 
 const b64url = (obj: unknown) => Buffer.from(JSON.stringify(obj)).toString("base64url");
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "asw-prov-"));
@@ -25,6 +25,19 @@ test("a linked path that does not exist is ignored (falls back to PATH resolutio
   assert.equal(resolveBinary("codex", missing), resolveBinary("codex"));
   // No link → unchanged behavior (bare name or ~/.local/bin), never the missing path.
   assert.notEqual(resolveBinary("codex", missing), missing);
+});
+
+test("offPathBinary finds a CLI in the package-manager dirs a GUI app's minimal PATH omits", () => {
+  const home = "/Users/u";
+  const only = (p: string) => (f: string) => f === p;
+  // Homebrew on Apple silicon — the case a daemon started by the app hit.
+  assert.equal(offPathBinary("claude", home, only("/opt/homebrew/bin/claude"), "darwin"), "/opt/homebrew/bin/claude");
+  assert.equal(offPathBinary("codex", home, only("/usr/local/bin/codex"), "darwin"), "/usr/local/bin/codex");
+  assert.equal(offPathBinary("agy", home, only("/Users/u/.local/bin/agy"), "darwin"), "/Users/u/.local/bin/agy");
+  // ~/.local/bin keeps its precedence over the system-wide dirs.
+  const both = (f: string) => f === "/Users/u/.local/bin/claude" || f === "/opt/homebrew/bin/claude";
+  assert.equal(offPathBinary("claude", home, both, "darwin"), "/Users/u/.local/bin/claude");
+  assert.equal(offPathBinary("claude", home, () => false, "darwin"), null);
 });
 
 test("isProviderId guards the three ids", () => {

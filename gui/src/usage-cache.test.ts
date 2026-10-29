@@ -82,6 +82,16 @@ describe("withStickyResets — never lose a reset time once seen", () => {
     expect(withStickyResets(prev, next).windows[0].resetsAt).toBe("2026-07-21T00:00:00Z");
     expect(withStickyResets(undefined, next).windows[0].resetsAt).toBe("2026-07-21T00:00:00Z");
   });
+
+  it("drops a remembered reset that already passed before the new capture", () => {
+    const prev = mk([{ key: "five_hour", label: "5h", utilization: 40, resetsAt: "2026-08-05T09:50:00Z" }]);
+    const next: UsageSnapshot = {
+      windows: [{ key: "five_hour", label: "5h", utilization: 0, resetsAt: null }],
+      routines: null,
+      capturedAt: "2026-10-29T15:01:17Z",
+    };
+    expect(withStickyResets(prev, next).windows[0].resetsAt).toBeNull();
+  });
 });
 
 describe("isUsageStale — age-based, not fetched-this-session", () => {
