@@ -95,3 +95,15 @@ test("D3: codexResetNotice fires once per cycle, only over the threshold with a 
   assert.equal(D.codexResetNotice("work", snap(99, 0), 95, undefined), null, "no credit");
   assert.equal(D.codexResetNotice("work", snap(99, null), 95, undefined), null, "credit unknown");
 });
+
+test("fetch failure: a blip is never reported; an outage of 15 minutes is, once, and never as an OS notification", () => {
+  const t0 = Date.parse("2026-10-29T11:00:00Z");
+  const min = 60_000;
+  assert.equal(D.fetchFailureNotice("claude/a", t0, t0 + 2 * min), null, "a single failed poll stays silent");
+  assert.equal(D.fetchFailureNotice("claude/a", t0, t0 + 14 * min), null);
+  const n = D.fetchFailureNotice("claude/a", t0, t0 + 15 * min);
+  assert.ok(n);
+  assert.equal(n!.os, false, "fetch failures stay in the app's log, off the desktop");
+  assert.match(n!.message, /claude\/a/);
+  assert.match(n!.message, /15 min/);
+});

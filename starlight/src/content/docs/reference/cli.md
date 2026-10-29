@@ -212,7 +212,7 @@ agent-switch tooling notes --json          # structured blocks, for scripting
 | --- | --- | --- |
 | `notifications [clear]` | `[--json]` | List or clear the notification log. |
 | `notify --kind K --title T --message M` | `[--json] [--repeat]` | Record a notification event. Kinds: `success`, `error`, `warning`, `info`. A notice identical to the last one within 30 minutes is collapsed into it; `--repeat` records it anyway (each occurrence is its own moment, e.g. a session waiting again). |
-| `os-notify [on\|off\|status]` | `[--json]` | Toggle daemon OS desktop notifications (default off). |
+| `os-notify [on\|off\|status]` | `[--json]` | Toggle daemon OS desktop notifications (default off) — Linux and Windows. On macOS the daemon shows nothing itself (a script notification would appear as Script Editor); the Agent Switch app shows the notice while it runs. A failed usage read is never a desktop notification: it goes to the app's log, and only after reads have failed for 15 minutes. |
 | `hooks install\|uninstall\|status [profile]` | — | Manage lifecycle push-hooks in Claude `settings.json` (additive, share-aware). |
 | `service run\|start\|stop\|status\|install\|uninstall` | — | Background usage daemon. `install` wires launchd / systemd-user / Task Scheduler autostart. |
 | `check-update` / `check-updates` | `[--json]` | Compare the running version against the latest GitHub release. |

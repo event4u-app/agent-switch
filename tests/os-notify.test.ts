@@ -3,20 +3,9 @@ import assert from "node:assert/strict";
 
 import { buildOsNotifyCommand, osNotify } from "../src/os-notify.js";
 
-test("buildOsNotifyCommand: macOS uses osascript with an escaped display-notification script", () => {
-  const cmd = buildOsNotifyCommand("darwin", "Auto-switch", "moved to privat");
-  assert.ok(cmd);
-  assert.equal(cmd.program, "osascript");
-  assert.equal(cmd.args[0], "-e");
-  assert.match(cmd.args[1], /display notification "moved to privat" with title "Auto-switch"/);
-});
-
-test("buildOsNotifyCommand: macOS escapes quotes and backslashes in the script", () => {
-  const cmd = buildOsNotifyCommand("darwin", 'a"b', "c\\d");
-  assert.ok(cmd);
-  // the embedded literals are escaped so the AppleScript string stays well-formed
-  assert.match(cmd.args[1], /title "a\\"b"/);
-  assert.match(cmd.args[1], /notification "c\\\\d"/);
+test("buildOsNotifyCommand: macOS sends nothing — an osascript notification would show as Script Editor", () => {
+  // Desktop notices on macOS come from the Agent Switch app itself, or from no one.
+  assert.equal(buildOsNotifyCommand("darwin", "Auto-switch", "moved to privat"), null);
 });
 
 test("buildOsNotifyCommand: Linux uses notify-send with summary + body args (no shell)", () => {

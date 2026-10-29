@@ -56,11 +56,33 @@ import { execFileSync } from "node:child_process";
  *  daemon-side OS notifications, fire a desktop notification too — marking the
  *  record so the GUI does not show it a second time. Deduped events (append
  *  returns null) never OS-notify. */
-function notify(event: Pick<Notification, "kind" | "title" | "message">): void {
+function notify(event: Pick<Notification, "kind" | "title" | "message">, opts: { os?: boolean } = {}): void {
   const created = appendNotification(event);
-  if (created && readOsNotifications() && osNotify(event.title, event.message)) {
+  if (created && opts.os !== false && readOsNotifications() && osNotify(event.title, event.message)) {
     markOsNotified(created.id);
   }
+}
+
+/** How long reads must fail before it counts as an outage. A single failed read
+ *  is routine — a rate-limited endpoint answers again a minute later — and the
+ *  last known values keep being served meanwhile. */
+export const FETCH_OUTAGE_MS = 15 * 60_000;
+
+/** The notice for a profile whose reads have failed since `sinceMs`, or null
+ *  while it is still a blip. Kept off the desktop: a fetch failure is a
+ *  diagnostic for the app's log, not something to interrupt anyone for. */
+export function fetchFailureNotice(
+  key: string,
+  sinceMs: number,
+  now: number,
+): { kind: "warning"; title: string; message: string; os: false } | null {
+  if (now - sinceMs < FETCH_OUTAGE_MS) return null;
+  return {
+    kind: "warning",
+    title: "Usage fetch failed",
+    message: `Could not fetch usage limits for ${key} for ${Math.round((now - sinceMs) / 60_000)} min. Keeping the last known values.`,
+    os: false,
+  };
 }
 
 // Providers the daemon may suggest a switch for on threshold (they expose a
@@ -99,6 +121,8 @@ export interface DaemonState {
   /** "provider/<name>" → true while a usage-fetch failure has already been
    *  notified, so the daemon warns ONCE per outage instead of every cycle. */
   notifiedFetchFail?: Record<string, boolean>;
+  /** When a profile's usage reads started failing (ISO), per `provider/name`. */
+  fetchFailingSince?: Record<string, string>;
   /** "provider/<name>" → the window cycle the protection warning last fired for. */
   protectionNotified?: Record<string, string>;
 }
@@ -403,24 +427,23 @@ async function pollProvider(
   const polled: SwitchCandidate[] = [];
 
   state.notifiedFetchFail = state.notifiedFetchFail ?? {};
+  state.fetchFailingSince = state.fetchFailingSince ?? {};
   for (const name of targets) {
     const key = `${provider}/${name}`;
     const snapshot = await snapshotFor(provider, name);
     if (!snapshot) {
       failures++;
       // Fail-safe: the last-known snapshot in state.profiles[key] is left intact
-      // (never overwritten with null), and we warn ONCE per outage rather than
-      // every cycle — the loop keeps serving the last good numbers meanwhile.
-      if (!state.notifiedFetchFail[key]) {
+      // (never overwritten with null). Only an outage is reported, once.
+      const since = state.fetchFailingSince[key] ?? (state.fetchFailingSince[key] = new Date().toISOString());
+      const notice = state.notifiedFetchFail[key] ? null : fetchFailureNotice(key, Date.parse(since), Date.now());
+      if (notice) {
         state.notifiedFetchFail[key] = true;
-        notify({
-          kind: "warning",
-          title: "Usage fetch failed",
-          message: `Could not fetch usage limits for ${provider}/${name}. Keeping the last known values.`,
-        });
+        notify(notice, { os: notice.os });
       }
       continue;
     }
+    delete state.fetchFailingSince[key];
     if (state.notifiedFetchFail[key]) {
       delete state.notifiedFetchFail[key];
       log(`recovered: ${provider}/${name} usage fetch succeeded again`);
