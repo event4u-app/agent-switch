@@ -59,6 +59,15 @@ export function claudeAuthStatus(name: string, raw: string | null, lastRefreshMs
   if (!raw) {
     return { ...base, state: "sign-in-needed", expiresAt: null, lastRefreshAt: null, detail: "No stored login for this profile." };
   }
+  if (oauth && oauth.refreshToken === "" && (oauth.accessToken === "" || oauth.accessToken == null)) {
+    return {
+      ...base,
+      state: "sign-in-needed",
+      expiresAt: null,
+      lastRefreshAt: iso(lastRefreshMs),
+      detail: "Claude Code cleared this login (signed out, or the refresh window ended). Sign in again.",
+    };
+  }
   if (!oauth || typeof oauth.refreshToken !== "string" || !oauth.refreshToken) {
     return { ...base, state: "unknown", expiresAt: null, lastRefreshAt: iso(lastRefreshMs), detail: "The stored login has an unrecognised shape." };
   }
@@ -76,6 +85,20 @@ export function claudeAuthStatus(name: string, raw: string | null, lastRefreshMs
 }
 
 /** Codex `auth.json` (`{ tokens: { refresh_token, … }, last_refresh, OPENAI_API_KEY? }`). */
+/** A JWT's `exp` (epoch ms) from its payload — read without verifying, only to
+ *  date it; null when it is not a JWT or carries no exp. */
+function jwtExpMs(token: unknown): number | null {
+  if (typeof token !== "string") return null;
+  const payload = token.split(".")[1];
+  if (!payload) return null;
+  try {
+    const exp = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"))?.exp;
+    return typeof exp === "number" ? exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
 export function codexAuthStatus(name: string, raw: string | null, now: number): AuthStatus {
   const base = { provider: "codex" as const, name, keptFreshBy: "codex (refreshes the login when it runs)" };
   let auth: any = null;
@@ -93,6 +116,16 @@ export function codexAuthStatus(name: string, raw: string | null, now: number): 
   }
   if (typeof auth?.tokens?.refresh_token !== "string" || !auth.tokens.refresh_token) {
     return { ...base, state: "sign-in-needed", expiresAt: null, lastRefreshAt: last, detail: "No refreshable login stored." };
+  }
+  const accessEnds = jwtExpMs(auth.tokens.access_token);
+  if (accessEnds !== null && accessEnds <= now) {
+    return {
+      ...base,
+      state: "unknown",
+      expiresAt: null,
+      lastRefreshAt: last,
+      detail: `The access token ran out on ${new Date(accessEnds).toISOString().slice(0, 10)}; codex renews it the next time it runs on this account, if the login is still valid. Usage can't be read until then.`,
+    };
   }
   return {
     ...base,

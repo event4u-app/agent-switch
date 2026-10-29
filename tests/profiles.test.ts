@@ -44,6 +44,8 @@ test("activeFor / setActive are per-provider", () => {
   P.writeState({
     active: { claude: null, codex: null, antigravity: null },
     labels: {},
+    colors: {},
+    disabled: [],
     autoSwitch: {
       claude: { enabled: false, threshold: 95, tag: "all" },
       codex: { enabled: false, threshold: 95, tag: "all" },
@@ -128,6 +130,8 @@ test("legacy global auto-switch migrates onto every provider", () => {
   P.writeState({
     active: { claude: null, codex: null, antigravity: null },
     labels: {},
+    colors: {},
+    disabled: [],
     // deliberately the OLD global shape, cast through unknown for the test
     autoSwitch: { enabled: true, threshold: 70 } as unknown as ReturnType<typeof P.readAutoSwitchAll>,
     providers: {

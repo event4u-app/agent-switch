@@ -67,3 +67,54 @@ test("loadMappings migrates a v1 bare-string value to { claude: <name> }", () =>
   const loaded = M.loadMappings();
   assert.deepEqual(loaded["/some/dir"], { claude: "legacy" });
 });
+
+test("a paused mapping is skipped by resolution — the next mapped ancestor applies", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "asw-pause-"));
+  try {
+    const repo = path.join(root, "repo");
+    const sub = path.join(repo, "pkg");
+    fs.mkdirSync(sub, { recursive: true });
+    M.setMapping(root, "claude", "outer");
+    M.setMapping(repo, "claude", "inner");
+    assert.equal(M.resolveMapping(sub, "claude")?.name, "inner");
+
+    assert.equal(M.setPaused(repo, "claude", true), true);
+    assert.equal(M.resolveMapping(sub, "claude")?.name, "outer");
+    const row = M.mappingRows().find((r) => r.path === M.normalizePath(repo));
+    assert.equal(row?.paused, true);
+    assert.equal(M.mappingRows().find((r) => r.path === M.normalizePath(root))?.paused, false);
+
+    // Editing the target keeps the rule paused.
+    M.setMapping(repo, "claude", "edited");
+    assert.equal(M.resolveMapping(sub, "claude")?.name, "outer");
+
+    assert.equal(M.setPaused(repo, "claude", false), true);
+    assert.equal(M.resolveMapping(sub, "claude")?.name, "edited");
+
+    // Removing a paused rule drops its paused flag too.
+    M.setPaused(repo, "claude", true);
+    M.removeMapping(repo, "claude");
+    M.setMapping(repo, "claude", "again");
+    assert.equal(M.resolveMapping(sub, "claude")?.name, "again");
+  } finally {
+    M.removeMapping(path.join(root, "repo"));
+    M.removeMapping(root);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("pausing only touches the named provider and refuses a folder without a rule", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-pause2-"));
+  try {
+    M.setMapping(dir, "claude", "a");
+    M.setMapping(dir, "codex", "b");
+    M.setPaused(dir, "claude", true);
+    assert.equal(M.resolveMapping(dir, "claude"), null);
+    assert.equal(M.resolveMapping(dir, "codex")?.name, "b");
+    assert.equal(M.setPaused(dir, "antigravity", true), false);
+    assert.equal(M.setPaused(path.join(dir, "nope"), "claude", true), false);
+  } finally {
+    M.removeMapping(dir);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

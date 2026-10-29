@@ -205,3 +205,80 @@ test("applySharing skips a settings.json that carries mcpServers, links a clean 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+// Prompt history (`history.jsonl`, what ↑ and Ctrl+R search) is shared by a
+// plain `share on`: it carries no account state, and without it every account
+// starts with an empty prompt history. A profile that already has its own file
+// is MERGED into the shared one (chronological, de-duplicated) instead of being
+// skipped, and its original is kept as a backup.
+const line = (ts: number, text: string, sid = "s") => JSON.stringify({ display: text, pastedContents: {}, timestamp: ts, project: "/p", sessionId: sid });
+
+test("share on merges a profile's own prompt history into the shared one and links it", { skip: WIN ? "file symlinks gated on win32" : false }, () => {
+  const { root, source, target } = setup();
+  try {
+    fs.writeFileSync(path.join(source, "history.jsonl"), [line(1, "a"), line(3, "c")].join("\n") + "\n");
+    fs.mkdirSync(target, { recursive: true });
+    fs.writeFileSync(path.join(target, "history.jsonl"), [line(2, "b"), line(3, "c")].join("\n") + "\n");
+    const actions = applySharing(source, target, false);
+    assert.ok(actions.some((a) => a.includes("merged 1 prompt") && a.includes("history.jsonl")), actions.join("; "));
+    assert.equal(fs.lstatSync(path.join(target, "history.jsonl")).isSymbolicLink(), true);
+    const merged = fs.readFileSync(path.join(source, "history.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l).display);
+    assert.deepEqual(merged, ["a", "b", "c"]);
+    const backups = fs.readdirSync(target).filter((f) => f.startsWith("history.jsonl.pre-share"));
+    assert.equal(backups.length, 1);
+    // An append through the link (how Claude Code writes it) reaches the source.
+    fs.appendFileSync(path.join(target, "history.jsonl"), line(4, "d") + "\n");
+    assert.ok(fs.readFileSync(path.join(source, "history.jsonl"), "utf8").includes('"d"'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("share on creates the shared prompt history when the source has none yet", { skip: WIN ? "file symlinks gated on win32" : false }, () => {
+  const { root, source, target } = setup();
+  try {
+    fs.mkdirSync(target, { recursive: true });
+    fs.writeFileSync(path.join(target, "history.jsonl"), line(5, "only") + "\n");
+    applySharing(source, target, false);
+    assert.equal(fs.lstatSync(path.join(target, "history.jsonl")).isSymbolicLink(), true);
+    assert.ok(fs.readFileSync(path.join(source, "history.jsonl"), "utf8").includes('"only"'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("share sync merges a forked prompt history instead of overwriting the shared one", { skip: WIN ? "file symlinks gated on win32" : false }, () => {
+  const { root, source, target } = setup();
+  try {
+    fs.writeFileSync(path.join(source, "history.jsonl"), line(1, "a") + "\n");
+    applySharing(source, target, false);
+    // Something replaced the link with a regular file holding only its own lines.
+    fs.unlinkSync(path.join(target, "history.jsonl"));
+    fs.writeFileSync(path.join(target, "history.jsonl"), line(2, "b") + "\n");
+    fs.appendFileSync(path.join(source, "history.jsonl"), line(3, "c") + "\n");
+    syncSharing(source, target);
+    const merged = fs.readFileSync(path.join(source, "history.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l).display);
+    assert.deepEqual(merged, ["a", "b", "c"]);
+    assert.equal(fs.lstatSync(path.join(target, "history.jsonl")).isSymbolicLink(), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("share off leaves each profile a copy of the shared prompt history", { skip: WIN ? "file symlinks gated on win32" : false }, () => {
+  const { root, source, target } = setup();
+  try {
+    fs.writeFileSync(path.join(source, "history.jsonl"), line(1, "a") + "\n");
+    applySharing(source, target, false);
+    removeSharing(target);
+    const st = fs.lstatSync(path.join(target, "history.jsonl"));
+    assert.equal(st.isSymbolicLink(), false);
+    assert.ok(fs.readFileSync(path.join(target, "history.jsonl"), "utf8").includes('"a"'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("prompt history is never part of a config export", () => {
+  assert.ok(!SHARED_ITEMS.includes("history.jsonl"));
+});

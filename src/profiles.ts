@@ -25,6 +25,16 @@ export function isProfileLabel(v: unknown): v is ProfileLabel {
 /** `"claude/work"` → label. Flat keys keep the shape trivially serialisable. */
 export type LabelMap = Record<string, ProfileLabel>;
 
+/** The account colours the GUI offers (its swatches use the same names). */
+export const PROFILE_COLORS = ["orange", "red", "yellow", "green", "teal", "blue", "purple", "pink"] as const;
+export type ProfileColor = (typeof PROFILE_COLORS)[number];
+export function isProfileColor(v: unknown): v is ProfileColor {
+  return typeof v === "string" && (PROFILE_COLORS as readonly string[]).includes(v);
+}
+
+/** `"claude/work"` → chosen colour. Unset = the GUI derives one from the id. */
+export type ColorMap = Record<string, ProfileColor>;
+
 /**
  * Opt-in auto-switch (default OFF). When enabled, the daemon switches the active
  * profile to the same-provider account with the most headroom once the active
@@ -94,6 +104,9 @@ export const DEFAULT_REBIND_STATE: RebindKillSwitch = { disabled: false, consecu
 export interface State {
   active: ActiveMap;
   labels: LabelMap;
+  colors: ColorMap;
+  /** `provider/name` keys of disabled profiles: kept, but never picked or polled. */
+  disabled: string[];
   autoSwitch: AutoSwitchMap;
   providers: ProvidersConfig;
   /** Per-provider linked binary paths (empty unless the user linked one). */
@@ -209,6 +222,16 @@ function normalizeLabels(raw: unknown): LabelMap {
   return out;
 }
 
+function normalizeColors(raw: unknown): ColorMap {
+  const out: ColorMap = {};
+  if (raw && typeof raw === "object") {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (isProfileColor(v)) out[k] = v;
+    }
+  }
+  return out;
+}
+
 function normalizeAutoSwitch(raw: unknown): AutoSwitchConfig {
   const r = (raw ?? {}) as Partial<AutoSwitchConfig>;
   const threshold = typeof r.threshold === "number" && r.threshold >= 1 && r.threshold <= 100 ? Math.round(r.threshold) : DEFAULT_AUTOSWITCH.threshold;
@@ -281,6 +304,8 @@ export function readState(): State {
   try {
     const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
     const labels = normalizeLabels(raw?.labels);
+    const colors = normalizeColors(raw?.colors);
+    const disabled = Array.isArray(raw?.disabled) ? raw.disabled.filter((k: unknown): k is string => typeof k === "string") : [];
     const autoSwitch = normalizeAutoSwitchMap(raw?.autoSwitch);
     const providers = normalizeProvidersMap(raw?.providers);
     const binaryPaths = normalizeBinaryPaths(raw?.binaryPaths);
@@ -289,12 +314,12 @@ export function readState(): State {
     const guard = normalizeGuard(raw?.guard);
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active }, labels, autoSwitch, providers, binaryPaths, osNotifications, rebind, guard };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, rebind, guard };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active }, labels, autoSwitch, providers, binaryPaths, osNotifications, rebind, guard };
+      return { active: { ...emptyActive(), ...raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, rebind, guard };
     }
-    return { active: emptyActive(), labels, autoSwitch, providers, binaryPaths, osNotifications, rebind, guard };
+    return { active: emptyActive(), labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, rebind, guard };
   } catch {
     /* absent / unparsable → default */
   }
@@ -302,7 +327,7 @@ export function readState(): State {
   // 2.1.0 install can have profiles and no state file — that user must keep the
   // pre-2.2 default (block), not be treated as new.
   const fresh = !fs.existsSync(STATE_FILE) && listAllProfiles().length === 0;
-  return { active: emptyActive(), labels: {}, autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
+  return { active: emptyActive(), labels: {}, colors: {}, disabled: [], autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
 }
 
 export function readOsNotifications(): boolean {
@@ -376,9 +401,41 @@ export function setLabel(providerId: ProviderId, name: string, label: ProfileLab
   writeState(state);
 }
 
-/** Drop a removed profile's label so it can't linger as an orphan. */
+/** Drop a removed profile's label, colour and disabled flag so they can't
+ *  linger as orphans (a reused name starts clean). */
 export function clearLabel(providerId: ProviderId, name: string): void {
   setLabel(providerId, name, null);
+  setColor(providerId, name, null);
+  setDisabled(providerId, name, false);
+}
+
+export function isDisabled(providerId: ProviderId, name: string): boolean {
+  return readState().disabled.includes(labelKey(providerId, name));
+}
+
+/** Disable (or re-enable) a profile. Disabling the active one clears the slot. */
+export function setDisabled(providerId: ProviderId, name: string, disabled: boolean): void {
+  const state = readState();
+  const key = labelKey(providerId, name);
+  state.disabled = state.disabled.filter((k) => k !== key);
+  if (disabled) {
+    state.disabled.push(key);
+    if (state.active[providerId] === name) state.active[providerId] = null;
+  }
+  writeState(state);
+}
+
+export function colorOf(providerId: ProviderId, name: string): ProfileColor | null {
+  return readState().colors[labelKey(providerId, name)] ?? null;
+}
+
+/** Set (or clear, with null) a profile's colour. */
+export function setColor(providerId: ProviderId, name: string, color: ProfileColor | null): void {
+  const state = readState();
+  const key = labelKey(providerId, name);
+  if (color) state.colors[key] = color;
+  else delete state.colors[key];
+  writeState(state);
 }
 
 /**
@@ -423,6 +480,11 @@ export function renameProfile(providerId: ProviderId, from: string, to: string, 
     state.labels[toKey] = state.labels[fromKey];
     delete state.labels[fromKey];
   }
+  if (state.colors[fromKey] !== undefined) {
+    state.colors[toKey] = state.colors[fromKey];
+    delete state.colors[fromKey];
+  }
+  state.disabled = state.disabled.map((k) => (k === fromKey ? toKey : k));
   writeState(state);
 }
 

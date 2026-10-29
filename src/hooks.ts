@@ -143,6 +143,25 @@ export function readEvents(file: string): HookEventRecord[] {
   }
 }
 
+/**
+ * Sessions waiting on the user: their last hook event is `Notification` (a
+ * permission prompt, or a long wait for input) and the transcript has not been
+ * written since — a reply or an approval writes to it. `Stop` alone is not
+ * waiting: it ends every turn.
+ */
+export function waitingSessions(events: readonly HookEventRecord[], mtimeMs: (sessionId: string) => number | null): Map<string, string> {
+  const last = new Map<string, HookEventRecord>();
+  for (const e of events) if (e.sessionId) last.set(e.sessionId, e);
+  // sessionId → when it started waiting.
+  const out = new Map<string, string>();
+  for (const [id, e] of last) {
+    const written = mtimeMs(id);
+    // Two seconds of slack: the notification and the transcript line that led to it land together.
+    if (e.event === "Notification" && written !== null && Date.parse(e.at) + 2000 >= written) out.set(id, e.at);
+  }
+  return out;
+}
+
 /** Append one event, trimming the ring to EVENT_RING_CAP. Tolerant of a
  *  malformed existing file (starts fresh). */
 export function appendEvent(file: string, rec: HookEventRecord): void {

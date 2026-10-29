@@ -78,23 +78,39 @@ export function schtasksCreateArgs(exec: string, args: string[], label = LABEL):
 
 // ---------- manifest ----------
 
-function readManifest(): string[] {
+function readManifestRaw(): { files: string[]; invocation: { exec: string; args: string[] } | null } {
   try {
     const d = JSON.parse(fs.readFileSync(MANIFEST, "utf8"));
-    return Array.isArray(d?.files) ? d.files : [];
+    const inv = d?.invocation;
+    const invocation = inv && typeof inv.exec === "string" && Array.isArray(inv.args) ? { exec: inv.exec, args: inv.args.map(String) } : null;
+    return { files: Array.isArray(d?.files) ? d.files : [], invocation };
   } catch {
-    return [];
+    return { files: [], invocation: null };
   }
+}
+
+function readManifest(): string[] {
+  return readManifestRaw().files;
 }
 
 function writeManifest(files: string[]): void {
   fs.mkdirSync(ROOT, { recursive: true });
-  fs.writeFileSync(MANIFEST, JSON.stringify({ label: LABEL, files }, null, 2) + "\n", { mode: 0o600 });
+  // The invocation is what `activate` compares against to re-point the service.
+  fs.writeFileSync(MANIFEST, JSON.stringify({ label: LABEL, files, invocation: runInvocation() }, null, 2) + "\n", { mode: 0o600 });
+}
+
+/** Whether the installed service runs this very CLI. An install from before the
+ *  manifest recorded its invocation counts as another one. */
+export function serviceTarget(): "not-installed" | "this-cli" | "other-cli" {
+  const m = readManifestRaw();
+  if (!m.files.length) return "not-installed";
+  const me = runInvocation();
+  return m.invocation && m.invocation.exec === me.exec && m.invocation.args.join("\0") === me.args.join("\0") ? "this-cli" : "other-cli";
 }
 
 // ---------- install / uninstall ----------
 
-export function serviceInstall(): void {
+export function serviceInstall(log: (line: string) => void = console.log): void {
   const { exec, args } = runInvocation();
   fs.mkdirSync(ROOT, { recursive: true });
 
@@ -106,21 +122,21 @@ export function serviceInstall(): void {
     const r = spawnSync("launchctl", ["load", plist], { encoding: "utf8" });
     if (r.status !== 0) die(`launchctl load failed: ${r.stderr || r.stdout}`);
     writeManifest([plist]);
-    console.log(`Installed LaunchAgent ${plist} (loaded).`);
+    log(`Installed LaunchAgent ${plist} (loaded).`);
   } else if (process.platform === "linux") {
     const unit = path.join(os.homedir(), ".config", "systemd", "user", "agent-switch.service");
     fs.mkdirSync(path.dirname(unit), { recursive: true });
     fs.writeFileSync(unit, systemdUnit(exec, args));
     spawnSync("systemctl", ["--user", "daemon-reload"], { stdio: "ignore" });
     const r = spawnSync("systemctl", ["--user", "enable", "--now", "agent-switch.service"], { encoding: "utf8" });
-    if (r.status !== 0) console.log(`(note: \`systemctl --user enable --now\` returned nonzero — unit written to ${unit}; enable manually if needed)`);
+    if (r.status !== 0) log(`(note: \`systemctl --user enable --now\` returned nonzero — unit written to ${unit}; enable manually if needed)`);
     writeManifest([unit]);
-    console.log(`Installed systemd user unit ${unit}.`);
+    log(`Installed systemd user unit ${unit}.`);
   } else if (process.platform === "win32") {
     const r = spawnSync("schtasks", schtasksCreateArgs(exec, args), { encoding: "utf8" });
     if (r.status !== 0) die(`schtasks /create failed: ${r.stderr || r.stdout}`);
     writeManifest([`schtasks:${LABEL}`]); // a task, not a file
-    console.log(`Installed Task Scheduler logon task ${LABEL}.`);
+    log(`Installed Task Scheduler logon task ${LABEL}.`);
   } else {
     die(`service install is not supported on ${process.platform}`);
   }

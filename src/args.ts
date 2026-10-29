@@ -17,6 +17,7 @@ import { ProviderId, PROVIDER_IDS, isProviderId } from "./providers.js";
  *  (the bug behind `notify`/`providers --surface` silently losing their args). */
 const VALUE_FLAGS = new Set([
   "provider",
+  "browser",
   "shell",
   "source",
   "threshold",

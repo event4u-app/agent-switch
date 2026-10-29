@@ -35,6 +35,8 @@
  * error instead of silently degrading the shell onto the default config dir.
  */
 
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { allProviders } from "./providers.js";
 import { GUARD_REFUSED_EXIT } from "./single-load.js";
 
@@ -63,11 +65,59 @@ export function detectShell(
   return "zsh"; // sensible POSIX default when $SHELL is unset
 }
 
+// The CLI the running app activated (`agent-switch activate` writes its path to
+// <home>/active-cli), so a dev build and an installed app each bring their own;
+// a missing or vanished path falls back to agent-switch on PATH.
+const POSIX_BIN = `__agent_switch_bin() {
+  local p
+  p="$(cat "\${AGENT_SWITCH_HOME:-$HOME/.agent-switch}/active-cli" 2>/dev/null)"
+  if [ -n "$p" ] && [ -x "$p" ]; then printf '%s\\n' "$p"
+  elif command -v agent-switch >/dev/null 2>&1; then printf 'agent-switch\\n'
+  fi
+}
+__agent_switch() {
+  local as
+  as="$(__agent_switch_bin)"
+  command "\${as:-agent-switch}" "$@"
+}`;
+
+const FISH_BIN = `function __agent_switch_bin
+    set -l home $HOME/.agent-switch
+    set -q AGENT_SWITCH_HOME; and set home $AGENT_SWITCH_HOME
+    if test -r $home/active-cli
+        set -l p (cat $home/active-cli)
+        if test -x "$p"
+            echo $p
+            return
+        end
+    end
+    type -q agent-switch; and echo agent-switch
+end
+function __agent_switch
+    set -l as (__agent_switch_bin)
+    test -n "$as"; or set as agent-switch
+    command $as $argv
+end`;
+
+const POWERSHELL_BIN = `function __agent_switch_bin {
+    $home_ = if ($env:AGENT_SWITCH_HOME) { $env:AGENT_SWITCH_HOME } else { Join-Path $HOME '.agent-switch' }
+    $p = Get-Content -Path (Join-Path $home_ 'active-cli') -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($p -and (Test-Path $p)) { return $p }
+    if (Get-Command agent-switch -ErrorAction SilentlyContinue) { return 'agent-switch' }
+    return $null
+}
+function __agent_switch {
+    $as = __agent_switch_bin
+    if (-not $as) { $as = 'agent-switch' }
+    if ($as -like '*.js') { & node $as @args } else { & $as @args }
+}`;
+
 function posixWrapper(binary: string, envVar: string, id: string): string {
   return `${binary}() {
-  local dir rc
-  command -v agent-switch >/dev/null 2>&1 || { command ${binary} "$@"; return; }
-  dir="$(command agent-switch dir --provider ${id} --guard)"
+  local dir rc as
+  as="$(__agent_switch_bin)"
+  [ -n "$as" ] || { command ${binary} "$@"; return; }
+  dir="$(command "$as" dir --provider ${id} --guard)"
   rc=$?
   if [ $rc -eq ${GUARD_REFUSED_EXIT} ]; then return $rc; fi
   if [ -n "$dir" ]; then
@@ -80,11 +130,12 @@ function posixWrapper(binary: string, envVar: string, id: string): string {
 
 function fishWrapper(binary: string, envVar: string, id: string): string {
   return `function ${binary}
-    if not type -q agent-switch
+    set -l as (__agent_switch_bin)
+    if test -z "$as"
         command ${binary} $argv
         return
     end
-    set -l dir (command agent-switch dir --provider ${id} --guard)
+    set -l dir (command $as dir --provider ${id} --guard)
     set -l rc $status
     if test $rc -eq ${GUARD_REFUSED_EXIT}
         return $rc
@@ -101,8 +152,9 @@ function powershellWrapper(binary: string, envVar: string, id: string): string {
   return `function ${binary} {
     $exe = Get-Command ${binary} -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $exe) { Write-Error '${binary} not found on PATH.'; return }
-    if (-not (Get-Command agent-switch -ErrorAction SilentlyContinue)) { & $exe.Source @args; return }
-    $dir = (& agent-switch dir --provider ${id} --guard)
+    $as = __agent_switch_bin
+    if (-not $as) { & $exe.Source @args; return }
+    $dir = (__agent_switch dir --provider ${id} --guard)
     if ($LASTEXITCODE -eq ${GUARD_REFUSED_EXIT}) { return }
     if ($dir) {
         $prev = Get-Item -Path Env:\\${envVar} -ErrorAction SilentlyContinue
@@ -114,8 +166,8 @@ function powershellWrapper(binary: string, envVar: string, id: string): string {
 }`;
 }
 
-function build(header: string, wrappers: string[], asw: string): string {
-  return [header, ...wrappers, asw].join("\n");
+function build(header: string, bin: string, wrappers: string[], asw: string): string {
+  return [header, bin, ...wrappers, asw].join("\n");
 }
 
 export function shellenvScript(shell: Shell): string {
@@ -126,36 +178,71 @@ export function shellenvScript(shell: Shell): string {
     const asw = `# Convenience: "asw" lists all; "asw work" switches claude; "asw codex work" switches a provider
 function asw
     if test (count $argv) -eq 0
-        command agent-switch list
+        __agent_switch list
     else if contains -- $argv[1] claude codex antigravity
-        command agent-switch use $argv[2] --provider $argv[1]
+        __agent_switch use $argv[2] --provider $argv[1]
     else
-        command agent-switch use $argv
+        __agent_switch use $argv
     end
 end`;
-    return build(header, providers.map((p) => fishWrapper(p.binary, p.envVar, p.id)), asw);
+    return build(header, FISH_BIN, providers.map((p) => fishWrapper(p.binary, p.envVar, p.id)), asw);
   }
 
   if (shell === "powershell") {
     const header = `# agent-switch shell integration — add to $PROFILE:  agent-switch shellenv --shell powershell | Out-String | Invoke-Expression`;
     const asw = `# Convenience: "asw" lists all; "asw work" switches claude; "asw codex work" switches a provider
 function asw {
-    if ($args.Count -eq 0) { & agent-switch list; return }
-    if (@('claude','codex','antigravity') -contains $args[0]) { & agent-switch use $args[1] --provider $args[0] }
-    else { & agent-switch use @args }
+    if ($args.Count -eq 0) { __agent_switch list; return }
+    if (@('claude','codex','antigravity') -contains $args[0]) { __agent_switch use $args[1] --provider $args[0] }
+    else { __agent_switch use @args }
 }`;
-    return build(header, providers.map((p) => powershellWrapper(p.binary, p.envVar, p.id)), asw);
+    return build(header, POWERSHELL_BIN, providers.map((p) => powershellWrapper(p.binary, p.envVar, p.id)), asw);
   }
 
   // zsh + bash share the POSIX snippet.
   const header = `# agent-switch shell integration — add to your rc file:  eval "$(agent-switch shellenv)"`;
   const asw = `# Convenience: "asw" lists all; "asw work" switches claude; "asw codex work" switches a provider
 asw() {
-  if [ $# -eq 0 ]; then command agent-switch list; return; fi
+  if [ $# -eq 0 ]; then __agent_switch list; return; fi
   case "$1" in
-    claude|codex|antigravity) command agent-switch use "$2" --provider "$1" ;;
-    *) command agent-switch use "$@" ;;
+    claude|codex|antigravity) __agent_switch use "$2" --provider "$1" ;;
+    *) __agent_switch use "$@" ;;
   esac
 }`;
-  return build(header, providers.map((p) => posixWrapper(p.binary, p.envVar, p.id)), asw);
+  return build(header, POSIX_BIN, providers.map((p) => posixWrapper(p.binary, p.envVar, p.id)), asw);
+}
+
+/** The line that loads the integration, per shell (same as the docs table). */
+export const SHELLENV_LINE: Record<Shell, string> = {
+  zsh: 'eval "$(agent-switch shellenv)"',
+  bash: 'eval "$(agent-switch shellenv)"',
+  fish: "agent-switch shellenv --shell fish | source",
+  powershell: "agent-switch shellenv --shell powershell | Out-String | Invoke-Expression",
+};
+
+/** The startup file `shellenv install` writes to. macOS opens login shells,
+ *  which read ~/.bash_profile rather than ~/.bashrc. */
+export function rcFileFor(shell: Shell, home: string, platform: NodeJS.Platform = process.platform): string {
+  if (shell === "zsh") return path.join(home, ".zshrc");
+  if (shell === "bash") return path.join(home, platform === "darwin" ? ".bash_profile" : ".bashrc");
+  if (shell === "fish") return path.join(home, ".config", "fish", "config.fish");
+  return path.join(home, "Documents", "PowerShell", "Microsoft.PowerShell_profile.ps1");
+}
+
+export interface ShellenvInstall {
+  shell: Shell;
+  file: string;
+  alreadyInstalled: boolean;
+}
+
+/** Append the loader line to the shell's startup file, once. `present` says
+ *  whether any known startup file already loads it (the doctor check). */
+export function installShellIntegration(shell: Shell, home: string, present: boolean): ShellenvInstall {
+  const file = rcFileFor(shell, home);
+  if (present) return { shell, file, alreadyInstalled: true };
+  const before = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+  const sep = before === "" || before.endsWith("\n") ? "" : "\n";
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${before}${sep}\n# agent-switch shell integration\n${SHELLENV_LINE[shell]}\n`);
+  return { shell, file, alreadyInstalled: false };
 }

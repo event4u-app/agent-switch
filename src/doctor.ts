@@ -104,7 +104,7 @@ export function shellIntegrationCheck(home: string = os.homedir(), read: (p: str
         status: "warn",
         title: "Shell integration not found",
         detail: "Without it, `claude`/`codex`/`agy` in a terminal ignore the active profile and folder rules. (Checked the usual zsh, bash, fish and PowerShell profile files.)",
-        fix: 'Add `eval "$(agent-switch shellenv)"` to your shell profile (see `agent-switch shellenv --help`).',
+        fix: 'Run `agent-switch shellenv install` — it adds `eval "$(agent-switch shellenv)"` (or your shell\'s equivalent) to your shell profile.',
       };
 }
 

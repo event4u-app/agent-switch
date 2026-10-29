@@ -50,21 +50,6 @@ test("selectPollTargets = active + live-session profiles, never idle ones", () =
   assert.deepEqual(D.selectPollTargets(names, null, (n) => live.has(n)), ["client"]);
 });
 
-test("poolTargetedMembers = same-provider members of pools a folder rule points at", () => {
-  const pools = [
-    { id: "work", name: "Work", members: ["claude/a", "claude/b", "codex/x"], createdAt: "" },
-    { id: "idle", name: "Idle", members: ["claude/c"], createdAt: "" },
-  ];
-  const rules = [
-    { path: "/r1", provider: "claude" as const, name: "pool:work" },
-    { path: "/r2", provider: "claude" as const, name: "a" }, // plain profile rule, not a pool
-    { path: "/r3", provider: "claude" as const, name: "pool:gone" }, // deleted pool
-  ];
-  assert.deepEqual(D.poolTargetedMembers("claude", rules, pools), ["a", "b"]); // not c: no rule points at "idle"
-  assert.deepEqual(D.poolTargetedMembers("codex", rules, pools), []); // the rule is a claude rule
-  assert.deepEqual(D.poolTargetedMembers("codex", [{ provider: "codex", name: "pool:work" }], pools), ["x"]);
-});
-
 test("selectPollTargets also polls pool-targeted members, spaced by POOL_POLL_INTERVAL_MS", () => {
   const names = ["work", "a", "b", "c"];
   const now = Date.parse("2026-10-28T12:00:00Z");

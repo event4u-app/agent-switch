@@ -24,6 +24,7 @@ import {
   transferSession,
   transferCodexSession,
 } from "../src/sessions.js";
+import * as S from "../src/sessions.js";
 
 // A canonical UUID for the delete/restore tests (assertValidSessionId requires one).
 const UID = "11111111-1111-4111-8111-111111111111";
@@ -56,7 +57,40 @@ test("encodeProjectDir replaces every non-alphanumeric with '-' (documented sche
   assert.equal(encodeProjectDir("abc123"), "abc123");
 });
 
-test("readSessionHeader reads ONLY the first line, defensively", () => {
+test("readSessionHeader finds the cwd past Claude Code's leading metadata lines", () => {
+  const root = tmp();
+  try {
+    // Claude Code 2.1.x opens a transcript with metadata lines that carry no cwd
+    // (mode, permission-mode, atis-latch, file-history-snapshot); the first
+    // message line is the first one that names the folder.
+    const f = path.join(root, "current.jsonl");
+    const lines = [
+      { type: "mode", mode: "default", sessionId: UID },
+      { type: "permission-mode", permissionMode: "default", sessionId: UID },
+      { type: "atis-latch", atis: {}, sessionId: UID },
+      { type: "file-history-snapshot", messageId: "m1", snapshot: {}, isSnapshotUpdate: false },
+      { type: "user", cwd: "/Users/me/code/agent switch", sessionId: UID, message: { role: "user", content: "hi" } },
+      { type: "summary", summary: "Fix the folder start" },
+    ];
+    fs.writeFileSync(f, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    assert.deepEqual(readSessionHeader(f), { cwd: "/Users/me/code/agent switch", summary: "Fix the folder start" });
+
+    // A broken line in between is skipped, not fatal.
+    const mixed = path.join(root, "mixed.jsonl");
+    fs.writeFileSync(mixed, `{"type":"mode"}\nnot json\n{"type":"user","cwd":"/w"}\n`);
+    assert.deepEqual(readSessionHeader(mixed), { cwd: "/w", summary: null });
+
+    // The read stays inside the 64 KiB cap: a cwd that only appears beyond it is
+    // not found (no slurping of a large transcript).
+    const late = path.join(root, "late.jsonl");
+    fs.writeFileSync(late, `{"type":"mode","pad":"${"p".repeat(70 * 1024)}"}\n{"type":"user","cwd":"/late"}\n`);
+    assert.deepEqual(readSessionHeader(late), { cwd: null, summary: null });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("readSessionHeader reads the legacy first-line header, defensively", () => {
   const root = tmp();
   try {
     const f = seedSession(path.join(root, "cfg"), "-proj", "s1", { cwd: "/proj", summary: "hello" });
@@ -468,4 +502,29 @@ test("detectRunningClaudeProfile maps each profile through configDirOf", () => {
     return [];
   });
   assert.deepEqual(seen, ["/home/a/.claude", "/home/b/.claude"]);
+});
+
+test("awaitingAnswer: an open AskUserQuestion / ExitPlanMode at the end of a transcript waits on the user", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-await-"));
+  try {
+    const ask = (id: string, name = "AskUserQuestion") => JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id, name, input: {} }] } });
+    const result = (id: string) => JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: "x" }] } });
+    const bash = (id: string) => JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id, name: "Bash", input: {} }] } });
+    const meta = JSON.stringify({ type: "permission-mode" });
+    const file = (name: string, lines: string[]) => {
+      const f = path.join(dir, name);
+      fs.writeFileSync(f, lines.join("\n") + "\n");
+      return f;
+    };
+    assert.equal(S.awaitingAnswer(file("open.jsonl", [ask("t1"), result("t1"), ask("t2"), meta])), true);
+    // Which question is open, so a new one right after the last is told apart.
+    assert.equal(S.openQuestion(file("open2.jsonl", [ask("t1"), result("t1"), ask("t2"), meta])), "t2");
+    assert.equal(S.openQuestion(file("none.jsonl", [ask("t1"), result("t1")])), null);
+    assert.equal(S.awaitingAnswer(file("plan.jsonl", [ask("p1", "ExitPlanMode")])), true);
+    assert.equal(S.awaitingAnswer(file("answered.jsonl", [ask("t1"), result("t1")])), false);
+    assert.equal(S.awaitingAnswer(file("tool.jsonl", [bash("b1")])), false, "a running tool is not a question");
+    assert.equal(S.awaitingAnswer(path.join(dir, "missing.jsonl")), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

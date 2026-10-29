@@ -193,14 +193,26 @@ function inputs(over: Partial<Parameters<typeof R.resolveForDir>[0]> = {}): Para
   };
 }
 
-test("dir: a pool rule picks the member with the most FRESH headroom and explains why", () => {
+test("dir: a pool rule picks the member that would lose the most at its reset (FRESH usage only) and explains why", () => {
   const r = R.resolveForDir(inputs());
   assert.equal(r.name, "b");
   assert.equal(r.why[0], "Rule: folder ~/x → pool work");
   assert.ok(r.why.includes("Skipped claude/stale: usage checked 30 min ago (too old to trust)"));
   assert.ok(r.why.includes("Skipped claude/unknown: usage unknown"));
   assert.ok(r.why.includes("Skipped claude/out: signed out"));
-  assert.match(r.why[r.why.length - 1], /^Most left in pool work · claude\/b at 30% · usage checked 2 min ago$/);
+  assert.match(
+    r.why[r.why.length - 1],
+    /^Picked claude\/b: 70% of its 5h window left, resets in 3 h \(23\.3 %\/h to use it up\) · usage checked 2 min ago — ahead of claude\/a \(6\.7 %\/h\)$/,
+  );
+});
+
+test("dir: a disabled pool member is skipped, and a rule naming a disabled account falls back", () => {
+  const pooled = R.resolveForDir(inputs({ disabled: (n) => n === "b" }));
+  assert.equal(pooled.name, "a");
+  assert.ok(pooled.why.includes("Skipped claude/b: disabled"));
+  const direct = R.resolveForDir(inputs({ mapping: { path: "/home/u/x", name: "b" }, disabled: (n) => n === "b" }));
+  assert.equal(direct.name, "a");
+  assert.ok(direct.why.includes("Rule: folder ~/x → claude/b, but that account is disabled"));
 });
 
 test("dir: unknown usage is never free — no fresh member falls back to the active profile", () => {
@@ -221,7 +233,7 @@ test("dir: with guard warn, a live member is still eligible but a free one wins 
   const pool = () => ({ id: "work", name: "Work", members: ["claude/a", "claude/b"], createdAt: "" });
   const r = R.resolveForDir(inputs({ pool, usage: tie, live: (n: string) => n === "a", guard: "warn" }));
   assert.equal(r.name, "b");
-  assert.ok(r.why.includes("Preferred claude/b over claude/a: same headroom, claude/a already has a live session"));
+  assert.ok(r.why.some((w) => /^claude\/a, claude\/b are level \(.*\) — taking the one without a live session, claude\/b$/.test(w)), r.why.join("\n"));
   // A live member with strictly more headroom still wins under warn, and says so.
   const live = R.resolveForDir(inputs({ live: (n: string) => n === "b", guard: "warn" }));
   assert.equal(live.name, "b");
@@ -254,6 +266,15 @@ test("auth-status: claude states from store metadata, never a token value", () =
   assert.equal(AU.claudeAuthStatus("w", cred({ refreshTokenExpiresAt: now - 1 }), null, now).state, "sign-in-needed");
   assert.equal(AU.claudeAuthStatus("w", null, null, now).state, "sign-in-needed");
   assert.equal(AU.claudeAuthStatus("w", "{}", null, now).state, "unknown");
+  // A login Claude Code has cleared (signed out, or the refresh window ended):
+  // the entry stays, with empty tokens and expiresAt 0. That is a sign-in, not
+  // an "unrecognised shape".
+  const cleared = JSON.stringify({ claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0, refreshTokenExpiresAt: now - 75 * 86400e3, scopes: ["user:inference"], subscriptionType: "max" } });
+  const c = AU.claudeAuthStatus("w", cleared, null, now);
+  assert.equal(c.state, "sign-in-needed");
+  assert.match(c.detail, /sign in again/i);
+  const clearedNoWindow = JSON.stringify({ claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0 } });
+  assert.equal(AU.claudeAuthStatus("w", clearedNoWindow, null, now).state, "sign-in-needed");
   const all = JSON.stringify([ok, AU.claudeAuthStatus("w", cred({ refreshTokenExpiresAt: now + 86400e3 }), null, now)]);
   assert.doesNotMatch(all, /sk-ant|rt-BBBB/);
 });
@@ -266,6 +287,15 @@ test("auth-status: codex and antigravity", () => {
   assert.equal(c.lastRefreshAt, "2026-10-27T10:00:00.000Z");
   assert.doesNotMatch(JSON.stringify(c), /eyJhbGci|sk-ant|rrrrrrrr/);
   assert.equal(AU.codexAuthStatus("w", JSON.stringify({ tokens: {} }), now).state, "sign-in-needed");
+  // An access token past its own `exp` cannot read usage until codex runs and
+  // renews it — and whether the refresh still works is not knowable from here.
+  const jwt = (exp: number) => `eyJhbGciOiJub25lIn0.${Buffer.from(JSON.stringify({ exp })).toString("base64url")}.sig`;
+  const stale = AU.codexAuthStatus("w", JSON.stringify({ tokens: { access_token: jwt(Math.floor((now - 96 * 86400e3) / 1000)), refresh_token: "r".repeat(40) }, last_refresh: "2026-07-14T19:20:52Z" }), now);
+  assert.equal(stale.state, "unknown");
+  assert.ok(stale.detail.includes(`ran out on ${new Date(now - 96 * 86400e3).toISOString().slice(0, 10)}`), stale.detail);
+  assert.match(stale.detail, /next time it runs/);
+  const live = AU.codexAuthStatus("w", JSON.stringify({ tokens: { access_token: jwt(Math.floor((now + 3600e3) / 1000)), refresh_token: "r".repeat(40) } }), now);
+  assert.equal(live.state, "connected");
   assert.equal(AU.codexAuthStatus("w", null, now).state, "sign-in-needed");
   assert.equal(AU.antigravityAuthStatus("w", true).state, "unknown");
   assert.equal(AU.antigravityAuthStatus("w", false).state, "sign-in-needed");
@@ -322,4 +352,65 @@ test("doctor: shell integration, CLI on PATH, autostart, antigravity OS, isolati
   ]);
   assert.equal(iso.status, "warn");
   assert.match(iso.detail, /claude\/a \+ claude\/b/);
+});
+
+// ---- plain starts: balance across accounts until their resets ----
+
+const H = 3_600_000;
+function weekSnap(fiveUtil: number, weekUtil: number, weekResetInH: number, capturedAt = "2026-10-28T11:59:00Z") {
+  return {
+    windows: [
+      { key: "five_hour", label: "5h", utilization: fiveUtil, resetsAt: "2026-10-28T15:00:00Z" },
+      { key: "seven_day", label: "All", utilization: weekUtil, resetsAt: new Date(NOW + weekResetInH * H).toISOString() },
+    ],
+    routines: null,
+    capturedAt,
+  };
+}
+function plain(usage: Record<string, ReturnType<typeof weekSnap> | null>, over: Partial<Parameters<typeof R.resolveForDir>[0]> = {}) {
+  return R.resolveForDir(
+    inputs({
+      mapping: null,
+      active: "star",
+      names: Object.keys(usage),
+      usage: (n) => {
+        const u = usage[n];
+        return u ? { snapshot: u, capturedMs: Date.parse(u.capturedAt) } : { snapshot: null, capturedMs: null };
+      },
+      ...over,
+    }),
+  );
+}
+
+test("plain start: picks the account whose weekly rest would expire soonest, and says why", () => {
+  // 60 % left over 10 h beats 100 % left over 6 days: the 60 % is lost otherwise.
+  const r = plain({ star: weekSnap(10, 0, 144), soon: weekSnap(10, 40, 10) });
+  assert.equal(r.name, "soon");
+  assert.equal(r.why[0], "No folder rule — balancing across 2 claude accounts by what each would lose at its reset");
+  assert.ok(r.why.some((w) => /^Picked claude\/soon: 60% of the week left, resets in 10 h \(6\.0 %\/h to use it up\)/.test(w)), r.why.join("\n"));
+});
+
+test("plain start: level accounts (same rest, same reset) go to the plain-start account", () => {
+  const r = plain({ other: weekSnap(10, 30, 48), star: weekSnap(10, 30, 48) });
+  assert.equal(r.name, "star");
+  assert.ok(r.why.some((w) => w.includes("level") && w.includes("claude/star")), r.why.join("\n"));
+});
+
+test("plain start: an account at its limit, disabled, signed out or without fresh usage is not picked", () => {
+  const r = plain(
+    { star: weekSnap(10, 90, 100), capped: weekSnap(99, 0, 2), off: weekSnap(0, 0, 1), out: weekSnap(0, 0, 1), stale: weekSnap(0, 0, 1, "2026-10-28T11:00:00Z") },
+    { disabled: (n) => n === "off", signedIn: (n) => n !== "out", threshold: () => 95 },
+  );
+  assert.equal(r.name, "star");
+  assert.ok(r.why.includes("Skipped claude/capped: at 99% of its 5h window (limit 95%)"));
+  assert.ok(r.why.includes("Skipped claude/off: disabled"));
+  assert.ok(r.why.includes("Skipped claude/out: signed out"));
+  assert.ok(r.why.some((w) => w.startsWith("Skipped claude/stale: usage checked")));
+});
+
+test("plain start: with nothing to weigh it falls back to the plain-start account", () => {
+  const r = plain({ star: null, other: null });
+  assert.equal(r.name, "star");
+  assert.ok(r.why.includes("No account has fresh usage to weigh — using the plain-start account"));
+  assert.ok(r.why.includes("Using the active profile claude/star"));
 });

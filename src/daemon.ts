@@ -28,7 +28,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { ROOT, activeFor, configDir, labelFor, listProfiles, readAutoSwitch, readBinaryPath } from "./profiles.js";
+import { ROOT, activeFor, configDir, isDisabled, labelFor, listProfiles, readAutoSwitch, readBinaryPath } from "./profiles.js";
 import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
 import { fetchUsage, liveSessionPids } from "./api.js";
@@ -51,8 +51,6 @@ import {
 import { readEvents, eventFile } from "./hooks.js";
 import { protectionNotice, readProtection } from "./protection.js";
 import { execFileSync } from "node:child_process";
-import { isPoolRef, parseMember, poolIdOf, readPools, type Pool } from "./pools.js";
-import { mappingRows } from "./mappings.js";
 
 /** Append an event to the shared log and, when the operator opted into
  *  daemon-side OS notifications, fire a desktop notification too — marking the
@@ -180,32 +178,12 @@ export function releaseSingleInstance(myPid: number, file: string = PIDFILE): vo
 export const POOL_POLL_INTERVAL_MS = 5 * 60_000;
 
 /**
- * Same-provider members of every pool that at least one folder rule for that
- * provider points at. A pool nobody routes to is not polled. Pure.
- */
-export function poolTargetedMembers(
-  provider: ProviderId,
-  rules: readonly { provider: ProviderId; name: string }[],
-  pools: readonly Pool[],
-): string[] {
-  const out: string[] = [];
-  for (const r of rules) {
-    if (r.provider !== provider || !isPoolRef(r.name)) continue;
-    const pool = pools.find((p) => p.id === poolIdOf(r.name));
-    for (const m of pool?.members ?? []) {
-      const parsed = parseMember(m);
-      if (parsed && parsed.provider === provider && !out.includes(parsed.name)) out.push(parsed.name);
-    }
-  }
-  return out;
-}
-
-/**
  * Which profiles to poll this cycle. Normally the active one plus any with a
  * live session — never a busy-poll of idle accounts. With `watchAll`
  * (auto-switch enabled) every profile is polled, since the switch decision
- * needs each candidate's headroom. Members of pools a folder rule targets
- * (`pooled`) are added too, but only once their last capture is at least
+ * needs each candidate's headroom. `pooled` profiles (every enabled account:
+ * plain starts and pools are balanced across them) are added too, but only once
+ * their last capture is at least
  * {@link POOL_POLL_INTERVAL_MS} old — that is what keeps `dir`'s pool pick on
  * fresh numbers without polling idle accounts every minute. `liveCheck` and
  * `lastCapturedMs` are injected for testability.
@@ -408,11 +386,13 @@ async function pollProvider(
   notifiedReset: Map<string, string>,
   log: (l: string) => void,
 ): Promise<number> {
-  const names = listProfiles(provider);
+  const names = listProfiles(provider).filter((n) => !isDisabled(provider, n));
   const active = activeFor(provider);
   const autoSwitch = readAutoSwitch(provider);
   const isLive = (n: string) => (provider === "claude" ? liveSessionPids(configDir("claude", n)).length > 0 : false);
-  const pooled = poolTargetedMembers(provider, mappingRows(), readPools());
+  // Every start without a folder rule is balanced across all enabled accounts
+  // (dir-resolve.ts), so each one needs fresh numbers — at the pool cadence.
+  const pooled = names;
   const lastCaptured = (n: string) => {
     const t = Date.parse(state.profiles[`${provider}/${n}`]?.capturedAt ?? "");
     return isNaN(t) ? null : t;

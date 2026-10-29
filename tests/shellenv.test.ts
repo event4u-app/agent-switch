@@ -59,7 +59,7 @@ test("every wrapper asks the guard on the same command that resolves the dir", (
     for (const binary of ["claude", "codex", "agy"]) {
       const provider = binary === "claude" ? "claude" : binary === "codex" ? "codex" : "antigravity";
       assert.ok(
-        script.includes(`agent-switch dir --provider ${provider} --guard`),
+        new RegExp(`(\\$as"?|__agent_switch) dir --provider ${provider} --guard`).test(script),
         `${shell}/${binary} must resolve the dir and the guard in ONE invocation`,
       );
     }
@@ -90,14 +90,21 @@ test("wrappers block on the guard's exit code and on nothing else", () => {
 });
 
 test("an uninstalled agent-switch falls straight through to the real binary", () => {
-  assert.match(shellenvScript("zsh"), /command -v agent-switch >\/dev\/null 2>&1 \|\| \{ command claude "\$@"; return; \}/);
-  assert.match(shellenvScript("fish"), /if not type -q agent-switch/);
-  assert.match(shellenvScript("powershell"), /if \(-not \(Get-Command agent-switch -ErrorAction SilentlyContinue\)\)/);
+  assert.match(shellenvScript("zsh"), /as="\$\(__agent_switch_bin\)"\n\s*\[ -n "\$as" \] \|\| \{ command claude "\$@"; return; \}/);
+  assert.match(shellenvScript("fish"), /if test -z "\$as"/);
+  assert.match(shellenvScript("powershell"), /if \(-not \$as\) \{ & \$exe\.Source @args; return \}/);
+});
+
+test("wrappers call the CLI the running app activated, else agent-switch on PATH", () => {
+  assert.match(shellenvScript("zsh"), /active-cli/);
+  assert.match(shellenvScript("zsh"), /command -v agent-switch >\/dev\/null 2>&1/);
+  assert.match(shellenvScript("fish"), /active-cli/);
+  assert.match(shellenvScript("powershell"), /active-cli/);
 });
 
 test("D29: the PowerShell asw has no POSIX `command` builtin", () => {
   const ps = shellenvScript("powershell");
   const asw = ps.slice(ps.indexOf("function asw {"));
   assert.doesNotMatch(asw, /\bcommand agent-switch\b/, "`command` is not a PowerShell builtin");
-  assert.match(asw, /& agent-switch list/);
+  assert.match(asw, /__agent_switch list/);
 });

@@ -12,6 +12,9 @@
  * canonicalized) paths; values are `{ provider, name }`. A path may map a
  * different profile per provider, so the stored value is keyed by provider:
  * `{ "<path>": { claude: "<name>", codex: "<name>", ... } }`.
+ *
+ * A rule can be paused without losing it: `paused` lists `{ "<path>": [provider] }`
+ * next to `mappings`, and resolution skips a paused rule as if it were absent.
  */
 
 import * as fs from "node:fs";
@@ -46,13 +49,31 @@ export function normalizePath(p: string): string {
   return canonicalizeWin32(resolved);
 }
 
-export function loadMappings(): Record<string, DirMapping> {
-  let data: any;
+type Paused = Record<string, ProviderId[]>;
+
+function readFile(): any {
   try {
-    data = JSON.parse(fs.readFileSync(MAPPINGS_FILE, "utf8"));
+    return JSON.parse(fs.readFileSync(MAPPINGS_FILE, "utf8"));
   } catch {
-    return {};
+    return null;
   }
+}
+
+function loadPaused(): Paused {
+  const raw = readFile()?.paused;
+  if (!raw || typeof raw !== "object") return {};
+  const out: Paused = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (Array.isArray(value)) out[key] = value.filter((v): v is ProviderId => typeof v === "string");
+  }
+  return out;
+}
+
+const isPaused = (paused: Paused, key: string, providerId: ProviderId) => !!paused[key]?.includes(providerId);
+
+export function loadMappings(): Record<string, DirMapping> {
+  const data = readFile();
+  if (!data) return {};
   const raw = data && typeof data.mappings === "object" ? data.mappings : {};
   const out: Record<string, DirMapping> = {};
   for (const [key, value] of Object.entries(raw)) {
@@ -63,11 +84,28 @@ export function loadMappings(): Record<string, DirMapping> {
   return out;
 }
 
-function save(mappings: Record<string, DirMapping>): void {
+/** Write mappings; paused flags of rules that no longer exist are dropped. */
+function save(mappings: Record<string, DirMapping>, paused: Paused = loadPaused()): void {
   ensureRoot();
-  fs.writeFileSync(MAPPINGS_FILE, JSON.stringify({ schema: 2, mappings }, null, 2) + "\n", {
-    mode: 0o600,
-  });
+  const kept: Paused = {};
+  for (const [key, providers] of Object.entries(paused)) {
+    const live = providers.filter((p) => mappings[key]?.[p]);
+    if (live.length > 0) kept[key] = live;
+  }
+  const body = Object.keys(kept).length > 0 ? { schema: 2, mappings, paused: kept } : { schema: 2, mappings };
+  fs.writeFileSync(MAPPINGS_FILE, JSON.stringify(body, null, 2) + "\n", { mode: 0o600 });
+}
+
+/** Pause or resume one folder rule. False when the folder has no rule for the provider. */
+export function setPaused(dir: string, providerId: ProviderId, on: boolean): boolean {
+  const key = normalizePath(dir);
+  const mappings = loadMappings();
+  if (!mappings[key]?.[providerId]) return false;
+  const paused = loadPaused();
+  const rest = (paused[key] ?? []).filter((p) => p !== providerId);
+  paused[key] = on ? [...rest, providerId] : rest;
+  save(mappings, paused);
+  return true;
 }
 
 export function setMapping(dir: string, providerId: ProviderId, name: string): string {
@@ -100,10 +138,11 @@ export function resolveMapping(
   providerId: ProviderId,
 ): { path: string; name: string } | null {
   const mappings = loadMappings();
+  const paused = loadPaused();
   let current = normalizePath(dir);
   for (;;) {
     const entry = mappings[current];
-    if (entry && entry[providerId]) return { path: current, name: entry[providerId]! };
+    if (entry && entry[providerId] && !isPaused(paused, current, providerId)) return { path: current, name: entry[providerId]! };
     const parent = path.dirname(current);
     if (parent === current) return null;
     current = parent;
@@ -126,11 +165,12 @@ export function pruneMappings(providerId: ProviderId, name: string): string[] {
 }
 
 /** All mappings as flat rows for display. */
-export function mappingRows(): { path: string; provider: ProviderId; name: string }[] {
-  const rows: { path: string; provider: ProviderId; name: string }[] = [];
+export function mappingRows(): { path: string; provider: ProviderId; name: string; paused: boolean }[] {
+  const rows: { path: string; provider: ProviderId; name: string; paused: boolean }[] = [];
+  const paused = loadPaused();
   for (const [key, entry] of Object.entries(loadMappings())) {
     for (const [provider, name] of Object.entries(entry)) {
-      rows.push({ path: key, provider: provider as ProviderId, name: name as string });
+      rows.push({ path: key, provider: provider as ProviderId, name: name as string, paused: isPaused(paused, key, provider as ProviderId) });
     }
   }
   return rows.sort((a, b) => a.path.localeCompare(b.path) || a.provider.localeCompare(b.provider));
