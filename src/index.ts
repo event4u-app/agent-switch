@@ -1710,6 +1710,16 @@ function cmdTakeover(
     .map((p) => ({ profile: p, loc: locateSession(configDir("claude", p), sessionId) }))
     .filter((h) => h.loc !== null);
   if (hits.length === 0) {
+    // A Code-tab transcript lives in Desktop's ~/.claude and its account binding in
+    // Desktop's own metadata — neither is a profile's, so nothing here can move it.
+    const desktop = desktopScan().rows.find((r) => r.sessionId === sessionId);
+    if (desktop) {
+      die(
+        `session ${sessionId} was started in Claude Desktop (account "${desktop.profile}") and runs on that Desktop window's sign-in — ` +
+          "Desktop sessions cannot be moved to another account yet.\n" +
+          "A session started in a terminal can: agent-switch run <profile>, or Start session › Open in: Terminal in the app.",
+      );
+    }
     die(`session ${sessionId} not found in any claude profile (see: agent-switch sessions)`);
   }
   if (hits.length > 1) {

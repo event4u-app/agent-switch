@@ -1534,6 +1534,41 @@ test("sessions/desktop: Claude Desktop sessions show up under the account they r
   }
 });
 
+test("`takeover` of a Claude Desktop session says it cannot be moved yet instead of \"not found\", and touches nothing", { skip: gate.skip || (process.platform !== "darwin" ? "the regular app's data dir is the macOS one" : false) }, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "asw-home-"));
+  try {
+    const uuid = { work: "11111111-1111-4111-8111-111111111111", side: "22222222-2222-4222-8222-222222222222" };
+    const org = "33333333-3333-4333-8333-333333333333";
+    for (const n of ["work", "side"] as const) {
+      const cfg = path.join(home, "claude", n, "config");
+      fs.mkdirSync(cfg, { recursive: true });
+      fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: `${n}@example.com`, accountUuid: uuid[n] } }));
+    }
+    const cli = "55555555-5555-4555-8555-555555555555";
+    const metaDir = path.join(home, "claude", "work", "gui", "claude-desktop", "claude-code-sessions", uuid.work, org);
+    fs.mkdirSync(metaDir, { recursive: true });
+    const meta = path.join(metaDir, "local_y.json");
+    fs.writeFileSync(meta, JSON.stringify({ cliSessionId: cli, cwd: "/w/app", title: "From Desktop", createdAt: Date.now() - 60 * 60_000 }));
+    const proj = path.join(fakeHome, ".claude", "projects", "-w-app");
+    fs.mkdirSync(proj, { recursive: true });
+    const transcript = path.join(proj, `${cli}.jsonl`);
+    fs.writeFileSync(transcript, "{}\n");
+    const env = { ...process.env, AGENT_SWITCH_HOME: home, HOME: fakeHome };
+    delete (env as Record<string, string | undefined>).CLAUDE_CONFIG_DIR;
+    assert.throws(
+      () => execFileSync("node", [CLI, "takeover", cli, "--to", "side", "--print-only"], { env, encoding: "utf8", stdio: "pipe" }),
+      (err: Error) => /started in Claude Desktop/.test(err.message) && /"work"/.test(err.message) && !/not found in any claude profile/.test(err.message),
+    );
+    assert.equal(fs.existsSync(meta), true);
+    assert.equal(fs.existsSync(transcript), true);
+    assert.equal(fs.existsSync(path.join(home, "claude", "side", "config", "projects")), false);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
 test("sessions: a session whose last hook event is Notification, with nothing written since, is waiting on you", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
