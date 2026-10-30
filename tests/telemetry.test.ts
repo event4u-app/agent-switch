@@ -242,10 +242,18 @@ test("perf: reading context from a large transcript stays cheap (capped tail)", 
   const filler = JSON.stringify({ type: "user", message: { content: "x".repeat(400) } }) + "\n";
   const body = filler.repeat(12000) + asst({ input_tokens: 500_000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 }) + "\n";
   fs.writeFileSync(f, body); // ~5 MB, real entry last
-  const t0 = process.hrtime.bigint();
-  const r = readClaudeContext(f, { claudeVersion: "2.1.210" })!;
-  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-  assert.equal(r.contextTokens, 500_000, "finds the real entry in the capped tail");
+  // The cap itself, deterministically: a fast disk reads all 5 MB inside the
+  // time budget too, so the timing below cannot tell a capped read from a full one.
+  assert.ok(tailLines(f).length < 12_001 / 10, "reads a capped tail, not the whole file");
+  // The fastest of 5 reads: a shared CI runner stalls single reads (49 ms seen on
+  // Windows), but an uncapped read is slow every time.
+  let ms = Infinity;
+  for (let i = 0; i < 5; i++) {
+    const t0 = process.hrtime.bigint();
+    const r = readClaudeContext(f, { claudeVersion: "2.1.210" })!;
+    ms = Math.min(ms, Number(process.hrtime.bigint() - t0) / 1e6);
+    assert.equal(r.contextTokens, 500_000, "finds the real entry in the capped tail");
+  }
   // 20 such reads must fit well under the 100ms/cycle budget → single read < 20ms
-  assert.ok(ms < 20, `single capped read should be <20ms, was ${ms.toFixed(1)}ms`);
+  assert.ok(ms < 20, `single capped read should be <20ms, fastest of 5 was ${ms.toFixed(1)}ms`);
 });
