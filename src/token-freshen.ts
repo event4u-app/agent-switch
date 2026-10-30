@@ -79,10 +79,10 @@ export interface FreshenDeps {
   /** Last freshen attempt for this config dir (epoch ms), 0 when never. */
   readLastAttempt: (configDir: string) => number;
   recordAttempt: (configDir: string, at: number) => void;
-  /** Run Claude Code's health check against this config dir. False = could not
-   *  run it at all (binary missing, spawn failure) — never a verdict on the
-   *  refresh itself, which is judged by re-reading the credential. */
-  runHealthCheck: (configDir: string) => boolean;
+  /** Run Claude Code's health check against this config dir. A string = could
+   *  not run it at all, and why (binary missing, spawn failure) — never a
+   *  verdict on the refresh itself, which is judged by re-reading the credential. */
+  runHealthCheck: (configDir: string) => true | string;
   cooldownMs: number;
   bufferMs: number;
 }
@@ -128,21 +128,30 @@ export function doctorPath(bin: string, execPath: string, inherited: string | un
 }
 
 /**
+ * The environment `claude doctor` runs with. DISABLE_AUTOUPDATER: a background
+ * health check must never reinstall Claude Code — npm updates racing each
+ * other can leave no install at all.
+ */
+export function doctorEnv(bin: string, configDir: string, execPath: string, inherited: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...inherited, CLAUDE_CONFIG_DIR: configDir, PATH: doctorPath(bin, execPath, inherited.PATH), DISABLE_AUTOUPDATER: "1" };
+}
+
+/**
  * `claude doctor` against one profile's config dir. stdout/stderr are dropped —
  * this is a side-effect call, not a readout. Any completed run returns true;
  * whether the token actually got refreshed is decided by re-reading the store.
  */
-function runClaudeDoctor(configDir: string, linkedBinary: string | null): boolean {
+function runClaudeDoctor(configDir: string, linkedBinary: string | null): true | string {
   const bin = resolveBinary("claude", linkedBinary);
   const res = spawnSync(bin, ["doctor"], {
-    env: { ...process.env, CLAUDE_CONFIG_DIR: configDir, PATH: doctorPath(bin, process.execPath, process.env.PATH) },
+    env: doctorEnv(bin, configDir, process.execPath, process.env),
     // Claude Code reads settings from the CWD; run it somewhere neutral so a
     // project's config can never influence a background health check.
     cwd: os.tmpdir(),
     stdio: "ignore",
     timeout: FRESHEN_TIMEOUT_MS,
   });
-  if (res.error) return false;
+  if (res.error) return `${bin}: ${(res.error as NodeJS.ErrnoException).code ?? res.error.message}`;
   return true;
 }
 
@@ -161,18 +170,26 @@ export function defaultFreshenDeps(linkedBinary: string | null = null): FreshenD
 /** Why a freshen attempt did not happen / how it ended — for logs and tests. */
 export type FreshenOutcome = "not-needed" | "cooling-down" | "unavailable" | "refreshed" | "still-expired";
 
+/** Called with the outcome, plus why the health check could not run when it is "unavailable". */
+export type OnFreshenOutcome = (outcome: FreshenOutcome, reason?: string) => void;
+
+function freshen(configDir: string, deps: FreshenDeps): { outcome: FreshenOutcome; reason?: string } {
+  const creds = deps.readCredential(configDir);
+  if (!needsFreshen(creds, deps.now(), deps.bufferMs)) return { outcome: "not-needed" };
+  if (deps.now() - deps.readLastAttempt(configDir) < deps.cooldownMs) return { outcome: "cooling-down" };
+  deps.recordAttempt(configDir, deps.now());
+  const ran = deps.runHealthCheck(configDir);
+  if (ran !== true) return { outcome: "unavailable", reason: ran };
+  return { outcome: needsFreshen(deps.readCredential(configDir), deps.now(), deps.bufferMs) ? "still-expired" : "refreshed" };
+}
+
 /**
  * Make sure the store behind `configDir` holds a usable access token, letting
  * Claude Code refresh it when it does not. Idempotent, cooldown-guarded, and a
  * no-op when the token is still good.
  */
 export function freshenToken(configDir: string, deps: FreshenDeps = defaultFreshenDeps()): FreshenOutcome {
-  const creds = deps.readCredential(configDir);
-  if (!needsFreshen(creds, deps.now(), deps.bufferMs)) return "not-needed";
-  if (deps.now() - deps.readLastAttempt(configDir) < deps.cooldownMs) return "cooling-down";
-  deps.recordAttempt(configDir, deps.now());
-  if (!deps.runHealthCheck(configDir)) return "unavailable";
-  return needsFreshen(deps.readCredential(configDir), deps.now(), deps.bufferMs) ? "still-expired" : "refreshed";
+  return freshen(configDir, deps).outcome;
 }
 
 /**
@@ -184,10 +201,10 @@ export function freshenToken(configDir: string, deps: FreshenDeps = defaultFresh
 export function freshAccessToken(
   configDir: string,
   deps: FreshenDeps = defaultFreshenDeps(),
-  onOutcome?: (outcome: FreshenOutcome) => void,
+  onOutcome?: OnFreshenOutcome,
 ): string | null {
-  const outcome = freshenToken(configDir, deps);
-  onOutcome?.(outcome);
+  const { outcome, reason } = freshen(configDir, deps);
+  onOutcome?.(outcome, reason);
   const creds = deps.readCredential(configDir);
   return creds ? accessTokenOf(creds) : null;
 }
@@ -201,7 +218,7 @@ export function usageToken(
   configDir: string,
   deps: FreshenDeps,
   sharesDefaultLogin: boolean,
-  onOutcome?: (outcome: FreshenOutcome) => void,
+  onOutcome?: OnFreshenOutcome,
 ): string | null {
   if (!sharesDefaultLogin) return freshAccessToken(configDir, deps, onOutcome);
   const creds = deps.readCredential(configDir);

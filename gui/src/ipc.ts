@@ -749,6 +749,12 @@ export async function quitApp(): Promise<void> {
   await invoke("quit");
 }
 
+/** Quit and start again on the version the CLI is on (the `restart_app` Tauri
+ *  command → `agent-switch gui --after-pid`), so an update takes effect. */
+export async function restartApp(): Promise<void> {
+  await invoke("restart_app");
+}
+
 /** Show the window and give the app its Dock icon back (the `show_window` Tauri
  *  command → Regular activation policy + show + focus). Routed through Rust so
  *  every show path restores the Dock presence. */

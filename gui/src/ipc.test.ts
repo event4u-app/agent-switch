@@ -34,6 +34,7 @@ import {
   deactivateProfile,
   removeProfile,
   quitApp,
+  restartApp,
   profileUsage,
   setProfileLabel,
   getAutoSwitch,
@@ -163,6 +164,11 @@ describe("ipc", () => {
   it("quitApp invokes the `quit` Tauri command", async () => {
     await quitApp();
     expect(invoke).toHaveBeenCalledWith("quit");
+  });
+
+  it("restartApp invokes the `restart_app` Tauri command", async () => {
+    await restartApp();
+    expect(invoke).toHaveBeenCalledWith("restart_app");
   });
 
   it("profileUsage reads a named profile's own usage snapshot", async () => {

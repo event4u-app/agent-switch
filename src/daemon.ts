@@ -463,8 +463,8 @@ async function snapshotFor(provider: ProviderId, name: string, log: (l: string) 
   // cause — a profile nobody is running never refreshes itself. Let Claude Code
   // refresh it first (cooldown-guarded, no-op while the token is still good) —
   // never for a profile sharing the default install's login.
-  const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), sharesDefaultLogin("claude", name), (outcome) => {
-    if (outcome === "unavailable") log(`freshen: claude/${name} — could not start \`claude doctor\` (not found on this service's PATH; link it in the app)`);
+  const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), sharesDefaultLogin("claude", name), (outcome, reason) => {
+    if (outcome === "unavailable") log(`freshen: claude/${name} — could not start \`claude doctor\` (${reason}; if Claude Code is installed elsewhere, link it in the app)`);
     else if (outcome === "still-expired") log(`freshen: claude/${name} — Claude Code could not refresh the login (sign in again)`);
   });
   if (!token) return null;

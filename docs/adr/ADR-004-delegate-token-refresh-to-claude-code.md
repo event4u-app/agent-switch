@@ -60,7 +60,9 @@ The path is deliberately narrow:
 
 - Usage keeps updating for idle accounts without the operator touching the CLI.
 - A background `claude doctor` process may briefly appear for an idle profile,
-  at most once per 10 minutes per profile.
+  at most once per 10 minutes per profile. It runs with `DISABLE_AUTOUPDATER=1`:
+  a background health check never reinstalls Claude Code (on 2026-10-30 three
+  npm updates of `@anthropic-ai/claude-code` racing each other left no install).
 - agent-switch grows a runtime dependency on the `claude` binary for *freshness*
   (it already depends on it for `run`). If the binary is absent the freshen is a
   clean no-op and behaviour degrades to exactly what it was before.

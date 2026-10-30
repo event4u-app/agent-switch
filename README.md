@@ -445,7 +445,10 @@ The CLI is fully usable on its own. Two optional layers add convenience:
   CLI** (`agent-switch <cmd> --json`) and never re-implements profile logic; the CLI
   core stays dependency-free. See [`gui/README.md`](gui/README.md). Running
   `agent-switch` **with no command** launches it (same as `agent-switch gui`); if
-  the app is already running, no second copy starts.
+  the app is already running, no second copy starts. After an update (of
+  agent-switch, or of agent-config from Tools) the app offers **Restart now**,
+  which runs `agent-switch gui --after-pid <pid>` to start the installed version
+  once the old one has quit.
 
 Usage readout is per-provider: Claude and Codex report their own usage windows;
 **Antigravity has no usage readout**, so it shows identity only (never a

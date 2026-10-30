@@ -118,7 +118,7 @@ import {
 } from "./tooling.js";
 import { releaseNoteBlocks } from "./release-notes.js";
 import { HistorySample, LATEST_FILE, readHistory, readLatestSnapshot, recordHistorySample, writeLatestSnapshot } from "./history.js";
-import { launchGui } from "./gui-launch.js";
+import { launchGui, waitForExit } from "./gui-launch.js";
 import {
   GUARD_POLICIES,
   GUARD_REFUSED_EXIT,
@@ -2343,9 +2343,16 @@ function cmdNotifications(sub: string | undefined, json = false): void {
 
 /** Launch a registered GUI app on a profile, isolated (macOS). Profile: an
  *  explicit positional name, else the active profile for the app's provider. */
-async function cmdGui(): Promise<void> {
+async function cmdGui(afterPid?: string | boolean): Promise<void> {
   // Launch the tray/menubar GUI — downloads its prebuilt artifact from the
   // matching GitHub Release on first use, then caches it (see gui-launch.ts).
+  // `--after-pid` is the GUI's restart: it quits and hands over to this run,
+  // which launches the version THIS CLI is on — after an update, the new one.
+  if (afterPid !== undefined) {
+    const pid = Number(afterPid);
+    if (!Number.isInteger(pid) || pid <= 0) die("usage: agent-switch gui [--after-pid <pid>]");
+    if (!(await waitForExit(pid))) die(`the GUI (pid ${pid}) did not quit — start it again with \`agent-switch gui\`.`);
+  }
   try {
     const result = await launchGui();
     console.log(result === "already-running" ? "The agent-switch GUI is already running." : "Launched the agent-switch GUI.");
@@ -2751,7 +2758,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch activity [--limit N] [--json]   what agent-switch itself did, and why
   agent-switch rename <old> <new> [--provider P]                               rename a profile (name & keep its tag)
   agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
-  agent-switch [gui]                           launch the tray/menubar GUI (the default with no command; won't start a second if one is running)
+  agent-switch [gui] [--after-pid <pid>]       launch the tray/menubar GUI (the default with no command; won't start a second if one is running; --after-pid waits for that process to quit first — the GUI's restart)
   agent-switch check-update [--json]           check GitHub Releases for a newer version
   agent-switch update                          self-update to the latest version (via npm); restarts the service on it, or offers to install one
   agent-switch apps                            list launchable GUI apps (macOS)
@@ -3180,7 +3187,7 @@ async function main(): Promise<void> {
     case "reset": return cmdReset(providerId, positional[0], !!flags.yes);
     case "rename": return cmdRename(providerId, positional[0], positional[1]);
     case "providers": return cmdProviders(providerId, providerExplicit, positional[0], flags);
-    case "gui": return cmdGui();
+    case "gui": return cmdGui(flags["after-pid"]);
     case "update": case "upgrade": return cmdUpdate();
     case "check-update": case "check-updates": return cmdCheckUpdate(!!flags.json);
     case "open": return cmdOpen(positional[0], positional[1]);

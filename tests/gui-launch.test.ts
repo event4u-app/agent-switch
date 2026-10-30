@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { guiAssetSpec, guiLaunchArgv, guiProcessSignature, guiRunningIn } from "../src/gui-launch.js";
+import { guiAssetSpec, guiLaunchArgv, guiProcessSignature, guiRunningIn, pidAlive, waitForExit } from "../src/gui-launch.js";
 
 test("guiAssetSpec maps platform+arch to the release-asset pattern + handling", () => {
   const mac = guiAssetSpec("darwin", "arm64");
@@ -60,4 +60,28 @@ test("guiRunningIn detects a running instance in a process-list snapshot", () =>
   const psWithAppImage = "/tmp/x/agent-switch.AppImage\n/usr/bin/gnome-shell";
   assert.equal(guiRunningIn(guiProcessSignature("appimage"), psWithAppImage), true);
   assert.equal(guiRunningIn(guiProcessSignature("appimage"), "/usr/bin/gnome-shell"), false);
+});
+
+test("waitForExit: returns once the process is gone, polling in between", async () => {
+  let polls = 0;
+  const slept: number[] = [];
+  const exited = await waitForExit(42, {
+    alive: () => ++polls < 4,
+    sleep: async (ms) => void slept.push(ms),
+    stepMs: 100,
+  });
+  assert.equal(exited, true);
+  assert.deepEqual(slept, [100, 100, 100]);
+});
+
+test("waitForExit: gives up after the timeout when the process never quits", async () => {
+  let slept = 0;
+  const exited = await waitForExit(42, { alive: () => true, sleep: async (ms) => void (slept += ms), stepMs: 100, timeoutMs: 1_000 });
+  assert.equal(exited, false);
+  assert.equal(slept, 1_000);
+});
+
+test("pidAlive: this process is alive, an unused pid is not", () => {
+  assert.equal(pidAlive(process.pid), true);
+  assert.equal(pidAlive(2 ** 22 + 12345), false);
 });
