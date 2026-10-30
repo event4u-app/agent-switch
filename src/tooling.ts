@@ -297,7 +297,10 @@ export function planToolAction(
   const platform = opts.platform ?? process.platform;
   switch (id) {
     case "agent-config":
-      return { command: npmCommand(NPM_PACKAGES["agent-config"], action === "upgrade") };
+      // `agent-config upgrade` is npm @latest PLUS the global re-install, plugin
+      // refresh and settings sync — npm alone leaves the global root stale.
+      if (action === "upgrade") return { command: { cmd: "agent-config", args: ["upgrade"], display: "agent-config upgrade" } };
+      return { command: npmCommand(NPM_PACKAGES["agent-config"], false) };
     case "codex":
       return { command: npmCommand(NPM_PACKAGES.codex, action === "upgrade") };
     case "claude":

@@ -292,10 +292,20 @@ test("planToolAction: npm tools — install plain, upgrade @latest (exact argv)"
     assert.deepEqual(install.args, ["install", "-g", pkg]);
     assert.equal(install.display, `npm install -g ${pkg}`);
   }
-  // upgrade without a claude binary present → npm @latest for all three.
-  for (const [id, pkg] of cases) {
+  // upgrade without a claude binary present → npm @latest for the provider CLIs.
+  for (const [id, pkg] of cases.filter(([id]) => id !== "agent-config")) {
     const upgrade = commandOf(id, "upgrade", { platform: "linux", claudePath: null });
     assert.deepEqual(upgrade.args, ["install", "-g", `${pkg}@latest`]);
+  }
+});
+
+test("planToolAction: agent-config upgrades through its own `agent-config upgrade`, the same steps as the CLI", () => {
+  for (const platform of ["darwin", "linux", "win32"] as const) {
+    assert.deepEqual(commandOf("agent-config", "upgrade", { platform }), {
+      cmd: "agent-config",
+      args: ["upgrade"],
+      display: "agent-config upgrade",
+    });
   }
 });
 
