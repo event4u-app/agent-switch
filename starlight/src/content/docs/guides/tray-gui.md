@@ -40,7 +40,8 @@ session; `⌘,` opens Settings.
   what each account has left, ranked by fresh headroom. Every number says how old it is.
 - **Sessions** — every session with its account; the session sheet shows a preview,
   why it got that account, and an explicit **Move to another account** (switch live,
-  take over, hand off). Nothing moves on its own.
+  take over, hand off). Nothing moves on its own. Sessions started in Claude Desktop
+  show a note instead: they run on the Desktop window's sign-in and cannot be moved yet.
 - **Accounts** — sign-in state, capacity windows, session protection per account,
   usage history, and **Projects & pools**: folder rules that start on an account or a
   pool, and the pools themselves — create one with **New pool**, add or remove its

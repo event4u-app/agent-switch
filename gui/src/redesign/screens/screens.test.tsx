@@ -185,7 +185,10 @@ describe("Session sheet", () => {
     const trash = screen.getByRole("button", { name: /Move to trash/ }) as HTMLButtonElement;
     expect(trash.disabled).toBe(true);
     expect(trash.title).toBe("Started in Claude Desktop — delete it there.");
-    expect(screen.getByText(/Started in Claude Desktop/, { selector: "p" })).toBeTruthy();
+    const note = screen.getByText(/Started in Claude Desktop/, { selector: "p" });
+    expect(note.textContent).toMatch(/can't be moved to another account yet/);
+    expect(note.textContent).toMatch(/Open in: Terminal/);
+    expect(note.textContent).not.toMatch(/Move, compact or delete it in Claude Desktop/);
     expect(screen.queryByRole("radio", { name: "Take over" })).toBeNull();
   });
 

@@ -325,7 +325,8 @@ export function SessionSheet({ id }: { id: string }) {
         </div>
         {!n.trashed && desktop && (
           <p className="rounded-lg border border-ac-line bg-ac-bg p-4 text-xs text-ac-muted">
-            Started in Claude Desktop — it runs on that Desktop window's sign-in. Move, compact or delete it in Claude Desktop.
+            Started in Claude Desktop — it runs on that Desktop window's sign-in, so compact or delete it there. It can't be moved to another account yet;
+            a session started with Start session › Open in: Terminal can.
           </p>
         )}
         {!n.trashed && !desktop && (
