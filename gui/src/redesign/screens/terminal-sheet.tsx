@@ -6,6 +6,7 @@ import { attachTerminal, tauriBackend, type TermBackend } from "../../terminal.j
 import { Badge } from "../../ui/Badge.js";
 import { Button } from "../../ui/Button.js";
 import { Sheet } from "../../ui/Overlay.js";
+import { RestartButton } from "./settings/updates.js";
 import { forceToolsOnNextLoad } from "../../vm/slow-cache.js";
 import { useAS, type Overlay, type TerminalRun } from "../../vm/store.js";
 
@@ -15,6 +16,12 @@ export function terminalRun(o: Extract<Overlay, { kind: "terminal" }>): Terminal
   if ("run" in o) return o.run;
   const install = o.action === "install";
   return { args: ["tooling", install ? "install" : "upgrade", o.toolId], title: o.toolId, kicker: install ? "Install" : "Update" };
+}
+
+/** An agent-config install/upgrade changes the server this app embeds, which
+ *  only picks up the new version on a restart. */
+export function offersRestart(run: TerminalRun): boolean {
+  return run.args[0] === "tooling" && run.args[2] === "agent-config";
 }
 
 function cssVar(name: string, fallback: string): string {
@@ -127,6 +134,7 @@ export function TerminalSheet({ run, backend = tauriBackend }: { run: TerminalRu
           <span className="mr-auto" role="status" aria-live="polite">
             {status}
           </span>
+          {phase.kind === "finished" && phase.code === 0 && offersRestart(run) && s.act.restart && <RestartButton restart={s.act.restart} />}
           <Button size="sm" variant={running ? "secondary" : "primary"} onClick={close} title={running ? "Closing ends the command" : undefined}>
             Close
           </Button>

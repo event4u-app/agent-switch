@@ -54,6 +54,8 @@ export interface Actions {
   selfUpdate?(): Promise<ipc.SelfUpdateResult>;
   uninstall?(): Promise<void>;
   quit?(): Promise<void>;
+  /** Quit and start the app again on the installed version (after an update). */
+  restart?(): Promise<void>;
   /** First turns of a session, read on demand (ADR-002). */
   previewSession?(sessionId: string): Promise<{ role: "you" | "agent"; text: string }[]>;
   /** Metadata-only handoff brief of a session for a target account; writes the
@@ -170,6 +172,7 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
     selfUpdate: () => ipc.selfUpdate(),
     uninstall: () => ipc.uninstall(),
     quit: () => ipc.quitApp(),
+    restart: () => ipc.restartApp(),
     previewSession: async (id: string) => {
       const p = session(id);
       const res = await ipc.sessionPreview(p.provider, p.sessionId, p.profile);

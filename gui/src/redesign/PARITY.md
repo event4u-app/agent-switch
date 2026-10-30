@@ -89,6 +89,7 @@ Paths are relative to `gui/src/`.
 | `getNotifyConfig`, `setNotify` | `screens/settings/notifications.tsx` | |
 | `setTrayTooltip` | `engines/pet.ts` | |
 | `quitApp` | `vm/actions.ts` → settings, tray | |
+| `restartApp` | `vm/actions.ts` → `screens/settings/updates.tsx`, `screens/terminal-sheet.tsx` (after an update) | |
 | `showWindow` | — | The redesign shows the window through `notifications.ts` `showAppWindow` / tray `bridge.ts` (same `show_window` command). |
 | `setMinimizeToDock` | `screens/settings/general.tsx`, `engines/startup.ts` | |
 | `selfUpdate` | `vm/actions.ts` → `screens/settings/updates.tsx`; `engines/updates.ts` | |

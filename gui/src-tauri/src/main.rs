@@ -67,6 +67,35 @@ fn quit(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+// Restart: hand over to `agent-switch gui --after-pid`, which waits for this
+// process to exit and launches the version the CLI is on — after an update the
+// new one. Restarting this binary in place would bring back the old version.
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
+    let pid = std::process::id().to_string();
+    #[cfg(windows)]
+    let mut cmd = {
+        use std::os::windows::process::CommandExt;
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", "agent-switch", "gui", "--after-pid", &pid])
+            .creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut c = std::process::Command::new("agent-switch");
+        c.args(["gui", "--after-pid", &pid]);
+        c
+    };
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("couldn't start `agent-switch gui`: {e}"))?;
+    app.exit(0);
+    Ok(())
+}
+
 // Show the window + Dock icon. The frontend calls this (rather than the JS
 // window API) so every show path goes through the one place that flips the
 // macOS activation policy back to Regular.
@@ -163,6 +192,7 @@ fn main() {
         .manage(tray::TrayState::default())
         .invoke_handler(tauri::generate_handler![
             quit,
+            restart_app,
             show_window,
             set_minimize_to_dock,
             set_tray_tooltip,

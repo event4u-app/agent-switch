@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
-import { Download, RefreshCw } from "lucide-react";
+import { Download, RefreshCw, RotateCw } from "lucide-react";
 import { cn } from "../../../lib/utils.js";
 import { getAutoUpdateCheck, getAutoUpdateKinds, setAutoUpdateCheckFlag, setAutoUpdateKinds } from "../../../settings-store.js";
 import { Button } from "../../../ui/Button.js";
@@ -17,6 +17,32 @@ const UPDATE_KINDS: [UpdateKind, string][] = [
 ];
 
 type Phase = "idle" | "checking" | "updating" | "done";
+
+/** Quits and starts Agent Switch again on the version just installed. */
+export function RestartButton({ restart }: { restart: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="primary"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setFailure(null);
+          restart().catch((e) => {
+            setFailure(`Restart failed: ${describeError(e)}`);
+            setBusy(false);
+          });
+        }}
+      >
+        <RotateCw /> {busy ? "Restarting …" : "Restart now"}
+      </Button>
+      {failure && <span className="text-xs text-ac-alert-text">{failure}</span>}
+    </>
+  );
+}
 
 /** Settings › Updates (bundle `mR`, artboard 25). */
 export function UpdatesSettings() {
@@ -93,9 +119,12 @@ export function UpdatesSettings() {
             {available.notes && <p className="max-h-24 overflow-y-auto whitespace-pre-wrap text-xs text-ac-muted">{available.notes}</p>}
             <div className="flex flex-wrap items-center gap-2">
               {phase === "done" ? (
-                <span className="text-xs text-ac-ok-text">
-                  Updated to {available.tag} — restart Agent Switch to apply. Your settings stay as they are.
-                </span>
+                <>
+                  <span className="text-xs text-ac-ok-text">
+                    Updated to {available.tag} — restart Agent Switch to apply. Your settings stay as they are.
+                  </span>
+                  {s.act.restart && <RestartButton restart={s.act.restart} />}
+                </>
               ) : (
                 <>
                   <Button size="sm" variant="primary" disabled={phase === "updating" || !s.act.selfUpdate} onClick={() => void runUpdate()}>

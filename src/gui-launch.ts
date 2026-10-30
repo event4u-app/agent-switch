@@ -162,6 +162,32 @@ async function ensureGuiArtifact(spec: { match: RegExp; kind: GuiKind }): Promis
   return launchPath;
 }
 
+/** Whether a process id is still alive. EPERM means it exists under another
+ *  user, which still counts as alive. */
+export function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/** Poll until `pid` has exited or `timeoutMs` passed; true when it exited. */
+export async function waitForExit(
+  pid: number,
+  opts: { alive?: (pid: number) => boolean; sleep?: (ms: number) => Promise<void>; timeoutMs?: number; stepMs?: number } = {},
+): Promise<boolean> {
+  const alive = opts.alive ?? pidAlive;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const step = opts.stepMs ?? 200;
+  for (let waited = 0; waited < (opts.timeoutMs ?? 30_000); waited += step) {
+    if (!alive(pid)) return true;
+    await sleep(step);
+  }
+  return !alive(pid);
+}
+
 /** Launch the desktop GUI (downloading + caching it on first use).
  *  Single-instance: if a GUI is already running, no second copy is started —
  *  returns "already-running" so the caller can say so. */
