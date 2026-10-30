@@ -13,11 +13,14 @@ import {
   suggestedPoolTags,
   uninstallArmed,
 } from "./prefs.js";
+import { readStarAsk, REDDIT_POST_URL, REPO_URL } from "../../../star-ask.js";
 import { providerRows } from "./providers.js";
 import { Settings, SETTINGS_GROUPS } from "./Settings.js";
 
 const nearLimit = vi.hoisted(() => ({ fireNearLimitIfCrossed: vi.fn(async () => false) }));
 vi.mock("../../engines/near-limit.js", () => nearLimit);
+const shell = vi.hoisted(() => ({ open: vi.fn((_url: string) => Promise.resolve()) }));
+vi.mock("@tauri-apps/plugin-shell", () => shell);
 
 const ipcMock = vi.hoisted(() => ({
   getAutoSwitch: vi.fn(),
@@ -232,6 +235,19 @@ describe("General", () => {
     expect(sw().getAttribute("aria-checked")).toBe("false");
     act(() => store!.update({ autostart: { desired: null, actual: "enabled" } }));
     expect(sw().getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("offers star, Reddit vote and sharing; a star there also stops the Overview ask", () => {
+    shell.open.mockClear();
+    mount("general");
+    fireEvent.click(screen.getByRole("button", { name: "Open the Reddit post" }));
+    expect(shell.open).toHaveBeenCalledWith(REDDIT_POST_URL);
+    fireEvent.click(screen.getByRole("button", { name: "LinkedIn" }));
+    expect(shell.open.mock.calls.at(-1)?.[0]).toContain("linkedin.com");
+    expect(readStarAsk(Date.now()).stopped).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Star" }));
+    expect(shell.open).toHaveBeenCalledWith(REPO_URL);
+    expect(readStarAsk(Date.now()).stopped).toBe("starred");
   });
 
   it("pushes minimize-into-Dock to Rust", () => {
