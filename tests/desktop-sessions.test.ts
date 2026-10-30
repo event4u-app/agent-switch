@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { scanDesktop } from "../src/desktop-sessions.js";
+import { moveDesktopSession, scanDesktop } from "../src/desktop-sessions.js";
 
 const ME = "9acce282-f364-4c40-b35b-ac8c9e06df12";
 const OTHER = "e332d367-0000-4000-8000-000000000001";
@@ -98,6 +98,62 @@ test("desktop sessions: a profile's instance signed in with another account is f
       r.instances[0].accounts.map((a) => a.profile),
       [null, "work", "side"],
     );
+  } finally {
+    fs.rmSync(t.root, { recursive: true, force: true });
+  }
+});
+
+test("desktop move: the metadata lands under the target account in the target instance, verified, and leaves the source; the transcript stays", () => {
+  const t = tree();
+  try {
+    const cli = "95448762-265a-42bc-9622-fbcae0cc0738";
+    const src = path.join(t.instance, "claude-code-sessions", ME, ORG, `local_${cli}.json`);
+    const body = meta(cli);
+    write(src, body);
+    const transcript = path.join(t.claudeHome, "projects", "-w-app", `${cli}.jsonl`);
+    write(transcript, "{}\n", NOW - 3_600_000);
+    const target = path.join(t.root, "agent-switch", "claude", "side", "gui", "claude-desktop");
+    const r = scanDesktop({ instances: [{ profile: "work", dir: t.instance }], claudeHome: t.claudeHome, profileOf: (u) => (u === ME ? "work" : null), now: NOW });
+    assert.equal(r.locations.length, 1);
+    const loc = r.locations[0];
+    assert.deepEqual([loc.sessionId, loc.profile, loc.kind, loc.accountUuid, loc.orgUuid, loc.metaFile], [cli, "work", "claude-code-sessions", ME, ORG, src]);
+
+    const moved = moveDesktopSession(loc, { dir: target, accountUuid: OTHER, orgUuid: ORG });
+    const dest = path.join(target, "claude-code-sessions", OTHER, ORG, `local_${cli}.json`);
+    assert.equal(moved.metaFile, dest);
+    assert.equal(fs.readFileSync(dest, "utf8"), body);
+    assert.equal(fs.existsSync(src), false);
+    assert.equal(fs.existsSync(transcript), true, "the Code-tab transcript is shared by every instance and never moves");
+    const after = scanDesktop({ instances: [{ profile: "side", dir: target }], claudeHome: t.claudeHome, profileOf: (u) => (u === OTHER ? "side" : null), now: NOW });
+    assert.deepEqual(after.rows.map((x) => [x.profile, x.sessionId]), [["side", cli]]);
+  } finally {
+    fs.rmSync(t.root, { recursive: true, force: true });
+  }
+});
+
+test("desktop move: refuses a session the target already has, one the target marked deleted, and an agent-mode session — nothing changes", () => {
+  const t = tree();
+  try {
+    const target = path.join(t.root, "agent-switch", "claude", "side", "gui", "claude-desktop");
+    const profileOf = (u: string) => (u === ME ? "work" : null);
+    const a = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const b = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const c = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    write(path.join(t.instance, "claude-code-sessions", ME, ORG, `local_${a}.json`), meta(a));
+    write(path.join(target, "claude-code-sessions", OTHER, ORG, `local_${a}.json`), "{}");
+    write(path.join(t.instance, "claude-code-sessions", ME, ORG, `local_${b}.json`), meta(b));
+    write(path.join(target, "claude-code-sessions", OTHER, ORG, `deleted_${b}`), "1761800000000");
+    write(path.join(t.instance, "local-agent-mode-sessions", ME, ORG, `local_${c}.json`), meta(c));
+    const r = scanDesktop({ instances: [{ profile: "work", dir: t.instance }], claudeHome: t.claudeHome, profileOf, now: NOW });
+    const at = (id: string) => r.locations.find((l) => l.sessionId === id)!;
+    const to = { dir: target, accountUuid: OTHER, orgUuid: ORG };
+    assert.throws(() => moveDesktopSession(at(a), to), /already has this session/);
+    assert.throws(() => moveDesktopSession(at(b), to), /marked this session as deleted/);
+    assert.throws(() => moveDesktopSession(at(c), to), /agent mode/i);
+    for (const [kind, id] of [["claude-code-sessions", a], ["claude-code-sessions", b], ["local-agent-mode-sessions", c]]) {
+      assert.equal(fs.existsSync(path.join(t.instance, kind, ME, ORG, `local_${id}.json`)), true, `${id} stays in the source`);
+    }
+    assert.equal(fs.readFileSync(path.join(target, "claude-code-sessions", OTHER, ORG, `local_${a}.json`), "utf8"), "{}", "the target's file is never overwritten");
   } finally {
     fs.rmSync(t.root, { recursive: true, force: true });
   }

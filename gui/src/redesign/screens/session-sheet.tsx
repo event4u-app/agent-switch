@@ -121,7 +121,11 @@ export function SessionSheet({ id }: { id: string }) {
   const otherTool = n
     ? s.accounts.filter((a) => a.tool !== n.tool && a.tool !== "gemini" && a.state !== "signed-out" && a.state !== "wrong-account")
     : [];
-  const live = n ? liveSwitch(n, s.platform) : { ok: false, reason: "" };
+  const live = !n
+    ? { ok: false, reason: "" }
+    : n.surface === "desktop-app"
+      ? { ok: false, reason: "A Claude Desktop session keeps its window's sign-in — take it over instead." }
+      : liveSwitch(n, s.platform);
   const [how, setHow] = useState<MoveHow>(live.ok ? "switch" : "takeover");
   const [target, setTarget] = useState(sameTool.find((r) => r.rank != null)?.account.id ?? "");
   const [handTo, setHandTo] = useState(otherTool[0]?.id ?? "");
@@ -134,7 +138,7 @@ export function SessionSheet({ id }: { id: string }) {
   const account = s.accountById(n.accountId);
   const running = isRunning(n);
   // Its transcript is Desktop's (~/.claude), not the profile's: the CLI's
-  // trash / move / compact can't reach it.
+  // trash / compact can't reach it; take over re-files it in Desktop.
   const desktop = n.surface === "desktop-app";
   const handle = sessionHandle(n);
   const profile = splitAccountId(n.accountId)[1];
@@ -171,7 +175,7 @@ export function SessionSheet({ id }: { id: string }) {
       run: {
         kicker: "Take over",
         title: `${n.project} → ${TOOL_LABEL[targetAccount.tool]} · ${targetAccount.name}`,
-        args: takeoverArgs(handle, targetAccount.name, keepCopy, n.tool as ProviderId),
+        args: takeoverArgs(handle, targetAccount.name, keepCopy && !desktop, n.tool as ProviderId),
       },
     });
   };
@@ -325,10 +329,11 @@ export function SessionSheet({ id }: { id: string }) {
         </div>
         {!n.trashed && desktop && (
           <p className="rounded-lg border border-ac-line bg-ac-bg p-4 text-xs text-ac-muted">
-            Started in Claude Desktop — it runs on that Desktop window's sign-in. Move, compact or delete it in Claude Desktop.
+            Started in Claude Desktop — it runs on that Desktop window's sign-in, so compact or delete it there. To take it over, quit the Desktop
+            window it runs in first.
           </p>
         )}
-        {!n.trashed && !desktop && (
+        {!n.trashed && (
           <div className="flex flex-col gap-3 rounded-lg border border-ac-line bg-ac-bg p-4">
             <div className="flex items-center gap-2">
               <ArrowLeftRight className="size-4 text-ac-brand-text" />
@@ -343,7 +348,7 @@ export function SessionSheet({ id }: { id: string }) {
               options={[
                 { value: "switch", label: "Switch live", disabled: !live.ok, why: live.reason },
                 { value: "takeover", label: "Take over" },
-                { value: "handoff", label: "Hand off" },
+                { value: "handoff", label: "Hand off", disabled: desktop, why: desktop ? "Needs a terminal session's transcript — a Claude Desktop session's isn't reachable here." : undefined },
               ]}
             />
             {how === "switch" && (
@@ -363,19 +368,25 @@ export function SessionSheet({ id }: { id: string }) {
             )}
             {how === "takeover" && (
               <>
-                <p className="text-xs text-ac-muted">Moves the transcript to another {TOOL_LABEL[n.tool]} account and resumes it there in a new terminal.</p>
+                <p className="text-xs text-ac-muted">
+                  {desktop
+                    ? "Moves it to that account's Claude Desktop window, where you continue it. Quit the window it runs in first."
+                    : `Moves the transcript to another ${TOOL_LABEL[n.tool]} account and resumes it there in a new terminal.`}
+                </p>
                 {options.length ? (
                   <Select label="Take over on" value={target} onChange={setTarget} options={options} />
                 ) : (
                   <p className="text-xs text-ac-faint">No other {TOOL_LABEL[n.tool]} account — add one on Accounts.</p>
                 )}
-                <label className="flex items-center justify-between gap-3 text-xs text-ac-soft">
-                  <span>
-                    Keep a copy on {account?.name}
-                    <span className="block text-[11px] text-ac-faint">Fork instead of move — both accounts keep the transcript.</span>
-                  </span>
-                  <Switch label="Keep a copy" checked={keepCopy} onChange={setKeepCopy} />
-                </label>
+                {!desktop && (
+                  <label className="flex items-center justify-between gap-3 text-xs text-ac-soft">
+                    <span>
+                      Keep a copy on {account?.name}
+                      <span className="block text-[11px] text-ac-faint">Fork instead of move — both accounts keep the transcript.</span>
+                    </span>
+                    <Switch label="Keep a copy" checked={keepCopy} onChange={setKeepCopy} />
+                  </label>
+                )}
                 <div className="flex justify-end">
                   <Button variant="primary" size="sm" disabled={!target} onClick={takeOver}>
                     Take over on {targetAccount?.name ?? "…"}

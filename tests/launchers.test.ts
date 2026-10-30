@@ -50,6 +50,18 @@ test("the running main process of a profile is found by its exact user-data dir,
   assert.equal(L.findMainPid(ps, "/Users/x/other"), null);
 });
 
+test("the regular Claude Desktop is the main process without a user-data dir, never a helper or a profile instance", () => {
+  const dir = "/Users/x/.agent-switch/claude/Work/gui/claude-desktop";
+  const profileOnly = [
+    `  101 /Applications/Claude.app/Contents/MacOS/Claude --user-data-dir=${dir}`,
+    "  102 /Applications/Claude.app/Contents/Frameworks/Claude Helper (GPU).app/Contents/MacOS/Claude Helper (GPU) --type=gpu-process",
+    "  105 /Applications/Claude.app/Contents/Resources/claude-code/claude --resume x",
+  ].join("\n");
+  assert.equal(L.findRegularMainPid(profileOnly), null);
+  assert.equal(L.findRegularMainPid(`${profileOnly}\n  104 /Applications/Claude.app/Contents/MacOS/Claude`), 104);
+  assert.equal(L.findRegularMainPid("  106 /Users/x/Applications/Claude.app/Contents/MacOS/Claude -psn_0_1"), 106);
+});
+
 test("the manifest keeps one entry per app and profile, and finds a profile's launchers", () => {
   const e = (app: string, profile: string) => ({ app, provider: "claude" as const, profile, path: `/p/${app}-${profile}.app` });
   let m = L.upsertEntry([], e("claude-desktop", "Work"));

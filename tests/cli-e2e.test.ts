@@ -1534,6 +1534,72 @@ test("sessions/desktop: Claude Desktop sessions show up under the account they r
   }
 });
 
+/** Two signed-in profiles and one Code-tab session in work's Desktop window,
+ *  its transcript in the shared ~/.claude written `ageMs` ago. */
+function desktopFixture(ageMs: number) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "asw-home-"));
+  const uuid = { work: "11111111-1111-4111-8111-111111111111", side: "22222222-2222-4222-8222-222222222222" };
+  const org = "33333333-3333-4333-8333-333333333333";
+  for (const n of ["work", "side"] as const) {
+    const cfg = path.join(home, "claude", n, "config");
+    fs.mkdirSync(cfg, { recursive: true });
+    fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: `${n}@example.com`, accountUuid: uuid[n], organizationUuid: org } }));
+  }
+  const cli = "55555555-5555-4555-8555-555555555555";
+  const metaDir = path.join(home, "claude", "work", "gui", "claude-desktop", "claude-code-sessions", uuid.work, org);
+  fs.mkdirSync(metaDir, { recursive: true });
+  const meta = path.join(metaDir, `local_${cli}.json`);
+  fs.writeFileSync(meta, JSON.stringify({ sessionId: `local_${cli}`, cliSessionId: cli, cwd: "/w/app", title: "From Desktop", createdAt: Date.now() - 2 * 60 * 60_000 }));
+  const proj = path.join(fakeHome, ".claude", "projects", "-w-app");
+  fs.mkdirSync(proj, { recursive: true });
+  const transcript = path.join(proj, `${cli}.jsonl`);
+  fs.writeFileSync(transcript, "{}\n");
+  const at = (Date.now() - ageMs) / 1000;
+  fs.utimesSync(transcript, at, at);
+  const target = path.join(home, "claude", "side", "gui", "claude-desktop", "claude-code-sessions", uuid.side, org, `local_${cli}.json`);
+  const env: Record<string, string | undefined> = { ...process.env, AGENT_SWITCH_HOME: home, HOME: fakeHome };
+  delete env.CLAUDE_CONFIG_DIR;
+  const takeover = (...extra: string[]) => execFileSync("node", [CLI, "takeover", cli, "--to", "side", ...extra], { env, encoding: "utf8", stdio: "pipe" });
+  const cleanup = () => {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  };
+  return { cli, meta, transcript, target, env, takeover, cleanup };
+}
+
+const desktopOnly = { skip: gate.skip || (process.platform !== "darwin" ? "the regular app's data dir is the macOS one" : false) };
+
+test("`takeover` moves a Claude Desktop session into the target account's Desktop window; the shared transcript stays", desktopOnly, () => {
+  const f = desktopFixture(60 * 60_000);
+  try {
+    const body = fs.readFileSync(f.meta, "utf8");
+    const out = f.takeover("--print-only");
+    assert.match(out, /agent-switch open claude-desktop side/);
+    assert.equal(fs.existsSync(f.meta), false, "gone from work's window");
+    assert.equal(fs.readFileSync(f.target, "utf8"), body, "filed under side's account in side's window");
+    assert.equal(fs.existsSync(f.transcript), true);
+    const rows = JSON.parse(execFileSync("node", [CLI, "sessions", "--json"], { env: f.env, encoding: "utf8" })) as { profile: string; sessionId: string }[];
+    assert.deepEqual(rows.filter((r) => r.sessionId === f.cli).map((r) => r.profile), ["side"]);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("`takeover` of a Claude Desktop session refuses a fork and a recently active session unless forced", desktopOnly, () => {
+  const f = desktopFixture(10_000);
+  try {
+    assert.throws(() => f.takeover("--keep-source"), /--keep-source.*Claude Desktop/s);
+    assert.throws(() => f.takeover("--print-only"), /active in the last/);
+    assert.equal(fs.existsSync(f.meta), true, "a refusal touches nothing");
+    assert.equal(fs.existsSync(f.target), false);
+    f.takeover("--print-only", "--force");
+    assert.equal(fs.existsSync(f.target), true);
+  } finally {
+    f.cleanup();
+  }
+});
+
 test("sessions: a session whose last hook event is Notification, with nothing written since, is waiting on you", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {

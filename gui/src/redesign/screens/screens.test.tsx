@@ -178,15 +178,21 @@ describe("Session sheet", () => {
     expect(rebind).toHaveBeenCalledWith("claude:agent-config", "claude:side");
   });
 
-  it("leaves a Claude Desktop session to Desktop: no trash, no move, and says so", () => {
+  it("takes a Claude Desktop session over to another account's Desktop window; trash, live switch and hand off stay out", () => {
     const vm = fixture();
     vm.sessions = vm.sessions.map((x) => (x.id === "claude:old" ? { ...x, surface: "desktop-app" as const } : x));
     mount(vm, { overlay: { kind: "session", id: "claude:old" }, act: { trashSession: vi.fn() } });
     const trash = screen.getByRole("button", { name: /Move to trash/ }) as HTMLButtonElement;
     expect(trash.disabled).toBe(true);
     expect(trash.title).toBe("Started in Claude Desktop — delete it there.");
-    expect(screen.getByText(/Started in Claude Desktop/, { selector: "p" })).toBeTruthy();
-    expect(screen.queryByRole("radio", { name: "Take over" })).toBeNull();
+    expect(screen.getByText(/Started in Claude Desktop/, { selector: "p" }).textContent).toMatch(/quit the Desktop window it runs in/);
+    expect(screen.getByRole("radio", { name: "Switch live" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Hand off" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Take over" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByRole("switch", { name: "Keep a copy" })).toBeNull();
+    expect(screen.getByText(/to that account's Claude Desktop window/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Take over on / }));
+    expect(screen.getByTestId("where").textContent).toBe("home/terminal");
   });
 
   it("disables live switching off macOS with the reason", () => {

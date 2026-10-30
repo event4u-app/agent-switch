@@ -73,7 +73,7 @@ $ asw             # list all profiles, the starred one marked *
 - **Sessions that wait for you** — a session asking a question (or waiting on a permission prompt) shows in *Needs you*, and the desktop pet tells you, even while the window is in the background. Claude Desktop sessions (Code tab and agent mode) appear under the account they ran on.
 - **Disable instead of delete** — a disabled account keeps its login and history but is never picked and not polled; refresh it by hand when you want to look.
 - **One prompt history** — with the shared setup (`agent-switch share on`, the app's default) ↑ and Ctrl+R in Claude Code find your old prompts on every account.
-- **Explicit switching only** — a running session moves to another account only when you choose it (live switch, take over or hand off). Nothing switches on its own.
+- **Explicit switching only** — a running session moves to another account only when you choose it (live switch, take over or hand off). Nothing switches on its own. A Claude Desktop session moves by take over, into the other account's Desktop window.
 - **Balanced starts, pools and project rules** — a plain `claude` with no folder rule is spread across your enabled accounts: it starts on the one that would lose the most at its next reset (its rest divided by the hours until its weekly window resets), so every account gets used up by its reset instead of one running dry while another resets unused. An account at its protection limit is never picked; when the best accounts are level, or nothing can be weighed, the account set for plain starts (the star) is used. A folder can also point at one account, or at a pool that is balanced the same way — a pool start never leaves the pool: without fresh usage it still takes a member, and a pool that is gone or has no usable member refuses the start. `dir --json` tells you why. The weighing uses cached usage only — written by the background service (`agent-switch service install`, which refreshes every enabled account every 5 minutes) or by every refresh the desktop app makes (kept unthrottled in `usage-latest.json`); usage older than 10 minutes is not trusted and `dir --json` says so. Under `guard block` an account that already has a live session is skipped.
 - **Health, activity, sign-in state** — `doctor --json`, `activity`, `auth-status` — readouts without tokens.
 - **Switch, the desktop pet** — introduces itself once, on the very first start. Never again.
@@ -272,6 +272,15 @@ agent-switch takeover <session-id> --to work --keep-source   # copy + fork inste
   (close them first, or `--force`), never overwrites an existing transcript on
   the target, and detects `share on --history` (nothing to move — profiles
   already see one history tree).
+- **Claude Desktop sessions move between Desktop windows.** A Code-tab
+  session's transcript sits in the shared `~/.claude`; Desktop files it per
+  account in its own data dir. `takeover` re-files that metadata under the
+  target account in the target profile's Desktop window (copy → verify →
+  delete), and you continue it there (`agent-switch open claude-desktop <profile>`).
+  It refuses while the source window is open or the session was active in the
+  last 2 minutes (`--force` overrides), never overwrites the target, and has no
+  `--keep-source` (Desktop has no fork). Agent-mode (Cowork) sessions are not
+  moved yet.
 - In an interactive terminal the takeover resumes the session directly; use
   `--print-only` to just print the resume command. Transcripts are treated as
   opaque blobs — moved whole, never parsed or rewritten.
