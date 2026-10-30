@@ -198,6 +198,7 @@ body {
   --ac-violet: #c9a2ff;
   --ac-violet-text: #d9bdff;
   --ac-violet-tint: rgba(201, 162, 255, 0.14);
+  --ac-violet-line: rgba(201, 162, 255, 0.55);
   --ac-scrim: rgba(3, 6, 10, 0.62);
   --ac-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
   --ac-id-orange: #ff8c2a;
@@ -249,6 +250,7 @@ body {
   --ac-violet: #8b5cf6;
   --ac-violet-text: #6d28d9;
   --ac-violet-tint: rgba(139, 92, 246, 0.12);
+  --ac-violet-line: rgba(139, 92, 246, 0.6);
   --ac-scrim: rgba(13, 21, 34, 0.32);
   --ac-shadow: 0 18px 48px rgba(13, 21, 34, 0.18);
   --ac-id-orange: #f47a12;
