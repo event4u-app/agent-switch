@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  doctorEnv,
   doctorPath,
   EXPIRY_BUFFER_MS,
   FreshenDeps,
@@ -40,7 +41,7 @@ function harness(opts: {
     recordAttempt: (_dir, at) => attempts.push(at),
     runHealthCheck: (dir) => {
       runs.push(dir);
-      if (opts.healthCheckOk === false) return false;
+      if (opts.healthCheckOk === false) return "/x/claude: ENOENT";
       if (opts.refreshTo !== undefined) store = opts.refreshTo;
       return true;
     },
@@ -134,10 +135,20 @@ test("doctorPath lets an npm-installed claude find its node under the service's 
 });
 
 test("usageToken reports why a spent token was not refreshed, so the service can log it", () => {
-  const seen: string[] = [];
+  const seen: [string, string | undefined][] = [];
   const h = harness({ store: cred(NOW - 1_000), healthCheckOk: false });
-  usageToken("/cfg", h.deps, false, (o) => seen.push(o));
-  assert.deepEqual(seen, ["unavailable"]);
+  usageToken("/cfg", h.deps, false, (o, reason) => seen.push([o, reason]));
+  assert.deepEqual(seen, [["unavailable", "/x/claude: ENOENT"]]);
+});
+
+// Three background health checks once updated Claude Code at the same moment;
+// the racing npm installs left no Claude Code installed at all.
+test("doctorEnv: the health check never auto-updates Claude Code and targets the profile", () => {
+  const env = doctorEnv("/opt/homebrew/bin/claude", "/p/cfg", "/usr/bin/node", { PATH: "/usr/bin", HOME: "/h", DISABLE_AUTOUPDATER: "0" });
+  assert.equal(env.DISABLE_AUTOUPDATER, "1");
+  assert.equal(env.CLAUDE_CONFIG_DIR, "/p/cfg");
+  assert.equal(env.HOME, "/h");
+  assert.equal(env.PATH, doctorPath("/opt/homebrew/bin/claude", "/usr/bin/node", "/usr/bin"));
 });
 
 test("freshAccessToken: returns the token the store holds AFTER the freshen", () => {
