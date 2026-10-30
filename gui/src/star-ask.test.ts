@@ -87,3 +87,17 @@ describe("shareLinks", () => {
     }
   });
 });
+
+describe("shell open scope", () => {
+  it("lets the app open every link the star ask offers", async () => {
+    const { readFileSync } = await import("node:fs");
+    const conf = JSON.parse(readFileSync(`${process.cwd()}/src-tauri/tauri.conf.json`, "utf8")) as {
+      plugins: { shell: { open: string } };
+    };
+    const scope = new RegExp(conf.plugins.shell.open);
+    for (const url of [REPO_URL, REDDIT_POST_URL, ...shareLinks().map((l) => l.url)]) {
+      expect(scope.test(url), url).toBe(true);
+    }
+    expect(scope.test("https://evil.example/x.com/intent/")).toBe(false);
+  });
+});
