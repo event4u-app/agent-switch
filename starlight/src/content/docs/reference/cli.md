@@ -131,7 +131,7 @@ performs the refresh itself.
 | `sessions preview <id>` | `[--provider claude\|codex] [--from <profile>]` | Show the first few turns of a session. |
 | `sessions rm <id>` | `[--provider] [--from] [--purge] [--yes] [--ack <id>] [--json]` | Delete a session (Claude trash-move; `--purge` hard-deletes; Codex native). `--yes` is mandatory and the command is live-guarded. |
 | `sessions restore <handle>` | `[--provider codex] [--from <profile>]` | Undo a delete. |
-| `takeover <id> --to <profile>` | `[--provider] [--from] [--keep-source] [--in-place] [--print-only] [--force] [--json]` | Move a session to another profile and resume. Move-by-default; `--keep-source` forks. Codex is move-only. |
+| `takeover <id> --to <profile>` | `[--provider] [--from] [--keep-source] [--in-place] [--print-only] [--force] [--json]` | Move a session to another profile and resume. Move-by-default; `--keep-source` forks. Codex is move-only. A Claude Desktop session moves into the target's Desktop window. |
 | `handoff extract <id> --to <target-provider>` | `--from <profile> [--provider] [--print-only] [--json]` | Compose a metadata-only cross-provider brief (lossy, ADR-001). Written as a `0600` file. |
 | `handoff seed --to <profile> --brief <path>` | `[--provider P] [--print-only]` | Open the target agent with a prompt referencing the brief. |
 | `compact <profile>` | `[--clear] [--dry-run] [--force] [--provider]` | Type `/compact` (or `/clear`, `--force`-gated) into the managed tmux pane. Idle-guarded. |

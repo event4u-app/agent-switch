@@ -204,7 +204,7 @@ import {
   renameLaunchersFor,
   repairLaunchers,
 } from "./launchers.js";
-import { scanDesktop, type DesktopInstance } from "./desktop-sessions.js";
+import { DESKTOP_LIVE_MS, moveDesktopSession, scanDesktop, type DesktopInstance, type DesktopLocation } from "./desktop-sessions.js";
 import { ensureAgyKeychain } from "./agy-keychain.js";
 import {
   currentManagedSession,
@@ -1710,16 +1710,8 @@ function cmdTakeover(
     .map((p) => ({ profile: p, loc: locateSession(configDir("claude", p), sessionId) }))
     .filter((h) => h.loc !== null);
   if (hits.length === 0) {
-    // A Code-tab transcript lives in Desktop's ~/.claude and its account binding in
-    // Desktop's own metadata — neither is a profile's, so nothing here can move it.
-    const desktop = desktopScan().rows.find((r) => r.sessionId === sessionId);
-    if (desktop) {
-      die(
-        `session ${sessionId} was started in Claude Desktop (account "${desktop.profile}") and runs on that Desktop window's sign-in — ` +
-          "Desktop sessions cannot be moved to another account yet.\n" +
-          "A session started in a terminal can: agent-switch run <profile>, or Start session › Open in: Terminal in the app.",
-      );
-    }
+    const desktop = desktopScan().locations.filter((l) => l.sessionId === sessionId && candidates.includes(l.profile));
+    if (desktop.length > 0) return takeoverDesktop(sessionId, target, desktop, { keepSource, inPlace, json, force: !!flags.force });
     die(`session ${sessionId} not found in any claude profile (see: agent-switch sessions)`);
   }
   if (hits.length > 1) {
@@ -1794,6 +1786,58 @@ function cmdTakeover(
   console.log(`Resume it with:\n  ${resumeCommand}`);
   if (inPlace) resumeInPlace("claude", target, resumeArgs, resumeCommand); // exits: respawn managed pane, else M5
   if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("claude"), target, resumeArgs));
+}
+
+/**
+ * Takeover of a Claude Desktop (Code tab) session: its metadata is re-filed
+ * under the target account in the target profile's own Desktop window. The
+ * transcript sits in the shared ~/.claude and stays, so nothing resumes in a
+ * terminal — the session continues in that window. The source window must be
+ * closed: an open one keeps the session in memory and may write it back.
+ */
+function takeoverDesktop(
+  sessionId: string,
+  target: string,
+  hits: DesktopLocation[],
+  opts: { keepSource: boolean; inPlace: boolean; json: boolean; force: boolean },
+): void {
+  if (hits.length > 1) {
+    die(
+      `session ${sessionId} is filed in more than one Claude Desktop window (${hits.map((h) => `${h.profile} in ${tildePath(h.instance.dir)}`).join(", ")}) — ` +
+        "delete the stale one in Claude Desktop, or pick one with --from.",
+    );
+  }
+  const [loc] = hits;
+  if (opts.keepSource) die("--keep-source is not supported for a Claude Desktop session: Desktop has no fork, so it can only move.");
+  if (opts.inPlace) die("--in-place does not apply to a Claude Desktop session — it continues in a Desktop window, not a terminal.");
+  if (loc.profile === target) die(`session ${sessionId} already runs on "${target}"`);
+  const app = findApp("claude-desktop");
+  if (!app) die("Claude Desktop is not a registered app here");
+  const account = readJson(path.join(configDir("claude", target), ".claude.json"))?.oauthAccount;
+  if (typeof account?.accountUuid !== "string" || typeof account?.organizationUuid !== "string") {
+    die(`profile "${target}" has no signed-in account to file the session under — sign it in first.`);
+  }
+  const pid = findRunning(loc.instance.profile === null ? null : loc.instance.dir);
+  if (pid !== null && !opts.force) {
+    die(`the Claude Desktop window holding this session is open (pid ${pid}) — quit it first so it can't write the session back (or --force).`);
+  }
+  if (loc.live && !opts.force) {
+    die(`session ${sessionId} was active in the last ${DESKTOP_LIVE_MS / 60_000} minutes — let it finish first (or --force).`);
+  }
+  let moved: ReturnType<typeof moveDesktopSession>;
+  try {
+    moved = moveDesktopSession(loc, { dir: guiDataDir(app, target), accountUuid: account.accountUuid, orgUuid: account.organizationUuid });
+  } catch (err) {
+    die(String((err as Error)?.message ?? err));
+  }
+  const resumeCommand = `agent-switch open claude-desktop ${target}`;
+  if (opts.json) {
+    console.log(JSON.stringify({ sessionId, from: loc.profile, to: target, surface: "desktop-app", transferred: moved.actions, shared: false, resumeCommand }, null, 2));
+    return;
+  }
+  console.log(`Session ${sessionId}: ${loc.profile} -> ${target} (Claude Desktop)`);
+  for (const a of moved.actions) console.log(`  ${a}`);
+  console.log(`Continue it in ${target}'s Claude Desktop window (reopen the window if it is open and the session is missing):\n  ${resumeCommand}`);
 }
 
 /**

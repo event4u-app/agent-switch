@@ -93,12 +93,26 @@ export function findMainPid(psOutput: string, userDataDir: string): number | nul
   return null;
 }
 
+/** The regular Claude Desktop: its main process runs without a `--user-data-dir`. */
+export function findRegularMainPid(psOutput: string): number | null {
+  for (const line of psOutput.split("\n")) {
+    const m = line.match(/^\s*(\d+)\s+(.*)$/);
+    if (!m) continue;
+    const args = m[2];
+    if (!/\/Claude\.app\/Contents\/MacOS\/Claude(\s|$)/.test(args)) continue;
+    if (args.includes("--type=") || args.includes("--user-data-dir=")) continue;
+    return Number(m[1]);
+  }
+  return null;
+}
+
 /** Brings an already running profile instance to the front. False = none runs
  *  (or it could not be activated), so the caller starts one. */
-export function findRunning(userDataDir: string): number | null {
+export function findRunning(userDataDir: string | null): number | null {
   if (process.platform !== "darwin") return null;
   const ps = spawnSync("ps", ["-axo", "pid=,args="], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
-  return ps.status === 0 ? findMainPid(ps.stdout, userDataDir) : null;
+  if (ps.status !== 0) return null;
+  return userDataDir === null ? findRegularMainPid(ps.stdout) : findMainPid(ps.stdout, userDataDir);
 }
 
 export function focusRunning(userDataDir: string): boolean {

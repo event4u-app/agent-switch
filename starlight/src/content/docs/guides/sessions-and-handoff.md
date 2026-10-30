@@ -66,7 +66,7 @@ agent-switch takeover 3f2a9c --to personal --from work
 | `--force` | Override guards |
 | `--provider` / `--from` | Target provider / source profile |
 
-Takeover is **move-by-default**: it copies the session to the target, verifies the copy, then deletes the source. Pass `--keep-source` to fork instead. It **refuses on a live source**, is shared-history aware, and for Codex is **move-only**. Sessions started in **Claude Desktop** cannot be moved yet — they run on the Desktop window's sign-in — and `takeover` says so instead of reporting the id as unknown.
+Takeover is **move-by-default**: it copies the session to the target, verifies the copy, then deletes the source. Pass `--keep-source` to fork instead. It **refuses on a live source**, is shared-history aware, and for Codex is **move-only**. A **Claude Desktop** (Code tab) session moves into the target profile's Desktop window, where you continue it; quit the source window first. It has no `--keep-source`, and agent-mode (Cowork) sessions are not moved yet.
 
 ### Handoff — bridge across providers
 
