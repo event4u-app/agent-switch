@@ -185,10 +185,16 @@ export function GeneralSettings() {
         </SettingRow>
       </SettingGroup>
 
-      <SettingGroup title="Support Agent Switch" detail="Free & open source — stars, votes and shares help other developers find it.">
+      <SettingGroup
+        tone="violet"
+        title="Support Agent Switch"
+        detail="Free & open source — stars, votes and shares help other developers find it."
+      >
         <SettingRow title="Star on GitHub" detail="Also stops the occasional star reminder on Overview.">
           <Button
             size="sm"
+            variant="primary"
+            className="bg-ac-violet"
             title={REPO_URL}
             onClick={() => {
               openExternal(REPO_URL);
@@ -199,12 +205,12 @@ export function GeneralSettings() {
           </Button>
         </SettingRow>
         <SettingRow title="Vote on Reddit" detail="An upvote or a comment on our r/ClaudeCode post.">
-          <Button size="sm" title={REDDIT_POST_URL} onClick={() => openExternal(REDDIT_POST_URL)}>
+          <Button size="sm" variant="primary" className="bg-ac-violet" title={REDDIT_POST_URL} onClick={() => openExternal(REDDIT_POST_URL)}>
             <MessageCircle /> Open the Reddit post
           </Button>
         </SettingRow>
         <SettingRow title="Share" detail="TikTok and Instagram have no share link — copy the text and paste it into your post." stacked>
-          <ShareButtons variant="secondary" />
+          <ShareButtons variant="violet" />
         </SettingRow>
       </SettingGroup>
 

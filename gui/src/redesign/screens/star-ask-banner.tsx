@@ -27,7 +27,8 @@ function StarTile({ size = 36 }: { size?: number }) {
 
 /** The share links, plus a copy button for the networks that have no web
  *  share link (TikTok, Instagram). Used by the banner and by Settings. */
-export function ShareButtons({ variant = "ghost" }: { variant?: "ghost" | "secondary" }) {
+export function ShareButtons({ variant = "ghost" }: { variant?: "ghost" | "violet" }) {
+  const look = variant === "violet" ? { variant: "primary" as const, className: "bg-ac-violet" } : { variant };
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -38,13 +39,13 @@ export function ShareButtons({ variant = "ghost" }: { variant?: "ghost" | "secon
   return (
     <>
       {links.map((l) => (
-        <Button key={l.id} size="sm" variant={variant} onClick={() => openExternal(l.url)}>
+        <Button key={l.id} size="sm" {...look} onClick={() => openExternal(l.url)}>
           {l.label}
         </Button>
       ))}
       <Button
         size="sm"
-        variant={variant}
+        {...look}
         title="TikTok and Instagram have no share link — copy the text and paste it into your post"
         onClick={() => {
           void navigator.clipboard
