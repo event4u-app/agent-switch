@@ -69,12 +69,12 @@ $ asw             # list all profiles, the starred one marked *
 
 - **Isolated logins** — every account gets its own config folder and keychain entry; nothing is snapshotted, and a running tool's login is only swapped when you ask for it (`agent-switch rebind`, undone with `rebind --restore`).
 - **Usage per account** — 5-hour and weekly windows for Claude and Codex, always with their age; unknown is shown as unknown, never as free.
-- **Session protection** — on by default at 98 % for every Claude and Codex account; it **warns** at the threshold and does not pause a running session. The warning comes from the background service (`agent-switch service install`), which reads every enabled account at least every 5 minutes. Antigravity has no usage readout and gets no warning.
+- **Session protection** — on by default at 98 % for every Claude and Codex account; it **warns** at the threshold and does not pause a running session. What happens at 100 % is Claude Code's call: with its `autoContinueAtUsageLimit` setting on (the default when unset) the session waits for the reset and continues by itself. `agent-switch protection` shows that state per Claude account and `agent-switch protection wait on|off <claude/name>` changes it (through the shared `settings.json` when one is shared). The warning comes from the background service (`agent-switch service install`), which reads every enabled account at least every 5 minutes. Antigravity has no usage readout and gets no warning.
 - **Sessions that wait for you** — a session asking a question (or waiting on a permission prompt) shows in *Needs you*, and the desktop pet tells you, even while the window is in the background. Claude Desktop sessions (Code tab and agent mode) appear under the account they ran on.
 - **Disable instead of delete** — a disabled account keeps its login and history but is never picked and not polled; refresh it by hand when you want to look.
 - **One prompt history** — with the shared setup (`agent-switch share on`, the app's default) ↑ and Ctrl+R in Claude Code find your old prompts on every account.
 - **Explicit switching only** — a running session moves to another account only when you choose it (live switch, take over or hand off). Nothing switches on its own. A Claude Desktop session moves by take over, into the other account's Desktop window.
-- **Balanced starts, pools and project rules** — a plain `claude` with no folder rule is spread across your enabled accounts: it starts on the one that would lose the most at its next reset (its rest divided by the hours until its weekly window resets), so every account gets used up by its reset instead of one running dry while another resets unused. An account at its protection limit is never picked; when the best accounts are level, or nothing can be weighed, the account set for plain starts (the star) is used. A folder can also point at one account, or at a pool that is balanced the same way — a pool start never leaves the pool: without fresh usage it still takes a member, and a pool that is gone or has no usable member refuses the start. `dir --json` tells you why. The weighing uses cached usage only — written by the background service (`agent-switch service install`, which refreshes every enabled account every 5 minutes) or by every refresh the desktop app makes (kept unthrottled in `usage-latest.json`); usage older than 10 minutes is not trusted and `dir --json` says so. Under `guard block` an account that already has a live session is skipped.
+- **Balanced starts, pools and project rules** — a plain `claude` with no folder rule is spread across your enabled accounts: it starts on the one that would lose the most at its next reset (its rest divided by the hours until its weekly window resets), so every account gets used up by its reset instead of one running dry while another resets unused. An account at its protection limit is never picked; when the best accounts are level, or nothing can be weighed, the account set for plain starts (the star) is used. A folder can also point at one account, or at a pool that is balanced the same way — a pool start never leaves the pool: without fresh usage it still takes a member, and a pool that is gone or has no usable member refuses the start. `dir --json` tells you why, and `agent-switch picks` lists every start the shell wrapper resolved with the reasons it gave. The weighing uses cached usage only — written by the background service (`agent-switch service install`, which refreshes every enabled account every 5 minutes) or by every refresh the desktop app makes (kept unthrottled in `usage-latest.json`); usage older than 10 minutes is not trusted and `dir --json` says so. Under `guard block` an account that already has a live session is skipped.
 - **Health, activity, sign-in state** — `doctor --json`, `activity`, `auth-status` — readouts without tokens.
 - **Switch, the desktop pet** — introduces itself once, on the very first start. Never again.
 
@@ -219,7 +219,9 @@ agent-switch add event4u
 | `agent-switch doctor [--json]` | self-check (CLI on PATH, shell integration, start at login, API-key overrides, logins, share links) |
 | `agent-switch auth-status --json` | per-profile login state from the provider's store — never a token |
 | `agent-switch activity` | what agent-switch itself did, and why |
+| `agent-switch picks` | which account each wrapped start chose, and why (newest 500) |
 | `agent-switch protection set claude/work --threshold 95` | per-profile limit warning (default on, 98 %); warns, never pauses |
+| `agent-switch protection wait on claude/work` | Claude Code's own auto-continue at the limit: wait for the reset (on) or stop (off) |
 | `agent-switch pool create Work` · `pool add work claude/a` · `map pool:work ~/x` | optional pools (also in the app: Accounts › Projects & pools › New pool): a folder rule starts on the member that would lose the most at its next reset (`dir --json` says why) |
 
 ## Per-repo accounts (directory mappings)
@@ -266,7 +268,7 @@ a transcript file scoped to its project directory — and an *account* handoff
 keeps that directory constant, so the session can move between profiles:
 
 ```bash
-agent-switch sessions                       # recent + live sessions, per profile (* = live)
+agent-switch sessions                       # recent + live sessions, per profile (* = live, [live: busy] = the host's own state)
 agent-switch takeover <session-id> --to work        # move it, then resume on "work"
 agent-switch takeover <session-id> --to work --keep-source   # copy + fork instead (source keeps its own)
 ```
@@ -313,7 +315,15 @@ agent-switch compact work             # type /compact into work's agent-switch-m
 - **Alerts** are **off by default** and, when on, name only the project +
   percentage + a suggested `/compact` — never another profile. Enable per-session
   liveness/compaction signals with `agent-switch hooks install` (adds additive,
-  reversible, share-aware hooks to the profile's `settings.json`).
+  reversible, share-aware hooks to the profile's `settings.json`). The hooks also
+  report why a turn stopped (`StopFailure`: usage limit, signed out, account on
+  hold, billing problem) and when Claude Code waits out a limit by itself; re-run
+  `hooks install` after an update to add new events.
+- **Live sessions** are read from Claude Code's own session registry
+  (`sessions/<pid>.json`): it names the running session and its state, which
+  `sessions --json` passes on as `hostStatus` with `liveSource: "registry"`. Where
+  the registry names no session, agent-switch falls back to matching the
+  process's folder (`liveSource: "cwd"`).
 - **Compaction is never automatic.** `agent-switch compact <profile>` only types
   into an agent-switch-*managed* tmux pane (`run --tmux`), refuses while a turn
   is in flight (`--force` to override), and prints the manual command anywhere
