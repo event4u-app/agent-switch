@@ -17,7 +17,9 @@
  *
  * Live sessions: under guard `block` a member that already holds a live
  * session is skipped (starting there would be refused). Otherwise a free member
- * wins a headroom tie over a busy one, and a busy pick is called out.
+ * wins a headroom tie over a busy one, and a busy pick is called out. With no
+ * rule and no fresh usage, a busy active profile under `block` gives way to the
+ * first free signed-in one (`note`) instead of being refused one step later.
  */
 
 import type { UsageSnapshot } from "./usage.js";
@@ -69,6 +71,8 @@ export interface Resolution {
   /** Set when a folder rule forbids every start it could make — the caller
    *  refuses instead of falling back to an account outside the rule. */
   blocked?: string;
+  /** Set when the start moved off a busy account — one line for the human. */
+  note?: string;
 }
 
 export function ago(ms: number): string {
@@ -82,6 +86,18 @@ export function ago(ms: number): string {
 
 function fallbackToActive(i: ResolveInputs, why: string[]): Resolution {
   if (i.active && i.exists(i.active)) {
+    // Under guard `block` a busy active account would only be refused one step
+    // later — take a free account instead. Nobody free → keep it, the guard speaks.
+    if (i.guard === "block" && i.names && (i.live?.(i.active) ?? false)) {
+      const free = i.names.find(
+        (n) => n !== i.active && i.exists(n) && !i.disabled?.(n) && !i.sharesDefaultLogin?.(n) && i.signedIn(n) && !(i.live?.(n) ?? false),
+      );
+      if (free) {
+        const note = `${i.providerId}/${i.active} already has a live session — starting on the free account ${i.providerId}/${free} instead`;
+        why.push(note);
+        return { name: free, why, note };
+      }
+    }
     why.push(`Using the active profile ${i.providerId}/${i.active}`);
     return { name: i.active, why };
   }
