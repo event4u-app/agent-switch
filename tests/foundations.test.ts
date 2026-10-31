@@ -263,6 +263,17 @@ test("dir: with guard warn, a live member is still eligible but a free one wins 
   assert.ok(live.why.includes("Note: claude/b already has a live session (guard: warn)"));
 });
 
+test("dir: with guard block, a busy plain-start account falls through to a free one instead of refusing", () => {
+  const plain = { mapping: null, names: ["stale", "unknown", "out"], active: "stale", guard: "block" as const };
+  const r = R.resolveForDir(inputs({ ...plain, live: (n: string) => n === "stale" }));
+  assert.equal(r.name, "unknown");
+  assert.equal(r.why[r.why.length - 1], "claude/stale already has a live session — starting on the free account claude/unknown instead");
+  // warn never refuses, so the plain-start account stays.
+  assert.equal(R.resolveForDir(inputs({ ...plain, guard: "warn", live: (n: string) => n === "stale" })).name, "stale");
+  // Nobody free: stay on the active account and let the guard speak.
+  assert.equal(R.resolveForDir(inputs({ ...plain, live: (n: string) => n !== "out" })).name, "stale");
+});
+
 test("dir: the no-fresh-usage fallback names the background service", () => {
   const r = R.resolveForDir(inputs({ pool: () => ({ id: "work", name: "Work", members: ["claude/stale"], createdAt: "" }) }));
   assert.ok(r.why.some((l: string) => /agent-switch service/.test(l)), r.why.join("\n"));

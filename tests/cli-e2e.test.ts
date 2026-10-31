@@ -706,6 +706,28 @@ test("guard: `dir --guard` refuses a second load with exit 86, and still prints 
   }
 });
 
+test("guard: a busy active profile moves `dir --guard` onto a free signed-in one instead of refusing", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
+  try {
+    seed(home, "claude", "work");
+    seed(home, "claude", "spare");
+    fs.writeFileSync(
+      path.join(home, "claude", "spare", "config", ".claude.json"),
+      JSON.stringify({ oauthAccount: { emailAddress: "spare@example.com" } }),
+    );
+    run(home, ["guard", "block"]);
+    run(home, ["use", "work"]);
+    seedLiveSession(home, "work", process.pid);
+
+    const r = runRaw(home, ["dir", "--guard"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout.trim(), /claude[/\\]spare[/\\]config$/);
+    assert.match(r.stderr, /starting on the free account claude\/spare instead/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("guard: a free profile passes `dir --guard` untouched (exit 0, no noise)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
   try {

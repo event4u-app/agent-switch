@@ -93,10 +93,18 @@ nothing used to stop two terminals from starting `claude` on the same account �
 sharing one set of rate limits and both refreshing one rotating OAuth token,
 while each terminal looked like a separate account.
 
-The single-load guard notices that second start and says which session already
-holds the profile and which accounts are free. New installs start on `warn`
-(it reports, then lets the session start); with `agent-switch guard block` it
-refuses instead, as shown here:
+The single-load guard notices that second start. New installs start on `warn`
+(it reports, then lets the session start). With `agent-switch guard block` a
+busy account gives way automatically — the new session starts on a free,
+signed-in account and says so in one line:
+
+```
+$ claude
+agent-switch: claude/work already has a live session — starting on the free account claude/privat instead.
+```
+
+Only when no account is free (or a folder rule pins that one account) does it
+refuse, naming who holds the profile:
 
 ```
 $ claude

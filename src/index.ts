@@ -789,7 +789,7 @@ function profileExistsSafe(providerId: ProviderId, name: string): boolean {
   return /^[A-Za-z0-9_-]+$/.test(name) && profileExists(providerId, name);
 }
 
-function resolveDir(providerId: ProviderId, plain = false): { name: string | null; why: string[]; blocked?: string } {
+function resolveDir(providerId: ProviderId, plain = false): { name: string | null; why: string[]; blocked?: string; note?: string } {
   return resolveForDir({
     providerId,
     mapping: plain ? null : resolveMapping(process.cwd(), providerId),
@@ -832,6 +832,7 @@ function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = f
           configDir: r.name ? configDir(providerId, r.name) : null,
           why: r.why,
           ...(r.blocked ? { blocked: r.blocked } : {}),
+          ...(r.note ? { note: r.note } : {}),
         },
         null,
         2,
@@ -850,6 +851,7 @@ function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = f
   if (!name) return;
   console.log(configDir(providerId, name));
   if (!guarded) return;
+  if (r.note) console.error(`agent-switch: ${r.note}.`);
 
   // A wrapper cannot pass `--force` (it would reach the provider binary), so
   // only the env override is offered here.
@@ -2624,7 +2626,7 @@ function cmdGuard(value?: string, json = false): void {
   }
 
   const explain: Record<GuardPolicy, string> = {
-    block: "a second session on a profile that is already loaded is refused",
+    block: "a second session moves to a free profile; refused only when none is free",
     warn: "a second session is reported, then allowed",
     off: "no check at all",
   };
