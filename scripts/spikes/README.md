@@ -144,6 +144,17 @@ things that can drift on any release, and **fail loud (never silent) on drift**:
 If any of the three no longer matches what the spike observed, the gate's PASS is
 **void for that CC version** — re-run before building on it.
 
+**Automatic fallback (`src/cc-contract.ts`).** When the running CC version is not
+in `PINNED_CC_VERSIONS`, `rebind` reads the installed CC bundle and re-checks the
+three facts above statically: the keychain-name derivation, that the OAuth refresh
+still acquires the legacy `<config_dir>.lock` with lock timings compatible with
+`src/locks.ts`, and a keychain read cache ≤ 30 s. It also confirms that the scanned
+bundle is the running version. All checks fail closed. If one fact is not found,
+`rebind` refuses and names the fact, and the manual path above applies. The verdict
+is cached per version in `$AGENT_SWITCH_HOME/.cc-contract-cache.json` and recomputed
+when the binary changes. This check is static only; it does not replace a live
+`r02`/`r03` run.
+
 ## Version pinning
 
 Record in the results log: `claude --version`, OS, credential backend

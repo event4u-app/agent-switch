@@ -31,6 +31,7 @@ import * as fs from "node:fs";
 import * as nodePath from "node:path";
 
 import { fetchProfile } from "./api.js";
+import { verifyCCBinary, type ContractVerdict } from "./cc-contract.js";
 import * as keychain from "./keychain.js";
 import { withProperLock } from "./locks.js";
 import { configDir, ROOT, readRebindKillSwitch, sharesDefaultLogin, writeRebindKillSwitch, type RebindKillSwitch } from "./profiles.js";
@@ -110,6 +111,9 @@ export interface RebindDeps {
   /** Raw `claude --version` output (e.g. "2.1.220 (Claude Code)"), or null when
    *  the binary can't be run. Feeds the CC-version-skew canary (R0.6). */
   claudeVersion: () => string | null;
+  /** Static re-verification of the store contract for a CC version outside
+   *  {@link PINNED_CC_VERSIONS} (cc-contract.ts). Absent → no fallback, the pin is final. */
+  verifyCCContract?: (version: string) => ContractVerdict;
   /** Authoritative account id behind a credential, or null when it cannot be
    *  established (offline, endpoint unreachable, token rejected). Consulted ONLY
    *  when the local fingerprint is inconclusive — see {@link compareAccounts}. */
@@ -189,6 +193,7 @@ export function defaultDeps(): RebindDeps {
         return null;
       }
     },
+    verifyCCContract: (v) => verifyCCBinary(v),
     resolveAccount: resolveAccountViaApi,
     sharesDefaultLogin: (name) => sharesDefaultLogin("claude", name),
   };
@@ -575,11 +580,21 @@ export function versionGuard(
  * the keychain-name {@link canaryCheck} — a version the contract was never proven
  * against is a config-drift stop, not a rebind failure, so it does not advance the
  * circuit-breaker. The env override ({@link CC_VERSION_OVERRIDE_ENV}) bypasses only
- * the set-membership check.
+ * the set-membership check. An unpinned version still proceeds when the static
+ * contract check ({@link RebindDeps.verifyCCContract}) confirms every pinned fact.
  */
 export function versionCanaryCheck(d: RebindDeps): void {
-  const r = versionGuard(d.claudeVersion(), PINNED_CC_VERSIONS, process.env[CC_VERSION_OVERRIDE_ENV] ?? null);
-  if (!r.ok) throw new RebindError(`credential-store canary tripped: ${r.reason}`);
+  const raw = d.claudeVersion();
+  const r = versionGuard(raw, PINNED_CC_VERSIONS, process.env[CC_VERSION_OVERRIDE_ENV] ?? null);
+  if (r.ok) return;
+  const v = parseCCVersion(raw);
+  if (!v || !d.verifyCCContract) throw new RebindError(`credential-store canary tripped: ${r.reason}`);
+  const verdict = d.verifyCCContract(v);
+  if (verdict.ok) return;
+  const failed = verdict.findings.filter((f) => !f.ok).map((f) => `${f.fact}: ${f.detail}`);
+  throw new RebindError(
+    `credential-store canary tripped: ${r.reason} The automatic contract check also failed — ${failed.join("; ")}.`,
+  );
 }
 
 /**
