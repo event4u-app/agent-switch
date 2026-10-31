@@ -120,6 +120,50 @@ test("protection notice: warns once per cycle, says warn, never paused", () => {
   assert.equal(PR.protectionNotice("claude/work", snap(100), { enabled: false, thresholdPct: 98 }, undefined), null);
 });
 
+test("protection says what the host does at the limit, and never claims a pause", () => {
+  const on = PR.protectionNotice("claude/work", snap(98), PR.DEFAULT_PROTECTION, undefined, "on");
+  assert.match(on!.message, /Claude waits at the limit and continues after the reset/);
+  const dflt = PR.protectionNotice("claude/work", snap(98), PR.DEFAULT_PROTECTION, undefined, "default");
+  assert.match(dflt!.message, /continues after the reset/);
+  const off = PR.protectionNotice("claude/work", snap(98), PR.DEFAULT_PROTECTION, undefined, "off");
+  assert.match(off!.message, /auto-continue is off/);
+  for (const n of [on, dflt, off]) assert.doesNotMatch(n!.message + n!.title, /paused|pausing/i);
+});
+
+test("autoContinueState reads the profile's setting; setAutoContinue writes through a shared link", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "asw-autocont-"));
+  try {
+    const cfg = path.join(root, "cfg");
+    fs.mkdirSync(cfg);
+    assert.equal(PR.autoContinueState(cfg), "default"); // no settings.json
+    fs.writeFileSync(path.join(cfg, "settings.json"), JSON.stringify({ theme: "dark", autoContinueAtUsageLimit: false }));
+    assert.equal(PR.autoContinueState(cfg), "off");
+    PR.setAutoContinue(cfg, true);
+    assert.equal(PR.autoContinueState(cfg), "on");
+    assert.equal(JSON.parse(fs.readFileSync(path.join(cfg, "settings.json"), "utf8")).theme, "dark"); // other keys kept
+
+    if (process.platform !== "win32") {
+      const shared = path.join(root, "shared-settings.json");
+      fs.writeFileSync(shared, "{}");
+      const linked = path.join(root, "linked");
+      fs.mkdirSync(linked);
+      fs.symlinkSync(shared, path.join(linked, "settings.json"));
+      PR.setAutoContinue(linked, false);
+      assert.ok(fs.lstatSync(path.join(linked, "settings.json")).isSymbolicLink(), "the link must not fork");
+      assert.equal(JSON.parse(fs.readFileSync(shared, "utf8")).autoContinueAtUsageLimit, false);
+    }
+
+    const bad = path.join(root, "bad");
+    fs.mkdirSync(bad);
+    fs.writeFileSync(path.join(bad, "settings.json"), "{ not json");
+    assert.equal(PR.autoContinueState(bad), "unknown");
+    assert.throws(() => PR.setAutoContinue(bad, true), /not valid JSON/);
+    assert.equal(fs.readFileSync(path.join(bad, "settings.json"), "utf8"), "{ not json"); // untouched
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 // ---------- pools ----------
 
 test("pools: empty store, create/rename/add/remove/delete, ids stay stable", () => {

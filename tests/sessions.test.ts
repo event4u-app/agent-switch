@@ -159,6 +159,68 @@ test("markLive marks the newest transcript of a live pid's project dir — nothi
   }
 });
 
+test("listSessions reads a header only for the rows it returns", () => {
+  const root = tmp();
+  try {
+    const cfg = path.join(root, "cfg");
+    const t = Date.now();
+    for (let i = 0; i < 12; i++) seedSession(cfg, `-p${i % 3}`, `s${i}`, { cwd: `/p${i}`, mtimeMs: t - i * 1000 });
+    const read: string[] = [];
+    const rows = listSessions(cfg, 4, (f) => (read.push(f), readSessionHeader(f)));
+    assert.equal(rows.length, 4);
+    assert.equal(read.length, 4);
+    assert.deepEqual(rows.map((r) => r.sessionId), ["s0", "s1", "s2", "s3"]);
+    assert.equal(rows[0].cwd, "/p0");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("markLive trusts the registry's sessionId over the cwd guess, and carries its status", () => {
+  const root = tmp();
+  try {
+    const cfg = path.join(root, "cfg");
+    const t = Date.now();
+    // The registry names the OLDER transcript — the cwd guess would pick the newest.
+    seedSession(cfg, "-live-proj", "named", { mtimeMs: t - 60_000 });
+    seedSession(cfg, "-live-proj", "newest", { mtimeMs: t });
+    fs.mkdirSync(path.join(cfg, "sessions"), { recursive: true });
+    fs.writeFileSync(
+      path.join(cfg, "sessions", `${process.pid}.json`),
+      JSON.stringify({ pid: process.pid, sessionId: "named", status: "busy", statusUpdatedAt: t }),
+    );
+
+    const rows = listSessions(cfg, 10);
+    markLive(cfg, rows, () => { throw new Error("cwd guess must not run when the registry names the session"); });
+    const named = rows.find((r) => r.sessionId === "named")!;
+    const newest = rows.find((r) => r.sessionId === "newest")!;
+    assert.equal(named.live, true);
+    assert.equal(named.hostStatus, "busy");
+    assert.equal(named.liveSource, "registry");
+    assert.equal(newest.live, false);
+    assert.equal(newest.hostStatus, undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("markLive falls back to the cwd guess for an unreadable registry file", () => {
+  const root = tmp();
+  try {
+    const cfg = path.join(root, "cfg");
+    seedSession(cfg, "-live-proj", "newest", { mtimeMs: Date.now() });
+    fs.mkdirSync(path.join(cfg, "sessions"), { recursive: true });
+    fs.writeFileSync(path.join(cfg, "sessions", `${process.pid}.json`), "{not json");
+    const rows = listSessions(cfg, 10);
+    markLive(cfg, rows, () => "/live/proj");
+    assert.equal(rows[0].live, true);
+    assert.equal(rows[0].liveSource, "cwd");
+    assert.equal(rows[0].hostStatus, undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("locateSession finds the transcript and its checkpoint subdir", () => {
   const root = tmp();
   try {

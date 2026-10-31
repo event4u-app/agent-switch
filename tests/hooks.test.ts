@@ -18,6 +18,8 @@ import {
   HOOK_EVENTS,
   HOOK_MARKER,
   EVENT_RING_CAP,
+  hookNotice,
+  waitingSessions,
 } from "../src/hooks.js";
 
 function tmp(): string {
@@ -115,4 +117,61 @@ test("profileFromConfigDir maps the agent-switch layout, rejects foreign dirs", 
   assert.deepEqual(profileFromConfigDir("/root/codex/priv/config", root), { provider: "codex", profile: "priv" });
   assert.equal(profileFromConfigDir("/somewhere/else/.claude", root), null);
   assert.equal(profileFromConfigDir("/root/claude/work", root), null, "must end in /config");
+});
+
+// ---------- what a hook event tells the user ----------
+
+const who = { provider: "claude", profile: "work" };
+const at = "2026-10-31T10:00:00.000Z";
+
+test("StopFailure is installed, so an existing install upgrades in place", () => {
+  assert.ok((HOOK_EVENTS as readonly string[]).includes("StopFailure"));
+  const old = withHooksInstalled({}, "agent-switch");
+  delete (old.hooks as Record<string, unknown>).StopFailure;
+  assert.equal(hooksInstalled(old), false);
+  assert.equal(hooksInstalled(withHooksInstalled(old, "agent-switch")), true);
+});
+
+test("hookNotice names the reason a session stopped, per StopFailure error", () => {
+  const cases: [string, RegExp][] = [
+    ["rate_limit", /usage limit/],
+    ["authentication_failed", /signed out/],
+    ["oauth_org_not_allowed", /signed out/],
+    ["account_on_hold", /on hold/],
+    ["billing_error", /billing/],
+    ["overloaded", /stopped with an error \(overloaded\)/],
+  ];
+  for (const [error, re] of cases) {
+    const n = hookNotice({ event: "StopFailure", error, at }, who);
+    assert.ok(n, error);
+    assert.equal(n.kind, "warning");
+    assert.match(n.message, re, error);
+    assert.match(n.message, /claude\/work/);
+  }
+  const bare = hookNotice({ event: "StopFailure", at }, who);
+  assert.match(bare!.message, /stopped with an error/);
+});
+
+test("hookNotice maps the host's own wait at the limit, and keeps the old notices", () => {
+  assert.match(hookNotice({ event: "Notification", notificationType: "quota_auto_resume_armed", at }, who)!.message, /waiting for the limit to reset/);
+  assert.match(hookNotice({ event: "Notification", notificationType: "quota_auto_resume_fired", at }, who)!.message, /resumed/);
+  assert.match(hookNotice({ event: "Notification", notificationType: "quota_auto_resume_stale", at }, who)!.message, /stale/);
+  assert.match(hookNotice({ event: "Notification", notificationType: "quota_auto_resume_disabled", at }, who)!.message, /auto-continue is off/);
+  assert.match(hookNotice({ event: "Notification", notificationType: "quota_auto_resume_cancelled", at }, who)!.message, /cancelled/);
+  assert.equal(hookNotice({ event: "Notification", at }, who)!.title, "Claude is waiting");
+  assert.equal(hookNotice({ event: "Stop", at }, who)!.title, "Claude finished");
+  assert.equal(hookNotice({ event: "SessionStart", at }, who), null);
+});
+
+test("waitingSessions: a StopFailure needs you; the host waiting out a limit does not", () => {
+  const t = Date.parse(at);
+  const events = [
+    { event: "StopFailure", error: "rate_limit", sessionId: "a", at },
+    { event: "Notification", notificationType: "quota_auto_resume_armed", sessionId: "b", at },
+    { event: "Notification", notificationType: "quota_auto_resume_disabled", sessionId: "c", at },
+  ];
+  const w = waitingSessions(events, () => t);
+  assert.equal(w.get("a"), at);
+  assert.equal(w.has("b"), false);
+  assert.equal(w.get("c"), at);
 });

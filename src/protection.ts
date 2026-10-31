@@ -5,9 +5,11 @@
  * profile with no stored entry simply reads the default.
  *
  * What it does today: the daemon WARNS when a polled profile reaches its
- * threshold. It does not pause anything. A real pause needs the provider to
- * hold the session (Claude Code's own auto-continue), which agent-switch cannot
- * verify from here, so every notice says "warn" — never "paused".
+ * threshold. It does not pause anything. What happens AT the limit is the
+ * host's call: Claude Code's `autoContinueAtUsageLimit` makes the session wait
+ * for the reset and continue by itself (an absent key reads as on in 2.1.314).
+ * agent-switch reads that setting and says which of the two will happen — never
+ * "paused", because agent-switch is not the one holding the session.
  */
 
 import { withFileLockSync } from "./locks.js";
@@ -110,6 +112,7 @@ export function protectionNotice(
   snap: UsageSnapshot,
   policy: ProtectionPolicy,
   lastCycle: string | undefined,
+  hostWaits?: AutoContinueState,
 ): { cycle: string; title: string; message: string } | null {
   if (!policy.enabled) return null;
   const hit = snap.windows.find((w) => typeof w.utilization === "number" && w.utilization >= policy.thresholdPct);
@@ -121,6 +124,57 @@ export function protectionNotice(
     title: "Session protection: limit almost reached",
     message:
       `${target} reached ${hit.utilization}% of its ${hit.label} limit (protection threshold ${policy.thresholdPct}%). ` +
-      `This is a warning only — agent-switch does not pause running sessions.`,
+      `This is a warning only — agent-switch does not pause running sessions.` +
+      (hostWaits === "on" || hostWaits === "default"
+        ? " At 100 % Claude waits at the limit and continues after the reset."
+        : hostWaits === "off"
+          ? " Claude's auto-continue is off — at 100 % the session stops at the limit."
+          : ""),
   };
+}
+
+// ---------- the host's own wait at the limit ----------
+
+/** `autoContinueAtUsageLimit` in a profile's settings.json: `on` / `off` when
+ *  set, `default` when absent (Claude Code treats that as on), `unknown` when
+ *  the file cannot be parsed. */
+export type AutoContinueState = "on" | "off" | "default" | "unknown";
+
+export const AUTO_CONTINUE_KEY = "autoContinueAtUsageLimit";
+
+function readSettingsFile(configDir: string): { exists: boolean; data: Record<string, unknown> | null } {
+  const file = path.join(configDir, "settings.json");
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch {
+    return { exists: false, data: {} };
+  }
+  try {
+    const o = JSON.parse(raw);
+    return { exists: true, data: o && typeof o === "object" && !Array.isArray(o) ? o : null };
+  } catch {
+    return { exists: true, data: null };
+  }
+}
+
+export function autoContinueState(configDir: string): AutoContinueState {
+  const { data } = readSettingsFile(configDir);
+  if (data === null) return "unknown";
+  const v = data[AUTO_CONTINUE_KEY];
+  return v === true ? "on" : v === false ? "off" : "default";
+}
+
+/**
+ * Set `autoContinueAtUsageLimit` in a profile's settings.json. A shared
+ * settings.json is a link (src/share.ts): writing through it updates the shared
+ * source and keeps the link, so every sharing profile gets the value. Refuses a
+ * file it cannot parse rather than replacing the user's settings.
+ */
+export function setAutoContinue(configDir: string, on: boolean): void {
+  const { data } = readSettingsFile(configDir);
+  if (data === null) throw new Error(`${path.join(configDir, "settings.json")} is not valid JSON — fix it first, nothing was changed`);
+  fs.mkdirSync(configDir, { recursive: true });
+  // writeFileSync follows a symlink, so a shared link stays a link.
+  fs.writeFileSync(path.join(configDir, "settings.json"), JSON.stringify({ ...data, [AUTO_CONTINUE_KEY]: on }, null, 2) + "\n", { mode: 0o600 });
 }

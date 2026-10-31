@@ -25,8 +25,10 @@ import * as path from "node:path";
  *  (the stdin field is `source`, not `matcher`). `Stop` fires when Claude ends a
  *  turn (finished / now waiting on you); `Notification` fires when it needs your
  *  attention (a permission prompt, or a long idle) — the two session-awareness
- *  signals the pet surfaces. */
-export const HOOK_EVENTS = ["SessionStart", "SessionEnd", "PreCompact", "PostCompact", "Stop", "Notification"] as const;
+ *  signals the pet surfaces. `StopFailure` fires when a turn ends on an API
+ *  error; its stdin carries `error` (`rate_limit`, `authentication_failed`, …),
+ *  read from the Claude Code 2.1.314 binary. */
+export const HOOK_EVENTS = ["SessionStart", "SessionEnd", "PreCompact", "PostCompact", "Stop", "Notification", "StopFailure"] as const;
 export type HookEvent = (typeof HOOK_EVENTS)[number];
 
 /** Marker stamped on every entry we add, so uninstall touches only our own. */
@@ -128,7 +130,51 @@ export interface HookEventRecord {
   event: string; // hook_event_name
   source?: string; // SessionStart matcher: startup|resume|clear|compact
   sessionId?: string;
+  /** StopFailure: the error type, never the message body. */
+  error?: string;
+  /** Notification: `notification_type` (`quota_auto_resume_armed`, …). */
+  notificationType?: string;
   at: string; // ISO
+}
+
+/** The host waiting out a usage limit by itself — the session needs nothing
+ *  from the user. `_disabled`, `_stale` and `_offer` do ask something of them. */
+const HOST_WAIT_TYPES = new Set(["quota_auto_resume_armed", "quota_auto_resume_fired", "quota_auto_resume_cancelled", "quota_auto_resume_setting"]);
+
+const STOP_REASONS: Record<string, string> = {
+  rate_limit: "hit its usage limit",
+  authentication_failed: "is signed out",
+  oauth_org_not_allowed: "is signed out",
+  account_on_hold: "stopped: the account is on hold",
+  billing_error: "stopped: the account has a billing problem",
+};
+
+const HOST_WAIT_TEXT: Record<string, string> = {
+  quota_auto_resume_armed: "is waiting for the limit to reset, then continues by itself",
+  quota_auto_resume_fired: "resumed after the limit reset",
+  quota_auto_resume_stale: "was waiting for a limit reset, but the wait went stale",
+  quota_auto_resume_disabled: "hit the limit and auto-continue is off",
+  quota_auto_resume_cancelled: "was waiting for a limit reset; the wait was cancelled",
+};
+
+/** What one hook event should tell the user, or null for events that are only
+ *  recorded. Pure, so every branch is tested without a hook process. */
+export function hookNotice(
+  rec: HookEventRecord,
+  who: { provider: string; profile: string },
+): { kind: "info" | "warning"; title: string; message: string } | null {
+  const name = `${who.provider}/${who.profile}`;
+  if (rec.event === "StopFailure") {
+    const reason = (rec.error && STOP_REASONS[rec.error]) ?? `stopped with an error${rec.error ? ` (${rec.error})` : ""}`;
+    return { kind: "warning", title: "Claude stopped", message: `${name} ${reason}.` };
+  }
+  if (rec.event === "Notification") {
+    const wait = rec.notificationType ? HOST_WAIT_TEXT[rec.notificationType] : undefined;
+    if (wait) return { kind: rec.notificationType === "quota_auto_resume_fired" ? "info" : "warning", title: "Claude at the limit", message: `${name} ${wait}.` };
+    return { kind: "warning", title: "Claude is waiting", message: `${name} needs your input.` };
+  }
+  if (rec.event === "Stop") return { kind: "info", title: "Claude finished", message: `${name} finished its turn.` };
+  return null;
 }
 
 export function eventFile(root: string, provider: string, profile: string): string {
@@ -145,9 +191,10 @@ export function readEvents(file: string): HookEventRecord[] {
 
 /**
  * Sessions waiting on the user: their last hook event is `Notification` (a
- * permission prompt, or a long wait for input) and the transcript has not been
+ * permission prompt, or a long wait for input) or `StopFailure` (the turn died
+ * on an error — a limit, a lapsed login) and the transcript has not been
  * written since — a reply or an approval writes to it. `Stop` alone is not
- * waiting: it ends every turn.
+ * waiting: it ends every turn. Neither is the host waiting out a limit by itself.
  */
 export function waitingSessions(events: readonly HookEventRecord[], mtimeMs: (sessionId: string) => number | null): Map<string, string> {
   const last = new Map<string, HookEventRecord>();
@@ -157,7 +204,8 @@ export function waitingSessions(events: readonly HookEventRecord[], mtimeMs: (se
   for (const [id, e] of last) {
     const written = mtimeMs(id);
     // Two seconds of slack: the notification and the transcript line that led to it land together.
-    if (e.event === "Notification" && written !== null && Date.parse(e.at) + 2000 >= written) out.set(id, e.at);
+    const asks = e.event === "StopFailure" || (e.event === "Notification" && !(e.notificationType && HOST_WAIT_TYPES.has(e.notificationType)));
+    if (asks && written !== null && Date.parse(e.at) + 2000 >= written) out.set(id, e.at);
   }
   return out;
 }

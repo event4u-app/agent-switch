@@ -50,7 +50,7 @@ import {
   ContextSample,
 } from "./notify.js";
 import { readEvents, eventFile } from "./hooks.js";
-import { protectionNotice, readProtection } from "./protection.js";
+import { autoContinueState, protectionNotice, readProtection } from "./protection.js";
 import { execFileSync } from "node:child_process";
 
 /** Append an event to the shared log and, when the operator opted into
@@ -543,7 +543,8 @@ async function pollProvider(
     state.profiles[key] = snapshot;
     polled.push({ name, snapshot });
     // Session protection (per profile, default on at 98 %): a warning only.
-    const pNotice = protectionNotice(key, snapshot, readProtection(provider, name), state.protectionNotified?.[key]);
+    const hostWaits = provider === "claude" ? autoContinueState(configDir(provider, name)) : undefined;
+    const pNotice = protectionNotice(key, snapshot, readProtection(provider, name), state.protectionNotified?.[key], hostWaits);
     if (pNotice) {
       state.protectionNotified = { ...(state.protectionNotified ?? {}), [key]: pNotice.cycle };
       log(`protection: ${pNotice.message}`);

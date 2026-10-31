@@ -137,8 +137,35 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-/** PIDs of live Claude Code sessions running on a profile's config dir. */
-export function liveSessionPids(configDir: string): number[] {
+/** One live Claude Code process, as its own registry file describes it. The
+ *  file's content is internal to Claude Code, so every field but `pid` is
+ *  optional and an unreadable file degrades to the pid alone. */
+export interface LiveSession {
+  pid: number;
+  sessionId: string | null;
+  /** The host's own word for the state (`idle`, `busy`, `shell`, …), verbatim. */
+  status: string | null;
+  statusUpdatedAt: number | null;
+}
+
+function readRegistryFile(file: string): Omit<LiveSession, "pid"> {
+  const none = { sessionId: null, status: null, statusUpdatedAt: null };
+  try {
+    const o = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (!o || typeof o !== "object") return none;
+    return {
+      sessionId: typeof o.sessionId === "string" && o.sessionId ? o.sessionId : null,
+      status: typeof o.status === "string" && o.status ? o.status : null,
+      statusUpdatedAt: typeof o.statusUpdatedAt === "number" ? o.statusUpdatedAt : null,
+    };
+  } catch {
+    return none;
+  }
+}
+
+/** Live Claude Code sessions on a profile's config dir: `sessions/<pid>.json`
+ *  whose pid is alive, with what the file says about the session. */
+export function liveSessions(configDir: string): LiveSession[] {
   const sessionsDir = path.join(configDir, "sessions");
   let entries: string[];
   try {
@@ -146,12 +173,17 @@ export function liveSessionPids(configDir: string): number[] {
   } catch {
     return [];
   }
-  const pids: number[] = [];
+  const out: LiveSession[] = [];
   for (const entry of entries) {
     const m = /^(\d+)\.json$/.exec(entry);
     if (!m) continue;
     const pid = Number(m[1]);
-    if (pidAlive(pid)) pids.push(pid);
+    if (pidAlive(pid)) out.push({ pid, ...readRegistryFile(path.join(sessionsDir, entry)) });
   }
-  return pids;
+  return out;
+}
+
+/** PIDs of live Claude Code sessions running on a profile's config dir. */
+export function liveSessionPids(configDir: string): number[] {
+  return liveSessions(configDir).map((s) => s.pid);
 }

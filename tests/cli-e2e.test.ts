@@ -942,7 +942,7 @@ test("upgrade from a 2.1.0 config: labels, mappings, alerts, autoswitch, guard u
     assert.equal(JSON.parse(run(home, ["guard", "--json"])).policy, "block");
     assert.equal(fs.existsSync(path.join(home, "pools.json")), false, "no pools file is created by an upgrade");
     const prot = JSON.parse(run(home, ["protection", "--json"]));
-    assert.deepEqual(prot.find((r: any) => r.profile === "claude/work"), { profile: "claude/work", enabled: true, thresholdPct: 98 });
+    assert.deepEqual(prot.find((r: any) => r.profile === "claude/work"), { profile: "claude/work", enabled: true, thresholdPct: 98, hostWaits: "default" });
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

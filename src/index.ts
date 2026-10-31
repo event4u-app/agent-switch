@@ -80,7 +80,7 @@ import { detectShell, installShellIntegration, shellenvScript } from "./shellenv
 import { runDoctor, shellIntegrationCheck } from "./doctor.js";
 import { appendActivity, readActivity, ACTIVITY_MAX_LINES, type ActivityKind } from "./activity.js";
 import { readGuiSettings, writeGuiSettings, applyGuiSetting, type GuiSettingUpdate } from "./gui-settings.js";
-import { readProtection, setProtection, renameProtection, forgetProtection } from "./protection.js";
+import { autoContinueState, readProtection, setAutoContinue, setProtection, renameProtection, forgetProtection } from "./protection.js";
 import {
   POOL_PREFIX,
   addPoolMember,
@@ -97,6 +97,7 @@ import {
   suggestPoolsFromLabels,
 } from "./pools.js";
 import { resolveForDir, type CachedUsage } from "./dir-resolve.js";
+import { appendPick, readPicks, PICKS_MAX_LINES } from "./picks.js";
 import {
   antigravityAuthStatus,
   claudeAuthStatus,
@@ -189,6 +190,7 @@ import {
   profileFromConfigDir,
   readEvents,
   waitingSessions,
+  hookNotice,
   HookEventRecord,
 } from "./hooks.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "./notify.js";
@@ -841,6 +843,8 @@ function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = f
     if (r.blocked) process.exit(GUARD_REFUSED_EXIT);
     return;
   }
+  // A wrapped start is a real pick — record it for `agent-switch picks`.
+  if (guarded) appendPick({ provider: providerId, chosen: r.name ? `${providerId}/${r.name}` : null, why: r.why, blocked: r.blocked, note: r.note });
   // A folder rule that cannot be served refuses — starting on an account
   // outside the rule is the one outcome the rule exists to prevent.
   if (r.blocked) {
@@ -1221,18 +1225,17 @@ function cmdHookEvent(): void {
       event: typeof o.hook_event_name === "string" ? o.hook_event_name : "unknown",
       source: typeof o.source === "string" ? o.source : undefined,
       sessionId: typeof o.session_id === "string" ? o.session_id : undefined,
+      error: typeof o.error === "string" ? o.error : undefined,
+      notificationType: typeof o.notification_type === "string" ? o.notification_type : undefined,
       at: new Date().toISOString(),
     };
     appendEvent(eventFile(ROOT, who.provider, who.profile), rec);
-    // Session awareness: surface "Claude needs you / finished" as a notification
-    // the GUI routes to the pet. dedupe=false — each turn is a distinct moment,
-    // so a solo session's repeated turns are never collapsed. Best-effort; a hook
-    // must never throw.
-    if (rec.event === "Notification") {
-      appendNotification({ kind: "warning", title: "Claude is waiting", message: `${who.provider}/${who.profile} needs your input.` }, undefined, undefined, false);
-    } else if (rec.event === "Stop") {
-      appendNotification({ kind: "info", title: "Claude finished", message: `${who.provider}/${who.profile} finished its turn.` }, undefined, undefined, false);
-    }
+    // Session awareness: surface "Claude needs you / finished / stopped" as a
+    // notification the GUI routes to the pet. dedupe=false — each turn is a
+    // distinct moment, so a solo session's repeated turns are never collapsed.
+    // Best-effort; a hook must never throw.
+    const notice = hookNotice(rec, who);
+    if (notice) appendNotification(notice, undefined, undefined, false);
   } catch {
     // never throw from a hook
   }
@@ -1354,7 +1357,7 @@ function cmdSessions(
       const summary = r.summary ? `  ${r.summary}` : "";
       const ctx = formatContext(contextForRow(providerId, r));
       const ctxCol = ctx ? `  ${ctx}` : "";
-      console.log(`${mark} ${r.sessionId}  ${where}  ${ageOf(r.mtimeMs)}${ctxCol}${r.live ? "  [live]" : ""}${summary}`);
+      console.log(`${mark} ${r.sessionId}  ${where}  ${ageOf(r.mtimeMs)}${ctxCol}${r.live ? (r.hostStatus ? `  [live: ${r.hostStatus}]` : "  [live]") : ""}${summary}`);
     }
   }
   if (!any) {
@@ -1788,6 +1791,7 @@ function cmdTakeover(
     process.exit(rc);
   }
   console.log(`Resume it with:\n  ${resumeCommand}`);
+  console.log("The prompt cache stays with the old account: the first turn here reads the whole conversation again, uncached.");
   if (inPlace) resumeInPlace("claude", target, resumeArgs, resumeCommand); // exits: respawn managed pane, else M5
   if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("claude"), target, resumeArgs));
 }
@@ -1897,6 +1901,7 @@ function takeoverCodex(
   for (const a of result.actions) console.log(`  ${a}`);
   console.log("Note: codex has no pid-file live detection — make sure no active codex session was running on the source profile.");
   console.log(`Resume it with:\n  ${resumeCommand}`);
+  console.log("The prompt cache stays with the old account: the first turn here reads the whole conversation again, uncached.");
   if (inPlace) resumeInPlace("codex", target, resumeArgs, resumeCommand); // exits
   if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("codex"), target, resumeArgs));
 }
@@ -2827,9 +2832,11 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>]   notify + suggest near a usage limit; never switches automatically (default OFF)
   agent-switch reset <profile> --provider codex [--yes]                        redeem one banked Codex rate-limit reset (asks on a terminal)
   agent-switch protection [--json] | protection set <provider/name> [--on|--off] [--threshold N]   per-profile limit warning (default on, 98%)
+  agent-switch protection wait on|off <claude/name>   Claude Code's own auto-continue at the limit (wait for the reset, or stop)
   agent-switch pool [list|create|rename|delete|add|remove|suggest] [--json]    optional groups a folder rule can point at
   agent-switch auth-status [--provider P] [--json]   per-profile login state from the provider's store (no tokens)
   agent-switch activity [--limit N] [--json]   what agent-switch itself did, and why
+  agent-switch picks [--limit N] [--json]      which account each wrapped start chose, and why
   agent-switch rename <old> <new> [--provider P]                               rename a profile (name & keep its tag)
   agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
   agent-switch [gui] [--after-pid <pid>]       launch the tray/menubar GUI (the default with no command; won't start a second if one is running; --after-pid waits for that process to quit first — the GUI's restart)
@@ -3070,6 +3077,19 @@ function cmdActivity(flags: Record<string, string | boolean>): void {
   }
 }
 
+function cmdPicks(flags: Record<string, string | boolean>): void {
+  const limit = typeof flags.limit === "string" ? Number(flags.limit) : undefined;
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) die("--limit must be a whole number of at least 1");
+  const entries = readPicks(limit ?? (flags.json ? undefined : 20));
+  if (flags.json) return void console.log(JSON.stringify({ entries, capacity: PICKS_MAX_LINES }, null, 2));
+  if (entries.length === 0) return void console.log("No picks recorded yet. A start through the shell wrapper records one.");
+  for (const e of entries) {
+    const what = e.blocked ? `refused — ${e.blocked}` : (e.chosen ?? `${e.provider} default install`);
+    console.log(`${e.at}  ${what}${e.note ? `  (${e.note})` : ""}`);
+    for (const w of e.why) console.log(`    ${w}`);
+  }
+}
+
 function authStatusFor(providerId: ProviderId, name: string): AuthStatus {
   const s = rawAuthStatusFor(providerId, name);
   const keptFreshBy = keptFreshByFor(providerId, { shared: sharesDefaultLogin(providerId, name), serviceInstalled: serviceTarget() !== "not-installed", keepSignedIn: readKeepSignedIn() }, s.keptFreshBy);
@@ -3110,13 +3130,56 @@ function parseMemberArg(v: string | undefined, usageLine: string): { provider: P
 }
 
 function cmdProtection(sub: string | undefined, args: string[], flags: Record<string, string | boolean>): void {
-  const usageLine = "usage: agent-switch protection [--json] | protection set <provider/name> [--on|--off] [--threshold <1-100>]";
+  const usageLine =
+    "usage: agent-switch protection [--json] | protection set <provider/name> [--on|--off] [--threshold <1-100>] | protection wait <on|off> <claude/name>";
   if (sub === undefined || sub === "status" || sub === "list") {
-    const rows = listAllProfiles().map((p) => ({ profile: `${p.provider}/${p.name}`, ...readProtection(p.provider, p.name) }));
+    const rows = listAllProfiles().map((p) => ({
+      profile: `${p.provider}/${p.name}`,
+      ...readProtection(p.provider, p.name),
+      // What Claude Code itself does at the limit; null for providers without the setting.
+      hostWaits: p.provider === "claude" ? autoContinueState(configDir(p.provider, p.name)) : null,
+    }));
     if (flags.json) return void console.log(JSON.stringify(rows, null, 2));
     if (rows.length === 0) return void console.log("No profiles.");
-    for (const r of rows) console.log(`${r.profile.padEnd(24)} ${r.enabled ? "on " : "off"}  at ${r.thresholdPct}%`);
-    console.log("\nA warning when a profile reaches its threshold — nothing is paused or switched.");
+    const waitText = { on: "Claude waits at the limit", default: "Claude waits at the limit (default)", off: "stops at the limit", unknown: "settings.json unreadable" };
+    for (const r of rows) {
+      const wait = r.hostWaits ? `  ·  ${waitText[r.hostWaits]}` : "";
+      console.log(`${r.profile.padEnd(24)} ${r.enabled ? "on " : "off"}  at ${r.thresholdPct}%${wait}`);
+    }
+    console.log("\nA warning when a profile reaches its threshold — agent-switch pauses and switches nothing.");
+    console.log("At 100 % Claude Code's own auto-continue decides: wait for the reset, or stop. Change it with `agent-switch protection wait on|off <claude/name>`.");
+    return;
+  }
+  if (sub === "wait") {
+    const state = args[0];
+    if (state !== "on" && state !== "off") die(usageLine);
+    const m = parseMemberArg(args[1], usageLine);
+    if (m.provider !== "claude") die("protection wait applies to Claude profiles only (it sets Claude Code's autoContinueAtUsageLimit)");
+    requireProfile(m.provider, m.name, "protection wait");
+    const cfg = configDir(m.provider, m.name);
+    try {
+      setAutoContinue(cfg, state === "on");
+    } catch (e) {
+      die((e as Error).message);
+    }
+    logActivity("protection", `${m.provider}/${m.name}`, `auto-continue ${state}`, "user ran `agent-switch protection wait`");
+    // A shared settings.json is one file for every profile linked to it.
+    let shared: string[] = [];
+    try {
+      const real = fs.realpathSync(path.join(cfg, "settings.json"));
+      shared = listProfiles("claude").filter((n) => {
+        try {
+          return fs.realpathSync(path.join(configDir("claude", n), "settings.json")) === real;
+        } catch {
+          return false;
+        }
+      });
+    } catch {
+      shared = [m.name];
+    }
+    if (flags.json) return void console.log(JSON.stringify({ profile: `${m.provider}/${m.name}`, hostWaits: autoContinueState(cfg), affected: shared.map((n) => `claude/${n}`) }, null, 2));
+    console.log(`Claude auto-continue ${state} for ${shared.map((n) => `claude/${n}`).join(", ")}${shared.length > 1 ? " (shared settings.json)" : ""}.`);
+    console.log(state === "on" ? "At the limit, a session waits for the reset and continues by itself." : "At the limit, Claude Code offers the wait as a choice instead.");
     return;
   }
   if (sub !== "set") die(usageLine);
@@ -3321,6 +3384,7 @@ async function main(): Promise<void> {
     case "doctor": return process.exit(await runDoctor(!!flags.json));
     case "auth-status": return cmdAuthStatus(providerExplicit ? providerId : undefined, !!flags.json);
     case "activity": return cmdActivity(flags);
+    case "picks": return cmdPicks(flags);
     case "protection": return cmdProtection(positional[0], positional.slice(1), flags);
     case "pool": case "pools": return cmdPool(positional[0], positional.slice(1), flags);
     case "gui-settings": return cmdGuiSettings(positional[0], positional.slice(1), flags);
