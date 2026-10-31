@@ -10,8 +10,9 @@ status: planned
 > because every item here needs real multi-OS runs, live provider logins or a soak
 > window that a single session cannot provide honestly.
 >
-> **Arrivals:** 3 — latest `inbox-2026-10-c` (2026-10-29, PR #103 review: start
-> admission, lock crash tests, reasons on every surface → Phases 2 and 6); earlier:
+> **Arrivals:** 4 — latest `inbox-2026-10-d` (2026-10-31, switchboard comparison:
+> pause instead of abort → Phase 1; detection and display of the native wait moved to
+> `road-to-signals-the-host-already-sends` Phase 3); earlier: `inbox-2026-10-c`,
 > `inbox-2026-10-b`, `inbox-2026-10-a`.
 >
 > Pull trigger: [`road-to-honest-foundations.md`](../archive/road-to-honest-foundations.md)

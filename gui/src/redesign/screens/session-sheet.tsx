@@ -340,6 +340,11 @@ export function SessionSheet({ id }: { id: string }) {
               <span className="text-[13px] font-medium text-ac-text">Move to another account</span>
             </div>
             <p className="text-xs text-ac-muted">A session keeps its account unless you choose here. Nothing happens until you click.</p>
+            {how !== "handoff" && (
+              <p className="text-[11px] text-ac-faint">
+                The prompt cache stays with the old account: the first turn on the new one reads the whole conversation again, uncached. The cheapest moment to move is right after a compaction.
+              </p>
+            )}
             <Segmented
               label="How"
               fill

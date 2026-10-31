@@ -21,7 +21,7 @@
 
 ---
 
-## Parked — `later/` (5 roadmaps, not active backlog)
+## Parked — `later/` (6 roadmaps, not active backlog)
 
 > Excluded from the table above and from `/roadmap:process-*` by design. Listed here so a resume condition is visible without opening the file.
 
@@ -32,6 +32,7 @@
 | [road-to-agent-switch-gui-service.md](roadmaps/later/road-to-agent-switch-gui-service.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-agent-switch-native-updater.md](roadmaps/later/road-to-agent-switch-native-updater.md) | 2 (2 you) | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-agent-switch-statusline-usage.md](roadmaps/later/road-to-agent-switch-statusline-usage.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
+| [road-to-host-signals-followups.md](roadmaps/later/road-to-host-signals-followups.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-multi-provider-and-provider-settings.md](roadmaps/later/road-to-multi-provider-and-provider-settings.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-session-orchestration.md](roadmaps/later/road-to-session-orchestration.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 
@@ -66,5 +67,5 @@ Days since each active roadmap landed at its path and since its last ticked step
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
 | [road-to-deferred-followups.md](roadmaps/road-to-deferred-followups.md) | 94 | 94 |
-| [road-to-keep-signed-in-codex-antigravity.md](roadmaps/road-to-keep-signed-in-codex-antigravity.md) | — | — |
+| [road-to-keep-signed-in-codex-antigravity.md](roadmaps/road-to-keep-signed-in-codex-antigravity.md) | 0 | — |
 

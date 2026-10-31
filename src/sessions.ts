@@ -29,7 +29,7 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { liveSessionPids } from "./api.js";
+import { LiveSession, liveSessionPids, liveSessions } from "./api.js";
 
 /** The documented encoding of a project cwd into its transcript dir name:
  *  every non-alphanumeric character of the absolute path becomes `-`. */
@@ -150,6 +150,10 @@ export interface SessionRow {
    *  not report a birthtime. */
   birthtimeMs: number;
   live: boolean;
+  /** The host registry's state word for a live session (`idle`, `busy`, …). */
+  hostStatus?: string;
+  /** How `live` was decided: the registry named this session, or the cwd guess. */
+  liveSource?: "registry" | "cwd";
   /** Waiting on the user: an open question in the transcript, or a hook prompt. */
   waiting?: boolean;
   /** What it waits on — the open question's id, or the prompt's time — so the
@@ -161,8 +165,9 @@ export interface SessionRow {
 }
 
 /** Recent sessions of one profile config dir, newest first, capped at `limit`.
- *  Pure directory scan — works on seeded fakes, shared trees, and win32. */
-export function listSessions(configDir: string, limit: number): SessionRow[] {
+ *  Pure directory scan — works on seeded fakes, shared trees, and win32. Sorts
+ *  and caps on `stat` alone, so only the returned rows pay for a header read. */
+export function listSessions(configDir: string, limit: number, readHeader: (file: string) => SessionHeader = readSessionHeader): SessionRow[] {
   const projects = path.join(configDir, "projects");
   let dirs: fs.Dirent[];
   try {
@@ -170,7 +175,7 @@ export function listSessions(configDir: string, limit: number): SessionRow[] {
   } catch {
     return [];
   }
-  const rows: SessionRow[] = [];
+  const found: { file: string; sessionId: string; projectDir: string; st: fs.Stats }[] = [];
   for (const d of dirs) {
     // A shared-history tree links `projects/` itself, not its children — but be
     // tolerant of either; only descend into directories (or links to them).
@@ -192,21 +197,23 @@ export function listSessions(configDir: string, limit: number): SessionRow[] {
         continue;
       }
       if (!st.isFile()) continue;
-      const header = readSessionHeader(file);
-      rows.push({
-        sessionId: entry.slice(0, -".jsonl".length),
-        projectDir: d.name,
-        cwd: header.cwd,
-        summary: header.summary,
-        mtimeMs: st.mtimeMs,
-        birthtimeMs: st.birthtimeMs || st.mtimeMs,
-        live: false,
-        file,
-      });
+      found.push({ file, sessionId: entry.slice(0, -".jsonl".length), projectDir: d.name, st });
     }
   }
-  rows.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return rows.slice(0, limit);
+  found.sort((a, b) => b.st.mtimeMs - a.st.mtimeMs);
+  return found.slice(0, limit).map(({ file, sessionId, projectDir, st }) => {
+    const header = readHeader(file);
+    return {
+      sessionId,
+      projectDir,
+      cwd: header.cwd,
+      summary: header.summary,
+      mtimeMs: st.mtimeMs,
+      birthtimeMs: st.birthtimeMs || st.mtimeMs,
+      live: false,
+      file,
+    };
+  });
 }
 
 /** A live pid's working directory, without elevated rights. Verified in
@@ -232,17 +239,32 @@ export function pidCwd(pid: number): string | null {
 }
 
 /**
- * Mark the sessions that belong to a live Claude process: a row is live when
- * its profile has a live pid whose cwd encodes to the row's project dir AND
- * the row is that dir's newest transcript (a running session appends to the
- * newest file; older siblings in the same dir are history).
+ * Mark the sessions that belong to a live Claude process. When the process's
+ * registry file names its session id, that row is live and carries the host's
+ * status. A pid without a readable id falls back to the guess: its cwd encodes
+ * to the row's project dir AND the row is that dir's newest transcript (a
+ * running session appends to the newest file; older siblings are history).
  */
-export function markLive(configDir: string, rows: SessionRow[], cwdOf: (pid: number) => string | null = pidCwd): void {
-  const pids = liveSessionPids(configDir);
-  if (pids.length === 0) return;
+export function markLive(
+  configDir: string,
+  rows: SessionRow[],
+  cwdOf: (pid: number) => string | null = pidCwd,
+  live: LiveSession[] = liveSessions(configDir),
+): void {
+  if (live.length === 0) return;
+  const byId = new Map(rows.map((r) => [r.sessionId, r]));
   const liveDirs = new Set<string>();
-  for (const pid of pids) {
-    const cwd = cwdOf(pid);
+  for (const s of live) {
+    const row = s.sessionId ? byId.get(s.sessionId) : undefined;
+    if (row) {
+      row.live = true;
+      row.liveSource = "registry";
+      if (s.status) row.hostStatus = s.status;
+      continue;
+    }
+    // A registry id that is not in the listing (older than the cap) needs no guess.
+    if (s.sessionId) continue;
+    const cwd = cwdOf(s.pid);
     if (cwd) liveDirs.add(encodeProjectDir(cwd));
   }
   if (liveDirs.size === 0) return;
@@ -252,7 +274,10 @@ export function markLive(configDir: string, rows: SessionRow[], cwdOf: (pid: num
     if (!seen || r.mtimeMs > seen.mtimeMs) newestPerDir.set(r.projectDir, r);
   }
   for (const [dir, row] of newestPerDir) {
-    if (liveDirs.has(dir)) row.live = true;
+    if (liveDirs.has(dir) && !row.live) {
+      row.live = true;
+      row.liveSource = "cwd";
+    }
   }
 }
 

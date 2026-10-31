@@ -54,6 +54,25 @@ member checked in the last 10 minutes it falls back to the active profile. Own p
 touched, and a running session changes its account only when you confirm
 it.
 
+## No holding, brokering or forwarding of logins
+
+Claude Code's legal page forbids third parties to collect, store or
+intermediate Claude.ai credentials or session tokens. agent-switch keeps
+logins where each provider puts them: every profile signs in through the
+provider's own login flow, and the login lives in that provider's own store
+for that profile (the OS keychain entry Claude Code derives for the profile's
+`CLAUDE_CONFIG_DIR`, or the provider's own file). Refreshing a login is left
+to the provider's CLI ([ADR-004](docs/adr/ADR-004-delegate-token-refresh-to-claude-code.md)).
+
+Two commands write a credential store, both on your explicit request and only
+on this machine: `agent-switch import` seeds a new profile from a login you
+already have, and `agent-switch rebind` moves a running session to another of
+your own accounts ([ADR-003](docs/adr/ADR-003-narrow-credential-store-read-only-invariant-for-rebind.md)).
+What never happens: a token leaves the machine, a request is proxied or
+replayed, or one account's login is used to serve another account's session
+without you choosing it. This describes what the code does; it is not legal
+advice.
+
 ## No bundled dashboard server
 
 agent-switch ships a CLI (zero runtime dependencies) and an optional
