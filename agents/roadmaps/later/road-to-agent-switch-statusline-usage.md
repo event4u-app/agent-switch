@@ -12,6 +12,12 @@ execution:
 > `UsageSnapshot` shape, and writes a per-profile cache — then chains to the user's
 > pre-existing statusline so their bar is untouched. The polled `/api/oauth/usage`
 > path is demoted to a fallback. Gated on a blocking live spike.
+>
+> **Arrivals:** 2 — latest `inbox-2026-10-d` (2026-10-31): the CC 2.1.314 binary
+> carries `rate_limits.five_hour` / `seven_day` statusline fields, and the docs say they
+> arrive only after the first API response. The 2026-07-19 NO-GO was taken on 2.1.215
+> before that; re-run the Phase-0 capture after a first response before reusing it.
+> Earlier: the original 2026-07 request.
 
 ## Goal
 
