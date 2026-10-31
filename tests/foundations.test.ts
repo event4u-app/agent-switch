@@ -274,6 +274,16 @@ test("dir: with guard block, a busy plain-start account falls through to a free 
   assert.equal(R.resolveForDir(inputs({ ...plain, live: (n: string) => n !== "out" })).name, "stale");
 });
 
+test("dir: with guard block, a busy folder-rule account also gives way to a free one", () => {
+  const rule = { mapping: { path: "/home/u/y", name: "stale" }, names: ["stale", "unknown", "out"], guard: "block" as const };
+  const r = R.resolveForDir(inputs({ ...rule, live: (n: string) => n === "stale" }));
+  assert.equal(r.name, "unknown");
+  assert.equal(r.note, "claude/stale already has a live session — starting on the free account claude/unknown instead");
+  // A free rule account is used as-is, and nobody free leaves the rule to the guard.
+  assert.equal(R.resolveForDir(inputs({ ...rule, live: () => false })).name, "stale");
+  assert.equal(R.resolveForDir(inputs({ ...rule, live: (n: string) => n !== "out" })).name, "stale");
+});
+
 test("dir: the no-fresh-usage fallback names the background service", () => {
   const r = R.resolveForDir(inputs({ pool: () => ({ id: "work", name: "Work", members: ["claude/stale"], createdAt: "" }) }));
   assert.ok(r.why.some((l: string) => /agent-switch service/.test(l)), r.why.join("\n"));

@@ -103,7 +103,7 @@ $ claude
 agent-switch: claude/work already has a live session — starting on the free account claude/privat instead.
 ```
 
-Only when no account is free (or a folder rule pins that one account) does it
+This holds for folder rules too. Only when no account is free does it
 refuse, naming who holds the profile:
 
 ```

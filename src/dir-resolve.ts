@@ -84,20 +84,26 @@ export function ago(ms: number): string {
   return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
 }
 
+/**
+ * Under guard `block` a busy account would only be refused one step later —
+ * take a free one instead. Null when `name` is not busy or nobody is free, so
+ * the caller keeps its pick and the guard speaks.
+ */
+function giveWayIfBusy(i: ResolveInputs, name: string, why: string[]): Resolution | null {
+  if (i.guard !== "block" || !i.names || !(i.live?.(name) ?? false)) return null;
+  const free = i.names.find(
+    (n) => n !== name && i.exists(n) && !i.disabled?.(n) && !i.sharesDefaultLogin?.(n) && i.signedIn(n) && !(i.live?.(n) ?? false),
+  );
+  if (!free) return null;
+  const note = `${i.providerId}/${name} already has a live session — starting on the free account ${i.providerId}/${free} instead`;
+  why.push(note);
+  return { name: free, why, note };
+}
+
 function fallbackToActive(i: ResolveInputs, why: string[]): Resolution {
   if (i.active && i.exists(i.active)) {
-    // Under guard `block` a busy active account would only be refused one step
-    // later — take a free account instead. Nobody free → keep it, the guard speaks.
-    if (i.guard === "block" && i.names && (i.live?.(i.active) ?? false)) {
-      const free = i.names.find(
-        (n) => n !== i.active && i.exists(n) && !i.disabled?.(n) && !i.sharesDefaultLogin?.(n) && i.signedIn(n) && !(i.live?.(n) ?? false),
-      );
-      if (free) {
-        const note = `${i.providerId}/${i.active} already has a live session — starting on the free account ${i.providerId}/${free} instead`;
-        why.push(note);
-        return { name: free, why, note };
-      }
-    }
+    const moved = giveWayIfBusy(i, i.active, why);
+    if (moved) return moved;
     why.push(`Using the active profile ${i.providerId}/${i.active}`);
     return { name: i.active, why };
   }
@@ -142,14 +148,15 @@ export function resolveForDir(i: ResolveInputs): Resolution {
     return { name: anyone[0], why };
   }
 
-  // A rule to one account is a boundary too: never another account in its place.
+  // A rule to one account: a missing or disabled account refuses; a busy one
+  // gives way to a free account rather than being refused by the guard.
   if (i.mapping) {
     const key = `${i.providerId}/${i.mapping.name}`;
     const flag = i.providerId === "claude" ? "" : ` --provider ${i.providerId}`;
     why.push(`Rule: folder ${shown(i.mapping.path)} → ${key}`);
     if (!i.exists(i.mapping.name)) return refuse(why, `${key} no longer exists — bind the folder anew (agent-switch map) or remove the rule (agent-switch unmap)`);
     if (i.disabled?.(i.mapping.name)) return refuse(why, `${key} is disabled — turn it back on (agent-switch enable ${i.mapping.name}${flag}) or change the rule`);
-    return { name: i.mapping.name, why };
+    return giveWayIfBusy(i, i.mapping.name, why) ?? { name: i.mapping.name, why };
   }
   return balancePlain(i, why);
 }
