@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import tauriConf from "../src-tauri/tauri.conf.json?raw";
 import { AGENT_CONFIG_REPO_URL } from "./agent-config.js";
 import {
   readStarAsk,
@@ -90,11 +91,8 @@ describe("shareLinks", () => {
 });
 
 describe("shell open scope", () => {
-  it("lets the app open every link the star ask offers", async () => {
-    const { readFileSync } = await import("node:fs");
-    const conf = JSON.parse(readFileSync(`${process.cwd()}/src-tauri/tauri.conf.json`, "utf8")) as {
-      plugins: { shell: { open: string } };
-    };
+  it("lets the app open every link the star ask offers", () => {
+    const conf = JSON.parse(tauriConf) as { plugins: { shell: { open: string } } };
     // tauri-plugin-shell wraps the configured regex in `^…$` (its config.rs),
     // so the whole URL has to match, not just a prefix.
     const scope = new RegExp(`^${conf.plugins.shell.open}$`);
