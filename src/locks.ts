@@ -21,8 +21,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-const STALENESS_MS = 10_000;
-const TOUCH_INTERVAL_MS = 3_000; // faster than claude-code's 5s, for margin
+export const STALENESS_MS = 10_000;
+export const TOUCH_INTERVAL_MS = 3_000; // faster than claude-code's 5s, for margin
 const DEFAULT_TIMEOUT_MS = 9_000;
 const RETRY_SLEEP_MS = 250;
 

@@ -144,7 +144,25 @@ things that can drift on any release, and **fail loud (never silent) on drift**:
 If any of the three no longer matches what the spike observed, the gate's PASS is
 **void for that CC version** — re-run before building on it.
 
+**Automatic fallback (`src/cc-contract.ts`).** When the running CC version is not
+in `PINNED_CC_VERSIONS`, `rebind` reads the installed CC bundle and re-checks the
+three facts above statically: the keychain-name derivation, that the OAuth refresh
+still acquires the legacy `<config_dir>.lock` with lock timings compatible with
+`src/locks.ts`, and a keychain read cache ≤ 30 s. It also confirms that the scanned
+bundle is the running version. All checks fail closed. If one fact is not found,
+`rebind` refuses and names the fact, and the manual path above applies. The verdict
+is cached per version in `$AGENT_SWITCH_HOME/.cc-contract-cache.json` and recomputed
+when the binary changes. This check is static only; it does not replace a live
+`r02`/`r03` run.
+
 ## Version pinning
 
 Record in the results log: `claude --version`, OS, credential backend
 (file vs Keychain), and the observed lock/keychain/cache facts above.
+
+## Results log (`r0*`)
+
+| CC version | Date | Machine | Method | Lock protocol | Keychain naming | Cache TTL | Result |
+|---|---|---|---|---|---|---|---|
+| 2.1.218 | 2026-07-24 | macOS | live `r02`–`r04` runs, throwaway accounts (see `agents/roadmaps/archive/road-to-live-rebind.md`) | `<config_dir>.lock`, stale 10 s, touch 5 s | `Claude Code-credentials-<sha256(NFC(dir))[:8]>` | 30 s | PASS |
+| 2.1.314 | 2026-10-31 | macOS 26 (Darwin 25.6) | **static re-pin** of the three canary facts from the shipped binary, plus read-only Keychain metadata; the live `r02`/`r03` runs were NOT repeated (no throwaway accounts) | **changed, still compatible:** the OAuth refresh now takes `<config_dir>/.oauth_refresh.lock` first and then the legacy `<realpath(config_dir)>.lock`, both stale 60 s / touch 5 s; on `ELOCKED` for the legacy lock it releases the new one and retries — so holding the legacy lock (what `src/locks.ts` does) still excludes CC's refresh. Our 10 s staleness stays above CC's 5 s touch. | unchanged for the default path; **new:** `CLAUDE_SECURESTORAGE_CONFIG_DIR`, when defined, replaces `CLAUDE_CONFIG_DIR` as the hash input → `canaryCheck` now refuses while it is set. All six live profiles' entries under the computed names carry an `mdat` written after the 2.1.314 install; no entry under a foreign hash appeared. | `zYt=30000` (30 s) | PASS (static) |
