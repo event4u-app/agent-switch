@@ -466,10 +466,12 @@ test("doctor: profiles sharing the default install's login are named with the wa
 
 test("auth-status: who keeps a login fresh", () => {
   const base = "claude (refreshes the login when it runs)";
-  assert.equal(AU.keptFreshByFor("claude", { shared: true, serviceInstalled: true }, base), "only you, by using it — it shares its login with the default install");
-  assert.equal(AU.keptFreshByFor("claude", { shared: false, serviceInstalled: true }, base), "the agent-switch service (Claude Code's own refresh)");
-  assert.equal(AU.keptFreshByFor("claude", { shared: false, serviceInstalled: false }, base), base);
-  assert.equal(AU.keptFreshByFor("codex", { shared: false, serviceInstalled: true }, "codex (x)"), "codex (x)");
+  const on = { shared: false, serviceInstalled: true, keepSignedIn: true };
+  assert.equal(AU.keptFreshByFor("claude", { ...on, shared: true }, base), "only you, by using it — it shares its login with the default install");
+  assert.equal(AU.keptFreshByFor("claude", on, base), "the agent-switch service (Claude Code's own refresh)");
+  assert.equal(AU.keptFreshByFor("claude", { ...on, keepSignedIn: false }, base), "only you, by using it — Keep accounts signed in is off");
+  assert.equal(AU.keptFreshByFor("claude", { ...on, serviceInstalled: false }, base), base);
+  assert.equal(AU.keptFreshByFor("codex", on, "codex (x)"), "codex (x)");
 });
 
 test("dir: the stale-usage pool fallback never takes a profile sharing the default login", () => {

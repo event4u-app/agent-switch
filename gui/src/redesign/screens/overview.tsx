@@ -8,6 +8,7 @@ import { nextInPools, rankAccounts, TOOL_LABEL } from "../../vm/rules.js";
 import { useAS } from "../../vm/store.js";
 import type { ViewModel } from "../../vm/types.js";
 import { accountTools, overviewSub } from "./logic.js";
+import { StarAskBanner } from "./star-ask-banner.js";
 import { AttentionRow, CompactAccountRow, RowList, SessionRow } from "./rows.js";
 
 /** "AC" monogram tile. Bundle `y0`. */
@@ -117,6 +118,8 @@ export function Overview() {
   const waiting = running.filter((x) => x.state === "needs-you");
   const needs = s.attention.length + waiting.length;
   const tools = accountTools(s.accounts);
+  // One promo at a time: the star ask waits while the agent-config strip shows.
+  const acPromoShowing = s.agentConfig.status === "not-installed" && !getAgentConfigCardDismissed();
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="What's going on?" sub={overviewSub(s)} />
@@ -151,6 +154,7 @@ export function Overview() {
         )}
       </section>
       <AcPromoBanner />
+      {!acPromoShowing && <StarAskBanner />}
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,1fr)]">
         <section aria-labelledby="running" className="flex min-w-0 flex-col gap-2">
           <div id="running">

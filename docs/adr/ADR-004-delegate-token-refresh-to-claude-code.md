@@ -102,6 +102,26 @@ forced into the past (original credential backed up and restored):
 - **`claude -p "…"` as the trigger.** Refreshes, but spends quota on a usage
   monitor — self-defeating.
 
+## Amendment (2026-10-31) — "Keep accounts signed in"
+
+The freshen is now the backend of the GUI's *Keep accounts signed in* switch
+(`agent-switch keep-signed-in on|off`, stored as `keepSignedIn` in
+`state.json`, default **on**). The mechanism is unchanged; what changed is who
+may trigger it. `loginRefreshAllowed` in `src/token-freshen.ts` is the single
+rule every usage read goes through — the daemon's poll and the CLI's `status`:
+
+- **Setting off** → never refreshed; a stored token is used only while valid.
+- **Login shared with the default install** → never refreshed (as before).
+- **A session runs on the profile** → never refreshed. That session's Claude
+  Code refreshes its own login; a second refresher only adds a race. Before
+  this amendment a live profile could be freshened.
+
+Default on, including for a `state.json` that predates the key, because that is
+what the service already did for every enabled profile (it polls each one at
+least every 5 minutes). Scope stays Claude: Codex and Antigravity have no
+verified equivalent of `claude doctor` — tracked in
+`agents/roadmaps/road-to-keep-signed-in-codex-antigravity.md`.
+
 ## References
 
 - `src/token-freshen.ts` — the module this ADR describes.

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { LogOut } from "lucide-react";
+import { LogOut, MessageCircle, Star } from "lucide-react";
 import * as ipc from "../../../ipc.js";
 import {
   getAutoRefreshLimits,
@@ -14,6 +14,7 @@ import {
   setNextUsageRefreshAt,
   setRefreshMinutes,
 } from "../../../settings-store.js";
+import { REDDIT_POST_URL, REPO_URL, setStarAskStopped } from "../../../star-ask.js";
 import { applyTheme, getTheme, type Theme } from "../../../theme.js";
 import { Badge } from "../../../ui/Badge.js";
 import { Button } from "../../../ui/Button.js";
@@ -22,6 +23,8 @@ import { Select } from "../../../ui/Select.js";
 import { SettingGroup, SettingRow } from "../../../ui/Setting.js";
 import { Switch } from "../../../ui/Switch.js";
 import { useAS } from "../../../vm/store.js";
+import { ShareButtons } from "../star-ask-banner.js";
+import { openExternal } from "../tools.js";
 import { usePref, useRun } from "./prefs.js";
 import { WithReason } from "./shared.js";
 
@@ -179,6 +182,35 @@ export function GeneralSettings() {
           }
         >
           <Switch label="Developer mode" checked={devMode} disabled={!IS_DEV} onChange={setDevMode} />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup
+        tone="violet"
+        title="Support Agent Switch"
+        detail="Free & open source — stars, votes and shares help other developers find it."
+      >
+        <SettingRow title="Star on GitHub" detail="Also stops the occasional star reminder on Overview.">
+          <Button
+            size="sm"
+            variant="primary"
+            className="bg-ac-violet"
+            title={REPO_URL}
+            onClick={() => {
+              openExternal(REPO_URL);
+              setStarAskStopped("starred");
+            }}
+          >
+            <Star /> Star
+          </Button>
+        </SettingRow>
+        <SettingRow title="Vote on Reddit" detail="An upvote or a comment on our r/ClaudeCode post.">
+          <Button size="sm" variant="primary" className="bg-ac-violet" title={REDDIT_POST_URL} onClick={() => openExternal(REDDIT_POST_URL)}>
+            <MessageCircle /> Open the Reddit post
+          </Button>
+        </SettingRow>
+        <SettingRow title="Share" detail="TikTok and Instagram have no share link — copy the text and paste it into your post." stacked>
+          <ShareButtons variant="violet" />
         </SettingRow>
       </SettingGroup>
 

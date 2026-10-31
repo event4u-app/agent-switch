@@ -70,6 +70,7 @@ export default {
         "ac-violet": "var(--ac-violet)",
         "ac-violet-tint": "var(--ac-violet-tint)",
         "ac-violet-text": "var(--ac-violet-text)",
+        "ac-violet-line": "var(--ac-violet-line)",
       },
       fontFamily: {
         display: ["Anton", "Impact", '"Arial Narrow"', "sans-serif"],

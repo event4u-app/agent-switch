@@ -13,17 +13,22 @@ import {
   suggestedPoolTags,
   uninstallArmed,
 } from "./prefs.js";
+import { readStarAsk, REDDIT_POST_URL, REPO_URL } from "../../../star-ask.js";
 import { providerRows } from "./providers.js";
 import { Settings, SETTINGS_GROUPS } from "./Settings.js";
 
 const nearLimit = vi.hoisted(() => ({ fireNearLimitIfCrossed: vi.fn(async () => false) }));
 vi.mock("../../engines/near-limit.js", () => nearLimit);
+const shell = vi.hoisted(() => ({ open: vi.fn((_url: string) => Promise.resolve()) }));
+vi.mock("@tauri-apps/plugin-shell", () => shell);
 
 const ipcMock = vi.hoisted(() => ({
   getAutoSwitch: vi.fn(),
   setAutoSwitch: vi.fn(),
   getOsNotify: vi.fn(),
   setOsNotify: vi.fn(),
+  getKeepSignedIn: vi.fn(),
+  setKeepSignedIn: vi.fn(),
   getNotifyConfig: vi.fn(),
   setNotify: vi.fn(),
   installSessionHooks: vi.fn(),
@@ -119,6 +124,8 @@ beforeEach(() => {
   ipcMock.setAutoSwitch.mockResolvedValue(undefined);
   ipcMock.getOsNotify.mockResolvedValue(false);
   ipcMock.setOsNotify.mockResolvedValue(undefined);
+  ipcMock.getKeepSignedIn.mockResolvedValue(true);
+  ipcMock.setKeepSignedIn.mockResolvedValue(undefined);
   ipcMock.getNotifyConfig.mockResolvedValue({ notify: true, contextThresholds: [80, 95] });
   ipcMock.installSessionHooks.mockResolvedValue(undefined);
   ipcMock.uninstallSessionHooks.mockResolvedValue(undefined);
@@ -234,6 +241,19 @@ describe("General", () => {
     expect(sw().getAttribute("aria-checked")).toBe("true");
   });
 
+  it("offers star, Reddit vote and sharing; a star there also stops the Overview ask", () => {
+    shell.open.mockClear();
+    mount("general");
+    fireEvent.click(screen.getByRole("button", { name: "Open the Reddit post" }));
+    expect(shell.open).toHaveBeenCalledWith(REDDIT_POST_URL);
+    fireEvent.click(screen.getByRole("button", { name: "LinkedIn" }));
+    expect(shell.open.mock.calls.at(-1)?.[0]).toContain("linkedin.com");
+    expect(readStarAsk(Date.now()).stopped).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Star" }));
+    expect(shell.open).toHaveBeenCalledWith(REPO_URL);
+    expect(readStarAsk(Date.now()).stopped).toBe("starred");
+  });
+
   it("pushes minimize-into-Dock to Rust", () => {
     mount("general");
     fireEvent.click(screen.getByRole("switch", { name: "Minimize into Dock" }));
@@ -242,11 +262,28 @@ describe("General", () => {
 });
 
 describe("Sign-ins", () => {
-  it("renders both controls disabled with the reason", () => {
+  it("reads Keep accounts signed in from the CLI and writes a change back", async () => {
     mount("sign-ins");
-    expect((screen.getByRole("switch", { name: "Keep accounts signed in" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getAllByTestId("unavailable-reason")).toHaveLength(2);
+    const sw = () => screen.getByRole("switch", { name: "Keep accounts signed in" }) as HTMLButtonElement;
+    await waitFor(() => expect(sw().getAttribute("aria-checked")).toBe("true"));
+    expect(sw().disabled).toBe(false);
+    fireEvent.click(sw());
+    await waitFor(() => expect(ipcMock.setKeepSignedIn).toHaveBeenCalledWith(false));
+    expect(sw().getAttribute("aria-checked")).toBe("false");
+    // Only the reminder is still unavailable; Codex and Antigravity are named as not covered.
+    expect(screen.getAllByTestId("unavailable-reason")).toHaveLength(1);
+    expect(screen.getByText(/Codex and Antigravity/)).toBeTruthy();
     expect(screen.getByText("What Agent Switch can't prevent")).toBeTruthy();
+  });
+
+  it("turns the switch back when the write fails", async () => {
+    ipcMock.setKeepSignedIn.mockRejectedValueOnce(new Error("cli failed"));
+    mount("sign-ins");
+    const sw = () => screen.getByRole("switch", { name: "Keep accounts signed in" }) as HTMLButtonElement;
+    await waitFor(() => expect(sw().getAttribute("aria-checked")).toBe("true"));
+    fireEvent.click(sw());
+    await waitFor(() => expect(sw().getAttribute("aria-checked")).toBe("true"));
+    expect(ipcMock.setKeepSignedIn).toHaveBeenCalledWith(false);
   });
 });
 

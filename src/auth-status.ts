@@ -33,10 +33,16 @@ export interface AuthStatus {
 }
 
 /** Who keeps a Claude login fresh: the background service polls (and so
- *  refreshes) every enabled profile — except one sharing the default install's
- *  login, which agent-switch never refreshes. */
-export function keptFreshByFor(provider: ProviderId, o: { shared: boolean; serviceInstalled: boolean }, base: string): string {
+ *  refreshes) every enabled profile while "Keep accounts signed in" is on —
+ *  except one sharing the default install's login, which agent-switch never
+ *  refreshes. */
+export function keptFreshByFor(
+  provider: ProviderId,
+  o: { shared: boolean; serviceInstalled: boolean; keepSignedIn: boolean },
+  base: string,
+): string {
   if (o.shared) return "only you, by using it — it shares its login with the default install";
+  if (provider === "claude" && !o.keepSignedIn) return "only you, by using it — Keep accounts signed in is off";
   if (provider === "claude" && o.serviceInstalled) return "the agent-switch service (Claude Code's own refresh)";
   return base;
 }

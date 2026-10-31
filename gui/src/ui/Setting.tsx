@@ -36,13 +36,24 @@ export function SettingRow({
 }
 
 /** Caps title + card of divided SettingRows. Bundle `xe`. */
-export function SettingGroup({ title, detail, children }: { title?: ReactNode; detail?: ReactNode; children: ReactNode }) {
+export function SettingGroup({
+  title,
+  detail,
+  children,
+  tone,
+}: {
+  title?: ReactNode;
+  detail?: ReactNode;
+  children: ReactNode;
+  tone?: "violet";
+}) {
+  const violet = tone === "violet";
   return (
     <div className="flex flex-col gap-2">
-      {title && <Caps className="px-1">{title}</Caps>}
+      {title && <Caps className={cn("px-1", violet && "text-ac-violet-text")}>{title}</Caps>}
       {detail && <p className="-mt-1 px-1 text-xs text-ac-muted">{detail}</p>}
-      <Card className="overflow-visible">
-        <div className="flex flex-col divide-y divide-ac-line">{children}</div>
+      <Card className={cn("overflow-visible", violet && "border-ac-violet-line bg-ac-violet-tint")}>
+        <div className={cn("flex flex-col divide-y", violet ? "divide-ac-violet-line" : "divide-ac-line")}>{children}</div>
       </Card>
     </div>
   );
