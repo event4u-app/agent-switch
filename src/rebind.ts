@@ -6,7 +6,8 @@
  * Mechanism proven by the Phase-0 spikes against CC 2.1.218 (macOS): a swap of
  * the hashed Keychain entry under Claude Code's own lock is picked up by the
  * running session (r02); the lock is a real mutex and a MOVE keeps one token
- * family in one live store (r03).
+ * family in one live store (r03). CC 2.1.314 was re-pinned against the same
+ * contract by static binary inspection (see scripts/spikes/README.md results log).
  *
  * Scope of THIS slice (macOS Keychain only): `rebind` refuses on Linux/Windows —
  * the `.credentials.json` backend (spike R0.1) is not yet validated there.
@@ -491,7 +492,15 @@ export const PINNED_SERVICE_NAME_RE = /^Claude Code-credentials-[0-9a-f]{8}$/;
  *   keychain-name format changed → rebind disabled pending re-verification →
  *   "re-run the Phase-0 spikes to re-pin the contract before rebinding".
  */
-export function canaryCheck(cfgDir: string, d: RebindDeps): void {
+export function canaryCheck(cfgDir: string, d: RebindDeps, env: NodeJS.ProcessEnv = process.env): void {
+  // CC ≥ 2.1.314 keys the Keychain entry off this var instead of CLAUDE_CONFIG_DIR
+  // whenever it is defined (even empty), so the per-profile name below would miss.
+  if (env.CLAUDE_SECURESTORAGE_CONFIG_DIR !== undefined) {
+    throw new RebindError(
+      `credential-store canary tripped: CLAUDE_SECURESTORAGE_CONFIG_DIR is set → Claude Code would read a ` +
+        `different Keychain entry than the per-profile one rebind targets. Unset it before rebinding.`,
+    );
+  }
   const svc = d.serviceNameFor(cfgDir);
   if (!PINNED_SERVICE_NAME_RE.test(svc)) {
     throw new RebindError(
@@ -512,8 +521,10 @@ export function canaryCheck(cfgDir: string, d: RebindDeps): void {
  * So the pin is a **verified set**, not a range: only add a version here after
  * re-running the Phase-0 spikes against it. (No major.minor tolerance — there is
  * no evidence CC applies semver semantics to its internal keychain contract.)
+ * 2.1.314 is pinned on a static re-verification only, not on live spike runs —
+ * the method per version is recorded in scripts/spikes/README.md.
  */
-export const PINNED_CC_VERSIONS: ReadonlySet<string> = new Set(["2.1.218"]);
+export const PINNED_CC_VERSIONS: ReadonlySet<string> = new Set(["2.1.218", "2.1.314"]);
 
 /** Env var an operator sets, AFTER manually re-running the Phase-0 spikes
  *  against the running CC version, to proceed without a code release. It bypasses

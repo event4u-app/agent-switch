@@ -523,6 +523,20 @@ test("canary passes for the real Keychain service-name format", () => {
   assert.doesNotThrow(() => canaryCheck(pConfig, f.deps));
 });
 
+test("canary refuses when CLAUDE_SECURESTORAGE_CONFIG_DIR redirects CC's keychain naming (CC ≥ 2.1.314)", () => {
+  const f = makeFake();
+  // CC 2.1.314 derives the service name from this var instead of CLAUDE_CONFIG_DIR
+  // whenever it is set — even to "" — so the per-profile name rebind computes would
+  // no longer be the entry the session reads.
+  for (const value of ["/elsewhere", ""]) {
+    assert.throws(
+      () => canaryCheck(pConfig, f.deps, { CLAUDE_SECURESTORAGE_CONFIG_DIR: value }),
+      /canary tripped: CLAUDE_SECURESTORAGE_CONFIG_DIR/,
+    );
+  }
+  assert.doesNotThrow(() => canaryCheck(pConfig, f.deps, {}));
+});
+
 test("canary refuses rebind BEFORE any mutation when the service-name format drifted", async () => {
   const f = makeFake();
   f.kc.set(pSvc, cred("tokP"));
@@ -553,6 +567,7 @@ test("parseCCVersion extracts the canonical semver from `claude --version` outpu
 
 test("versionGuard passes a version in the verified set, refuses one outside it", () => {
   assert.equal(versionGuard("2.1.218 (Claude Code)", PINNED_CC_VERSIONS).ok, true);
+  assert.equal(versionGuard("2.1.314 (Claude Code)", PINNED_CC_VERSIONS).ok, true);
   const bad = versionGuard("2.1.220 (Claude Code)", PINNED_CC_VERSIONS);
   assert.equal(bad.ok, false);
   assert.match((bad as { reason: string }).reason, /not in rebind's verified set/);
