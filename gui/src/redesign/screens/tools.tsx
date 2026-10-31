@@ -102,7 +102,10 @@ export function acReleaseFrom(releases: readonly ReleaseInfo[], current: string)
 
 /** Opens a URL in the default browser (window.open outside Tauri). */
 export function openExternal(url: string) {
-  shellOpen(url).catch(() => window.open(url, "_blank", "noopener"));
+  shellOpen(url).catch((err: unknown) => {
+    console.error("openExternal failed", url, err);
+    window.open(url, "_blank", "noopener");
+  });
 }
 
 type AcRelease = ReturnType<typeof acReleaseFrom>;

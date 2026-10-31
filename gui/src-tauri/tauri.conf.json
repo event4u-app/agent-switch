@@ -31,7 +31,7 @@
   },
   "plugins": {
     "shell": {
-      "open": "^https://(github\\.com/event4u-app/(agent-switch|agent-config)|www\\.reddit\\.com/r/ClaudeCode/|x\\.com/intent/|www\\.linkedin\\.com/sharing/|www\\.facebook\\.com/sharer/|bsky\\.app/intent/)"
+      "open": "https://(github\\.com/event4u-app/(agent-switch|agent-config)(/.*)?|www\\.reddit\\.com/r/ClaudeCode/.*|x\\.com/intent/.*|www\\.linkedin\\.com/sharing/.*|www\\.facebook\\.com/sharer/.*|bsky\\.app/intent/.*)"
     }
   },
   "bundle": {

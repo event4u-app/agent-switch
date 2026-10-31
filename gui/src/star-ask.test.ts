@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { AGENT_CONFIG_REPO_URL } from "./agent-config.js";
 import {
   readStarAsk,
   recordStarAskShown,
@@ -94,10 +95,14 @@ describe("shell open scope", () => {
     const conf = JSON.parse(readFileSync(`${process.cwd()}/src-tauri/tauri.conf.json`, "utf8")) as {
       plugins: { shell: { open: string } };
     };
-    const scope = new RegExp(conf.plugins.shell.open);
-    for (const url of [REPO_URL, REDDIT_POST_URL, ...shareLinks().map((l) => l.url)]) {
+    // tauri-plugin-shell wraps the configured regex in `^…$` (its config.rs),
+    // so the whole URL has to match, not just a prefix.
+    const scope = new RegExp(`^${conf.plugins.shell.open}$`);
+    const offered = [REPO_URL, `${AGENT_CONFIG_REPO_URL}/releases`, REDDIT_POST_URL, ...shareLinks().map((l) => l.url)];
+    for (const url of offered) {
       expect(scope.test(url), url).toBe(true);
     }
     expect(scope.test("https://evil.example/x.com/intent/")).toBe(false);
+    expect(scope.test("https://github.com/event4u-app/agent-switch-fake")).toBe(false);
   });
 });
