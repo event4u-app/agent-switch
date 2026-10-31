@@ -29,11 +29,11 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { ROOT, activeFor, configDir, isDisabled, labelFor, listProfiles, readAutoSwitch, readBinaryPath, sharesDefaultLogin } from "./profiles.js";
+import { ROOT, activeFor, configDir, isDisabled, labelFor, listProfiles, readAutoSwitch, readBinaryPath } from "./profiles.js";
 import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
 import { fetchUsage, liveSessionPids, readProfileCredential } from "./api.js";
-import { defaultFreshenDeps, usageToken } from "./token-freshen.js";
+import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, SwitchCandidate, ThresholdState, UsageSnapshot } from "./usage.js";
 import { readCodexUsage } from "./codex-usage.js";
 import { LATEST_FILE, recordHistorySample, writeLatestSnapshot } from "./history.js";
@@ -462,8 +462,8 @@ async function snapshotFor(provider: ProviderId, name: string, log: (l: string) 
   // An expired access token is the daemon's most common "usage stopped moving"
   // cause — a profile nobody is running never refreshes itself. Let Claude Code
   // refresh it first (cooldown-guarded, no-op while the token is still good) —
-  // never for a profile sharing the default install's login.
-  const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), sharesDefaultLogin("claude", name), (outcome, reason) => {
+  // only while "Keep accounts signed in" allows it (token-freshen.ts).
+  const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), claudeLoginRefreshAllowed(name), (outcome, reason) => {
     if (outcome === "unavailable") log(`freshen: claude/${name} — could not start \`claude doctor\` (${reason}; if Claude Code is installed elsewhere, link it in the app)`);
     else if (outcome === "still-expired") log(`freshen: claude/${name} — Claude Code could not refresh the login (sign in again)`);
   });

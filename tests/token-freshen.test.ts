@@ -8,6 +8,7 @@ import {
   FreshenDeps,
   freshAccessToken,
   freshenToken,
+  loginRefreshAllowed,
   needsFreshen,
   tokenExpiresAt,
   usageToken,
@@ -137,7 +138,7 @@ test("doctorPath lets an npm-installed claude find its node under the service's 
 test("usageToken reports why a spent token was not refreshed, so the service can log it", () => {
   const seen: [string, string | undefined][] = [];
   const h = harness({ store: cred(NOW - 1_000), healthCheckOk: false });
-  usageToken("/cfg", h.deps, false, (o, reason) => seen.push([o, reason]));
+  usageToken("/cfg", h.deps, true, (o, reason) => seen.push([o, reason]));
   assert.deepEqual(seen, [["unavailable", "/x/claude: ENOENT"]]);
 });
 
@@ -168,14 +169,23 @@ test("freshAccessToken: no credential at all → null, and nothing is spawned", 
   assert.deepEqual(h.runs, []);
 });
 
-test("usageToken: a profile sharing the default install's login is never refreshed — a valid token is used, an expired one is not", () => {
+test("usageToken: when a refresh is not allowed a valid token is used, an expired one is not, and nothing is spawned", () => {
   const valid = harness({ store: cred(NOW + 60 * 60 * 1000), refreshTo: cred(NOW + 9e9, "tok-b") });
-  assert.equal(usageToken("/p", valid.deps, true), "tok-a");
+  assert.equal(usageToken("/p", valid.deps, false), "tok-a");
   const expired = harness({ store: cred(NOW - 1000), refreshTo: cred(NOW + 9e9, "tok-b") });
-  assert.equal(usageToken("/p", expired.deps, true), null);
-  assert.deepEqual(expired.runs, [], "no refresh may run for a shared login");
-  // An own login still refreshes as before.
+  assert.equal(usageToken("/p", expired.deps, false), null);
+  assert.deepEqual(expired.runs, [], "no refresh may run when it is not allowed");
+  // Allowed: an expired login is refreshed as before.
   const own = harness({ store: cred(NOW - 1000), refreshTo: cred(NOW + 9e9, "tok-b") });
-  assert.equal(usageToken("/p", own.deps, false), "tok-b");
+  assert.equal(usageToken("/p", own.deps, true), "tok-b");
   assert.deepEqual(own.runs, ["/p"]);
+});
+
+test("loginRefreshAllowed: only with Keep accounts signed in on, an own login, and no session running on it", () => {
+  const ok = { keepSignedIn: true, sharesDefaultLogin: false, liveSession: false };
+  assert.equal(loginRefreshAllowed(ok), true);
+  // Each guard alone blocks the refresh.
+  assert.equal(loginRefreshAllowed({ ...ok, keepSignedIn: false }), false);
+  assert.equal(loginRefreshAllowed({ ...ok, sharesDefaultLogin: true }), false); // whichever side refreshes first signs the other out
+  assert.equal(loginRefreshAllowed({ ...ok, liveSession: true }), false); // the running session refreshes its own login
 });

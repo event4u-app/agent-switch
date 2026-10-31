@@ -30,8 +30,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { accessTokenOf, readProfileCredential } from "./api.js";
-import { ROOT } from "./profiles.js";
+import { accessTokenOf, liveSessionPids, readProfileCredential } from "./api.js";
+import { ROOT, configDir, readKeepSignedIn, sharesDefaultLogin } from "./profiles.js";
 import { resolveBinary } from "./providers.js";
 
 /** Treat a token as spent this close to `expiresAt` — mirrors Claude Code's own
@@ -210,17 +210,38 @@ export function freshAccessToken(
 }
 
 /**
- * The token for a usage read. A profile that shares its login with the default
- * install (seeded by `import`) is never refreshed: whichever side refreshes
- * first invalidates the other, so its stored token is used only while valid.
+ * May agent-switch have Claude Code refresh this profile's login? Pure — the
+ * testable core of "Keep accounts signed in". Never with the setting off; never
+ * for a login shared with the default install (whichever side refreshes first
+ * signs the other out); never while a session runs on the profile — that
+ * session's Claude Code refreshes its own login, and a second refresher only
+ * adds a race.
+ */
+export function loginRefreshAllowed(o: { keepSignedIn: boolean; sharesDefaultLogin: boolean; liveSession: boolean }): boolean {
+  return o.keepSignedIn && !o.sharesDefaultLogin && !o.liveSession;
+}
+
+/** {@link loginRefreshAllowed} for a Claude profile, read from disk. */
+export function claudeLoginRefreshAllowed(name: string): boolean {
+  return loginRefreshAllowed({
+    keepSignedIn: readKeepSignedIn(),
+    sharesDefaultLogin: sharesDefaultLogin("claude", name),
+    liveSession: liveSessionPids(configDir("claude", name)).length > 0,
+  });
+}
+
+/**
+ * The token for a usage read. With `mayRefresh` (see
+ * {@link claudeLoginRefreshAllowed}) a spent token is refreshed first; without
+ * it the stored token is used only while it is still valid.
  */
 export function usageToken(
   configDir: string,
   deps: FreshenDeps,
-  sharesDefaultLogin: boolean,
+  mayRefresh: boolean,
   onOutcome?: OnFreshenOutcome,
 ): string | null {
-  if (!sharesDefaultLogin) return freshAccessToken(configDir, deps, onOutcome);
+  if (mayRefresh) return freshAccessToken(configDir, deps, onOutcome);
   const creds = deps.readCredential(configDir);
   return creds && !needsFreshen(creds, deps.now(), deps.bufferMs) ? accessTokenOf(creds) : null;
 }

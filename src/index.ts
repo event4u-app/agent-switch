@@ -53,6 +53,8 @@ import {
   type AutoSwitchTag,
   readOsNotifications,
   setOsNotifications,
+  readKeepSignedIn,
+  setKeepSignedIn,
   readProviders,
   setProviderSurface,
   readBinaryPath,
@@ -148,7 +150,7 @@ import {
   fetchUsage,
   liveSessionPids,
 } from "./api.js";
-import { defaultFreshenDeps, usageToken } from "./token-freshen.js";
+import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { UsageSnapshot, formatSnapshot, parseUsage } from "./usage.js";
 import { readCodexUsage } from "./codex-usage.js";
 import { redeemResetCredit } from "./codex-reset.js";
@@ -659,7 +661,7 @@ async function claudeSnapshot(name: string): Promise<UsageSnapshot | null> {
   const state = readDaemonState();
   const cached = state?.profiles?.[`claude/${name}`];
   if (snapshotFresh(cached, Date.now(), cacheMaxAgeMs(state?.pollIntervalMs))) return cached!;
-  const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), sharesDefaultLogin("claude", name));
+  const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), claudeLoginRefreshAllowed(name));
   if (!token) return null;
   const raw = await fetchUsage(token);
   return raw ? parseUsage(raw) : null;
@@ -720,7 +722,7 @@ async function cmdStatus(providerId?: ProviderId, name?: string, json = false): 
       console.log("  (no usage readout for this provider — shows own usage only where available)");
       continue;
     }
-    const token = usageToken(configDir("claude", n), defaultFreshenDeps(readBinaryPath("claude")), sharesDefaultLogin("claude", n));
+    const token = usageToken(configDir("claude", n), defaultFreshenDeps(readBinaryPath("claude")), claudeLoginRefreshAllowed(n));
     if (!token) {
       const auth = authStatusFor("claude", n);
       console.log(
@@ -2372,6 +2374,22 @@ function cmdOsNotify(sub: string | undefined, json = false): void {
   }
 }
 
+/** `agent-switch keep-signed-in [on|off|status] [--json]` — whether the
+ *  service lets Claude Code refresh a lapsed login (token-freshen.ts). Default
+ *  on; Claude only — Codex and Antigravity refresh only when their own CLI runs. */
+function cmdKeepSignedIn(sub: string | undefined, json = false): void {
+  if (sub === "on" || sub === "off") {
+    const on = sub === "on";
+    if (readKeepSignedIn() !== on) {
+      setKeepSignedIn(on);
+      logActivity("settings", null, `keep accounts signed in ${on ? "on" : "off"}`, "user changed it");
+    }
+  } else if (sub && sub !== "status") die("usage: agent-switch keep-signed-in [on|off|status] [--json]");
+  const enabled = readKeepSignedIn();
+  if (json) console.log(JSON.stringify({ enabled }));
+  else console.log(`Keep accounts signed in ${enabled ? "ON" : "OFF"} (Claude accounts; needs the background service).`);
+}
+
 /** `agent-switch notifications [clear] [--json]` — list the recent
  *  notifications (newest first) or clear the log. */
 function cmdNotifications(sub: string | undefined, json = false): void {
@@ -2825,6 +2843,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch notifications [clear] [--json]  recent notifications (usage-limit suggestions, fetch failures)
   agent-switch notify --kind K --title T --message M [--json]   record a notification event
   agent-switch os-notify [on|off|status] [--json]   daemon-side OS desktop notifications, Linux/Windows (default off; macOS: the app shows them)
+  agent-switch keep-signed-in [on|off|status] [--json]   let the service keep Claude logins from lapsing (default on)
   agent-switch uninstall [--force]             remove all agent-switch data + daemon
   agent-switch usage history [--provider P] [--profile <name>] [--json]   daemon-recorded usage samples per profile
   agent-switch tooling [--json]                ecosystem tool readout (agent-config, rtk, provider CLIs)
@@ -3051,7 +3070,7 @@ function cmdActivity(flags: Record<string, string | boolean>): void {
 
 function authStatusFor(providerId: ProviderId, name: string): AuthStatus {
   const s = rawAuthStatusFor(providerId, name);
-  const keptFreshBy = keptFreshByFor(providerId, { shared: sharesDefaultLogin(providerId, name), serviceInstalled: serviceTarget() !== "not-installed" }, s.keptFreshBy);
+  const keptFreshBy = keptFreshByFor(providerId, { shared: sharesDefaultLogin(providerId, name), serviceInstalled: serviceTarget() !== "not-installed", keepSignedIn: readKeepSignedIn() }, s.keptFreshBy);
   return { ...s, keptFreshBy };
 }
 
@@ -3251,6 +3270,7 @@ async function main(): Promise<void> {
     case "notify": return cmdNotify(flags);
     case "notifications": return cmdNotifications(positional[0], !!flags.json);
     case "os-notify": return cmdOsNotify(positional[0], !!flags.json);
+    case "keep-signed-in": return cmdKeepSignedIn(positional[0], !!flags.json);
     case "uninstall": return cmdUninstall(flags);
     case "run": {
       let r: ReturnType<typeof parseRun>;

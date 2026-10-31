@@ -115,6 +115,10 @@ export interface State {
   /** Whether the background daemon fires OS desktop notifications itself (for
    *  timeliness when the GUI is closed). Default false — opt-in. */
   osNotifications: boolean;
+  /** "Keep accounts signed in": the service lets Claude Code refresh a lapsed
+   *  login (token-freshen.ts). Default true — also for a state file written
+   *  before the key existed, because that is what the service already did. */
+  keepSignedIn: boolean;
   /** Rollback / circuit-breaker for the `rebind` write path (ADR-003). */
   rebind: RebindKillSwitch;
   /**
@@ -327,16 +331,17 @@ export function readState(): State {
     const providers = normalizeProvidersMap(raw?.providers);
     const binaryPaths = normalizeBinaryPaths(raw?.binaryPaths);
     const osNotifications = raw?.osNotifications === true;
+    const keepSignedIn = raw?.keepSignedIn !== false;
     const rebind = normalizeRebindState(raw?.rebind);
     const guard = normalizeGuard(raw?.guard);
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, rebind, guard };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, rebind, guard };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, rebind, guard };
+      return { active: { ...emptyActive(), ...raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, rebind, guard };
     }
-    return { active: emptyActive(), labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, rebind, guard };
+    return { active: emptyActive(), labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, rebind, guard };
   } catch {
     /* absent / unparsable → default */
   }
@@ -344,7 +349,7 @@ export function readState(): State {
   // 2.1.0 install can have profiles and no state file — that user must keep the
   // pre-2.2 default (block), not be treated as new.
   const fresh = !fs.existsSync(STATE_FILE) && listAllProfiles().length === 0;
-  return { active: emptyActive(), labels: {}, colors: {}, disabled: [], autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
+  return { active: emptyActive(), labels: {}, colors: {}, disabled: [], autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, keepSignedIn: true, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
 }
 
 export function readOsNotifications(): boolean {
@@ -355,6 +360,18 @@ export function setOsNotifications(on: boolean): void {
   return withFileLockSync(STATE_FILE, () => {
     const state = readState();
     state.osNotifications = on;
+    writeState(state);
+  });
+}
+
+export function readKeepSignedIn(): boolean {
+  return readState().keepSignedIn;
+}
+
+export function setKeepSignedIn(on: boolean): void {
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    state.keepSignedIn = on;
     writeState(state);
   });
 }

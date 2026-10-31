@@ -58,6 +58,7 @@ test("activeFor / setActive are per-provider", () => {
     },
     binaryPaths: {},
     osNotifications: false,
+    keepSignedIn: true,
     rebind: { disabled: false, consecutiveFailures: 0 },
     guard: "block",
   }); // clean baseline (shared STATE_FILE)
@@ -141,6 +142,7 @@ test("legacy global auto-switch migrates onto every provider", () => {
     },
     binaryPaths: {},
     osNotifications: false,
+    keepSignedIn: true,
     rebind: { disabled: false, consecutiveFailures: 0 },
     guard: "block",
   });
@@ -189,6 +191,19 @@ test("osNotifications defaults OFF and persists a change", () => {
   assert.equal(P.readOsNotifications(), true);
   P.setOsNotifications(false);
   assert.equal(P.readOsNotifications(), false);
+});
+
+test("keepSignedIn defaults ON, also for a state file that predates it, and persists a change", () => {
+  fs.rmSync(P.STATE_FILE, { force: true });
+  assert.equal(P.readKeepSignedIn(), true); // no state file → on
+  fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: {}, osNotifications: false }));
+  assert.equal(P.readKeepSignedIn(), true); // upgraded install without the key → on
+  P.setKeepSignedIn(false);
+  assert.equal(P.readKeepSignedIn(), false);
+  P.setActive("codex", null); // survives an unrelated state write
+  assert.equal(P.readKeepSignedIn(), false);
+  P.setKeepSignedIn(true);
+  assert.equal(P.readKeepSignedIn(), true);
 });
 
 test("renameProfile moves the config dir and carries active + label", () => {
