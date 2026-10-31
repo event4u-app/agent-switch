@@ -814,6 +814,16 @@ export async function setOsNotify(on: boolean): Promise<void> {
   await runCli(["os-notify", on ? "on" : "off"]);
 }
 
+/** "Keep accounts signed in" — the service keeps Claude logins from lapsing (default on). */
+export async function getKeepSignedIn(): Promise<boolean> {
+  const { enabled } = JSON.parse(await runCli(["keep-signed-in", "status", "--json"]));
+  return !!enabled;
+}
+
+export async function setKeepSignedIn(on: boolean): Promise<void> {
+  await runCli(["keep-signed-in", on ? "on" : "off"]);
+}
+
 // ---- desktop pet (road-to-desktop-pet) --------------------------------------
 
 /** Show the pet overlay window. Resolves true when the window was freshly

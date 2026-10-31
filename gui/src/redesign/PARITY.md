@@ -97,6 +97,7 @@ Paths are relative to `gui/src/`.
 | `recordNotification` | `engines/bus.ts` (every notice the window records) | |
 | `clearNotifications` | `vm/actions.ts` → `screens/notifications-sheet.tsx` | Followed by `notifications.ts` `clearDesktopNotifications`. |
 | `getOsNotify`, `setOsNotify` | `screens/settings/notifications.tsx`; `getOsNotify` also `engines/notifications.ts` | |
+| `getKeepSignedIn`, `setKeepSignedIn` | `screens/settings/sign-ins.tsx` | |
 | `petShow`, `petHide`, `petResetPosition`, `petEmitPose`, `petMoveTo` | `screens/settings/pet.tsx`; `petShow` also `engines/pet.ts` | |
 | `petEmitNotification`, `petEmitContext`, `onPetAction` | `engines/pet.ts` | |
 | `petDeliver` | `engines/notifications.ts`, `screens/settings/pet.tsx` (test bubbles) | |

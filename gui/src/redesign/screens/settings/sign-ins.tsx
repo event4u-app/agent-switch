@@ -1,29 +1,55 @@
+import { useEffect, useState } from "react";
+import * as ipc from "../../../ipc.js";
 import { Card } from "../../../ui/Card.js";
 import { Select } from "../../../ui/Select.js";
 import { SettingGroup, SettingRow } from "../../../ui/Setting.js";
 import { Switch } from "../../../ui/Switch.js";
+import { useRun } from "./prefs.js";
 import { WithReason } from "./shared.js";
 
-export const KEEP_SIGNED_IN_UNAVAILABLE =
-  "Not adjustable yet — the CLI has no keep-signed-in maintenance to turn on or off.";
 export const REMIND_UNAVAILABLE = "Not adjustable yet — the CLI sends no expiry reminders today.";
 
-/** Settings › Sign-ins (bundle `cR`, artboard 12). Neither control has a
- *  backend yet: both render disabled with the reason. */
+/** Settings › Sign-ins (bundle `cR`, artboard 12). "Keep accounts signed in"
+ *  is the CLI's `keep-signed-in`; the reminder has no backend yet and renders
+ *  disabled with the reason. */
 export function SignInSettings() {
+  const run = useRun();
+  // null until read: the switch stays disabled rather than showing a guess.
+  const [keep, setKeep] = useState<boolean | null>(null);
+  useEffect(() => {
+    ipc
+      .getKeepSignedIn()
+      .then(setKeep)
+      .catch(() => setKeep(null));
+  }, []);
+
+  async function toggleKeep(next: boolean) {
+    setKeep(next);
+    const ok = await run(async () => (await ipc.setKeepSignedIn(next), true));
+    if (!ok) setKeep(!next);
+  }
+
   return (
     <>
       <SettingGroup>
         <SettingRow
           title="Keep accounts signed in"
           detail={
-            <WithReason
-              detail="Unused accounts are refreshed by the provider's own tool before they lapse. Never with a model request, never while a session of that account runs."
-              reason={KEEP_SIGNED_IN_UNAVAILABLE}
-            />
+            <>
+              Unused Claude accounts are refreshed by Claude Code itself before they lapse. Never with a model request,
+              never while a session of that account runs. Needs the background service.
+              <span className="mt-1 block text-ac-faint">
+                Codex and Antigravity renew their sign-in only when you use them — not covered yet.
+              </span>
+            </>
           }
         >
-          <Switch label="Keep accounts signed in" checked={false} disabled onChange={() => {}} />
+          <Switch
+            label="Keep accounts signed in"
+            checked={keep ?? false}
+            disabled={keep === null}
+            onChange={(v) => void toggleKeep(v)}
+          />
         </SettingRow>
         <SettingRow
           title="Remind me before a sign-in expires"
