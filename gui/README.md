@@ -26,7 +26,7 @@ npm run tauri build # package (.app/.dmg on macOS, .msi/.exe on Windows)
 
 ## Prerequisites (GUI only — the CLI core stays dependency-free)
 
-- Node ≥ 18 and the Rust toolchain (`rustc`/`cargo`).
+- Node ≥ 20 and the Rust toolchain (`rustc`/`cargo`).
 - A tray icon at `src-tauri/icons/icon.png` (generate with `npm run tauri icon <src>`).
 - Platform webview: macOS/Windows ship one; Linux needs `webkit2gtk`.
 

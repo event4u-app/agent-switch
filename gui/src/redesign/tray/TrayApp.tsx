@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import * as ipc from "../../ipc.js";
+import { LangKeyed } from "../../i18n/LangKeyed.js";
 import { AcRoot } from "../../ui/AcRoot.js";
 import { createActions } from "../../vm/actions.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
@@ -104,7 +105,9 @@ export default function TrayApp() {
   return (
     <AcRoot>
       <ASProvider initial={emptyViewModel()} load={loadViewModel} actions={trayActions}>
-        <TrayFrame />
+        <LangKeyed>
+          <TrayFrame />
+        </LangKeyed>
       </ASProvider>
     </AcRoot>
   );

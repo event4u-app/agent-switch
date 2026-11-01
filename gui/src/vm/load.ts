@@ -4,6 +4,7 @@
  * of blanking the window, and the failure surfaces as `error` / readiness.
  */
 
+import { t } from "../i18n/index.js";
 import * as ipc from "../ipc.js";
 import type { ToolingEntry } from "../ipc.js";
 import { getHideSummaries, getTrayShowDisabled, getMutedKinds, getNextUsageRefreshAt, getNotifLastRead } from "../settings-store.js";
@@ -168,7 +169,7 @@ export async function loadViewModel(): Promise<ViewModel> {
     guard: guardFromStatus(value(guardR)),
     autostart: { desired: null, actual: autostart == null ? null : autostart ? "enabled" : "disabled" },
     providers: providersR.status === "fulfilled" ? providersFromStatus(providersR.value) : [],
-    error: cliError ? `agent-switch didn't answer: ${cliError}` : null,
+    error: cliError ? t("vm.load.cliNoAnswer", { error: cliError }) : null,
     platform: detectPlatform(),
     hideSummaries: getHideSummaries(),
     trayShowDisabled: getTrayShowDisabled(),

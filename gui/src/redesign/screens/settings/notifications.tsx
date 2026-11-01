@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { fmtNumber, t, type TKey } from "../../../i18n/index.js";
+import { tx } from "../../../i18n/react.js";
 import * as ipc from "../../../ipc.js";
 import { desktopPermission, requestDesktopPermission, type DesktopPermission, type NotificationKind } from "../../../notifications.js";
 import {
@@ -14,23 +16,30 @@ import { Switch } from "../../../ui/Switch.js";
 import { describeError, usePref, useRun } from "./prefs.js";
 import { WithReason } from "./shared.js";
 
-/** Per-kind alert labels (bundle `$0`); hints follow what the app actually records. */
-export const KIND_LABELS: { kind: NotificationKind; label: string; hint: string }[] = [
-  { kind: "success", label: "Account switches", hint: "Account switches you made and Codex resets you redeemed." },
-  { kind: "warning", label: "Fetch failures", hint: "A usage-limit fetch that did not succeed." },
-  { kind: "info", label: "Threshold crossings", hint: "The active account passing a usage threshold." },
-  { kind: "error", label: "Errors", hint: "Unexpected failures." },
+/** Per-kind alert labels (bundle `$0`) as translation keys; hints follow what the app actually records. */
+export const KIND_LABELS: { kind: NotificationKind; labelKey: TKey; hintKey: TKey }[] = [
+  { kind: "success", labelKey: "settings.notifications.kindSwitches", hintKey: "settings.notifications.kindSwitchesHint" },
+  { kind: "warning", labelKey: "settings.notifications.kindFetch", hintKey: "settings.notifications.kindFetchHint" },
+  { kind: "info", labelKey: "settings.notifications.kindThreshold", hintKey: "settings.notifications.kindThresholdHint" },
+  { kind: "error", labelKey: "settings.notifications.kindErrors", hintKey: "settings.notifications.kindErrorsHint" },
 ];
 
-const PERMISSION_LABEL: Record<DesktopPermission, string> = {
-  granted: "Granted",
-  denied: "Denied",
-  default: "Not yet requested",
-  unavailable: "Unavailable",
+const PERMISSION_LABEL: Record<DesktopPermission, TKey> = {
+  granted: "settings.notifications.permGranted",
+  denied: "settings.notifications.permDenied",
+  default: "settings.notifications.permDefault",
+  unavailable: "settings.notifications.permUnavailable",
 };
 
-export const SESSION_EVENTS_UNAVAILABLE =
-  "Not adjustable yet — there is no separate switch for this event; Monitor Claude sessions above covers finished and waiting turns.";
+/** Key of the reason the per-event switches are unavailable (translate with `t()` at render). */
+export const SESSION_EVENTS_UNAVAILABLE = "settings.notifications.sessionEventsUnavailable" satisfies TKey;
+
+const SESSION_EVENTS: readonly (readonly [TKey, TKey | undefined])[] = [
+  ["settings.notifications.eventPaused", "settings.notifications.eventPausedDetail"],
+  ["settings.notifications.eventContinued", undefined],
+  ["settings.notifications.eventFinished", undefined],
+  ["settings.notifications.eventSignIn", undefined],
+];
 
 function writeSessionMonitoring(on: boolean) {
   setSessionMonitoringFlag(on);
@@ -83,8 +92,8 @@ export function NotificationSettings() {
     if (p !== "granted") {
       setHint(
         p === "unavailable"
-          ? "Not available on this platform."
-          : "Blocked by the OS — allow notifications for Agent Switch in System Settings.",
+          ? t("settings.notifications.notOnPlatform")
+          : t("settings.notifications.blockedByOs"),
       );
       return;
     }
@@ -112,55 +121,60 @@ export function NotificationSettings() {
     <>
       <SettingGroup>
         <SettingRow
-          title="Desktop notifications"
+          title={t("settings.notifications.desktop")}
           detail={
             <>
-              Show OS notifications for alerts, including when the app is closed. When off or blocked, alerts still appear
-              in the bell and as in-window toasts.
+              {t("settings.notifications.desktopDetail")}
               <span className="mt-1 block">
-                OS permission: <span className="text-ac-soft">{perm ? PERMISSION_LABEL[perm] : "…"}</span>
+                {tx("settings.notifications.osPermission", {
+                  state: <span className="text-ac-soft">{perm ? t(PERMISSION_LABEL[perm]) : "…"}</span>,
+                })}
               </span>
               {hint && <span className="mt-1 block text-ac-warn-text">{hint}</span>}
             </>
           }
         >
           <Switch
-            label="Desktop notifications"
+            label={t("settings.notifications.desktop")}
             checked={!!osNotify}
             disabled={osNotify === null || perm === "unavailable"}
             onChange={(v) => void toggleDesktop(v)}
           />
         </SettingRow>
         <SettingRow
-          title="Notify on account switch"
-          detail="When you make an account the active one (Use) or turn it off, record a notification — the pet reacts and a desktop alert fires when that is on."
+          title={t("settings.notifications.onSwitch")}
+          detail={t("settings.notifications.onSwitchDetail")}
         >
-          <Switch label="Notify on account switch" checked={notifyOnSwitch} onChange={setNotifyOnSwitch} />
+          <Switch label={t("settings.notifications.onSwitch")} checked={notifyOnSwitch} onChange={setNotifyOnSwitch} />
         </SettingRow>
         <SettingRow
-          title="Monitor Claude sessions"
-          detail="Watch every Claude session and alert you when Claude finishes a turn or is waiting on you — handy when it runs in a terminal you are not watching. Installs additive, reversible hooks into each Claude account's settings; works while this app is open."
+          title={t("settings.notifications.monitor")}
+          detail={t("settings.notifications.monitorDetail")}
         >
-          <Switch label="Monitor Claude sessions" checked={monitoring} onChange={toggleMonitoring} />
+          <Switch label={t("settings.notifications.monitor")} checked={monitoring} onChange={toggleMonitoring} />
         </SettingRow>
       </SettingGroup>
 
-      <SettingGroup title="Alert types">
+      <SettingGroup title={t("settings.notifications.alertTypes")}>
         <SettingRow
-          title="Context alerts"
-          detail={`A session's context window passing a threshold${thresholds.length ? ` (${thresholds.join(" %, ")} %)` : ""}.`}
+          title={t("settings.notifications.contextAlerts")}
+          detail={
+            thresholds.length
+              ? t("settings.notifications.contextAlertsDetailWith", { list: thresholds.map((n) => `${fmtNumber(n)} %`).join(", ") })
+              : t("settings.notifications.contextAlertsDetail")
+          }
         >
           <Switch
-            label="Context alerts"
+            label={t("settings.notifications.contextAlerts")}
             checked={!!contextAlerts}
             disabled={contextAlerts === null}
             onChange={(v) => void toggleContext(v)}
           />
         </SettingRow>
-        {KIND_LABELS.map(({ kind, label, hint: kindHint }) => (
-          <SettingRow key={kind} title={label} detail={kindHint}>
+        {KIND_LABELS.map(({ kind, labelKey, hintKey }) => (
+          <SettingRow key={kind} title={t(labelKey)} detail={t(hintKey)}>
             <Switch
-              label={label}
+              label={t(labelKey)}
               checked={!muted.includes(kind)}
               onChange={(on) => setMuted(on ? muted.filter((k) => k !== kind) : [...muted, kind])}
             />
@@ -168,17 +182,14 @@ export function NotificationSettings() {
         ))}
       </SettingGroup>
 
-      <SettingGroup title="Sessions and sign-ins">
-        {(
-          [
-            ["A session paused", "Protection stopped it at a safe point."],
-            ["A session continued after the reset", undefined],
-            ["A session finished", undefined],
-            ["A sign-in is needed or looks wrong", undefined],
-          ] as const
-        ).map(([title, detail]) => (
-          <SettingRow key={title} title={title} detail={<WithReason detail={detail} reason={SESSION_EVENTS_UNAVAILABLE} />}>
-            <Switch label={title} checked={false} disabled onChange={() => {}} />
+      <SettingGroup title={t("settings.notifications.sessionsAndSignIns")}>
+        {SESSION_EVENTS.map(([titleKey, detailKey]) => (
+          <SettingRow
+            key={titleKey}
+            title={t(titleKey)}
+            detail={<WithReason detail={detailKey && t(detailKey)} reason={t(SESSION_EVENTS_UNAVAILABLE)} />}
+          >
+            <Switch label={t(titleKey)} checked={false} disabled onChange={() => {}} />
           </SettingRow>
         ))}
       </SettingGroup>

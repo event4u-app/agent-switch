@@ -15,7 +15,10 @@
  * tray.png (360 wide, clipped to the content-sized card, transparent corners).
  *
  * Env: SHOTS_ONLY=overview,tray  capture a subset · SHOTS_HEADED=1  show the browser ·
- *      SHOTS_DEBUG=1  log every CLI call the GUI makes.
+ *      SHOTS_DEBUG=1  log every CLI call the GUI makes ·
+ *      SHOTS_LANG=de  capture the GUI in that language (default en). A non-en run writes to
+ *      SHOTS_OUT (default: a temp dir) and never touches the README/docs captures; it also
+ *      captures the pet bubble with a full-length title plus action line (pet-bubble*.png).
  */
 
 import { execFileSync, spawnSync } from "node:child_process";
@@ -36,13 +39,15 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const GUI = path.resolve(HERE, "../..");
 const ROOT = path.resolve(GUI, "..");
 const CLI = path.join(ROOT, "dist", "index.js");
-const OUT = path.join(ROOT, ".github", "assets", "screenshots");
+let OUT = path.join(ROOT, ".github", "assets", "screenshots");
 // The docs site shows the same app views; mirrored so README and docs never drift.
 const DOCS_OUT = path.join(ROOT, "starlight", "public", "screenshots");
 const DOCS_MIRROR = { overview: "app-overview.png", sessions: "app-sessions.png", "session-sheet": "app-session.png" };
 const VIEWPORT = { width: 1600, height: 1000 };
 // The tray window is content-sized: render in a tall viewport, then clip to the card.
 const TRAY_VIEWPORT = { width: 360, height: 900 };
+const LANG = process.env.SHOTS_LANG || "en";
+if (process.env.SHOTS_OUT || LANG !== "en") OUT = process.env.SHOTS_OUT || fs.mkdtempSync(path.join(os.tmpdir(), `agent-switch-shots-${LANG}-`));
 const ONLY = process.env.SHOTS_ONLY ? new Set(process.env.SHOTS_ONLY.split(",").map((s) => s.trim())) : null;
 
 const log = (...a) => console.log("[shots]", ...a);
@@ -246,17 +251,13 @@ async function waitQuiet(traffic, quietMs = 2500, timeoutMs = 45_000) {
   log(`CLI traffic did not settle within ${timeoutMs} ms — capturing anyway`);
 }
 
-async function waitLoaded(page, traffic) {
-  await page.waitForFunction(() => !document.body.innerText.includes("Reading accounts"), null, { timeout: 30_000 });
+async function waitLoaded(page, traffic, loading = ["Reading accounts"]) {
+  await page.waitForFunction((needles) => needles.every((n) => !document.body.innerText.includes(n)), loading, { timeout: 30_000 });
   await page.waitForLoadState("networkidle");
   await waitQuiet(traffic);
   await settle(page, 600);
 }
 
-async function nav(page, label) {
-  await page.getByRole("navigation", { name: "Places" }).getByRole("button", { name: new RegExp(`^${label}`) }).click();
-  await settle(page);
-}
 
 async function closeOverlay(page) {
   await page.keyboard.press("Escape");
@@ -282,6 +283,26 @@ async function main() {
   await vite.listen();
   const base = `http://127.0.0.1:${port}`;
   log(`vite on ${base}`);
+
+  // Selectors stay in English; in another language they also accept the
+  // translation of the same English string (looked up in the GUI's own tables).
+  const { tables } = await vite.ssrLoadModule("/src/i18n/index.ts");
+  const dict = tables();
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  /** Regex source matching `text` or its translations (same English value, any key). */
+  const alt = (text) => {
+    const forms = new Set([text]);
+    if (LANG !== "en") for (const [k, v] of Object.entries(dict.en)) if (v === text && dict[LANG]?.[k]) forms.add(dict[LANG][k]);
+    return `(?:${[...forms].map(esc).join("|")})`;
+  };
+  const L = (text, { prefix = false, exact = false, flags = "" } = {}) =>
+    new RegExp(`${prefix || exact ? "^" : ""}${alt(text)}${exact ? "$" : ""}`, flags);
+  const loadingTexts = [...new Set(["Reading accounts", ...Object.entries(dict.en).filter(([, v]) => v.startsWith("Reading accounts")).map(([k]) => dict[LANG]?.[k]?.replace(/[ …]+$/, "")).filter(Boolean)])];
+
+  async function nav(page, label) {
+    await page.getByRole("navigation", { name: L("Places", { exact: true }) }).getByRole("button", { name: L(label, { prefix: true }) }).click();
+    await settle(page);
+  }
 
   const browser = await chromium.launch({ headless: !process.env.SHOTS_HEADED });
   const produced = [];
@@ -315,7 +336,7 @@ async function main() {
     await page.addInitScript(installTauriShim, {
       statics,
       windowLabel,
-      storage: { "agent-switch-theme": "dark" },
+      storage: { "agent-switch-theme": "dark", ...(LANG !== "en" ? { "agent-switch-language": LANG } : {}) },
     });
     await page.goto(`${base}/${file}`);
     return { context, page };
@@ -327,19 +348,19 @@ async function main() {
     await assertAnonymous(page, seed.home, name);
     const file = path.join(OUT, `${name}.png`);
     await page.screenshot({ path: file, clip, omitBackground, animations: "disabled" });
-    produced.push(path.relative(ROOT, file));
-    log(`wrote ${path.relative(ROOT, file)}`);
+    produced.push(file);
+    log(`wrote ${file}`);
   }
 
   try {
     const { context, page } = await openPage("index.html", VIEWPORT, "main");
-    await waitLoaded(page, bridge.traffic);
+    await waitLoaded(page, bridge.traffic, loadingTexts);
 
     await nav(page, "Overview");
     await shot(page, "overview");
 
     // Near-limit decision for `side` (94 %), opened from the attention queue.
-    const decide = page.getByRole("button", { name: "Decide" }).first();
+    const decide = page.getByRole("button", { name: L("Decide", { exact: true }) }).first();
     if (await decide.count()) {
       await decide.click();
       await settle(page, 600);
@@ -347,14 +368,14 @@ async function main() {
       await closeOverlay(page);
     } else log("no Decide button on Overview — near-limit.png skipped");
 
-    await page.getByRole("button", { name: "Start session" }).first().click();
+    await page.getByRole("button", { name: L("Start session", { exact: true }) }).first().click();
     await settle(page, 600);
     await shot(page, "start-session");
     await closeOverlay(page);
 
     await nav(page, "Sessions");
     // "All" shows the finished sessions next to the two running ones.
-    const all = page.getByRole("radio", { name: /^All \d/ });
+    const all = page.getByRole("radio", { name: new RegExp(`^${alt("All")} \\d`) });
     if (await all.count()) {
       await all.first().click();
       await settle(page);
@@ -364,7 +385,7 @@ async function main() {
     // Open the live agent-config session.
     await page.getByText("Knowledge map: edge filter for stale links").first().click();
     await settle(page, 700);
-    const preview = page.getByRole("button", { name: /preview/i });
+    const preview = page.getByRole("button", { name: L("Preview", { flags: "i" }) });
     if (await preview.count()) {
       await preview.first().click();
       await waitQuiet(bridge.traffic, 800);
@@ -379,14 +400,15 @@ async function main() {
     await nav(page, "Tools");
     await shot(page, "tools");
 
-    await page.getByRole("button", { name: /^Health/ }).click();
+    await page.getByRole("button", { name: L("Health", { prefix: true }) }).click();
     await settle(page);
     await shot(page, "health");
 
-    await page.locator("header").getByRole("button", { name: "Settings", exact: true }).click();
+    await page.locator("header").getByRole("button", { name: L("Settings", { exact: true }) }).click();
     await settle(page);
     await shot(page, "settings");
-    const protection = page.getByRole("button", { name: /^Protection/ }).or(page.getByRole("link", { name: /^Protection/ })).or(page.getByRole("tab", { name: /^Protection/ }));
+    const prot = L("Protection", { prefix: true });
+    const protection = page.getByRole("button", { name: prot }).or(page.getByRole("link", { name: prot })).or(page.getByRole("tab", { name: prot }));
     if (await protection.count()) {
       await protection.first().click();
       await settle(page);
@@ -395,7 +417,7 @@ async function main() {
     await context.close();
 
     const tray = await openPage("tray.html", TRAY_VIEWPORT, "tray");
-    await waitLoaded(tray.page, bridge.traffic);
+    await waitLoaded(tray.page, bridge.traffic, loadingTexts);
     const box = await tray.page.evaluate(() => {
       const root = document.getElementById("root");
       const card = root?.firstElementChild ?? root;
@@ -404,13 +426,40 @@ async function main() {
     });
     await shot(tray.page, "tray", { clip: box.height > 0 ? box : undefined, omitBackground: true });
     await tray.context.close();
+
+    // Pet bubble: the window is 240 wide (sprite 192 + 48) and grows in height
+    // to fit the bubble (pet-main layoutWindow), so render tall and clip to the
+    // stage. Titles: the longest pet-bound copy in this language, plus the
+    // 140-char cap, each with an action line ("→ click to switch").
+    if (!ONLY || [...ONLY].some((n) => n.startsWith("pet-bubble"))) {
+      const pet = await openPage("pet.html", { width: 240, height: 640 }, "pet");
+      await settle(pet.page, 800);
+      const fill = (v) => v.replace(/\{(\w+)\}/g, (_, n) => ({ count: "3", pct: "94", percent: "94", name: "personal-backup", account: "personal-backup", target: "personal-backup", from: "work", to: "personal-backup", provider: "Claude", version: "2.6.3", minutes: "45", tool: "claude", threshold: "90", tag: "v2.6.4", window: "5h" })[n] ?? n);
+      const pool = Object.entries(dict[LANG] ?? dict.en).filter(([k]) => /^(engines|vm)\./.test(k)).map(([, v]) => fill(v));
+      const longest = pool.sort((a, b) => b.length - a.length).slice(0, 3);
+      const cap = longest[0] ? (longest[0] + " " + longest[1]).slice(0, 139) + "…" : "x".repeat(140);
+      const cases = [...longest.map((title, i) => ({ name: `pet-bubble-${i + 1}`, title })), { name: "pet-bubble-cap", title: cap }];
+      for (const c of cases) {
+        await pet.page.evaluate((title) => window.__TAURI_INTERNALS__.invoke("plugin:event|emit", { event: "pet-notification", payload: { kind: "warning", title, action: "switch", force: true } }), c.title);
+        await settle(pet.page, 500);
+        const m = await pet.page.evaluate(() => {
+          const b = document.getElementById("bubble");
+          const st = document.getElementById("stage").getBoundingClientRect();
+          return { scrollW: b.scrollWidth, clientW: b.clientWidth, bubbleH: b.offsetHeight, bubbleTop: b.getBoundingClientRect().top, stageTop: st.top, w: st.width };
+        });
+        log(`${c.name}: ${JSON.stringify(m)} title=${JSON.stringify(c.title)}`);
+        const top = Math.max(0, Math.floor(m.bubbleTop) - 8);
+        await shot(pet.page, c.name, { clip: { x: 0, y: top, width: 240, height: 640 - top }, omitBackground: false });
+      }
+      await pet.context.close();
+    }
   } finally {
     await browser.close();
     await vite.close();
     seed.cleanup();
   }
 
-  for (const [name, docsName] of Object.entries(DOCS_MIRROR)) {
+  if (LANG === "en" && !process.env.SHOTS_OUT) for (const [name, docsName] of Object.entries(DOCS_MIRROR)) {
     const src = path.join(OUT, `${name}.png`);
     if (fs.existsSync(src)) fs.copyFileSync(src, path.join(DOCS_OUT, docsName));
   }

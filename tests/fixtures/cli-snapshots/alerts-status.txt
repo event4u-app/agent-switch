@@ -1,0 +1,4 @@
+notifications: off  ·  context thresholds: 80, 95%
+(enable with `agent-switch alerts on`; the daemon records one coalesced notification per cycle when a live session crosses a threshold)
+--- stderr ---
+--- exit 0 ---

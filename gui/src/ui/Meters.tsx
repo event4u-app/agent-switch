@@ -2,6 +2,7 @@ import { cn } from "../lib/utils.js";
 import { isStale, toneFor } from "../vm/rules.js";
 import type { MeterTone, UsageWindow } from "../vm/types.js";
 import { countdown, shortAge } from "./format.js";
+import { t } from "../i18n/index.js";
 
 const BAR: Record<MeterTone, string> = {
   ok: "bg-ac-ok",
@@ -16,8 +17,13 @@ const FIGURE: Record<MeterTone, string> = {
   neutral: "text-ac-faint",
 };
 
-/** "checked 4m ago" — but "checked just now" for a fresh readout. */
-const checkedLine = (age: string, prefix = "checked ") => (age === "now" ? `${prefix}just now` : `${prefix}${age} ago`);
+/** "checked 4m ago" — but "checked just now" for a fresh readout; without
+ *  "checked" when `withVerb` is false (compact meters). */
+function checkedLine(age: string, withVerb = true): string {
+  const fresh = age === t("format.now");
+  if (withVerb) return fresh ? t("ui.meter.checkedJustNow") : t("ui.meter.checkedAgo", { age });
+  return fresh ? t("ui.meter.justNow") : t("ui.meter.ago", { age });
+}
 
 /** Label · meter with a threshold tick · mono % · reset countdown. Bundle `s0`. */
 export function UsageWindowRow({
@@ -44,7 +50,7 @@ export function UsageWindowRow({
       <span
         className="relative h-1.5 overflow-hidden rounded-full bg-ac-line"
         role="meter"
-        aria-label={`${w.label} window used`}
+        aria-label={t("ui.meter.windowUsed", { label: w.label })}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={w.utilization ?? undefined}
@@ -97,7 +103,7 @@ export function UsageWindowStack({
               <span
                 className="relative h-1.5 overflow-hidden rounded-full bg-ac-line"
                 role="meter"
-                aria-label={`${w.label} window used`}
+                aria-label={t("ui.meter.windowUsed", { label: w.label })}
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={w.utilization ?? undefined}
@@ -115,7 +121,7 @@ export function UsageWindowStack({
         })}
       </div>
       <span className="truncate text-[11px] text-ac-faint" title={checkedLine(age)}>
-        {stale ? <span className="text-ac-warn-text">{age} old</span> : checkedLine(age)}
+        {stale ? <span className="text-ac-warn-text">{t("ui.meter.old", { age })}</span> : checkedLine(age)}
       </span>
     </div>
   );
@@ -141,7 +147,7 @@ export function CapacityMeter({
     return (
       <div className="flex items-center gap-2 text-[11px] text-ac-faint">
         <span className="h-1.5 flex-1 rounded-full border border-dashed border-ac-line2" aria-hidden />
-        <span>usage unknown</span>
+        <span>{t("ui.meter.usageUnknown")}</span>
       </div>
     );
   }
@@ -154,7 +160,7 @@ export function CapacityMeter({
         <span
           className="relative h-1.5 overflow-hidden rounded-full bg-ac-line"
           role="meter"
-          aria-label={`${w.label} window used`}
+          aria-label={t("ui.meter.windowUsed", { label: w.label })}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={w.utilization}
@@ -167,10 +173,10 @@ export function CapacityMeter({
         </span>
         <span className={cn("text-right font-ac-mono text-[11px] tabular-nums", FIGURE[tone])}>{w.utilization}%</span>
       </div>
-      <span className="truncate text-[11px] text-ac-faint" title={`${w.label} window · ${checkedLine(age)}`}>
+      <span className="truncate text-[11px] text-ac-faint" title={t("ui.meter.windowChecked", { label: w.label, checked: checkedLine(age) })}>
         {compact ? "" : `${w.label} · `}
         {resets ? `↻ ${resets} · ` : ""}
-        {stale ? <span className="text-ac-warn-text">{age} old</span> : checkedLine(age, compact ? "" : "checked ")}
+        {stale ? <span className="text-ac-warn-text">{t("ui.meter.old", { age })}</span> : checkedLine(age, !compact)}
       </span>
     </div>
   );

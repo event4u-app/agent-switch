@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { t } from "../../../i18n/index.js";
 import * as ipc from "../../../ipc.js";
 import { cn } from "../../../lib/utils.js";
 import type { NotificationKind } from "../../../notifications.js";
@@ -69,16 +70,27 @@ function writePresence(p: PetPresence) {
   void (p === "always" ? ipc.petShow() : ipc.petHide());
 }
 
-type BubbleTest = { label: string; send: () => Promise<void> };
+type BubbleTest = { id: string; name: () => string; send: () => Promise<void> };
 
+/** Dev-only bubble tests. Names and texts are read at click/render time
+ *  (the language can change); the welcome bubble stays PET_WELCOME. */
 const BUBBLE_TESTS: BubbleTest[] = [
   ...(["success", "error", "warning", "info"] as NotificationKind[]).map((k) => ({
-    label: k,
-    send: () => ipc.petDeliver(k, `Test ${k} bubble — looking good?`, null, true),
+    id: k,
+    name: () => k,
+    send: () => ipc.petDeliver(k, t("settings.pet.testBubble", { kind: k }), null, true),
   })),
-  { label: "switch suggestion", send: () => ipc.petDeliver("warning", "Usage limit near — suggested profile: claude/test", "switch", true) },
-  { label: "update", send: () => ipc.petDeliver("info", "Update available — v9.9.9 (test)", "updates", true) },
-  { label: "welcome", send: () => ipc.petDeliver("info", PET_WELCOME, "pet-settings", true) },
+  {
+    id: "switch",
+    name: () => t("settings.pet.testSuggestionLabel"),
+    send: () => ipc.petDeliver("warning", t("settings.pet.testSuggestion"), "switch", true),
+  },
+  {
+    id: "update",
+    name: () => t("settings.pet.testUpdateLabel"),
+    send: () => ipc.petDeliver("info", t("settings.pet.testUpdate"), "updates", true),
+  },
+  { id: "welcome", name: () => t("settings.pet.testWelcomeLabel"), send: () => ipc.petDeliver("info", PET_WELCOME, "pet-settings", true) },
 ];
 
 /** Settings › Desktop pet (bundle `pR`, artboard 13). Everything is written to
@@ -130,14 +142,14 @@ export function PetSettings() {
     <>
       <SettingGroup>
         <SettingRow
-          title="Desktop pet"
-          detail="An animated companion floating above your windows that reacts to notifications. Purely optional."
+          title={t("settings.pet.enabled")}
+          detail={t("settings.pet.enabledDetail")}
         >
-          <Switch label="Desktop pet" checked={on} onChange={setOn} />
+          <Switch label={t("settings.pet.enabled")} checked={on} onChange={setOn} />
         </SettingRow>
         {on && (
-          <SettingRow title="Pet" detail="Pick your companion." stacked>
-            <div role="radiogroup" aria-label="Pet" className="grid w-full grid-cols-4 gap-2 xl:grid-cols-8">
+          <SettingRow title={t("settings.pet.pet")} detail={t("settings.pet.petDetail")} stacked>
+            <div role="radiogroup" aria-label={t("settings.pet.pet")} className="grid w-full grid-cols-4 gap-2 xl:grid-cols-8">
               {PET_IDS.map((id) => {
                 const checked = pet === id;
                 return (
@@ -167,35 +179,35 @@ export function PetSettings() {
 
       {on && (
         <>
-          <SettingGroup title="When it shows up">
+          <SettingGroup title={t("settings.pet.whenShows")}>
             <SettingRow
-              title="Presence"
-              detail="Appear for a notification and hide again afterwards (default), or stay on screen permanently."
+              title={t("settings.pet.presence")}
+              detail={t("settings.pet.presenceDetail")}
             >
               <Segmented<PetPresence>
-                label="Presence"
+                label={t("settings.pet.presence")}
                 size="sm"
                 value={presence}
                 onChange={setPresence}
                 options={[
-                  { value: "message-only", label: "Only for messages" },
-                  { value: "always", label: "Always visible" },
+                  { value: "message-only", label: t("settings.pet.presenceMessages") },
+                  { value: "always", label: t("settings.pet.presenceAlways") },
                 ]}
               />
             </SettingRow>
             <SettingRow
-              title="Notification routing"
-              detail="Pet + system (default), pet replaces desktop notifications and toasts, or decoration only."
+              title={t("settings.pet.routing")}
+              detail={t("settings.pet.routingDetail")}
             >
               <div className="w-[170px]">
                 <Select
-                  ariaLabel="Notification routing"
+                  ariaLabel={t("settings.pet.routing")}
                   value={tier}
                   onChange={(v) => setTier(v as PetTier)}
                   options={[
-                    { value: "hybrid", label: "Pet + system" },
-                    { value: "pet-only", label: "Pet only" },
-                    { value: "os-only", label: "Decoration only" },
+                    { value: "hybrid", label: t("settings.pet.routingHybrid") },
+                    { value: "pet-only", label: t("settings.pet.routingPetOnly") },
+                    { value: "os-only", label: t("settings.pet.routingOsOnly") },
                   ]}
                 />
               </div>
@@ -204,13 +216,13 @@ export function PetSettings() {
 
           {tier !== "os-only" && (
             <SettingGroup
-              title="Pet reacts to"
-              detail="Independent of the desktop mutes — the pet can cover kinds you muted there."
+              title={t("settings.pet.reactsTo")}
+              detail={t("settings.pet.reactsToDetail")}
             >
-              {KIND_LABELS.map(({ kind, label: kindLabel, hint }) => (
-                <SettingRow key={kind} title={kindLabel} detail={hint}>
+              {KIND_LABELS.map(({ kind, labelKey, hintKey }) => (
+                <SettingRow key={kind} title={t(labelKey)} detail={t(hintKey)}>
                   <Switch
-                    label={`Pet reacts to ${kindLabel}`}
+                    label={t("settings.pet.reactsToKind", { kind: t(labelKey) })}
                     checked={kinds.includes(kind)}
                     onChange={(v) => setKinds(v ? [...kinds, kind] : kinds.filter((k) => k !== kind))}
                   />
@@ -219,74 +231,74 @@ export function PetSettings() {
             </SettingGroup>
           )}
 
-          <SettingGroup title="Look">
+          <SettingGroup title={t("settings.pet.look")}>
             <SettingRow
-              title="Speech bubbles"
-              detail="Show the notification title as a bubble; a near-limit bubble opens the suggestion on click."
+              title={t("settings.pet.bubbles")}
+              detail={t("settings.pet.bubblesDetail")}
             >
               {bubbles && (
                 <Segmented<BubbleDuration>
-                  label="Bubble duration"
+                  label={t("settings.pet.bubbleDuration")}
                   size="sm"
                   value={bubbleDuration}
                   onChange={setBubbleDuration}
                   options={[
-                    { value: "short", label: "Short" },
-                    { value: "normal", label: "Normal" },
-                    { value: "long", label: "Long" },
+                    { value: "short", label: t("settings.pet.durationShort") },
+                    { value: "normal", label: t("settings.pet.durationNormal") },
+                    { value: "long", label: t("settings.pet.durationLong") },
                   ]}
                 />
               )}
-              <Switch label="Speech bubbles" checked={bubbles} onChange={setBubbles} />
+              <Switch label={t("settings.pet.bubbles")} checked={bubbles} onChange={setBubbles} />
             </SettingRow>
-            <SettingRow title="Size" detail="How large the pet renders.">
+            <SettingRow title={t("settings.pet.size")} detail={t("settings.pet.sizeDetail")}>
               <Segmented<PetSize>
-                label="Size"
+                label={t("settings.pet.size")}
                 size="sm"
                 value={size}
                 onChange={setSize}
                 options={[
-                  { value: "small", label: "Small" },
-                  { value: "medium", label: "Medium" },
-                  { value: "large", label: "Large" },
+                  { value: "small", label: t("settings.pet.sizeSmall") },
+                  { value: "medium", label: t("settings.pet.sizeMedium") },
+                  { value: "large", label: t("settings.pet.sizeLarge") },
                 ]}
               />
             </SettingRow>
             <SettingRow
-              title="Animations"
-              detail="Auto follows the system's reduce-motion preference; Off shows a static sprite."
+              title={t("settings.pet.animations")}
+              detail={t("settings.pet.animationsDetail")}
             >
               <Segmented<PetMotion>
-                label="Animations"
+                label={t("settings.pet.animations")}
                 size="sm"
                 value={motion}
                 onChange={setMotion}
                 options={[
-                  { value: "auto", label: "Auto" },
-                  { value: "on", label: "On" },
-                  { value: "off", label: "Off" },
+                  { value: "auto", label: t("settings.pet.motionAuto") },
+                  { value: "on", label: t("common.on") },
+                  { value: "off", label: t("common.off") },
                 ]}
               />
             </SettingRow>
           </SettingGroup>
 
-          <SettingGroup title="Position">
+          <SettingGroup title={t("settings.pet.position")}>
             <SettingRow
-              title="Position"
-              detail="Click and hold the pet to drag it. Reset brings it back to the bottom-right corner; “last position” restores where it was before the most recent move (press again to toggle back)."
+              title={t("settings.pet.position")}
+              detail={t("settings.pet.positionDetail")}
             >
               <Button size="sm" disabled={!prevPos} onClick={lastPosition}>
-                Last position
+                {t("settings.pet.lastPosition")}
               </Button>
               <Button size="sm" onClick={resetPosition}>
-                Reset
+                {t("settings.pet.reset")}
               </Button>
             </SettingRow>
             <SettingRow
-              title="Lock position"
-              detail="Prevent dragging the pet (the reset buttons still work). If displays change — dock, unplug — the pet re-anchors itself either way."
+              title={t("settings.pet.lockPosition")}
+              detail={t("settings.pet.lockPositionDetail")}
             >
-              <Switch label="Lock position" checked={posLock} onChange={setPosLock} />
+              <Switch label={t("settings.pet.lockPosition")} checked={posLock} onChange={setPosLock} />
             </SettingRow>
           </SettingGroup>
 
@@ -294,32 +306,32 @@ export function PetSettings() {
             <img src={petThumb(pet)} alt="" draggable={false} className="size-16 shrink-0 object-contain [image-rendering:pixelated]" />
             <div className="flex min-w-0 flex-col justify-center gap-1.5">
               <div className="rounded-lg border border-ac-line2 bg-ac-raise px-3 py-2 text-[13px] text-ac-text">{PET_WELCOME}</div>
-              <p className="text-[11px] text-ac-faint">Said once, on the very first start — never again at login.</p>
+              <p className="text-[11px] text-ac-faint">{t("settings.pet.welcomeNote")}</p>
             </div>
           </Card>
 
           {devMode && (
-            <SettingGroup title="Developer">
+            <SettingGroup title={t("settings.pet.developer")}>
               <SettingRow
-                title="State label"
-                detail="Show “pet · reaction” under the sprite. Dev builds only; never shown in production."
+                title={t("settings.pet.stateLabel")}
+                detail={t("settings.pet.stateLabelDetail")}
               >
-                <Switch label="State label" checked={label} onChange={setLabel} />
+                <Switch label={t("settings.pet.stateLabel")} checked={label} onChange={setLabel} />
               </SettingRow>
               <SettingRow
-                title="Bubble test"
-                detail="Sends one event of each kind straight to the pet — bypasses the notification log and the reaction cooldown."
+                title={t("settings.pet.bubbleTest")}
+                detail={t("settings.pet.bubbleTestDetail")}
                 stacked
               >
-                {BUBBLE_TESTS.map((t) => (
-                  <Button key={t.label} size="sm" onClick={() => void t.send()}>
-                    {t.label}
+                {BUBBLE_TESTS.map((b) => (
+                  <Button key={b.id} size="sm" onClick={() => void b.send()}>
+                    {b.name()}
                   </Button>
                 ))}
               </SettingRow>
               <SettingRow
-                title="Pose"
-                detail="Make the pet hold a spritesheet row for QA — it keeps looping until you pick another; “idle” restores normal behavior."
+                title={t("settings.pet.pose")}
+                detail={t("settings.pet.poseDetail")}
                 stacked
               >
                 {ALL_REACTIONS.map((r) => (

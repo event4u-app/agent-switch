@@ -5,13 +5,34 @@ import { Kbd } from "../ui/Typography.js";
 import {
   buildSearchIndex,
   filterSearch,
-  SEARCH_KIND_LABEL,
   type SearchCrumb,
   type SearchItem,
   type SearchKind,
 } from "../vm/search.js";
 import { useAS } from "../vm/store.js";
 import { isAppShortcut } from "./shortcuts.js";
+import { t, type TKey } from "../i18n/index.js";
+import { tx } from "../i18n/react.js";
+
+/** Kind labels as keys — plural for the filter chips, singular for a row. */
+const KIND_PLURAL = {
+  action: "shell.search.kinds.action",
+  account: "shell.search.kinds.account",
+  session: "shell.search.kinds.session",
+  project: "shell.search.kinds.project",
+  rule: "shell.search.kinds.rule",
+  tool: "shell.search.kinds.tool",
+  page: "shell.search.kinds.page",
+} as const satisfies Record<SearchKind, TKey>;
+const KIND_SINGULAR = {
+  action: "shell.search.kind.action",
+  account: "shell.search.kind.account",
+  session: "shell.search.kind.session",
+  project: "shell.search.kind.project",
+  rule: "shell.search.kind.rule",
+  tool: "shell.search.kind.tool",
+  page: "shell.search.kind.page",
+} as const satisfies Record<SearchKind, TKey>;
 
 /** ⌘K palette in the top bar (bundle `oP`, app L193–288). `collapsed` = icon
  *  button that expands into an overlaying field (narrow windows). `isMac`
@@ -56,21 +77,21 @@ export function CommandSearch({ collapsed, isMac }: { collapsed: boolean; isMac?
 
   function choose(item: SearchItem | undefined) {
     if (!item) return;
-    const t = item.target;
+    const target = item.target;
     reset();
     input.current?.blur();
-    switch (t.type) {
+    switch (target.type) {
       case "screen":
-        s.go(t.screen);
+        s.go(target.screen);
         break;
       case "account":
-        s.open({ kind: "account", id: t.id });
+        s.open({ kind: "account", id: target.id });
         break;
       case "session":
-        s.open({ kind: "session", id: t.id });
+        s.open({ kind: "session", id: target.id });
         break;
       case "start":
-        s.open({ kind: "start", cwd: t.cwd });
+        s.open({ kind: "start", cwd: target.cwd });
         break;
       case "tools":
         s.go("tools");
@@ -171,8 +192,8 @@ export function CommandSearch({ collapsed, isMac }: { collapsed: boolean; isMac?
           requestAnimationFrame(() => input.current?.focus());
         }}
         className="inline-flex h-8 items-center gap-2 rounded-md border border-ac-line px-2 text-ac-muted hover:border-ac-line2 hover:text-ac-text"
-        aria-label={"Search (⌘K)"}
-        title={"Search (⌘K)"}
+        aria-label={t("shell.search.button")}
+        title={t("shell.search.button")}
       >
         <Search className="size-4" />
         <Kbd>{"⌘K"}</Kbd>
@@ -205,9 +226,9 @@ export function CommandSearch({ collapsed, isMac }: { collapsed: boolean; isMac?
           aria-expanded={showList}
           aria-controls={listId}
           aria-activedescendant={activeId}
-          aria-label="Search sessions, accounts, projects"
+          aria-label={t("shell.search.aria")}
           value={query}
-          placeholder={"Session, account, project …"}
+          placeholder={t("shell.search.placeholder")}
           onChange={(e) => {
             setQuery(e.target.value);
             setActive(0);
@@ -234,7 +255,7 @@ export function CommandSearch({ collapsed, isMac }: { collapsed: boolean; isMac?
                 type="button"
                 onClick={back}
                 className="inline-flex size-6 items-center justify-center rounded text-ac-muted hover:bg-ac-raise hover:text-ac-text"
-                aria-label="Back"
+                aria-label={t("common.back")}
               >
                 <ChevronLeft className="size-4" />
               </button>
@@ -242,7 +263,7 @@ export function CommandSearch({ collapsed, isMac }: { collapsed: boolean; isMac?
             </div>
           )}
           {result.order.length > 1 && (
-            <div className="flex flex-wrap gap-1 border-b border-ac-line px-2 py-2" role="group" aria-label="Filter by kind">
+            <div className="flex flex-wrap gap-1 border-b border-ac-line px-2 py-2" role="group" aria-label={t("shell.search.filterByKind")}>
               {(["all", ...result.order] as const).map((k) => {
                 const pressed = result.kind === k;
                 return (
@@ -261,7 +282,9 @@ export function CommandSearch({ collapsed, isMac }: { collapsed: boolean; isMac?
                         : "text-ac-soft shadow-[inset_0_0_0_1px_var(--ac-line)] hover:text-ac-text",
                     )}
                   >
-                    {k === "all" ? `All ${result.all.length}` : `${SEARCH_KIND_LABEL[k]} ${result.counts[k]}`}
+                    {k === "all"
+                      ? t("shell.search.all", { count: result.all.length })
+                      : t("shell.search.kindCount", { kind: t(KIND_PLURAL[k]), count: result.counts[k] ?? 0 })}
                   </button>
                 );
               })}
@@ -282,7 +305,7 @@ export function CommandSearch({ collapsed, isMac }: { collapsed: boolean; isMac?
                 )}
               >
                 <span className="w-16 shrink-0 text-[10px] font-medium uppercase tracking-[0.12em] text-ac-faint">
-                  {SEARCH_KIND_LABEL[item.kind].replace(/s$/, "")}
+                  {t(KIND_SINGULAR[item.kind])}
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-[13px] text-ac-text">{item.text}</span>
@@ -292,7 +315,7 @@ export function CommandSearch({ collapsed, isMac }: { collapsed: boolean; isMac?
                   <button
                     type="button"
                     tabIndex={-1}
-                    aria-label={`Show ${item.kids.length} inside`}
+                    aria-label={t("shell.search.showInside", { count: item.kids.length })}
                     onClick={(e) => {
                       e.stopPropagation();
                       drillIn(i);
@@ -307,15 +330,13 @@ export function CommandSearch({ collapsed, isMac }: { collapsed: boolean; isMac?
             ))}
             {!result.shown.length && (
               <li className="px-3 py-4 text-xs text-ac-muted">
-                {"Nothing matches “"}
-                {query.trim()}
-                {"”."}
+                {tx("shell.search.nothing", { query: query.trim() })}
               </li>
             )}
           </ul>
           <div className="flex items-center justify-between gap-3 border-t border-ac-line px-3 py-1.5 text-[11px] text-ac-faint">
-            <span>{result.all.length} hits</span>
-            <span className="hidden sm:inline">{"↑↓ move · ↵ open · → into · ← back · esc"}</span>
+            <span>{t("shell.search.hits", { count: result.all.length })}</span>
+            <span className="hidden sm:inline">{t("shell.search.keys")}</span>
           </div>
         </div>
       )}

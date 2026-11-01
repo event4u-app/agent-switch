@@ -1,0 +1,3 @@
+<HOME>/claude/work/config
+--- stderr ---
+--- exit 0 ---

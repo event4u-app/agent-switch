@@ -4,20 +4,39 @@
  */
 
 import { shortPath } from "../ui/format.js";
-import { TOOL_LABEL } from "./rules.js";
+import { t, type TKey } from "../i18n/index.js";
+import { TOOL_LABEL, translatedRecord } from "./rules.js";
 import type { Screen } from "./store.js";
 import type { Account, Binding, Session, ToolEntry } from "./types.js";
 
 export type SearchKind = "action" | "account" | "session" | "project" | "rule" | "tool" | "page";
 
-export const SEARCH_KIND_LABEL: Record<SearchKind, string> = {
-  action: "Actions",
-  account: "Accounts",
-  session: "Sessions",
-  project: "Projects",
-  rule: "Bindings",
-  tool: "Tools",
-  page: "Pages",
+/** Kind → plural label in the live language (translated on read). */
+export const SEARCH_KIND_LABEL: Readonly<Record<SearchKind, string>> = translatedRecord<SearchKind>({
+  action: "vm.search.kind.action",
+  account: "vm.search.kind.account",
+  session: "vm.search.kind.session",
+  project: "vm.search.kind.project",
+  rule: "vm.search.kind.rule",
+  tool: "vm.search.kind.tool",
+  page: "vm.search.kind.page",
+});
+
+/** Kind → singular label in the live language (a result row's kind chip). */
+export const SEARCH_KIND_SINGULAR: Readonly<Record<SearchKind, string>> = translatedRecord<SearchKind>({
+  action: "vm.search.kindOne.action",
+  account: "vm.search.kindOne.account",
+  session: "vm.search.kindOne.session",
+  project: "vm.search.kindOne.project",
+  rule: "vm.search.kindOne.rule",
+  tool: "vm.search.kindOne.tool",
+  page: "vm.search.kindOne.page",
+});
+
+const MATCH_KIND_KEY: Record<Binding["match"]["kind"], TKey> = {
+  folder: "vm.search.match.folder",
+  repo: "vm.search.match.repo",
+  org: "vm.search.match.org",
 };
 
 export type SearchTarget =
@@ -38,14 +57,14 @@ export interface SearchItem {
   target: SearchTarget;
 }
 
-const PAGES: [Screen, string, string][] = [
-  ["home", "Home", "What needs you, what runs, what's left"],
-  ["sessions", "Sessions", "All running and recent sessions"],
-  ["accounts", "Accounts", "Sign-ins, capacity, protection, project bindings"],
-  ["tools", "Tools", "agent-config, rtk, agent CLIs, updates, apps"],
-  ["activity", "Activity", "What happened and why"],
-  ["health", "Health", "Readiness, checks, repairs"],
-  ["settings", "Settings", "Start at login, protection, notifications, pet, updates"],
+const PAGES: [Screen, TKey, TKey][] = [
+  ["home", "vm.search.page.home", "vm.search.page.homeMeta"],
+  ["sessions", "vm.search.page.sessions", "vm.search.page.sessionsMeta"],
+  ["accounts", "vm.search.page.accounts", "vm.search.page.accountsMeta"],
+  ["tools", "vm.search.page.tools", "vm.search.page.toolsMeta"],
+  ["activity", "vm.search.page.activity", "vm.search.page.activityMeta"],
+  ["health", "vm.search.page.health", "vm.search.page.healthMeta"],
+  ["settings", "vm.search.page.settings", "vm.search.page.settingsMeta"],
 ];
 
 export function buildSearchIndex(vm: {
@@ -70,7 +89,7 @@ export function buildSearchIndex(vm: {
       id: `a:${a.id}`,
       kind: "account",
       text: `${TOOL_LABEL[a.tool]} · ${a.name}`,
-      meta: [a.identity ?? "not signed in", a.plan, a.label].filter(Boolean).join(" · "),
+      meta: [a.identity ?? t("vm.search.notSignedIn"), a.plan, a.label].filter(Boolean).join(" · "),
       kids: kids.length ? kids : undefined,
       target: { type: "account", id: a.id },
     };
@@ -97,23 +116,26 @@ export function buildSearchIndex(vm: {
       id: `r:${r.id}`,
       kind: "rule",
       text: r.match.value,
-      meta: `${r.match.kind} → ${r.target.kind === "pool" ? `pool ${r.target.pool}` : r.target.accountId}${r.enabled ? "" : " · off"}`,
+      meta: [
+        `${t(MATCH_KIND_KEY[r.match.kind])} → ${r.target.kind === "pool" ? t("vm.search.pool", { pool: r.target.pool }) : r.target.accountId}`,
+        ...(r.enabled ? [] : [t("vm.search.off")]),
+      ].join(" · "),
       target: { type: "projects" },
     }),
   );
   const actions: SearchItem[] = [
-    { id: "x:start", kind: "action", text: "Start session", meta: "Pick a folder, tool and account", target: { type: "start" } },
-    { id: "x:add", kind: "action", text: "Add account", meta: "Sign in with Claude, Codex or Gemini", target: { type: "add-account" } },
+    { id: "x:start", kind: "action", text: t("vm.search.startSession"), meta: t("vm.search.startSessionMeta"), target: { type: "start" } },
+    { id: "x:add", kind: "action", text: t("vm.search.addAccount"), meta: t("vm.search.addAccountMeta"), target: { type: "add-account" } },
   ];
   const pages = PAGES.map(
-    ([screen, text, meta]): SearchItem => ({ id: `g:${screen}`, kind: "page", text, meta, target: { type: "screen", screen } }),
+    ([screen, text, meta]): SearchItem => ({ id: `g:${screen}`, kind: "page", text: t(text), meta: t(meta), target: { type: "screen", screen } }),
   );
   const tools = vm.tools.map(
-    (t): SearchItem => ({
-      id: `t:${t.id}`,
+    (tool): SearchItem => ({
+      id: `t:${tool.id}`,
       kind: "tool",
-      text: t.name,
-      meta: [t.version ?? "not installed", t.latest && t.latest !== t.version ? `update ${t.latest}` : null, t.role]
+      text: tool.name,
+      meta: [tool.version ?? t("vm.search.notInstalled"), tool.latest && tool.latest !== tool.version ? t("vm.search.update", { version: tool.latest }) : null, tool.role]
         .filter(Boolean)
         .join(" · "),
       target: { type: "tools" },

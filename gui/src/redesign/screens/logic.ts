@@ -5,6 +5,8 @@
  */
 
 import type { DirResolution } from "../../ipc.js";
+import { en } from "../../i18n/en/index.js";
+import { t, tp, type TKey } from "../../i18n/index.js";
 import { expandHome } from "../../lib/paths.js";
 import { shortPath } from "../../ui/format.js";
 import { accountIdFromMember, BIN_NAME } from "../../vm/build.js";
@@ -83,12 +85,21 @@ export interface Availability {
  *  profile's credential store, which a terminal session picks up — only a
  *  surface known to be the app/IDE is ruled out. */
 export function liveSwitch(s: Session, platform: ViewModel["platform"]): Availability {
-  if (s.tool !== "claude") return { ok: false, reason: "Live switching is only available for Claude today." };
-  if (s.surface != null && s.surface !== "terminal")
-    return { ok: false, reason: "Only sessions in a terminal can switch live; the app and IDE keep their sign-in." };
-  if (platform !== "mac") return { ok: false, reason: "Live switching works on macOS only today." };
-  if (s.state === "done") return { ok: false, reason: "The session has ended." };
-  return { ok: true, reason: "Adopts the new sign-in with its next message — no restart. If that fails, it stays on its account." };
+  if (s.tool !== "claude") return { ok: false, reason: t("sessions.live.claudeOnly") };
+  if (s.surface != null && s.surface !== "terminal") return { ok: false, reason: t("sessions.live.terminalOnly") };
+  if (platform !== "mac") return { ok: false, reason: t("sessions.live.macOnly") };
+  if (s.state === "done") return { ok: false, reason: t("sessions.live.ended") };
+  return { ok: true, reason: t("sessions.live.ok") };
+}
+
+/** Whether a live switch can be ARMED for the end of the session's turn (D3).
+ *  Needs the host's own state word: a session live only by its folder
+ *  (`liveSource: "cwd"`) has no turn end the daemon could see. */
+export function armSwitch(s: Session, platform: ViewModel["platform"]): Availability {
+  const live = liveSwitch(s, platform);
+  if (!live.ok) return live;
+  if (s.liveSource !== "registry") return { ok: false, reason: t("sessions.arm.noState") };
+  return { ok: true, reason: t("sessions.arm.ok") };
 }
 
 // ------------------------------------------------------------ resolution
@@ -97,6 +108,12 @@ export const AUTO = "__auto";
 
 function glob(pattern: string, value: string): boolean {
   return new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`).test(value);
+}
+
+/** A binding's match kind as a word ("folder" / "repo" / "org"). */
+function ruleKind(kind: Binding["match"]["kind"]): string {
+  const key = `sessions.ruleKind.${kind}`;
+  return key in en ? t(key as TKey) : kind;
 }
 
 export interface Resolution {
@@ -155,7 +172,7 @@ export function resolveStart(
   if (rule && rule.target.kind === "account") {
     const id = rule.target.accountId;
     const account = accounts.find((a) => a.id === id) ?? null;
-    return { account, rule, why: [`Rule: ${rule.match.kind} ${rule.match.value} → ${account?.name ?? "?"}`] };
+    return { account, rule, why: [t("sessions.resolve.ruleAccount", { kind: ruleKind(rule.match.kind), value: rule.match.value, name: account?.name ?? "?" })] };
   }
   if (rule && rule.target.kind === "pool") {
     const pool = rule.target.pool;
@@ -165,8 +182,10 @@ export function resolveStart(
       account: top?.account ?? null,
       rule,
       why: [
-        `Rule: ${rule.match.kind} ${rule.match.value} → pool ${pool}`,
-        top ? `Pool ${pool}: ${top.account.name} has the most left (${top.reason})` : `Pool ${pool}: no ${tool} account can take work`,
+        t("sessions.resolve.rulePool", { kind: ruleKind(rule.match.kind), value: rule.match.value, pool }),
+        top
+          ? t("sessions.resolve.poolTop", { pool, name: top.account.name, reason: top.reason })
+          : t("sessions.resolve.poolNone", { pool, tool }),
       ],
     };
   }
@@ -174,7 +193,7 @@ export function resolveStart(
   return {
     account: def,
     rule: null,
-    why: [def ? `No rule matches — default ${tool} account ${def.name}` : `No rule matches and no default ${tool} account`],
+    why: [def ? t("sessions.resolve.noRuleDefault", { tool, name: def.name }) : t("sessions.resolve.noRuleNoDefault", { tool })],
   };
 }
 
@@ -182,20 +201,20 @@ export function resolveStart(
  *  reasons. No profile (the default config dir) → the tool's default account,
  *  which is what `run` would load there. */
 export function resolutionFromCli(res: DirResolution, tool: Tool, accounts: readonly Account[]): Resolution {
-  if (res.blocked) return { account: null, rule: null, why: res.why.length ? res.why : [`Refused: ${res.blocked}`] };
+  if (res.blocked) return { account: null, rule: null, why: res.why.length ? res.why : [t("sessions.resolve.refused", { reason: res.blocked })] };
   if (res.profile) {
     const id = accountIdFromMember(res.profile) ?? `${tool}:${res.profile}`;
     const account = accounts.find((a) => a.id === id) ?? null;
-    return { account, rule: null, why: res.why.length ? res.why : [`agent-switch picks ${res.profile}`] };
+    return { account, rule: null, why: res.why.length ? res.why : [t("sessions.resolve.cliPicks", { profile: res.profile })] };
   }
   const def = accounts.find((a) => a.tool === tool && a.isDefault) ?? null;
-  return { account: def, rule: null, why: res.why.length ? res.why : [`No rule matches — default ${tool} account ${def?.name ?? "none"}`] };
+  return { account: def, rule: null, why: res.why.length ? res.why : [t("sessions.resolve.noRuleDefault", { tool, name: def?.name ?? t("sessions.resolve.none") })] };
 }
 
 /** Why a tool cannot be picked in the start dialog; null when it can. */
 export function toolUnavailableReason(tool: Tool, accounts: readonly Account[], platform: ViewModel["platform"]): string | null {
-  if (tool === "antigravity" && platform !== "mac") return "Antigravity profiles need macOS for now";
-  return toolCanTakeWork(accounts, tool) ? null : `No ${TOOL_LABEL[tool]} account can take work`;
+  if (tool === "antigravity" && platform !== "mac") return t("sessions.tool.antigravityMac");
+  return toolCanTakeWork(accounts, tool) ? null : t("sessions.tool.noAccount", { tool: TOOL_LABEL[tool] });
 }
 
 /** A reason line split so an `agent-switch …` command renders unbroken. */
@@ -232,8 +251,8 @@ export function hasLauncher(launchers: readonly Launcher[], appId: string, accou
 }
 
 export function appUnavailableReason(vm: Pick<ViewModel, "surfaces">, tool: Tool): string | null {
-  if (tool === "gemini") return "Gemini has no desktop app";
-  return appFor(vm, tool) ? null : `No ${TOOL_LABEL[tool]} app found on this computer`;
+  if (tool === "gemini") return t("sessions.app.geminiNone");
+  return appFor(vm, tool) ? null : t("sessions.app.notFound", { tool: TOOL_LABEL[tool] });
 }
 
 // ------------------------------------------------------------- near limit
@@ -248,8 +267,10 @@ export interface LimitOption {
   isDefault?: boolean;
 }
 
-export const PAUSE_UNAVAILABLE = "Pausing needs the protection engine — Agent Switch warns at the threshold today.";
-export const KEEP_UNAVAILABLE = "There is no session protection to turn off — Agent Switch only warns today.";
+/** English source text; the options render `t("sessions.limit.pauseUnavailable")`. */
+export const PAUSE_UNAVAILABLE = en["sessions.limit.pauseUnavailable"];
+/** English source text; the options render `t("sessions.limit.keepUnavailable")`. */
+export const KEEP_UNAVAILABLE = en["sessions.limit.keepUnavailable"];
 
 /** The session a near-limit item is about: the item's own, else the account's
  *  most recently active running session. */
@@ -274,43 +295,43 @@ export function limitOptions(
   targets: readonly RankedAccount[],
   platform: ViewModel["platform"],
 ): LimitOption[] {
-  const noSession = `Not available here: no running session on ${account.name}.`;
-  const noTarget = `Not available here: no other ${TOOL_LABEL[account.tool]} account can take work.`;
+  const noSession = t("sessions.limit.noSession", { name: account.name });
+  const noTarget = t("sessions.limit.noTarget", { tool: TOOL_LABEL[account.tool] });
   const live = session ? liveSwitch(session, platform) : null;
   return [
     {
       id: "pause",
-      title: `Pause at ${account.threshold} %, continue after the reset`,
-      detail: `Not available here: ${PAUSE_UNAVAILABLE}`,
+      title: t("sessions.limit.pauseTitle", { threshold: account.threshold }),
+      detail: t("sessions.limit.notAvailable", { reason: t("sessions.limit.pauseUnavailable") }),
       disabled: true,
       isDefault: true,
     },
     {
       id: "switch",
-      title: "Switch this session to another account",
+      title: t("sessions.limit.switchTitle"),
       detail: !session
         ? noSession
         : !live?.ok
-          ? `Not available here: ${live?.reason}`
+          ? t("sessions.limit.notAvailable", { reason: live?.reason ?? "" })
           : !targets.length
             ? noTarget
-            : "Live: the session keeps running and adopts the other sign-in with its next message. Only when you choose it — never on its own.",
+            : t("sessions.limit.switchDetail"),
       disabled: !session || !live?.ok || !targets.length,
     },
     {
       id: "continue-elsewhere",
-      title: "Continue on another account",
+      title: t("sessions.limit.elsewhereTitle"),
       detail: !session
         ? noSession
         : !targets.length
           ? noTarget
-          : "Starts a new session there with a brief of this one. This session keeps running — it is not moved. Lossy: the transcript stays here.",
+          : t("sessions.limit.elsewhereDetail"),
       disabled: !session || !targets.length,
     },
     {
       id: "keep",
-      title: `Keep going on ${account.name}`,
-      detail: `Not available here: ${KEEP_UNAVAILABLE}`,
+      title: t("sessions.limit.keepTitle", { name: account.name }),
+      detail: t("sessions.limit.notAvailable", { reason: t("sessions.limit.keepUnavailable") }),
       disabled: true,
     },
   ];
@@ -322,9 +343,11 @@ export function overviewSub(vm: Pick<ViewModel, "accounts" | "sessions" | "atten
   const ready = vm.accounts.filter((a) => a.state === "ready" || a.state === "near-limit").length;
   const working = vm.sessions.filter((s) => s.state === "working").length;
   const n = vm.attention.length;
-  return [`${ready} of ${vm.accounts.length} accounts ready`, `${working} session${working === 1 ? "" : "s"} working`, n ? `${n} need${n === 1 ? "s" : ""} you` : "nothing needs you"].join(
-    " · ",
-  );
+  return [
+    tp("sessions.overview.ready", vm.accounts.length, { ready }),
+    tp("sessions.overview.working", working),
+    n ? tp("sessions.overview.needs", n) : t("sessions.overview.nothingNeeds"),
+  ].join(" · ");
 }
 
 /** Tools in first-seen account order (the "What's left" groups). */
@@ -355,14 +378,13 @@ export function plainStart(accounts: readonly Account[], tool: Tool, rules: read
   const command = tool === "gemini" ? "gemini" : BIN_NAME[tool];
   const def = accounts.find((a) => a.tool === tool && a.isDefault && !a.disabled) ?? null;
   const ruleCount = rules.filter((r) => r.enabled && (r.tool === tool || r.tool === "any")).length;
-  const rulesNote = ruleCount ? ` ${ruleCount} folder rule${ruleCount > 1 ? "s" : ""} pick their own.` : "";
-  const base = `A plain \`${command}\` outside a folder rule starts on`;
+  const rulesNote = ruleCount ? ` ${tp("sessions.plain.rules", ruleCount)}` : "";
   if (!def) {
     return {
       command,
       account: null,
       rules: ruleCount,
-      text: `${base} your original ${TOOL_LABEL[tool]} login — no account is set for plain starts.${rulesNote}`,
+      text: `${t("sessions.plain.original", { command, tool: TOOL_LABEL[tool] })}${rulesNote}`,
       warn: null,
       reason: null,
       why: [],
@@ -370,13 +392,13 @@ export function plainStart(accounts: readonly Account[], tool: Tool, rules: read
   }
   const warn =
     def.state === "signed-out"
-      ? `${def.name} is signed out — sign in again or pick another account for plain starts.`
+      ? t("sessions.plain.signedOut", { name: def.name })
       : def.state === "wrong-account"
-        ? `${def.name} is signed in to a different account than expected.`
+        ? t("sessions.plain.wrongAccount", { name: def.name })
         : def.state === "limited"
-          ? `${def.name} is at its limit — pick another account for plain starts.`
+          ? t("sessions.plain.limited", { name: def.name })
           : null;
-  return { command, account: def, rules: ruleCount, text: `${base} ${def.name}.${rulesNote}`, warn, reason: null, why: [] };
+  return { command, account: def, rules: ruleCount, text: `${t("sessions.plain.onAccount", { command, name: def.name })}${rulesNote}`, warn, reason: null, why: [] };
 }
 
 /** The same answer from agent-switch itself (`dir --plain`), which balances a
@@ -392,9 +414,9 @@ export function plainStartFromCli(accounts: readonly Account[], tool: Tool, rule
   const reason = picked
     ? picked.replace(/^Picked [^:]+: /, "").replace(/ \(.*$/, "")
     : r.why.some((w) => w.includes("are level"))
-      ? "level with the others — the starred account"
+      ? t("sessions.plain.level")
       : r.why.some((w) => w.startsWith("No account has fresh usage"))
-        ? "no fresh usage to weigh — the starred account"
+        ? t("sessions.plain.noFreshUsage")
         : null;
   return { ...local, reason, why: r.why };
 }

@@ -1778,3 +1778,36 @@ test("mark-shared: marking a profile by hand makes balancing skip it, --off clea
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+// D3 "switch when this turn ends": arm, list, cancel — and refuse without registry state.
+test("`rebind --when-idle` arms, `sessions --json` shows it, `rebind --cancel` drops it; a cwd-only session is refused", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work");
+    seed(home, "claude", "side");
+    const cfg = path.join(home, "claude", "work", "config");
+    fs.mkdirSync(path.join(cfg, "sessions"), { recursive: true });
+    fs.mkdirSync(path.join(cfg, "projects", "-tmp-proj"), { recursive: true });
+    fs.writeFileSync(path.join(cfg, "projects", "-tmp-proj", "s-1.jsonl"), "");
+    const reg = path.join(cfg, "sessions", `${process.pid}.json`);
+
+    fs.writeFileSync(reg, "{}");
+    const refused = spawnSync("node", [CLI, "rebind", "side", "--when-idle", "--profile", "work"], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
+    assert.notEqual(refused.status, 0);
+    assert.match(refused.stderr, /cannot arm: .*liveSource "cwd"/);
+
+    fs.writeFileSync(reg, JSON.stringify({ sessionId: "s-1", status: "busy" }));
+    assert.match(run(home, ["rebind", "side", "--when-idle", "--profile", "work"]), /Armed: "work" switches to "side"/);
+    const rows = JSON.parse(run(home, ["sessions", "work", "--json"]));
+    const row = rows.find((r: { sessionId: string }) => r.sessionId === "s-1");
+    assert.equal(row.armed.target, "side");
+    assert.equal(Date.parse(row.armed.expiresAt) - Date.parse(row.armed.createdAt), 30 * 60_000);
+    assert.match(run(home, ["sessions", "work"]), /\[switches to side when this turn ends\]/);
+
+    assert.match(run(home, ["rebind", "--cancel", "--profile", "work"]), /Cancelled: "work" will not switch to "side"/);
+    assert.equal(JSON.parse(run(home, ["sessions", "work", "--json"])).find((r: { sessionId: string }) => r.sessionId === "s-1").armed, null);
+    assert.match(run(home, ["rebind", "--cancel"]), /No armed switch to cancel/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

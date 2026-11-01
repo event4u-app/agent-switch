@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { LogOut, MessageCircle, Star } from "lucide-react";
+import { setLanguagePref, t, type LanguagePref } from "../../../i18n/index.js";
 import * as ipc from "../../../ipc.js";
 import {
   getAutoRefreshLimits,
   getDevMode,
+  getLanguagePref,
   getMinimizeToDock,
   getRefreshMinutes,
   REFRESH_INTERVAL_CHOICES,
@@ -63,6 +65,7 @@ export function GeneralSettings() {
   const [autoRefresh, setAutoRefresh] = usePref(getAutoRefreshLimits, writeAutoRefresh);
   const [refreshMinutes, setRefresh] = usePref(getRefreshMinutes, setRefreshMinutes);
   const [devMode, setDevMode] = usePref(() => IS_DEV && getDevMode(), setDevModeFlag);
+  const [language, setLanguage] = usePref<LanguagePref>(getLanguagePref, setLanguagePref);
   const on = autostart ?? false;
 
   async function toggleAutostart(next: boolean) {
@@ -70,7 +73,7 @@ export function GeneralSettings() {
     setAutostartFailed(false);
     toggling.current = true;
     const ok = await run(async () => {
-      if (!s.act.setAutostart) throw new Error("Start at login is not available.");
+      if (!s.act.setAutostart) throw new Error(t("settings.general.startAtLoginUnavailable"));
       await s.act.setAutostart(next);
       return true;
     }).finally(() => {
@@ -86,33 +89,33 @@ export function GeneralSettings() {
     <>
       <SettingGroup>
         <SettingRow
-          title="Start at login"
+          title={t("settings.general.startAtLogin")}
           detail={
             !autostartFailed && (s.autostart.actual === "enabled" || !on)
-              ? "Launch Agent Switch automatically when you sign in. It waits in the menu bar."
-              : "Couldn't register with the system — try again or check the system's login items."
+              ? t("settings.general.startAtLoginDetail")
+              : t("settings.general.startAtLoginFailed")
           }
         >
-          {on && s.autostart.actual === "enabled" && <Badge tone="ok">Checked</Badge>}
-          <Switch label="Start at login" checked={on} disabled={autostart === null} onChange={(v) => void toggleAutostart(v)} />
+          {on && s.autostart.actual === "enabled" && <Badge tone="ok">{t("settings.general.checked")}</Badge>}
+          <Switch label={t("settings.general.startAtLogin")} checked={on} disabled={autostart === null} onChange={(v) => void toggleAutostart(v)} />
         </SettingRow>
         <SettingRow
-          title="Open the window on start"
+          title={t("settings.general.openOnStart")}
           detail={
             <WithReason
-              detail="Off: only the menu bar icon appears."
-              reason="Not adjustable yet — Agent Switch always starts in the menu bar; open the window from there."
+              detail={t("settings.general.openOnStartDetail")}
+              reason={t("settings.general.openOnStartReason")}
             />
           }
         >
-          <Switch label="Open the window on start" checked={false} disabled onChange={() => {}} />
+          <Switch label={t("settings.general.openOnStart")} checked={false} disabled onChange={() => {}} />
         </SettingRow>
         <SettingRow
-          title="Show disabled accounts in the menu bar"
-          detail="Off (default): the popover from the menu bar icon lists only enabled accounts. The Accounts screen always shows all of them."
+          title={t("settings.general.trayShowDisabled")}
+          detail={t("settings.general.trayShowDisabledDetail")}
         >
           <Switch
-            label="Show disabled accounts in the menu bar"
+            label={t("settings.general.trayShowDisabled")}
             checked={s.trayShowDisabled}
             onChange={(v) => {
               setTrayShowDisabledFlag(v);
@@ -122,56 +125,69 @@ export function GeneralSettings() {
         </SettingRow>
         {s.platform === "mac" && (
           <SettingRow
-            title="Minimize into Dock"
-            detail="On: the yellow button minimizes the window into the Dock (macOS standard). Off (default): minimizing or closing removes Agent Switch from the Dock — it stays in the menu bar and reopens from there."
+            title={t("settings.general.minimizeToDock")}
+            detail={t("settings.general.minimizeToDockDetail")}
           >
-            <Switch label="Minimize into Dock" checked={minimizeToDock} onChange={setMinimizeToDock} />
+            <Switch label={t("settings.general.minimizeToDock")} checked={minimizeToDock} onChange={setMinimizeToDock} />
           </SettingRow>
         )}
-        <SettingRow title="Appearance" detail="System follows your OS light/dark setting.">
+        <SettingRow title={t("settings.general.appearance")} detail={t("settings.general.appearanceDetail")}>
           <Segmented<Theme>
-            label="Appearance"
+            label={t("settings.general.appearance")}
             size="sm"
             value={theme}
             onChange={setTheme}
             options={[
-              { value: "light", label: "Light" },
-              { value: "dark", label: "Dark" },
-              { value: "system", label: "System" },
+              { value: "light", label: t("settings.general.themeLight") },
+              { value: "dark", label: t("settings.general.themeDark") },
+              { value: "system", label: t("settings.general.themeSystem") },
+            ]}
+          />
+        </SettingRow>
+        <SettingRow title={t("settings.general.language")} detail={t("settings.general.languageDetail")}>
+          <Segmented<LanguagePref>
+            label={t("settings.general.language")}
+            size="sm"
+            value={language}
+            onChange={setLanguage}
+            options={[
+              { value: "system", label: t("settings.general.languageSystem") },
+              { value: "en", label: t("settings.general.languageEnglish") },
+              { value: "de", label: t("settings.general.languageGerman") },
             ]}
           />
         </SettingRow>
       </SettingGroup>
 
-      <SettingGroup title="Usage limits">
+      <SettingGroup title={t("settings.general.usageLimits")}>
         <SettingRow
-          title="Auto-refresh limits"
-          detail="Refresh usage limits automatically on the interval below. When off, use Refresh on Accounts."
+          title={t("settings.general.autoRefresh")}
+          detail={t("settings.general.autoRefreshDetail")}
         >
-          <Switch label="Auto-refresh limits" checked={autoRefresh} onChange={setAutoRefresh} />
+          <Switch label={t("settings.general.autoRefresh")} checked={autoRefresh} onChange={setAutoRefresh} />
         </SettingRow>
         <SettingRow
-          title="Refresh interval"
-          detail="How often usage limits refresh. Also the minimum spacing between manual refreshes."
+          title={t("settings.general.refreshInterval")}
+          detail={t("settings.general.refreshIntervalDetail")}
         >
           <div className="w-[120px]">
             <Select
-              ariaLabel="Refresh interval"
+              ariaLabel={t("settings.general.refreshInterval")}
               value={String(refreshMinutes)}
               onChange={(v) => setRefresh(Number(v))}
-              options={REFRESH_INTERVAL_CHOICES.map((m) => ({ value: String(m), label: `${m} min` }))}
+              options={REFRESH_INTERVAL_CHOICES.map((m) => ({ value: String(m), label: t("settings.general.minutes", { n: m }) }))}
             />
           </div>
         </SettingRow>
       </SettingGroup>
 
-      <SettingGroup title="Privacy">
+      <SettingGroup title={t("settings.general.privacy")}>
         <SettingRow
-          title="Hide session summaries"
-          detail="Suppress the first-line session summary and the preview in Sessions (the only session content shown in the app)."
+          title={t("settings.general.hideSummaries")}
+          detail={t("settings.general.hideSummariesDetail")}
         >
           <Switch
-            label="Hide session summaries"
+            label={t("settings.general.hideSummaries")}
             checked={s.hideSummaries}
             onChange={(v) => {
               setHideSummariesFlag(v);
@@ -181,30 +197,27 @@ export function GeneralSettings() {
         </SettingRow>
       </SettingGroup>
 
-      <SettingGroup title="Developer">
+      <SettingGroup title={t("settings.general.developer")}>
         <SettingRow
-          title="Developer mode"
+          title={t("settings.general.devMode")}
           detail={
             IS_DEV ? (
-              "Adds in-app test helpers: generate 25 test notifications in the bell, force a near-limit suggestion, pet bubble tests and poses. Dev builds only."
+              t("settings.general.devModeDetail")
             ) : (
-              <WithReason
-                detail="Adds in-app test helpers: generate 25 test notifications in the bell, force a near-limit suggestion, pet bubble tests and poses. Dev builds only."
-                reason="This is a release build."
-              />
+              <WithReason detail={t("settings.general.devModeDetail")} reason={t("settings.general.devModeReason")} />
             )
           }
         >
-          <Switch label="Developer mode" checked={devMode} disabled={!IS_DEV} onChange={setDevMode} />
+          <Switch label={t("settings.general.devMode")} checked={devMode} disabled={!IS_DEV} onChange={setDevMode} />
         </SettingRow>
       </SettingGroup>
 
       <SettingGroup
         tone="violet"
-        title="Support Agent Switch"
-        detail="Free & open source — stars, votes and shares help other developers find it."
+        title={t("settings.general.support")}
+        detail={t("settings.general.supportDetail")}
       >
-        <SettingRow title="Star on GitHub" detail="Also stops the occasional star reminder on Overview.">
+        <SettingRow title={t("settings.general.starOnGitHub")} detail={t("settings.general.starDetail")}>
           <Button
             size="sm"
             variant="primary"
@@ -215,26 +228,26 @@ export function GeneralSettings() {
               setStarAskStopped("starred");
             }}
           >
-            <Star /> Star
+            <Star /> {t("settings.general.star")}
           </Button>
         </SettingRow>
-        <SettingRow title="Vote on Reddit" detail="An upvote or a comment on our r/ClaudeCode post.">
+        <SettingRow title={t("settings.general.voteOnReddit")} detail={t("settings.general.voteDetail")}>
           <Button size="sm" variant="primary" className="bg-ac-violet" title={REDDIT_POST_URL} onClick={() => openExternal(REDDIT_POST_URL)}>
-            <MessageCircle /> Open the Reddit post
+            <MessageCircle /> {t("settings.general.openRedditPost")}
           </Button>
         </SettingRow>
-        <SettingRow title="Share" detail="TikTok and Instagram have no share link — copy the text and paste it into your post." stacked>
+        <SettingRow title={t("settings.general.share")} detail={t("settings.general.shareDetail")} stacked>
           <ShareButtons variant="violet" />
         </SettingRow>
       </SettingGroup>
 
       <SettingGroup>
         <SettingRow
-          title="Quit Agent Switch"
-          detail="Running sessions keep running; protection and reminders stop until you open it again."
+          title={t("settings.general.quitTitle")}
+          detail={t("settings.general.quitDetail")}
         >
           <Button size="sm" disabled={!s.act.quit} onClick={() => void run(async () => s.act.quit?.())}>
-            <LogOut /> Quit
+            <LogOut /> {t("settings.general.quit")}
           </Button>
         </SettingRow>
       </SettingGroup>

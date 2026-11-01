@@ -15,6 +15,7 @@ import { splitAccountId, type Actions } from "../../vm/actions.js";
 import { TOOL_LABEL } from "../../vm/rules.js";
 import type { ViewModel } from "../../vm/types.js";
 import { notify } from "./bus.js";
+import { noticeEn } from "./notice-text.js";
 
 export interface SwitchEffectDeps {
   notifyOnSwitch(): boolean;
@@ -41,7 +42,7 @@ export function withSwitchEffects(a: Actions, getVm: () => ViewModel, d: SwitchE
       await setDefault(id);
       await relink();
       const [tool, name] = splitAccountId(id);
-      await announce("Account switched", `${TOOL_LABEL[tool]} is now using ${name}.`);
+      await announce(noticeEn("engines.notice.switchedTitle"), noticeEn("engines.notice.switchedBody", { tool: TOOL_LABEL[tool], name }));
     };
   }
   if (a.deactivate) {
@@ -50,8 +51,10 @@ export function withSwitchEffects(a: Actions, getVm: () => ViewModel, d: SwitchE
       const name = getVm().accounts.find((x) => x.tool === tool && x.isDefault)?.name ?? null;
       await deactivate(tool);
       await announce(
-        "Account deactivated",
-        name ? `Deactivated the active ${TOOL_LABEL[tool]} account (${name}).` : `Deactivated the active ${TOOL_LABEL[tool]} account.`,
+        noticeEn("engines.notice.deactivatedTitle"),
+        name
+          ? noticeEn("engines.notice.deactivatedBodyNamed", { tool: TOOL_LABEL[tool], name })
+          : noticeEn("engines.notice.deactivatedBody", { tool: TOOL_LABEL[tool] }),
       );
     };
   }

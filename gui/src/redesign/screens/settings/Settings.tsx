@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Bell, Box, Cat, Download, KeyRound, Power, Shield, Shuffle, Wrench } from "lucide-react";
+import { t, type TKey } from "../../../i18n/index.js";
 import { cn } from "../../../lib/utils.js";
 import { Caps, PageHeader } from "../../../ui/Typography.js";
 import { useAS, type SettingsTab } from "../../../vm/store.js";
@@ -13,17 +14,30 @@ import { ProvidersSettings } from "./providers.js";
 import { SignInSettings } from "./sign-ins.js";
 import { UpdatesSettings } from "./updates.js";
 
+type SettingsGroup = { id: SettingsTab; label: string; icon: typeof Power };
+
+/** `label` is a getter so it reads the live language on every access. */
+function group(id: SettingsTab, labelKey: TKey, icon: typeof Power): SettingsGroup {
+  return {
+    id,
+    icon,
+    get label() {
+      return t(labelKey);
+    },
+  };
+}
+
 /** Settings groups and their order (bundle `Kd`). */
-export const SETTINGS_GROUPS: { id: SettingsTab; label: string; icon: typeof Power }[] = [
-  { id: "general", label: "General", icon: Power },
-  { id: "sign-ins", label: "Sign-ins", icon: KeyRound },
-  { id: "protection", label: "Protection", icon: Shield },
-  { id: "distribution", label: "Distribution", icon: Shuffle },
-  { id: "notifications", label: "Notifications", icon: Bell },
-  { id: "pet", label: "Desktop pet", icon: Cat },
-  { id: "providers", label: "Providers", icon: Box },
-  { id: "updates", label: "Updates", icon: Download },
-  { id: "advanced", label: "Advanced", icon: Wrench },
+export const SETTINGS_GROUPS: SettingsGroup[] = [
+  group("general", "settings.group.general", Power),
+  group("sign-ins", "settings.group.signIns", KeyRound),
+  group("protection", "settings.group.protection", Shield),
+  group("distribution", "settings.group.distribution", Shuffle),
+  group("notifications", "settings.group.notifications", Bell),
+  group("pet", "settings.group.pet", Cat),
+  group("providers", "settings.group.providers", Box),
+  group("updates", "settings.group.updates", Download),
+  group("advanced", "settings.group.advanced", Wrench),
 ];
 
 const PAGES: Record<SettingsTab, () => ReactNode> = {
@@ -45,9 +59,9 @@ export function Settings() {
   const current = SETTINGS_GROUPS.find((g) => g.id === tab)!;
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="How should it behave?" />
+      <PageHeader title={t("settings.shell.title")} />
       <div className="grid gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
-        <nav aria-label="Settings groups" className="flex gap-1 overflow-x-auto md:flex-col">
+        <nav aria-label={t("settings.shell.groupsNav")} className="flex gap-1 overflow-x-auto md:flex-col">
           {SETTINGS_GROUPS.map(({ id, label, icon: Icon }) => {
             const active = id === tab;
             return (

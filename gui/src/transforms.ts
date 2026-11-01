@@ -8,10 +8,25 @@
  * across accounts.
  */
 
+import { t, type TKey } from "./i18n/index.js";
+
 export type ProviderId = "claude" | "codex" | "antigravity";
 
+/** The stored label values (CLI data — never translated); show them through
+ *  {@link profileLabelText}. */
 export const PROFILE_LABELS = ["Work", "Personal", "Other"] as const;
 export type ProfileLabel = (typeof PROFILE_LABELS)[number];
+
+const PROFILE_LABEL_KEY: Record<ProfileLabel, TKey> = {
+  Work: "vm.profileLabel.work",
+  Personal: "vm.profileLabel.personal",
+  Other: "vm.profileLabel.other",
+};
+
+/** A profile label as shown, in the live language. */
+export function profileLabelText(label: ProfileLabel): string {
+  return t(PROFILE_LABEL_KEY[label]);
+}
 
 /** Which accounts (by label) auto-switch may switch to; "all" = no filter.
  *  Mirrors the CLI's AutoSwitchTag. */
@@ -78,6 +93,10 @@ export interface SessionRow {
   waiting?: boolean;
   /** What it waits on (the open question's id, or the prompt's time). */
   waitingFor?: string;
+  /** How `live` was decided: the host registry named it, or only the cwd guess. */
+  liveSource?: "registry" | "cwd";
+  /** A switch armed for the end of this session's turn (`rebind --when-idle`). */
+  armed?: { target: string; createdAt: string; expiresAt: string } | null;
 }
 
 /** One turn of a session content preview (ADR-002 bounded reader). */
@@ -156,7 +175,7 @@ export function isProviderWorking(
 /** Tray tooltip for the active profile's worst live-session context fill. One
  *  number, active profile only — never a per-profile list. */
 export function contextTrayTooltip(pct: number | null): string {
-  return pct == null ? "agent-switch" : `agent-switch — ${pct}% context`;
+  return pct == null ? "agent-switch" : t("vm.tray.context", { pct: String(pct) });
 }
 
 /** Compact "how long ago" label from an mtime, e.g. "3m", "2h", "5d". Pure. */
@@ -264,10 +283,10 @@ export function pickMostHeadroom(candidates: { name: string; max: number | null 
 
 /** Tray tooltip: active profile + its nearest own limit. */
 export function trayTooltip(active: ProfileRow | null, usage: UsageSnapshot | null): string {
-  if (!active) return "agent-switch — no active profile";
+  if (!active) return t("vm.tray.noActive");
   const limit = nearestLimit(usage);
-  const head = limit === null ? "" : ` · ${limit}% used`;
-  return `agent-switch — ${active.provider}/${active.name}${head}`;
+  const profile = `${active.provider}/${active.name}`;
+  return limit === null ? `agent-switch — ${profile}` : t("vm.tray.used", { profile, pct: String(limit) });
 }
 
 /** Relative "resets in" hint from an ISO timestamp, e.g. "2h 47m" or "5d 3h".

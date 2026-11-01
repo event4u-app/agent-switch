@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Trash2, TriangleAlert } from "lucide-react";
+import { t, type TKey } from "../../../i18n/index.js";
+import { tx } from "../../../i18n/react.js";
 import { Button } from "../../../ui/Button.js";
 import { Segmented } from "../../../ui/Segmented.js";
 import { SettingGroup, SettingRow } from "../../../ui/Setting.js";
@@ -9,7 +11,11 @@ import type { GuardPolicy } from "../../../vm/types.js";
 import { uninstallArmed, useFoundation, useRun } from "./prefs.js";
 import { WithReason } from "./shared.js";
 
-export const DIAGNOSTICS_UNAVAILABLE = "Not available yet — the CLI has no diagnostics export. Health shows every check.";
+/** Key of the reason the diagnostics export is unavailable (translate with `t()` at render). */
+export const DIAGNOSTICS_UNAVAILABLE = "settings.advanced.diagnosticsUnavailable" satisfies TKey;
+
+/** The word the user types to arm uninstall (see `uninstallArmed`); never translated. */
+const UNINSTALL_WORD = "uninstall";
 
 /** Settings › Advanced (bundle `xR`, artboard 26). */
 export function AdvancedSettings() {
@@ -32,61 +38,60 @@ export function AdvancedSettings() {
     <>
       <SettingGroup>
         <SettingRow
-          title="Same account in two places"
+          title={t("settings.advanced.sameAccount")}
           detail={
             s.guard.policy
-              ? "Warn is safe for most setups; Block only for sign-ins that break when shared."
-              : <WithReason detail="Warn is safe for most setups; Block only for sign-ins that break when shared." reason="The current policy wasn't read — pick one to set it." />
+              ? t("settings.advanced.sameAccountDetail")
+              : <WithReason detail={t("settings.advanced.sameAccountDetail")} reason={t("settings.advanced.policyNotRead")} />
           }
         >
           <Segmented<GuardPolicy>
-            label="Same account in two places"
+            label={t("settings.advanced.sameAccount")}
             size="sm"
             value={(s.guard.policy ?? "") as GuardPolicy}
             onChange={(p) => void run(() => fa.setGuard(p))}
             options={[
-              { value: "warn", label: "Warn" },
-              { value: "block", label: "Block" },
-              { value: "off", label: "Off" },
+              { value: "warn", label: t("settings.advanced.warn") },
+              { value: "block", label: t("settings.advanced.block") },
+              { value: "off", label: t("common.off") },
             ]}
           />
         </SettingRow>
         <SettingRow
-          title="Diagnostics"
+          title={t("settings.advanced.diagnostics")}
           detail={
             <WithReason
-              detail="A report without tokens, cookies or project paths, to attach to an issue."
-              reason={DIAGNOSTICS_UNAVAILABLE}
+              detail={t("settings.advanced.diagnosticsDetail")}
+              reason={t(DIAGNOSTICS_UNAVAILABLE)}
             />
           }
         >
-          <Button size="sm" disabled title={DIAGNOSTICS_UNAVAILABLE}>
-            Export
+          <Button size="sm" disabled title={t(DIAGNOSTICS_UNAVAILABLE)}>
+            {t("settings.advanced.export")}
           </Button>
         </SettingRow>
       </SettingGroup>
-      <SettingGroup title="Danger zone">
+      <SettingGroup title={t("settings.advanced.dangerZone")}>
         <SettingRow
           tone="danger"
           stacked
           title={
             <span className="flex items-center gap-1.5">
-              <TriangleAlert className="size-4" /> Uninstall Agent Switch
+              <TriangleAlert className="size-4" /> {t("settings.advanced.uninstall")}
             </span>
           }
           detail={
-            <>
-              Removes <strong className="text-ac-soft">all</strong> Agent Switch profiles, credentials, directory
-              mappings, and the background daemon under <span className="font-ac-mono">~/.agent-switch</span>. This cannot
-              be undone.
-            </>
+            tx("settings.advanced.uninstallDetail", {
+              all: <strong className="text-ac-soft">{t("settings.advanced.uninstallAll")}</strong>,
+              path: <span className="font-ac-mono">~/.agent-switch</span>,
+            })
           }
         >
           <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-xs text-ac-muted">
             <span>
-              Type <span className="font-ac-mono text-ac-text">uninstall</span> to confirm
+              {tx("settings.advanced.typeToConfirm", { word: <span className="font-ac-mono text-ac-text">{UNINSTALL_WORD}</span> })}
             </span>
-            <TextInput mono placeholder="uninstall" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+            <TextInput mono placeholder={UNINSTALL_WORD} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
           </label>
           <Button
             size="sm"
@@ -95,7 +100,7 @@ export function AdvancedSettings() {
             onClick={() => void uninstall()}
             className="self-end"
           >
-            <Trash2 /> Uninstall Agent Switch
+            <Trash2 /> {t("settings.advanced.uninstall")}
           </Button>
         </SettingRow>
       </SettingGroup>

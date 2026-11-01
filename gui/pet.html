@@ -72,6 +72,9 @@
         padding: 5px 9px;
         border-radius: 10px;
         line-height: 1.35;
+        /* Long German compounds, ids and paths wrap inside the 200px column
+           instead of running past the window edge (roadmap 5.3). */
+        overflow-wrap: anywhere;
         /* Per-kind accent on the alignment edge (right-aligned → right edge). */
         --kind-color: rgba(255, 255, 255, 0.18);
       }

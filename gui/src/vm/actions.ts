@@ -34,6 +34,10 @@ export interface Actions {
   restoreSession?(sessionId: string, handle: string): Promise<void>;
   /** Live switch of a running Claude session's account (macOS, ADR-003). */
   rebind?(sessionId: string, targetAccountId: string): Promise<void>;
+  /** Arm a live switch for when the session's turn ends (D3). */
+  armRebind?(sessionId: string, targetAccountId: string): Promise<void>;
+  /** Drop a session's armed switch. */
+  cancelArm?(sessionId: string): Promise<void>;
   openApp?(appId: string, accountId: string): Promise<void>;
   /** Create or remove the account's Dock/Spotlight launcher for an app (macOS). */
   setLauncher?(appId: string, accountId: string, on: boolean): Promise<void>;
@@ -136,6 +140,13 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
     rebind: thenReload(async (id: string, target: string) => {
       const p = session(id);
       await ipc.rebindTo(splitAccountId(target)[1], p.profile);
+    }),
+    armRebind: thenReload(async (id: string, target: string) => {
+      const p = session(id);
+      await ipc.armRebind(splitAccountId(target)[1], p.profile, p.sessionId);
+    }),
+    cancelArm: thenReload(async (id: string) => {
+      await ipc.cancelArm(session(id).profile);
     }),
     openApp: (appId: string, id: string) => ipc.openApp(appId, splitAccountId(id)[1]),
     setLauncher: thenReload((appId: string, id: string, on: boolean) => ipc.setLauncher(appId, splitAccountId(id)[1], on)),

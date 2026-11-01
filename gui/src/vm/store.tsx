@@ -5,6 +5,7 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { t } from "../i18n/index.js";
 import type { Actions } from "./actions.js";
 import type { ViewModel } from "./types.js";
 
@@ -96,6 +97,8 @@ const TOAST_MS = 6000;
 const MAX_TOASTS = 3;
 const CLOCK_MS = 30_000;
 
+/** The English of the busy toast (tests compare against it); shown through
+ *  `t("vm.store.terminalBusy")` in the live language. */
 export const TERMINAL_BUSY_TOAST = "A command is running in the terminal — close it first";
 
 export interface ASProviderProps {
@@ -172,7 +175,7 @@ export function ASProvider({
   /** True (and toasts) when a running terminal holds the overlay slot. */
   const terminalHolds = useCallback(() => {
     if (overlayRef.current.kind !== "terminal" || !terminalBusy.current) return false;
-    toast({ text: TERMINAL_BUSY_TOAST, tone: "warn" });
+    toast({ text: t("vm.store.terminalBusy"), tone: "warn" });
     return true;
   }, [toast]);
 

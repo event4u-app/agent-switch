@@ -1,0 +1,22 @@
+[
+  {
+    "profile": "claude/home",
+    "enabled": true,
+    "thresholdPct": 98,
+    "hostWaits": "default"
+  },
+  {
+    "profile": "claude/work",
+    "enabled": true,
+    "thresholdPct": 98,
+    "hostWaits": "default"
+  },
+  {
+    "profile": "codex/work",
+    "enabled": true,
+    "thresholdPct": 98,
+    "hostWaits": null
+  }
+]
+--- stderr ---
+--- exit 0 ---

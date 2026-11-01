@@ -74,6 +74,45 @@ jobs:
       # with the generated icon set and standard Tauri deps.
       - run: cargo check --manifest-path gui/src-tauri/Cargo.toml
 
+  coverage:
+    # Floors live in package.json (root) and gui/vite.config.ts (GUI): the
+    # 2026-11-01 measurement minus 1 point, rounded down. Raise them when
+    # coverage rises; never lower them. Measured on macOS, so it runs there.
+    name: coverage floor (macos · node 22)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run coverage
+      - run: npm ci
+        working-directory: gui
+      - run: npm run coverage
+        working-directory: gui
+
+  audit:
+    name: dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The CLI ships with zero runtime dependencies; this keeps it honest.
+      - run: npm audit --omit=dev
+      # Gates what ships in the app bundle. The GUI's dev tooling (vite, vitest)
+      # carries advisories only fixable by a major upgrade — tracked in the
+      # roadmap, not gated here.
+      - run: npm audit --omit=dev --audit-level=high
+        working-directory: gui
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-audit --locked --version 0.22.2
+      - run: cargo audit
+        working-directory: gui/src-tauri
+
   pets:
     name: pet sprite geometry
     runs-on: ubuntu-latest

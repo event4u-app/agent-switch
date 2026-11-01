@@ -4,6 +4,7 @@
  * Pure — every screen and the tray read the same answers from here.
  */
 
+import { t, type TKey } from "../i18n/index.js";
 import type { Account, MeterTone, Pool, SessionState, Tool, ToolEntry, UsageWindow } from "./types.js";
 
 /** Below the threshold by less than this many points → warn. */
@@ -11,16 +12,27 @@ export const WARN_BAND = 10;
 /** Usage older than this is stale: greyed, ranked below fresh readouts. */
 export const STALE_MS = 10 * 60_000;
 
-export const SESSION_STATE_LABEL: Record<SessionState, string> = {
-  working: "Working",
-  waiting: "Waiting for you",
-  "needs-you": "Needs a decision",
-  "pause-requested": "Pause requested",
-  parked: "Paused at limit",
-  "auth-paused": "Paused · sign-in needed",
-  idle: "Idle",
-  done: "Done",
+/** A record whose values translate on every read (never at import): existing
+ *  `MAP[key]` callers get the live language without changing shape. */
+export function translatedRecord<K extends string>(keys: Record<K, TKey>): Readonly<Record<K, string>> {
+  const out = {} as Record<K, string>;
+  for (const k of Object.keys(keys) as K[]) Object.defineProperty(out, k, { get: () => t(keys[k]), enumerable: true });
+  return out;
+}
+
+export const SESSION_STATE_KEY: Record<SessionState, TKey> = {
+  working: "vm.sessionState.working",
+  waiting: "vm.sessionState.waiting",
+  "needs-you": "vm.sessionState.needsYou",
+  "pause-requested": "vm.sessionState.pauseRequested",
+  parked: "vm.sessionState.parked",
+  "auth-paused": "vm.sessionState.authPaused",
+  idle: "vm.sessionState.idle",
+  done: "vm.sessionState.done",
 };
+
+/** Session state → label in the live language (translated on read). */
+export const SESSION_STATE_LABEL: Readonly<Record<SessionState, string>> = translatedRecord(SESSION_STATE_KEY);
 
 export const TOOL_LABEL: Record<Tool, string> = {
   claude: "Claude",
@@ -100,20 +112,18 @@ export function rankAccounts(accounts: readonly Account[], tool: Tool, now?: num
     const left = headroom(account);
     const rank = !account.disabled && (account.state === "ready" || account.state === "near-limit") ? ++next : null;
     const reason = account.disabled
-      ? "Disabled — turn it back on to use it"
+      ? t("vm.rank.disabled")
       : account.state === "signed-out"
-        ? "Sign-in needed"
+        ? t("vm.rank.signInNeeded")
         : account.state === "wrong-account"
-          ? "Signed in with the wrong account"
+          ? t("vm.rank.wrongAccount")
           : account.state === "checking"
-            ? "Checking sign-in"
+            ? t("vm.rank.checking")
             : account.state === "limited"
-              ? "At its limit"
+              ? t("vm.rank.limited")
               : left == null
-                ? "Usage unknown — not counted as free"
-                : fresh(account)
-                  ? `${left}% left in its binding window`
-                  : `${left}% left · usage is stale`;
+                ? t("vm.rank.unknown")
+                : t(fresh(account) ? "vm.rank.left" : "vm.rank.leftStale", { pct: String(left) });
     return { account, headroom: left, rank, reason };
   });
 }

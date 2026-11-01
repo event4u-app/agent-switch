@@ -1,5 +1,6 @@
 import type { MouseEvent, ReactNode } from "react";
 import { AppWindow, Download, KeyRound, LogIn, Stethoscope, TriangleAlert } from "lucide-react";
+import { t } from "../../i18n/index.js";
 import { cn } from "../../lib/utils.js";
 import { AccountDot } from "../../ui/AccountDot.js";
 import { Badge } from "../../ui/Badge.js";
@@ -11,6 +12,7 @@ import { ago, duration, shortPath } from "../../ui/format.js";
 import { bindingWindow, SESSION_STATE_LABEL, TOOL_LABEL, type RankedAccount } from "../../vm/rules.js";
 import { useAS, type Store } from "../../vm/store.js";
 import type { Account, Attention, AttentionKind, Session, SessionState } from "../../vm/types.js";
+import { tagLabel } from "./account-logic.js";
 
 const ROW_STOP =
   'button:not([data-row-main]), a, input, select, textarea, label, [role="switch"], [role="menuitem"], [role="combobox"], [role="listbox"], [data-row-stop]';
@@ -18,9 +20,9 @@ const ROW_STOP =
 /** Email (with a copy icon), plan and tag under an account's name. */
 export function AccountSubline({ account: a, signedOut }: { account: Account; signedOut: boolean }) {
   if (signedOut && !a.identity) {
-    return <span className="truncate text-[11px] text-ac-muted">{["Not signed in yet", a.label].filter(Boolean).join(" · ")}</span>;
+    return <span className="truncate text-[11px] text-ac-muted">{[t("accounts.rows.notSignedIn"), a.label && tagLabel(a.label)].filter(Boolean).join(" · ")}</span>;
   }
-  const rest = [a.plan, a.label].filter(Boolean).join(" · ");
+  const rest = [a.plan, a.label && tagLabel(a.label)].filter(Boolean).join(" · ");
   return (
     <span className="flex min-w-0 items-center gap-1 text-[11px] text-ac-muted">
       {a.identity && (
@@ -54,25 +56,25 @@ export function AccountStateBadge({ account }: { account: Account }) {
     case "near-limit":
       return (
         <Badge tone="warn" dot>
-          Near limit
+          {t("accounts.state.nearLimit")}
         </Badge>
       );
     case "limited":
       return (
         <Badge tone="alert" dot>
-          At limit
+          {t("accounts.state.atLimit")}
         </Badge>
       );
     case "signed-out":
-      return <Badge tone="neutral">Sign-in needed</Badge>;
+      return <Badge tone="neutral">{t("accounts.state.signInNeeded")}</Badge>;
     case "wrong-account":
       return (
         <Badge tone="alert" dot>
-          Wrong account
+          {t("accounts.state.wrongAccount")}
         </Badge>
       );
     case "checking":
-      return <Badge tone="neutral">Checking sign-in</Badge>;
+      return <Badge tone="neutral">{t("accounts.state.checking")}</Badge>;
     default:
       return null;
   }
@@ -113,7 +115,7 @@ export function CompactAccountRow({
           {nextIn || hasStateBadge(a) ? (
             <span className="mt-1 flex min-w-0 items-center gap-1.5">
               <AccountStateBadge account={a} />
-              {nextIn && <Badge tone="info">Next in {nextIn}</Badge>}
+              {nextIn && <Badge tone="info">{t("accounts.badge.nextIn", { pool: nextIn })}</Badge>}
             </span>
           ) : (
             <AccountSubline account={a} signedOut={signedOut} />
@@ -122,13 +124,13 @@ export function CompactAccountRow({
       </button>
       <div>
         {signedOut ? (
-          <span className="text-[11px] text-ac-faint">{a.windows.length ? "Waits for sign-in" : "No usage yet"}</span>
+          <span className="text-[11px] text-ac-faint">{a.windows.length ? t("accounts.rows.waitsForSignIn") : t("accounts.rows.noUsageYet")}</span>
         ) : (
           <CapacityMeter window={bindingWindow(a.windows)} threshold={a.threshold} checkedAt={a.checkedAt} now={s.now} compact />
         )}
       </div>
       {app && (
-        <IconButton label={`Open ${app.name} as ${a.name}`} onClick={app.onOpen}>
+        <IconButton label={t("accounts.rows.openAppAs", { app: app.name, name: a.name })} onClick={app.onOpen}>
           <AppWindow />
         </IconButton>
       )}
@@ -143,11 +145,11 @@ const SESSION_GRID = "md:grid-cols-[minmax(0,1.3fr)_minmax(140px,0.8fr)_64px_84p
 export function SessionColumns() {
   return (
     <div className={cn("hidden gap-x-4 px-3 pb-1 md:grid", SESSION_GRID)}>
-      <span className="ac-caps pl-5">Session</span>
-      <span className="ac-caps">Runs on</span>
-      <span className="ac-caps text-right">Context</span>
-      <span className="ac-caps text-right">Time</span>
-      <span className="ac-caps w-[68px] text-right">&nbsp;</span>
+      <span className="ac-caps pl-5">{t("accounts.rows.colSession")}</span>
+      <span className="ac-caps">{t("accounts.rows.colRunsOn")}</span>
+      <span className="ac-caps text-right">{t("accounts.rows.colContext")}</span>
+      <span className="ac-caps text-right">{t("accounts.rows.colTime")}</span>
+      <span className="ac-caps w-[68px] text-right">{"\u00a0"}</span>
     </div>
   );
 }
@@ -176,7 +178,7 @@ export function SessionRow({ session: e, compact }: { session: Session; compact?
         <span className="flex min-w-0 flex-col">
           <span className="flex min-w-0 items-center gap-2">
             <span className="truncate text-[13px] font-medium text-ac-text">{e.project}</span>
-            {e.surface === "desktop-app" && <Badge>Desktop</Badge>}
+            {e.surface === "desktop-app" && <Badge>{t("accounts.rows.desktop")}</Badge>}
           </span>
           <span className="truncate text-[11px] text-ac-muted">
             {SECONDARY_STATES.has(e.state) && (
@@ -187,6 +189,11 @@ export function SessionRow({ session: e, compact }: { session: Session; compact?
                 )}
               >
                 {SESSION_STATE_LABEL[e.state]} ·{" "}
+              </span>
+            )}
+            {e.armedSwitch && (
+              <span className="font-medium text-ac-brand-text">
+                {t("accounts.rows.switchesTo", { name: s.accountById(e.armedSwitch.target)?.name ?? t("accounts.rows.anotherAccount") })}{" · "}
               </span>
             )}
             {e.title}
@@ -200,7 +207,7 @@ export function SessionRow({ session: e, compact }: { session: Session; compact?
           {TOOL_LABEL[e.tool]} · {account?.name ?? "?"}
         </span>
       </span>
-      <span className={cn("hidden text-right font-ac-mono text-[11px] tabular-nums", !compact && "md:block", ctxTone)} title="Context window used">
+      <span className={cn("hidden text-right font-ac-mono text-[11px] tabular-nums", !compact && "md:block", ctxTone)} title={t("accounts.rows.contextTitle")}>
         {e.contextPct == null ? "—" : `${e.contextPct}%`}
       </span>
       <span className="hidden text-right text-[11px] text-ac-faint md:block" title={e.cwd ? shortPath(e.cwd) : undefined}>
@@ -209,11 +216,11 @@ export function SessionRow({ session: e, compact }: { session: Session; compact?
       <div className="flex min-w-[68px] items-center justify-end gap-1">
         {e.state === "needs-you" ? (
           <Button size="sm" variant="primary" onClick={() => decide(s, e)}>
-            Decide
+            {t("accounts.rows.decide")}
           </Button>
         ) : e.state === "auth-paused" ? (
           <Button size="sm" variant="primary" onClick={() => s.open({ kind: "reauth", accountId: e.accountId })}>
-            Sign in
+            {t("accounts.action.signIn")}
           </Button>
         ) : null}
       </div>
@@ -262,9 +269,9 @@ export function AttentionRow({ item }: { item: Attention }) {
             size="sm"
             variant="ghost"
             onClick={() => s.update((vm) => ({ attention: vm.attention.filter((a) => a.id !== item.id) }))}
-            title="Remind me later — once"
+            title={t("accounts.rows.laterTitle")}
           >
-            Later
+            {t("accounts.action.later")}
           </Button>
         )}
         <Button size="sm" variant="primary" className="min-w-[72px]" onClick={run}>

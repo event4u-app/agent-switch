@@ -23,10 +23,10 @@ import {
   currentMonitor,
   getCurrentWindow,
 } from "@tauri-apps/api/window";
+import { syncLanguageFromStore, t, type TKey } from "./i18n/index.js";
 import type { NotificationKind } from "./notifications.js";
 import {
   BUBBLE_DURATION_MS,
-  BUBBLE_HINT,
   FRAME_H,
   FRAME_W,
   KIND_TO_REACTION,
@@ -188,6 +188,15 @@ function resumeAutoHide(): void {
   }
 }
 
+/** The action hint after an actionable bubble (pet/model's BUBBLE_HINT, translated). */
+const BUBBLE_HINT_KEY: Record<BubbleAction, TKey> = {
+  switch: "pet.hint.switch",
+  updates: "pet.hint.update",
+  ecosystem: "pet.hint.update",
+  tooling: "pet.hint.update",
+  "pet-settings": "pet.hint.settings",
+};
+
 function showBubble(kind: NotificationKind, text: string, action: BubbleAction | null) {
   if (!getPetBubbles()) return;
   if (bubbleTimer) clearTimeout(bubbleTimer);
@@ -195,7 +204,7 @@ function showBubble(kind: NotificationKind, text: string, action: BubbleAction |
   bubble.dataset.kind = kind; // per-kind color accent on the alignment edge
   bubble.classList.add("show");
   bubble.classList.toggle("actionable", action != null);
-  bubble.dataset.hint = action ? ` → ${BUBBLE_HINT[action]}` : "";
+  bubble.dataset.hint = action ? ` → ${t(BUBBLE_HINT_KEY[action])}` : "";
   bubble.onclick = action
     ? () => {
         hideBubble();
@@ -485,6 +494,7 @@ document.addEventListener("contextmenu", (e) => e.preventDefault());
 /* ---- settings apply live (cross-window storage event) ---- */
 
 window.addEventListener("storage", () => {
+  syncLanguageFromStore();
   void applySize();
   paint(currentReaction, currentReaction === "idle" ? "infinite" : TRANSIENT_LOOPS);
 });

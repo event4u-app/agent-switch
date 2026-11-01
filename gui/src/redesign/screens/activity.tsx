@@ -18,6 +18,7 @@ import {
   TriangleAlert,
   Wrench,
 } from "lucide-react";
+import { t } from "../../i18n/index.js";
 import { cn } from "../../lib/utils.js";
 import { AccountDot } from "../../ui/AccountDot.js";
 import { Card, EmptyState } from "../../ui/Card.js";
@@ -83,16 +84,16 @@ export function Activity() {
   const rows = filterActivity(s.activity, filter);
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="What happened?" sub="Starts, bindings, pauses, sign-ins and repairs — with the reason for each." />
+      <PageHeader title={t("sessions.activity.title")} sub={t("sessions.activity.sub")} />
       <Segmented
-        label="Show"
+        label={t("sessions.activity.show")}
         value={filter}
         onChange={setFilter}
         options={[
-          { value: "all", label: "All" },
-          { value: "sessions", label: "Sessions" },
-          { value: "accounts", label: "Accounts" },
-          { value: "system", label: "System" },
+          { value: "all", label: t("common.all") },
+          { value: "sessions", label: t("sessions.activity.sessions") },
+          { value: "accounts", label: t("sessions.activity.accounts") },
+          { value: "system", label: t("sessions.activity.system") },
         ]}
       />
       {rows.length ? (
@@ -114,7 +115,7 @@ export function Activity() {
                     <span className="flex items-center gap-2 text-[13px] text-ac-text">
                       {a ? <AccountDot color={a.color} size={8} /> : <span className="w-2 shrink-0" aria-hidden />}
                       <span className="truncate">{o.text}</span>
-                      {o.ok === false && <span className="shrink-0 text-[11px] font-medium text-ac-alert-text">Failed</span>}
+                      {o.ok === false && <span className="shrink-0 text-[11px] font-medium text-ac-alert-text">{t("sessions.activity.failed")}</span>}
                     </span>
                     {o.detail && <span className="mt-0.5 block truncate text-[11px] text-ac-muted">{o.detail}</span>}
                   </span>
@@ -126,8 +127,8 @@ export function Activity() {
         </Card>
       ) : (
         <EmptyState
-          title={filter === "all" ? "Nothing recorded yet." : "Nothing of this kind recorded yet."}
-          detail="Switches, sign-ins, resets, pools and updates show up here with the reason for each."
+          title={filter === "all" ? t("sessions.activity.empty") : t("sessions.activity.emptyKind")}
+          detail={t("sessions.activity.emptyDetail")}
         />
       )}
     </div>

@@ -271,6 +271,27 @@ export async function rebindTo(account: string, profile: string): Promise<void> 
   await runCli(rebindArgs(account, profile));
 }
 
+/** Args for `rebind <account> --when-idle --profile <running> --session <id>` —
+ *  ARM a live switch for the end of the session's current turn (D3). */
+export function armRebindArgs(account: string, profile: string, sessionId: string): string[] {
+  return ["rebind", account, "--when-idle", "--profile", profile, "--session", sessionId];
+}
+
+/** Arm a switch: only ever on an explicit confirmed click. The daemon runs the
+ *  ordinary `rebind` (all guards) at the next busy → idle edge. */
+export async function armRebind(account: string, profile: string, sessionId: string): Promise<void> {
+  await runCli(armRebindArgs(account, profile, sessionId));
+}
+
+/** Args for `rebind --cancel --profile <p>` — drop an armed switch. */
+export function cancelArmArgs(profile: string): string[] {
+  return ["rebind", "--cancel", "--profile", profile];
+}
+
+export async function cancelArm(profile: string): Promise<void> {
+  await runCli(cancelArmArgs(profile));
+}
+
 /** Clear the active profile for a provider (no profile active afterwards). */
 export async function deactivateProfile(provider: ProviderId): Promise<void> {
   await runCli(["deactivate", "--provider", provider]);

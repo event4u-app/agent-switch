@@ -36,6 +36,8 @@ const VALUE_FLAGS = new Set([
   "reason",
   "limit",
   "after-pid",
+  "format",
+  "session",
 ]);
 
 export interface ParsedArgs {

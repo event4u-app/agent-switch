@@ -8,7 +8,7 @@ Every `agent-switch` command is listed below, grouped by task. Use it as a looku
 ## Global conventions
 
 - **Provider defaults to `claude`.** Target another provider with `--provider codex` or `--provider antigravity`.
-- **Value-flags consume the next token:** `provider`, `shell`, `source`, `threshold`, `to`, `from`, `recent`, `kind`, `title`, `message`, `surface`, `tag`, `ack`, `brief`.
+- **Value-flags consume the next token:** `provider`, `shell`, `source`, `threshold`, `to`, `from`, `recent`, `kind`, `title`, `message`, `surface`, `tag`, `ack`, `brief`, `format`.
 - **`run` is special.** Everything after the profile name passes straight through to the provider binary — see [Running / switching context](#running--switching-context).
 
 ```bash
@@ -106,7 +106,8 @@ you use `eval "$(agent-switch shellenv)"`) after upgrading.
 
 | Command | Args / flags | What it does |
 | --- | --- | --- |
-| `list` / `ls` | `[--provider P] [--json]` | List profiles grouped by provider, active marked `*`, with live-session count. `--json` is the GUI contract (no usage). |
+| `list` / `ls` | `[--provider P] [--json] [--format cswap-v1]` | List profiles grouped by provider, active marked `*`, with live-session count. `--json` is the GUI contract (no usage). `--format cswap-v1` prints the Claude profiles in the claude-swap list schema v1 instead — see below. |
+| `--list --json` | — | The Claude profiles in the claude-swap list schema v1 that CodexBar and ccdeck read: stable account numbers, email, active/disabled, cached 5-hour and 7-day usage with `usageStatus` `ok`/`stale`/`unavailable`. Read-only (`supportsAccountSwitching: false`), cache only — no network, no token. Errors are `{"schemaVersion":1,"error":{…}}` with a non-zero exit. See [Accounts in CodexBar / ccdeck](/agent-switch/guides/codexbar-ccdeck/). |
 | `status [name]` | `[--provider P] [--json]` | Identity, Claude/Codex usage, and the worst live-session context. `--json` returns the active profile only. |
 | `current` | `[--provider P]` | Show the active profile(s). |
 | `whoami [name]` | `[--provider P]` | Show a profile's account identity. |
@@ -132,6 +133,8 @@ performs the refresh itself.
 | `sessions rm <id>` | `[--provider] [--from] [--purge] [--yes] [--ack <id>] [--json]` | Delete a session (Claude trash-move; `--purge` hard-deletes; Codex native). `--yes` is mandatory and the command is live-guarded. |
 | `sessions restore <handle>` | `[--provider codex] [--from <profile>]` | Undo a delete. |
 | `takeover <id> --to <profile>` | `[--provider] [--from] [--keep-source] [--in-place] [--print-only] [--force] [--json]` | Move a session to another profile and resume. Move-by-default; `--keep-source` forks. Codex is move-only. A Claude Desktop session moves into the target's Desktop window. |
+| `rebind <account> --when-idle` | `[--profile <p>] [--session <id>]` | Arm a live switch for when the session's current turn ends (macOS, Claude). Nothing switches at arm time: the background service watches Claude Code's registry and, on the session's next `busy → idle` edge, runs the ordinary `rebind` with all its guards — once. A refused guard drops the arm and says why in a notification. The arm expires unused after 30 minutes. Refused for a session Claude Code's registry does not report a state for (`liveSource: "cwd"`); with several running sessions on the profile, `--session` names the one to wait for. `sessions --json` shows it as `armed: {target, createdAt, expiresAt}`. |
+| `rebind --cancel` | `[--profile <p>]` | Drop the armed switch on that profile, or every armed switch without `--profile`. |
 | `handoff extract <id> --to <target-provider>` | `--from <profile> [--provider] [--print-only] [--json]` | Compose a metadata-only cross-provider brief (lossy, ADR-001). Written as a `0600` file. |
 | `handoff seed --to <profile> --brief <path>` | `[--provider P] [--print-only]` | Open the target agent with a prompt referencing the brief. |
 | `compact <profile>` | `[--clear] [--dry-run] [--force] [--provider]` | Type `/compact` (or `/clear`, `--force`-gated) into the managed tmux pane. Idle-guarded. |
@@ -227,3 +230,4 @@ agent-switch tooling notes --json          # structured blocks, for scripting
 | `picks` | `[--limit N] [--json]` | Every start the shell wrapper resolved (`dir --guard`): the chosen account (or the refusal) and the resolver's reasons. Kept to the newest 500; no prompt or session content. |
 | `uninstall` | `[--force]` | Remove all agent-switch data, keychain entries, and the daemon. Does **not** touch provider installs. |
 | `help` / `--help` / `-h` | — | Show usage. |
+| `--version` / `version` | — | Print the installed version (semver). |

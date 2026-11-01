@@ -139,7 +139,7 @@ export const PET_WELCOME =
  *  newlines collapse to spaces so a log-ish message can't deform the bubble. */
 export function sanitizeBubble(text: string, max = 140): string {
   // eslint-disable-next-line no-control-regex
-  const oneLine = text.replace(/[\u0000-\u001F\u007F]+/g, " ").replace(/\s+/g, " ").trim();
+  const oneLine = text.replace(/[\u0000-\u001F\u007F]+/g, " ").replace(/[^\S\u00a0]+/g, " ").trim(); // keeps no-break spaces ("94\u00a0%")
   return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max - 1)}…`;
 }
 

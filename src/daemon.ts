@@ -32,7 +32,7 @@ import * as path from "node:path";
 import { ROOT, activeFor, configDir, isDisabled, labelFor, listProfiles, readAutoSwitch, readBinaryPath } from "./profiles.js";
 import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
-import { fetchUsage, liveSessionPids, readProfileCredential } from "./api.js";
+import { fetchUsage, liveSessionPids, liveSessions, readProfileCredential } from "./api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, SwitchCandidate, ThresholdState, UsageSnapshot, type Crossing } from "./usage.js";
 import { readCodexUsage } from "./codex-usage.js";
@@ -52,6 +52,9 @@ import {
 import { readEvents, eventFile } from "./hooks.js";
 import { autoContinueState, protectionNotice, readProtection } from "./protection.js";
 import { execFileSync } from "node:child_process";
+import { appendActivity } from "./activity.js";
+import { rebind } from "./rebind.js";
+import { armsFile, watchArmsOnce, type ArmWatchDeps } from "./rebind-arm.js";
 
 /** Append an event to the shared log and, when the operator opted into
  *  daemon-side OS notifications, fire a desktop notification too — marking the
@@ -465,6 +468,43 @@ export function monitorContext(provider: ProviderId, name: string, state: Daemon
   }
 }
 
+// ---------- armed switches (D3) ----------
+
+/** How often the daemon reads the registry while a switch is armed. Local file
+ *  reads only; a tick with no arm file returns at once. */
+export const ARM_WATCH_MS = 2_000;
+
+/** The live wiring for {@link watchArmsOnce}: the host registry per claude
+ *  profile, the ordinary `rebind` with every guard, and the shared notifier. */
+export function armWatchDeps(log: (l: string) => void): ArmWatchDeps {
+  return {
+    file: armsFile(ROOT),
+    liveSessions: (profile) => liveSessions(configDir("claude", profile)),
+    rebind: (o) => rebind(o),
+    notify: (e) => notify(e),
+    activity: (target, action, reason, ok) => {
+      appendActivity({ kind: "rebind", target, action, reason, ok });
+    },
+    log,
+  };
+}
+
+/** Watch armed switches on a short timer, one tick at a time. Returns a stop function. */
+export function startArmWatcher(deps: ArmWatchDeps, everyMs = ARM_WATCH_MS): () => void {
+  let busy = false;
+  const timer = setInterval(() => {
+    if (busy || !fs.existsSync(deps.file)) return;
+    busy = true;
+    watchArmsOnce(deps)
+      .catch((err: any) => deps.log(`arm watch error: ${String(err?.message ?? err)}`))
+      .finally(() => {
+        busy = false;
+      });
+  }, everyMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
 // ---------- the loop ----------
 
 interface RunOptions {
@@ -693,6 +733,7 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
   let cycles = 0;
 
   log(`started (pid ${process.pid}, base interval ${baseInterval}ms).`);
+  const stopArmWatcher = startArmWatcher(armWatchDeps(log));
   while (running) {
     try {
       const { failures, attempted } = await pollOnce(state, thresholds, notifiedReset, backoff, baseInterval, log);
@@ -712,5 +753,6 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
     const jitter = wait * 0.1 * (Math.random() * 2 - 1);
     await new Promise((r) => setTimeout(r, wait + jitter));
   }
+  stopArmWatcher();
   releaseSingleInstance(process.pid);
 }

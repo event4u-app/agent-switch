@@ -1,0 +1,3 @@
+[{"path":"<HOME>/proj","provider":"claude","target":"work","paused":false}]
+--- stderr ---
+--- exit 0 ---

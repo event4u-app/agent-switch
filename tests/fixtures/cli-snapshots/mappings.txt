@@ -1,0 +1,3 @@
+<HOME>/proj -> claude/work
+--- stderr ---
+--- exit 0 ---

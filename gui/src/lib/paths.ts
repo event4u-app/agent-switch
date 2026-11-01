@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { homeDir } from "@tauri-apps/api/path";
+import { t } from "../i18n/index.js";
 
 /** `~` / `~/x` → `<home>` / `<home>/x`; anything else (and an unknown home) unchanged. */
 export function expandHome(path: string, home: string | null): string {
@@ -17,7 +18,7 @@ export function expandHome(path: string, home: string | null): string {
 
 /** Why a typed folder can't be used, or null. */
 export function folderProblem(path: string): string | null {
-  return path.trim().startsWith("-") ? "A folder path can't start with “-”." : null;
+  return path.trim().startsWith("-") ? t("common.path.dash") : null;
 }
 
 export type TypedFolder = { ok: true; path: string } | { ok: false; reason: string };
@@ -25,7 +26,7 @@ export type TypedFolder = { ok: true; path: string } | { ok: false; reason: stri
 /** The folder to send to the CLI for what the user typed. */
 export function typedFolder(raw: string, home: string | null): TypedFolder {
   const path = raw.trim();
-  if (!path) return { ok: false, reason: "Enter a folder path." };
+  if (!path) return { ok: false, reason: t("common.path.empty") };
   const problem = folderProblem(path);
   if (problem) return { ok: false, reason: problem };
   return { ok: true, path: expandHome(path, home) };

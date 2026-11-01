@@ -1,0 +1,3 @@
+{"active":false,"source":"default","profiles":[{"name":"home","shared":false,"prompts":false},{"name":"work","shared":false,"prompts":false}]}
+--- stderr ---
+--- exit 0 ---

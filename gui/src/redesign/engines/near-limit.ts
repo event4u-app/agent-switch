@@ -8,6 +8,7 @@
 import { pickMostHeadroom, type AutoSwitchTag, type ProviderId } from "../../transforms.js";
 import type { Account } from "../../vm/types.js";
 import { notify } from "./bus.js";
+import { noticeEn } from "./notice-text.js";
 
 function maxUse(a: Account): number | null {
   const vals = a.windows.map((w) => w.utilization).filter((u): u is number => typeof u === "number");
@@ -26,13 +27,13 @@ export function nearLimitMessage(accounts: readonly Account[], tool: ProviderId,
     own.filter((a) => a.id !== active.id && (tag === "all" || a.label === tag)).map((a) => ({ name: a.name, max: maxUse(a) })),
   );
   if (!target) return null;
-  const how = tool === "claude" ? "Run `agent-switch rebind` to switch (no automatic switch)." : "Switch manually (no automatic switch).";
-  return `${tool}/${active.name} hit ≥${threshold}% — suggested profile: ${tool}/${target}. ${how}`;
+  const params = { tool, account: active.name, threshold: String(threshold), target };
+  return noticeEn(tool === "claude" ? "engines.notice.limitNearRebind" : "engines.notice.limitNearManual", params);
 }
 
 export async function fireNearLimitIfCrossed(accounts: readonly Account[], tool: ProviderId, threshold: number, tag?: AutoSwitchTag): Promise<boolean> {
   const message = nearLimitMessage(accounts, tool, threshold, tag);
   if (!message) return false;
-  await notify("warning", "Usage limit near", message);
+  await notify("warning", noticeEn("engines.notice.limitNearTitle"), message);
   return true;
 }

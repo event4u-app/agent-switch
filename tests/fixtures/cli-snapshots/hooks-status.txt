@@ -1,0 +1,4 @@
+claude/home: not installed
+claude/work: not installed
+--- stderr ---
+--- exit 0 ---

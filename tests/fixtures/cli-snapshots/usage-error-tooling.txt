@@ -1,0 +1,3 @@
+--- stderr ---
+error: usage: agent-switch tooling [install|upgrade <agent-config|rtk|claude|codex|agy>] [notes [<tool>]] [--json]
+--- exit 1 ---

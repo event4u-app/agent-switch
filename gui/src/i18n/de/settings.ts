@@ -1,0 +1,318 @@
+import type { settings as en } from "../en/settings.js";
+
+/** German copy – `settings` namespace. Informal "Du"; every English key, no extras. */
+export const settings: { readonly [K in keyof typeof en]: string } = {
+  // Shell
+  "settings.shell.title": "Wie soll es sich verhalten?",
+  "settings.shell.groupsNav": "Einstellungsgruppen",
+  "settings.group.general": "Allgemein",
+  "settings.group.signIns": "Anmeldungen",
+  "settings.group.protection": "Schutz",
+  "settings.group.distribution": "Verteilung",
+  "settings.group.notifications": "Benachrichtigungen",
+  "settings.group.pet": "Desktop-Pet",
+  "settings.group.providers": "Anbieter",
+  "settings.group.updates": "Updates",
+  "settings.group.advanced": "Erweitert",
+
+  // General
+  "settings.general.startAtLogin": "Mit dem System starten",
+  "settings.general.startAtLoginDetail": "Startet Agent Switch automatisch bei der Anmeldung am System. Es wartet in der Menüleiste.",
+  "settings.general.startAtLoginFailed":
+    "Konnte nicht beim System registriert werden – versuch es erneut oder prüf die Anmeldeobjekte des Systems.",
+  "settings.general.startAtLoginUnavailable": "Start bei der Anmeldung am System ist nicht verfügbar.",
+  "settings.general.checked": "Geprüft",
+  "settings.general.openOnStart": "Fenster beim Start öffnen",
+  "settings.general.openOnStartDetail": "Aus: Nur das Menüleisten-Symbol erscheint.",
+  "settings.general.openOnStartReason":
+    "Noch nicht einstellbar – Agent Switch startet immer in der Menüleiste; öffne das Fenster von dort.",
+  "settings.general.trayShowDisabled": "Deaktivierte Konten in der Menüleiste zeigen",
+  "settings.general.trayShowDisabledDetail":
+    "Aus (Standard): Das Popover am Menüleisten-Symbol listet nur aktivierte Konten. Die Kontenansicht zeigt immer alle.",
+  "settings.general.minimizeToDock": "Ins Dock minimieren",
+  "settings.general.minimizeToDockDetail":
+    "An: Der gelbe Knopf minimiert das Fenster ins Dock (macOS-Standard). Aus (Standard): Minimieren oder Schließen entfernt Agent Switch aus dem Dock – es bleibt in der Menüleiste und öffnet sich von dort wieder.",
+  "settings.general.appearance": "Erscheinungsbild",
+  "settings.general.appearanceDetail": "System folgt der Hell/Dunkel-Einstellung deines Betriebssystems.",
+  "settings.general.themeLight": "Hell",
+  "settings.general.themeDark": "Dunkel",
+  "settings.general.themeSystem": "System",
+  "settings.general.language": "Sprache",
+  "settings.general.languageDetail": "Folgt deinem System, solange du keine auswählst.",
+  "settings.general.languageSystem": "System",
+  "settings.general.languageEnglish": "English",
+  "settings.general.languageGerman": "Deutsch",
+  "settings.general.usageLimits": "Nutzungslimits",
+  "settings.general.autoRefresh": "Limits automatisch aktualisieren",
+  "settings.general.autoRefreshDetail":
+    "Aktualisiert die Nutzungslimits automatisch im Intervall unten. Wenn aus, nutz „Aktualisieren“ unter Konten.",
+  "settings.general.refreshInterval": "Aktualisierungsintervall",
+  "settings.general.refreshIntervalDetail":
+    "Wie oft die Nutzungslimits aktualisiert werden. Gleichzeitig der Mindestabstand zwischen manuellen Aktualisierungen.",
+  "settings.general.minutes": "{n} Min.",
+  "settings.general.privacy": "Datenschutz",
+  "settings.general.hideSummaries": "Sitzungszusammenfassungen ausblenden",
+  "settings.general.hideSummariesDetail":
+    "Blendet die einzeilige Sitzungszusammenfassung und die Vorschau unter Sitzungen aus (der einzige Sitzungsinhalt, den die App zeigt).",
+  "settings.general.developer": "Entwickler",
+  "settings.general.devMode": "Entwicklermodus",
+  "settings.general.devModeDetail":
+    "Fügt Testhelfer hinzu: 25 Testbenachrichtigungen in der Glocke erzeugen, einen Vorschlag kurz vor dem Limit erzwingen, Pet-Sprechblasen und Posen testen. Nur in Dev-Builds.",
+  "settings.general.devModeReason": "Dies ist ein Release-Build.",
+  "settings.general.support": "Agent Switch unterstützen",
+  "settings.general.supportDetail": "Kostenlos & Open Source – Sterne, Votes und Shares helfen anderen Entwicklern, es zu finden.",
+  "settings.general.starOnGitHub": "Auf GitHub mit Stern markieren",
+  "settings.general.starDetail": "Beendet außerdem die gelegentliche Stern-Erinnerung in der Übersicht.",
+  "settings.general.star": "Stern",
+  "settings.general.voteOnReddit": "Auf Reddit voten",
+  "settings.general.voteDetail": "Ein Upvote oder ein Kommentar zu unserem r/ClaudeCode-Post.",
+  "settings.general.openRedditPost": "Reddit-Post öffnen",
+  "settings.general.share": "Teilen",
+  "settings.general.shareDetail": "TikTok und Instagram haben keinen Teilen-Link – kopier den Text und füg ihn in deinen Post ein.",
+  "settings.general.quitTitle": "Agent Switch beenden",
+  "settings.general.quitDetail": "Laufende Sitzungen laufen weiter; Schutz und Erinnerungen stoppen, bis du es wieder öffnest.",
+  "settings.general.quit": "Beenden",
+
+  // Sign-ins
+  "settings.signIns.keep": "Konten angemeldet halten",
+  "settings.signIns.keepDetail":
+    "Unbenutzte Claude-Konten werden von Claude Code selbst erneuert, bevor sie ablaufen. Nie mit einer Modellanfrage, nie während eine Sitzung dieses Kontos läuft. Braucht den Hintergrunddienst.",
+  "settings.signIns.keepNotCovered": "Codex und Antigravity erneuern ihre Anmeldung nur, wenn du sie nutzt – noch nicht abgedeckt.",
+  "settings.signIns.remind": "Erinnern, bevor eine Anmeldung abläuft",
+  "settings.signIns.remindDetail": "Einmal vorher und noch einmal, wenn sie abgelaufen ist. Erfolgreiche Erneuerungen bleiben still.",
+  "settings.signIns.remindUnavailable": "Noch nicht einstellbar – die CLI verschickt heute keine Ablauf-Erinnerungen.",
+  "settings.signIns.daysBefore_one": "{count} Tag vorher",
+  "settings.signIns.daysBefore_other": "{count} Tage vorher",
+  "settings.signIns.likeClaudeCode": "Wie Claude Code",
+  "settings.signIns.cantPrevent": "Was Agent Switch nicht verhindern kann",
+  "settings.signIns.cantPreventDetail":
+    "Eine Passwortänderung, eine Abmeldung auf einem anderen Gerät, ein Sitzungslimit vom Admin oder ein entzogener Zugriff beenden eine Anmeldung endgültig. Dann bekommst du einen Hinweis und einen einzigen Knopf, der die Anmeldung des Anbieters für genau dieses Konto öffnet. Agent Switch speichert nie Passwörter oder Tokens.",
+
+  // Protection
+  "settings.protection.newUnavailable":
+    "An für jedes neue Konto (98\u00a0%) – hier noch nicht einstellbar; ändere es unten pro Konto.",
+  "settings.protection.autoResumeUnavailable": "Braucht die Schutz-Engine – Agent Switch warnt heute nur an der Schwelle.",
+  "settings.protection.unknownUsageUnavailable":
+    "Heute gibt es keine Warnung, solange die Nutzung unbekannt ist – sie zählt nie als frei, und nichts wird pausiert. Noch nicht einstellbar.",
+  "settings.protection.warnsAt": "Warnt bei {pct}\u00a0% des maßgeblichen Fensters.",
+  "settings.protection.accountOff": "Aus – keine Warnung für dieses Konto.",
+  "settings.protection.notRead": "Schutz konnte nicht gelesen werden (die CLI hat ihn nicht gemeldet).",
+  "settings.protection.warnAt": "{name} warnen bei",
+  "settings.protection.recommended": "Empfohlen",
+  "settings.protection.protectAccount": "{name} schützen",
+  "settings.protection.session": "Sitzungsschutz",
+  "settings.protection.sessionDetail": "Heute nur Warnungen: An der Schwelle bekommst du einen Hinweis – nichts wird pausiert oder gewechselt.",
+  "settings.protection.protectNew": "Neue Konten schützen",
+  "settings.protection.protectNewDetail":
+    "Neue Konten bekommen die Limit-Warnung: einen Hinweis an der Schwelle – nichts wird pausiert oder gewechselt. Jedes Konto kann das selbst ändern.",
+  "settings.protection.continueAfterReset": "Nach dem Reset weitermachen",
+  "settings.protection.continueAfterResetDetail":
+    "Nur wo die App das sicher unterstützt (Claude CLI: natives Auto-Continue). Sonst bekommst du eine Benachrichtigung.",
+  "settings.protection.unknownUsage": "Wenn die Nutzung unbekannt ist",
+  "settings.protection.nearLimit": "Kurz vor dem Limit",
+  "settings.protection.notifyNearLimit": "Kurz vor dem Limit benachrichtigen",
+  "settings.protection.notifyNearLimitDetail":
+    "Benachrichtigt dich und schlägt das Konto mit dem meisten Spielraum vor, wenn eines kurz vor dem Limit ist – wechselt nie automatisch. Ausschalten deaktiviert die Vorschläge unten.",
+  "settings.protection.notifyNearLimitFor": "Kurz vor dem Limit benachrichtigen für {name}",
+  "settings.protection.notifyAtUsage": "Benachrichtigen, wenn das aktive Konto diese Nutzung erreicht.",
+  "settings.protection.needsTwo": "Braucht mindestens 2 {name}-Konten, um zwischen ihnen vorzuschlagen.",
+  "settings.protection.thresholdFor": "Benachrichtigungsschwelle kurz vor dem Limit für {name}",
+  "settings.protection.suggestFrom": "Vorschläge für {name} aus",
+  "settings.protection.suggestFromDetail": "Welche Konten ein Vorschlag nennen darf, nach Tag. Ändert nie den Schutz.",
+  "settings.protection.allAccounts": "Alle Konten",
+  "settings.protection.tagAccounts": "Konten mit Label {tag}",
+
+  // Distribution
+  "settings.distribution.unboundUnavailable":
+    "Noch nicht einstellbar – ohne Projektbindung nutzt ein einfacher Start das Standardkonto.",
+  "settings.distribution.perAccountUnavailable": "Noch nicht einstellbar – die CLI setzt kein Limit für Sitzungen pro Konto.",
+  "settings.distribution.createdPool": "Pool „{tag}“ erstellt.",
+  "settings.distribution.unbound": "Starts ohne Projektbindung",
+  "settings.distribution.unboundDetail": "Projektbindungen haben immer Vorrang. Das hier entscheidet den Rest.",
+  "settings.distribution.mostLeft": "Meiste übrig im Pool",
+  "settings.distribution.defaultAccount": "Standardkonto",
+  "settings.distribution.askMe": "Mich fragen",
+  "settings.distribution.perAccount": "Sitzungen pro Konto",
+  "settings.distribution.perAccountDetail": "Mehrere Sitzungen können sich ein Konto teilen; sie teilen sich dessen Kapazität.",
+  "settings.distribution.noLimit": "Kein Limit",
+  "settings.distribution.upTo": "Bis zu {n}",
+  "settings.distribution.accountsAndPools": "Konten und Pools",
+  "settings.distribution.accountsAndPoolsDetail":
+    "Tags beschreiben ein Konto (Work, Personal, Other). Pools legen fest, welche Konten ein Projekt nutzen darf; ein Konto kann in mehreren Pools sein. Pools addieren nie Anbieter-Limits.",
+  "settings.distribution.projectsAndPools": "Projekte & Pools",
+  "settings.distribution.suggested": "Vorgeschlagen",
+  "settings.distribution.createFromTag": "Pool „{tag}“ aus deinen {tag}-Konten erstellen",
+  "settings.distribution.onlySuggestion": "Nur ein Vorschlag – nichts ändert sich, bis du ihn erstellst.",
+  "settings.distribution.creating": "Wird erstellt …",
+  "settings.distribution.createPool": "Pool erstellen",
+
+  // Notifications
+  "settings.notifications.kindSwitches": "Kontowechsel",
+  "settings.notifications.kindSwitchesHint": "Kontowechsel, die du gemacht hast, und eingelöste Codex-Resets.",
+  "settings.notifications.kindFetch": "Abruffehler",
+  "settings.notifications.kindFetchHint": "Ein Abruf der Nutzungslimits, der nicht geklappt hat.",
+  "settings.notifications.kindThreshold": "Schwelle überschritten",
+  "settings.notifications.kindThresholdHint": "Das aktive Konto überschreitet eine Nutzungsschwelle.",
+  "settings.notifications.kindErrors": "Fehler",
+  "settings.notifications.kindErrorsHint": "Unerwartete Fehler.",
+  "settings.notifications.permGranted": "Erteilt",
+  "settings.notifications.permDenied": "Abgelehnt",
+  "settings.notifications.permDefault": "Noch nicht angefragt",
+  "settings.notifications.permUnavailable": "Nicht verfügbar",
+  "settings.notifications.sessionEventsUnavailable":
+    "Noch nicht einstellbar – für dieses Ereignis gibt es keinen eigenen Schalter; „Claude-Sitzungen überwachen“ oben deckt fertige und wartende Antworten ab.",
+  "settings.notifications.notOnPlatform": "Auf dieser Plattform nicht verfügbar.",
+  "settings.notifications.blockedByOs":
+    "Vom Betriebssystem blockiert – erlaube Benachrichtigungen für Agent Switch in den Systemeinstellungen.",
+  "settings.notifications.desktop": "Desktop-Benachrichtigungen",
+  "settings.notifications.desktopDetail":
+    "Zeigt Systembenachrichtigungen für Hinweise, auch wenn die App geschlossen ist. Wenn aus oder blockiert, erscheinen Hinweise weiterhin in der Glocke und als Toasts im Fenster.",
+  "settings.notifications.osPermission": "Systemberechtigung: {state}",
+  "settings.notifications.onSwitch": "Bei Kontowechsel benachrichtigen",
+  "settings.notifications.onSwitchDetail":
+    "Wenn du ein Konto aktiv machst (Nutzen) oder ausschaltest, wird eine Benachrichtigung erfasst – das Pet reagiert, und eine Desktop-Benachrichtigung erscheint, wenn die an ist.",
+  "settings.notifications.monitor": "Claude-Sitzungen überwachen",
+  "settings.notifications.monitorDetail":
+    "Beobachtet jede Claude-Sitzung und meldet sich, wenn die Antwort fertig ist oder Claude auf dich wartet – praktisch, wenn es in einem Terminal läuft, das du gerade nicht im Blick hast. Installiert zusätzliche, umkehrbare Hooks in die Einstellungen jedes Claude-Kontos; funktioniert, solange diese App offen ist.",
+  "settings.notifications.alertTypes": "Hinweisarten",
+  "settings.notifications.contextAlerts": "Kontext-Hinweise",
+  "settings.notifications.contextAlertsDetail": "Das Kontextfenster einer Sitzung überschreitet eine Schwelle.",
+  "settings.notifications.contextAlertsDetailWith": "Das Kontextfenster einer Sitzung überschreitet eine Schwelle ({list}).",
+  "settings.notifications.sessionsAndSignIns": "Sitzungen und Anmeldungen",
+  "settings.notifications.eventPaused": "Eine Sitzung wurde pausiert",
+  "settings.notifications.eventPausedDetail": "Der Schutz hat sie an einem sicheren Punkt angehalten.",
+  "settings.notifications.eventContinued": "Eine Sitzung lief nach dem Reset weiter",
+  "settings.notifications.eventFinished": "Eine Sitzung ist fertig",
+  "settings.notifications.eventSignIn": "Eine Anmeldung ist nötig oder sieht falsch aus",
+
+  // Desktop pet
+  "settings.pet.testBubble": "Test-Sprechblase {kind} – sieht gut aus?",
+  "settings.pet.testSuggestion": "Nutzungslimit nah – vorgeschlagenes Profil: claude/test",
+  "settings.pet.testUpdate": "Update verfügbar – v9.9.9 (Test)",
+  "settings.pet.testSuggestionLabel": "Wechselvorschlag",
+  "settings.pet.testUpdateLabel": "Update",
+  "settings.pet.testWelcomeLabel": "Willkommen",
+  "settings.pet.enabled": "Desktop-Pet",
+  "settings.pet.enabledDetail": "Ein animierter Begleiter über deinen Fenstern, der auf Benachrichtigungen reagiert. Rein optional.",
+  "settings.pet.pet": "Pet",
+  "settings.pet.petDetail": "Wähl deinen Begleiter.",
+  "settings.pet.whenShows": "Wann es erscheint",
+  "settings.pet.presence": "Präsenz",
+  "settings.pet.presenceDetail":
+    "Erscheint bei einer Benachrichtigung und verschwindet danach wieder (Standard) oder bleibt dauerhaft sichtbar.",
+  "settings.pet.presenceMessages": "Nur bei Nachrichten",
+  "settings.pet.presenceAlways": "Immer sichtbar",
+  "settings.pet.routing": "Benachrichtigungswege",
+  "settings.pet.routingDetail":
+    "Pet + System (Standard), Pet ersetzt Desktop-Benachrichtigungen und Toasts, oder nur Dekoration.",
+  "settings.pet.routingHybrid": "Pet + System",
+  "settings.pet.routingPetOnly": "Nur Pet",
+  "settings.pet.routingOsOnly": "Nur Dekoration",
+  "settings.pet.reactsTo": "Pet reagiert auf",
+  "settings.pet.reactsToDetail":
+    "Unabhängig von den Desktop-Stummschaltungen – das Pet kann Arten abdecken, die du dort stummgeschaltet hast.",
+  "settings.pet.reactsToKind": "Pet reagiert auf {kind}",
+  "settings.pet.look": "Aussehen",
+  "settings.pet.bubbles": "Sprechblasen",
+  "settings.pet.bubblesDetail":
+    "Zeigt den Titel der Benachrichtigung als Sprechblase; eine Blase kurz vor dem Limit öffnet per Klick den Vorschlag.",
+  "settings.pet.bubbleDuration": "Anzeigedauer der Sprechblase",
+  "settings.pet.durationShort": "Kurz",
+  "settings.pet.durationNormal": "Normal",
+  "settings.pet.durationLong": "Lang",
+  "settings.pet.size": "Größe",
+  "settings.pet.sizeDetail": "Wie groß das Pet dargestellt wird.",
+  "settings.pet.sizeSmall": "Klein",
+  "settings.pet.sizeMedium": "Mittel",
+  "settings.pet.sizeLarge": "Groß",
+  "settings.pet.animations": "Animationen",
+  "settings.pet.animationsDetail":
+    "Auto folgt der Einstellung „Bewegung reduzieren“ des Systems; Aus zeigt ein statisches Bild.",
+  "settings.pet.motionAuto": "Auto",
+  "settings.pet.position": "Position",
+  "settings.pet.positionDetail":
+    "Klick und halte das Pet, um es zu ziehen. Zurücksetzen bringt es in die rechte untere Ecke; „Letzte Position“ stellt wieder her, wo es vor der letzten Bewegung war (nochmal drücken schaltet zurück).",
+  "settings.pet.lastPosition": "Letzte Position",
+  "settings.pet.reset": "Zurücksetzen",
+  "settings.pet.lockPosition": "Position sperren",
+  "settings.pet.lockPositionDetail":
+    "Verhindert das Ziehen des Pets (die Zurücksetzen-Knöpfe funktionieren weiter). Ändern sich die Bildschirme – Dock, Abstecken –, richtet sich das Pet so oder so neu aus.",
+  "settings.pet.welcomeNote": "Wird einmal beim allerersten Start gesagt – nie wieder bei der Anmeldung.",
+  "settings.pet.developer": "Entwickler",
+  "settings.pet.stateLabel": "Status-Label",
+  "settings.pet.stateLabelDetail": "Zeigt „Pet · Reaktion“ unter dem Sprite. Nur in Dev-Builds; nie in Produktion.",
+  "settings.pet.bubbleTest": "Sprechblasen-Test",
+  "settings.pet.bubbleTestDetail":
+    "Schickt ein Ereignis jeder Art direkt ans Pet – umgeht das Benachrichtigungsprotokoll und die Reaktionspause.",
+  "settings.pet.pose": "Pose",
+  "settings.pet.poseDetail":
+    "Lässt das Pet eine Spritesheet-Zeile für QA halten – sie läuft in Schleife, bis du eine andere wählst; „idle“ stellt das normale Verhalten wieder her.",
+
+  // Providers
+  "settings.providers.intro":
+    "Aktivier die Anbieter, die du nutzt. Deaktivieren blendet einen aus – deine Konten bleiben erhalten und kommen zurück, wenn du ihn wieder aktivierst. Liegt die CLI eines Anbieters nicht in deinem PATH, verknüpf ihr Binary und du kannst sie trotzdem nutzen.",
+  "settings.providers.planned": "Geplant",
+  "settings.providers.signInPlanned": "Anmelde-Unterstützung ist geplant.",
+  "settings.providers.linked": "Verknüpft: {path}",
+  "settings.providers.installed": "Installiert",
+  "settings.providers.notInstalled": "Nicht installiert – verknüpf das Binary, um ihn zu nutzen",
+  "settings.providers.app": "App",
+  "settings.providers.surfaceSwitch": "{tool} {surface}",
+  "settings.providers.changeLink": "Verknüpfung ändern",
+  "settings.providers.unlink": "Verknüpfung lösen",
+  "settings.providers.linkBinary": "Binary verknüpfen …",
+  "settings.providers.pathTo": "Pfad zu {bin}",
+  "settings.providers.pathPlaceholder": "/vollständiger/pfad/zu/{bin}",
+  "settings.providers.link": "Verknüpfen",
+
+  // Updates
+  "settings.updates.major": "Major",
+  "settings.updates.minor": "Minor",
+  "settings.updates.patch": "Bugfix",
+  "settings.updates.restartFailed": "Neustart fehlgeschlagen: {error}",
+  "settings.updates.restarting": "Startet neu …",
+  "settings.updates.restartNow": "Jetzt neu starten",
+  "settings.updates.updateFailed": "Update fehlgeschlagen: {error}",
+  "settings.updates.unknownError": "unbekannter Fehler",
+  "settings.updates.version": "Version",
+  "settings.updates.current": "Aktuell: {version}",
+  "settings.updates.upToDate": " · du hast die neueste Version.",
+  "settings.updates.noReleases": " · noch keine Releases veröffentlicht.",
+  "settings.updates.checkFailed": " · Prüfung fehlgeschlagen: {error}",
+  "settings.updates.checking": "Prüft …",
+  "settings.updates.checkNow": "Jetzt prüfen",
+  "settings.updates.available": "{tag} verfügbar",
+  "settings.updates.updated":
+    "Auf {tag} aktualisiert – starte Agent Switch neu, um es zu übernehmen. Deine Einstellungen bleiben, wie sie sind.",
+  "settings.updates.updating": "Aktualisiert …",
+  "settings.updates.updateTo": "Update auf {tag}",
+  "settings.updates.releaseNotes": "Release Notes",
+  "settings.updates.automatic": "Automatisch",
+  "settings.updates.automaticUpdates": "Automatische Updates",
+  "settings.updates.automaticUpdatesDetail":
+    "Prüft beim Öffnen und alle 24 Stunden und installiert eine neue Version automatisch (für die unten gewählten Release-Arten). Du wirst informiert, wenn ein Neustart nötig ist.",
+  "settings.updates.installFor": "Automatisch installieren für",
+  "settings.updates.installForDetail":
+    "Entferne den Haken bei einer Art, um nur benachrichtigt zu werden (z. B. Major aus lassen, um große Releases erst zu prüfen).",
+  "settings.updates.autoUpdateKind": "Auto-Update {kind}",
+  "settings.updates.toolsNote": "agent-config, rtk und die Agent-CLIs werden unter Tools aktualisiert.",
+
+  // Advanced
+  "settings.advanced.diagnosticsUnavailable":
+    "Noch nicht verfügbar – die CLI hat keinen Diagnose-Export. Zustand zeigt jede Prüfung.",
+  "settings.advanced.sameAccount": "Gleiches Konto an zwei Orten",
+  "settings.advanced.sameAccountDetail":
+    "Warnen passt für die meisten Setups; Blockieren nur für Anmeldungen, die beim Teilen kaputtgehen.",
+  "settings.advanced.policyNotRead": "Die aktuelle Regel wurde nicht gelesen – wähl eine aus, um sie zu setzen.",
+  "settings.advanced.warn": "Warnen",
+  "settings.advanced.block": "Blockieren",
+  "settings.advanced.diagnostics": "Diagnose",
+  "settings.advanced.diagnosticsDetail": "Ein Bericht ohne Tokens, Cookies oder Projektpfade, zum Anhängen an ein Issue.",
+  "settings.advanced.export": "Exportieren",
+  "settings.advanced.dangerZone": "Gefahrenbereich",
+  "settings.advanced.uninstall": "Agent Switch deinstallieren",
+  "settings.advanced.uninstallDetail":
+    "Entfernt {all} Agent-Switch-Profile, Zugangsdaten, Ordnerzuordnungen und den Hintergrunddienst unter {path}. Das lässt sich nicht rückgängig machen.",
+  "settings.advanced.uninstallAll": "alle",
+  "settings.advanced.typeToConfirm": "Tippe {word} zur Bestätigung",
+};
