@@ -68,7 +68,7 @@ Scores are the review's judgement of read code, not measurements.
 
 | ID | ownership | resolved by | decision | revisit if |
 |---|---|---|---|---|
-| D1 | owner | **open** | Pay for signing: Apple Developer ID (~99 USD/year), optionally Azure Trusted Signing. Without it Phase 1 stops at an own tap with a quarantine caveat plus winget. | the owner declines the cost |
+| D1 | owner | **owner, 2026-11-01: (3) none for now** | npm stays the only install path; signing (~99 USD/year), own tap and winget are parked in `road-to-a-trusted-install.md`. Options were (1) pay for Developer ID, (2) unsigned tap + winget, (3) neither. | the owner wants Gatekeeper-clean installs, the native updater, or a package-manager listing |
 | D2 | reversible-technical | agent | The claude-swap-compatible list is read-only (`supportsAccountSwitching: false`). | the owner wants switching from CodexBar |
 | D3 | owner | **owner, 2026-11-01: (a) build it** | "Switch when this turn ends": the user arms a live switch; it runs at the next idle edge the host reports; never armed automatically. | the owner rejects anything that runs later than the click |
 | D4 | reversible-technical | agent | agent-switch never sets `CLAUDE_CODE_DISABLE_AGENT_VIEW` for the user. If F2 is confirmed: warn, and set it only per profile behind an opt-in. | Anthropic binds the supervisor per config dir |
@@ -106,24 +106,13 @@ Scores are the review's judgement of read code, not measurements.
 - [x] **0.4 Replace D34 in `later/road-to-session-orchestration.md` Phase 4 with a pointer here.** <!-- done: 2026-11-01 — done in the planning commit; Phase 4 line points to step 0.3 -->
       verify: grep → pointer only.
 
-## Phase 1 — An install the OS trusts (F1, needs D1)
+## Phase 1 — An install the OS trusts (F1) — moved
 
-> **Deferred — blocker `signing-cost` (owner, D1) and `package-submission` (owner):**
-> signing needs the paid Apple Developer ID; the tap repo, the `homebrew/cask`
-> and `microsoft/winget-pkgs` submissions are external publications.
-> _Resume when:_ the owner decides D1, or asks for the unsigned tap + winget path.
+> **D1 = (3), owner 2026-11-01:** npm stays the only install path for now; no
+> signing, no tap, no winget. The five steps moved unchanged to
+> [`road-to-a-trusted-install.md`](road-to-a-trusted-install.md).
 
-- [~] **1.1 macOS signing and notarisation in `release.yml`** (Tauri `APPLE_*`
-      secrets, stapled universal `.dmg`; the job fails when a secret is missing).
-      verify: `spctl -a -vv -t install` and `xcrun stapler validate` on the release `.dmg`.
-- [~] **1.2 Windows signing (optional within D1).**
-      verify: `Get-AuthenticodeSignature` → `Valid`, or the SmartScreen note in the release text.
-- [~] **1.3 Homebrew** — own tap `event4u-app/homebrew-tap`; official cask only after 1.1. No `--no-quarantine` advice.
-      verify: `brew install --cask event4u-app/tap/agent-switch` on a clean runner.
-- [~] **1.4 winget** manifest (silent switch, direct `InstallerUrl`, SHA-256), submitted to `microsoft/winget-pkgs`, updated from `release.yml`.
-      verify: `winget install event4u.agent-switch` then `agent-switch --version`.
-- [~] **1.5 README and docs** list brew/winget/npm; `later/road-to-agent-switch-native-updater.md` gets "prerequisite 1 met".
-      verify: `task docs:check` → 0.
+- [-] **1.1–1.5** — moved to `road-to-a-trusted-install.md`.
 
 ## Phase 2 — A readout other tools can show (D2)
 
@@ -279,7 +268,7 @@ Scores are the review's judgement of read code, not measurements.
 
 - [ ] AC-1 — It is recorded whether an Agent View session under a profile bills that profile; if not, doctor warns and a per-profile opt-in exists.
 - [ ] AC-2 — No Antigravity profile keychain has an empty password after its next run.
-- [ ] AC-3 — With D1 paid: Gatekeeper-clean brew install, winget install. Without: tap + winget work and the docs name the extra step.
+- [-] AC-3 — moved to `road-to-a-trusted-install.md` (D1 = 3). With D1 paid: Gatekeeper-clean brew install, winget install. Without: tap + winget work and the docs name the extra step.
 - [x] AC-4 — `agent-switch --list --json` passes the schema-v1 fixture, reads only the cache, < 300 ms, never offers a switch.
 - [x] AC-5 — An armed switch runs once at the next idle edge, expires, or is cancelled; it never runs without an arm.
 - [x] AC-6 — `src/index.ts` < 600 lines with byte-identical help; coverage and audit jobs green. <!-- CI run 41282865393: coverage + audit green -->
