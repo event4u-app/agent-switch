@@ -195,7 +195,7 @@ The integration defines `claude`, `codex` and `agy` wrappers plus `asw`
 | `protection wait on\|off <claude/name>` <Badge text="Claude only" variant="note" /> | At 100%: let Claude Code wait for the reset (`on`) or stop (`off`). |
 | `autoswitch on\|off\|status [--threshold N] [--tag T]` | Limit suggestions: a notification that names the account with the most room. Never switches. Default off. |
 | `reset <name> --provider codex [--yes]` | Use one banked Codex limit reset. Asks first on a terminal. |
-| `keep-signed-in [on\|off\|status]` <Badge text="Claude only" variant="note" /> | Let the background service keep unused Claude logins from running out (default on). |
+| `keep-signed-in [on\|off\|status]` | Let the background service keep unused logins from running out (default on). Each provider's own tool does the refresh; Antigravity on macOS only. |
 
 <Aside>
 `autoswitch` only notifies and suggests. A running session changes account only

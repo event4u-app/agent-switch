@@ -44,8 +44,8 @@ export function cmdOsNotify(sub: string | undefined, json = false): void {
 }
 
 /** `agent-switch keep-signed-in [on|off|status] [--json]` — whether the
- *  service lets Claude Code refresh a lapsed login (token-freshen.ts). Default
- *  on; Claude only — Codex and Antigravity refresh only when their own CLI runs. */
+ *  service has the provider's own CLI refresh a lapsed login (token-freshen.ts,
+ *  login-keepalive.ts). Default on; Antigravity on macOS only. */
 export function cmdKeepSignedIn(sub: string | undefined, json = false): void {
   if (sub === "on" || sub === "off") {
     const on = sub === "on";
@@ -56,7 +56,7 @@ export function cmdKeepSignedIn(sub: string | undefined, json = false): void {
   } else if (sub && sub !== "status") die("usage: agent-switch keep-signed-in [on|off|status] [--json]");
   const enabled = readKeepSignedIn();
   if (json) console.log(JSON.stringify({ enabled }));
-  else console.log(`Keep accounts signed in ${enabled ? "ON" : "OFF"} (Claude accounts; needs the background service).`);
+  else console.log(`Keep accounts signed in ${enabled ? "ON" : "OFF"} (Claude, Codex and Antigravity accounts; needs the background service).`);
 }
 
 /** `agent-switch notifications [clear] [--json]` — list the recent

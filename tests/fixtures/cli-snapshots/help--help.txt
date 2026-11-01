@@ -67,7 +67,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch notifications [clear] [--json]  recent notifications (usage-limit suggestions, fetch failures)
   agent-switch notify --kind K --title T --message M [--json]   record a notification event
   agent-switch os-notify [on|off|status] [--json]   daemon-side OS desktop notifications, Linux/Windows (default off; macOS: the app shows them)
-  agent-switch keep-signed-in [on|off|status] [--json]   let the service keep Claude logins from lapsing (default on)
+  agent-switch keep-signed-in [on|off|status] [--json]   let the service keep unused logins from lapsing (default on)
   agent-switch uninstall [--force]             remove all agent-switch data + daemon
   agent-switch usage history [--provider P] [--profile <name>] [--json]   daemon-recorded usage samples per profile
   agent-switch tooling [--json]                ecosystem tool readout (agent-config, rtk, provider CLIs)

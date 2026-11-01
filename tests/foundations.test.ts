@@ -540,7 +540,11 @@ test("auth-status: who keeps a login fresh", () => {
   assert.equal(AU.keptFreshByFor("claude", on, base), "the agent-switch service (Claude Code's own refresh)");
   assert.equal(AU.keptFreshByFor("claude", { ...on, keepSignedIn: false }, base), "only you, by using it — Keep accounts signed in is off");
   assert.equal(AU.keptFreshByFor("claude", { ...on, serviceInstalled: false }, base), base);
-  assert.equal(AU.keptFreshByFor("codex", on, "codex (x)"), "codex (x)");
+  assert.equal(AU.keptFreshByFor("codex", on, "codex (x)"), "the agent-switch service (Codex's own refresh)");
+  assert.equal(AU.keptFreshByFor("codex", { ...on, keepSignedIn: false }, "codex (x)"), "only you, by using it — Keep accounts signed in is off");
+  assert.equal(AU.keptFreshByFor("codex", on, "not needed (API key)"), "not needed (API key)");
+  assert.equal(AU.keptFreshByFor("antigravity", { ...on, platform: "darwin" }, "agy (x)"), "the agent-switch service (agy's own refresh)");
+  assert.equal(AU.keptFreshByFor("antigravity", { ...on, platform: "linux" }, "agy (x)"), "agy (x)");
 });
 
 test("dir: the stale-usage pool fallback never takes a profile sharing the default login", () => {

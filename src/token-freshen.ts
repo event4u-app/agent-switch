@@ -98,7 +98,7 @@ function attemptStampFile(configDir: string): string {
 /** Cooldown state is a FILE, not a module variable: the GUI reads usage by
  *  spawning a fresh `agent-switch status --json` per profile, so an in-process
  *  map would reset on every read and defeat the floor entirely. */
-function readLastAttemptFile(configDir: string): number {
+export function readLastAttemptFile(configDir: string): number {
   try {
     const n = Number(fs.readFileSync(attemptStampFile(configDir), "utf8").trim());
     return Number.isFinite(n) ? n : 0;
@@ -107,7 +107,7 @@ function readLastAttemptFile(configDir: string): number {
   }
 }
 
-function recordAttemptFile(configDir: string, at: number): void {
+export function recordAttemptFile(configDir: string, at: number): void {
   const file = attemptStampFile(configDir);
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });

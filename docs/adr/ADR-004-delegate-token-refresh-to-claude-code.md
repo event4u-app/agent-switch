@@ -120,11 +120,61 @@ Default on, including for a `state.json` that predates the key, because that is
 what the service already did for every enabled profile (it polls each one at
 least every 5 minutes). Scope stays Claude: Codex and Antigravity have no
 verified equivalent of `claude doctor` — tracked in
-`agents/roadmaps/road-to-keep-signed-in-codex-antigravity.md`.
+`agents/roadmaps/archive/road-to-keep-signed-in-codex-antigravity.md`, and
+closed by the next amendment.
+
+## Amendment (2026-11-01) — Codex and Antigravity
+
+"Keep accounts signed in" now covers Codex everywhere and Antigravity on macOS
+(`src/login-keepalive.ts`). The decision is the same one: the provider's own CLI
+refreshes, under its own lock, into its own store; agent-switch only decides
+when and judges the result by re-reading the store's expiry. Verified on
+2026-11-01:
+
+| Provider | Trigger | Verified on | Evidence |
+|---|---|---|---|
+| Codex | `codex app-server`, then JSON-RPC `account/read { refreshToken: true }` | codex-cli 0.166.0 | `last_refresh` in `auth.json` moved from 2026-10-28 to the run. The protocol documents the flag as "the normal refresh-token flow". |
+| Antigravity | `agy models` | agy 1.1.3 | `token.expiry` in the keychain item moved from 2026-09-01 to the run + 1 h. |
+
+Neither trigger sends a model request: `account/read` reads the account (the
+server lists models on start), and `agy models` lists models.
+
+**Rejected for Codex.** `codex doctor` and `codex login status` do not refresh:
+doctor's WebSocket check uses the stored token as it is and gets a 401.
+`codex app-server` also exits on stdin EOF before it answers, so the request
+keeps stdin open until the reply arrives.
+
+**Refresh-token lifetime.** Both Codex profiles on the test machine had been
+unused since 2026-07-14. After 110 days their refresh was rejected ("Your access
+token could not be refreshed. Please log out and sign in again."), so an unused
+Codex login does lapse and the feature is needed. The Antigravity login, unused
+for 61 days, still refreshed. Neither lifetime was measured more closely,
+because that needs time to pass.
+
+**When it runs.** Codex: once the access token has expired. It lives about 10
+days and Codex refreshes after 8 when it runs, so an expired one means nothing
+has run on the account. Antigravity: 7 days after the access token expired. It
+lives one hour; what lapses is the refresh token after long disuse, so a weekly
+renewal is enough. Both share the 10-minute cooldown with Claude, and the daemon
+checks them once per poll cycle, before the usage reads.
+
+**The session guard.** Neither CLI writes a live-session marker
+(`hasLiveSessionSignal: false`). The guard reads the environment of every
+running `codex` / `agy` process (`ps -E` on macOS, `/proc/<pid>/environ` on
+Linux). A process whose `CODEX_HOME` / `HOME` is the profile counts as a
+session, and so does a process whose environment cannot be read. The other two
+rules of `loginRefreshAllowed` apply unchanged: the setting must be on, and a
+login shared with the default install is never refreshed. Disabled profiles are
+skipped, as they are by the usage poll.
+
+**Antigravity is macOS only** because its login sits in a per-profile macOS
+keychain. Elsewhere its expiry cannot be read, so nothing runs and Settings ›
+Sign-ins says so.
 
 ## References
 
 - `src/token-freshen.ts` — the module this ADR describes.
+- `src/login-keepalive.ts` — the Codex and Antigravity counterpart (2026-11-01 amendment).
 - `docs/adr/ADR-003-narrow-credential-store-read-only-invariant-for-rebind.md` —
   the read-only invariant this decision leaves intact.
 - `src/api.ts` — the read-only OAuth endpoints whose 401 started this.

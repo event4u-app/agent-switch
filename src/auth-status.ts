@@ -32,18 +32,31 @@ export interface AuthStatus {
   detail: string;
 }
 
-/** Who keeps a Claude login fresh: the background service polls (and so
- *  refreshes) every enabled profile while "Keep accounts signed in" is on —
- *  except one sharing the default install's login, which agent-switch never
- *  refreshes. */
+/** An API-key login has nothing to refresh. */
+const API_KEY_FRESHNESS = "not needed (API key)";
+
+/** The provider CLI the service has refresh a login, per provider. */
+const SERVICE_REFRESHER: Record<ProviderId, string> = {
+  claude: "Claude Code's own refresh",
+  codex: "Codex's own refresh",
+  antigravity: "agy's own refresh",
+};
+
+/** Who keeps a login fresh: the background service has the provider's own CLI
+ *  refresh every enabled profile while "Keep accounts signed in" is on
+ *  (token-freshen.ts, login-keepalive.ts) — except one sharing the default
+ *  install's login, which agent-switch never refreshes. Antigravity's login sits
+ *  in a macOS keychain, so it is covered on macOS only. */
 export function keptFreshByFor(
   provider: ProviderId,
-  o: { shared: boolean; serviceInstalled: boolean; keepSignedIn: boolean },
+  o: { shared: boolean; serviceInstalled: boolean; keepSignedIn: boolean; platform?: NodeJS.Platform },
   base: string,
 ): string {
+  if (base === API_KEY_FRESHNESS) return base;
   if (o.shared) return "only you, by using it — it shares its login with the default install";
-  if (provider === "claude" && !o.keepSignedIn) return "only you, by using it — Keep accounts signed in is off";
-  if (provider === "claude" && o.serviceInstalled) return "the agent-switch service (Claude Code's own refresh)";
+  if (provider === "antigravity" && (o.platform ?? process.platform) !== "darwin") return base;
+  if (!o.keepSignedIn) return "only you, by using it — Keep accounts signed in is off";
+  if (o.serviceInstalled) return `the agent-switch service (${SERVICE_REFRESHER[provider]})`;
   return base;
 }
 
@@ -102,7 +115,7 @@ export function claudeAuthStatus(name: string, raw: string | null, lastRefreshMs
 /** Codex `auth.json` (`{ tokens: { refresh_token, … }, last_refresh, OPENAI_API_KEY? }`). */
 /** A JWT's `exp` (epoch ms) from its payload — read without verifying, only to
  *  date it; null when it is not a JWT or carries no exp. */
-function jwtExpMs(token: unknown): number | null {
+export function jwtExpMs(token: unknown): number | null {
   if (typeof token !== "string") return null;
   const payload = token.split(".")[1];
   if (!payload) return null;
@@ -127,7 +140,7 @@ export function codexAuthStatus(name: string, raw: string | null, now: number): 
   }
   const last = typeof auth.last_refresh === "string" && !isNaN(Date.parse(auth.last_refresh)) ? new Date(auth.last_refresh).toISOString() : null;
   if (typeof auth.OPENAI_API_KEY === "string" && auth.OPENAI_API_KEY) {
-    return { ...base, state: "connected", expiresAt: null, lastRefreshAt: last, keptFreshBy: "not needed (API key)", detail: "Signed in with an API key, billed per use." };
+    return { ...base, state: "connected", expiresAt: null, lastRefreshAt: last, keptFreshBy: API_KEY_FRESHNESS, detail: "Signed in with an API key, billed per use." };
   }
   if (typeof auth?.tokens?.refresh_token !== "string" || !auth.tokens.refresh_token) {
     return { ...base, state: "sign-in-needed", expiresAt: null, lastRefreshAt: last, detail: "No refreshable login stored." };
