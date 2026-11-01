@@ -198,3 +198,21 @@ test("fetch failure: a blip is never reported; an outage of 15 minutes is, once,
   assert.match(n!.message, /claude\/a/);
   assert.match(n!.message, /15 min/);
 });
+
+test("thresholdNotice groups an account's crossings into one notice naming the highest per window", () => {
+  const n = D.thresholdNotice("claude/Matze", [
+    { window: "seven_day", threshold: 75, utilization: 99 },
+    { window: "seven_day", threshold: 90, utilization: 99 },
+    { window: "five_hour", threshold: 75, utilization: 80 },
+  ], false);
+  assert.ok(n);
+  assert.equal(n!.key, "threshold:claude/Matze");
+  assert.match(n!.message, /seven_day passed 90% \(now 99%\)/);
+  assert.match(n!.message, /five_hour passed 75% \(now 80%\)/);
+  assert.doesNotMatch(n!.message, /passed 75% \(now 99%\)/, "the lower seven_day threshold is folded into the higher");
+});
+
+test("thresholdNotice is inhibited when session protection already warned for the account", () => {
+  assert.equal(D.thresholdNotice("claude/Matze", [{ window: "seven_day", threshold: 90, utilization: 99 }], true), null);
+  assert.equal(D.thresholdNotice("claude/Matze", [], false), null);
+});
