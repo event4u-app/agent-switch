@@ -181,3 +181,17 @@ export function setAutoContinue(configDir: string, on: boolean): void {
   // writeFileSync follows a symlink, so a shared link stays a link.
   fs.writeFileSync(path.join(configDir, "settings.json"), JSON.stringify({ ...data, [AUTO_CONTINUE_KEY]: on }, null, 2) + "\n", { mode: 0o600 });
 }
+
+/**
+ * Remove `autoContinueAtUsageLimit` so the profile inherits Claude Code's own
+ * default again — `off` is a pinned value, not the absence of one. Writes only
+ * when the key is present; same shared-link and invalid-JSON handling as
+ * `setAutoContinue`.
+ */
+export function clearAutoContinue(configDir: string): void {
+  const { exists, data } = readSettingsFile(configDir);
+  if (data === null) throw new Error(`${path.join(configDir, "settings.json")} is not valid JSON — fix it first, nothing was changed`);
+  if (!exists || !(AUTO_CONTINUE_KEY in data)) return;
+  const { [AUTO_CONTINUE_KEY]: _removed, ...rest } = data;
+  fs.writeFileSync(path.join(configDir, "settings.json"), JSON.stringify(rest, null, 2) + "\n", { mode: 0o600 });
+}

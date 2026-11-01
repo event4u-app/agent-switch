@@ -53,7 +53,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>]   notify + suggest near a usage limit; never switches automatically (default OFF)
   agent-switch reset <profile> --provider codex [--yes]                        redeem one banked Codex rate-limit reset (asks on a terminal)
   agent-switch protection [--json] | protection set <provider/name> [--on|--off] [--threshold N]   per-profile limit warning (default on, 98%)
-  agent-switch protection wait on|off <claude/name>   Claude Code's own auto-continue at the limit (wait for the reset, or stop)
+  agent-switch protection wait on|off|default <claude/name>   Claude Code's own auto-continue at the limit (wait, stop, or Claude's default)
   agent-switch pool [list|create|rename|delete|add|remove|suggest] [--json]    optional groups a folder rule can point at
   agent-switch auth-status [--provider P] [--json]   per-profile login state from the provider's store (no tokens)
   agent-switch activity [--limit N] [--json]   what agent-switch itself did, and why

@@ -54,7 +54,11 @@ and lets you change it per account <Badge text="Claude only" variant="note" />:
 ```bash
 agent-switch protection wait on claude/work    # wait for the reset and continue
 agent-switch protection wait off claude/work   # stop at the limit
+agent-switch protection wait default claude/work   # remove the setting, Claude Code's own default applies
 ```
+
+`off` pins a value; `default` removes it, so the account follows whatever
+Claude Code ships as its default (today that is to wait).
 
 ### Limit suggestions
 

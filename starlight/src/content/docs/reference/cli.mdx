@@ -192,7 +192,7 @@ The integration defines `claude`, `codex` and `agy` wrappers plus `asw`
 | `usage history [--profile <name>]` | Usage samples the background service recorded. |
 | `protection` | Limit protection per account (default on at 98%). |
 | `protection set <provider/name> [--on\|--off] [--threshold N]` | Change one account's limit protection. |
-| `protection wait on\|off <claude/name>` <Badge text="Claude only" variant="note" /> | At 100%: let Claude Code wait for the reset (`on`) or stop (`off`). |
+| `protection wait on\|off\|default <claude/name>` <Badge text="Claude only" variant="note" /> | At 100%: let Claude Code wait for the reset (`on`), stop (`off`), or follow Claude Code's own default (`default`, removes the setting). |
 | `autoswitch on\|off\|status [--threshold N] [--tag T]` | Limit suggestions: a notification that names the account with the most room. Never switches. Default off. |
 | `reset <name> --provider codex [--yes]` | Use one banked Codex limit reset. Asks first on a terminal. |
 | `keep-signed-in [on\|off\|status]` | Let the background service keep unused logins from running out (default on). Each provider's own tool does the refresh; Antigravity on macOS only. |
@@ -214,7 +214,7 @@ Limit protection does two things:
 It pauses nothing. `protection --json` also shows, per Claude account, what
 Claude Code itself does at 100% (`hostWaits`: `on`, `off`, `default` or
 `unknown`). `protection wait` writes Claude Code's `autoContinueAtUsageLimit`
-setting. If several accounts share one `settings.json`, all of them change, and
+setting; `protection wait default` removes it. If several accounts share one `settings.json`, all of them change, and
 the command lists them.
 
 ### `autoswitch`
