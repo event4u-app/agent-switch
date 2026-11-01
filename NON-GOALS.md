@@ -33,9 +33,10 @@ using the vendor's own client.
 
 Aggregating free tiers across providers whose terms prohibit proxy/relay
 use is a ToS minefield that shifts risk onto the user. **Instead:**
-agent-switch pools *your own* accounts — the ones you already pay for
-and are entitled to use — and only switches which one is active, when
-you tell it to.
+agent-switch works with *your own* accounts — the ones you already pay
+for and are entitled to use. It only chooses which of them a new session
+starts on, and it changes a running session's account only when you
+confirm it.
 
 ## No request-level routing
 
@@ -48,11 +49,14 @@ account with the most headroom; on Codex it tells you when a banked reset
 is available but never redeems one. A new session can be placed by a
 folder rule, including a rule that points at a pool you created yourself
 (`agent-switch pool`), which picks the member with the most fresh headroom
-and says why (`agent-switch dir --json`). That pick reads cached usage only
-(the background service refreshes pool members every 5 minutes); with no
-member checked in the last 10 minutes it falls back to the active profile. Own profiles only, no traffic
-touched, and a running session changes its account only when you confirm
-it.
+and says why (`agent-switch dir --json`). Without a folder rule, a new session is balanced across your enabled
+accounts the same way. Both picks read cached usage only (the background
+service refreshes every enabled account every 5 minutes); usage older than
+10 minutes is not trusted. A pool never leaves the pool: with no fresh member
+it still takes a usable member, and it refuses the start when it has none. A
+plain start with no fresh numbers uses your preferred account. Own profiles
+only, no traffic touched, and a running session changes its account only when
+you confirm it.
 
 ## No holding, brokering or forwarding of logins
 
