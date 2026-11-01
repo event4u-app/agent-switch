@@ -1,0 +1,1 @@
+{"generation":"f1b92fea05b60f9d","runtime":{"reader":"runtime lane (compose, Dockerfiles, Terraform, Kubernetes, task files)","completeness":"complete","empty":"no compose file, Dockerfile, Terraform or Kubernetes manifest was found","findings":[],"environments":[],"resources":[],"services":[],"links":[]}}
