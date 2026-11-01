@@ -194,7 +194,10 @@ async function main(): Promise<void> {
     default:
       if (cmd === undefined) return cmdGui();
       usage();
-      process.exit(1);
+      // exitCode, not exit(): the usage text is larger than a pipe buffer, and
+      // exit() would drop the part still queued for a piped stdout.
+      process.exitCode = 1;
+      return;
   }
 }
 
