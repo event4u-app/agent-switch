@@ -18,7 +18,7 @@ import * as path from "node:path";
 
 import { ROOT, ensureRoot } from "./profiles.js";
 import { ProviderId } from "./providers.js";
-import { UsageSnapshot } from "./usage.js";
+import { UsageSnapshot, sameResetCycle } from "./usage.js";
 
 export const PROTECTION_FILE = path.join(ROOT, "protection.json");
 
@@ -118,7 +118,10 @@ export function protectionNotice(
   const hit = snap.windows.find((w) => typeof w.utilization === "number" && w.utilization >= policy.thresholdPct);
   if (!hit) return null;
   const cycle = `${hit.key}@${hit.resetsAt ?? ""}`;
-  if (cycle === lastCycle) return null;
+  if (lastCycle) {
+    const at = lastCycle.indexOf("@");
+    if (lastCycle.slice(0, at) === hit.key && sameResetCycle(lastCycle.slice(at + 1), hit.resetsAt ?? "")) return null;
+  }
   return {
     cycle,
     title: "Session protection: limit almost reached",

@@ -34,7 +34,7 @@ import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
 import { fetchUsage, liveSessionPids, readProfileCredential } from "./api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "./token-freshen.js";
-import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, SwitchCandidate, ThresholdState, UsageSnapshot } from "./usage.js";
+import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, SwitchCandidate, ThresholdState, UsageSnapshot, type Crossing } from "./usage.js";
 import { readCodexUsage } from "./codex-usage.js";
 import { LATEST_FILE, recordHistorySample, writeLatestSnapshot } from "./history.js";
 import { appendNotification, markOsNotified, Notification } from "./notifications.js";
@@ -56,8 +56,9 @@ import { execFileSync } from "node:child_process";
 /** Append an event to the shared log and, when the operator opted into
  *  daemon-side OS notifications, fire a desktop notification too — marking the
  *  record so the GUI does not show it a second time. Deduped events (append
- *  returns null) never OS-notify. */
-function notify(event: Pick<Notification, "kind" | "title" | "message">, opts: { os?: boolean } = {}): void {
+ *  returns null) never OS-notify; a `key` (category + account) mutes repeats for
+ *  NOTIFY_COOLDOWN_MS. */
+function notify(event: Pick<Notification, "kind" | "title" | "message" | "key">, opts: { os?: boolean } = {}): void {
   const created = appendNotification(event);
   if (created && opts.os !== false && readOsNotifications() && osNotify(event.title, event.message)) {
     markOsNotified(created.id);
@@ -84,6 +85,26 @@ export function fetchFailureNotice(
     message: `Could not fetch usage limits for ${key} for ${Math.round((now - sinceMs) / 60_000)} min. Keeping the last known values.`,
     os: false,
   };
+}
+
+/**
+ * One notice for all threshold crossings of an account in a poll (grouping), the
+ * highest threshold per window only, or null. Inhibited when session protection
+ * warned for the same account in this poll — that notice already says it.
+ */
+export function thresholdNotice(
+  target: string,
+  crossings: Crossing[],
+  protectionFired: boolean,
+): { kind: "info"; title: string; message: string; key: string } | null {
+  if (crossings.length === 0 || protectionFired) return null;
+  const top = new Map<string, Crossing>();
+  for (const c of crossings) {
+    const seen = top.get(c.window);
+    if (!seen || c.threshold > seen.threshold) top.set(c.window, c);
+  }
+  const parts = [...top.values()].map((c) => `${c.window} passed ${c.threshold}% (now ${c.utilization}%)`);
+  return { kind: "info", title: "Usage threshold crossed", message: `${target} ${parts.join(", ")}.`, key: `threshold:${target}` };
 }
 
 // Providers the daemon may suggest a switch for on threshold (they expose a
@@ -531,7 +552,7 @@ async function pollProvider(
       const notice = state.notifiedFetchFail[key] ? null : fetchFailureNotice(key, Date.parse(since), Date.now());
       if (notice) {
         state.notifiedFetchFail[key] = true;
-        notify(notice, { os: notice.os });
+        notify({ ...notice, key: `fetch-failed:${key}` }, { os: notice.os });
       }
       continue;
     }
@@ -550,7 +571,7 @@ async function pollProvider(
       log(`protection: ${pNotice.message}`);
       // "info", not "warning": the GUI mutes warnings by default (fetch-failure
       // noise), and a default-on protection notice must actually be seen.
-      notify({ kind: "info", title: pNotice.title, message: pNotice.message });
+      notify({ kind: "info", title: pNotice.title, message: pNotice.message, key: `protection:${key}` });
     }
     recordHistorySample(path.join(profileDir(provider, name), "usage-history.json"), snapshot);
     writeLatestSnapshot(path.join(profileDir(provider, name), LATEST_FILE), snapshot);
@@ -560,12 +581,9 @@ async function pollProvider(
       thresholds.set(`${provider}/${name}`, next);
       for (const c of crossings) {
         log(`threshold: ${provider}/${name} ${c.window} crossed ${c.threshold}% (now ${c.utilization}%)`);
-        notify({
-          kind: "info",
-          title: "Usage threshold crossed",
-          message: `${provider}/${name} ${c.window} passed ${c.threshold}% (now ${c.utilization}%).`,
-        });
       }
+      const tNotice = thresholdNotice(key, crossings, pNotice !== null);
+      if (tNotice) notify(tNotice);
     }
   }
 
@@ -588,7 +606,7 @@ async function pollProvider(
     if (notice) {
       notifiedReset.set(`codex/${active}`, notice.cycle);
       log(`threshold: codex/${active} over ≥${autoSwitch.threshold}% with a banked reset available → notifying (no automatic redeem)`);
-      notify({ kind: "info", title: notice.title, message: notice.message });
+      notify({ kind: "info", title: notice.title, message: notice.message, key: `codex-reset:codex/${active}` });
     }
   }
 
@@ -614,6 +632,7 @@ async function pollProvider(
       kind: "warning",
       title: "Usage limit near",
       message: `${provider}/${active} hit ≥${autoSwitch.threshold}% — suggested profile: ${provider}/${target}. ${how}`,
+      key: `limit-near:${provider}/${active}`,
     });
   }
   return result;

@@ -8,6 +8,10 @@
  * first, capped at MAX_NOTIFICATIONS. Appends deduplicate an identical event
  * within DEDUP_WINDOW_MS so a persistent failure polled every few minutes does
  * not spam the list (and does not re-fire a desktop notification each cycle).
+ * An event carrying a `key` (category + account, e.g. `protection:claude/work`)
+ * is additionally muted for NOTIFY_COOLDOWN_MS after it fired, whatever its
+ * message says and whatever was logged in between — the repeat-interval that
+ * alerting systems apply per alert identity.
  */
 
 import * as fs from "node:fs";
@@ -27,12 +31,16 @@ export interface Notification {
   /** Set when the daemon already fired an OS desktop notification for this
    *  event, so the GUI does not show it a second time. */
   osNotified?: boolean;
+  /** Stable identity (category + account) the cooldown is keyed on. */
+  key?: string;
 }
 
 export const NOTIFICATIONS_FILE = path.join(ROOT, "notifications.json");
 export const MAX_NOTIFICATIONS = 25;
 /** An identical event within this window is dropped instead of re-appended. */
 export const DEDUP_WINDOW_MS = 30 * 60_000;
+/** A keyed event is muted this long after the same key last fired. */
+export const NOTIFY_COOLDOWN_MS = 10 * 60_000;
 
 export function readNotifications(file: string = NOTIFICATIONS_FILE): Notification[] {
   try {
@@ -51,14 +59,15 @@ function writeNotifications(list: Notification[], file: string): void {
 /**
  * Append an event (kept newest-last). Deduplicates a byte-identical
  * kind+title+message against the most recent entry within DEDUP_WINDOW_MS.
- * Returns the created notification, or `null` when it was deduplicated.
+ * Returns the created notification, or `null` when it was deduplicated or its
+ * `key` is still cooling down (any entry with that key within NOTIFY_COOLDOWN_MS).
  *
- * `dedupe: false` skips that collapse — for session-awareness events (Claude
+ * `dedupe: false` skips both — for session-awareness events (Claude
  * finished / is waiting) where each occurrence is a distinct moment the user
  * wants surfaced, so a solo session's repeated turns are never swallowed.
  */
 export function appendNotification(
-  event: Pick<Notification, "kind" | "title" | "message">,
+  event: Pick<Notification, "kind" | "title" | "message" | "key">,
   now: number = Date.now(),
   file: string = NOTIFICATIONS_FILE,
   dedupe = true,
@@ -75,12 +84,16 @@ export function appendNotification(
   ) {
     return null;
   }
+  if (dedupe && event.key && list.some((n) => n.key === event.key && now - n.ts < NOTIFY_COOLDOWN_MS)) {
+    return null;
+  }
   const created: Notification = {
     id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
     ts: now,
     kind: event.kind,
     title: event.title,
     message: event.message,
+    ...(event.key ? { key: event.key } : {}),
   };
   writeNotifications([...list, created], file);
   return created;

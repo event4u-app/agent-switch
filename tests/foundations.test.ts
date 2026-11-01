@@ -577,3 +577,11 @@ test("dir: on a level tie the account with the most room in its fullest window w
   assert.equal(r.name, "calm", r.why.join("\n"));
   assert.ok(r.why.some((w) => /taking the one with the most room right now, claude\/calm/.test(w)), r.why.join("\n"));
 });
+
+test("protection notice: sub-second resetsAt jitter is the same cycle, not a new warning", () => {
+  const n = PR.protectionNotice("claude/work", snap(99, undefined, "2026-10-31T18:00:00.149976+00:00"), PR.DEFAULT_PROTECTION, undefined);
+  assert.ok(n);
+  for (const jitter of ["2026-10-31T18:00:00+00:00", "2026-10-31T17:59:59.626070+00:00"]) {
+    assert.equal(PR.protectionNotice("claude/work", snap(99, undefined, jitter), PR.DEFAULT_PROTECTION, n!.cycle), null);
+  }
+});

@@ -8,6 +8,7 @@ import {
   maxUtilization,
   pickSwitchTarget,
   windowPace,
+  sameResetCycle,
   type ThresholdState,
   type UsageSnapshot,
   type UsageWindow,
@@ -197,4 +198,28 @@ test("windowPace measures against capturedAt, not the wall clock (stale-safe)", 
   const w = pw(80, 0.3);
   assert.equal(windowPace(w, AT), windowPace(w, AT));
   assert.equal(windowPace(w, AT), "ahead");
+});
+
+test("detectCrossings keeps one cycle across sub-second resetsAt jitter from the API", () => {
+  const win = (u: number, reset: string) => parseUsage({ seven_day: { utilization: u, resets_at: reset } }, AT);
+  let r = detectCrossings(win(99, "2026-10-31T18:00:00.149976+00:00"), {});
+  assert.deepEqual(r.crossings.map((c) => c.threshold), [75, 90]);
+  // Observed live: the same reset reported with and without a fraction, and
+  // even a hair before the full hour — all one cycle, nothing re-fires.
+  for (const jitter of ["2026-10-31T18:00:00+00:00", "2026-10-31T17:59:59.626070+00:00"]) {
+    r = detectCrossings(win(99, jitter), r.state);
+    assert.deepEqual(r.crossings, [], `re-fired on ${jitter}`);
+  }
+  // A genuinely new window (a week later) still re-arms.
+  r = detectCrossings(win(80, "2026-11-07T18:00:00+00:00"), r.state);
+  assert.deepEqual(r.crossings.map((c) => c.threshold), [75]);
+});
+
+test("sameResetCycle: tolerant for timestamps, exact for anything unparsable", () => {
+  assert.equal(sameResetCycle("2026-10-31T18:00:00.149976+00:00", "2026-10-31T18:00:00+00:00"), true);
+  assert.equal(sameResetCycle("2026-10-31T18:00:00Z", "2026-10-31T19:00:00Z"), false);
+  assert.equal(sameResetCycle(null, null), true);
+  assert.equal(sameResetCycle(null, "2026-10-31T18:00:00Z"), false);
+  assert.equal(sameResetCycle("R1", "R1"), true);
+  assert.equal(sameResetCycle("R1", "R2"), false);
 });

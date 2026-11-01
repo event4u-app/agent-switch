@@ -10,6 +10,7 @@ import {
   markOsNotified,
   readNotifications,
   DEDUP_WINDOW_MS,
+  NOTIFY_COOLDOWN_MS,
   MAX_NOTIFICATIONS,
 } from "../src/notifications.js";
 
@@ -102,4 +103,30 @@ test("markOsNotified flags a stored notification (and no-ops on an unknown id)",
   assert.equal(readNotifications(f)[0].osNotified, true);
   markOsNotified("does-not-exist", f); // no throw, no change
   assert.equal(readNotifications(f).length, 1);
+});
+
+test("a keyed event is muted for the cooldown even with other events and a different message in between", () => {
+  const f = tmpFile();
+  const t0 = 1_000_000;
+  assert.ok(appendNotification({ kind: "info", title: "P", message: "99%", key: "protection:claude/A" }, t0, f));
+  assert.ok(appendNotification({ kind: "info", title: "X", message: "other" }, t0 + 1, f));
+  assert.equal(
+    appendNotification({ kind: "info", title: "P", message: "100%", key: "protection:claude/A" }, t0 + NOTIFY_COOLDOWN_MS - 1, f),
+    null,
+    "same key inside the cooldown is muted",
+  );
+  assert.ok(
+    appendNotification({ kind: "info", title: "P", message: "B at 99%", key: "protection:claude/B" }, t0 + 2, f),
+    "another account is not muted",
+  );
+  assert.ok(
+    appendNotification({ kind: "info", title: "P", message: "99%", key: "protection:claude/A" }, t0 + NOTIFY_COOLDOWN_MS, f),
+    "fires again once the cooldown has passed",
+  );
+});
+
+test("dedupe:false bypasses the keyed cooldown too", () => {
+  const f = tmpFile();
+  assert.ok(appendNotification({ kind: "info", title: "S", message: "m", key: "k" }, 1000, f));
+  assert.ok(appendNotification({ kind: "info", title: "S", message: "m", key: "k" }, 1001, f, false));
 });
