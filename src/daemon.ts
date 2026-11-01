@@ -34,6 +34,7 @@ import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
 import { fetchUsage, liveSessionPids, liveSessions, readProfileCredential } from "./api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "./token-freshen.js";
+import { keepAliveSweep } from "./login-keepalive.js";
 import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, SwitchCandidate, ThresholdState, UsageSnapshot, type Crossing } from "./usage.js";
 import { readCodexUsage } from "./codex-usage.js";
 import { LATEST_FILE, recordHistorySample, writeLatestSnapshot } from "./history.js";
@@ -687,6 +688,12 @@ async function pollOnce(
   log: (l: string) => void,
 ): Promise<CycleResult> {
   const total: CycleResult = { failures: 0, attempted: 0 };
+  // Before the usage reads, so a Codex login refreshed here is read with its new token.
+  try {
+    await keepAliveSweep(log);
+  } catch (e) {
+    log(`keep-signed-in: sweep failed (${(e as Error).message})`);
+  }
   for (const provider of AUTO_PROVIDERS) {
     const r = await pollProvider(provider, state, thresholds, notifiedReset, backoff, baseMs, log);
     total.failures += r.failures;
