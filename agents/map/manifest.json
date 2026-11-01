@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "generation": "f1b92fea05b60f9d",
+  "commit": "aa0fb8d8dd79",
+  "built_at_commit": "aa0fb8d8dd79",
+  "state": "fresh",
+  "areas": {
+    "code": {
+      "path": "code/map.json",
+      "source": "code-graph",
+      "freshness": "fresh",
+      "facts": 417
+    },
+    "data": {
+      "path": "data/data.json",
+      "source": "data lane (migrations, dumps, snapshots)",
+      "freshness": "empty",
+      "completeness": "unknown",
+      "facts": 0,
+      "findings": 0,
+      "reason": "no migration, schema file, committed dump or snapshot was found"
+    },
+    "systems": {
+      "path": "systems/systems.json",
+      "source": "systems lane (lockfiles, manifests, version files, images, CI)",
+      "freshness": "fresh",
+      "completeness": "complete",
+      "facts": 1127,
+      "findings": 4
+    },
+    "interfaces": {
+      "path": "interfaces/interfaces.json",
+      "source": "interfaces lane (call sites, contracts, configuration names)",
+      "freshness": "fresh",
+      "completeness": "complete",
+      "facts": 37,
+      "findings": 7
+    },
+    "runtime": {
+      "path": "runtime/runtime.json",
+      "source": "runtime lane (compose, Dockerfiles, Terraform, Kubernetes, task files)",
+      "freshness": "empty",
+      "completeness": "complete",
+      "facts": 0,
+      "findings": 0,
+      "reason": "no compose file, Dockerfile, Terraform or Kubernetes manifest was found"
+    },
+    "delivery": {
+      "path": "delivery/delivery.json",
+      "source": "delivery lane (GitHub Actions, GitLab CI)",
+      "freshness": "fresh",
+      "completeness": "complete",
+      "facts": 71,
+      "findings": 28
+    },
+    "impact": {
+      "path": "code/map.json",
+      "source": "review-risk over the working diff",
+      "freshness": "fresh",
+      "completeness": "complete",
+      "facts": 0,
+      "findings": 0
+    },
+    "agent": {
+      "path": "code/map.json",
+      "source": "code-graph CLI and MCP surface",
+      "freshness": "fresh",
+      "completeness": "complete",
+      "facts": 0,
+      "findings": 0
+    }
+  }
+}
