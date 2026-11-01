@@ -11,6 +11,7 @@ import { settings } from "./settings.js";
 import { tray } from "./tray.js";
 import { engines } from "./engines.js";
 import { vm } from "./vm.js";
+import { pet } from "./pet.js";
 
 export const en = {
   ...common,
@@ -25,4 +26,5 @@ export const en = {
   ...tray,
   ...engines,
   ...vm,
+  ...pet,
 } as const;

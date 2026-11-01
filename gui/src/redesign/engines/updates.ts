@@ -35,6 +35,7 @@ import {
 } from "../../updates.js";
 import type { NotificationKind } from "../../notifications.js";
 import { notify } from "./bus.js";
+import { noticeEn } from "./notice-text.js";
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const HOUR_MS = 60 * 60 * 1000;
@@ -72,12 +73,16 @@ export async function runAutoUpdateCheck(d: AutoUpdateDeps = autoUpdateDeps): Pr
     if (r.ok) d.markNotified(tag);
     await d.notify(
       r.ok ? "success" : "warning",
-      r.ok ? `Updated to ${tag}` : `Update to ${tag} failed`,
-      r.ok ? "Restart agent-switch to apply." : "Open Settings › Updates to retry.",
+      noticeEn(r.ok ? "engines.notice.updatedTitle" : "engines.notice.updateFailedTitle", { tag }),
+      noticeEn(r.ok ? "engines.notice.updatedBody" : "engines.notice.updateFailedBody"),
     );
   } else {
     d.markNotified(tag);
-    await d.notify("info", `Update available — ${tag}`, `Open Settings › Updates to install it${kind ? ` (${kind})` : ""}.`);
+    await d.notify(
+      "info",
+      noticeEn("engines.notice.updateAvailableTitle", { tag }),
+      kind ? noticeEn("engines.notice.updateAvailableBodyKind", { kind }) : noticeEn("engines.notice.updateAvailableBody"),
+    );
   }
 }
 
@@ -135,8 +140,10 @@ export async function checkAgentConfigUpdate(d: AgentConfigWatchDeps = agentConf
   const highlight = newer.length ? firstHighlight(releaseNoteBlocks(newer[0].notes)) : null;
   await d.notify(
     "info",
-    "agent-config update available",
-    `v${current} → v${latest}${highlight ? ` — ${clampText(highlight, 90)}` : ""} · read what's new under Tools → agent-config.`,
+    noticeEn("engines.notice.agentConfigTitle"),
+    highlight
+      ? noticeEn("engines.notice.agentConfigBodyHighlight", { current, latest, highlight: clampText(highlight, 90) })
+      : noticeEn("engines.notice.agentConfigBody", { current, latest }),
   );
 }
 

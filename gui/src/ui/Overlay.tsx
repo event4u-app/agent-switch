@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { usePortalContainer } from "./AcRoot.js";
 import { IconButton } from "./Button.js";
 import { Caps } from "./Typography.js";
+import { t } from "../i18n/index.js";
 
 interface OverlayProps {
   open: boolean;
@@ -52,7 +53,7 @@ function OverlayHeader({ title, kicker, className }: { title: ReactNode; kicker?
         <DialogPrimitive.Title className="text-[17px] font-semibold leading-snug text-ac-text">{title}</DialogPrimitive.Title>
       </div>
       <DialogPrimitive.Close asChild>
-        <IconButton label="Close">
+        <IconButton label={t("common.close")}>
           <X />
         </IconButton>
       </DialogPrimitive.Close>

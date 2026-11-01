@@ -17,6 +17,8 @@ import { Select } from "../../ui/Select.js";
 import { Switch } from "../../ui/Switch.js";
 import { Caps, PageHeader, SectionHeader } from "../../ui/Typography.js";
 import { ago } from "../../ui/format.js";
+import { t, tp, type TKey } from "../../i18n/index.js";
+import { tx } from "../../i18n/react.js";
 import { fetchReleases, isNewer, releasesNewerThan, type ReleaseInfo } from "../../updates.js";
 import { TOOL_LABEL, toolStatus, updateCount, type ToolStatus } from "../../vm/rules.js";
 import { useAS, type Store } from "../../vm/store.js";
@@ -27,12 +29,12 @@ import { rowClick } from "./rows.js";
 // ------------------------------------------------------------------ logic
 
 /** Design `b0`. */
-export const TOOL_STATUS: Record<ToolStatus, { label: string; tone: Tone }> = {
-  update: { label: "Update available", tone: "info" },
-  ok: { label: "Up to date", tone: "ok" },
-  attention: { label: "Needs a look", tone: "warn" },
-  missing: { label: "Not installed", tone: "neutral" },
-  unknown: { label: "Latest unknown", tone: "neutral" },
+export const TOOL_STATUS: Record<ToolStatus, { labelKey: TKey; tone: Tone }> = {
+  update: { labelKey: "tools.status.update", tone: "info" },
+  ok: { labelKey: "tools.status.ok", tone: "ok" },
+  attention: { labelKey: "tools.status.attention", tone: "warn" },
+  missing: { labelKey: "tools.status.missing", tone: "neutral" },
+  unknown: { labelKey: "tools.status.unknown", tone: "neutral" },
 };
 
 /** Design `S0`: attention → update → ok → unknown → missing. */
@@ -62,16 +64,16 @@ export function copyCommand(t: ToolEntry): string | null {
 export function isolatedLabel(toolId: string, accounts: readonly Account[]): string | null {
   const tool = toolId === "agy" ? "antigravity" : toolId;
   const n = accounts.filter((a) => a.tool === tool).length;
-  return n ? `${n} account${n === 1 ? "" : "s"} isolated` : null;
+  return n ? tp("tools.isolated", n) : null;
 }
 
 /** null = no badge: agent-config not being started is its normal state, not a finding. */
 export const AC_STATUS: Record<AgentConfigStatus, { label: (port: number | null) => string; tone: Tone } | null> = {
-  live: { label: (port) => `Running · port ${port}`, tone: "ok" },
+  live: { label: (port) => t("tools.ac.running", { port: String(port) }), tone: "ok" },
   "not-running": null,
-  wedged: { label: () => "Not responding", tone: "alert" },
-  "not-installed": { label: () => "Not installed", tone: "neutral" },
-  unknown: { label: () => "Status unknown", tone: "neutral" },
+  wedged: { label: () => t("tools.ac.notResponding"), tone: "alert" },
+  "not-installed": { label: () => t("tools.ac.notInstalled"), tone: "neutral" },
+  unknown: { label: () => t("tools.ac.statusUnknown"), tone: "neutral" },
 };
 
 /** Design `v0`: agent-config is not on this computer. */
@@ -173,30 +175,32 @@ export function Tools() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Which tools does it look after?"
-        sub="agent-config, rtk and the agent CLIs — installed, current, and where Agent Switch reaches into your apps."
+        title={t("tools.page.title")}
+        sub={t("tools.page.sub")}
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Segmented
-          label="View"
+          label={t("tools.tabs.view")}
           value={s.toolsTab}
           onChange={s.setToolsTab}
           options={[
             {
               value: "tools",
-              label: updates ? `Tools ${s.tools.length} · ${updates} update${updates === 1 ? "" : "s"}` : `Tools ${s.tools.length}`,
+              label: updates
+                ? `${t("tools.tabs.tools", { count: s.tools.length })} · ${tp("tools.tabs.updates", updates)}`
+                : t("tools.tabs.tools", { count: s.tools.length }),
             },
-            { value: "apps", label: `Apps ${s.surfaces.length}` },
+            { value: "apps", label: t("tools.tabs.apps", { count: s.surfaces.length }) },
           ]}
         />
         {s.toolsTab === "tools" && (
           <span className="flex items-center gap-2 text-xs text-ac-faint">
-            {s.toolsCheckedAt != null ? `checked ${ago(s.toolsCheckedAt, s.now)}` : "not checked yet"}
+            {s.toolsCheckedAt != null ? t("tools.checked", { ago: ago(s.toolsCheckedAt, s.now) }) : t("tools.notChecked")}
             <Button size="sm" variant="ghost" onClick={() => {
                 forgetFailedReleaseLookups();
                 void s.act.recheckTools?.();
               }} disabled={!s.act.recheckTools || s.loading}>
-              <RefreshCw /> Check now
+              <RefreshCw /> {t("tools.checkNow")}
             </Button>
           </span>
         )}
@@ -206,6 +210,9 @@ export function Tools() {
   );
 }
 
+/** The agent-config logo monogram, not language. */
+const AC_MONOGRAM = "AC";
+
 /** Design `y0`. */
 function AcTile({ size = 40 }: { size?: number }) {
   return (
@@ -213,16 +220,19 @@ function AcTile({ size = 40 }: { size?: number }) {
       className="inline-flex shrink-0 items-center justify-center rounded-lg border border-ac-brand-line bg-ac-brand-tint font-display tracking-[0.02em] text-ac-brand-text"
       style={{ width: size, height: size, fontSize: size * 0.38 }}
     >
-      AC
+      {AC_MONOGRAM}
     </span>
   );
 }
 
-const AC_BENEFITS = [
-  { icon: Layers, title: "Skills, commands and rules", text: "Compiled into Claude Code, Cursor and 5+ hosts — the same in every session." },
-  { icon: Link2, title: "One setup for all accounts", text: "Agent Switch shares it across your Claude accounts; sign-ins stay apart." },
-  { icon: RefreshCw, title: "Kept current for you", text: "Agent Switch installs it and shows its updates here, with what's new." },
+const AC_BENEFITS: { icon: typeof Layers; titleKey: TKey; textKey: TKey }[] = [
+  { icon: Layers, titleKey: "tools.noAc.b1Title", textKey: "tools.noAc.b1Text" },
+  { icon: Link2, titleKey: "tools.noAc.b2Title", textKey: "tools.noAc.b2Text" },
+  { icon: RefreshCw, titleKey: "tools.noAc.b3Title", textKey: "tools.noAc.b3Text" },
 ];
+
+/** Shown as a command line, never translated. */
+const AC_INSTALL_CMD = "$ agent-switch tooling install agent-config";
 
 /** Design `k0` card variant (artboard 20 NoAC-Tools). */
 export function NoAgentConfigCard() {
@@ -233,33 +243,33 @@ export function NoAgentConfigCard() {
         <AcTile />
         <div className="min-w-[240px] flex-1">
           <p className="text-[15px] font-semibold text-ac-text">
-            Supercharge your AI agents with <span className="whitespace-nowrap">agent-config</span>
+            {tx("tools.noAc.headline", { name: <span className="whitespace-nowrap">agent-config</span> })}
           </p>
-          <p className="mt-1 text-xs text-ac-muted">Free &amp; open source: skills, commands and governed rules — no daemon, no proxy.</p>
+          <p className="mt-1 text-xs text-ac-muted">{t("tools.noAc.sub")}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" onClick={() => openExternal(AGENT_CONFIG_REPO_URL)} title={AGENT_CONFIG_REPO_URL}>
-            <BookOpen /> Read more
+            <BookOpen /> {t("tools.noAc.readMore")}
           </Button>
           <Button size="sm" variant="primary" onClick={() => s.open({ kind: "terminal", toolId: "agent-config", action: "install" })}>
-            <Download /> Install agent-config
+            <Download /> {t("tools.noAc.install")}
           </Button>
         </div>
       </div>
       <div className="flex flex-col gap-3 border-t border-ac-line px-4 py-3">
-        <Caps>What you get with both</Caps>
+        <Caps>{t("tools.noAc.whatYouGet")}</Caps>
         <ul className="grid gap-3 md:grid-cols-3">
-          {AC_BENEFITS.map(({ icon: Icon, title, text }) => (
-            <li key={title} className="flex items-start gap-2.5">
+          {AC_BENEFITS.map(({ icon: Icon, titleKey, textKey }) => (
+            <li key={titleKey} className="flex items-start gap-2.5">
               <Icon className="mt-0.5 size-4 shrink-0 text-ac-brand-text" />
               <span className="min-w-0">
-                <span className="block text-[13px] text-ac-text">{title}</span>
-                <span className="mt-0.5 block text-xs text-ac-muted">{text}</span>
+                <span className="block text-[13px] text-ac-text">{t(titleKey)}</span>
+                <span className="mt-0.5 block text-xs text-ac-muted">{t(textKey)}</span>
               </span>
             </li>
           ))}
         </ul>
-        <p className="font-ac-mono text-[11px] text-ac-faint">$ agent-switch tooling install agent-config</p>
+        <p className="font-ac-mono text-[11px] text-ac-faint">{AC_INSTALL_CMD}</p>
       </div>
     </Card>
   );
@@ -277,7 +287,7 @@ function ReleaseNotesList({ notes }: { notes: ReleaseNote[] }) {
               className="text-[11px] text-ac-muted hover:text-ac-text"
               onClick={() => openExternal(n.url ?? `${AGENT_CONFIG_REPO_URL}/releases`)}
             >
-              Release page ↗
+              {t("tools.release.page")}
             </button>
           </span>
           <ul className="flex flex-col gap-0.5">
@@ -305,12 +315,12 @@ function errorText(e: unknown): string {
 /** Design `vP`: the agent-config card with its shared-setup block. */
 export function AgentConfigCard() {
   const s = useAS();
-  const t = s.agentConfig;
+  const cfg = s.agentConfig;
   const acTool = s.tools.find((x) => x.id === "agent-config");
   const hasUpdate = acTool ? toolStatus(acTool) === "update" : false;
-  const latest = acTool?.latest ?? t.latest;
+  const latest = acTool?.latest ?? cfg.latest;
   const notes = acTool?.notes ?? [];
-  const status = AC_STATUS[t.status];
+  const status = AC_STATUS[cfg.status];
   const claude = s.accounts.filter((a) => a.tool === "claude");
   const def = claude.find((a) => a.isDefault);
 
@@ -345,22 +355,24 @@ export function AgentConfigCard() {
     try {
       await s.act.openAgentConfig?.();
     } catch (e) {
-      setOpenError({ title: "agent-config could not be opened", detail: errorText(e), command: "agent-config ui:serve" });
+      setOpenError({ title: t("tools.ac.openFailed"), detail: errorText(e), command: "agent-config ui:serve" });
     }
   }
 
   function restart() {
     s.open({
       kind: "confirm",
-      title: "Restart agent-config?",
+      title: t("tools.ac.restartTitle"),
       body:
-        t.status === "wedged"
-          ? `agent-config is not responding${t.pid ? ` (pid ${t.pid})` : ""}. Restarting stops that process and starts a fresh one. Its settings and your agents' files are kept.`
-          : "Stops the running agent-config and starts a fresh one. Its settings and your agents' files are kept.",
-      confirm: "Force restart",
-      danger: t.status === "wedged",
+        cfg.status === "wedged"
+          ? cfg.pid
+            ? t("tools.ac.restartBodyWedgedPid", { pid: String(cfg.pid) })
+            : t("tools.ac.restartBodyWedged")
+          : t("tools.ac.restartBody"),
+      confirm: t("tools.ac.forceRestart"),
+      danger: cfg.status === "wedged",
       onConfirm: () => {
-        s.act.restartAgentConfig?.().catch((e) => s.toast({ text: `Restart failed: ${errorText(e)}`, tone: "alert" }));
+        s.act.restartAgentConfig?.().catch((e) => s.toast({ text: t("tools.ac.restartFailed", { error: errorText(e) }), tone: "alert" }));
       },
     });
   }
@@ -382,11 +394,9 @@ export function AgentConfigCard() {
     const name = id === "default" ? "default" : id.slice("claude:".length);
     s.open({
       kind: "confirm",
-      title: "Relink all Claude accounts?",
-      body: `Skills, rules and settings of every Claude account will come from ${
-        id === "default" ? "your global ~/.claude" : `${s.accountById(id)?.name ?? name}`
-      }. Sign-ins stay separate. Files an account has of its own stay untouched.`,
-      confirm: "Relink",
+      title: t("tools.share.relinkTitle"),
+      body: t("tools.share.relinkBody", { source: id === "default" ? t("tools.share.globalSource") : (s.accountById(id)?.name ?? name) }),
+      confirm: t("tools.share.relink"),
       onConfirm: () => {
         setShareSourceFlag(name);
         setSource(name);
@@ -408,58 +418,58 @@ export function AgentConfigCard() {
             <span className="text-[15px] font-semibold text-ac-text">agent-config</span>
             {status && (
               <Badge tone={status.tone} dot>
-                {status.label(t.port)}
+                {status.label(cfg.port)}
               </Badge>
             )}
-            {hasUpdate && <Badge tone="info">{latest} available</Badge>}
+            {hasUpdate && <Badge tone="info">{t("tools.ac.available", { version: latest ?? "" })}</Badge>}
           </div>
           <p className="mt-1 text-xs text-ac-muted">
-            Skills, rules and the knowledge map your agents use · {t.version ?? acTool?.version ?? "version unknown"}
+            {t("tools.ac.sub", { version: cfg.version ?? acTool?.version ?? t("tools.ac.versionUnknown") })}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {hasUpdate && (
             <Button variant="primary" size="sm" onClick={() => s.open({ kind: "terminal", toolId: "agent-config", action: "update" })}>
-              <Download /> Update to {latest}
+              <Download /> {t("tools.ac.updateTo", { version: latest ?? "" })}
             </Button>
           )}
-          <Button size="sm" onClick={() => void openAc()} disabled={t.status !== "live" || !s.act.openAgentConfig}>
-            <MapIcon /> Knowledge map
+          <Button size="sm" onClick={() => void openAc()} disabled={cfg.status !== "live" || !s.act.openAgentConfig}>
+            <MapIcon /> {t("tools.ac.knowledgeMap")}
           </Button>
           <RowMenu
             items={[
               {
                 id: "settings",
-                label: "agent-config settings",
+                label: t("tools.ac.menuSettings"),
                 icon: <Settings2 />,
-                disabled: t.status !== "live" || !s.act.openAgentConfig,
+                disabled: cfg.status !== "live" || !s.act.openAgentConfig,
                 onSelect: () => void openAc(),
               },
               {
                 id: "restart",
-                label: "Restart agent-config …",
+                label: t("tools.ac.menuRestart"),
                 icon: <RotateCw />,
                 // The backend's force restart is for a wedged server only.
-                disabled: t.status !== "wedged" || !s.act.restartAgentConfig,
+                disabled: cfg.status !== "wedged" || !s.act.restartAgentConfig,
                 onSelect: restart,
               },
-              { id: "repo", label: "Open the repository", icon: <ExternalLink />, separatorBefore: true, onSelect: () => openExternal(AGENT_CONFIG_REPO_URL) },
+              { id: "repo", label: t("tools.ac.menuRepo"), icon: <ExternalLink />, separatorBefore: true, onSelect: () => openExternal(AGENT_CONFIG_REPO_URL) },
             ]}
             trigger={
-              <IconButton label="More for agent-config">
+              <IconButton label={t("tools.ac.more")}>
                 <MoreHorizontal />
               </IconButton>
             }
           />
         </div>
       </div>
-      {t.status === "wedged" && (
+      {cfg.status === "wedged" && (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ac-line bg-ac-alert-tint px-4 py-3">
           <p className="text-xs text-ac-alert-text">
-            agent-config is not responding{t.pid ? ` (pid ${t.pid})` : ""} — restart it?
+            {cfg.pid ? t("tools.ac.wedgedPid", { pid: String(cfg.pid) }) : t("tools.ac.wedged")}
           </p>
           <Button size="sm" variant="danger" onClick={restart}>
-            Force restart
+            {t("tools.ac.forceRestart")}
           </Button>
         </div>
       )}
@@ -476,34 +486,35 @@ export function AgentConfigCard() {
         <div className="border-t border-ac-line px-4 py-3">
           <div className="mb-2 flex items-center gap-2">
             <BookOpen className="size-3.5 text-ac-muted" />
-            <Caps>What's new</Caps>
+            <Caps>{t("tools.ac.whatsNew")}</Caps>
           </div>
           <ReleaseNotesList notes={notes} />
         </div>
       )}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ac-line px-4 py-3 text-xs">
         <span className="text-ac-muted">
-          Active in{" "}
-          {def ? (
-            <span className="inline-flex items-center gap-1.5 text-ac-text">
-              <AccountDot color={def.color} size={7} /> Claude · {def.name}
-            </span>
-          ) : (
-            <span className="text-ac-text">no Claude account</span>
-          )}
-          {shared && <span> · shared across {sharedAccounts.length}</span>}
+          {tx("tools.share.activeIn", {
+            target: def ? (
+              <span className="inline-flex items-center gap-1.5 text-ac-text">
+                <AccountDot color={def.color} size={7} /> Claude · {def.name}
+              </span>
+            ) : (
+              <span className="text-ac-text">{t("tools.share.noClaudeAccount")}</span>
+            ),
+          })}
+          {shared && <span> · {t("tools.share.sharedAcross", { count: sharedAccounts.length })}</span>}
         </span>
-        {t.status === "live" && (
+        {cfg.status === "live" && (
           <span className="font-ac-mono text-[11px] text-ac-faint">
-            v{t.version ?? "?"} · port {t.port}
+            {t("tools.ac.versionPort", { version: cfg.version ?? "?", port: String(cfg.port) })}
           </span>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-ac-line px-4 py-3">
         <div className="flex min-w-[260px] flex-1 items-center justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[13px] text-ac-text">Share one setup across Claude accounts</p>
-            <p className="mt-0.5 text-xs text-ac-muted">Skills, rules, settings and your prompt history (↑ and Ctrl+R) come from one place; sign-ins stay separate.</p>
+            <p className="text-[13px] text-ac-text">{t("tools.share.title")}</p>
+            <p className="mt-0.5 text-xs text-ac-muted">{t("tools.share.sub")}</p>
             {shared && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {sharedAccounts.map((id) => {
@@ -518,7 +529,7 @@ export function AgentConfigCard() {
             )}
           </div>
           <Switch
-            label="Share one setup across Claude accounts"
+            label={t("tools.share.title")}
             checked={shared}
             disabled={share == null || !s.act.setSharedSetup}
             onChange={toggleShare}
@@ -527,11 +538,11 @@ export function AgentConfigCard() {
         {shared && (
           <div className="flex w-full flex-col gap-1.5 md:w-[260px]">
             <Select
-              label="Setup comes from"
+              label={t("tools.share.sourceLabel")}
               value={sourceId}
               onChange={chooseSource}
               options={[
-                { value: "default", label: "Default (~/.claude)", hint: "Your global Claude setup" },
+                { value: "default", label: t("tools.share.defaultOption"), hint: t("tools.share.defaultHint") },
                 ...claude.map((a) => ({ value: a.id, label: `${TOOL_LABEL[a.tool]} · ${a.name}`, dot: <AccountDot color={a.color} size={8} /> })),
               ]}
             />
@@ -540,7 +551,7 @@ export function AgentConfigCard() {
             </span>
             {source !== "default" && (
               <button type="button" className="w-fit text-[11px] text-ac-muted hover:text-ac-text" onClick={() => chooseSource("default")}>
-                Reset to default
+                {t("tools.share.resetDefault")}
               </button>
             )}
           </div>
@@ -558,7 +569,7 @@ export function ToolList() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const attention = s.tools.filter((t) => toolStatus(t) === "attention").length;
   const updates = updateCount(s.tools);
-  const summary = [attention ? `${attention} need${attention === 1 ? "s" : ""} a look` : null, updates ? `${updates} update${updates === 1 ? "" : "s"}` : null]
+  const summary = [attention ? tp("tools.list.needsLook", attention) : null, updates ? tp("tools.tabs.updates", updates) : null]
     .filter(Boolean)
     .join(" · ");
 
@@ -566,12 +577,12 @@ export function ToolList() {
     <div className="flex flex-col gap-6">
       {agentConfigMissing(s) ? <NoAgentConfigCard /> : <AgentConfigCard />}
       <section className="flex flex-col gap-1">
-        <SectionHeader title="Tools" count={s.tools.length} actions={summary ? <span className="text-[11px] text-ac-muted">{summary}</span> : undefined} />
+        <SectionHeader title={t("tools.list.title")} count={s.tools.length} actions={summary ? <span className="text-[11px] text-ac-muted">{summary}</span> : undefined} />
         <div className="hidden grid-cols-[minmax(0,1fr)_92px_92px_140px] gap-x-4 px-3 pb-1 md:grid">
-          <span className="ac-caps">Tool</span>
-          <span className="ac-caps">Installed</span>
-          <span className="ac-caps">Latest</span>
-          <span className="ac-caps text-right">&nbsp;</span>
+          <span className="ac-caps">{t("tools.list.colTool")}</span>
+          <span className="ac-caps">{t("tools.list.colInstalled")}</span>
+          <span className="ac-caps">{t("tools.list.colLatest")}</span>
+          <span className="ac-caps text-right">{"\u00a0"}</span>
         </div>
         <Card className="p-1">
           <div className="flex flex-col divide-y divide-ac-line">
@@ -594,7 +605,7 @@ export function ToolList() {
                     <span className="flex min-w-0 flex-col">
                       <span className="flex items-center gap-2">
                         <span className="truncate text-[13px] font-medium text-ac-text">{u.name}</span>
-                        {f !== "ok" && <Badge tone={TOOL_STATUS[f].tone}>{TOOL_STATUS[f].label}</Badge>}
+                        {f !== "ok" && <Badge tone={TOOL_STATUS[f].tone}>{t(TOOL_STATUS[f].labelKey)}</Badge>}
                       </span>
                       <span className="truncate text-[11px] text-ac-muted">{sub}</span>
                       {u.present && u.path && f !== "missing" && (
@@ -609,7 +620,7 @@ export function ToolList() {
                           className="mt-1 flex w-fit items-center gap-1 text-[11px] text-ac-info-text hover:underline"
                           aria-expanded={open}
                         >
-                          <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} /> What's new in {notes[0].version}
+                          <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} /> {t("tools.list.whatsNewIn", { version: notes[0].version })}
                         </button>
                       )}
                     </span>
@@ -620,22 +631,22 @@ export function ToolList() {
                     <span className="col-start-2 row-start-1 flex justify-end gap-1 md:col-start-auto md:row-start-auto">
                       {f === "update" && INSTALLABLE_TOOLS.has(u.id) && (
                         <Button size="sm" variant="primary" onClick={() => s.open({ kind: "terminal", toolId: u.id, action: "update" })}>
-                          <Download /> Update
+                          <Download /> {t("tools.list.update")}
                         </Button>
                       )}
                       {f === "missing" && INSTALLABLE_TOOLS.has(u.id) && (
                         <Button size="sm" onClick={() => s.open({ kind: "terminal", toolId: u.id, action: "install" })}>
-                          <Download /> Install
+                          <Download /> {t("tools.list.install")}
                         </Button>
                       )}
                       {f === "ok" && (
                         <span className="inline-flex h-7 items-center gap-1 text-xs text-ac-ok-text">
-                          <Check className="size-3.5" /> Up to date
+                          <Check className="size-3.5" /> {t("tools.status.ok")}
                         </span>
                       )}
                       {cmd && f !== "ok" && (
                         <IconButton
-                          label={copied === u.id ? "Copied" : `Copy: ${cmd}`}
+                          label={copied === u.id ? t("common.copied") : t("tools.list.copyCmd", { command: cmd })}
                           onClick={() => {
                             navigator.clipboard?.writeText(cmd).catch(() => {});
                             setCopied(u.id);
@@ -657,9 +668,8 @@ export function ToolList() {
           </div>
         </Card>
         <p className="px-1 pt-1 text-[11px] text-ac-faint">
-          Install and update run in the built-in terminal, so you see every line. Running sessions keep their version until they restart. If npm says
-          EACCES, your global npm folder isn't writable — the terminal shows the fix.{" "}
-          {s.platform === "mac" ? "Checked on macOS." : s.platform === "windows" ? "Checked on Windows." : "Checked on Linux."}
+          {t("tools.list.footer")}{" "}
+          {t(s.platform === "mac" ? "tools.list.checkedMac" : s.platform === "windows" ? "tools.list.checkedWindows" : "tools.list.checkedLinux")}
         </p>
       </section>
     </div>

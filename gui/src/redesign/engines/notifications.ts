@@ -21,6 +21,7 @@ import { getMutedKinds, getNotifLastRead, getPetEnabled, getPetReactKinds, getPe
 import { noticeFromNotification } from "../../vm/build.js";
 import { useAS, type Toast } from "../../vm/store.js";
 import { onSyncRequest } from "./bus.js";
+import { localizeNotification } from "./notice-text.js";
 
 /** While session monitoring is on, the log is re-read this often so a "Claude
  *  finished / is waiting" hook reaches the pet within seconds. */
@@ -50,9 +51,11 @@ const TOAST_TONE: Record<NotificationKind, NonNullable<Toast["tone"]>> = {
   info: "info",
 };
 
-/** Title plus message: the title alone ("Account switched") drops the detail. */
+/** Title plus message in the live language: the title alone ("Account
+ *  switched") drops the detail. */
 export function noticeText(n: AppNotification): string {
-  return n.message ? `${n.title} — ${n.message}` : n.title;
+  const { title, message } = localizeNotification(n);
+  return message ? `${title} — ${message}` : title;
 }
 
 export function toastFor(n: AppNotification): Omit<Toast, "id"> {
@@ -82,9 +85,15 @@ export async function deliver(fresh: readonly AppNotification[], ctx: FireContex
     if (routing.toPet) sinks.pet(n);
     if (n.osNotified || muted.has(n.kind)) continue;
     if (routing.suppressDesktopAndToast) continue;
-    const shown = ctx.osNotify ? await sinks.desktop(n.title, n.message) : false;
+    const shown = ctx.osNotify ? await sinks.desktop(...desktopText(n)) : false;
     if (!shown) sinks.toast(n);
   }
+}
+
+/** Desktop notification title and body in the live language. */
+function desktopText(n: AppNotification): [string, string] {
+  const { title, message } = localizeNotification(n);
+  return [title, message];
 }
 
 async function readFireContext(): Promise<FireContext> {

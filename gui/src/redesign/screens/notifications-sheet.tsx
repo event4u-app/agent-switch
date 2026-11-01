@@ -1,4 +1,5 @@
 import { Settings2 } from "lucide-react";
+import { getLang, locale, t } from "../../i18n/index.js";
 import { cn } from "../../lib/utils.js";
 import { getDevMode } from "../../settings-store.js";
 import { Button } from "../../ui/Button.js";
@@ -38,10 +39,10 @@ export function NotificationsSheet() {
               <p className={cn("text-[13px]", n.unread ? "font-medium text-ac-text" : "text-ac-soft")}>{n.title}</p>
               {n.detail && <p className="mt-0.5 text-xs text-ac-muted">{n.detail}</p>}
             </div>
-            <span className="shrink-0 text-[11px] text-ac-faint" title={new Date(n.at).toLocaleString("en-GB")}>
+            <span className="shrink-0 text-[11px] text-ac-faint" title={new Date(n.at).toLocaleString(getLang() === "en" ? "en-GB" : locale())}>
               {ago(n.at, s.now)}
             </span>
-            {n.unread && <span className="sr-only">unread</span>}
+            {n.unread && <span className="sr-only">{t("sessions.notices.unreadSr")}</span>}
           </div>
         ))}
       </section>
@@ -51,13 +52,13 @@ export function NotificationsSheet() {
     <Sheet
       open
       onOpenChange={(o) => !o && s.close()}
-      kicker="Notifications"
-      title={`${unread} unread`}
+      kicker={t("sessions.notices.kicker")}
+      title={t("sessions.notices.unread", { count: unread })}
       width={420}
       footer={
         <>
           <Button size="sm" variant="ghost" onClick={() => s.go("settings", "notifications")}>
-            <Settings2 /> Notification settings
+            <Settings2 /> {t("sessions.notices.settings")}
           </Button>
           <span className="flex-1" />
           {devMode && (
@@ -69,8 +70,8 @@ export function NotificationsSheet() {
                   notices: [
                     ...Array.from({ length: 25 }, (_, i) => ({
                       id: `t${vm.now}-${i}`,
-                      title: `Test notification ${i + 1}`,
-                      detail: "Generated in developer mode.",
+                      title: t("sessions.notices.testTitle", { n: i + 1 }),
+                      detail: t("sessions.notices.testDetail"),
                       at: vm.now - i * 60_000,
                       unread: true,
                       tone: (["info", "ok", "warn", "alert"] as const)[i % 4],
@@ -80,7 +81,7 @@ export function NotificationsSheet() {
                 }))
               }
             >
-              + 25 test
+              {t("sessions.notices.addTest")}
             </Button>
           )}
           <Button
@@ -90,12 +91,12 @@ export function NotificationsSheet() {
             onClick={() =>
               s.open({
                 kind: "confirm",
-                title: "Clear all notifications?",
+                title: t("sessions.notices.clearTitle"),
                 // `notifications clear` empties the log; the action also removes
                 // the desktop notifications this app delivered (the daemon's own
                 // OS notifications belong to another process and stay).
-                body: "Empties this list and removes the desktop notifications Agent Switch showed.",
-                confirm: "Clear all",
+                body: t("sessions.notices.clearBody"),
+                confirm: t("sessions.notices.clearAll"),
                 onConfirm: () => {
                   s.update({ notices: [] });
                   s.act.clearNotifications?.().catch((e) => s.toast({ text: e instanceof Error ? e.message : String(e), tone: "alert" }));
@@ -103,10 +104,10 @@ export function NotificationsSheet() {
               })
             }
           >
-            Clear all
+            {t("sessions.notices.clearAll")}
           </Button>
           <Button size="sm" onClick={s.markNoticesRead} disabled={!unread}>
-            Mark all read
+            {t("sessions.notices.markRead")}
           </Button>
         </>
       }
@@ -114,11 +115,11 @@ export function NotificationsSheet() {
       <div className="flex flex-col gap-5">
         {s.notices.length ? (
           <>
-            {group("Today", today)}
-            {group("Earlier", earlier)}
+            {group(t("sessions.notices.today"), today)}
+            {group(t("sessions.notices.earlier"), earlier)}
           </>
         ) : (
-          <p className="py-8 text-center text-xs text-ac-muted">No notifications. Alerts show up here and, if you allow it, as desktop notifications.</p>
+          <p className="py-8 text-center text-xs text-ac-muted">{t("sessions.notices.empty")}</p>
         )}
       </div>
     </Sheet>

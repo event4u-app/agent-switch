@@ -4,6 +4,7 @@
  * L672, `FP` L657, `VP` L694, `GP` L717, `KP` L757, `DP` L642). No React, no I/O.
  */
 
+import { t, type TKey } from "../../i18n/index.js";
 import type { UsageHistorySample } from "../../ipc.js";
 import { loginArgs, reloginArgs } from "../../ipc.js";
 import type { ProviderId } from "../../transforms.js";
@@ -19,14 +20,28 @@ export const ACCOUNT_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
 export function nameProblem(name: string): string | null {
   const n = name.trim();
   if (!n) return null;
-  if (/\s/.test(name)) return "No spaces — use - or _ instead.";
-  if (n.startsWith("-")) return "A name can't start with “-”.";
-  if (!ACCOUNT_NAME_RE.test(n)) return "Only letters, digits, - and _.";
+  if (/\s/.test(name)) return t("accounts.name.noSpaces");
+  if (n.startsWith("-")) return t("accounts.name.leadingDash");
+  if (!ACCOUNT_NAME_RE.test(n)) return t("accounts.name.onlyAllowed");
   return null;
 }
 
 /** The hint under a name field when nothing is wrong. */
-export const NAME_HINT = "Letters, digits, - and _.";
+export function nameHint(): string {
+  return t("accounts.name.hint");
+}
+
+const TAG_KEY: Record<string, TKey> = {
+  Work: "accounts.tag.work",
+  Personal: "accounts.tag.personal",
+  Other: "accounts.tag.other",
+};
+
+/** A profile tag in the live language; the stored value stays English. */
+export function tagLabel(label: string): string {
+  const key = TAG_KEY[label];
+  return key ? t(key) : label;
+}
 
 /** Names that existed before the design rule (dots, capitals) stay savable
  *  unchanged; a NEW name must follow the design rule. */
@@ -53,8 +68,8 @@ export function usedIn(account: Pick<Account, "surfaces">): string | null {
 /** Tooltip of the Protect column. The backend only warns at the threshold, so
  *  the copy says "warns" where the design says "pauses". */
 export function protectTitle(p: Protection | null): string {
-  if (!p) return "Session protection not read";
-  return p.enabled ? `Session protection on: warns at ${p.thresholdPct} % of the binding window` : "Session protection off";
+  if (!p) return t("accounts.protection.notRead");
+  return p.enabled ? t("accounts.protection.onTitle", { pct: p.thresholdPct }) : t("accounts.protection.offTitle");
 }
 
 // ------------------------------------------------------------ usage history
@@ -114,18 +129,22 @@ export function linePath(values: readonly (number | null)[], w: number, h: numbe
 
 // ------------------------------------------------------------- sign-in flows
 
-/** Add-account step 3 lead text per provider (bundle `I0`). */
-export const SIGN_IN_TEXT: Record<Tool, string> = {
-  claude: "Opens the Claude sign-in in your browser",
-  codex: "Opens the ChatGPT sign-in in your browser — or shows a device code",
-  gemini: "Opens the Google sign-in in your browser",
-  antigravity: "Antigravity stays monitor-only on this OS until sign-in isolation is proven",
+const SIGN_IN_TEXT_KEY: Record<Tool, TKey> = {
+  claude: "accounts.signInLead.claude",
+  codex: "accounts.signInLead.codex",
+  gemini: "accounts.signInLead.gemini",
+  antigravity: "accounts.signInLead.antigravity",
 };
+
+/** Add-account step 3 lead text per provider (bundle `I0`). */
+export function signInText(tool: Tool): string {
+  return t(SIGN_IN_TEXT_KEY[tool]);
+}
 
 /** Why a provider can't be added from here; null = it can. */
 export function addBlocked(tool: Tool): string | null {
-  if (tool === "antigravity") return `${SIGN_IN_TEXT.antigravity}.`;
-  if (tool === "gemini") return "Gemini has no backend yet — accounts can't be added for it.";
+  if (tool === "antigravity") return t("accounts.add.blockedAntigravity");
+  if (tool === "gemini") return t("accounts.add.blockedGemini");
   return null;
 }
 

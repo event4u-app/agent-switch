@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { Download, RefreshCw, RotateCw } from "lucide-react";
+import { getLang, locale, t, type TKey } from "../../../i18n/index.js";
+import { tx } from "../../../i18n/react.js";
 import { cn } from "../../../lib/utils.js";
 import { getAutoUpdateCheck, getAutoUpdateKinds, setAutoUpdateCheckFlag, setAutoUpdateKinds } from "../../../settings-store.js";
 import { Button } from "../../../ui/Button.js";
@@ -10,10 +12,10 @@ import type { UpdateCheck, UpdateKind } from "../../../updates.js";
 import { useAS } from "../../../vm/store.js";
 import { describeError, usePref } from "./prefs.js";
 
-const UPDATE_KINDS: [UpdateKind, string][] = [
-  ["major", "Major"],
-  ["minor", "Minor"],
-  ["patch", "Bugfix"],
+const UPDATE_KINDS: [UpdateKind, TKey][] = [
+  ["major", "settings.updates.major"],
+  ["minor", "settings.updates.minor"],
+  ["patch", "settings.updates.patch"],
 ];
 
 type Phase = "idle" | "checking" | "updating" | "done";
@@ -32,12 +34,12 @@ export function RestartButton({ restart }: { restart: () => Promise<void> }) {
           setBusy(true);
           setFailure(null);
           restart().catch((e) => {
-            setFailure(`Restart failed: ${describeError(e)}`);
+            setFailure(t("settings.updates.restartFailed", { error: describeError(e) }));
             setBusy(false);
           });
         }}
       >
-        <RotateCw /> {busy ? "Restarting …" : "Restart now"}
+        <RotateCw /> {busy ? t("settings.updates.restarting") : t("settings.updates.restartNow")}
       </Button>
       {failure && <span className="text-xs text-ac-alert-text">{failure}</span>}
     </>
@@ -73,11 +75,11 @@ export function UpdatesSettings() {
       const r = await s.act.selfUpdate();
       if (r.ok) setPhase("done");
       else {
-        setFailure(`Update failed: ${r.output.slice(-300) || "unknown error"}`);
+        setFailure(t("settings.updates.updateFailed", { error: r.output.slice(-300) || t("settings.updates.unknownError") }));
         setPhase("idle");
       }
     } catch (e) {
-      setFailure(`Update failed: ${describeError(e)}`);
+      setFailure(t("settings.updates.updateFailed", { error: describeError(e) }));
       setPhase("idle");
     }
   }
@@ -93,45 +95,47 @@ export function UpdatesSettings() {
     <>
       <SettingGroup>
         <SettingRow
-          title="Version"
+          title={t("settings.updates.version")}
           detail={
             <>
-              Current: <span className="font-ac-mono text-ac-soft">{check?.current ?? "…"}</span>
-              {check?.kind === "uptodate" && " · you're on the latest version."}
-              {check?.kind === "no-releases" && " · no releases published yet."}
-              {check?.kind === "error" && <span className="text-ac-alert-text"> · check failed: {check.message}</span>}
+              {tx("settings.updates.current", { version: <span className="font-ac-mono text-ac-soft">{check?.current ?? "…"}</span> })}
+              {check?.kind === "uptodate" && t("settings.updates.upToDate")}
+              {check?.kind === "no-releases" && t("settings.updates.noReleases")}
+              {check?.kind === "error" && (
+                <span className="text-ac-alert-text">{t("settings.updates.checkFailed", { error: check.message })}</span>
+              )}
             </>
           }
         >
           <Button size="sm" disabled={phase === "checking" || phase === "updating" || !s.act.checkForUpdate} onClick={() => void runCheck()}>
-            <RefreshCw className={cn(phase === "checking" && "animate-spin")} /> {phase === "checking" ? "Checking …" : "Check now"}
+            <RefreshCw className={cn(phase === "checking" && "animate-spin")} /> {phase === "checking" ? t("settings.updates.checking") : t("settings.updates.checkNow")}
           </Button>
         </SettingRow>
         {available && (
           <div className="flex flex-col gap-3 bg-ac-brand-tint px-4 py-3.5">
             <p className="flex items-center gap-2 text-[13px] text-ac-text">
               <span className="size-2 rounded-full bg-ac-brand" aria-hidden />
-              {available.tag} available
+              {t("settings.updates.available", { tag: available.tag })}
               {available.publishedAt && (
-                <span className="text-xs text-ac-muted">({new Date(available.publishedAt).toLocaleDateString("en-GB")})</span>
+                <span className="text-xs text-ac-muted">
+                  ({new Date(available.publishedAt).toLocaleDateString(getLang() === "en" ? "en-GB" : locale())})
+                </span>
               )}
             </p>
             {available.notes && <p className="max-h-24 overflow-y-auto whitespace-pre-wrap text-xs text-ac-muted">{available.notes}</p>}
             <div className="flex flex-wrap items-center gap-2">
               {phase === "done" ? (
                 <>
-                  <span className="text-xs text-ac-ok-text">
-                    Updated to {available.tag} — restart Agent Switch to apply. Your settings stay as they are.
-                  </span>
+                  <span className="text-xs text-ac-ok-text">{t("settings.updates.updated", { tag: available.tag })}</span>
                   {s.act.restart && <RestartButton restart={s.act.restart} />}
                 </>
               ) : (
                 <>
                   <Button size="sm" variant="primary" disabled={phase === "updating" || !s.act.selfUpdate} onClick={() => void runUpdate()}>
-                    <Download /> {phase === "updating" ? "Updating …" : `Update to ${available.tag}`}
+                    <Download /> {phase === "updating" ? t("settings.updates.updating") : t("settings.updates.updateTo", { tag: available.tag })}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => void openUrl(available.url).catch(() => {})}>
-                    Release notes
+                    {t("settings.updates.releaseNotes")}
                   </Button>
                 </>
               )}
@@ -140,23 +144,23 @@ export function UpdatesSettings() {
           </div>
         )}
       </SettingGroup>
-      <SettingGroup title="Automatic">
+      <SettingGroup title={t("settings.updates.automatic")}>
         <SettingRow
-          title="Automatic updates"
-          detail="Check on open and every 24 hours, and install a new version automatically (for the release types selected below). You'll be told to restart once it's applied."
+          title={t("settings.updates.automaticUpdates")}
+          detail={t("settings.updates.automaticUpdatesDetail")}
         >
-          <Switch label="Automatic updates" checked={auto} onChange={setAuto} />
+          <Switch label={t("settings.updates.automaticUpdates")} checked={auto} onChange={setAuto} />
         </SettingRow>
         {auto && (
           <SettingRow
-            title="Install automatically for"
-            detail="Uncheck a type to only be notified about it (e.g. leave Major off to review big releases first)."
+            title={t("settings.updates.installFor")}
+            detail={t("settings.updates.installForDetail")}
           >
-            {UPDATE_KINDS.map(([kind, label]) => (
+            {UPDATE_KINDS.map(([kind, labelKey]) => (
               <span key={kind} className="flex items-center gap-2 text-xs text-ac-soft">
-                {label}
+                {t(labelKey)}
                 <Switch
-                  label={`Auto-update ${label}`}
+                  label={t("settings.updates.autoUpdateKind", { kind: t(labelKey) })}
                   checked={kinds.includes(kind)}
                   onChange={(on) => setKinds(on ? [...new Set([...kinds, kind])] : kinds.filter((k) => k !== kind))}
                 />
@@ -165,7 +169,7 @@ export function UpdatesSettings() {
           </SettingRow>
         )}
       </SettingGroup>
-      <p className="px-1 text-[11px] text-ac-faint">agent-config, rtk and the agent CLIs update from Tools.</p>
+      <p className="px-1 text-[11px] text-ac-faint">{t("settings.updates.toolsNote")}</p>
     </>
   );
 }

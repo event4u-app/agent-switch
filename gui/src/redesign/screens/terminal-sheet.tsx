@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { t } from "../../i18n/index.js";
 import { attachTerminal, tauriBackend, type TermBackend } from "../../terminal.js";
 import { Badge } from "../../ui/Badge.js";
 import { Button } from "../../ui/Button.js";
@@ -15,7 +16,7 @@ import { useAS, type Overlay, type TerminalRun } from "../../vm/store.js";
 export function terminalRun(o: Extract<Overlay, { kind: "terminal" }>): TerminalRun {
   if ("run" in o) return o.run;
   const install = o.action === "install";
-  return { args: ["tooling", install ? "install" : "upgrade", o.toolId], title: o.toolId, kicker: install ? "Install" : "Update" };
+  return { args: ["tooling", install ? "install" : "upgrade", o.toolId], title: o.toolId, kicker: install ? t("sessions.term.install") : t("sessions.term.update") };
 }
 
 /** An agent-config install/upgrade changes the server this app embeds, which
@@ -110,15 +111,15 @@ export function TerminalSheet({ run, backend = tauriBackend }: { run: TerminalRu
   const status =
     phase.kind === "running" ? (
       <Badge tone="info" dot>
-        Running
+        {t("sessions.term.running")}
       </Badge>
     ) : phase.kind === "failed" ? (
       <Badge tone="alert" dot>
-        Couldn't start · {phase.message}
+        {t("sessions.term.couldntStart", { message: phase.message })}
       </Badge>
     ) : (
       <Badge tone={phase.code === 0 || phase.code == null ? "ok" : "alert"} dot>
-        Finished · exit {phase.code ?? "?"}
+        {t("sessions.term.finished", { code: phase.code == null ? "?" : String(phase.code) })}
       </Badge>
     );
   return (
@@ -126,7 +127,7 @@ export function TerminalSheet({ run, backend = tauriBackend }: { run: TerminalRu
       open
       onOpenChange={(o) => !o && close()}
       dismissible={!running}
-      kicker={run.kicker ?? "Terminal"}
+      kicker={run.kicker ?? t("sessions.term.kicker")}
       title={run.title}
       width={520}
       footer={
@@ -135,8 +136,8 @@ export function TerminalSheet({ run, backend = tauriBackend }: { run: TerminalRu
             {status}
           </span>
           {phase.kind === "finished" && phase.code === 0 && offersRestart(run) && s.act.restart && <RestartButton restart={s.act.restart} />}
-          <Button size="sm" variant={running ? "secondary" : "primary"} onClick={close} title={running ? "Closing ends the command" : undefined}>
-            Close
+          <Button size="sm" variant={running ? "secondary" : "primary"} onClick={close} title={running ? t("sessions.term.closingEnds") : undefined}>
+            {t("common.close")}
           </Button>
         </>
       }

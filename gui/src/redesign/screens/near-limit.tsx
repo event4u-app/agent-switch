@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { handoffSeedArgs } from "../../ipc.js";
 import type { ProviderId } from "../../transforms.js";
+import { t } from "../../i18n/index.js";
 import { cn } from "../../lib/utils.js";
 import { AccountDot } from "../../ui/AccountDot.js";
 import { Badge } from "../../ui/Badge.js";
@@ -16,10 +17,10 @@ import { useAS } from "../../vm/store.js";
 import { limitOptions, limitSession, limitTargets, type LimitChoice } from "./logic.js";
 
 const PRIMARY: Record<LimitChoice, (name: string) => string> = {
-  pause: () => "Pause & resume",
-  switch: (name) => `Switch to ${name}`,
-  "continue-elsewhere": (name) => `Continue on ${name}`,
-  keep: () => "Keep going",
+  pause: () => t("sessions.near.pauseResume"),
+  switch: (name) => t("sessions.near.switchTo", { name }),
+  "continue-elsewhere": (name) => t("sessions.near.continueOn", { name }),
+  keep: () => t("sessions.near.keepGoing"),
 };
 
 /** Bundle `vR`, sheet 460. Offers only what the backend can do; the rest stays
@@ -51,9 +52,12 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
         await s.act.rebind!(session.id, targetAccount.id);
         done();
         s.close();
-        s.toast({ text: `${session.project} now runs on ${targetAccount.name}.`, tone: "ok" });
+        s.toast({ text: t("sessions.sheet.nowRunsOn", { project: session.project, name: targetAccount.name }), tone: "ok" });
       } catch (e) {
-        s.toast({ text: `Switch failed — ${session.project} stays on ${account.name}. ${e instanceof Error ? e.message : String(e)}`, tone: "alert" });
+        s.toast({
+          text: t("sessions.sheet.switchFailed", { project: session.project, name: account.name, error: e instanceof Error ? e.message : String(e) }),
+          tone: "alert",
+        });
       } finally {
         setBusy(false);
       }
@@ -61,18 +65,18 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
       setBusy(true);
       try {
         const b = await s.act.handoffBrief!(session.id, targetAccount.id);
-        if (!b.briefPath) throw new Error("the brief file was not written");
+        if (!b.briefPath) throw new Error(t("sessions.sheet.briefNotWritten"));
         done();
         s.open({
           kind: "terminal",
           run: {
-            kicker: "Continue on another account",
+            kicker: t("sessions.limit.elsewhereTitle"),
             title: `${session.project} → ${TOOL_LABEL[targetAccount.tool]} · ${targetAccount.name}`,
             args: handoffSeedArgs(targetAccount.tool as ProviderId, targetAccount.name, b.briefPath),
           },
         });
       } catch (e) {
-        s.toast({ text: `Couldn't prepare the brief: ${e instanceof Error ? e.message : String(e)}`, tone: "alert" });
+        s.toast({ text: t("sessions.near.briefFailed", { error: e instanceof Error ? e.message : String(e) }), tone: "alert" });
       } finally {
         setBusy(false);
       }
@@ -85,13 +89,13 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
     <Sheet
       open
       onOpenChange={(o) => !o && s.close()}
-      kicker="Near limit · you decide"
+      kicker={t("sessions.near.kicker")}
       title={item.title}
       width={460}
       footer={
         <>
           <Button size="sm" variant="ghost" onClick={() => s.close()}>
-            Later
+            {t("sessions.near.later")}
           </Button>
           <Button
             size="sm"
@@ -115,7 +119,7 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
                 </span>
               </>
             ) : (
-              <span className="min-w-0 flex-1 truncate text-[13px] text-ac-muted">No running session on this account</span>
+              <span className="min-w-0 flex-1 truncate text-[13px] text-ac-muted">{t("sessions.near.noSession")}</span>
             )}
             <span className="inline-flex items-center gap-1.5 text-xs text-ac-soft">
               <AccountDot color={account.color} size={8} /> {TOOL_LABEL[account.tool]} · {account.name}
@@ -126,8 +130,8 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
           ))}
           {session?.protectionNote && <p className="text-[11px] text-ac-muted">{session.protectionNote}</p>}
         </Card>
-        <div role="radiogroup" aria-label="How to go on" className="flex flex-col gap-2">
-          <Caps className="mb-1">How do you want to go on?</Caps>
+        <div role="radiogroup" aria-label={t("sessions.near.howAria")} className="flex flex-col gap-2">
+          <Caps className="mb-1">{t("sessions.near.how")}</Caps>
           {options.map((o) => {
             const on = choice === o.id;
             return (
@@ -151,7 +155,7 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col gap-1">
                   <span className="flex items-center gap-2 text-[13px] font-medium text-ac-text">
-                    {o.title} {o.isDefault && <Badge tone="ok">Default</Badge>}
+                    {o.title} {o.isDefault && <Badge tone="ok">{t("sessions.near.default")}</Badge>}
                   </span>
                   <span className="text-xs text-ac-muted">{o.detail}</span>
                 </span>
@@ -161,7 +165,7 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
         </div>
         {needsTarget && targets.length > 0 && (
           <Select
-            label={choice === "switch" ? "Switch to" : "Continue on"}
+            label={choice === "switch" ? t("sessions.near.switchToLabel") : t("sessions.near.continueOnLabel")}
             value={target}
             onChange={setTarget}
             options={targets.map((r) => ({
@@ -169,11 +173,11 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
               label: `${TOOL_LABEL[r.account.tool]} · ${r.account.name}`,
               hint: r.reason,
               dot: <AccountDot color={r.account.color} size={8} />,
-              tag: r.rank === 1 ? <Badge tone="info">Most left</Badge> : undefined,
+              tag: r.rank === 1 ? <Badge tone="info">{t("sessions.near.mostLeft")}</Badge> : undefined,
             }))}
           />
         )}
-        <p className="text-[11px] text-ac-faint">"Pause requested" turns into "Paused" only when the session has really stopped.</p>
+        <p className="text-[11px] text-ac-faint">{t("sessions.near.pauseNote")}</p>
       </div>
     </Sheet>
   );

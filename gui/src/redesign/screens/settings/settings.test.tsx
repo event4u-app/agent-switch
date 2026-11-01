@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { setLangForTests, setLanguagePref } from "../../../i18n/index.js";
 import { PET_WELCOME } from "../../../pet/model.js";
+import { getLanguagePref } from "../../../settings-store.js";
 import { AcRoot } from "../../../ui/AcRoot.js";
 import type { Actions } from "../../../vm/actions.js";
 import { emptyViewModel } from "../../../vm/load.js";
@@ -261,6 +263,25 @@ describe("General", () => {
     fireEvent.click(screen.getByRole("button", { name: "Star" }));
     expect(shell.open).toHaveBeenCalledWith(REPO_URL);
     expect(readStarAsk(Date.now()).stopped).toBe("starred");
+  });
+
+  describe("language override", () => {
+    afterEach(() => {
+      setLanguagePref("system");
+      setLangForTests("en");
+    });
+
+    it("offers System, English and Deutsch and switches the live language", () => {
+      mount("general");
+      const group = screen.getByRole("radiogroup", { name: "Language" });
+      expect([...group.querySelectorAll('[role="radio"]')].map((r) => r.textContent)).toEqual(["System", "English", "Deutsch"]);
+      expect(getLanguagePref()).toBe("system");
+      fireEvent.click(screen.getByRole("radio", { name: "Deutsch" }));
+      expect(getLanguagePref()).toBe("de");
+      expect(screen.getByRole("switch", { name: "Sitzungszusammenfassungen ausblenden" })).toBeTruthy();
+      expect(screen.getByText("Sprache")).toBeTruthy();
+      expect(screen.getByRole("radio", { name: "Deutsch" }).getAttribute("aria-checked")).toBe("true");
+    });
   });
 
   it("pushes minimize-into-Dock to Rust", () => {

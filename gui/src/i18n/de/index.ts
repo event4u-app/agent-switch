@@ -11,6 +11,7 @@ import { settings } from "./settings.js";
 import { tray } from "./tray.js";
 import { engines } from "./engines.js";
 import { vm } from "./vm.js";
+import { pet } from "./pet.js";
 
 /** All German namespaces, merged; typed so a missing or extra key fails tsc. */
 export const de: { readonly [K in keyof typeof en]: string } = {
@@ -26,4 +27,5 @@ export const de: { readonly [K in keyof typeof en]: string } = {
   ...tray,
   ...engines,
   ...vm,
+  ...pet,
 };

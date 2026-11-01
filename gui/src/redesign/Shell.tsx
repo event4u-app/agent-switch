@@ -8,15 +8,25 @@ import { useAS, type Screen } from "../vm/store.js";
 import { CommandSearch } from "./CommandSearch.js";
 import { isAppShortcut } from "./shortcuts.js";
 import { checksToLook } from "./screens/health.js";
+import { t, tp, type TKey } from "../i18n/index.js";
 
-const PLACES: { id: Exclude<Screen, "activity" | "health" | "settings">; label: string; icon: typeof House }[] = [
-  { id: "home", label: "Overview", icon: House },
-  { id: "sessions", label: "Sessions", icon: MessageSquare },
-  { id: "accounts", label: "Accounts", icon: Layers },
-  { id: "tools", label: "Tools", icon: Wrench },
+/** Labels are keys: `t()` runs at render time, the language can change. */
+const PLACES: { id: Exclude<Screen, "activity" | "health" | "settings">; labelKey: TKey; icon: typeof House }[] = [
+  { id: "home", labelKey: "shell.places.home", icon: House },
+  { id: "sessions", labelKey: "shell.places.sessions", icon: MessageSquare },
+  { id: "accounts", labelKey: "shell.places.accounts", icon: Layers },
+  { id: "tools", labelKey: "shell.places.tools", icon: Wrench },
 ];
 
-const READINESS_LABEL = { starting: "Starting", ready: "Ready", degraded: "Degraded", "needs-action": "Needs action" } as const;
+const READINESS_LABEL = {
+  starting: "shell.readiness.starting",
+  ready: "shell.readiness.ready",
+  degraded: "shell.readiness.degraded",
+  "needs-action": "shell.readiness.needsAction",
+} as const satisfies Record<string, TKey>;
+
+/** The wordmark is the brand name, never translated. */
+const WORDMARK = "AGENT SWITCH";
 
 function useWindowWidth(): number {
   const [w, setW] = useState(() => (typeof window === "undefined" ? 1040 : window.innerWidth));
@@ -33,7 +43,7 @@ export function TopBar({ isMac }: { isMac: boolean }) {
   const s = useAS();
   const width = useWindowWidth();
   const toCheck = checksToLook(s.checks).length;
-  const label = READINESS_LABEL[s.readiness];
+  const label = t(READINESS_LABEL[s.readiness]);
   const tone =
     s.readiness === "ready" ? (toCheck ? "warn" : "ok") : s.readiness === "starting" ? "neutral" : s.readiness === "degraded" ? "warn" : "alert";
   const unread = s.notices.filter((n) => n.unread).length;
@@ -52,7 +62,7 @@ export function TopBar({ isMac }: { isMac: boolean }) {
         isMac ? "pl-[84px]" : "pl-3",
       )}
     >
-      <button type="button" onClick={() => s.go("home")} className="mr-1 flex items-center gap-2.5 rounded-md" aria-label={"Agent Switch — Home"}>
+      <button type="button" onClick={() => s.go("home")} className="mr-1 flex items-center gap-2.5 rounded-md" aria-label={t("shell.brand.home")}>
         <AppLogo className="size-8" />
         <span
           className={cn(
@@ -60,12 +70,13 @@ export function TopBar({ isMac }: { isMac: boolean }) {
             width >= 1440 ? "flex" : "hidden",
           )}
         >
-          <span className="font-display text-[16px] tracking-[0.02em] text-ac-text">AGENT SWITCH</span>
-          <span className="mt-1 text-[9px] font-semibold tracking-[0.3em] text-ac-brand-text">SESSION CONTROL</span>
+          <span className="font-display text-[16px] tracking-[0.02em] text-ac-text">{WORDMARK}</span>
+          <span className="mt-1 text-[9px] font-semibold tracking-[0.3em] text-ac-brand-text">{t("shell.brand.tagline")}</span>
         </span>
       </button>
-      <nav aria-label="Places" className="flex items-center gap-0.5">
-        {PLACES.map(({ id, label: placeLabel, icon: Icon }) => {
+      <nav aria-label={t("shell.places.label")} className="flex items-center gap-0.5">
+        {PLACES.map(({ id, labelKey, icon: Icon }) => {
+          const placeLabel = t(labelKey);
           const current = s.screen === id;
           return (
             <button
@@ -92,7 +103,7 @@ export function TopBar({ isMac }: { isMac: boolean }) {
                     "rounded-full bg-ac-info-tint font-ac-mono text-[10px] leading-4 text-ac-info-text",
                     wide ? "px-1.5" : "-ml-1 px-1",
                   )}
-                  title={`${updates} updates`}
+                  title={tp("shell.places.updates", updates)}
                 >
                   {updates}
                 </span>
@@ -103,15 +114,15 @@ export function TopBar({ isMac }: { isMac: boolean }) {
       </nav>
       <div data-tauri-drag-region className="min-w-2 flex-1 self-stretch" />
       <CommandSearch collapsed={width < 1240} isMac={isMac} />
-      <Button variant="primary" size="md" onClick={() => s.open({ kind: "start" })} aria-label="Start session" title={"Start session (⌘N)"}>
+      <Button variant="primary" size="md" onClick={() => s.open({ kind: "start" })} aria-label={t("shell.start.label")} title={t("shell.start.title")}>
         <Plus />
-        {width >= 760 && <span>Start session</span>}
+        {width >= 760 && <span>{t("shell.start.label")}</span>}
       </Button>
       <button
         type="button"
         onClick={() => s.go("health")}
-        title={`${label}${toCheck ? ` · ${toCheck} to check` : ""}`}
-        aria-label={`Health: ${label}${toCheck ? `, ${toCheck} to check` : ""}`}
+        title={toCheck ? t("shell.health.titleWithChecks", { label, count: toCheck }) : label}
+        aria-label={toCheck ? t("shell.health.ariaWithChecks", { label, count: toCheck }) : t("shell.health.aria", { label })}
         aria-current={s.screen === "health" ? "page" : undefined}
         className={cn(
           "inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-xs font-medium",
@@ -123,21 +134,21 @@ export function TopBar({ isMac }: { isMac: boolean }) {
         )}
       >
         <Stethoscope className="size-4" />
-        {width >= 1180 && <span>{toCheck && s.readiness === "ready" ? `${toCheck} to check` : label}</span>}
+        {width >= 1180 && <span>{toCheck && s.readiness === "ready" ? t("shell.health.toCheck", { count: toCheck }) : label}</span>}
         {width < 1180 && toCheck > 0 && <span className="font-ac-mono">{toCheck}</span>}
       </button>
-      <IconButton label="Activity" active={s.screen === "activity"} onClick={() => s.go("activity")} className={width < 640 ? "hidden" : ""}>
+      <IconButton label={t("shell.activity")} active={s.screen === "activity"} onClick={() => s.go("activity")} className={width < 640 ? "hidden" : ""}>
         <History />
       </IconButton>
       <IconButton
-        label="Notifications"
+        label={t("shell.notifications")}
         badge={unread ? (unread > 9 ? "9+" : unread) : undefined}
         active={s.overlay.kind === "notifications"}
         onClick={() => s.open({ kind: "notifications" })}
       >
         <Bell />
       </IconButton>
-      <IconButton label="Settings" active={s.screen === "settings"} onClick={() => s.go("settings", "general")}>
+      <IconButton label={t("shell.settings")} active={s.screen === "settings"} onClick={() => s.go("settings", "general")}>
         <Settings />
       </IconButton>
     </header>
@@ -156,9 +167,9 @@ export function ErrorBanner() {
       </span>
       <span className="flex items-center gap-2">
         <Button size="sm" variant="ghost" onClick={() => s.go("health")}>
-          Open Health
+          {t("shell.error.openHealth")}
         </Button>
-        <IconButton label="Dismiss" onClick={() => s.update({ error: null })}>
+        <IconButton label={t("common.dismiss")} onClick={() => s.update({ error: null })}>
           <X />
         </IconButton>
       </span>
@@ -179,13 +190,13 @@ export function ShellIntegrationBanner() {
       <span className="flex min-w-0 flex-1 items-start gap-2.5 text-ac-alert-text">
         <TriangleAlert className="mt-0.5 size-4 shrink-0" />
         <span className="min-w-0">
-          <span className="block text-[13px] font-medium">Shell integration missing — Agent Switch can't pick the account in a terminal</span>
-          <span className="block text-xs">A plain `claude`, `codex` or `agy` ignores your accounts, folder rules and pools until it is set up.</span>
+          <span className="block text-[13px] font-medium">{t("shell.integration.title")}</span>
+          <span className="block text-xs">{t("shell.integration.body")}</span>
         </span>
       </span>
       <span className="flex items-center gap-2">
         <Button size="sm" variant="ghost" onClick={() => s.open({ kind: "fix", checkId: check.id })}>
-          Details
+          {t("common.details")}
         </Button>
         {install && (
           <Button
@@ -195,12 +206,12 @@ export function ShellIntegrationBanner() {
             onClick={() => {
               setBusy(true);
               install()
-                .then(() => s.toast({ tone: "ok", text: "Shell integration set up. Open a new terminal to use it." }))
-                .catch((e: unknown) => s.toast({ tone: "alert", text: `Couldn't set it up: ${e instanceof Error ? e.message : String(e)}` }))
+                .then(() => s.toast({ tone: "ok", text: t("shell.integration.done") }))
+                .catch((e: unknown) => s.toast({ tone: "alert", text: t("shell.integration.failed", { error: e instanceof Error ? e.message : String(e) }) }))
                 .finally(() => setBusy(false));
             }}
           >
-            <Wrench /> {busy ? "Setting up …" : "Set up now"}
+            <Wrench /> {busy ? t("shell.integration.settingUp") : t("shell.integration.setUpNow")}
           </Button>
         )}
       </span>

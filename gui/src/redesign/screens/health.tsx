@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { CircleCheck, CircleX, Info, TriangleAlert, Wrench } from "lucide-react";
 import * as ipc from "../../ipc.js";
+import { t, tp, type TKey } from "../../i18n/index.js";
 import { cn } from "../../lib/utils.js";
 import { Badge } from "../../ui/Badge.js";
 import { Button } from "../../ui/Button.js";
@@ -13,11 +14,11 @@ import type { Check, Readiness } from "../../vm/types.js";
 import { rowClick } from "./rows.js";
 
 /** Design `qP`. */
-export const READINESS: Record<Readiness, [string, string, "ok" | "warn" | "alert" | "neutral"]> = {
-  starting: ["Starting", "Reading accounts and sessions …", "neutral"],
-  ready: ["Ready", "Runs in the menu bar. Usage is watched in the background.", "ok"],
-  degraded: ["Degraded", "Works, but something needs a look.", "warn"],
-  "needs-action": ["Needs action", "Something blocks Agent Switch. See below.", "alert"],
+export const READINESS: Record<Readiness, [TKey, TKey, "ok" | "warn" | "alert" | "neutral"]> = {
+  starting: ["tools.health.startingTitle", "tools.health.startingLine", "neutral"],
+  ready: ["tools.health.readyTitle", "tools.health.readyLine", "ok"],
+  degraded: ["tools.health.degradedTitle", "tools.health.degradedLine", "warn"],
+  "needs-action": ["tools.health.needsActionTitle", "tools.health.needsActionLine", "alert"],
 };
 
 /** Design `ZP`; `info` (a neutral `doctor` note) gets its own glyph. */
@@ -45,15 +46,18 @@ export type AutostartActual = "enabled" | "disabled" | null;
 /** The Start-at-login line (design `JP`). `desired` is the stored preference
  *  (null = unreadable), `actual` what the OS reports (null = unreadable). */
 export function autostartText(desired: AutostartDesired, actual: AutostartActual, reason: string | null = null): string {
-  if (desired === "disabled") return "Off — you switched it off. Updates keep it off.";
-  if (actual === "enabled") return "On — registered with the system and checked.";
-  if (actual == null) return "Couldn't read the system state.";
+  if (desired === "disabled") return t("tools.health.autoOffByYou");
+  if (actual === "enabled") return t("tools.health.autoOn");
+  if (actual == null) return t("tools.health.autoUnreadable");
   // Wanted on, the OS has it off: a failed attempt leaves a reason; without one
   // the login item was switched off outside the app (System Settings).
-  if (desired === "enabled") return reason ? `Couldn't turn it on (${reason}).` : "Off — switched off in System Settings.";
+  if (desired === "enabled") return reason ? t("tools.health.autoFailed", { reason }) : t("tools.health.autoOffOutside");
   // Never decided (or the preference is unreadable) and the OS says off.
-  return "Off — not registered with the system yet.";
+  return t("tools.health.autoNotRegistered");
 }
+
+/** What the retry action reads (the action id stays English, see autostartAction). */
+const AUTOSTART_ACTION: Record<"Turn on" | "Try again", TKey> = { "Turn on": "tools.health.turnOn", "Try again": "tools.health.tryAgain" };
 
 /** "Try again" only where the user wants it on and the OS does not have it. */
 export function autostartRetry(desired: AutostartDesired, actual: AutostartActual): boolean {
@@ -70,7 +74,7 @@ export function autostartAction(desired: AutostartDesired, actual: AutostartActu
 /** Bundle `JP`. */
 export function Health() {
   const s = useAS();
-  const [title, line, tone] = READINESS[s.readiness];
+  const [titleKey, lineKey, tone] = READINESS[s.readiness];
   const problems = checksToLook(s.checks);
   const updates = updateCount(s.tools);
   const [pref, setPref] = useState<{ state: AutostartDesired; reason: string | null }>({ state: null, reason: null });
@@ -95,7 +99,7 @@ export function Health() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Is everything working?" sub="Background readiness and checks with repairs." />
+      <PageHeader title={t("tools.health.title")} sub={t("tools.health.sub")} />
       <div className="grid gap-3 md:grid-cols-2">
         <Card className="flex items-start gap-3 p-4">
           <span
@@ -105,13 +109,13 @@ export function Health() {
             )}
           />
           <div className="min-w-0">
-            <p className="text-[13px] font-medium text-ac-text">{title}</p>
-            <p className="mt-1 text-xs text-ac-muted">{line}</p>
+            <p className="text-[13px] font-medium text-ac-text">{t(titleKey)}</p>
+            <p className="mt-1 text-xs text-ac-muted">{t(lineKey)}</p>
           </div>
         </Card>
         <Card className="flex items-center justify-between gap-3 p-4">
           <div className="min-w-0">
-            <p className="text-[13px] font-medium text-ac-text">Start at login</p>
+            <p className="text-[13px] font-medium text-ac-text">{t("tools.health.startAtLogin")}</p>
             <p className="mt-1 text-xs text-ac-muted">{autostartText(pref.state, actual, pref.reason)}</p>
           </div>
           {retry && s.act.setAutostart ? (
@@ -121,29 +125,29 @@ export function Health() {
               onClick={() => {
                 s.act
                   .setAutostart?.(true)
-                  .catch((e) => s.toast({ text: `Couldn't turn it on: ${e instanceof Error ? e.message : String(e)}`, tone: "alert" }))
+                  .catch((e) => s.toast({ text: t("tools.health.turnOnFailed", { error: e instanceof Error ? e.message : String(e) }), tone: "alert" }))
                   .finally(readPref);
               }}
             >
-              {retry}
+              {t(AUTOSTART_ACTION[retry])}
             </Button>
           ) : (
             <Button size="sm" variant="ghost" onClick={() => s.go("settings", "general")}>
-              Settings
+              {t("tools.health.settings")}
             </Button>
           )}
         </Card>
       </div>
       <section className="flex flex-col gap-2">
         <SectionHeader
-          title="Checks"
+          title={t("tools.health.checks")}
           count={s.checks.length}
           actions={
             s.checks.length ? (
               problems.length ? (
-                <Badge tone="warn">{problems.length} to check</Badge>
+                <Badge tone="warn">{t("tools.health.toCheck", { count: problems.length })}</Badge>
               ) : (
-                <Badge tone="ok">All pass</Badge>
+                <Badge tone="ok">{t("tools.health.allPass")}</Badge>
               )
             ) : undefined
           }
@@ -164,7 +168,7 @@ export function Health() {
                   </span>
                   {c.fix && (
                     <Button size="sm" onClick={() => s.open({ kind: "fix", checkId: c.id })}>
-                      <Wrench /> Fix
+                      <Wrench /> {t("tools.health.fix")}
                     </Button>
                   )}
                 </li>
@@ -173,8 +177,8 @@ export function Health() {
           </Card>
         ) : (
           <EmptyState
-            title={s.checksCheckedAt == null ? "The checks could not be run." : "No checks reported."}
-            detail={s.checksCheckedAt == null ? "`agent-switch doctor` did not answer. Check again after the CLI is reachable." : undefined}
+            title={t(s.checksCheckedAt == null ? "tools.health.notRun" : "tools.health.noChecks")}
+            detail={s.checksCheckedAt == null ? t("tools.health.notRunDetail") : undefined}
             action={
               <Button
                 size="sm"
@@ -184,7 +188,7 @@ export function Health() {
                 }}
                 disabled={s.loading}
               >
-                Check again
+                {t("tools.health.checkAgain")}
               </Button>
             }
           />
@@ -192,11 +196,9 @@ export function Health() {
       </section>
       <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
         <div className="min-w-0">
-          <p className="text-[13px] font-medium text-ac-text">Tools</p>
+          <p className="text-[13px] font-medium text-ac-text">{t("tools.health.tools")}</p>
           <p className="mt-0.5 text-xs text-ac-muted">
-            {updates
-              ? `${updates} updates available — agent-config, rtk and the agent CLIs live under Tools.`
-              : "agent-config, rtk and the agent CLIs are up to date."}
+            {updates ? tp("tools.health.updates", updates) : t("tools.health.upToDate")}
           </p>
         </div>
         <Button
@@ -206,7 +208,7 @@ export function Health() {
             s.setToolsTab("tools");
           }}
         >
-          Open Tools
+          {t("tools.health.openTools")}
         </Button>
       </Card>
     </div>

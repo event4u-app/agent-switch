@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { ArchiveRestore, ArrowLeftRight, ChevronDown, Copy, Eye, Minimize2, ShieldCheck, Trash2 } from "lucide-react";
+import { en } from "../../i18n/en/index.js";
+import { getLang, locale, t } from "../../i18n/index.js";
 import { compactArgs, handoffSeedArgs, takeoverArgs } from "../../ipc.js";
 import type { ProviderId } from "../../transforms.js";
 import { cn } from "../../lib/utils.js";
@@ -22,9 +24,11 @@ import { armSwitch, isRunning, liveSwitch, sessionHandle } from "./logic.js";
 
 /** The arm dialog's copy (D3). Both sentences are load-bearing: the cache does
  *  not travel, and nothing switches unless the user confirms here. */
-export const ARM_CACHE_SENTENCE =
-  "The prompt cache does not move with the session: the first turn on the new account reads the whole conversation again, uncached.";
-export const ARM_CLICK_SENTENCE = "Nothing switches without this click.";
+export const ARM_CACHE_SENTENCE = en["sessions.sheet.armCache"];
+export const ARM_CLICK_SENTENCE = en["sessions.sheet.armClick"];
+
+/** The slash command a compaction runs — a command, never translated. */
+const COMPACT_COMMAND = "/compact";
 
 type MoveHow = "switch" | "takeover" | "handoff";
 
@@ -45,7 +49,7 @@ export function restoreSessionFrom(s: Store, session: Session) {
       trashHandles.delete(session.id);
       s.update((vm) => ({ sessions: vm.sessions.map((x) => (x.id === session.id ? { ...x, trashed: false } : x)) }));
     })
-    .catch((e) => s.toast({ text: `Restore failed: ${errorText(e)}`, tone: "alert" }));
+    .catch((e) => s.toast({ text: t("sessions.sheet.restoreFailed", { error: errorText(e) }), tone: "alert" }));
 }
 
 function trash(s: Store, session: Session) {
@@ -58,11 +62,11 @@ function trash(s: Store, session: Session) {
       // The reload dropped it; keep the trashed copy so the Trash view and Undo can reach it.
       s.update((vm) => ({ sessions: [...vm.sessions.filter((x) => x.id !== session.id), { ...session, trashed: true }] }));
       s.toast({
-        text: `${session.project} moved to the trash.`,
-        action: canUndo ? { label: "Undo", run: () => restoreSessionFrom(s, { ...session, trashed: true }) } : undefined,
+        text: t("sessions.sheet.trashed", { project: session.project }),
+        action: canUndo ? { label: t("sessions.sheet.undo"), run: () => restoreSessionFrom(s, { ...session, trashed: true }) } : undefined,
       });
     })
-    .catch((e) => s.toast({ text: `Couldn't move ${session.project} to the trash: ${errorText(e)}`, tone: "alert" }));
+    .catch((e) => s.toast({ text: t("sessions.sheet.trashFailed", { project: session.project, error: errorText(e) }), tone: "alert" }));
 }
 
 /** Options for a same-tool target account. */
@@ -72,7 +76,7 @@ export function targetOptions(ranked: readonly RankedAccount[]): SelectOption[] 
     return {
       value: r.account.id,
       label: `${TOOL_LABEL[r.account.tool]} · ${r.account.name}`,
-      hint: max != null ? `${max} % used${r.rank === 1 ? " · most headroom" : ""}` : "usage n/a",
+      hint: max != null ? t(r.rank === 1 ? "sessions.sheet.usedMost" : "sessions.sheet.used", { pct: max }) : t("sessions.sheet.usageNa"),
       dot: <AccountDot color={r.account.color} size={8} />,
     };
   });
@@ -93,26 +97,26 @@ function Preview({ s, session }: { s: Store; session: Session }) {
     <div className="flex flex-col gap-2">
       <button type="button" onClick={toggle} className="flex items-center gap-2 text-left" aria-expanded={open}>
         <Eye className="size-3.5 text-ac-muted" />
-        <Caps>Preview</Caps>
+        <Caps>{t("sessions.sheet.preview")}</Caps>
         <ChevronDown className={cn("ml-auto size-4 text-ac-muted transition-transform", open && "rotate-180")} />
       </button>
       {open && (
         <div className="flex flex-col gap-2 rounded-lg border border-ac-line bg-ac-bg p-3">
           {turns == null ? (
-            <p className="text-xs text-ac-muted">Reading …</p>
+            <p className="text-xs text-ac-muted">{t("sessions.sheet.reading")}</p>
           ) : turns.length ? (
-            turns.map((t, i) => (
+            turns.map((turn, i) => (
               <p key={i} className="text-xs">
-                <span className={cn("mr-2 font-ac-mono text-[10px] uppercase tracking-wider", t.role === "you" ? "text-ac-brand-text" : "text-ac-info-text")}>
-                  {t.role === "you" ? "You" : "Agent"}
+                <span className={cn("mr-2 font-ac-mono text-[10px] uppercase tracking-wider", turn.role === "you" ? "text-ac-brand-text" : "text-ac-info-text")}>
+                  {turn.role === "you" ? t("sessions.sheet.you") : t("sessions.sheet.agent")}
                 </span>
-                <span className="text-ac-soft">{t.text}</span>
+                <span className="text-ac-soft">{turn.text}</span>
               </p>
             ))
           ) : (
-            <p className="text-xs text-ac-muted">No turns to show.</p>
+            <p className="text-xs text-ac-muted">{t("sessions.sheet.noTurns")}</p>
           )}
-          <p className="text-[11px] text-ac-faint">First turns only, read on demand. Hidden when “Hide session summaries” is on.</p>
+          <p className="text-[11px] text-ac-faint">{t("sessions.sheet.previewNote")}</p>
         </div>
       )}
     </div>
@@ -130,7 +134,7 @@ export function SessionSheet({ id }: { id: string }) {
   const live = !n
     ? { ok: false, reason: "" }
     : n.surface === "desktop-app"
-      ? { ok: false, reason: "A Claude Desktop session keeps its window's sign-in — take it over instead." }
+      ? { ok: false, reason: t("sessions.sheet.desktopKeeps") }
       : liveSwitch(n, s.platform);
   const [how, setHow] = useState<MoveHow>(live.ok ? "switch" : "takeover");
   const [target, setTarget] = useState(sameTool.find((r) => r.rank != null)?.account.id ?? "");
@@ -163,14 +167,16 @@ export function SessionSheet({ id }: { id: string }) {
   const switchLive = () =>
     s.open({
       kind: "confirm",
-      title: `Switch ${n.project} to ${targetAccount?.name}?`,
-      body: "The running session adopts the new sign-in with its next message. Its transcript stays where it is. If the switch fails, the session keeps its current account and nothing is lost.",
-      confirm: "Switch account",
+      title: t("sessions.sheet.switchTitle", { project: n.project, name: targetAccount?.name ?? "" }),
+      body: t("sessions.sheet.switchBody"),
+      confirm: t("sessions.sheet.switchAccount"),
       onConfirm: () => {
         s.act
           .rebind?.(n.id, target)
-          .then(() => s.toast({ text: `${n.project} now runs on ${targetAccount?.name}.`, tone: "ok" }))
-          .catch((e) => s.toast({ text: `Switch failed — ${n.project} stays on ${account?.name}. ${errorText(e)}`, tone: "alert" }));
+          .then(() => s.toast({ text: t("sessions.sheet.nowRunsOn", { project: n.project, name: targetAccount?.name ?? "" }), tone: "ok" }))
+          .catch((e) =>
+            s.toast({ text: t("sessions.sheet.switchFailed", { project: n.project, name: account?.name ?? "", error: errorText(e) }), tone: "alert" }),
+          );
       },
     });
 
@@ -180,29 +186,31 @@ export function SessionSheet({ id }: { id: string }) {
   const armLive = () =>
     s.open({
       kind: "confirm",
-      title: `Switch ${n.project} to ${targetAccount?.name} when this turn ends?`,
-      body: `${ARM_CACHE_SENTENCE} ${ARM_CLICK_SENTENCE} Once you confirm, it switches when the current turn ends — or not at all, if that takes longer than 30 minutes. You can cancel it until then.`,
-      confirm: "Switch when the turn ends",
+      title: t("sessions.sheet.armTitle", { project: n.project, name: targetAccount?.name ?? "" }),
+      body: `${t("sessions.sheet.armCache")} ${t("sessions.sheet.armClick")} ${t("sessions.sheet.armRest")}`,
+      confirm: t("sessions.sheet.armConfirm"),
       onConfirm: () => {
         s.act
           .armRebind?.(n.id, target)
-          .then(() => s.toast({ text: `${n.project} switches to ${targetAccount?.name} when this turn ends.`, tone: "ok" }))
-          .catch((e) => s.toast({ text: `Couldn't arm the switch — ${n.project} stays on ${account?.name}. ${errorText(e)}`, tone: "alert" }));
+          .then(() => s.toast({ text: t("sessions.sheet.armed", { project: n.project, name: targetAccount?.name ?? "" }), tone: "ok" }))
+          .catch((e) =>
+            s.toast({ text: t("sessions.sheet.armFailed", { project: n.project, name: account?.name ?? "", error: errorText(e) }), tone: "alert" }),
+          );
       },
     });
 
   const cancelArmed = () =>
     s.act
       .cancelArm?.(n.id)
-      .then(() => s.toast({ text: `${n.project} stays on ${account?.name}.`, tone: "ok" }))
-      .catch((e) => s.toast({ text: `Couldn't cancel the armed switch: ${errorText(e)}`, tone: "alert" }));
+      .then(() => s.toast({ text: t("sessions.sheet.staysOn", { project: n.project, name: account?.name ?? "" }), tone: "ok" }))
+      .catch((e) => s.toast({ text: t("sessions.sheet.cancelArmFailed", { error: errorText(e) }), tone: "alert" }));
 
   const takeOver = () => {
     if (!targetAccount) return;
     s.open({
       kind: "terminal",
       run: {
-        kicker: "Take over",
+        kicker: t("sessions.sheet.takeOver"),
         title: `${n.project} → ${TOOL_LABEL[targetAccount.tool]} · ${targetAccount.name}`,
         args: takeoverArgs(handle, targetAccount.name, keepCopy && !desktop, n.tool as ProviderId),
       },
@@ -213,24 +221,24 @@ export function SessionSheet({ id }: { id: string }) {
     if (!handAccount) return;
     try {
       const b = await loadBrief(handAccount.id);
-      if (!b.briefPath) throw new Error("the brief file was not written");
+      if (!b.briefPath) throw new Error(t("sessions.sheet.briefNotWritten"));
       s.open({
         kind: "terminal",
         run: {
-          kicker: "Hand off",
+          kicker: t("sessions.sheet.handOff"),
           title: `${n.project} → ${TOOL_LABEL[handAccount.tool]} · ${handAccount.name}`,
           args: handoffSeedArgs(handAccount.tool as ProviderId, handAccount.name, b.briefPath),
         },
       });
     } catch (e) {
-      s.toast({ text: `Couldn't prepare the handoff brief: ${errorText(e)}`, tone: "alert" });
+      s.toast({ text: t("sessions.sheet.handoffFailed", { error: errorText(e) }), tone: "alert" });
     }
   };
 
   const toggleBrief = () => {
     setShowBrief((v) => !v);
     if (!showBrief && handTo && brief?.to !== handTo)
-      loadBrief(handTo).catch((e) => s.toast({ text: `Couldn't read the brief: ${errorText(e)}`, tone: "alert" }));
+      loadBrief(handTo).catch((e) => s.toast({ text: t("sessions.sheet.briefFailed", { error: errorText(e) }), tone: "alert" }));
   };
 
   const showPreview = n.tool === "claude" && !s.hideSummaries && !!s.act.previewSession;
@@ -239,7 +247,7 @@ export function SessionSheet({ id }: { id: string }) {
     <Sheet
       open
       onOpenChange={(o) => !o && s.close()}
-      kicker={`${TOOL_LABEL[n.tool]} session`}
+      kicker={t("sessions.sheet.kicker", { tool: TOOL_LABEL[n.tool] })}
       title={`${n.project} · ${n.title}`}
       width={500}
       footer={
@@ -251,7 +259,7 @@ export function SessionSheet({ id }: { id: string }) {
               s.close();
             }}
           >
-            <ArchiveRestore /> Restore
+            <ArchiveRestore /> {t("sessions.sheet.restore")}
           </Button>
         ) : (
           <>
@@ -260,36 +268,35 @@ export function SessionSheet({ id }: { id: string }) {
               size="sm"
               disabled={desktop || running || !s.act.trashSession}
               title={
-                desktop
-                  ? "Started in Claude Desktop — delete it there."
-                  : running
-                    ? "Stop the session first — a running session can't be moved to the trash"
-                    : undefined
+                desktop ? t("sessions.sheet.desktopDelete") : running ? t("sessions.sheet.stopFirst") : undefined
               }
               onClick={() =>
                 s.open({
                   kind: "confirm",
-                  title: `Move ${n.project} to the trash?`,
-                  body:
-                    n.tool === "codex"
-                      ? "Codex archives the session. You can restore it from Trash."
-                      : "The transcript moves to the trash. You can restore it from Trash.",
-                  confirm: "Move to trash",
+                  title: t("sessions.sheet.trashTitle", { project: n.project }),
+                  body: n.tool === "codex" ? t("sessions.sheet.trashCodex") : t("sessions.sheet.trashClaude"),
+                  confirm: t("sessions.sheet.moveToTrash"),
                   danger: true,
                   onConfirm: () => trash(s, n),
                 })
               }
             >
-              <Trash2 /> Move to trash
+              <Trash2 /> {t("sessions.sheet.moveToTrash")}
             </Button>
             {n.tool === "claude" && (
               <Button
                 size="sm"
                 disabled={desktop || !running}
-                title={desktop ? "Started in Claude Desktop — compact it there." : running ? "Runs /compact in this session" : "Only a running session can be compacted"}
-                onClick={() => s.open({ kind: "terminal", run: { kicker: "Compact", title: `${n.project} · /compact`, args: compactArgs(profile) } })}
+                title={
+                  desktop
+                    ? t("sessions.sheet.desktopCompact")
+                    : running
+                      ? t("sessions.sheet.compactHint")
+                      : t("sessions.sheet.compactRunning")
+                }
+                onClick={() => s.open({ kind: "terminal", run: { kicker: t("sessions.sheet.compact"), title: `${n.project} · ${COMPACT_COMMAND}`, args: compactArgs(profile) } })}
               >
-                <Minimize2 /> Compact
+                <Minimize2 /> {t("sessions.sheet.compact")}
               </Button>
             )}
           </>
@@ -300,16 +307,18 @@ export function SessionSheet({ id }: { id: string }) {
         <div className="flex flex-wrap items-center gap-3">
           <SessionStateIcon state={n.state} withLabel />
           <span className="text-xs text-ac-faint">
-            {n.state === "working" ? `for ${duration(n.startedAt, s.now)}` : `last active ${ago(n.lastActiveAt, s.now)}`}
+            {n.state === "working"
+              ? t("sessions.sheet.for", { duration: duration(n.startedAt, s.now) })
+              : t("sessions.sheet.lastActive", { ago: ago(n.lastActiveAt, s.now) })}
           </span>
-          {n.livenessUnknown && <Badge>Liveness unknown</Badge>}
-          {n.trashed && <Badge tone="warn">In the trash</Badge>}
+          {n.livenessUnknown && <Badge>{t("sessions.sheet.livenessUnknown")}</Badge>}
+          {n.trashed && <Badge tone="warn">{t("sessions.sheet.inTrash")}</Badge>}
         </div>
         {n.summary && n.summary !== n.title && !s.hideSummaries && <p className="text-[13px] text-ac-soft">{n.summary}</p>}
         <DefinitionList
           rows={[
             [
-              "Runs on",
+              t("sessions.sheet.runsOn"),
               account ? (
                 <span className="inline-flex items-center gap-2">
                   <AccountDot color={account.color} size={8} />
@@ -319,13 +328,28 @@ export function SessionSheet({ id }: { id: string }) {
                 "?"
               ),
             ],
-            ["Folder", n.cwd ? <span className="font-ac-mono text-xs">{shortPath(n.cwd)}</span> : "Unknown"],
-            ["Branch", n.branch ?? "—"],
-            ["Opened in", n.surface === "desktop-app" ? `${TOOL_LABEL[n.tool]} app` : n.surface === "ide" ? "IDE" : n.surface === "terminal" ? "Terminal" : "—"],
-            ["Context", n.contextPct == null ? "—" : `${n.contextPct} % of the window${n.model ? ` · ${n.model}` : ""}`],
-            ["Created", <span title={new Date(n.startedAt).toLocaleString("en-GB")}>{ago(n.startedAt, s.now)}</span>],
+            [t("sessions.sheet.folder"), n.cwd ? <span className="font-ac-mono text-xs">{shortPath(n.cwd)}</span> : t("sessions.sheet.unknown")],
+            [t("sessions.sheet.branch"), n.branch ?? "—"],
             [
-              "Session",
+              t("sessions.sheet.openedIn"),
+              n.surface === "desktop-app"
+                ? t("sessions.sheet.app", { tool: TOOL_LABEL[n.tool] })
+                : n.surface === "ide"
+                  ? t("sessions.sheet.ide")
+                  : n.surface === "terminal"
+                    ? t("sessions.sheet.terminal")
+                    : "—",
+            ],
+            [
+              t("sessions.sheet.context"),
+              n.contextPct == null ? "—" : `${t("sessions.sheet.contextPct", { pct: n.contextPct })}${n.model ? ` · ${n.model}` : ""}`,
+            ],
+            [
+              t("sessions.sheet.created"),
+              <span title={new Date(n.startedAt).toLocaleString(getLang() === "en" ? "en-GB" : locale())}>{ago(n.startedAt, s.now)}</span>,
+            ],
+            [
+              t("sessions.sheet.session"),
               <span className="font-ac-mono text-xs" title={handle}>
                 {handle.slice(0, 8)}
               </span>,
@@ -337,13 +361,13 @@ export function SessionSheet({ id }: { id: string }) {
           <div className="flex items-start gap-2.5 rounded-lg border border-ac-line px-3 py-2.5">
             <ShieldCheck className="mt-px size-4 shrink-0 text-ac-ok" />
             <div className="min-w-0">
-              <p className="text-xs text-ac-text">Session protection</p>
+              <p className="text-xs text-ac-text">{t("sessions.sheet.protection")}</p>
               <p className="mt-0.5 text-[11px] text-ac-muted">{n.protectionNote}</p>
             </div>
           </div>
         )}
         <div className="flex flex-col gap-2">
-          <Caps>Why this account</Caps>
+          <Caps>{t("sessions.sheet.why")}</Caps>
           <ol className="flex flex-col gap-1.5 border-l border-ac-line2 pl-3">
             {n.why.length ? (
               n.why.map((w, i) => (
@@ -352,52 +376,49 @@ export function SessionSheet({ id }: { id: string }) {
                 </li>
               ))
             ) : (
-              <li className="text-xs text-ac-faint">No reason recorded for this session.</li>
+              <li className="text-xs text-ac-faint">{t("sessions.sheet.noReason")}</li>
             )}
           </ol>
         </div>
         {!n.trashed && desktop && (
           <p className="rounded-lg border border-ac-line bg-ac-bg p-4 text-xs text-ac-muted">
-            Started in Claude Desktop — it runs on that Desktop window's sign-in, so compact or delete it there. To take it over, quit the Desktop
-            window it runs in first.
+            {t("sessions.sheet.desktopNote")}
           </p>
         )}
         {!n.trashed && (
           <div className="flex flex-col gap-3 rounded-lg border border-ac-line bg-ac-bg p-4">
             <div className="flex items-center gap-2">
               <ArrowLeftRight className="size-4 text-ac-brand-text" />
-              <span className="text-[13px] font-medium text-ac-text">Move to another account</span>
+              <span className="text-[13px] font-medium text-ac-text">{t("sessions.sheet.move")}</span>
             </div>
-            <p className="text-xs text-ac-muted">A session keeps its account unless you choose here. Nothing happens until you click.</p>
+            <p className="text-xs text-ac-muted">{t("sessions.sheet.moveNote")}</p>
             {how !== "handoff" && (
-              <p className="text-[11px] text-ac-faint">
-                The prompt cache stays with the old account: the first turn on the new one reads the whole conversation again, uncached. The cheapest moment to move is right after a compaction.
-              </p>
+              <p className="text-[11px] text-ac-faint">{t("sessions.sheet.cacheNote")}</p>
             )}
             <Segmented
-              label="How"
+              label={t("sessions.sheet.how")}
               fill
               value={how}
               onChange={setHow}
               options={[
-                { value: "switch", label: "Switch live", disabled: !live.ok, why: live.reason },
-                { value: "takeover", label: "Take over" },
-                { value: "handoff", label: "Hand off", disabled: desktop, why: desktop ? "Needs a terminal session's transcript — a Claude Desktop session's isn't reachable here." : undefined },
+                { value: "switch", label: t("sessions.sheet.switchLive"), disabled: !live.ok, why: live.reason },
+                { value: "takeover", label: t("sessions.sheet.takeOver") },
+                { value: "handoff", label: t("sessions.sheet.handOff"), disabled: desktop, why: desktop ? t("sessions.sheet.handoffDesktop") : undefined },
               ]}
             />
             {how === "switch" && (
               <>
                 <p className="text-xs text-ac-muted">{live.reason}</p>
                 {options.length ? (
-                  <Select label="Switch to" value={target} onChange={setTarget} options={options} />
+                  <Select label={t("sessions.sheet.switchTo")} value={target} onChange={setTarget} options={options} />
                 ) : (
-                  <p className="text-xs text-ac-faint">No other {TOOL_LABEL[n.tool]} account to switch to — add one on Accounts.</p>
+                  <p className="text-xs text-ac-faint">{t("sessions.sheet.noSwitchTarget", { tool: TOOL_LABEL[n.tool] })}</p>
                 )}
                 {n.armedSwitch ? (
                   <div className="flex items-center justify-between gap-3 rounded-md border border-ac-line px-3 py-2">
-                    <p className="text-xs text-ac-soft">Switches to {armedTo?.name ?? "another account"} when this turn ends.</p>
+                    <p className="text-xs text-ac-soft">{t("sessions.sheet.armedTo", { name: armedTo?.name ?? t("sessions.sheet.anotherAccount") })}</p>
                     <Button size="sm" variant="ghost" disabled={!s.act.cancelArm} onClick={() => void cancelArmed()}>
-                      Cancel switch
+                      {t("sessions.sheet.cancelSwitch")}
                     </Button>
                   </div>
                 ) : null}
@@ -408,10 +429,10 @@ export function SessionSheet({ id }: { id: string }) {
                     title={arm.reason}
                     onClick={armLive}
                   >
-                    When this turn ends
+                    {t("sessions.sheet.whenTurnEnds")}
                   </Button>
                   <Button variant="primary" size="sm" disabled={!target || !live.ok || !s.act.rebind} onClick={switchLive}>
-                    Switch account
+                    {t("sessions.sheet.switchAccount")}
                   </Button>
                 </div>
               </>
@@ -420,44 +441,42 @@ export function SessionSheet({ id }: { id: string }) {
               <>
                 <p className="text-xs text-ac-muted">
                   {desktop
-                    ? "Moves it to that account's Claude Desktop window, where you continue it. Quit the window it runs in first."
-                    : `Moves the transcript to another ${TOOL_LABEL[n.tool]} account and resumes it there in a new terminal.`}
+                    ? t("sessions.sheet.takeoverDesktop")
+                    : t("sessions.sheet.takeoverTerminal", { tool: TOOL_LABEL[n.tool] })}
                 </p>
                 {options.length ? (
-                  <Select label="Take over on" value={target} onChange={setTarget} options={options} />
+                  <Select label={t("sessions.sheet.takeOverOn")} value={target} onChange={setTarget} options={options} />
                 ) : (
-                  <p className="text-xs text-ac-faint">No other {TOOL_LABEL[n.tool]} account — add one on Accounts.</p>
+                  <p className="text-xs text-ac-faint">{t("sessions.sheet.noOther", { tool: TOOL_LABEL[n.tool] })}</p>
                 )}
                 {!desktop && (
                   <label className="flex items-center justify-between gap-3 text-xs text-ac-soft">
                     <span>
-                      Keep a copy on {account?.name}
-                      <span className="block text-[11px] text-ac-faint">Fork instead of move — both accounts keep the transcript.</span>
+                      {t("sessions.sheet.keepCopyOn", { name: account?.name ?? "" })}
+                      <span className="block text-[11px] text-ac-faint">{t("sessions.sheet.forkNote")}</span>
                     </span>
-                    <Switch label="Keep a copy" checked={keepCopy} onChange={setKeepCopy} />
+                    <Switch label={t("sessions.sheet.keepCopy")} checked={keepCopy} onChange={setKeepCopy} />
                   </label>
                 )}
                 <div className="flex justify-end">
                   <Button variant="primary" size="sm" disabled={!target} onClick={takeOver}>
-                    Take over on {targetAccount?.name ?? "…"}
+                    {t("sessions.sheet.takeOverOnName", { name: targetAccount?.name ?? "…" })}
                   </Button>
                 </div>
               </>
             )}
             {how === "handoff" && (
               <>
-                <p className="text-xs text-ac-muted">
-                  Starts a new session on another provider with a brief of this one. Lossy: only metadata travels — not the transcript, tools or context.
-                </p>
+                <p className="text-xs text-ac-muted">{t("sessions.sheet.handoffNote")}</p>
                 {otherTool.length ? (
                   <Select
-                    label="Hand off to"
+                    label={t("sessions.sheet.handOffTo")}
                     value={handTo}
                     onChange={setHandTo}
                     options={otherTool.map((a) => ({ value: a.id, label: `${TOOL_LABEL[a.tool]} · ${a.name}`, dot: <AccountDot color={a.color} size={8} /> }))}
                   />
                 ) : (
-                  <p className="text-xs text-ac-faint">No account on another provider yet.</p>
+                  <p className="text-xs text-ac-faint">{t("sessions.sheet.noOtherProvider")}</p>
                 )}
                 <button
                   type="button"
@@ -466,12 +485,12 @@ export function SessionSheet({ id }: { id: string }) {
                   className="flex items-center gap-2 text-left text-xs text-ac-soft disabled:opacity-45"
                   aria-expanded={showBrief}
                 >
-                  <ChevronDown className={cn("size-4 transition-transform", showBrief && "rotate-180")} /> {showBrief ? "Hide the brief" : "Show the brief"}
+                  <ChevronDown className={cn("size-4 transition-transform", showBrief && "rotate-180")} /> {showBrief ? t("sessions.sheet.hideBrief") : t("sessions.sheet.showBrief")}
                 </button>
                 {showBrief && (
                   <div className="flex flex-col gap-2">
                     <pre className="whitespace-pre-wrap rounded-md border border-ac-line bg-ac-panel p-3 font-ac-mono text-[11px] text-ac-soft">
-                      {brief?.to === handTo ? brief.brief : "Reading …"}
+                      {brief?.to === handTo ? brief.brief : t("sessions.sheet.reading")}
                     </pre>
                     <div className="flex justify-end">
                       <Button
@@ -483,14 +502,14 @@ export function SessionSheet({ id }: { id: string }) {
                           setCopied(true);
                         }}
                       >
-                        <Copy /> {copied ? "Copied" : "Copy brief"}
+                        <Copy /> {copied ? t("common.copied") : t("sessions.sheet.copyBrief")}
                       </Button>
                     </div>
                   </div>
                 )}
                 <div className="flex justify-end">
                   <Button variant="primary" size="sm" disabled={!handTo || !s.act.handoffBrief} onClick={() => void handOff()}>
-                    Hand off to {handAccount ? `${TOOL_LABEL[handAccount.tool]} · ${handAccount.name}` : "…"}
+                    {t("sessions.sheet.handOffToName", { name: handAccount ? `${TOOL_LABEL[handAccount.tool]} · ${handAccount.name}` : "…" })}
                   </Button>
                 </div>
               </>

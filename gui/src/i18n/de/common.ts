@@ -1,6 +1,6 @@
 import type { common as en } from "../en/common.js";
 
-/** German copy — `common` namespace. Informal "Du"; every English key, no extras. */
+/** German copy – `common` namespace. Informal "Du"; every English key, no extras. */
 export const common: { readonly [K in keyof typeof en]: string } = {
   "common.cancel": "Abbrechen",
   "common.close": "Schließen",
@@ -38,4 +38,6 @@ export const common: { readonly [K in keyof typeof en]: string } = {
   "common.learnMore": "Mehr erfahren",
   "common.showMore": "Mehr anzeigen",
   "common.showLess": "Weniger anzeigen",
+  "common.path.dash": "Ein Ordnerpfad darf nicht mit „-“ beginnen.",
+  "common.path.empty": "Gib einen Ordnerpfad ein.",
 };

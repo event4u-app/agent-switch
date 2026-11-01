@@ -37,4 +37,6 @@ export const common = {
   "common.learnMore": "Learn more",
   "common.showMore": "Show more",
   "common.showLess": "Show less",
+  "common.path.dash": "A folder path can't start with “-”.",
+  "common.path.empty": "Enter a folder path.",
 } as const;

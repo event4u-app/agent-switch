@@ -5,6 +5,7 @@
  * can be merged into `Actions` without touching the screens lane.
  */
 
+import { t } from "../i18n/index.js";
 import * as ipc from "../ipc.js";
 import type { ProviderId } from "../transforms.js";
 import { splitAccountId } from "./actions.js";
@@ -41,7 +42,7 @@ export interface FoundationActions {
 
 /** The redesign knows `gemini`; no backend does yet. */
 function providerOf(tool: Tool): ProviderId {
-  if (tool === "gemini") throw new Error("Gemini has no backend yet.");
+  if (tool === "gemini") throw new Error(t("vm.actions.geminiNoBackend"));
   return tool;
 }
 

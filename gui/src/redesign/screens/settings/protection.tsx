@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { tagLabel } from "../account-logic.js";
+import { t, type TKey } from "../../../i18n/index.js";
 import * as ipc from "../../../ipc.js";
 import type { AutoSwitchMap } from "../../../ipc.js";
 import { getAutoSwitchGlobal, setAutoSwitchGlobalFlag } from "../../../settings-store.js";
@@ -22,9 +24,10 @@ import {
 } from "./prefs.js";
 import { WithReason } from "./shared.js";
 
-export const PROTECT_NEW_UNAVAILABLE = "On for every new account (98 %) — not adjustable here yet; change it per account below.";
-export const AUTO_RESUME_UNAVAILABLE = "Needs the protection engine — Agent Switch only warns at the threshold today.";
-export const UNKNOWN_USAGE_UNAVAILABLE = "Today no warning is sent while usage is unknown — it is never counted as free, and nothing is paused. Not adjustable yet.";
+/** Keys of the unavailable reasons (translate with `t()` at render). */
+export const PROTECT_NEW_UNAVAILABLE = "settings.protection.newUnavailable" satisfies TKey;
+export const AUTO_RESUME_UNAVAILABLE = "settings.protection.autoResumeUnavailable" satisfies TKey;
+export const UNKNOWN_USAGE_UNAVAILABLE = "settings.protection.unknownUsageUnavailable" satisfies TKey;
 
 function AccountProtectionRow({ account: a }: { account: Account }) {
   const fa = useFoundation();
@@ -42,26 +45,26 @@ function AccountProtectionRow({ account: a }: { account: Account }) {
       detail={
         p
           ? p.enabled
-            ? `Warns at ${p.thresholdPct} % of the binding window.`
-            : "Off — no warning for this account."
-          : "Protection wasn't read (the CLI didn't report it)."
+            ? t("settings.protection.warnsAt", { pct: p.thresholdPct })
+            : t("settings.protection.accountOff")
+          : t("settings.protection.notRead")
       }
     >
       <div className="w-[120px]">
         <Select
-          ariaLabel={`Warn ${label} at`}
+          ariaLabel={t("settings.protection.warnAt", { name: label })}
           value={String(p?.thresholdPct ?? 98)}
           disabled={!p}
           onChange={(v) => void run(() => fa.setProtection(a.id, { thresholdPct: Number(v) }))}
-          options={protectionThresholds(p?.thresholdPct ?? null).map((t) => ({
-            value: String(t),
-            label: `${t} %`,
-            hint: t === 98 ? "Recommended" : undefined,
+          options={protectionThresholds(p?.thresholdPct ?? null).map((pct) => ({
+            value: String(pct),
+            label: `${pct} %`,
+            hint: pct === 98 ? t("settings.protection.recommended") : undefined,
           }))}
         />
       </div>
       <Switch
-        label={`Protect ${label}`}
+        label={t("settings.protection.protectAccount", { name: label })}
         checked={!!p?.enabled}
         disabled={!p}
         onChange={(on) => void run(() => fa.setProtection(a.id, { enabled: on }))}
@@ -111,44 +114,44 @@ export function ProtectionSettings() {
   return (
     <>
       <SettingGroup
-        title="Session protection"
-        detail="Warn-only today: at the threshold you get a notice — nothing is paused or switched."
+        title={t("settings.protection.session")}
+        detail={t("settings.protection.sessionDetail")}
       >
         <SettingRow
-          title="Protect new accounts"
+          title={t("settings.protection.protectNew")}
           detail={
             <WithReason
-              detail="New accounts get the limit warning: a notice at the threshold — nothing is paused or switched. Each account can change this on its own."
-              reason={PROTECT_NEW_UNAVAILABLE}
+              detail={t("settings.protection.protectNewDetail")}
+              reason={t(PROTECT_NEW_UNAVAILABLE)}
             />
           }
         >
-          <Switch label="Protect new accounts" checked disabled onChange={() => {}} />
+          <Switch label={t("settings.protection.protectNew")} checked disabled onChange={() => {}} />
         </SettingRow>
         {s.accounts.map((a) => (
           <AccountProtectionRow key={a.id} account={a} />
         ))}
         <SettingRow
-          title="Continue after the reset"
+          title={t("settings.protection.continueAfterReset")}
           detail={
             <WithReason
-              detail="Only where the app supports it safely (Claude CLI: native auto-continue). Elsewhere you get a notification."
-              reason={AUTO_RESUME_UNAVAILABLE}
+              detail={t("settings.protection.continueAfterResetDetail")}
+              reason={t(AUTO_RESUME_UNAVAILABLE)}
             />
           }
         >
-          <Switch label="Continue after the reset" checked={false} disabled onChange={() => {}} />
+          <Switch label={t("settings.protection.continueAfterReset")} checked={false} disabled onChange={() => {}} />
         </SettingRow>
         {/* No option is in force yet, so this is a statement, not a choice. */}
-        <SettingRow title="When usage is unknown" detail={UNKNOWN_USAGE_UNAVAILABLE} />
+        <SettingRow title={t("settings.protection.unknownUsage")} detail={t(UNKNOWN_USAGE_UNAVAILABLE)} />
       </SettingGroup>
 
-      <SettingGroup title="Near limit">
+      <SettingGroup title={t("settings.protection.nearLimit")}>
         <SettingRow
-          title="Notify near limit"
-          detail="Notify you and suggest the account with the most headroom when one gets near its limit — never switches automatically. Turning this off disables the suggestions below."
+          title={t("settings.protection.notifyNearLimit")}
+          detail={t("settings.protection.notifyNearLimitDetail")}
         >
-          <Switch label="Notify near limit" checked={master} onChange={(v) => void toggleMaster(v)} />
+          <Switch label={t("settings.protection.notifyNearLimit")} checked={master} onChange={(v) => void toggleMaster(v)} />
         </SettingRow>
         {master &&
           auto &&
@@ -161,29 +164,25 @@ export function ProtectionSettings() {
             return (
               <div key={pid} className="flex flex-col divide-y divide-ac-line">
                 <SettingRow
-                  title={`Notify near limit for ${name}`}
-                  detail={
-                    can
-                      ? "Notify when the active account reaches this usage."
-                      : `Needs at least 2 ${name} accounts to suggest between.`
-                  }
+                  title={t("settings.protection.notifyNearLimitFor", { name })}
+                  detail={can ? t("settings.protection.notifyAtUsage") : t("settings.protection.needsTwo", { name })}
                 >
                   {can && cfg.enabled && (
                     <div className="w-[100px]">
                       <Select
-                        ariaLabel={`Near-limit notify threshold for ${name}`}
+                        ariaLabel={t("settings.protection.thresholdFor", { name })}
                         value={String(cfg.threshold)}
                         onChange={(v) =>
                           void writeAuto(pid, cfg.enabled, Number(v), cfg.tag).then((ok) =>
                             ok && cfg.enabled ? fireNearLimitIfCrossed(s.accounts, pid, Number(v), cfg.tag) : false,
                           )
                         }
-                        options={NOTIFY_THRESHOLD_CHOICES.map((t) => ({ value: String(t), label: `${t}%` }))}
+                        options={NOTIFY_THRESHOLD_CHOICES.map((pct) => ({ value: String(pct), label: `${pct}%` }))}
                       />
                     </div>
                   )}
                   <Switch
-                    label={`Notify near limit for ${name}`}
+                    label={t("settings.protection.notifyNearLimitFor", { name })}
                     checked={cfg.enabled}
                     disabled={!can}
                     onChange={(on) => void writeAuto(pid, on)}
@@ -191,15 +190,18 @@ export function ProtectionSettings() {
                 </SettingRow>
                 {tags && (
                   <SettingRow
-                    title={`Suggest for ${name} from`}
-                    detail="Which accounts a suggestion may name, by tag. It never changes protection."
+                    title={t("settings.protection.suggestFrom", { name })}
+                    detail={t("settings.protection.suggestFromDetail")}
                   >
                     <div className="w-[180px]">
                       <Select
-                        ariaLabel={`Suggest for ${name} from`}
+                        ariaLabel={t("settings.protection.suggestFrom", { name })}
                         value={cfg.tag}
                         onChange={(v) => void writeAuto(pid, cfg.enabled, cfg.threshold, v as AutoSwitchTag)}
-                        options={tags.map((t) => ({ value: t, label: t === "all" ? "All accounts" : `${t} accounts` }))}
+                        options={tags.map((tag) => ({
+                          value: tag,
+                          label: tag === "all" ? t("settings.protection.allAccounts") : t("settings.protection.tagAccounts", { tag: tagLabel(tag) }),
+                        }))}
                       />
                     </div>
                   </SettingRow>

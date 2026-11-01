@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { t } from "../../i18n/index.js";
+import { tx } from "../../i18n/react.js";
 import { usageHistory } from "../../ipc.js";
 import { AccountDot, identityColor } from "../../ui/AccountDot.js";
 import { Button } from "../../ui/Button.js";
@@ -57,7 +59,7 @@ function HistoryChart({ series }: { series: { id: string; label: string; color: 
         preserveAspectRatio="none"
         className="h-[150px] w-full overflow-visible"
         role="img"
-        aria-label="Week window, peak use per day, last 30 days"
+        aria-label={t("tools.history.chartLabel")}
       >
         {[0, 50, 100].map((v) => (
           <line key={v} x1="0" x2={W} y1={y(v)} y2={y(v)} stroke="var(--ac-line)" strokeDasharray={v === 100 ? "3 4" : undefined} vectorEffect="non-scaling-stroke" />
@@ -70,9 +72,9 @@ function HistoryChart({ series }: { series: { id: string; label: string; color: 
       </svg>
       <span />
       <div className="mt-1 flex justify-between text-[10px] text-ac-faint">
-        <span>30 days ago</span>
-        <span>2 weeks ago</span>
-        <span>today</span>
+        <span>{t("tools.history.daysAgo30")}</span>
+        <span>{t("tools.history.weeksAgo2")}</span>
+        <span>{t("tools.history.today")}</span>
       </div>
     </div>
   );
@@ -85,7 +87,7 @@ export function Sparkline({ values, color }: { values: (number | null)[]; color:
   const step = 400 / Math.max(1, values.length - 1);
   const area = known.length ? `${line} L${known[known.length - 1] * step},56 L${known[0] * step},56 Z` : "";
   return (
-    <svg viewBox="0 0 400 56" className="h-14 w-full" preserveAspectRatio="none" role="img" aria-label="Peak use per day, last 30 days">
+    <svg viewBox="0 0 400 56" className="h-14 w-full" preserveAspectRatio="none" role="img" aria-label={t("tools.history.sparkLabel")}>
       <line x1="0" x2={400} y1={1.12} y2={1.12} stroke="var(--ac-line2)" strokeDasharray="3 4" />
       {area && <path d={area} fill={color} opacity="0.12" />}
       <path d={line} fill="none" stroke={color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
@@ -114,14 +116,14 @@ export function UsageHistory({ history }: { history?: HistoryMap }) {
                 <span className="flex min-w-0 items-center gap-2.5 text-[13px] text-ac-text">
                   <AccountDot color={top.color} size={10} />
                   <span className="min-w-0">
-                    Most headroom right now: <b className="font-medium">{top.name}</b>
+                    {tx("tools.history.mostHeadroom", { name: <b className="font-medium">{top.name}</b> })}
                   </span>
                 </span>
                 {top.isDefault ? (
-                  <span className="text-xs text-ac-muted">Already used for plain starts</span>
+                  <span className="text-xs text-ac-muted">{t("tools.history.alreadyDefault")}</span>
                 ) : (
                   <Button size="sm" onClick={() => makeDefault(top, s)}>
-                    Use for plain starts
+                    {t("tools.history.useDefault")}
                   </Button>
                 )}
               </Card>
@@ -141,16 +143,16 @@ export function UsageHistory({ history }: { history?: HistoryMap }) {
                   </ul>
                 </>
               ) : (
-                <p className="text-xs text-ac-muted">No history yet — it builds up while Agent Switch reads usage.</p>
+                <p className="text-xs text-ac-muted">{t("tools.history.empty")}</p>
               )}
               {withData.length > 0 && all.length > withData.length && (
                 <p className="text-[11px] text-ac-faint">
-                  No readout for{" "}
-                  {all
-                    .filter((a) => !hasReadout(h[a.id]))
-                    .map((a) => a.name)
-                    .join(", ")}{" "}
-                  — sign in once to start one.
+                  {t("tools.history.noReadout", {
+                    names: all
+                      .filter((a) => !hasReadout(h[a.id]))
+                      .map((a) => a.name)
+                      .join(", "),
+                  })}
                 </p>
               )}
             </Card>
@@ -158,7 +160,7 @@ export function UsageHistory({ history }: { history?: HistoryMap }) {
         );
       })}
       <p className="px-1 text-[11px] text-ac-faint">
-        Week window, peak use per day · own accounts only · refreshed {refreshed ? ago(refreshed, s.now) : "never"}
+        {t("tools.history.footer", { ago: refreshed ? ago(refreshed, s.now) : t("common.never") })}
       </p>
     </div>
   );

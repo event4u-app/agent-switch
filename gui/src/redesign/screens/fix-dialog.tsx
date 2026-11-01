@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { Check as CheckIcon, Copy, Wrench } from "lucide-react";
+import { t, type TKey } from "../../i18n/index.js";
 import { getShareSource } from "../../settings-store.js";
 import { Button, IconButton } from "../../ui/Button.js";
 import { Dialog } from "../../ui/Overlay.js";
@@ -29,7 +30,13 @@ export function commandInFix(fix: string | undefined): string | null {
   return /^(npm|npx|brew|agent-switch|agent-config)\s/.test(fix.trim()) ? fix.trim() : null;
 }
 
-export const CHECK_STATE_LABEL: Record<Check["state"], string> = { ok: "Passes", warn: "Needs a look", fail: "Fails", info: "Note" };
+/** Translation keys, not text: call `t()` at render time. */
+export const CHECK_STATE_LABEL: Record<Check["state"], TKey> = {
+  ok: "accounts.fix.statePasses",
+  warn: "accounts.fix.stateWarn",
+  fail: "accounts.fix.stateFails",
+  info: "accounts.fix.stateInfo",
+};
 
 async function runRepair(repair: Repair, act: Actions) {
   // The reload after the write must re-run `doctor` to show the after state.
@@ -70,10 +77,10 @@ export function FixDialog({ checkId }: { checkId: string }) {
     repair && phase !== "done" ? (
       <>
         <Button size="sm" variant="ghost" onClick={() => s.close()}>
-          Not now
+          {t("accounts.fix.notNow")}
         </Button>
         <Button size="sm" variant="primary" onClick={() => void onRepair()} disabled={phase === "running"}>
-          <Wrench /> {phase === "running" ? "Repairing …" : phase === "failed" ? "Try again" : "Repair"}
+          <Wrench /> {phase === "running" ? t("accounts.fix.repairing") : phase === "failed" ? t("accounts.action.tryAgain") : t("accounts.fix.repair")}
         </Button>
       </>
     ) : (
@@ -88,24 +95,24 @@ export function FixDialog({ checkId }: { checkId: string }) {
             }}
             disabled={s.loading}
           >
-            {s.loading ? "Checking …" : "Check again"}
+            {s.loading ? t("accounts.fix.checking") : t("accounts.fix.checkAgain")}
           </Button>
         )}
         <Button size="sm" variant={phase === "done" ? "primary" : "secondary"} onClick={() => s.close()}>
-          Close
+          {t("common.close")}
         </Button>
       </>
     );
 
   return (
-    <Dialog open onOpenChange={(o) => !o && s.close()} kicker="Fix it" title={check.title} width={520} footer={footer}>
+    <Dialog open onOpenChange={(o) => !o && s.close()} kicker={t("accounts.fix.kicker")} title={check.title} width={520} footer={footer}>
       <div className="flex flex-col gap-4">
         <div>
-          <span className="ac-caps">What we found</span>
+          <span className="ac-caps">{t("accounts.fix.found")}</span>
           <p className="mt-1.5 text-[13px] text-ac-soft">{check.detail || "—"}</p>
         </div>
         <div>
-          <span className="ac-caps">{repair ? "What will change" : "What to do"}</span>
+          <span className="ac-caps">{repair ? t("accounts.fix.willChange") : t("accounts.fix.toDo")}</span>
           <p className="mt-1.5 rounded-md border border-ac-line bg-ac-bg p-3 font-ac-mono text-xs text-ac-text">{check.fix}</p>
         </div>
         {command && (
@@ -114,7 +121,7 @@ export function FixDialog({ checkId }: { checkId: string }) {
               {command}
             </code>
             <IconButton
-              label={copied ? "Copied" : `Copy: ${command}`}
+              label={copied ? t("common.copied") : t("accounts.fix.copyCommand", { command })}
               onClick={() => {
                 navigator.clipboard?.writeText(command).catch(() => {});
                 setCopied(true);
@@ -126,18 +133,21 @@ export function FixDialog({ checkId }: { checkId: string }) {
         )}
         {phase === "done" && (
           <p className="text-[13px] text-ac-soft" role="status">
-            Before: {before.current ? CHECK_STATE_LABEL[before.current] : "—"} · After: {CHECK_STATE_LABEL[check.state]}
+            {t("accounts.fix.beforeAfter", {
+              before: before.current ? t(CHECK_STATE_LABEL[before.current]) : "—",
+              after: t(CHECK_STATE_LABEL[check.state]),
+            })}
           </p>
         )}
         {phase === "failed" && error && (
           <p className="text-xs text-ac-alert-text" role="alert">
-            The repair did not go through: {error}
+            {t("accounts.fix.failed", { error })}
           </p>
         )}
         <p className="text-[11px] text-ac-faint">
           {repair
-            ? "Nothing is closed or restarted. The check runs again afterwards and shows before/after."
-            : "Agent Switch can't make this change for you. Do it yourself, then check again."}
+            ? t("accounts.fix.repairNote")
+            : t("accounts.fix.manualNote")}
         </p>
       </div>
     </Dialog>

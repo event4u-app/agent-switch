@@ -10,6 +10,10 @@ import type { Account, Attention } from "../../vm/types.js";
 import type { ForwardedScreen } from "./bridge.js";
 import { accountTools, appFor } from "../screens/logic.js";
 import { CompactAccountRow } from "../screens/rows.js";
+import { t, tp } from "../../i18n/index.js";
+
+/** The wordmark is the brand name, never translated. */
+const WORDMARK = "AGENT SWITCH";
 
 export type AttentionTarget = { overlay: Overlay } | { screen: ForwardedScreen };
 
@@ -49,9 +53,9 @@ export function Tray({
 }) {
   const s = useAS();
   const follow = (a: Attention) => {
-    const t = attentionTarget(a);
-    if (t && "overlay" in t) s.open(t.overlay);
-    else if (t && onGo) onGo(t.screen);
+    const target = attentionTarget(a);
+    if (target && "overlay" in target) s.open(target.overlay);
+    else if (target && onGo) onGo(target.screen);
     else onOpenApp?.();
   };
   const accounts = s.trayShowDisabled ? s.accounts : s.accounts.filter((a) => !a.disabled);
@@ -65,11 +69,11 @@ export function Tray({
     <div className="flex w-[340px] flex-col overflow-hidden rounded-xl border border-ac-line2 bg-ac-panel shadow-[var(--ac-shadow)]">
       <header className="flex items-center gap-2.5 border-b border-ac-line px-3 py-2.5">
         <AppLogo className="size-7" />
-        <span className="font-display text-[14px] tracking-[0.02em] text-ac-text">AGENT SWITCH</span>
+        <span className="font-display text-[14px] tracking-[0.02em] text-ac-text">{WORDMARK}</span>
         <span className="flex-1" />
         <span className={cn("inline-flex items-center gap-1.5 text-[11px]", ready ? "text-ac-ok-text" : "text-ac-warn-text")}>
           <span className={cn("size-1.5 rounded-full", ready ? "bg-ac-ok" : "bg-ac-warn")} />
-          {ready ? "Ready" : "Check health"}
+          {ready ? t("tray.ready") : t("tray.checkHealth")}
         </span>
       </header>
       {s.attention.length > 0 && (
@@ -92,7 +96,7 @@ export function Tray({
         {tools.map((tool) => {
           const nextIn = nextInPools(s.accounts, tool, s.pools, s.now);
           const appId = onOpenAccountApp ? appFor(s, tool) : null;
-          const appName = s.surfaces.find((x) => x.id === appId)?.name ?? "app";
+          const appName = s.surfaces.find((x) => x.id === appId)?.name ?? t("tray.appFallback");
           const usable = (a: Account) => !a.disabled && a.state !== "signed-out" && a.state !== "wrong-account";
           return (
             <div key={tool} className="flex flex-col">
@@ -112,36 +116,34 @@ export function Tray({
       </div>
       <div className="flex items-center gap-2 whitespace-nowrap border-t border-ac-line px-3 py-2 text-[11px] text-ac-muted">
         <span className="inline-flex items-center gap-1.5">
-          <SessionStateIcon state="working" /> {open.filter((x) => x.state === "working").length} working
+          <SessionStateIcon state="working" /> {t("tray.working", { count: open.filter((x) => x.state === "working").length })}
         </span>
         {ctx.length > 0 && (
           <>
             <span>·</span>
-            <span title="Fullest context window of a running session">ctx {Math.max(...ctx.map((x) => x.contextPct ?? 0))}%</span>
+            <span title={t("tray.ctxTitle")}>{t("tray.ctx", { pct: Math.max(...ctx.map((x) => x.contextPct ?? 0)) })}</span>
           </>
         )}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {parked > 0 && <Badge>{parked} paused</Badge>}
+          {parked > 0 && <Badge>{t("tray.paused", { count: parked })}</Badge>}
           {updates > 0 && (
-            <Badge tone="info">
-              {updates} update{updates === 1 ? "" : "s"}
-            </Badge>
+            <Badge tone="info">{tp("tray.updates", updates)}</Badge>
           )}
         </span>
       </div>
       <footer className="flex items-center gap-2 border-t border-ac-line p-2">
         <Button size="sm" variant="primary" className="flex-1" onClick={() => s.open({ kind: "start" })}>
-          <Plus /> Start session
+          <Plus /> {t("tray.startSession")}
         </Button>
         <Button size="sm" onClick={onOpenApp}>
-          <AppWindow /> Open
+          <AppWindow /> {t("common.open")}
         </Button>
         <Button
           size="sm"
           variant="ghost"
           onClick={onQuit ?? (() => void s.act.quit?.())}
-          aria-label="Quit Agent Switch"
-          title="Quit Agent Switch"
+          aria-label={t("tray.quit")}
+          title={t("tray.quit")}
         >
           <Power />
         </Button>

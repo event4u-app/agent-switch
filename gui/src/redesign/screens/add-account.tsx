@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Check, ExternalLink, LoaderCircle } from "lucide-react";
+import { t, tp, type TKey } from "../../i18n/index.js";
+import { tx } from "../../i18n/react.js";
 import { cn } from "../../lib/utils.js";
 import { tauriBackend } from "../../terminal.js";
 import type { ProfileLabel } from "../../transforms.js";
@@ -16,13 +18,13 @@ import { TOOL_LABEL } from "../../vm/rules.js";
 import { useAS } from "../../vm/store.js";
 import type { IdentityColor, Tool } from "../../vm/types.js";
 import { attempt } from "./account-actions.js";
-import { ACCOUNT_NAME_RE, ACCOUNT_TOOLS, addBlocked, NAME_HINT, nameProblem, providerOf, SIGN_IN_TEXT, signInArgs } from "./account-logic.js";
+import { ACCOUNT_NAME_RE, ACCOUNT_TOOLS, addBlocked, nameHint, nameProblem, providerOf, signInArgs, signInText } from "./account-logic.js";
 import { ColourPicker, PoolsPicker, TagPicker } from "./account-sheet.js";
 import { LoginBrowserField, readIdentity, useLoginBrowser } from "./reauth.js";
 import { XtermBox } from "./terminal-sheet.js";
 
-const STEPS = ["Provider", "Name", "Sign in", "Use in"];
-const TITLES = ["Which provider?", "What should we call it?", "Sign in with the provider", "Where should it be used?"];
+const STEPS: readonly TKey[] = ["accounts.add.stepProvider", "accounts.add.stepName", "accounts.add.stepSignIn", "accounts.add.stepUseIn"];
+const TITLES: readonly TKey[] = ["accounts.add.titleProvider", "accounts.add.titleName", "accounts.add.titleSignIn", "accounts.add.titleUseIn"];
 
 type SignIn = { state: "idle" } | { state: "pending"; run: number } | { state: "verified"; identity: string };
 
@@ -30,7 +32,7 @@ type SignIn = { state: "idle" } | { state: "pending"; run: number } | { state: "
  *  in the built-in terminal; the account exists once it finishes. */
 export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
   const s = useAS();
-  const preset = ACCOUNT_TOOLS.find((t) => t === initialTool);
+  const preset = ACCOUNT_TOOLS.find((x) => x === initialTool);
   const [step, setStep] = useState(preset ? 1 : 0);
   const [tool, setTool] = useState<Tool>(preset ?? "claude");
   const [name, setName] = useState("");
@@ -69,11 +71,11 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
       if (r.exists && r.identity) setSignIn({ state: "verified", identity: r.identity });
       else {
         setSignIn({ state: "idle" });
-        s.toast({ tone: "warn", text: "The sign-in didn't finish — try again." });
+        s.toast({ tone: "warn", text: t("accounts.add.unfinished") });
       }
     } catch (e) {
       setSignIn({ state: "idle" });
-      s.toast({ tone: "alert", text: `Couldn't read the new account: ${e instanceof Error ? e.message : String(e)}` });
+      s.toast({ tone: "alert", text: t("accounts.add.readFailed", { error: e instanceof Error ? e.message : String(e) }) });
     }
     void s.reload();
   }
@@ -86,9 +88,9 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
         if (label || picked) await s.act.updateAccount?.(id, { ...(label ? { label } : {}), ...(picked ? { color: picked } : {}) });
         for (const p of pools) await s.act.setPoolMembership?.(p, id, true);
       })(),
-      `Couldn't finish ${name}`,
+      t("accounts.add.finishFailed", { name }),
     );
-    s.toast({ tone: "ok", text: `${TOOL_LABEL[tool]} · ${name} is added.` });
+    s.toast({ tone: "ok", text: t("accounts.add.added", { tool: TOOL_LABEL[tool], name }) });
     s.close();
   }
 
@@ -101,14 +103,14 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
     <Sheet
       open
       onOpenChange={(o) => !o && close()}
-      kicker={`Add account · step ${step + 1} of ${STEPS.length}`}
-      title={TITLES[step]}
+      kicker={t("accounts.add.kicker", { step: step + 1, total: STEPS.length })}
+      title={t(TITLES[step])}
       width={480}
       footer={
         <>
           {step > 0 && (
             <Button size="sm" variant="ghost" onClick={() => setStep(step - 1)} disabled={step === 2 && signIn.state === "pending"}>
-              Back
+              {t("common.back")}
             </Button>
           )}
           <span className="flex-1" />
@@ -119,49 +121,49 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
               disabled={(step === 0 && !!blocked) || (step === 1 && (!nameOk || !label)) || (step === 2 && signIn.state !== "verified")}
               onClick={() => setStep(step + 1)}
             >
-              Continue
+              {t("accounts.add.continue")}
             </Button>
           ) : (
             <Button size="sm" variant="primary" onClick={done}>
-              <Check /> Done
+              <Check /> {t("common.done")}
             </Button>
           )}
         </>
       }
     >
-      <ol className="mb-5 grid grid-cols-4 gap-2" aria-label="Steps">
+      <ol className="mb-5 grid grid-cols-4 gap-2" aria-label={t("accounts.add.steps")}>
         {STEPS.map((x, i) => (
           <li key={x} className="flex flex-col gap-1.5" aria-current={i === step ? "step" : undefined}>
             <span className={cn("h-1 rounded-full", i <= step ? "bg-ac-brand" : "bg-ac-line")} />
             <span className={cn("text-[11px]", i === step ? "text-ac-text" : "text-ac-faint")}>
-              {i + 1}. {x}
+              {i + 1}. {t(x)}
             </span>
           </li>
         ))}
       </ol>
 
       {step === 0 && (
-        <div role="radiogroup" aria-label="Provider" className="grid gap-2 sm:grid-cols-2">
-          {ACCOUNT_TOOLS.map((t) => {
-            const on = tool === t;
-            const n = s.accounts.filter((a) => a.tool === t).length;
+        <div role="radiogroup" aria-label={t("accounts.add.stepProvider")} className="grid gap-2 sm:grid-cols-2">
+          {ACCOUNT_TOOLS.map((tl) => {
+            const on = tool === tl;
+            const n = s.accounts.filter((a) => a.tool === tl).length;
             return (
               <button
-                key={t}
+                key={tl}
                 type="button"
                 role="radio"
                 aria-checked={on}
-                onClick={() => setTool(t)}
+                onClick={() => setTool(tl)}
                 className={cn(
                   "flex flex-col items-start gap-1.5 rounded-lg border p-3 text-left transition-colors",
                   on ? "border-transparent bg-ac-brand-tint shadow-[inset_0_0_0_1px_var(--ac-brand-line)]" : "border-ac-line hover:border-ac-line2",
                 )}
               >
                 <span className="flex w-full items-center justify-between gap-2">
-                  <span className="text-[14px] font-medium text-ac-text">{TOOL_LABEL[t]}</span>
-                  {t === "antigravity" && <Badge>Monitor only</Badge>}
+                  <span className="text-[14px] font-medium text-ac-text">{TOOL_LABEL[tl]}</span>
+                  {tl === "antigravity" && <Badge>{t("accounts.add.monitorOnly")}</Badge>}
                 </span>
-                <span className="text-[11px] text-ac-muted">{n ? `${n} account${n > 1 ? "s" : ""} so far` : "No account yet"}</span>
+                <span className="text-[11px] text-ac-muted">{n ? tp("accounts.add.soFar", n) : t("accounts.add.noAccountYet")}</span>
               </button>
             );
           })}
@@ -173,7 +175,7 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-1.5">
             <label className="ac-caps" htmlFor="new-name">
-              Name
+              {t("accounts.name.label")}
             </label>
             <TextInput
               id="new-name"
@@ -181,12 +183,12 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
               autoFocus
               className="h-9"
               value={name}
-              placeholder="e.g. client-acme"
+              placeholder={t("accounts.add.namePlaceholder")}
               disabled={created}
               onChange={(e) => setName(e.target.value)}
             />
             <span className={cn("text-[11px]", (taken && !created) || problem ? "text-ac-warn-text" : "text-ac-faint")}>
-              {taken && !created ? `There is already a ${TOOL_LABEL[tool]} account named ${twin?.name ?? name}.` : (problem ?? NAME_HINT)}
+              {taken && !created ? t("accounts.add.nameTaken", { tool: TOOL_LABEL[tool], name: twin?.name ?? name }) : (problem ?? nameHint())}
             </span>
           </div>
           <TagPicker value={label} onChange={setLabel} />
@@ -198,19 +200,19 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
       {step === 2 && provider && (
         <div className="flex flex-col gap-4">
           <p className="text-[13px] text-ac-soft">
-            {SIGN_IN_TEXT[tool]}. Your existing login stays untouched — this account gets its own folder and keychain entry. Agent Switch never sees your password.
+            {t("accounts.add.signInIntro", { lead: signInText(tool) })}
           </p>
           <Segmented
-            label="Sign-in method"
+            label={t("accounts.add.method")}
             value={method}
             onChange={setMethod}
             options={[
-              { value: "browser", label: "Browser" },
+              { value: "browser", label: t("accounts.add.methodBrowser") },
               {
                 value: "device",
-                label: "Device code",
+                label: t("accounts.add.methodDevice"),
                 disabled: true,
-                why: tool === "codex" ? "Device code sign-in isn't wired up in Agent Switch yet" : "Only Codex offers a device code",
+                why: tool === "codex" ? t("accounts.add.deviceNotWired") : t("accounts.add.deviceOnlyCodex"),
               },
             ]}
           />
@@ -222,28 +224,24 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
                 {TOOL_LABEL[tool]} · {name}
               </span>
               <span className="block text-[11px] text-ac-muted">
-                {signIn.state === "idle" && "Not started"}
-                {signIn.state === "pending" && "Waiting for the browser … you can switch windows."}
-                {signIn.state === "verified" && (
-                  <>
-                    Verified: <Copyable text={signIn.identity} />
-                  </>
-                )}
+                {signIn.state === "idle" && t("accounts.add.notStarted")}
+                {signIn.state === "pending" && t("accounts.add.waitingBrowser")}
+                {signIn.state === "verified" && tx("accounts.add.verified", { identity: <Copyable text={signIn.identity} /> })}
               </span>
             </span>
             {signIn.state === "idle" && (
               <Button size="sm" variant="primary" onClick={begin}>
-                <ExternalLink /> Open sign-in
+                <ExternalLink /> {t("accounts.add.openSignIn")}
               </Button>
             )}
             {signIn.state === "pending" && (
               <Button size="sm" disabled>
-                <LoaderCircle className="animate-spin" /> Waiting
+                <LoaderCircle className="animate-spin" /> {t("accounts.add.waiting")}
               </Button>
             )}
             {signIn.state === "verified" && (
               <Badge tone="ok" dot>
-                Connected
+                {t("accounts.auth.connected")}
               </Badge>
             )}
           </Card>
@@ -260,16 +258,16 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
           <label className="flex items-center justify-between gap-3 rounded-lg border border-ac-line p-3">
             <span>
               <span className="block text-[13px] text-ac-text">{TOOL_LABEL[tool]} CLI</span>
-              <span className="block text-[11px] text-ac-muted">Plain `{tool}` picks it when a project binding or pool says so.</span>
+              <span className="block text-[11px] text-ac-muted">{t("accounts.add.plainPicks", { tool })}</span>
             </span>
-            <Badge tone="ok">Always</Badge>
+            <Badge tone="ok">{t("accounts.add.always")}</Badge>
           </label>
           {tool !== "gemini" && s.platform === "mac" && (
             <p className="text-[11px] text-ac-muted">
-              Want a Dock icon that opens the {TOOL_LABEL[tool]} desktop app as this account? Switch on its launcher in Tools → Apps once it's added.
+              {t("accounts.add.dockHint", { tool: TOOL_LABEL[tool] })}
             </p>
           )}
-          <p className="text-[11px] text-ac-faint">Session protection is on (98 %). You can change everything later in the account.</p>
+          <p className="text-[11px] text-ac-faint">{t("accounts.add.protectionNote")}</p>
         </div>
       )}
     </Sheet>
