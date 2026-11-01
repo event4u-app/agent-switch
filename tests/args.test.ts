@@ -60,6 +60,13 @@ test("parseArgs consumes providers' --surface value", () => {
   assert.deepEqual(p.positional, ["enable"]); // "cli" is the --surface value, not a positional
 });
 
+test("parseArgs consumes providers link's --path value", () => {
+  const p = parseArgs(["providers", "link", "--provider", "codex", "--path", "/opt/bin/codex"]);
+  assert.equal(p.flags.path, "/opt/bin/codex");
+  assert.equal(p.providerId, "codex");
+  assert.deepEqual(p.positional, ["link"]); // the path is the --path value, not a positional
+});
+
 test("parseArgs throws on an explicit invalid provider (testable, not process.exit)", () => {
   assert.throws(() => parseArgs(["use", "--provider", "bogus", "x"]), /unknown provider/);
 });
