@@ -93,7 +93,16 @@ export function parseArgs(argv: string[]): ParsedArgs {
  * general parser. Strip only `--provider <val>` and `--cwd <dir>` (before any
  * bare `--`), take the name, pass the rest.
  */
-export function parseRun(rest: string[]): { providerId: ProviderId; name?: string; args: string[]; cwd?: string } {
+export interface RunArgs {
+  providerId: ProviderId;
+  name?: string;
+  args: string[];
+  cwd?: string;
+  tmux?: true;
+  force?: true;
+}
+
+export function parseRun(rest: string[]): RunArgs {
   const args = [...rest];
   // Everything after a bare `--` belongs to the provider binary, so our own
   // flags are only looked for before it.
@@ -115,6 +124,19 @@ export function parseRun(rest: string[]): { providerId: ProviderId; name?: strin
     if (!cwd) throw new Error("--cwd needs a folder");
     args.splice(ci, 2);
   }
+  const switches: Pick<RunArgs, "tmux" | "force"> = {};
+  for (const flag of ["--tmux", "--force"] as const) {
+    const i = own(flag);
+    if (i >= 0) {
+      switches[flag === "--tmux" ? "tmux" : "force"] = true;
+      args.splice(i, 1);
+    }
+  }
+  // The separator is ours: the binary would read everything after its own `--`
+  // as prompt text, so `run work -- --resume` must reach it as `--resume`.
+  const end = args.indexOf("--");
+  if (end >= 0) args.splice(end, 1);
   const name = args.shift();
-  return cwd === undefined ? { providerId, name, args } : { providerId, name, args, cwd };
+  const parsed: RunArgs = cwd === undefined ? { providerId, name, args } : { providerId, name, args, cwd };
+  return { ...parsed, ...switches };
 }
