@@ -88,6 +88,11 @@ export const vm = {
   "vm.profileLabel.personal": "Personal",
   "vm.profileLabel.other": "Other",
   "vm.tray.context": "agent-switch — {pct}% context",
+  "vm.cache.warm": "warm",
+  "vm.cache.warmTill": "warm till {time}",
+  "vm.cache.cold": "cold",
+  "vm.cache.coldResend": "cold · next turn re-sends ~{tokens}",
+  "vm.cache.compacted": "compacted · next turn re-sends only the summary",
   "vm.tray.noActive": "agent-switch — no active profile",
   "vm.tray.used": "agent-switch — {profile} · {pct}% used",
 } as const;

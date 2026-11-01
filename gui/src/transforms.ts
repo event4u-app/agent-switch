@@ -97,6 +97,34 @@ export interface SessionRow {
   liveSource?: "registry" | "cwd";
   /** A switch armed for the end of this session's turn (`rebind --when-idle`). */
   armed?: { target: string; createdAt: string; expiresAt: string } | null;
+  /** The session's prompt-cache state (Claude only; null when unknown). */
+  cache?: SessionCache | null;
+}
+
+/** `sessions --json` → `cache`: whether the prompt cache is still warm and
+ *  what the next turn re-sends once it is cold. Tokens only, never money. */
+export interface SessionCache {
+  state: "warm" | "cold" | "compacted" | "unknown";
+  ttl: "5m" | "1h" | null;
+  lastResponseAt: string | null;
+  expiresAt: string | null;
+  resendTokens: number | null;
+  source: "transcript" | "host";
+}
+
+/** One line for a session's prompt cache, e.g. "warm till 10:42" or
+ *  "cold · next turn re-sends ~182k". Empty when nothing is known. Pure. */
+export function formatCacheLine(cache: SessionCache | null | undefined): string {
+  if (!cache) return "";
+  if (cache.state === "warm") {
+    if (!cache.expiresAt) return t("vm.cache.warm");
+    const d = new Date(cache.expiresAt);
+    const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    return t("vm.cache.warmTill", { time });
+  }
+  if (cache.state === "cold") return cache.resendTokens == null ? t("vm.cache.cold") : t("vm.cache.coldResend", { tokens: formatTokensK(cache.resendTokens) });
+  if (cache.state === "compacted") return t("vm.cache.compacted");
+  return "";
 }
 
 /** One turn of a session content preview (ADR-002 bounded reader). */

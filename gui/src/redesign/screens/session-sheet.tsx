@@ -3,7 +3,7 @@ import { ArchiveRestore, ArrowLeftRight, ChevronDown, Copy, Eye, Minimize2, Shie
 import { en } from "../../i18n/en/index.js";
 import { getLang, locale, t } from "../../i18n/index.js";
 import { compactArgs, handoffSeedArgs, takeoverArgs } from "../../ipc.js";
-import type { ProviderId } from "../../transforms.js";
+import { formatCacheLine, type ProviderId } from "../../transforms.js";
 import { cn } from "../../lib/utils.js";
 import { AccountDot } from "../../ui/AccountDot.js";
 import { Badge } from "../../ui/Badge.js";
@@ -344,6 +344,7 @@ export function SessionSheet({ id }: { id: string }) {
               t("sessions.sheet.context"),
               n.contextPct == null ? "—" : `${t("sessions.sheet.contextPct", { pct: n.contextPct })}${n.model ? ` · ${n.model}` : ""}`,
             ],
+            [t("sessions.sheet.cache"), formatCacheLine(n.cache) || "—"],
             [
               t("sessions.sheet.created"),
               <span title={new Date(n.startedAt).toLocaleString(getLang() === "en" ? "en-GB" : locale())}>{ago(n.startedAt, s.now)}</span>,

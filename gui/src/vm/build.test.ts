@@ -91,6 +91,12 @@ describe("sessionFromRow", () => {
     ...over,
   });
 
+  it("carries the prompt-cache state through unchanged, null when the CLI sent none", () => {
+    const cache = { state: "cold" as const, ttl: "1h" as const, lastResponseAt: iso(NOW - 2 * 60 * MIN), expiresAt: iso(NOW - 60 * MIN), resendTokens: 182_000, source: "transcript" as const };
+    expect(sessionFromRow(s({ cache }), NOW).cache).toEqual(cache);
+    expect(sessionFromRow(s(), NOW).cache).toBeNull();
+  });
+
   it("carries the live source and an armed switch (target as an account id)", () => {
     const armed = sessionFromRow(s({ liveSource: "registry", armed: { target: "side", createdAt: iso(NOW), expiresAt: iso(NOW + 30 * MIN) } }), NOW);
     expect(armed.liveSource).toBe("registry");

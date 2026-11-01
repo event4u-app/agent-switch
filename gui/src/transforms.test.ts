@@ -9,6 +9,7 @@ import {
   formatReset,
   formatTokensK,
   formatContextBadge,
+  formatCacheLine,
   worstLiveContextPct,
   isProviderWorking,
   contextTrayTooltip,
@@ -17,6 +18,7 @@ import {
   type ProfileRow,
   type SessionRow,
   type SessionContext,
+  type SessionCache,
   type UsageSnapshot,
   type UsageWindow,
 } from "./transforms.js";
@@ -278,5 +280,33 @@ describe("windowPace (GUI mirror of the CLI windowPace)", () => {
   it("measures against capturedAt, not the wall clock", () => {
     const w = pw(80, 0.3);
     expect(windowPace(w, AT)).toBe(windowPace(w, AT));
+  });
+});
+
+describe("formatCacheLine", () => {
+  const cache = (over: Partial<SessionCache>): SessionCache => ({
+    state: "warm",
+    ttl: "1h",
+    lastResponseAt: "2026-11-01T10:00:00.000Z",
+    expiresAt: "2026-11-01T11:00:00.000Z",
+    resendTokens: 182_340,
+    source: "transcript",
+    ...over,
+  });
+  it("warm names the local time it stays warm until", () => {
+    const d = new Date("2026-11-01T11:00:00.000Z");
+    const hhmm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    expect(formatCacheLine(cache({}))).toBe(`warm till ${hhmm}`);
+    expect(formatCacheLine(cache({ expiresAt: null }))).toBe("warm");
+  });
+  it("cold names what the next turn re-sends", () => {
+    expect(formatCacheLine(cache({ state: "cold" }))).toBe("cold · next turn re-sends ~182k");
+    expect(formatCacheLine(cache({ state: "cold", resendTokens: null }))).toBe("cold");
+  });
+  it("compacted, unknown and missing", () => {
+    expect(formatCacheLine(cache({ state: "compacted", resendTokens: null }))).toBe("compacted · next turn re-sends only the summary");
+    expect(formatCacheLine(cache({ state: "unknown" }))).toBe("");
+    expect(formatCacheLine(null)).toBe("");
+    expect(formatCacheLine(undefined)).toBe("");
   });
 });
