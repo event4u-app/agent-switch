@@ -158,7 +158,45 @@ test("autoContinueState reads the profile's setting; setAutoContinue writes thro
     fs.writeFileSync(path.join(bad, "settings.json"), "{ not json");
     assert.equal(PR.autoContinueState(bad), "unknown");
     assert.throws(() => PR.setAutoContinue(bad, true), /not valid JSON/);
+    assert.throws(() => PR.clearAutoContinue(bad), /not valid JSON/);
     assert.equal(fs.readFileSync(path.join(bad, "settings.json"), "utf8"), "{ not json"); // untouched
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("clearAutoContinue removes the key so Claude's own default applies again, through a shared link", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "asw-autocont-clear-"));
+  try {
+    const cfg = path.join(root, "cfg");
+    fs.mkdirSync(cfg);
+    PR.clearAutoContinue(cfg); // no settings.json: nothing to remove, nothing created
+    assert.equal(fs.existsSync(path.join(cfg, "settings.json")), false);
+
+    for (const before of [true, false]) {
+      fs.writeFileSync(path.join(cfg, "settings.json"), JSON.stringify({ theme: "dark", autoContinueAtUsageLimit: before }));
+      PR.clearAutoContinue(cfg);
+      const after = JSON.parse(fs.readFileSync(path.join(cfg, "settings.json"), "utf8"));
+      assert.equal("autoContinueAtUsageLimit" in after, false);
+      assert.equal(after.theme, "dark"); // other keys kept
+      assert.equal(PR.autoContinueState(cfg), "default");
+    }
+
+    const untouched = JSON.stringify({ theme: "light" });
+    fs.writeFileSync(path.join(cfg, "settings.json"), untouched);
+    PR.clearAutoContinue(cfg); // key already absent: file left byte-identical
+    assert.equal(fs.readFileSync(path.join(cfg, "settings.json"), "utf8"), untouched);
+
+    if (process.platform !== "win32") {
+      const shared = path.join(root, "shared-settings.json");
+      fs.writeFileSync(shared, JSON.stringify({ autoContinueAtUsageLimit: false }));
+      const linked = path.join(root, "linked");
+      fs.mkdirSync(linked);
+      fs.symlinkSync(shared, path.join(linked, "settings.json"));
+      PR.clearAutoContinue(linked);
+      assert.ok(fs.lstatSync(path.join(linked, "settings.json")).isSymbolicLink(), "the link must not fork");
+      assert.equal("autoContinueAtUsageLimit" in JSON.parse(fs.readFileSync(shared, "utf8")), false);
+    }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

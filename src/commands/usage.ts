@@ -23,7 +23,7 @@ import {
   readBinaryPath,
 } from "../profiles.js";
 import { ProviderId, PROVIDER_IDS, provider } from "../providers.js";
-import { autoContinueState, readProtection, setAutoContinue, setProtection } from "../protection.js";
+import { autoContinueState, clearAutoContinue, readProtection, setAutoContinue, setProtection } from "../protection.js";
 import { HistorySample, LATEST_FILE, readHistory, recordHistorySample, writeLatestSnapshot } from "../history.js";
 import { checkAuth, fetchProfile, fetchUsage } from "../api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "../token-freshen.js";
@@ -252,7 +252,7 @@ export function cmdAuthStatus(providerId: ProviderId | undefined, json: boolean)
 
 export function cmdProtection(sub: string | undefined, args: string[], flags: Record<string, string | boolean>): void {
   const usageLine =
-    "usage: agent-switch protection [--json] | protection set <provider/name> [--on|--off] [--threshold <1-100>] | protection wait <on|off> <claude/name>";
+    "usage: agent-switch protection [--json] | protection set <provider/name> [--on|--off] [--threshold <1-100>] | protection wait <on|off|default> <claude/name>";
   if (sub === undefined || sub === "status" || sub === "list") {
     const rows = listAllProfiles().map((p) => ({
       profile: `${p.provider}/${p.name}`,
@@ -268,18 +268,19 @@ export function cmdProtection(sub: string | undefined, args: string[], flags: Re
       console.log(`${r.profile.padEnd(24)} ${r.enabled ? "on " : "off"}  at ${r.thresholdPct}%${wait}`);
     }
     console.log("\nA warning when a profile reaches its threshold — agent-switch pauses and switches nothing.");
-    console.log("At 100 % Claude Code's own auto-continue decides: wait for the reset, or stop. Change it with `agent-switch protection wait on|off <claude/name>`.");
+    console.log("At 100 % Claude Code's own auto-continue decides: wait for the reset, or stop. Change it with `agent-switch protection wait on|off <claude/name>`, or return to Claude's default with `protection wait default <claude/name>`.");
     return;
   }
   if (sub === "wait") {
     const state = args[0];
-    if (state !== "on" && state !== "off") die(usageLine);
+    if (state !== "on" && state !== "off" && state !== "default") die(usageLine);
     const m = parseMemberArg(args[1], usageLine);
     if (m.provider !== "claude") die("protection wait applies to Claude profiles only (it sets Claude Code's autoContinueAtUsageLimit)");
     requireProfile(m.provider, m.name, "protection wait");
     const cfg = configDir(m.provider, m.name);
     try {
-      setAutoContinue(cfg, state === "on");
+      if (state === "default") clearAutoContinue(cfg);
+      else setAutoContinue(cfg, state === "on");
     } catch (e) {
       die((e as Error).message);
     }
@@ -299,7 +300,13 @@ export function cmdProtection(sub: string | undefined, args: string[], flags: Re
       shared = [m.name];
     }
     if (flags.json) return void console.log(JSON.stringify({ profile: `${m.provider}/${m.name}`, hostWaits: autoContinueState(cfg), affected: shared.map((n) => `claude/${n}`) }, null, 2));
-    console.log(`Claude auto-continue ${state} for ${shared.map((n) => `claude/${n}`).join(", ")}${shared.length > 1 ? " (shared settings.json)" : ""}.`);
+    const targets = `${shared.map((n) => `claude/${n}`).join(", ")}${shared.length > 1 ? " (shared settings.json)" : ""}`;
+    if (state === "default") {
+      console.log(`Claude auto-continue back to Claude Code's default for ${targets}.`);
+      console.log("The setting is no longer pinned; Claude Code decides (today: wait for the reset and continue).");
+      return;
+    }
+    console.log(`Claude auto-continue ${state} for ${targets}.`);
     console.log(state === "on" ? "At the limit, a session waits for the reset and continues by itself." : "At the limit, Claude Code offers the wait as a choice instead.");
     return;
   }

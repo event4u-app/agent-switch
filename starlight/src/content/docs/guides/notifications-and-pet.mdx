@@ -56,9 +56,11 @@ waiting for the reset or stopping:
 ```bash
 agent-switch protection wait on claude/work
 agent-switch protection wait off claude/work
+agent-switch protection wait default claude/work
 ```
 
-This sets Claude Code's own auto-continue option for that account.
+This sets Claude Code's own auto-continue option for that account. `default`
+removes the option again, so Claude Code's own default applies.
 
 ## Limit suggestions (`autoswitch`)
 

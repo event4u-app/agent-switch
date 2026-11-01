@@ -23,7 +23,7 @@ status: planned
 
 ## Protection
 
-- [ ] **Return a profile to Claude's own default.** `protection wait default
+- [x] **Return a profile to Claude's own default.** `protection wait default
       <claude/name>` removes `autoContinueAtUsageLimit` from settings.json instead of
       writing `false`, so a user who set it can return to inheriting Claude's
       default. Same affected-profiles list as `on|off`. (Council 2026-10-31, see D2 in
