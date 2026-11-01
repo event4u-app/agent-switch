@@ -7,10 +7,14 @@
  * release-downloaded, cached binary avoids the browser-download Gatekeeper
  * quarantine, and reuses the artifacts the release already publishes.
  *
- * Per platform the release carries a runnable artifact:
+ * Per platform the release carries a runnable artifact — never an installer:
  *   - macOS: `*.app.tar.gz` (the .app bundle) → extract, `open`.
  *   - Linux: `*.AppImage`                     → chmod +x, run.
- *   - Windows: `*-setup.exe` (NSIS installer) → run (installs; no portable exe).
+ *   - Windows: `*_x64-portable.exe`           → run directly.
+ *
+ * The newest release that carries the artifact is used, so a release whose
+ * build is still running never breaks `gui`; with no network the newest cached
+ * build starts.
  *
  * The platform→asset resolution is pure and tested; download/extract/launch
  * touch the filesystem + network.
@@ -36,7 +40,7 @@ function currentVersion(): string {
   }
 }
 
-export type GuiKind = "app" | "appimage" | "win-setup";
+export type GuiKind = "app" | "appimage" | "win-exe";
 
 /** The release-asset pattern + handling for the host platform+arch, or null
  *  when unsupported. Pure. */
@@ -46,7 +50,7 @@ export function guiAssetSpec(
 ): { match: RegExp; kind: GuiKind } | null {
   if (platform === "darwin") return { match: /\.app\.tar\.gz$/, kind: "app" };
   if (platform === "linux" && arch === "x64") return { match: /\.AppImage$/i, kind: "appimage" };
-  if (platform === "win32" && arch === "x64") return { match: /-setup\.exe$/i, kind: "win-setup" };
+  if (platform === "win32" && arch === "x64") return { match: /_x64-portable\.exe$/i, kind: "win-exe" };
   return null;
 }
 
@@ -82,7 +86,7 @@ function appBundleVersion(appPath: string): string | null {
  *  single-instance guarantee (`isGuiRunning` is the other half). */
 export function guiLaunchArgv(kind: GuiKind, target: string): { program: string; args: string[] } {
   if (kind === "app") return { program: "open", args: [target] };
-  return { program: target, args: [] }; // AppImage runs directly; win-setup runs the installer
+  return { program: target, args: [] }; // AppImage and the portable exe run directly
 }
 
 /** Substring that identifies a RUNNING GUI process for this kind inside a
@@ -91,7 +95,7 @@ export function guiLaunchArgv(kind: GuiKind, target: string): { program: string;
 export function guiProcessSignature(kind: GuiKind): string {
   if (kind === "app") return "agent-switch.app/Contents/MacOS/agent-switch"; // the running .app binary
   if (kind === "appimage") return "agent-switch.AppImage";
-  return "agent-switch.exe"; // win: the installed app process (not the -setup installer)
+  return "agent-switch.exe"; // win: the portable exe, cached under this name
 }
 
 /** Whether `signature` appears in a process-list snapshot. Pure. */
@@ -124,23 +128,53 @@ interface Asset {
   url: string;
 }
 
-/** Find a matching GUI asset on the release for `version`, falling back to the
- *  latest release. Returns null when neither has one. */
-async function findAsset(version: string, match: RegExp): Promise<(Asset & { tag: string }) | null> {
-  const headers = { Accept: "application/vnd.github+json", "User-Agent": "@event4u/agent-switch gui-launch" };
-  for (const ref of [`tags/${version}`, "latest"]) {
-    let res: Response;
-    try {
-      res = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/${ref}`, { headers });
-    } catch {
-      continue;
-    }
-    if (!res.ok) continue;
-    const rel = (await res.json()) as { tag_name?: string; assets?: { name: string; browser_download_url: string }[] };
+interface Release {
+  tag_name?: string;
+  draft?: boolean;
+  assets?: { name: string; browser_download_url: string }[];
+}
+
+/** The newest published release (list order, newest first) that carries an
+ *  asset matching `match`. A release whose build for this platform is still
+ *  running has no such asset yet and is passed over. Pure. */
+export function pickReleaseAsset(releases: readonly Release[], match: RegExp): (Asset & { tag: string }) | null {
+  for (const rel of releases) {
+    if (rel.draft) continue;
     const a = (rel.assets ?? []).find((x) => match.test(x.name));
-    if (a) return { name: a.name, url: a.browser_download_url, tag: rel.tag_name ?? version };
+    if (a && rel.tag_name) return { name: a.name, url: a.browser_download_url, tag: rel.tag_name };
   }
   return null;
+}
+
+/** The highest `x.y.z` among cache folder names, or null. Pure. */
+export function newestCachedVersion(names: readonly string[]): string | null {
+  const parse = (v: string) => (/^\d+\.\d+\.\d+$/.test(v) ? v.split(".").map(Number) : null);
+  const newer = (a: number[], b: number[]) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  let best: { v: string; n: number[] } | null = null;
+  for (const v of names) {
+    const n = parse(v);
+    if (n && (!best || newer(n, best.n) > 0)) best = { v, n };
+  }
+  return best?.v ?? null;
+}
+
+/** The GUI asset from this version's release, else from the newest release
+ *  that has one. Null when GitHub cannot be reached or none has one. */
+async function findAsset(version: string, match: RegExp): Promise<(Asset & { tag: string }) | null> {
+  const headers = { Accept: "application/vnd.github+json", "User-Agent": "@event4u/agent-switch gui-launch" };
+  const get = async (ref: string): Promise<unknown> => {
+    try {
+      const res = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/${ref}`, { headers });
+      return res.ok ? await res.json() : null;
+    } catch {
+      return null;
+    }
+  };
+  const own = (await get(`releases/tags/${version}`)) as Release | null;
+  const hit = own ? pickReleaseAsset([own], match) : null;
+  if (hit) return hit;
+  const list = await get("releases?per_page=30");
+  return Array.isArray(list) ? pickReleaseAsset(list as Release[], match) : null;
 }
 
 /** Download `url` to `dest` (follows redirects via global fetch). */
@@ -155,7 +189,7 @@ async function download(url: string, dest: string): Promise<void> {
  *  version cache, and return the path to launch. */
 async function ensureGuiArtifact(spec: { match: RegExp; kind: GuiKind }): Promise<string> {
   const version = currentVersion();
-  const launchName = spec.kind === "app" ? "agent-switch.app" : spec.kind === "appimage" ? "agent-switch.AppImage" : "agent-switch-setup.exe";
+  const launchName = spec.kind === "app" ? "agent-switch.app" : spec.kind === "appimage" ? "agent-switch.AppImage" : "agent-switch.exe";
   const cached = (v: string): string | null => {
     const p = path.join(CACHE_ROOT, v, launchName);
     if (!fs.existsSync(p)) return null;
@@ -168,16 +202,28 @@ async function ensureGuiArtifact(spec: { match: RegExp; kind: GuiKind }): Promis
   const hit = cached(version);
   if (hit) return hit;
 
+  // Offline, no release with a build, or a failed download: the newest cached
+  // build still runs.
+  const newestCached = (): string | null => {
+    const names = fs.existsSync(CACHE_ROOT) ? fs.readdirSync(CACHE_ROOT) : [];
+    const newest = newestCachedVersion(names.filter((v) => fs.existsSync(path.join(CACHE_ROOT, v, launchName))));
+    if (!newest) return null;
+    console.log(`No GUI build reachable for ${version} — starting the cached ${newest}.`);
+    return path.join(CACHE_ROOT, newest, launchName);
+  };
+
   const asset = await findAsset(version, spec.match);
   if (!asset) {
+    const fallback = newestCached();
+    if (fallback) return fallback;
     throw new Error(
-      `no GUI artifact for ${process.platform}/${process.arch} on the ${version} (or latest) release.\n` +
-        `Download an installer from https://github.com/${UPDATE_REPO}/releases instead.`,
+      `no GUI build for ${process.platform}/${process.arch} could be downloaded, and none is cached yet.\n` +
+        `Check the connection to github.com and run \`agent-switch gui\` again.`,
     );
   }
-  // The fallback to the latest release (this version's build still running, or
-  // none) is filed under ITS version: filed under ours, the older app would be
-  // reused forever and report itself as outdated.
+  // An older release's build (this version's still running) is filed under ITS
+  // version: filed under ours, the older app would be reused forever and report
+  // itself as outdated.
   const assetVersion = guiCacheVersion(asset.tag);
   if (assetVersion !== guiCacheVersion(version)) {
     console.log(`Release ${version} has no GUI build yet — using ${assetVersion}.`);
@@ -185,11 +231,23 @@ async function ensureGuiArtifact(spec: { match: RegExp; kind: GuiKind }): Promis
     if (older) return older;
   }
   const dir = path.join(CACHE_ROOT, assetVersion);
+  try {
+    return await downloadArtifact(spec.kind, asset, dir, launchName);
+  } catch (e) {
+    // A half-written folder would be taken for a cached build next time.
+    fs.rmSync(dir, { recursive: true, force: true });
+    const fallback = newestCached();
+    if (fallback) return fallback;
+    throw e;
+  }
+}
+
+async function downloadArtifact(kind: GuiKind, asset: Asset, dir: string, launchName: string): Promise<string> {
   const launchPath = path.join(dir, launchName);
   fs.mkdirSync(dir, { recursive: true });
   console.log(`Downloading the GUI (${asset.name})…`);
 
-  if (spec.kind === "app") {
+  if (kind === "app") {
     const tgz = path.join(dir, "app.tar.gz");
     await download(asset.url, tgz);
     // Extract the .app bundle, then locate it (the tarball name may vary).
@@ -203,7 +261,7 @@ async function ensureGuiArtifact(spec: { match: RegExp; kind: GuiKind }): Promis
   }
 
   await download(asset.url, launchPath);
-  if (spec.kind === "appimage") fs.chmodSync(launchPath, 0o755);
+  if (kind === "appimage") fs.chmodSync(launchPath, 0o755);
   return launchPath;
 }
 
