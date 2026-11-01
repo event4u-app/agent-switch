@@ -189,6 +189,13 @@ function check(w: World): ReturnType<typeof R.resolveForDir> {
     const id = w.mapping.name.slice(5);
     const members = poolMembers(w, id);
     const anyUsable = members.some((n) => usable(w, n));
+    if (!anyUsable && members.some((n) => takesWork(w, n))) {
+      // Every working member is busy: one is shared, never a refusal.
+      assert.equal(res.blocked, undefined, `pool ${id} refused though a busy member could be shared`);
+      assert.ok(res.name !== null && members.includes(res.name) && takesWork(w, res.name), `pool ${id} shared ${res.name}, not a working member`);
+      assert.ok(res.note?.includes(`sharing ${w.providerId}/${res.name}`), "pool shared a busy member silently");
+      return res;
+    }
     if (!anyUsable) {
       // Fail-closed: a pool that cannot serve refuses, never runs outside itself.
       assert.equal(res.name, null, `pool ${id} cannot serve but resolved to ${res.name}`);
@@ -212,7 +219,14 @@ function check(w: World): ReturnType<typeof R.resolveForDir> {
       return res;
     }
     assert.equal(res.blocked, undefined, "an enabled rule account was refused");
-    if (res.name === bound) return res;
+    if (res.name === bound) {
+      // Staying on a busy bound account means nobody else was free — and it is said.
+      if (w.guard === "block" && w.profs[bound].live) {
+        assert.ok(!(w.names ?? []).some((n) => n !== bound && usable(w, n)), `rule shared busy ${bound} though a free account exists`);
+        assert.ok(res.note?.includes(`sharing ${w.providerId}/${bound}`), "rule shared its busy account silently");
+      }
+      return res;
+    }
     // The one way off a one-account rule: guard `block`, the bound account is
     // busy, and the start moves to a FREE account — said out loud in `note`.
     // (Deliberate since c63a357; see the roadmap note on 4.4.)

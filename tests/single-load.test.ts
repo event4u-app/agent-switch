@@ -184,7 +184,7 @@ test("renderGuardMessage: free profiles are named, not left for the user to look
 
 test("renderGuardMessage: the `use` context describes what happens NEXT, not what just did", () => {
   const refuse = renderGuardMessage({ profile: "work", binary: "claude", verdict: "refuse", context: "use", inspection: LOADED });
-  assert.match(refuse, /the next `claude` started here will be refused/);
+  assert.match(refuse, /the next `claude` started here moves to a free account, or shares this one when none is free/);
   assert.doesNotMatch(refuse, /continuing anyway/);
 
   const warn = renderGuardMessage({ profile: "work", binary: "claude", verdict: "warn", context: "use", inspection: LOADED });

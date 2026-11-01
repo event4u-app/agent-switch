@@ -74,7 +74,7 @@ $ asw             # list all profiles, the starred one marked *
 - **Disable instead of delete** — a disabled account keeps its login and history but is never picked and not polled; refresh it by hand when you want to look.
 - **One prompt history** — with the shared setup (`agent-switch share on`, the app's default) ↑ and Ctrl+R in Claude Code find your old prompts on every account.
 - **Explicit switching only** — a running session moves to another account only when you choose it (live switch, take over or hand off). Nothing switches on its own. A Claude Desktop session moves by take over, into the other account's Desktop window.
-- **Balanced starts, pools and project rules** — a plain `claude` with no folder rule is spread across your enabled accounts: it starts on the one that would lose the most at its next reset (its rest divided by the hours until its weekly window resets), so every account gets used up by its reset instead of one running dry while another resets unused. An account at its protection limit is never picked; when the best accounts are level, or nothing can be weighed, the account set for plain starts (the star) is used. A folder can also point at one account, or at a pool that is balanced the same way — a pool start never leaves the pool: without fresh usage it still takes a member, and a pool that is gone or has no usable member refuses the start. `dir --json` tells you why, and `agent-switch picks` lists every start the shell wrapper resolved with the reasons it gave. The weighing uses cached usage only — written by the background service (`agent-switch service install`, which refreshes every enabled account every 5 minutes) or by every refresh the desktop app makes (kept unthrottled in `usage-latest.json`); usage older than 10 minutes is not trusted and `dir --json` says so. Under `guard block` an account that already has a live session is skipped.
+- **Balanced starts, pools and project rules** — a plain `claude` with no folder rule is spread across your enabled accounts: it starts on the one that would lose the most at its next reset (its rest divided by the hours until its weekly window resets), so every account gets used up by its reset instead of one running dry while another resets unused. An account at its protection limit is never picked; when the best accounts are level, or nothing can be weighed, the account set for plain starts (the star) is used. A folder can also point at one account, or at a pool that is balanced the same way — a pool start never leaves the pool: without fresh usage it still takes a member, and a pool that is gone or has no usable member refuses the start. `dir --json` tells you why, and `agent-switch picks` lists every start the shell wrapper resolved with the reasons it gave. The weighing uses cached usage only — written by the background service (`agent-switch service install`, which refreshes every enabled account every 5 minutes) or by every refresh the desktop app makes (kept unthrottled in `usage-latest.json`); usage older than 10 minutes is not trusted and `dir --json` says so. Under `guard block` an account that already has a live session is skipped while a free one can take the start, and shared when none can.
 - **Health, activity, sign-in state** — `doctor --json`, `activity`, `auth-status` — readouts without tokens.
 - **Switch, the desktop pet** — introduces itself once, on the very first start. Never again.
 
@@ -103,23 +103,14 @@ $ claude
 agent-switch: claude/work already has a live session — starting on the free account claude/privat instead.
 ```
 
-This holds for folder rules too. Only when no account is free does it
-refuse, naming who holds the profile:
+This holds for folder rules too, and the free account it moves to is the one
+with the most headroom. When every account already has a live session, the
+start shares the best one instead of refusing — several sessions on one account
+are fine, they just share its limits:
 
 ```
 $ claude
-agent-switch: profile "work" is already loaded by a running claude session.
-
-  pid 41234  started 12m ago  ~/projects/foo
-
-Two sessions on one account share its rate limits, and both refresh the
-same rotating OAuth token.
-
-Ways forward:
-  agent-switch use privat                switch to a free account — also free: event4u
-  AGENT_SWITCH_ALLOW_DUPLICATE=1 claude  start it anyway, this once
-  agent-switch guard warn                warn instead of refusing, from now on
-  agent-switch guard off                 turn the guard off entirely
+agent-switch: every usable claude account already has a live session — sharing claude/work.
 ```
 
 It never gets in the way where it has no business being: a `claude` started

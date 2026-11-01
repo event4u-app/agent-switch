@@ -1,22 +1,22 @@
 # Map of agent-switch
 
-> Map built at `170c707832e5` · 2026-11-01 by `agent-config code-graph map` — this describes that commit; compare it with HEAD yourself.
+> Map built at `c50ca3936b94` · 2026-11-01 by `agent-config code-graph map` — this describes that commit; compare it with HEAD yourself.
 > Deterministic, no model call. Rebuild with `agent-config code-graph map`; never edit by hand.
 
-**420 files · 19 areas · 6279 trusted links · guess share 1.5 %**
+**422 files · 20 areas · 6279 trusted links · guess share 1.5 %**
 
 Thresholds: seed 42 · infrastructure above in-degree 56 · areas under 3 files fold into "small parts" · an area above 25 % is split once · lists capped at 15.
 
 Convention providers: none detected — only the framework-neutral default ran.
 
-## Health — B, 61.7 of 100
+## Health — B, 61.8 of 100
 
 | Part | Value | Points |
 |---|---|---|
-| Dead code files | 1.3 % | 23.4 / 25 |
+| Dead code files | 1.2 % | 23.4 / 25 |
 | File cycles | 5 | 0 / 25 |
 | Guessed edges | 1.5 % | 23.8 / 25 |
-| Hotspot files | 2.1 % | 14.5 / 25 |
+| Hotspot files | 2.1 % | 14.6 / 25 |
 
 Formula: `health.formula` in `code/map.json`.
 
@@ -42,13 +42,10 @@ Beside Code, each area is filled by its own reader. Every fact carries a witness
 
 ## Since the last map
 
-- a2 src/profiles.ts: +2 / −4 files
-- a4 gui/src/settings-store.ts: +4 / −0 files
-- a6 src/rebind.ts: +3 / −0 files
-- a7 gui/src/ipc.ts: +0 / −4 files
-- a9 small parts · src: +0 / −2 files
-- a10 src/telemetry.ts: +2 / −0 files
-- a13 src/commands/sharing.ts: +1 / −0 files
+- a2 src/profiles.ts: +1 / −1 files
+- a3 gui/src/vm/build.ts: +3 / −2 files
+- a8 src/usage.ts: +1 / −1 files
+- new: a16 small parts · .claude/worktrees
 
 ## Areas
 
@@ -60,7 +57,7 @@ actual dependencies disagree.
 |---|---|---|---|---|---|---|
 | [a1](code/areas/a1.md) | gui/src/vm/store.tsx | 73 | 57.4 % | 23.3 % | 94.6 % | `store.tsx`, `utils.ts`, `Button.tsx` |
 | [a2](code/areas/a2.md) | src/profiles.ts | 72 | 81.4 % | 38.9 % | 27.3 % | `profiles.ts`, `providers.ts`, `api.ts` |
-| [a3](code/areas/a3.md) | gui/src/vm/build.ts | 40 | 56.5 % | 37.5 % | 76 % | `transforms.ts`, `load.ts`, `actions.ts` |
+| [a3](code/areas/a3.md) | gui/src/vm/build.ts | 41 | 56.6 % | 36.6 % | 76.9 % | `transforms.ts`, `load.ts`, `actions.ts` |
 | [a4](code/areas/a4.md) | gui/src/settings-store.ts | 34 | 52.2 % | 23.5 % | 73.1 % | `settings-store.ts`, `Switch.tsx`, `model.ts` |
 | [a5](code/areas/a5.md) | gui/src/i18n/en/index.ts | 28 | 85.1 % | 0 % | 50 % | `index.ts`, `accounts.ts`, `common.ts` |
 | [a6](code/areas/a6.md) | src/rebind.ts | 13 | 57.1 % | 61.5 % | 0 % | `keychain.ts`, `rebind.ts`, `rebind-arm.ts` |
@@ -73,10 +70,11 @@ actual dependencies disagree.
 | [a13](code/areas/a13.md) | src/commands/sharing.ts | 5 | 59.5 % | 40 % | 66.7 % | `share.ts`, `config-transfer.ts`, `sharing.ts` |
 | a14 | small parts · scripts/pets | 3 | 50 % | 0 % | 0 % | `validate.py`, `petgen.py`, `package_pets.py` |
 | a15 | src/notify.ts | 3 | 55.6 % | 66.7 % | 0 % | `notify.ts`, `daemon-context.test.ts`, `notify.test.ts` |
-| a16 | small parts · gui | 2 | 0 % | 0 % | 0 % | `index.html`, `tray.html` |
-| a17 | small parts · gui/src | 1 | 0 % | 0 % | 0 % | `test-setup.ts` |
-| a18 | small parts · scripts | 1 | 0 % | 0 % | 0 % | `release.mjs` |
-| a19 | small parts · starlight | 1 | 0 % | 0 % | 0 % | `package-lock.json` |
+| a16 | small parts · .claude/worktrees | 2 | 100 % | 0 % | 50 % | `t5-litellm-pricing.mjs`, `t5-litellm-pricing.mjs` |
+| a17 | small parts · gui | 2 | 0 % | 0 % | 0 % | `index.html`, `tray.html` |
+| a18 | small parts · gui/src | 1 | 0 % | 0 % | 0 % | `test-setup.ts` |
+| a19 | small parts · scripts | 1 | 0 % | 0 % | 0 % | `release.mjs` |
+| a20 | small parts · starlight | 1 | 0 % | 0 % | 0 % | `package-lock.json` |
 
 ## Infrastructure
 
@@ -127,12 +125,12 @@ a string path or a framework convention the engine does not read is isolated too
 
 | Role | Files |
 |---|---|
-| code | 222 |
+| code | 225 |
 | test | 105 |
 | config | 5 |
 | doc | 71 |
 | infra | 3 |
-| isolated | 14 |
+| isolated | 13 |
 
 ## Guessed links
 

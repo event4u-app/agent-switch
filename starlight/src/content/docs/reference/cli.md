@@ -44,7 +44,7 @@ Precedence: **directory mapping (nearest ancestor) > active profile > default.**
 | Command | Args / flags | What it does |
 | --- | --- | --- |
 | `run <name> [-- passthrough…]` | `[--provider P] [--tmux] [--force] [--cwd DIR]` | Launch the provider CLI on a profile (one-shot, parallel). `--cwd` starts it in that folder. `--tmux` wraps it in a managed tmux session (POSIX). `--force` overrides the [single-load guard](#single-load-guard). Args after `--` pass through, e.g. `run work -- --resume`; `--tmux` and `--force` count as agent-switch flags only before the `--`. |
-| `dir` | `[--provider P] [--guard] [--json] [--plain]` | Resolve the config dir for the current directory: a folder rule first; without one, the start is balanced across every enabled account, and only then the active profile. Balancing (also for a rule that points at a pool) picks the account that would lose the most at its next reset — the rest of its longest window divided by the hours until that window resets — on usage checked within 10 minutes; stale, unknown, signed-out, disabled and at-limit accounts (any window at its protection threshold) are skipped, under `guard block` so is one that already has a live session. Accounts within 5 % of each other are level: the active profile wins a level tie (then one without a live session, then the one with the most room in its fullest window — so an account about to hit its 5-hour limit loses to one that is not); with none left the active profile is used — under `guard block` a busy active profile gives way to the first free, signed-in, enabled one (`note` in `--json`). A rule that points at one account refuses the start when that account is disabled or removed; under `guard block` a busy rule account gives way to a free one (`note`). A rule that points at a pool never leaves the pool: with no fresh member it takes the active profile if that is a member, else the first usable member; when the pool no longer exists or has no usable member the start is refused (exit `86`, the reason on stderr, `blocked` in `--json`). `--plain` ignores folder rules (what a start outside any rule would do). No network call is made: the usage comes from the cache the background service writes (`service install`; it refreshes every enabled account every 5 minutes) or the desktop app's refresh (every successful `status --json` read is kept in the profile's `usage-latest.json`, and `dir` takes the newest source) — without either, starts fall back to the active profile. `--json` prints `{profile, configDir, why[], blocked?, note?}`. Machine-consumed by the shell wrapper. With `--guard`, also runs the [single-load guard](#single-load-guard): the path stays on stdout, the guard writes to stderr and exits `86` on a refusal. |
+| `dir` | `[--provider P] [--guard] [--json] [--plain]` | Resolve the config dir for the current directory: a folder rule first; without one, the start is balanced across every enabled account, and only then the active profile. Balancing (also for a rule that points at a pool) picks the account that would lose the most at its next reset — the rest of its longest window divided by the hours until that window resets — on usage checked within 10 minutes; stale, unknown, signed-out, disabled and at-limit accounts (any window at its protection threshold) are skipped, under `guard block` so is one that already has a live session while a free one can take the start. Accounts within 5 % of each other are level: the active profile wins a level tie (then one without a live session, then the one with the most room in its fullest window — so an account about to hit its 5-hour limit loses to one that is not); with none left the active profile is used — under `guard block` a busy active profile gives way to the free, signed-in, enabled one with the most headroom (`note` in `--json`). A rule that points at one account refuses the start when that account is disabled or removed; under `guard block` a busy rule account gives way to a free one (`note`). When every account is busy, the start shares the best busy account (`note`: "sharing …") rather than refusing. A rule that points at a pool never leaves the pool: with no fresh member it takes the active profile if that is a member, else the first usable member; when the pool no longer exists or has no signed-in, enabled member the start is refused (exit `86`, the reason on stderr, `blocked` in `--json`). `--plain` ignores folder rules (what a start outside any rule would do). No network call is made: the usage comes from the cache the background service writes (`service install`; it refreshes every enabled account every 5 minutes) or the desktop app's refresh (every successful `status --json` read is kept in the profile's `usage-latest.json`, and `dir` takes the newest source) — without either, starts fall back to the active profile. `--json` prints `{profile, configDir, why[], blocked?, note?}`. Machine-consumed by the shell wrapper. With `--guard`, also runs the [single-load guard](#single-load-guard): the path stays on stdout, notes go to stderr; a busy account never makes it exit `86`. |
 | `guard [block\|warn\|off]` | `[--json]` | Read or set the [single-load guard](#single-load-guard) policy. The bare form also lists which profiles are loaded right now. |
 | `map <name\|pool:<id>> [dir]` | `[--provider P]` | Map a directory (default: CWD) to a profile or to a [pool](#pools). |
 | `map --pause\|--resume [dir]` | `[--provider P]` | Pause a mapping without removing it — it stays in `mappings` (`paused: true` in `--json`, `[paused]` in text) but resolution skips it — or resume it. Re-mapping a paused folder keeps it paused. |
@@ -72,15 +72,16 @@ agent-switch guard off          # disable the check
 
 | Policy | Behaviour |
 | --- | --- |
-| `block` | A plain `claude` whose active profile is already loaded starts on a free, signed-in, enabled profile instead, with one line on stderr saying so. This applies to a folder rule's account too. Only when no profile is free is the second session refused, naming the running session. The default for installs that predate 2.2. |
+| `block` | A plain `claude` whose active profile is already loaded starts on the free, signed-in, enabled profile with the most headroom instead, with one line on stderr saying so. This applies to a folder rule's account and to pools too. When no profile is free, the start shares the best busy one — again with one line — and is never refused. The default for installs that predate 2.2. |
 | `warn` *(default on new installs)* | The same information is printed, then the session starts. |
 | `off` | No check at all. |
 
-Overrides, both named in the refusal itself:
+`agent-switch run <profile>` names one account explicitly, so there the guard
+still refuses a busy profile; override that one start with:
 
 ```bash
-AGENT_SWITCH_ALLOW_DUPLICATE=1 claude    # this one start, any shell
 agent-switch run work --force            # this one start, via run
+AGENT_SWITCH_ALLOW_DUPLICATE=1 agent-switch run work
 ```
 
 ### What it never does
@@ -91,8 +92,9 @@ agent-switch run work --force            # this one start, via run
 - **Never refuses on a crashed session.** Liveness is `kill(pid, 0)` against
   Claude Code's own `sessions/<pid>.json`, checked on every read, so a leftover
   file from a crash is simply not counted. agent-switch holds no lock of its own.
+- **Never blocks a wrapped start on a busy account.** It moves or shares.
 - **Never blocks a start because agent-switch itself failed.** The shell wrapper
-  blocks on exit code `86` and on nothing else — a missing, older, or broken
+  blocks on exit code `86` (a folder rule it cannot serve) and on nothing else — a missing, older, or broken
   `agent-switch` falls straight through to the real binary.
 - **Codex and Antigravity are not covered.** Neither CLI registers a running
   session on disk, so there is no signal to tell a second load from a first, and

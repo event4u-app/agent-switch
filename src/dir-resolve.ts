@@ -4,9 +4,10 @@
  *
  * Order: folder rule (to a profile, or to a pool) > balanced plain start > active
  * profile > none. A disabled or missing rule profile, like a pool that cannot
- * serve, refuses the start (`blocked`). One exception, deliberate since 2.6.3:
- * under guard `block` a busy one-account rule gives way to a free signed-in
- * account, with a note (`giveWayIfBusy`).
+ * serve, refuses the start (`blocked`). Under guard `block` a busy account gives
+ * way to the best free signed-in account, with a note (`giveWayIfBusy`); when
+ * every usable account is busy the start SHARES the best one, again with a note
+ * — a busy account is never a reason to refuse a start.
  * A pool resolves to the member with the most headroom on FRESH cached usage.
  * Unknown usage is never treated as free: a member whose usage is older than
  * {@link FRESH_USAGE_MS}, missing, or who is signed out is skipped. A pool rule
@@ -18,10 +19,9 @@
  * fresh for pool members: it polls every member of a pool a folder rule targets.
  *
  * Live sessions: under guard `block` a member that already holds a live
- * session is skipped (starting there would be refused). Otherwise a free member
- * wins a headroom tie over a busy one, and a busy pick is called out. With no
- * rule and no fresh usage, a busy active profile under `block` gives way to the
- * first free signed-in one (`note`) instead of being refused one step later.
+ * session is passed over while a free one can take the start, and shared when
+ * none can. Otherwise a free member wins a headroom tie over a busy one, and a
+ * busy pick is called out.
  */
 
 import type { UsageSnapshot } from "./usage.js";
@@ -86,25 +86,36 @@ export function ago(ms: number): string {
   return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
 }
 
-/**
- * Under guard `block` a busy account would only be refused one step later —
- * take a free one instead. Null when `name` is not busy or nobody is free, so
- * the caller keeps its pick and the guard speaks.
- */
-function giveWayIfBusy(i: ResolveInputs, name: string, why: string[]): Resolution | null {
-  if (i.guard !== "block" || !i.names || !(i.live?.(name) ?? false)) return null;
-  const free = i.names.find(
-    (n) => n !== name && i.exists(n) && !i.disabled?.(n) && !i.sharesDefaultLogin?.(n) && i.signedIn(n) && !(i.live?.(n) ?? false),
-  );
-  if (!free) return null;
-  const note = `${i.providerId}/${name} already has a live session — starting on the free account ${i.providerId}/${free} instead`;
+const busy = (i: ResolveInputs, name: string) => i.guard === "block" && (i.live?.(name) ?? false);
+
+function shareNote(i: ResolveInputs, name: string, why: string[]): string {
+  const note = `every usable ${i.providerId} account already has a live session — sharing ${i.providerId}/${name}`;
   why.push(note);
-  return { name: free, why, note };
+  return note;
+}
+
+const takesWork = (i: ResolveInputs, n: string) => i.exists(n) && !i.disabled?.(n) && !i.sharesDefaultLogin?.(n) && i.signedIn(n);
+
+/**
+ * Under guard `block` a busy account moves to the free account with the most
+ * headroom (the first free one when none has fresh usage). Nobody free → a busy
+ * account is shared, with a note: `share` names which one. Null when `name` is
+ * not busy.
+ */
+function giveWayIfBusy(i: ResolveInputs, name: string, why: string[], share: string = name): Resolution | null {
+  if (!busy(i, name)) return null;
+  const free = (i.names ?? []).filter((n) => n !== name && takesWork(i, n) && !busy(i, n));
+  if (!free.length) return { name: share, why, note: shareNote(i, share, why) };
+  const target = pickBalanced(i, free, [], null) ?? free[0];
+  const note = `${i.providerId}/${name} already has a live session — starting on the free account ${i.providerId}/${target} instead`;
+  why.push(note);
+  return { name: target, why, note };
 }
 
 function fallbackToActive(i: ResolveInputs, why: string[]): Resolution {
   if (i.active && i.exists(i.active)) {
-    const moved = giveWayIfBusy(i, i.active, why);
+    // Every account busy: share the one that would lose the most at its reset.
+    const moved = giveWayIfBusy(i, i.active, why, (i.names && pickBalanced(i, i.names, [], i.active, true)) || i.active);
     if (moved) return moved;
     why.push(`Using the active profile ${i.providerId}/${i.active}`);
     return { name: i.active, why };
@@ -136,10 +147,13 @@ export function resolveForDir(i: ResolveInputs): Resolution {
     const best = pickBalanced(i, members, why, null);
     if (best) return { name: best, why };
     // No fresh numbers to weigh: still a member — the rule is a boundary first.
-    const usable = (n: string) =>
-      i.exists(n) && !i.disabled?.(n) && !i.sharesDefaultLogin?.(n) && i.signedIn(n) && !(i.guard === "block" && (i.live?.(n) ?? false));
-    const anyone = members.filter(usable);
-    if (!anyone.length) return refuse(why, `pool ${id} has no usable ${i.providerId} member (signed out, disabled, busy or sharing the default login)`);
+    const signedIn = members.filter((n) => takesWork(i, n));
+    if (!signedIn.length) return refuse(why, `pool ${id} has no usable ${i.providerId} member (signed out, disabled or sharing the default login)`);
+    const anyone = signedIn.filter((n) => !busy(i, n));
+    if (!anyone.length) {
+      const shared = pickBalanced(i, members, [], i.active, true) ?? (i.active && signedIn.includes(i.active) ? i.active : signedIn[0]);
+      return { name: shared, why, note: shareNote(i, shared, why) };
+    }
     why.push(`No member of pool ${id} has fresh usage`);
     why.push("Usage comes from the background service or the open desktop app — keep one running (agent-switch service install)");
     if (i.active && anyone.includes(i.active)) {
@@ -178,9 +192,11 @@ function balancePlain(i: ResolveInputs, why: string[]): Resolution {
 /**
  * The candidate that would lose the most at its reset (see balance.ts), after
  * dropping every profile that can't take work. A level tie goes to `prefer`
- * (the plain-start account), then to one without a live session.
+ * (the plain-start account), then to one without a live session. Under guard
+ * `block` a busy account is dropped too, unless `allowBusy` (every account is
+ * busy and one has to be shared).
  */
-function pickBalanced(i: ResolveInputs, names: string[], why: string[], prefer: string | null): string | null {
+function pickBalanced(i: ResolveInputs, names: string[], why: string[], prefer: string | null, allowBusy = false): string | null {
   const isLive = i.live ?? (() => false);
   const guard = i.guard ?? "off";
   const picks: { name: string; w: Extract<Weighed, { usable: true }>; live: boolean; ageMs: number }[] = [];
@@ -203,8 +219,8 @@ function pickBalanced(i: ResolveInputs, names: string[], why: string[], prefer: 
       continue;
     }
     const live = isLive(name);
-    if (live && guard === "block") {
-      why.push(`Skipped ${key}: already has a live session (guard: block would refuse it)`);
+    if (live && guard === "block" && !allowBusy) {
+      why.push(`Skipped ${key}: already has a live session`);
       continue;
     }
     const u = i.usage(name);

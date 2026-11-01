@@ -262,7 +262,7 @@ export function cmdUse(providerId: ProviderId, name?: string): void {
 
   // `use` loads nothing — it states an intent — so it NEVER blocks. But it is
   // the cheapest possible moment to tell the user that the profile they just
-  // pointed at is already busy, before they type the command that gets refused.
+  // pointed at is already busy, before the next start moves or shares it.
   const check = checkSingleLoad(providerId, n, { context: "use" });
   if (check.message) {
     console.log("");
