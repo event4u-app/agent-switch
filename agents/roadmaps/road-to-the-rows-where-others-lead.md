@@ -98,7 +98,7 @@ Scores are the review's judgement of read code, not measurements.
       `run` (`set-keychain-password`, old empty password accepted once). `doctor`
       reports any profile still on an empty password.
       verify: `npm test` → 0 with mocked `security` calls for create, migrate and unlock.
-- [ ] **0.4 Replace D34 in `later/road-to-session-orchestration.md` Phase 4 with a pointer here.**
+- [x] **0.4 Replace D34 in `later/road-to-session-orchestration.md` Phase 4 with a pointer here.** <!-- done: 2026-11-01 — done in the planning commit; Phase 4 line points to step 0.3 -->
       verify: grep → pointer only.
 
 ## Phase 1 — An install the OS trusts (F1, needs D1)
@@ -201,18 +201,18 @@ Scores are the review's judgement of read code, not measurements.
 
 ## Phase 5 — The GUI in German and English (D7)
 
-- [ ] **5.1 String table.** Visible strings in `gui/src/redesign/**` and
+- [x] **5.1 String table.** <!-- done: 2026-11-01 — gui/src/i18n (t/tp/tx, en+de tables, ~1,230 keys per language, de typed against en), language pref agent-switch-language (system|en|de) in Settings › General, lint test gui/src/i18n/lint.test.ts over redesign/ + ui/ .tsx, settings test for the override; view-model and engine copy translated too (logged notices stay English, translated on display) --> Visible strings in `gui/src/redesign/**` and
       `gui/src/ui/**` go through one `t()` with `en` and `de`; language follows the
       OS with an override in Settings › General; numbers and plurals through `Intl`.
       verify: a lint test fails on a JSX text node without `t()` in those folders; settings test for the override.
-- [ ] **5.2 German copy reviewed for meaning.** `PET_WELCOME` stays English.
+- [x] **5.2 German copy reviewed for meaning.** <!-- done: 2026-11-01 — informal du, one glossary (Konto, Profil, Sitzung, Wechsel, Anmeldung …), dashes/no-break spaces normalised, two strings shortened after the tray capture; PET_WELCOME regression test in gui/src/i18n/i18n.test.ts. CLI output, doctor checks and backend reasons stay English by design (D7) --> `PET_WELCOME` stays English.
       verify: regression test that `PET_WELCOME` is unchanged.
-- [ ] **5.3 Layout holds in German.** Regenerate screenshots in `de` and inspect
+- [x] **5.3 Layout holds in German.** <!-- done: 2026-11-01 — `SHOTS_LANG=de npm --prefix gui run screenshots` (new: writes to SHOTS_OUT/tmp, also captures pet-bubble-1..3 + pet-bubble-cap); inspected overview, near-limit, start-session, sessions, session-sheet, accounts, tools, health, settings, settings-protection, tray, 4 pet bubbles. Fixed: pet bubble had no overflow rule (overflow-wrap: anywhere), tray cut „gerade e…“ and the sign-in attention title (shorter de copy), % no longer splits from its number (no-break space kept by sanitizeBubble) --> Regenerate screenshots in `de` and inspect
       each for overflow and cut-off — including the pet bubble with a full-length
       title plus action line (`long-text.png` from the July inbox showed it clipped;
       `gui/pet.html:66-76` has no overflow rule, window 240×330).
       verify: the PR lists every capture as inspected.
-- [ ] **5.4 Replace the DE/EN item in `later/road-to-session-orchestration.md` Phase 5 with a pointer here.**
+- [x] **5.4 Replace the DE/EN item in `later/road-to-session-orchestration.md` Phase 5 with a pointer here.** <!-- done: 2026-11-01 — done in the planning commit -->
       verify: grep → pointer only.
 
 ## Not in this roadmap — where each point goes
@@ -260,4 +260,4 @@ Scores are the review's judgement of read code, not measurements.
 - [ ] AC-4 — `agent-switch --list --json` passes the schema-v1 fixture, reads only the cache, < 300 ms, never offers a switch.
 - [ ] AC-5 — An armed switch runs once at the next idle edge, expires, or is cancelled; it never runs without an arm.
 - [ ] AC-6 — `src/index.ts` < 600 lines with byte-identical help; coverage and audit jobs green.
-- [ ] AC-7 — Every visible GUI string exists in DE and EN; `PET_WELCOME` unchanged; every `de` capture inspected.
+- [x] AC-7 — Every visible GUI string exists in DE and EN; `PET_WELCOME` unchanged; every `de` capture inspected.
