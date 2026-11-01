@@ -523,6 +523,20 @@ test("canary passes for the real Keychain service-name format", () => {
   assert.doesNotThrow(() => canaryCheck(pConfig, f.deps));
 });
 
+test("canary refuses when CLAUDE_SECURESTORAGE_CONFIG_DIR redirects CC's keychain naming (CC ≥ 2.1.314)", () => {
+  const f = makeFake();
+  // CC 2.1.314 derives the service name from this var instead of CLAUDE_CONFIG_DIR
+  // whenever it is set — even to "" — so the per-profile name rebind computes would
+  // no longer be the entry the session reads.
+  for (const value of ["/elsewhere", ""]) {
+    assert.throws(
+      () => canaryCheck(pConfig, f.deps, { CLAUDE_SECURESTORAGE_CONFIG_DIR: value }),
+      /canary tripped: CLAUDE_SECURESTORAGE_CONFIG_DIR/,
+    );
+  }
+  assert.doesNotThrow(() => canaryCheck(pConfig, f.deps, {}));
+});
+
 test("canary refuses rebind BEFORE any mutation when the service-name format drifted", async () => {
   const f = makeFake();
   f.kc.set(pSvc, cred("tokP"));
@@ -553,6 +567,7 @@ test("parseCCVersion extracts the canonical semver from `claude --version` outpu
 
 test("versionGuard passes a version in the verified set, refuses one outside it", () => {
   assert.equal(versionGuard("2.1.218 (Claude Code)", PINNED_CC_VERSIONS).ok, true);
+  assert.equal(versionGuard("2.1.314 (Claude Code)", PINNED_CC_VERSIONS).ok, true);
   const bad = versionGuard("2.1.220 (Claude Code)", PINNED_CC_VERSIONS);
   assert.equal(bad.ok, false);
   assert.match((bad as { reason: string }).reason, /not in rebind's verified set/);
@@ -585,6 +600,52 @@ test("version canary refuses rebind BEFORE any mutation on an unverified CC vers
     "no credential mutation on a version-canary refusal",
   );
   assert.equal(f.rebindState.consecutiveFailures, 0, "a version-canary refusal does not advance the circuit-breaker");
+});
+
+test("an unpinned CC version proceeds when the automatic contract check passes", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  f.deps.claudeVersion = () => "2.1.999 (Claude Code)";
+  const checked: string[] = [];
+  f.deps.verifyCCContract = (v) => {
+    checked.push(v);
+    return { ok: true, findings: [] };
+  };
+
+  const r = await rebind({ account: "A", profile: "P" }, f.deps);
+  assert.equal(r.boundToProfile, "A");
+  assert.deepEqual(checked, ["2.1.999"], "the contract check ran for the running version");
+});
+
+test("an unpinned CC version is refused, naming the failed fact, when the contract check fails", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  f.deps.claudeVersion = () => "2.1.999 (Claude Code)";
+  f.deps.verifyCCContract = () => ({
+    ok: false,
+    findings: [
+      { fact: "keychain-naming", ok: true, detail: "fine" },
+      { fact: "legacy-lock", ok: false, detail: "no legacy lock" },
+    ],
+  });
+
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /canary tripped[\s\S]*legacy-lock: no legacy lock/);
+  assert.equal(
+    f.calls.filter((c) => c.startsWith("kcAdd") || c.startsWith("kcDelete") || c.startsWith("writeFile")).length,
+    0,
+    "no credential mutation when the automatic contract check fails",
+  );
+  assert.equal(f.rebindState.consecutiveFailures, 0, "a contract refusal does not advance the circuit-breaker");
+});
+
+test("a pinned CC version never pays for the contract scan", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  f.deps.verifyCCContract = () => assert.fail("pinned versions must not scan the binary");
+  await rebind({ account: "A", profile: "P" }, f.deps);
 });
 
 // ---------- claim-less credentials: same-tier account collision ----------
