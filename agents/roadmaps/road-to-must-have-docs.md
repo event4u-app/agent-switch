@@ -250,7 +250,7 @@ duplication (14 topics in both today) is the main source of drift.
 
 ## Phase 1 — Positioning assets (internal, reviewed before any public text)
 
-- [ ] **Write `docs/positioning.md`.** It holds the message house above in its
+- [x] **Write `docs/positioning.md`.** It holds the message house above in its
   final wording:
   - tagline;
   - 3 pillars with proof (file refs);
@@ -262,7 +262,7 @@ duplication (14 topics in both today) is the main source of drift.
   - a vocabulary table (internal term → user term).
 
   Every later text quotes from this file.
-- [ ] **Decide the demo storyboard (≤ 20 s).**
+- [x] **Decide the demo storyboard (≤ 20 s).**
   - Two accounts in the menu bar. `claude` starts on the one with the most to
     give. One nears its limit, a notification fires, and the next start goes
     to the other account.
