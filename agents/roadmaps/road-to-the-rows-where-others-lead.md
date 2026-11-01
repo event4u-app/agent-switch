@@ -115,7 +115,7 @@ Scores are the review's judgement of read code, not measurements.
 
 ## Phase 2 — A readout other tools can show (D2)
 
-- [ ] **2.1 claude-swap-compatible list, read-only.** `agent-switch --list --json`
+- [x] **2.1 claude-swap-compatible list, read-only.** `agent-switch --list --json`
       and `agent-switch list --json --format cswap-v1` emit `schemaVersion: 1`,
       `supportsAccountSwitching: false`, `activeAccountNumber` and `accounts[]`
       (`number` stable from a stored map and never reused, `email`, `alias`,
@@ -124,11 +124,14 @@ Scores are the review's judgement of read code, not measurements.
       are `{"schemaVersion":1,"error":{…}}` with a non-zero exit. No token, no
       network, cache only.
       verify: `npm test` → 0 with a field-by-field fixture and a no-network test.
-- [ ] **2.2 Prove it against the consumer's rules:** cache-only read; `--version`
+      done: `src/cswap-list.ts` + `tests/cswap-list.test.ts`; numbers in `~/.agent-switch/cswap-numbers.json`; `stale` past `cacheMaxAgeMs` (the age the CLI stops serving a cached snapshot).
+- [x] **2.2 Prove it against the consumer's rules:** cache-only read; `--version`
       answers; unknown usage is `usage: null` with `usageStatus: "unavailable"`.
       verify: e2e < 300 ms on a five-profile fixture; `--version` prints a semver.
-- [ ] **2.3 Docs page** "Show agent-switch accounts in CodexBar / ccdeck", read-only by design. No outreach.
+      done: e2e measured 81–93 ms on the five-profile fixture; `--version` added (it was unhandled before) and prints `2.6.3`.
+- [x] **2.3 Docs page** "Show agent-switch accounts in CodexBar / ccdeck", read-only by design. No outreach.
       verify: `task docs:check` → 0.
+      done: `guides/codexbar-ccdeck.md` in the sidebar; flags in `reference/cli.md`; `astro check` 0 errors.
 
 ## Phase 3 — Switch when the turn ends (D3 = a)
 

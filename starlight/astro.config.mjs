@@ -58,6 +58,7 @@ export default defineConfig({
 						{ label: 'Providers & Auto-Switch', slug: 'guides/providers-and-autoswitch' },
 						{ label: 'The desktop app', slug: 'guides/tray-gui' },
 						{ label: 'Desktop Pet', slug: 'guides/desktop-pet' },
+						{ label: 'Accounts in CodexBar / ccdeck', slug: 'guides/codexbar-ccdeck' },
 					],
 				},
 				{
