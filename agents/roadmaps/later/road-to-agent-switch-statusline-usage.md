@@ -13,7 +13,11 @@ execution:
 > pre-existing statusline so their bar is untouched. The polled `/api/oauth/usage`
 > path is demoted to a fallback. Gated on a blocking live spike.
 >
-> **Arrivals:** 2 — latest `inbox-2026-10-d` (2026-10-31): the CC 2.1.314 binary
+> **Arrivals:** 3 — latest `cache-awareness` (2026-11-01, agent-config inbox): the
+> status payload also carries `prompt_cache` (`warm`, `ttl`, `expires_at`,
+> `recache_tokens_if_cold`; CC v2.1.251+, statusline doc). Once this bridge ships,
+> those fields replace the transcript derivation in `readClaudeCache`
+> (`road-to-sessions-that-show-their-cache` D1). Before that: `inbox-2026-10-d` (2026-10-31): the CC 2.1.314 binary
 > carries `rate_limits.five_hour` / `seven_day` statusline fields, and the docs say they
 > arrive only after the first API response. The 2026-07-19 NO-GO was taken on 2.1.215
 > before that; re-run the Phase-0 capture after a first response before reusing it.
