@@ -71,8 +71,8 @@ export const settings = {
   // Sign-ins
   "settings.signIns.keep": "Keep accounts signed in",
   "settings.signIns.keepDetail":
-    "Unused Claude accounts are refreshed by Claude Code itself before they lapse. Never with a model request, never while a session of that account runs. Needs the background service.",
-  "settings.signIns.keepNotCovered": "Codex and Antigravity renew their sign-in only when you use them — not covered yet.",
+    "Unused accounts are refreshed by their own tool — Claude Code, Codex or agy — before they lapse. Never with a model request, never while a session of that account runs. Needs the background service.",
+  "settings.signIns.keepCoverage": "Antigravity only on macOS, where its sign-in sits in the keychain.",
   "settings.signIns.remind": "Remind me before a sign-in expires",
   "settings.signIns.remindDetail": "Once, and once more when it has expired. Successful refreshes stay silent.",
   "settings.signIns.remindUnavailable": "Not adjustable yet — the CLI sends no expiry reminders today.",

@@ -300,9 +300,9 @@ describe("Sign-ins", () => {
     fireEvent.click(sw());
     await waitFor(() => expect(ipcMock.setKeepSignedIn).toHaveBeenCalledWith(false));
     expect(sw().getAttribute("aria-checked")).toBe("false");
-    // Only the reminder is still unavailable; Codex and Antigravity are named as not covered.
+    // Only the reminder is still unavailable; the one coverage limit left is named.
     expect(screen.getAllByTestId("unavailable-reason")).toHaveLength(1);
-    expect(screen.getByText(/Codex and Antigravity/)).toBeTruthy();
+    expect(screen.getByText(/Antigravity only on macOS/)).toBeTruthy();
     expect(screen.getByText("What Agent Switch can't prevent")).toBeTruthy();
   });
 

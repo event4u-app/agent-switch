@@ -39,7 +39,7 @@ export function SignInSettings() {
           detail={
             <>
               {t("settings.signIns.keepDetail")}
-              <span className="mt-1 block text-ac-faint">{t("settings.signIns.keepNotCovered")}</span>
+              <span className="mt-1 block text-ac-faint">{t("settings.signIns.keepCoverage")}</span>
             </>
           }
         >

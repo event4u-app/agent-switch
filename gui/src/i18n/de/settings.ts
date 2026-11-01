@@ -76,8 +76,8 @@ export const settings: { readonly [K in keyof typeof en]: string } = {
   // Sign-ins
   "settings.signIns.keep": "Konten angemeldet halten",
   "settings.signIns.keepDetail":
-    "Unbenutzte Claude-Konten werden von Claude Code selbst erneuert, bevor sie ablaufen. Nie mit einer Modellanfrage, nie während eine Sitzung dieses Kontos läuft. Braucht den Hintergrunddienst.",
-  "settings.signIns.keepNotCovered": "Codex und Antigravity erneuern ihre Anmeldung nur, wenn du sie nutzt – noch nicht abgedeckt.",
+    "Unbenutzte Konten werden von ihrem eigenen Werkzeug – Claude Code, Codex oder agy – erneuert, bevor sie ablaufen. Nie mit einer Modellanfrage, nie während eine Sitzung dieses Kontos läuft. Braucht den Hintergrunddienst.",
+  "settings.signIns.keepCoverage": "Antigravity nur auf macOS, wo seine Anmeldung im Schlüsselbund liegt.",
   "settings.signIns.remind": "Erinnern, bevor eine Anmeldung abläuft",
   "settings.signIns.remindDetail": "Einmal vorher und noch einmal, wenn sie abgelaufen ist. Erfolgreiche Erneuerungen bleiben still.",
   "settings.signIns.remindUnavailable": "Noch nicht einstellbar – die CLI verschickt heute keine Ablauf-Erinnerungen.",
