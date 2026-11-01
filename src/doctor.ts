@@ -19,6 +19,7 @@ import { sharedLinkHealth } from "./share.js";
 import { checkAuth, liveSessionPids, type AuthState } from "./api.js";
 import { checkTooling, doctorToolingLine } from "./tooling.js";
 import { readGuiSettings, type GuiSettings } from "./gui-settings.js";
+import { agyKeychainState, type AgyKeychainState } from "./agy-keychain.js";
 
 export type CheckStatus = "ok" | "warn" | "error" | "info";
 
@@ -137,6 +138,21 @@ export function antigravityOsCheck(platform: NodeJS.Platform = process.platform)
         title: "Antigravity is only partly supported here",
         detail: `On ${platform} agent-switch isolates agy's HOME per profile but cannot read which account is signed in or seed a per-profile keychain — both are macOS-only today.`,
       };
+}
+
+/** Antigravity profile keychains still on the empty password (D5). */
+export function agyKeychainPasswordCheck(rows: { name: string; state: AgyKeychainState }[]): DoctorCheck {
+  const empty = rows.filter((r) => r.state === "empty").map((r) => r.name);
+  if (empty.length === 0) {
+    return { id: "agy-keychain-password", status: "ok", title: "Antigravity keychains are password-protected", detail: "Each profile keychain's password is kept in your login keychain." };
+  }
+  return {
+    id: "agy-keychain-password",
+    status: "warn",
+    title: "Antigravity keychain without a password",
+    detail: `${empty.join(", ")}: the profile keychain still has an empty password, so anyone who can read the profile folder can open agy's login token.`,
+    fix: `Run \`agent-switch run ${empty[0]} --provider antigravity\` once — it moves the keychain to a random password kept in your login keychain.`,
+  };
 }
 
 /** Two profiles of one provider signed into the same account defeat the isolation. */
@@ -286,6 +302,10 @@ export async function collectDoctorReport(): Promise<DoctorReport> {
   checks.push(autostartCheck(readGuiSettings()));
   checks.push(apiKeyOverrideCheck());
   checks.push(antigravityOsCheck());
+  if (process.platform === "darwin") {
+    const agy = listProfiles("antigravity").map((n) => ({ name: n, state: agyKeychainState(configDir("antigravity", n)) }));
+    if (agy.length > 0) checks.push(agyKeychainPasswordCheck(agy));
+  }
 
   await providerChecks(checks);
 

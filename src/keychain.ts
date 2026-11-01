@@ -57,9 +57,9 @@ export function deletePassword(service: string): boolean {
 
 /**
  * Upsert a generic password entry (`-U` overwrites an existing value). Returns
- * true on success. This is the ONE credential-store WRITE in agent-switch — used
- * ONLY by `src/rebind.ts` under Claude Code's lock (ADR-003). Elsewhere the
- * credential store stays read-only.
+ * true on success. The ONE write to a provider's credential store is
+ * `src/rebind.ts` under Claude Code's lock (ADR-003); the only other caller,
+ * `src/agy-keychain.ts`, writes agent-switch's own `agent-switch.agy.*` entries.
  *
  * Note: the value is passed on argv (as `security` requires with `-w`), so it is
  * briefly visible to `ps` — the same trade-off Claude Code's own tooling makes.

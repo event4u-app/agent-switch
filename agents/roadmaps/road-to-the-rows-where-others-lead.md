@@ -90,7 +90,7 @@ Scores are the review's judgement of read code, not measurements.
       profile's wrapper only (D4). If binding is correct, record it in the platform
       notes and close.
       verify: `npm test` → 0 with a doctor fixture; e2e that only the opted-in profile gets the variable.
-- [ ] **0.3 Antigravity keychain with a real password (F3, D5).** New profiles get
+- [x] **0.3 Antigravity keychain with a real password (F3, D5).** <!-- done: 2026-11-01 — src/agy-keychain.ts (store-then-change migration, half-way resume), doctor check agy-keychain-password, tests/agy-keychain.test.ts with mocked security; no real macOS keychain run --> New profiles get
       a 32-byte random password stored in the login keychain as
       `agent-switch.agy.<profile-hash>`. Existing profiles migrate on their next
       `run` (`set-keychain-password`, old empty password accepted once). `doctor`
