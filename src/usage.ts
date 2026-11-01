@@ -217,10 +217,25 @@ export interface Crossing {
 
 export const DEFAULT_THRESHOLDS = [75, 90];
 
+/** Reset stamps closer than this are one cycle. The usage API reports the same
+ *  reset with jitter (`18:00:00.149976`, `18:00:00`, `17:59:59.626070`); real
+ *  windows are hours apart, so 10 min cannot merge two genuine cycles. */
+export const RESET_JITTER_MS = 10 * 60_000;
+
+/** Whether two `resetsAt` stamps name the same window cycle. Unparsable stamps
+ *  fall back to exact comparison. */
+export function sameResetCycle(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return (a || null) === (b || null);
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return a === b;
+  return Math.abs(ta - tb) < RESET_JITTER_MS;
+}
+
 /**
  * Edge-triggered threshold detection: a threshold fires once when utilization
  * first reaches it, and the fired-set resets when the window rolls over
- * (`resetsAt` changes). Returns the crossings for THIS poll plus the new state
+ * (`resetsAt` moves beyond {@link RESET_JITTER_MS}). Returns the crossings for THIS poll plus the new state
  * to persist. Pure — no I/O, no cross-account view.
  */
 export function detectCrossings(
@@ -237,7 +252,7 @@ export function detectCrossings(
       continue;
     }
     // Same cycle → keep the fired set; rolled over → reset it.
-    const fired = prevW && prevW.resetsAt === w.resetsAt ? [...prevW.fired] : [];
+    const fired = prevW && sameResetCycle(prevW.resetsAt, w.resetsAt) ? [...prevW.fired] : [];
     for (const t of thresholds) {
       if (w.utilization >= t && !fired.includes(t)) {
         crossings.push({ window: w.key, threshold: t, utilization: w.utilization });
