@@ -1,9 +1,9 @@
 # Map of agent-switch
 
-> Map built at `e05e35f69a5f` · 2026-11-01 by `agent-config code-graph map` — this describes that commit; compare it with HEAD yourself.
+> Map built at `170c707832e5` · 2026-11-01 by `agent-config code-graph map` — this describes that commit; compare it with HEAD yourself.
 > Deterministic, no model call. Rebuild with `agent-config code-graph map`; never edit by hand.
 
-**416 files · 19 areas · 6181 trusted links · guess share 1.5 %**
+**420 files · 19 areas · 6279 trusted links · guess share 1.5 %**
 
 Thresholds: seed 42 · infrastructure above in-degree 56 · areas under 3 files fold into "small parts" · an area above 25 % is split once · lists capped at 15.
 
@@ -25,7 +25,7 @@ Top findings:
 - 5 file cycles
 - no layers.yaml, so no layer breaches checked
 - 3 dead files (exports unchecked: the extractor records no exportedness, so an exported but unimported file counts as dead; entry files and files reached by a guessed link are never counted)
-- hotspot `gui/package-lock.json`: 21 commits × 6998 lines
+- hotspot `gui/package-lock.json`: 22 commits × 6998 lines
 - hotspot `gui/src/ipc.ts`: 49 commits × 1269 lines
 
 ## Knowledge areas
@@ -42,11 +42,13 @@ Beside Code, each area is filled by its own reader. Every fact carries a witness
 
 ## Since the last map
 
-- a1 src/profiles.ts: +4 / −1 files
-- a3 gui/src/vm/build.ts: +2 / −3 files
-- a7 src/usage.ts: +1 / −1 files
-- a8 src/rebind.ts: +0 / −3 files
-- gone: `small parts · .claude/worktrees`
+- a2 src/profiles.ts: +2 / −4 files
+- a4 gui/src/settings-store.ts: +4 / −0 files
+- a6 src/rebind.ts: +3 / −0 files
+- a7 gui/src/ipc.ts: +0 / −4 files
+- a9 small parts · src: +0 / −2 files
+- a10 src/telemetry.ts: +2 / −0 files
+- a13 src/commands/sharing.ts: +1 / −0 files
 
 ## Areas
 
@@ -56,19 +58,19 @@ actual dependencies disagree.
 
 | Area | Named after (hub) | Files | Cohesion | Tests | Outside hub folder | Most used |
 |---|---|---|---|---|---|---|
-| [a1](code/areas/a1.md) | src/profiles.ts | 74 | 81.5 % | 39.2 % | 28.9 % | `profiles.ts`, `providers.ts`, `api.ts` |
-| [a2](code/areas/a2.md) | gui/src/vm/store.tsx | 73 | 57.5 % | 23.3 % | 94.6 % | `store.tsx`, `utils.ts`, `Button.tsx` |
-| [a3](code/areas/a3.md) | gui/src/vm/build.ts | 40 | 56.7 % | 37.5 % | 76 % | `transforms.ts`, `load.ts`, `actions.ts` |
-| [a4](code/areas/a4.md) | gui/src/settings-store.ts | 30 | 51.7 % | 23.3 % | 82.6 % | `settings-store.ts`, `Switch.tsx`, `model.ts` |
+| [a1](code/areas/a1.md) | gui/src/vm/store.tsx | 73 | 57.4 % | 23.3 % | 94.6 % | `store.tsx`, `utils.ts`, `Button.tsx` |
+| [a2](code/areas/a2.md) | src/profiles.ts | 72 | 81.4 % | 38.9 % | 27.3 % | `profiles.ts`, `providers.ts`, `api.ts` |
+| [a3](code/areas/a3.md) | gui/src/vm/build.ts | 40 | 56.5 % | 37.5 % | 76 % | `transforms.ts`, `load.ts`, `actions.ts` |
+| [a4](code/areas/a4.md) | gui/src/settings-store.ts | 34 | 52.2 % | 23.5 % | 73.1 % | `settings-store.ts`, `Switch.tsx`, `model.ts` |
 | [a5](code/areas/a5.md) | gui/src/i18n/en/index.ts | 28 | 85.1 % | 0 % | 50 % | `index.ts`, `accounts.ts`, `common.ts` |
-| [a6](code/areas/a6.md) | gui/src/ipc.ts | 16 | 59 % | 43.8 % | 33.3 % | `ipc.ts`, `startup.ts`, `theme.ts` |
-| [a7](code/areas/a7.md) | src/usage.ts | 12 | 53.8 % | 50 % | 16.7 % | `usage.ts`, `history.ts`, `codex-usage.ts` |
-| [a8](code/areas/a8.md) | src/rebind.ts | 10 | 59 % | 60 % | 0 % | `keychain.ts`, `rebind.ts`, `agy-keychain.ts` |
-| [a9](code/areas/a9.md) | small parts · src | 8 | 70.6 % | 50 % | 0 % | `hooks.ts`, `session-preview.ts`, `gui-launch.ts` |
-| [a10](code/areas/a10.md) | src/tooling.ts | 6 | 70.2 % | 50 % | 0 % | `updates.ts`, `tooling.ts`, `release-notes.ts` |
-| [a11](code/areas/a11.md) | gui/scripts/screenshots/capture.mjs | 5 | 85.7 % | 0 % | 20 % | `fixtures.mjs`, `seed.mjs`, `tauri-shim.mjs` |
-| a12 | src/share.ts | 4 | 50.9 % | 50 % | 0 % | `share.ts`, `config-transfer.ts`, `config-transfer.test.ts` |
-| a13 | src/telemetry.ts | 4 | 64 % | 50 % | 0 % | `telemetry.ts`, `handoff.ts`, `telemetry.test.ts` |
+| [a6](code/areas/a6.md) | src/rebind.ts | 13 | 57.1 % | 61.5 % | 0 % | `keychain.ts`, `rebind.ts`, `rebind-arm.ts` |
+| [a7](code/areas/a7.md) | gui/src/ipc.ts | 12 | 58.9 % | 50 % | 50 % | `ipc.ts`, `startup.ts`, `pet.ts` |
+| [a8](code/areas/a8.md) | src/usage.ts | 12 | 53.4 % | 50 % | 16.7 % | `usage.ts`, `history.ts`, `codex-usage.ts` |
+| [a9](code/areas/a9.md) | small parts · src | 6 | 83.1 % | 50 % | 0 % | `session-preview.ts`, `gui-launch.ts`, `os-notify.ts` |
+| [a10](code/areas/a10.md) | src/telemetry.ts | 6 | 61.8 % | 50 % | 0 % | `telemetry.ts`, `cache-words.ts`, `handoff.ts` |
+| [a11](code/areas/a11.md) | src/tooling.ts | 6 | 70.2 % | 50 % | 0 % | `updates.ts`, `tooling.ts`, `release-notes.ts` |
+| [a12](code/areas/a12.md) | gui/scripts/screenshots/capture.mjs | 5 | 85.7 % | 0 % | 20 % | `fixtures.mjs`, `seed.mjs`, `tauri-shim.mjs` |
+| [a13](code/areas/a13.md) | src/commands/sharing.ts | 5 | 59.5 % | 40 % | 66.7 % | `share.ts`, `config-transfer.ts`, `sharing.ts` |
 | a14 | small parts · scripts/pets | 3 | 50 % | 0 % | 0 % | `validate.py`, `petgen.py`, `package_pets.py` |
 | a15 | src/notify.ts | 3 | 55.6 % | 66.7 % | 0 % | `notify.ts`, `daemon-context.test.ts`, `notify.test.ts` |
 | a16 | small parts · gui | 2 | 0 % | 0 % | 0 % | `index.html`, `tray.html` |
@@ -89,20 +91,20 @@ Files used by more than 56 other files. They are drawn apart and do not decide a
 Links between two areas that are otherwise barely connected, rarest first.
 
 - `gui/src/redesign/engines/notice-text.ts` → `gui/src/i18n/en/index.ts`
+- `tests/daemon-rebind.test.ts` → `src/usage.ts`
 - `gui/src/redesign/screens/logic.ts` → `gui/src/i18n/en/index.ts`
 - `gui/src/redesign/screens/session-sheet.tsx` → `gui/src/i18n/en/index.ts`
+- `src/commands/system.ts` → `src/gui-launch.ts`
+- `src/commands/sessions.ts` → `src/session-preview.ts`
+- `src/daemon.ts` → `src/os-notify.ts`
 - `src/daemon.ts` → `src/notify.ts`
 - `src/commands/sessions.ts` → `src/notify.ts`
 - `tests/daemon-context.test.ts` → `src/daemon.ts`
 - `tests/daemon-context.test.ts` → `src/sessions.ts`
-- `src/commands/sharing.ts` → `src/share.ts`
-- `src/commands/sharing.ts` → `src/config-transfer.ts`
+- `src/commands/sharing.ts` → `src/profiles.ts`
+- `src/index.ts` → `src/commands/sharing.ts`
 - `src/doctor.ts` → `src/share.ts`
-- `src/mappings.ts` → `src/share.ts`
-- `src/commands/takeover.ts` → `src/handoff.ts`
-- `src/handoff.ts` → `src/sessions.ts`
-- `src/commands/shared.ts` → `src/telemetry.ts`
-- `src/commands/sessions.ts` → `src/telemetry.ts`
+- `src/commands/sharing.ts` → `src/commands/shared.ts`
 
 ## Import cycles
 
@@ -125,39 +127,15 @@ a string path or a framework convention the engine does not read is isolated too
 
 | Role | Files |
 |---|---|
-| code | 221 |
-| test | 104 |
+| code | 222 |
+| test | 105 |
 | config | 5 |
-| doc | 69 |
+| doc | 71 |
 | infra | 3 |
 | isolated | 14 |
 
-## External dependencies
+## Guessed links
 
-- `node:fs` — imported by 99 files
-- `node:path` — imported by 98 files
-- `react` — imported by 60 files
-- `node:assert/strict` — imported by 56 files
-- `node:test` — imported by 56 files
-- `node:os` — imported by 54 files
-- `vitest` — imported by 48 files
-- `node:child_process` — imported by 35 files
-- `lucide-react` — imported by 30 files
-- `node:url` — imported by 25 files
-- `@testing-library/react` — imported by 13 files
-- `node:crypto` — imported by 7 files
-- `@tauri-apps/api/core` — imported by 6 files
-- `@tauri-apps/api/event` — imported by 4 files
-- `@tauri-apps/api/webviewWindow` — imported by 4 files
-- `@tauri-apps/plugin-shell` — imported by 3 files
-- `PIL` — imported by 3 files
-- `json` — imported by 3 files
-- `os` — imported by 3 files
-- `../src-tauri/tauri.conf.json?raw` — imported by 2 files
-- `PIL::Draw` — imported by 2 files
-- `PIL::new` — imported by 2 files
-- `node:readline` — imported by 2 files
-- `react-dom/client` — imported by 2 files
-- `vite` — imported by 2 files
+80 links were resolved by name only (no import, no type) and are not drawn by default; they are 1.5 % of all file-to-file links.
 
-> Budget of 2000 tokens reached — cut: Guesses. Read one with `agent-config code-graph map --section <name>`; never open `code/map.json` for it.
+> Budget of 2000 tokens reached — cut: External dependencies. Read one with `agent-config code-graph map --section <name>`; never open `code/map.json` for it.
