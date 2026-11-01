@@ -103,7 +103,7 @@ now or when its current turn ends.
 ## Your logins stay yours
 
 agent-switch is not a proxy and has no server, no account and no telemetry.
-Logins stay where the provider put them. It only connects to:
+Logins stay where the provider put them. Over the internet it only talks to:
 
 - the provider's own usage endpoint, with your own login;
 - GitHub, for releases and the desktop app download;
@@ -124,7 +124,8 @@ It switches a running session only when you confirm.
 | Switch a running session's account | ✅ macOS | ➖ | ➖ |
 | Logins kept fresh in the background | ✅ | ➖ | ➖ |
 
-Claude Code and Codex are on by default. Antigravity is opt-in:
+Antigravity accounts work with `--provider antigravity`. The desktop app shows
+Claude Code and Codex by default; show Antigravity there with
 `agent-switch providers enable --provider antigravity`. The core works on
 macOS, Linux and Windows, in zsh, bash, fish and PowerShell. The
 [platform matrix](https://event4u-app.github.io/agent-switch/reference/platform-matrix/)
@@ -161,7 +162,8 @@ lists every command.
 ## Update and uninstall
 
 `agent-switch update` installs the latest version through npm. The desktop app
-updates itself. `agent-switch uninstall` removes its profiles, their stored
+updates itself. What changed in each version is in the
+[release notes](https://github.com/event4u-app/agent-switch/releases). `agent-switch uninstall` removes its profiles, their stored
 logins, the background service and the app launchers. Your default Claude Code,
 Codex and Antigravity installs are untouched. Remove the `shellenv` line from
 your shell's startup file yourself.

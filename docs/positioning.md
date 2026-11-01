@@ -69,11 +69,15 @@ starts on the one with the most left.
 Your logins stay where the provider put them, and they only ever travel to the
 provider they belong to. No proxy, no telemetry, no account, no server.
 
-The complete outbound list:
+The complete outbound list (kept in sync with
+`starlight/src/content/docs/trust/security-and-privacy.mdx`):
 - the provider's own usage endpoints (`api.anthropic.com`,
-  `chatgpt.com/backend-api/wham/usage`), called with your own token;
-- GitHub (release check, app download);
-- npm (update check).
+  `chatgpt.com/backend-api/wham/usage` and `…/wham/rate-limit-reset-credits`),
+  called with your own token;
+- GitHub (release check, release notes, app download; `raw.githubusercontent.com`
+  only for `tooling install rtk`);
+- npm (the app's CLI version checks; `update` and `tooling install`);
+- loopback only, when the app embeds agent-config's local settings server.
 
 ## Objections
 

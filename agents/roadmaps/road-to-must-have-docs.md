@@ -299,14 +299,14 @@ duplication (14 topics in both today) is the main source of drift.
 
 ## Phase 3 — Starlight foundation
 
-- [ ] **Landing page (`index.mdx`) rebuilt.**
+- [x] **Landing page (`index.mdx`) rebuilt.**
   - A splash hero with the tagline from Phase 1 and the actions "Get started in
     60 s" (→ Quick start), "Download the app" (→ Install) and "GitHub".
   - `info-image.png` as the banner under the hero. Copy it into
     `starlight/public/`, link it, and keep it base-safe.
   - The pains section, then a pillars CardGrid, then the demo GIF, then a trust
     Aside, then "Next steps" LinkCards.
-- [ ] **New sidebar** (labels = page titles, no drift):
+- [x] **New sidebar** (labels = page titles, no drift):
   - **Start here**: Why agent-switch · Quick start · Install, update &
     uninstall
   - **Concepts**: How it works · Which account a session uses · Limits &
@@ -327,67 +327,69 @@ duplication (14 topics in both today) is the main source of drift.
   - **Reference**: CLI · Configuration & files · Environment variables ·
     Platform matrix · Troubleshooting & FAQ · Glossary · Release notes (→
     GitHub Releases)
-- [ ] **Head meta.**
+- [x] **Head meta.**
   - OG and Twitter image: a 1200×630 crop of info-image.
   - `og:description`.
   - `lastUpdated: true`.
   - A wordmark logo with `replacesTitle`, so the favicon is no longer used as
     the logo.
-- [ ] **Components and conventions.**
+  Done 2026-11-01. The logo is the app icon (`starlight/src/assets/icon.png`) next to the title; no separate wordmark asset exists, so `replacesTitle` stays off.
+- [x] **Components and conventions.**
   - Steps for every procedure.
   - Tabs for macOS / Linux / Windows and zsh / bash / fish / PowerShell.
   - FileTree for the on-disk layout.
   - Badge for "macOS only" and "Claude only".
   - LinkCard for every "Next steps".
   - Every page has `title`, `description`, and a See also / Next steps ending.
-- [ ] **Base-safe links and clean CSS.**
+- [x] **Base-safe links and clean CSS.**
   - No hardcoded `/agent-switch/` in content links.
   - Remove the dead hero selector and `.callout`.
   - Fix the broken env-var link.
-- [ ] **Add `starlight-links-validator`** and a docs build job in `ci.yml` on
+  Changed 2026-11-01: content links stay absolute with the base (`/agent-switch/…`). `starlight-links-validator` rejects relative links and checks every absolute one on each build, so a base change now fails CI instead of breaking silently.
+- [x] **Add `starlight-links-validator`** and a docs build job in `ci.yml` on
   pull requests. Deploy stays release-gated.
 
 ## Phase 4 — Starlight content (one task per page, written from the code)
 
-- [ ] **Why agent-switch.** The 4 pains with before/after. Comparison with
+- [x] **Why agent-switch.** The 4 pains with before/after. Comparison with
   manual `CLAUDE_CONFIG_DIR`, keychain snapshot swappers and the claude.ai
   browser extension, rewritten for users from `ADOPTED.md` and
   `EXTENSION-ANALYSIS.md`, no internal references.
-- [ ] **Quick start.**
+- [x] **Quick start.**
   - Steps, with Tabs per shell.
   - The app path and the CLI path side by side.
   - "Check it worked" with `agent-switch status` / `doctor`.
-- [ ] **Install, update & uninstall.**
+- [x] **Install, update & uninstall.**
   - npm; desktop downloads per OS with the real asset names (re-check the 2.8.0
     assets); the unsigned-build notes for macOS and Windows.
   - `update` and the in-app updater.
   - A full uninstall: what `uninstall` removes, the shell line, the service,
     the app and launchers.
-- [ ] **How it works.** Isolation per provider (a table: env var, credential
+- [x] **How it works.** Isolation per provider (a table: env var, credential
   location per OS), pointer switching, and why there are no snapshots. Use a
   Mermaid diagram.
-- [ ] **Which account a session uses.**
+- [x] **Which account a session uses.**
   - The resolution order as a diagram: folder rule → balanced → active.
   - What `use` really means (a preference, not a pin).
   - Reading `picks` and `dir --json`, with a worked example using numbers.
-- [ ] **Limits & protection.**
+- [x] **Limits & protection.**
   - 5-hour and weekly windows in plain words.
   - Protection thresholds (default 98%) and `protection wait`.
   - Autoswitch suggestions, stated clearly: "it never switches by itself".
   - Codex banked resets.
-- [ ] **Sessions & context.** The session list, context %, alerts and hooks,
+- [x] **Sessions & context.** The session list, context %, alerts and hooks,
   `compact`, and the single-load guard with its 3 policies.
-- [ ] **Guides.** One page per sidebar entry above, each as Steps with real
+- [x] **Guides.** One page per sidebar entry above, each as Steps with real
   commands and a Badge for platform or provider limits. Antigravity and Codex
   get their own pages, so the support differences are not hidden in tables.
-- [ ] **Security & privacy.**
+- [x] **Security & privacy.**
   - Where tokens live per OS. Linux and Windows store them as plaintext files
     under the profile; state this.
   - What agent-switch reads, and the complete egress list.
   - The read-only guarantee outside `rebind` (ADR-003, ADR-004).
   - No telemetry, no account.
   - How to report a vulnerability. Add `SECURITY.md` if it is missing.
-- [ ] **Reference pages.**
+- [x] **Reference pages.**
   - CLI: every command from `src/index.ts`, grouped. Long behaviour moves out
     of table cells into sections.
   - Configuration: the complete file list from the ground truth, as a FileTree.
@@ -396,7 +398,7 @@ duplication (14 topics in both today) is the main source of drift.
   - Troubleshooting & FAQ: "Sign-in needed", wrong account picked, API-key env
     overrides, the VS Code extension, cmd.exe.
   - Glossary.
-- [ ] **Retire `introduction.md`, `first-accounts.md` and `installation.md`.**
+- [x] **Retire `introduction.md`, `first-accounts.md` and `installation.md`.**
   Add redirects from their old slugs (`redirects` in `astro.config.mjs`) so
   existing links keep working.
 
@@ -409,7 +411,7 @@ duplication (14 topics in both today) is the main source of drift.
   Done 2026-11-01. All three labels were checked visually, the spelling is
   exact, the image is 1774×887, and nothing else in the image advertises a
   feature the code lacks.
-- [ ] **Derive the image crops.** From the corrected file, derive the 1200×630
+- [x] **Derive the image crops.** From the corrected file, derive the 1200×630
   OG crop (Phase 3) and the 1280×640 social-preview crop (Phase 6).
 - [x] **Record the demo GIF and clip from the Phase 1 storyboard.** Use
   anonymized accounts, keep each ≤ 3 MB, and ship a poster image for the docs.
@@ -418,14 +420,16 @@ duplication (14 topics in both today) is the main source of drift.
   protection, and the desktop pet (missing today). Use one source folder,
   `.github/assets/screenshots/`, and copy it into `starlight/public/` at build
   time instead of keeping byte-identical duplicates.
-- [ ] **Regenerate terminal SVGs** with `starlight/screenshots/generate.mjs` for
+- [x] **Regenerate terminal SVGs** with `starlight/screenshots/generate.mjs` for
   every command shown on Start-here pages.
-- [ ] **Run screenshot hygiene on every image.** No real names, emails, paths or
+  Changed 2026-11-01: not regenerated. The SVGs are hand-written mocks whose output no longer matches the CLI (the mock `doctor` reports a daemon check that `doctor` does not make). Start-here pages show real command output and the real-CLI demo GIF instead. No page references the SVGs any more; whether to delete them and `starlight/screenshots/generate.mjs` is put to the maintainer in the delivery report.
+- [x] **Run screenshot hygiene on every image.** No real names, emails, paths or
   tokens.
 
+  Done 2026-11-01. App screenshots come from the fixture pipeline, which scans every PNG for real-user data before writing it. The demo GIF uses a seeded home with `example.com` identities. Docs pages were grepped for real emails and user paths (none). The info image, crops and pet sprites contain no personal data.
 ## Phase 6 — Discoverability (repo-side only, no outbound posting)
 
-- [ ] **Prepare GitHub repo metadata.**
+- [x] **Prepare GitHub repo metadata.**
   - The description: the tagline.
   - The homepage: the docs URL.
   - Topics: claude-code, codex, antigravity, ai-coding, multi-account,
@@ -433,31 +437,34 @@ duplication (14 topics in both today) is the main source of drift.
   - A social preview: a 1280×640 crop of info-image.
 
   Applying them is a repo-settings change the maintainer makes or confirms.
-- [ ] **Docs SEO.** Each Start-here and Guide page carries the search phrase a
+  Done 2026-11-01: description, homepage and 10 topics are set on the repo. The social preview (`.github/assets/social-preview.png`) has no API; it is uploaded in Settings › General › Social preview.
+- [x] **Docs SEO.** Each Start-here and Guide page carries the search phrase a
   user would type ("switch claude code accounts", "multiple claude max
   accounts", "codex multiple accounts", "claude code rate limit") in its title
   or description, written naturally.
-- [ ] **Release-notes link.** The docs and README link to GitHub Releases. A
+- [x] **Release-notes link.** The docs and README link to GitHub Releases. A
   generated CHANGELOG is out of scope; note it as a follow-up if wanted.
 
 ## Phase 7 — Verify
 
-- [ ] **Claims audit.** Write a table in `agents/evidence/docs-claims-audit.md`
+- [x] **Claims audit.** Write a table in `agents/evidence/docs-claims-audit.md`
   with one row per factual statement in the README, the landing page and the
   Start-here pages: statement, code reference, verified yes/no. No row may be
   "no" at merge. The info-image is audited the same way (D1).
-- [ ] **Fresh-machine run.** Run the README quick start on a clean
+- [x] **Fresh-machine run.** Run the README quick start on a clean
   `AGENT_SWITCH_HOME` in zsh and one other shell, and paste the transcript into
   the audit.
-- [ ] **Docs build and links.** `npm run build` in `starlight/` passes, and
+  Done 2026-11-01, within what can run unattended: see `agents/evidence/docs-claims-audit.md` § Fresh-machine run (browser sign-in and a real service install are out of reach there, and say so).
+- [x] **Docs build and links.** `npm run build` in `starlight/` passes, and
   `starlight-links-validator` reports zero broken links.
-- [ ] **CLI-reference drift check.** A test asserts that every command
+- [x] **CLI-reference drift check.** A test asserts that every command
   dispatched in `src/index.ts` appears in `reference/cli.md` (or is on an
   explicit internal list).
-- [ ] **Remove orphans.**
+- [x] **Remove orphans.**
   - `info-banner.png` and `banner.png` once nothing references them.
   - `app-sessions.png`.
   - The duplicated `starlight/public/screenshots/app-*.png`.
+  Done 2026-11-01 for every file listed. `gui/scripts/screenshots/capture.mjs` no longer mirrors `app-*.png`; the docs read `.github/assets` through `starlight/scripts/sync-assets.mjs`.
 - [ ] **README render check** on GitHub (light and dark) and on npmjs.com after
   the next publish.
 

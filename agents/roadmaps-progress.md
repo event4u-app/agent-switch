@@ -6,10 +6,10 @@
 
 ## Overall
 
-**5 / 55 steps done · 9%**
+**45 / 55 steps done · 82%**
 
 ```text
-████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   9%
+█████████████████████████████████░░░░░░░   82%
 ```
 
 ## Open roadmaps
@@ -17,7 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-keep-signed-in-codex-antigravity.md](roadmaps/road-to-keep-signed-in-codex-antigravity.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
-| 2 | [road-to-must-have-docs.md](roadmaps/road-to-must-have-docs.md) | 8 | 47 | 42 | 5 | 0 | 0 | 0 | █░░░░░░░░░ 11% |
+| 2 | [road-to-must-have-docs.md](roadmaps/road-to-must-have-docs.md) | 8 | 47 | 2 | 45 | 0 | 0 | 0 | ██████████ 96% |
 
 ---
 
@@ -55,18 +55,18 @@
 
 ### [road-to-must-have-docs.md](roadmaps/road-to-must-have-docs.md)
 
-**Make agent-switch a must-have — positioning, README and docs** — 5 / 47 done (11%)
+**Make agent-switch a must-have — positioning, README and docs** — 45 / 47 done (96%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 0 | Make the code match what the docs will say | ✅ done | 0 | 4 | 0 | 0 | 100% |
-| 1 | Positioning assets (internal, reviewed before any public text) | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
-| 2 | README rewrite | ⬜ not started | 9 | 0 | 0 | 0 | 0% |
-| 3 | Starlight foundation | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
-| 4 | Starlight content (one task per page, written from the code) | ⬜ not started | 11 | 0 | 0 | 0 | 0% |
-| 5 | Visual proof | 🟡 in progress | 5 | 1 | 0 | 0 | 17% |
-| 6 | Discoverability (repo-side only, no outbound posting) | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
-| 7 | Verify | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
+| 1 | Positioning assets (internal, reviewed before any public text) | ✅ done | 0 | 2 | 0 | 0 | 100% |
+| 2 | README rewrite | 🟡 in progress | 1 | 8 | 0 | 0 | 89% |
+| 3 | Starlight foundation | ✅ done | 0 | 6 | 0 | 0 | 100% |
+| 4 | Starlight content (one task per page, written from the code) | ✅ done | 0 | 11 | 0 | 0 | 100% |
+| 5 | Visual proof | ✅ done | 0 | 6 | 0 | 0 | 100% |
+| 6 | Discoverability (repo-side only, no outbound posting) | ✅ done | 0 | 3 | 0 | 0 | 100% |
+| 7 | Verify | 🟡 in progress | 1 | 5 | 0 | 0 | 83% |
 
 ## Age
 
