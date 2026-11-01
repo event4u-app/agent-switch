@@ -1,22 +1,22 @@
 # Map of agent-switch
 
-> Map built at `aa0fb8d8dd79` · 2026-11-01 by `agent-config code-graph map` — this describes that commit; compare it with HEAD yourself.
+> Map built at `6f70bb359ac6` · 2026-11-01 by `agent-config code-graph map` — this describes that commit; compare it with HEAD yourself.
 > Deterministic, no model call. Rebuild with `agent-config code-graph map`; never edit by hand.
 
-**417 files · 20 areas · 6172 trusted links · guess share 1.5 %**
+**416 files · 19 areas · 6172 trusted links · guess share 1.5 %**
 
 Thresholds: seed 42 · infrastructure above in-degree 56 · areas under 3 files fold into "small parts" · an area above 25 % is split once · lists capped at 15.
 
 Convention providers: none detected — only the framework-neutral default ran.
 
-## Health — B, 61.8 of 100
+## Health — B, 61.7 of 100
 
 | Part | Value | Points |
 |---|---|---|
 | Dead code files | 1.3 % | 23.4 / 25 |
 | File cycles | 5 | 0 / 25 |
 | Guessed edges | 1.5 % | 23.8 / 25 |
-| Hotspot files | 2.1 % | 14.6 / 25 |
+| Hotspot files | 2.1 % | 14.5 / 25 |
 
 Formula: `health.formula` in `code/map.json`.
 
@@ -37,25 +37,15 @@ Beside Code, each area is filled by its own reader. Every fact carries a witness
 - interfaces: 6 services, 11 operations, 7 findings — interfaces lane (call sites, contracts, configuration names)
 - runtime: runtime lane (compose, Dockerfiles, Terraform, Kubernetes, task files) found nothing — no compose file, Dockerfile, Terraform or Kubernetes manifest was found
 - delivery: 4 workflows, 10 jobs, 28 findings — delivery lane (GitHub Actions, GitLab CI)
-- impact: 15 changed files since HEAD, 0 affected items, 0 findings — review-risk over the working diff
+- impact: 7 changed files since HEAD, 11 affected items, 0 findings — review-risk over the working diff
 - agent: 15 verbs, 0 findings — code-graph CLI and MCP surface
 
 ## Since the last map
 
-- a2 src/profiles.ts: +16 / −4 files
-- a7 src/rebind.ts: +5 / −0 files
+- a2 src/profiles.ts: +1 / −1 files
+- a3 gui/src/vm/build.ts: +2 / −3 files
 - a8 src/usage.ts: +1 / −1 files
-- a15 src/notify.ts: +0 / −56 files
-- new: a5 gui/src/i18n/en/index.ts
-- new: a16 small parts · .claude/worktrees
-- new: a18 small parts · gui/src
-- split: `gui/src/settings-store.ts` → a3 gui/src/vm/build.ts, a4 gui/src/settings-store.ts
-- split: `gui/src/updates.ts` → a3 gui/src/vm/build.ts, a9 small parts · src
-- merged into a1 gui/src/vm/store.tsx: `gui/src/vm/store.tsx`, `gui/src/lib/utils.ts`, `gui/src/redesign/screens/tools.tsx`, `gui/src/vm/search.ts`, `gui/src/redesign/screens/account-sheet.tsx`, `gui/src/ui/AcRoot.tsx`, `gui/src/vm/rules.ts`, `gui/src/redesign/screens/account-logic.ts`, `gui/src/redesign/screens/logic.ts`, `gui/src/ui/format.ts`, `gui/src/redesign/screens/projects-pools.tsx`, `gui/src/redesign/screens/session-sheet.tsx`
-- merged into a3 gui/src/vm/build.ts: `gui/src/vm/build.ts`, `gui/src/settings-store.ts`, `gui/src/updates.ts`, `small parts · gui/src`
-- merged into a4 gui/src/settings-store.ts: `gui/src/settings-store.ts`, `gui/src/star-ask.ts`
-- merged into a6 gui/src/ipc.ts: `gui/src/ipc.ts`, `gui/src/theme.ts`
-- merged into a9 small parts · src: `small parts · src`, `gui/src/updates.ts`
+- gone: `small parts · .claude/worktrees`
 
 ## Areas
 
@@ -67,7 +57,7 @@ actual dependencies disagree.
 |---|---|---|---|---|---|---|
 | [a1](code/areas/a1.md) | gui/src/vm/store.tsx | 73 | 57.5 % | 23.3 % | 94.6 % | `store.tsx`, `utils.ts`, `Button.tsx` |
 | [a2](code/areas/a2.md) | src/profiles.ts | 71 | 80.2 % | 38 % | 29.5 % | `profiles.ts`, `providers.ts`, `api.ts` |
-| [a3](code/areas/a3.md) | gui/src/vm/build.ts | 41 | 56.7 % | 36.6 % | 76.9 % | `transforms.ts`, `load.ts`, `actions.ts` |
+| [a3](code/areas/a3.md) | gui/src/vm/build.ts | 40 | 56.7 % | 37.5 % | 76 % | `transforms.ts`, `load.ts`, `actions.ts` |
 | [a4](code/areas/a4.md) | gui/src/settings-store.ts | 30 | 51.7 % | 23.3 % | 82.6 % | `settings-store.ts`, `Switch.tsx`, `model.ts` |
 | [a5](code/areas/a5.md) | gui/src/i18n/en/index.ts | 28 | 85.1 % | 0 % | 50 % | `index.ts`, `accounts.ts`, `common.ts` |
 | [a6](code/areas/a6.md) | gui/src/ipc.ts | 16 | 59 % | 43.8 % | 33.3 % | `ipc.ts`, `startup.ts`, `theme.ts` |
@@ -80,11 +70,10 @@ actual dependencies disagree.
 | a13 | src/telemetry.ts | 4 | 64 % | 50 % | 0 % | `telemetry.ts`, `handoff.ts`, `telemetry.test.ts` |
 | a14 | small parts · scripts/pets | 3 | 50 % | 0 % | 0 % | `validate.py`, `petgen.py`, `package_pets.py` |
 | a15 | src/notify.ts | 3 | 55.6 % | 66.7 % | 0 % | `notify.ts`, `daemon-context.test.ts`, `notify.test.ts` |
-| a16 | small parts · .claude/worktrees | 2 | 100 % | 0 % | 50 % | `t5-litellm-pricing.mjs`, `t5-litellm-pricing.mjs` |
-| a17 | small parts · gui | 2 | 0 % | 0 % | 0 % | `index.html`, `tray.html` |
-| a18 | small parts · gui/src | 1 | 0 % | 0 % | 0 % | `test-setup.ts` |
-| a19 | small parts · scripts | 1 | 0 % | 0 % | 0 % | `release.mjs` |
-| a20 | small parts · starlight | 1 | 0 % | 0 % | 0 % | `package-lock.json` |
+| a16 | small parts · gui | 2 | 0 % | 0 % | 0 % | `index.html`, `tray.html` |
+| a17 | small parts · gui/src | 1 | 0 % | 0 % | 0 % | `test-setup.ts` |
+| a18 | small parts · scripts | 1 | 0 % | 0 % | 0 % | `release.mjs` |
+| a19 | small parts · starlight | 1 | 0 % | 0 % | 0 % | `package-lock.json` |
 
 ## Infrastructure
 
@@ -128,8 +117,46 @@ Links between two areas that are otherwise barely connected, rarest first.
 
 - none declared
 
-## Guessed links
+## Files by role
 
-80 links were resolved by name only (no import, no type) and are not drawn by default; they are 1.5 % of all file-to-file links.
+*isolated* means no trusted link in or out — never "dead": a file reached by reflection,
+a string path or a framework convention the engine does not read is isolated too.
 
-> Budget of 2000 tokens reached — cut: Roles, External dependencies. Read one with `agent-config code-graph map --section <name>`; never open `code/map.json` for it.
+| Role | Files |
+|---|---|
+| code | 221 |
+| test | 104 |
+| config | 5 |
+| doc | 69 |
+| infra | 3 |
+| isolated | 14 |
+
+## External dependencies
+
+- `node:fs` — imported by 99 files
+- `node:path` — imported by 98 files
+- `react` — imported by 60 files
+- `node:assert/strict` — imported by 56 files
+- `node:test` — imported by 56 files
+- `node:os` — imported by 54 files
+- `vitest` — imported by 48 files
+- `node:child_process` — imported by 35 files
+- `lucide-react` — imported by 30 files
+- `node:url` — imported by 25 files
+- `@testing-library/react` — imported by 13 files
+- `node:crypto` — imported by 7 files
+- `@tauri-apps/api/core` — imported by 6 files
+- `@tauri-apps/api/event` — imported by 4 files
+- `@tauri-apps/api/webviewWindow` — imported by 4 files
+- `@tauri-apps/plugin-shell` — imported by 3 files
+- `PIL` — imported by 3 files
+- `json` — imported by 3 files
+- `os` — imported by 3 files
+- `../src-tauri/tauri.conf.json?raw` — imported by 2 files
+- `PIL::Draw` — imported by 2 files
+- `PIL::new` — imported by 2 files
+- `node:readline` — imported by 2 files
+- `react-dom/client` — imported by 2 files
+- `vite` — imported by 2 files
+
+> Budget of 2000 tokens reached — cut: Guesses. Read one with `agent-config code-graph map --section <name>`; never open `code/map.json` for it.
