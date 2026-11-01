@@ -34,6 +34,8 @@ function snapshotDir(): string {
   throw new Error(`fixture directory ${rel} not found above ${fileURLToPath(import.meta.url)}`);
 }
 
+const PKG_VERSION: string = JSON.parse(fs.readFileSync(path.resolve(path.dirname(CLI), "..", "package.json"), "utf8")).version;
+
 function exec(home: string, args: string[]): { stdout: string; stderr: string; status: number | null } {
   const res = spawnSync("node", [CLI, ...args], {
     // HOME/USERPROFILE point into the fixture too, so nothing reads the real ~/.claude.
@@ -46,7 +48,8 @@ function exec(home: string, args: string[]): { stdout: string; stderr: string; s
 function render(home: string, args: string[]): string {
   const { stdout, stderr, status } = exec(home, args);
   const real = fs.realpathSync(home);
-  const norm = (s: string) => s.split(real).join("<HOME>").split(home).join("<HOME>");
+  // The release bump changes the version every time; it is not what this test pins.
+  const norm = (s: string) => s.split(real).join("<HOME>").split(home).join("<HOME>").split(PKG_VERSION).join("<VERSION>");
   return `${norm(stdout)}--- stderr ---\n${norm(stderr)}--- exit ${status} ---\n`;
 }
 
