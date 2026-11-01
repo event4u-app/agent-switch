@@ -88,6 +88,19 @@ tasks:
       - task: test
       - task: test:gui
 
+  coverage:
+    desc: CLI + GUI tests with coverage; fails below the floor (package.json / gui/vite.config.ts)
+    cmds:
+      - npm run coverage
+      - npm --prefix gui run coverage
+
+  audit:
+    desc: "Dependency audit as CI runs it: npm (CLI + GUI runtime) and cargo audit (needs: cargo install cargo-audit --locked)"
+    cmds:
+      - npm audit --omit=dev
+      - npm --prefix gui audit --omit=dev --audit-level=high
+      - cargo audit --file gui/src-tauri/Cargo.lock
+
   typecheck:
     desc: Type-check the CLI (src + tests) without emitting
     cmds:

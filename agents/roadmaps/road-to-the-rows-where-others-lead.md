@@ -152,16 +152,35 @@ Scores are the review's judgement of read code, not measurements.
 - [ ] **4.1 Split `src/index.ts` by command family** behind one dispatch table;
       help output byte-identical.
       verify: `npm test` → 0; snapshot of `--help` unchanged; `src/index.ts` < 600 lines.
-- [ ] **4.2 Coverage floor** — `node --test --experimental-test-coverage` for the
+- [x] **4.2 Coverage floor** — `node --test --experimental-test-coverage` for the
       root, `vitest --coverage` for the GUI; floor = today's number minus 1 %, may only rise.
       verify: CI job `coverage` fails when the floor is undercut.
-- [ ] **4.3 Dependency audit** — `npm audit --omit=dev` (root), `npm audit` (`gui/`), `cargo audit` (`gui/src-tauri`).
+      done: measured 2026-11-01 on macOS (node 26 locally; CI runs node 22) — root
+      lines 70.99 / branches 73.57 / functions 69.88 → floor 69 / 72 / 68 (`npm run coverage`);
+      GUI (`src/**`) lines 79.61 / statements 79.61 / branches 83.91 / functions 70.39 →
+      floor 78 / 78 / 82 / 69 (`gui/vite.config.ts`, `@vitest/coverage-v8@2.1.9`). Job
+      `coverage` on macos-latest; `task coverage`. Raising a floor to 99 exits 1 on both sides.
+- [x] **4.3 Dependency audit** — `npm audit --omit=dev` (root), `npm audit` (`gui/`), `cargo audit` (`gui/src-tauri`).
       verify: CI job `audit` green.
-- [ ] **4.4 Property tests for routing** (from the v15 plan, AS-003). Generated
+      done: job `audit` + `task audit`. Root: 0. GUI gates `--omit=dev --audit-level=high`
+      (what ships in the bundle): 0. `cargo audit` (cargo-audit 0.22.2): 0 vulnerabilities,
+      13 warnings (unmaintained/unsound transitive crates of Tauri), exit 0. Not gated and
+      still open: the GUI dev tree has 16 advisories (3 critical, 4 high) in vitest 2 /
+      tinypool / vite 5 / @vitest/coverage-v8 — fixable only by a vitest 5 / vite 8 major
+      upgrade; nanoid, postcss, source-map-js, browserslist fixable by `npm audit fix`.
+- [x] **4.4 Property tests for routing** (from the v15 plan, AS-003). Generated
       inputs over `src/dir-resolve.ts`: missing/disabled profiles, pool changes,
       unknown and stale usage. An explicit binding never resolves outside its
       boundary; unknown usage is never treated as free capacity.
       verify: `npm test` → 0 with ≥ 1,000 generated cases, no new runtime dependency.
+      done: `tests/dir-resolve-property.test.ts`, mulberry32 seeded (`FUZZ_SEED`), 1,500
+      worlds × 3 properties (invariants, pool change, usage decay); each branch reached ≥ 30×.
+      Mutation-checked: dropping the staleness check, counting unknown usage as room, the
+      pool fallback picking `active`, and dropping the missing-account refusal each go red.
+      Finding: a one-account rule DOES leave its account under guard `block` when that
+      account is busy (`giveWayIfBusy`, c63a357, deliberate and tested) — contradicts
+      "never resolves outside its boundary" and the module header; the property encodes
+      the exception (guard block + busy + a free account + a `note`) pending a decision.
 
 ## Phase 5 — The GUI in German and English (D7)
 
