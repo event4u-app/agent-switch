@@ -1,0 +1,65 @@
+---
+title: Why Agent Switch
+description: Use several Claude Code, Codex and Antigravity accounts without logging in and out, and stop paid limits from resetting unused.
+---
+
+import { CardGrid, LinkCard, Aside } from '@astrojs/starlight/components';
+
+If you pay for more than one AI coding plan, you know the routine. A work seat
+and a personal plan, maybe a ChatGPT plan for Codex on top. Every switch means
+logging out, logging in, and hoping you picked the account that still has room.
+Agent Switch removes that routine.
+
+## Before and after
+
+| Without Agent Switch | With Agent Switch |
+|---|---|
+| You log out of one account to use another. | Every account stays signed in at the same time, each in its own folder. |
+| One account hits its limit mid-task while another resets with quota left. | Each new session starts on the account that would waste the most at its next reset. |
+| You open each provider's usage page to see what is left. | The desktop app shows every account's 5-hour and weekly limit, live. |
+| Client work lands on your personal account because you forgot to switch. | A folder pinned to an account always uses it. |
+| Moving a conversation to another account means starting over. | `takeover` moves a session to another account and resumes it there. |
+
+## How it does it — in one paragraph
+
+Claude Code, Codex and Antigravity each read their login from a folder that an
+environment variable can point somewhere else. Agent Switch gives every account
+its own folder and, through a small shell wrapper, decides which folder a new
+`claude`, `codex` or `agy` start gets. That is the whole trick. The provider's
+own client still talks to the provider directly, with its own login.
+[How it works](/agent-switch/concepts/how-it-works/) has the details.
+
+## Compared with the alternatives
+
+| | Agent Switch | Setting `CLAUDE_CONFIG_DIR` by hand | Login-swapping tools | Browser cookie switchers |
+|---|:-:|:-:|:-:|:-:|
+| Every account stays signed in | ✅ | ✅ | ➖ one at a time, others go stale | ➖ claude.ai only |
+| Picks the account for you | ✅ balanced by what is left | ➖ | ➖ | ➖ |
+| Pins folders to accounts | ✅ | write your own script | ➖ | ➖ |
+| Usage of every account at a glance | ✅ | ➖ | some | ➖ |
+| Moves sessions between accounts | ✅ | ➖ | ➖ | ➖ |
+| Claude Code, Codex and Antigravity | ✅ | Claude only | mostly Claude | ➖ |
+
+**Why login swapping goes stale.** Tools that keep one login and swap
+credentials in and out have a structural problem. Claude Code rotates its
+refresh token when it refreshes, so a stored copy of an account's login stops
+working within hours to days. Agent Switch never swaps: every account keeps its
+own live login.
+
+## What it deliberately does not do
+
+Agent Switch is not a proxy, does not intercept traffic, does not pool free
+tiers and never switches a running session without your confirmation. The
+[full list](/agent-switch/trust/non-goals/) explains each refusal.
+
+<Aside type="note">
+  Agent Switch is an independent open-source project. It is not affiliated with
+  Anthropic, OpenAI or Google.
+</Aside>
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Quick start" href="/agent-switch/start-here/quick-start/" description="Working in three steps." />
+  <LinkCard title="How it works" href="/agent-switch/concepts/how-it-works/" description="One folder per account, and why that never goes stale." />
+</CardGrid>

@@ -1,0 +1,100 @@
+---
+title: Limits & protection
+description: How Agent Switch tracks Claude Code and Codex usage limits, warns before an account runs out, and suggests another account — without ever switching on its own.
+---
+
+import { Aside, Badge, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Claude and ChatGPT plans meter your usage in two windows: a **5-hour limit**
+and a **weekly limit**. Each window fills up as you work and resets at a fixed
+time. Agent Switch reads both windows for every account, shows how old the
+numbers are, and uses them to keep you from running into a wall.
+
+## What you see
+
+```bash
+agent-switch status
+```
+
+shows every account with who it is signed in as and both windows, for Claude
+Code and Codex. The desktop app shows the same as meters, per account, with the
+time until each reset. Unknown usage is shown as unknown, never as free.
+
+## Four safeguards, from always-on to opt-in
+
+| Safeguard | Default | What it does |
+|---|---|---|
+| **Limit protection** | on, at 98 % | An account at its threshold in any window is never picked for a new session, and you get one warning per window. |
+| **Usage notices** | on, at 75 % and 90 % | A notice when the account you prefer crosses a threshold. |
+| **Limit suggestions** (`autoswitch`) | off | Near a limit (95 % by default), a notification suggests the account with the most headroom. It never switches by itself. |
+| **Context alerts** (`alerts`) | off | A notice when a running session's context window passes 80 % or 95 %. See [Sessions & context](/agent-switch/concepts/sessions-and-context/). |
+
+The warnings come from the background service
+(`agent-switch service install`), which checks every enabled account at least
+every 5 minutes.
+
+### Limit protection
+
+```bash
+agent-switch protection                                   # every account's policy
+agent-switch protection set claude/work --threshold 95    # warn earlier for one account
+agent-switch protection set claude/work --off             # no warnings for one account
+```
+
+`--off` only silences the warning. A new session still skips an account once it
+reaches its threshold, so set a higher `--threshold` if you want an account to
+be used closer to 100 %.
+
+Protection warns; it does not pause a session that is already running. What
+happens when a running Claude Code session reaches 100 % is Claude Code's own
+choice, set by its `autoContinueAtUsageLimit` setting: it either waits for the
+reset and continues by itself, or stops. Agent Switch shows which one applies
+and lets you change it per account <Badge text="Claude only" variant="note" />:
+
+```bash
+agent-switch protection wait on claude/work    # wait for the reset and continue
+agent-switch protection wait off claude/work   # stop at the limit
+```
+
+### Limit suggestions
+
+```bash
+agent-switch autoswitch on --threshold 90
+agent-switch autoswitch status
+agent-switch autoswitch off
+```
+
+When the account you prefer gets close to its limit, you get a notification
+that names a better account. Taking the suggestion is your move. Start the next
+session there, or switch a running session with
+[`rebind`](/agent-switch/guides/move-a-session/).
+
+<Aside type="note" title="Why it never switches on its own">
+  Switching a running session's account changes whose limits and whose
+  organization the conversation runs under. That is your decision, every time.
+  An earlier version rotated accounts automatically; it was removed on purpose.
+</Aside>
+
+## Codex: banked resets <Badge text="Codex" variant="note" />
+
+Codex plans can bank a limited number of rate-limit resets. With limit
+suggestions turned on for Codex (`agent-switch autoswitch on --provider codex`),
+the service tells you when your preferred Codex account is near its limit and
+has a reset banked, once per reset cycle. The desktop app shows the banked
+resets per account. Redeeming one is always your action:
+
+```bash
+agent-switch reset work --provider codex
+```
+
+## Antigravity
+
+Antigravity does not report usage, so it has no meters, no protection and no
+suggestions. Its accounts can still be pinned to folders.
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Which account a session uses" href="/agent-switch/concepts/which-account/" description="How limits feed the balanced pick." />
+  <LinkCard title="Notifications & desktop pet" href="/agent-switch/guides/notifications-and-pet/" description="Where the warnings show up." />
+</CardGrid>

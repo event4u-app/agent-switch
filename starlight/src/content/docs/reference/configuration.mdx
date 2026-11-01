@@ -1,0 +1,135 @@
+---
+title: Configuration & files
+description: Where agent-switch keeps its data, what each file is for, the fields in state.json, and which files you may edit by hand.
+---
+
+import { Aside, CardGrid, FileTree, LinkCard } from '@astrojs/starlight/components';
+
+agent-switch keeps everything in one folder: `~/.agent-switch`, or the folder in
+`$AGENT_SWITCH_HOME` when that is set. Each account (a **profile** in the CLI)
+is a subfolder there. Nothing is stored anywhere else, except the few files
+listed under [Outside the data folder](#outside-the-data-folder).
+
+## Editing by hand
+
+**Don't.** Every setting has a command or a switch in the desktop app; use
+those. The files are read and written under locks by the CLI, the background
+service and the app at the same time, and several hold state that must match
+other files. Delete the whole folder only through `agent-switch uninstall`.
+
+## The data folder
+
+<FileTree>
+- ~/.agent-switch/
+  - state.json preferred accounts, tags, colours, tool switches, guard policy
+  - mappings.json folder rules
+  - pools.json pools
+  - protection.json limit protection per account
+  - notifications.json the latest 25 notifications
+  - activity.jsonl what agent-switch did, and why (newest 2000)
+  - picks.jsonl which account each start chose, and why (newest 500)
+  - telemetry-config.json context alerts: on/off and thresholds
+  - gui-settings.json desktop app: start at login, pet intro shown
+  - active-cli path of the CLI terminals and the service call
+  - daemon-state.json background service: last check, cached usage
+  - daemon.pid background service process id
+  - daemon.log background service log (moved to daemon.log.1 above 1 MB)
+  - service-manifest.json files `service install` created, for a clean uninstall
+  - launchers.json launchers `launcher add` created (macOS)
+  - tmux-sessions.json tmux sessions started with `run --tmux`
+  - rebind-arms.json live switches waiting for a turn to end
+  - .agent-switch-rebind-registry.json which account each live switch borrowed
+  - cswap-numbers.json stable account numbers for CodexBar and ccdeck
+  - .cc-contract-cache.json cached check of the installed Claude Code version
+  - .layout-v2 marks the one-time move from the old layout
+  - events/
+    - claude-work.jsonl hook events per account (after `hooks install`)
+  - freshen/ when each login was last kept fresh
+  - browsers/ sign-in browser wrappers for `--browser` (macOS)
+  - gui/
+    - 2.8.2/ the downloaded desktop app, one folder per version
+  - claude/
+    - work/
+      - config/ **the account's own folder** (see below)
+      - browser/ the `web` browser profile
+      - gui/
+        - claude-desktop/ this account's own desktop-app data (macOS)
+      - usage-latest.json the latest usage reading
+      - usage-history.json usage samples over time
+      - shares-default-login present when the account shares the default login
+  - codex/
+    - work/
+      - config/
+  - antigravity/
+    - work/
+      - config/
+</FileTree>
+
+Most files are created only when the feature is first used. They are written
+with owner-only permissions.
+
+<Aside type="caution">
+The `gui/` folder is always `~/.agent-switch/gui/`, even when
+`AGENT_SWITCH_HOME` points elsewhere.
+</Aside>
+
+### The account folder (`config/`)
+
+`<tool>/<name>/config/` is the folder the tool runs in for that account. The
+shell integration and `run` set the tool's own variable to it:
+`CLAUDE_CONFIG_DIR` for Claude, `CODEX_HOME` for Codex, `HOME` for Antigravity.
+The tool writes its login, settings and history there itself.
+
+agent-switch adds only these, and only when you use the feature:
+
+| Path inside `config/` | Written by | What it is |
+| --- | --- | --- |
+| `.claude.json` | `add`, `import` | Claude Code's first-run screens marked as done. |
+| `.credentials.json` (Claude), `auth.json` (Codex) | `import` | Your current login, copied once. On macOS Claude Code moves it into its own keychain entry on first use. |
+| `.agent-switch-shared.json` | `share on` | Which items are shared links. |
+| `.agent-switch-rebind.json` | `rebind` | Marks a running session that borrows another account. |
+| `.agent-switch-trash/` | `sessions rm` | Removed Claude sessions, restorable with `sessions restore`. |
+| `.agent-switch/handoff/` | `handoff extract` | Briefs for continuing a session in another tool. |
+| `Library/Keychains/` | `run` (Antigravity, macOS) | A keychain only this Antigravity account uses. |
+
+## `state.json` fields
+
+| Field | What it holds | Changed with |
+| --- | --- | --- |
+| `active` | The preferred account per tool, or `null`. | `use`, `deactivate` |
+| `labels` | Tag per account, keyed `provider/name`. | `label` |
+| `colors` | Colour per account. | `color` |
+| `disabled` | Accounts that are kept but not used. | `disable`, `enable` |
+| `autoSwitch` | Limit suggestions per tool: `enabled`, `threshold` (default 95), `tag`. | `autoswitch` |
+| `providers` | Per tool, whether its terminal tool (`cli`) and desktop app (`ui`) are on. | `providers enable\|disable` |
+| `binaryPaths` | A linked tool binary, per tool. | `providers link\|unlink` |
+| `osNotifications` | Desktop notifications from the service on Linux/Windows (default `false`). | `os-notify` |
+| `keepSignedIn` | Keep unused Claude logins fresh (default `true`). | `keep-signed-in` |
+| `rebind` | Whether `rebind` turned itself off, and the failure count. | `rebind --reset` |
+| `guard` | `block`, `warn` or `off`. | `guard` |
+
+A new install starts with `guard: "warn"`. A file from an older version with no
+`guard` field reads as `block`, so an upgrade keeps the behaviour you had.
+
+## Outside the data folder
+
+| Path | When | Removed by |
+| --- | --- | --- |
+| `~/Library/LaunchAgents/com.event4u.agent-switch.plist` | `service install` on macOS | `service uninstall`, `uninstall` |
+| `~/.config/systemd/user/agent-switch.service` | `service install` on Linux | `service uninstall`, `uninstall` |
+| Task Scheduler task `com.event4u.agent-switch` | `service install` on Windows | `service uninstall`, `uninstall` |
+| `~/Applications/Agent Switch/` | `launcher add` (macOS) | `launcher remove`, `uninstall` |
+| One keychain entry per Claude account (macOS) | Claude Code, on sign-in | `remove`, `uninstall` |
+| One line in your shell's startup file | `shellenv install` | you |
+
+## Account names
+
+Names may use letters, digits, `-` and `_` only.
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Environment variables" href="/agent-switch/reference/environment/" description="AGENT_SWITCH_HOME and the variables set per account." />
+  <LinkCard title="Security & privacy" href="/agent-switch/trust/security-and-privacy/" description="Where logins live and what leaves your machine." />
+  <LinkCard title="CLI reference" href="/agent-switch/reference/cli/" description="The command behind each file." />
+</CardGrid>

@@ -40,9 +40,8 @@ const GUI = path.resolve(HERE, "../..");
 const ROOT = path.resolve(GUI, "..");
 const CLI = path.join(ROOT, "dist", "index.js");
 let OUT = path.join(ROOT, ".github", "assets", "screenshots");
-// The docs site shows the same app views; mirrored so README and docs never drift.
-const DOCS_OUT = path.join(ROOT, "starlight", "public", "screenshots");
-const DOCS_MIRROR = { overview: "app-overview.png", sessions: "app-sessions.png", "session-sheet": "app-session.png" };
+// The docs site reads these same files (starlight/scripts/sync-assets.mjs copies
+// them at build time), so README and docs never drift.
 const VIEWPORT = { width: 1600, height: 1000 };
 // The tray window is content-sized: render in a tall viewport, then clip to the card.
 const TRAY_VIEWPORT = { width: 360, height: 900 };
@@ -459,10 +458,6 @@ async function main() {
     seed.cleanup();
   }
 
-  if (LANG === "en" && !process.env.SHOTS_OUT) for (const [name, docsName] of Object.entries(DOCS_MIRROR)) {
-    const src = path.join(OUT, `${name}.png`);
-    if (fs.existsSync(src)) fs.copyFileSync(src, path.join(DOCS_OUT, docsName));
-  }
   if (bridge.unknown.size) log(`stubbed (not run): ${[...bridge.unknown].join(" · ")}`);
   log(`done — ${produced.length} PNGs:\n  ${produced.join("\n  ")}`);
 }

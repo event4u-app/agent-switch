@@ -1,0 +1,217 @@
+---
+title: Everyday workflow
+description: Switch Claude Code and Codex accounts without logging out — start sessions, set a preferred account, see why a start went where it did.
+---
+
+import { Steps, Tabs, TabItem, Aside, Badge, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Once your accounts are added, you mostly just type `claude` or `codex` as
+before. Agent Switch picks the account each new session starts on, and every
+other account stays signed in for the next one.
+
+This page walks through a normal day: starting sessions, steering which account
+they use, checking what is left, and keeping your list of accounts tidy.
+
+## Start a session
+
+With the shell integration installed (`agent-switch shellenv install`), the
+commands you already use are wrapped:
+
+```bash
+cd ~/code/client-a
+claude          # or: codex, agy
+```
+
+Before the real binary starts, the wrapper asks Agent Switch which account fits
+this folder and points the tool at that account's own folder. The order is:
+
+1. **A pinned folder.** If this folder or one of its parents is pinned to an
+   account or a pool, that rule decides. See
+   [Projects and pools](/agent-switch/guides/projects-and-pools/).
+2. **A balanced start.** With no pin, the session goes to the account that
+   would lose the most of its remaining quota at its next reset. This needs
+   usage numbers that are at most 10 minutes old.
+3. **Your preferred account.** On a tie, or when no account has fresh usage,
+   the start uses the account you chose with `asw` (below).
+4. **The tool's own login.** With no preferred account set, the tool starts
+   with its default login, exactly as without Agent Switch.
+
+Running sessions are never moved by any of this. The choice happens only when
+a session starts. See [Which account a session uses](/agent-switch/concepts/which-account/)
+for the full rules.
+
+<Aside type="tip">
+Keep the background service running (`agent-switch service install`) or the
+desktop app open. Either one keeps usage fresh, which is what makes balanced
+starts possible.
+</Aside>
+
+## Set your preferred account with `asw`
+
+The shell integration also defines `asw`, a short form of `agent-switch use`:
+
+```bash
+asw                 # list every account, grouped by tool
+asw work            # make "work" your preferred Claude account
+asw codex personal  # make "personal" your preferred Codex account
+```
+
+`asw <name>` does not pin anything. It sets the account a plain start falls
+back to: on a tie, without fresh usage, or for tools that report no usage.
+New sessions pick it up; running sessions are unaffected. A disabled account
+cannot be made preferred until you enable it again.
+
+To clear the preference for a tool:
+
+```bash
+agent-switch deactivate                     # Claude
+agent-switch deactivate --provider codex    # Codex
+```
+
+## Run one session on a specific account
+
+When you want exactly one session on a given account, without changing your
+preference or any folder pin, use `run`:
+
+```bash
+agent-switch run personal
+agent-switch run work --provider codex
+agent-switch run work --cwd ~/code/client-a
+agent-switch run work -- --resume          # everything after -- goes to claude
+```
+
+`run` starts the tool on that account directly. It skips folder pins and
+balancing. Options:
+
+| Option | What it does |
+| --- | --- |
+| `--provider codex\|antigravity` | Run another tool (default: Claude) |
+| `--cwd <dir>` | Start in that folder |
+| `--tmux` | Run inside a tmux session that Agent Switch manages (macOS and Linux) |
+| `--force` | Start even if the account already has a live session and the guard is set to `block` |
+| `--` | Pass everything after it to the tool unchanged |
+
+`run` is also the way to start an account from `cmd.exe` on Windows, which has
+no shell integration.
+
+## Check what each account has left
+
+```bash
+agent-switch status                 # every account, with usage where available
+agent-switch status work            # one account
+agent-switch status --provider codex
+```
+
+For Claude and Codex accounts, `status` shows the 5-hour and weekly limits
+with their reset times, plus the context fill of any live session. Antigravity
+has no usage readout, so its accounts show identity only.
+
+Two related views:
+
+```bash
+agent-switch list           # accounts per tool; * marks the preferred one
+agent-switch auth-status    # sign-in state per account (no tokens printed)
+```
+
+## Ask why a start went where it did
+
+Every start through the shell wrapper is recorded:
+
+```bash
+agent-switch picks
+agent-switch picks --limit 5 --json
+```
+
+Each entry shows the account chosen (or the refusal) and the reasons, for
+example which accounts were skipped as signed out or at their limit, and how
+old the usage numbers were.
+
+To preview the decision for the current folder without starting anything:
+
+```bash
+agent-switch dir --json
+```
+
+## Check your setup
+
+```bash
+agent-switch doctor
+```
+
+`doctor` runs a self-check for your OS and each tool: whether `agent-switch`
+and the tools are on your PATH, whether the shell integration is loaded, and
+whether no two accounts of one tool are signed in to the same login. It exits
+non-zero when something blocks normal use, so it also works in scripts.
+
+## One account, one session
+
+By default, starting a second session on an account that already has one
+prints a warning and continues. You can change that:
+
+```bash
+agent-switch guard          # show the policy and which accounts are busy
+agent-switch guard block    # move a second session to a free account
+agent-switch guard off      # no check
+```
+
+With `block`, a start that would land on a busy account moves to a free one.
+When every usable account is busy, it shares the best one and says so. A busy
+account never makes a start fail. To allow one duplicate start under `block`,
+prefix it with `AGENT_SWITCH_ALLOW_DUPLICATE=1`.
+
+This works for Claude only. Codex and Antigravity do not register a running
+session on disk, so Agent Switch cannot tell whether an account is busy.
+
+## Keep your account list tidy
+
+<Steps>
+
+1. **Pause an account without deleting it.** A disabled account is skipped by
+   balanced starts and pools, and a folder pinned to it refuses to start until
+   you change the pin.
+
+   ```bash
+   agent-switch disable personal
+   agent-switch enable personal
+   ```
+
+2. **Tag and colour accounts.** Tags (`Work`, `Personal`, `Other`) group
+   accounts and can seed pools. Colours show up in the desktop app.
+
+   ```bash
+   agent-switch label work Work
+   agent-switch color work teal
+   agent-switch label work none     # clear the tag
+   ```
+
+3. **Rename an account.** Folder pins, pool memberships, limit settings and
+   launchers follow the new name. Names may contain letters, numbers, dots,
+   dashes and underscores. A Claude account with a live session cannot be
+   renamed until the session ends.
+
+   ```bash
+   agent-switch rename side client-a
+   ```
+
+4. **Remove an account.** This deletes the account's folder and its login,
+   and drops its folder pins. It asks first on a terminal; `--yes` skips the
+   question.
+
+   ```bash
+   agent-switch remove client-a
+   ```
+
+</Steps>
+
+<Aside type="caution">
+`remove` cannot be undone. It refuses while the account is your preferred one
+or has a live Claude session, unless you pass `--force`.
+</Aside>
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Projects and pools" href="/agent-switch/guides/projects-and-pools/" description="Pin a folder to an account, or let it choose within a group." />
+  <LinkCard title="Move a session" href="/agent-switch/guides/move-a-session/" description="Continue a session on another account when one runs low." />
+  <LinkCard title="The desktop app" href="/agent-switch/guides/desktop-app/" description="The same day, in one window and the menu bar." />
+</CardGrid>

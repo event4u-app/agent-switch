@@ -1,0 +1,163 @@
+---
+title: Troubleshooting & FAQ
+description: Fixes for the common agent-switch problems — the wrong account, sign-in needed, unknown usage, a silent shell wrapper, API keys, VS Code and cmd.exe.
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Start with the self-check. It names most problems and prints the fix:
+
+```bash
+agent-switch doctor
+```
+
+### A session started on the wrong account
+
+Ask agent-switch what it would pick here, and why:
+
+```bash
+agent-switch dir --json      # the pick for this folder, with every reason
+agent-switch picks           # what earlier starts actually chose
+agent-switch mappings        # your folder rules
+```
+
+Then check, in this order:
+
+1. **A folder rule wins.** A rule for this folder or any parent folder decides
+   first. Remove it with `agent-switch unmap <dir>`, or pause it with
+   `agent-switch map --pause <dir>`.
+2. **Without a rule the start is balanced.** It goes to the account that would
+   lose the most of its remaining limit at its next reset — not necessarily
+   your preferred account. `use` sets a preference, not a pin.
+3. **Balancing needs fresh usage.** Only numbers from the last 10 minutes count.
+   Without them, the start uses your preferred account (`agent-switch current`).
+   Keep them fresh with the background service:
+
+   ```bash
+   agent-switch service install
+   agent-switch service status
+   ```
+
+4. **An account at its limit is skipped.** Limit protection (default 98%) keeps
+   starts off it. See `agent-switch protection`.
+
+To always use one account, start it by name: `agent-switch run work`, or pin
+the folder: `agent-switch map work`. See
+[Which account a session uses](/agent-switch/concepts/which-account/).
+
+### "Sign-in needed"
+
+The account's login ran out or was signed out. Sign it in again:
+
+```bash
+agent-switch auth-status     # connected · expiring · sign-in-needed · unknown
+agent-switch login work
+```
+
+For a Codex account add `--provider codex`. With the background service and
+`keep-signed-in` on (the default), unused Claude logins are kept fresh so this
+happens less often.
+
+### An imported account is never picked
+
+An account made with `import` shares its login with your default install, so
+a balanced start skips it and `dir --json` says *"shares its login with the
+default install"*. Give it its own login once:
+
+```bash
+agent-switch login work
+```
+
+That clears the mark. `doctor` lists every account in this state.
+
+### Usage shows "unknown"
+
+- **The background service is not running.** Usage comes from what the service
+  or the desktop app last read. Check with `agent-switch service status`; start
+  it with `agent-switch service install`.
+- **The account is signed out.** See [Sign-in needed](#sign-in-needed).
+- **It is an Antigravity account.** Antigravity has no usage readout, so it has
+  no meters and is never balanced.
+- **A Codex account** shows usage only once it is signed in; `status --provider
+  codex` says *"usage unavailable"* otherwise.
+
+### The wrapper does nothing
+
+`claude` in a terminal ignores your accounts when the shell integration is not
+loaded.
+
+```bash
+agent-switch shellenv install
+```
+
+Then **open a new terminal** (the current one has not read the change).
+`agent-switch doctor` confirms it with *"Shell integration installed"*. If
+`doctor` says *"agent-switch is not on PATH"*, install the CLI globally:
+`npm install -g @event4u/agent-switch`.
+
+### An API key overrides my account
+
+If `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`,
+`OPENAI_API_KEY`, `CODEX_API_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY` is set,
+the tool uses that key instead of the account's login — the same key in every
+account, usually billed per use. `doctor` warns with *"API key overrides profile
+logins"*. Remove the line that sets it from your shell's startup file and open
+a new terminal.
+
+### The VS Code extension uses the wrong account
+
+The Claude Code extension for VS Code ignores `CLAUDE_CONFIG_DIR`, so folder
+rules and accounts do not reach it. Use `claude` in VS Code's terminal instead.
+For Codex in VS Code on macOS, start VS Code on an account with
+`agent-switch open codex-ide work`; see
+[Desktop apps & launchers](/agent-switch/guides/desktop-apps-and-launchers/).
+
+### Windows: nothing happens in cmd.exe
+
+There is no shell integration for cmd.exe. Use PowerShell
+(`agent-switch shellenv install`), or start each session by name:
+
+```bat
+agent-switch run work
+agent-switch run work --provider codex
+```
+
+### macOS says the app can't be opened
+
+`agent-switch gui` downloads the app itself, so it carries no download
+quarantine and should open directly. This message comes from the **installers**
+(`.dmg`) on the release page, which are not code-signed yet. Open **System
+Settings › Privacy & Security** and click **Open Anyway**, or run:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/agent-switch.app
+```
+
+On Windows, the installers trigger SmartScreen: click **More info › Run
+anyway**. See [Install](/agent-switch/start-here/install/).
+
+### Two terminals ended up on the same account
+
+That account now has two sessions sharing one limit. `agent-switch guard` shows
+the policy and what is running. With `guard block`, a second plain start moves
+to a free account instead. See [Sessions & context](/agent-switch/concepts/sessions-and-context/).
+
+### Is this allowed by the provider's terms?
+
+agent-switch signs every account in through the provider's own login and starts
+the provider's own tool. It does not proxy requests, pool free accounts, or hold
+logins for anyone else. What it does and does not do is listed in
+[Non-goals](/agent-switch/trust/non-goals/). Whether your own use fits your
+plan's terms is for you to check.
+
+<Aside type="caution">
+This describes what the code does. It is not legal advice.
+</Aside>
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="CLI reference" href="/agent-switch/reference/cli/" description="Every command and flag." />
+  <LinkCard title="Platform matrix" href="/agent-switch/reference/platform-matrix/" description="What works on your OS and tool." />
+  <LinkCard title="Glossary" href="/agent-switch/reference/glossary/" description="The words used in these docs." />
+</CardGrid>

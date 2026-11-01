@@ -1,0 +1,176 @@
+---
+title: Install, update & uninstall
+description: Install Agent Switch with npm, start the desktop app without an installer, keep it up to date, and remove it cleanly.
+---
+
+import { Steps, Tabs, TabItem, Aside, Badge, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Agent Switch is one npm package. The desktop app comes with it: it downloads
+on first use, so there is nothing else to install.
+
+## Requirements
+
+- **Node.js 20 or newer.**
+- **macOS, Linux or Windows.** The desktop app runs on macOS (Apple silicon and
+  Intel), Linux x64 and Windows x64.
+- **The tools you want to switch.** Install Claude Code, Codex or Antigravity as
+  you normally would. Agent Switch uses their own sign-in and their own binary.
+
+## Install the CLI
+
+```bash
+npm install -g @event4u/agent-switch
+```
+
+This puts `agent-switch` on your PATH. The package name is
+`@event4u/agent-switch`; the bare name `agent-switch` on npm belongs to an
+unrelated project.
+
+To try it without installing anything:
+
+```bash
+npx @event4u/agent-switch doctor
+```
+
+For daily use, install it globally, so that the shell wrapper and `asw` always
+find it.
+
+## Start the desktop app
+
+```bash
+agent-switch
+```
+
+With no command, Agent Switch starts the desktop app (same as
+`agent-switch gui`). On first use it downloads the app that matches your
+installed version from the project's GitHub release, keeps it under
+`~/.agent-switch/gui/<version>/`, and runs it. It never runs an installer.
+
+| Platform | What is downloaded |
+|---|---|
+| macOS | the app bundle (`.app.tar.gz`, universal) |
+| Linux x64 | an `.AppImage` |
+| Windows x64 | a portable `.exe` |
+
+If a new release is still being built, it takes the newest release that already
+has the app. With no network, it starts the newest copy it already downloaded.
+Only one copy runs at a time: if the app is already open, a second one is not
+started.
+
+### Prefer an installer?
+
+Every [GitHub release](https://github.com/event4u-app/agent-switch/releases)
+also carries installers: `.dmg` (macOS), `.msi` and `-setup.exe` (Windows),
+`.deb` and `.rpm` (Linux). They are not code-signed yet, so the first launch
+needs one extra click:
+
+<Tabs syncKey="os">
+  <TabItem label="macOS">
+    Open **System Settings › Privacy & Security**, find the message about
+    `agent-switch`, and click **Open Anyway**. On macOS 14 and earlier you can
+    also right-click the app in Finder and choose **Open**. Or remove the
+    quarantine flag in a terminal:
+    ```bash
+    xattr -dr com.apple.quarantine /Applications/agent-switch.app
+    ```
+  </TabItem>
+  <TabItem label="Windows">
+    SmartScreen says *"Windows protected your PC."* Click **More info › Run
+    anyway**.
+  </TabItem>
+  <TabItem label="Linux">
+    Make the AppImage executable before you run it:
+    ```bash
+    chmod +x agent-switch_*.AppImage
+    ```
+  </TabItem>
+</Tabs>
+
+The app that `agent-switch` downloads for you does not need this step on macOS.
+It is not fetched through a browser, so macOS does not quarantine it.
+
+## Run it in the background
+
+```bash
+agent-switch service install
+```
+
+The background service checks every enabled account's usage every few minutes.
+It is what keeps balanced starts and limit warnings working while the desktop
+app is closed. It starts at login through launchd (macOS), `systemd --user`
+(Linux) or Task Scheduler (Windows).
+
+```bash
+agent-switch service status    # is it running, and when did it last check?
+agent-switch service stop      # stop it for now
+agent-switch service uninstall # remove it
+```
+
+The desktop app starts at login by default after its first run. You can turn
+that off in **Settings › General**.
+
+## Update
+
+```bash
+agent-switch update
+```
+
+This installs the latest version through npm and restarts the background
+service on it. `agent-switch check-update` only checks. The desktop app checks
+for updates on its own and offers **Restart now** when a new version is ready.
+
+## Uninstall
+
+<Steps>
+
+1. **Remove Agent Switch's data and service.**
+
+   ```bash
+   agent-switch uninstall           # lists what will be removed
+   agent-switch uninstall --force   # removes it
+   ```
+
+   It removes:
+   - every profile Agent Switch created, including its stored login (for
+     Claude on macOS, the profile's keychain entry);
+   - folder rules, settings and the background service;
+   - the app launchers in `~/Applications/Agent Switch` <Badge text="macOS" variant="caution" />.
+
+   Your default Claude Code, Codex and Antigravity installs are not touched.
+
+2. **Remove the shell line.** Delete the `agent-switch shellenv` line from your
+   shell's startup file (`~/.zshrc`, `~/.bashrc` or `~/.bash_profile`,
+   `~/.config/fish/config.fish`, or `$PROFILE`).
+
+3. **Remove the CLI.**
+
+   ```bash
+   npm uninstall -g @event4u/agent-switch
+   ```
+
+4. **If you used an installer,** remove the desktop app the way you remove any
+   app on your system.
+
+</Steps>
+
+<Aside type="caution">
+  Uninstalling deletes the logins Agent Switch stored for its profiles. To use
+  one of those accounts again without Agent Switch, sign in to it in the
+  provider's tool.
+</Aside>
+
+## Build from source
+
+```bash
+git clone https://github.com/event4u-app/agent-switch.git
+cd agent-switch
+npm ci && npm run build && npm link
+```
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Quick start" href="/agent-switch/start-here/quick-start/" description="Add your accounts and turn it on." />
+  <LinkCard title="The desktop app" href="/agent-switch/guides/desktop-app/" description="What every view shows." />
+  <LinkCard title="Platform matrix" href="/agent-switch/reference/platform-matrix/" description="What works on which OS and with which tool." />
+</CardGrid>

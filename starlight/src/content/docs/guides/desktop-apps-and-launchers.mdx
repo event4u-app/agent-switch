@@ -1,0 +1,162 @@
+---
+title: Desktop apps and launchers
+description: Open Claude Desktop, the Codex app or Antigravity as a specific account on macOS, several accounts side by side, with Dock launchers per account.
+---
+
+import { Steps, Aside, Badge, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<Badge text="macOS" variant="caution" />
+
+Desktop apps such as Claude Desktop sign in to one account at a time. Agent
+Switch can open each app as a specific account, keep several of them open side
+by side, and give you a Dock or Spotlight icon per account.
+
+The apps themselves are never copied, patched or re-signed. Agent Switch only
+starts them with a separate data folder or settings folder per account.
+
+## Supported apps
+
+```bash
+agent-switch apps
+```
+
+| App id | App | Account type | How the account is kept apart |
+| --- | --- | --- | --- |
+| `claude-desktop` | Claude Desktop | Claude | its own data folder per account |
+| `codex-desktop` | Codex | Codex | the account's `CODEX_HOME`, plus its own data folder |
+| `codex-ide` | VS Code (for the Codex extension) | Codex | the account's `CODEX_HOME` |
+| `antigravity` | Antigravity | Antigravity | its own data folder per account |
+
+A filled dot in the `apps` list means the app is installed.
+
+## Open an app as an account
+
+```bash
+agent-switch open claude-desktop work
+agent-switch open codex-desktop personal
+agent-switch open claude-desktop          # your preferred Claude account
+```
+
+- If that account's window is already open, it is brought to the front
+  instead of starting a second copy (not for VS Code, which just opens).
+- The first time an account opens an app, the app starts signed out. Sign in
+  once; the login is saved in that account's data folder.
+- Your normal Claude Desktop data (`~/Library/Application Support/Claude`) is
+  never touched. Each account gets its own folder under
+  `~/.agent-switch/<tool>/<account>/gui/`.
+
+<Aside type="caution">
+Before you sign in to a new account in Claude Desktop, quit its other windows.
+A sign-in in the browser can return to whichever window is open.
+</Aside>
+
+The desktop app's menu-bar popover has the same thing as a button per
+account, and **Tools › Apps** manages it per account.
+
+## Launchers in the Dock and Spotlight
+
+A launcher is a small app in `~/Applications/Agent Switch/`, for example
+`Claude Desktop – work.app`. Starting it runs `agent-switch open` for that
+account. Drag it into the Dock, or find it with Spotlight.
+
+<Steps>
+
+1. **Create a launcher.**
+
+   ```bash
+   agent-switch launcher add claude-desktop work
+   ```
+
+2. **Start it** from Spotlight, or drag it from `~/Applications/Agent Switch/`
+   into the Dock.
+
+3. **List or remove launchers.**
+
+   ```bash
+   agent-switch launcher list
+   agent-switch launcher remove claude-desktop work
+   ```
+
+</Steps>
+
+Launchers are built on your Mac and signed locally, so macOS does not ask
+before opening them. They carry the app's icon.
+
+- Renaming an account rebuilds its launchers; removing an account removes
+  them; `agent-switch uninstall` removes them all.
+- If Node or Agent Switch moved (for example after a reinstall), rebuild them:
+
+  ```bash
+  agent-switch launcher repair
+  ```
+
+## Copy Claude Desktop settings to an account
+
+A new account's Claude Desktop starts empty. Copy your MCP servers,
+preferences and installed extensions from your normal Claude Desktop, or from
+another account:
+
+```bash
+agent-switch app-settings copy claude-desktop --from default --to work
+agent-switch app-settings copy claude-desktop --from work --to personal
+```
+
+- Quit Claude Desktop on the target account first; it would overwrite the copy
+  when it quits.
+- Never copied: the login and its token cache (`config.json`), cookies and web
+  storage, session folders, and preferences tied to one account.
+- Chats, Projects and memory belong to the account on Anthropic's side and are
+  not on your Mac to copy.
+- Files that get replaced are kept as `*.pre-copy`.
+
+This works for Claude Desktop only.
+
+## Which account ran what in Claude Desktop
+
+```bash
+agent-switch desktop
+agent-switch desktop --json
+```
+
+This lists, per Claude Desktop instance, which accounts ran sessions in it. An
+account's own instance that was used with another account's login is marked
+`<- not this profile's account`.
+
+## claude.ai in the browser <Badge text="Claude only" variant="note" />
+
+`web` opens claude.ai in a browser that keeps its own profile per account, so
+each account stays signed in to the website too:
+
+```bash
+agent-switch web work
+```
+
+The browser profile lives in `~/.agent-switch/claude/<account>/browser`. Sign
+in once; the next `web` reuses it. This needs Playwright, which is not
+installed with Agent Switch:
+
+```bash
+npm install playwright
+npx playwright install chromium
+```
+
+Unlike the rest of this page, `web` is not limited to macOS. On a Linux
+machine without a display there is no window to open.
+
+## Caveats
+
+- **Start the app through Agent Switch.** Opening Claude Desktop from Finder or
+  its own Dock icon starts it on its normal data, not on an account. Use
+  `open`, a launcher, or the menu-bar popover.
+- **macOS only.** `apps`, `open`, `launcher` and `app-settings` need macOS.
+- **Apps change.** No vendor offers an account switch in these apps, so an app
+  update can change how they start. If an app stops keeping accounts apart,
+  please open an issue.
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="The desktop app" href="/agent-switch/guides/desktop-app/" description="The menu-bar popover opens apps per account with one click." />
+  <LinkCard title="Codex accounts" href="/agent-switch/guides/codex/" description="Codex app and VS Code per account." />
+  <LinkCard title="Platform matrix" href="/agent-switch/reference/platform-matrix/" description="What works on which OS." />
+</CardGrid>

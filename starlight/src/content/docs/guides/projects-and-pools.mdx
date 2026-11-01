@@ -1,0 +1,211 @@
+---
+title: Projects and pools
+description: Use a different Claude Code or Codex account per project — pin a folder to an account once, or let it pick from a pool of accounts.
+---
+
+import { Steps, Aside, CardGrid, LinkCard, FileTree } from '@astrojs/starlight/components';
+
+Pin a folder to an account once, and every session you start in it uses that
+account. Client work stays on the client's account, personal projects on
+yours, and you never have to remember to switch.
+
+A pin can point at one account, or at a **pool**: a group of accounts the
+folder may use. A pool lets a project spread its work over several accounts
+while never touching an account outside the group.
+
+## Pin a folder to an account
+
+<Steps>
+
+1. **Go to the project folder and pin it.**
+
+   ```bash
+   cd ~/code/client-a
+   agent-switch map client-a
+   ```
+
+   Without a folder argument, `map` pins the current folder. You can also
+   name it: `agent-switch map client-a ~/code/client-a`.
+
+2. **Start a session as usual.**
+
+   ```bash
+   claude
+   ```
+
+   It starts on `client-a`, in this folder and in every folder below it.
+
+3. **Check it.**
+
+   ```bash
+   agent-switch mappings
+   ```
+
+</Steps>
+
+Pins are per tool. Add `--provider codex` to pin the Codex account for the same
+folder:
+
+```bash
+agent-switch map client-a --provider codex
+```
+
+## The nearest folder wins
+
+When you start a session, Agent Switch walks up from the current folder and
+uses the first pin it finds for that tool. A pin deeper in the tree beats one
+higher up:
+
+<FileTree>
+- ~/code/
+  - client-a/ pinned to `client-a`
+    - api/ uses `client-a`
+    - legacy/ pinned to `personal`, which wins here
+</FileTree>
+
+## Pause, remove, list
+
+```bash
+agent-switch map --pause            # keep the pin, but skip it for now
+agent-switch map --resume           # turn it back on
+agent-switch unmap                  # remove the pin for this folder
+agent-switch mappings               # list every pin; paused ones are marked
+agent-switch mappings --json
+```
+
+A paused pin stays listed but no longer decides anything. The next pinned
+parent folder applies, and without one the start is balanced as usual.
+`--pause`, `--resume` and `unmap` take an optional folder and `--provider`,
+like `map`.
+
+## A pin never runs on another account
+
+A pin is a boundary first. If the pinned account cannot take the session, the
+start is refused with the reason, instead of quietly running on some other
+account:
+
+- the pinned account was removed → refused, with `map` or `unmap` as the fix;
+- the pinned account is disabled → refused, with `enable` as the fix.
+
+A **busy** account is different. With the guard set to `block`, a second
+session on a busy pinned account moves to a free account and says so. With
+the default `warn`, it starts on the pinned account and prints a note.
+
+## Pools: a group of accounts for a project
+
+A pool is a named group of accounts. Pin a folder to a pool, and each session
+there starts on whichever member is the best choice right then.
+
+<Steps>
+
+1. **Create the pool and add members.** Members are written as
+   `<tool>/<account>`.
+
+   ```bash
+   agent-switch pool create Work
+   agent-switch pool add work claude/work
+   agent-switch pool add work claude/side
+   ```
+
+   `create` prints the pool's id (here `work`). You use the id in every other
+   pool command.
+
+2. **Pin a folder to the pool.**
+
+   ```bash
+   cd ~/code/client-a
+   agent-switch map pool:work
+   ```
+
+3. **See which member it would pick, and why.**
+
+   ```bash
+   agent-switch dir --json
+   ```
+
+</Steps>
+
+One account can be in several pools, and a pool can hold accounts of several
+tools: a Claude start only considers the pool's Claude members, a Codex start
+only its Codex members. Pools never add up limits; each account keeps its own.
+
+### How a pool picks
+
+- It weighs each member the same way a balanced start does: the member that
+  would lose the most of its remaining quota at its next reset goes first.
+- It only trusts **fresh** usage, at most 10 minutes old. A member whose usage
+  is older or unknown, or who is signed out, disabled or still sharing the
+  default login, is skipped.
+- A member at its limit protection threshold (98% by default) is skipped.
+- It never leaves the pool. With no fresh numbers, it still starts on a usable
+  member: your preferred account if it is a member, otherwise the first usable
+  one.
+- When the pool no longer exists, has no member for this tool, or has no
+  usable member, the start is **refused** with the reason.
+
+<Aside type="tip">
+Fresh usage comes from the background service or the open desktop app. The
+service checks pool members that a folder pin points at every 5 minutes, so
+keep one of them running: `agent-switch service install`.
+</Aside>
+
+### Manage pools
+
+```bash
+agent-switch pool list                       # pools, members, pinned folders
+agent-switch pool rename work "Client work"  # new name, same id and pins
+agent-switch pool remove work claude/side
+agent-switch pool delete work                # refused while a folder is pinned to it
+```
+
+`pool delete` never touches the accounts themselves. Unpin the folders first
+with `agent-switch unmap <folder>`.
+
+### Start pools from your tags
+
+If you tagged your accounts (`agent-switch label <name> Work`), Agent Switch
+can propose one pool per tag:
+
+```bash
+agent-switch pool suggest              # preview only
+agent-switch pool suggest --confirm    # create the proposed pools
+```
+
+Nothing is created until you pass `--confirm`. Pools that already exist are
+skipped.
+
+## Read the decision: `dir --json`
+
+`dir --json` shows what a start in the current folder would do, without
+starting anything:
+
+```json
+{
+  "profile": "claude/work",
+  "configDir": "~/.agent-switch/claude/work/config",
+  "why": [
+    "Rule: folder ~/code/client-a → pool work",
+    "Skipped claude/side: usage checked 25 min ago (too old to trust)",
+    "Picked claude/work: 62% of the week left, resets in 5 d (0.5 %/h to use it up) · usage checked 2 min ago"
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `profile` | The account the start would use, as `<tool>/<account>`. `null` means the tool's own default login. |
+| `configDir` | The folder the tool would be pointed at (an absolute path in the real output). |
+| `why` | Each step of the decision, in order: the rule that applied, every account that was skipped and why, and the pick. |
+| `blocked` | Present when a pin refuses the start; the command then exits with code 86. |
+| `note` | Present when the start moved off a busy account or shares one. |
+
+Add `--provider codex` for Codex. `agent-switch picks` shows the same reasons
+for starts that already happened.
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Which account a session uses" href="/agent-switch/concepts/which-account/" description="The full decision order, from pins to balanced starts." />
+  <LinkCard title="Limits and protection" href="/agent-switch/concepts/limits-and-protection/" description="What the 5-hour and weekly limits mean, and when an account counts as full." />
+  <LinkCard title="Everyday workflow" href="/agent-switch/guides/everyday-workflow/" description="Preferred accounts, one-off runs and status checks." />
+</CardGrid>

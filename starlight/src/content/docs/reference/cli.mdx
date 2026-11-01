@@ -1,0 +1,374 @@
+---
+title: CLI reference
+description: Every agent-switch command, grouped by task — accounts, starting sessions, usage and limits, sessions, sharing, desktop apps, the service and maintenance.
+---
+
+import { Aside, Badge, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Every command the `agent-switch` binary accepts, grouped by task. In the CLI an
+account is called a **profile**: wherever you see `<name>` or `<profile>`, it
+means the name you gave an account with `add` or `import`.
+
+For the ideas behind the commands, start with
+[How it works](/agent-switch/concepts/how-it-works/) and
+[Which account a session uses](/agent-switch/concepts/which-account/).
+
+## Global flags
+
+| Flag | What it does |
+| --- | --- |
+| `--provider claude\|codex\|antigravity` | Which tool the command is about. Default: `claude`. |
+| `--json` | Machine-readable output, where the command supports it. |
+
+```bash
+agent-switch use work                     # a Claude account
+agent-switch use work --provider codex    # a Codex account
+```
+
+A flag that takes a value always consumes the next word, so
+`agent-switch remove --provider codex old` removes the Codex account `old`.
+
+Running `agent-switch` with no command starts the desktop app (same as
+`agent-switch gui`).
+
+## Accounts
+
+| Command | What it does |
+| --- | --- |
+| `add <name> [--browser B]` | Create an account and sign it in with the tool's own sign-in. |
+| `import <name>` | Turn the login you already have into an account, without signing in again. See [below](#import-and-shared-logins). |
+| `login <name> [--browser B]` | Sign an existing account in again (signed out, or login expired). Gives an imported account its own login. |
+| `browsers` | Browsers `--browser` can open. <Badge text="macOS" variant="caution" /> and Linux. |
+| `mark-shared <name> [--off]` | Mark an account as sharing the default install's login (for imports made by older versions). |
+| `list` / `ls` | All accounts, grouped by tool; the preferred account is marked `*`. |
+| `status [name]` | Who each account is signed in as, plus its usage. `--json` covers the preferred account only. |
+| `current` | The preferred account per tool. |
+| `whoami [name]` | Which account identity an account is signed in as. |
+| `auth-status` | Login state per account: `connected`, `expiring`, `sign-in-needed` or `unknown`. Never prints a token. |
+| `rename <old> <new>` | Rename an account; its tag, colour and folder rules follow. |
+| `label <name> [Work\|Personal\|Other\|none]` | Tag an account. |
+| `color <name> [orange\|red\|yellow\|green\|teal\|blue\|purple\|pink\|none]` | Pick the account's colour in the app (`colour` works too). |
+| `disable <name>` / `enable <name>` | Keep an account but stop using it, or turn it back on. |
+| `remove <name> [--force] [--yes]` / `rm` | Delete an account and its login. Asks on a terminal; `--yes` skips the question. |
+
+### `add` and `login`
+
+`add` runs the tool's own sign-in in the new account's folder:
+`claude auth login` for Claude, `codex login` for Codex. Antigravity has no
+separate sign-in command; `agy` asks you to sign in when it starts.
+
+If the sign-in does not finish, the account is kept and `add` exits with `1`.
+Finish it with `agent-switch login <name>`.
+
+`--browser <id>` opens the Claude sign-in in that browser (ids from
+`agent-switch browsers`). It is refused on Windows. Codex opens your default
+browser itself; the link it prints works in any browser.
+
+### `import` and shared logins
+
+`import` copies your current setup into a new account, so you do not sign in
+again. The catch: the new account and your default install now **share one
+login**. Whichever side refreshes the login first signs the other out.
+
+So agent-switch marks such an account, and then:
+
+- a balanced start never picks it,
+- the background service never refreshes its login,
+- `doctor` names it.
+
+`agent-switch login <name>` gives it its own login and clears the mark. For an
+import made before the mark existed, set it with `mark-shared <name>`.
+
+### `remove`
+
+`remove` refuses without `--force` when the account:
+
+- is the preferred account,
+- has a running Claude session,
+- is in the middle of a live switch (`rebind`), or lends its login to another
+  account's live switch.
+
+With `--force`, a live switch is undone first. On macOS the account's keychain
+entry is deleted too. Folder rules that point at it are removed.
+
+### `disable`
+
+A disabled account keeps its login, history and settings. It is never the
+preferred account, `use` refuses it, folder rules and pools skip it, and the
+background service stops checking its usage.
+
+## Starting sessions & routing
+
+| Command | What it does |
+| --- | --- |
+| `use <name>` | Set the preferred account for a tool. A preference, not a pin — see below. |
+| `deactivate` | Clear the preferred account. |
+| `run <name> [--cwd DIR] [--tmux] [--force] [-- args…]` | Start the tool on one named account. |
+| `dir [--guard] [--json] [--plain]` | Which account a start in this folder would use, and why. |
+| `picks [--limit N]` | Which account each start from your terminal chose, and why (newest 500 kept). |
+| `map <name\|pool:<id>> [dir]` | Pin a folder (default: the current one) to an account or a pool. |
+| `map --pause\|--resume [dir]` | Pause a folder rule without deleting it, or turn it back on. |
+| `unmap [dir]` | Remove a folder rule. |
+| `mappings` | List folder rules. |
+| `pool …` | Groups of accounts a folder rule can point at. See [below](#pool). |
+| `guard [block\|warn\|off]` | One account, one running session: read or set the policy. See [below](#guard). |
+| `shellenv [--shell S]` | Print the shell integration. |
+| `shellenv install [--shell S]` | Add the shell integration to your shell's startup file. |
+
+### Which account a start uses
+
+A plain `claude`, `codex` or `agy` in a terminal with the shell integration
+asks `agent-switch dir` first. The order is:
+
+1. **A folder rule** for this folder or the nearest parent folder: that account,
+   or the best account in that pool.
+2. **No folder rule:** a balanced start across all of that tool's accounts.
+3. **The preferred account** (`use`) on a tie, or when no account has usage
+   numbers from the last 10 minutes.
+
+`dir --json` prints `{profile, configDir, why[], blocked?, note?}`. `--plain`
+ignores folder rules. A folder rule that cannot be served (its account is
+disabled or removed, or its pool has no usable account) refuses the start with
+exit code `86`. Details:
+[Which account a session uses](/agent-switch/concepts/which-account/).
+
+### `run`
+
+`run` names one account explicitly. Everything after the account name is passed
+to the tool, so `agent-switch run work -- --resume` resumes the last Claude
+conversation on `work`.
+
+- `--cwd DIR` starts it in that folder.
+- `--tmux` starts it in a tmux session agent-switch manages (macOS and Linux).
+- `--force` starts it even if that account already has a running session.
+
+These three only count as agent-switch flags before a bare `--`.
+
+### `guard`
+
+| Policy | What happens when the account already has a running session |
+| --- | --- |
+| `warn` (default on new installs) | A one-line note, then the session starts. |
+| `block` | A plain start moves to a free, signed-in account with the most room. If none is free, it shares the best busy one. `run <name>` is refused. |
+| `off` | No check. |
+
+The check covers Claude only: Codex and Antigravity leave no sign of a running
+session on disk. A session started from inside another one on the same account
+is never counted. To start a second session on one account once, use
+`run <name> --force` or set `AGENT_SWITCH_ALLOW_DUPLICATE=1`.
+
+### `pool`
+
+| Command | What it does |
+| --- | --- |
+| `pool [list]` | Pools, their members and the folder rules that use them. |
+| `pool create <name>` | Create a pool. Its id is the name in lower case with dashes. |
+| `pool rename <id> <name>` | Change the display name. |
+| `pool delete <id>` | Delete a pool. Refused while a folder rule uses it. |
+| `pool add\|remove <id> <provider/name>` | Change members, e.g. `pool add client-a claude/work`. |
+| `pool suggest [--confirm]` | Propose one pool per tag; nothing is created without `--confirm`. |
+| `pools …` | Same as `pool`. |
+
+### `shellenv`
+
+The integration defines `claude`, `codex` and `agy` wrappers plus `asw`
+(`asw` lists accounts, `asw work` sets the preferred Claude account,
+`asw codex work` the preferred Codex account).
+
+| Shell | Load it with | `shellenv install` writes to |
+| --- | --- | --- |
+| zsh | `eval "$(agent-switch shellenv)"` | `~/.zshrc` |
+| bash | `eval "$(agent-switch shellenv)"` | `~/.bash_profile` on macOS, `~/.bashrc` elsewhere |
+| fish | `agent-switch shellenv --shell fish \| source` | `~/.config/fish/config.fish` |
+| PowerShell | `agent-switch shellenv --shell powershell \| Out-String \| Invoke-Expression` | the `$PROFILE` PowerShell reports |
+
+`cmd.exe` has no integration; use `agent-switch run <name>` there.
+
+## Usage & limits
+
+| Command | What it does |
+| --- | --- |
+| `status [name]` | Usage per account: 5-hour and weekly meters (Claude, Codex). |
+| `usage history [--profile <name>]` | Usage samples the background service recorded. |
+| `protection` | Limit protection per account (default on at 98%). |
+| `protection set <provider/name> [--on\|--off] [--threshold N]` | Change one account's limit protection. |
+| `protection wait on\|off <claude/name>` <Badge text="Claude only" variant="note" /> | At 100%: let Claude Code wait for the reset (`on`) or stop (`off`). |
+| `autoswitch on\|off\|status [--threshold N] [--tag T]` | Limit suggestions: a notification that names the account with the most room. Never switches. Default off. |
+| `reset <name> --provider codex [--yes]` | Use one banked Codex limit reset. Asks first on a terminal. |
+| `keep-signed-in [on\|off\|status]` <Badge text="Claude only" variant="note" /> | Let the background service keep unused Claude logins from running out (default on). |
+
+<Aside>
+`autoswitch` only notifies and suggests. A running session changes account only
+when you confirm a [live switch](#rebind). See
+[Limits & protection](/agent-switch/concepts/limits-and-protection/).
+</Aside>
+
+### `protection`
+
+Limit protection does two things:
+
+- a balanced or pool start skips an account that has reached its threshold on
+  any limit;
+- the background service shows a warning when a checked account reaches it.
+
+It pauses nothing. `protection --json` also shows, per Claude account, what
+Claude Code itself does at 100% (`hostWaits`: `on`, `off`, `default` or
+`unknown`). `protection wait` writes Claude Code's `autoContinueAtUsageLimit`
+setting. If several accounts share one `settings.json`, all of them change, and
+the command lists them.
+
+### `autoswitch`
+
+Works for Claude and Codex (they have usage numbers). `--threshold` is 1–100
+(default 95). `--tag all|work|personal|other` limits which accounts may be
+suggested. The background service must be running.
+
+## Sessions
+
+| Command | What it does |
+| --- | --- |
+| `sessions [profile] [--recent N]` | Recent and running sessions per account, with context %. Claude and Codex. |
+| `sessions preview <session-id> [--from <profile>]` | The first turns of one session. |
+| `sessions rm <session-id> --yes [--from <profile>] [--purge]` | Move a session to the trash; `--purge` deletes it for good. |
+| `sessions restore <trash-id\|session-id> [--from <profile>]` | Bring a removed session back. |
+| `takeover <session-id> --to <profile>` | Move a session to another account and resume it there. Claude and Codex. See [below](#takeover). |
+| `rebind [<account>]` <Badge text="macOS" variant="caution" /> <Badge text="Claude only" variant="note" /> | Switch the account of a running Claude session. See [below](#rebind). |
+| `handoff extract <session-id> --from <profile> --to <tool>` | Write a short brief to continue a session in another tool (lossy). |
+| `handoff seed --to <profile> --brief <path>` | Start the target tool on that brief. |
+| `compact <profile> [--clear] [--dry-run] [--force]` | Type `/compact` (or `/clear`) into a session started with `run --tmux`. Claude and Codex. |
+| `hooks install\|uninstall\|status [profile]` <Badge text="Claude only" variant="note" /> | Add the hooks that tell the app when Claude needs you or finished. |
+| `alerts on\|off\|status [--threshold 80,95]` | Log a notification when a session's context passes these marks (default off). |
+| `desktop` <Badge text="Claude only" variant="note" /> | Which accounts ran sessions in each Claude Desktop window. |
+
+### `sessions rm`
+
+`--yes` is required. A running session is never removed. When several accounts
+share one history folder, it also asks for `--ack <session-id>`, because the
+session disappears for all of them.
+
+### `takeover`
+
+Moves by default. Options:
+
+- `--from <profile>` names the source account;
+- `--keep-source` copies instead (the copy gets a new session id);
+- `--in-place` continues inside the tmux pane of a `run --tmux` session;
+- `--print-only` prints the resume command instead of running it;
+- `--force` skips the running-session check.
+
+### `rebind`
+
+Switches the account of a **running** Claude session on macOS. The session uses
+the new account from its next message.
+
+| Form | What it does |
+| --- | --- |
+| `rebind` | Pick the account in a list (the one with the most room is pre-selected). |
+| `rebind <account> [--profile <p>]` | Switch now. |
+| `rebind <account> --when-idle [--session <id>]` | Switch once the session's current turn ends. Expires after 30 minutes. |
+| `rebind --cancel [--profile <p>]` | Drop a waiting `--when-idle` switch. |
+| `rebind --restore [--profile <p>]` | Give the session its own account back. |
+| `rebind --reset` | Re-enable `rebind` after it turned itself off following 3 failed attempts. |
+
+See [Move a session](/agent-switch/guides/move-a-session/).
+
+## Sharing & config
+
+| Command | What it does |
+| --- | --- |
+| `share on\|sync\|off\|status [--source <profile\|default>]` <Badge text="Claude only" variant="note" /> | Use one set of settings, `CLAUDE.md`, skills, commands and agents in every Claude account. |
+| `share on --history` | Also share conversations and plans (macOS and Linux). |
+| `config export <profile>` <Badge text="Claude only" variant="note" /> | Write a settings-only bundle to stdout. Never contains logins. |
+| `config import <profile>` <Badge text="Claude only" variant="note" /> | Read such a bundle from stdin. |
+
+The prompt history (what ↑ and Ctrl+R search) is always shared once `share on`
+runs. See [Share settings](/agent-switch/guides/share-settings/).
+
+```bash
+agent-switch config export work | gpg -c > work-config.gpg
+gpg -d work-config.gpg | agent-switch config import personal
+```
+
+## Desktop apps (macOS)
+
+| Command | What it does |
+| --- | --- |
+| `apps` <Badge text="macOS" variant="caution" /> | Desktop apps agent-switch can start per account, and whether each is installed. |
+| `open <app> [profile]` <Badge text="macOS" variant="caution" /> | Start a desktop app on one account, separate from the others. Brings it to the front if it already runs. |
+| `launcher add\|remove <app> <profile>` <Badge text="macOS" variant="caution" /> | A Dock and Spotlight app per account in `~/Applications/Agent Switch`. |
+| `launcher list` · `launcher repair` <Badge text="macOS" variant="caution" /> | List launchers, or rebuild them after Node or agent-switch moved. |
+| `launchers …` <Badge text="macOS" variant="caution" /> | Same as `launcher`. |
+| `app-settings copy <app> --from <profile\|default> --to <profile>` <Badge text="macOS" variant="caution" /> | Copy desktop settings (MCP servers, preferences, extensions). Never logins. |
+| `web <name>` <Badge text="Claude only" variant="note" /> | claude.ai in a browser profile kept per account. Needs the optional `playwright` package. |
+
+App ids: `claude-desktop`, `codex-ide` (VS Code), `codex-desktop`,
+`antigravity`. See
+[Desktop apps & launchers](/agent-switch/guides/desktop-apps-and-launchers/).
+
+## App & service
+
+| Command | What it does |
+| --- | --- |
+| `gui [--after-pid <pid>]` | Start the desktop app. Downloads it on first use; never runs an installer. |
+| `activate` | Make this copy of the CLI the one terminals and the background service use. The desktop app runs it on every start. |
+| `service install\|uninstall` | Start the background service at login, or remove it. |
+| `service start\|stop\|status\|run` | Start it now, stop it, show its state, or run it in the foreground. |
+| `notifications [clear]` | Recent notifications (limit suggestions, protection warnings, failed usage reads). |
+| `os-notify [on\|off\|status]` | Let the background service show desktop notifications itself on Linux and Windows (default off). |
+| `providers status` | Which tools are on, installed or linked. |
+| `providers enable\|disable [--surface cli\|ui]` | Turn a tool on or off. Accounts are kept. Claude and Codex are on by default. |
+| `providers link --provider P --path <binary>` | Use a tool binary that is not on your PATH. |
+| `providers unlink --provider P` | Go back to finding it on your PATH. |
+
+`service install` uses launchd on macOS, a `systemd --user` unit on Linux and a
+Task Scheduler logon task on Windows. The service refreshes the usage numbers
+of your enabled Claude and Codex accounts about every 5 minutes.
+
+## Maintenance
+
+| Command | What it does |
+| --- | --- |
+| `doctor` | Self-check for this OS and each tool. Exits `1` on a hard error. |
+| `activity [--limit N]` | What agent-switch itself did, and why (newest 2000 kept). |
+| `check-update` / `check-updates` | Compare your version with the latest GitHub release. |
+| `update` / `upgrade` | Update through npm, then restart the background service on the new version. |
+| `tooling` | Readout of related tools (`agent-config`, `rtk`, `claude`, `codex`, `agy`). No network. |
+| `tooling install\|upgrade <tool>` | Install or upgrade one of them. Refused for `agy`. |
+| `tooling notes [<tool>] [--latest]` | Release notes newer than your version (fetched from GitHub). |
+| `list --format cswap-v1` / `--list --json` | Claude accounts in the format CodexBar and ccdeck read. See [CodexBar & ccdeck](/agent-switch/guides/codexbar-ccdeck/). |
+| `uninstall [--force]` | Remove all agent-switch data, keychain entries and the service. Your tools' own installs are untouched. |
+| `version` / `--version` | Print the installed version. |
+| `help` / `--help` / `-h` | Print the command list. |
+
+### `doctor` checks
+
+- `agent-switch` is on your PATH;
+- the shell integration is loaded from a startup file;
+- the desktop app starts at login;
+- no API key in your environment overrides the account logins;
+- Antigravity support on this OS;
+- every account has a stored login, and no two accounts are signed in as the
+  same identity;
+- accounts that share the default install's login;
+- shared settings links are intact;
+- the guard policy, and whether an account runs twice right now.
+
+`--json` prints `{readiness, platform, checks[]}`.
+
+## Internal commands
+
+Used by the desktop app and by hooks; not for direct use.
+
+| Command | Used by |
+| --- | --- |
+| `__hook-event` | Claude Code hooks installed by `hooks install`. |
+| `notify --kind K --title T --message M` | The desktop app, to log a notification. |
+| `gui-settings` | The desktop app, for its start-at-login and pet-intro settings. |
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Configuration & files" href="/agent-switch/reference/configuration/" description="Every file agent-switch writes." />
+  <LinkCard title="Environment variables" href="/agent-switch/reference/environment/" description="What it reads and what it sets." />
+  <LinkCard title="Troubleshooting" href="/agent-switch/reference/troubleshooting/" description="Fixes for the common problems." />
+</CardGrid>

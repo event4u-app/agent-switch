@@ -1,0 +1,103 @@
+---
+title: Security & privacy
+description: Where Agent Switch keeps your Claude Code, Codex and Antigravity logins, what it reads, what it stores and every connection it makes.
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+You are trusting Agent Switch with access to several paid accounts. This page
+says exactly what it does with that access, so you can check it rather than
+take it on faith. Everything here describes the code; the source is on
+[GitHub](https://github.com/event4u-app/agent-switch).
+
+## The short version
+
+- Agent Switch is a local tool. There is **no server, no account, no
+  telemetry**, and it never listens on a port.
+- Each login stays where the provider's own tool put it. Agent Switch does not
+  hold, forward or share logins.
+- It does not sit in your traffic. Claude Code, Codex and Antigravity talk to
+  their providers directly.
+- Nothing changes a running session's account without your confirmation.
+
+## Where your logins live
+
+Every account signs in through the provider's own login flow, into that
+account's own folder under `~/.agent-switch`:
+
+| Tool | macOS | Linux | Windows |
+|---|---|---|---|
+| Claude Code | Keychain, one entry per account (derived by Claude Code from the folder) | `.credentials.json` in the account's folder | `.credentials.json` in the account's folder |
+| Codex | `auth.json` in the account's folder | same | same |
+| Antigravity | a keychain inside the account's folder | — | — |
+
+<Aside type="caution" title="Plaintext logins on Linux and Windows">
+  On Linux and Windows, Claude Code and Codex store logins as files. Agent
+  Switch writes the files it creates with owner-only permissions (`0600`) where
+  the OS supports them. Protect your home folder accordingly, and never sync
+  `~/.agent-switch` to a shared or cloud folder.
+</Aside>
+
+## What Agent Switch reads and writes
+
+**It reads** each account's login only to ask the provider how much of that
+account's usage is left, and who the account belongs to. It reads your local
+session files to show context %, the prompt cache and session previews.
+
+**It writes a login in exactly two cases, both on your command:**
+
+- `agent-switch import <name>` copies the login of your existing default install
+  into a new account, so you do not have to sign in again.
+- `agent-switch rebind` switches a running Claude session to another of your
+  accounts (macOS), and `rebind --restore` reverses it.
+
+Refreshing a login is always left to the provider's own tool. To keep idle
+Claude accounts signed in, the background service runs `claude doctor` for that
+account. That is a local health check that makes Claude Code refresh its own
+login under its own lock, without spending quota. Turn it off with
+`agent-switch keep-signed-in off`.
+
+**It stores** usage numbers, your settings, folder rules and a log of its own
+actions (`agent-switch activity`) under `~/.agent-switch`. It never stores a
+token outside the provider's own place for it.
+
+## Every connection it makes
+
+| Destination | Why | With what |
+|---|---|---|
+| `api.anthropic.com` | Claude usage and the account's identity | that account's own login |
+| `chatgpt.com` (`/backend-api/wham/…`) | Codex usage and banked resets (`reset` redeems one only when you run it) | that account's own login |
+| `api.github.com`, `github.com` | update checks, release notes, downloading the desktop app | nothing personal |
+| `registry.npmjs.org` | the desktop app checks for new versions of the `claude` and `codex` CLIs; `update` and `tooling install` install packages through npm | nothing personal |
+| `raw.githubusercontent.com` | only `agent-switch tooling install rtk`, which runs rtk's own install script | nothing personal |
+| `127.0.0.1` (your own machine) | only when you open agent-config's settings from the desktop app: it talks to agent-config's local server | a token agent-config created for this |
+
+That is the complete list. `agent-switch web` opens claude.ai in a browser
+window, which then talks to claude.ai like any browser. Your prompts, code and conversations never pass
+through Agent Switch.
+
+## What it refuses to do
+
+No proxy and no TLS interception. No pretending to be another client. No pooling
+of free tiers. No forwarding or brokering of logins. No hosted dashboard. Each
+refusal is explained in [What it will never do](/agent-switch/trust/non-goals/).
+
+## Is this allowed by the providers?
+
+Each account signs in through the provider's own login and uses the provider's
+own client, unmodified, for the person who owns the account. Agent Switch only
+chooses which of your own accounts a new session starts on. Check your plan's
+terms for your situation; this page describes the code, it is not legal advice.
+
+## Reporting a vulnerability
+
+Please report security issues privately through
+[GitHub's private vulnerability reporting](https://github.com/event4u-app/agent-switch/security/advisories/new)
+rather than in a public issue.
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="What it will never do" href="/agent-switch/trust/non-goals/" description="The refusals, and what to use instead." />
+  <LinkCard title="How it works" href="/agent-switch/concepts/how-it-works/" description="One folder per account." />
+</CardGrid>

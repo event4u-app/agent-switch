@@ -1,0 +1,144 @@
+---
+title: Quick start
+description: Set up several Claude Code or Codex accounts side by side in three steps, and let each new session pick the account with the most left.
+---
+
+import { Steps, Tabs, TabItem, Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Three steps, about a minute: install, add your accounts, turn it on. You need
+Node.js 20 or newer. It works on macOS, Linux and Windows.
+
+<Steps>
+
+1. **Install Agent Switch.**
+
+   ```bash
+   npm install -g @event4u/agent-switch
+   ```
+
+2. **Add each account once.** Each command opens the provider's own sign-in in
+   your browser. Pick any names you like.
+
+   <Tabs syncKey="provider">
+     <TabItem label="Claude Code">
+       ```bash
+       agent-switch add work
+       agent-switch add personal
+       ```
+     </TabItem>
+     <TabItem label="Codex">
+       ```bash
+       agent-switch add work --provider codex
+       agent-switch add personal --provider codex
+       ```
+     </TabItem>
+   </Tabs>
+
+   Already signed in to Claude Code or Codex? See
+   [Keep the login you already have](#keep-the-login-you-already-have).
+
+3. **Turn it on.** The shell wrapper makes `claude` and `codex` start on the
+   right account. The background service keeps every account's usage fresh,
+   which is what lets Agent Switch balance your sessions.
+
+   ```bash
+   agent-switch shellenv install
+   agent-switch service install
+   ```
+
+   Open a **new** terminal afterwards.
+
+</Steps>
+
+That's it. Run `claude` or `codex` as always. Each start goes to the account
+with the most to give, and you can ask why at any time:
+
+```bash
+agent-switch dir --json
+```
+
+Prefer a window? Run `agent-switch`. The desktop app downloads on first use,
+with no installer, and starts. See [The desktop app](/agent-switch/guides/desktop-app/).
+
+## Check that it worked
+
+```bash
+agent-switch status           # every account, who it is signed in as, and its limits
+agent-switch doctor           # the CLI, the shell wrapper, every login, API keys that override one
+agent-switch service status   # the background service and when it last checked usage
+```
+
+`doctor` names anything that is wrong and the command that fixes it.
+
+## Keep the login you already have
+
+`import` turns the login of your existing install into an account, with no new
+sign-in:
+
+```bash
+agent-switch import personal
+```
+
+That account still shares its login with your default install. If both used it,
+whichever refreshed first would sign the other one out, so Agent Switch never
+picks a shared account for a balanced start and never refreshes it. Give it its
+own login once, and it takes part like every other account:
+
+```bash
+agent-switch login personal
+```
+
+<Aside type="caution">
+  Never use `claude auth logout` to switch accounts. It revokes the login on the
+  provider's side. Switching with Agent Switch never touches the other accounts.
+</Aside>
+
+## Your shell, by hand
+
+`shellenv install` detects your shell and adds one line to its startup file. To
+add it yourself:
+
+<Tabs syncKey="shell">
+  <TabItem label="zsh">
+    Add to `~/.zshrc`:
+    ```bash
+    eval "$(agent-switch shellenv)"
+    ```
+  </TabItem>
+  <TabItem label="bash">
+    Add to `~/.bashrc` (on macOS: `~/.bash_profile`):
+    ```bash
+    eval "$(agent-switch shellenv)"
+    ```
+  </TabItem>
+  <TabItem label="fish">
+    Add to `~/.config/fish/config.fish`:
+    ```fish
+    agent-switch shellenv --shell fish | source
+    ```
+  </TabItem>
+  <TabItem label="PowerShell">
+    Add to `$PROFILE`:
+    ```powershell
+    agent-switch shellenv --shell powershell | Out-String | Invoke-Expression
+    ```
+  </TabItem>
+  <TabItem label="cmd.exe">
+    cmd.exe has no wrapper. Start a session on an account explicitly:
+    ```bat
+    agent-switch run work
+    ```
+  </TabItem>
+</Tabs>
+
+The line defines `claude`, `codex` and `agy` wrappers and the `asw` shortcut.
+If Agent Switch is ever missing or broken, the wrappers fall straight through to
+the real binary, so your tools keep working.
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Which account a session uses" href="/agent-switch/concepts/which-account/" description="Balanced starts, folder rules and your preferred account." />
+  <LinkCard title="Everyday workflow" href="/agent-switch/guides/everyday-workflow/" description="The handful of commands you use daily." />
+  <LinkCard title="Pin a project to an account" href="/agent-switch/guides/projects-and-pools/" description="Client work always on the work account." />
+</CardGrid>
