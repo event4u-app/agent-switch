@@ -15,6 +15,8 @@ import {
   claudeTranscriptPath,
   preflightClaude,
   turnInFlight,
+  readClaudeCache,
+  withResumeFacts,
   CONTEXT_WINDOWS,
   SUPPORTED_CLAUDE,
 } from "../src/telemetry.js";
@@ -256,4 +258,119 @@ test("perf: reading context from a large transcript stays cheap (capped tail)", 
   }
   // 20 such reads must fit well under the 100ms/cycle budget → single read < 20ms
   assert.ok(ms < 20, `single capped read should be <20ms, fastest of 5 was ${ms.toFixed(1)}ms`);
+});
+
+// ---------- readClaudeCache / withResumeFacts ----------
+
+function cacheLine(opts: { ts: string; w1h?: number; w5m?: number; read?: number; out?: number; sidechain?: boolean; stop?: string | null }): string {
+  const w1h = opts.w1h ?? 0;
+  const w5m = opts.w5m ?? 0;
+  return JSON.stringify({
+    type: "assistant",
+    isSidechain: opts.sidechain ?? false,
+    timestamp: opts.ts,
+    message: {
+      model: "claude-opus-5-5",
+      stop_reason: "stop" in opts ? opts.stop : "end_turn",
+      usage: {
+        input_tokens: 2,
+        cache_read_input_tokens: opts.read ?? 0,
+        cache_creation_input_tokens: w1h + w5m,
+        output_tokens: opts.out ?? 0,
+        cache_creation: { ephemeral_1h_input_tokens: w1h, ephemeral_5m_input_tokens: w5m },
+      },
+    },
+  });
+}
+
+const T0 = Date.parse("2026-11-01T10:00:00Z");
+const min = 60_000;
+
+test("readClaudeCache: 1h write → warm inside the hour, expiry one TTL after the last response", () => {
+  const f = tmpFile([cacheLine({ ts: "2026-11-01T10:00:00.000Z", w1h: 600, read: 180_000, out: 400 })]);
+  const r = readClaudeCache(f, T0 + 59 * min)!;
+  assert.equal(r.state, "warm");
+  assert.equal(r.ttl, "1h");
+  assert.equal(r.expiresAt, "2026-11-01T11:00:00.000Z");
+  assert.equal(r.resendTokens, 2 + 180_000 + 600 + 400, "input side plus the answer");
+  assert.equal(r.source, "transcript");
+  assert.equal(readClaudeCache(f, T0 + 61 * min)!.state, "cold");
+});
+
+test("readClaudeCache: 5m write goes cold after five minutes", () => {
+  const f = tmpFile([cacheLine({ ts: "2026-11-01T10:00:00.000Z", w5m: 50, read: 20_000 })]);
+  assert.equal(readClaudeCache(f, T0 + 4 * min)!.state, "warm");
+  const cold = readClaudeCache(f, T0 + 6 * min)!;
+  assert.equal(cold.state, "cold");
+  assert.equal(cold.ttl, "5m");
+});
+
+test("readClaudeCache: a pure hit takes its TTL from the newest earlier write, its time from itself", () => {
+  const f = tmpFile([
+    cacheLine({ ts: "2026-11-01T09:00:00.000Z", w1h: 900 }),
+    cacheLine({ ts: "2026-11-01T10:00:00.000Z", read: 30_000 }), // no write split
+  ]);
+  const r = readClaudeCache(f, T0 + 30 * min)!;
+  assert.equal(r.ttl, "1h");
+  assert.equal(r.lastResponseAt, "2026-11-01T10:00:00.000Z");
+  assert.equal(r.state, "warm");
+});
+
+test("readClaudeCache: subagent and streaming lines never decide the state", () => {
+  const f = tmpFile([
+    cacheLine({ ts: "2026-11-01T10:00:00.000Z", w1h: 100, read: 10_000 }),
+    cacheLine({ ts: "2026-11-01T10:20:00.000Z", w5m: 100, sidechain: true }),
+    cacheLine({ ts: "2026-11-01T10:21:00.000Z", w1h: 100, stop: null }),
+  ]);
+  const r = readClaudeCache(f, T0 + 30 * min)!;
+  assert.equal(r.lastResponseAt, "2026-11-01T10:00:00.000Z");
+  assert.equal(r.ttl, "1h");
+});
+
+test("readClaudeCache: a compaction after the last response → compacted, no resend figure", () => {
+  const f = tmpFile([
+    cacheLine({ ts: "2026-11-01T10:00:00.000Z", w1h: 100, read: 300_000 }),
+    JSON.stringify({ type: "system", subtype: "compact_boundary", timestamp: "2026-11-01T10:54:00.000Z" }),
+  ]);
+  const r = readClaudeCache(f, T0 + 90 * min)!;
+  assert.equal(r.state, "compacted");
+  assert.equal(r.resendTokens, null);
+});
+
+test("readClaudeCache: a compaction before the last response does not count", () => {
+  const f = tmpFile([
+    JSON.stringify({ type: "system", subtype: "compact_boundary", timestamp: "2026-11-01T09:00:00.000Z" }),
+    cacheLine({ ts: "2026-11-01T10:00:00.000Z", w1h: 100 }),
+  ]);
+  assert.equal(readClaudeCache(f, T0 + 90 * min)!.state, "cold");
+});
+
+test("readClaudeCache: no write split anywhere → unknown, still with time and size", () => {
+  const f = tmpFile([asst({ input_tokens: 10, cache_read_input_tokens: 5, cache_creation_input_tokens: 0, output_tokens: 1 }, { ts: "2026-11-01T10:00:00.000Z" })]);
+  const r = readClaudeCache(f, T0)!;
+  assert.equal(r.state, "unknown");
+  assert.equal(r.expiresAt, null);
+  assert.equal(r.resendTokens, 16);
+});
+
+test("readClaudeCache: unreadable or empty → null, malformed lines skipped", () => {
+  assert.equal(readClaudeCache("/nonexistent/asw.jsonl", T0), null);
+  assert.equal(readClaudeCache(tmpFile(['{"type":"user"}']), T0), null);
+  const f = tmpFile([cacheLine({ ts: "2026-11-01T10:00:00.000Z", w1h: 1 }), "{not json"]);
+  assert.equal(readClaudeCache(f, T0)!.state, "warm");
+});
+
+test("withResumeFacts: the host answers until the resumed session responds again", () => {
+  const f = tmpFile([cacheLine({ ts: "2026-11-01T10:00:00.000Z", w1h: 100, read: 1000 })]);
+  const reading = readClaudeCache(f, T0 + 10 * min);
+  const resumed = withResumeFacts(reading, { at: "2026-11-01T10:05:00.000Z", contextTokens: 182_340, cacheLikelyExpired: true });
+  assert.equal(resumed!.state, "cold");
+  assert.equal(resumed!.resendTokens, 182_340);
+  assert.equal(resumed!.source, "host");
+  // A response after the resume: the transcript is newer and wins.
+  assert.equal(withResumeFacts(reading, { at: "2026-11-01T09:00:00.000Z", cacheLikelyExpired: true }), reading);
+  // Facts without the flag (an older host) change nothing.
+  assert.equal(withResumeFacts(reading, { at: "2026-11-01T10:05:00.000Z" }), reading);
+  // A resumed session with no transcript reading yet still gets the host's answer.
+  assert.equal(withResumeFacts(null, { at: "2026-11-01T10:05:00.000Z", cacheLikelyExpired: false })!.state, "warm");
 });

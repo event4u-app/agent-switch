@@ -21,6 +21,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import type { ResumeFacts } from "./telemetry.js";
+
 /** The hook events we install. `source`/matcher values confirmed in spikes/t6
  *  (the stdin field is `source`, not `matcher`). `Stop` fires when Claude ends a
  *  turn (finished / now waiting on you); `Notification` fires when it needs your
@@ -134,7 +136,29 @@ export interface HookEventRecord {
   error?: string;
   /** Notification: `notification_type` (`quota_auto_resume_armed`, …). */
   notificationType?: string;
+  /** SessionStart `resume`/`fork` (Claude Code v2.1.251+): numbers and a flag, never content. */
+  resume?: { secondsSinceLastResponse?: number; contextTokens?: number; cacheLikelyExpired?: boolean };
   at: string; // ISO
+}
+
+/** The resume fields of a SessionStart stdin payload, or undefined when the host sent none. */
+export function resumeFields(o: any): HookEventRecord["resume"] {
+  if (o?.hook_event_name !== "SessionStart" || typeof o.prompt_cache_likely_expired !== "boolean") return undefined;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+  return {
+    secondsSinceLastResponse: num(o.seconds_since_last_response),
+    contextTokens: num(o.context_tokens),
+    cacheLikelyExpired: o.prompt_cache_likely_expired,
+  };
+}
+
+/** The newest resume facts recorded for one session, or null. */
+export function resumeFactsFor(events: readonly HookEventRecord[], sessionId: string): ResumeFacts | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e.sessionId === sessionId && e.event === "SessionStart" && e.resume) return { at: e.at, ...e.resume };
+  }
+  return null;
 }
 
 /** The host waiting out a usage limit by itself — the session needs nothing
