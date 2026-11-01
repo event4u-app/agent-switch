@@ -294,6 +294,13 @@ agent-switch takeover <session-id> --to work --keep-source   # copy + fork inste
 - In an interactive terminal the takeover resumes the session directly; use
   `--print-only` to just print the resume command. Transcripts are treated as
   opaque blobs — moved whole, never parsed or rewritten.
+- **The move names its cache cost first.** The prompt cache is shared within one
+  organization, not across organizations ([probe](agents/evidence/cache-move-probe-2026-11.md)).
+  Before it moves, `takeover` (and `rebind`) prints one line: a warm session
+  moving within its organization keeps its cache; into another organization
+  its first turn re-sends the conversation (`~182k`); a cold session costs the
+  same wherever it continues. `--json` carries it as `cache` and `cacheLine`.
+  The interactive `rebind` picker marks targets in the same organization.
 
 ## Context monitoring
 
@@ -303,6 +310,7 @@ locally (no API calls, own-profile only, never a cross-account comparison).
 
 ```bash
 agent-switch sessions                 # live sessions carry a context column: 67% · 134k/1000k
+                                      # and the prompt cache: cache warm till 10:42 / cache cold · ~182k re-sent
 agent-switch status                   # active profile's worst live session's context, one line
 agent-switch alerts on --threshold 80,95   # daemon records ONE coalesced notification per cycle on a crossing
 agent-switch compact work             # type /compact into work's agent-switch-managed tmux pane (idle-guarded)
@@ -312,6 +320,12 @@ agent-switch compact work             # type /compact into work's agent-switch-m
   main-chain turn's input side, matching Claude Code's own `/context`); the
   window (200k / 1M) comes from a small per-model table. Unknown model → raw
   tokens, no guessed percentage. Codex context comes in-band from its rollout.
+- **Prompt cache** (Claude) comes from the same transcript: the last response's
+  time plus the TTL its cache writes used (5 min or 1 h), so `sessions` shows
+  how long the cache stays warm and, once cold, what the next turn re-sends.
+  After a compaction it shows `cache compacted`. With hooks installed, a resumed
+  session uses Claude Code's own resume figures until it answers again.
+  `sessions --json` carries it as `cache`; tokens only, never money.
 - **Alerts** are **off by default** and, when on, name only the project +
   percentage + a suggested `/compact` — never another profile. Enable per-session
   liveness/compaction signals with `agent-switch hooks install` (adds additive,
@@ -327,7 +341,8 @@ agent-switch compact work             # type /compact into work's agent-switch-m
 - **Compaction is never automatic.** `agent-switch compact <profile>` only types
   into an agent-switch-*managed* tmux pane (`run --tmux`), refuses while a turn
   is in flight (`--force` to override), and prints the manual command anywhere
-  else. `/clear` is gated behind `--force` (it discards the conversation).
+  else. `/clear` is gated behind `--force` (it discards the conversation). On a
+  cold cache it says first that the `/compact` re-reads the history uncached.
 
 ## Browser sessions (claude.ai) without re-login
 
