@@ -1,15 +1,15 @@
 {
   "schema": 1,
-  "generation": "f16349351919899d",
-  "commit": "6f70bb359ac6",
-  "built_at_commit": "6f70bb359ac6",
-  "state": "edited",
+  "generation": "61ddf095fa324f37",
+  "commit": "513b00b7d804",
+  "built_at_commit": "513b00b7d804",
+  "state": "fresh",
   "areas": {
     "code": {
       "path": "code/map.json",
       "source": "code-graph",
-      "freshness": "edited",
-      "facts": 416
+      "freshness": "fresh",
+      "facts": 418
     },
     "data": {
       "path": "data/data.json",
@@ -23,20 +23,18 @@
     "systems": {
       "path": "systems/systems.json",
       "source": "systems lane (lockfiles, manifests, version files, images, CI)",
-      "freshness": "stale",
+      "freshness": "fresh",
       "completeness": "complete",
       "facts": 1127,
-      "findings": 4,
-      "reason": "graph state edited"
+      "findings": 4
     },
     "interfaces": {
       "path": "interfaces/interfaces.json",
       "source": "interfaces lane (call sites, contracts, configuration names)",
-      "freshness": "stale",
+      "freshness": "fresh",
       "completeness": "complete",
       "facts": 37,
-      "findings": 7,
-      "reason": "graph state edited"
+      "findings": 7
     },
     "runtime": {
       "path": "runtime/runtime.json",
@@ -50,29 +48,26 @@
     "delivery": {
       "path": "delivery/delivery.json",
       "source": "delivery lane (GitHub Actions, GitLab CI)",
-      "freshness": "stale",
+      "freshness": "fresh",
       "completeness": "complete",
       "facts": 71,
-      "findings": 28,
-      "reason": "graph state edited"
+      "findings": 28
     },
     "impact": {
       "path": "code/map.json",
       "source": "review-risk over the working diff",
-      "freshness": "stale",
+      "freshness": "fresh",
       "completeness": "complete",
-      "facts": 13,
-      "findings": 0,
-      "reason": "graph state edited"
+      "facts": 0,
+      "findings": 0
     },
     "agent": {
       "path": "code/map.json",
       "source": "code-graph CLI and MCP surface",
-      "freshness": "stale",
+      "freshness": "fresh",
       "completeness": "complete",
-      "facts": 35,
-      "findings": 0,
-      "reason": "graph state edited"
+      "facts": 0,
+      "findings": 0
     }
   }
 }

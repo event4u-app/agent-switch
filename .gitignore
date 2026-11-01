@@ -10,10 +10,12 @@ agents/runtime/
 agents/tmp/
 agents/tmp.old/
 agents/state/
-agents/map/.build/
 gui/node_modules/
 gui/dist/
 gui/src-tauri/target/
 gui/src-tauri/gen/
 .task/
 .claude/
+
+# code-graph cache, lock and opt-in markers (the map itself is tracked)
+agents/map/.build/
