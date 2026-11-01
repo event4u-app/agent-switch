@@ -1,45 +1,49 @@
-/* Custom styles for agent-switch documentation */
+/* Agent Switch docs — brand accent on top of the Rapide theme. */
 
 :root {
   --sl-color-accent: #c74624;
   --sl-color-accent-high: #a33a1d;
-  --sl-color-accent-low: #e85a32;
+  --sl-color-accent-low: #f6d8cc;
 }
 
-/* Dark mode - lighter orange for better visibility */
 :root[data-theme='dark'] {
   --sl-color-accent: #ff7a50;
-  --sl-color-accent-high: #ff9470;
-  --sl-color-accent-low: #e85a32;
+  --sl-color-accent-high: #ffb69c;
+  --sl-color-accent-low: #3e1e1b;
 }
 
-/* Override green buttons on splash page with orange border and dark background */
-.hero .actions a[href='/getting-started/introduction/'],
-.hero .actions a[data-variant='primary'],
-.hero .actions a.primary,
-.sl-flex.actions a {
-  background: #3e1e1b !important;
-  background-color: #3e1e1b !important;
-  border: 2px solid var(--sl-color-accent) !important;
-  border-color: var(--sl-color-accent) !important;
-  color: white !important;
+/* Primary buttons: the Rapide theme paints them green; use the brand.
+   Unlayered rules win over the theme's cascade layers. */
+.sl-link-button.primary {
+  background-color: var(--sl-color-accent-low);
+  border: 1px solid var(--sl-color-accent);
+  color: var(--sl-color-accent-high);
 }
 
-.hero .actions a[href='/getting-started/introduction/']:hover,
-.hero .actions a[data-variant='primary']:hover,
-.hero .actions a.primary:hover,
-.sl-flex.actions a:hover {
-  background: var(--sl-color-accent) !important;
-  background-color: var(--sl-color-accent) !important;
-  border-color: var(--sl-color-accent) !important;
+.sl-link-button.primary:is(:hover, :focus-visible) {
+  background-color: var(--sl-color-accent);
+  border-color: var(--sl-color-accent);
+  color: var(--sl-color-white);
 }
 
-/* Code blocks */
+/* The info banner and app screenshots. */
+.banner-figure {
+  margin: 0 auto 2rem;
+  max-width: 1200px;
+}
+
+.banner-figure img,
+.shot {
+  width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+  border: 1px solid var(--sl-color-gray-5);
+}
+
 pre {
   border-radius: 0.5rem;
 }
 
-/* Tables */
 table {
   width: 100%;
   border-collapse: collapse;
@@ -48,13 +52,4 @@ table {
 th {
   background-color: var(--sl-color-gray-6);
   font-weight: 600;
-}
-
-/* Callouts */
-.callout {
-  padding: 1rem;
-  border-left: 4px solid var(--sl-color-accent);
-  background-color: var(--sl-color-gray-6);
-  border-radius: 0.25rem;
-  margin: 1rem 0;
 }

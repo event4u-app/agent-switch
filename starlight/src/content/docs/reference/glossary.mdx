@@ -1,0 +1,108 @@
+---
+title: Glossary
+description: Short definitions of the words the agent-switch docs, CLI and desktop app use — accounts, folder rules, pools, limits, protection, live switch and more.
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+### Account (profile)
+
+One signed-in Claude Code, Codex or Antigravity login, with its own folder. The
+CLI calls it a *profile* (`agent-switch add work`). All your accounts stay
+signed in at the same time.
+
+### Preferred account (the star)
+
+The account you chose with `use`, or with the star in the app. It is used on a
+tie and when no account has fresh usage numbers. It is a preference, not a
+pin. The CLI calls it the *active* profile.
+
+### Folder rule
+
+Pins a folder, and everything below it, to one account or one pool. A folder
+rule always wins over balancing. Set it with `agent-switch map`.
+
+### Pool
+
+A named group of accounts a folder rule can point at. A start in that folder
+takes the best account in the group and never leaves the group.
+
+### Balanced start
+
+A new session without a folder rule goes to the account that would lose the
+most of its remaining limit at its next reset. It needs usage numbers from the
+last 10 minutes; without them the preferred account is used.
+
+### 5-hour limit / weekly limit
+
+The two usage limits a Claude plan has: one over a 5-hour window and one over a
+week. Each resets on its own schedule. The meters show how much of each is
+used.
+
+### Limit protection
+
+Per account, on by default at 98%. A balanced or pool start skips an account
+that has reached it, and the background service shows a warning. It never
+stops or pauses a running session.
+
+### Limit suggestions (autoswitch)
+
+Optional, off by default. Near a limit you get a notification naming the
+account with the most room left. It never switches anything by itself.
+
+### One account, one session (single-load guard)
+
+What happens when an account that already runs a Claude session is started
+again. `warn` (the default on new installs) prints a note and starts. `block`
+moves the start to a free account, or shares a busy one if none is free. `off`
+does not check.
+
+### Take over
+
+`agent-switch takeover`: move a session to another account and resume it there.
+Refused while the source account has a running session, unless you add
+`--force`.
+
+### Live switch (rebind)
+
+`agent-switch rebind`: switch the account of a **running** Claude session, on
+macOS. The session uses the new account from its next message. It happens only
+when you confirm, right away or when the current turn ends.
+
+### Hand off
+
+`agent-switch handoff`: continue a session in another tool, for example from
+Claude Code to Codex, with a short written brief. Lossy by design: the brief is
+a summary, not the conversation.
+
+### Background service
+
+A small process that starts at login. It refreshes the usage numbers of your
+Claude and Codex accounts about every 5 minutes, so balanced starts have fresh
+data, and it keeps unused Claude logins from running out.
+
+### Shared login (import)
+
+An account made with `import` shares one login with your default install.
+Whichever side refreshes first signs the other out, so a balanced start never
+picks it and the service never refreshes it, until
+`agent-switch login <name>` gives it its own.
+
+### Context %
+
+How full a session's context window is, read from the session's files on your
+machine. Shown per session in the app and in `agent-switch sessions`.
+
+### Prompt cache
+
+The provider's short-lived cache of a session's conversation. While it is warm,
+the next message costs fewer uncached tokens. Before a move or a live switch,
+agent-switch says whether the cache comes along (same organization) or whether
+the first message on the new account re-sends the conversation.
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="How it works" href="/agent-switch/concepts/how-it-works/" description="The ideas behind these words." />
+  <LinkCard title="Limits & protection" href="/agent-switch/concepts/limits-and-protection/" description="Limits, protection and suggestions in detail." />
+</CardGrid>

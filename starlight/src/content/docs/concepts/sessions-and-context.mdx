@@ -1,0 +1,101 @@
+---
+title: Sessions & context
+description: See every running Claude Code and Codex session, which account it runs on, how full its context window is and whether its prompt cache is still warm.
+---
+
+import { Aside, Badge, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Agent Switch knows every session that ran on each of your accounts. You can see
+which ones are running right now, how full each context window is, and whether
+continuing costs a full re-read of the conversation. It reads this from your
+own session files, on your machine. No API calls are involved.
+
+## Every session, per account
+
+```bash
+agent-switch sessions             # recent and running sessions, grouped by account
+agent-switch sessions work        # one account
+agent-switch sessions --recent 20 # more history
+```
+
+Running sessions are marked. For Claude Code, a running session also shows:
+
+- **context %**: how full its context window is, e.g. `67% · 134k/1000k`. This
+  matches what Claude Code's own `/context` reports. For an unknown model you
+  see the raw token count, never a guessed percentage.
+- **prompt cache**: whether the cache is still warm (`cache warm till 10:42`) or
+  what the next turn will re-send once it is cold (`cache cold · ~182k re-sent`).
+
+Codex sessions show their context from the session's own log.
+
+The desktop app shows the same in **Sessions**, with a preview of each session's
+first turns.
+
+## One account, one session
+
+Several sessions on one account share its limits, and both keep the same login
+fresh. It is easy to end up there by accident, for example when two terminals
+start `claude` on the same preferred account. The single-session guard notices
+this:
+
+| Policy | What a second start on a busy account does |
+|---|---|
+| `warn` (default for new installs) | Starts, and tells you the account is already in use. |
+| `block` | Starts on the best free signed-in account instead, and says so. When every account is busy, it shares the best one. |
+| `off` | Starts without comment. |
+
+```bash
+agent-switch guard block
+```
+
+A `claude` started inside a running session counts as part of it, not as a
+second session. A crashed session leaves nothing behind that could lock you
+out. To allow one duplicate start on purpose, set
+`AGENT_SWITCH_ALLOW_DUPLICATE=1` for that command.
+
+## Context alerts <Badge text="Claude only" variant="note" />
+
+```bash
+agent-switch alerts on --threshold 80,95
+```
+
+When a running session's context passes a threshold, the background service
+records one notice with the project, the percentage and a suggested `/compact`.
+Alerts are off by default.
+
+For precise session state, install Agent Switch's hooks into an account's
+Claude Code settings:
+
+```bash
+agent-switch hooks install work
+```
+
+They report when a session starts, stops, compacts or waits at a usage limit,
+and why a turn stopped (for example a usage limit or a sign-out). The hooks are
+added next to your own and removed cleanly with `hooks uninstall`. Run
+`hooks install` again after an update to pick up new events.
+
+## Compacting from outside <Badge text="macOS & Linux" variant="caution" />
+
+```bash
+agent-switch run work --tmux    # start a session in a managed tmux pane
+agent-switch compact work       # later: type /compact into it
+```
+
+`compact` only types into a pane that Agent Switch started with `run --tmux`.
+It refuses while a turn is running unless you pass `--force`. Anywhere else it
+prints the command for you to run. `--clear` sends `/clear` instead, which
+discards the conversation, so it also needs `--force`. Nothing is ever
+compacted automatically.
+
+<Aside type="tip">
+  On a cold cache, `/compact` re-reads the whole history without the cache.
+  `compact` says so before it types.
+</Aside>
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Move a session" href="/agent-switch/guides/move-a-session/" description="Continue a session on another account." />
+  <LinkCard title="Notifications & desktop pet" href="/agent-switch/guides/notifications-and-pet/" description="Where alerts and limit warnings appear." />
+</CardGrid>

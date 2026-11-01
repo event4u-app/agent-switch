@@ -1,0 +1,164 @@
+---
+title: Codex accounts
+description: Run several ChatGPT Codex accounts side by side — each signed in, with live usage, balanced starts, session moves and banked resets.
+---
+
+import { Steps, Aside, Badge, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+If you have more than one ChatGPT plan, Agent Switch keeps every Codex account
+signed in next to the others and starts each `codex` session on the one with
+the most left. Codex is on by default, next to Claude Code.
+
+Most of Agent Switch works the same for both tools. This page covers what is
+specific to Codex, and what does not work for it yet.
+
+## How the accounts stay apart
+
+Codex reads its login and settings from the folder in `CODEX_HOME`. Each Codex
+account gets its own folder, `~/.agent-switch/codex/<name>/config`, and the
+`codex` shell wrapper sets `CODEX_HOME` to the right one before it starts the
+real `codex`. Your normal `~/.codex` stays as it is.
+
+## Add your accounts
+
+<Steps>
+
+1. **Add each account.** This runs `codex login` inside the new account's
+   folder. Finish the sign-in in the browser.
+
+   ```bash
+   agent-switch add work --provider codex
+   agent-switch add personal --provider codex
+   ```
+
+2. **Turn on the wrapper**, if you have not yet, and open a new terminal.
+
+   ```bash
+   agent-switch shellenv install
+   ```
+
+3. **Start Codex as usual.**
+
+   ```bash
+   codex
+   ```
+
+</Steps>
+
+### Keep the login you already have
+
+`import` turns your current `~/.codex` login into an account without signing
+in again:
+
+```bash
+agent-switch import work --provider codex
+```
+
+The imported account still shares its login with your normal Codex install,
+so Agent Switch never balances onto it. Give it a login of its own when you
+are ready:
+
+```bash
+agent-switch login work --provider codex
+```
+
+`login` is also how you sign an account in again after its login expired.
+
+## Usage
+
+For each Codex account, Agent Switch reads the live limits from ChatGPT's own
+usage endpoint (`chatgpt.com/backend-api/wham/usage`), using that account's own
+token. It shows the windows your plan reports, typically the 5-hour and the
+weekly limit, plus the number of banked resets.
+
+```bash
+agent-switch status --provider codex
+```
+
+The background service refreshes Codex usage like Claude usage, and the
+desktop app shows the same meters.
+
+## Balanced starts, pins and pools
+
+Because Codex reports usage, everything that depends on it works:
+
+- **Balanced starts.** A `codex` start without a folder pin goes to the account
+  that would lose the most of its remaining quota at its next reset.
+- **Folder pins and pools.** Pin a folder for Codex with `--provider codex`.
+  Pins are per tool, so one folder can use one Claude account and another
+  Codex account.
+
+  ```bash
+  agent-switch map work --provider codex
+  agent-switch pool add work codex/work
+  ```
+
+- **Limit protection and suggestions.** Protection warns at 98% by default, and
+  `autoswitch on --provider codex` suggests another account near the limit.
+
+## Banked resets
+
+A ChatGPT plan can hold banked rate-limit resets. The desktop app shows how
+many each account has. With limit suggestions on for Codex
+(`agent-switch autoswitch on --provider codex`), the notice for a preferred
+account over the threshold also says when a reset is available.
+Agent Switch never redeems one for you. To redeem one yourself:
+
+```bash
+agent-switch reset work --provider codex
+```
+
+<Aside type="caution">
+A reset is a real, scarce credit and cannot be returned. `reset` asks first on
+a terminal; `--yes` skips the question.
+</Aside>
+
+## Sessions
+
+```bash
+agent-switch sessions --provider codex
+agent-switch takeover <session-id> --to personal --provider codex
+```
+
+- `takeover` moves a Codex session to another account and resumes it there
+  with `codex resume`. It is move-only: `--keep-source` is not available.
+- `sessions rm --provider codex` uses Codex's own `codex archive`, or
+  `codex delete` with `--purge`.
+- `handoff` can carry the gist of a Claude session over to Codex, and back.
+
+See [Move a session](/agent-switch/guides/move-a-session/) for the details.
+
+## What does not work for Codex
+
+| Feature | Why |
+| --- | --- |
+| One account, one session (the guard) | Codex writes no marker for a running session, so a busy account cannot be detected. |
+| Live session markers | Same reason: Codex sessions are listed as recent, never as live. Make sure none is running before you move one. |
+| `rebind` (switch a running session) | Claude only. |
+| Keep accounts signed in | Claude only. A Codex login renews when you use that account. |
+| Session previews | Not available; the preview stays empty. |
+| `share`, `hooks`, `web` | Claude only. |
+
+## Codex desktop and VS Code <Badge text="macOS" variant="caution" />
+
+On macOS, Agent Switch can open the Codex desktop app or VS Code with the
+Codex extension as a specific account:
+
+```bash
+agent-switch open codex-desktop work     # the Codex app
+agent-switch open codex-ide work         # VS Code, for the Codex extension
+agent-switch launcher add codex-desktop work
+```
+
+The Codex app gets the account's `CODEX_HOME` and its own browser data folder,
+so two accounts can run side by side. VS Code gets the account's
+`CODEX_HOME`. See
+[Desktop apps and launchers](/agent-switch/guides/desktop-apps-and-launchers/).
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Projects and pools" href="/agent-switch/guides/projects-and-pools/" description="Pin a folder to a Codex account, or a pool." />
+  <LinkCard title="Notifications" href="/agent-switch/guides/notifications-and-pet/" description="Get a suggestion before a Codex account runs out." />
+  <LinkCard title="Platform matrix" href="/agent-switch/reference/platform-matrix/" description="What works for which tool on which OS." />
+</CardGrid>

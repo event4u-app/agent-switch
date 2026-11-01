@@ -1,0 +1,141 @@
+---
+title: Antigravity accounts
+description: Keep several Google Antigravity (agy) accounts signed in side by side and pin each project folder to the right one.
+---
+
+import { Steps, Aside, Badge, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Agent Switch keeps several Antigravity accounts signed in at once, so `agy`
+starts on the right account for each project without signing out and in
+again.
+
+Antigravity support is narrower than for Claude Code and Codex. Antigravity
+reports no usage numbers that Agent Switch can read, so everything built on
+usage (balanced starts, limit protection, suggestions) does not apply. Folder
+pins and a preferred account work fully.
+
+## Turn it on
+
+Antigravity is off by default, so the desktop app does not show it. Turn it
+on in **Settings › Providers**, or from the CLI:
+
+```bash
+agent-switch providers enable --provider antigravity
+agent-switch providers status
+```
+
+The CLI commands accept `--provider antigravity` either way. If `agy` is not
+on your PATH, point Agent Switch at it:
+
+```bash
+agent-switch providers link --provider antigravity --path ~/.local/bin/agy
+```
+
+## How the accounts stay apart
+
+`agy` keeps its settings under your home folder, so each Antigravity account
+gets its own home: `~/.agent-switch/antigravity/<name>/config`. The `agy`
+shell wrapper sets `HOME` to that folder before it starts the real `agy`.
+
+On macOS, `agy` also stores its login in the keychain, always under the same
+name. Agent Switch therefore gives each account its own keychain file inside
+its folder. The password of that keychain is kept in your login keychain under
+an anonymous name. Your own `agy` login is not touched. `agent-switch doctor`
+checks these keychains.
+
+<Aside type="caution">
+Because `HOME` points at the account's folder, programs that `agy` starts see
+that folder as their home too, not your real one.
+</Aside>
+
+## Add your accounts
+
+<Steps>
+
+1. **Add the account.** `agy` has no separate login command, so Agent Switch
+   starts `agy` itself in the new account's folder. Sign in there when it asks.
+
+   ```bash
+   agent-switch add work --provider antigravity
+   ```
+
+2. **Do the same for every other account.**
+
+   ```bash
+   agent-switch add personal --provider antigravity
+   ```
+
+3. **Turn on the shell wrapper**, if you have not yet, and open a new terminal.
+
+   ```bash
+   agent-switch shellenv install
+   ```
+
+</Steps>
+
+To sign an account in again later, run `agent-switch login work --provider
+antigravity`; it starts `agy` the same way. Use `add`, not `import`: there is
+no Antigravity login file that `import` could copy.
+
+## Choose which account `agy` uses
+
+Without usage numbers there is nothing to balance, so a plain `agy` start uses
+your preferred Antigravity account:
+
+```bash
+asw antigravity work
+```
+
+Pin a folder to an account, and `agy` started there always uses it:
+
+```bash
+cd ~/code/client-a
+agent-switch map client-a --provider antigravity
+```
+
+Or start one session on a given account:
+
+```bash
+agent-switch run personal --provider antigravity
+```
+
+Pools add nothing for Antigravity: a pool chooses by usage, and there is none
+to compare.
+
+## Account identity <Badge text="macOS" variant="caution" />
+
+Agent Switch reads which Google account an Antigravity account is signed in
+to from its keychain, so the email shows up in `list`, `status` and the app.
+This works on macOS only. On Linux and Windows, Antigravity accounts work but
+show no email.
+
+## What works and what does not
+
+| Works | Does not work |
+| --- | --- |
+| Separate accounts, each signed in | Usage readout and meters |
+| The `agy` shell wrapper and `run` | Balanced starts and pools |
+| Folder pins and a preferred account | Limit protection and limit suggestions |
+| `disable`, `enable`, `label`, `color`, `rename`, `remove` | Sessions, `takeover` and `handoff` |
+| Opening the Antigravity app per account (macOS) | One account, one session (the guard) |
+| | `rebind`, `share`, keep accounts signed in |
+
+## The Antigravity app <Badge text="macOS" variant="caution" />
+
+On macOS, Agent Switch can open the Antigravity desktop app as a specific
+account, each with its own browser data, so two accounts can run side by side:
+
+```bash
+agent-switch open antigravity work
+agent-switch launcher add antigravity work
+```
+
+See [Desktop apps and launchers](/agent-switch/guides/desktop-apps-and-launchers/).
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Projects and pools" href="/agent-switch/guides/projects-and-pools/" description="Pin folders to accounts." />
+  <LinkCard title="Platform matrix" href="/agent-switch/reference/platform-matrix/" description="What works for which tool on which OS." />
+  <LinkCard title="How it works" href="/agent-switch/concepts/how-it-works/" description="Why each account has its own folder." />
+</CardGrid>

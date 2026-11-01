@@ -1,0 +1,91 @@
+---
+title: Platform matrix
+description: What works on macOS, Linux and Windows, and what works for Claude Code, Codex and Antigravity — plus the known limits of each.
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+agent-switch runs on macOS, Linux and Windows with Node.js 20 or newer. Most of
+it works everywhere; the tables below list where it does not. For a live check
+of your own machine, run `agent-switch doctor`.
+
+## By operating system
+
+| Feature | macOS | Linux | Windows |
+| --- | --- | --- | --- |
+| Accounts side by side, folder rules, pools, balanced starts | Yes | Yes | Yes |
+| Usage meters, limit protection, limit suggestions | Yes | Yes | Yes |
+| Shell integration | zsh, bash, fish, PowerShell | zsh, bash, fish, PowerShell | PowerShell (cmd.exe: use `agent-switch run`) |
+| Background service starts at login via | launchd | `systemd --user` | Task Scheduler |
+| Where Claude Code keeps an account's login | Keychain, one entry per account folder (file as fallback) | `.credentials.json` in the account folder | `.credentials.json` in the account folder |
+| Desktop app (`agent-switch gui`) | Universal `.app` (Apple silicon and Intel) | x64 AppImage | x64 portable `.exe` |
+| Desktop notifications | Shown by the desktop app | From the service with `os-notify on` (`notify-send`) | From the service with `os-notify on` |
+| Switch a running session's account (`rebind`) | Yes | No | No |
+| Desktop apps per account (`open`, `launcher`, `app-settings`) | Yes | No | No |
+| Sign in with a chosen browser (`--browser`) | Yes | Yes | No |
+| tmux sessions (`run --tmux`, `compact`, `takeover --in-place`) | Yes | Yes | No |
+| Shared settings (`share on`) | Yes | Yes | Folders yes; files need Developer Mode |
+| Shared conversations (`share on --history`) | Yes | Yes | No |
+| Antigravity: which account is signed in, own keychain per account | Yes | No | No |
+
+On Linux and Windows on other processor types (for example ARM), the CLI works
+but `agent-switch gui` has no build to download.
+
+### The desktop app download
+
+`agent-switch` (or `agent-switch gui`) downloads the app itself, never an
+installer, and keeps it in `~/.agent-switch/gui/<version>/`. Because the CLI
+downloads it rather than your browser, macOS does not put a download
+quarantine on it. The installers attached to each GitHub release (`.dmg`,
+`.msi`, `-setup.exe`, `.deb`, `.rpm`) are an alternative; see
+[Install](/agent-switch/start-here/install/).
+
+## By tool
+
+| Feature | Claude Code | Codex | Antigravity |
+| --- | --- | --- | --- |
+| On by default | Yes | Yes | No (`providers enable --provider antigravity`) |
+| Account folder variable | `CLAUDE_CONFIG_DIR` | `CODEX_HOME` | `HOME` |
+| `add` / `login` sign-in | `claude auth login` | `codex login` | `agy` asks when it starts |
+| `import` the current login | Yes | Yes | No |
+| Usage meters | 5-hour and weekly | Yes, plus banked resets | No |
+| Balanced starts, limit protection, limit suggestions | Yes | Yes | No usage, so starts use the preferred account |
+| One account, one session (`guard`) | Yes | No | No |
+| Keep unused logins fresh (`keep-signed-in`) | Yes | No | No |
+| Sessions list, preview, remove, restore | Yes | Yes | No |
+| Move a session (`takeover`) | Yes | Yes (move only, no `--keep-source`) | No |
+| Switch a running session (`rebind`) | Yes (macOS) | No | No |
+| Hand a session off to another tool (`handoff extract`, as the source) | Yes | Yes | No |
+| `compact`, `run --tmux` | Yes | Yes | `run --tmux` only |
+| `share`, `config export\|import`, `hooks`, `alerts`, `web`, `protection wait` | Yes | No | No |
+| Desktop app per account (macOS) | Claude Desktop | Codex in VS Code, Codex desktop app | Antigravity |
+
+## Known gotchas
+
+- **Never run `claude auth logout` to switch accounts.** It signs the login out
+  on the server, not just on your machine. With agent-switch you never need to
+  log out: every account stays signed in.
+- **The Claude Code extension for VS Code ignores `CLAUDE_CONFIG_DIR`.** It uses
+  the default login, whatever account a folder is pinned to. The folder rules
+  apply to the `claude` command in a terminal.
+- **On Linux, Claude Code's state folder is shared.** `CLAUDE_CONFIG_DIR` moves
+  Claude Code's config folder, but `~/.local/state/claude/` stays one folder
+  for all accounts.
+- **cmd.exe has no shell integration.** Use `agent-switch run <name>`, or use
+  PowerShell.
+- **An API key in your environment beats every account.** See
+  [Environment variables](/agent-switch/reference/environment/#api-keys-that-override-every-account).
+
+<Aside>
+Antigravity on Linux and Windows: each account still gets its own `HOME`, but
+agent-switch cannot read which account is signed in there and has no per-account
+keychain to set up. `doctor` says so.
+</Aside>
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Troubleshooting" href="/agent-switch/reference/troubleshooting/" description="Fixes for the common problems." />
+  <LinkCard title="Antigravity" href="/agent-switch/guides/antigravity/" description="Setting up Antigravity accounts." />
+  <LinkCard title="Codex" href="/agent-switch/guides/codex/" description="Setting up Codex accounts." />
+</CardGrid>

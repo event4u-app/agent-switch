@@ -1,0 +1,200 @@
+---
+title: Notifications and the desktop pet
+description: Get notified before a Claude Code or Codex account hits its usage limit, with a suggested account to switch to — Agent Switch never switches on its own.
+---
+
+import { Steps, Tabs, TabItem, Aside, Badge, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+You should hear about a limit before you hit it, not after. Agent Switch
+watches your accounts in the background and tells you when one gets close,
+when a sign-in expired, or when a session's context fills up, in the terminal,
+in the app, or as a small animated pet on your desktop.
+
+Every notice is a suggestion. Agent Switch never switches an account on its
+own; a running session moves only when you choose to move it.
+
+<Aside type="note">
+Most notices come from the background service. Install it once with
+`agent-switch service install`; without it running, nothing is watched.
+</Aside>
+
+## The notification log
+
+Every notice lands in one shared log, which the CLI and the app both read:
+
+```bash
+agent-switch notifications           # newest first
+agent-switch notifications --json
+agent-switch notifications clear
+```
+
+The log keeps the 25 most recent notices. To keep it readable:
+
+- an identical notice within 30 minutes is not added again;
+- a notice about one subject (for example, one account's limit) is muted for
+  10 minutes after it fired, whatever its wording.
+
+In the app, the same log is the bell in the top bar.
+
+## Limit protection: a warning at the threshold
+
+Limit protection is on for every account, at 98% by default. When an account
+reaches its threshold, you get a warning. It does not pause or stop anything.
+
+```bash
+agent-switch protection                                   # every account's setting
+agent-switch protection set claude/work --threshold 95
+agent-switch protection set codex/personal --off
+```
+
+Protection also keeps balanced starts and pools off an account at its
+threshold. Antigravity has no usage readout, so it is never covered.
+
+For Claude, you can also choose what Claude Code itself does at the limit,
+waiting for the reset or stopping:
+
+```bash
+agent-switch protection wait on claude/work
+agent-switch protection wait off claude/work
+```
+
+This sets Claude Code's own auto-continue option for that account.
+
+## Limit suggestions (`autoswitch`)
+
+Off by default. When it is on, the background service watches the preferred
+account of a tool. Once that account crosses the threshold, you get a
+notification that **suggests** the account with the most left. Switching stays
+your action, from the app, with `rebind`, or by starting the next session
+elsewhere.
+
+```bash
+agent-switch autoswitch on --threshold 90
+agent-switch autoswitch on --provider codex --tag work
+agent-switch autoswitch status
+agent-switch autoswitch off
+```
+
+| Option | What it does |
+| --- | --- |
+| `--threshold 1-100` | The usage that triggers the notice (default 95) |
+| `--tag all\|work\|personal\|other` | Only suggest accounts with this tag |
+| `--provider codex` | Codex instead of Claude |
+
+Despite its name, `autoswitch` never switches. It only works for Claude and
+Codex, which report usage. With it on, the service checks every account of
+that tool, not only the preferred one.
+
+On Codex, if the account over the threshold holds a banked reset, the notice
+says so. Redeeming it stays your call; see [Codex](/agent-switch/guides/codex/).
+
+## Context alerts
+
+Off by default. With alerts on, the service records a notice when a live
+session's context window passes a threshold:
+
+```bash
+agent-switch alerts on --threshold 80,95
+agent-switch alerts status
+agent-switch alerts off
+```
+
+The default thresholds are 80% and 95%. Only your own local session files are
+read for this.
+
+## Claude session monitoring <Badge text="Claude only" variant="note" />
+
+To be told when Claude finishes a turn or is waiting for you, for example in a
+terminal you are not watching, turn on **Settings › Notifications › Monitor
+Claude sessions** in the app. It adds small, removable hooks to each Claude
+account's settings. From the CLI:
+
+```bash
+agent-switch hooks install          # every Claude account, or name one
+agent-switch hooks status
+agent-switch hooks uninstall
+```
+
+If you share settings across accounts (`share on`), run `agent-switch share
+sync` afterwards so the change reaches every account.
+
+## Desktop notifications
+
+<Tabs syncKey="os">
+  <TabItem label="macOS">
+    The desktop app shows the notices as macOS notifications while it runs.
+    Allow notifications for Agent Switch in System Settings, and turn on
+    **Settings › Notifications › Desktop notifications**. The background
+    service shows none itself on macOS.
+  </TabItem>
+  <TabItem label="Linux">
+    The app shows notices while it runs. To get them while the app is closed,
+    let the background service send them with `notify-send`:
+    ```bash
+    agent-switch os-notify on
+    ```
+  </TabItem>
+  <TabItem label="Windows">
+    The app shows notices while it runs. To get them while the app is closed,
+    let the background service show them as a system tray balloon:
+    ```powershell
+    agent-switch os-notify on
+    ```
+  </TabItem>
+</Tabs>
+
+`os-notify` is off by default. `agent-switch os-notify status` shows the
+current setting. When desktop notifications are off or blocked, notices still
+appear in the bell and as messages inside the app window.
+
+## The desktop pet
+
+![The pet in its seven states: idle, review, running, waiting, waving, jumping and failed](/agent-switch/media/pet-states.png)
+
+The pet is an optional pixel-art companion that floats above your windows and
+turns notices into something you notice from the corner of your eye. It
+comes with the desktop app and is on by default, but by default it only
+appears when it has something to say, and hides again afterwards. On the very
+first start it introduces itself once.
+
+### What it shows
+
+- **Reactions.** A success makes it jump, an error makes it stumble, a warning
+  makes it wait, and information makes it wave.
+- **Speech bubbles.** The notice's title appears next to the pet.
+- **Context mood.** A small dot mirrors the fullest context window of a live
+  session on your preferred Claude account: amber from 60%, red from 80%.
+
+### It only navigates
+
+A click on a bubble opens the matching place in the main window: a near-limit
+bubble opens the near-limit sheet with its suggestion, an update bubble opens
+**Settings › Updates**. The pet itself never switches an account and never
+installs anything. Those stay behind the app's own confirm buttons.
+
+### Pick and set it up
+
+Everything is under **Settings › Desktop pet** and applies right away:
+
+| Setting | Options |
+| --- | --- |
+| Desktop pet | On (default) or off |
+| Pet | Eight characters: Agent Switch, Iron Law Warden, Recon Scout, Dev Bot, Folk Metal Bard, Festival Raver, Stage Crew, The CEO |
+| Presence | Only for messages (default), or always visible |
+| Notification routing | Pet + system (default); pet only, which replaces desktop notifications and in-app messages for the kinds it covers; or decoration only |
+| Pet reacts to | Per kind, independent of your desktop notification settings |
+| Speech bubbles | On or off, and how long they stay |
+| Size | Small, medium or large |
+| Animations | Auto (follows your system's reduce-motion setting), on, or off (a still image) |
+| Position | Drag the pet anywhere; reset to the bottom-right corner, or back to its last position |
+| Lock position | Stops dragging; the pet still re-anchors when your displays change |
+
+The bell in the app always keeps the full log, whatever the routing.
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Limits and protection" href="/agent-switch/concepts/limits-and-protection/" description="The 5-hour and weekly limits, and when an account counts as full." />
+  <LinkCard title="Move a session" href="/agent-switch/guides/move-a-session/" description="Act on a suggestion: move or switch a session." />
+  <LinkCard title="The desktop app" href="/agent-switch/guides/desktop-app/" description="Where the bell, the near-limit sheet and the pet settings live." />
+</CardGrid>

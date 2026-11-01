@@ -1,0 +1,77 @@
+---
+title: Environment variables
+description: The environment variables agent-switch reads, the ones it sets for Claude Code, Codex and Antigravity, and the API keys that override an account's login.
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Variables agent-switch reads
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `AGENT_SWITCH_HOME` | `~/.agent-switch` | Where all data and accounts live. The shell integration reads it too, to find `active-cli`. The downloaded desktop app stays in `~/.agent-switch/gui/` either way. |
+| `AGENT_SWITCH_ALLOW_DUPLICATE` | unset | Start a session on an account that already has one, this once. Any value except empty, `0` or `false` counts. |
+| `AGENT_SWITCH_CC_VERSION_OVERRIDE` | unset | Lets `rebind` run on a Claude Code version it has not been verified against. Meant for maintainers who re-ran the verification by hand. |
+| `SHELL` | — | Picks the shell for `shellenv` when `--shell` is not given. On Windows the default is PowerShell. |
+| `PSModulePath` | — | Tells `shellenv install` whether to ask PowerShell 7 or Windows PowerShell for `$PROFILE` first. |
+| `TMUX` | — | Tells `takeover --in-place` whether it runs inside tmux. |
+| `PATH` | — | Where the tools and `agent-switch` itself are looked up. `doctor` checks that `agent-switch` is on it. |
+| `APPDATA` | — | On Windows, where the regular Claude Desktop keeps its data (read by `desktop`). |
+| `CLAUDE_CONFIG_DIR` | — | Read by the hook command, to tell which account a hook event came from. A Claude start from inside a session on the same account is not counted as a second session. |
+| `CLAUDE_SECURESTORAGE_CONFIG_DIR` | unset | If set, `rebind` refuses: Claude Code would read a different keychain entry. Unset it first. |
+
+## Variables agent-switch sets for each start
+
+When the shell integration or `agent-switch run` starts a tool on an account, it
+sets one variable to that account's folder,
+`<AGENT_SWITCH_HOME>/<tool>/<name>/config`:
+
+| Tool | Variable | What the tool does with it |
+| --- | --- | --- |
+| Claude Code (`claude`) | `CLAUDE_CONFIG_DIR` | Keeps its settings, history and login there. On macOS the login sits in a keychain entry named after this folder. |
+| Codex (`codex`) | `CODEX_HOME` | Keeps its settings, history and `auth.json` there. |
+| Antigravity (`agy`) | `HOME` | Keeps its files under `.gemini/` there. |
+
+For Antigravity, `agent-switch run` also sets `CFFIXED_USER_HOME` to the same
+folder on macOS, so the login lands in that account's own keychain.
+
+`add --browser` and `login --browser` set `BROWSER` for the sign-in, so
+Claude Code opens that browser.
+
+Nothing else in your environment changes. A running session never changes
+account because of these variables; only a new start reads them.
+
+## API keys that override every account
+
+If one of these is set, the tool uses it instead of the account's login. Every
+account then uses the same key, usually billed per use. `doctor` warns when any
+of them is set (it reports the name, never the value).
+
+| Variable | Tool |
+| --- | --- |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code |
+| `OPENAI_API_KEY`, `CODEX_API_KEY` | Codex |
+| `GEMINI_API_KEY`, `GOOGLE_API_KEY` | Antigravity |
+
+Fix: remove the line that sets it from your shell's startup file, then open a
+new terminal.
+
+## Test-only variables
+
+<Aside>
+These switch on tests that need a real signed-in account. They are not used in
+normal operation.
+</Aside>
+
+| Variable | Used by |
+| --- | --- |
+| `AGENT_SWITCH_CONTRACT_TESTS` | Live checks against a real Claude Code install. |
+| `AGENT_SWITCH_CONTRACT_CONFIG_DIR`, `AGENT_SWITCH_CONTRACT_ACCESS_TOKEN`, `AGENT_SWITCH_CONTRACT_SRC_PROFILE`, `AGENT_SWITCH_CONTRACT_TGT_PROFILE` | Inputs for those checks. |
+| `AGENT_SWITCH_SWITCH_TESTS` | End-to-end switch tests (never run in CI). |
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Configuration & files" href="/agent-switch/reference/configuration/" description="What is inside each account folder." />
+  <LinkCard title="How it works" href="/agent-switch/concepts/how-it-works/" description="Why one folder per account keeps every login live." />
+</CardGrid>

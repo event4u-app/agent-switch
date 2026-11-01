@@ -1,0 +1,213 @@
+---
+title: The desktop app
+description: See every Claude Code and Codex account's 5-hour and weekly usage live in the menu bar, start sessions, and move them between accounts.
+---
+
+import { Steps, Tabs, TabItem, Aside, Badge, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The desktop app shows, at a glance, what needs you, which session runs on
+which account, and what every account has left. It lives in the menu bar, so
+the numbers are one click away while you work.
+
+It is a window onto the same CLI: everything it does, it does through
+`agent-switch` commands, so the terminal and the app always agree.
+
+![The Overview: three items that need you, two running sessions, and each account's remaining usage grouped by tool](/agent-switch/media/screenshots/overview.png)
+
+## Start it
+
+```bash
+agent-switch
+```
+
+With no command (or with `agent-switch gui`), Agent Switch starts the desktop
+app. There is no installer: on first use it downloads the app that matches
+your platform from the project's GitHub release, keeps it under
+`~/.agent-switch/gui/<version>/`, and runs it.
+
+| Platform | What is downloaded |
+| --- | --- |
+| macOS | the app bundle (`.app.tar.gz`) |
+| Linux x64 | an `.AppImage` |
+| Windows x64 | a portable `.exe` (`*_x64-portable.exe`) |
+
+- If the newest release is still being built, it takes the newest release that
+  already has the app, so `agent-switch` keeps working right after a release.
+- With no network, it starts the newest copy it already downloaded.
+- If the app is already running, a second one is not started.
+
+Other platforms (for example Linux on ARM) have no prebuilt app; the CLI works
+there as usual.
+
+### Prefer an installer?
+
+Every [GitHub release](https://github.com/event4u-app/agent-switch/releases)
+also carries installers: `.dmg` (macOS), `.msi` and `-setup.exe` (Windows),
+`.deb` and `.rpm` (Linux). They are not code-signed yet, so the first launch
+needs one extra step:
+
+<Tabs syncKey="os">
+  <TabItem label="macOS">
+    Open **System Settings › Privacy & Security**, find the message about
+    `agent-switch`, and click **Open Anyway**. On macOS 14 and earlier you can
+    also right-click the app in Finder and choose **Open**. Or remove the
+    quarantine flag in a terminal:
+    ```bash
+    xattr -dr com.apple.quarantine /Applications/agent-switch.app
+    ```
+  </TabItem>
+  <TabItem label="Windows">
+    SmartScreen says *"Windows protected your PC."* Click **More info › Run
+    anyway**.
+  </TabItem>
+  <TabItem label="Linux">
+    No extra step for `.deb` and `.rpm`. A downloaded `.AppImage` needs to be
+    made executable first: `chmod +x agent-switch_*.AppImage`.
+  </TabItem>
+</Tabs>
+
+The app that `agent-switch` downloads itself needs none of this.
+
+## The window
+
+The top bar has four places on the left (**Overview**, **Sessions**,
+**Accounts**, **Tools**) and, on the right, search, **Start session**,
+**Health**, **Activity**, **Notifications** and **Settings**.
+
+| Shortcut (Ctrl on Linux and Windows) | Does |
+| --- | --- |
+| ⌘K | Search sessions, accounts, projects and pages |
+| ⌘N | Start a session |
+| ⌘, | Open Settings |
+
+### Overview
+
+"What's going on?" in three parts:
+
+- **Needs you**: accounts near their limit, sign-ins that expired, updates.
+  Each item has the button that resolves it.
+- **Running now**: live sessions and the account each one runs on.
+- **What's left**: every account's usage, grouped by tool, with the time until
+  its reset and how old the reading is.
+
+### Sessions
+
+Every session with its account. Click one to open the session sheet: its
+folder, context fill, a preview of the first turns, why it got this account,
+and **Move to another account**.
+
+![The session sheet: session details, a preview of the first turns, and the Move to another account choices Switch live, Take over and Hand off](/agent-switch/media/screenshots/session-sheet.png)
+
+The three ways to move match the CLI: **Switch live** is `rebind`, **Take
+over** is `takeover`, **Hand off** is `handoff`. Nothing moves until you
+choose. See [Move a session](/agent-switch/guides/move-a-session/).
+
+![The Sessions list: each session's project, summary and the account it runs on, filterable by state and tool](/agent-switch/media/screenshots/sessions.png)
+
+### Accounts
+
+Each account with its sign-in, where it is used, its 5-hour and weekly meters,
+and the limit protection threshold. The **Plain claude starts on** line says
+which account a start without a folder pin would use right now.
+
+![The Accounts view: Claude and Codex accounts with sign-in state, usage meters, reset times and protection thresholds](/agent-switch/media/screenshots/accounts.png)
+
+Two more tabs: **Usage history** shows each account's usage over time, and **Projects
+& pools** manages folder pins and pools, the same as `map` and `pool` in the
+CLI. See [Projects and pools](/agent-switch/guides/projects-and-pools/).
+
+### Tools
+
+The agent CLIs (Claude Code, Codex, Antigravity) and the companion tools
+agent-config and rtk: installed version, newest version, and an install or
+update button. The **Apps** tab manages desktop apps per account on macOS.
+
+![The Tools view: each tool's installed and latest version, with an update button where a newer one exists](/agent-switch/media/screenshots/tools.png)
+
+### Health, Activity, Notifications
+
+- **Health**: whether the app is ready, whether it starts at login, and a list
+  of checks (PATH, shell integration, sign-ins), with a **Fix** button where
+  Agent Switch can repair it itself.
+- **Activity**: what Agent Switch did and why: switches, sign-ins, resets,
+  pools, updates. The CLI equivalent is `agent-switch activity`.
+- **Notifications**: the bell lists recent notices. See
+  [Notifications and the desktop pet](/agent-switch/guides/notifications-and-pet/).
+
+![The Health view: ready state, start at login, and twelve passing checks](/agent-switch/media/screenshots/health.png)
+
+## Start a session from the app
+
+**Start session** asks for a folder, a tool and an account, and shows the
+decision before anything starts. **Automatic** uses the same rules as `claude`
+in a terminal, and the box below lists the reasons.
+
+![The Start session dialog: folder, tool and account, with the reasons the automatic choice picked this account](/agent-switch/media/screenshots/start-session.png)
+
+## When an account nears its limit
+
+A near-limit item opens a sheet that asks how you want to go on. It suggests
+the account with the most left. Nothing happens until you click.
+
+![The near-limit sheet: the session at 94% of its 5-hour window, the choices to switch it or continue on another account, and the suggested account](/agent-switch/media/screenshots/near-limit.png)
+
+## The menu-bar popover
+
+A left click on the menu-bar icon opens the popover: the items that need you,
+every account's meters, and **Start session**. On macOS, each signed-in
+account whose tool has a desktop app gets a button that opens that app as this
+account. A right click shows the classic menu with **Show agent-switch** and **Quit**.
+
+![The menu-bar popover: three items that need you, each account's meters, and Start session](/agent-switch/media/screenshots/tray.png)
+
+Disabled accounts are hidden from the popover. To show them, turn on
+**Settings › General › Show disabled accounts in the menu bar**.
+
+## The built-in terminal
+
+Adding an account, signing one in again, and installing or updating a tool run
+in a terminal inside the app. You see every line, and no separate terminal
+window opens.
+
+## Settings
+
+| Section | What you set there |
+| --- | --- |
+| General | Start at login, appearance, language, how often usage refreshes, hiding session previews |
+| Sign-ins | Keep Claude accounts signed in (needs the background service) |
+| Protection | Limit protection per account, and limit suggestions (off by default) |
+| Distribution | Projects and pools, and creating pools from your tags |
+| Notifications | Desktop notifications, Claude session monitoring, context alerts |
+| Desktop pet | The optional companion; see [the pet](/agent-switch/guides/notifications-and-pet/) |
+| Providers | Turn Claude, Codex or Antigravity on or off, or link a binary that is not on your PATH |
+| Updates | Check now, automatic updates |
+| Advanced | One account in two places (warn or block), uninstall |
+
+![Settings › Protection: per-account limit warning thresholds, and the near-limit suggestion switch](/agent-switch/media/screenshots/settings-protection.png)
+
+### Start at login
+
+On its first run, the app registers itself to start at login and checks that
+the system accepted it. Turn it off in **Settings › General › Start at login**.
+**Health** shows whether it is on.
+
+### Language
+
+The app speaks English and German. It follows your system unless you pick one
+in **Settings › General › Language**.
+
+### Updates
+
+The app checks for a new Agent Switch release when it opens and every 24
+hours. For the release types you select under **Settings › Updates** (major,
+minor and bugfix by default), it installs the update itself with
+`agent-switch update` and asks you to restart. For any other type it only
+tells you. **Check now** checks right away.
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Notifications and the desktop pet" href="/agent-switch/guides/notifications-and-pet/" description="Choose what tells you an account is near its limit." />
+  <LinkCard title="Desktop apps and launchers" href="/agent-switch/guides/desktop-apps-and-launchers/" description="Open Claude Desktop or Codex as a specific account on macOS." />
+  <LinkCard title="Troubleshooting" href="/agent-switch/reference/troubleshooting/" description="When the app does not start or shows no usage." />
+</CardGrid>

@@ -1,0 +1,68 @@
+---
+title: What it will never do
+description: The things Agent Switch refuses to do on purpose — no proxy, no fingerprinting, no free-tier pooling, no brokering of logins — and what to use instead.
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Agent Switch earns trust by what it refuses to do. Its whole mechanism is "set
+an environment variable and get out of the way". Each item below would break
+that promise, so it is out of scope for good, not just unscheduled.
+
+## No proxy, no traffic interception
+
+Agent Switch never sits between your tools and their providers. It installs no
+certificate, needs no sudo and rewrites no request. Each tool talks to its
+provider directly, with its own login.
+
+## No pretending to be another client
+
+Agent Switch never disguises itself as another client, never rebuilds a
+provider's client fingerprint and never strips identifying headers. Each
+account is a real account, signed in with the provider's own tool.
+
+## No pooling of free tiers
+
+Combining free tiers across providers whose terms forbid relaying them shifts
+the risk onto you. Agent Switch works only with your own accounts, the ones you
+already pay for and are entitled to use.
+
+## No per-request routing
+
+Routing individual requests between accounts would mean intercepting them.
+Agent Switch decides only which of your accounts a new session starts on.
+A running session changes its account only when you confirm it.
+
+## No holding, brokering or forwarding of logins
+
+Logins stay where each provider's tool puts them. Agent Switch writes a login in
+only two cases, both on your command: `import` copies the login you already
+have into a new account, and `rebind` switches a running session to another of
+your accounts. Refreshing a login is left to the provider's own tool. A token
+never leaves your machine, and one account's login is never used for another
+account's session without your choice.
+
+## No prompt rewriting
+
+Agent Switch never compresses or rewrites your prompts. If you want to save
+tokens, do it at the source: [agent-config](https://github.com/event4u-app/agent-config)
+controls what your agents load, and [rtk](https://github.com/rtk-ai/rtk) filters
+the output of tools you opt into.
+
+## No hosted dashboard
+
+The CLI has no runtime dependencies, and the desktop app only shows what the
+CLI already knows. Agent Switch runs no web server and listens on no port.
+
+---
+
+The same list lives in the repository as
+[NON-GOALS.md](https://github.com/event4u-app/agent-switch/blob/main/NON-GOALS.md),
+with links to the design decisions behind each item.
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Security & privacy" href="/agent-switch/trust/security-and-privacy/" description="Every connection, every file." />
+  <LinkCard title="Why Agent Switch" href="/agent-switch/start-here/why/" description="What it does instead." />
+</CardGrid>

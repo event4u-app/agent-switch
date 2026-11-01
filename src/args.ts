@@ -28,6 +28,7 @@ const VALUE_FLAGS = new Set([
   "title",
   "message",
   "surface",
+  "path",
   "tag",
   "ack",
   "brief",

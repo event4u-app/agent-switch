@@ -1,0 +1,243 @@
+---
+title: Move a session to another account
+description: Continue a Claude Code or Codex session on another account when one hits its limit — move it, fork it, or switch a running session live.
+---
+
+import { Steps, Tabs, TabItem, Aside, Badge, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+When an account runs low in the middle of your work, you do not have to start
+over. Move the conversation to an account that has quota left and keep going,
+with the full history.
+
+There are three ways, and each one only happens when you run it:
+
+| You want to | Use | Works for |
+| --- | --- | --- |
+| Continue a session on another account, with its full history | `takeover` | Claude, Codex |
+| Keep a **running** Claude session going on another account, without restarting it | `rebind` | Claude, macOS |
+| Carry the gist of a session over to another **tool** (Claude ↔ Codex) | `handoff` | Claude, Codex |
+
+## Find the session
+
+```bash
+agent-switch sessions                       # recent sessions of every Claude account
+agent-switch sessions work --recent 20      # one account, more rows
+agent-switch sessions --provider codex
+agent-switch sessions --json
+```
+
+Each row shows the session id, folder, age, which account it belongs to and,
+for Claude, how full its context window is. Live Claude sessions are marked,
+and so are sessions waiting for an answer from you. Claude Desktop sessions
+appear next to terminal sessions.
+
+To read the first turns of a Claude session before you act on it:
+
+```bash
+agent-switch sessions preview 5b1f7c2e --from work
+```
+
+## Move a session with `takeover`
+
+`takeover` moves a session's files to another account and resumes it there.
+
+```bash
+agent-switch takeover 5b1f7c2e --to personal
+```
+
+<Steps>
+
+1. **It finds the session.** It searches every account of the tool, or only
+   the one you name with `--from`. If the same id exists in more than one
+   account, the copies have diverged, and it refuses until you pick one with
+   `--from`.
+
+2. **It prints the cache cost** (Claude). The prompt cache is shared within
+   one organization, not across organizations. Moving a warm session to an
+   account of another organization means its first turn reads the whole
+   conversation again, uncached. A session whose cache is already cold costs
+   the same anywhere.
+
+3. **It copies, checks, then deletes.** The transcript is copied, its size is
+   checked against the original, and only then is the source copy removed. If
+   anything fails, the source stays resumable.
+
+4. **It resumes.** In a terminal, the session opens on the target account.
+   Otherwise it prints the resume command, for example
+   `agent-switch run personal -- --resume 5b1f7c2e`.
+
+</Steps>
+
+### Options
+
+| Option | What it does |
+| --- | --- |
+| `--from <account>` | Look only in this account |
+| `--keep-source` | Fork instead of move: the source keeps its session, and the target continues as a new session with its own id. Claude only, needs an interactive terminal. |
+| `--in-place` | Resume inside the tmux pane of a session started with `agent-switch run <account> --tmux`. Without such a pane, it opens a new Terminal window on macOS, or prints the command elsewhere. |
+| `--print-only` | Move the session, but print the resume command instead of starting it |
+| `--force` | Move even though the source account has a live session |
+| `--json` | Machine-readable result, including the cache reading |
+| `--provider codex` | Move a Codex session |
+
+<Aside type="caution" title="--print-only still moves">
+`--print-only` does not preview. It moves the session and only skips starting
+it. To look before you move, use `sessions preview`.
+</Aside>
+
+### Guard rails
+
+- **Live source.** If the source Claude account has any live session, the move
+  is refused, because the running session could keep writing into the file
+  being moved. Close it first, or pass `--force` if you are sure the session
+  you are moving is not the running one.
+- **No overwrite.** If the target already has a file with that session id, the
+  move stops instead of overwriting it.
+- **Shared history.** When both accounts share one history through
+  `share on --history`, there is nothing to move: `takeover` just resumes the
+  session on the target.
+- **Codex.** A Codex move is move-only (no `--keep-source`), and Codex has no
+  live-session signal: make sure no Codex session is running on the source
+  account.
+
+### Claude Desktop sessions <Badge text="macOS" variant="caution" />
+
+A session from Claude Desktop's Code tab moves into the target account's own
+Claude Desktop window, where you continue it:
+
+```bash
+agent-switch takeover 5b1f7c2e --to personal
+agent-switch open claude-desktop personal
+```
+
+Quit the Claude Desktop window that holds the session first, or it may write
+the session back. A session that was active in the last 2 minutes is refused
+until it is idle. The target account must be signed in. There is no
+`--keep-source` or `--in-place` for Desktop sessions.
+
+## Switch a running session with `rebind` <Badge text="macOS" variant="caution" /> <Badge text="Claude only" variant="note" />
+
+`rebind` keeps a running Claude session alive and moves it to another
+account's login. The session picks up the new account with its next message,
+without a restart.
+
+```bash
+agent-switch rebind personal            # switch the running account to personal's login
+agent-switch rebind                     # pick from a list
+agent-switch rebind --restore           # give the account its own login back
+```
+
+Which running account is switched: the one named with `--profile <account>`;
+otherwise the account with a live session, if exactly one has one; otherwise
+your preferred Claude account.
+
+With no account named, `rebind` lists your other Claude accounts with their
+usage, pre-selects the one with the most room, and waits for you: Enter takes
+the suggestion, `q` cancels. Without a terminal, it only prints the suggested
+command.
+
+Before it switches, it prints the same cache-cost line as `takeover`, and the
+list marks accounts of the same organization.
+
+### Switch when the turn ends
+
+You can arm a switch to happen once the session has finished its current turn:
+
+```bash
+agent-switch rebind personal --when-idle
+agent-switch rebind personal --when-idle --profile work --session 5b1f7c2e
+agent-switch rebind --cancel                  # drop the armed switch
+```
+
+<Steps>
+
+1. **You arm it.** Nothing else ever arms a switch. In the desktop app, the
+   session sheet offers the same choice.
+2. **The background service waits** for that session to go from busy to idle,
+   as reported by Claude Code itself.
+3. **It runs the normal `rebind`** with every check. If a check refuses, the
+   arm is dropped and a notification says why.
+4. **It runs once.** An arm that has not fired after 30 minutes expires.
+
+</Steps>
+
+The background service must be running (`agent-switch service start`, or the
+desktop app). A session whose state Claude Code does not report cannot be
+armed.
+
+### When `rebind` refuses
+
+- Both accounts must be signed in, and the target must not be the account
+  itself.
+- It refuses on Linux and Windows.
+- It refuses when your Claude Code version is outside the range it was
+  verified against.
+- After 3 failed switches in a row it turns itself off. Re-enable it with
+  `agent-switch rebind --reset` once the cause is fixed. `--restore` always
+  works.
+
+A rebound account cannot be removed until you restore it.
+
+## Carry work to another tool with `handoff`
+
+Claude and Codex cannot read each other's transcripts, so a session cannot
+move between them. `handoff` writes a short brief instead and starts the other
+tool on it. It is a summary, not a resume: the conversation itself does not
+come along.
+
+<Steps>
+
+1. **Write the brief** from the source session. `--provider` is the source
+   tool, `--to` the target tool.
+
+   ```bash
+   agent-switch handoff extract 5b1f7c2e --from work --to codex
+   ```
+
+   The brief holds the session's folder and summary, its model and context
+   fill, and the git branch and commit of the folder. It is saved with
+   owner-only permissions inside the source account's folder, and the command
+   prints its path and the seed command. Use `--print-only` to print the brief
+   instead of saving it.
+
+2. **Start the target tool** on one of its accounts. `--provider` is the
+   target tool here.
+
+   ```bash
+   agent-switch handoff seed --to personal --provider codex --brief <path-from-step-1>
+   ```
+
+   The target tool opens interactively with a prompt that points at the brief
+   file. The source session is left untouched.
+
+</Steps>
+
+Briefs older than a day are cleaned up the next time you run `extract`.
+
+## Delete and restore sessions
+
+```bash
+agent-switch sessions rm 5b1f7c2e --yes
+agent-switch sessions restore <trash-id>
+```
+
+- `--yes` is required; without it nothing is deleted.
+- A Claude session goes to a trash folder, and the command prints the id to
+  restore it. Add `--purge` to delete it for good.
+- A Codex session is archived with Codex's own `codex archive`, or deleted with
+  `codex delete` when you pass `--purge`. Restore it with
+  `agent-switch sessions restore <session-id> --provider codex --from <account>`.
+- A Claude account with a live session refuses the delete; `--force` does not
+  change that.
+- If other accounts share this history (`share on --history`), the delete
+  removes the session for all of them, so it asks for `--ack <session-id>`.
+- A Codex session written in the last minute might still be running; confirm
+  with `--ack <session-id>`.
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Sessions and context" href="/agent-switch/concepts/sessions-and-context/" description="What the context and cache readings mean." />
+  <LinkCard title="Notifications and the desktop pet" href="/agent-switch/guides/notifications-and-pet/" description="Get told when an account nears its limit." />
+  <LinkCard title="The desktop app" href="/agent-switch/guides/desktop-app/" description="Move sessions from the session sheet instead of the terminal." />
+</CardGrid>

@@ -1,0 +1,115 @@
+---
+title: Show your accounts in CodexBar or ccdeck
+description: Point CodexBar or ccdeck at Agent Switch to see your Claude Code accounts and their usage, read-only, through the claude-swap list format.
+---
+
+import { Steps, Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+If you already use CodexBar or ccdeck, you can keep them and let them show
+your Agent Switch accounts. Both tools can read the account list of
+claude-swap (`cswap --list --json`, "list schema v1"). Agent Switch prints the
+same format, so either tool shows your Claude accounts and their usage.
+
+## Point the tool at Agent Switch
+
+<Steps>
+
+1. **Find the path of `agent-switch`.**
+
+   ```bash
+   which agent-switch
+   ```
+
+2. **Enter that path** wherever the tool asks for the claude-swap (`cswap`)
+   binary.
+
+</Steps>
+
+The tool then runs:
+
+```bash
+agent-switch --list --json
+```
+
+The same output, spelled the Agent Switch way:
+
+```bash
+agent-switch list --json --format cswap-v1
+```
+
+`agent-switch --version` prints the installed version, for tools that check
+it.
+
+## What the list contains
+
+Claude accounts only. Codex and Antigravity accounts are not part of this
+format.
+
+```json
+{
+  "schemaVersion": 1,
+  "supportsAccountSwitching": false,
+  "activeAccountNumber": 1,
+  "accounts": [
+    {
+      "number": 1,
+      "email": "work@example.com",
+      "alias": "work",
+      "active": true,
+      "disabled": false,
+      "usageStatus": "ok",
+      "usage": {
+        "fiveHour": { "pct": 42, "resetsAt": "2026-11-01T15:00:00.000Z" },
+        "sevenDay": { "pct": 17, "resetsAt": "2026-11-05T09:00:00.000Z" }
+      },
+      "usageFetchedAt": "2026-11-01T11:59:00.000Z",
+      "usageAgeSeconds": 60
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `number` | A stable number per account, stored in `~/.agent-switch/cswap-numbers.json`. A number is never handed out again: an account that is removed and added again, or renamed, gets a new one. Accounts are listed in number order. |
+| `alias` | The account name. |
+| `email` | The email from the account's own Claude Code data, or `null` before its first sign-in. |
+| `active` / `activeAccountNumber` | Your preferred Claude account (set with `asw` or `agent-switch use`), or `null` when none is set. |
+| `disabled` | The account was turned off with `agent-switch disable`. |
+| `usageStatus` | `ok`: the stored usage is recent enough to trust (the background service's slowest refresh interval, 5 minutes or longer, plus one minute). `stale`: older than that, still shown. `unavailable`: nothing stored; `usage` is then `null`. |
+| `usage.fiveHour` / `usage.sevenDay` | `pct` (0–100) and `resetsAt` for the 5-hour and the weekly limit. A limit with no stored reading is `null`. |
+| `usageFetchedAt` / `usageAgeSeconds` | When the stored usage was read, and how long ago. |
+
+An error is printed in the same format, with a non-zero exit code:
+
+```json
+{"schemaVersion":1,"error":{"code":"unsupported_format","message":"…"}}
+```
+
+`unsupported_format` (exit code 2) means an unknown `--format`; `read_failed`
+(exit code 1) means the stored data could not be read.
+
+## Read-only by design
+
+- **No switching.** `supportsAccountSwitching` is always `false`, so the tool
+  never offers to switch accounts. Choose accounts with Agent Switch itself:
+  `asw`, folder pins, or the desktop app.
+- **Stored numbers only.** The list is built from what Agent Switch already
+  saved: the background service's last readings and each account's most recent
+  usage. It makes no network request and reads no login.
+- **No token in the output.** The list carries account names, emails and usage
+  percentages, nothing that signs in.
+
+<Aside type="tip">
+Keep the background service running (`agent-switch service install`) or the
+desktop app open, so the numbers stay fresh. Without either, usage turns
+`stale` and stays at the last reading.
+</Aside>
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="The desktop app" href="/agent-switch/guides/desktop-app/" description="Agent Switch's own menu-bar view of every account." />
+  <LinkCard title="Everyday workflow" href="/agent-switch/guides/everyday-workflow/" description="Preferred accounts, status and why a start went where it did." />
+  <LinkCard title="Security and privacy" href="/agent-switch/trust/security-and-privacy/" description="What Agent Switch reads and what it never sends." />
+</CardGrid>

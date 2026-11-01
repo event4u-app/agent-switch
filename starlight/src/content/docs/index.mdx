@@ -1,33 +1,116 @@
 ---
-title: agent-switch
-description: Switch between multiple Claude Code, Codex, and Antigravity accounts via isolated config-dir profiles.
+title: Agent Switch
+description: Keep every Claude Code, Codex and Antigravity account signed in side by side, and start each session on the account with the most left.
 template: splash
 hero:
-  tagline: Switch between multiple Claude Code, Codex, and Antigravity accounts with one shell command — no repeated logins, nothing goes stale.
-  image:
-    html: '<img src="/agent-switch/banner.png" alt="agent-switch" />'
+  title: All your AI coding accounts. Signed in side by side.
+  tagline: Agent Switch starts every Claude Code and Codex session on the account with the most to give, so no paid limit resets unused and you never log in twice.
   actions:
-    - text: Get started
-      link: /agent-switch/getting-started/introduction/
+    - text: Get started in 60 seconds
+      link: /agent-switch/start-here/quick-start/
       icon: right-arrow
       variant: primary
-    - text: View on GitHub
+    - text: Why Agent Switch?
+      link: /agent-switch/start-here/why/
+      variant: secondary
+    - text: GitHub
       link: https://github.com/event4u-app/agent-switch
       icon: external
+      variant: minimal
 ---
-import { Card, CardGrid } from '@astrojs/starlight/components';
+
+import { Card, CardGrid, LinkCard, Aside } from '@astrojs/starlight/components';
+
+<figure class="banner-figure">
+  <a href="https://github.com/event4u-app/agent-switch">
+    <img
+      src="/agent-switch/media/info-image.png"
+      alt="Agent Switch: Claude, Codex and Antigravity accounts with live usage, balanced starts, limit protection, live rebind and the desktop app"
+      width="1774"
+      height="887"
+    />
+  </a>
+</figure>
+
+## Sound familiar?
 
 <CardGrid>
-  <Card title="Multi-provider" icon="puzzle">
-    Claude Code, Codex, and Antigravity — one architecture, one command surface. See the [introduction](/agent-switch/getting-started/introduction/).
+  <Card title="“I keep logging out and back in.”" icon="puzzle">
+    Every account stays signed in at the same time. Switching never logs anyone out.
   </Card>
-  <Card title="Live & isolated" icon="approve-check">
-    Config-dir isolation gives every account its own directory, so each stays logged in independently and nothing goes stale. See the [introduction](/agent-switch/getting-started/introduction/).
+  <Card title="“One account runs dry, the other resets unused.”" icon="warning">
+    Each new session starts on the account that would otherwise waste the most of its quota at its next reset.
   </Card>
-  <Card title="Per-repo accounts" icon="setting">
-    Bind accounts to directories with mappings and shared settings. See [mappings & sharing](/agent-switch/guides/mappings-and-sharing/).
+  <Card title="“I never know what is left.”" icon="information">
+    The desktop app shows every account's 5-hour and weekly limit, live, in your menu bar.
   </Card>
-  <Card title="Sessions & handoff" icon="random">
-    Move or fork sessions between accounts, write cross-provider briefs, and drive it all from the tray GUI. See [sessions & handoff](/agent-switch/guides/sessions-and-handoff/) and the [tray GUI](/agent-switch/guides/tray-gui/).
+  <Card title="“Client work ends up on my personal account.”" icon="setting">
+    Pin a folder to an account once. Every session started there uses it.
   </Card>
+</CardGrid>
+
+## See it decide
+
+Two accounts are signed in. `personal` still has 66% of its week left and
+resets in 14 hours. `work` has 19% left over five days. A new session goes to
+`personal`, because its quota would expire first. A client folder is pinned to
+`work`.
+
+![Terminal demo: a new session goes to the account whose quota would expire first; a client folder is pinned to the work account](/agent-switch/media/demo.gif)
+
+## What you get
+
+<CardGrid>
+  <Card title="Never log in twice" icon="approve-check">
+    Each account has its own folder and its own login, the way the provider
+    intended. Agent Switch only decides which folder the next session uses. It
+    never copies or swaps a login.
+  </Card>
+  <Card title="Never waste a paid limit" icon="rocket">
+    New sessions are balanced across your accounts by what each would lose at
+    its next reset. Accounts at their limit are skipped. `dir --json` tells you
+    why.
+  </Card>
+  <Card title="See everything" icon="laptop">
+    One window and a menu-bar popover: every account's limits, every running
+    session with its context %, and the one thing that needs you next.
+  </Card>
+  <Card title="Move anything" icon="random">
+    Move a session to another account and continue it there. On macOS, switch
+    the account of a session that is still running, now or when its turn ends.
+  </Card>
+</CardGrid>
+
+![The Agent Switch desktop app: what needs you, what is running, and what every account has left](/agent-switch/media/screenshots/overview.png)
+
+<Aside type="tip" title="Your logins stay yours">
+  Agent Switch is not a proxy and has no server, no account and no telemetry.
+  Logins stay where the provider put them. Nothing switches a running session
+  without your confirmation.
+  [What it reads, stores and sends](/agent-switch/trust/security-and-privacy/).
+</Aside>
+
+## Next steps
+
+<CardGrid>
+  <LinkCard
+    title="Quick start"
+    href="/agent-switch/start-here/quick-start/"
+    description="Install, add two accounts, done — in three steps."
+  />
+  <LinkCard
+    title="Which account a session uses"
+    href="/agent-switch/concepts/which-account/"
+    description="Folder rules, balanced starts and your preferred account."
+  />
+  <LinkCard
+    title="The desktop app"
+    href="/agent-switch/guides/desktop-app/"
+    description="Limits, sessions and notifications at a glance."
+  />
+  <LinkCard
+    title="Security & privacy"
+    href="/agent-switch/trust/security-and-privacy/"
+    description="Where your logins live and what leaves your machine."
+  />
 </CardGrid>

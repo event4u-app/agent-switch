@@ -18,7 +18,7 @@ import {
   ROOT,
 } from "../profiles.js";
 import { ProviderId, PROVIDER_IDS, provider, isProviderInstalled } from "../providers.js";
-import { detectShell, installShellIntegration, shellenvScript } from "../shellenv.js";
+import { detectShell, installShellIntegration, rcFileFor, shellenvScript } from "../shellenv.js";
 import { shellIntegrationCheck } from "../doctor.js";
 import {
   TOOL_IDS,
@@ -150,7 +150,7 @@ export function cmdUninstall(flags: Record<string, string | boolean> = {}): void
   if (removedLaunchers > 0) console.log(`Removed ${removedLaunchers} app launcher(s) from ~/Applications/Agent Switch.`);
   if (removedEntries > 0) console.log(`Removed ${removedEntries} Claude keychain entr(y/ies).`);
   console.log("Follow-ups (manual, if you set them up):");
-  console.log("  - `npm uninstall -g agent-switch`  (or `npm unlink -g agent-switch`)");
+  console.log("  - `npm uninstall -g @event4u/agent-switch`  (or `npm unlink -g @event4u/agent-switch` for a source checkout)");
   console.log("  - remove the `agent-switch shellenv` line from your shell rc");
 }
 
@@ -235,7 +235,12 @@ async function serviceAfterSelfUpdate(): Promise<void> {
 export function cmdShellenv(shellArg?: string, sub?: string, json = false): void {
   if (sub !== "install") return void console.log(shellenvScript(detectShell(shellArg)));
   const shell = detectShell(shellArg);
-  const present = shellIntegrationCheck(HOME).status === "ok";
+  // An explicit --shell asks for THAT shell, so only its own startup file
+  // counts; without one, any shell already set up is enough.
+  const ownRc = shellArg ? rcFileFor(shell, HOME) : null;
+  const present = ownRc
+    ? fs.existsSync(ownRc) && /agent-switch\s+shellenv/.test(fs.readFileSync(ownRc, "utf8"))
+    : shellIntegrationCheck(HOME).status === "ok";
   const r = installShellIntegration(shell, HOME, present);
   if (json) return void console.log(JSON.stringify(r));
   console.log(

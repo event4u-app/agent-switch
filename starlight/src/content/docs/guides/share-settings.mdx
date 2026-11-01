@@ -1,0 +1,166 @@
+---
+title: Share settings across accounts
+description: Use one CLAUDE.md, settings, skills and commands across all your Claude Code accounts, while each account keeps its own login.
+---
+
+import { Steps, Tabs, TabItem, Aside, Badge, CardGrid, LinkCard, FileTree } from '@astrojs/starlight/components';
+
+Each account has its own folder, which is what keeps the logins apart. It
+would also mean setting up your `CLAUDE.md`, skills and commands once per
+account. Sharing avoids that: one setup, linked into every Claude account,
+while every login stays separate.
+
+<Aside type="note">
+Sharing is for Claude Code only. Codex and Antigravity accounts are not
+affected.
+</Aside>
+
+## Turn sharing on
+
+<Steps>
+
+1. **Pick the source.** By default the source is your normal Claude Code
+   folder, `~/.claude`. To use one of your accounts instead, pass
+   `--source <account>`.
+
+2. **Link it into every account.**
+
+   ```bash
+   agent-switch share on                  # source: ~/.claude
+   agent-switch share on --source work    # source: the "work" account
+   ```
+
+   The output lists, per account, what was linked or why something was
+   skipped.
+
+3. **Check it.**
+
+   ```bash
+   agent-switch share status
+   agent-switch share status --json
+   ```
+
+</Steps>
+
+If an account already has its own copy of a file or folder, `share on` leaves
+it alone and says so. Remove that copy if you want the shared one instead.
+
+## What is shared
+
+<FileTree>
+- source (for example ~/.claude)/
+  - CLAUDE.md file, linked
+  - settings.json file, linked
+  - keybindings.json file, linked
+  - history.jsonl prompt history, linked
+  - skills/ folder, linked
+  - commands/ folder, linked
+  - agents/ folder, linked
+  - projects/ only with `--history`
+  - plans/ only with `--history`
+</FileTree>
+
+What is **never** shared: the login and account data (`.claude.json`,
+`.credentials.json`), and `plugins/`, `sessions/`, `ide/` and `statsig/`.
+
+### Folders write through, files can fork
+
+The two kinds of link behave differently, because of how Claude Code saves
+its settings:
+
+- **Folders** (`skills/`, `commands/`, `agents/`) are shared for real. A new
+  skill added in any account lands in the source and shows up everywhere.
+- **Files** (`settings.json`, `keybindings.json`, `CLAUDE.md`) are linked too,
+  but Claude Code saves a changed setting by writing a new file. An edit made
+  with `/config` inside one account therefore replaces the link with that
+  account's own copy: the file **forks**.
+
+To push a forked file back into the source and link it again:
+
+```bash
+agent-switch share sync
+```
+
+If several accounts forked the same file, the last one synced wins. Run
+`share sync` after any `/config` change you want everywhere.
+
+### Prompt history
+
+Your prompt history (`history.jsonl`, what ↑ and Ctrl+R search) is shared by
+every `share on`, so an old prompt is found on every account. Claude Code only
+ever adds to this file, so its link never forks. An account that already had
+its own history is merged in, in order and without duplicates, and its
+original is kept as `history.jsonl.pre-share`.
+
+## Share conversations too <Badge text="macOS · Linux" variant="caution" />
+
+With `--history`, conversations (`projects/`) and plan files (`plans/`) are
+shared as well, so `claude --resume` sees the sessions of every account:
+
+```bash
+agent-switch share on --history
+```
+
+This needs real symbolic links and is refused on Windows.
+
+<Aside type="caution">
+With shared history, deleting a session deletes it for every account that
+shares it. `agent-switch sessions rm` asks for `--ack <session-id>` in that
+case.
+</Aside>
+
+## Turn sharing off
+
+```bash
+agent-switch share off
+```
+
+This removes only the links Agent Switch created. Files an account owns, and
+forked files, are left as they are. Each account keeps a copy of the shared
+prompt history, so no account ends up with an empty history.
+
+## Windows <Badge text="Windows" variant="caution" />
+
+- Folders are linked as junctions, which need no admin rights.
+- Files need symbolic links, which Windows allows only with **Developer Mode**
+  turned on (Settings › System › For developers) or as an administrator.
+  Without it, file links are skipped with a message, and folders are still
+  shared.
+- `--history` is not available.
+
+## Copy your setup to another computer
+
+`config export` and `config import` move one Claude account's setup between
+machines as a single file. They carry `settings.json`, `keybindings.json`,
+`CLAUDE.md`, `skills/`, `commands/` and `agents/`, and **never** a login or
+token.
+
+<Steps>
+
+1. **On the old computer**, export and encrypt it:
+
+   ```bash
+   agent-switch config export work | gpg -c > work-config.gpg
+   ```
+
+2. **Copy the file** to the new computer.
+
+3. **On the new computer**, after adding the account, import it:
+
+   ```bash
+   gpg -d work-config.gpg | agent-switch config import work
+   ```
+
+</Steps>
+
+The import accepts only those six names, and rejects paths that try to leave
+the account's folder. There is no option to include credentials; sign in on
+the new computer with `agent-switch add` or `agent-switch login`.
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Move a session" href="/agent-switch/guides/move-a-session/" description="With shared history, moving a session is just a resume." />
+  <LinkCard title="Configuration" href="/agent-switch/reference/configuration/" description="Where Agent Switch keeps its files." />
+  <LinkCard title="Security and privacy" href="/agent-switch/trust/security-and-privacy/" description="What is read, what is written, and what never leaves your machine." />
+</CardGrid>

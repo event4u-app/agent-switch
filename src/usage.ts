@@ -3,9 +3,9 @@
  *
  * Parses Claude's OAuth `/usage` response into a defensive snapshot, formats it
  * for `status`, tracks 30-day history, and detects active-profile threshold
- * crossings. It NEVER compares or ranks accounts — that is the anti-rotation
- * boundary the whole roadmap is locked around. Codex/Antigravity have no usage
- * readout (verified), so they surface "usage unavailable" and never reach here.
+ * crossings. It does not rank accounts itself; choosing between them lives in
+ * balance.ts. Codex usage is read by codex-usage.ts into the same snapshot
+ * shape; Antigravity has no usage readout and surfaces "usage unavailable".
  */
 
 export interface UsageWindow {
