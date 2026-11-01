@@ -91,6 +91,15 @@ describe("sessionFromRow", () => {
     ...over,
   });
 
+  it("carries the live source and an armed switch (target as an account id)", () => {
+    const armed = sessionFromRow(s({ liveSource: "registry", armed: { target: "side", createdAt: iso(NOW), expiresAt: iso(NOW + 30 * MIN) } }), NOW);
+    expect(armed.liveSource).toBe("registry");
+    expect(armed.armedSwitch).toEqual({ target: "claude:side", expiresAt: NOW + 30 * MIN });
+    const plain = sessionFromRow(s({ liveSource: "cwd" }), NOW);
+    expect(plain.liveSource).toBe("cwd");
+    expect(plain.armedSwitch).toBeNull();
+  });
+
   it("maps a fresh live session to working, a quiet one to idle, a dead one to done", () => {
     expect(sessionFromRow(s(), NOW).state).toBe("working");
     expect(sessionFromRow(s({ mtimeMs: NOW - 5 * MIN }), NOW).state).toBe("idle");

@@ -89,6 +89,17 @@ agent-switch handoff seed --to personal --brief ~/.agent-switch/briefs/3f2a9c.md
 A handoff carries a **metadata brief only**, not the session. Treat it as a summary to seed a fresh conversation — expect to lose the fine-grained context a same-provider takeover preserves.
 :::
 
+## Switch when the turn ends
+
+A live switch (`rebind`) can wait for the session to finish what it is doing. Arm it in the session sheet (**When this turn ends**) or with:
+
+```bash
+agent-switch rebind personal --when-idle --profile work
+agent-switch rebind --cancel --profile work   # changed your mind
+```
+
+The arm is the switch's only trigger — nothing switches unless you arm it. The background service then waits for the session's next `busy → idle` edge in Claude Code's own registry and runs the ordinary `rebind`, with every guard. It runs once; if a guard refuses, the arm is dropped and a notification says why; after 30 minutes unused it expires. The session row shows "switches to … when this turn ends" until then. A session whose state Claude Code does not report (live only by its folder) cannot be armed. As with any switch, the prompt cache does not move: the first turn on the new account reads the conversation again, uncached.
+
 ## Context monitoring & compaction
 
 `agent-switch sessions` reports a context % column matching Claude's own `/context`. This is read **locally** and is strictly **own-session only**.

@@ -107,3 +107,11 @@ test("parseRun leaves --cwd and --provider after `--` to the provider binary", (
     cwd: "/r",
   });
 });
+
+test("`rebind side --when-idle --session s-1` keeps the session id out of the positionals", () => {
+  const p = parseArgs(["rebind", "side", "--when-idle", "--session", "s-1", "--profile", "work"]);
+  assert.deepEqual(p.positional, ["side"]);
+  assert.equal(p.flags["when-idle"], true);
+  assert.equal(p.flags.session, "s-1");
+  assert.equal(p.flags.profile, "work");
+});

@@ -91,6 +91,17 @@ export function liveSwitch(s: Session, platform: ViewModel["platform"]): Availab
   return { ok: true, reason: "Adopts the new sign-in with its next message — no restart. If that fails, it stays on its account." };
 }
 
+/** Whether a live switch can be ARMED for the end of the session's turn (D3).
+ *  Needs the host's own state word: a session live only by its folder
+ *  (`liveSource: "cwd"`) has no turn end the daemon could see. */
+export function armSwitch(s: Session, platform: ViewModel["platform"]): Availability {
+  const live = liveSwitch(s, platform);
+  if (!live.ok) return live;
+  if (s.liveSource !== "registry")
+    return { ok: false, reason: "Claude Code does not report this session's state, so the end of its turn can't be seen — switch now instead." };
+  return { ok: true, reason: "Switches when the current turn ends — or not at all, if it doesn't end within 30 minutes." };
+}
+
 // ------------------------------------------------------------ resolution
 
 export const AUTO = "__auto";

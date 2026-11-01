@@ -10,7 +10,8 @@ import type { UsageSnapshot } from "../src/usage.js";
 // daemon.ts derives module-level constants from ROOT (AGENT_SWITCH_HOME) at load
 // time — set it before importing, mirroring daemon.test.ts.
 process.env.AGENT_SWITCH_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "asw-daemon-rebind-"));
-const { decideThresholdAction } = await import("../src/daemon.js");
+const { decideThresholdAction, startArmWatcher } = await import("../src/daemon.js");
+const { armRebind, armsFile } = await import("../src/rebind-arm.js");
 
 const AUTO = { enabled: true, threshold: 80 };
 
@@ -83,4 +84,33 @@ test("the daemon threshold path contains NO setActive call (never auto-switches)
   const here = path.dirname(fileURLToPath(import.meta.url));
   const src = fs.readFileSync(path.resolve(here, "../../src/daemon.ts"), "utf8");
   assert.ok(!/setActive\s*\(/.test(src), "daemon.ts must never call setActive() — switching is always a user interaction");
+});
+
+// D3 "switch when this turn ends": the daemon's own timer drives the arm watch.
+// A scripted registry busy, busy, idle → rebind exactly once, at the edge.
+test("daemon arm watcher: registry busy, busy, idle → rebind once at the edge", async () => {
+  const file = armsFile(fs.mkdtempSync(path.join(os.tmpdir(), "asw-daemon-arm-")));
+  armRebind({ profile: "work", target: "side", live: [{ pid: 1, sessionId: "s-1", status: "busy", statusUpdatedAt: null }] }, file);
+  const script = ["busy", "busy", "idle", "busy", "idle"];
+  let reads = 0;
+  const calls: string[] = [];
+  const stop = startArmWatcher(
+    {
+      file,
+      liveSessions: () => [{ pid: 1, sessionId: "s-1", status: script[Math.min(reads++, script.length - 1)], statusUpdatedAt: null }],
+      rebind: async (o) => {
+        calls.push(`${o.profile}->${o.account}@read${reads}`);
+        return { uxNote: "" };
+      },
+      notify: () => {},
+      activity: () => {},
+      log: () => {},
+    },
+    5,
+  );
+  const deadline = Date.now() + 2000;
+  while (calls.length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5));
+  await new Promise((r) => setTimeout(r, 60)); // more ticks: a consumed arm never runs again
+  stop();
+  assert.deepEqual(calls, ["work->side@read3"], "one switch, on the third read (the first idle)");
 });
