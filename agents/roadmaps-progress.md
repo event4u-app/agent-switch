@@ -6,10 +6,10 @@
 
 ## Overall
 
-**1 / 55 steps done · 2%**
+**5 / 55 steps done · 9%**
 
 ```text
-█░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   2%
+████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   9%
 ```
 
 ## Open roadmaps
@@ -17,7 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-keep-signed-in-codex-antigravity.md](roadmaps/road-to-keep-signed-in-codex-antigravity.md) | 3 | 8 | 8 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
-| 2 | [road-to-must-have-docs.md](roadmaps/road-to-must-have-docs.md) | 8 | 47 | 46 | 1 | 0 | 0 | 0 | ░░░░░░░░░░ 2% |
+| 2 | [road-to-must-have-docs.md](roadmaps/road-to-must-have-docs.md) | 8 | 47 | 42 | 5 | 0 | 0 | 0 | █░░░░░░░░░ 11% |
 
 ---
 
@@ -55,11 +55,11 @@
 
 ### [road-to-must-have-docs.md](roadmaps/road-to-must-have-docs.md)
 
-**Make agent-switch a must-have — positioning, README and docs** — 1 / 47 done (2%)
+**Make agent-switch a must-have — positioning, README and docs** — 5 / 47 done (11%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
-| 0 | Make the code match what the docs will say | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
+| 0 | Make the code match what the docs will say | ✅ done | 0 | 4 | 0 | 0 | 100% |
 | 1 | Positioning assets (internal, reviewed before any public text) | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
 | 2 | README rewrite | ⬜ not started | 9 | 0 | 0 | 0 | 0% |
 | 3 | Starlight foundation | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
@@ -75,5 +75,5 @@ Days since each active roadmap landed at its path and since its last ticked step
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
 | [road-to-keep-signed-in-codex-antigravity.md](roadmaps/road-to-keep-signed-in-codex-antigravity.md) | 1 | — |
-| [road-to-must-have-docs.md](roadmaps/road-to-must-have-docs.md) | — | — |
+| [road-to-must-have-docs.md](roadmaps/road-to-must-have-docs.md) | 0 | 0 |
 

@@ -232,20 +232,20 @@ duplication (14 topics in both today) is the main source of drift.
 
 ## Phase 0 — Make the code match what the docs will say
 
-- [ ] **Fix `--path` in `VALUE_FLAGS`, with a regression test.**
+- [x] **Fix `--path` in `VALUE_FLAGS`, with a regression test.**
   `providers link --provider codex --path /x/codex` must link the binary, not
   print usage. Prove it red first, then green.
-- [ ] **Complete `help` output.** List `handoff`, `sessions rm|restore|preview`,
+- [x] **Complete `help` output.** List `handoff`, `sessions rm|restore|preview`,
   `providers link|unlink` and `gui-settings`, or mark them internal on
   purpose. The CLI reference is generated from or checked against this list in
   Phase 7.
-- [ ] **Fix `package.json` metadata.**
+- [x] **Fix `package.json` metadata.**
   - `description`: multi-provider and benefit-first, ≤ 120 characters.
   - `keywords`: claude-code, codex, antigravity, multi-account, account
     switcher, rate limit, usage, ai coding.
   - `homepage`: the docs URL.
   - `bugs`: the issues URL.
-- [ ] **Align the stale header comment in `src/usage.ts`.** It says Codex has
+- [x] **Align the stale header comment in `src/usage.ts`.** It says Codex has
   no usage readout, but it does.
 
 ## Phase 1 — Positioning assets (internal, reviewed before any public text)
