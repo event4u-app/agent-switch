@@ -510,8 +510,9 @@ one-time `service install` — the GUI does not manage it. Check both with
 
 The tray GUI ships as native installers on the project's GitHub Releases —
 `.dmg`/`.app` (macOS, universal), `.deb`/`.rpm`/`.AppImage` (Linux), and
-`.msi`/`.exe` (Windows). They are **not code-signed or notarized yet**, so the
-OS blocks the first launch. This is expected; here is how to open them.
+`.msi`/`.exe` (Windows). You do not need them: `agent-switch gui` downloads the
+runnable app (no installer) and starts it. They are **not code-signed or
+notarized yet**, so the OS blocks the first launch. This is expected; here is how to open them.
 
 **macOS** — Gatekeeper shows *"'agent-switch.app' can't be opened because Apple
 cannot check it for malicious software."* Pick one:

@@ -1,22 +1,22 @@
 # Map of agent-switch
 
-> Map built at `c50ca3936b94` · 2026-11-01 by `agent-config code-graph map` — this describes that commit; compare it with HEAD yourself.
+> Map built at `e30675d20fad` · 2026-11-01 by `agent-config code-graph map` — this describes that commit; compare it with HEAD yourself.
 > Deterministic, no model call. Rebuild with `agent-config code-graph map`; never edit by hand.
 
-**422 files · 20 areas · 6279 trusted links · guess share 1.5 %**
+**423 files · 20 areas · 6286 trusted links · guess share 1.5 %**
 
 Thresholds: seed 42 · infrastructure above in-degree 56 · areas under 3 files fold into "small parts" · an area above 25 % is split once · lists capped at 15.
 
 Convention providers: none detected — only the framework-neutral default ran.
 
-## Health — B, 61.8 of 100
+## Health — B, 62 of 100
 
 | Part | Value | Points |
 |---|---|---|
-| Dead code files | 1.2 % | 23.4 / 25 |
+| Dead code files | 1.2 % | 23.5 / 25 |
 | File cycles | 5 | 0 / 25 |
 | Guessed edges | 1.5 % | 23.8 / 25 |
-| Hotspot files | 2.1 % | 14.6 / 25 |
+| Hotspot files | 2.1 % | 14.7 / 25 |
 
 Formula: `health.formula` in `code/map.json`.
 
@@ -25,7 +25,7 @@ Top findings:
 - 5 file cycles
 - no layers.yaml, so no layer breaches checked
 - 3 dead files (exports unchecked: the extractor records no exportedness, so an exported but unimported file counts as dead; entry files and files reached by a guessed link are never counted)
-- hotspot `gui/package-lock.json`: 22 commits × 6998 lines
+- hotspot `gui/package-lock.json`: 24 commits × 6998 lines
 - hotspot `gui/src/ipc.ts`: 49 commits × 1269 lines
 
 ## Knowledge areas
@@ -34,7 +34,7 @@ Beside Code, each area is filled by its own reader. Every fact carries a witness
 
 - data: data lane (migrations, dumps, snapshots) found nothing — no migration, schema file, committed dump or snapshot was found
 - systems: 1 runtime, 2 frameworks, 1002 packages, 4 findings — systems lane (lockfiles, manifests, version files, images, CI)
-- interfaces: 6 services, 11 operations, 7 findings — interfaces lane (call sites, contracts, configuration names)
+- interfaces: 6 services, 12 operations, 7 findings — interfaces lane (call sites, contracts, configuration names)
 - runtime: runtime lane (compose, Dockerfiles, Terraform, Kubernetes, task files) found nothing — no compose file, Dockerfile, Terraform or Kubernetes manifest was found
 - delivery: 4 workflows, 10 jobs, 28 findings — delivery lane (GitHub Actions, GitLab CI)
 - impact: review-risk over the working diff found nothing — no change against HEAD
@@ -42,10 +42,7 @@ Beside Code, each area is filled by its own reader. Every fact carries a witness
 
 ## Since the last map
 
-- a2 src/profiles.ts: +1 / −1 files
-- a3 gui/src/vm/build.ts: +3 / −2 files
-- a8 src/usage.ts: +1 / −1 files
-- new: a16 small parts · .claude/worktrees
+- a3 gui/src/vm/build.ts: +1 / −0 files
 
 ## Areas
 
@@ -57,13 +54,13 @@ actual dependencies disagree.
 |---|---|---|---|---|---|---|
 | [a1](code/areas/a1.md) | gui/src/vm/store.tsx | 73 | 57.4 % | 23.3 % | 94.6 % | `store.tsx`, `utils.ts`, `Button.tsx` |
 | [a2](code/areas/a2.md) | src/profiles.ts | 72 | 81.4 % | 38.9 % | 27.3 % | `profiles.ts`, `providers.ts`, `api.ts` |
-| [a3](code/areas/a3.md) | gui/src/vm/build.ts | 41 | 56.6 % | 36.6 % | 76.9 % | `transforms.ts`, `load.ts`, `actions.ts` |
+| [a3](code/areas/a3.md) | gui/src/vm/build.ts | 42 | 56.6 % | 35.7 % | 77.8 % | `transforms.ts`, `load.ts`, `actions.ts` |
 | [a4](code/areas/a4.md) | gui/src/settings-store.ts | 34 | 52.2 % | 23.5 % | 73.1 % | `settings-store.ts`, `Switch.tsx`, `model.ts` |
 | [a5](code/areas/a5.md) | gui/src/i18n/en/index.ts | 28 | 85.1 % | 0 % | 50 % | `index.ts`, `accounts.ts`, `common.ts` |
 | [a6](code/areas/a6.md) | src/rebind.ts | 13 | 57.1 % | 61.5 % | 0 % | `keychain.ts`, `rebind.ts`, `rebind-arm.ts` |
 | [a7](code/areas/a7.md) | gui/src/ipc.ts | 12 | 58.9 % | 50 % | 50 % | `ipc.ts`, `startup.ts`, `pet.ts` |
 | [a8](code/areas/a8.md) | src/usage.ts | 12 | 53.4 % | 50 % | 16.7 % | `usage.ts`, `history.ts`, `codex-usage.ts` |
-| [a9](code/areas/a9.md) | small parts · src | 6 | 83.1 % | 50 % | 0 % | `session-preview.ts`, `gui-launch.ts`, `os-notify.ts` |
+| [a9](code/areas/a9.md) | small parts · src | 6 | 84.5 % | 50 % | 0 % | `session-preview.ts`, `gui-launch.ts`, `os-notify.ts` |
 | [a10](code/areas/a10.md) | src/telemetry.ts | 6 | 61.8 % | 50 % | 0 % | `telemetry.ts`, `cache-words.ts`, `handoff.ts` |
 | [a11](code/areas/a11.md) | src/tooling.ts | 6 | 70.2 % | 50 % | 0 % | `updates.ts`, `tooling.ts`, `release-notes.ts` |
 | [a12](code/areas/a12.md) | gui/scripts/screenshots/capture.mjs | 5 | 85.7 % | 0 % | 20 % | `fixtures.mjs`, `seed.mjs`, `tauri-shim.mjs` |
@@ -125,15 +122,39 @@ a string path or a framework convention the engine does not read is isolated too
 
 | Role | Files |
 |---|---|
-| code | 225 |
+| code | 226 |
 | test | 105 |
 | config | 5 |
 | doc | 71 |
 | infra | 3 |
 | isolated | 13 |
 
-## Guessed links
+## External dependencies
 
-80 links were resolved by name only (no import, no type) and are not drawn by default; they are 1.5 % of all file-to-file links.
+- `node:fs` — imported by 99 files
+- `node:path` — imported by 98 files
+- `react` — imported by 60 files
+- `node:assert/strict` — imported by 57 files
+- `node:test` — imported by 57 files
+- `node:os` — imported by 54 files
+- `vitest` — imported by 48 files
+- `node:child_process` — imported by 35 files
+- `lucide-react` — imported by 30 files
+- `node:url` — imported by 25 files
+- `@testing-library/react` — imported by 13 files
+- `node:crypto` — imported by 7 files
+- `@tauri-apps/api/core` — imported by 6 files
+- `@tauri-apps/api/event` — imported by 4 files
+- `@tauri-apps/api/webviewWindow` — imported by 4 files
+- `@tauri-apps/plugin-shell` — imported by 3 files
+- `PIL` — imported by 3 files
+- `json` — imported by 3 files
+- `os` — imported by 3 files
+- `../src-tauri/tauri.conf.json?raw` — imported by 2 files
+- `PIL::Draw` — imported by 2 files
+- `PIL::new` — imported by 2 files
+- `node:readline` — imported by 2 files
+- `react-dom/client` — imported by 2 files
+- `vite` — imported by 2 files
 
-> Budget of 2000 tokens reached — cut: External dependencies. Read one with `agent-config code-graph map --section <name>`; never open `code/map.json` for it.
+> Budget of 2000 tokens reached — cut: Guesses. Read one with `agent-config code-graph map --section <name>`; never open `code/map.json` for it.

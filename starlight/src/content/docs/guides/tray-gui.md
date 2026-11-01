@@ -13,13 +13,13 @@ The desktop app wraps the whole CLI in one window plus a menu-bar popover. It's 
 agent-switch gui
 ```
 
-On first use, `gui` downloads the prebuilt artifact from the matching GitHub Release, caches it under `~/.agent-switch/gui/<version>/`, then launches it. Launch-at-login is enabled by default on the first run.
+On first use, `gui` downloads the prebuilt app from the matching GitHub Release, caches it under `~/.agent-switch/gui/<version>/`, then launches it — no installer runs on any platform. Right after an update the new release's build can still be running; `gui` then takes the newest release that has one, and without a connection it starts the newest cached build. Launch-at-login is enabled by default on the first run.
 
 | Platform | Artifact |
 | --- | --- |
 | macOS | `.app.tar.gz` |
 | Linux | `.AppImage` |
-| Windows | `-setup.exe` |
+| Windows | `_x64-portable.exe` |
 
 :::note[Unsigned builds]
 Desktop installers are not yet code-signed or notarized. First launch needs the Gatekeeper (macOS) / SmartScreen (Windows) workaround — see [platform support](/agent-switch/reference/platform-support/) for the exact steps.

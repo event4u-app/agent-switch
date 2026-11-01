@@ -9,6 +9,8 @@ import {
   guiLaunchArgv,
   guiProcessSignature,
   guiRunningIn,
+  newestCachedVersion,
+  pickReleaseAsset,
   pidAlive,
   waitForExit,
 } from "../src/gui-launch.js";
@@ -24,8 +26,8 @@ test("guiAssetSpec maps platform+arch to the release-asset pattern + handling", 
   assert.ok(linux?.match.test("agent-switch_1.0.2_amd64.AppImage"));
 
   const win = guiAssetSpec("win32", "x64");
-  assert.equal(win?.kind, "win-setup");
-  assert.ok(win?.match.test("agent-switch_1.0.2_x64-setup.exe"));
+  assert.equal(win?.kind, "win-exe");
+  assert.ok(win?.match.test("agent-switch_2.8.2_x64-portable.exe"));
 });
 
 test("guiAssetSpec returns null for unsupported platform/arch", () => {
@@ -37,8 +39,9 @@ test("guiAssetSpec returns null for unsupported platform/arch", () => {
 test("guiAssetSpec patterns don't match the wrong artifact", () => {
   // macOS wants the .app bundle tarball, not the .dmg installer.
   assert.ok(!guiAssetSpec("darwin", "arm64")!.match.test("agent-switch_1.0.2_universal.dmg"));
-  // Windows wants the setup exe, not the .msi.
+  // Windows wants the portable exe — never an installer (.msi or NSIS setup).
   assert.ok(!guiAssetSpec("win32", "x64")!.match.test("agent-switch_1.0.2_x64_en-US.msi"));
+  assert.ok(!guiAssetSpec("win32", "x64")!.match.test("agent-switch_1.0.2_x64-setup.exe"));
 });
 
 test("guiLaunchArgv opens the .app on macOS (no -n → activates the running instance), runs the binary directly otherwise", () => {
@@ -46,13 +49,13 @@ test("guiLaunchArgv opens the .app on macOS (no -n → activates the running ins
   // second copy — the OS-level half of the single-instance guarantee.
   assert.deepEqual(guiLaunchArgv("app", "/c/agent-switch.app"), { program: "open", args: ["/c/agent-switch.app"] });
   assert.deepEqual(guiLaunchArgv("appimage", "/c/agent-switch.AppImage"), { program: "/c/agent-switch.AppImage", args: [] });
-  assert.deepEqual(guiLaunchArgv("win-setup", "C:/c/agent-switch-setup.exe"), { program: "C:/c/agent-switch-setup.exe", args: [] });
+  assert.deepEqual(guiLaunchArgv("win-exe", "C:/c/agent-switch.exe"), { program: "C:/c/agent-switch.exe", args: [] });
 });
 
 test("guiProcessSignature identifies the running GUI process per kind", () => {
   assert.equal(guiProcessSignature("app"), "agent-switch.app/Contents/MacOS/agent-switch");
   assert.equal(guiProcessSignature("appimage"), "agent-switch.AppImage");
-  assert.equal(guiProcessSignature("win-setup"), "agent-switch.exe");
+  assert.equal(guiProcessSignature("win-exe"), "agent-switch.exe");
 });
 
 test("guiRunningIn detects a running instance in a process-list snapshot", () => {
@@ -118,4 +121,24 @@ test("cachedBundleFits: a cached app whose own version differs from its folder i
   assert.equal(cachedBundleFits("2.7.0", "2.6.3"), false);
   // unreadable bundle version → keep it (cannot tell), never discard blindly
   assert.equal(cachedBundleFits("2.7.0", null), true);
+});
+
+test("pickReleaseAsset takes the newest release that carries the asset, skipping one still building", () => {
+  const mac = /\.app\.tar\.gz$/;
+  const releases = [
+    // 2.8.1 is published but its macOS job is still running: no .app yet.
+    { tag_name: "2.8.1", assets: [{ name: "agent-switch_2.8.1_amd64.AppImage", browser_download_url: "u/2.8.1/appimage" }] },
+    { tag_name: "2.8.0", draft: true, assets: [{ name: "agent-switch_universal.app.tar.gz", browser_download_url: "u/draft" }] },
+    { tag_name: "2.7.9", assets: [{ name: "agent-switch_universal.app.tar.gz", browser_download_url: "u/2.7.9/app" }] },
+    { tag_name: "2.7.8", assets: [{ name: "agent-switch_universal.app.tar.gz", browser_download_url: "u/2.7.8/app" }] },
+  ];
+  assert.deepEqual(pickReleaseAsset(releases, mac), { name: "agent-switch_universal.app.tar.gz", url: "u/2.7.9/app", tag: "2.7.9" });
+  assert.equal(pickReleaseAsset([], mac), null);
+  assert.equal(pickReleaseAsset([{ tag_name: "1.0.0", assets: [] }], mac), null);
+});
+
+test("newestCachedVersion orders by version, not by string", () => {
+  assert.equal(newestCachedVersion(["2.7.1", "2.10.0", "2.9.3", "junk", "1.2.1"]), "2.10.0");
+  assert.equal(newestCachedVersion(["junk"]), null);
+  assert.equal(newestCachedVersion([]), null);
 });

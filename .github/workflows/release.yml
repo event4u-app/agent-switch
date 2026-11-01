@@ -34,7 +34,7 @@ jobs:
             rust-targets: ""
             args: ""
           - os: windows-latest
-            label: Windows (msi / nsis)
+            label: Windows (msi / nsis / portable exe)
             rust-targets: ""
             args: ""
     steps:
@@ -88,4 +88,20 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
           # `agent-switch gui` downloads these release artifacts on first use —
-          # the .app.tar.gz (macOS) / .AppImage (Linux) are runnable directly.
+          # the .app.tar.gz (macOS) / .AppImage (Linux) are runnable directly;
+          # Windows gets a portable exe in the next step.
+
+      # `agent-switch gui` runs the app directly on Windows too — never an
+      # installer. Tauri's raw exe embeds the frontend; WebView2 ships with
+      # Windows 10/11. tauri-action has created the release by now.
+      - name: Upload the portable Windows exe
+        if: matrix.os == 'windows-latest' && github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          exe="gui/src-tauri/target/release/agent-switch-gui.exe"
+          test -f "$exe" || { echo "missing $exe"; ls gui/src-tauri/target/release; exit 1; }
+          cp "$exe" "agent-switch_${TAG}_x64-portable.exe"
+          gh release upload "$TAG" "agent-switch_${TAG}_x64-portable.exe" --clobber
