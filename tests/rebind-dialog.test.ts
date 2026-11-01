@@ -128,3 +128,12 @@ test("resolveRebindChoice indexes only selectable rows, skipping the running pro
   // only two selectable → 3 is out of range.
   assert.deepEqual(resolveRebindChoice("3", d), { kind: "invalid" });
 });
+
+test("buildRebindDialog carries same-organization per row but never ranks by it (D4)", () => {
+  const d = buildRebindDialog(
+    [{ ...cand("team", 60), sameOrg: true }, { ...cand("other", 10), sameOrg: false }, cand("unknown", 30)],
+    "run",
+  );
+  assert.deepEqual(d.rows.map((r) => [r.profile, r.sameOrg]), [["team", true], ["other", false], ["unknown", null]]);
+  assert.equal(d.suggestedProfile, "other", "most headroom wins even though the cache would not move along");
+});

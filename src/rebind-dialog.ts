@@ -21,6 +21,9 @@ export interface RebindDialogCandidate {
   name: string;
   snapshot: UsageSnapshot | null;
   label?: string | null;
+  /** Same organization as the running account, so the prompt cache moves along;
+   *  null when either side is unknown. Shown, never ranked. */
+  sameOrg?: boolean | null;
 }
 
 /** One rendered row. `maxUtil` is the profile's own highest window utilization
@@ -31,6 +34,7 @@ export interface RebindDialogRow {
   label: string | null;
   maxUtil: number | null;
   isRunning: boolean;
+  sameOrg: boolean | null;
 }
 
 export interface RebindDialog {
@@ -55,6 +59,7 @@ export function buildRebindDialog(
     label: c.label ?? null,
     maxUtil: c.snapshot ? maxUtilization(c.snapshot) : null,
     isRunning: c.name === runningProfile,
+    sameOrg: c.sameOrg ?? null,
   }));
 
   // Suggestion = lowest known max-utilization among the non-running rows (most

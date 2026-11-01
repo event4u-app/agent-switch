@@ -21,7 +21,23 @@ import { ArmRefused, armRebind, armsFile, cancelArms } from "../rebind-arm.js";
 import { liveSessions } from "../api.js";
 import { detectRunningClaudeProfile } from "../sessions.js";
 import { readPid, PIDFILE, processAlive } from "../daemon.js";
-import { claudeSnapshot, logActivity } from "./shared.js";
+import { cacheForRow, claudeSnapshot, logActivity, sameOrganization } from "./shared.js";
+import { locateSession } from "../sessions.js";
+import { eventFile, readEvents } from "../hooks.js";
+import { moveCacheLine } from "../cache-words.js";
+
+/** What switching `running`'s live session to `target` costs in cache terms,
+ *  read from that session's transcript (the first live one with an id); null
+ *  when no live session or nothing worth saying. */
+function rebindCacheLine(running: string, target: string): string | null {
+  const cfg = configDir("claude", running);
+  const live = liveSessions(cfg).find((s) => s.sessionId);
+  const loc = live?.sessionId ? locateSession(cfg, live.sessionId) : null;
+  if (!live?.sessionId || !loc) return null;
+  const now = Date.now();
+  const cache = cacheForRow("claude", { sessionId: live.sessionId, file: loc.jsonl }, readEvents(eventFile(ROOT, "claude", running)), now);
+  return moveCacheLine(cache, target, sameOrganization(running, target), now);
+}
 
 /**
  * The interactive limit dialog (Phase 4) — `agent-switch rebind` with no account
@@ -38,7 +54,7 @@ async function rebindDialog(running: string): Promise<void> {
   for (const n of others) {
     // Same usage read path `status` uses (daemon cache when fresh, else the
     // OAuth /usage endpoint); null when unreadable — the row shows no %.
-    candidates.push({ name: n, snapshot: await claudeSnapshot(n), label: labelFor("claude", n) });
+    candidates.push({ name: n, snapshot: await claudeSnapshot(n), label: labelFor("claude", n), sameOrg: sameOrganization(running, n) });
   }
   const dialog = buildRebindDialog(candidates, running);
   const rows = selectableRows(dialog);
@@ -70,7 +86,8 @@ async function rebindDialog(running: string): Promise<void> {
     const marker = r.profile === dialog.suggestedProfile ? "  ← suggested (most headroom)" : "";
     const label = r.label ? ` [${r.label}]` : "";
     const util = r.maxUtil === null ? "usage n/a" : `${r.maxUtil}% used`;
-    console.log(`  ${i + 1}) ${(r.profile + label).padEnd(24)} ${util}${marker}`);
+    const org = r.sameOrg === true ? "  · same org" : "";
+    console.log(`  ${i + 1}) ${(r.profile + label).padEnd(24)} ${util}${org}${marker}`);
   });
   const enterHint = dialog.suggestedProfile ?? "(no suggestion)";
   console.log(`  [enter] = ${enterHint}   ·   q = cancel (stay on "${running}")`);
@@ -96,6 +113,8 @@ async function rebindDialog(running: string): Promise<void> {
     console.log(`No valid selection — stayed on "${running}".`);
     return;
   }
+  const cacheLine = rebindCacheLine(running, choice.profile);
+  if (cacheLine) console.log(cacheLine);
   try {
     const r = await rebind({ account: choice.profile, profile: running });
     logActivity("rebind", `claude/${running}`, `now serves ${choice.profile}'s account`, "user picked it in the rebind dialog");
@@ -180,6 +199,8 @@ export async function cmdRebind(
   if (!profile) die("no running claude profile — pass --profile <name> or set one active with `asw <name>`.");
   requireProfile("claude", account, "rebind");
   requireProfile("claude", profile, "rebind --profile");
+  const cacheLine = rebindCacheLine(profile, account);
+  if (cacheLine) console.log(cacheLine);
   if (flags["when-idle"]) {
     // D3: arm, do not run. The daemon runs the ordinary rebind at the turn's end.
     try {
