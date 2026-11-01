@@ -8,7 +8,7 @@ Every `agent-switch` command is listed below, grouped by task. Use it as a looku
 ## Global conventions
 
 - **Provider defaults to `claude`.** Target another provider with `--provider codex` or `--provider antigravity`.
-- **Value-flags consume the next token:** `provider`, `shell`, `source`, `threshold`, `to`, `from`, `recent`, `kind`, `title`, `message`, `surface`, `tag`, `ack`, `brief`.
+- **Value-flags consume the next token:** `provider`, `shell`, `source`, `threshold`, `to`, `from`, `recent`, `kind`, `title`, `message`, `surface`, `tag`, `ack`, `brief`, `format`.
 - **`run` is special.** Everything after the profile name passes straight through to the provider binary — see [Running / switching context](#running--switching-context).
 
 ```bash
@@ -106,7 +106,8 @@ you use `eval "$(agent-switch shellenv)"`) after upgrading.
 
 | Command | Args / flags | What it does |
 | --- | --- | --- |
-| `list` / `ls` | `[--provider P] [--json]` | List profiles grouped by provider, active marked `*`, with live-session count. `--json` is the GUI contract (no usage). |
+| `list` / `ls` | `[--provider P] [--json] [--format cswap-v1]` | List profiles grouped by provider, active marked `*`, with live-session count. `--json` is the GUI contract (no usage). `--format cswap-v1` prints the Claude profiles in the claude-swap list schema v1 instead — see below. |
+| `--list --json` | — | The Claude profiles in the claude-swap list schema v1 that CodexBar and ccdeck read: stable account numbers, email, active/disabled, cached 5-hour and 7-day usage with `usageStatus` `ok`/`stale`/`unavailable`. Read-only (`supportsAccountSwitching: false`), cache only — no network, no token. Errors are `{"schemaVersion":1,"error":{…}}` with a non-zero exit. See [Accounts in CodexBar / ccdeck](/agent-switch/guides/codexbar-ccdeck/). |
 | `status [name]` | `[--provider P] [--json]` | Identity, Claude/Codex usage, and the worst live-session context. `--json` returns the active profile only. |
 | `current` | `[--provider P]` | Show the active profile(s). |
 | `whoami [name]` | `[--provider P]` | Show a profile's account identity. |
@@ -227,3 +228,4 @@ agent-switch tooling notes --json          # structured blocks, for scripting
 | `picks` | `[--limit N] [--json]` | Every start the shell wrapper resolved (`dir --guard`): the chosen account (or the refusal) and the resolver's reasons. Kept to the newest 500; no prompt or session content. |
 | `uninstall` | `[--force]` | Remove all agent-switch data, keychain entries, and the daemon. Does **not** touch provider installs. |
 | `help` / `--help` / `-h` | — | Show usage. |
+| `--version` / `version` | — | Print the installed version (semver). |
