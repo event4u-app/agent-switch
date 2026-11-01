@@ -166,9 +166,18 @@ Scores are the review's judgement of read code, not measurements.
 
 ## Phase 4 — Code health (D6)
 
-- [ ] **4.1 Split `src/index.ts` by command family** behind one dispatch table;
+- [x] **4.1 Split `src/index.ts` by command family** behind one dispatch table;
       help output byte-identical.
       verify: `npm test` → 0; snapshot of `--help` unchanged; `src/index.ts` < 600 lines.
+      done: `src/index.ts` 3,437 → 201 lines (header, imports, `main()` dispatch). Twelve
+      modules under `src/commands/`: profiles 564, sessions 508, takeover 365, system 329,
+      usage 321, shared 320, routing 316, rebind 203, desktop 193, settings 138, sharing 124,
+      help 78. All 109 top-level statements moved byte-identical (only `export` added);
+      region banners dropped. One adaptation: `cmdActivate` resolves `../index.js` from
+      `import.meta.url`, since the module now sits in `dist/commands/` (caught by the e2e
+      `activate` test). Proof: `tests/cli-snapshot.test.ts` (help, `-h`, `--help`, unknown
+      command, 28 read-only commands on a fixture home — stdout, stderr, exit) committed
+      before the split and unchanged after; `npm test` 727 pass / 0 fail / 13 skipped.
 - [x] **4.2 Coverage floor** — `node --test --experimental-test-coverage` for the
       root, `vitest --coverage` for the GUI; floor = today's number minus 1 %, may only rise.
       verify: CI job `coverage` fails when the floor is undercut.

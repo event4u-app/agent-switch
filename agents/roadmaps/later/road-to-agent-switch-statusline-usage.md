@@ -31,7 +31,7 @@ clobbering, corrupting, or irreversibly altering a user's existing statusline**.
 
 - **Precedent:** `src/hooks.ts` already installs ADDITIVE, marker-keyed
   (`HOOK_MARKER='asw_managed'`), idempotent, fully-reversible hooks into a
-  profile's `settings.json`; `cmdHookEvent` (`src/index.ts:720-738`) reads fd0
+  profile's `settings.json`; `cmdHookEvent` (`src/commands/sessions.ts`) reads fd0
   stdin + `CLAUDE_CONFIG_DIR` and maps dir→profile via `profileFromConfigDir`
   (`src/hooks.ts:156-164`). The `__statusline` command mirrors this shape.
 - **Critical difference from hooks:** `settings.statusLine` is a **single object**
@@ -45,7 +45,7 @@ clobbering, corrupting, or irreversibly altering a user's existing statusline**.
   `detectCrossings`/`withStickyResets`/`isUsageStale` stay unchanged.
 - **GUI is a pure consumer:** `gui/src/ipc.ts:152` `profileUsage` shells
   `status --provider <p> <name> --json` → `cmdStatus` → `claudeSnapshot`
-  (`src/index.ts:363-376`) → daemon-cache-first, else `fetchUsage`→`parseUsage`.
+  (`src/commands/shared.ts`) → daemon-cache-first, else `fetchUsage`→`parseUsage`.
   Daemon has a parallel producer `snapshotFor` (`src/daemon.ts:276-283`). Plugging
   the statusline source into BOTH seams = zero GUI change.
 - **Current 429-prone path:** `src/api.ts` `oauthGet('/api/oauth/usage')` with
@@ -53,7 +53,7 @@ clobbering, corrupting, or irreversibly altering a user's existing statusline**.
   closed "not planned"; no reliable Retry-After. This is the path being demoted.
 - **`settings.json` is a fork-prone SHARED symlink** (`src/share.ts:4-16`); a
   managed statusLine inherits that contract + its `share sync` reminder
-  (`src/index.ts:622-625`).
+  (`src/commands/sharing.ts`).
 - **No statusLine stdin has EVER been captured here.** `scripts/spikes` has
   t1/t2/t3/t5/t6/t7 — none for statusLine; t6 (hook stdin) returned honest-NULL.
   The "rate_limits on statusLine ≥2.1.x" claim is documentation + ccusage/ccstatusline
@@ -229,7 +229,7 @@ Source-selection is the point of the feature, but a PARTIAL statusline source mu
 never mask the COMPLETE poll, nor blind the daemon's switch/threshold path.
 
 - [ ] **Step 1:** Prepend a statusline-if-fresh branch to `claudeSnapshot`
-      (`src/index.ts:363-376`) and `snapshotFor` (`src/daemon.ts:276-283`): read the
+      (`src/commands/shared.ts`) and `snapshotFor` (`src/daemon.ts:276-283`): read the
       statusline cache; if present AND version-supported AND `capturedAt` age <
       `STATUSLINE_TTL` → use it (zero network); else existing daemon-cache-if-fresh;
       else the unchanged poll. Poll null/429 → return the stalest REAL snapshot,
