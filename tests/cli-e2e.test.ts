@@ -773,7 +773,7 @@ function runRaw(home: string, args: string[], env: Record<string, string> = {}) 
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
-test("guard: `dir --guard` refuses a second load with exit 86, and still prints the path", gate, () => {
+test("guard: with every account busy, `dir --guard` shares the profile instead of refusing", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
   try {
     seed(home, "claude", "work");
@@ -782,11 +782,12 @@ test("guard: `dir --guard` refuses a second load with exit 86, and still prints 
     seedLiveSession(home, "work", process.pid);
 
     const r = runRaw(home, ["dir", "--guard"]);
-    assert.equal(r.status, 86, "the wrapper keys on this exact code");
-    // stdout stays the contract the wrapper reads — the guard speaks on stderr.
+    assert.equal(r.status, 0, r.stderr);
+    // stdout stays the contract the wrapper reads — notes go to stderr, in one line.
     assert.match(r.stdout.trim(), /claude[/\\]work[/\\]config$/);
-    assert.match(r.stderr, /already loaded/);
-    assert.match(r.stderr, new RegExp(`pid ${process.pid}`));
+    assert.equal(r.stderr.trim().split("\n").length, 1, r.stderr);
+    assert.match(r.stderr, /every usable claude account already has a live session — sharing claude\/work/);
+    assert.doesNotMatch(r.stderr, /Ways forward/);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
@@ -841,7 +842,7 @@ test("guard: a dead pid is not a load — the profile stays startable", gate, ()
   }
 });
 
-test("guard: the env override downgrades a refusal to a warning", gate, () => {
+test("guard: the env override still starts on the busy profile", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
   try {
     seed(home, "claude", "work");
@@ -849,7 +850,7 @@ test("guard: the env override downgrades a refusal to a warning", gate, () => {
     seedLiveSession(home, "work", process.pid);
     const r = runRaw(home, ["dir", "--guard"], { AGENT_SWITCH_ALLOW_DUPLICATE: "1" });
     assert.equal(r.status, 0);
-    assert.match(r.stderr, /continuing anyway/);
+    assert.match(r.stdout.trim(), /claude[/\\]work[/\\]config$/);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
@@ -881,7 +882,7 @@ test("guard: policy off and warn never refuse", gate, () => {
     run(home, ["guard", "warn"]);
     const warned = runRaw(home, ["dir", "--guard"]);
     assert.equal(warned.status, 0);
-    assert.match(warned.stderr, /continuing anyway/);
+    assert.match(warned.stderr, /claude\/work already has 1 live session — starting another one on it/);
 
     run(home, ["guard", "off"]);
     const off = runRaw(home, ["dir", "--guard"]);

@@ -223,7 +223,7 @@ export function renderGuardMessage(input: MessageInput): string {
   const headline =
     context === "use"
       ? verdict === "refuse"
-        ? `${held} — the next \`${binary}\` started here will be refused.`
+        ? `${held} — the next \`${binary}\` started here moves to a free account, or shares this one when none is free.`
         : `${held} — a second session will be allowed (guard: warn).`
       : verdict === "refuse"
         ? `${held}.`
@@ -245,7 +245,9 @@ export function renderGuardMessage(input: MessageInput): string {
     "same rotating OAuth token.",
   );
 
-  if (verdict === "refuse") {
+  // `use` moves only a pointer: the next wrapped start resolves the busy
+  // account by itself, so there is nothing for the user to do.
+  if (verdict === "refuse" && context === "start") {
     const rows: [string, string][] = [];
 
     rows.push([

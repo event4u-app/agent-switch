@@ -56,9 +56,14 @@ function resolveDir(providerId: ProviderId, plain = false): { name: string | nul
     sharesDefaultLogin: (n) => profileExistsSafe(providerId, n) && sharesDefaultLogin(providerId, n),
     pool: (id) => findPool(id),
     usage: (n) => cachedUsage(providerId, n),
-    // Only providers that write a live-session signal can report one; the
-    // check runs for pool members only.
-    live: (n) => provider(providerId).hasLiveSessionSignal && liveSessionPids(configDir(providerId, n)).length > 0,
+    // Only providers that write a live-session signal can report one. A start
+    // from inside a session on that profile (its env var inherited) is a child,
+    // not a second load, so the profile does not count as busy for it.
+    live: (n) => {
+      const p = provider(providerId);
+      const dir = configDir(providerId, n);
+      return p.hasLiveSessionSignal && process.env[p.envVar] !== dir && liveSessionPids(dir).length > 0;
+    },
     guard: readGuard(),
     now: Date.now(),
     displayPath: tildePath,
@@ -71,10 +76,10 @@ function resolveDir(providerId: ProviderId, plain = false): { name: string | nul
  * to the default config dir.
  *
  * With `--guard`, stdout is unchanged (the wrapper still reads the path from
- * it) and the guard speaks on STDERR, exiting {@link GUARD_REFUSED_EXIT} on a
- * refusal. Splitting the streams is what lets one command both feed the wrapper
- * and talk to the human; a distinct exit code is what lets the wrapper block on
- * a refusal without ever blocking on a missing or older `agent-switch`.
+ * it) and notes go to STDERR. Only a folder rule that cannot be served exits
+ * {@link GUARD_REFUSED_EXIT}; a busy account never does — the resolver moves to
+ * a free one or shares the best. The distinct exit code lets the wrapper block
+ * on that refusal without ever blocking on a missing or older `agent-switch`.
  */
 export function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = false): void {
   const r = resolveDir(providerId, plain);
@@ -107,13 +112,17 @@ export function cmdDir(providerId: ProviderId, guarded = false, json = false, pl
   if (!name) return;
   console.log(configDir(providerId, name));
   if (!guarded) return;
-  if (r.note) console.error(`agent-switch: ${r.note}.`);
-
-  // A wrapper cannot pass `--force` (it would reach the provider binary), so
-  // only the env override is offered here.
-  const guard = checkSingleLoad(providerId, name, { offerForceFlag: false });
-  if (guard.message) console.error(`agent-switch: ${guard.message}`);
-  if (guard.verdict === "refuse") process.exit(GUARD_REFUSED_EXIT);
+  // The resolver already moved off a busy account where a free one exists, so
+  // a wrapped start that lands on a busy account has no better option: it is
+  // shared, never refused. One line says so.
+  if (r.note) {
+    console.error(`agent-switch: ${r.note}.`);
+    return;
+  }
+  const guard = checkSingleLoad(providerId, name);
+  if (guard.verdict === "allow") return;
+  const n = guard.inspection.sessions.length;
+  console.error(`agent-switch: ${providerId}/${name} already has ${n} live session${n === 1 ? "" : "s"} — starting another one on it.`);
 }
 
 export function cmdMap(providerId: ProviderId, name?: string, dir?: string, flags: Record<string, string | boolean> = {}): void {
@@ -194,7 +203,7 @@ export function cmdGuard(value?: string, json = false): void {
   }
 
   const explain: Record<GuardPolicy, string> = {
-    block: "a second session moves to a free profile; refused only when none is free",
+    block: "a second session moves to a free profile, and shares the best one when none is free",
     warn: "a second session is reported, then allowed",
     off: "no check at all",
   };
@@ -207,7 +216,7 @@ export function cmdGuard(value?: string, json = false): void {
     for (const r of rows) {
       const doubled = r.sessions > 1;
       const mark = doubled ? "⚠️ " : "  ";
-      const detail = doubled ? `loaded ${r.sessions}× — this is what the guard exists to prevent` : "1 live session";
+      const detail = doubled ? `loaded ${r.sessions}× — no free profile was left` : "1 live session";
       console.log(`${mark} ${`${r.provider}/${r.name}`.padEnd(24)} ${detail}`);
     }
   }

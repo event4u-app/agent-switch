@@ -292,7 +292,7 @@ test("dir: a pool that cannot serve refuses the start instead of using an accoun
 test("dir: with guard block, a pool member that already holds a live session is skipped", () => {
   const r = R.resolveForDir(inputs({ live: (n: string) => n === "b", guard: "block" }));
   assert.equal(r.name, "a");
-  assert.ok(r.why.includes("Skipped claude/b: already has a live session (guard: block would refuse it)"));
+  assert.ok(r.why.includes("Skipped claude/b: already has a live session"));
 });
 
 test("dir: with guard warn, a live member is still eligible but a free one wins a tie", () => {
@@ -314,8 +314,10 @@ test("dir: with guard block, a busy plain-start account falls through to a free 
   assert.equal(r.why[r.why.length - 1], "claude/stale already has a live session — starting on the free account claude/unknown instead");
   // warn never refuses, so the plain-start account stays.
   assert.equal(R.resolveForDir(inputs({ ...plain, guard: "warn", live: (n: string) => n === "stale" })).name, "stale");
-  // Nobody free: stay on the active account and let the guard speak.
-  assert.equal(R.resolveForDir(inputs({ ...plain, live: (n: string) => n !== "out" })).name, "stale");
+  // Nobody free: stay on the active account and share it — never a refusal.
+  const shared = R.resolveForDir(inputs({ ...plain, live: (n: string) => n !== "out" }));
+  assert.equal(shared.name, "stale");
+  assert.equal(shared.note, "every usable claude account already has a live session — sharing claude/stale");
 });
 
 test("dir: with guard block, a busy folder-rule account also gives way to a free one", () => {
@@ -323,9 +325,11 @@ test("dir: with guard block, a busy folder-rule account also gives way to a free
   const r = R.resolveForDir(inputs({ ...rule, live: (n: string) => n === "stale" }));
   assert.equal(r.name, "unknown");
   assert.equal(r.note, "claude/stale already has a live session — starting on the free account claude/unknown instead");
-  // A free rule account is used as-is, and nobody free leaves the rule to the guard.
+  // A free rule account is used as-is, and nobody free shares the rule account.
   assert.equal(R.resolveForDir(inputs({ ...rule, live: () => false })).name, "stale");
-  assert.equal(R.resolveForDir(inputs({ ...rule, live: (n: string) => n !== "out" })).name, "stale");
+  const shared = R.resolveForDir(inputs({ ...rule, live: (n: string) => n !== "out" }));
+  assert.equal(shared.name, "stale");
+  assert.match(shared.note ?? "", /sharing claude\/stale$/);
 });
 
 test("dir: the no-fresh-usage fallback names the background service", () => {
@@ -584,4 +588,31 @@ test("protection notice: sub-second resetsAt jitter is the same cycle, not a new
   for (const jitter of ["2026-10-31T18:00:00+00:00", "2026-10-31T17:59:59.626070+00:00"]) {
     assert.equal(PR.protectionNotice("claude/work", snap(99, undefined, jitter), PR.DEFAULT_PROTECTION, n!.cycle), null);
   }
+});
+
+test("dir: with guard block, a busy account gives way to the free account with the most headroom, not the first", () => {
+  const rule = { mapping: { path: "/home/u/y", name: "a" }, names: ["a", "stale", "b"], guard: "block" as const };
+  // "a" is busy; "stale" is free but its usage is too old to weigh; "b" is free and fresh.
+  const r = R.resolveForDir(inputs({ ...rule, live: (n: string) => n === "a" }));
+  assert.equal(r.name, "b");
+});
+
+test("dir: with guard block and every account busy, the plain start shares the best one instead of refusing", () => {
+  const plain = { mapping: null, names: ["a", "b"], active: "a", guard: "block" as const };
+  const r = R.resolveForDir(inputs({ ...plain, live: () => true }));
+  assert.equal(r.name, "b");
+  assert.equal(r.blocked, undefined);
+  assert.equal(r.note, "every usable claude account already has a live session — sharing claude/b");
+});
+
+test("dir: with guard block and every pool member busy, the pool shares a member instead of refusing", () => {
+  const fresh = R.resolveForDir(inputs({ live: () => true, guard: "block" }));
+  assert.equal(fresh.name, "b");
+  assert.equal(fresh.blocked, undefined);
+  assert.match(fresh.note ?? "", /sharing claude\/b$/);
+  const pool = () => ({ id: "work", name: "Work", members: ["claude/stale", "claude/unknown"], createdAt: "" });
+  const stale = R.resolveForDir(inputs({ pool, live: () => true, guard: "block" }));
+  assert.equal(stale.name, "stale");
+  assert.equal(stale.blocked, undefined);
+  assert.match(stale.note ?? "", /sharing claude\/stale$/);
 });
