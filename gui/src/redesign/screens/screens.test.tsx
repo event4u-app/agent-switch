@@ -8,6 +8,7 @@ import type { Account, Session, ViewModel } from "../../vm/types.js";
 import { OverlayHost, ScreenHost } from "../Hosts.js";
 import { startPlan, startPreview, startProblem } from "./start-session.js";
 import { terminalRun } from "./terminal-sheet.js";
+import { ARM_CACHE_SENTENCE, ARM_CLICK_SENTENCE } from "./session-sheet.js";
 
 // jsdom has no canvas/matchMedia for xterm and no Tauri pty: stub both.
 vi.mock("@xterm/xterm", () => ({
@@ -176,6 +177,44 @@ describe("Session sheet", () => {
     expect(screen.getByText("Switch agent-config to side?")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Switch account" }));
     expect(rebind).toHaveBeenCalledWith("claude:agent-config", "claude:side");
+  });
+
+  it("arms a switch for the end of the turn behind a dialog that says the cache does not move and nothing switches without the click", () => {
+    const armRebind = vi.fn(() => Promise.resolve());
+    const vm = fixture();
+    vm.sessions = vm.sessions.map((x) => (x.id === "claude:agent-config" ? { ...x, liveSource: "registry" as const } : x));
+    mount(vm, { overlay: { kind: "session", id: "claude:agent-config" }, act: { rebind: vi.fn(), armRebind } });
+    fireEvent.click(screen.getByRole("button", { name: "When this turn ends" }));
+    expect(armRebind).not.toHaveBeenCalled();
+    expect(screen.getByText("Switch agent-config to side when this turn ends?")).toBeTruthy();
+    const body = screen.getByText(/The prompt cache does not move/).textContent ?? "";
+    expect(body).toContain(ARM_CACHE_SENTENCE);
+    expect(body).toContain(ARM_CLICK_SENTENCE);
+    expect(ARM_CACHE_SENTENCE).toBe("The prompt cache does not move with the session: the first turn on the new account reads the whole conversation again, uncached.");
+    expect(ARM_CLICK_SENTENCE).toBe("Nothing switches without this click.");
+    fireEvent.click(screen.getByRole("button", { name: "Switch when the turn ends" }));
+    expect(armRebind).toHaveBeenCalledWith("claude:agent-config", "claude:side");
+  });
+
+  it("refuses to arm a session that is live only by its folder, with the reason", () => {
+    const vm = fixture();
+    vm.sessions = vm.sessions.map((x) => (x.id === "claude:agent-config" ? { ...x, liveSource: "cwd" as const } : x));
+    mount(vm, { overlay: { kind: "session", id: "claude:agent-config" }, act: { rebind: vi.fn(), armRebind: vi.fn() } });
+    const btn = screen.getByRole("button", { name: "When this turn ends" }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.title).toMatch(/does not report this session's state/);
+  });
+
+  it("shows an armed switch in the row and the sheet, and cancels it", () => {
+    const cancelArm = vi.fn(() => Promise.resolve());
+    const vm = fixture();
+    vm.sessions = vm.sessions.map((x) =>
+      x.id === "claude:agent-config" ? { ...x, liveSource: "registry" as const, armedSwitch: { target: "claude:side", expiresAt: NOW + 60_000 } } : x,
+    );
+    mount(vm, { screen: "sessions", overlay: { kind: "session", id: "claude:agent-config" }, act: { rebind: vi.fn(), armRebind: vi.fn(), cancelArm } });
+    expect(screen.getAllByText(/Switches to side when this turn ends/).length).toBeGreaterThanOrEqual(2);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel switch" }));
+    expect(cancelArm).toHaveBeenCalledWith("claude:agent-config");
   });
 
   it("takes a Claude Desktop session over to another account's Desktop window; trash, live switch and hand off stay out", () => {

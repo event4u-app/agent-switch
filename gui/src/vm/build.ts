@@ -264,6 +264,8 @@ export function sessionFromRow(row: SessionRow, now: number): Session {
     protectionNote: null,
     surface: row.surface === "desktop-app" ? "desktop-app" : null,
     waitingFor: row.waiting ? (row.waitingFor ?? null) : null,
+    liveSource: row.liveSource ?? null,
+    armedSwitch: row.armed ? { target: accountId(row.provider, row.armed.target), expiresAt: Date.parse(row.armed.expiresAt) } : null,
   };
 }
 

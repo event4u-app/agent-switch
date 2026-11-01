@@ -22,6 +22,10 @@ import {
   switchProfile,
   rebindArgs,
   rebindTo,
+  armRebindArgs,
+  armRebind,
+  cancelArmArgs,
+  cancelArm,
   agentConfigVersion,
   shareStatus,
   shareOn,
@@ -119,6 +123,16 @@ describe("ipc", () => {
     execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
     await rebindTo("privat", "work");
     expect(create).toHaveBeenCalledWith("agent-switch", ["rebind", "privat", "--profile", "work"]);
+  });
+
+  it("armRebindArgs / cancelArmArgs build the --when-idle and --cancel forms; both run through the CLI", async () => {
+    expect(armRebindArgs("privat", "work", "s-1")).toEqual(["rebind", "privat", "--when-idle", "--profile", "work", "--session", "s-1"]);
+    expect(cancelArmArgs("work")).toEqual(["rebind", "--cancel", "--profile", "work"]);
+    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+    await armRebind("privat", "work", "s-1");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["rebind", "privat", "--when-idle", "--profile", "work", "--session", "s-1"]);
+    await cancelArm("work");
+    expect(create).toHaveBeenCalledWith("agent-switch", ["rebind", "--cancel", "--profile", "work"]);
   });
 
   it("rebindTo throws with the stderr on a non-zero exit (the caller surfaces it)", async () => {

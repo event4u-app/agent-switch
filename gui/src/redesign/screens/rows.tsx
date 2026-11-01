@@ -189,6 +189,9 @@ export function SessionRow({ session: e, compact }: { session: Session; compact?
                 {SESSION_STATE_LABEL[e.state]} ·{" "}
               </span>
             )}
+            {e.armedSwitch && (
+              <span className="font-medium text-ac-brand-text">Switches to {s.accountById(e.armedSwitch.target)?.name ?? "another account"} when this turn ends · </span>
+            )}
             {e.title}
             {e.branch ? ` · ${e.branch}` : ""}
           </span>

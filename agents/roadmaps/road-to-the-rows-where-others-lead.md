@@ -132,20 +132,32 @@ Scores are the review's judgement of read code, not measurements.
 
 ## Phase 3 — Switch when the turn ends (D3 = a)
 
-- [ ] **3.1 Arm, do not run.** The session sheet and
+- [x] **3.1 Arm, do not run.** The session sheet and
       `agent-switch rebind --when-idle <profile> <account>` arm a live switch with
       creation time, target and a 30-minute expiry, visible in the session row
       ("switches to B when this turn ends"); cancelled with one click or
       `rebind --cancel`.
       verify: `npm test` → 0 for arm, cancel and expiry.
-- [ ] **3.2 Run at the idle edge.** The daemon watches the registry state; on a
+      done: `src/rebind-arm.ts` (arm store `rebind-arms.json` under `withFileLockSync`,
+      one arm per profile, session id from the registry); CLI `rebind <account> --when-idle
+      [--profile] [--session]` and `rebind --cancel [--profile]`; `sessions --json` carries
+      `armed`, the text listing and the GUI row/sheet show it with a cancel button.
+      Tests: `tests/rebind-arm.test.ts`, e2e in `tests/cli-e2e.test.ts`.
+- [x] **3.2 Run at the idle edge.** The daemon watches the registry state; on a
       `busy → idle` edge it runs the existing `rebind` with all its guards. A
       refused guard drops the arm and tells the user why. Without a registry state
       (`liveSource: "cwd"`) arming is refused.
       verify: daemon test with a scripted registry `busy, busy, idle` → `rebind` once at the edge, never for `cwd`.
-- [ ] **3.3 Honest copy.** The arm dialog says the prompt cache does not move and
+      done: `watchArmsOnce` consumes the arm before calling `rebind` (at most once);
+      the daemon runs it on a 2 s timer (`startArmWatcher`), separate from the 60 s poll.
+      A refusal drops the arm, notifies and logs activity; an ended session drops it too.
+      Tests: `tests/rebind-arm.test.ts`, `tests/daemon-rebind.test.ts`. Not yet run against a
+      real live Claude Code session.
+- [x] **3.3 Honest copy.** The arm dialog says the prompt cache does not move and
       nothing switches without this click.
       verify: GUI test asserts both sentences.
+      done: `ARM_CACHE_SENTENCE` / `ARM_CLICK_SENTENCE` in `gui/src/redesign/screens/session-sheet.tsx`,
+      asserted in `screens.test.tsx`.
 
 ## Phase 4 — Code health (D6)
 

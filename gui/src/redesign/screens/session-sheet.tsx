@@ -18,7 +18,13 @@ import { splitAccountId } from "../../vm/actions.js";
 import { maxUtilization, rankAccounts, TOOL_LABEL, type RankedAccount } from "../../vm/rules.js";
 import { useAS, type Store } from "../../vm/store.js";
 import type { Session } from "../../vm/types.js";
-import { isRunning, liveSwitch, sessionHandle } from "./logic.js";
+import { armSwitch, isRunning, liveSwitch, sessionHandle } from "./logic.js";
+
+/** The arm dialog's copy (D3). Both sentences are load-bearing: the cache does
+ *  not travel, and nothing switches unless the user confirms here. */
+export const ARM_CACHE_SENTENCE =
+  "The prompt cache does not move with the session: the first turn on the new account reads the whole conversation again, uncached.";
+export const ARM_CLICK_SENTENCE = "Nothing switches without this click.";
 
 type MoveHow = "switch" | "takeover" | "handoff";
 
@@ -167,6 +173,29 @@ export function SessionSheet({ id }: { id: string }) {
           .catch((e) => s.toast({ text: `Switch failed — ${n.project} stays on ${account?.name}. ${errorText(e)}`, tone: "alert" }));
       },
     });
+
+  const arm = n.surface === "desktop-app" ? { ok: false, reason: live.reason } : armSwitch(n, s.platform);
+  const armedTo = n.armedSwitch ? s.accountById(n.armedSwitch.target) : undefined;
+
+  const armLive = () =>
+    s.open({
+      kind: "confirm",
+      title: `Switch ${n.project} to ${targetAccount?.name} when this turn ends?`,
+      body: `${ARM_CACHE_SENTENCE} ${ARM_CLICK_SENTENCE} Once you confirm, it switches when the current turn ends — or not at all, if that takes longer than 30 minutes. You can cancel it until then.`,
+      confirm: "Switch when the turn ends",
+      onConfirm: () => {
+        s.act
+          .armRebind?.(n.id, target)
+          .then(() => s.toast({ text: `${n.project} switches to ${targetAccount?.name} when this turn ends.`, tone: "ok" }))
+          .catch((e) => s.toast({ text: `Couldn't arm the switch — ${n.project} stays on ${account?.name}. ${errorText(e)}`, tone: "alert" }));
+      },
+    });
+
+  const cancelArmed = () =>
+    s.act
+      .cancelArm?.(n.id)
+      .then(() => s.toast({ text: `${n.project} stays on ${account?.name}.`, tone: "ok" }))
+      .catch((e) => s.toast({ text: `Couldn't cancel the armed switch: ${errorText(e)}`, tone: "alert" }));
 
   const takeOver = () => {
     if (!targetAccount) return;
@@ -364,7 +393,23 @@ export function SessionSheet({ id }: { id: string }) {
                 ) : (
                   <p className="text-xs text-ac-faint">No other {TOOL_LABEL[n.tool]} account to switch to — add one on Accounts.</p>
                 )}
-                <div className="flex justify-end">
+                {n.armedSwitch ? (
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-ac-line px-3 py-2">
+                    <p className="text-xs text-ac-soft">Switches to {armedTo?.name ?? "another account"} when this turn ends.</p>
+                    <Button size="sm" variant="ghost" disabled={!s.act.cancelArm} onClick={() => void cancelArmed()}>
+                      Cancel switch
+                    </Button>
+                  </div>
+                ) : null}
+                <div className="flex justify-end gap-2">
+                  <Button
+                    size="sm"
+                    disabled={!target || !arm.ok || !s.act.armRebind}
+                    title={arm.reason}
+                    onClick={armLive}
+                  >
+                    When this turn ends
+                  </Button>
                   <Button variant="primary" size="sm" disabled={!target || !live.ok || !s.act.rebind} onClick={switchLive}>
                     Switch account
                   </Button>

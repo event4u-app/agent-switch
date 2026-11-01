@@ -78,6 +78,10 @@ export interface SessionRow {
   waiting?: boolean;
   /** What it waits on (the open question's id, or the prompt's time). */
   waitingFor?: string;
+  /** How `live` was decided: the host registry named it, or only the cwd guess. */
+  liveSource?: "registry" | "cwd";
+  /** A switch armed for the end of this session's turn (`rebind --when-idle`). */
+  armed?: { target: string; createdAt: string; expiresAt: string } | null;
 }
 
 /** One turn of a session content preview (ADR-002 bounded reader). */

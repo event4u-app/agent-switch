@@ -70,6 +70,7 @@ import { browserWrapperScript, defaultBrowserDeps, listBrowsers, locateBrowser }
 import { Provider, ProviderId, PROVIDER_IDS, provider, isProviderInstalled, resolveBinary } from "./providers.js";
 import { borrowerOf, discardBinding, readBinding, rebind, releaseBorrowedAccount, restoreRebind } from "./rebind.js";
 import { buildRebindDialog, resolveRebindChoice, selectableRows, type RebindDialogCandidate } from "./rebind-dialog.js";
+import { ArmRefused, armForSession, armRebind, armsFile, cancelArms, readArms } from "./rebind-arm.js";
 import { parseArgs, parseRun, resolveProviderValue } from "./args.js";
 import { extractBrief, writeBrief, sweepBriefs, seedPrompt } from "./handoff.js";
 import { credentialStore } from "./credentials.js";
@@ -150,6 +151,7 @@ import {
   fetchProfile,
   fetchUsage,
   liveSessionPids,
+  liveSessions,
 } from "./api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { UsageSnapshot, formatSnapshot, parseUsage } from "./usage.js";
@@ -1325,6 +1327,12 @@ function cmdSessions(
     all.push(...rows.slice(0, limit).map((r) => ({ ...r, profile: p })));
   }
 
+  // D3: a switch armed for the end of this session's turn.
+  const arms = providerId === "claude" ? readArms(armsFile(ROOT)) : {};
+  const armedFor = (r: { profile: string; sessionId: string }) => {
+    const a = armForSession(arms, r.profile, r.sessionId);
+    return a ? { target: a.target, createdAt: a.createdAt, expiresAt: a.expiresAt } : null;
+  };
   if (flags.json) {
     console.log(
       JSON.stringify(
@@ -1333,6 +1341,7 @@ function cmdSessions(
           return {
             provider: providerId,
             ...r,
+            armed: armedFor(r),
             context: c
               ? { pct: c.pct, contextTokens: c.contextTokens, windowTokens: c.windowTokens, model: c.model, confidence: c.confidence }
               : null,
@@ -1357,7 +1366,7 @@ function cmdSessions(
       const summary = r.summary ? `  ${r.summary}` : "";
       const ctx = formatContext(contextForRow(providerId, r));
       const ctxCol = ctx ? `  ${ctx}` : "";
-      console.log(`${mark} ${r.sessionId}  ${where}  ${ageOf(r.mtimeMs)}${ctxCol}${r.live ? (r.hostStatus ? `  [live: ${r.hostStatus}]` : "  [live]") : ""}${summary}`);
+      console.log(`${mark} ${r.sessionId}  ${where}  ${ageOf(r.mtimeMs)}${ctxCol}${r.live ? (r.hostStatus ? `  [live: ${r.hostStatus}]` : "  [live]") : ""}${armedFor(r) ? `  [switches to ${armedFor(r)!.target} when this turn ends]` : ""}${summary}`);
     }
   }
   if (!any) {
@@ -2822,6 +2831,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch compact <profile> [--clear] [--dry-run] [--force]   type /compact (or /clear) into the profile's managed tmux pane
   agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place] [--print-only] [--force]   move a session to another profile and resume it
   agent-switch rebind [<account>] [--profile <p>]   |   rebind --restore [--profile <p>]   |   rebind --reset   switch a RUNNING profile's account (macOS; no <account> = interactive picker; --restore reverses; --reset re-enables after a circuit-breaker trip)
+  agent-switch rebind <account> --when-idle [--profile <p>] [--session <id>]   |   rebind --cancel [--profile <p>]   arm the switch for when the session's turn ends (runs once, expires after 30 min; --cancel drops it)
   agent-switch web <name>                      claude.ai in a persistent browser (Claude)
   agent-switch remove [--provider P] <name> [--force] [--yes]   delete a profile (asks on a terminal; --yes skips)
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
@@ -2957,6 +2967,13 @@ async function cmdRebind(
   flags: Record<string, string | boolean>,
 ): Promise<void> {
   if (providerExplicit && providerId !== "claude") die(`rebind supports claude only (not ${providerId})`);
+  if (flags.cancel) {
+    const which = typeof flags.profile === "string" ? flags.profile : undefined;
+    const gone = cancelArms(which, armsFile(ROOT));
+    for (const a of gone) logActivity("rebind", `claude/${a.profile}`, `armed switch to ${a.target} cancelled`, "user ran `agent-switch rebind --cancel`");
+    console.log(gone.length ? gone.map((a) => `Cancelled: "${a.profile}" will not switch to "${a.target}".`).join("\n") : "No armed switch to cancel.");
+    return;
+  }
   // Resolve which running profile rebind targets: explicit --profile wins; else
   // prefer the profile that actually has a LIVE session (rebind's whole point is
   // the running session, which may not be the "active" default-for-new-processes
@@ -3011,6 +3028,19 @@ async function cmdRebind(
   if (!profile) die("no running claude profile — pass --profile <name> or set one active with `asw <name>`.");
   requireProfile("claude", account, "rebind");
   requireProfile("claude", profile, "rebind --profile");
+  if (flags["when-idle"]) {
+    // D3: arm, do not run. The daemon runs the ordinary rebind at the turn's end.
+    try {
+      const a = armRebind({ profile, target: account, live: liveSessions(configDir("claude", profile)), sessionId: typeof flags.session === "string" ? flags.session : undefined }, armsFile(ROOT));
+      logActivity("rebind", `claude/${profile}`, `armed: switches to ${account} when the turn ends`, "user ran `agent-switch rebind --when-idle`");
+      console.log(`Armed: "${profile}" switches to "${account}" when session ${a.sessionId.slice(0, 8)}'s turn ends (expires ${a.expiresAt}). Cancel with \`agent-switch rebind --cancel --profile ${profile}\`.`);
+      const pid = readPid(PIDFILE);
+      if (pid === null || !processAlive(pid)) console.log("The background service is not running — start it (`agent-switch service start` or the app), or the arm expires unused.");
+    } catch (e) {
+      die(e instanceof ArmRefused ? `cannot arm: ${e.message}` : (e as Error).message);
+    }
+    return;
+  }
   try {
     const r = await rebind({ account, profile });
     logActivity("rebind", `claude/${profile}`, `now serves ${account}'s account`, "user ran `agent-switch rebind`");
