@@ -1,0 +1,72 @@
+agent-switch — switch accounts for Claude Code, Codex, and Antigravity (macOS · Linux · Windows)
+
+Provider defaults to claude; pass --provider codex|antigravity for the others.
+Run with no command to launch the tray/menubar GUI (single-instance).
+
+  agent-switch add [--provider P] <name> [--browser B]   create a profile and sign it in
+  agent-switch login [--provider P] <name> [--browser <id>]   sign an existing profile in again (after a sign-out / expired login); --browser opens the Claude sign-in in that browser
+  agent-switch browsers [--json]               browsers --browser can open (macOS / Linux)
+  agent-switch import [--provider P] <name>    migrate the default install (no re-login)
+  agent-switch mark-shared [--provider P] <name> [--off]   mark a profile as sharing the default install's login (never refreshed or balanced)
+  agent-switch use [--provider P] <name>       set the active profile for a provider
+  agent-switch deactivate [--provider P]       clear the active profile for a provider
+  agent-switch run [--provider P] <name> [--tmux] [..]  launch the provider's CLI (--tmux = managed tmux session, POSIX)
+  agent-switch list [--provider P] [--json]    list profiles, grouped by provider
+  agent-switch --list --json                   Claude accounts in claude-swap list schema v1 (read-only, cache only; same as list --json --format cswap-v1)
+  agent-switch status [--provider P] [name] [--json]   identity (+ Claude usage); --json = active only
+  agent-switch current [--provider P]          show the active profile(s)
+  agent-switch whoami [--provider P] [name]    show a profile's account identity
+  agent-switch dir [--provider P] [--guard] [--json] [--plain]   resolve profile for CWD (rule > balanced pick > active); --json adds why
+  agent-switch guard [block|warn|off]          one profile, one live session (default warn on new installs)
+  agent-switch map [--provider P] <name|pool:<id>> [dir]   map a directory to a profile or a pool
+  agent-switch map --pause|--resume [--provider P] [dir]   pause a folder rule (kept, but skipped) or turn it back on
+  agent-switch unmap [--provider P] [dir]      remove a directory mapping
+  agent-switch mappings                        list directory mappings
+  agent-switch share on|sync|off|status [--history] [--source <profile|default>] [--json]   (Claude)
+  agent-switch config export|import <profile>   config-only cross-machine bundle to stdout / from stdin (settings, keybindings, CLAUDE.md, skills/, commands/, agents/ — NEVER credentials; pipe export | gpg -c)
+  agent-switch sessions [profile] [--recent N] [--json]   recent + live Claude sessions per profile (with context %)
+  agent-switch hooks install|uninstall|status [profile]   manage lifecycle push hooks in Claude settings.json
+  agent-switch alerts on|off|status [--threshold 80,95]   record context/usage crossings to the notification log (off by default)
+  agent-switch compact <profile> [--clear] [--dry-run] [--force]   type /compact (or /clear) into the profile's managed tmux pane
+  agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place] [--print-only] [--force]   move a session to another profile and resume it
+  agent-switch rebind [<account>] [--profile <p>]   |   rebind --restore [--profile <p>]   |   rebind --reset   switch a RUNNING profile's account (macOS; no <account> = interactive picker; --restore reverses; --reset re-enables after a circuit-breaker trip)
+  agent-switch rebind <account> --when-idle [--profile <p>] [--session <id>]   |   rebind --cancel [--profile <p>]   arm the switch for when the session's turn ends (runs once, expires after 30 min; --cancel drops it)
+  agent-switch web <name>                      claude.ai in a persistent browser (Claude)
+  agent-switch remove [--provider P] <name> [--force] [--yes]   delete a profile (asks on a terminal; --yes skips)
+  agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
+  agent-switch desktop [--json]                which accounts ran sessions in each Claude Desktop instance
+  agent-switch activate [--json]               make this CLI the one terminals and the background service use
+  agent-switch disable|enable [--provider P] <name>   keep a profile but stop using it / turn it back on
+  agent-switch color [--provider P] <name> [orange|red|yellow|green|teal|blue|purple|pink|none]   pick a profile's colour
+  agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>]   notify + suggest near a usage limit; never switches automatically (default OFF)
+  agent-switch reset <profile> --provider codex [--yes]                        redeem one banked Codex rate-limit reset (asks on a terminal)
+  agent-switch protection [--json] | protection set <provider/name> [--on|--off] [--threshold N]   per-profile limit warning (default on, 98%)
+  agent-switch protection wait on|off <claude/name>   Claude Code's own auto-continue at the limit (wait for the reset, or stop)
+  agent-switch pool [list|create|rename|delete|add|remove|suggest] [--json]    optional groups a folder rule can point at
+  agent-switch auth-status [--provider P] [--json]   per-profile login state from the provider's store (no tokens)
+  agent-switch activity [--limit N] [--json]   what agent-switch itself did, and why
+  agent-switch picks [--limit N] [--json]      which account each wrapped start chose, and why
+  agent-switch rename <old> <new> [--provider P]                               rename a profile (name & keep its tag)
+  agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
+  agent-switch [gui] [--after-pid <pid>]       launch the tray/menubar GUI (the default with no command; won't start a second if one is running; --after-pid waits for that process to quit first — the GUI's restart)
+  agent-switch check-update [--json]           check GitHub Releases for a newer version
+  agent-switch update                          self-update to the latest version (via npm); restarts the service on it, or offers to install one
+  agent-switch apps                            list launchable GUI apps (macOS)
+  agent-switch open <app> [profile]            launch a GUI app on a profile, isolated; focuses it if already open (macOS)
+  agent-switch launcher add|remove <app> <profile> | list [--json] | repair   Dock/Spotlight launcher per account in ~/Applications/Agent Switch (macOS)
+  agent-switch app-settings copy <app> --from <profile|default> --to <profile> [--json]   copy desktop settings (MCP, preferences, extensions) — never logins
+  agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
+  agent-switch shellenv install [--shell S] [--json]   add it to your shell's startup file
+  agent-switch service run|start|stop|status|install|uninstall   background usage daemon
+  agent-switch notifications [clear] [--json]  recent notifications (usage-limit suggestions, fetch failures)
+  agent-switch notify --kind K --title T --message M [--json]   record a notification event
+  agent-switch os-notify [on|off|status] [--json]   daemon-side OS desktop notifications, Linux/Windows (default off; macOS: the app shows them)
+  agent-switch keep-signed-in [on|off|status] [--json]   let the service keep Claude logins from lapsing (default on)
+  agent-switch uninstall [--force]             remove all agent-switch data + daemon
+  agent-switch usage history [--provider P] [--profile <name>] [--json]   daemon-recorded usage samples per profile
+  agent-switch tooling [--json]                ecosystem tool readout (agent-config, rtk, provider CLIs)
+  agent-switch tooling install|upgrade <tool>  install/upgrade an ecosystem tool (agent-config, rtk, claude, codex)
+  agent-switch tooling notes [<tool>] [--latest] [--json]   read an ecosystem tool's release notes (default agent-config; fetches from GitHub)
+  agent-switch doctor [--json]                  per-OS, per-provider self-check
+--- stderr ---
+--- exit 0 ---

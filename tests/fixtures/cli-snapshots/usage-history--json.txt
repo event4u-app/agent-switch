@@ -1,0 +1,12 @@
+[
+  {
+    "profile": "home",
+    "samples": []
+  },
+  {
+    "profile": "work",
+    "samples": []
+  }
+]
+--- stderr ---
+--- exit 0 ---

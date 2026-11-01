@@ -1,0 +1,7 @@
+claude:
+    home             not logged in
+  * work             not logged in
+codex:
+    work             not logged in
+--- stderr ---
+--- exit 0 ---

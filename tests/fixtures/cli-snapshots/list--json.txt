@@ -1,0 +1,34 @@
+[
+  {
+    "provider": "claude",
+    "name": "home",
+    "identity": null,
+    "label": null,
+    "color": "teal",
+    "disabled": false,
+    "active": false,
+    "liveSessions": 0
+  },
+  {
+    "provider": "claude",
+    "name": "work",
+    "identity": null,
+    "label": "Work",
+    "color": null,
+    "disabled": false,
+    "active": true,
+    "liveSessions": 0
+  },
+  {
+    "provider": "codex",
+    "name": "work",
+    "identity": null,
+    "label": null,
+    "color": null,
+    "disabled": false,
+    "active": false,
+    "liveSessions": 0
+  }
+]
+--- stderr ---
+--- exit 0 ---

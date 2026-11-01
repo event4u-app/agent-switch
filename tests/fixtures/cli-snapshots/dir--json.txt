@@ -1,0 +1,13 @@
+{
+  "profile": "claude/work",
+  "configDir": "<HOME>/claude/work/config",
+  "why": [
+    "No folder rule — balancing across 2 claude accounts by what each would lose at its reset",
+    "Skipped claude/home: signed out",
+    "Skipped claude/work: signed out",
+    "No account has fresh usage to weigh — using the plain-start account",
+    "Using the active profile claude/work"
+  ]
+}
+--- stderr ---
+--- exit 0 ---

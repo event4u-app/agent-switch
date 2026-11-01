@@ -1,0 +1,6 @@
+{
+  "policy": "block",
+  "loaded": []
+}
+--- stderr ---
+--- exit 0 ---

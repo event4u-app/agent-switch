@@ -1,0 +1,3 @@
+{"enabled":false}
+--- stderr ---
+--- exit 0 ---

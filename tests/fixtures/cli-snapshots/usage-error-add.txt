@@ -1,0 +1,3 @@
+--- stderr ---
+error: usage: agent-switch add [--provider claude] <profile> [--browser B]
+--- exit 1 ---

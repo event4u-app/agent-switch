@@ -1,0 +1,3 @@
+{"claude":{"enabled":false,"threshold":95,"tag":"all"},"codex":{"enabled":false,"threshold":95,"tag":"all"},"antigravity":{"enabled":false,"threshold":95,"tag":"all"}}
+--- stderr ---
+--- exit 0 ---

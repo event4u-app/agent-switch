@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "supportsAccountSwitching": false,
+  "activeAccountNumber": 2,
+  "accounts": [
+    {
+      "number": 1,
+      "email": null,
+      "alias": "home",
+      "active": false,
+      "disabled": false,
+      "usageStatus": "unavailable",
+      "usage": null,
+      "usageFetchedAt": null,
+      "usageAgeSeconds": null
+    },
+    {
+      "number": 2,
+      "email": null,
+      "alias": "work",
+      "active": true,
+      "disabled": false,
+      "usageStatus": "unavailable",
+      "usage": null,
+      "usageFetchedAt": null,
+      "usageAgeSeconds": null
+    }
+  ]
+}
+--- stderr ---
+--- exit 0 ---

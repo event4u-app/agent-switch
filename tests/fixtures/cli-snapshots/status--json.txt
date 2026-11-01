@@ -1,0 +1,9 @@
+{
+  "provider": "claude",
+  "name": "work",
+  "identity": null,
+  "usage": null,
+  "context": null
+}
+--- stderr ---
+--- exit 0 ---
