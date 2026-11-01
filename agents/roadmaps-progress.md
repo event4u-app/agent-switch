@@ -20,7 +20,7 @@
 
 ---
 
-## Parked — `later/` (8 roadmaps, not active backlog)
+## Parked — `later/` (9 roadmaps, not active backlog)
 
 > Excluded from the table above and from `/roadmap:process-*` by design. Listed here so a resume condition is visible without opening the file.
 
@@ -28,6 +28,7 @@
 
 | Roadmap | Open blockers | Resume when |
 |---|---:|---|
+| [road-to-a-trusted-install.md](roadmaps/later/road-to-a-trusted-install.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-agent-switch-gui-service.md](roadmaps/later/road-to-agent-switch-gui-service.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-agent-switch-native-updater.md](roadmaps/later/road-to-agent-switch-native-updater.md) | 2 (2 you) | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-agent-switch-statusline-usage.md](roadmaps/later/road-to-agent-switch-statusline-usage.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
