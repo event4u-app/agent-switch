@@ -282,5 +282,5 @@ Scores are the review's judgement of read code, not measurements.
 - [ ] AC-3 — With D1 paid: Gatekeeper-clean brew install, winget install. Without: tap + winget work and the docs name the extra step.
 - [x] AC-4 — `agent-switch --list --json` passes the schema-v1 fixture, reads only the cache, < 300 ms, never offers a switch.
 - [x] AC-5 — An armed switch runs once at the next idle edge, expires, or is cancelled; it never runs without an arm.
-- [ ] AC-6 — `src/index.ts` < 600 lines with byte-identical help; coverage and audit jobs green.
+- [x] AC-6 — `src/index.ts` < 600 lines with byte-identical help; coverage and audit jobs green. <!-- CI run 41282865393: coverage + audit green -->
 - [x] AC-7 — Every visible GUI string exists in DE and EN; `PET_WELCOME` unchanged; every `de` capture inspected.
