@@ -270,13 +270,13 @@ duplication (14 topics in both today) is the main source of drift.
 
 ## Phase 2 — README rewrite
 
-- [ ] **Hero.** `info-image.png` (D-A, absolute URL, alt text that states the
+- [x] **Hero.** `info-image.png` (D-A, absolute URL, alt text that states the
   promise). Then the one-line promise, 5 badges (npm version, downloads, CI,
   docs, license), and a single line "Claude Code · Codex · Antigravity — macOS,
   Linux, Windows".
-- [ ] **"Sound familiar?"** — the 4 pains as 4 short lines, each answered in
+- [x] **"Sound familiar?"** — the 4 pains as 4 short lines, each answered in
   one sentence.
-- [ ] **Quick start in 60 seconds — three steps.**
+- [x] **Quick start in 60 seconds — three steps.**
   1. `npm i -g @event4u/agent-switch`
   2. `agent-switch import work` (keeps your current login) and
      `agent-switch add personal`
@@ -284,14 +284,14 @@ duplication (14 topics in both today) is the main source of drift.
 
   Then one sentence: "Prefer a window? Run `agent-switch` — the desktop app
   opens." Every command is verified in Phase 7 on a clean `AGENT_SWITCH_HOME`.
-- [ ] **Demo GIF** from Phase 5 directly under the quick start.
-- [ ] **"What you get"** — the 3 pillars, each with one screenshot or terminal
+- [x] **Demo GIF** from Phase 5 directly under the quick start.
+- [x] **"What you get"** — the 3 pillars, each with one screenshot or terminal
   snippet and a "Learn more →" docs link.
-- [ ] **"Your tokens stay yours"** — the trust line, the egress list in one
+- [x] **"Your tokens stay yours"** — the trust line, the egress list in one
   sentence, and a link to Security & privacy.
-- [ ] **Platform matrix (compact)** — providers × OS, with ✅/➖ only. Details
+- [x] **Platform matrix (compact)** — providers × OS, with ✅/➖ only. Details
   link to the docs.
-- [ ] **Docs, FAQ, non-goals, contributing, sponsor, license** as a link
+- [x] **Docs, FAQ, non-goals, contributing, sponsor, license** as a link
   block. Remove "Behaviour changes in this release", the Daily-use table, the
   Layout section and all `agents/evidence/` links from the README.
 - [ ] **Check the README in three renderers:** GitHub light, GitHub dark, and
@@ -411,9 +411,9 @@ duplication (14 topics in both today) is the main source of drift.
   feature the code lacks.
 - [ ] **Derive the image crops.** From the corrected file, derive the 1200×630
   OG crop (Phase 3) and the 1280×640 social-preview crop (Phase 6).
-- [ ] **Record the demo GIF and clip from the Phase 1 storyboard.** Use
+- [x] **Record the demo GIF and clip from the Phase 1 storyboard.** Use
   anonymized accounts, keep each ≤ 3 MB, and ship a poster image for the docs.
-- [ ] **Refresh app screenshots against the 2.8 UI.** Cover the overview, the
+- [x] **Refresh app screenshots against the 2.8 UI.** Cover the overview, the
   tray popover, the near-limit notification, the session sheet, settings ›
   protection, and the desktop pet (missing today). Use one source folder,
   `.github/assets/screenshots/`, and copy it into `starlight/public/` at build

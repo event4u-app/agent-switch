@@ -1,579 +1,187 @@
-<p align="center"><a href="https://event4u.app"><img alt="event4u Agent Switch" src=".github/assets/info-banner.png"></a></p>
-
-# <img src=".github/assets/icon.png" alt="" width="44" align="top"> Agent Switch — the right account for every session
-
 <p align="center">
-  <a href="https://github.com/event4u-app/agent-switch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/event4u-app/agent-switch/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://www.npmjs.com/package/@event4u/agent-switch"><img alt="npm" src="https://img.shields.io/npm/v/@event4u/agent-switch?style=flat-square&color=orange"></a>
-  <a href="https://www.npmjs.com/package/@event4u/agent-switch"><img alt="downloads" src="https://img.shields.io/npm/dm/@event4u/agent-switch?style=flat-square&label=downloads%2Fmonth&color=orange"></a>
-  <a href="https://event4u-app.github.io/agent-switch/"><img alt="Documentation" src="https://img.shields.io/badge/docs-event4u--app.github.io-orange?style=flat-square"></a>
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-orange?style=flat-square"></a>
+  <a href="https://event4u-app.github.io/agent-switch/">
+    <img alt="Agent Switch — all your AI coding accounts signed in side by side, every session on the one with the most left" src="https://raw.githubusercontent.com/event4u-app/agent-switch/main/.github/assets/info-image.png">
+  </a>
 </p>
 
-Keep several **Claude Code, Codex and Antigravity** accounts signed in side by side on
-macOS, Linux and Windows — each in its own folder, each with its own login. Start a
-session on the account you mean, see what every account has left, and get warned
-before one runs out. Your tools keep starting exactly as before.
+<h1 align="center">Agent Switch</h1>
 
-📖 **[Read the documentation →](https://event4u-app.github.io/agent-switch/)** · **Try it in 30 seconds:** [quickstart ↓](#try-it-in-30-seconds)
+<p align="center">
+  <b>All your AI coding accounts, signed in side by side —<br>and every session on the one with the most left.</b>
+</p>
 
-### See what needs you, what runs where, and what every account has left
+<p align="center">
+  <a href="https://www.npmjs.com/package/@event4u/agent-switch"><img alt="npm" src="https://img.shields.io/npm/v/@event4u/agent-switch?style=flat-square&color=orange"></a>
+  <a href="https://www.npmjs.com/package/@event4u/agent-switch"><img alt="downloads" src="https://img.shields.io/npm/dm/@event4u/agent-switch?style=flat-square&label=downloads%2Fmonth&color=orange"></a>
+  <a href="https://github.com/event4u-app/agent-switch/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/event4u-app/agent-switch/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://event4u-app.github.io/agent-switch/"><img alt="Documentation" src="https://img.shields.io/badge/docs-read%20online-orange?style=flat-square"></a>
+  <a href="https://github.com/event4u-app/agent-switch/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-orange?style=flat-square"></a>
+</p>
 
-![Overview — what needs you, what runs, what's left](.github/assets/screenshots/overview.png)
+<p align="center">
+  Claude Code · Codex · Antigravity — macOS, Linux and Windows
+</p>
 
-One window for every account and session: which session runs on which account and
-why, what each account has left in its 5-hour and weekly window (with how old that
-number is), and the one thing that needs you next — a session waiting for your
-answer, a sign-in, an account near its limit. Claude Desktop sessions are filed
-under the account that ran them. The menu-bar popover shows the same at a glance
-and opens Claude Desktop (or Codex, Antigravity) as any account in one click.
+## Sound familiar?
 
-<details><summary><b>More views</b></summary>
+- **"I keep logging out and back in to switch accounts."**
+  Every account stays signed in, side by side. Switching never logs anyone out.
+- **"One account hits its limit mid-task while the other resets unused."**
+  Each new session starts on the account that would otherwise waste the most of
+  its quota at its next reset.
+- **"I never know which account has what left."**
+  The menu-bar app shows every account's 5-hour and weekly limit, live.
+- **"Client work ends up on my personal account."**
+  Pin a folder to an account once, and every session started there uses it.
 
-| ![Accounts — every usage window, next plain start, protection](.github/assets/screenshots/accounts.png) | ![Sessions — every session with its account and why it got it](.github/assets/screenshots/sessions.png) |
-|---|---|
-| ![Tools — agent-config, rtk and the agent CLIs](.github/assets/screenshots/tools.png) | ![Health — readiness and checks with repairs](.github/assets/screenshots/health.png) |
-| ![Session — preview, why this account, explicit move](.github/assets/screenshots/session-sheet.png) | ![Near limit — you decide](.github/assets/screenshots/near-limit.png) |
-| ![Start session — folder, tool, account](.github/assets/screenshots/start-session.png) | ![Settings — protection per account](.github/assets/screenshots/settings-protection.png) |
+## Quick start — 60 seconds
 
-<p align="center"><img alt="Menu-bar popover" src=".github/assets/screenshots/tray.png" width="360"></p>
-
-</details>
-
-## Try it in 30 seconds
-
-```bash
-npm install -g @event4u/agent-switch     # Node ≥ 20, macOS / Linux / Windows
-agent-switch shellenv install            # once: `claude` now starts on the right account
-agent-switch add work                    # sign in each account once (opens the browser)
-agent-switch add personal
-agent-switch                             # open the desktop app
-```
-
-Open a new terminal and run `claude` as always — Agent Switch picks the account.
-`agent-switch doctor` checks the setup; details in [Install](#install).
-
-### Or stay in the terminal
-
-```
-$ claude          # starts on the account with the most to lose before its reset
-$ agent-switch run work   # this one session on "work", whatever the balance says
-$ asw work        # star "work": it takes plain starts when accounts are level
-$ asw             # list all profiles, the starred one marked *
-* work             work@example.com
-  privat           me@example.com
-  event4u          dev@example.com
-```
-
-### What it does — and what it deliberately doesn't
-
-- **Isolated logins** — every account gets its own config folder and keychain entry; nothing is snapshotted, and a running tool's login is only swapped when you ask for it (`agent-switch rebind`, undone with `rebind --restore`).
-- **Usage per account** — 5-hour and weekly windows for Claude and Codex, always with their age; unknown is shown as unknown, never as free.
-- **Session protection** — on by default at 98 % for every Claude and Codex account; it **warns** at the threshold and does not pause a running session. What happens at 100 % is Claude Code's call: with its `autoContinueAtUsageLimit` setting on (the default when unset) the session waits for the reset and continues by itself. `agent-switch protection` shows that state per Claude account and `agent-switch protection wait on|off <claude/name>` changes it (through the shared `settings.json` when one is shared). The warning comes from the background service (`agent-switch service install`), which reads every enabled account at least every 5 minutes. It fires once per limit window. A repeat for the same account stays muted for 10 minutes, and while the protection warning is up for an account, its lower usage-threshold notices (75 / 90 %) are held back. Antigravity has no usage readout and gets no warning.
-- **Sessions that wait for you** — a session asking a question (or waiting on a permission prompt) shows in *Needs you*, and the desktop pet tells you, even while the window is in the background. Claude Desktop sessions (Code tab and agent mode) appear under the account they ran on.
-- **Disable instead of delete** — a disabled account keeps its login and history but is never picked and not polled; refresh it by hand when you want to look.
-- **One prompt history** — with the shared setup (`agent-switch share on`, the app's default) ↑ and Ctrl+R in Claude Code find your old prompts on every account.
-- **Explicit switching only** — a running session moves to another account only when you choose it (live switch, take over or hand off). Nothing switches on its own. A Claude Desktop session moves by take over, into the other account's Desktop window.
-- **Balanced starts, pools and project rules** — a plain `claude` with no folder rule is spread across your enabled accounts: it starts on the one that would lose the most at its next reset (its rest divided by the hours until its weekly window resets), so every account gets used up by its reset instead of one running dry while another resets unused. An account at its protection limit is never picked; when the best accounts are level, or nothing can be weighed, the account set for plain starts (the star) is used. A folder can also point at one account, or at a pool that is balanced the same way — a pool start never leaves the pool: without fresh usage it still takes a member, and a pool that is gone or has no usable member refuses the start. `dir --json` tells you why, and `agent-switch picks` lists every start the shell wrapper resolved with the reasons it gave. The weighing uses cached usage only — written by the background service (`agent-switch service install`, which refreshes every enabled account every 5 minutes) or by every refresh the desktop app makes (kept unthrottled in `usage-latest.json`); usage older than 10 minutes is not trusted and `dir --json` says so. Under `guard block` an account that already has a live session is skipped while a free one can take the start, and shared when none can.
-- **Health, activity, sign-in state** — `doctor --json`, `activity`, `auth-status` — readouts without tokens.
-- **Switch, the desktop pet** — introduces itself once, on the very first start. Never again.
-
-## Why not keychain snapshot swapping?
-
-Most naive switchers snapshot the macOS Keychain entry (`Claude Code-credentials`) per account and restore it on switch. This breaks: Claude Code's OAuth **refresh tokens rotate on every refresh**, so a stored snapshot goes stale within hours and you're back to browser logins.
-
-`agent-switch` uses **`CLAUDE_CONFIG_DIR` isolation** instead. Each profile gets its own config directory under `~/.agent-switch/claude/<name>/config`. Claude Code derives a *separate* keychain entry per config dir, so every account stays logged in **live and independently**. Switching only changes which directory new `claude` invocations point at — nothing is snapshotted, nothing goes stale, and each account logs in via browser exactly once.
-
-The same restraint governs the whole tool: no proxy, no traffic interception, no fingerprinting, no prompt rewriting — see [NON-GOALS.md](NON-GOALS.md) for the explicit list and the alternatives this ecosystem offers instead.
-
-## One profile, one session
-
-Because `agent-switch use` sets a **global** pointer that every shell re-reads,
-nothing used to stop two terminals from starting `claude` on the same account —
-sharing one set of rate limits and both refreshing one rotating OAuth token,
-while each terminal looked like a separate account.
-
-The single-load guard notices that second start. New installs start on `warn`
-(it reports, then lets the session start). With `agent-switch guard block` a
-busy account gives way automatically — the new session starts on a free,
-signed-in account and says so in one line:
-
-```
-$ claude
-agent-switch: claude/work already has a live session — starting on the free account claude/privat instead.
-```
-
-This holds for folder rules too, and the free account it moves to is the one
-with the most headroom. When every account already has a live session, the
-start shares the best one instead of refusing — several sessions on one account
-are fine, they just share its limits:
-
-```
-$ claude
-agent-switch: every usable claude account already has a live session — sharing claude/work.
-```
-
-It never gets in the way where it has no business being: a `claude` started
-*inside* a running session is a child, not a duplicate; a crashed session leaves
-nothing behind that can lock you out; and if `agent-switch` itself is missing or
-broken, the wrapper falls straight through to the real binary. Set the policy
-with `agent-switch guard <block|warn|off>` — see the
-[CLI reference](https://event4u-app.github.io/agent-switch/reference/cli/#single-load-guard).
-
-## Install
-
-**npm / npx** (any OS — needs Node ≥ 20). The package is published as
-`@event4u/agent-switch` (the bare name `agent-switch` on npm is an unrelated
-project):
+**1. Install** (Node 20 or newer):
 
 ```bash
-npm install -g @event4u/agent-switch    # puts `agent-switch` on your PATH
-# or run without installing:
-npx @event4u/agent-switch --help
-npx @event4u/agent-switch doctor     # self-check: CLI, shell integration, logins
+npm install -g @event4u/agent-switch
 ```
 
-`npx` is handy for a one-off or first run; for daily use install globally so the
-`agent-switch` / `asw` commands and the shell wrapper are always on PATH.
-
-From source (for development):
+**2. Add each account once.** Each one opens the provider's normal sign-in in
+your browser:
 
 ```bash
-npm install          # or: npm ci
-npm run build
-npm link             # puts `agent-switch` on your PATH (npm creates a .cmd shim on Windows)
-```
-
-Native package managers (Homebrew / Scoop / winget) are planned; `npm i -g`
-above is the supported install path on every OS in the meantime.
-
-Then add the shell integration. `agent-switch shellenv install` does it for you:
-it detects your shell and adds the line below to its startup file (once — a second
-run changes nothing). The desktop app shows a red banner until it is set up and
-offers the same step. To do it by hand — `agent-switch shellenv` auto-detects your
-shell, or pass `--shell`:
-
-| Shell | One-time setup |
-|---|---|
-| **zsh** (macOS default) | add `eval "$(agent-switch shellenv)"` to `~/.zshrc` |
-| **bash** | add `eval "$(agent-switch shellenv)"` to `~/.bashrc` |
-| **fish** | add `agent-switch shellenv --shell fish \| source` to `~/.config/fish/config.fish` |
-| **PowerShell** (Windows) | add `agent-switch shellenv --shell powershell \| Out-String \| Invoke-Expression` to `$PROFILE` |
-| **cmd.exe** | no wrapper — use `agent-switch run <name>` directly (see below) |
-
-This defines:
-- a `claude` wrapper that injects the active profile's `CLAUDE_CONFIG_DIR`
-- `asw <name>` as shorthand for `agent-switch use <name>`, and bare `asw` for `agent-switch list`
-
-Open a new terminal afterwards, then run `agent-switch doctor` to self-check the setup.
-
-**cmd.exe has no function-wrapper story**, so there is no `claude` shadow there:
-run a profile explicitly with `agent-switch run <name>` (which sets
-`CLAUDE_CONFIG_DIR` for that one invocation). PowerShell is the recommended
-Windows shell.
-
-## Setup your accounts
-
-```bash
-# Adopt your existing default install as the first profile (keeps history/settings):
-agent-switch import privat
-agent-switch run privat        # then /login once so this profile owns its own credential
-
-# Add the other accounts — each opens Claude Code for a one-time login:
 agent-switch add work
-agent-switch add event4u
+agent-switch add personal
 ```
 
-## Daily use
-
-| Command | Effect |
-|---|---|
-| `asw work` | star an account: it takes plain starts when the accounts are level (or nothing can be weighed) |
-| `asw` | list profiles (live sessions shown) |
-| `agent-switch run event4u` | one-shot session on another account **without** switching — all accounts can run in parallel |
-| `agent-switch run work -- --resume` | pass any flags through to `claude` |
-| `agent-switch status` | identity + 5h/7d usage for every profile |
-| `agent-switch login work` | sign a profile in again after a sign-out or an expired login (`--browser arc` opens the Claude sign-in in a specific browser; `agent-switch browsers` lists them) |
-| `agent-switch map work ~/projects/kunde-a` | `claude` in that repo always uses this account — no switching |
-| `agent-switch share on` | one settings/skills/commands/agents tree and one prompt history for all profiles |
-| `agent-switch sessions` | recent + live Claude sessions per profile |
-| `agent-switch takeover <id> --to work` | move a session to another account and resume it there (see below) |
-| `agent-switch web work` | claude.ai in a persistent per-profile browser (see below) |
-| `agent-switch remove old --force` | delete a profile incl. its keychain entry (asks on a terminal; `--yes` skips) |
-| `agent-switch label work Work` | tag a profile (`Work` / `Personal` / `Other`, or `none` to clear) |
-| `agent-switch disable work` | keep the profile but stop using it (`enable` turns it back on) |
-| `agent-switch color work teal` | pick the profile's colour in the app (`none` clears it) |
-| `agent-switch providers status` | which providers are enabled (default: Claude + Codex; others off) |
-| `agent-switch providers enable --provider antigravity` | enable a provider (or `disable`; `--surface cli\|ui` for one surface) |
-| `agent-switch autoswitch on --threshold 90` | near-limit notification that suggests another profile (off by default; never switches) |
-| `agent-switch uninstall --force` | remove all agent-switch data, keychain entries, and the daemon |
-| `agent-switch doctor [--json]` | self-check (CLI on PATH, shell integration, start at login, API-key overrides, logins, share links) |
-| `agent-switch auth-status --json` | per-profile login state from the provider's store — never a token |
-| `agent-switch activity` | what agent-switch itself did, and why |
-| `agent-switch picks` | which account each wrapped start chose, and why (newest 500) |
-| `agent-switch protection set claude/work --threshold 95` | per-profile limit warning (default on, 98 %); warns, never pauses |
-| `agent-switch protection wait on claude/work` | Claude Code's own auto-continue at the limit: wait for the reset (on) or stop (off) |
-| `agent-switch pool create Work` · `pool add work claude/a` · `map pool:work ~/x` | optional pools (also in the app: Accounts › Projects & pools › New pool): a folder rule starts on the member that would lose the most at its next reset (`dir --json` says why) |
-
-## Per-repo accounts (directory mappings)
+**3. Turn it on.** This adds the shell wrapper and the background service that
+keeps usage numbers fresh:
 
 ```bash
-agent-switch map work ~/projects/firma
-agent-switch map privat ~/projects/hobby
-agent-switch map --pause ~/projects/hobby    # keep the rule, skip it for now (--resume turns it back on)
+agent-switch shellenv install
+agent-switch service install
 ```
 
-The `claude` shell wrapper resolves the current directory to the nearest mapped
-ancestor. Precedence: **mapping > balanced pick across your accounts > active profile (the star) > default**. `agent-switch mappings`
-lists, `agent-switch unmap` removes.
+Open a new terminal and run `claude` as always. It starts on the account with
+the most to give. Want to see it? Run `agent-switch`: the desktop app opens,
+with no installer needed.
 
-## Shared settings across accounts
+<p align="center">
+  <img alt="Terminal demo: two signed-in accounts; a new session goes to the account whose quota would expire first, and a client folder is pinned to the work account" src="https://raw.githubusercontent.com/event4u-app/agent-switch/main/.github/assets/demo.gif" width="900">
+</p>
+
+> Codex: add `--provider codex` to `add`. Already signed in to Claude Code? See
+> [keeping your current login](https://event4u-app.github.io/agent-switch/start-here/quick-start/#keep-the-login-you-already-have).
+
+## What you get
+
+### Never log in twice
+
+Each account gets its own folder with its own login, the way the provider
+intended. agent-switch only decides which folder the next session uses. It
+never copies, swaps or rotates a login. Nothing goes stale when you switch, and
+running sessions are never touched. With the background service, idle Claude
+logins are kept fresh without spending any quota.
+
+### Never waste a paid limit
+
+With no folder rule, a new session is balanced across your accounts. It goes to
+the one that would lose the most of what is left at its next reset, so every
+plan gets used before it resets. An account at its limit is skipped. Folder
+rules pin a project to one account or to a group of accounts. Ask
+`agent-switch dir --json` for any folder, and it tells you which account it
+would pick and why.
+
+### See everything, move anything
+
+<p align="center">
+  <img alt="Agent Switch desktop app: what needs you, what is running, and what every account has left" src="https://raw.githubusercontent.com/event4u-app/agent-switch/main/.github/assets/screenshots/overview.png" width="900">
+</p>
+
+The desktop app and its menu-bar popover show every account's limits, every
+running session with its context %, and the one thing that needs you next. Move
+a session to another account and continue it there (`takeover`). On macOS you
+can even switch the account of a session that is still running (`rebind`), right
+now or when its current turn ends.
+
+## Your logins stay yours
+
+agent-switch is not a proxy and has no server, no account and no telemetry.
+Logins stay where the provider put them. It only connects to:
+
+- the provider's own usage endpoint, with your own login;
+- GitHub, for releases and the desktop app download;
+- npm, for update checks of agent-switch's tools (the desktop app checks the
+  `claude` and `codex` CLIs).
+
+It switches a running session only when you confirm.
+[What agent-switch reads, stores and sends →](https://event4u-app.github.io/agent-switch/trust/security-and-privacy/)
+
+## What works where
+
+| | Claude Code | Codex | Antigravity |
+|---|:-:|:-:|:-:|
+| Several accounts signed in at once | ✅ | ✅ | ✅ |
+| Usage meters and balanced starts | ✅ | ✅ | ➖ |
+| Pin folders to accounts | ✅ | ✅ | ✅ |
+| Move a session to another account | ✅ | ✅ | ➖ |
+| Switch a running session's account | ✅ macOS | ➖ | ➖ |
+| Logins kept fresh in the background | ✅ | ➖ | ➖ |
+
+Claude Code and Codex are on by default. Antigravity is opt-in:
+`agent-switch providers enable --provider antigravity`. The core works on
+macOS, Linux and Windows, in zsh, bash, fish and PowerShell. The
+[platform matrix](https://event4u-app.github.io/agent-switch/reference/platform-matrix/)
+lists every exception.
+
+## Everyday commands
 
 ```bash
-agent-switch share on             # settings.json, CLAUDE.md, skills/, commands/, agents/ + prompt history (history.jsonl)
-agent-switch share on --history   # additionally share conversations + plans/ (--resume, POSIX only)
-agent-switch share sync           # re-link any file a /config edit forked (see below)
-agent-switch share off            # removes only agent-switch-created links
+asw                        # list your accounts (* = the one you prefer)
+asw work                   # prefer "work" when the accounts are level
+agent-switch run personal  # one session on "personal", whatever the balance says
+agent-switch map work ~/code/client-a   # this folder always uses "work"
+agent-switch status        # every account's limits
+agent-switch doctor        # check the setup
 ```
 
-Sharing links from `~/.claude` (or `--source <profile>`) into each profile.
-Two behaviors, because Claude Code's settings writer writes atomically:
+The [CLI reference](https://event4u-app.github.io/agent-switch/reference/cli/)
+lists every command.
 
-- **Directories** (`skills/`, `commands/`, `agents/`) write **through** the link
-  — an edit in any profile lands in the shared source. This is the payoff.
-  Linked as a symlink on macOS/Linux, a junction on Windows (no admin needed).
-- **Files** (`settings.json`, `keybindings.json`, `CLAUDE.md`) are linked too,
-  but an in-profile `/config` edit **forks** the file (the atomic rename
-  replaces the link). Run `agent-switch share sync` to push a fork back into the
-  shared source and re-link it (last sync wins across profiles). On Windows,
-  file symlinks need Developer Mode or admin; without it, only the directories
-  are shared and files are skipped with a message.
+## Documentation
 
-Account-scoped state (credentials, `.claude.json`, plugins) always stays per
-profile.
+- **[Quick start](https://event4u-app.github.io/agent-switch/start-here/quick-start/)**:
+  the three steps above, per shell and OS.
+- **[Which account a session uses](https://event4u-app.github.io/agent-switch/concepts/which-account/)**:
+  folder rules, balanced starts and your preferred account.
+- **[The desktop app](https://event4u-app.github.io/agent-switch/guides/desktop-app/)**:
+  overview, sessions, notifications and the desktop pet.
+- **[Move a session](https://event4u-app.github.io/agent-switch/guides/move-a-session/)**:
+  take over, live switch and hand off.
+- **[Troubleshooting & FAQ](https://event4u-app.github.io/agent-switch/reference/troubleshooting/)**
+- **[What agent-switch will never do](NON-GOALS.md)**: no proxy, no
+  fingerprinting, no pooling of free tiers.
 
-## Session handoff between accounts (takeover)
+## Update and uninstall
 
-Switching the account should not cost the conversation. A Claude Code session is
-a transcript file scoped to its project directory — and an *account* handoff
-keeps that directory constant, so the session can move between profiles:
+`agent-switch update` installs the latest version through npm. The desktop app
+updates itself. `agent-switch uninstall` removes its profiles, their stored
+logins, the background service and the app launchers. Your default Claude Code,
+Codex and Antigravity installs are untouched. Remove the `shellenv` line from
+your shell's startup file yourself.
+[Details →](https://event4u-app.github.io/agent-switch/start-here/install/#uninstall)
+
+## Contributing
+
+Issues and pull requests are welcome. To build from source:
 
 ```bash
-agent-switch sessions                       # recent + live sessions, per profile (* = live, [live: busy] = the host's own state)
-agent-switch takeover <session-id> --to work        # move it, then resume on "work"
-agent-switch takeover <session-id> --to work --keep-source   # copy + fork instead (source keeps its own)
+npm ci && npm run build && npm link
+npm test
 ```
 
-- **Move by default.** The transcript is transferred copy→verify→delete; the
-  original account no longer owns the session afterwards (no same-id divergence).
-- **`--keep-source` forks.** The target resumes with `--fork-session` (fresh
-  session id there); the source's transcript stays untouched. Session-scoped
-  permission approvals do not carry into a fork — Claude asks once more.
-- **Guard rails.** Takeover refuses when the source profile has live sessions
-  (close them first, or `--force`), never overwrites an existing transcript on
-  the target, and detects `share on --history` (nothing to move — profiles
-  already see one history tree).
-- **Claude Desktop sessions move between Desktop windows.** A Code-tab
-  session's transcript sits in the shared `~/.claude`; Desktop files it per
-  account in its own data dir. `takeover` re-files that metadata under the
-  target account in the target profile's Desktop window (copy → verify →
-  delete), and you continue it there (`agent-switch open claude-desktop <profile>`).
-  It refuses while the source window is open or the session was active in the
-  last 2 minutes (`--force` overrides), never overwrites the target, and has no
-  `--keep-source` (Desktop has no fork). Agent-mode (Cowork) sessions are not
-  moved yet.
-- In an interactive terminal the takeover resumes the session directly; use
-  `--print-only` to just print the resume command. Transcripts are treated as
-  opaque blobs — moved whole, never parsed or rewritten.
-- **The move names its cache cost first.** The prompt cache is shared within one
-  organization, not across organizations ([probe](agents/evidence/cache-move-probe-2026-11.md)).
-  Before it moves, `takeover` (and `rebind`) prints one line: a warm session
-  moving within its organization keeps its cache; into another organization
-  its first turn re-sends the conversation (`~182k`); a cold session costs the
-  same wherever it continues. `--json` carries it as `cache` and `cacheLine`.
-  The interactive `rebind` picker marks targets in the same organization.
+The desktop app lives in [`gui/`](gui/) (Tauri + React). The docs site lives in
+[`starlight/`](starlight/).
 
-## Context monitoring
+If agent-switch saves you a login or a wasted limit, a ⭐ on GitHub helps others
+find it.
 
-See how full each live session's context window is *before* the "97% of context
-used" wall, get warned at a threshold, and act — all from own-session data read
-locally (no API calls, own-profile only, never a cross-account comparison).
+## License
 
-```bash
-agent-switch sessions                 # live sessions carry a context column: 67% · 134k/1000k
-                                      # and the prompt cache: cache warm till 10:42 / cache cold · ~182k re-sent
-agent-switch status                   # active profile's worst live session's context, one line
-agent-switch alerts on --threshold 80,95   # daemon records ONE coalesced notification per cycle on a crossing
-agent-switch compact work             # type /compact into work's agent-switch-managed tmux pane (idle-guarded)
-```
-
-- **Context %** is read from the session's own transcript (the last finalized
-  main-chain turn's input side, matching Claude Code's own `/context`); the
-  window (200k / 1M) comes from a small per-model table. Unknown model → raw
-  tokens, no guessed percentage. Codex context comes in-band from its rollout.
-- **Prompt cache** (Claude) comes from the same transcript: the last response's
-  time plus the TTL its cache writes used (5 min or 1 h), so `sessions` shows
-  how long the cache stays warm and, once cold, what the next turn re-sends.
-  After a compaction it shows `cache compacted`. With hooks installed, a resumed
-  session uses Claude Code's own resume figures until it answers again.
-  `sessions --json` carries it as `cache`; tokens only, never money.
-- **Alerts** are **off by default** and, when on, name only the project +
-  percentage + a suggested `/compact` — never another profile. Enable per-session
-  liveness/compaction signals with `agent-switch hooks install` (adds additive,
-  reversible, share-aware hooks to the profile's `settings.json`). The hooks also
-  report why a turn stopped (`StopFailure`: usage limit, signed out, account on
-  hold, billing problem) and when Claude Code waits out a limit by itself; re-run
-  `hooks install` after an update to add new events.
-- **Live sessions** are read from Claude Code's own session registry
-  (`sessions/<pid>.json`): it names the running session and its state, which
-  `sessions --json` passes on as `hostStatus` with `liveSource: "registry"`. Where
-  the registry names no session, agent-switch falls back to matching the
-  process's folder (`liveSource: "cwd"`).
-- **Compaction is never automatic.** `agent-switch compact <profile>` only types
-  into an agent-switch-*managed* tmux pane (`run --tmux`), refuses while a turn
-  is in flight (`--force` to override), and prints the manual command anywhere
-  else. `/clear` is gated behind `--force` (it discards the conversation). On a
-  cold cache it says first that the `/compact` re-reads the history uncached.
-
-## Browser sessions (claude.ai) without re-login
-
-`agent-switch web <name>` launches a Playwright Chromium instance with a **persistent user-data-dir per profile** (`~/.agent-switch/<name>/browser`). You log in once per account; cookies and session live in that directory and are reused on every subsequent `agent-switch web <name>`. No cookie copying, no fragile session extraction — just isolated browser profiles.
-
-Requires the optional dependency:
-
-```bash
-npm install playwright && npx playwright install chromium
-```
-
-(Alternative without any tooling: separate Chrome profiles or Firefox containers achieve the same thing.)
-
-## GUI apps (experimental, macOS)
-
-Beyond the CLIs, agent-switch can launch **desktop/GUI clients** on an isolated
-profile. Two strategies, picked per app:
-
-- **env** — export the provider's config-dir env var (the same mechanism the
-  CLIs use, e.g. `CODEX_HOME`) when launching the app. Reuses the profile's
-  config dir.
-- **user-data-dir** — pass Chromium's `--user-data-dir` to an Electron app, so
-  each profile gets its own isolated data dir and profiles run **in parallel**.
-
-```bash
-agent-switch apps                 # list launchable GUI apps + installed state
-agent-switch open <app> [profile] # launch an app on a profile (active if omitted);
-                                  # if that profile already runs, its window comes to the front
-agent-switch launcher add <app> <profile>     # a Dock/Spotlight app for that account
-agent-switch launcher remove <app> <profile>  # remove it again (list / repair as well)
-agent-switch app-settings copy claude-desktop --from default --to <profile>
-                                  # MCP servers, preferences, extensions — never logins
-```
-
-**Launchers.** `launcher add` puts a small app into `~/Applications/Agent Switch/`
-(e.g. `Claude Desktop – Work.app`) that runs `agent-switch open` for that
-account — drag it into the Dock or start it from Spotlight. It is built locally
-with `osacompile` and signed ad hoc, so Gatekeeper does not prompt; the
-original app is never copied, patched or re-signed. The launcher carries the
-app's icon; the open window still shows the app's own icon and name. Removing
-or renaming a profile removes or rebuilds its launchers, `uninstall` removes
-them all, and `launcher repair` rebuilds them after Node or agent-switch moved.
-macOS only: Claude Desktop on Windows is an MSIX package whose executable
-cannot be started with its own arguments.
-
-**Copying Claude Desktop settings.** Chats, Projects and memory belong to the
-account on Anthropic's servers and cannot be moved. What lives on the Mac can:
-`app-settings copy` takes the MCP servers, preferences and installed extensions
-from the default install (`default`) or another profile. It never copies
-`config.json` (it holds the login's token cache), cookies, web storage,
-session folders or preferences scoped to one account; replaced files are kept
-as `*.pre-copy`. Quit Claude Desktop on the target profile first.
-
-**Supported now:**
-
-- **Claude Desktop** (`agent-switch open claude-desktop <profile>`) —
-  `user-data-dir` strategy, parallel accounts.
-- **Codex desktop** (`agent-switch open codex-desktop <profile>`) — **two
-  layers** in one launch: `CODEX_HOME` (agent auth, reuses the codex profile) +
-  `--user-data-dir` (the ChatGPT web session).
-- **Codex in VS Code** (`agent-switch open codex-ide <profile>`) — `CODEX_HOME`
-  only (the extension reads it from the editor's env).
-
-More clients land via their roadmaps in `agents/roadmaps/`.
-
-Caveats (why this is experimental):
-- **macOS-only for now**; a plain Finder/Dock start of the app itself doesn't
-  carry the flag/env (→ no isolation) — use `agent-switch open` or a launcher.
-- **Unofficial / version-fragile** — no vendor ships a built-in account
-  switcher; an app update can change launcher behaviour. Re-verify per app.
-- The profile's data dir is never swapped on a live app (that risks
-  SingletonLock/DB corruption); isolation is by launch flag/env only. Claude
-  Desktop's own default install (`~/Library/Application Support/Claude`) is
-  never touched — each profile gets its own dir.
-- **Claude Desktop login is a web session** (not a refreshable token): each
-  profile signs in once and expires on its own schedule. Because an OAuth
-  callback can reach the wrong live window, **quit other Claude windows before
-  signing into a new account.**
-- **Codex** — the desktop app lists only the *latest* session when a custom
-  `CODEX_HOME` is set (upstream openai/codex#14389; cosmetic, not an isolation
-  failure). For `codex-ide`, `CODEX_HOME` reaches a *newly launched* editor
-  process — if your editor is already running, quit it first so the new account
-  takes effect (also re-check openai/codex#7971 on your extension version).
-
-Verify a candidate Electron app honours `--user-data-dir` on your machine:
-
-```bash
-open -n -a "<App>" --args --user-data-dir="$HOME/Library/Application Support/<App>-test"
-pgrep -lf "<App>.app/Contents/MacOS"        # ≥2 processes ⇒ parallel instances
-ls "$HOME/Library/Application Support/<App>-test"   # populated ⇒ flag honoured
-```
-
-## Platform support
-
-Every command works on macOS, Linux, and Windows, or degrades with an explicit
-message. `agent-switch doctor` reports the live status for your machine.
-
-| Capability | macOS | Linux | Windows |
-|---|---|---|---|
-| Profiles, switch, run, status, mappings | ✅ | ✅ | ✅ |
-| Credential store | Keychain (per-dir), file fallback | plaintext file per profile | plaintext file per profile |
-| `import` (login-free) | ✅ | ✅ | ✅ |
-| Share **directories** (skills/commands/agents) | ✅ symlink | ✅ symlink | ✅ junction (no admin) |
-| Share **files** (settings.json, …) | ✅ (forks on edit → `share sync`) | ✅ (same) | ⚠️ needs Developer Mode/admin; else skipped |
-| `share --history` | ✅ | ✅ | ❌ POSIX-only |
-| Shell wrapper | zsh/bash | zsh/bash/fish | PowerShell (cmd.exe → `run`) |
-| `web` (claude.ai browser) | ✅ | ✅ desktop session | ✅ |
-
-Full per-mechanism contract (verified/degraded/broken with sources) lives in
-[`ADOPTED.md`](ADOPTED.md#per-os-contract-matrix).
-
-## Notes & gotchas
-
-- **Never use `claude auth logout` to switch** — it revokes the token server-side. Switching via `agent-switch` never touches the other accounts' credentials.
-- **Running sessions are unaffected by a switch.** Claude Code reads its config at startup; only *new* sessions pick up the new profile. Restart a session if you want it on the other account.
-- `agent-switch remove` deletes the config dir **and** the profile's hashed keychain entry, and prunes its directory mappings.
-- After `agent-switch import`, the imported profile and the old default login share one OAuth lineage — the first side to refresh wins. Stop using the bare default login afterwards.
-- Profiles are fully isolated by default; use `agent-switch share on` for a managed shared-settings setup.
-- Override the profile root with `AGENT_SWITCH_HOME` if you don't want `~/.agent-switch`.
-- **`CLAUDE_CONFIG_DIR` relocates only the config home, not the OS state dir.** On Linux, Claude Code may also write to `~/.local/state/claude/` (XDG state), which is *not* per-profile — so any state kept there (not credentials, which live in each profile's config dir) is effectively shared across all profiles. Impact is limited and the exact contents vary by version; flagged here so a surprising cross-profile artifact there is not mistaken for a leak of account data. Credentials, `.claude.json`, and history stay per profile.
-- **Claude Code Agent View (`claude --bg`, `claude agents`) stays per profile.** Its background supervisor is keyed on `CLAUDE_CONFIG_DIR`, so each profile gets its own and every background session bills the profile it was started under (verified on 2.1.316, `agents/evidence/2026-11-01-agent-view-isolation.md`).
-- **VS Code extension ignores `CLAUDE_CONFIG_DIR`** (upstream #30538) — the extension always uses the default `~/.claude`. Use the CLI (`agent-switch run` / the `claude` wrapper) for per-profile sessions; the extension is out of scope.
-
-## Background service & tray GUI (optional)
-
-The CLI is fully usable on its own. Two optional layers add convenience:
-
-- **Usage daemon** — a background service polls each profile's **own** usage
-  (every enabled account at least every 5 minutes, the active one and accounts
-  with a live session more often; disabled accounts never), caches it, and
-  notifies on the active profile's threshold crossings (75% / 90% by default).
-  Balanced starts (`dir`) and session protection warnings depend on it running:
-
-  ```bash
-  agent-switch service install    # launchd (macOS) / systemd --user (Linux) / Task Scheduler (Windows)
-  agent-switch service status     # health, last poll, cached profiles
-  agent-switch service start|stop # manual control (no install)
-  ```
-
-- **Desktop app** (`gui/`, Tauri) — Overview, Sessions, Accounts and Tools in one
-  window, Health / Activity / Notifications / Settings on the right of the top bar,
-  and a menu-bar popover with the accounts that need you. It is a **client of the
-  CLI** (`agent-switch <cmd> --json`) and never re-implements profile logic; the CLI
-  core stays dependency-free. See [`gui/README.md`](gui/README.md). Running
-  `agent-switch` **with no command** launches it (same as `agent-switch gui`); if
-  the app is already running, no second copy starts. After an update (of
-  agent-switch, or of agent-config from Tools) the app offers **Restart now**,
-  which runs `agent-switch gui --after-pid <pid>` to start the installed version
-  once the old one has quit.
-
-Usage readout is per-provider: Claude and Codex report their own usage windows;
-**Antigravity has no usage readout**, so it shows identity only (never a
-fabricated number).
-
-### Run it all automatically (on login)
-
-For a hands-off setup where the daemon **and** the tray GUI start on login:
-
-```bash
-agent-switch service install    # daemon on login (launchd / systemd --user / Task Scheduler)
-agent-switch gui                # launch the tray GUI (installs it on first use, then runs it)
-```
-
-The tray GUI enables **launch-at-login by default on its first run**; toggle it
-any time in **Settings → General → Start at login**. The daemon is a separate,
-one-time `service install` — the GUI does not manage it. Check both with
-`agent-switch service status` and the GUI's General tab.
-
-> After updating the GUI (a new npm version), re-toggle *Start at login* once so
-> the login item points at the new build — the launch-at-login entry references
-> the installed binary path, which changes across versions.
-
-### Installing the desktop app (unsigned builds)
-
-The tray GUI ships as native installers on the project's GitHub Releases —
-`.dmg`/`.app` (macOS, universal), `.deb`/`.rpm`/`.AppImage` (Linux), and
-`.msi`/`.exe` (Windows). You do not need them: `agent-switch gui` downloads the
-runnable app (no installer) and starts it. They are **not code-signed or
-notarized yet**, so the OS blocks the first launch. This is expected; here is how to open them.
-
-**macOS** — Gatekeeper shows *"'agent-switch.app' can't be opened because Apple
-cannot check it for malicious software."* Pick one:
-
-- **Recommended:** open **System Settings → Privacy & Security**, scroll to the
-  message about `agent-switch`, and click **Open Anyway**, then confirm. On
-  macOS 15 (Sequoia) and later this is the only reliable route.
-- **macOS 14 and earlier:** right-click (Control-click) the app in Finder →
-  **Open** → **Open** in the dialog. (Double-clicking only offers "Move to
-  Trash" — you must use the right-click menu to get an "Open" button.)
-- **Terminal:** strip the quarantine flag directly —
-  `xattr -dr com.apple.quarantine /Applications/agent-switch.app`.
-
-You only do this once per install; subsequent launches open normally.
-
-**Windows** — SmartScreen shows *"Windows protected your PC."* Click **More
-info → Run anyway**.
-
-**Linux** — no Gatekeeper equivalent; for the AppImage, mark it executable
-(`chmod +x agent-switch_*.AppImage`) before running.
-
-To remove these prompts entirely, the builds need Apple Developer-ID signing +
-notarization (macOS) and an Authenticode certificate (Windows) — wired via
-release secrets when certificates are available.
-
-### Behaviour changes in this release
-
-- **Codex resets are no longer redeemed automatically.** Up to 2.1.0, with
-  `autoswitch on` for Codex, the daemon redeemed a banked reset on its own once
-  the active profile crossed the threshold. It now only notifies you that a
-  reset is available (once per reset cycle); redeeming is your action —
-  `agent-switch reset <profile> --provider codex`, or the confirmed button in
-  the app.
-- **The single-load guard starts on `warn` for new installs.** Existing installs
-  (a `state.json` or any profile) keep `block`.
-
-### Near-limit notifications (opt-in, off by default)
-
-By default `agent-switch` only switches when **you** ask, and shows **your own**
-usage per profile — the same information the vendors' own `/usage` surfaces show.
-`agent-switch autoswitch on [--threshold N]` adds a notification when the active
-profile nears its limit, with a suggested profile to switch to. It **never
-switches by itself**: accepting the suggestion is your action. The earlier
-automatic quota rotation was removed; its review record stays in
-[`agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md`](agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md).
-
-## Layout
-
-```
-~/.agent-switch/
-  state.json               # active profile per provider, labels, colours, disabled
-  mappings.json            # folder rules (and which are paused)
-  claude/
-    work/
-      config/              # CLAUDE_CONFIG_DIR for this account (.claude.json, settings, history)
-      browser/             # persistent Playwright profile for claude.ai
-      gui/claude-desktop/  # this account's own Claude Desktop data
-      usage-history.json   # the usage samples behind the history charts
-    privat/
-      config/
-  codex/
-    work/
-      config/              # CODEX_HOME for this account
-```
+[MIT](LICENSE) © [event4u](https://event4u.app)

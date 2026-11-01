@@ -39,7 +39,10 @@ starts on the one with the most left.
    - Switching changes which folder the next start uses. It never copies or
      swaps a login (`src/profiles.ts`).
    - `import` turns the login you already have into a profile without signing
-     in again.
+     in again. That profile still shares its login with the default install,
+     so it is never balanced or refreshed until `agent-switch login <name>`
+     gives it its own (`src/commands/profiles.ts` cmdImport and cmdLogin,
+     `src/dir-resolve.ts`). The quick start therefore leads with `add`.
    - With the background service, Claude logins are kept fresh without spending
      quota (`src/token-freshen.ts`, ADR-004, on by default).
 2. **Never waste a paid limit.**
@@ -50,9 +53,10 @@ starts on the one with the most left.
      (`src/dir-resolve.ts`).
    - Protection keeps a start off an account at its limit (default 98%).
    - `dir --json` and `picks` say why each start went where it went.
-   - Requires the background service. It refreshes every enabled account's
-     usage every 5 minutes (`src/daemon.ts` `selectPollTargets`). Without fresh
-     numbers, a start uses your chosen account.
+   - Needs fresh usage numbers (≤ 10 minutes old, `FRESH_USAGE_MS`). The
+     background service refreshes every enabled account every 5 minutes
+     (`src/daemon.ts` `selectPollTargets`), and every refresh in the desktop
+     app counts too. Without fresh numbers, a start uses your chosen account.
 3. **See everything, move anything.**
    - The desktop app (Tauri) shows meters, live sessions and context %, and
      asks you when something needs you.
