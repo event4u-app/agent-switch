@@ -110,3 +110,14 @@ stays visible and tracked instead of being buried in an archive.
   is expected — this roadmap exists to keep the work visible, not to force it.
 - If Phase 2/3 stay blocked long-term, move this roadmap to `agents/roadmaps/later/`
   rather than letting it read as active-but-stalled.
+- Moved to `later/` on 2026-11-01 (`inbox-2026-11-a`): Phase 1 is closed and
+  Phases 2–3 wait on a non-macOS machine or on agent-config contracts.
+
+## Phase 3b — carried from the July inbox (`inbox-2026-11-a`)
+
+- [ ] **AS side of shared design tokens.** The owner asked that the embedded
+      agent-config GUI match agent-switch's look (`omni-route` transcript, July).
+      AS side: a generated token file from a shared source, a CI drift check, and
+      a bounded `accent` parameter on the embed URL (`gui/src-tauri/src/ac.rs`
+      builds it with `embed=1&theme=` only). Blocked on the agent-config token
+      pipeline (its shared-design-tokens roadmap, Phase 2).

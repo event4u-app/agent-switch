@@ -21,6 +21,21 @@ status: planned
       measured gain; otherwise ±5 % stays (`src/balance.ts`).
       _Resume when:_ the ledger holds 4 weeks of starts.
 
+## Protection
+
+- [ ] **Return a profile to Claude's own default.** `protection wait default
+      <claude/name>` removes `autoContinueAtUsageLimit` from settings.json instead of
+      writing `false`, so a user who set it can return to inheriting Claude's
+      default. Same affected-profiles list as `on|off`. (Council 2026-10-31, see D2 in
+      `../archive/road-to-signals-the-host-already-sends.md`.)
+      _Resume when:_ a user asks to undo `wait on|off`, or the next change to `protection wait`.
+- [ ] **Bulk `protection wait on|off --all` with a preview.** Explicit and opt-in,
+      never automatic: show every resolved settings target (deduplicated across
+      shared links) before writing, check the targets again right before the
+      write, and report partial failure.
+      _Resume when:_ a user asks for bulk setting, or Claude Code changes the absent
+      default to off.
+
 ## Codex
 
 - [ ] **Session parity for Codex.** Map a start to its rollout through an originator
