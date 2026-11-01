@@ -294,6 +294,8 @@ export interface ViewModel {
   error: string | null;
   platform: "mac" | "windows" | "linux";
   hideSummaries: boolean;
+  /** List disabled accounts in the menu-bar popover (Settings › General). */
+  trayShowDisabled: boolean;
   /** Epoch ms of the next usage refresh; null = no schedule known. */
   usageNextAt: number | null;
 }

@@ -835,3 +835,23 @@ export function setHideSummariesFlag(on: boolean): void {
     /* no/blocked localStorage → in-memory only for this session */
   }
 }
+
+const TRAY_SHOW_DISABLED_KEY = "agent-switch-tray-show-disabled";
+
+/** Whether the menu-bar popover lists disabled accounts. Default OFF — the
+ *  popover is small, so only the literal "on" shows them. */
+export function getTrayShowDisabled(): boolean {
+  try {
+    return localStorage.getItem(TRAY_SHOW_DISABLED_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+export function setTrayShowDisabledFlag(on: boolean): void {
+  try {
+    localStorage.setItem(TRAY_SHOW_DISABLED_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}

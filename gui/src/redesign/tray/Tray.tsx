@@ -54,7 +54,8 @@ export function Tray({
     else if (t && onGo) onGo(t.screen);
     else onOpenApp?.();
   };
-  const tools = accountTools(s.accounts);
+  const accounts = s.trayShowDisabled ? s.accounts : s.accounts.filter((a) => !a.disabled);
+  const tools = accountTools(accounts);
   const open = s.sessions.filter((x) => x.state !== "done");
   const ready = s.readiness === "ready";
   const updates = updateCount(s.tools);
@@ -96,7 +97,7 @@ export function Tray({
           return (
             <div key={tool} className="flex flex-col">
               <span className="ac-caps px-3 pb-0.5 pt-2.5">{TOOL_LABEL[tool]}</span>
-              {rankAccounts(s.accounts, tool, s.now).map((r) => (
+              {rankAccounts(accounts, tool, s.now).map((r) => (
                 <CompactAccountRow
                   key={r.account.id}
                   account={r.account}
