@@ -136,7 +136,7 @@ async function main(): Promise<void> {
     case "run": {
       let r: ReturnType<typeof parseRun>;
       try { r = parseRun(rest); } catch (e) { die((e as Error).message); }
-      return cmdRun(r.providerId, r.name, r.args, r.cwd);
+      return cmdRun(r.providerId, r.name, r.args, r.cwd, { tmux: r.tmux, force: r.force });
     }
     case "handoff": return cmdHandoff(providerId, positional[0], positional.slice(1), flags);
     case "list": case "ls":

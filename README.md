@@ -448,6 +448,7 @@ Full per-mechanism contract (verified/degraded/broken with sources) lives in
 - Profiles are fully isolated by default; use `agent-switch share on` for a managed shared-settings setup.
 - Override the profile root with `AGENT_SWITCH_HOME` if you don't want `~/.agent-switch`.
 - **`CLAUDE_CONFIG_DIR` relocates only the config home, not the OS state dir.** On Linux, Claude Code may also write to `~/.local/state/claude/` (XDG state), which is *not* per-profile — so any state kept there (not credentials, which live in each profile's config dir) is effectively shared across all profiles. Impact is limited and the exact contents vary by version; flagged here so a surprising cross-profile artifact there is not mistaken for a leak of account data. Credentials, `.claude.json`, and history stay per profile.
+- **Claude Code Agent View (`claude --bg`, `claude agents`) stays per profile.** Its background supervisor is keyed on `CLAUDE_CONFIG_DIR`, so each profile gets its own and every background session bills the profile it was started under (verified on 2.1.316, `agents/evidence/2026-11-01-agent-view-isolation.md`).
 - **VS Code extension ignores `CLAUDE_CONFIG_DIR`** (upstream #30538) — the extension always uses the default `~/.claude`. Use the CLI (`agent-switch run` / the `claude` wrapper) for per-profile sessions; the extension is out of scope.
 
 ## Background service & tray GUI (optional)

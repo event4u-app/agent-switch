@@ -282,18 +282,21 @@ export function cmdDeactivate(providerId: ProviderId): void {
   console.log(`New \`${provider(providerId).binary}\` sessions fall back to the default install until you \`use\` one.`);
 }
 
-export function cmdRun(providerId: ProviderId, name: string | undefined, args: string[], cwd?: string): void {
+export function cmdRun(
+  providerId: ProviderId,
+  name: string | undefined,
+  passthrough: string[],
+  cwd?: string,
+  own: { tmux?: boolean; force?: boolean } = {},
+): void {
   const n = requireProfile(providerId, name, "run");
   if (cwd !== undefined) {
     if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) die(`no such folder: ${cwd}`);
     process.chdir(cwd);
   }
   const p = provider(providerId);
-  // `--tmux` and `--force` are agent-switch flags, not passthrough flags — strip
-  // them before the rest reaches the provider binary.
-  const wantTmux = args.includes("--tmux");
-  const forced = args.includes("--force");
-  const passthrough = args.filter((a) => a !== "--tmux" && a !== "--force");
+  const wantTmux = !!own.tmux;
+  const forced = !!own.force;
 
   // agent-switch spawns the binary itself here, so this is the strongest
   // enforcement point: refuse before anything is launched.

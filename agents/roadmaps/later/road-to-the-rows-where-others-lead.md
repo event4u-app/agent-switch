@@ -80,23 +80,21 @@ Scores are the review's judgement of read code, not measurements.
 
 ## Phase 0 — Safety before reach
 
-> **0.1/0.2 deferred — blocker `agent-view-live-run` (owner):** the spike starts
-> real background sessions on two signed-in accounts, which spends quota and needs
-> the owner's machine. Nothing else in this roadmap depends on it.
-> _Resume when:_ the owner runs the two-profile Agent View test (steps in 0.1).
 
-- [~] **0.1 Spike: Agent View under a profile (F2).** On macOS with two signed-in
+- [x] **0.1 Spike: Agent View under a profile (F2).** On macOS with two signed-in
       profiles A and B, start `claude --bg` under A through the wrapper, then under
       B; list with `claude agents --json`. Record which account each bills, whether
       the supervisor carries `CLAUDE_CONFIG_DIR`, whether a B session attaches to
       A's supervisor, and the Claude Code version.
       verify: a dated record under `agents/evidence/`, tokens redacted.
-- [~] **0.2 If 0.1 shows a wrong account:** `doctor` check `agent-view-isolation`
+      <!-- done 2026-11-01 (owner-approved run): agents/evidence/2026-11-01-agent-view-isolation.md — CC 2.1.316, one supervisor per config dir, each session bills its own profile. -->
+- [-] **0.2 If 0.1 shows a wrong account:** `doctor` check `agent-view-isolation`
       (warn); the session list marks foreign-config Agent View sessions; per-profile
       opt-in `agent-view off` sets `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` in that
       profile's wrapper only (D4). If binding is correct, record it in the platform
       notes and close.
       verify: `npm test` → 0 with a doctor fixture; e2e that only the opted-in profile gets the variable.
+      <!-- not needed: 0.1 showed correct binding; recorded in README › Notes & gotchas and closed. -->
 - [x] **0.3 Antigravity keychain with a real password (F3, D5).** <!-- done: 2026-11-01 — src/agy-keychain.ts (store-then-change migration, half-way resume), doctor check agy-keychain-password, tests/agy-keychain.test.ts with mocked security; no real macOS keychain run --> New profiles get
       a 32-byte random password stored in the login keychain as
       `agent-switch.agy.<profile-hash>`. Existing profiles migrate on their next
@@ -266,8 +264,11 @@ Scores are the review's judgement of read code, not measurements.
 > `tests/rebind-arm.test.ts`, `tests/daemon-rebind.test.ts`), not yet by a live
 > session; AC-2 needs a real `run` on macOS.
 
-- [ ] AC-1 — It is recorded whether an Agent View session under a profile bills that profile; if not, doctor warns and a per-profile opt-in exists.
+- [x] AC-1 — It is recorded whether an Agent View session under a profile bills that profile; if not, doctor warns and a per-profile opt-in exists.
 - [ ] AC-2 — No Antigravity profile keychain has an empty password after its next run.
+      _Resume when:_ the next real `agy` run on macOS — then `agent-switch doctor` must show no
+      `agy-keychain-password` warning. (No profile keychain existed on the dev machine on
+      2026-11-01, and creating one writes to the login keychain, which needs the owner.)
 - [-] AC-3 — moved to `road-to-a-trusted-install.md` (D1 = 3). With D1 paid: Gatekeeper-clean brew install, winget install. Without: tap + winget work and the docs name the extra step.
 - [x] AC-4 — `agent-switch --list --json` passes the schema-v1 fixture, reads only the cache, < 300 ms, never offers a switch.
 - [x] AC-5 — An armed switch runs once at the next idle edge, expires, or is cancelled; it never runs without an arm.

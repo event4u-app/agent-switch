@@ -80,8 +80,24 @@ test("parseRun strips --provider but passes the rest through verbatim", () => {
   assert.deepEqual(parseRun(["work", "--", "--resume"]), {
     providerId: "claude",
     name: "work",
-    args: ["--", "--resume"],
+    args: ["--resume"],
   });
+});
+
+test("parseRun drops only the first bare `--`: the binary would read everything after it as prompt text", () => {
+  assert.deepEqual(parseRun(["work", "--", "--bg", "do it"]).args, ["--bg", "do it"]);
+  assert.deepEqual(parseRun(["work", "--", "--", "--literal"]).args, ["--", "--literal"]);
+  assert.deepEqual(parseRun(["work", "-p", "hi"]).args, ["-p", "hi"]);
+});
+
+test("parseRun takes --tmux and --force as its own only before `--`", () => {
+  const own = parseRun(["work", "--force", "--tmux", "--", "--resume"]);
+  assert.deepEqual(own.args, ["--resume"]);
+  assert.equal(own.force, true);
+  assert.equal(own.tmux, true);
+  const theirs = parseRun(["work", "--", "--force"]);
+  assert.deepEqual(theirs.args, ["--force"]);
+  assert.equal(theirs.force, undefined);
 });
 
 test("parseRun takes --cwd as an agent-switch flag, never a passthrough one", () => {
@@ -98,12 +114,12 @@ test("parseRun leaves --cwd and --provider after `--` to the provider binary", (
   assert.deepEqual(parseRun(["work", "--", "--cwd", "/x", "--provider", "y"]), {
     providerId: "claude",
     name: "work",
-    args: ["--", "--cwd", "/x", "--provider", "y"],
+    args: ["--cwd", "/x", "--provider", "y"],
   });
   assert.deepEqual(parseRun(["work", "--cwd", "/r", "--", "--cwd", "/x"]), {
     providerId: "claude",
     name: "work",
-    args: ["--", "--cwd", "/x"],
+    args: ["--cwd", "/x"],
     cwd: "/r",
   });
 });
