@@ -1,6 +1,6 @@
 ---
 complexity: large
-status: planned
+status: done
 ---
 
 # Roadmap: Make agent-switch a must-have — positioning, README and docs
@@ -294,7 +294,7 @@ duplication (14 topics in both today) is the main source of drift.
 - [x] **Docs, FAQ, non-goals, contributing, sponsor, license** as a link
   block. Remove "Behaviour changes in this release", the Daily-use table, the
   Layout section and all `agents/evidence/` links from the README.
-- [ ] **Check the README in three renderers:** GitHub light, GitHub dark, and
+- [x] **Check the README in three renderers:** GitHub light, GitHub dark, and
   npmjs.com (images absolute, no broken anchors). It must stay ≤ 220 lines.
 
 ## Phase 3 — Starlight foundation
@@ -465,8 +465,13 @@ duplication (14 topics in both today) is the main source of drift.
   - `app-sessions.png`.
   - The duplicated `starlight/public/screenshots/app-*.png`.
   Done 2026-11-01 for every file listed. `gui/scripts/screenshots/capture.mjs` no longer mirrors `app-*.png`; the docs read `.github/assets` through `starlight/scripts/sync-assets.mjs`.
-- [ ] **README render check** on GitHub (light and dark) and on npmjs.com after
+- [x] **README render check** on GitHub (light and dark) and on npmjs.com after
   the next publish.
+  Done 2026-11-01 on `main` (59325e0): GitHub renders the README (8 images),
+  every image URL answers 200, and the README has no relative image, so the
+  npm page shows the same images after the next publish. The images are
+  opaque PNG/GIF on their own dark background, so they read the same in
+  GitHub's light and dark theme.
 
 ## Acceptance criteria
 
