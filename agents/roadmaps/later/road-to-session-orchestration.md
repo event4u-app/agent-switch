@@ -49,7 +49,7 @@ status: planned
 ## Phase 4 — Surfaces and providers
 
 - [ ] Antigravity stop-the-line: the macOS keychain password (D34) moved to
-      `../road-to-the-rows-where-others-lead.md` step 0.3; Linux/Windows isolation
+      `road-to-the-rows-where-others-lead.md` step 0.3; Linux/Windows isolation
       spikes before any credential-changing `add`/`run` stay here.
 - [ ] Claude Desktop extra instance without `CLAUDE_CONFIG_DIR` (D21); Desktop chat vs
       code identity.
@@ -73,7 +73,7 @@ status: planned
 - [ ] Claude sporadic reset assistant (transcript turn 26, v14 R5-01): today the app
       opens claude.ai for the account ("Check at Claude"); a verified-offer readout,
       once a documented source exists, with consent and never counted as capacity.
-- [-] German/English localisation of the GUI — moved to `../road-to-the-rows-where-others-lead.md` Phase 5.
+- [-] German/English localisation of the GUI — moved to `road-to-the-rows-where-others-lead.md` Phase 5.
 - [ ] Quiet hours for notifications; KPIs from v6 measured against real tasks.
 - [ ] Per-profile GitHub/MCP sharing matrix.
 

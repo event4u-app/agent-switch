@@ -123,5 +123,5 @@ stays visible and tracked instead of being buried in an archive.
       pipeline (its shared-design-tokens roadmap, Phase 2).
 - [ ] **Upgrade the GUI test toolchain (vitest 2 → current, vite 5 → current).**
       Clears the dev-tree advisories the `audit` job does not gate (D8 in
-      `../road-to-the-rows-where-others-lead.md`); then gate the full `gui/` tree.
+      `road-to-the-rows-where-others-lead.md`); then gate the full `gui/` tree.
       _Resume when:_ any GUI tooling change, or an advisory reaches the runtime tree.

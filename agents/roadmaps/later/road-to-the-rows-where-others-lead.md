@@ -1,6 +1,6 @@
 ---
 complexity: structural
-status: in-progress
+status: parked
 tree_pin: ce9e019
 execution:
   mode: process-full
@@ -80,13 +80,18 @@ Scores are the review's judgement of read code, not measurements.
 
 ## Phase 0 — Safety before reach
 
-- [ ] **0.1 Spike: Agent View under a profile (F2).** On macOS with two signed-in
+> **0.1/0.2 deferred — blocker `agent-view-live-run` (owner):** the spike starts
+> real background sessions on two signed-in accounts, which spends quota and needs
+> the owner's machine. Nothing else in this roadmap depends on it.
+> _Resume when:_ the owner runs the two-profile Agent View test (steps in 0.1).
+
+- [~] **0.1 Spike: Agent View under a profile (F2).** On macOS with two signed-in
       profiles A and B, start `claude --bg` under A through the wrapper, then under
       B; list with `claude agents --json`. Record which account each bills, whether
       the supervisor carries `CLAUDE_CONFIG_DIR`, whether a B session attaches to
       A's supervisor, and the Claude Code version.
       verify: a dated record under `agents/evidence/`, tokens redacted.
-- [ ] **0.2 If 0.1 shows a wrong account:** `doctor` check `agent-view-isolation`
+- [~] **0.2 If 0.1 shows a wrong account:** `doctor` check `agent-view-isolation`
       (warn); the session list marks foreign-config Agent View sessions; per-profile
       opt-in `agent-view off` sets `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` in that
       profile's wrapper only (D4). If binding is correct, record it in the platform
@@ -103,16 +108,21 @@ Scores are the review's judgement of read code, not measurements.
 
 ## Phase 1 — An install the OS trusts (F1, needs D1)
 
-- [ ] **1.1 macOS signing and notarisation in `release.yml`** (Tauri `APPLE_*`
+> **Deferred — blocker `signing-cost` (owner, D1) and `package-submission` (owner):**
+> signing needs the paid Apple Developer ID; the tap repo, the `homebrew/cask`
+> and `microsoft/winget-pkgs` submissions are external publications.
+> _Resume when:_ the owner decides D1, or asks for the unsigned tap + winget path.
+
+- [~] **1.1 macOS signing and notarisation in `release.yml`** (Tauri `APPLE_*`
       secrets, stapled universal `.dmg`; the job fails when a secret is missing).
       verify: `spctl -a -vv -t install` and `xcrun stapler validate` on the release `.dmg`.
-- [ ] **1.2 Windows signing (optional within D1).**
+- [~] **1.2 Windows signing (optional within D1).**
       verify: `Get-AuthenticodeSignature` → `Valid`, or the SmartScreen note in the release text.
-- [ ] **1.3 Homebrew** — own tap `event4u-app/homebrew-tap`; official cask only after 1.1. No `--no-quarantine` advice.
+- [~] **1.3 Homebrew** — own tap `event4u-app/homebrew-tap`; official cask only after 1.1. No `--no-quarantine` advice.
       verify: `brew install --cask event4u-app/tap/agent-switch` on a clean runner.
-- [ ] **1.4 winget** manifest (silent switch, direct `InstallerUrl`, SHA-256), submitted to `microsoft/winget-pkgs`, updated from `release.yml`.
+- [~] **1.4 winget** manifest (silent switch, direct `InstallerUrl`, SHA-256), submitted to `microsoft/winget-pkgs`, updated from `release.yml`.
       verify: `winget install event4u.agent-switch` then `agent-switch --version`.
-- [ ] **1.5 README and docs** list brew/winget/npm; `later/road-to-agent-switch-native-updater.md` gets "prerequisite 1 met".
+- [~] **1.5 README and docs** list brew/winget/npm; `later/road-to-agent-switch-native-updater.md` gets "prerequisite 1 met".
       verify: `task docs:check` → 0.
 
 ## Phase 2 — A readout other tools can show (D2)
@@ -263,10 +273,14 @@ Scores are the review's judgement of read code, not measurements.
 
 ## Acceptance Criteria
 
+> AC-4 and AC-5 are proven by tests (`tests/cswap-list.test.ts`,
+> `tests/rebind-arm.test.ts`, `tests/daemon-rebind.test.ts`), not yet by a live
+> session; AC-2 needs a real `run` on macOS.
+
 - [ ] AC-1 — It is recorded whether an Agent View session under a profile bills that profile; if not, doctor warns and a per-profile opt-in exists.
 - [ ] AC-2 — No Antigravity profile keychain has an empty password after its next run.
 - [ ] AC-3 — With D1 paid: Gatekeeper-clean brew install, winget install. Without: tap + winget work and the docs name the extra step.
-- [ ] AC-4 — `agent-switch --list --json` passes the schema-v1 fixture, reads only the cache, < 300 ms, never offers a switch.
-- [ ] AC-5 — An armed switch runs once at the next idle edge, expires, or is cancelled; it never runs without an arm.
+- [x] AC-4 — `agent-switch --list --json` passes the schema-v1 fixture, reads only the cache, < 300 ms, never offers a switch.
+- [x] AC-5 — An armed switch runs once at the next idle edge, expires, or is cancelled; it never runs without an arm.
 - [ ] AC-6 — `src/index.ts` < 600 lines with byte-identical help; coverage and audit jobs green.
 - [x] AC-7 — Every visible GUI string exists in DE and EN; `PET_WELCOME` unchanged; every `de` capture inspected.
