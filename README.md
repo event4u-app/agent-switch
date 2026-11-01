@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://event4u-app.github.io/agent-switch/">
-    <img alt="Agent Switch — all your AI coding accounts signed in side by side, every session on the one with the most left" src="https://raw.githubusercontent.com/event4u-app/agent-switch/main/.github/assets/info-image.png">
+    <img alt="Agent Switch — one tool for all your AI accounts: Claude, Codex and Antigravity signed in side by side, every session on the account with the most left" src="https://raw.githubusercontent.com/event4u-app/agent-switch/main/.github/assets/info-banner.png">
   </a>
 </p>
 
@@ -99,6 +99,12 @@ running session with its context %, and the one thing that needs you next. Move
 a session to another account and continue it there (`takeover`). On macOS you
 can even switch the account of a session that is still running (`rebind`), right
 now or when its current turn ends.
+
+## How it fits together
+
+<p align="center">
+  <img alt="How Agent Switch fits together: Claude, Codex and Antigravity accounts feed one orchestrator with usage monitor, limit guard, session keep-alive and live rebind; it routes each task from the CLI, IDE or desktop app to the account with free capacity, runs it, monitors it and suggests a switch" src="https://raw.githubusercontent.com/event4u-app/agent-switch/main/.github/assets/info-image.png" width="900">
+</p>
 
 ## Your logins stay yours
 
