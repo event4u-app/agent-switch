@@ -245,7 +245,9 @@ export function Shell({ isMac, children }: { isMac: boolean; children: ReactNode
   return (
     <div className="flex h-full min-h-0 flex-col bg-ac-bg">
       <TopBar isMac={isMac} />
-      <main className="min-h-0 flex-1 overflow-y-auto">
+      {/* relative: absolute descendants (sr-only labels in rows) below the fold
+          must overflow this column, not the document — or the window scrolls too. */}
+      <main className="relative min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[1180px] px-4 pb-10 pt-6 sm:px-6">
           <ErrorBanner />
           <ShellIntegrationBanner />

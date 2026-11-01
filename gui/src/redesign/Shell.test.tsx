@@ -45,6 +45,15 @@ describe("redesign shell", () => {
     expect(screen.getByRole("button", { name: "Health: Ready" })).toBeTruthy();
   });
 
+  it("the scrolling column is the containing block, so the window never gets a second scrollbar", () => {
+    renderShell();
+    const main = document.querySelector("main")!;
+    expect(main.className).toContain("overflow-y-auto");
+    // Absolutely positioned descendants (sr-only labels in session rows) below
+    // the fold otherwise stretch the document instead of the column.
+    expect(main.className.split(/\s+/)).toContain("relative");
+  });
+
   it("the Health pill counts only warn + fail checks, like the Health screen", () => {
     renderShell({
       checks: [
