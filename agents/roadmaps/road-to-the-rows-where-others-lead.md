@@ -75,6 +75,8 @@ Scores are the review's judgement of read code, not measurements.
 | D5 | reversible-technical | agent | The Antigravity profile keychain gets a random password, stored in the user's login keychain under an agent-switch service name. | macOS refuses the unlock in a background launch |
 | D6 | reversible-technical | agent | `index.ts` is split by command family behind an unchanged dispatch; no behaviour change in the same PR. | — |
 | D7 | reversible-technical | agent | DE/EN covers every visible GUI string; the CLI stays English; `PET_WELCOME` stays byte-exact in English. | the owner wants the intro translated |
+| D8 | reversible-technical | agent | The `audit` job gates what ships: `npm audit --omit=dev` in `gui/`. The dev tree carries 16 advisories (vitest 2 / vite 5 chain) that need a major upgrade; carried to `later/road-to-deferred-followups.md`, not ignored. | the vitest/vite upgrade lands → gate the full tree |
+| D9 | reversible-technical | agent | The property test (4.4) found that a busy one-account folder rule gives way to a free account under guard `block` (c63a357, shipped in 2.6.3, covered by a test). Kept as shipped; the stale module header that said a rule never leaves itself is corrected. | the owner wants one-account rules to refuse instead |
 
 ## Phase 0 — Safety before reach
 

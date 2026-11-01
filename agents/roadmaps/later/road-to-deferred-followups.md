@@ -121,3 +121,7 @@ stays visible and tracked instead of being buried in an archive.
       a bounded `accent` parameter on the embed URL (`gui/src-tauri/src/ac.rs`
       builds it with `embed=1&theme=` only). Blocked on the agent-config token
       pipeline (its shared-design-tokens roadmap, Phase 2).
+- [ ] **Upgrade the GUI test toolchain (vitest 2 → current, vite 5 → current).**
+      Clears the dev-tree advisories the `audit` job does not gate (D8 in
+      `../road-to-the-rows-where-others-lead.md`); then gate the full `gui/` tree.
+      _Resume when:_ any GUI tooling change, or an advisory reaches the runtime tree.

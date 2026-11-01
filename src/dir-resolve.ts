@@ -3,8 +3,10 @@
  * `agent-switch dir` (the shell wrapper's hot path) and `dir --json`.
  *
  * Order: folder rule (to a profile, or to a pool) > balanced plain start > active
- * profile > none. A rule never resolves outside itself: a disabled or missing
- * profile, like a pool that cannot serve, refuses the start (`blocked`).
+ * profile > none. A disabled or missing rule profile, like a pool that cannot
+ * serve, refuses the start (`blocked`). One exception, deliberate since 2.6.3:
+ * under guard `block` a busy one-account rule gives way to a free signed-in
+ * account, with a note (`giveWayIfBusy`).
  * A pool resolves to the member with the most headroom on FRESH cached usage.
  * Unknown usage is never treated as free: a member whose usage is older than
  * {@link FRESH_USAGE_MS}, missing, or who is signed out is skipped. A pool rule
