@@ -50,6 +50,32 @@ export function guiAssetSpec(
   return null;
 }
 
+/** The cache folder for an artifact taken from release `tag`. Pure. */
+export function guiCacheVersion(tag: string): string {
+  return tag.trim().replace(/^[vV]/, "");
+}
+
+/** `CFBundleShortVersionString` from an Info.plist (XML), or null. Pure. */
+export function bundleVersionFromPlist(xml: string): string | null {
+  const m = /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/.exec(xml);
+  return m ? m[1].trim() : null;
+}
+
+/** Whether a cached app may be reused for `version`. A bundle reporting another
+ *  version would be compared against releases as that version forever, so it is
+ *  stale; an unreadable version is kept, since nothing proves it wrong. Pure. */
+export function cachedBundleFits(version: string, bundleVersion: string | null): boolean {
+  return bundleVersion === null || guiCacheVersion(bundleVersion) === guiCacheVersion(version);
+}
+
+function appBundleVersion(appPath: string): string | null {
+  try {
+    return bundleVersionFromPlist(fs.readFileSync(path.join(appPath, "Contents", "Info.plist"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
 /** Program + args to launch a prepared artifact. Pure.
  *  macOS uses `open` WITHOUT `-n`: a bare `open` activates the already-running
  *  app instead of forcing a second copy, so it is the OS-level half of the
@@ -100,7 +126,7 @@ interface Asset {
 
 /** Find a matching GUI asset on the release for `version`, falling back to the
  *  latest release. Returns null when neither has one. */
-async function findAsset(version: string, match: RegExp): Promise<Asset | null> {
+async function findAsset(version: string, match: RegExp): Promise<(Asset & { tag: string }) | null> {
   const headers = { Accept: "application/vnd.github+json", "User-Agent": "@event4u/agent-switch gui-launch" };
   for (const ref of [`tags/${version}`, "latest"]) {
     let res: Response;
@@ -110,9 +136,9 @@ async function findAsset(version: string, match: RegExp): Promise<Asset | null> 
       continue;
     }
     if (!res.ok) continue;
-    const rel = (await res.json()) as { assets?: { name: string; browser_download_url: string }[] };
+    const rel = (await res.json()) as { tag_name?: string; assets?: { name: string; browser_download_url: string }[] };
     const a = (rel.assets ?? []).find((x) => match.test(x.name));
-    if (a) return { name: a.name, url: a.browser_download_url };
+    if (a) return { name: a.name, url: a.browser_download_url, tag: rel.tag_name ?? version };
   }
   return null;
 }
@@ -129,10 +155,18 @@ async function download(url: string, dest: string): Promise<void> {
  *  version cache, and return the path to launch. */
 async function ensureGuiArtifact(spec: { match: RegExp; kind: GuiKind }): Promise<string> {
   const version = currentVersion();
-  const dir = path.join(CACHE_ROOT, version);
   const launchName = spec.kind === "app" ? "agent-switch.app" : spec.kind === "appimage" ? "agent-switch.AppImage" : "agent-switch-setup.exe";
-  const launchPath = path.join(dir, launchName);
-  if (fs.existsSync(launchPath)) return launchPath; // already cached
+  const cached = (v: string): string | null => {
+    const p = path.join(CACHE_ROOT, v, launchName);
+    if (!fs.existsSync(p)) return null;
+    if (spec.kind === "app" && !cachedBundleFits(v, appBundleVersion(p))) {
+      fs.rmSync(path.join(CACHE_ROOT, v), { recursive: true, force: true });
+      return null;
+    }
+    return p;
+  };
+  const hit = cached(version);
+  if (hit) return hit;
 
   const asset = await findAsset(version, spec.match);
   if (!asset) {
@@ -141,6 +175,17 @@ async function ensureGuiArtifact(spec: { match: RegExp; kind: GuiKind }): Promis
         `Download an installer from https://github.com/${UPDATE_REPO}/releases instead.`,
     );
   }
+  // The fallback to the latest release (this version's build still running, or
+  // none) is filed under ITS version: filed under ours, the older app would be
+  // reused forever and report itself as outdated.
+  const assetVersion = guiCacheVersion(asset.tag);
+  if (assetVersion !== guiCacheVersion(version)) {
+    console.log(`Release ${version} has no GUI build yet — using ${assetVersion}.`);
+    const older = cached(assetVersion);
+    if (older) return older;
+  }
+  const dir = path.join(CACHE_ROOT, assetVersion);
+  const launchPath = path.join(dir, launchName);
   fs.mkdirSync(dir, { recursive: true });
   console.log(`Downloading the GUI (${asset.name})…`);
 
