@@ -50,7 +50,8 @@ import { UsageSnapshot, parseUsage } from "../usage.js";
 import { SessionRow, listSessions, listCodexSessions, markLive } from "../sessions.js";
 import { cacheMaxAgeMs, snapshotFresh, readDaemonState } from "../daemon.js";
 import { serviceTarget } from "../service.js";
-import { ContextReading, readContext } from "../telemetry.js";
+import { CacheReading, ContextReading, readClaudeCache, readContext, withResumeFacts } from "../telemetry.js";
+import { resumeFactsFor, type HookEventRecord } from "../hooks.js";
 import { findApp, guiDataDir } from "../apps.js";
 import { scanDesktop, type DesktopInstance } from "../desktop-sessions.js";
 import { ensureAgyKeychain } from "../agy-keychain.js";
@@ -217,6 +218,27 @@ export function contextForRow(providerId: ProviderId, row: SessionRow): ContextR
   if (!row.file) return null;
   if (providerId !== "claude" && providerId !== "codex") return null;
   return readContext(providerId, row.file, { claudeVersion: claudeVersion() });
+}
+
+/** A Claude session row's prompt-cache state: its transcript, refined by the
+ *  host's resume facts from the profile's hook events. null for other providers. */
+export function cacheForRow(providerId: ProviderId, row: Pick<SessionRow, "sessionId" | "file">, events: readonly HookEventRecord[], nowMs = Date.now()): CacheReading | null {
+  if (providerId !== "claude" || !row.file) return null;
+  return withResumeFacts(readClaudeCache(row.file, nowMs), resumeFactsFor(events, row.sessionId));
+}
+
+/** The organization a Claude profile is signed in to (`oauthAccount` in its
+ *  `.claude.json`, which holds no secret), or null when unknown. */
+export function claudeOrganization(profile: string): string | null {
+  const org = readJson(path.join(configDir("claude", profile), ".claude.json"))?.oauthAccount?.organizationUuid;
+  return typeof org === "string" && org.length > 0 ? org : null;
+}
+
+/** Whether two Claude profiles share an organization (and so a prompt cache); null when either is unknown. */
+export function sameOrganization(a: string, b: string): boolean | null {
+  const oa = claudeOrganization(a);
+  const ob = claudeOrganization(b);
+  return oa && ob ? oa === ob : null;
 }
 
 /** The worst (highest-utilization) LIVE session's context for a profile — the

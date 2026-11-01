@@ -259,6 +259,107 @@ export function turnInFlight(file: string, nowMs: number, maxAgeMs: number): boo
   return false;
 }
 
+// ---------- prompt cache state (roadmap: road-to-sessions-that-show-their-cache) ----------
+
+export type CacheTtl = "5m" | "1h";
+export const CACHE_TTL_MS: Record<CacheTtl, number> = { "5m": 5 * 60_000, "1h": 60 * 60_000 };
+
+/**
+ * Whether a Claude session's prompt cache is still warm, read from its own
+ * transcript. `compacted`: a compaction replaced the history after the last
+ * response, so the next turn re-sends only the summary. `unknown`: no line in
+ * the tail says which TTL the session writes with.
+ */
+export type CacheState = "warm" | "cold" | "compacted" | "unknown";
+
+export interface CacheReading {
+  state: CacheState;
+  ttl: CacheTtl | null;
+  /** ISO time of the last finalized main-chain response. */
+  lastResponseAt: string | null;
+  /** `lastResponseAt + ttl` — the host keeps the cache one TTL after the last response. */
+  expiresAt: string | null;
+  /** What the next turn re-sends: the last request's input side plus its answer.
+   *  null after a compaction (the summary's size is not in the transcript). */
+  resendTokens: number | null;
+  /** `host`: the SessionStart resume fields answered; `transcript`: derived here. */
+  source: "transcript" | "host";
+}
+
+function writeTtl(usage: any): CacheTtl | null {
+  const split = usage?.cache_creation;
+  if (!split || typeof split !== "object") return null;
+  if ((split.ephemeral_1h_input_tokens || 0) > 0) return "1h";
+  if ((split.ephemeral_5m_input_tokens || 0) > 0) return "5m";
+  return null;
+}
+
+/**
+ * Claude prompt-cache state from a transcript tail. The TTL comes from the
+ * newest main-chain line that wrote to the cache (a pure hit carries no split);
+ * subagent lines are skipped because they always write 5m. Degraded → null.
+ */
+export function readClaudeCache(file: string, nowMs: number, opts: { cap?: number } = {}): CacheReading | null {
+  const lines = tailLines(file, opts.cap ?? TAIL_CAP);
+  let compactAfter = false;
+  let last: { ts: string; resend: number } | null = null;
+  let ttl: CacheTtl | null = null;
+  for (let i = lines.length - 1; i >= 0 && ttl === null; i--) {
+    let o: any;
+    try { o = JSON.parse(lines[i]); } catch { continue; }
+    if (!last && o?.type === "system" && o.subtype === "compact_boundary") { compactAfter = true; continue; }
+    if (o?.type !== "assistant" || o.isSidechain === true) continue;
+    const m = o.message;
+    if (!m?.usage || m.model === "<synthetic>" || m.stop_reason === null || m.stop_reason === undefined) continue;
+    const u = m.usage;
+    if (!last) {
+      if (typeof o.timestamp !== "string" || Number.isNaN(Date.parse(o.timestamp))) return null;
+      const input = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+      last = { ts: o.timestamp, resend: input + (u.output_tokens || 0) };
+    }
+    ttl = writeTtl(u);
+  }
+  if (!last) return null;
+  const expiresMs = ttl ? Date.parse(last.ts) + CACHE_TTL_MS[ttl] : null;
+  const state: CacheState = compactAfter ? "compacted" : expiresMs === null ? "unknown" : nowMs < expiresMs ? "warm" : "cold";
+  return {
+    state,
+    ttl,
+    lastResponseAt: last.ts,
+    expiresAt: expiresMs === null ? null : new Date(expiresMs).toISOString(),
+    resendTokens: compactAfter ? null : last.resend,
+    source: "transcript",
+  };
+}
+
+/** The SessionStart fields Claude Code (v2.1.251+) sends on `resume`/`fork`. */
+export interface ResumeFacts {
+  at: string;
+  secondsSinceLastResponse?: number;
+  contextTokens?: number;
+  cacheLikelyExpired?: boolean;
+}
+
+/**
+ * Let the host's resume facts answer for a resumed session that has not sent
+ * its first request yet (the resume is newer than the last response). Once the
+ * session answers again, the transcript is newer and wins. Pure.
+ */
+export function withResumeFacts(reading: CacheReading | null, facts: ResumeFacts | null): CacheReading | null {
+  if (!facts || typeof facts.cacheLikelyExpired !== "boolean") return reading;
+  const at = Date.parse(facts.at);
+  if (Number.isNaN(at)) return reading;
+  if (reading?.lastResponseAt && Date.parse(reading.lastResponseAt) >= at) return reading;
+  return {
+    state: facts.cacheLikelyExpired ? "cold" : "warm",
+    ttl: reading?.ttl ?? null,
+    lastResponseAt: reading?.lastResponseAt ?? null,
+    expiresAt: facts.cacheLikelyExpired ? null : (reading?.expiresAt ?? null),
+    resendTokens: typeof facts.contextTokens === "number" ? facts.contextTokens : (reading?.resendTokens ?? null),
+    source: "host",
+  };
+}
+
 /** A session's context reading joined from its on-disk transcript. `file` is
  *  the resolved transcript/rollout path; `provider` selects the reader. Thin
  *  join so the CLI/daemon can go SessionRow → path → reading in one call. */

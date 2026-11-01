@@ -1,15 +1,15 @@
 {
   "schema": 1,
-  "generation": "fda37c040567360b",
-  "commit": "e05e35f69a5f",
-  "built_at_commit": "e05e35f69a5f",
+  "generation": "76999c6e502b8778",
+  "commit": "170c707832e5",
+  "built_at_commit": "170c707832e5",
   "state": "fresh",
   "areas": {
     "code": {
       "path": "code/map.json",
       "source": "code-graph",
       "freshness": "fresh",
-      "facts": 416
+      "facts": 420
     },
     "data": {
       "path": "data/data.json",

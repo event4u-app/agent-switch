@@ -68,6 +68,8 @@ agent-switch takeover 3f2a9c --to personal --from work
 
 Takeover is **move-by-default**: it copies the session to the target, verifies the copy, then deletes the source. Pass `--keep-source` to fork instead. It **refuses on a live source**, is shared-history aware, and for Codex is **move-only**. A **Claude Desktop** (Code tab) session moves into the target profile's Desktop window, where you continue it; quit the source window first. It has no `--keep-source`, and agent-mode (Cowork) sessions are not moved yet.
 
+Before a Claude takeover moves anything, it prints what the move costs in prompt-cache terms. The cache is shared within one organization and not across organizations, so a warm session moving to an account of the same organization keeps its cache, while an account of another organization re-sends the whole conversation on its first turn. A session whose cache is already cold costs the same wherever it continues. `--json` carries the reading as `cache` and the sentence as `cacheLine`.
+
 ### Handoff — bridge across providers
 
 Handoff composes a metadata-only brief to continue work in a **different** provider. Per [ADR-001](https://github.com/event4u-app/agent-switch/blob/main/docs/adr/ADR-001-cross-provider-handoff-is-a-lossy-bridge.md), this is a lossy bridge — it does not restore full conversation state.
@@ -98,11 +100,13 @@ agent-switch rebind personal --when-idle --profile work
 agent-switch rebind --cancel --profile work   # changed your mind
 ```
 
-The arm is the switch's only trigger — nothing switches unless you arm it. The background service then waits for the session's next `busy → idle` edge in Claude Code's own registry and runs the ordinary `rebind`, with every guard. It runs once; if a guard refuses, the arm is dropped and a notification says why; after 30 minutes unused it expires. The session row shows "switches to … when this turn ends" until then. A session whose state Claude Code does not report (live only by its folder) cannot be armed. As with any switch, the prompt cache does not move: the first turn on the new account reads the conversation again, uncached.
+The arm is the switch's only trigger — nothing switches unless you arm it. The background service then waits for the session's next `busy → idle` edge in Claude Code's own registry and runs the ordinary `rebind`, with every guard. It runs once; if a guard refuses, the arm is dropped and a notification says why; after 30 minutes unused it expires. The session row shows "switches to … when this turn ends" until then. A session whose state Claude Code does not report (live only by its folder) cannot be armed. As with any switch, the prompt cache moves only within one organization: on an account of another organization, the first turn reads the conversation again, uncached. `rebind` prints that line before it switches, and its picker marks the accounts in the same organization.
 
 ## Context monitoring & compaction
 
 `agent-switch sessions` reports a context % column matching Claude's own `/context`. This is read **locally** and is strictly **own-session only**.
+
+For Claude sessions it also shows the prompt cache: `cache warm till 10:42`, or once the cache has expired `cache cold · ~182k re-sent` (what the next turn sends again), or `cache compacted` after a compaction. The time comes from the last response and the TTL (5 minutes or 1 hour) its cache writes used. A resumed session uses Claude Code's own resume figures (with hooks installed) until it answers again. Tokens only, never money.
 
 :::caution[Anti-rotation boundary]
 Context monitoring is never a cross-account comparison. It reads your own session's usage locally — it does not, and cannot, compare context across accounts to drive rotation.
@@ -115,7 +119,7 @@ agent-switch compact work            # type /compact into the managed pane
 agent-switch compact work --clear --force   # /clear is force-gated
 ```
 
-`compact` types `/compact` (or `/clear`) into the profile's **managed tmux pane only**, and is idle-guarded. `--dry-run` previews the action.
+`compact` types `/compact` (or `/clear`) into the profile's **managed tmux pane only**, and is idle-guarded. `--dry-run` previews the action. When the session's cache is cold, it first says that this `/compact` re-reads the whole history as uncached input.
 
 Record threshold crossings with the daemon:
 

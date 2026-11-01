@@ -20,6 +20,8 @@ import {
   EVENT_RING_CAP,
   hookNotice,
   waitingSessions,
+  resumeFields,
+  resumeFactsFor,
 } from "../src/hooks.js";
 
 function tmp(): string {
@@ -174,4 +176,35 @@ test("waitingSessions: a StopFailure needs you; the host waiting out a limit doe
   assert.equal(w.get("a"), at);
   assert.equal(w.has("b"), false);
   assert.equal(w.get("c"), at);
+});
+
+test("resumeFields: keeps the host's resume numbers and flag, nothing else", () => {
+  const r = resumeFields({
+    hook_event_name: "SessionStart",
+    source: "resume",
+    seconds_since_last_response: 5400,
+    context_tokens: 182340,
+    prompt_cache_likely_expired: true,
+    estimated_cache_write_usd: 1.14,
+    transcript_path: "/secret/path.jsonl",
+  });
+  assert.deepEqual(r, { secondsSinceLastResponse: 5400, contextTokens: 182340, cacheLikelyExpired: true });
+  assert.equal(resumeFields({ hook_event_name: "SessionStart", source: "startup" }), undefined, "no fields on a fresh start");
+  assert.equal(resumeFields({ hook_event_name: "Stop", prompt_cache_likely_expired: true }), undefined);
+  assert.deepEqual(resumeFields({ hook_event_name: "SessionStart", prompt_cache_likely_expired: false, context_tokens: "x" }), {
+    secondsSinceLastResponse: undefined,
+    contextTokens: undefined,
+    cacheLikelyExpired: false,
+  });
+});
+
+test("resumeFactsFor: newest resume of that session, survives the event ring round-trip", () => {
+  const f = eventFile(tmp(), "claude", "a");
+  appendEvent(f, { event: "SessionStart", source: "resume", sessionId: "s1", resume: { contextTokens: 1, cacheLikelyExpired: true }, at: "2026-11-01T09:00:00.000Z" });
+  appendEvent(f, { event: "SessionStart", source: "resume", sessionId: "s2", resume: { contextTokens: 2, cacheLikelyExpired: false }, at: "2026-11-01T09:30:00.000Z" });
+  appendEvent(f, { event: "SessionStart", source: "resume", sessionId: "s1", resume: { contextTokens: 3, cacheLikelyExpired: false }, at: "2026-11-01T10:00:00.000Z" });
+  appendEvent(f, { event: "Stop", sessionId: "s1", at: "2026-11-01T10:01:00.000Z" });
+  const events = readEvents(f);
+  assert.deepEqual(resumeFactsFor(events, "s1"), { at: "2026-11-01T10:00:00.000Z", contextTokens: 3, cacheLikelyExpired: false });
+  assert.equal(resumeFactsFor(events, "nope"), null);
 });

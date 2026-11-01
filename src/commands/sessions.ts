@@ -38,12 +38,14 @@ import {
   readEvents,
   waitingSessions,
   hookNotice,
+  resumeFields,
   HookEventRecord,
 } from "../hooks.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "../notify.js";
 import { appendNotification } from "../notifications.js";
 import { readTmuxRegistry, sendKeysArgs, tmuxSessionName } from "../tmux.js";
-import { contextForRow, desktopScan, formatContext } from "./shared.js";
+import { cacheForRow, contextForRow, desktopScan, formatContext } from "./shared.js";
+import { compactCacheLine, formatCache } from "../cache-words.js";
 
 /** Relative age like "3m" / "2h" / "5d" for the sessions table. */
 function ageOf(mtimeMs: number): string {
@@ -132,7 +134,13 @@ export function cmdCompact(providerId: ProviderId, name?: string, flags: Record<
     die(`a turn looks in-flight in ${providerId}/${profile} (last entry is unfinished + recent). Wait for it, or pass --force.`);
   }
 
-  // 4. act (or dry-run).
+  // 4. a cold /compact re-reads the whole history uncached — say so, never refuse.
+  if (!clear && target) {
+    const line = compactCacheLine(cacheForRow(providerId, target, readEvents(eventFile(ROOT, providerId, profile))), Date.now());
+    if (line) console.log(line);
+  }
+
+  // 5. act (or dry-run).
   const argv = sendKeysArgs(sess, literal);
   if (dryRun) {
     console.log(`[dry-run] tmux ${argv.map((a) => (a.includes(" ") ? `'${a}'` : a)).join(" ")}`);
@@ -192,6 +200,7 @@ export function cmdHookEvent(): void {
       sessionId: typeof o.session_id === "string" ? o.session_id : undefined,
       error: typeof o.error === "string" ? o.error : undefined,
       notificationType: typeof o.notification_type === "string" ? o.notification_type : undefined,
+      resume: resumeFields(o),
       at: new Date().toISOString(),
     };
     appendEvent(eventFile(ROOT, who.provider, who.profile), rec);
@@ -223,6 +232,7 @@ export function cmdSessions(
   if (profiles.length === 0) die(`no ${providerId} profiles`);
 
   const all: (SessionRow & { profile: string; surface?: string })[] = [];
+  const eventsOf = new Map<string, HookEventRecord[]>();
   // Claude Desktop's own sessions, filed by account (see desktop-sessions.ts).
   const desktop = providerId === "claude" ? desktopScan().rows : [];
   for (const p of profiles) {
@@ -234,7 +244,9 @@ export function cmdSessions(
     if (providerId === "claude") markLive(cfg, rows); // POSIX: pid→cwd→dir match; win32: recent-only
     if (providerId === "claude") {
       const mtime = new Map(rows.map((r) => [r.sessionId, r.mtimeMs]));
-      const waiting = waitingSessions(readEvents(eventFile(ROOT, providerId, p)), (id) => mtime.get(id) ?? null);
+      const events = readEvents(eventFile(ROOT, providerId, p));
+      eventsOf.set(p, events);
+      const waiting = waitingSessions(events, (id) => mtime.get(id) ?? null);
       // Hooks report a prompt; an open question also shows in the transcript itself.
       for (const r of rows) {
         const why = (r.file ? openQuestion(r.file) : null) ?? waiting.get(r.sessionId) ?? null;
@@ -256,6 +268,7 @@ export function cmdSessions(
     const a = armForSession(arms, r.profile, r.sessionId);
     return a ? { target: a.target, createdAt: a.createdAt, expiresAt: a.expiresAt } : null;
   };
+  const cacheOf = (r: SessionRow & { profile: string }) => cacheForRow(providerId, r, eventsOf.get(r.profile) ?? []);
   if (flags.json) {
     console.log(
       JSON.stringify(
@@ -268,6 +281,7 @@ export function cmdSessions(
             context: c
               ? { pct: c.pct, contextTokens: c.contextTokens, windowTokens: c.windowTokens, model: c.model, confidence: c.confidence }
               : null,
+            cache: cacheOf(r),
           };
         }),
         null,
@@ -289,7 +303,9 @@ export function cmdSessions(
       const summary = r.summary ? `  ${r.summary}` : "";
       const ctx = formatContext(contextForRow(providerId, r));
       const ctxCol = ctx ? `  ${ctx}` : "";
-      console.log(`${mark} ${r.sessionId}  ${where}  ${ageOf(r.mtimeMs)}${ctxCol}${r.live ? (r.hostStatus ? `  [live: ${r.hostStatus}]` : "  [live]") : ""}${armedFor(r) ? `  [switches to ${armedFor(r)!.target} when this turn ends]` : ""}${summary}`);
+      const cache = formatCache(cacheOf(r));
+      const cacheCol = cache ? `  ${cache}` : "";
+      console.log(`${mark} ${r.sessionId}  ${where}  ${ageOf(r.mtimeMs)}${ctxCol}${cacheCol}${r.live ? (r.hostStatus ? `  [live: ${r.hostStatus}]` : "  [live]") : ""}${armedFor(r) ? `  [switches to ${armedFor(r)!.target} when this turn ends]` : ""}${summary}`);
     }
   }
   if (!any) {

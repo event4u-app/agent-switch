@@ -104,6 +104,8 @@ export interface Session {
   lastActiveAt: number;
   contextPct: number | null;
   model: string | null;
+  /** Prompt-cache state from `sessions --json` (Claude only). */
+  cache?: import("../transforms.js").SessionCache | null;
   summary: string | null;
   why: string[];
   protectionNote: string | null;

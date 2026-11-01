@@ -179,7 +179,7 @@ describe("Session sheet", () => {
     expect(rebind).toHaveBeenCalledWith("claude:agent-config", "claude:side");
   });
 
-  it("arms a switch for the end of the turn behind a dialog that says the cache does not move and nothing switches without the click", () => {
+  it("arms a switch for the end of the turn behind a dialog that says the cache moves only within one organization and nothing switches without the click", () => {
     const armRebind = vi.fn(() => Promise.resolve());
     const vm = fixture();
     vm.sessions = vm.sessions.map((x) => (x.id === "claude:agent-config" ? { ...x, liveSource: "registry" as const } : x));
@@ -187,10 +187,10 @@ describe("Session sheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "When this turn ends" }));
     expect(armRebind).not.toHaveBeenCalled();
     expect(screen.getByText("Switch agent-config to side when this turn ends?")).toBeTruthy();
-    const body = screen.getByText(/The prompt cache does not move/).textContent ?? "";
+    const body = screen.getByText(/The prompt cache moves only within one organization/).textContent ?? "";
     expect(body).toContain(ARM_CACHE_SENTENCE);
     expect(body).toContain(ARM_CLICK_SENTENCE);
-    expect(ARM_CACHE_SENTENCE).toBe("The prompt cache does not move with the session: the first turn on the new account reads the whole conversation again, uncached.");
+    expect(ARM_CACHE_SENTENCE).toBe("The prompt cache moves only within one organization: on an account of another organization, the first turn reads the whole conversation again, uncached.");
     expect(ARM_CLICK_SENTENCE).toBe("Nothing switches without this click.");
     fireEvent.click(screen.getByRole("button", { name: "Switch when the turn ends" }));
     expect(armRebind).toHaveBeenCalledWith("claude:agent-config", "claude:side");

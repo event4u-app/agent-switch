@@ -10,6 +10,7 @@ import { CapacityMeter } from "../../ui/Meters.js";
 import { SessionStateIcon } from "../../ui/SessionStateIcon.js";
 import { ago, duration, shortPath } from "../../ui/format.js";
 import { bindingWindow, SESSION_STATE_LABEL, TOOL_LABEL, type RankedAccount } from "../../vm/rules.js";
+import { formatCacheLine } from "../../transforms.js";
 import { useAS, type Store } from "../../vm/store.js";
 import type { Account, Attention, AttentionKind, Session, SessionState } from "../../vm/types.js";
 import { tagLabel } from "./account-logic.js";
@@ -207,7 +208,7 @@ export function SessionRow({ session: e, compact }: { session: Session; compact?
           {TOOL_LABEL[e.tool]} · {account?.name ?? "?"}
         </span>
       </span>
-      <span className={cn("hidden text-right font-ac-mono text-[11px] tabular-nums", !compact && "md:block", ctxTone)} title={t("accounts.rows.contextTitle")}>
+      <span className={cn("hidden text-right font-ac-mono text-[11px] tabular-nums", !compact && "md:block", ctxTone)} title={[t("accounts.rows.contextTitle"), formatCacheLine(e.cache)].filter(Boolean).join(" · ")}>
         {e.contextPct == null ? "—" : `${e.contextPct}%`}
       </span>
       <span className="hidden text-right text-[11px] text-ac-faint md:block" title={e.cwd ? shortPath(e.cwd) : undefined}>

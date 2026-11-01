@@ -220,6 +220,19 @@ function seedTranscript(home: string, profile: string, encDir: string, id: strin
   return file;
 }
 
+/** One finalized main-chain answer that wrote 600 tokens to the 1h cache. */
+function cachedAnswer(ts: string): string {
+  return JSON.stringify({
+    type: "assistant",
+    timestamp: ts,
+    message: {
+      model: "claude-opus-5-5",
+      stop_reason: "end_turn",
+      usage: { input_tokens: 2, cache_read_input_tokens: 180_000, cache_creation_input_tokens: 600, output_tokens: 400, cache_creation: { ephemeral_1h_input_tokens: 600, ephemeral_5m_input_tokens: 0 } },
+    },
+  });
+}
+
 test("`sessions --json` lists seeded transcripts with metadata only (GUI contract)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
@@ -232,6 +245,31 @@ test("`sessions --json` lists seeded transcripts with metadata only (GUI contrac
     assert.equal(rows[0].sessionId, "0000-e2e-id");
     assert.equal(rows[0].cwd, "/tmp/proj");
     assert.equal(rows[0].live, false);
+    assert.equal(rows[0].cache, null, "no assistant line, no cache reading");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`sessions` shows each Claude session's prompt-cache state (road-to-sessions-that-show-their-cache)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work");
+    const old = seedTranscript(home, "work", "-tmp-proj", "0000-cold");
+    fs.appendFileSync(old, cachedAnswer(new Date(Date.now() - 2 * 3_600_000).toISOString()) + "\n");
+    const fresh = seedTranscript(home, "work", "-tmp-proj", "0000-warm");
+    fs.appendFileSync(fresh, cachedAnswer(new Date(Date.now() - 60_000).toISOString()) + "\n");
+
+    const rows = JSON.parse(run(home, ["sessions", "--json"]));
+    const by = new Map(rows.map((r: any) => [r.sessionId, r.cache]));
+    assert.equal((by.get("0000-cold") as any).state, "cold");
+    assert.equal((by.get("0000-cold") as any).resendTokens, 181_002);
+    assert.equal((by.get("0000-warm") as any).state, "warm");
+    assert.equal((by.get("0000-warm") as any).ttl, "1h");
+
+    const text = run(home, ["sessions"]);
+    assert.match(text, /0000-cold .*cache cold · ~181k re-sent/);
+    assert.match(text, /0000-warm .*cache warm till \d\d:\d\d/);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
@@ -292,6 +330,54 @@ test("`takeover --print-only` moves the transcript between profiles and prints t
       fs.existsSync(path.join(home, "claude", "work", "config", "projects", "-tmp-proj", "0000-move-id.jsonl")),
       true, // ...into the same encoded dir on the target
     );
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`takeover` names the cache cost before it moves, by organization (road-to-sessions-that-show-their-cache)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const org = (profile: string, uuid: string) =>
+    fs.writeFileSync(path.join(home, "claude", profile, "config", ".claude.json"), JSON.stringify({ oauthAccount: { organizationUuid: uuid } }));
+  try {
+    for (const p of ["privat", "team-a", "team-b"]) seed(home, "claude", p);
+    org("privat", "org-1");
+    org("team-a", "org-2");
+    org("team-b", "org-2");
+    const warm = cachedAnswer(new Date(Date.now() - 60_000).toISOString());
+
+    fs.appendFileSync(seedTranscript(home, "team-a", "-tmp-proj", "0000-same-org"), warm + "\n");
+    const same = run(home, ["takeover", "0000-same-org", "--to", "team-b", "--print-only"]);
+    assert.match(same, /^Cache: warm till \d\d:\d\d — team-b is in the same organization, so the cache moves with the session\.$/m);
+    assert.ok(same.indexOf("Cache:") < same.indexOf("Session 0000-same-org"), "said before the move is reported");
+
+    fs.appendFileSync(seedTranscript(home, "team-a", "-tmp-proj", "0000-other-org"), warm + "\n");
+    const other = JSON.parse(run(home, ["takeover", "0000-other-org", "--to", "privat", "--json"]));
+    assert.equal(other.cache.state, "warm");
+    assert.match(other.cacheLine, /privat is another organization — its first turn re-sends ~181k\./);
+
+    const cold = cachedAnswer(new Date(Date.now() - 3 * 3_600_000).toISOString());
+    fs.appendFileSync(seedTranscript(home, "privat", "-tmp-proj", "0000-cold"), cold + "\n");
+    const out = run(home, ["takeover", "0000-cold", "--to", "team-a", "--print-only"]);
+    assert.match(out, /^Cache: cold for 2 h — the first turn on team-a re-sends ~181k, same as staying\.$/m);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`compact --dry-run` says a cold /compact re-reads the history uncached; warm stays quiet", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work");
+    fs.writeFileSync(path.join(home, "tmux-sessions.json"), JSON.stringify({ "asw-claude-work": { provider: "claude", profile: "work" } }));
+    const file = seedTranscript(home, "work", "-tmp-proj", "0000-compact");
+    fs.appendFileSync(file, cachedAnswer(new Date(Date.now() - 90 * 60_000).toISOString()) + "\n");
+    const cold = run(home, ["compact", "work", "--dry-run"]);
+    assert.match(cold, /^Cache cold for 30 min: this \/compact re-reads ~181k as uncached input\.$/m);
+    assert.match(cold, /\[dry-run\] tmux send-keys/);
+
+    fs.appendFileSync(file, cachedAnswer(new Date(Date.now() - 60_000).toISOString()) + "\n");
+    assert.doesNotMatch(run(home, ["compact", "work", "--dry-run"]), /Cache/);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

@@ -89,6 +89,11 @@ export const vm: { readonly [K in keyof typeof en]: string } = {
   "vm.profileLabel.personal": "Privat",
   "vm.profileLabel.other": "Sonstiges",
   "vm.tray.context": "agent-switch – {pct}\u00a0% Kontext",
+  "vm.cache.warm": "warm",
+  "vm.cache.warmTill": "warm bis {time}",
+  "vm.cache.cold": "kalt",
+  "vm.cache.coldResend": "kalt · nächster Turn sendet ~{tokens} neu",
+  "vm.cache.compacted": "kompaktiert · nächster Turn sendet nur die Zusammenfassung",
   "vm.tray.noActive": "agent-switch – kein aktives Profil",
   "vm.tray.used": "agent-switch – {profile} · {pct}\u00a0% genutzt",
 };

@@ -261,6 +261,7 @@ export function sessionFromRow(row: SessionRow, now: number): Session {
     lastActiveAt: row.mtimeMs,
     contextPct: row.context?.pct ?? null,
     model: row.context?.model ?? null,
+    cache: row.cache ?? null,
     summary,
     why: [],
     protectionNote: null,

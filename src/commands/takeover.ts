@@ -5,7 +5,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { configDir, die, listProfiles, readJson, requireProfile } from "../profiles.js";
+import { ROOT, configDir, die, listProfiles, readJson, requireProfile } from "../profiles.js";
 import { ProviderId, provider } from "../providers.js";
 import { resolveProviderValue } from "../args.js";
 import { extractBrief, writeBrief, sweepBriefs, seedPrompt } from "../handoff.js";
@@ -31,7 +31,9 @@ import {
   tmuxSessionName,
 } from "../tmux.js";
 import { cmdRun } from "./profiles.js";
-import { desktopScan, launch, tildePath } from "./shared.js";
+import { cacheForRow, desktopScan, launch, sameOrganization, tildePath } from "./shared.js";
+import { moveCacheLine } from "../cache-words.js";
+import { eventFile, readEvents } from "../hooks.js";
 
 /** M5 fallback: open the resume in a NEW terminal (macOS Terminal.app), else
  *  print it. Used when --in-place is asked for but there is no managed pane. */
@@ -212,11 +214,17 @@ export function cmdTakeover(
   const resumeArgs = ["--resume", sessionId, ...(keepSource ? ["--fork-session"] : [])];
   const resumeCommand = `agent-switch run ${target} -- ${resumeArgs.join(" ")}`;
 
+  // Read before the move: what the target's first turn costs in cache terms.
+  const now = Date.now();
+  const cache = cacheForRow("claude", { sessionId, file: loc.jsonl }, readEvents(eventFile(ROOT, "claude", source)), now);
+  const cacheLine = moveCacheLine(cache, target, sameOrganization(source, target), now);
+  if (cacheLine && !json) console.log(cacheLine);
+
   // Shared-history mode (`share on --history`): both profiles already see one
   // projects/ tree — file ops would be self-moves. Degrade to the resume step.
   if (sharedHistory(srcCfg, tgtCfg)) {
     if (json) {
-      console.log(JSON.stringify({ sessionId, from: source, to: target, transferred: [], shared: true, resumeCommand }, null, 2));
+      console.log(JSON.stringify({ sessionId, from: source, to: target, transferred: [], shared: true, resumeCommand, cache, cacheLine }, null, 2));
       return;
     }
     console.log(`Profiles "${source}" and "${target}" share one history tree — nothing to move.`);
@@ -233,7 +241,7 @@ export function cmdTakeover(
   }
 
   if (json) {
-    console.log(JSON.stringify({ sessionId, from: source, to: target, transferred: result.actions, shared: false, resumeCommand }, null, 2));
+    console.log(JSON.stringify({ sessionId, from: source, to: target, transferred: result.actions, shared: false, resumeCommand, cache, cacheLine }, null, 2));
     return;
   }
   console.log(`Session ${sessionId}: ${source} -> ${target}`);
@@ -249,7 +257,6 @@ export function cmdTakeover(
     process.exit(rc);
   }
   console.log(`Resume it with:\n  ${resumeCommand}`);
-  console.log("The prompt cache stays with the old account: the first turn here reads the whole conversation again, uncached.");
   if (inPlace) resumeInPlace("claude", target, resumeArgs, resumeCommand); // exits: respawn managed pane, else M5
   if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("claude"), target, resumeArgs));
 }
@@ -359,7 +366,7 @@ function takeoverCodex(
   for (const a of result.actions) console.log(`  ${a}`);
   console.log("Note: codex has no pid-file live detection — make sure no active codex session was running on the source profile.");
   console.log(`Resume it with:\n  ${resumeCommand}`);
-  console.log("The prompt cache stays with the old account: the first turn here reads the whole conversation again, uncached.");
+  console.log("The prompt cache is not shared across organizations: unless both accounts belong to one, the first turn here reads the whole conversation again, uncached.");
   if (inPlace) resumeInPlace("codex", target, resumeArgs, resumeCommand); // exits
   if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("codex"), target, resumeArgs));
 }
