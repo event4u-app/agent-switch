@@ -1,3 +1,4 @@
+import { LangKeyed } from "../i18n/LangKeyed.js";
 import { setNotifLastRead } from "../settings-store.js";
 import { AcRoot } from "../ui/AcRoot.js";
 import { Toaster } from "../ui/Toaster.js";
@@ -55,7 +56,9 @@ export default function RedesignApp() {
   return (
     <AcRoot className="h-full">
       <ASProvider initial={emptyViewModel()} load={loadViewModel} actions={allActions} onNoticesRead={setNotifLastRead}>
-        <Frame />
+        <LangKeyed>
+          <Frame />
+        </LangKeyed>
       </ASProvider>
     </AcRoot>
   );
