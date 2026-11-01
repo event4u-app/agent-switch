@@ -21,5 +21,14 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.d.ts"],
+      reporter: ["text-summary"],
+      // Floor = the 2026-11-01 measurement minus 1 point, rounded down. Raise it
+      // when coverage rises; never lower it (roadmap 4.2).
+      thresholds: { lines: 78, statements: 78, branches: 82, functions: 69 },
+    },
   },
 });
