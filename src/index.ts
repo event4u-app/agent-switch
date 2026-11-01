@@ -135,7 +135,8 @@ import {
   overrideFromEnv,
   renderGuardMessage,
 } from "./single-load.js";
-import { checkForUpdate, fetchReleases, releasesNewerThan, selfUpdate, type ReleaseInfo } from "./updates.js";
+import { checkForUpdate, currentVersion, fetchReleases, releasesNewerThan, selfUpdate, type ReleaseInfo } from "./updates.js";
+import { printCswapList } from "./cswap-list.js";
 import {
   mappingRows,
   pruneMappings,
@@ -2805,6 +2806,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch deactivate [--provider P]       clear the active profile for a provider
   agent-switch run [--provider P] <name> [--tmux] [..]  launch the provider's CLI (--tmux = managed tmux session, POSIX)
   agent-switch list [--provider P] [--json]    list profiles, grouped by provider
+  agent-switch --list --json                   Claude accounts in claude-swap list schema v1 (read-only, cache only; same as list --json --format cswap-v1)
   agent-switch status [--provider P] [name] [--json]   identity (+ Claude usage); --json = active only
   agent-switch current [--provider P]          show the active profile(s)
   agent-switch whoami [--provider P] [name]    show a profile's account identity
@@ -3343,7 +3345,11 @@ async function main(): Promise<void> {
       return cmdRun(r.providerId, r.name, r.args, r.cwd);
     }
     case "handoff": return cmdHandoff(providerId, positional[0], positional.slice(1), flags);
-    case "list": case "ls": return cmdList(providerExplicit ? providerId : undefined, !!flags.json);
+    case "list": case "ls":
+      if ("format" in flags) return printCswapList(flags, false);
+      return cmdList(providerExplicit ? providerId : undefined, !!flags.json);
+    case "--list": return printCswapList(flags, true); // claude-swap list schema v1
+    case "--version": case "version": return void console.log(currentVersion());
     case "status": return cmdStatus(providerExplicit ? providerId : undefined, positional[0], !!flags.json);
     case "current": return cmdCurrent(providerExplicit ? providerId : undefined);
     case "whoami": return cmdWhoami(providerId, positional[0]);

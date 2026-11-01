@@ -36,6 +36,7 @@ const VALUE_FLAGS = new Set([
   "reason",
   "limit",
   "after-pid",
+  "format",
 ]);
 
 export interface ParsedArgs {
