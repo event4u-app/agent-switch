@@ -1,6 +1,6 @@
 # Docs claims audit — README, landing page, Start here
 
-Roadmap: `agents/roadmaps/road-to-must-have-docs.md`, Phase 7. Each factual
+Roadmap: `agents/roadmaps/archive/road-to-must-have-docs.md`, Phase 7. Each factual
 statement in the README, the docs landing page (`index.mdx`) and the three
 Start-here pages, with the code that backs it. Checked 2026-11-01 against the
 tree at the branch head (2.8.2).
