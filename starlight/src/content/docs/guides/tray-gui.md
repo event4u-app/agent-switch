@@ -56,6 +56,8 @@ session; `⌘,` opens Settings.
   need you and starts sessions; a right click keeps the classic Show / Quit menu.
   Each signed-in account whose tool has a desktop app (Claude Desktop, Codex,
   Antigravity) gets a button that opens that app as the account, isolated from the others.
+  Disabled accounts are left out to keep the popover short; Settings › General ›
+  **Show disabled accounts in the menu bar** brings them back (off by default).
 
 The session sheet lists the details of one session and the explicit ways to move it:
 

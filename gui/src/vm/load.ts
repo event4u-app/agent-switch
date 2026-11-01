@@ -6,7 +6,7 @@
 
 import * as ipc from "../ipc.js";
 import type { ToolingEntry } from "../ipc.js";
-import { getHideSummaries, getMutedKinds, getNextUsageRefreshAt, getNotifLastRead } from "../settings-store.js";
+import { getHideSummaries, getTrayShowDisabled, getMutedKinds, getNextUsageRefreshAt, getNotifLastRead } from "../settings-store.js";
 import { latestToolVersion, toolUpdateAvailable, UPDATE_CHECK_TOOLS, versionToken } from "../tool-updates.js";
 import { hasUsageReadout, type ProfileRow, type UsageSnapshot } from "../transforms.js";
 import {
@@ -66,6 +66,7 @@ export function emptyViewModel(now: number = Date.now()): ViewModel {
     error: null,
     platform: detectPlatform(),
     hideSummaries: false,
+    trayShowDisabled: false,
     usageNextAt: null,
   };
 }
@@ -170,6 +171,7 @@ export async function loadViewModel(): Promise<ViewModel> {
     error: cliError ? `agent-switch didn't answer: ${cliError}` : null,
     platform: detectPlatform(),
     hideSummaries: getHideSummaries(),
+    trayShowDisabled: getTrayShowDisabled(),
     usageNextAt: getNextUsageRefreshAt() || null,
   };
 }

@@ -219,6 +219,15 @@ describe("General", () => {
     expect((screen.getByRole("switch", { name: "Open the window on start" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("persists Show disabled accounts in the menu bar (default off)", () => {
+    mount("general");
+    const sw = () => screen.getByRole("switch", { name: "Show disabled accounts in the menu bar" });
+    expect(sw().getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(sw());
+    expect(sw().getAttribute("aria-checked")).toBe("true");
+    expect(localStorage.getItem("agent-switch-tray-show-disabled")).toBe("on");
+  });
+
   it("the Start at login switch follows the system state when the store updates", () => {
     let store: ReturnType<typeof useAS> | null = null;
     function Grab() {

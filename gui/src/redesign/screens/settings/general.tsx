@@ -13,6 +13,7 @@ import {
   setMinimizeToDockFlag,
   setNextUsageRefreshAt,
   setRefreshMinutes,
+  setTrayShowDisabledFlag,
 } from "../../../settings-store.js";
 import { REDDIT_POST_URL, REPO_URL, setStarAskStopped } from "../../../star-ask.js";
 import { applyTheme, getTheme, type Theme } from "../../../theme.js";
@@ -105,6 +106,19 @@ export function GeneralSettings() {
           }
         >
           <Switch label="Open the window on start" checked={false} disabled onChange={() => {}} />
+        </SettingRow>
+        <SettingRow
+          title="Show disabled accounts in the menu bar"
+          detail="Off (default): the popover from the menu bar icon lists only enabled accounts. The Accounts screen always shows all of them."
+        >
+          <Switch
+            label="Show disabled accounts in the menu bar"
+            checked={s.trayShowDisabled}
+            onChange={(v) => {
+              setTrayShowDisabledFlag(v);
+              s.update({ trayShowDisabled: v });
+            }}
+          />
         </SettingRow>
         {s.platform === "mac" && (
           <SettingRow

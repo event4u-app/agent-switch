@@ -114,12 +114,44 @@ describe("Tray popover", () => {
     expect(screen.getByTestId("overlay").textContent).toBe("start");
   });
 
+  it("hides disabled accounts by default, and a tool whose accounts are all disabled", () => {
+    const vm = fixture({
+      attention: [],
+      accounts: [acc("work"), acc("off", { disabled: true }), acc("cxoff", { id: "codex:cxoff", tool: "codex", disabled: true })],
+    });
+    render(
+      <AcRoot>
+        <ASProvider initial={vm}>
+          <Tray />
+        </ASProvider>
+      </AcRoot>,
+    );
+    expect(screen.getByText("work")).toBeTruthy();
+    expect(screen.queryByText("off")).toBeNull();
+    expect(screen.queryByText("cxoff")).toBeNull();
+    expect(screen.queryByText("Codex")).toBeNull();
+  });
+
+  it("shows disabled accounts when the setting is on", () => {
+    const vm = fixture({ attention: [], trayShowDisabled: true, accounts: [acc("work"), acc("off", { disabled: true })] });
+    render(
+      <AcRoot>
+        <ASProvider initial={vm}>
+          <Tray />
+        </ASProvider>
+      </AcRoot>,
+    );
+    expect(screen.getByText("work")).toBeTruthy();
+    expect(screen.getByText("off")).toBeTruthy();
+  });
+
   it("offers each account's desktop app and starts it without opening the account", () => {
     const onOpenAccountApp = vi.fn();
     const vm = fixture({
       attention: [],
       surfaces: [desktop],
       accounts: [acc("work"), acc("off", { disabled: true }), acc("out", { state: "signed-out" }), acc("cx", { id: "codex:cx", tool: "codex" })],
+      trayShowDisabled: true,
     });
     render(
       <AcRoot>
