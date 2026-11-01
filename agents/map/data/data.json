@@ -1,1 +1,1 @@
-{"generation":"635fb8a74bc3703e","data":{"reader":"data lane (migrations, dumps, snapshots)","completeness":"unknown","empty":"no migration, schema file, committed dump or snapshot was found","findings":[],"tables":[],"foreignKeys":[],"relations":[]}}
+{"generation":"5ea6dbc79263bb43","data":{"reader":"data lane (migrations, dumps, snapshots)","completeness":"unknown","empty":"no migration, schema file, committed dump or snapshot was found","findings":[],"tables":[],"foreignKeys":[],"relations":[]}}

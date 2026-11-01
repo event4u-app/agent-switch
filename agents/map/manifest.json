@@ -1,15 +1,15 @@
 {
   "schema": 1,
-  "generation": "635fb8a74bc3703e",
-  "commit": "e30675d20fad",
-  "built_at_commit": "e30675d20fad",
+  "generation": "5ea6dbc79263bb43",
+  "commit": "257525886df0",
+  "built_at_commit": "257525886df0",
   "state": "fresh",
   "areas": {
     "code": {
       "path": "code/map.json",
       "source": "code-graph",
       "freshness": "fresh",
-      "facts": 423
+      "facts": 442
     },
     "data": {
       "path": "data/data.json",
@@ -25,15 +25,15 @@
       "source": "systems lane (lockfiles, manifests, version files, images, CI)",
       "freshness": "fresh",
       "completeness": "complete",
-      "facts": 1127,
-      "findings": 4
+      "facts": 1136,
+      "findings": 3
     },
     "interfaces": {
       "path": "interfaces/interfaces.json",
       "source": "interfaces lane (call sites, contracts, configuration names)",
       "freshness": "fresh",
       "completeness": "complete",
-      "facts": 38,
+      "facts": 37,
       "findings": 7
     },
     "runtime": {
@@ -50,17 +50,16 @@
       "source": "delivery lane (GitHub Actions, GitLab CI)",
       "freshness": "fresh",
       "completeness": "complete",
-      "facts": 71,
-      "findings": 28
+      "facts": 76,
+      "findings": 30
     },
     "impact": {
       "path": "code/map.json",
       "source": "review-risk over the working diff",
-      "freshness": "empty",
+      "freshness": "fresh",
       "completeness": "complete",
       "facts": 0,
-      "findings": 0,
-      "reason": "no change against HEAD"
+      "findings": 0
     },
     "agent": {
       "path": "code/map.json",
