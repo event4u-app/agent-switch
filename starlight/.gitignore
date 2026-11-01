@@ -4,3 +4,4 @@ dist/
 .astro/
 # dependencies
 node_modules/
+public/media/
