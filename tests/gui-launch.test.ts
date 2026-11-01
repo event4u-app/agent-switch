@@ -1,7 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { guiAssetSpec, guiLaunchArgv, guiProcessSignature, guiRunningIn, pidAlive, waitForExit } from "../src/gui-launch.js";
+import {
+  bundleVersionFromPlist,
+  cachedBundleFits,
+  guiAssetSpec,
+  guiCacheVersion,
+  guiLaunchArgv,
+  guiProcessSignature,
+  guiRunningIn,
+  pidAlive,
+  waitForExit,
+} from "../src/gui-launch.js";
 
 test("guiAssetSpec maps platform+arch to the release-asset pattern + handling", () => {
   const mac = guiAssetSpec("darwin", "arm64");
@@ -84,4 +94,28 @@ test("waitForExit: gives up after the timeout when the process never quits", asy
 test("pidAlive: this process is alive, an unused pid is not", () => {
   assert.equal(pidAlive(process.pid), true);
   assert.equal(pidAlive(2 ** 22 + 12345), false);
+});
+
+test("guiCacheVersion files an artifact under the release it came from, never the requested one", () => {
+  assert.equal(guiCacheVersion("2.6.3"), "2.6.3");
+  assert.equal(guiCacheVersion("v2.7.0"), "2.7.0");
+  assert.equal(guiCacheVersion(" 2.7.0 "), "2.7.0");
+});
+
+test("bundleVersionFromPlist reads CFBundleShortVersionString from an Info.plist", () => {
+  const plist = `<?xml version="1.0"?><plist><dict>
+    <key>CFBundleName</key><string>agent-switch</string>
+    <key>CFBundleShortVersionString</key>
+    <string>2.6.3</string></dict></plist>`;
+  assert.equal(bundleVersionFromPlist(plist), "2.6.3");
+  assert.equal(bundleVersionFromPlist("<plist><dict></dict></plist>"), null);
+  assert.equal(bundleVersionFromPlist(""), null);
+});
+
+test("cachedBundleFits: a cached app whose own version differs from its folder is stale", () => {
+  assert.equal(cachedBundleFits("2.7.0", "2.7.0"), true);
+  // the bug: the latest-release fallback (2.6.3) filed under 2.7.0 → endless update prompt
+  assert.equal(cachedBundleFits("2.7.0", "2.6.3"), false);
+  // unreadable bundle version → keep it (cannot tell), never discard blindly
+  assert.equal(cachedBundleFits("2.7.0", null), true);
 });

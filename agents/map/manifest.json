@@ -1,15 +1,15 @@
 {
   "schema": 1,
-  "generation": "61ddf095fa324f37",
-  "commit": "513b00b7d804",
-  "built_at_commit": "513b00b7d804",
+  "generation": "fda37c040567360b",
+  "commit": "e05e35f69a5f",
+  "built_at_commit": "e05e35f69a5f",
   "state": "fresh",
   "areas": {
     "code": {
       "path": "code/map.json",
       "source": "code-graph",
       "freshness": "fresh",
-      "facts": 418
+      "facts": 416
     },
     "data": {
       "path": "data/data.json",
@@ -56,10 +56,11 @@
     "impact": {
       "path": "code/map.json",
       "source": "review-risk over the working diff",
-      "freshness": "fresh",
+      "freshness": "empty",
       "completeness": "complete",
       "facts": 0,
-      "findings": 0
+      "findings": 0,
+      "reason": "no change against HEAD"
     },
     "agent": {
       "path": "code/map.json",
