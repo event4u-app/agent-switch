@@ -6,6 +6,7 @@ import { RowMenu } from "../../ui/RowMenu.js";
 import { Switch } from "../../ui/Switch.js";
 import { SectionHeader } from "../../ui/Typography.js";
 import { ago } from "../../ui/format.js";
+import { t } from "../../i18n/index.js";
 import { TOOL_LABEL } from "../../vm/rules.js";
 import { useAS, type Store } from "../../vm/store.js";
 import type { Account, Surface, Tool } from "../../vm/types.js";
@@ -17,13 +18,15 @@ export const APP_TOOLS: Tool[] = ["claude", "codex", "gemini", "antigravity"];
 /** "Found 2 of 3: Claude Desktop, Codex." */
 export function foundLine(surfaces: readonly Surface[]): string {
   const found = surfaces.filter((x) => x.detected);
-  return `Found ${found.length} of ${surfaces.length}: ${found.map((x) => x.name).join(", ")}.`;
+  return t("tools.apps.found", { found: found.length, total: surfaces.length, names: found.map((x) => x.name).join(", ") });
 }
 
 /** Secondary line of an app row (design `iP`); the age only when one was read. */
 export function surfaceSub(o: Surface, now: number): string {
-  const what = o.note ?? (o.identitySeen === "per session" ? "Account chosen per session" : o.identitySeen ? `Running as ${o.identitySeen}` : o.kind.toUpperCase());
-  return o.checkedAt != null ? `${what} · checked ${ago(o.checkedAt, now)}` : what;
+  const what =
+    o.note ??
+    (o.identitySeen === "per session" ? t("tools.apps.perSession") : o.identitySeen ? t("tools.apps.runningAs", { who: o.identitySeen }) : o.kind.toUpperCase());
+  return o.checkedAt != null ? `${what} · ${t("tools.checked", { ago: ago(o.checkedAt, now) })}` : what;
 }
 
 function failed(s: Store, what: string) {
@@ -39,24 +42,24 @@ function AppAccountRow({ app, account: a, accounts }: { app: Surface; account: A
   const copyFrom = (from: string, label: string) =>
     s.open({
       kind: "confirm",
-      title: `Copy ${app.name} settings into ${a.name}?`,
-      body: `Takes the MCP servers, preferences and extensions of ${label}. Logins, chats and account-bound preferences are not copied; the files it replaces are kept as a backup. Quit ${app.name} on ${a.name} first.`,
-      confirm: "Copy settings",
+      title: t("tools.apps.copyTitle", { app: app.name, account: a.name }),
+      body: t("tools.apps.copyBody", { source: label, app: app.name, account: a.name }),
+      confirm: t("tools.apps.copyConfirm"),
       onConfirm: () => {
         s.act.copyAppSettings?.(app.id, from, a.id).then(
-          () => s.toast({ tone: "ok", text: `${app.name} settings copied into ${a.name}.` }),
-          failed(s, "Couldn't copy the settings"),
+          () => s.toast({ tone: "ok", text: t("tools.apps.copied", { app: app.name, account: a.name }) }),
+          failed(s, t("tools.apps.copyFailed")),
         );
       },
     });
   const menu = [
-    ...(s.act.openApp ? [{ id: "open", label: `Open as ${who}`, icon: <AccountDot color={a.color} size={8} />, onSelect: () => s.act.openApp?.(app.id, a.id).catch(failed(s, `Couldn't open ${app.name}`)) }] : []),
+    ...(s.act.openApp ? [{ id: "open", label: t("tools.apps.openAs", { who }), icon: <AccountDot color={a.color} size={8} />, onSelect: () => s.act.openApp?.(app.id, a.id).catch(failed(s, t("tools.apps.openFailed", { app: app.name }))) }] : []),
     ...(app.copiesSettings && s.act.copyAppSettings
       ? [
-          { id: "copy:default", label: `Copy settings from the default ${app.name}`, icon: <SlidersHorizontal />, onSelect: () => copyFrom("default", `the default ${app.name}`) },
+          { id: "copy:default", label: t("tools.apps.copyFromDefault", { app: app.name }), icon: <SlidersHorizontal />, onSelect: () => copyFrom("default", t("tools.apps.theDefault", { app: app.name })) },
           ...accounts
             .filter((x) => x.id !== a.id)
-            .map((x) => ({ id: `copy:${x.id}`, label: `Copy settings from ${TOOL_LABEL[x.tool]} · ${x.name}`, icon: <SlidersHorizontal />, onSelect: () => copyFrom(x.id, x.name) })),
+            .map((x) => ({ id: `copy:${x.id}`, label: t("tools.apps.copyFrom", { who: `${TOOL_LABEL[x.tool]} · ${x.name}` }), icon: <SlidersHorizontal />, onSelect: () => copyFrom(x.id, x.name) })),
         ]
       : []),
   ];
@@ -65,18 +68,18 @@ function AppAccountRow({ app, account: a, accounts }: { app: Surface; account: A
       <AccountDot color={a.color} size={8} />
       <span className="min-w-0 flex-1 truncate text-[13px] text-ac-text">{a.name}</span>
       {app.detected && s.act.openApp && (
-        <Button size="sm" variant="ghost" onClick={() => s.act.openApp?.(app.id, a.id).catch(failed(s, `Couldn't open ${app.name}`))}>
-          Open
+        <Button size="sm" variant="ghost" onClick={() => s.act.openApp?.(app.id, a.id).catch(failed(s, t("tools.apps.openFailed", { app: app.name })))}>
+          {t("common.open")}
         </Button>
       )}
       {mac && app.detected && (
         <span className="flex items-center gap-2 text-[11px] text-ac-muted">
-          Launcher
+          {t("tools.apps.launcher")}
           <Switch
-            label={`Launcher for ${app.name} as ${a.name}`}
+            label={t("tools.apps.launcherFor", { app: app.name, account: a.name })}
             checked={on}
             disabled={!s.act.setLauncher}
-            onChange={(next) => void s.act.setLauncher?.(app.id, a.id, next).catch(failed(s, next ? "Couldn't create the launcher" : "Couldn't remove the launcher"))}
+            onChange={(next) => void s.act.setLauncher?.(app.id, a.id, next).catch(failed(s, t(next ? "tools.apps.launcherCreateFailed" : "tools.apps.launcherRemoveFailed")))}
           />
         </span>
       )}
@@ -84,7 +87,7 @@ function AppAccountRow({ app, account: a, accounts }: { app: Surface; account: A
         <RowMenu
           items={menu}
           trigger={
-            <IconButton label={`More for ${app.name} as ${a.name}`}>
+            <IconButton label={t("tools.apps.moreFor", { app: app.name, account: a.name })}>
               <MoreHorizontal />
             </IconButton>
           }
@@ -103,16 +106,14 @@ export function Apps() {
       <Card className="flex items-start gap-3 p-4" style={{ boxShadow: "inset 3px 0 0 var(--ac-info)" }}>
         <CircleCheck className="mt-0.5 size-4 shrink-0 text-ac-info" />
         <div className="min-w-0">
-          <p className="text-[13px] text-ac-text">{s.surfaces.length ? foundLine(s.surfaces) : "No desktop apps are registered yet."}</p>
+          <p className="text-[13px] text-ac-text">{s.surfaces.length ? foundLine(s.surfaces) : t("tools.apps.noneRegistered")}</p>
           <p className="mt-1 text-xs text-ac-muted">
-            {mac
-              ? "Nothing was changed. Your Dock and app icons are untouched — a launcher is added only when you switch it on."
-              : "Nothing was changed. Launchers are available on macOS only; open an app on an account from its row here."}
+            {t(mac ? "tools.apps.nothingChangedMac" : "tools.apps.nothingChangedOther")}
           </p>
         </div>
       </Card>
       {!s.surfaces.length && (
-        <EmptyState title="No apps to show." detail="Desktop apps appear here once agent-switch knows how to open them on an account." />
+        <EmptyState title={t("tools.apps.emptyTitle")} detail={t("tools.apps.emptyDetail")} />
       )}
       {APP_TOOLS.flatMap((tool) => s.surfaces.filter((o) => o.tool === tool)).map((app) => {
         const accounts = s.accounts.filter((a) => a.tool === app.tool && !a.disabled);
@@ -123,7 +124,7 @@ export function Apps() {
               <div className="flex items-center gap-2 px-3 pb-1 pt-2 text-[11px] text-ac-muted">
                 {!app.detected && (
                   <span className="inline-flex items-center gap-1 text-ac-faint">
-                    <EyeOff className="size-3" /> not found on this computer
+                    <EyeOff className="size-3" /> {t("tools.apps.notFound")}
                   </span>
                 )}
                 {app.detected && <span>{surfaceSub(app, s.now)}</span>}
@@ -135,7 +136,7 @@ export function Apps() {
                   ))}
                 </div>
               ) : (
-                <p className="px-3 pb-2.5 text-xs text-ac-faint">No {TOOL_LABEL[app.tool]} accounts yet.</p>
+                <p className="px-3 pb-2.5 text-xs text-ac-faint">{t("tools.apps.noAccounts", { tool: TOOL_LABEL[app.tool] })}</p>
               )}
             </Card>
           </section>
@@ -145,13 +146,12 @@ export function Apps() {
         <Card className="flex items-start gap-3 p-4">
           <Rocket className="mt-0.5 size-4 text-ac-brand-text" />
           <div>
-            <p className="text-[13px] text-ac-text">What does a launcher do?</p>
+            <p className="text-[13px] text-ac-text">{t("tools.apps.launcherQ")}</p>
             <p className="mt-1 max-w-[560px] text-xs text-ac-muted">
-              It puts an app into ~/Applications/Agent Switch that opens the original app on one account — start it from Spotlight or drag it into the
-              Dock. Clicking it again brings that account's window to the front. Switch it off and it's removed — nothing else to undo.
+              {t("tools.apps.launcherA")}
             </p>
             <p className="mt-1 flex items-center gap-1.5 text-[11px] text-ac-faint">
-              <Info className="size-3" /> The open window still shows the app's own icon and name; only the launcher carries the account.
+              <Info className="size-3" /> {t("tools.apps.launcherNote")}
             </p>
           </div>
         </Card>

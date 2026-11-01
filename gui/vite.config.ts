@@ -21,6 +21,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    // Tests assert English copy: pin en regardless of the machine's language.
+    setupFiles: ["src/i18n/test-setup.ts"],
     coverage: {
       provider: "v8",
       include: ["src/**/*.{ts,tsx}"],

@@ -1,3 +1,4 @@
+import { t } from "../../i18n/index.js";
 import { useAS, type TerminalRun } from "../../vm/store.js";
 import { TerminalSheet } from "./terminal-sheet.js";
 
@@ -5,7 +6,7 @@ import { TerminalSheet } from "./terminal-sheet.js";
  *  tool's name as title, `tooling install|upgrade <id>` in the real pty. */
 export function updateRun(toolId: string, action: "install" | "update", toolName?: string): TerminalRun {
   const install = action === "install";
-  return { args: ["tooling", install ? "install" : "upgrade", toolId], title: toolName ?? toolId, kicker: install ? "Install" : "Update" };
+  return { args: ["tooling", install ? "install" : "upgrade", toolId], title: toolName ?? toolId, kicker: t(install ? "tools.run.install" : "tools.run.update") };
 }
 
 /** Bundle `wP` (sheet 520): lane A's terminal sheet streams the actual command
@@ -13,6 +14,6 @@ export function updateRun(toolId: string, action: "install" | "update", toolName
  *  the new version and the cleared update badge come from the CLI. */
 export function UpdateSheet({ toolId, action }: { toolId: string; action: "install" | "update" }) {
   const s = useAS();
-  const tool = s.tools.find((t) => t.id === toolId);
+  const tool = s.tools.find((x) => x.id === toolId);
   return <TerminalSheet run={updateRun(toolId, action, tool?.name)} />;
 }

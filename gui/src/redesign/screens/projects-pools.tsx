@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { t } from "../../i18n/index.js";
+import { tx } from "../../i18n/react.js";
 import { typedFolder, useHomeDir } from "../../lib/paths.js";
 import { cn } from "../../lib/utils.js";
 import type { DirResolution } from "../../ipc.js";
@@ -54,7 +56,7 @@ export const BINDING_TOOLS: Tool[] = ["claude", "codex"];
 export function bindingTargets(accounts: readonly Account[], pools: readonly Pool[], tool: Tool): { value: string; label: string }[] {
   return [
     ...accounts.filter((a) => a.tool === tool).map((a) => ({ value: `account:${a.id}`, label: `${TOOL_LABEL[a.tool]} · ${a.name}` })),
-    ...pools.map((p) => ({ value: `pool:${p.id}`, label: `Pool · ${p.label}` })),
+    ...pools.map((p) => ({ value: `pool:${p.id}`, label: t("tools.bindings.poolTarget", { name: p.label }) })),
   ];
 }
 
@@ -80,7 +82,7 @@ function BindingForm({ initialDir, editing, onDone }: { initialDir: string; edit
   const [target, setTarget] = useState(editing ? targetValue(editing) : "");
   const [busy, setBusy] = useState(false);
   const home = useHomeDir();
-  const chosen = targets.some((t) => t.value === target) ? target : (targets[0]?.value ?? "");
+  const chosen = targets.some((x) => x.value === target) ? target : (targets[0]?.value ?? "");
   const parsed = bindingTarget(chosen, tool);
   const folder = typedFolder(dir, home);
   const problem = !folder.ok && dir.trim() ? folder.reason : null;
@@ -100,25 +102,30 @@ function BindingForm({ initialDir, editing, onDone }: { initialDir: string; edit
     setBusy(true);
     write(folder.path, parsed)
       .then(() => {
-        s.toast({ text: editing ? `Binding for ${shortPath(folder.path)} saved.` : `Bound ${shortPath(folder.path)} for ${TOOL_LABEL[tool]}.`, tone: "ok" });
+        s.toast({
+          text: editing
+            ? t("tools.bindings.saved", { path: shortPath(folder.path) })
+            : t("tools.bindings.bound", { path: shortPath(folder.path), tool: TOOL_LABEL[tool] }),
+          tone: "ok",
+        });
         onDone();
       })
       .catch((e: unknown) =>
-        s.toast({ text: `Couldn't ${editing ? "save" : "add"} the binding: ${e instanceof Error ? e.message : String(e)}`, tone: "alert" }),
+        s.toast({ text: t(editing ? "tools.bindings.saveFailed" : "tools.bindings.addFailed", { error: e instanceof Error ? e.message : String(e) }), tone: "alert" }),
       )
       .finally(() => setBusy(false));
   };
 
   return (
-    <Card className="mb-2 flex flex-col gap-3 p-4" aria-label={editing ? "Edit binding" : "Add binding"}>
+    <Card className="mb-2 flex flex-col gap-3 p-4" aria-label={t(editing ? "tools.bindings.edit" : "tools.bindings.add")}>
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex min-w-[220px] flex-1 flex-col gap-1.5">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-ac-muted">Folder</span>
+          <span className="text-[11px] font-medium uppercase tracking-wide text-ac-muted">{t("tools.bindings.folder")}</span>
           <TextInput
             mono
             autoFocus
-            aria-label="Folder to bind"
-            placeholder="/full/path/to/project"
+            aria-label={t("tools.bindings.folderToBind")}
+            placeholder={t("tools.bindings.folderPlaceholder")}
             value={dir}
             aria-invalid={problem ? true : undefined}
             aria-describedby={problem ? "add-binding-folder-error" : undefined}
@@ -138,25 +145,25 @@ function BindingForm({ initialDir, editing, onDone }: { initialDir: string; edit
             </span>
           )}
         </label>
-        <Segmented label="Binding tool" value={tool} onChange={setTool} options={BINDING_TOOLS.map((t) => ({ value: t, label: TOOL_LABEL[t] }))} />
+        <Segmented label={t("tools.bindings.tool")} value={tool} onChange={setTool} options={BINDING_TOOLS.map((x) => ({ value: x, label: TOOL_LABEL[x] }))} />
         <div className="min-w-[200px]">
           <Select
-            label="Starts on"
+            label={t("tools.bindings.startsOnLabel")}
             value={chosen}
             onChange={setTarget}
             disabled={targets.length === 0}
-            options={targets.length ? targets : [{ value: "", label: `No ${TOOL_LABEL[tool]} account or pool yet`, disabled: true }]}
+            options={targets.length ? targets : [{ value: "", label: t("tools.bindings.noTarget", { tool: TOOL_LABEL[tool] }), disabled: true }]}
           />
         </div>
       </div>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[11px] text-ac-muted">The folder and its subfolders start on this account — or, for a pool, on its account with the most left.</p>
+        <p className="text-[11px] text-ac-muted">{t("tools.bindings.formHint")}</p>
         <div className="flex gap-2">
           <Button size="sm" variant="ghost" onClick={onDone}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button size="sm" variant="primary" disabled={!canSave} onClick={save}>
-            {editing ? "Save binding" : "Add binding"}
+            {t(editing ? "tools.bindings.save" : "tools.bindings.add")}
           </Button>
         </div>
       </div>
@@ -172,30 +179,33 @@ function BindingMenu({ rule, onEdit }: { rule: Binding; onEdit: () => void }) {
   return (
     <RowMenu
       items={[
-        { id: "edit", label: "Edit binding", icon: <Pencil />, disabled: !s.act.mapFolder, onSelect: onEdit },
+        { id: "edit", label: t("tools.bindings.edit"), icon: <Pencil />, disabled: !s.act.mapFolder, onSelect: onEdit },
         {
           id: "remove",
-          label: "Remove binding",
+          label: t("tools.bindings.remove"),
           icon: <Trash2 />,
           danger: true,
           disabled: !unmap,
           onSelect: () =>
             s.open({
               kind: "confirm",
-              title: "Remove this binding?",
-              body: `${shortPath(rule.match.value)} stops starting on its bound ${rule.tool === "any" ? "" : `${TOOL_LABEL[rule.tool]} `}target. You can add it again any time.`,
-              confirm: "Remove binding",
+              title: t("tools.bindings.removeTitle"),
+              body:
+                rule.tool === "any"
+                  ? t("tools.bindings.removeBody", { path: shortPath(rule.match.value) })
+                  : t("tools.bindings.removeBodyTool", { path: shortPath(rule.match.value), tool: TOOL_LABEL[rule.tool] }),
+              confirm: t("tools.bindings.remove"),
               danger: true,
               onConfirm: () => {
                 unmap?.(rule.match.value, rule.tool === "any" ? undefined : rule.tool)?.catch((e: unknown) =>
-                  s.toast({ text: `Couldn't remove the binding: ${e instanceof Error ? e.message : String(e)}`, tone: "alert" }),
+                  s.toast({ text: t("tools.bindings.removeFailed", { error: e instanceof Error ? e.message : String(e) }), tone: "alert" }),
                 );
               },
             }),
         },
       ]}
       trigger={
-        <IconButton label={`Binding menu for ${rule.match.value}`}>
+        <IconButton label={t("tools.bindings.menuFor", { path: rule.match.value })}>
           <MoreHorizontal />
         </IconButton>
       }
@@ -220,7 +230,9 @@ export function ProjectsPools() {
     if (r.tool === "any" || !s.act.setBindingPaused) return;
     s.act
       .setBindingPaused(r.match.value, r.tool, r.enabled)
-      .catch((e: unknown) => s.toast({ tone: "alert", text: `Couldn't ${r.enabled ? "pause" : "resume"} the binding: ${e instanceof Error ? e.message : String(e)}` }));
+      .catch((e: unknown) =>
+        s.toast({ tone: "alert", text: t(r.enabled ? "tools.bindings.pauseFailed" : "tools.bindings.resumeFailed", { error: e instanceof Error ? e.message : String(e) }) }),
+      );
   };
   const account = ex.state === "done" ? s.accountById(accountIdFromMember(ex.res.profile) ?? "") : undefined;
   const why = ex.state === "done" ? ex.res.why : ex.state === "error" ? [ex.message] : [];
@@ -231,7 +243,7 @@ export function ProjectsPools() {
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[220px] flex-1">
             <Select
-              label="Try a folder"
+              label={t("tools.bindings.tryFolder")}
               mono
               value={picked}
               onChange={(v) => {
@@ -243,18 +255,18 @@ export function ProjectsPools() {
           </div>
           <div className="flex min-w-[200px] flex-1 flex-col gap-1.5">
             <label className="ac-caps" htmlFor="try-folder">
-              Or type a folder
+              {t("tools.bindings.typeFolder")}
             </label>
-            <TextInput id="try-folder" mono className="h-9" placeholder="~/projects/…" value={typed} onChange={(e) => setTyped(e.target.value)} />
+            <TextInput id="try-folder" mono className="h-9" placeholder={t("tools.bindings.typePlaceholder")} value={typed} onChange={(e) => setTyped(e.target.value)} />
           </div>
           <Segmented
-            label="Tool"
+            label={t("tools.bindings.toolLabel")}
             value={tool}
             onChange={setTool}
             options={[
               { value: "claude", label: "Claude" },
               { value: "codex", label: "Codex" },
-              { value: "gemini", label: "Gemini", disabled: true, why: "Gemini has no backend yet." },
+              { value: "gemini", label: "Gemini", disabled: true, why: t("tools.bindings.geminiNoBackend") },
             ]}
           />
         </div>
@@ -263,20 +275,21 @@ export function ProjectsPools() {
           <div className="min-w-0 flex-1">
             <p className="text-[13px] text-ac-text">
               {account ? (
-                <>
-                  Starts on{" "}
-                  <b className="font-medium">
-                    {TOOL_LABEL[account.tool]} · {account.name}
-                  </b>
-                </>
+                tx("tools.bindings.startsOn", {
+                  who: (
+                    <b className="font-medium">
+                      {TOOL_LABEL[account.tool]} · {account.name}
+                    </b>
+                  ),
+                })
               ) : !dir ? (
-                "No folder to try yet — type one, or pick one once a session ran in it."
+                t("tools.bindings.noFolder")
               ) : ex.state === "loading" || ex.state === "idle" ? (
-                "Checking …"
+                t("tools.bindings.checking")
               ) : ex.state === "done" && ex.res.profile == null ? (
-                `Starts on your original ${TOOL_LABEL[tool]} login`
+                t("tools.bindings.original", { tool: TOOL_LABEL[tool] })
               ) : (
-                "No account can take this start"
+                t("tools.bindings.noAccount")
               )}
             </p>
             <ul className="mt-1 flex flex-col gap-0.5">
@@ -292,22 +305,22 @@ export function ProjectsPools() {
 
       <section className="flex flex-col gap-1">
         <SectionHeader
-          title="Project bindings"
+          title={t("tools.bindings.title")}
           count={s.rules.length}
           actions={
             <Button
               size="sm"
               variant="ghost"
               disabled={!s.act.mapFolder || adding}
-              title={s.act.mapFolder ? undefined : "Binding folders isn't available in this window."}
+              title={s.act.mapFolder ? undefined : t("tools.bindings.unavailable")}
               onClick={() => setAdding(true)}
             >
-              <Plus /> Add binding
+              <Plus /> {t("tools.bindings.add")}
             </Button>
           }
         />
         <p className="px-1 pb-2 text-xs text-ac-muted">
-          The nearest bound folder wins. Bind to an account to always start there, or to a pool to let its accounts share the work — work and personal never mix.
+          {t("tools.bindings.explain")}
         </p>
         {adding && <BindingForm initialDir={dir} onDone={() => setAdding(false)} />}
         <Card className="p-1">
@@ -334,17 +347,21 @@ export function ProjectsPools() {
                         <AccountDot color={a.color} size={8} /> {TOOL_LABEL[a.tool]} · {a.name}
                       </>
                     ) : (
-                      <>pool {r.target.kind === "pool" ? (s.pools.find((p) => p.id === (r.target as { pool: string }).pool)?.label ?? r.target.pool) : ""}</>
+                      <>
+                        {t("tools.bindings.poolRow", {
+                          name: r.target.kind === "pool" ? (s.pools.find((p) => p.id === (r.target as { pool: string }).pool)?.label ?? r.target.pool) : "",
+                        })}
+                      </>
                     )}
-                    {r.tool !== "any" && <span className="text-ac-faint">({TOOL_LABEL[r.tool]} only)</span>}
+                    {r.tool !== "any" && <span className="text-ac-faint">{t("tools.bindings.toolOnly", { tool: TOOL_LABEL[r.tool] })}</span>}
                   </span>
-                  <span className="hidden text-right font-ac-mono text-[11px] text-ac-faint md:block" title="Matches in the last 7 days">
+                  <span className="hidden text-right font-ac-mono text-[11px] text-ac-faint md:block" title={t("tools.bindings.hitsTitle")}>
                     {r.hits == null ? "—" : `${r.hits}×`}
                   </span>
                   <span className="col-start-2 row-start-1 flex items-center justify-end gap-2 md:col-start-auto md:row-start-auto">
-                    <span title={r.enabled ? "On — pause to keep the binding but stop using it" : "Paused — starts here ignore it until you turn it back on"}>
+                    <span title={t(r.enabled ? "tools.bindings.onTitle" : "tools.bindings.pausedTitle")}>
                       <Switch
-                        label={`Binding ${r.match.value}`}
+                        label={t("tools.bindings.switchLabel", { path: r.match.value })}
                         checked={r.enabled}
                         disabled={!s.act.setBindingPaused || r.tool === "any"}
                         onChange={() => togglePaused(r)}

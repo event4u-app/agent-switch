@@ -855,3 +855,28 @@ export function setTrayShowDisabledFlag(on: boolean): void {
     /* no/blocked localStorage → in-memory only for this session */
   }
 }
+
+const LANGUAGE_KEY = "agent-switch-language";
+
+/** GUI language preference. "system" follows the OS/browser language; only the
+ *  literals "en" and "de" pin one, so a missing or unknown stored value (a fresh
+ *  install, an older build) migrates to "system". */
+export type LanguagePref = "system" | "en" | "de";
+
+export function getLanguagePref(): LanguagePref {
+  try {
+    const v = localStorage.getItem(LANGUAGE_KEY);
+    return v === "en" || v === "de" ? v : "system";
+  } catch {
+    return "system";
+  }
+}
+
+export function setLanguagePrefFlag(pref: LanguagePref): void {
+  try {
+    if (pref === "system") localStorage.removeItem(LANGUAGE_KEY);
+    else localStorage.setItem(LANGUAGE_KEY, pref);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}

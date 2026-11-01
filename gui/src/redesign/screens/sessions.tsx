@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { t } from "../../i18n/index.js";
 import { AccountDot } from "../../ui/AccountDot.js";
 import { Button } from "../../ui/Button.js";
 import { Card, EmptyState } from "../../ui/Card.js";
@@ -23,40 +24,40 @@ export function Sessions() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="What runs on which account?" sub="Every session with its account, its protection state and why it got that account." />
+      <PageHeader title={t("sessions.list.title")} sub={t("sessions.list.sub")} />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <Segmented
-          label="Show"
+          label={t("sessions.list.show")}
           value={filter}
           onChange={setFilter}
           options={[
-            { value: "open", label: `Open ${count("open")}` },
-            { value: "needs-you", label: `Needs you ${count("needs-you")}` },
-            { value: "paused", label: `Paused ${count("paused")}` },
-            { value: "done", label: `Done ${count("done")}` },
-            { value: "all", label: `All ${count("all")}` },
-            ...(count("trash") ? [{ value: "trash" as const, label: `Trash ${count("trash")}` }] : []),
+            { value: "open", label: t("sessions.list.open", { count: count("open") }) },
+            { value: "needs-you", label: t("sessions.list.needsYou", { count: count("needs-you") }) },
+            { value: "paused", label: t("sessions.list.paused", { count: count("paused") }) },
+            { value: "done", label: t("sessions.list.done", { count: count("done") }) },
+            { value: "all", label: t("sessions.list.all", { count: count("all") }) },
+            ...(count("trash") ? [{ value: "trash" as const, label: t("sessions.list.trash", { count: count("trash") }) }] : []),
           ]}
         />
         <div className="flex flex-wrap gap-2">
           <div className="w-[150px]">
             <Select
-              ariaLabel="Tool"
+              ariaLabel={t("sessions.list.tool")}
               value={tool}
               onChange={(v) => setTool(v as "all" | Tool)}
               options={[
-                { value: "all", label: "All tools" },
-                ...tools.map((t) => ({ value: t, label: `${TOOL_LABEL[t]} ${s.sessions.filter((x) => x.tool === t && !x.trashed).length}` })),
+                { value: "all", label: t("sessions.list.allTools") },
+                ...tools.map((tl) => ({ value: tl, label: `${TOOL_LABEL[tl]} ${s.sessions.filter((x) => x.tool === tl && !x.trashed).length}` })),
               ]}
             />
           </div>
           <div className="w-[220px]">
             <Select
-              ariaLabel="Account"
+              ariaLabel={t("sessions.list.account")}
               value={accountId}
               onChange={setAccountId}
               options={[
-                { value: "all", label: "All accounts" },
+                { value: "all", label: t("sessions.list.allAccounts") },
                 ...s.accounts
                   .filter((a) => tool === "all" || a.tool === tool)
                   .map((a) => ({ value: a.id, label: `${TOOL_LABEL[a.tool]} · ${a.name}`, dot: <AccountDot color={a.color} size={8} /> })),
@@ -76,14 +77,14 @@ export function Sessions() {
             </RowList>
           </Card>
         ) : filter === "trash" ? (
-          <EmptyState title="The trash is empty." detail="Sessions you move to the trash can be restored here." />
+          <EmptyState title={t("sessions.list.trashEmpty")} detail={t("sessions.list.trashEmptyDetail")} />
         ) : (
           <EmptyState
-            title="No sessions here."
-            detail="Start one from the top bar, or keep using claude / codex in your terminal — they show up here on their own."
+            title={t("sessions.list.empty")}
+            detail={t("sessions.list.emptyDetail")}
             action={
               <Button variant="primary" size="sm" onClick={() => s.open({ kind: "start" })}>
-                Start session
+                {t("sessions.list.start")}
               </Button>
             }
           />

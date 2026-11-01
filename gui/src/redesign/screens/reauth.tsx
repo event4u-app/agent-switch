@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, LoaderCircle, ShieldAlert } from "lucide-react";
+import { t, tp, type TKey } from "../../i18n/index.js";
 import { listBrowsers, listProfiles, type BrowserInfo } from "../../ipc.js";
 import { getLoginBrowser, setLoginBrowser } from "../../settings-store.js";
 import { tauriBackend } from "../../terminal.js";
@@ -18,11 +19,11 @@ import type { Tool } from "../../vm/types.js";
 import { providerOf, signInArgs, signInOutcome } from "./account-logic.js";
 import { XtermBox } from "./terminal-sheet.js";
 
-const SIGN_IN_WITH: Record<Tool, string> = {
-  claude: "Sign in with Claude",
-  codex: "Sign in with ChatGPT",
-  gemini: "Sign in with Google",
-  antigravity: "Sign in with Google",
+const SIGN_IN_WITH: Record<Tool, TKey> = {
+  claude: "accounts.reauth.withClaude",
+  codex: "accounts.reauth.withChatGpt",
+  gemini: "accounts.reauth.withGoogle",
+  antigravity: "accounts.reauth.withGoogle",
 };
 
 /** The identity `list` reports for one profile right now; null = none. */
@@ -81,15 +82,15 @@ export function LoginBrowserField({ tool, login }: { tool: Tool; login: LoginBro
     <>
       {login.choosable && (
         <Select
-          label="Open the sign-in in"
+          label={t("accounts.reauth.openIn")}
           value={login.browser || DEFAULT_BROWSER}
           onChange={(v) => login.pick(v === DEFAULT_BROWSER ? "" : v)}
-          options={[{ value: DEFAULT_BROWSER, label: "Default browser" }, ...login.browsers.map((b) => ({ value: b.id, label: b.name }))]}
+          options={[{ value: DEFAULT_BROWSER, label: t("accounts.reauth.defaultBrowser") }, ...login.browsers.map((b) => ({ value: b.id, label: b.name }))]}
         />
       )}
       {tool === "codex" && login.browsers.length > 0 && (
         <p className="text-xs text-ac-muted">
-          Codex opens your default browser itself. If that's the wrong one, copy the link it shows below into the browser you want — the sign-in works from any browser.
+          {t("accounts.reauth.codexBrowser")}
         </p>
       )}
     </>
@@ -121,11 +122,11 @@ export function ReauthDialog({ accountId }: { accountId: string }) {
       setSeen(now.identity);
       if (outcome === "unfinished") {
         setStep("start");
-        s.toast({ tone: "warn", text: "The sign-in didn't finish — nothing changed. Try again." });
+        s.toast({ tone: "warn", text: t("accounts.reauth.unfinished") });
       } else setStep(outcome);
     } catch (e) {
       setStep("start");
-      s.toast({ tone: "alert", text: `Couldn't read the sign-in: ${e instanceof Error ? e.message : String(e)}` });
+      s.toast({ tone: "alert", text: t("accounts.reauth.readFailed", { error: e instanceof Error ? e.message : String(e) }) });
     }
     void s.reload();
   }
@@ -139,7 +140,7 @@ export function ReauthDialog({ accountId }: { accountId: string }) {
     <Dialog
       open
       onOpenChange={(o) => !o && close()}
-      kicker={first ? "Sign in" : "Sign in again"}
+      kicker={first ? t("accounts.action.signIn") : t("accounts.action.signInAgain")}
       title={
         <span className="inline-flex items-center gap-2.5">
           <AccountDot color={a.color} size={12} /> {TOOL_LABEL[a.tool]} · {a.name}
@@ -149,7 +150,7 @@ export function ReauthDialog({ accountId }: { accountId: string }) {
       footer={
         <>
           <Button size="sm" variant="ghost" onClick={close}>
-            Later
+            {t("accounts.action.later")}
           </Button>
           <span className="flex-1" />
           {step === "start" && (
@@ -157,23 +158,23 @@ export function ReauthDialog({ accountId }: { accountId: string }) {
               size="sm"
               variant="primary"
               disabled={!provider}
-              title={provider ? undefined : `${TOOL_LABEL[a.tool]} has no sign-in backend yet.`}
+              title={provider ? undefined : t("accounts.reauth.noBackend", { tool: TOOL_LABEL[a.tool] })}
               onClick={() => {
                 setRun((n) => n + 1);
                 setStep("pending");
               }}
             >
-              <ExternalLink /> {SIGN_IN_WITH[a.tool]}
+              <ExternalLink /> {t(SIGN_IN_WITH[a.tool])}
             </Button>
           )}
           {step === "pending" && (
             <Button size="sm" disabled>
-              <LoaderCircle className="animate-spin" /> Waiting for the browser
+              <LoaderCircle className="animate-spin" /> {t("accounts.reauth.waitingBrowser")}
             </Button>
           )}
           {step === "verified" && (
             <Button size="sm" variant="primary" onClick={close}>
-              Done{waiting.length ? ` — continue ${waiting.length} session${waiting.length > 1 ? "s" : ""}` : ""}
+              {waiting.length ? tp("accounts.reauth.doneContinue", waiting.length) : t("common.done")}
             </Button>
           )}
           {step === "mismatch" && (
@@ -185,7 +186,7 @@ export function ReauthDialog({ accountId }: { accountId: string }) {
                 setStep("pending");
               }}
             >
-              <ExternalLink /> Try again
+              <ExternalLink /> {t("accounts.action.tryAgain")}
             </Button>
           )}
         </>
@@ -200,15 +201,12 @@ export function ReauthDialog({ accountId }: { accountId: string }) {
         )}
         {step === "start" && (
           <>
-            <p className="text-[13px] text-ac-soft">
-              The {TOOL_LABEL[a.tool]} sign-in opens in your browser — for this account only, in its own folder. Your other accounts and your normal{" "}
-              {TOOL_LABEL[a.tool]} login stay as they are. Agent Switch never sees your password.
-            </p>
+            <p className="text-[13px] text-ac-soft">{t("accounts.reauth.intro", { tool: TOOL_LABEL[a.tool] })}</p>
             <DefinitionList
               rows={[
-                ["Expected account", a.identity ? <Copyable text={a.identity} /> : "any — first sign-in"],
-                ["Last refresh", a.auth?.lastRefreshAt ? ago(a.auth.lastRefreshAt, s.now) : "—"],
-                ["Waiting sessions", waiting.length ? waiting.map((x) => x.project).join(", ") : "none"],
+                [t("accounts.reauth.expected"), a.identity ? <Copyable text={a.identity} /> : t("accounts.reauth.anyFirst")],
+                [t("accounts.lastRefresh"), a.auth?.lastRefreshAt ? ago(a.auth.lastRefreshAt, s.now) : "—"],
+                [t("accounts.reauth.waitingSessions"), waiting.length ? waiting.map((x) => x.project).join(", ") : t("accounts.reauth.none")],
               ]}
             />
             <LoginBrowserField tool={a.tool} login={login} />
@@ -216,7 +214,7 @@ export function ReauthDialog({ accountId }: { accountId: string }) {
         )}
         {step === "pending" && provider && (
           <>
-            <p className="text-[13px] text-ac-soft">Finish the sign-in in the browser. You can switch windows; this updates on its own.</p>
+            <p className="text-[13px] text-ac-soft">{t("accounts.reauth.finishInBrowser")}</p>
             <div className="flex h-[280px] overflow-hidden rounded-lg border border-ac-line bg-ac-bg p-3">
               <XtermBox key={run} args={signInArgs(provider, a.name, true, browser || undefined)} backend={tauriBackend} onExit={(code) => void finished(code)} />
             </div>
@@ -226,14 +224,18 @@ export function ReauthDialog({ accountId }: { accountId: string }) {
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <Badge tone="ok" dot>
-                Connected
+                {t("accounts.auth.connected")}
               </Badge>
               {shown && <Copyable text={shown} className="text-[13px] text-ac-text" />}
             </div>
             <p className="text-xs text-ac-muted">
-              {before ? "Same account as before. " : ""}
-              {a.auth?.expiresAt ? `The sign-in now runs until ${expiry(a.auth.expiresAt, s.now)}.` : ""}
-              {waiting.length ? " Paused sessions continue where they stopped — nothing is run twice." : ""}
+              {[
+                before ? t("accounts.reauth.sameAccount") : "",
+                a.auth?.expiresAt ? t("accounts.reauth.runsUntil", { when: expiry(a.auth.expiresAt, s.now) }) : "",
+                waiting.length ? t("accounts.reauth.pausedContinue") : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
             </p>
           </div>
         )}
@@ -241,14 +243,11 @@ export function ReauthDialog({ accountId }: { accountId: string }) {
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <Badge tone="alert" dot>
-                Wrong account
+                {t("accounts.state.wrongAccount")}
               </Badge>
               {seen && <Copyable text={seen} className="text-[13px] text-ac-text" />}
             </div>
-            <p className="text-xs text-ac-muted">
-              That sign-in belongs to a different account, and this account's folder now holds it. Sign in with {a.identity ?? "the account you want here"}, or add
-              the other one as a new account.
-            </p>
+            <p className="text-xs text-ac-muted">{t("accounts.reauth.mismatch", { who: a.identity ?? t("accounts.reauth.wantedAccount") })}</p>
           </div>
         )}
       </div>

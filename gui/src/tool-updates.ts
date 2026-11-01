@@ -14,6 +14,7 @@
 import { fetchLatestRelease, isNewer } from "./updates.js";
 import { recordNotification, type ToolingEntry, type ToolingId } from "./ipc.js";
 import { getToolNotifiedVersion, setToolNotifiedVersion } from "./settings-store.js";
+import { noticeEn } from "./redesign/engines/notice-text.js";
 
 /** The public repo whose GitHub Releases are rtk's update source of truth. */
 export const RTK_REPO = "rtk-ai/rtk";
@@ -100,8 +101,8 @@ export async function notifyToolUpdates(
     setToolNotifiedVersion(t.id, l);
     await recordNotification(
       "info",
-      `${t.id} update available`,
-      `v${versionToken(t.version ?? "") ?? t.version} → v${versionToken(l) ?? l} — open Tooling to update.`,
+      noticeEn("engines.notice.toolUpdateTitle", { tool: t.id }),
+      noticeEn("engines.notice.toolUpdateBody", { current: versionToken(t.version ?? "") ?? t.version ?? "", latest: versionToken(l) ?? l }),
     ).catch(() => {});
     recorded++;
   }

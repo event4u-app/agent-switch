@@ -1,6 +1,7 @@
 import { useEffect, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { Check, Copy } from "lucide-react";
 import { cn } from "../lib/utils.js";
+import { t } from "../i18n/index.js";
 
 export interface CopyButtonProps {
   text: string;
@@ -28,7 +29,7 @@ export function CopyButton({ text, nested, className }: CopyButtonProps) {
       .then(() => setDone(true))
       .catch(() => {});
   };
-  const label = done ? "Copied" : `Copy ${text}`;
+  const label = done ? t("common.copied") : t("ui.copy.copyText", { text });
   const props = {
     "aria-label": label,
     title: label,

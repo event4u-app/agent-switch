@@ -11,6 +11,7 @@ import { getRefreshMinutes, setNextUsageRefreshAt } from "../settings-store.js";
 import { fetchOnCooldown, getUsageAttempts, loadUsageCache, markUsageAttempt, saveUsageSnapshot, withStickyResets } from "../usage-cache.js";
 import { hasUsageReadout, type ProviderId, type UsageSnapshot } from "../transforms.js";
 import { notify } from "../redesign/engines/bus.js";
+import { noticeEn } from "../redesign/engines/notice-text.js";
 
 /** The /api/oauth/usage endpoint 429s on a few near-simultaneous reads, so
  *  consecutive Claude fetches are spaced; the other readouts are local. */
@@ -58,7 +59,8 @@ export interface UsageDeps {
 
 const defaultDeps: UsageDeps = {
   fetch: (p, n) => profileUsage(p, n).catch(() => null),
-  onFailure: (p, n) => notify("warning", "Usage fetch failed", `Could not fetch usage limits for ${p}/${n}.`),
+  onFailure: (p, n) =>
+    notify("warning", noticeEn("engines.notice.usageFetchFailedTitle"), noticeEn("engines.notice.usageFetchFailedBody", { profile: `${p}/${n}` })),
   sleep: (ms) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve()),
   now: () => Date.now(),
 };

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AppWindow, Check, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
+import { t, tp, type TKey } from "../../i18n/index.js";
 import { cn } from "../../lib/utils.js";
 import { hasUsageReadout, type ProfileLabel } from "../../transforms.js";
 import { AccountDot, identityColor } from "../../ui/AccountDot.js";
@@ -18,20 +19,31 @@ import { isStale, nextInPools, TOOL_LABEL } from "../../vm/rules.js";
 import { useAS, type AccountSection } from "../../vm/store.js";
 import { IDENTITY_COLORS, type AuthHealth, type AuthState, type IdentityColor } from "../../vm/types.js";
 import { attempt, confirmRedeem, confirmRemove, makeDefault, PlainStartStar, refreshOne, turnOffPlainStarts } from "./account-actions.js";
-import { canSaveName, hasReadout, NAME_HINT, nameProblem } from "./account-logic.js";
+import { canSaveName, hasReadout, nameProblem, tagLabel } from "./account-logic.js";
 import { appFor, hasLauncher } from "./logic.js";
 import { AccountStateBadge } from "./rows.js";
 import { Sparkline, useUsageHistory } from "./usage-history.js";
 
 const LABELS: ProfileLabel[] = ["Work", "Personal", "Other"];
 
-const AUTH_BADGE: Record<AuthState, { label: string; tone: "ok" | "info" | "warn" | "alert" | "neutral" }> = {
-  connected: { label: "Connected", tone: "ok" },
-  refreshing: { label: "Refreshing", tone: "info" },
-  expiring: { label: "Expires soon", tone: "warn" },
-  "sign-in-needed": { label: "Sign-in needed", tone: "warn" },
-  "wrong-account": { label: "Wrong account", tone: "alert" },
-  unknown: { label: "Unknown", tone: "neutral" },
+const AUTH_BADGE: Record<AuthState, { labelKey: TKey; tone: "ok" | "info" | "warn" | "alert" | "neutral" }> = {
+  connected: { labelKey: "accounts.auth.connected", tone: "ok" },
+  refreshing: { labelKey: "accounts.auth.refreshing", tone: "info" },
+  expiring: { labelKey: "accounts.auth.expiresSoon", tone: "warn" },
+  "sign-in-needed": { labelKey: "accounts.state.signInNeeded", tone: "warn" },
+  "wrong-account": { labelKey: "accounts.state.wrongAccount", tone: "alert" },
+  unknown: { labelKey: "accounts.auth.unknown", tone: "neutral" },
+};
+
+const COLOUR_KEY: Record<IdentityColor, TKey> = {
+  orange: "accounts.colour.orange",
+  blue: "accounts.colour.blue",
+  green: "accounts.colour.green",
+  purple: "accounts.colour.purple",
+  yellow: "accounts.colour.yellow",
+  teal: "accounts.colour.teal",
+  pink: "accounts.colour.pink",
+  red: "accounts.colour.red",
 };
 
 const UNKNOWN_AUTH: AuthHealth = {
@@ -48,16 +60,16 @@ const UNKNOWN_AUTH: AuthHealth = {
 export function ColourPicker({ value, onChange }: { value: IdentityColor; onChange: (c: IdentityColor) => void }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="ac-caps">Colour</span>
-      <div role="radiogroup" aria-label="Account colour" className="flex flex-wrap gap-2">
+      <span className="ac-caps">{t("accounts.colour.title")}</span>
+      <div role="radiogroup" aria-label={t("accounts.colour.groupLabel")} className="flex flex-wrap gap-2">
         {IDENTITY_COLORS.map((c) => (
           <button
             key={c}
             type="button"
             role="radio"
             aria-checked={value === c}
-            aria-label={c}
-            title={c}
+            aria-label={t(COLOUR_KEY[c])}
+            title={t(COLOUR_KEY[c])}
             onClick={() => onChange(c)}
             className={cn(
               "inline-flex size-8 items-center justify-center rounded-md border transition-colors",
@@ -78,14 +90,14 @@ export function ColourPicker({ value, onChange }: { value: IdentityColor; onChan
 export function TagPicker({ value, onChange }: { value: ProfileLabel | null; onChange: (v: ProfileLabel) => void }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="ac-caps">Tag</span>
+      <span className="ac-caps">{t("accounts.tag.title")}</span>
       <Segmented<ProfileLabel | "">
-        label="Tag"
+        label={t("accounts.tag.title")}
         value={value ?? ""}
         onChange={(v) => v && onChange(v)}
-        options={LABELS.map((l) => ({ value: l, label: l }))}
+        options={LABELS.map((l) => ({ value: l, label: tagLabel(l) }))}
       />
-      <span className="text-[11px] text-ac-faint">Describes the account. Shown in lists and used to suggest pools.</span>
+      <span className="text-[11px] text-ac-faint">{t("accounts.tag.hint")}</span>
     </div>
   );
 }
@@ -95,7 +107,7 @@ export function PoolsPicker({ value, onChange }: { value: string[]; onChange: (v
   const s = useAS();
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="ac-caps">Pools · optional</span>
+      <span className="ac-caps">{t("accounts.pools.title")}</span>
       <div className="flex flex-wrap gap-1.5">
         {s.pools.map((p) => {
           const on = value.includes(p.id);
@@ -115,7 +127,7 @@ export function PoolsPicker({ value, onChange }: { value: string[]; onChange: (v
           );
         })}
       </div>
-      <span className="text-[11px] text-ac-faint">A project bound to a pool may use any of its accounts. Pools never add up provider limits.</span>
+      <span className="text-[11px] text-ac-faint">{t("accounts.pools.hint")}</span>
     </div>
   );
 }
@@ -178,7 +190,7 @@ export function AccountSheet({ id, section }: { id: string; section?: AccountSec
           });
         }
       })(),
-      `Couldn't save ${acc.name}`,
+      t("accounts.sheet.saveFailed", { name: acc.name }),
     );
     s.update((vm) => ({
       accounts: vm.accounts.map((m) =>
@@ -198,7 +210,7 @@ export function AccountSheet({ id, section }: { id: string; section?: AccountSec
     <Sheet
       open
       onOpenChange={(o) => !o && s.close()}
-      kicker={`${TOOL_LABEL[a.tool]} account`}
+      kicker={t("accounts.sheet.kicker", { tool: TOOL_LABEL[a.tool] })}
       title={
         <span className="inline-flex items-center gap-2.5">
           <AccountDot color={a.color} size={12} /> {a.name}
@@ -208,22 +220,22 @@ export function AccountSheet({ id, section }: { id: string; section?: AccountSec
       footer={
         <>
           <Button size="sm" variant="ghost" onClick={() => s.close()}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button size="sm" variant="primary" onClick={save} disabled={!valid}>
-            Save
+            {t("common.save")}
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-5">
         <SheetSection
-          title="Identity"
+          title={t("accounts.sheet.identity")}
           aside={
             <span className="flex items-center gap-1">
               {app && (
-                <Button size="sm" variant="ghost" onClick={() => attempt(s, s.act.openApp?.(app, a.id), "Couldn't open the app")} disabled={a.state === "signed-out"}>
-                  <AppWindow /> Open {TOOL_LABEL[a.tool]} app
+                <Button size="sm" variant="ghost" onClick={() => attempt(s, s.act.openApp?.(app, a.id), t("accounts.actions.openAppFailed"))} disabled={a.state === "signed-out"}>
+                  <AppWindow /> {t("accounts.sheet.openApp", { tool: TOOL_LABEL[a.tool] })}
                 </Button>
               )}
               <Button
@@ -232,66 +244,63 @@ export function AccountSheet({ id, section }: { id: string; section?: AccountSec
                 aria-pressed={a.isDefault}
                 onClick={() => (a.isDefault ? turnOffPlainStarts(a, s) : makeDefault(a, s))}
                 disabled={!a.isDefault && (a.state === "signed-out" || !!a.disabled)}
-                title={a.isDefault ? "Used for plain starts — click to go back to your original login" : "Use for plain starts"}
+                title={a.isDefault ? t("accounts.sheet.usedForPlainTitle") : t("accounts.action.usePlain")}
               >
-                <PlainStartStar on={a.isDefault} /> Use for plain starts
+                <PlainStartStar on={a.isDefault} /> {t("accounts.action.usePlain")}
               </Button>
             </span>
           }
         >
           <div className="flex flex-wrap items-center gap-2">
-            {a.isDefault && <Badge tone="brand">Default</Badge>}
-            {next && <Badge tone="info">Next in {next}</Badge>}
+            {a.isDefault && <Badge tone="brand">{t("accounts.badge.default")}</Badge>}
+            {next && <Badge tone="info">{t("accounts.badge.nextIn", { pool: next })}</Badge>}
             {!["signed-out", "wrong-account", "checking"].includes(a.state) && <AccountStateBadge account={a} />}
           </div>
           <DefinitionList
             rows={[
-              ["Signed in as", a.identity ? <Copyable text={a.identity} /> : "—"],
-              ["Plan", a.plan ?? "—"],
-              ["Tag", a.label ?? "—"],
-              ["Pools", a.pools.map((p) => s.pools.find((x) => x.id === p)?.label ?? p).join(", ") || "—"],
+              [t("accounts.sheet.signedInAs"), a.identity ? <Copyable text={a.identity} /> : "—"],
+              [t("accounts.sheet.plan"), a.plan ?? "—"],
+              [t("accounts.tag.title"), a.label ? tagLabel(a.label) : "—"],
+              [t("accounts.sheet.pools"), a.pools.map((p) => s.pools.find((x) => x.id === p)?.label ?? p).join(", ") || "—"],
             ]}
           />
           {a.desktopForeign && (
-            <p className="text-xs text-ac-warn-text">
-              Its Claude Desktop window is signed in as {a.desktopForeign.join(", ")} — chats and Code sessions there count against that account, not{" "}
-              {a.name}. Sign out in that window and sign in as {a.name}.
-            </p>
+            <p className="text-xs text-ac-warn-text">{t("accounts.sheet.desktopForeign", { who: a.desktopForeign.join(", "), name: a.name })}</p>
           )}
         </SheetSection>
 
-        <SheetSection title="Sign-in">
+        <SheetSection title={t("accounts.sheet.signInSection")}>
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={AUTH_BADGE[auth.state].tone} dot>
-              {auth.state === "expiring" && auth.expiresAt ? `Expires ${expiry(auth.expiresAt, s.now)}` : AUTH_BADGE[auth.state].label}
+              {auth.state === "expiring" && auth.expiresAt ? t("accounts.sheet.expiresBadge", { when: expiry(auth.expiresAt, s.now) }) : t(AUTH_BADGE[auth.state].labelKey)}
             </Badge>
-            {auth.checkedAt && <span className="text-[11px] text-ac-faint">checked {ago(auth.checkedAt, s.now)}</span>}
+            {auth.checkedAt && <span className="text-[11px] text-ac-faint">{t("accounts.sheet.checked", { when: ago(auth.checkedAt, s.now) })}</span>}
           </div>
           <DefinitionList
             rows={[
-              ["Expires", auth.expiresAt ? `${expiry(auth.expiresAt, s.now)} — moves on with each refresh` : "Not reported by the provider"],
-              ["Last refresh", auth.lastRefreshAt ? ago(auth.lastRefreshAt, s.now) : "—"],
-              ["Kept fresh by", auth.keptFreshBy ?? auth.method ?? "—"],
+              [t("accounts.sheet.expires"), auth.expiresAt ? t("accounts.sheet.expiresValue", { when: expiry(auth.expiresAt, s.now) }) : t("accounts.sheet.notReported")],
+              [t("accounts.lastRefresh"), auth.lastRefreshAt ? ago(auth.lastRefreshAt, s.now) : "—"],
+              [t("accounts.sheet.keptFreshBy"), auth.keptFreshBy ?? auth.method ?? "—"],
             ]}
           />
           {(a.state === "signed-out" || a.state === "wrong-account") && (
             <div className="flex items-center justify-between gap-3 rounded-md border border-ac-line px-3 py-2">
-              <span className="text-xs text-ac-muted">{auth.reason ?? "This account needs a sign-in."}</span>
+              <span className="text-xs text-ac-muted">{auth.reason ?? t("accounts.sheet.needsSignIn")}</span>
               <Button size="sm" variant="primary" onClick={() => s.open({ kind: "reauth", accountId: a.id })}>
-                Sign in
+                {t("accounts.action.signIn")}
               </Button>
             </div>
           )}
         </SheetSection>
 
         {surfaces.length > 0 && (
-          <SheetSection title="Desktop apps">
+          <SheetSection title={t("accounts.sheet.desktopApps")}>
             <div className="flex flex-col gap-1.5">
               {surfaces.map((x) => (
                 <div key={x.id} className="flex items-center justify-between gap-3 text-xs">
                   <span className={x.detected ? "text-ac-text" : "text-ac-faint"}>{x.name}</span>
                   <span className="text-ac-muted">
-                    {!x.detected ? "Not installed" : hasLauncher(s.launchers, x.id, a.id) ? "Own launcher" : "Open from Agent Switch"}
+                    {!x.detected ? t("accounts.sheet.notInstalled") : hasLauncher(s.launchers, x.id, a.id) ? t("accounts.sheet.ownLauncher") : t("accounts.sheet.openFromAgentSwitch")}
                   </span>
                 </div>
               ))}
@@ -299,27 +308,27 @@ export function AccountSheet({ id, section }: { id: string; section?: AccountSec
           </SheetSection>
         )}
 
-        <SheetSection title="Session protection" aside={<Switch label="Session protection" checked={protOn} onChange={setProtOn} disabled={!s.act.setProtection} />}>
+        <SheetSection title={t("accounts.protection.title")} aside={<Switch label={t("accounts.protection.title")} checked={protOn} onChange={setProtOn} disabled={!s.act.setProtection} />}>
           <p className="text-xs text-ac-muted">
             {protOn
-              ? `At ${a.threshold} % of the binding window, Agent Switch warns you — it doesn't pause sessions yet. A running session is never moved to another account on its own.`
-              : "Off — sessions run until the provider stops them."}
+              ? t("accounts.protection.onBody", { pct: a.threshold })
+              : t("accounts.protection.offBody")}
           </p>
         </SheetSection>
 
         {(a.windows.length > 0 || readout) && (
           <SheetSection
             id="account-usage"
-            title="Capacity"
+            title={t("accounts.capacity")}
             aside={
               <span className="flex items-center gap-1">
                 <span className={cn("text-[11px]", isStale(a.checkedAt, s.now) ? "text-ac-warn-text" : "text-ac-faint")}>
-                  checked {a.checkedAt ? ago(a.checkedAt, s.now) : "never"}
+                  {t("accounts.sheet.checked", { when: a.checkedAt ? ago(a.checkedAt, s.now) : t("common.never") })}
                 </span>
                 {readout && (
                   <IconButton
-                    label="Refresh usage"
-                    title={signedOut ? "Sign in first" : a.disabled ? "Refresh usage — disabled accounts are only checked when you ask" : "Refresh usage"}
+                    label={t("accounts.action.refreshUsage")}
+                    title={signedOut ? t("accounts.sheet.signInFirst") : a.disabled ? t("accounts.sheet.refreshDisabledTitle") : t("accounts.action.refreshUsage")}
                     className="size-7 disabled:cursor-not-allowed disabled:opacity-45"
                     disabled={signedOut || refreshing || !s.act.refreshAccountUsage}
                     onClick={() => {
@@ -334,7 +343,7 @@ export function AccountSheet({ id, section }: { id: string; section?: AccountSec
             }
           >
             {a.windows.length === 0 && (
-              <span className="text-xs text-ac-muted">{signedOut ? "Usage resumes after the sign-in." : "No usage read yet."}</span>
+              <span className="text-xs text-ac-muted">{signedOut ? t("accounts.sheet.usageResumes") : t("accounts.sheet.noUsageRead")}</span>
             )}
             {a.windows.map((w) => (
               <UsageWindowRow key={w.key} window={w} threshold={a.threshold} now={s.now} />
@@ -342,30 +351,28 @@ export function AccountSheet({ id, section }: { id: string; section?: AccountSec
             {hasReadout(history[a.id]) && (
               <div className="flex flex-col gap-1">
                 <Sparkline values={history[a.id]} color={identityColor(a.color)} />
-                <span className="text-[11px] text-ac-faint">Week window, peak per day, last 30 days</span>
+                <span className="text-[11px] text-ac-faint">{t("accounts.sheet.sparklineCaption")}</span>
               </div>
             )}
             {a.tool === "claude" ? (
               <div className="flex items-center justify-between gap-3 rounded-md border border-ac-line px-3 py-2">
-                <span className="text-xs text-ac-muted">Claude sometimes offers a free reset. Agent Switch can't see offers — check at Claude.</span>
-                <Button size="sm" variant="ghost" disabled={!s.act.openUsagePage} onClick={() => attempt(s, s.act.openUsagePage?.(a.id), "Couldn't open Claude")}>
-                  <ExternalLink /> Check
+                <span className="text-xs text-ac-muted">{t("accounts.sheet.freeResetNote")}</span>
+                <Button size="sm" variant="ghost" disabled={!s.act.openUsagePage} onClick={() => attempt(s, s.act.openUsagePage?.(a.id), t("accounts.actions.openClaudeFailed"))}>
+                  <ExternalLink /> {t("accounts.sheet.check")}
                 </Button>
               </div>
             ) : a.resetCredits != null ? (
               <div className="flex items-center justify-between gap-3 rounded-md border border-ac-line px-3 py-2">
-                <span className="text-xs text-ac-muted">
-                  {a.resetCredits} reset credit{a.resetCredits === 1 ? "" : "s"} available
-                </span>
+                <span className="text-xs text-ac-muted">{tp("accounts.sheet.resetCredits", a.resetCredits)}</span>
                 <Button size="sm" variant="ghost" disabled={!a.resetCredits} onClick={() => confirmRedeem(a, s)}>
-                  Redeem one
+                  {t("accounts.actions.redeemOne")}
                 </Button>
               </div>
             ) : null}
           </SheetSection>
         )}
 
-        <SheetSection title={`Sessions · ${sessions.length}`}>
+        <SheetSection title={t("accounts.sheet.sessions", { count: sessions.length })}>
           {sessions.length ? (
             <div className="flex flex-col gap-1.5">
               {sessions.map((x) => (
@@ -384,14 +391,14 @@ export function AccountSheet({ id, section }: { id: string; section?: AccountSec
               ))}
             </div>
           ) : (
-            <p className="text-xs text-ac-faint">No sessions on this account yet.</p>
+            <p className="text-xs text-ac-faint">{t("accounts.sheet.noSessions")}</p>
           )}
         </SheetSection>
 
-        <SheetSection id="account-edit" title="Name, colour, tag & pools">
+        <SheetSection id="account-edit" title={t("accounts.sheet.editTitle")}>
           <div className="flex flex-col gap-1.5">
             <label className="ac-caps" htmlFor="acc-name">
-              Name
+              {t("accounts.name.label")}
             </label>
             <TextInput
               id="acc-name"
@@ -402,7 +409,7 @@ export function AccountSheet({ id, section }: { id: string; section?: AccountSec
               onKeyDown={(e) => e.key === "Enter" && save()}
             />
             <span className={cn("text-[11px]", nameProblem(name) && name.trim() !== a.name ? "text-ac-warn-text" : "text-ac-faint")}>
-              {(name.trim() !== a.name && nameProblem(name)) || `${NAME_HINT} Renaming keeps the sign-in and the sessions.`}
+              {(name.trim() !== a.name && nameProblem(name)) || t("accounts.sheet.renameHint")}
             </span>
           </div>
           <ColourPicker value={color} onChange={setColor} />
@@ -410,11 +417,11 @@ export function AccountSheet({ id, section }: { id: string; section?: AccountSec
           <PoolsPicker value={pools} onChange={setPools} />
         </SheetSection>
 
-        <SheetSection title="Danger zone">
+        <SheetSection title={t("accounts.sheet.dangerZone")}>
           <div className="flex items-center justify-between gap-3">
-            <span className="text-xs text-ac-muted">Removes this account's folder from Agent Switch. Your original login is untouched.</span>
+            <span className="text-xs text-ac-muted">{t("accounts.sheet.removeNote")}</span>
             <Button size="sm" variant="danger" onClick={() => confirmRemove(a, s)}>
-              <Trash2 /> Remove …
+              <Trash2 /> {t("accounts.sheet.removeButton")}
             </Button>
           </div>
         </SheetSection>

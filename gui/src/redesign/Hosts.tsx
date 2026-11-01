@@ -18,6 +18,7 @@ import { AccountSheet } from "./screens/account-sheet.js";
 import { Accounts } from "./screens/accounts.js";
 import { AddAccountDialog } from "./screens/add-account.js";
 import { ReauthDialog } from "./screens/reauth.js";
+import { t } from "../i18n/index.js";
 
 /** The current place (bundle `bR`). */
 export function ScreenHost() {
@@ -38,14 +39,14 @@ function ConfirmDialog({ title, body, confirm, danger, onConfirm }: ConfirmReque
     <Dialog
       open
       onOpenChange={(o) => !o && s.close()}
-      kicker="Please confirm"
+      kicker={t("shell.confirm.kicker")}
       title={title}
       width={460}
       footer={
         <>
           <span className="flex-1" />
           <Button size="sm" variant="ghost" onClick={() => s.close()}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             size="sm"

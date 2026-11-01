@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { CircleCheck, Download, X } from "lucide-react";
+import { t } from "../../i18n/index.js";
+import { tx } from "../../i18n/react.js";
 import { getAgentConfigCardDismissed, getSessionMonitoring, setAgentConfigCardDismissed } from "../../settings-store.js";
 import { Button, IconButton } from "../../ui/Button.js";
 import { Card } from "../../ui/Card.js";
@@ -11,6 +13,9 @@ import { accountTools, overviewSub } from "./logic.js";
 import { StarAskBanner } from "./star-ask-banner.js";
 import { AttentionRow, CompactAccountRow, RowList, SessionRow } from "./rows.js";
 
+/** The agent-config monogram: a logo, not language. */
+const MONOGRAM = "AC";
+
 /** "AC" monogram tile. Bundle `y0`. */
 export function AcTile({ size = 40 }: { size?: number }) {
   return (
@@ -18,7 +23,7 @@ export function AcTile({ size = 40 }: { size?: number }) {
       className="inline-flex shrink-0 items-center justify-center rounded-lg border border-ac-brand-line bg-ac-brand-tint font-display tracking-[0.02em] text-ac-brand-text"
       style={{ width: size, height: size, fontSize: size * 0.38 }}
     >
-      AC
+      {MONOGRAM}
     </span>
   );
 }
@@ -35,19 +40,19 @@ export function AcPromoBanner() {
       <AcTile size={36} />
       <div className="min-w-[220px] flex-1">
         <p className="text-[13px] font-medium text-ac-text">
-          Supercharge your AI agents with <span className="whitespace-nowrap">agent-config</span> — free & open source
+          {tx("overview.promo.title", { name: <span className="whitespace-nowrap">agent-config</span> })}
         </p>
-        <p className="mt-0.5 text-xs text-ac-muted">Skills, commands and rules in every session — Agent Switch installs and updates it for you.</p>
+        <p className="mt-0.5 text-xs text-ac-muted">{t("overview.promo.sub")}</p>
       </div>
       <div className="flex items-center gap-2">
         <Button size="sm" variant="ghost" onClick={() => s.go("tools")}>
-          Learn more
+          {t("common.learnMore")}
         </Button>
         <Button size="sm" variant="primary" onClick={() => s.open({ kind: "terminal", toolId: "agent-config", action: "install" })}>
-          <Download /> Install
+          <Download /> {t("overview.promo.install")}
         </Button>
         <IconButton
-          label="Not now — it stays under Tools"
+          label={t("overview.promo.notNow")}
           onClick={() => {
             setAgentConfigCardDismissed();
             setDismissed(true);
@@ -74,11 +79,11 @@ export function FirstRun() {
   return (
     <div className="mx-auto flex max-w-[620px] flex-col gap-6 pt-6">
       <PageHeader
-        title="Let's add your first account"
-        sub="Agent Switch keeps your accounts apart and gives every session the right one. Your tools keep working exactly as before."
+        title={t("overview.firstRun.title")}
+        sub={t("overview.firstRun.sub")}
       />
       <Card className="flex flex-col gap-3 p-4">
-        <span className="ac-caps">Found on this computer</span>
+        <span className="ac-caps">{t("overview.firstRun.found")}</span>
         <ul className="flex flex-col gap-1.5">
           {found.map((name) => (
             <li key={name} className="flex items-center gap-2.5 text-[13px] text-ac-text">
@@ -86,11 +91,11 @@ export function FirstRun() {
             </li>
           ))}
         </ul>
-        <p className="text-xs text-ac-muted">Nothing was changed. Your current logins stay where they are.</p>
+        <p className="text-xs text-ac-muted">{t("overview.firstRun.nothingChanged")}</p>
       </Card>
       <div className="flex flex-wrap gap-2">
         <Button variant="primary" size="lg" onClick={() => s.open({ kind: "add-account" })}>
-          Add account
+          {t("overview.firstRun.addAccount")}
         </Button>
         <Button
           size="lg"
@@ -100,7 +105,7 @@ export function FirstRun() {
             s.setToolsTab("apps");
           }}
         >
-          See what works where
+          {t("overview.firstRun.whatWorksWhere")}
         </Button>
       </div>
     </div>
@@ -111,7 +116,7 @@ export function FirstRun() {
 export function Overview() {
   const s = useAS();
   if (!s.accounts.length) {
-    if (s.readiness === "starting") return <PageHeader title="What's going on?" sub="Reading accounts and sessions …" />;
+    if (s.readiness === "starting") return <PageHeader title={t("overview.title")} sub={t("overview.reading")} />;
     return <FirstRun />;
   }
   const running = s.sessions.filter((x) => x.state !== "done" && !x.trashed);
@@ -122,10 +127,10 @@ export function Overview() {
   const acPromoShowing = s.agentConfig.status === "not-installed" && !getAgentConfigCardDismissed();
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title="What's going on?" sub={overviewSub(s)} />
+      <PageHeader title={t("overview.title")} sub={overviewSub(s)} />
       <section aria-labelledby="needs-you" className="flex flex-col gap-3">
         <div id="needs-you">
-          <SectionHeader title="Needs you" count={needs} />
+          <SectionHeader title={t("overview.needsYou")} count={needs} />
         </div>
         {needs ? (
           <Card className="overflow-hidden">
@@ -140,14 +145,16 @@ export function Overview() {
           </Card>
         ) : (
           <p className="flex flex-wrap items-center gap-2 text-[13px] text-ac-muted">
-            <CircleCheck className="size-4 text-ac-ok" /> Nothing needs you. Sessions keep running on their accounts.
+            <CircleCheck className="size-4 text-ac-ok" /> {t("overview.nothingNeedsYou")}
             {!getSessionMonitoring() && running.length > 0 && (
               <span className="text-xs text-ac-faint">
-                Questions a session asks show here; a permission prompt only with{" "}
-                <button type="button" className="underline underline-offset-2 hover:text-ac-text" onClick={() => s.go("settings", "notifications")}>
-                  session monitoring on
-                </button>
-                .
+                {tx("overview.monitoringHint", {
+                  link: (
+                    <button type="button" className="underline underline-offset-2 hover:text-ac-text" onClick={() => s.go("settings", "notifications")}>
+                      {t("overview.monitoringLink")}
+                    </button>
+                  ),
+                })}
               </span>
             )}
           </p>
@@ -158,7 +165,7 @@ export function Overview() {
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,1fr)]">
         <section aria-labelledby="running" className="flex min-w-0 flex-col gap-2">
           <div id="running">
-            <SectionHeader title="Running now" count={running.length} />
+            <SectionHeader title={t("overview.runningNow")} count={running.length} />
           </div>
           <Card className="p-1">
             {running.length ? (
@@ -168,13 +175,13 @@ export function Overview() {
                 ))}
               </RowList>
             ) : (
-              <p className="px-3 py-2.5 text-xs text-ac-muted">Nothing runs right now.</p>
+              <p className="px-3 py-2.5 text-xs text-ac-muted">{t("overview.nothingRuns")}</p>
             )}
           </Card>
         </section>
         <section aria-labelledby="left" className="flex min-w-0 flex-col gap-2">
           <div id="left">
-            <SectionHeader title="What's left" />
+            <SectionHeader title={t("overview.whatsLeft")} />
           </div>
           <Card className="flex flex-col gap-1 p-1">
             {tools.map((tool) => {

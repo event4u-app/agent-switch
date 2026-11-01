@@ -38,6 +38,7 @@ describe("pet model", () => {
   it("sanitizes bubble text to one capped line", () => {
     expect(sanitizeBubble("a\nb\tc")).toBe("a b c");
     expect(sanitizeBubble("  spaced   out  ")).toBe("spaced out");
+    expect(sanitizeBubble("bei 94\u00a0%  jetzt")).toBe("bei 94\u00a0% jetzt"); // a no-break space survives
     const long = "x".repeat(200);
     expect(sanitizeBubble(long).length).toBe(140);
     expect(sanitizeBubble(long).endsWith("…")).toBe(true);

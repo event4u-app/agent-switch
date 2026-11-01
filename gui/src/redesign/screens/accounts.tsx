@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { resolvePlainStart, type DirResolution } from "../../ipc.js";
 import { Ellipsis, LogIn, Plus, RefreshCw, ShieldCheck, ShieldOff, SquareTerminal } from "lucide-react";
+import { t, tp } from "../../i18n/index.js";
+import { tx } from "../../i18n/react.js";
 import { cn } from "../../lib/utils.js";
 import { AccountDot } from "../../ui/AccountDot.js";
 import { Badge } from "../../ui/Badge.js";
@@ -29,7 +31,7 @@ function ProtectCell({ account: a }: { account: Account }) {
   return (
     <span className={cn("inline-flex items-center gap-1 whitespace-nowrap text-[11px]", on ? "text-ac-soft" : "text-ac-faint")} title={protectTitle(p)}>
       {p == null ? "—" : on ? <ShieldCheck className="size-3.5 text-ac-soft" /> : <ShieldOff className="size-3.5" />}
-      {p == null ? null : on ? `${p.thresholdPct} %` : "Off"}
+      {p == null ? null : on ? `${p.thresholdPct} %` : t("common.off")}
     </span>
   );
 }
@@ -62,16 +64,16 @@ export function AccountRow({ account: a, ranked, showRank, nextIn }: { account: 
         <span className="flex min-w-0 flex-col">
           <span className="flex min-w-0 items-center gap-2">
             <span className="truncate text-[13px] font-medium text-ac-text">{a.name}</span>
-            {a.disabled && <Badge>Disabled</Badge>}
+            {a.disabled && <Badge>{t("common.disabled")}</Badge>}
             {a.desktopForeign && (
-              <span title={`Its Claude Desktop window is signed in as ${a.desktopForeign.join(", ")} — sessions there count against that account.`}>
+              <span title={t("accounts.list.desktopForeignTitle", { who: a.desktopForeign.join(", ") })}>
                 <Badge tone="warn" dot>
-                  Desktop: {a.desktopForeign.join(", ")}
+                  {t("accounts.list.desktopBadge", { who: a.desktopForeign.join(", ") })}
                 </Badge>
               </span>
             )}
-            {a.isDefault && <Badge tone="brand">Default</Badge>}
-            {nextIn && <Badge tone="info">Next in {nextIn}</Badge>}
+            {a.isDefault && <Badge tone="brand">{t("accounts.badge.default")}</Badge>}
+            {nextIn && <Badge tone="info">{t("accounts.badge.nextIn", { pool: nextIn })}</Badge>}
             {!a.disabled && <AccountStateBadge account={a} />}
           </span>
           <AccountSubline account={a} signedOut={signedOut} />
@@ -79,11 +81,11 @@ export function AccountRow({ account: a, ranked, showRank, nextIn }: { account: 
       </button>
       <span className="hidden min-w-0 flex-col md:flex">
         {usedIn(a) && <span className="truncate text-xs text-ac-soft">{usedIn(a)}</span>}
-        <span className="text-[11px] text-ac-faint">{a.liveSessions ? `${a.liveSessions} running` : "idle"}</span>
+        <span className="text-[11px] text-ac-faint">{a.liveSessions ? tp("accounts.list.running", a.liveSessions) : t("accounts.list.idle")}</span>
       </span>
       <div className="col-span-2 md:col-span-1">
         {signedOut ? (
-          <span className="text-[11px] text-ac-faint">{a.windows.length ? "Usage resumes after the sign-in" : "No usage before the first sign-in"}</span>
+          <span className="text-[11px] text-ac-faint">{a.windows.length ? t("accounts.list.usageResumes") : t("accounts.list.noUsageBeforeSignIn")}</span>
         ) : (
           <UsageWindowStack windows={a.windows} threshold={a.threshold} checkedAt={a.checkedAt} now={s.now} />
         )}
@@ -94,7 +96,7 @@ export function AccountRow({ account: a, ranked, showRank, nextIn }: { account: 
       <div className="col-start-2 row-start-1 flex items-center justify-end gap-1 md:col-start-auto md:row-start-auto">
         {signedOut || a.state === "wrong-account" ? (
           <Button size="sm" variant="primary" onClick={() => s.open({ kind: "reauth", accountId: a.id })}>
-            <LogIn /> Sign in
+            <LogIn /> {t("accounts.action.signIn")}
           </Button>
         ) : (
           <>
@@ -103,12 +105,12 @@ export function AccountRow({ account: a, ranked, showRank, nextIn }: { account: 
                 size="sm"
                 variant="ghost"
                 onClick={() => makeDefault(a, s)}
-                title="Use for plain starts — what a plain `claude` / `codex` picks when no binding matches"
+                title={t("accounts.list.useTitle")}
               >
-                Use
+                {t("accounts.list.use")}
               </Button>
             )}
-            <IconButton label="Start session as this account" onClick={() => startAs(a, s)}>
+            <IconButton label={t("accounts.action.startAs")} onClick={() => startAs(a, s)}>
               <SquareTerminal />
             </IconButton>
           </>
@@ -116,7 +118,7 @@ export function AccountRow({ account: a, ranked, showRank, nextIn }: { account: 
         <RowMenu
           items={accountMenu(a, s)}
           trigger={
-            <IconButton label={`More for ${a.name}`}>
+            <IconButton label={t("accounts.list.moreFor", { name: a.name })}>
               <Ellipsis />
             </IconButton>
           }
@@ -130,15 +132,15 @@ export function AccountRow({ account: a, ranked, showRank, nextIn }: { account: 
 function AccountColumns({ ranked, threshold }: { ranked?: boolean; threshold: number }) {
   return (
     <div className={cn("hidden gap-x-4 px-3 pb-1 md:grid", ACCOUNT_GRID)}>
-      <span className={cn("ac-caps", ranked && "pl-8")}>Account</span>
-      <span className="ac-caps">Used in</span>
-      <span className="ac-caps" title={`Binding window. The tick on each bar marks where protection warns (${threshold} %).`}>
-        Capacity
+      <span className={cn("ac-caps", ranked && "pl-8")}>{t("accounts.list.colAccount")}</span>
+      <span className="ac-caps">{t("accounts.list.colUsedIn")}</span>
+      <span className="ac-caps" title={t("accounts.list.colCapacityTitle", { pct: threshold })}>
+        {t("accounts.capacity")}
       </span>
-      <span className="ac-caps" title="Session protection">
-        Protect
+      <span className="ac-caps" title={t("accounts.protection.title")}>
+        {t("accounts.list.colProtect")}
       </span>
-      <span className="ac-caps text-right">&nbsp;</span>
+      <span className="ac-caps text-right">{"\u00a0"}</span>
     </div>
   );
 }
@@ -152,7 +154,7 @@ function RefreshControl() {
   const mins = s.usageNextAt ? Math.max(0, Math.round((s.usageNextAt - s.now) / 60_000)) : null;
   return (
     <span className="flex items-center gap-2 text-xs text-ac-faint">
-      {mins != null && <span title="Automatic refresh — Settings › General">next refresh in {mins} min</span>}
+      {mins != null && <span title={t("accounts.list.autoRefreshTitle")}>{t("accounts.list.nextRefresh", { mins })}</span>}
       <Button
         size="sm"
         variant="ghost"
@@ -160,11 +162,11 @@ function RefreshControl() {
         onClick={() => {
           setBusy(true);
           void (s.act.refreshUsage?.() ?? Promise.resolve())
-            .catch((e: unknown) => s.toast({ tone: "alert", text: `Couldn't refresh: ${e instanceof Error ? e.message : String(e)}` }))
+            .catch((e: unknown) => s.toast({ tone: "alert", text: t("accounts.list.refreshFailed", { error: e instanceof Error ? e.message : String(e) }) }))
             .finally(() => setBusy(false));
         }}
       >
-        <RefreshCw className={cn(busy && "animate-spin")} /> {busy ? "Refreshing …" : "Refresh"}
+        <RefreshCw className={cn(busy && "animate-spin")} /> {busy ? t("accounts.list.refreshing") : t("common.refresh")}
       </Button>
     </span>
   );
@@ -201,7 +203,7 @@ function PlainStartLine({ tool }: { tool: Tool }) {
       <span className="flex min-w-0 flex-1 items-center gap-2 text-xs text-ac-muted">
         <SquareTerminal className="size-3.5 shrink-0 text-ac-faint" />
         <span className="shrink-0">
-          Plain <code className="font-ac-mono text-[11px] text-ac-soft">{p.command}</code> starts on
+          {tx("accounts.plain.startsOn", { command: <code className="font-ac-mono text-[11px] text-ac-soft">{p.command}</code> })}
         </span>
         {p.account ? (
           <span className="flex min-w-0 items-center gap-1.5">
@@ -209,16 +211,16 @@ function PlainStartLine({ tool }: { tool: Tool }) {
             <span className="truncate text-[13px] font-medium text-ac-text">{p.account.name}</span>
           </span>
         ) : (
-          <span className="truncate text-ac-soft">your original {TOOL_LABEL[tool]} login</span>
+          <span className="truncate text-ac-soft">{t("accounts.plain.originalLogin", { tool: TOOL_LABEL[tool] })}</span>
         )}
         {p.warn && (
           <Badge tone="warn" dot>
-            <span title={p.warn}>{p.account?.state === "signed-out" ? "Signed out" : p.account?.state === "limited" ? "At its limit" : "Check this account"}</span>
+            <span title={p.warn}>{p.account?.state === "signed-out" ? t("accounts.plain.signedOut") : p.account?.state === "limited" ? t("accounts.plain.atLimit") : t("accounts.plain.check")}</span>
           </Badge>
         )}
       </span>
       <span className="text-[11px] text-ac-faint">
-        {p.reason ?? (p.rules ? `Folders with a rule (${p.rules}) use their own` : p.account ? "No folder rules" : "Pick one: ⋯ → Use for plain starts")}
+        {p.reason ?? (p.rules ? t("accounts.plain.folderRules", { count: p.rules }) : p.account ? t("accounts.plain.noFolderRules") : t("accounts.plain.pickOne"))}
       </span>
     </div>
   );
@@ -239,9 +241,9 @@ function AccountGroups({ order }: { order: Order }) {
             <section key={tool} className="flex flex-col gap-1">
               <SectionHeader title={TOOL_LABEL[tool]} count={0} />
               <Card className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <span className="text-xs text-ac-muted">No {TOOL_LABEL[tool]} accounts yet.</span>
+                <span className="text-xs text-ac-muted">{t("accounts.list.noneYet", { tool: TOOL_LABEL[tool] })}</span>
                 <Button size="sm" onClick={() => s.open({ kind: "add-account", tool })}>
-                  <Plus /> Add a {TOOL_LABEL[tool]} account
+                  <Plus /> {t("accounts.list.addOne", { tool: TOOL_LABEL[tool] })}
                 </Button>
               </Card>
             </section>
@@ -262,7 +264,7 @@ function AccountGroups({ order }: { order: Order }) {
               count={ranked.length}
               actions={
                 <Button size="sm" variant="ghost" onClick={() => s.open({ kind: "add-account", tool })}>
-                  <Plus /> Add
+                  <Plus /> {t("common.add")}
                 </Button>
               }
             />
@@ -289,23 +291,23 @@ export function Accounts() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Who is signed in where?"
-        sub="Each account with its sign-in, where it is used, what is left and at what share it warns."
+        title={t("accounts.page.title")}
+        sub={t("accounts.page.sub")}
         actions={
           <Button variant="primary" onClick={() => s.open({ kind: "add-account" })}>
-            <Plus /> Add account
+            <Plus /> {t("accounts.action.addAccount")}
           </Button>
         }
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Segmented
-          label="View"
+          label={t("accounts.page.view")}
           value={s.accountsTab}
           onChange={s.setAccountsTab}
           options={[
-            { value: "accounts", label: `Accounts ${s.accounts.length}` },
-            { value: "history", label: "Usage history" },
-            { value: "projects", label: `Projects & pools ${s.rules.length}` },
+            { value: "accounts", label: t("accounts.tab.accounts", { count: s.accounts.length }) },
+            { value: "history", label: t("accounts.tab.history") },
+            { value: "projects", label: t("accounts.tab.projects", { count: s.rules.length }) },
           ]}
         />
         {s.accountsTab !== "projects" && (
@@ -313,11 +315,11 @@ export function Accounts() {
             <RefreshControl />
             {s.accountsTab === "accounts" && (
               <Segmented
-                label="Order"
+                label={t("accounts.page.order")}
                 value={order}
                 onChange={setOrder}
                 options={[
-                  { value: "headroom", label: "Most left first" },
+                  { value: "headroom", label: t("accounts.page.mostLeft") },
                   { value: "name", label: "A–Z" },
                 ]}
               />

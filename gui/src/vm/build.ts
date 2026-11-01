@@ -20,6 +20,8 @@ import type {
 import type { DesktopInstanceRow, LauncherRow } from "../ipc.js";
 import type { AppNotification } from "../notifications.js";
 import type { ProfileRow, ProvidersStatus, SessionRow, UsageSnapshot } from "../transforms.js";
+import { t, tp, type TKey } from "../i18n/index.js";
+import { localizeNotification } from "../redesign/engines/notice-text.js";
 import { countdown } from "../ui/format.js";
 import { TOOL_LABEL, bindingWindow, isStale, maxUtilization, rankAccounts, toneFor, toolStatus } from "./rules.js";
 import type {
@@ -250,10 +252,10 @@ export function sessionFromRow(row: SessionRow, now: number): Session {
     id: `${row.provider}:${row.sessionId}`,
     tool: row.provider,
     accountId: accountId(row.provider, row.profile),
-    project: cwd ? basename(cwd) : "Unknown folder",
+    project: cwd ? basename(cwd) : t("vm.build.unknownFolder"),
     cwd,
     branch: null,
-    title: summary ?? `Session ${row.sessionId.slice(0, 8)}`,
+    title: summary ?? t("vm.build.sessionTitle", { id: row.sessionId.slice(0, 8) }),
     state,
     startedAt: row.birthtimeMs ?? row.mtimeMs,
     lastActiveAt: row.mtimeMs,
@@ -269,9 +271,10 @@ export function sessionFromRow(row: SessionRow, now: number): Session {
   };
 }
 
-const TOOL_META: Record<ToolingEntry["id"], { name: string; role: string }> = {
-  "agent-config": { name: "agent-config", role: "Skills, rules and knowledge map for your agents" },
-  rtk: { name: "rtk", role: "Token killer — trims tool output" },
+/** `roleKey` is translated when the entry is built; `role` is the literal for brand names. */
+const TOOL_META: Record<ToolingEntry["id"], { name: string; role: string; roleKey?: TKey }> = {
+  "agent-config": { name: "agent-config", role: "", roleKey: "vm.tool.agentConfigRole" },
+  rtk: { name: "rtk", role: "", roleKey: "vm.tool.rtkRole" },
   claude: { name: "Claude Code", role: "Claude CLI" },
   codex: { name: "Codex CLI", role: "Codex CLI" },
   agy: { name: "Antigravity CLI", role: "agy" },
@@ -282,7 +285,7 @@ export function toolFromEntry(e: ToolingEntry, latest: string | null = null): To
   return {
     id: e.id,
     name: meta.name,
-    role: meta.role,
+    role: meta.roleKey ? t(meta.roleKey) : meta.role,
     present: e.present,
     version: e.version,
     latest,
@@ -316,7 +319,8 @@ const NOTICE_TONE: Record<AppNotification["kind"], Notice["tone"]> = {
 
 /** `lastRead` is the shared read-marker the legacy bell also uses. */
 export function noticeFromNotification(n: AppNotification, lastRead: number): Notice {
-  return { id: n.id, title: n.title, detail: n.message, at: n.ts, unread: n.ts > lastRead, tone: NOTICE_TONE[n.kind] };
+  const { title, message } = localizeNotification(n);
+  return { id: n.id, title, detail: message, at: n.ts, unread: n.ts > lastRead, tone: NOTICE_TONE[n.kind] };
 }
 
 /** Whether the stored login matters at all. A disabled account is never used,
@@ -370,10 +374,10 @@ export function deriveAttention(accounts: Account[], tools: ToolEntry[], toolsCh
       out.push({
         id: `signin:${a.id}`,
         kind: "signed-out",
-        title: `${TOOL_LABEL[a.tool]} · ${a.name} needs a new sign-in`,
-        detail: a.auth.reason ?? "The stored login can no longer be refreshed.",
+        title: t("vm.attention.signInTitle", { tool: TOOL_LABEL[a.tool], name: a.name }),
+        detail: a.auth.reason ?? t("vm.attention.signInDetail"),
         accountId: a.id,
-        primary: "Sign in",
+        primary: t("vm.attention.signIn"),
         at: a.auth.checkedAt,
       });
       continue;
@@ -390,10 +394,10 @@ export function deriveAttention(accounts: Account[], tools: ToolEntry[], toolsCh
     out.push({
       id: `limit:${a.id}`,
       kind: "near-limit",
-      title: `${a.name} is at ${w.utilization} % of its ${w.label} window`,
-      detail: resets ? `Resets in ${resets}.` : "Reset time not reported.",
+      title: t("vm.attention.limitTitle", { name: a.name, pct: String(w.utilization), window: w.label }),
+      detail: resets ? t("vm.attention.resetsIn", { time: resets }) : t("vm.attention.noReset"),
       accountId: a.id,
-      primary: "Decide",
+      primary: t("vm.attention.decide"),
       at: a.checkedAt,
     });
   }
@@ -403,12 +407,13 @@ export function deriveAttention(accounts: Account[], tools: ToolEntry[], toolsCh
     out.push({
       id: "update:tools",
       kind: "update",
-      title: `${first.name} ${first.latest} is out`,
-      detail:
-        `You have ${first.version}.` +
-        (rest.length ? ` ${rest.map((t) => t.name).join(", ")} ${rest.length === 1 ? "has an update" : "have updates"} too.` : "") +
-        " Running sessions are not touched.",
-      primary: "See updates",
+      title: t("vm.attention.updateTitle", { name: first.name, version: String(first.latest) }),
+      detail: [
+        t("vm.attention.youHave", { version: String(first.version) }),
+        ...(rest.length ? [tp("vm.attention.othersUpdate", rest.length, { names: rest.map((x) => x.name).join(", ") })] : []),
+        t("vm.attention.sessionsUntouched"),
+      ].join(" "),
+      primary: t("vm.attention.seeUpdates"),
       at: toolsCheckedAt,
     });
   }
@@ -440,7 +445,7 @@ export function desktopForeign(instances: readonly DesktopInstanceRow[]): Map<st
   const out = new Map<string, string[]>();
   for (const i of instances) {
     if (!i.profile || !i.mismatch) continue;
-    const others = i.accounts.filter((a) => a.profile !== i.profile).map((a) => a.profile ?? "an account without a profile");
+    const others = i.accounts.filter((a) => a.profile !== i.profile).map((a) => a.profile ?? t("vm.build.noProfileAccount"));
     if (others.length) out.set(accountId("claude", i.profile), others);
   }
   return out;

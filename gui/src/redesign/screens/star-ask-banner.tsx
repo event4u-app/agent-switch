@@ -10,9 +10,14 @@ import {
   shareLinks,
   starAskDue,
 } from "../../star-ask.js";
+import { t } from "../../i18n/index.js";
+import { tx } from "../../i18n/react.js";
 import { Button, IconButton } from "../../ui/Button.js";
 import { Card } from "../../ui/Card.js";
 import { openExternal } from "./tools.js";
+
+/** A subreddit name, not language. */
+const SUBREDDIT = "r/ClaudeCode";
 
 function StarTile({ size = 36 }: { size?: number }) {
   return (
@@ -46,7 +51,7 @@ export function ShareButtons({ variant = "ghost" }: { variant?: "ghost" | "viole
       <Button
         size="sm"
         {...look}
-        title="TikTok and Instagram have no share link — copy the text and paste it into your post"
+        title={t("tools.star.copyTitle")}
         onClick={() => {
           void navigator.clipboard
             ?.writeText(SHARE_CLIPBOARD_TEXT)
@@ -55,7 +60,7 @@ export function ShareButtons({ variant = "ghost" }: { variant?: "ghost" | "viole
         }}
       >
         {copied ? <Check /> : <Copy />}
-        {copied ? "Copied — paste it into your post" : "TikTok / Instagram: copy text"}
+        {t(copied ? "tools.star.copiedPaste" : "tools.star.copyText")}
       </Button>
     </>
   );
@@ -68,14 +73,14 @@ export function ShareSection() {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <MessageCircle className="size-4 shrink-0 text-ac-violet-text" />
         <p className="min-w-[200px] flex-1 text-xs text-ac-muted">
-          We're on <span className="text-ac-text">r/ClaudeCode</span> — an upvote or a comment on our post helps others find Agent Switch.
+          {tx("tools.star.reddit", { sub: <span className="text-ac-text">{SUBREDDIT}</span> })}
         </p>
         <Button size="sm" variant="secondary" onClick={() => openExternal(REDDIT_POST_URL)} title={REDDIT_POST_URL}>
-          Open the Reddit post
+          {t("tools.star.openReddit")}
         </Button>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-ac-muted">Share on</span>
+        <span className="text-xs text-ac-muted">{t("tools.star.shareOn")}</span>
         <ShareButtons />
       </div>
     </div>
@@ -99,24 +104,22 @@ export function StarAskBanner() {
 
   if (!visible) return null;
   return (
-    <Card className="flex flex-col gap-3 border-ac-violet-line bg-ac-violet-tint px-4 py-3" aria-label="Support Agent Switch">
+    <Card className="flex flex-col gap-3 border-ac-violet-line bg-ac-violet-tint px-4 py-3" aria-label={t("tools.star.support")}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <StarTile />
         <div className="min-w-[220px] flex-1">
           <p className="text-[13px] font-medium text-ac-text">
-            {starred ? "Thank you for the star!" : "Enjoying Agent Switch? Give it a star on GitHub"}
+            {t(starred ? "tools.star.thanks" : "tools.star.ask")}
           </p>
           <p className="mt-0.5 text-xs text-ac-muted">
-            {starred
-              ? "Want to help a bit more? Tell others about it — every share brings new people in."
-              : "It's free & open source — a star helps other developers find it and keeps us going."}
+            {t(starred ? "tools.star.thanksSub" : "tools.star.askSub")}
           </p>
         </div>
         <div className="flex items-center gap-2">
           {!starred && (
             <>
               <Button size="sm" variant="ghost" aria-expanded={sharing} onClick={() => setSharing((v) => !v)}>
-                <Share2 /> Share
+                <Share2 /> {t("tools.star.share")}
               </Button>
               <Button
                 size="sm"
@@ -130,11 +133,11 @@ export function StarAskBanner() {
                   setSharing(true);
                 }}
               >
-                <Star /> Star on GitHub
+                <Star /> {t("tools.star.starOnGitHub")}
               </Button>
             </>
           )}
-          <IconButton label={starred ? "Close" : "Not now — asks again in a month"} onClick={() => setVisible(false)}>
+          <IconButton label={starred ? t("common.close") : t("tools.star.notNow")} onClick={() => setVisible(false)}>
             <X />
           </IconButton>
         </div>
@@ -149,7 +152,7 @@ export function StarAskBanner() {
             setVisible(false);
           }}
         >
-          Don't ask again
+          {t("tools.star.dontAsk")}
         </button>
       )}
     </Card>

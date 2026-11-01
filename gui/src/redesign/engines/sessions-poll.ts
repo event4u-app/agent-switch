@@ -17,6 +17,7 @@ import type { SessionRow } from "../../transforms.js";
 import { sessionFromRow } from "../../vm/build.js";
 import { useAS } from "../../vm/store.js";
 import { notify } from "./bus.js";
+import { noticeEn } from "./notice-text.js";
 import type { Account, Session, ViewModel } from "../../vm/types.js";
 
 export const SESSIONS_POLL_MS = 10_000;
@@ -61,7 +62,9 @@ export function useSessionsPoll(): void {
         if (waiting) {
           for (const x of newlyWaiting(waiting, sessions)) {
             const name = sRef.current.accountById(x.accountId)?.name ?? x.accountId;
-            void notify("warning", `${x.project} is waiting for you`, `A session on ${name} asks you something.`, { repeat: true });
+            void notify("warning", noticeEn("engines.notice.waitingTitle", { project: x.project }), noticeEn("engines.notice.waitingBody", { name }), {
+              repeat: true,
+            });
           }
         }
         waiting = new Set(sessions.filter((x) => x.state === "needs-you").map(waitKey));

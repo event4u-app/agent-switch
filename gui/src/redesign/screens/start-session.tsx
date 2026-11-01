@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Play } from "lucide-react";
 import { sessionArgs, type DirResolution } from "../../ipc.js";
+import { t } from "../../i18n/index.js";
 import { expandHome, typedFolder, useHomeDir } from "../../lib/paths.js";
 import type { ProviderId } from "../../transforms.js";
 import { AccountDot } from "../../ui/AccountDot.js";
@@ -55,13 +56,13 @@ export function isAbsoluteFolder(dir: string): boolean {
  *  explains it, e.g. the desktop app being unavailable). */
 export function startProblem(account: Account | null, tool: Tool, openIn: OpenIn, folder: string): string | null {
   if (tool === "gemini") return null;
-  if (!account) return `No ${TOOL_LABEL[tool]} account to start on.`;
-  if (account.disabled) return `${account.name} is disabled — turn it back on first (Accounts → ${account.name} → ⋯ → Turn back on).`;
-  if (account.state === "signed-out") return `${account.name} is signed out — sign in again first (Accounts → ${account.name} → Sign in again).`;
-  if (account.state === "limited") return `${account.name} is at its limit — pick another account.`;
-  if (account.state === "wrong-account") return `${account.name} is signed in to a different account than expected.`;
+  if (!account) return t("sessions.start.noAccount", { tool: TOOL_LABEL[tool] });
+  if (account.disabled) return t("sessions.start.disabled", { name: account.name });
+  if (account.state === "signed-out") return t("sessions.start.signedOut", { name: account.name });
+  if (account.state === "limited") return t("sessions.start.limited", { name: account.name });
+  if (account.state === "wrong-account") return t("sessions.start.wrongAccount", { name: account.name });
   const dir = folder.trim();
-  if (openIn === "terminal" && dir && !isAbsoluteFolder(dir)) return `“${dir}” is not a full folder path — choose another folder.`;
+  if (openIn === "terminal" && dir && !isAbsoluteFolder(dir)) return t("sessions.start.notAbsolute", { dir });
   return null;
 }
 
@@ -130,9 +131,9 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
     cli?.state === "done"
       ? resolutionFromCli(cli.res, tool, s.accounts)
       : cli?.state === "error"
-        ? { ...local, why: [...local.why, `agent-switch didn't answer (${cli.message}) — this is the window's own guess`] }
+        ? { ...local, why: [...local.why, t("sessions.start.cliNoAnswer", { error: cli.message })] }
         : resolving
-          ? { account: null, rule: null, why: ["Asking agent-switch which account this folder starts on …"] }
+          ? { account: null, rule: null, why: [t("sessions.start.asking")] }
           : local;
   const ranked = rankAccounts(s.accounts, tool, s.now);
   const account = pick === AUTO ? resolution.account : (s.accountById(pick) ?? null);
@@ -141,7 +142,7 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
   const plan = startPlan(account, tool, effectiveOpenIn, appFor(s, tool), expandHome(folder.trim(), home));
   const folders = Array.from(new Set([...(cwd ? [cwd] : []), ...recent]));
   const preview = startPreview(tool, effectiveOpenIn, folder, appFor(s, tool), account?.name ?? null);
-  const why = pick === AUTO ? resolution.why : [`Picked by you: ${account?.name ?? "?"}`];
+  const why = pick === AUTO ? resolution.why : [t("sessions.start.pickedByYou", { name: account?.name ?? "?" })];
   const problem = resolving ? null : startProblem(account, tool, effectiveOpenIn, expandHome(folder.trim(), home));
 
   const start = () => {
@@ -150,10 +151,12 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
       s.close();
       s.act
         .openApp?.(plan.appId, plan.accountId)
-        .then(() => s.toast({ text: `${TOOL_LABEL[tool]} app opened as ${account.name}.` }))
-        .catch((e) => s.toast({ text: `Couldn't open the ${TOOL_LABEL[tool]} app: ${e instanceof Error ? e.message : String(e)}`, tone: "alert" }));
+        .then(() => s.toast({ text: t("sessions.start.appOpened", { tool: TOOL_LABEL[tool], name: account.name }) }))
+        .catch((e) =>
+          s.toast({ text: t("sessions.start.appFailed", { tool: TOOL_LABEL[tool], error: e instanceof Error ? e.message : String(e) }), tone: "alert" }),
+        );
     } else {
-      s.open({ kind: "terminal", run: { kicker: "Start session", title: `${TOOL_LABEL[tool]} · ${account.name}`, args: plan.args } });
+      s.open({ kind: "terminal", run: { kicker: t("sessions.start.kicker"), title: `${TOOL_LABEL[tool]} · ${account.name}`, args: plan.args } });
     }
   };
 
@@ -161,16 +164,16 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
     <Dialog
       open
       onOpenChange={(o) => !o && s.close()}
-      kicker="Start session"
-      title="Where and with what?"
+      kicker={t("sessions.start.kicker")}
+      title={t("sessions.start.title")}
       width={580}
       footer={
         <>
           <Button size="sm" variant="ghost" onClick={() => s.close()}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button size="sm" variant="primary" disabled={!plan || (plan.kind === "app" && !s.act.openApp)} onClick={start}>
-            <Play /> Start {TOOL_LABEL[tool]}
+            <Play /> {t("sessions.start.start", { tool: TOOL_LABEL[tool] })}
           </Button>
         </>
       }
@@ -178,7 +181,7 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
           <Select
-            label="Folder"
+            label={t("sessions.start.folder")}
             mono
             value={typing ? PICK : folder}
             onChange={(v) => {
@@ -188,14 +191,14 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
                 setFolder(v);
               }
             }}
-            options={[...folders.map((f) => ({ value: f, label: shortPath(f) })), { value: PICK, label: "Choose another folder …" }]}
+            options={[...folders.map((f) => ({ value: f, label: shortPath(f) })), { value: PICK, label: t("sessions.start.chooseFolder") }]}
           />
           {typing && (
             <TextInput
               mono
               autoFocus
-              aria-label="Folder path"
-              placeholder="/full/path/to/project"
+              aria-label={t("sessions.start.folderPath")}
+              placeholder={t("sessions.start.folderPlaceholder")}
               value={typed}
               aria-invalid={typedError ? true : undefined}
               aria-describedby={typedError ? "start-folder-error" : undefined}
@@ -205,12 +208,12 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && typed.trim()) {
-                  const t = typedFolder(typed, home);
-                  if (!t.ok) {
-                    setTypedError(t.reason);
+                  const tf = typedFolder(typed, home);
+                  if (!tf.ok) {
+                    setTypedError(tf.reason);
                     return;
                   }
-                  setFolder(t.path);
+                  setFolder(tf.path);
                   setTyping(false);
                 }
                 // The dialog stays open (Overlay leaves Escape to text fields).
@@ -229,28 +232,28 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <Caps>Tool</Caps>
+          <Caps>{t("sessions.start.tool")}</Caps>
           <Segmented
-            label="Tool"
+            label={t("sessions.start.tool")}
             fill
             value={tool}
             onChange={setTool}
-            options={START_TOOLS.map((t) => ({
-              value: t,
-              label: TOOL_LABEL[t],
-              disabled: toolUnavailableReason(t, s.accounts, s.platform) !== null,
-              why: toolUnavailableReason(t, s.accounts, s.platform) ?? undefined,
+            options={START_TOOLS.map((tl) => ({
+              value: tl,
+              label: TOOL_LABEL[tl],
+              disabled: toolUnavailableReason(tl, s.accounts, s.platform) !== null,
+              why: toolUnavailableReason(tl, s.accounts, s.platform) ?? undefined,
             }))}
           />
         </div>
         <Select
-          label="Account"
+          label={t("sessions.start.account")}
           value={pick}
           onChange={setPick}
           options={[
             {
               value: AUTO,
-              label: `Automatic → ${resolving ? "…" : resolution.account ? resolution.account.name : "none"}`,
+              label: t("sessions.start.automatic", { name: resolving ? "…" : resolution.account ? resolution.account.name : t("sessions.resolve.none") }),
               hint: resolution.why[resolution.why.length - 1],
               dot: resolution.account ? <AccountDot color={resolution.account.color} size={8} /> : undefined,
             },
@@ -264,14 +267,14 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
           ]}
         />
         <div className="flex flex-col gap-1.5">
-          <Caps>Open in</Caps>
+          <Caps>{t("sessions.start.openIn")}</Caps>
           <Segmented
-            label="Open in"
+            label={t("sessions.start.openIn")}
             value={effectiveOpenIn}
             onChange={setOpenIn}
             options={[
-              { value: "terminal", label: "Terminal" },
-              { value: "desktop-app", label: `${TOOL_LABEL[tool]} app`, disabled: !!appWhy, why: appWhy ?? undefined },
+              { value: "terminal", label: t("sessions.start.terminal") },
+              { value: "desktop-app", label: t("sessions.start.app", { tool: TOOL_LABEL[tool] }), disabled: !!appWhy, why: appWhy ?? undefined },
             ]}
           />
         </div>
@@ -307,7 +310,7 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
               </li>
             )}
             {folder && effectiveOpenIn === "desktop-app" && (
-              <li className="text-[11px] text-ac-muted">· The {TOOL_LABEL[tool]} app opens without a folder.</li>
+              <li className="text-[11px] text-ac-muted">· {t("sessions.start.appNoFolder", { tool: TOOL_LABEL[tool] })}</li>
             )}
           </ul>
         </div>
