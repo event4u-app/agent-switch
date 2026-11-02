@@ -237,6 +237,10 @@ suggested. The background service must be running.
 | `sessions vault <session> [restore]` | Copy a session into the vault now, or put a vaulted session back after Claude deleted it. |
 | `sessions keep auto on\|off` | Keep sessions with an open PR like pinned ones (on by default). |
 | `sessions resume <session> [--how continue\|fork\|account\|brief] [--to <profile>] [--yes]` | Check what changed since (folder, branch, commit, uncommitted changes, account), suggest where to resume — a new worktree at the last commit when your checkout has changes — and show the exact commands; `--yes` runs them. Claude. |
+| `open <session> [--with vscode\|cursor\|phpstorm\|idea\|finder\|terminal] [--file F] [--line N]` | Open a session's worktree (or one file in it) with that tool's own launcher; without `--with`, the default target. Paths outside the session's folder are refused. |
+| `open-targets <session> [--json]` | What the Open menu offers for a session: installed targets, the default and the last used one, its agent app, its PR. |
+| `open-default <target> [--repo DIR]` | Set the default Open target, for every repository or for one. |
+| `focus <session>` <Badge text="macOS" variant="caution" /> | Bring the Terminal.app or iTerm2 tab a Claude session runs in to the front. |
 | `sessions cleanup [--yes]` | Remove the worktrees of sessions whose PR is merged; a worktree with changes is skipped. |
 | `takeover <session-id> --to <profile>` | Move a session to another account and resume it there. Claude and Codex. See [below](#takeover). |
 | `rebind [<account>]` <Badge text="macOS" variant="caution" /> <Badge text="Claude only" variant="note" /> | Switch the account of a running Claude session. See [below](#rebind). |

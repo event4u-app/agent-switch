@@ -41,6 +41,10 @@ const VALUE_FLAGS = new Set([
   "session",
   "cwd",
   "how",
+  "with",
+  "file",
+  "line",
+  "repo",
 ]);
 
 export interface ParsedArgs {

@@ -172,8 +172,9 @@ export class Store {
     } catch {
       // not fatal: the dir is the user's own
     }
-    db.exec("PRAGMA journal_mode = WAL");
+    // The timeout first: switching to WAL needs a lock another opener may hold for a moment.
     db.exec("PRAGMA busy_timeout = 5000");
+    db.exec("PRAGMA journal_mode = WAL");
     db.exec(SCHEMA);
     const { user_version } = db.get<{ user_version: number }>("PRAGMA user_version")!;
     if (user_version > STORE_SCHEMA_VERSION) {

@@ -42,6 +42,8 @@ import {
 } from "./commands/profiles.js";
 import { cmdRebind } from "./commands/rebind.js";
 import { cmdStore } from "./commands/store.js";
+import { cmdFocus, cmdOpenDefault, cmdOpenSession, cmdOpenTargets } from "./commands/open-in.js";
+import { findApp } from "./apps.js";
 import { cmdCleanup, cmdLibrary, cmdResume } from "./commands/library.js";
 const LIBRARY_ACTIONS = new Set(["pin", "unpin", "name", "tag", "untag", "archive", "unarchive", "search", "keep", "vault"]);
 import { visibilityFile, writeVisibility } from "./app-visibility.js";
@@ -132,7 +134,11 @@ async function main(): Promise<void> {
     case "gui": return cmdGui(flags["after-pid"]);
     case "update": case "upgrade": return cmdUpdate();
     case "check-update": case "check-updates": return cmdCheckUpdate(!!flags.json);
-    case "open": return cmdOpen(positional[0], positional[1]);
+    // `open <app> [profile]` opens a desktop app on an account; `open <session> [--with …]` opens a session's folder.
+    case "open": return flags.with !== undefined || flags.file !== undefined || (positional[0] && !findApp(positional[0])) ? cmdOpenSession(positional[0], flags) : cmdOpen(positional[0], positional[1]);
+    case "open-targets": return cmdOpenTargets(positional[0], flags);
+    case "open-default": return cmdOpenDefault(positional[0], flags);
+    case "focus": return cmdFocus(positional[0]);
     case "launcher": case "launchers": return cmdLauncher(positional[0], positional.slice(1), flags);
     case "app-settings": return cmdAppSettings(positional[0], positional.slice(1), flags);
     case "apps": return cmdApps(!!flags.json);

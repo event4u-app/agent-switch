@@ -427,6 +427,35 @@ test("`sessions resume`: a dirty checkout gets a new worktree at the session's l
   }
 });
 
+test("open: targets for a session's worktree root, a default per repo, and nothing outside its folder", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-open-")));
+    execFileSync("git", ["-C", repo, "init", "-q", "-b", "main"]);
+    fs.mkdirSync(path.join(repo, "src"));
+    seed(home, "claude", "work");
+    const dir = path.join(home, "claude", "work", "config", "projects", "-repo");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "9999-open.jsonl"), JSON.stringify({ cwd: path.join(repo, "src") }) + "\n");
+    const t = JSON.parse(run(home, ["open-targets", "9999-open", "--json"]));
+    assert.equal(t.root, repo, "the worktree root, not the subfolder");
+    assert.deepEqual(t.agentApp, { app: "claude-desktop", label: "Claude Desktop", note: "opens the app" });
+    assert.deepEqual(t.targets.map((x: any) => x.target), ["vscode", "cursor", "phpstorm", "idea", "finder", "terminal"]);
+    run(home, ["open-default", "finder", "--repo", repo]);
+    if (t.targets.find((x: any) => x.target === "finder").installed) {
+      const p = JSON.parse(run(home, ["open", "9999-open", "--dry-run"]));
+      assert.equal(p.target, "finder", "the repo's default");
+      assert.ok(p.args.includes(repo));
+    }
+    const out = spawnSync("node", [CLI, "open", "9999-open", "--with", "finder", "--file", "../..", "--dry-run"], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
+    assert.notEqual(out.status, 0);
+    assert.match(out.stderr, /outside the session's folder/);
+    assert.match(spawnSync("node", [CLI, "open", "nope-no-such"], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" }).stderr, /unknown app "nope-no-such" and no session/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("`sessions` shows each Claude session's prompt-cache state (road-to-sessions-that-show-their-cache)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
