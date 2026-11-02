@@ -6,17 +6,17 @@
 
 ## Overall
 
-**19 / 75 steps done · 25%**
+**27 / 77 steps done · 35%**
 
 ```text
-██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   25%
+██████████████░░░░░░░░░░░░░░░░░░░░░░░░░░   35%
 ```
 
 ## Open roadmaps
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 75 | 56 | 19 | 0 | 0 | 0 | ██░░░░░░░░ 25% |
+| 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 77 | 50 | 27 | 0 | 0 | 0 | ████░░░░░░ 35% |
 
 ---
 
@@ -46,18 +46,18 @@
 
 ### [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md)
 
-**agent-switch v3.0 "Central" — sessions that survive, a tree, git/PR, a library** — 19 / 75 done (25%)
+**agent-switch v3.0 "Central" — sessions that survive, a tree, git/PR, a library** — 27 / 77 done (35%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 0 | Contracts and spikes (gate for everything below) | ✅ done | 0 | 10 | 0 | 0 | 100% |
 | 1 | Engine, event store, host | 🟡 in progress | 1 | 9 | 0 | 0 | 90% |
-| 2 | Tree and lineage | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
+| 2 | Tree and lineage | 🟡 in progress | 1 | 8 | 0 | 0 | 89% |
 | 3 | Git and PR facts | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
 | 4 | Library and vault | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
 | 5 | Open in… | ⬜ not started | 5 | 0 | 0 | 0 | 0% |
 | 6 | Design system and window frame (spec §0–§4, §12) | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
-| 7 | Sessions window and attention (spec §5, §7.1–§7.5, §10.7) | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
+| 7 | Sessions window and attention (spec §5, §7.1–§7.5, §10.7) | ⬜ not started | 7 | 0 | 0 | 0 | 0% |
 | 8 | Workbench, dialogs and tool windows (spec §6, §7.6–§7.7, §8, §9) | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
 | 9 | Pages (spec §10.1–§10.6, §11) | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
 | 10 | Codex and Antigravity parity | ⬜ not started | 2 | 0 | 0 | 0 | 0% |

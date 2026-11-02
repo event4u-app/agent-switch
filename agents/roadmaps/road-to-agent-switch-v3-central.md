@@ -262,25 +262,34 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 
 ## Phase 2 — Tree and lineage
 
-- [ ] M4 subagents from hook events (`road-to-hooks-that-keep-up` Phase 2);
+- [x] M4 subagents from hook events (`road-to-hooks-that-keep-up` Phase 2);
       without hooks: counted from the session directory, content not read.
-- [ ] Lineage contract `AGENT_SWITCH_PARENT_SESSION|KIND|LABEL` env vars,
+      → hook children since `road-to-hooks-that-keep-up`; without subagent hooks `countSubagentFiles` counts `<session>/subagents/agent-*.jsonl` by name (`childSource: "counted"`).
+- [x] Lineage contract `AGENT_SWITCH_PARENT_SESSION|KIND|LABEL` env vars,
       published as a versioned doc; AC adopts it in its own PR, no reverse
       dependency.
-- [ ] Council seats running as `claude --print` in a temp dir are grouped as
+      → `lineageFromEnv` in `src/hooks.ts`, read at `SessionStart` by `__hook-event`, stored as a `lineage` edge (`source: lineage`, confidence `reported`). AC's own PR is theirs to open.
+- [x] Council seats running as `claude --print` in a temp dir are grouped as
       "helper sessions" under their parent; collapsed by default (C2).
-- [ ] Continuation edges from takeover, handoff and fork.
-- [ ] Never guess a parent; an unproven edge is shown as "relation unknown".
+      → a seat that sets `KIND=council` shows under its parent with its label (`src/lineage.ts`); collapsing is the Sessions window's job (Phase 7, ChildLine).
+- [x] Continuation edges from takeover, handoff and fork.
+      → `takeover` (also `--fork`, also in place) starts the resumed session with `AGENT_SWITCH_PARENT_KIND=continued_from`, shown "via host". `handoff` only prints a command for the user to run, so it has no edge yet.
+- [x] Never guess a parent; an unproven edge is shown as "relation unknown".
       Temp-orphan criteria: temp `cwd` and never on a TTY. "continued from" is drawn
       apart from "started by"; `clear`/`compact` are edges too.
-- [ ] `sessions --json`: `children`, `childCount`, `childSource`. GUI per spec
-      §5.2, §7.3, §9.3: children unfold under the row (`ChildLine`, provenance in
-      the tooltip, "relation unknown ⓘ" / "counted" inline), the `Bot` + count
-      trailing slot, the Children tool window, `N children` in the peek card;
-      counters count roots only. The pet stays unchanged (spec §11).
-- [ ] Lineage doc `docs/lineage-contract.md` (`AGENT_SWITCH_PARENT_SESSION`,
+      → no edge without a report; an unclaimed session in a temp folder carries `relation: "unknown"` (TTY history is not recorded, so the temp folder alone marks it). `continued_from` ≠ `started_by`. Compaction keeps the id (an event, not an edge); `/clear` is not provable from the hook payload — carried as its own step below.
+- [x] `sessions --json`: `children`, `childCount`, `childSource`.
+      → `children` with `kind` / `state` / `source`, `childCount`, `childSource`,
+      and `parent` on a child. The GUI half moved to Phase 7 (Sessions zone).
+- [x] Lineage doc `docs/lineage-contract.md` (`AGENT_SWITCH_PARENT_SESSION`,
       `_AGENT`, `_KIND`, `_LABEL`).
-- [ ] `agent-switch sessions --tree --json`.
+      → `docs/lineage-contract.md`, version 1.
+- [x] `agent-switch sessions --tree --json`.
+      → `buildTree` nests reported children; property-tested: each row once, no cycles.
+- [ ] `/clear` edge: link the new session to the one it cleared through process
+      continuity (the same Claude process before and after), not through timing.
+      Needs a pid-stable source in the hook (the hook runs under `sh`, so its
+      parent pid is not Claude's).
 
 ## Phase 3 — Git and PR facts
 
@@ -377,6 +386,12 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       3 rows plus "N more ›", one digest row, hidden when empty. "Allow" and
       "Reply" only where an approval channel exists (S2); otherwise the verb is
       "Focus terminal" (D-approve).
+- [ ] Children in the GUI (spec §5.2, §7.3, §9.3; moved here from Phase 2):
+      children unfold under the row (`ChildLine`, provenance in the tooltip,
+      "relation unknown ⓘ" / "counted" inline), helper sessions collapsed by
+      default (C2), the `Bot` + count trailing slot, the Children tool window,
+      `N children` in the peek card; counters count roots only. The pet stays
+      unchanged (spec §11).
 - [ ] Sessions zone: the shared order (needs you → CI failing → working → rest),
       one trailing slot by priority, second line on the active row (and on every
       row in comfortable density), "Done today N ›" with "Clean up",
