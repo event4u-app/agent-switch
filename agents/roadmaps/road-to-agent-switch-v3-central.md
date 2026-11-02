@@ -294,11 +294,18 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 
 ## Phase 3 — Git and PR facts
 
-- [ ] M5 branch, worktree, dirty, ahead/behind from the last hook `cwd`; fills the
+- [x] M5 branch, worktree, dirty, ahead/behind from the last hook `cwd`; fills the
       existing `branch` field (`gui/src/vm/build.ts:257`). For sessions without
       hooks: cwd fallback chain hook → `/proc`/`lsof` → transcript header, with
       `branchSource`. `headSha`, `remote`; 1 s git timeout; cache key
       `(toplevel, .git/HEAD mtime)`.
+      → `src/git-facts.ts`; `sessions --json` `git` with `cwdSource: hook ·
+      process · transcript`; the GUI's `branch` reads it. Deviation from the
+      plan, on evidence: status is read fresh each time — a new untracked file
+      changes neither HEAD nor index mtime, so that cache key showed a stale
+      "clean" (test). Only the remote URL is cached; within one run, one git call
+      per folder. SessionStart and Stop now carry the folder, so a worktree
+      switch shows after the next turn (e2e).
 - [ ] PR matched by head repo + head SHA (several candidates allowed); lifecycle,
       mergeability, review and CI kept as separate axes; one batched `gh` GraphQL
       query per repo, ETag/backoff, rate-limit aware. `MERGED`/`CLOSED` stay stored.
