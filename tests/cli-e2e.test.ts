@@ -258,6 +258,13 @@ test("`sessions --json` lists a session's subagents from its hooks, and leaves `
     seedTranscript(home, "work", "-tmp-proj", "0000-parent");
     const before = JSON.parse(run(home, ["sessions", "--json"]));
     assert.ok(!("children" in before[0]), "no hooks: no children field, not an empty list");
+    // Without hooks only a count of subagent transcripts, by file name.
+    const sub = path.join(home, "claude", "work", "config", "projects", "-tmp-proj", "0000-parent", "subagents");
+    fs.mkdirSync(sub, { recursive: true });
+    fs.writeFileSync(path.join(sub, "agent-x.jsonl"), "");
+    const counted = JSON.parse(run(home, ["sessions", "--json"]))[0];
+    assert.deepEqual([counted.childCount, counted.childSource, "children" in counted], [1, "counted", false]);
+    fs.rmSync(sub, { recursive: true });
 
     run(home, ["hooks", "install", "work"]);
     assert.deepEqual(JSON.parse(run(home, ["sessions", "--json"]))[0].children, [], "hooks, no subagent yet: empty");
@@ -272,10 +279,29 @@ test("`sessions --json` lists a session's subagents from its hooks, and leaves `
 
     const kids = JSON.parse(run(home, ["sessions", "--json"]))[0].children;
     assert.equal(kids.length, 4, "4 subagents, 4 children");
-    assert.deepEqual(kids[0], { agentId: "a1", type: "general-purpose", state: "done", cwd: "/tmp/proj/.worktrees/w1" });
+    assert.deepEqual(kids[0], { kind: "subagent", agentId: "a1", type: "general-purpose", state: "done", cwd: "/tmp/proj/.worktrees/w1", source: "hook" });
     assert.deepEqual(kids.slice(1).map((k: any) => k.state), ["running", "running", "running"]);
     const ring = fs.readFileSync(path.join(home, "events", "claude-work.jsonl"), "utf8");
     assert.ok(!ring.includes("secret answer"), "the subagent's answer is never stored");
+
+    // A council seat names its parent through the lineage contract; a child of a
+    // hosted window through AGENT_SWITCH_HOST_PANE. Both arrive via the seat's own hook.
+    seedTranscript(home, "work", "-tmp-seat", "1111-seat");
+    seedTranscript(home, "work", "-tmp-kid", "2222-kid");
+    const seat = (payload: object, env: Record<string, string>) =>
+      execFileSync("node", [CLI, "__hook-event"], { env: { ...process.env, AGENT_SWITCH_HOME: home, CLAUDE_CONFIG_DIR: cfg, ...env }, input: JSON.stringify(payload) });
+    seat({ hook_event_name: "SessionStart", session_id: "1111-seat", source: "startup" }, { AGENT_SWITCH_PARENT_SESSION: "claude/work/0000-parent", AGENT_SWITCH_PARENT_KIND: "council", AGENT_SWITCH_PARENT_LABEL: "seat 1" });
+    seat({ hook_event_name: "SessionStart", session_id: "2222-kid", source: "startup" }, { AGENT_SWITCH_HOST_PANE: "claude/work/0000-parent" });
+    const rows = JSON.parse(run(home, ["sessions", "--json"]));
+    const parentRow = rows.find((r: any) => r.sessionId === "0000-parent");
+    assert.deepEqual(parentRow.children.slice(4).map((c: any) => [c.kind, c.sessionKey, c.source]), [["council", "claude/work/1111-seat", "lineage"], ["started_by", "claude/work/2222-kid", "host"]]);
+    assert.equal(parentRow.childCount, 6);
+    assert.equal(parentRow.childSource, "hook+host+lineage");
+    assert.equal(rows.find((r: any) => r.sessionId === "1111-seat").parent, "claude/work/0000-parent");
+
+    const tree = JSON.parse(run(home, ["sessions", "--tree", "--json"]));
+    assert.deepEqual(tree.map((r: any) => r.sessionId), ["0000-parent"], "counted as roots: one");
+    assert.deepEqual(tree[0].sessions.map((r: any) => r.sessionId).sort(), ["1111-seat", "2222-kid"]);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

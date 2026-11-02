@@ -4,6 +4,7 @@
  */
 
 import * as fs from "node:fs";
+import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { configDir, die, listProfiles, requireProfile, readBinaryPath, ROOT } from "../profiles.js";
 import { ProviderId, provider, resolveBinary } from "../providers.js";
@@ -40,10 +41,11 @@ import {
   waitingSessions,
   hookNotice,
   recordFromPayload,
-  childrenOf,
+  lineageFromEnv,
   hooksRecordSubagents,
   HookEventRecord,
 } from "../hooks.js";
+import { buildTree, childSource, childrenWithHooks, countSubagentFiles, helperIndex, relationUnknown, type TreeNode } from "../lineage.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "../notify.js";
 import { appendNotification } from "../notifications.js";
 import { readTmuxRegistry, sendKeysArgs, tmuxSessionName } from "../tmux.js";
@@ -103,6 +105,9 @@ export function cmdHooks(sub?: string, name?: string): void {
   }
 }
 
+
+/** Where helper runs (council seats, scripted `claude -p`) usually work. */
+const TEMP_ROOTS = [...new Set([os.tmpdir(), "/tmp", "/private/tmp", "/var/folders", "/private/var/folders"])];
 
 /** Idle-guard window per provider (council #10): a Claude turn runs 15–60s, a
  *  Codex turn can be sub-second. In-flight = last transcript entry non-finalized
@@ -255,6 +260,10 @@ export function cmdHookEvent(): void {
     const who = profileFromConfigDir(cfg, ROOT);
     if (!who) return;
     const rec = recordFromPayload(o, new Date().toISOString());
+    if (rec.event === "SessionStart") {
+      const lineage = lineageFromEnv(process.env, rec.sessionId, rec.sessionId ? `${who.provider}/${who.profile}/${rec.sessionId}` : undefined);
+      if (lineage) rec.lineage = lineage;
+    }
     appendEvent(eventFile(ROOT, who.provider, who.profile), rec);
     // Session awareness: surface "Claude needs you / finished / stopped" as a
     // notification the GUI routes to the pet. dedupe=false — each turn is a
@@ -324,26 +333,44 @@ export function cmdSessions(
     return a ? { target: a.target, createdAt: a.createdAt, expiresAt: a.expiresAt } : null;
   };
   const cacheOf = (r: SessionRow & { profile: string }) => cacheForRow(providerId, r, eventsOf.get(r.profile) ?? []);
-  if (flags.json) {
-    console.log(
-      JSON.stringify(
-        all.map((r) => {
-          const c = contextForRow(providerId, r);
-          return {
-            provider: providerId,
-            ...r,
-            armed: armedFor(r),
-            context: c
-              ? { pct: c.pct, contextTokens: c.contextTokens, windowTokens: c.windowTokens, model: c.model, effort: c.effort ?? null, confidence: c.confidence, source: "transcript" }
-              : null,
-            cache: cacheOf(r),
-            ...(seesChildren.has(r.profile) ? { children: childrenOf(eventsOf.get(r.profile) ?? [], r.sessionId) } : {}),
-          };
-        }),
-        null,
-        2,
-      ),
-    );
+  if (flags.json || flags.tree) {
+    // Helpers can name a parent on another account, so every account's events count.
+    const allEvents = new Map(listProfiles(providerId).map((p) => [p, eventsOf.get(p) ?? (providerId === "claude" ? readEvents(eventFile(ROOT, providerId, p)) : [])]));
+    const helpers = helperIndex(providerId, allEvents);
+    const json = all.map((r) => {
+      const c = contextForRow(providerId, r);
+      const key = `${providerId}/${r.profile}/${r.sessionId}`;
+      let kids: Record<string, unknown> = {};
+      if (seesChildren.has(r.profile)) {
+        const children = childrenWithHooks(key, eventsOf.get(r.profile) ?? [], helpers);
+        kids = { children, childCount: children.length, childSource: childSource(children) };
+      } else {
+        const named = childrenWithHooks(key, [], helpers);
+        const counted = providerId === "claude" ? countSubagentFiles(configDir(providerId, r.profile), r.projectDir, r.sessionId) : 0;
+        if (named.length) kids = { children: named, childCount: named.length + counted, childSource: counted ? `${childSource(named)}+counted` : childSource(named) };
+        else if (counted) kids = { childCount: counted, childSource: "counted" };
+      }
+      const parent = helpers.parentOf.get(key);
+      return {
+        provider: providerId,
+        ...r,
+        armed: armedFor(r),
+        context: c
+          ? { pct: c.pct, contextTokens: c.contextTokens, windowTokens: c.windowTokens, model: c.model, effort: c.effort ?? null, confidence: c.confidence, source: "transcript" }
+          : null,
+        cache: cacheOf(r),
+        ...kids,
+        ...(parent ? { parent } : relationUnknown(r.cwd, false, TEMP_ROOTS) ? { relation: "unknown" } : {}),
+      };
+    });
+    if (flags.tree) {
+      type Row = (typeof json)[number];
+      const keyOf = (r: Row) => `${providerId}/${r.profile}/${r.sessionId}`;
+      const nest = (n: TreeNode<Row>): unknown => ({ ...n.row, sessions: n.children.map(nest) });
+      console.log(JSON.stringify(buildTree(json, keyOf, (r) => (r as { parent?: string }).parent).map(nest), null, 2));
+      return;
+    }
+    console.log(JSON.stringify(json, null, 2));
     return;
   }
   const providerFlag = providerId === "claude" ? "" : ` --provider ${providerId}`;

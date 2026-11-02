@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS lineage (
   first_seen  TEXT NOT NULL,
   observed_at TEXT NOT NULL,
   agent_type  TEXT,
+  label       TEXT,
   cwd         TEXT,
   state       TEXT NOT NULL
 );
@@ -80,7 +81,8 @@ CREATE TABLE IF NOT EXISTS attention (
 `;
 
 /** The fields a stored event may carry. Anything else is dropped at ingest. */
-const ALLOWED: Record<string, "string" | "resume"> = {
+const ALLOWED: Record<string, "string" | "resume" | "lineage"> = {
+  lineage: "lineage",
   source: "string",
   error: "string",
   notificationType: "string",
@@ -115,6 +117,12 @@ export function checkRecord(input: IngestInput): { kind: string; session: string
     const v = r[k];
     if (v === undefined) continue;
     if (kind === "string" && typeof v === "string") data[k] = v.slice(0, MAX_STRING);
+    if (kind === "lineage" && v && typeof v === "object") {
+      const o = v as Record<string, unknown>;
+      if (typeof o.parent === "string" && typeof o.kind === "string" && (o.source === "lineage" || o.source === "host")) {
+        data.lineage = { parent: o.parent.slice(0, 200), kind: o.kind.slice(0, 20), source: o.source, ...(typeof o.label === "string" ? { label: o.label.slice(0, 80) } : {}) };
+      }
+    }
     if (kind === "resume" && v && typeof v === "object") {
       const o = v as Record<string, unknown>;
       const num = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : undefined);
@@ -145,6 +153,7 @@ export interface StoredEdge {
   confidence: string;
   observedAt: string;
   agentType?: string;
+  label?: string;
   cwd?: string;
   state: "running" | "done";
 }
@@ -231,7 +240,23 @@ export class Store {
       e.kind,
       e.kind === "SessionEnd" ? 1 : 0,
     );
-    if (e.kind === "SessionEnd") this.db.run("UPDATE lineage SET state = 'done' WHERE parent = ?", key);
+    if (e.kind === "SessionEnd") this.db.run("UPDATE lineage SET state = 'done' WHERE parent = ? OR child = ?", key, key);
+    if (e.kind === "SessionStart" && e.data.lineage) {
+      // Reported by the session itself through the env it inherited (ADR-007 source
+      // `lineage` or `host`); a bare parent id is matched by id at read time.
+      const l = e.data.lineage as { parent: string; kind: string; label?: string; source: string };
+      this.db.run(
+        `INSERT INTO lineage (child, parent, kind, source, confidence, first_seen, observed_at, label, state) VALUES (?, ?, ?, ?, 'reported', ?, ?, ?, 'running')
+         ON CONFLICT (child) DO UPDATE SET parent = excluded.parent, kind = excluded.kind, source = excluded.source, observed_at = excluded.observed_at, label = excluded.label, state = 'running'`,
+        key,
+        l.parent,
+        l.kind,
+        l.source,
+        e.at,
+        e.at,
+        l.label ?? null,
+      );
+    }
     if ((e.kind === "SubagentStart" || e.kind === "SubagentStop") && typeof e.data.agentId === "string") {
       this.db.run(
         `INSERT INTO lineage (child, parent, kind, source, confidence, first_seen, observed_at, agent_type, cwd, state) VALUES (?, ?, 'subagent', 'hook', 'proven', ?, ?, ?, ?, ?)
@@ -255,9 +280,11 @@ export class Store {
   }
 
   children(parentKey: string): StoredEdge[] {
-    return this.db.all<any>("SELECT * FROM lineage WHERE parent = ? ORDER BY first_seen, child", parentKey).map((r) => {
+    const bareId = parentKey.split("/").pop() ?? parentKey;
+    return this.db.all<any>("SELECT * FROM lineage WHERE parent = ? OR parent = ? ORDER BY first_seen, child", parentKey, bareId).map((r) => {
       const edge: StoredEdge = { child: r.child, parent: r.parent, kind: r.kind, source: r.source, confidence: r.confidence, observedAt: r.observed_at, state: r.state };
       if (r.agent_type) edge.agentType = r.agent_type;
+      if (r.label) edge.label = r.label;
       if (r.cwd) edge.cwd = r.cwd;
       return edge;
     });

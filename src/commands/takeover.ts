@@ -55,14 +55,14 @@ function spawnNewTerminal(command: string): void {
  * never a user's own terminal. Otherwise fall back to M5 (spawn a new terminal).
  * Exits the process.
  */
-function resumeInPlace(providerId: ProviderId, target: string, resumeArgs: string[], resumeCommand: string): void {
+function resumeInPlace(providerId: ProviderId, target: string, resumeArgs: string[], resumeCommand: string, env: Record<string, string> = {}): void {
   // A v3 hosted window names its own session key; respawn that window on the target.
   const hostedKey = process.env.AGENT_SWITCH_HOST_PANE;
   if (hostedKey && TmuxHost.available()) {
     const host = new TmuxHost(ROOT);
     if (host.windowOf(hostedKey)) {
       const p = provider(providerId);
-      const moved = host.respawn(hostedKey, { provider: providerId, account: target, configDir: configDir(providerId, target), cwd: process.cwd(), bin: readBinaryPath(providerId) ?? p.binary, args: resumeArgs });
+      const moved = host.respawn(hostedKey, { provider: providerId, account: target, configDir: configDir(providerId, target), cwd: process.cwd(), bin: readBinaryPath(providerId) ?? p.binary, args: resumeArgs, env });
       console.log(`Handed the session over to "${target}" in its hosted window (${moved.key}).`);
       process.exit(0);
     }
@@ -225,6 +225,8 @@ export function cmdTakeover(
 
   const resumeArgs = ["--resume", sessionId, ...(keepSource ? ["--fork-session"] : [])];
   const resumeCommand = `agent-switch run ${target} -- ${resumeArgs.join(" ")}`;
+  // The resumed session reports where it came from (docs/lineage-contract.md).
+  const continued = { AGENT_SWITCH_PARENT_SESSION: `claude/${source}/${sessionId}`, AGENT_SWITCH_PARENT_KIND: "continued_from" };
 
   // Read before the move: what the target's first turn costs in cache terms.
   const now = Date.now();
@@ -241,7 +243,7 @@ export function cmdTakeover(
     }
     console.log(`Profiles "${source}" and "${target}" share one history tree — nothing to move.`);
     console.log(`Resume on the target with:\n  ${resumeCommand}`);
-    if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("claude"), target, resumeArgs));
+    if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("claude"), target, resumeArgs, continued));
     return;
   }
 
@@ -261,7 +263,7 @@ export function cmdTakeover(
   if (keepSource) {
     console.log("Resuming with --fork-session (fresh id on the target; note: session-scoped");
     console.log("permission approvals do not carry into a fork — Claude asks once more).");
-    const rc = launch(provider("claude"), target, resumeArgs);
+    const rc = launch(provider("claude"), target, resumeArgs, continued);
     // The fork got its own id; drop the vehicle copy that still carries the
     // original id, or both profiles would own that id (the g02 trap).
     cleanupForkVehicle(tgtCfg, loc.projectDir, sessionId);
@@ -269,8 +271,8 @@ export function cmdTakeover(
     process.exit(rc);
   }
   console.log(`Resume it with:\n  ${resumeCommand}`);
-  if (inPlace) resumeInPlace("claude", target, resumeArgs, resumeCommand); // exits: respawn managed pane, else M5
-  if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("claude"), target, resumeArgs));
+  if (inPlace) resumeInPlace("claude", target, resumeArgs, resumeCommand, continued); // exits: respawn managed pane, else M5
+  if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("claude"), target, resumeArgs, continued));
 }
 
 /**
@@ -379,6 +381,7 @@ function takeoverCodex(
   console.log("Note: codex has no pid-file live detection — make sure no active codex session was running on the source profile.");
   console.log(`Resume it with:\n  ${resumeCommand}`);
   console.log("The prompt cache is not shared across organizations: unless both accounts belong to one, the first turn here reads the whole conversation again, uncached.");
-  if (inPlace) resumeInPlace("codex", target, resumeArgs, resumeCommand); // exits
-  if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("codex"), target, resumeArgs));
+  const continued = { AGENT_SWITCH_PARENT_SESSION: `codex/${source}/${sessionId}`, AGENT_SWITCH_PARENT_KIND: "continued_from" };
+  if (inPlace) resumeInPlace("codex", target, resumeArgs, resumeCommand, continued); // exits
+  if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("codex"), target, resumeArgs, continued));
 }
