@@ -247,9 +247,13 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       → `sessions --json` `context` now carries `model`, `effort` (per-turn first)
       and `pct` with `source: "transcript"`; a transcript without effort gives
       `null`.
-- [ ] Engine health for the title bar and the system banner (spec §4.1, §6.6):
+- [x] Engine health for the title bar and the system banner (spec §4.1, §6.6):
       "Engine stopped" with restart; hosted sessions keep running in tmux and AS
       reconnects.
+      → `agent-switch engine status|restart [--json]`: `running`, `reason`, and
+      `hostedRunning` (hosted sessions alive in tmux either way); restart restarts
+      the background service the engine lives in. The title-bar label and banner
+      read this in Phase 6/8; reconnecting is the app polling it.
 - [x] Windows: in-app PTY sessions are labelled **ephemeral** until a native host
       exists (see `later/road-to-agent-switch-v3-reach.md`).
       → `hostingMode()` in `src/host/tmux-host.ts` (also without tmux on Linux and
