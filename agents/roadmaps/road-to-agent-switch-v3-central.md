@@ -562,9 +562,16 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       → `LibraryPage`: search, All / Pinned / Archived, vault size, `nextDeadline` banner with Keep it, Resume… or can't resume, Archive / Restore, auto-keep switch.
 - [ ] Tools page; updates also arrive as Needs-you items and never touch running
       sessions.
-- [ ] Settings page with its left nav; Appearance (mode, theme cards with live
+- [x] Settings page with its left nav; Appearance (mode, theme cards with live
       mini previews grouped as in §10.5, accent, terminal colours, contrast note,
       "About <theme>"); Open in. The Agents and Remote entries arrive with v3.2.
+      → `gui/src/v3/settings.tsx`: `SettingsPage` (left nav with Marker; the other
+      sections are the 2.11 screens passed in), `AppearanceSettings` (mode with
+      Sync with OS, every theme as a mini preview on its real tokens grouped
+      JetBrains / Agent Switch / Popular / Accessibility, `pickTheme`, accent,
+      terminal colours, contrast note, About <theme> with its source),
+      `OpenInSettings` on `open-targets` rows (missing apps hidden, default and
+      per-repo, Focus terminal). Agents and Remote are not listed until v3.2.
 - [ ] First run (spec §10.6): one path, no tour; shell integration shown before
       it changes anything.
 - [ ] Every row of the 2.11 map (spec §11) is reachable in ≤ 2 clicks from the
