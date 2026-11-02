@@ -200,3 +200,33 @@ test("an Antigravity account reaches its hosted window through HOME", () => {
   const args = TmuxHost.envArgs({ provider: "antigravity", configDir: "/as/antigravity/work/config" }, "antigravity/work/x1234");
   assert.deepEqual(args.slice(0, 2), ["-e", "HOME=/as/antigravity/work/config"]);
 });
+
+test("CLI host respawn: same window, same session, the next turn on another model; never typed as /model", gate, async () => {
+  const { execFileSync } = await import("node:child_process");
+  const CLI = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../dist/index.js");
+  if (!fs.existsSync(CLI)) return;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "h-"));
+  const out = path.join(home, "out");
+  fs.mkdirSync(out);
+  const bin = stubBin(home);
+  fs.writeFileSync(path.join(home, "state.json"), JSON.stringify({ binaryPaths: { claude: bin } }));
+  const cfg = path.join(home, "claude", "work", "config");
+  fs.mkdirSync(cfg, { recursive: true });
+  const socket = `as-test-rs-${process.pid}`;
+  const host = new TmuxHost(home, { socket });
+  try {
+    const s = host.start({ provider: "claude", account: "work", configDir: cfg, cwd: home, bin, env: { AS_STUB_OUT: out } });
+    assert.ok(waitFor(() => fs.readdirSync(out).length === 1));
+    fs.rmSync(out, { recursive: true });
+    fs.mkdirSync(out);
+    execFileSync("node", [CLI, "host", "respawn", s.key, "--model", "sonnet", "--effort", "low"], { env: { ...process.env, AGENT_SWITCH_HOME: home, AGENT_SWITCH_HOST_SOCKET: socket, AS_STUB_OUT: out } });
+    assert.ok(waitFor(() => fs.readdirSync(out).length === 1), "restarted");
+    const seen = JSON.parse(fs.readFileSync(path.join(out, fs.readdirSync(out)[0]), "utf8"));
+    assert.deepEqual(seen.argv.slice(-6), ["--resume", s.sessionId, "--model", "sonnet", "--effort", "low"]);
+    assert.equal(host.list()[0].window, s.window);
+    const screen = host.capture(s.key) ?? "";
+    assert.doesNotMatch(screen, /\/model|\/effort/, "nothing was typed into the session");
+  } finally {
+    host.killServer();
+  }
+});

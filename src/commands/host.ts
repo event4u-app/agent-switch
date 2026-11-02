@@ -12,11 +12,13 @@ import { appendPick } from "../picks.js";
 import { configDir, die, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
 import { provider, type ProviderId } from "../providers.js";
 import { HostUnavailable, TmuxHost, hostingMode } from "../host/tmux-host.js";
+import { listSessions } from "../sessions.js";
+import { turnInFlight } from "../telemetry.js";
 import { resolveDir } from "./routing.js";
 
 export async function cmdHost(providerId: ProviderId, sub: string | undefined, arg: string | undefined, flags: Record<string, string | boolean>): Promise<void> {
   const action = sub ?? "list";
-  if (!["start", "list", "end", "attach"].includes(action)) die("usage: agent-switch host start [profile] [--provider P] [--cwd DIR] | list | attach <session> | end <session> [--yes]");
+  if (!["start", "list", "end", "attach", "respawn"].includes(action)) die("usage: agent-switch host start [profile] [--provider P] [--cwd DIR] | list | attach <session> | respawn <session> [--model M] [--effort E] | end <session> [--yes]");
   const mode = hostingMode(process.platform, TmuxHost.available());
   if (action === "list" && flags.json && mode === "ephemeral") {
     console.log(JSON.stringify({ mode, hosted: [], legacy: [] }));
@@ -47,6 +49,24 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
       const argv = host.view(arg, `cli${process.pid}`);
       const r = spawnSync(argv[0], argv.slice(1), { stdio: "inherit" });
       process.exitCode = r.status ?? 0;
+      return;
+    }
+    if (action === "respawn") {
+      // Next-turn model and thinking (spike S8): restart the window on the same
+      // session between turns. Typing /model or /effort would change the
+      // account's defaults for every new session, so that is never done.
+      const cur = arg ? host.list().find((x) => x.key === arg) : undefined;
+      if (!cur) die("usage: agent-switch host respawn <session> [--model M] [--effort E]");
+      if (cur.provider !== "claude") die("model and thinking changes are for hosted Claude sessions");
+      const cfg = configDir("claude", cur.account);
+      const rows = listSessions(cfg, 50);
+      const row = rows.find((r) => r.sessionId === cur.sessionId);
+      if (row?.file && !flags.force && turnInFlight(row.file, Date.now(), 15_000)) die(`a turn is running in ${cur.key}; the change applies from the next turn — try again when it ends, or pass --force`);
+      const args = ["--resume", cur.sessionId];
+      if (typeof flags.model === "string") args.push("--model", flags.model);
+      if (typeof flags.effort === "string") args.push("--effort", flags.effort);
+      const moved = host.respawn(cur.key, { provider: "claude", account: cur.account, configDir: cfg, cwd: cur.cwd, bin: readBinaryPath("claude") ?? provider("claude").binary, args }, hookCommandPrefix());
+      console.log(`Restarted ${moved.key}${flags.model ? ` on ${flags.model}` : ""}${flags.effort ? ` with ${flags.effort} thinking` : ""}; its next turn reads the history again.`);
       return;
     }
     if (action === "end") {

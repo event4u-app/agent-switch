@@ -42,6 +42,8 @@ const VALUE_FLAGS = new Set([
   "cwd",
   "how",
   "with",
+  "effort",
+  "model",
   "file",
   "line",
   "repo",

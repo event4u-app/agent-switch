@@ -21,7 +21,7 @@ describe("v3 design guard (spec §14)", () => {
     const allowed = new Set(["rounded", "rounded-md", "rounded-xl", "rounded-full", "rounded-none", "rounded-[10px]", "rounded-t-md"]);
     const bad: string[] = [];
     for (const f of files(join(SRC, "v3"))) {
-      for (const m of readFileSync(f, "utf8").matchAll(/\brounded(?:-[a-z0-9[\]]+)?\b(?:\])?/g)) {
+      for (const m of readFileSync(f, "utf8").matchAll(/\brounded(?:-[a-z0-9[\]-]+)?/g)) {
         if (!allowed.has(m[0])) bad.push(`${f.slice(SRC.length + 1)}: ${m[0]}`);
       }
     }
