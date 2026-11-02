@@ -8,8 +8,10 @@ tree_pin: ff38137
 
 > **Source:** `agents/tmp.old/inbox-2026-11-b/` — owner transcript (three turns,
 > 2026-11-02), the consolidated proposal `road-to-agent-switch-v3` and its two
-> parents, three parallel proposals from a second assistant, one UI sketch.
-> Proposal ids are kept where they help a reader map back (V*, M*, S*, E*, K*).
+> parents, three parallel proposals from a second assistant, one UI sketch, and
+> (second arrival, same day) the v3 UI design `design/`: a written spec, reference
+> boards as a patch, 42 board renders. Proposal ids are kept where they help a
+> reader map back (V*, M*, S*, E*, K*).
 >
 > Follow-ups (parked, pull trigger named in each):
 > [`later/road-to-agent-switch-v3-client.md`](later/road-to-agent-switch-v3-client.md) (v3.1),
@@ -26,6 +28,34 @@ tree_pin: ff38137
   release, so the final merge does not carry months of drift.
 - CI runs on PRs into `dev/v3` and on pushes to it (`.github/workflows/ci.yml`).
 
+## Design basis (binding)
+
+- **The UI spec is the spec.** [`docs/design/agent-switch-v3-ui-spec.md`](../../docs/design/agent-switch-v3-ui-spec.md)
+  says what every v3 element is for, how it looks and how it behaves. It is built
+  1:1 (`design.fidelity_mode` default `strict`): every visible deviation — font,
+  control, component, layout, spacing, colour, an added or omitted element —
+  needs the owner's confirmation first. Section numbers below (`§n`) point into it.
+- **Reference boards:** [`docs/design/agent-switch-v3-reference.patch`](../../docs/design/agent-switch-v3-reference.patch)
+  adds `gui/src/v3/` (boards on demo data, theme registry + resolver + tests) and
+  five shared `gui/src/ui/` changes. It applies cleanly on `ff38137`. Its code is
+  adapted, not re-derived (Phase 6), but it is **not** merged as it is: applied
+  whole it drops GUI line coverage to 63.6 % against the 78 % floor
+  (`gui/vite.config.ts`, measured 2026-11-02). Where boards and spec disagree, the
+  spec wins and the conflict is reported (spec §0).
+- **Board renders** (42 PNG, ~7.8 MB) stay in the inbox
+  (`agents/tmp.old/inbox-2026-11-b/design/views/`). They check the result; the
+  spec and the boards are the input.
+- **Superseded by the design:** the earlier UI sketch's three-column layout
+  (sidebar pinned · projects · recent · archive · accounts, right inspector) →
+  spec §4 frame; the quick-input field on a session row and the child mini-sheet
+  are not in the design and are dropped (typing goes into a hosted session's
+  terminal tab, children show under the row and in the Children window).
+- **Conflicts reported, spec wins (no owner decision needed):** the `map` board
+  (`rest.tsx`) says Health = "Ready" in the title bar and names an "Accounts
+  zone"; spec §4.1/§11 say "Engine stopped" only while the engine is down, and
+  §5.3 a Limits strip.
+- **Conflicts that need the owner:** D-mirror, D-vault, D-approve (Decisions).
+
 ## Goal
 
 agent-switch becomes the switch-and-session center the owner asked for: every
@@ -33,19 +63,21 @@ session shows **who it belongs to** (subagent, council seat, other helper),
 **where it works** (branch, worktree, dirty, ahead/behind), **what its PR does**
 (open/merged/closed, CI, mergeable, review), opens in the editor with one click,
 **keeps running when the window closes**, and can be typed into from AS. Old
-sessions can be pinned, kept beyond Claude's cleanup and resumed.
+sessions can be pinned, kept beyond Claude's cleanup and resumed. Everything the
+user sees follows the v3 UI spec.
 
 ## Owner demands this roadmap answers (transcript, 2026-11-02)
 
 | # | Demand (owner's words, paraphrased) | Where |
 |---|---|---|
-| D1 | show which session is a sub-session (subagent, council, arena, court …) | Phase 2 |
-| D2 | branch, worktree, PR incl. CI status, mergeable / merged | Phase 3 |
-| D3 | open in VS Code / PhpStorm per click | Phase 5 |
+| D1 | show which session is a sub-session (subagent, council, arena, court …) | Phase 2, Phase 7 |
+| D2 | branch, worktree, PR incl. CI status, mergeable / merged | Phase 3, Phase 8 |
+| D3 | open in VS Code / PhpStorm per click | Phase 5, Phase 8 |
 | D4 | AS as switch & session center | whole roadmap |
-| D5 | run the CLIs/terminals in AS, type into them at any time | Phase 1, Phase 6 |
-| D6 | pin/save old sessions, resume as management | Phase 4 |
-| D15 | full redesign and re-split are allowed | Phase 6, Decisions |
+| D5 | run the CLIs/terminals in AS, type into them at any time | Phase 1, Phase 8 |
+| D6 | pin/save old sessions, resume as management | Phase 4, Phase 9 |
+| D15 | full redesign and re-split are allowed | Phases 6–9, Decisions |
+| D16 | take the design as the basis (second arrival, 2026-11-02) | Design basis, Phases 6–9 |
 
 D7–D11 (Claude-Desktop-class client, view switch, drag & drop, diffs) are in
 `later/road-to-agent-switch-v3-client.md`; D12–D14 (other agents, local models,
@@ -57,23 +89,31 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
   and can be focused; typing into them is only possible for sessions AS hosts.
 - **No port, no server** in v3.0 (`NON-GOALS.md` § No bundled dashboard server).
   App ↔ engine over Tauri IPC / a 0600 socket.
-- **No automatic account rotation** (existing principle, `NON-GOALS.md`).
+- **No automatic account rotation** (existing principle, `NON-GOALS.md`; spec
+  §1.2, §13.1).
 - **Every edge and status says where it came from.** A relation AS cannot prove is
   shown as "relation unknown", never guessed silently (source: host hook, AC
-  lineage contract, git observation, heuristic).
+  lineage contract, git observation, GitHub, host, counted; spec §1.4, §13.6).
 - **Identity is namespaced.** `session_id` is never a global key; session,
   process, terminal and worktree are separate identities.
 - **No code from `neelsatyavolu/agmux`** (MIT + Commons Clause): ideas only.
-- Every existing GUI function stays reachable (redesign principle of 2026-10-28);
-  the modal terminal sheet stays for installs and logins.
+- Every existing GUI function stays reachable (redesign principle of 2026-10-28;
+  spec §1.6 and the map in §11); the modal terminal sheet stays for installs and
+  logins.
 - **Privacy floor on stored events:** no prompt or answer content in the event
   store; `last_assistant_message` and similar fields are discarded at ingest;
   free text that must be kept passes `redactSecrets`.
 - **Dependency direction:** AS reads no agent-config files or AC-specific env names;
   AC writes the published lineage contract, AS only reads that contract.
-- **Hosting is opt-in per start.** The default start stays unchanged; "host in AS"
-  is an option in the start dialog. Pin and name never write host index files.
+- **Hosting is opt-in per start.** The default start stays unchanged; "Host in
+  Agent Switch" is a radio card in the start dialog (spec §1.5, §8.1). Pin and
+  name never write host index files.
 - No URL schemes (`phpstorm://`, `vscode://`) as the open path; no tmux `-CC`.
+- **UI behaviour rules of spec §13 (1–10) and principles of spec §1 (1–10) are
+  binding**, in particular: approvals stay real and are one decision wherever
+  they are answered; model and thinking changes apply from the next turn and are
+  locked for sessions in the user's own terminal; closing a tab never ends a
+  session; stale usage is drawn greyed with its age.
 - Scope line: `later/road-to-session-orchestration.md` (pause/resume, scheduling)
   stays disjoint; this roadmap does not schedule sessions.
 
@@ -91,6 +131,9 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 - AC ships no first-class "arena"/"court" entity (only prose mentions in judge
   skills of the installed agent-config); the UI sketch shows a Court row anyway →
   a **generic kind + label** per child, no dedicated views (Decision C3).
+- The design patch applies on `ff38137` without conflicts; with it, `gui` passes
+  `tsc --noEmit` and 627/627 tests, and fails the coverage floor (lines and
+  statements 63.6 % vs 78 %). Measured 2026-11-02.
 
 ## Phase 0 — Contracts and spikes (gate for everything below)
 
@@ -99,6 +142,10 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 - [ ] ADR draft: identity model (namespaced ids, edge provenance + confidence,
       state axes kept separate: library / runtime / PR / capability — no single
       `status` column).
+- [ ] ADR draft: v3 GUI code — how `gui/src/v3/` grows from the reference boards
+      (port board by board, wired to the engine, each with tests; demo data never
+      in the product bundle; the coverage floor is kept, never lowered or
+      side-stepped by excludes).
 - [ ] Spike S3: `--settings` hook injection together with `CLAUDE_CONFIG_DIR` and
       the user's own settings (does it merge or replace?).
 - [ ] Spike S4: event-store runtime — Node `node:sqlite` vs Bun `bun:sqlite`
@@ -112,12 +159,26 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 - [ ] Spike S5: tmux backend per rjprins/agmux rules (own server
       `-L as-<uid> -f /dev/null`, one window per session, linked view session per
       viewer, `refresh-client` on attach) on macOS and Linux.
+- [ ] Spike S2 (moved here from v3.1, because the Needs-you zone shows "Allow" and
+      "Reply" in v3.0, spec §5.1): `PermissionRequest` hook as approval channel vs
+      `--permission-prompt-tool` — latency, abort, always-allow, answering a
+      question. The approval hook is the one hook that waits by nature; measure
+      that its timeout falls back to the terminal prompt and never holds a turn
+      longer than the prompt would. Feeds D-approve.
+- [ ] Spike S8: next-turn model and thinking change for a hosted session (spec
+      §6.2, §7.6, §13.2) — which of the tool's own commands sets each (Claude:
+      model and effort; Codex: reasoning levels), sent through the input lease
+      between turns; and the source of `ctx %` per session (hook, transcript or
+      status line), with its provenance.
+- [ ] Spike S9 (spec §15.3): can Claude Desktop / Codex Desktop resume the same
+      conversation when opened on the worktree root, per app version? Until it is
+      verified the Open menu says "opens this project" (spec §13.10).
 
 ## Phase 1 — Engine, event store, host
 
 - [ ] M1 event store (SQLite, WAL): `sessions`, `lineage`, `events`, `library`,
-      `vault`, `git_facts`, `pr_cache`. Existing JSON files migrated; read
-      compatibility for one release. Ingest is append-only, schema-checked,
+      `vault`, `git_facts`, `pr_cache`, `attention`. Existing JSON files migrated;
+      read compatibility for one release. Ingest is append-only, schema-checked,
       deduped, ordered per producer; projections are rebuildable.
 - [ ] Engine protocol v1 over a 0600 Unix socket (Windows: named pipe); commands
       carry an idempotency key. CLI `--json` stays stable
@@ -134,6 +195,17 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       action); `AGENT_SWITCH_HOST_PANE` exported for non-Claude providers; starts go
       through the existing guard/pool path; `takeover --in-place` and `compact`
       move to the new host names.
+- [ ] Attention queue (spec §5.1, §7.4): one queue ordered approvals → questions →
+      limit decisions → failing CI → sign-ins → updates; "Later" snoozes an item
+      until it changes; finished items stay as history (the 2.11 activity list);
+      a "while you were away" digest after a long absence (merged PRs, CI breaks,
+      finished turns, limit resets). An answer given in one place clears the item
+      everywhere (spec §13.5). `agent-switch needs --json`.
+- [ ] Per-session facts for the session bar from S8: model, thinking level,
+      context used — each with its source; unknown stays unknown.
+- [ ] Engine health for the title bar and the system banner (spec §4.1, §6.6):
+      "Engine stopped" with restart; hosted sessions keep running in tmux and AS
+      reconnects.
 - [ ] Windows: in-app PTY sessions are labelled **ephemeral** until a native host
       exists (see `later/road-to-agent-switch-v3-reach.md`).
 
@@ -150,9 +222,11 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 - [ ] Never guess a parent; an unproven edge is shown as "relation unknown".
       Temp-orphan criteria: temp `cwd` and never on a TTY. "continued from" is drawn
       apart from "started by"; `clear`/`compact` are edges too.
-- [ ] `sessions --json`: `children`, `childCount`, `childSource`; GUI: expander,
-      filter on roots, running-child marker, child mini-sheet, `+n` badge in tray
-      and pet; counters count roots only.
+- [ ] `sessions --json`: `children`, `childCount`, `childSource`. GUI per spec
+      §5.2, §7.3, §9.3: children unfold under the row (`ChildLine`, provenance in
+      the tooltip, "relation unknown ⓘ" / "counted" inline), the `Bot` + count
+      trailing slot, the Children tool window, `N children` in the peek card;
+      counters count roots only. The pet stays unchanged (spec §11).
 - [ ] Lineage doc `docs/lineage-contract.md` (`AGENT_SWITCH_PARENT_SESSION`,
       `_AGENT`, `_KIND`, `_LABEL`).
 - [ ] `agent-switch sessions --tree --json`.
@@ -172,63 +246,163 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       `UNKNOWN`. GitLab (`glab`) after GitHub works.
 - [ ] No `gh` or no login → one honest line with a fix button; AS never stores a
       GitHub token itself.
+- [ ] Failing CI and merge conflicts become attention items and the session's
+      blocker (spec §5.1, §6.3, §9.1); "Fix" / "Send to agent" sends the failing
+      check's name and log link to a hosted session through the input lease —
+      never into a session AS does not host.
 - [ ] `agent-switch pr status`, `agent-switch worktrees`.
 
 ## Phase 4 — Library and vault
 
 - [ ] M6 pin, name, tags, archive (separate from trash) and search in the store,
       not in localStorage.
-- [ ] Show "deleted by Claude in N days" from `cleanupPeriodDays`.
+- [ ] Show "deleted by Claude in N days" from `cleanupPeriodDays`; the Library's
+      deadline banner and "Kept?" states kept / at risk (≤ 7 days in amber) / lost
+      (spec §10.3).
 - [ ] Vault copy of pinned sessions (jsonl + `<id>/` + `file-history/<id>`),
-      verified by hash; a pin whose transcript is gone shows "saved / unavailable"
-      and no Resume button.
-- [ ] Vault write on `SessionEnd` of a pinned session: copy → checksum → never
-      move; Codex rollouts too; size shown. A session Claude deleted can be
-      restored from the vault.
+      verified by hash; a pin whose transcript is gone shows "transcript gone" and
+      "can't resume".
+- [ ] "Auto-keep sessions with an open PR", on by default (spec §10.3): such a
+      session is kept like a pin until its PR is merged or closed.
+- [ ] Vault write on `SessionEnd` of a kept session: copy → checksum → never
+      move; Codex rollouts too; size shown ("vault 11.6 MB"). A session Claude
+      deleted can be restored from the vault.
+- [ ] Merged sessions archive themselves after 24 h into the Library; "Clean up"
+      under "Done today" removes merged worktrees and skips dirty ones (spec §5.2,
+      §13.8).
 - [ ] CLI: `agent-switch sessions pin|name|tag|archive …`; search over name,
       summary, folder, branch, PR.
-- [ ] Resume preflight (cwd exists, branch/SHA, dirty tree, account) and restore
-      targets `same_cwd | worktree | new_worktree`; continue, fork, continue on
-      another account (existing handoff path), or "as a new session with brief";
-      the exact command is previewed.
+- [ ] Resume (spec §8.4): preflight (folder, branch/SHA, dirty main checkout,
+      account with numbers), restore targets `same_cwd | worktree | new_worktree`
+      with the suggestion in words; Continue, Fork, Other account (existing handoff
+      path), New with brief; the exact command is previewed and copyable.
 
 ## Phase 5 — Open in…
 
 - [ ] M7 `agent-switch open <session> --with vscode|cursor|phpstorm|idea|finder|terminal [--line N]`
       via the editors' official launchers; target = worktree root; installed
       editors detected via `apps --json`, missing ones hidden.
+- [ ] Open targets per spec §7.7: default target (⌘O) and last used target;
+      Editor, Agent app (only the app of the session's tool, "opens this project"
+      until S9 says more), Terminal (focus / new here / attach tmux), Files (reveal
+      / copy path), Web (PR / CI run).
 - [ ] "Focus terminal" for sessions running in the user's own terminal (tty
       lookup; macOS automation error -1743 explained, not swallowed).
 - [ ] Security: allowlisted executables only, canonical path inside a known
       worktree, argv only, never a URL taken from PR text.
-- [ ] Default editor setting (scope per Decision E-editor).
+- [ ] Default target global with per-repo override (Decision E-editor; Settings ›
+      Open in, spec §10.5).
 
-## Phase 6 — App: the center
+## Phase 6 — Design system and window frame (spec §0–§4, §12)
 
-- [ ] M8 three-column layout: sidebar (pinned · projects · recent · archive ·
-      accounts), centre terminal dock (tabs; closing a tab detaches, never kills),
-      right inspector (changes · git/PR · children · info) — the UI sketch's
-      session card (branch, PR, CI, worktree, child tree, "terminal connected",
-      editor buttons) is the reference for the card.
-- [ ] Quick input on a hosted session row: `send-keys -l` through the input
-      lease, plus a `capture-pane` live preview. Never on a non-hosted pane.
-- [ ] Same building blocks in list, tray and pet; every current function reachable
-      (accounts, pools, protection, apps, tools, activity, health).
-- [ ] Before each merge: render and check — no wraps, nothing clipped, same element
-      looks the same everywhere.
+- [ ] Themes (spec §2): the 18 themes in spec order, Darcula for new installs;
+      `--ac-*` tokens from `resolveTheme` only (no raw colours except account
+      identity colours); the resolver enforces the contrast floors, including
+      terminal ANSI ≥ 4.5:1; accent = theme or Agent Switch orange; "Terminal uses
+      the theme's colours" on by default. Ported from `themes/*` with their tests;
+      every new token gets a floor.
+- [ ] 2.11 migration: the old `agent-switch-theme` keeps its mode and gets the
+      Agent Switch palette, so the update changes nothing visible. Test.
+- [ ] Shared component changes (spec §0): `ui/Segmented` selected = raise fill,
+      `RowMenu`/`Select`/`Toaster` at 12 px, `AcRoot` takes `style`. They reach the
+      2.11 screens too — render-check those screens in the same change.
+- [ ] Visual grammar kit (spec §3): the one radius scale, `Marker` and the tab
+      frame for "where you are", state dots vs the `AccountMark` tick, three chip
+      kinds, button kinds with one filled button per surface, one number and
+      duration format.
+- [ ] Window frame (spec §4): title bar (search field → palette, "Engine
+      stopped", inbox pill only in focus mode, "Start session" as the only filled
+      chrome button, settings gear), left and right stripes with corner dots, one
+      right tool window at a time and closed by default, tone order rail → panel →
+      bg.
+- [ ] Keyboard (spec §12): every listed key; no app key steals a key the CLI needs
+      while the terminal has focus; Ctrl+Shift on Linux/Windows; all keys
+      rebindable.
 
-## Phase 7 — Codex and Antigravity parity
+## Phase 7 — Sessions window and attention (spec §5, §7.1–§7.5, §10.7)
+
+- [ ] Needs-you zone on the attention queue: `NeedRow` with the verb and keys per
+      kind, the top item open, ⌘J focus with the warn Marker and key line, at most
+      3 rows plus "N more ›", one digest row, hidden when empty. "Allow" and
+      "Reply" only where an approval channel exists (S2, D-approve).
+- [ ] Sessions zone: the shared order (needs you → CI failing → working → rest),
+      one trailing slot by priority, second line on the active row (and on every
+      row in comfortable density), "Done today N ›" with "Clean up",
+      multi-select with the batch bar.
+- [ ] Peek card on hover (~400 ms): account, model, thinking; branch, `#PR`,
+      children; last output line (hosted: `capture-pane`; otherwise only where a
+      source exists, else left out).
+- [ ] Limits strip and limits popover: tightest window per account, colours from
+      the account's protect value, stale data greyed with its age, "sign in ›";
+      the popover with all windows, the pace tick and the pace line in words plus
+      its one-line legend; "Move its session…" opens the decision sheet.
+- [ ] Inbox popover (focus mode), ⌃Tab switcher, ⌘K palette (sessions incl.
+      Library, branches & PRs, commands; `>` for commands).
+- [ ] Tray (spec §10.7): the same components in the same order; "Start session"
+      and "Open Agent Switch".
+
+## Phase 8 — Workbench, dialogs and tool windows (spec §6, §7.6–§7.7, §8, §9)
+
+- [ ] Tab strip: page tabs first, session tabs with state dot and `⌘1…⌘9`;
+      closing a session tab detaches, never ends.
+- [ ] Session bar: `[Terminal | Chat]` (Chat disabled until v3.1 and for
+      non-hosted sessions, with the reason), account chip (opens the decision
+      sheet, never switches), model and thinking chips → model popover for the next
+      turn (S8), locked with the reason for sessions in the user's own terminal,
+      `ctx %`, Open ▾ split button, ⋯ menu.
+- [ ] Terminal body: the hosted session's real PTY in xterm with the theme's
+      terminal tokens, 12.5 px mono, line height 1.5, xterm's custom glyphs for the
+      CLI's rounded boxes; never re-rendered or summarised (spec §6.4); typing goes
+      through the input lease (D5). Blocker strip
+      only while Summary is closed, never twice.
+- [ ] Session in the user's own terminal (spec §6.5): "Runs in … · read-only
+      here", "Focus terminal ⌘↵", "Take over here…" that explains the move first;
+      body per D-mirror.
+- [ ] Dialogs (spec §8): New session (prefill remembered per project, tool /
+      model / thinking, account box with all windows, pace estimate in words,
+      "Why? ›" with the 2.11 routing lines, "Where it runs" radio cards with "Your
+      terminal" default, command preview, primary names the outcome); near-limit
+      decision sheet on the existing arm and rebind paths; End session listing
+      what stops with it.
+- [ ] Right tool windows (spec §9): Summary (next step, PR with provenance, git
+      line, limit block only near the limit, More ›), Changes (worktree vs HEAD,
+      "Commit…"; "Review changes" arrives with v3.1), Children.
+
+## Phase 9 — Pages (spec §10.1–§10.6, §11)
+
+- [ ] Pages share `PageBody` and `PageHeader` (spec §6.7): centred, max 960,
+      tables as 10 px cards with muted column heads.
+- [ ] Accounts page: the 2.11 table kept, with "Usage history" and "Projects &
+      pools" as views, every window as a full `LimitBar`.
+- [ ] All sessions page: filter, State and Tool segmented controls, the labelled
+      batch bar, the columns of spec §10.2.
+- [ ] Library page on Phase 4 data (search, All / Pinned / Archived, vault size,
+      deadline banner, Resume… / can't resume, Archive/Restore).
+- [ ] Tools page; updates also arrive as Needs-you items and never touch running
+      sessions.
+- [ ] Settings page with its left nav; Appearance (mode, theme cards with live
+      mini previews grouped as in §10.5, accent, terminal colours, contrast note,
+      "About <theme>"); Open in. The Agents and Remote entries arrive with v3.2.
+- [ ] First run (spec §10.6): one path, no tour; shell integration shown before
+      it changes anything.
+- [ ] Every row of the 2.11 map (spec §11) is reachable in ≤ 2 clicks from the
+      main window.
+
+## Phase 10 — Codex and Antigravity parity
 
 - [ ] Codex hooks per `CODEX_HOME` (user level only); Codex `cwd` from
       `session_meta`; Codex subagent rollouts grouped, not listed as roots.
 - [ ] Antigravity: "not readable" label until a structured source exists
-      (ACP in `later/road-to-agent-switch-v3-reach.md`).
+      (ACP in `later/road-to-agent-switch-v3-reach.md`); it can be started from
+      New session like any terminal-only tool.
 
 ## Ordering
 
 Phase 0 → Phase 1 store (M1) first. Library (Phase 4), git facts (Phase 3) and
 open-in (Phase 5) need only the store and may start before the host (M3) lands —
 they are the fastest visible value. The tree (Phase 2) needs the hook roadmap.
+Phase 6 needs no engine and may run beside Phase 1; Phases 7–9 port one board at a
+time and wire it to the engine as its data exists.
 
 ## Acceptance (v3.0)
 
@@ -245,11 +419,19 @@ they are the fastest visible value. The tree (Phase 2) needs the hook roadmap.
   mid-session worktree switch shows after the next turn.
 - GraphQL calls per tick ≤ number of repos; `UNKNOWN` resolved within 2 ticks.
 - IDE opens the worktree root on macOS and Linux.
-- Typing arrives in the dock; a foreign tmux server stays untouched.
-- Pins survive takeover; host files unchanged (checksums); unpinned sessions are
-  never copied.
+- Typing arrives in the hosted terminal; a foreign tmux server stays untouched.
+- Pins survive takeover; host files unchanged (checksums); sessions neither pinned
+  nor auto-kept are never copied.
 - Graph code covered by property-based tests (no cycles, every child has one
   parent or "unknown").
+- Design (spec §14): every v3.0 screen rendered at 1440×900 in darcula,
+  github-light and one high-contrast theme with nothing clipped, no unplanned
+  wrap, no misaligned row baseline; no inset-shadow selection bars; every "where
+  you are" item uses `Marker` or the tab frame, every chosen list option a check,
+  every segmented control `ui/Segmented`; only the §3.1 radii; contrast tests
+  green; the GUI coverage floor holds.
+- A fidelity matrix is committed that names, per spec chapter §1–§14, the
+  evidence taken (render, test, grep) and every confirmed deviation.
 
 ## Decisions
 
@@ -259,7 +441,7 @@ they are the fastest visible value. The tree (Phase 2) needs the hook roadmap.
 | E2 | Positioning as "center and client for all your agents and accounts" | **owner** — recommendation yes, with v3.0 |
 | E3 | Monorepo vs split | decided: one repo (one maintainer, one CI); layout per Phase 0 ADR |
 | E7 | Hooks for self-started sessions: keep opt-in or offer once at first start | **owner** — recommendation offer once with preview |
-| E-editor | Default editor global or per repo | decided: global default, per-repo override (cheap, no lock-in) |
+| E-editor | Default editor global or per repo | decided: global default, per-repo override (cheap, no lock-in; spec §10.5 agrees) |
 | E-token | Remove all OAuth-token reads (proposal V0.2)? Collides with ADR-003 (rebind reads `fetchProfile`, `src/rebind.ts:147`) and ADR-004 (`src/token-freshen.ts:161`) — the proposal missed both callers | **owner** — see `later/road-to-agent-switch-statusline-usage.md` |
 | C2 | Helper sessions collapsed by default | decided: yes (noise; expandable) |
 | C3 | Dedicated arena/court views | decided: no — generic kind + label until AC ships those entities |
@@ -267,6 +449,15 @@ they are the fastest visible value. The tree (Phase 2) needs the hook roadmap.
 | E-idle | Auto-end idle hosted sessions | decided: no |
 | E-cleanup | Change `cleanupPeriodDays` per account from AS | decided: not in v3.0 — show the deadline only (writing host settings is a separate opt-in) |
 | C4 | Fix the hook race before or after reproducing it | decided: after (`road-to-hooks-that-keep-up` Phase 0 → 1) |
+| D-design | Is the v3 UI spec binding? | decided: yes, strict fidelity (owner, 2026-11-02: "das Design als Grundlage") |
+| D-sketch | Earlier UI sketch layout and quick input on rows | decided: superseded by the design (Design basis) |
+| D-mirror | Spec §6.5 shows a read-only mirror of a session in the user's own terminal; AS cannot read a foreign PTY | **owner** — recommendation: v3.0 shows the session's facts and last transcript line there; a full read-only view comes with the v3.1 timeline reader |
+| D-vault | Spec §8.3 says "the transcript is kept in the vault either way"; Phase 4 vaults only pinned and auto-kept sessions | **owner** — recommendation: keep the vault scope, change the dialog line to say whether this session is kept |
+| D-approve | Spec §5.1 offers "Allow"/"Reply" for every approval; for a session without an approval channel (own terminal without hooks, or S2 red) AS cannot answer | **owner** — recommendation: there the row's verb is "Focus terminal" |
+| S-density | Spec §15.1: comfortable density as default? | **owner** (from the design) — spec today: compact |
+| S-limits | Spec §15.2: Limits strip at the bottom or under the session list? | **owner** (from the design) — spec today: bottom |
+| S-desktop | Spec §15.3: Desktop apps resume or only open the project? | decided by Spike S9; until then "opens this project" |
+| S-proposals | Spec proposals: ⇧/⌘-click multi-select (§5.2), "Start here" when hosted (§8.1) | **owner** — both marked "proposal" in the spec, not built until confirmed |
 
 ## Not in v3.0 (kills, with reason)
 
@@ -275,13 +466,17 @@ they are the fastest visible value. The tree (Phase 2) needs the hook roadmap.
 - Own MLX/llama server, own agent loop.
 - Team login pooling, automatic account rotation, telemetry on by default.
 - Pins in localStorage; commands typed into shells; tokens in URLs or terminals.
+- Quick input on session rows and the child mini-sheet — not in the design.
+- Merging the reference patch as it is — it drops the GUI coverage floor.
 
 ## Risk Register
 
 | Risk | Mitigation |
 |---|---|
 | `dev/v3` drifts from `main` while 2.x keeps shipping | merge `main` into `dev/v3` after every 2.x release; conflicts resolved there, never on the final merge |
-| Scope: v3.0 alone is large for one maintainer | Phase 0 → 1 first; Phases 2–5 parallel only after Phase 1 |
+| Scope: v3.0 alone is large for one maintainer | Phase 0 → 1 first; Phases 2–5 parallel only after Phase 1; boards ported one at a time |
 | Undocumented host internals (transcript layout, cleanup) | fixtures per CC version, honest degrade |
 | tmux missing (Windows, minimal Linux) | ephemeral label; native host later |
 | agmux is broader | win on trust, persistence, platforms, AC integration — not breadth |
+| Shared component changes alter the 2.11 screens | render-check the 2.11 screens in the same change (Phase 6) |
+| The approval hook holds a turn | S2 measures it; timeout falls back to the terminal prompt |

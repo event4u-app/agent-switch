@@ -8,7 +8,9 @@ tree_pin: ff38137
 
 > **Source:** `agents/tmp.old/inbox-2026-11-b/` — owner turn 3 (2026-11-02): connect
 > other agents and models incl. local ones; "the app can be reached from anywhere";
-> deep code analysis of two terminal-multiplexer-class agent clients.
+> deep code analysis of two terminal-multiplexer-class agent clients. Second
+> arrival the same day: the v3 UI design (`design/`), whose Agents and Remote
+> boards are v3.2.
 >
 > **Pull trigger:** [`road-to-agent-switch-v3-client.md`](road-to-agent-switch-v3-client.md)
 > closed, and owner decisions E4/E5 below answered.
@@ -17,6 +19,17 @@ tree_pin: ff38137
 
 Targets `dev/v3` (branch model in
 [`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)).
+
+## Design basis (binding)
+
+The v3 UI spec [`docs/design/agent-switch-v3-ui-spec.md`](../../../docs/design/agent-switch-v3-ui-spec.md)
+is the spec here too, at strict fidelity (rules in
+[`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)
+§ Design basis). This roadmap builds its v3.2 boards: Settings › Agents and
+Settings › Remote (§10.5), Antigravity as a tool in New session (§8.1), and
+behaviour rule §13.5 for remote approvals. Reference code:
+`gui/src/v3/settings3.tsx` in
+[`docs/design/agent-switch-v3-reference.patch`](../../../docs/design/agent-switch-v3-reference.patch).
 
 ## Owner demands answered here
 
@@ -51,12 +64,18 @@ D14 access from anywhere.
       agent list as suggestions; ACP driver for Gemini, Antigravity (after S6),
       OpenCode, Goose, Qwen Code — all through the AS event model.
 - [ ] Three classes shown honestly: deep (Claude, Codex: accounts + limits),
-      ACP (limits only if reported), terminal-only.
+      ACP (limits only if reported), terminal-only — Settings › Agents lists one row
+      per agent with its class ("deep" / "ACP" / "terminal only") and a switch
+      (spec §10.5).
 - [ ] M16 "local" marker for agents configured with a local model; optional local
       model for titles/summaries, otherwise none.
 
 ## Phase 2 — Remote stage 1 (host-native)
 
+- [ ] Settings › Remote (spec §10.5): the stages R1 Claude Remote Control, R2 own
+      tunnel (SSH/Tailscale), R3 E2E relay ("later"); paired devices with their
+      scopes; no stage opens a port outside the user's network. An approval
+      answered remotely is the same decision as the terminal prompt (§13.5).
 - [ ] M17 per-session / per-account switch "Remote Control on" → start with
       `--remote-control "<name>"`; no inbound port. Codex: pointer to the ChatGPT
       app's remote connections.
@@ -84,6 +103,8 @@ D14 access from anywhere.
 - One ACP agent and one local-model agent run a turn in the client view.
 - Remote stage 1 and 2 work without AS opening a port outside the tailnet; a
   remote client cannot change a permission mode (test).
+- The Agents and Remote boards pass the design acceptance of spec §14 and get
+  their rows in the fidelity matrix.
 
 ## Decisions
 
@@ -91,6 +112,7 @@ D14 access from anywhere.
 |---|---|---|
 | E4 | Pursue remote stage 3 (relay) at all? | **owner** — recommendation: stages 1 and 2 first; relay only with E2E + self-hosting |
 | E5 | Change `NON-GOALS.md` "no server" → "no server outside your own network, no relay without E2E" | **owner** — recommendation yes, with this roadmap |
+| E-remote-default | The Remote board shows R1 and R2 "on"; the constraints keep every networked stage opt-in | **owner** — recommendation: off until the user turns a stage on; the board shows a configured state |
 | E6 | Antigravity via Google's ACP server instead of terminal only | decided: yes after S6 is green |
 
 ## Risk Register

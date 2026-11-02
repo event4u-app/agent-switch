@@ -6,7 +6,7 @@
 
 ## Overall
 
-**0 / 51 steps done · 0%**
+**0 / 84 steps done · 0%**
 
 ```text
 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   0%
@@ -16,7 +16,7 @@
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 8 | 42 | 42 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
+| 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 75 | 75 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
 | 2 | [road-to-hooks-that-keep-up.md](roadmaps/road-to-hooks-that-keep-up.md) | 3 | 9 | 9 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
 
 ---
@@ -47,18 +47,21 @@
 
 ### [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md)
 
-**agent-switch v3.0 "Central" — sessions that survive, a tree, git/PR, a library** — 0 / 42 done (0%)
+**agent-switch v3.0 "Central" — sessions that survive, a tree, git/PR, a library** — 0 / 75 done (0%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
-| 0 | Contracts and spikes (gate for everything below) | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
-| 1 | Engine, event store, host | ⬜ not started | 7 | 0 | 0 | 0 | 0% |
+| 0 | Contracts and spikes (gate for everything below) | ⬜ not started | 10 | 0 | 0 | 0 | 0% |
+| 1 | Engine, event store, host | ⬜ not started | 10 | 0 | 0 | 0 | 0% |
 | 2 | Tree and lineage | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
-| 3 | Git and PR facts | ⬜ not started | 5 | 0 | 0 | 0 | 0% |
-| 4 | Library and vault | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
-| 5 | Open in… | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
-| 6 | App: the center | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
-| 7 | Codex and Antigravity parity | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
+| 3 | Git and PR facts | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
+| 4 | Library and vault | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
+| 5 | Open in… | ⬜ not started | 5 | 0 | 0 | 0 | 0% |
+| 6 | Design system and window frame (spec §0–§4, §12) | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
+| 7 | Sessions window and attention (spec §5, §7.1–§7.5, §10.7) | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
+| 8 | Workbench, dialogs and tool windows (spec §6, §7.6–§7.7, §8, §9) | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
+| 9 | Pages (spec §10.1–§10.6, §11) | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
+| 10 | Codex and Antigravity parity | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
 
 ### [road-to-hooks-that-keep-up.md](roadmaps/road-to-hooks-that-keep-up.md)
 
