@@ -241,9 +241,12 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       Failing CI joins in Phase 3 (and the digest gains merged PRs and CI breaks
       there), tool updates with the Tools page (Phase 9). Approvals say "Focus
       terminal" until AS installs the approval hook (D-approve).
-- [ ] Per-session facts for the session bar from S8: model and thinking level
+- [x] Per-session facts for the session bar from S8: model and thinking level
       from the transcript (`message.model`, `effort`), context used from the
       transcript reader — each with its source; unknown stays unknown.
+      → `sessions --json` `context` now carries `model`, `effort` (per-turn first)
+      and `pct` with `source: "transcript"`; a transcript without effort gives
+      `null`.
 - [ ] Engine health for the title bar and the system banner (spec §4.1, §6.6):
       "Engine stopped" with restart; hosted sessions keep running in tmux and AS
       reconnects.
