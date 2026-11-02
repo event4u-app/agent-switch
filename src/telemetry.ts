@@ -74,6 +74,9 @@ export interface ContextReading {
   /** 0–100, one decimal — or null when the window is unknown. */
   pct: number | null;
   model: string | null;
+  /** Claude: the effort the last answer ran at (`perTurnEffort`, else `effort`),
+   *  null where the transcript does not say (Claude Code before ~2.1.3xx, Codex). */
+  effort?: string | null;
   timestamp: string | null;
   /** high = clean parse; low = version drift or malformed lines seen. */
   confidence: "high" | "low";
@@ -138,7 +141,7 @@ export function readClaudeContext(
 
   let parsed = 0;
   let malformed = 0;
-  let hit: { inputSide: number; model: string | null; ts: string | null } | null = null;
+  let hit: { inputSide: number; model: string | null; effort: string | null; ts: string | null } | null = null;
 
   for (let i = lines.length - 1; i >= 0; i--) {
     let o: any;
@@ -160,7 +163,7 @@ export function readClaudeContext(
     const u = m.usage;
     const inputSide =
       (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
-    hit = { inputSide, model: typeof m.model === "string" ? m.model : null, ts: o.timestamp ?? null };
+    hit = { inputSide, model: typeof m.model === "string" ? m.model : null, effort: effortOf(o.perTurnEffort) ?? effortOf(o.effort), ts: o.timestamp ?? null };
   }
 
   if (!hit) return null;
@@ -179,9 +182,17 @@ export function readClaudeContext(
     windowTokens,
     pct,
     model: hit.model,
+    effort: hit.effort,
     timestamp: hit.ts,
     confidence,
   };
+}
+
+/** `"high"`, or `{ level: "high" }` as the hooks carry it. */
+function effortOf(v: unknown): string | null {
+  if (typeof v === "string" && v) return v;
+  if (v && typeof v === "object" && typeof (v as { level?: unknown }).level === "string") return (v as { level: string }).level;
+  return null;
 }
 
 /**

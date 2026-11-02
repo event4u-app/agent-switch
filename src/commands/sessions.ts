@@ -334,7 +334,7 @@ export function cmdSessions(
             ...r,
             armed: armedFor(r),
             context: c
-              ? { pct: c.pct, contextTokens: c.contextTokens, windowTokens: c.windowTokens, model: c.model, confidence: c.confidence }
+              ? { pct: c.pct, contextTokens: c.contextTokens, windowTokens: c.windowTokens, model: c.model, effort: c.effort ?? null, confidence: c.confidence, source: "transcript" }
               : null,
             cache: cacheOf(r),
             ...(seesChildren.has(r.profile) ? { children: childrenOf(eventsOf.get(r.profile) ?? [], r.sessionId) } : {}),
