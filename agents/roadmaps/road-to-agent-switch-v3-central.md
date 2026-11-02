@@ -509,8 +509,18 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 
 ## Phase 10 — Codex and Antigravity parity
 
-- [ ] Codex hooks per `CODEX_HOME` (user level only); Codex `cwd` from
-      `session_meta`; Codex subagent rollouts grouped, not listed as roots.
+- [x] Codex `cwd` from `session_meta`; Codex subagent rollouts grouped, not
+      listed as roots.
+      → `codexSessionMeta` reads the first line (≤ 256 KiB; fields measured on
+      codex-cli 0.166.0) for `cwd` and `thread_source`; a thread not started by
+      the user is `root: false, relation: "unknown"` and `--tree` groups it apart.
+      Codex sessions now get git facts too.
+- [ ] Codex hooks per `CODEX_HOME` (user level only). Measured: codex-cli
+      0.166.0 has hooks (`[hooks]` in config.toml — SessionStart/End, Stop,
+      SubagentStart/Stop, PermissionRequest, Pre/PostCompact, …) behind a
+      persisted hook trust. Open: both Codex accounts here are signed out
+      ("access token could not be refreshed"), so the payloads could not be
+      captured; signing in is the user's step.
 - [ ] Antigravity: "not readable" label until a structured source exists
       (ACP in `later/road-to-agent-switch-v3-reach.md`); it can be started from
       New session like any terminal-only tool.
