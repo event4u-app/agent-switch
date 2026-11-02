@@ -187,10 +187,15 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 
 ## Phase 1 — Engine, event store, host
 
-- [ ] M1 event store (SQLite, WAL): `sessions`, `lineage`, `events`, `library`,
+- [x] M1 event store (SQLite, WAL): `sessions`, `lineage`, `events`, `library`,
       `vault`, `git_facts`, `pr_cache`, `attention`. Existing JSON files migrated;
       read compatibility for one release. Ingest is append-only, schema-checked,
       deduped, ordered per producer; projections are rebuildable.
+      → `src/store/` (`node:sqlite` or `bun:sqlite`, so E1 stays open);
+      `agent-switch store status|import|rebuild`. The hook rings are the only
+      event-shaped JSON and are imported; they stay in place for the 2.x readers.
+      Other JSON state (arms, mappings, settings) is not event data and stays.
+      Node 20 has no SQLite: there the store reports itself unavailable.
 - [ ] Engine protocol v1 over a 0600 Unix socket (Windows: named pipe); commands
       carry an idempotency key. CLI `--json` stays stable
       (`tests/cli-snapshot.test.ts`).
