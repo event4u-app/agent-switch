@@ -5,6 +5,7 @@
 
 import * as fs from "node:fs";
 import * as os from "node:os";
+import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { configDir, die, listProfiles, requireProfile, readBinaryPath, ROOT } from "../profiles.js";
 import { ProviderId, provider, resolveBinary } from "../providers.js";
@@ -52,6 +53,8 @@ import {
 import { buildTree, childSource, childrenWithHooks, countSubagentFiles, helperIndex, relationUnknown, type TreeNode } from "../lineage.js";
 import { gitFacts, type GitFacts } from "../git-facts.js";
 import { githubRepo, prCacheFile, prsForHead, readPrCache } from "../pr-facts.js";
+import { Store, storeFile } from "../store/store.js";
+import { libraryFacts } from "./library.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "../notify.js";
 import { appendNotification } from "../notifications.js";
 import { readTmuxRegistry, sendKeysArgs, tmuxSessionName } from "../tmux.js";
@@ -304,12 +307,12 @@ export function cmdHookEvent(): void {
   }
 }
 
-export function cmdSessions(
+export async function cmdSessions(
   providerId: ProviderId,
   providerExplicit: boolean,
   name?: string,
   flags: Record<string, string | boolean> = {},
-): void {
+): Promise<void> {
   if (providerExplicit && providerId !== "claude" && providerId !== "codex") {
     die(`sessions supports claude and codex for now (${providerId} parity is gated on its Phase-0 spike — see scripts/spikes/)`);
   }
@@ -366,6 +369,8 @@ export function cmdSessions(
     const allEvents = new Map(listProfiles(providerId).map((p) => [p, eventsOf.get(p) ?? (providerId === "claude" ? readEvents(eventFile(ROOT, providerId, p)) : [])]));
     const helpers = helperIndex(providerId, allEvents);
     const prCache = readPrCache(prCacheFile(ROOT));
+    // The library lives in the event store; without SQLite (Node 20) it is left out.
+    const store = providerId === "claude" ? await Store.open(storeFile(ROOT)).catch(() => null) : null;
     const json = all.map((r) => {
       const c = contextForRow(providerId, r);
       const key = `${providerId}/${r.profile}/${r.sessionId}`;
@@ -394,10 +399,12 @@ export function cmdSessions(
         git,
         // From the cache the background refresh keeps; this call reads no network.
         prs,
+        ...(store ? libraryFacts(store, key, { transcript: r.file ?? "", sessionDir: path.join(configDir(providerId, r.profile), "projects", r.projectDir, r.sessionId), fileHistory: path.join(configDir(providerId, r.profile), "file-history", r.sessionId) }) : {}),
         ...kids,
         ...(parent ? { parent } : relationUnknown(r.cwd, false, TEMP_ROOTS) ? { relation: "unknown" } : {}),
       };
     });
+    store?.close();
     if (flags.tree) {
       type Row = (typeof json)[number];
       const keyOf = (r: Row) => `${providerId}/${r.profile}/${r.sessionId}`;

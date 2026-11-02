@@ -8,6 +8,7 @@
 import { die, ROOT } from "../profiles.js";
 import { Store, importEventRings, storeFile, STORE_SCHEMA_VERSION } from "../store/store.js";
 import { StoreUnavailable } from "../store/driver.js";
+import { vaultBytes } from "../library.js";
 
 export async function cmdStore(sub: string | undefined, flags: Record<string, string | boolean>): Promise<void> {
   const action = sub ?? "status";
@@ -31,9 +32,9 @@ export async function cmdStore(sub: string | undefined, flags: Record<string, st
       return;
     }
     if (action === "rebuild") store.rebuildProjections();
-    const status = { available: true, file, driver: store.db.name, schema: STORE_SCHEMA_VERSION, events: store.eventCount(), sessions: store.sessions().length };
+    const status = { available: true, file, driver: store.db.name, schema: STORE_SCHEMA_VERSION, events: store.eventCount(), sessions: store.sessions().length, vaultBytes: vaultBytes(store) };
     if (flags.json) console.log(JSON.stringify(status));
-    else console.log(`${action === "rebuild" ? "Rebuilt. " : ""}${status.events} events, ${status.sessions} sessions in ${file} (${status.driver}).`);
+    else console.log(`${action === "rebuild" ? "Rebuilt. " : ""}${status.events} events, ${status.sessions} sessions in ${file} (${status.driver}); vault ${(status.vaultBytes / 1_048_576).toFixed(1)} MB.`);
   } finally {
     store.close();
   }

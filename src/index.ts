@@ -42,6 +42,8 @@ import {
 } from "./commands/profiles.js";
 import { cmdRebind } from "./commands/rebind.js";
 import { cmdStore } from "./commands/store.js";
+import { cmdCleanup, cmdLibrary, cmdResume } from "./commands/library.js";
+const LIBRARY_ACTIONS = new Set(["pin", "unpin", "name", "tag", "untag", "archive", "unarchive", "search", "keep", "vault"]);
 import { visibilityFile, writeVisibility } from "./app-visibility.js";
 import { cmdPr, cmdWorktrees } from "./commands/pr.js";
 import { cmdEngine } from "./commands/engine.js";
@@ -164,6 +166,9 @@ async function main(): Promise<void> {
       if (positional[0] === "rm") return cmdSessionsRm(providerId, providerExplicit, positional[1], flags);
       if (positional[0] === "restore") return cmdSessionsRestore(providerId, providerExplicit, positional[1], flags);
       if (positional[0] === "preview") return cmdSessionsPreview(providerId, providerExplicit, positional[1], flags);
+      if (positional[0] && LIBRARY_ACTIONS.has(positional[0])) return cmdLibrary(positional[0], positional[1], positional.slice(2).join(" ") || undefined, flags);
+      if (positional[0] === "cleanup") return cmdCleanup(flags);
+      if (positional[0] === "resume") return cmdResume(positional[1], flags);
       return cmdSessions(providerId, providerExplicit, positional[0], flags);
     case "hooks": return cmdHooks(positional[0], positional[1]);
     case "store": return cmdStore(positional[0], flags);

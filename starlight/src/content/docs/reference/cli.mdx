@@ -231,6 +231,13 @@ suggested. The background service must be running.
 | `sessions preview <session-id> [--from <profile>]` | The first turns of one session. |
 | `sessions rm <session-id> --yes [--from <profile>] [--purge]` | Move a session to the trash; `--purge` deletes it for good. |
 | `sessions restore <trash-id\|session-id> [--from <profile>]` | Bring a removed session back. |
+| `sessions pin\|unpin\|archive\|unarchive <session>` | Keep a session in the library. A pinned session is copied into the vault, so Claude's own cleanup cannot take it; archived is not deleted. Claude, needs Node 22.13 or later. |
+| `sessions name <session> <name>` · `sessions tag\|untag <session> <tag>` | Name and tag a session for the library. |
+| `sessions search <words>` | Search sessions by name, tag, summary, folder, branch or `#PR`. |
+| `sessions vault <session> [restore]` | Copy a session into the vault now, or put a vaulted session back after Claude deleted it. |
+| `sessions keep auto on\|off` | Keep sessions with an open PR like pinned ones (on by default). |
+| `sessions resume <session> [--how continue\|fork\|account\|brief] [--to <profile>] [--yes]` | Check what changed since (folder, branch, commit, uncommitted changes, account), suggest where to resume — a new worktree at the last commit when your checkout has changes — and show the exact commands; `--yes` runs them. Claude. |
+| `sessions cleanup [--yes]` | Remove the worktrees of sessions whose PR is merged; a worktree with changes is skipped. |
 | `takeover <session-id> --to <profile>` | Move a session to another account and resume it there. Claude and Codex. See [below](#takeover). |
 | `rebind [<account>]` <Badge text="macOS" variant="caution" /> <Badge text="Claude only" variant="note" /> | Switch the account of a running Claude session. See [below](#rebind). |
 | `handoff extract <session-id> --from <profile> --to <tool>` | Write a short brief to continue a session in another tool (lossy). |

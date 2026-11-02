@@ -371,6 +371,54 @@ test("`sessions --json` git facts follow the folder of the newest turn (a worktr
   }
 });
 
+test("library: pin copies to the vault, name/tag/search, restore after Claude deleted the transcript", { ...gate, skip: gate.skip || (Number(process.versions.node.split(".")[0]) < 22 ? "the library needs node:sqlite" : false) }, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work");
+    const file = seedTranscript(home, "work", "-tmp-lib", "7f3c2a91-4b1e");
+    run(home, ["sessions", "pin", "7f3c2a91-4b1e"]);
+    run(home, ["sessions", "name", "7f3c2a91-4b1e", "Release", "notes"]);
+    run(home, ["sessions", "tag", "7f3c2a91-4b1e", "docs"]);
+    const hits = JSON.parse(run(home, ["sessions", "search", "release", "--json"]));
+    assert.deepEqual(hits.map((h: any) => [h.key, h.library.name, h.library.tags, h.library.pinned]), [["claude/work/7f3c2a91-4b1e", "Release notes", ["docs"], true]]);
+    assert.ok(fs.existsSync(path.join(home, "vault", "claude", "work", "7f3c2a91-4b1e", "transcript.jsonl")), "pinning copied it");
+
+    const original = fs.readFileSync(file, "utf8");
+    fs.rmSync(file); // Claude's cleanup
+    run(home, ["sessions", "vault", "claude/work/7f3c2a91-4b1e", "restore"]);
+    assert.equal(fs.readFileSync(file, "utf8"), original);
+    assert.deepEqual(JSON.parse(run(home, ["sessions", "search", "nothing-like-this", "--json"])), []);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`sessions resume`: a dirty checkout gets a new worktree at the session's last commit, with the commands", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-res-")));
+    const g = (...a: string[]) => execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { encoding: "utf8" });
+    g("init", "-q", "-b", "main");
+    fs.writeFileSync(path.join(repo, "a"), "1");
+    g("add", ".");
+    g("commit", "-qm", "one");
+    const sha = g("rev-parse", "HEAD").trim();
+    fs.writeFileSync(path.join(repo, "a"), "work in progress");
+    seed(home, "claude", "work");
+    const dir = path.join(home, "claude", "work", "config", "projects", "-repo");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "6666-resume.jsonl"), JSON.stringify({ cwd: repo }) + "\n");
+    const p = JSON.parse(run(home, ["sessions", "resume", "6666-resume", "--json"]));
+    assert.equal(p.target, "new_worktree");
+    assert.ok(p.checks.some((c: any) => !c.ok && /not committed/.test(c.text)));
+    assert.deepEqual(p.commands[0], ["git", "-C", repo, "worktree", "add", "--detach", `${repo}-resume-6666-res`, sha]);
+    assert.equal(p.commandLines[1], `agent-switch run work --cwd ${repo}-resume-6666-res -- --resume 6666-resume`);
+    assert.equal(fs.existsSync(`${repo}-resume-6666-res`), false, "nothing ran without --yes");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("`sessions` shows each Claude session's prompt-cache state (road-to-sessions-that-show-their-cache)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {

@@ -731,6 +731,16 @@ async function refreshPrs(log: (l: string) => void): Promise<void> {
   }
 }
 
+async function libraryRoundLogged(log: (l: string) => void): Promise<void> {
+  try {
+    const { libraryRound } = await import("./commands/library.js");
+    const r = await libraryRound();
+    if (r.autoKept || r.released || r.archived || r.copied) log(`library: ${r.autoKept} auto-kept, ${r.released} released, ${r.archived} archived, ${r.copied} copied to the vault`);
+  } catch (err: any) {
+    log(`library: ${err?.message ?? err}`);
+  }
+}
+
 /** Run the daemon loop. Single-instance; SIGTERM-clean. */
 export async function runDaemon(opts: RunOptions = {}): Promise<void> {
   const log = opts.log ?? ((l: string) => console.log(`[daemon] ${new Date().toISOString()} ${l}`));
@@ -775,6 +785,7 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
       const { failures, attempted } = await pollOnce(state, thresholds, notifiedReset, backoff, baseInterval, log);
       consecutiveFailures = nextConsecutiveFailures(consecutiveFailures, failures, attempted);
       if (opts.prs !== false) await refreshPrs(log);
+      if (opts.prs !== false) await libraryRoundLogged(log);
     } catch (err: any) {
       consecutiveFailures++;
       state.lastError = String(err?.message ?? err);
