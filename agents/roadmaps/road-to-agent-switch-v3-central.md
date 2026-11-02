@@ -538,9 +538,13 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       there is no tmux —, command preview, "Start in …" / "Start here"),
       `DecisionSheet` (after this turn by default, unchecked sessions stay),
       `EndDialog` (what stops, whether this session is kept: D-vault).
-- [ ] Right tool windows (spec §9): Summary (next step, PR with provenance, git
+- [x] Right tool windows (spec §9): Summary (next step, PR with provenance, git
       line, limit block only near the limit, More ›), Changes (worktree vs HEAD,
       "Commit…"; "Review changes" arrives with v3.1), Children.
+      → `gui/src/v3/panels.tsx`: `SummaryWindow` (next step + one action, PR
+      axes with failing checks and provenance tooltip, git in one line, limit
+      only when near, More), `ChangesWindow` with `changedFiles` (numstat +
+      porcelain; Review waits for v3.1), `ChildrenWindow` with the provenance note.
 
 ## Phase 9 — Pages (spec §10.1–§10.6, §11)
 
