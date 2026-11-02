@@ -220,7 +220,8 @@ test("concurrent writers across rotations leave every line readable and no lock 
 // Real processes, because the race is between hook processes: each child
 // imports the compiled module and appends its events as fast as it can.
 function concurrentWriters(file: string, writers: number, perWriter: number, rotateBytes?: number): Promise<void> {
-  const mod = fileURLToPath(new URL("../src/hooks.js", import.meta.url));
+  // A file:// URL, not a path: on Windows `import("D:\\…")` reads "d:" as a URL scheme.
+  const mod = new URL("../src/hooks.js", import.meta.url).href;
   const script = `const { appendEvent } = await import(${JSON.stringify(mod)});
 const [file, w, n, rb] = process.argv.slice(1);
 const opts = rb ? { rotateBytes: Number(rb) } : {};
