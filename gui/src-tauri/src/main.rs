@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, WindowEvent,
+    Emitter, Manager, WindowEvent,
 };
 
 // Whether the yellow "minimize" button minimizes the window into the Dock
@@ -280,7 +280,12 @@ fn main() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
-                    "quit" => app.exit(0),
+                    // Ask first: the main window shows the quit confirmation
+                    // (same event the tray popover forwards overlays on).
+                    "quit" => {
+                        show_main(app);
+                        let _ = app.emit_to("main", "tray:open", serde_json::json!({ "kind": "quit" }));
+                    }
                     "show" => show_main(app),
                     _ => {}
                 })

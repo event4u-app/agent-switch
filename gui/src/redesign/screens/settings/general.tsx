@@ -246,7 +246,7 @@ export function GeneralSettings() {
           title={t("settings.general.quitTitle")}
           detail={t("settings.general.quitDetail")}
         >
-          <Button size="sm" disabled={!s.act.quit} onClick={() => void run(async () => s.act.quit?.())}>
+          <Button size="sm" disabled={!s.act.quit} onClick={() => s.open({ kind: "quit" })}>
             <LogOut /> {t("settings.general.quit")}
           </Button>
         </SettingRow>

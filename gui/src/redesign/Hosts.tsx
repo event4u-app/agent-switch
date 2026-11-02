@@ -72,6 +72,15 @@ export function OverlayHost() {
   const o = s.overlay;
   if (o.kind === "none") return null;
   if (o.kind === "confirm") return <ConfirmDialog {...o} />;
+  if (o.kind === "quit")
+    return (
+      <ConfirmDialog
+        title={t("shell.quit.title")}
+        body={t("shell.quit.body")}
+        confirm={t("shell.quit.confirm")}
+        onConfirm={() => void s.act.quit?.().catch(() => {})}
+      />
+    );
   if (o.kind === "session") return <SessionSheet key={o.id} id={o.id} />;
   if (o.kind === "start") return <StartSessionDialog cwd={o.cwd} tool={o.tool} accountId={o.accountId} />;
   if (o.kind === "limit") return <NearLimitSheet key={o.attentionId} attentionId={o.attentionId} />;

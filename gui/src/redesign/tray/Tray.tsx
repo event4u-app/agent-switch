@@ -141,7 +141,7 @@ export function Tray({
         <Button
           size="sm"
           variant="ghost"
-          onClick={onQuit ?? (() => void s.act.quit?.())}
+          onClick={onQuit ?? (() => s.open({ kind: "quit" }))}
           aria-label={t("tray.quit")}
           title={t("tray.quit")}
         >
