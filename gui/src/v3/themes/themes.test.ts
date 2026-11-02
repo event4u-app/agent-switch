@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { contrast } from "./color.js";
 import { THEMES } from "./registry.js";
 import { DEFAULT_APPEARANCE, FLOOR, activeTheme, migrate, resolveTheme } from "./resolve.js";
@@ -57,4 +59,23 @@ describe("v3 themes", () => {
     expect(activeTheme(migrate("system"), true).id).toBe("agent-switch-dark");
     expect(migrate(null).dark).toBe("darcula");
   });
+});
+
+describe("the Agent Switch palettes are the 2.11 window's own values", () => {
+  // Parse the shipped stylesheet, so a drift on either side fails here.
+  const css = readFileSync(join(process.cwd(), "src", "index.css"), "utf8"); // vitest runs in gui/
+  const block = (selector: string) => {
+    const start = css.indexOf(`${selector} {`);
+    const body = css.slice(start, css.indexOf("}", start));
+    return Object.fromEntries([...body.matchAll(/(--ac-[a-z0-9-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim().toLowerCase()]));
+  };
+  for (const [selector, id] of [[".as-ac", "agent-switch-dark"], ['.as-ac[data-mode="light"]', "agent-switch-light"]] as const) {
+    it(`${id} resolves to every --ac-* value of ${selector}`, () => {
+      const shipped = block(selector);
+      expect(Object.keys(shipped).length).toBeGreaterThan(10);
+      const v = resolveTheme(THEMES.find((t) => t.id === id)!).vars;
+      const differs = Object.entries(shipped).filter(([k, val]) => v[k] !== undefined && v[k].toLowerCase() !== val).map(([k, val]) => `${k}: 2.11 ${val} vs ${v[k]}`);
+      expect(differs).toEqual([]);
+    });
+  }
 });

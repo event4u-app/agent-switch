@@ -72,6 +72,9 @@ const AS_DARK_EXACT: Record<string, string> = {
   "--ac-warn": "#ffc14d", "--ac-warn-text": "#ffc14d", "--ac-warn-tint": "rgba(255, 193, 77, 0.14)",
   "--ac-alert": "#ff5d6c", "--ac-alert-text": "#ff8a95", "--ac-alert-tint": "rgba(255, 93, 108, 0.14)",
   "--ac-violet": "#c9a2ff", "--ac-violet-text": "#d9bdff", "--ac-violet-tint": "rgba(201, 162, 255, 0.14)", "--ac-violet-line": "rgba(201, 162, 255, 0.55)",
+  "--ac-scrim": "rgba(3, 6, 10, 0.62)", "--ac-shadow": "0 18px 48px rgba(0, 0, 0, 0.45)",
+  "--ac-id-orange": "#ff8c2a", "--ac-id-red": "#ff5d6c", "--ac-id-yellow": "#ffc14d", "--ac-id-green": "#3ddc84",
+  "--ac-id-teal": "#2dd4bf", "--ac-id-blue": "#3ec5ff", "--ac-id-purple": "#c9a2ff", "--ac-id-pink": "#ff7ac6",
 };
 const AS_LIGHT_EXACT: Record<string, string> = {
   "--ac-bg": "#f3f5f9", "--ac-panel": "#ffffff", "--ac-rail": "#fafbfd", "--ac-raise": "#eef2f7",
@@ -83,6 +86,10 @@ const AS_LIGHT_EXACT: Record<string, string> = {
   "--ac-warn": "#f5b324", "--ac-warn-text": "#92580a", "--ac-warn-tint": "rgba(245, 179, 36, 0.16)",
   "--ac-alert": "#e11d48", "--ac-alert-text": "#be123c", "--ac-alert-tint": "rgba(225, 29, 72, 0.1)",
   "--ac-violet": "#8b5cf6", "--ac-violet-text": "#6d28d9", "--ac-violet-tint": "rgba(139, 92, 246, 0.12)", "--ac-violet-line": "rgba(139, 92, 246, 0.6)",
+  // Overlay, shadow and account colours too: the reference boards derived these and drifted from 2.11.
+  "--ac-scrim": "rgba(13, 21, 34, 0.32)", "--ac-shadow": "0 18px 48px rgba(13, 21, 34, 0.18)",
+  "--ac-id-orange": "#f47a12", "--ac-id-red": "#e11d48", "--ac-id-yellow": "#d99a06", "--ac-id-green": "#16a34a",
+  "--ac-id-teal": "#0d9488", "--ac-id-blue": "#0284c7", "--ac-id-purple": "#7c3aed", "--ac-id-pink": "#db2777",
 };
 
 const IJ = "https://github.com/JetBrains/intellij-community/blob/master/platform/platform-resources/src";
