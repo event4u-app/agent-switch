@@ -428,10 +428,14 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       segmented control shows its selection (raise fill instead of the orange
       outline, checked by eye on `sessions`); nothing clipped or moved. 637 GUI
       tests pass.
-- [ ] Visual grammar kit (spec §3): the one radius scale, `Marker` and the tab
+- [x] Visual grammar kit (spec §3): the one radius scale, `Marker` and the tab
       frame for "where you are", state dots vs the `AccountMark` tick, three chip
       kinds, button kinds with one filled button per surface, one number and
       duration format.
+      → `gui/src/v3/kit.tsx` adapted with handlers on every control and the
+      §3.6 formats (`pct`, `duration`, `resetIn`, `age`, `checkedAgo`);
+      `design-guard.test.ts` enforces no inset-shadow bars anywhere and only the
+      §3.1 radii in v3 code (shown to fail on a planted `rounded-lg`).
 - [ ] Window frame (spec §4): title bar (search field → palette, "Engine
       stopped", inbox pill only in focus mode, "Start session" as the only filled
       chrome button, settings gear), left and right stripes with corner dots, one
