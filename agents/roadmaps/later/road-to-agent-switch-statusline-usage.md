@@ -13,7 +13,16 @@ execution:
 > pre-existing statusline so their bar is untouched. The polled `/api/oauth/usage`
 > path is demoted to a fallback. Gated on a blocking live spike.
 >
-> **Arrivals:** 3 — latest `cache-awareness` (2026-11-01, agent-config inbox): the
+> **Arrivals:** 4 — latest `inbox-2026-11-b` (2026-11-02, AS v3 proposal step V0.2):
+> move usage off the OAuth token entirely — statusline first, then an undocumented
+> control query over the unmodified binary (`initialize` → `get_usage`, needs a
+> spike), then remove `readProfileCredential`/`fetchUsage`/`fetchProfile`. The
+> removal collides with ADR-003 (`src/rebind.ts:147` reads the profile via the
+> token) and ADR-004 (`src/token-freshen.ts:161`) — the proposal listed only the
+> daemon and two commands as callers. **Owner decision E-token (2026-11-02): only
+> the usage query moves off the token** (Phase 6); rebind and token-freshen keep
+> their narrow reads as the ADRs allow.
+> Before that: `cache-awareness` (2026-11-01, agent-config inbox): the
 > status payload also carries `prompt_cache` (`warm`, `ttl`, `expires_at`,
 > `recache_tokens_if_cold`; CC v2.1.251+, statusline doc). Once this bridge ships,
 > those fields replace the transcript derivation in `readClaudeCache`
@@ -293,6 +302,24 @@ never mask the COMPLETE poll, nor blind the daemon's switch/threshold path.
       remain the primary 429 defense.
       _Files:_ `src/share.ts`, `docs/`, `README.md`, this roadmap. _Verify:_ a
       `share sync` does not propagate the sidecar; docs state the ~1/N relief.
+
+## Phase 6 — Usage without the token (owner decision E-token, 2026-11-02)
+
+Scope is the usage query only. ADR-003 (rebind, `src/rebind.ts:147`) and ADR-004
+(token-freshen, `src/token-freshen.ts:161`) keep their narrow credential reads;
+the login stamp (`src/daemon.ts:541`) is not a usage read and stays.
+
+- [ ] **Step 1:** Spike the control query over the unmodified binary
+      (`initialize` → `get_usage`): per-profile via `CLAUDE_CONFIG_DIR`, no token
+      handled by AS, output shape and CC version recorded as a fixture.
+- [ ] **Step 2:** Usage source order statusline (Phases 1–5) → control query →
+      serve-stale; the three `fetchUsage` callers (`src/daemon.ts:533`,
+      `src/commands/shared.ts:166`, `src/commands/usage.ts:108`) move to it.
+- [ ] **Step 3:** Remove `fetchUsage` once it has no caller. `fetchProfile` in
+      `src/commands/usage.ts:108` goes only if the control query also returns the
+      profile; otherwise it stays on the ADR-003 path.
+- [ ] **Step 4:** Test that no usage path reads the credential (spy on
+      `readProfileCredential` across a full `status --json` and a daemon tick).
 
 ## Acceptance Criteria
 
