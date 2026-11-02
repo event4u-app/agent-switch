@@ -138,42 +138,52 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 
 ## Phase 0 — Contracts and spikes (gate for everything below)
 
-- [ ] ADR draft: v3 module split — engine (CLI + daemon), host, app, `as-hook`;
+- [x] ADR draft: v3 module split — engine (CLI + daemon), host, app, `as-hook`;
       protocol types shared between app and engine.
-- [ ] ADR draft: identity model (namespaced ids, edge provenance + confidence,
+      → `docs/adr/ADR-006-v3-module-split.md` (Proposed).
+- [x] ADR draft: identity model (namespaced ids, edge provenance + confidence,
       state axes kept separate: library / runtime / PR / capability — no single
       `status` column).
-- [ ] ADR draft: v3 GUI code — how `gui/src/v3/` grows from the reference boards
+      → `docs/adr/ADR-007-v3-identity-model.md` (Proposed).
+- [x] ADR draft: v3 GUI code — how `gui/src/v3/` grows from the reference boards
       (port board by board, wired to the engine, each with tests; demo data never
       in the product bundle; the coverage floor is kept, never lowered or
       side-stepped by excludes).
-- [ ] Spike S3: `--settings` hook injection together with `CLAUDE_CONFIG_DIR` and
+      → `docs/adr/ADR-008-v3-gui-code-from-the-reference-boards.md` (Proposed).
+- [x] Spike S3: `--settings` hook injection together with `CLAUDE_CONFIG_DIR` and
       the user's own settings (does it merge or replace?).
-- [ ] Spike S4: event-store runtime — Node `node:sqlite` vs Bun `bun:sqlite`
+      → `agents/evidence/v3-phase0-spikes-2026-11.md` § S3: `--settings` adds to project and local hooks, even under a narrowed `--setting-sources`.
+- [x] Spike S4: event-store runtime — Node `node:sqlite` vs Bun `bun:sqlite`
       (WAL, concurrent writer, packaging). Feeds Decision E1.
-- [ ] Spike T-S1: live `SubagentStart/Stop` payloads incl. `agent_transcript_path`;
+      → `agents/evidence/v3-phase0-spikes-2026-11.md` § S4: both correct and fast; `node:sqlite` needs Node ≥ 22.13 (engine floor is 20), a Bun-compiled CLI is 61 MB and already hits hook p95 20.4 ms. E1 stays with the owner.
+- [x] Spike T-S1: live `SubagentStart/Stop` payloads incl. `agent_transcript_path`;
       T-S2: hook `cwd` of a subagent under `isolation: worktree`; T-S3: does a
       council child (`claude --print`) inherit AS hooks/env — especially when the
       parent got its hooks via `--settings` (argv-only, probably not inherited);
       T-S4: `claude agents --json` per `CLAUDE_CONFIG_DIR`. Fixtures under
       `scripts/spikes/`.
-- [ ] Spike S5: tmux backend per rjprins/agmux rules (own server
+      → `agents/evidence/v3-phase0-spikes-2026-11.md` § T-S1…T-S4: worktree subagents report `<repo>/.claude/worktrees/agent-<id>`; a child `claude -p` inherits env vars but not `--settings` hooks; `claude agents --json` lists live sessions per account.
+- [x] Spike S5: tmux backend per rjprins/agmux rules (own server
       `-L as-<uid> -f /dev/null`, one window per session, linked view session per
       viewer, `refresh-client` on attach) on macOS and Linux.
-- [ ] Spike S2 (moved here from v3.1, because the Needs-you zone shows "Allow" and
+      → `agents/evidence/v3-phase0-spikes-2026-11.md` § S5: all seven checks green on macOS (tmux 3.7b) and Linux (tmux 3.5a).
+- [x] Spike S2 (moved here from v3.1, because the Needs-you zone shows "Allow" and
       "Reply" in v3.0, spec §5.1): `PermissionRequest` hook as approval channel vs
       `--permission-prompt-tool` — latency, abort, always-allow, answering a
       question. The approval hook is the one hook that waits by nature; measure
       that its timeout falls back to the terminal prompt and never holds a turn
       longer than the prompt would. Feeds D-approve.
-- [ ] Spike S8: next-turn model and thinking change for a hosted session (spec
+      → `agents/evidence/v3-phase0-spikes-2026-11.md` § S2: the hook answers approvals next to the terminal prompt; first answer wins; timeout leaves the normal prompt.
+- [x] Spike S8: next-turn model and thinking change for a hosted session (spec
       §6.2, §7.6, §13.2) — which of the tool's own commands sets each (Claude:
       model and effort; Codex: reasoning levels), sent through the input lease
       between turns; and the source of `ctx %` per session (hook, transcript or
       status line), with its provenance.
-- [ ] Spike S9 (spec §15.3): can Claude Desktop / Codex Desktop resume the same
+      → `agents/evidence/v3-phase0-spikes-2026-11.md` § S8: `/model` and `/effort` persist as the account's defaults, so AS never types them; next-turn changes go through the in-place respawn with `--model`/`--effort`. Model and effort per answer come from the transcript; `ctx %` from the existing transcript reader.
+- [x] Spike S9 (spec §15.3): can Claude Desktop / Codex Desktop resume the same
       conversation when opened on the worktree root, per app version? Until it is
       verified the Open menu says "opens this project" (spec §13.10).
+      → `agents/evidence/v3-phase0-spikes-2026-11.md` § S9: Claude Desktop 4.29.0 takes no folder and cannot resume a CLI session through its launcher; Codex Desktop not installed. See S-desktop.
 
 ## Phase 1 — Engine, event store, host
 
@@ -202,8 +212,9 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       a "while you were away" digest after a long absence (merged PRs, CI breaks,
       finished turns, limit resets). An answer given in one place clears the item
       everywhere (spec §13.5). `agent-switch needs --json`.
-- [ ] Per-session facts for the session bar from S8: model, thinking level,
-      context used — each with its source; unknown stays unknown.
+- [ ] Per-session facts for the session bar from S8: model and thinking level
+      from the transcript (`message.model`, `effort`), context used from the
+      transcript reader — each with its source; unknown stays unknown.
 - [ ] Engine health for the title bar and the system banner (spec §4.1, §6.6):
       "Engine stopped" with restart; hosted sessions keep running in tmux and AS
       reconnects.
@@ -351,7 +362,10 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       non-hosted sessions, with the reason), account chip (opens the decision
       sheet, never switches), model and thinking chips → model popover for the next
       turn (S8), locked with the reason for sessions in the user's own terminal,
-      `ctx %`, Open ▾ split button, ⋯ menu.
+      `ctx %`, Open ▾ split button, ⋯ menu. A model or thinking change is
+      applied by respawning the hosted session in place between turns with
+      `--resume … --model … --effort …` — never by typing `/model` or `/effort`,
+      which change the account's defaults (S8).
 - [ ] Terminal body: the hosted session's real PTY in xterm with the theme's
       terminal tokens, 12.5 px mono, line height 1.5, xterm's custom glyphs for the
       CLI's rounded boxes; never re-rendered or summarised (spec §6.4); typing goes
@@ -457,10 +471,10 @@ time and wire it to the engine as its data exists.
 | D-sketch | Earlier UI sketch layout and quick input on rows | decided: superseded by the design (Design basis) |
 | D-mirror | Spec §6.5 shows a read-only mirror of a session in the user's own terminal; AS cannot read a foreign PTY | decided (owner, 2026-11-02): v3.0 shows the session's facts and last transcript line there; a full read-only view comes with the v3.1 timeline reader |
 | D-vault | Spec §8.3 says "the transcript is kept in the vault either way"; Phase 4 vaults only pinned and auto-kept sessions | decided (owner, 2026-11-02): the vault scope stays (pinned and auto-kept); the End dialog says whether this session is kept |
-| D-approve | Spec §5.1 offers "Allow"/"Reply" for every approval; for a session without an approval channel (own terminal without hooks, or S2 red) AS cannot answer | decided (owner, 2026-11-02): there the row's verb is "Focus terminal" |
+| D-approve | Spec §5.1 offers "Allow"/"Reply" for every approval; for a session without an approval channel (own terminal without hooks, or S2 red) AS cannot answer | decided (owner, 2026-11-02): there the row's verb is "Focus terminal". S2 is green: the channel exists wherever AS hooks are installed, hosted or not, so "Focus terminal" applies to sessions without AS hooks |
 | S-density | Spec §15.1: comfortable density as default? | **owner** (from the design) — spec today: compact |
 | S-limits | Spec §15.2: Limits strip at the bottom or under the session list? | **owner** (from the design) — spec today: bottom |
-| S-desktop | Spec §15.3: Desktop apps resume or only open the project? | decided by Spike S9; until then "opens this project" |
+| S-desktop | Spec §15.3: Desktop apps resume or only open the project? | S9: Claude Desktop 4.29.0 can do neither through its launcher (no folder type; only `claude://`, which the roadmap excludes). The spec's "opens this project" would overclaim | **owner** — recommendation: the Agent-app entry says "opens the app"; re-check per app version |
 | S-proposals | Spec proposals: ⇧/⌘-click multi-select (§5.2), "Start here" when hosted (§8.1) | **owner** — both marked "proposal" in the spec, not built until confirmed |
 
 ## Not in v3.0 (kills, with reason)
