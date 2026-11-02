@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { lineageFromEnv } from "../src/hooks.js";
+import { lineageFromEnv, clearedFrom, pidFrom } from "../src/hooks.js";
 import { helperIndex, childrenWithHooks, countSubagentFiles, childSource, buildTree, relationUnknown } from "../src/lineage.js";
 
 const SID = "3c87a281-1424-4ebf-965d-7ee64ed28e82";
@@ -100,4 +100,20 @@ test("relationUnknown: an unclaimed session in a temp folder is marked, never at
   assert.equal(relationUnknown("/tmpfoo/repo", false, roots), false, "a prefix of a name is not the folder");
   assert.equal(relationUnknown("/var/folders/x", true, roots), false, "a reported parent wins");
   assert.equal(relationUnknown(null, false, roots), false);
+});
+
+test("clearedFrom: a /clear links to the last session of the same Claude process, and nothing else does", () => {
+  const at = "2026-11-02T10:00:00Z";
+  const ring = [
+    { event: "SessionStart", source: "startup", sessionId: "A", hostPid: 4242, at },
+    { event: "SessionStart", source: "startup", sessionId: "X", hostPid: 7, at },
+    { event: "SessionEnd", sessionId: "A", at },
+  ];
+  assert.equal(clearedFrom({ event: "SessionStart", source: "clear", sessionId: "B", hostPid: 4242, at }, ring), "A");
+  assert.equal(clearedFrom({ event: "SessionStart", source: "startup", sessionId: "B", hostPid: 4242, at }, ring), undefined, "a new start is not a clear");
+  assert.equal(clearedFrom({ event: "SessionStart", source: "clear", sessionId: "B", at }, ring), undefined, "no pid, no edge");
+  assert.equal(clearedFrom({ event: "SessionStart", source: "clear", sessionId: "B", hostPid: 1, at }, ring), undefined, "another process");
+  assert.equal(pidFrom("4242"), 4242);
+  assert.equal(pidFrom("0"), undefined);
+  assert.equal(pidFrom("12; rm"), undefined);
 });

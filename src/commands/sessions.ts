@@ -42,6 +42,8 @@ import {
   hookNotice,
   recordFromPayload,
   lineageFromEnv,
+  clearedFrom,
+  pidFrom,
   hooksRecordSubagents,
   HookEventRecord,
 } from "../hooks.js";
@@ -261,7 +263,12 @@ export function cmdHookEvent(): void {
     if (!who) return;
     const rec = recordFromPayload(o, new Date().toISOString());
     if (rec.event === "SessionStart") {
-      const lineage = lineageFromEnv(process.env, rec.sessionId, rec.sessionId ? `${who.provider}/${who.profile}/${rec.sessionId}` : undefined);
+      const hostPid = pidFrom(process.env.CLAUDE_PID);
+      if (hostPid) rec.hostPid = hostPid;
+      const cleared = clearedFrom(rec, rec.source === "clear" ? readEvents(eventFile(ROOT, who.provider, who.profile)) : []);
+      const lineage = cleared
+        ? ({ parent: `${who.provider}/${who.profile}/${cleared}`, kind: "cleared", source: "hook" } as const)
+        : lineageFromEnv(process.env, rec.sessionId, rec.sessionId ? `${who.provider}/${who.profile}/${rec.sessionId}` : undefined);
       if (lineage) rec.lineage = lineage;
     }
     appendEvent(eventFile(ROOT, who.provider, who.profile), rec);

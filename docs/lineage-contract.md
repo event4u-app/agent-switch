@@ -35,12 +35,15 @@ a root, never under a guessed parent. A session never becomes its own parent.
 | A session started inside an Agent Switch hosted window (`AGENT_SWITCH_HOST_PANE` holds the window's session key) | `started_by` that session | "via host" |
 | `takeover` resuming a session on another account (same id or a fork) | `continued_from` the original | "via host" |
 | A subagent (`SubagentStart` hook) | `subagent` of its session | "via hook" |
+| `/clear` in the same Claude process (`CLAUDE_PID`) | `cleared` from the session before | "via hook" |
 | Subagent transcripts next to a session, without hooks | a count only | "counted" |
 
 `continued_from` is drawn apart from `started_by`. A compaction keeps the
 session id and is shown as an event on that session, not as an edge. A `/clear`
-starts a new session id and the host does not say which session was cleared, so
-it is not linked yet.
+starts a new session id in the same Claude process: Claude Code gives its hooks
+that process as `CLAUDE_PID`, so the new session is linked as `cleared` from the
+last session of the same process ("via hook"). Without a pid on both sides there
+is no link.
 
 ## Where it shows
 

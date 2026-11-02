@@ -20,7 +20,7 @@ import { childrenOf, type HookEventRecord, type Lineage } from "./hooks.js";
 
 export type Child =
   | { kind: "subagent"; agentId: string; type?: string; state: "running" | "done"; cwd?: string; source: "hook" }
-  | { kind: Lineage["kind"]; sessionKey: string; label?: string; state: "running" | "done"; source: "lineage" | "host" };
+  | { kind: Lineage["kind"]; sessionKey: string; label?: string; state: "running" | "done"; source: Lineage["source"] };
 
 export interface HelperIndex {
   /** parent key or bare parent id → the helper sessions that named it. */

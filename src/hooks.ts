@@ -182,20 +182,43 @@ export interface HookEventRecord {
   /** SessionStart: who started this session, from the env it inherited
    *  (docs/lineage-contract.md). Never inferred from timing or folders. */
   lineage?: Lineage;
+  /** SessionStart: the Claude process (`CLAUDE_PID`), to tell a `/clear` in the same process from a new start. */
+  hostPid?: number;
   at: string; // ISO
 }
 
 export const LINEAGE_KINDS = ["subagent", "council", "arena", "court", "helper", "other", "continued_from"] as const;
 
+/** A positive integer pid from an env value, or undefined. */
+export function pidFrom(v: string | undefined): number | undefined {
+  return v && /^[1-9][0-9]{0,9}$/.test(v) ? Number(v) : undefined;
+}
+
+/**
+ * `/clear` starts a new session id in the same Claude process. The previous
+ * session of that process — the last SessionStart with the same host pid and
+ * another id — is the one that was cleared. Nothing else links them: without a
+ * pid on both sides there is no edge. Pure.
+ */
+export function clearedFrom(rec: HookEventRecord, earlier: readonly HookEventRecord[]): string | undefined {
+  if (rec.event !== "SessionStart" || rec.source !== "clear" || !rec.hostPid || !rec.sessionId) return undefined;
+  for (let i = earlier.length - 1; i >= 0; i--) {
+    const e = earlier[i];
+    if (e.event === "SessionStart" && e.hostPid === rec.hostPid && e.sessionId && e.sessionId !== rec.sessionId) return e.sessionId;
+  }
+  return undefined;
+}
+
 export interface Lineage {
   /** The parent's session key (`provider/account/sessionId`) or bare session id. */
   parent: string;
-  kind: (typeof LINEAGE_KINDS)[number] | "started_by";
+  kind: (typeof LINEAGE_KINDS)[number] | "started_by" | "cleared";
   label?: string;
   /** The parent's tool, when the parent named it. */
   agent?: string;
-  /** `lineage`: the parent set AGENT_SWITCH_PARENT_*; `host`: started inside an AS-hosted window. */
-  source: "lineage" | "host";
+  /** `lineage`: the parent set AGENT_SWITCH_PARENT_*; `host`: started inside an AS-hosted window
+   *  or resumed by AS; `hook`: the host's own hook data (a `/clear` in the same process). */
+  source: "lineage" | "host" | "hook";
 }
 
 const PARENT_RE = /^(?:[a-z][a-z0-9-]*\/[^/\s]{1,64}\/)?[A-Za-z0-9][A-Za-z0-9-]{3,63}$/;

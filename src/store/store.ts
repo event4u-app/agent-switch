@@ -119,7 +119,7 @@ export function checkRecord(input: IngestInput): { kind: string; session: string
     if (kind === "string" && typeof v === "string") data[k] = v.slice(0, MAX_STRING);
     if (kind === "lineage" && v && typeof v === "object") {
       const o = v as Record<string, unknown>;
-      if (typeof o.parent === "string" && typeof o.kind === "string" && (o.source === "lineage" || o.source === "host")) {
+      if (typeof o.parent === "string" && typeof o.kind === "string" && (o.source === "lineage" || o.source === "host" || o.source === "hook")) {
         data.lineage = { parent: o.parent.slice(0, 200), kind: o.kind.slice(0, 20), source: o.source, ...(typeof o.label === "string" ? { label: o.label.slice(0, 80) } : {}) };
       }
     }

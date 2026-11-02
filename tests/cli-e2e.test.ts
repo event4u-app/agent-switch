@@ -299,9 +299,19 @@ test("`sessions --json` lists a session's subagents from its hooks, and leaves `
     assert.equal(parentRow.childSource, "hook+host+lineage");
     assert.equal(rows.find((r: any) => r.sessionId === "1111-seat").parent, "claude/work/0000-parent");
 
+    // /clear in the same Claude process: the new session hangs under the cleared one.
+    seedTranscript(home, "work", "-tmp-clr", "3333-before");
+    seedTranscript(home, "work", "-tmp-clr", "4444-after");
+    seat({ hook_event_name: "SessionStart", session_id: "3333-before", source: "startup" }, { CLAUDE_PID: "4242" });
+    seat({ hook_event_name: "SessionStart", session_id: "4444-after", source: "clear" }, { CLAUDE_PID: "4242" });
+    const after = JSON.parse(run(home, ["sessions", "--json"])).find((r: any) => r.sessionId === "4444-after");
+    assert.equal(after.parent, "claude/work/3333-before");
+
     const tree = JSON.parse(run(home, ["sessions", "--tree", "--json"]));
-    assert.deepEqual(tree.map((r: any) => r.sessionId), ["0000-parent"], "counted as roots: one");
-    assert.deepEqual(tree[0].sessions.map((r: any) => r.sessionId).sort(), ["1111-seat", "2222-kid"]);
+    assert.deepEqual(tree.map((r: any) => r.sessionId).sort(), ["0000-parent", "3333-before"], "roots only");
+    const node = (id: string) => tree.find((r: any) => r.sessionId === id);
+    assert.deepEqual(node("0000-parent").sessions.map((r: any) => r.sessionId).sort(), ["1111-seat", "2222-kid"]);
+    assert.deepEqual(node("3333-before").sessions.map((r: any) => r.sessionId), ["4444-after"]);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
