@@ -339,28 +339,40 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 
 ## Phase 4 — Library and vault
 
-- [ ] M6 pin, name, tags, archive (separate from trash) and search in the store,
+- [x] M6 pin, name, tags, archive (separate from trash) and search in the store,
       not in localStorage.
-- [ ] Show "deleted by Claude in N days" from `cleanupPeriodDays`; the Library's
+      → `src/library.ts` + `sessions pin|unpin|name|tag|untag|archive|unarchive|search`; library table in the store (the app kept no pins in localStorage, so there was nothing to move).
+- [x] Show "deleted by Claude in N days" from `cleanupPeriodDays`; the Library's
       deadline banner and "Kept?" states kept / at risk (≤ 7 days in amber) / lost
       (spec §10.3).
-- [ ] Vault copy of pinned sessions (jsonl + `<id>/` + `file-history/<id>`),
+      → `keptState` from `cleanupPeriodDays` (default 30); `sessions --json` carries `library`, `kept` (`kept · at-risk · lost`), `vault`, `canResume`. The banner itself is the Library page (Phase 9).
+- [x] Vault copy of pinned sessions (jsonl + `<id>/` + `file-history/<id>`),
       verified by hash; a pin whose transcript is gone shows "transcript gone" and
       "can't resume".
-- [ ] "Auto-keep sessions with an open PR", on by default (spec §10.3): such a
+      → `vaultCopy`: copy into a temp folder, hash-check, swap in; symlinks are not followed; a pin is copied at once. A lost transcript gives `kept: lost`, `canResume: false`.
+- [x] "Auto-keep sessions with an open PR", on by default (spec §10.3): such a
       session is kept like a pin until its PR is merged or closed.
-- [ ] Vault write on `SessionEnd` of a kept session: copy → checksum → never
-      move; Codex rollouts too; size shown ("vault 11.6 MB"). A session Claude
-      deleted can be restored from the vault.
-- [ ] Merged sessions archive themselves after 24 h into the Library; "Clean up"
+      → `libraryRound` sets and releases `autoKept` from the PR cache; `sessions keep auto on|off` (default on).
+- [x] Vault write on `SessionEnd` of a kept session: copy → checksum → never
+      move; size shown ("vault 11.6 MB"). A session Claude deleted can be
+      restored from the vault.
+      → The daemon's library round copies every kept session whose transcript
+      changed since its copy (which covers the end of a session without making
+      a hook wait for a copy); `store status` shows the vault size;
+      `sessions vault <key> restore` puts it back to the paths in its manifest.
+- [ ] Codex rollouts in the vault too (the library resolves Claude sessions only).
+- [x] Merged sessions archive themselves after 24 h into the Library; "Clean up"
       under "Done today" removes merged worktrees and skips dirty ones (spec §5.2,
       §13.8).
-- [ ] CLI: `agent-switch sessions pin|name|tag|archive …`; search over name,
+      → `libraryRound` archives once per session (`library_auto_archived`), so an unarchive sticks; `sessions cleanup [--yes]` removes merged linked worktrees from the main checkout, without `--force`, skipping dirty ones.
+- [x] CLI: `agent-switch sessions pin|name|tag|archive …`; search over name,
       summary, folder, branch, PR.
-- [ ] Resume (spec §8.4): preflight (folder, branch/SHA, dirty main checkout,
+      → as above, plus `sessions vault` and `sessions keep`; search matches every word.
+- [x] Resume (spec §8.4): preflight (folder, branch/SHA, dirty main checkout,
       account with numbers), restore targets `same_cwd | worktree | new_worktree`
       with the suggestion in words; Continue, Fork, Other account (existing handoff
       path), New with brief; the exact command is previewed and copyable.
+      → `src/resume.ts` + `sessions resume <session> [--how …] [--to …] [--yes]`: checks in words, `new_worktree` at the last commit when the branch is gone or the checkout dirty, exact commands (`--json` adds copyable lines); nothing runs without `--yes`.
 
 ## Phase 5 — Open in…
 
