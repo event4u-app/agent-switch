@@ -71,6 +71,16 @@ const ENV_FOR: Record<string, string> = { claude: "CLAUDE_CONFIG_DIR", codex: "C
 
 export class HostUnavailable extends Error {}
 
+/**
+ * What "Host in Agent Switch" can promise on this machine. `persistent`: tmux
+ * keeps the session when the window closes. `ephemeral`: no tmux (Windows, until
+ * a native host exists) — a session started in the app lives in the app's own
+ * terminal and ends with it, and every surface must say so. Pure.
+ */
+export function hostingMode(platform: NodeJS.Platform, tmuxPresent: boolean): "persistent" | "ephemeral" {
+  return platform !== "win32" && tmuxPresent ? "persistent" : "ephemeral";
+}
+
 export class TmuxHost {
   readonly socket: string;
   private readonly registryFile: string;

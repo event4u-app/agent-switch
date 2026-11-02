@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { TmuxHost, HOST_SESSION } from "../src/host/tmux-host.js";
+import { TmuxHost, HOST_SESSION, hostingMode } from "../src/host/tmux-host.js";
 import { HOOK_EVENTS } from "../src/hooks.js";
 
 const gate = { skip: TmuxHost.available() ? false : "tmux is not installed here" };
@@ -187,4 +187,11 @@ test("CLI: compact reaches a hosted session through the lease; host end asks fir
   } finally {
     host.killServer();
   }
+});
+
+test("hostingMode: persistent only with tmux and not on Windows; everything else is ephemeral", () => {
+  assert.equal(hostingMode("darwin", true), "persistent");
+  assert.equal(hostingMode("linux", true), "persistent");
+  assert.equal(hostingMode("linux", false), "ephemeral");
+  assert.equal(hostingMode("win32", true), "ephemeral");
 });

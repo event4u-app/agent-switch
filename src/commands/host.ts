@@ -11,16 +11,21 @@ import * as readline from "node:readline";
 import { appendPick } from "../picks.js";
 import { configDir, die, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
 import { provider, type ProviderId } from "../providers.js";
-import { HostUnavailable, TmuxHost } from "../host/tmux-host.js";
+import { HostUnavailable, TmuxHost, hostingMode } from "../host/tmux-host.js";
 import { resolveDir } from "./routing.js";
 
 export async function cmdHost(providerId: ProviderId, sub: string | undefined, arg: string | undefined, flags: Record<string, string | boolean>): Promise<void> {
   const action = sub ?? "list";
   if (!["start", "list", "end", "attach"].includes(action)) die("usage: agent-switch host start [profile] [--provider P] [--cwd DIR] | list | attach <session> | end <session> [--yes]");
-  if (!TmuxHost.available()) {
+  const mode = hostingMode(process.platform, TmuxHost.available());
+  if (action === "list" && flags.json && mode === "ephemeral") {
+    console.log(JSON.stringify({ mode, hosted: [], legacy: [] }));
+    return;
+  }
+  if (mode === "ephemeral") {
     die(process.platform === "win32"
-      ? "hosting needs tmux, which Windows does not have; sessions started in the app there are ephemeral"
-      : "hosting needs tmux (macOS: brew install tmux · Debian/Ubuntu: apt install tmux)");
+      ? "hosting needs tmux, which Windows does not have: a session started in the app there is ephemeral and ends when the app closes"
+      : "hosting needs tmux (macOS: brew install tmux · Debian/Ubuntu: apt install tmux); without it a session started in the app is ephemeral");
   }
   const host = new TmuxHost(ROOT);
   try {
@@ -57,7 +62,7 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
     const rows = host.list();
     const legacy = host.legacy();
     if (flags.json) {
-      console.log(JSON.stringify({ hosted: rows, legacy }));
+      console.log(JSON.stringify({ mode, hosted: rows, legacy }));
       return;
     }
     if (rows.length === 0 && legacy.length === 0) console.log("No hosted sessions.");
