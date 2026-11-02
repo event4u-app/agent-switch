@@ -476,9 +476,10 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       row in comfortable density), "Done today N ›" with "Clean up",
       multi-select with the batch bar.
       → `SessionsZone`, `SessionRow`, `liveOrder`, `trailing` in `gui/src/v3/sessions.tsx`: one order, one trailing slot by priority, Marker and second line on the active row (every row in comfortable density), Done today with Clean up, multi-select with the compact batch bar.
-- [ ] Peek card on hover (~400 ms): account, model, thinking; branch, `#PR`,
+- [x] Peek card on hover (~400 ms): account, model, thinking; branch, `#PR`,
       children; last output line (hosted: `capture-pane`; otherwise only where a
       source exists, else left out).
+      → `PeekCard` in `gui/src/v3/overlays.tsx` (account, tool, model, thinking; branch, PR, children; last output line). The ~400 ms hover delay and where the last line comes from (hosted: `capture-pane`) are the window's wiring.
 - [x] Limits strip and limits popover: tightest window per account, colours from
       the account's protect value, stale data greyed with its age, "sign in ›";
       the popover with all windows, the pace tick and the pace line in words plus
@@ -488,8 +489,9 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       OK, greyed with its age after 10 min, no tick on small bars, sign in ›),
       `LimitsPopover` with ticks, `PaceLine` in words and its legend from the
       account's protect value.
-- [ ] Inbox popover (focus mode), ⌃Tab switcher, ⌘K palette (sessions incl.
+- [x] Inbox popover (focus mode), ⌃Tab switcher, ⌘K palette (sessions incl.
       Library, branches & PRs, commands; `>` for commands).
+      → `InboxPopover` (full queue, first focused, All later, Earlier today), `Switcher` (Marker on the current pick, needs-you chip, ⌘N hints), `Palette` (grouped, `filterPalette` with `>` for commands and the Last-week scope, ↑↓/↵/⌘↵).
 - [ ] Tray (spec §10.7): the same components in the same order; "Start session"
       and "Open Agent Switch".
 
