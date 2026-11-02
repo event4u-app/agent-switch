@@ -492,8 +492,11 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 - [x] Inbox popover (focus mode), ⌃Tab switcher, ⌘K palette (sessions incl.
       Library, branches & PRs, commands; `>` for commands).
       → `InboxPopover` (full queue, first focused, All later, Earlier today), `Switcher` (Marker on the current pick, needs-you chip, ⌘N hints), `Palette` (grouped, `filterPalette` with `>` for commands and the Last-week scope, ↑↓/↵/⌘↵).
-- [ ] Tray (spec §10.7): the same components in the same order; "Start session"
+- [x] Tray (spec §10.7): the same components in the same order; "Start session"
       and "Open Agent Switch".
+      → `gui/src/v3/tray.tsx` (`V3Tray`): `NeedsZone`, `SessionsZone` (5 rows in
+      the shared order, then N more), `LimitsStrip`, Start session and Open
+      Agent Switch. It replaces the 2.11 tray only when the v3 window does.
 
 ## Phase 8 — Workbench, dialogs and tool windows (spec §6, §7.6–§7.7, §8, §9)
 
