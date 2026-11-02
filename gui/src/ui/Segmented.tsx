@@ -48,7 +48,7 @@ export function Segmented<V extends string>({
       role="radiogroup"
       aria-label={label}
       className={cn(
-        "inline-flex w-fit shrink-0 items-center gap-0.5 rounded-lg border border-ac-line bg-ac-bg p-[3px]",
+        "inline-flex w-fit shrink-0 items-center gap-0.5 rounded-md border border-ac-line bg-ac-bg p-[3px]",
         size === "sm" ? "h-8" : "h-9",
         fill && "flex w-full",
       )}
@@ -75,7 +75,7 @@ export function Segmented<V extends string>({
               "inline-flex h-full items-center justify-center whitespace-nowrap rounded-md px-3 text-xs font-medium transition-colors",
               fill && "flex-1",
               selected
-                ? "bg-ac-brand-tint text-ac-brand-text shadow-[inset_0_0_0_1px_var(--ac-brand-line)]"
+                ? "bg-ac-raise text-ac-text"
                 : o.disabled
                   ? "cursor-not-allowed text-ac-faint"
                   : "text-ac-muted hover:bg-ac-raise hover:text-ac-text",
