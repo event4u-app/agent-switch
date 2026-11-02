@@ -442,7 +442,7 @@ time and wire it to the engine as its data exists.
 | E3 | Monorepo vs split | decided: one repo (one maintainer, one CI); layout per Phase 0 ADR |
 | E7 | Hooks for self-started sessions: keep opt-in or offer once at first start | **owner** — recommendation offer once with preview |
 | E-editor | Default editor global or per repo | decided: global default, per-repo override (cheap, no lock-in; spec §10.5 agrees) |
-| E-token | Remove all OAuth-token reads (proposal V0.2)? Collides with ADR-003 (rebind reads `fetchProfile`, `src/rebind.ts:147`) and ADR-004 (`src/token-freshen.ts:161`) — the proposal missed both callers | **owner** — see `later/road-to-agent-switch-statusline-usage.md` |
+| E-token | Remove all OAuth-token reads (proposal V0.2)? Collides with ADR-003 (rebind reads `fetchProfile`, `src/rebind.ts:147`) and ADR-004 (`src/token-freshen.ts:161`) — the proposal missed both callers | decided (owner, 2026-11-02): only the usage query moves off the token — statusline first, then a control query over the unmodified binary; rebind and token-freshen keep their narrow reads (`later/road-to-agent-switch-statusline-usage.md` Phase 6) |
 | C2 | Helper sessions collapsed by default | decided: yes (noise; expandable) |
 | C3 | Dedicated arena/court views | decided: no — generic kind + label until AC ships those entities |
 | E-lineage | Publish the lineage env contract as a stable, versioned doc | decided: yes (Phase 2); AC adopts it in its own PR |
