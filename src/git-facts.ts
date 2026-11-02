@@ -71,13 +71,24 @@ function mtime(p: string): number {
   }
 }
 
+/** One spelling per folder: git prints long, forward-slash paths while the caller may hold
+ *  a symlink or a Windows 8.3 short name for the same place. */
+function canonical(p: string): string {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
 export function gitFacts(cwd: string, timeoutMs = GIT_TIMEOUT_MS): GitFacts | null {
   if (!cwd || !fs.existsSync(cwd)) return null;
   const rp = git(cwd, ["rev-parse", "--show-toplevel", "--absolute-git-dir", "--git-common-dir"], timeoutMs);
   if (!rp) return null;
-  const [toplevel, gitDir, commonRaw] = rp.trim().split("\n");
-  if (!toplevel || !gitDir) return null;
-  const commonDir = path.resolve(cwd, commonRaw ?? gitDir);
+  const [topRaw, gitDir, commonRaw] = rp.trim().split("\n");
+  if (!topRaw || !gitDir) return null;
+  const toplevel = canonical(topRaw);
+  const commonDir = canonical(path.resolve(cwd, commonRaw ?? gitDir));
   const st = git(toplevel, ["status", "--porcelain=v2", "--branch", "--untracked-files=normal"], timeoutMs);
   if (st === null) return null;
   const s = parseStatusV2(st);
@@ -93,5 +104,5 @@ export function gitFacts(cwd: string, timeoutMs = GIT_TIMEOUT_MS): GitFacts | nu
       remoteCache.set(toplevel, { key, remote });
     }
   }
-  return { toplevel, ...s, remote, worktree: path.resolve(gitDir) !== commonDir };
+  return { toplevel, ...s, remote, worktree: canonical(gitDir) !== commonDir };
 }

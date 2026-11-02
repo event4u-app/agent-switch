@@ -6,6 +6,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { shellLine } from "../src/resume.js";
+
 // End-to-end smokes over the BUILT CLI (`dist/index.js`) — the layer the round-2
 // blocker (F1) lived in, previously untested. Requires `npm run build` first
 // (CI runs it); skips cleanly otherwise so a bare `npm test` never false-fails.
@@ -348,7 +350,7 @@ test("`needs` lists what waits, says where to answer, hides on later and keeps h
 test("`sessions --json` git facts follow the folder of the newest turn (a worktree switch shows after the next turn)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
-    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
+    const repo = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
     const g = (...a: string[]) => execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { stdio: "ignore" });
     g("init", "-q", "-b", "main");
     fs.writeFileSync(path.join(repo, "a"), "1");
@@ -404,7 +406,7 @@ test("library: pin copies to the vault, name/tag/search, restore after Claude de
 test("`sessions resume`: a dirty checkout gets a new worktree at the session's last commit, with the commands", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
-    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-res-")));
+    const repo = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-res-")));
     const g = (...a: string[]) => execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { encoding: "utf8" });
     g("init", "-q", "-b", "main");
     fs.writeFileSync(path.join(repo, "a"), "1");
@@ -420,7 +422,8 @@ test("`sessions resume`: a dirty checkout gets a new worktree at the session's l
     assert.equal(p.target, "new_worktree");
     assert.ok(p.checks.some((c: any) => !c.ok && /not committed/.test(c.text)));
     assert.deepEqual(p.commands[0], ["git", "-C", repo, "worktree", "add", "--detach", `${repo}-resume-6666-res`, sha]);
-    assert.equal(p.commandLines[1], `agent-switch run work --cwd ${repo}-resume-6666-res -- --resume 6666-resume`);
+    // Quoted by the same rule the command uses (a Windows path always is: it has backslashes).
+    assert.equal(p.commandLines[1], shellLine(["agent-switch", "run", "work", "--cwd", `${repo}-resume-6666-res`, "--", "--resume", "6666-resume"]));
     assert.equal(fs.existsSync(`${repo}-resume-6666-res`), false, "nothing ran without --yes");
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
@@ -430,7 +433,7 @@ test("`sessions resume`: a dirty checkout gets a new worktree at the session's l
 test("open: targets for a session's worktree root, a default per repo, and nothing outside its folder", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
-    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-open-")));
+    const repo = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-open-")));
     execFileSync("git", ["-C", repo, "init", "-q", "-b", "main"]);
     fs.mkdirSync(path.join(repo, "src"));
     seed(home, "claude", "work");
@@ -1308,7 +1311,7 @@ test("auth-status --json, doctor --json and activity --json never contain a toke
 
 test("pools: dir --json resolves a pool rule to the freshest member and explains why", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
-  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
+  const repo = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
   try {
     for (const n of ["a", "b"]) {
       const cfg = path.join(home, "claude", n, "config");
@@ -1406,7 +1409,7 @@ test("remove refuses a profile with an active rebind; --force drops it (stash cl
 
 test("mappings renders a pool rule as a pool; activity --limit 0 is rejected", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
-  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
+  const repo = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
   try {
     seed(home, "claude", "a");
     run(home, ["pool", "create", "Work"]);
@@ -1971,7 +1974,7 @@ test("browsers --json lists installed browsers as {id, name}", gate, () => {
 
 test("dir: a folder bound to a pool that no longer exists is refused with exit 86, never started elsewhere", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-pool-gone-"));
-  const folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-pool-folder-")));
+  const folder = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-pool-folder-")));
   try {
     seed(home, "claude", "personal");
     run(home, ["use", "personal"]);
@@ -2012,7 +2015,7 @@ test("import: a seeded import is marked as sharing the default login, and doctor
 
 test("dir: a folder bound to a disabled account is refused with exit 86, never started on another one", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bound-off-"));
-  const folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-bound-folder-")));
+  const folder = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-bound-folder-")));
   try {
     seed(home, "claude", "work");
     seed(home, "claude", "personal");
@@ -2031,7 +2034,7 @@ test("dir: a folder bound to a disabled account is refused with exit 86, never s
 
 test("dir: balances on the app's latest usage read without the background service", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-latest-dir-"));
-  const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-latest-cwd-")));
+  const cwd = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-latest-cwd-")));
   try {
     const now = Date.now();
     const reset = new Date(now + 3 * 3600e3).toISOString();
@@ -2056,7 +2059,7 @@ test("dir: balances on the app's latest usage read without the background servic
 
 test("mark-shared: marking a profile by hand makes balancing skip it, --off clears it", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-mark-"));
-  const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-mark-cwd-")));
+  const cwd = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-mark-cwd-")));
   try {
     seed(home, "claude", "work");
     run(home, ["mark-shared", "work"]);

@@ -32,7 +32,7 @@ test("stripCredentials removes user and token from a remote URL", () => {
 const g = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, "-c", "user.name=t", "-c", "user.email=t@t", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
 
 test("gitFacts on a real repo, a linked worktree, a non-repo; a change shows without staleness", () => {
-  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-git-")));
+  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-git-")));
   const origin = path.join(base, "origin.git");
   g(base, "init", "-q", "--bare", origin);
   const repo = path.join(base, "repo");
@@ -62,4 +62,19 @@ test("gitFacts on a real repo, a linked worktree, a non-repo; a change shows wit
 
   assert.equal(gitFacts(base), null, "not a repo: null");
   assert.equal(gitFacts(path.join(base, "missing")), null);
+});
+
+test("gitFacts through a second spelling of the same folder (a symlink here, an 8.3 short name on Windows): still the main checkout, at its real path", () => {
+  const real = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "gf-alias-")));
+  const link = path.join(fs.realpathSync.native(os.tmpdir()), `gf-link-${process.pid}`);
+  try {
+    execFileSync("git", ["-C", real, "init", "-q", "-b", "main"]);
+    fs.symlinkSync(real, link, "dir");
+    const f = gitFacts(link)!;
+    assert.equal(f.worktree, false, "the main checkout is not a linked worktree");
+    assert.equal(f.toplevel, real);
+  } finally {
+    fs.rmSync(link, { force: true });
+    fs.rmSync(real, { recursive: true, force: true });
+  }
 });

@@ -32,7 +32,7 @@ test("menu lists every target and marks what is installed", () => {
 });
 
 test("confine: only paths inside the session's folder, symlinks resolved", () => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-open-")));
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-open-")));
   fs.mkdirSync(path.join(root, "src"));
   fs.symlinkSync(os.tmpdir(), path.join(root, "out"));
   assert.equal(confine(root), root);
