@@ -172,3 +172,25 @@ test("startEngine: imports the hook rings, answers on the root's socket, and a s
     await engine!.stop();
   }
 });
+
+test("CLI `engine status --json`: stopped without an engine, running with one", { skip: storeSkip || (process.platform === "win32" ? "Unix socket path" : false) }, async () => {
+  const { startEngine } = await import("../src/engine/run.js");
+  const { execFile } = await import("node:child_process");
+  const CLI = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../dist/index.js");
+  if (!fs.existsSync(CLI)) return;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "e-"));
+  // Async on purpose: the engine under test answers from this process's event loop.
+  const status = () =>
+    new Promise<any>((resolve, reject) =>
+      execFile("node", [CLI, "engine", "status", "--json"], { env: { ...process.env, AGENT_SWITCH_HOME: root, AGENT_SWITCH_HOST_SOCKET: `as-test-es-${process.pid}` }, encoding: "utf8" }, (err, out) => (err ? reject(err) : resolve(JSON.parse(out)))),
+    );
+  assert.equal((await status()).running, false);
+  const engine = await startEngine(root, () => {});
+  try {
+    const s = await status();
+    assert.equal(s.running, true);
+    assert.equal(s.pid, process.pid);
+  } finally {
+    await engine!.stop();
+  }
+});

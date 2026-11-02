@@ -42,6 +42,7 @@ import {
 } from "./commands/profiles.js";
 import { cmdRebind } from "./commands/rebind.js";
 import { cmdStore } from "./commands/store.js";
+import { cmdEngine } from "./commands/engine.js";
 import { cmdNeeds } from "./commands/needs.js";
 import { cmdHost } from "./commands/host.js";
 import { cmdDir, cmdGuard, cmdMap, cmdMappings, cmdPicks, cmdPool, cmdUnmap } from "./commands/routing.js";
@@ -164,6 +165,7 @@ async function main(): Promise<void> {
       return cmdSessions(providerId, providerExplicit, positional[0], flags);
     case "hooks": return cmdHooks(positional[0], positional[1]);
     case "store": return cmdStore(positional[0], flags);
+    case "engine": return cmdEngine(positional[0], flags);
     case "needs": return cmdNeeds(positional[0], positional[1], flags);
     case "host": return cmdHost(providerId, positional[0], positional[1], flags);
     case "alerts": return cmdAlerts(positional[0], flags);
