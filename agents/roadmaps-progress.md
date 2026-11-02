@@ -6,10 +6,10 @@
 
 ## Overall
 
-**0 / 84 steps done · 0%**
+**6 / 84 steps done · 7%**
 
 ```text
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   0%
+███░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   7%
 ```
 
 ## Open roadmaps
@@ -17,7 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 75 | 75 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
-| 2 | [road-to-hooks-that-keep-up.md](roadmaps/road-to-hooks-that-keep-up.md) | 3 | 9 | 9 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
+| 2 | [road-to-hooks-that-keep-up.md](roadmaps/road-to-hooks-that-keep-up.md) | 3 | 9 | 3 | 6 | 0 | 0 | 0 | ███████░░░ 67% |
 
 ---
 
@@ -65,12 +65,12 @@
 
 ### [road-to-hooks-that-keep-up.md](roadmaps/road-to-hooks-that-keep-up.md)
 
-**hooks that keep up (non-blocking, lossless, subagent-aware)** — 0 / 9 done (0%)
+**hooks that keep up (non-blocking, lossless, subagent-aware)** — 6 / 9 done (67%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
-| 0 | Measure first | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
-| 1 | Fix | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 0 | Measure first | ✅ done | 0 | 3 | 0 | 0 | 100% |
+| 1 | Fix | ✅ done | 0 | 3 | 0 | 0 | 100% |
 | 2 | Subagent events | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
 
 ## Age
