@@ -13,7 +13,14 @@ execution:
 > pre-existing statusline so their bar is untouched. The polled `/api/oauth/usage`
 > path is demoted to a fallback. Gated on a blocking live spike.
 >
-> **Arrivals:** 3 — latest `cache-awareness` (2026-11-01, agent-config inbox): the
+> **Arrivals:** 4 — latest `inbox-2026-11-b` (2026-11-02, AS v3 proposal step V0.2):
+> move usage off the OAuth token entirely — statusline first, then an undocumented
+> control query over the unmodified binary (`initialize` → `get_usage`, needs a
+> spike), then remove `readProfileCredential`/`fetchUsage`/`fetchProfile`. Open
+> owner question: the removal collides with ADR-003 (`src/rebind.ts:147` reads the
+> profile via the token) and ADR-004 (`src/token-freshen.ts:161`) — the proposal
+> listed only the daemon and two commands as callers.
+> Before that: `cache-awareness` (2026-11-01, agent-config inbox): the
 > status payload also carries `prompt_cache` (`warm`, `ttl`, `expires_at`,
 > `recache_tokens_if_cold`; CC v2.1.251+, statusline doc). Once this bridge ships,
 > those fields replace the transcript derivation in `readClaudeCache`
