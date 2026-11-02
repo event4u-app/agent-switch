@@ -66,6 +66,16 @@ function cli(args: string[]) {
   return Command.create((inTrayWindow() && trayScope(args)) || "agent-switch", args);
 }
 
+/** Tell the background service whether the window is shown, so it can pause
+ *  work only the window displays (the PR refresh). Best-effort. */
+export async function reportVisibility(visible: boolean): Promise<void> {
+  try {
+    await cli(["app-visibility", visible ? "visible" : "hidden"]).execute();
+  } catch {
+    /* an older CLI without the command: nothing pauses, nothing breaks */
+  }
+}
+
 async function runCli(args: string[]): Promise<string> {
   const out = await cli(args).execute();
   if (out.code !== 0) throw new Error(out.stderr || `agent-switch ${args.join(" ")} failed`);

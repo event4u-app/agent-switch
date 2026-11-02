@@ -33,6 +33,7 @@ import { ROOT, activeFor, configDir, isDisabled, labelFor, listProfiles, readAut
 import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
 import { startEngine } from "./engine/run.js";
+import { appHidden, visibilityFile } from "./app-visibility.js";
 import { fetchUsage, liveSessionPids, liveSessions, readProfileCredential } from "./api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { keepAliveSweep } from "./login-keepalive.js";
@@ -718,6 +719,7 @@ async function pollOnce(
 let lastPrProblem: string | null = null;
 async function refreshPrs(log: (l: string) => void): Promise<void> {
   try {
+    if (appHidden(visibilityFile(ROOT))) return; // only the app shows PRs; it asks again when shown
     const { refreshForSessions, sessionsWithGit } = await import("./commands/pr.js");
     const r = refreshForSessions(sessionsWithGit(), false);
     const problem = r.problem ? `${r.problem.message} (${r.problem.fix})` : null;

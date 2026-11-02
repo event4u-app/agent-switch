@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef } from "react";
-import { listSessions } from "../../ipc.js";
+import { listSessions, reportVisibility } from "../../ipc.js";
 import type { SessionRow } from "../../transforms.js";
 import { sessionFromRow } from "../../vm/build.js";
 import { useAS } from "../../vm/store.js";
@@ -79,7 +79,10 @@ export function useSessionsPoll(): void {
       if (document.visibilityState === "hidden" && tick % 2 === 1) return;
       void poll();
     }, SESSIONS_POLL_MS);
-    const onShow = () => document.visibilityState === "visible" && void poll();
+    const onShow = () => {
+      void reportVisibility(document.visibilityState === "visible");
+      if (document.visibilityState === "visible") void poll();
+    };
     document.addEventListener("visibilitychange", onShow);
     return () => {
       clearInterval(id);

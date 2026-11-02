@@ -12,7 +12,7 @@
  * (~/.agent-switch/<name>) are migrated on first run (see migrateLegacyLayout).
  */
 
-import { die, migrateLegacyLayout } from "./profiles.js";
+import { die, migrateLegacyLayout, ROOT } from "./profiles.js";
 import { parseArgs, parseRun } from "./args.js";
 import { runDoctor } from "./doctor.js";
 import { TOOL_IDS } from "./tooling.js";
@@ -42,6 +42,7 @@ import {
 } from "./commands/profiles.js";
 import { cmdRebind } from "./commands/rebind.js";
 import { cmdStore } from "./commands/store.js";
+import { visibilityFile, writeVisibility } from "./app-visibility.js";
 import { cmdPr, cmdWorktrees } from "./commands/pr.js";
 import { cmdEngine } from "./commands/engine.js";
 import { cmdNeeds } from "./commands/needs.js";
@@ -166,6 +167,9 @@ async function main(): Promise<void> {
       return cmdSessions(providerId, providerExplicit, positional[0], flags);
     case "hooks": return cmdHooks(positional[0], positional[1]);
     case "store": return cmdStore(positional[0], flags);
+    case "app-visibility":
+      if (positional[0] !== "visible" && positional[0] !== "hidden") die("usage: agent-switch app-visibility visible|hidden");
+      return writeVisibility(visibilityFile(ROOT), positional[0] === "visible");
     case "pr": return cmdPr(positional[0], flags);
     case "worktrees": return cmdWorktrees(flags);
     case "engine": return cmdEngine(positional[0], flags);
