@@ -400,12 +400,16 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 
 ## Phase 6 — Design system and window frame (spec §0–§4, §12)
 
-- [ ] Themes (spec §2): the 18 themes in spec order, Darcula for new installs;
+- [x] Themes (spec §2): the 18 themes in spec order, Darcula for new installs;
       `--ac-*` tokens from `resolveTheme` only (no raw colours except account
       identity colours); the resolver enforces the contrast floors, including
       terminal ANSI ≥ 4.5:1; accent = theme or Agent Switch orange; "Terminal uses
       the theme's colours" on by default. Ported from `themes/*` with their tests;
       every new token gets a floor.
+      → `gui/src/v3/themes/` adapted from the reference patch with its tests,
+      plus two: every terminal colour ≥ 4.5:1 on the terminal background, and
+      the spec's theme order. GUI coverage stays above the floor (84.5 % lines).
+      Wiring into the window is the `AcRoot` step below.
 - [ ] 2.11 migration: the old `agent-switch-theme` keeps its mode and gets the
       Agent Switch palette, so the update changes nothing visible. Test.
 - [ ] Shared component changes (spec §0): `ui/Segmented` selected = raise fill,
