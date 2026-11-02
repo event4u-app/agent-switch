@@ -306,19 +306,31 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       "clean" (test). Only the remote URL is cached; within one run, one git call
       per folder. SessionStart and Stop now carry the folder, so a worktree
       switch shows after the next turn (e2e).
-- [ ] PR matched by head repo + head SHA (several candidates allowed); lifecycle,
+- [x] PR matched by head repo + head SHA (several candidates allowed); lifecycle,
       mergeability, review and CI kept as separate axes; one batched `gh` GraphQL
       query per repo, ETag/backoff, rate-limit aware. `MERGED`/`CLOSED` stay stored.
-- [ ] Polling cadence: 60 s while a session runs, 5 min idle, paused when the app
-      is hidden, halved on rate-limit pressure; chip states for every axis incl.
-      `UNKNOWN`. GitLab (`glab`) after GitHub works.
-- [ ] No `gh` or no login → one honest line with a fix button; AS never stores a
+      → `src/pr-facts.ts`: one GraphQL call per repo (verified live against this repo: 50 PRs, 50 points of 5000), matched by head commit, four axes each with UNKNOWN, cache `<root>/pr-cache.json`. GraphQL has no ETag; the back-off reads GitHub's own `rateLimit` instead. `sessions --json` lists `prs` from the cache only.
+- [x] Polling cadence: 60 s while a session runs, 5 min idle, halved on
+      rate-limit pressure; chip states for every axis incl. `UNKNOWN`.
+      → `refreshIntervalMs` / `due`; the daemon refreshes due repos each cycle and
+      logs a missing gh once per change.
+- [ ] Pause the PR refresh while the app is hidden (the daemon needs a signal
+      from the app; none exists yet).
+- [ ] GitLab merge requests through `glab`, after GitHub works.
+- [x] No `gh` or no login → one honest line with a fix button; AS never stores a
       GitHub token itself.
-- [ ] Failing CI and merge conflicts become attention items (kind `ci` in `src/attention.ts`; the digest counts merged PRs and CI breaks) and the session's
+      → `GhUnavailable` with `fix` (`gh auth login` / install link); `pr status` prints one line, `--json` gives `problem: {message, fix}` for the app's button. No token is read or stored.
+- [x] Failing CI and merge conflicts become attention items (kind `ci` in `src/attention.ts`; the digest counts merged PRs and CI breaks) and the session's
       blocker (spec §5.1, §6.3, §9.1); "Fix" / "Send to agent" sends the failing
       check's name and log link to a hosted session through the input lease —
       never into a session AS does not host.
-- [ ] `agent-switch pr status`, `agent-switch worktrees`.
+      → `ciCandidates` in `src/commands/needs.ts` (open PRs only, each once);
+      `needs fix <id>` types the PR, its failing checks and the checks URL into a
+      hosted session through the input lease, and refuses for any other
+      session. The digest counts merged PRs and CI breaks. The blocker strip and
+      Summary's next step read the same facts in Phase 8.
+- [x] `agent-switch pr status`, `agent-switch worktrees`.
+      → both, with `--json`; `worktrees` groups linked worktrees by their main checkout and names the sessions in each.
 
 ## Phase 4 — Library and vault
 
