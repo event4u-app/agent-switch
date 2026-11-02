@@ -212,8 +212,12 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       → `src/host/tmux-host.ts`, `agent-switch host start|list|end`. Verified live:
       `claude agents --json` reports the session id AS chose. Hooks reach the
       session through `<root>/host/hooks-settings.json`.
-- [ ] Single writer per hosted session: one input lease, read-only mirrors for
+- [x] Single writer per hosted session: one input lease, read-only mirrors for
       other viewers, explicit handover, stale-lease recovery.
+      → `src/host/lease.ts`: O_EXCL lease file per session, renewal within 15 s,
+      recovery from a dead or silent holder, handover only by the holder; typing
+      is `send-keys -l` and only for the holder. Mirrors read `capture-pane`.
+      The 12-process race test fails when the exclusive create is removed.
 - [ ] Hosted session controls: detach (close tab) vs **end** (own, confirmed
       action); `AGENT_SWITCH_HOST_PANE` exported for non-Claude providers; starts go
       through the existing guard/pool path; `takeover --in-place` and `compact`
