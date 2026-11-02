@@ -16,7 +16,7 @@ tree_pin: ff38137
 > Follow-ups (parked, pull trigger named in each):
 > [`later/road-to-agent-switch-v3-client.md`](later/road-to-agent-switch-v3-client.md) (v3.1),
 > [`later/road-to-agent-switch-v3-reach.md`](later/road-to-agent-switch-v3-reach.md) (v3.2).
-> Prerequisite: [`road-to-hooks-that-keep-up.md`](road-to-hooks-that-keep-up.md).
+> Prerequisite (done, archived): [`road-to-hooks-that-keep-up.md`](archive/road-to-hooks-that-keep-up.md).
 
 ## Branch model (owner, 2026-11-02)
 

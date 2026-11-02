@@ -1,6 +1,6 @@
 ---
 complexity: small
-status: planned
+status: done
 tree_pin: ff38137
 ---
 
@@ -11,13 +11,13 @@ tree_pin: ff38137
 > This roadmap carries the defect half that every later phase depends on (proposal
 > step V0.1 and the subagent event half of P1).
 >
-> Sibling: [`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)
+> Sibling: [`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)
 > builds the session tree on top of the events this roadmap makes trustworthy.
 
 ## Branch
 
 Targets `dev/v3` like all v3 work (branch model in
-[`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)). The
+[`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)). The
 defect also exists in 2.x; shipping a backport to `main` early is a separate
 owner decision, not part of this roadmap.
 
@@ -99,8 +99,13 @@ tree needs. Measured before and after, not assumed.
 ## Acceptance
 
 - The Phase 0 blocking probe shows no turn delay from an installed AS hook.
+  → Met: the handler shape agent-switch now writes (run C) let the result through
+  before the hook started, in 3 of 3 rounds (`agents/evidence/hook-blocking-probe-2026-11.md`).
 - 20 concurrent writers × 50 events: zero lost lines.
+  → Met: `tests/hooks.test.ts` "loses no line under 20 concurrent writers".
 - A session with 4 subagents shows 4 children in `sessions --json`.
+  → Met: `tests/cli-e2e.test.ts` "lists a session's subagents from its hooks"
+  (through the built CLI's `__hook-event`).
 
 ## Risk Register
 
