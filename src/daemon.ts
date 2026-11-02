@@ -32,6 +32,7 @@ import * as path from "node:path";
 import { ROOT, activeFor, configDir, isDisabled, labelFor, listProfiles, readAutoSwitch, readBinaryPath } from "./profiles.js";
 import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
+import { startEngine } from "./engine/run.js";
 import { fetchUsage, liveSessionPids, liveSessions, readProfileCredential } from "./api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { keepAliveSweep } from "./login-keepalive.js";
@@ -513,6 +514,8 @@ interface RunOptions {
   log?: (line: string) => void;
   /** Test seam: stop after N cycles (default: run forever). */
   maxCycles?: number;
+  /** Test seam: false = do not start the v3 engine (store + protocol socket). */
+  engine?: boolean;
 }
 
 /** One poll cycle: refresh the state cache for the selected profiles. Returns
@@ -714,11 +717,13 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
     return;
   }
   let running = true;
+  // v3 engine: store + protocol socket. Off (with a log line) where SQLite is missing.
+  const engine = opts.engine === false ? null : await startEngine(ROOT, log);
   const stop = () => {
     running = false;
     releaseSingleInstance(process.pid);
     log("stopped.");
-    process.exit(0);
+    void (engine?.stop() ?? Promise.resolve()).finally(() => process.exit(0));
   };
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
@@ -761,5 +766,6 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
     await new Promise((r) => setTimeout(r, wait + jitter));
   }
   stopArmWatcher();
+  await engine?.stop();
   releaseSingleInstance(process.pid);
 }
