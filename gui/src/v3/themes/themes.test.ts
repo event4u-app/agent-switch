@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+// Via Vite, not node:fs: CI installs inside gui/ only, without @types/node.
+import css from "../../index.css?raw";
 import { contrast } from "./color.js";
 import { THEMES } from "./registry.js";
 import { DEFAULT_APPEARANCE, FLOOR, activeTheme, migrate, resolveTheme } from "./resolve.js";
@@ -63,7 +63,6 @@ describe("v3 themes", () => {
 
 describe("the Agent Switch palettes are the 2.11 window's own values", () => {
   // Parse the shipped stylesheet, so a drift on either side fails here.
-  const css = readFileSync(join(process.cwd(), "src", "index.css"), "utf8"); // vitest runs in gui/
   const block = (selector: string) => {
     const start = css.indexOf(`${selector} {`);
     const body = css.slice(start, css.indexOf("}", start));

@@ -23,6 +23,8 @@ export default defineConfig({
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     // Tests assert English copy: pin en regardless of the machine's language.
     setupFiles: ["src/i18n/test-setup.ts"],
+    // The theme test reads index.css as text (?raw); vitest empties CSS it does not include.
+    css: { include: [/index\.css/] },
     coverage: {
       provider: "v8",
       include: ["src/**/*.{ts,tsx}"],
