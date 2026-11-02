@@ -99,6 +99,24 @@ export interface SessionRow {
   armed?: { target: string; createdAt: string; expiresAt: string } | null;
   /** The session's prompt-cache state (Claude only; null when unknown). */
   cache?: SessionCache | null;
+  /** Git facts of the folder the session works in now; null outside a repo. */
+  git?: SessionGit | null;
+}
+
+/** `sessions --json` → `git`; `cwdSource` says where the folder came from. */
+export interface SessionGit {
+  toplevel: string;
+  branch: string | null;
+  headSha: string | null;
+  dirty: boolean;
+  changed: number;
+  ahead: number | null;
+  behind: number | null;
+  upstream: string | null;
+  remote: string | null;
+  worktree: boolean;
+  cwd: string;
+  cwdSource: "hook" | "process" | "transcript";
 }
 
 /** `sessions --json` → `cache`: whether the prompt cache is still warm and

@@ -152,6 +152,8 @@ export interface SessionRow {
   live: boolean;
   /** The host registry's state word for a live session (`idle`, `busy`, …). */
   hostStatus?: string;
+  /** The live process, when the host's registry names this session. */
+  pid?: number;
   /** How `live` was decided: the registry named this session, or the cwd guess. */
   liveSource?: "registry" | "cwd";
   /** Waiting on the user: an open question in the transcript, or a hook prompt. */
@@ -259,6 +261,7 @@ export function markLive(
     if (row) {
       row.live = true;
       row.liveSource = "registry";
+      row.pid = s.pid;
       if (s.status) row.hostStatus = s.status;
       continue;
     }

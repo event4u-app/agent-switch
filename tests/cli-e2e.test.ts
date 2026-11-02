@@ -345,6 +345,32 @@ test("`needs` lists what waits, says where to answer, hides on later and keeps h
   }
 });
 
+test("`sessions --json` git facts follow the folder of the newest turn (a worktree switch shows after the next turn)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
+    const g = (...a: string[]) => execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { stdio: "ignore" });
+    g("init", "-q", "-b", "main");
+    fs.writeFileSync(path.join(repo, "a"), "1");
+    g("add", ".");
+    g("commit", "-qm", "one");
+    g("worktree", "add", "-q", "-b", "feat/wt", path.join(repo, ".wt"));
+    seed(home, "claude", "work");
+    const dir = path.join(home, "claude", "work", "config", "projects", "-repo");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "5555-git.jsonl"), JSON.stringify({ cwd: repo, summary: "git" }) + "\n");
+    const before = JSON.parse(run(home, ["sessions", "--json"]))[0].git;
+    assert.deepEqual([before.branch, before.worktree, before.cwdSource], ["main", false, "transcript"]);
+
+    run(home, ["hooks", "install", "work"]);
+    execFileSync("node", [CLI, "__hook-event"], { env: { ...process.env, AGENT_SWITCH_HOME: home, CLAUDE_CONFIG_DIR: path.join(home, "claude", "work", "config") }, input: JSON.stringify({ hook_event_name: "Stop", session_id: "5555-git", cwd: path.join(repo, ".wt") }) });
+    const after = JSON.parse(run(home, ["sessions", "--json"]))[0].git;
+    assert.deepEqual([after.branch, after.worktree, after.cwdSource], ["feat/wt", true, "hook"]);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("`sessions` shows each Claude session's prompt-cache state (road-to-sessions-that-show-their-cache)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {

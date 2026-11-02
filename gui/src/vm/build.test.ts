@@ -97,6 +97,13 @@ describe("sessionFromRow", () => {
     expect(sessionFromRow(s(), NOW).cache).toBeNull();
   });
 
+  it("takes the branch from the CLI's git facts; no repo or an older CLI gives null", () => {
+    const git = { toplevel: "/r", branch: "feat/x", headSha: "abc1234", dirty: true, changed: 3, ahead: 1, behind: 0, upstream: "origin/feat/x", remote: null, worktree: true, cwd: "/r", cwdSource: "hook" as const };
+    expect(sessionFromRow(s({ git }), NOW).branch).toBe("feat/x");
+    expect(sessionFromRow(s({ git: null }), NOW).branch).toBeNull();
+    expect(sessionFromRow(s(), NOW).branch).toBeNull();
+  });
+
   it("carries the live source and an armed switch (target as an account id)", () => {
     const armed = sessionFromRow(s({ liveSource: "registry", armed: { target: "side", createdAt: iso(NOW), expiresAt: iso(NOW + 30 * MIN) } }), NOW);
     expect(armed.liveSource).toBe("registry");

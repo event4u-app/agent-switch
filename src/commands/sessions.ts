@@ -21,6 +21,7 @@ import {
   locateCodexSession,
   markLive,
   openQuestion,
+  pidCwd,
   restoreSession,
   sharedHistory,
   sweepTrash,
@@ -41,6 +42,7 @@ import {
   waitingSessions,
   hookNotice,
   recordFromPayload,
+  lastHookCwd,
   lineageFromEnv,
   clearedFrom,
   pidFrom,
@@ -48,6 +50,7 @@ import {
   HookEventRecord,
 } from "../hooks.js";
 import { buildTree, childSource, childrenWithHooks, countSubagentFiles, helperIndex, relationUnknown, type TreeNode } from "../lineage.js";
+import { gitFacts, type GitFacts } from "../git-facts.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "../notify.js";
 import { appendNotification } from "../notifications.js";
 import { readTmuxRegistry, sendKeysArgs, tmuxSessionName } from "../tmux.js";
@@ -107,6 +110,23 @@ export function cmdHooks(sub?: string, name?: string): void {
   }
 }
 
+
+/**
+ * Git facts for a session, from the folder it works in now: the newest hook
+ * (start or turn end), else the live process's folder, else the transcript's
+ * first folder — `cwdSource` says which. null outside a repo.
+ */
+function gitFor(r: SessionRow, events: readonly HookEventRecord[]): (GitFacts & { cwd: string; cwdSource: "hook" | "process" | "transcript" }) | null {
+  const hook = lastHookCwd(events, r.sessionId);
+  const proc = !hook && r.pid ? pidCwd(r.pid) : null;
+  const cwd = hook ?? proc ?? r.cwd;
+  if (!cwd) return null;
+  // Many sessions share a folder: ask git once per folder per run.
+  if (!gitMemo.has(cwd)) gitMemo.set(cwd, gitFacts(cwd));
+  const facts = gitMemo.get(cwd)!;
+  return facts ? { ...facts, cwd, cwdSource: hook ? "hook" : proc ? "process" : "transcript" } : null;
+}
+const gitMemo = new Map<string, GitFacts | null>();
 
 /** Where helper runs (council seats, scripted `claude -p`) usually work. */
 const TEMP_ROOTS = [...new Set([os.tmpdir(), "/tmp", "/private/tmp", "/var/folders", "/private/var/folders"])];
@@ -358,6 +378,7 @@ export function cmdSessions(
         else if (counted) kids = { childCount: counted, childSource: "counted" };
       }
       const parent = helpers.parentOf.get(key);
+      const git = gitFor(r, eventsOf.get(r.profile) ?? []);
       return {
         provider: providerId,
         ...r,
@@ -366,6 +387,7 @@ export function cmdSessions(
           ? { pct: c.pct, contextTokens: c.contextTokens, windowTokens: c.windowTokens, model: c.model, effort: c.effort ?? null, confidence: c.confidence, source: "transcript" }
           : null,
         cache: cacheOf(r),
+        git,
         ...kids,
         ...(parent ? { parent } : relationUnknown(r.cwd, false, TEMP_ROOTS) ? { relation: "unknown" } : {}),
       };

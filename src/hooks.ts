@@ -177,7 +177,7 @@ export interface HookEventRecord {
   /** SubagentStart/Stop: which subagent; `sessionId` is its parent. */
   agentId?: string;
   agentType?: string;
-  /** SubagentStart/Stop: where the subagent works (a worktree shows here). */
+  /** SessionStart, Stop, SubagentStart/Stop: the working folder at that moment (a worktree shows here). */
   cwd?: string;
   /** SessionStart: who started this session, from the env it inherited
    *  (docs/lineage-contract.md). Never inferred from timing or folders. */
@@ -264,8 +264,9 @@ export function recordFromPayload(o: any, at: string): HookEventRecord {
   if (event === "SubagentStart" || event === "SubagentStop") {
     rec.agentId = str(o.agent_id);
     rec.agentType = str(o.agent_type);
-    rec.cwd = str(o.cwd);
   }
+  // Where the session works right now: a mid-session worktree switch shows at the next Stop.
+  if (["SessionStart", "Stop", "SubagentStart", "SubagentStop"].includes(event)) rec.cwd = str(o.cwd);
   for (const k of Object.keys(rec) as (keyof HookEventRecord)[]) if (rec[k] === undefined) delete rec[k];
   return rec;
 }
@@ -307,6 +308,15 @@ export function resumeFields(o: any): HookEventRecord["resume"] {
     contextTokens: num(o.context_tokens),
     cacheLikelyExpired: o.prompt_cache_likely_expired,
   };
+}
+
+/** The folder a session's newest hook reported, or null. Subagent events name the subagent's folder, not the session's. */
+export function lastHookCwd(events: readonly HookEventRecord[], sessionId: string): string | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e.sessionId === sessionId && e.cwd && (e.event === "SessionStart" || e.event === "Stop")) return e.cwd;
+  }
+  return null;
 }
 
 /** The newest resume facts recorded for one session, or null. */
