@@ -218,10 +218,15 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       recovery from a dead or silent holder, handover only by the holder; typing
       is `send-keys -l` and only for the holder. Mirrors read `capture-pane`.
       The 12-process race test fails when the exclusive create is removed.
-- [ ] Hosted session controls: detach (close tab) vs **end** (own, confirmed
+- [x] Hosted session controls: detach (close tab) vs **end** (own, confirmed
       action); `AGENT_SWITCH_HOST_PANE` exported for non-Claude providers; starts go
       through the existing guard/pool path; `takeover --in-place` and `compact`
       move to the new host names.
+      → `host attach` opens a per-viewer view that tmux drops on detach; `host end`
+      asks (or needs `--yes`); `AGENT_SWITCH_HOST_PANE` carries the session key for
+      every provider; `host start` without a profile uses `resolveDir` (folder
+      rules, pools, guard) and records the pick; `takeover --in-place` respawns the
+      hosted window, `compact <key>` types through the input lease.
 - [ ] Attention queue (spec §5.1, §7.4): one queue ordered approvals → questions →
       limit decisions → failing CI → sign-ins → updates; "Later" snoozes an item
       until it changes; finished items stay as history (the 2.11 activity list);
