@@ -464,16 +464,18 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       → `gui/src/v3/needs.tsx` (`NeedsZone`, `NeedRow`, `keysFor`, `nextFocus`)
       on `needs --json` (`listNeeds`, `needsLater` in `ipc.ts`). Items AS cannot
       answer carry "Focus terminal" as their verb and keys.
-- [ ] Children in the GUI (spec §5.2, §7.3, §9.3; moved here from Phase 2):
+- [x] Children in the GUI (spec §5.2, §7.3, §9.3; moved here from Phase 2):
       children unfold under the row (`ChildLine`, provenance in the tooltip,
       "relation unknown ⓘ" / "counted" inline), helper sessions collapsed by
       default (C2), the `Bot` + count trailing slot, the Children tool window,
       `N children` in the peek card; counters count roots only. The pet stays
       unchanged (spec §11).
-- [ ] Sessions zone: the shared order (needs you → CI failing → working → rest),
+      → `gui/src/v3/sessions.tsx`: `childrenFromCli` maps `sessions --json` children (subagents, helpers, counted), `ChildLine` with provenance in the tooltip and "relation unknown ⓘ" / "counted" inline, rows folded by default (C2), the `Bot` + count slot, `childNoun`. The Children tool window and the peek card's count use the same model (Phase 8 / next step); the pet is untouched.
+- [x] Sessions zone: the shared order (needs you → CI failing → working → rest),
       one trailing slot by priority, second line on the active row (and on every
       row in comfortable density), "Done today N ›" with "Clean up",
       multi-select with the batch bar.
+      → `SessionsZone`, `SessionRow`, `liveOrder`, `trailing` in `gui/src/v3/sessions.tsx`: one order, one trailing slot by priority, Marker and second line on the active row (every row in comfortable density), Done today with Clean up, multi-select with the compact batch bar.
 - [ ] Peek card on hover (~400 ms): account, model, thinking; branch, `#PR`,
       children; last output line (hosted: `capture-pane`; otherwise only where a
       source exists, else left out).
