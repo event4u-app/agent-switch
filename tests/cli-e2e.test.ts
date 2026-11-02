@@ -281,6 +281,34 @@ test("`sessions --json` lists a session's subagents from its hooks, and leaves `
   }
 });
 
+test("`needs` lists what waits, says where to answer, hides on later and keeps history", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work"); // .claude.json without an account: not signed in
+    const cfg = path.join(home, "claude", "work", "config");
+    fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "a@example.com", accountUuid: "u" } }));
+    const file = seedTranscript(home, "work", "-tmp-proj", "0000-asks");
+    const t = new Date(Date.now() - 60_000);
+    fs.utimesSync(file, t, t);
+    fs.mkdirSync(path.join(home, "events"));
+    fs.writeFileSync(path.join(home, "events", "claude-work.jsonl"), JSON.stringify({ event: "Notification", sessionId: "0000-asks", notificationType: "permission_prompt", at: new Date(t.getTime() + 1000).toISOString() }) + "\n");
+    seed(home, "claude", "side"); // no account at all
+
+    const first = JSON.parse(run(home, ["needs", "--json"]));
+    assert.deepEqual(first.items.map((i: any) => [i.kind, i.who, i.verb]), [["approval", "seeded", "Focus terminal"], ["signin", "side", "Sign in"]]);
+
+    run(home, ["needs", "later", first.items[1].id]);
+    assert.equal(JSON.parse(run(home, ["needs", "--json"])).items.length, 1, "later hides it");
+
+    fs.utimesSync(file, new Date(), new Date()); // the user answered in the terminal
+    const after = JSON.parse(run(home, ["needs", "--json"]));
+    assert.deepEqual(after.items, []);
+    assert.equal(after.history[0].kind, "approval", "the answered prompt is history");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("`sessions` shows each Claude session's prompt-cache state (road-to-sessions-that-show-their-cache)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
