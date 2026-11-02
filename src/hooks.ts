@@ -29,8 +29,10 @@ import type { ResumeFacts } from "./telemetry.js";
  *  attention (a permission prompt, or a long idle) — the two session-awareness
  *  signals the pet surfaces. `StopFailure` fires when a turn ends on an API
  *  error; its stdin carries `error` (`rate_limit`, `authentication_failed`, …),
- *  read from the Claude Code 2.1.314 binary. */
-export const HOOK_EVENTS = ["SessionStart", "SessionEnd", "PreCompact", "PostCompact", "Stop", "Notification", "StopFailure"] as const;
+ *  read from the Claude Code 2.1.314 binary. `SubagentStart`/`SubagentStop` carry
+ *  the parent's `session_id` plus `agent_id`, `agent_type` and `cwd` (captured
+ *  live from 2.1.316, tests/fixtures/claude-subagent-hooks-2.1.316.jsonl). */
+export const HOOK_EVENTS = ["SessionStart", "SessionEnd", "PreCompact", "PostCompact", "Stop", "Notification", "StopFailure", "SubagentStart", "SubagentStop"] as const;
 export type HookEvent = (typeof HOOK_EVENTS)[number];
 
 /** Marker stamped on every entry we add, so uninstall touches only our own. */
@@ -88,6 +90,13 @@ export function hooksInstalled(settings: Settings): boolean {
   const hooks = settings.hooks;
   if (!hooks || typeof hooks !== "object") return false;
   return HOOK_EVENTS.every((ev) => Array.isArray(hooks[ev]) && hooks[ev].some(isCurrent) && hooks[ev].filter(isOurs).length === 1);
+}
+
+/** Does this install record subagents? `sessions --json` leaves `children`
+ *  out, rather than empty, for a profile whose hooks cannot see them. */
+export function hooksRecordSubagents(settings: Settings): boolean {
+  const list = settings.hooks?.SubagentStart;
+  return Array.isArray(list) && list.some(isOurs);
 }
 
 /** Some entry of ours is present but the install is not current — an install
@@ -165,7 +174,65 @@ export interface HookEventRecord {
   notificationType?: string;
   /** SessionStart `resume`/`fork` (Claude Code v2.1.251+): numbers and a flag, never content. */
   resume?: { secondsSinceLastResponse?: number; contextTokens?: number; cacheLikelyExpired?: boolean };
+  /** SubagentStart/Stop: which subagent; `sessionId` is its parent. */
+  agentId?: string;
+  agentType?: string;
+  /** SubagentStart/Stop: where the subagent works (a worktree shows here). */
+  cwd?: string;
   at: string; // ISO
+}
+
+const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+
+/** One hook stdin payload → the record the ring keeps. Pure. Only ids, types,
+ *  error codes and a working directory are kept — never prompt or answer text
+ *  (`last_assistant_message`) or transcript paths. */
+export function recordFromPayload(o: any, at: string): HookEventRecord {
+  const event = str(o?.hook_event_name) ?? "unknown";
+  const rec: HookEventRecord = {
+    event,
+    source: str(o?.source),
+    sessionId: str(o?.session_id),
+    error: str(o?.error),
+    notificationType: str(o?.notification_type),
+    resume: resumeFields(o),
+    at,
+  };
+  if (event === "SubagentStart" || event === "SubagentStop") {
+    rec.agentId = str(o.agent_id);
+    rec.agentType = str(o.agent_type);
+    rec.cwd = str(o.cwd);
+  }
+  for (const k of Object.keys(rec) as (keyof HookEventRecord)[]) if (rec[k] === undefined) delete rec[k];
+  return rec;
+}
+
+export interface SubagentChild {
+  agentId: string;
+  type?: string;
+  state: "running" | "done";
+  cwd?: string;
+}
+
+/** The subagents one session started, in start order: running until their
+ *  SubagentStop or the parent's SessionEnd. A stop whose start was rotated
+ *  away still shows, as done. */
+export function childrenOf(events: readonly HookEventRecord[], sessionId: string): SubagentChild[] {
+  const kids = new Map<string, SubagentChild>();
+  for (const e of events) {
+    if (e.sessionId !== sessionId) continue;
+    if (e.event === "SessionEnd") {
+      for (const k of kids.values()) k.state = "done";
+      continue;
+    }
+    if ((e.event !== "SubagentStart" && e.event !== "SubagentStop") || !e.agentId) continue;
+    const prev = kids.get(e.agentId);
+    const child: SubagentChild = { agentId: e.agentId, type: e.agentType ?? prev?.type, state: e.event === "SubagentStart" ? "running" : "done", cwd: e.cwd ?? prev?.cwd };
+    if (child.type === undefined) delete child.type;
+    if (child.cwd === undefined) delete child.cwd;
+    kids.set(e.agentId, child);
+  }
+  return [...kids.values()];
 }
 
 /** The resume fields of a SessionStart stdin payload, or undefined when the host sent none. */

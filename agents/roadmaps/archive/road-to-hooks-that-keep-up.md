@@ -84,12 +84,17 @@ tree needs. Measured before and after, not assumed.
 
 ## Phase 2 — Subagent events
 
-- [ ] Add `SubagentStart`/`SubagentStop` to `HOOK_EVENTS`; record `agent_id`,
+- [x] Add `SubagentStart`/`SubagentStop` to `HOOK_EVENTS`; record `agent_id`,
       `agent_type`, parent `session_id` and `cwd` from the payload (field names
       verified against a captured live payload, fixture committed).
-- [ ] `sessions --json` exposes `children: [{agentId, type, state, cwd}]` per
+      → `scripts/spikes/t11-subagent-hook-capture.sh`,
+      `tests/fixtures/claude-subagent-hooks-2.1.316.jsonl`; `recordFromPayload`
+      keeps ids, type and cwd, never `last_assistant_message`.
+- [x] `sessions --json` exposes `children: [{agentId, type, state, cwd}]` per
       session; without hooks the field is absent, never an empty list.
-- [ ] Docs: `hooks` page lists the new events and what each one costs.
+      → `childrenOf` in `src/hooks.ts`; a parent's `SessionEnd` ends its children.
+- [x] Docs: `hooks` page lists the new events and what each one costs.
+      → `concepts/sessions-and-context.mdx`, `guides/move-a-session.mdx`.
 
 ## Acceptance
 

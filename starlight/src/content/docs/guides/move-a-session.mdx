@@ -29,7 +29,10 @@ agent-switch sessions --json
 Each row shows the session id, folder, age, which account it belongs to and,
 for Claude, how full its context window is. Live Claude sessions are marked,
 and so are sessions waiting for an answer from you. Claude Desktop sessions
-appear next to terminal sessions.
+appear next to terminal sessions. With [hooks](/agent-switch/concepts/sessions-and-context/) installed,
+`--json` also lists each Claude session's subagents under `children` (id,
+type, `running` or `done`, working folder); without hooks the field is left
+out.
 
 To read the first turns of a Claude session before you act on it:
 

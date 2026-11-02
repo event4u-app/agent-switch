@@ -24,6 +24,9 @@ import {
   waitingSessions,
   resumeFields,
   resumeFactsFor,
+  recordFromPayload,
+  childrenOf,
+  hooksRecordSubagents,
 } from "../src/hooks.js";
 
 function tmp(): string {
@@ -338,4 +341,72 @@ test("resumeFactsFor: newest resume of that session, survives the event ring rou
   const events = readEvents(f);
   assert.deepEqual(resumeFactsFor(events, "s1"), { at: "2026-11-01T10:00:00.000Z", contextTokens: 3, cacheLikelyExpired: false });
   assert.equal(resumeFactsFor(events, "nope"), null);
+});
+
+// ---------- subagents (Phase 2) ----------
+
+// Captured live from Claude Code 2.1.316 by scripts/spikes/t11-subagent-hook-capture.sh,
+// paths and the subagent's answer anonymised. Read from the source tree.
+const SUBAGENT_FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "tests", "fixtures", "claude-subagent-hooks-2.1.316.jsonl");
+const subagentPayloads = () => fs.readFileSync(SUBAGENT_FIXTURE, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+
+test("SubagentStart/Stop are installed, and an install without them is migrated", () => {
+  for (const ev of ["SubagentStart", "SubagentStop"]) assert.ok((HOOK_EVENTS as readonly string[]).includes(ev));
+  const old = withHooksInstalled({});
+  delete old.hooks.SubagentStart;
+  delete old.hooks.SubagentStop;
+  assert.equal(hooksRecordSubagents(old), false);
+  assert.equal(hooksNeedMigration(old), true);
+  assert.equal(hooksRecordSubagents(withHooksInstalled(old)), true);
+  assert.equal(hooksRecordSubagents({}), false);
+});
+
+test("recordFromPayload keeps the subagent's id, type, parent and cwd from a live payload — no content, no paths to transcripts", () => {
+  const [start, stop] = subagentPayloads().map((o) => recordFromPayload(o, at));
+  assert.deepEqual(start, {
+    event: "SubagentStart",
+    sessionId: "d37f90b5-2201-4065-abbb-9e0cac14474a",
+    agentId: "a3731b735e452e7b7",
+    agentType: "general-purpose",
+    cwd: "/private/tmp/probe",
+    at,
+  });
+  assert.equal(stop.event, "SubagentStop");
+  assert.equal(stop.agentId, start.agentId);
+  const raw = JSON.stringify(stop);
+  for (const banned of ["last_assistant_message", "transcript", "\"ok\"", "prompt_id"]) assert.ok(!raw.includes(banned), `${banned} not recorded`);
+});
+
+test("recordFromPayload adds no subagent fields to other events", () => {
+  const rec = recordFromPayload({ hook_event_name: "Stop", session_id: "s1", cwd: "/x", agent_id: "nope" }, at);
+  assert.deepEqual(rec, { event: "Stop", sessionId: "s1", at });
+});
+
+test("childrenOf: one entry per subagent of that session, running until its stop or the parent's end", () => {
+  const t = (n: number) => new Date(Date.UTC(2026, 10, 2, 10, 0, n)).toISOString();
+  const ev = (event: string, sessionId: string, agentId?: string, n = 0) =>
+    ({ event, sessionId, at: t(n), ...(agentId ? { agentId, agentType: "general-purpose", cwd: "/repo" } : {}) });
+  const events = [
+    ev("SubagentStart", "p1", "a1", 1),
+    ev("SubagentStart", "p1", "a2", 2),
+    ev("SubagentStart", "p2", "b1", 3),
+    ev("SubagentStop", "p1", "a1", 4),
+    ev("SubagentStop", "p1", "orphan", 5), // its start was rotated away
+  ];
+  assert.deepEqual(childrenOf(events, "p1"), [
+    { agentId: "a1", type: "general-purpose", state: "done", cwd: "/repo" },
+    { agentId: "a2", type: "general-purpose", state: "running", cwd: "/repo" },
+    { agentId: "orphan", type: "general-purpose", state: "done", cwd: "/repo" },
+  ]);
+  assert.deepEqual(childrenOf(events, "nobody"), []);
+  const ended = [...events, ev("SessionEnd", "p1", undefined, 6)];
+  assert.ok(childrenOf(ended, "p1").every((c) => c.state === "done"), "the parent's end ends its children");
+  assert.equal(childrenOf(ended, "p2")[0].state, "running", "another session is unaffected");
+});
+
+test("childrenOf on the live fixture: one finished general-purpose subagent", () => {
+  const events = subagentPayloads().map((o) => recordFromPayload(o, at));
+  assert.deepEqual(childrenOf(events, "d37f90b5-2201-4065-abbb-9e0cac14474a"), [
+    { agentId: "a3731b735e452e7b7", type: "general-purpose", state: "done", cwd: "/private/tmp/probe" },
+  ]);
 });

@@ -71,7 +71,20 @@ agent-switch hooks install work
 ```
 
 They report when a session starts, stops, compacts or waits at a usage limit,
-and why a turn stopped (for example a usage limit or a sign-out). The hooks are
+why a turn stopped (for example a usage limit or a sign-out), and when a
+subagent starts and stops. They record ids, event types, error codes, a few
+counts and folders, never what you or Claude wrote.
+
+| Event | Records |
+| --- | --- |
+| `SessionStart`, `SessionEnd` | the session, how it started (new, resumed, after `/clear` or a compaction) |
+| `PreCompact`, `PostCompact` | that the context was compacted |
+| `Stop`, `StopFailure` | that a turn ended, and the error code if it failed |
+| `Notification` | that Claude waits for you, or for a usage limit to reset |
+| `SubagentStart`, `SubagentStop` | the subagent's id, type and working folder, under its session |
+
+Each event starts one short `agent-switch` process: about 45 ms and 40 ms of
+CPU on an Apple-silicon Mac, 4 CPU seconds per 100 events. The hooks are
 added next to your own and removed cleanly with `hooks uninstall`. They run in
 the background, so a turn never waits for them. Run `hooks install` again after
 an update to pick up new events; `hooks status` also brings hooks installed by
