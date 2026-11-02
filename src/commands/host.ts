@@ -4,15 +4,19 @@
  * `claude` keeps starting in the user's own terminal as before.
  */
 
+import { spawnSync } from "node:child_process";
 import * as path from "node:path";
+import * as readline from "node:readline";
 
+import { appendPick } from "../picks.js";
 import { configDir, die, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
 import { provider, type ProviderId } from "../providers.js";
 import { HostUnavailable, TmuxHost } from "../host/tmux-host.js";
+import { resolveDir } from "./routing.js";
 
-export function cmdHost(providerId: ProviderId, sub: string | undefined, arg: string | undefined, flags: Record<string, string | boolean>): void {
+export async function cmdHost(providerId: ProviderId, sub: string | undefined, arg: string | undefined, flags: Record<string, string | boolean>): Promise<void> {
   const action = sub ?? "list";
-  if (!["start", "list", "end"].includes(action)) die("usage: agent-switch host start <profile> [--provider P] [--cwd DIR] | list | end <session-key>");
+  if (!["start", "list", "end", "attach"].includes(action)) die("usage: agent-switch host start [profile] [--provider P] [--cwd DIR] | list | attach <session> | end <session> [--yes]");
   if (!TmuxHost.available()) {
     die(process.platform === "win32"
       ? "hosting needs tmux, which Windows does not have; sessions started in the app there are ephemeral"
@@ -22,17 +26,31 @@ export function cmdHost(providerId: ProviderId, sub: string | undefined, arg: st
   try {
     if (action === "start") {
       if (providerId !== "claude" && providerId !== "codex") die(`hosting supports claude and codex for now`);
-      const profile = requireProfile(providerId, arg, "host start");
       const cwd = path.resolve(typeof flags.cwd === "string" ? flags.cwd : process.cwd());
+      // No account named: the same routing, folder rules and guard as a plain start.
+      const profile = arg ? requireProfile(providerId, arg, "host start") : routed(providerId, cwd);
       const bin = readBinaryPath(providerId) ?? provider(providerId).binary;
       const s = host.start({ provider: providerId, account: profile, configDir: configDir(providerId, profile), cwd, bin }, hookCommandPrefix());
       if (flags.json) console.log(JSON.stringify(s));
       else console.log(`Started ${s.key} in ${cwd}. It keeps running when you close the window; end it with: agent-switch host end ${s.key}`);
       return;
     }
+    if (action === "attach") {
+      if (!arg) die("usage: agent-switch host attach <session>");
+      // Detaching (or closing the terminal) removes only this view.
+      const argv = host.view(arg, `cli${process.pid}`);
+      const r = spawnSync(argv[0], argv.slice(1), { stdio: "inherit" });
+      process.exitCode = r.status ?? 0;
+      return;
+    }
     if (action === "end") {
-      if (!arg) die("usage: agent-switch host end <session-key>");
-      if (!host.end(arg)) die(`no hosted session ${arg}`);
+      if (!arg) die("usage: agent-switch host end <session> [--yes]");
+      if (!host.list().some((s) => s.key === arg)) die(`no hosted session ${arg}`);
+      if (!flags.yes && !(await confirm(`End ${arg}? The program in it stops; its transcript stays. [y/N] `))) {
+        console.log("Not ended.");
+        return;
+      }
+      host.end(arg);
       console.log(`Ended ${arg}.`);
       return;
     }
@@ -56,4 +74,22 @@ export function cmdHost(providerId: ProviderId, sub: string | undefined, arg: st
 function hookCommandPrefix(): string {
   const q = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
   return process.argv[1] ? `${q(process.execPath)} ${q(process.argv[1])}` : "agent-switch";
+}
+
+function routed(providerId: ProviderId, cwd: string): string {
+  const r = resolveDir(providerId, false, cwd);
+  appendPick({ provider: providerId, chosen: r.name ? `${providerId}/${r.name}` : null, why: r.why, blocked: r.blocked, note: r.note });
+  if (r.blocked) die(`not starting here — ${r.blocked}`);
+  if (!r.name) die(`no ${providerId} account to start on`);
+  if (r.note) console.error(`agent-switch: ${r.note}.`);
+  return r.name;
+}
+
+/** Ending is its own, confirmed action. Without a terminal to ask on, it needs --yes. */
+async function confirm(question: string): Promise<boolean> {
+  if (!process.stdin.isTTY) die("ending a hosted session needs --yes when there is no terminal to ask on");
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer: string = await new Promise((resolve) => rl.question(question, resolve));
+  rl.close();
+  return /^y(es)?$/i.test(answer.trim());
 }

@@ -77,7 +77,8 @@ export class TmuxHost {
   readonly settingsFile: string;
 
   constructor(readonly root: string, opts: { socket?: string; tmux?: string } = {}) {
-    this.socket = opts.socket ?? `as-${typeof process.getuid === "function" ? process.getuid() : "user"}`;
+    // AGENT_SWITCH_HOST_SOCKET: tests and side-by-side installs use their own server.
+    this.socket = opts.socket ?? process.env.AGENT_SWITCH_HOST_SOCKET ?? `as-${typeof process.getuid === "function" ? process.getuid() : "user"}`;
     this.tmuxBin = opts.tmux ?? "tmux";
     this.registryFile = path.join(root, "host", "sessions.json");
     this.settingsFile = path.join(root, "host", "hooks-settings.json");
@@ -120,6 +121,16 @@ export class TmuxHost {
     return this.settingsFile;
   }
 
+  /** `-e NAME=value` pairs for a window: the account's config dir, the
+   *  session's own key as AGENT_SWITCH_HOST_PANE (so any provider's process can
+   *  tell it runs in an AS-hosted window), and the caller's extras. Pure. */
+  static envArgs(o: Pick<StartOptions, "provider" | "configDir" | "env">, key: string): string[] {
+    const envVar = ENV_FOR[o.provider];
+    const env: Record<string, string> = { ...(envVar ? { [envVar]: o.configDir } : {}), AGENT_SWITCH_HOST_PANE: key, ...(o.env ?? {}) };
+    for (const k of Object.keys(env)) if (!/^[A-Z_][A-Z0-9_]*$/.test(k)) throw new Error(`bad env name ${k}`);
+    return Object.entries(env).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+  }
+
   /** The argv the window runs. Pure. */
   static programArgv(o: StartOptions, sessionId: string, settingsFile: string | null): string[] {
     const argv = [o.bin];
@@ -136,12 +147,10 @@ export class TmuxHost {
     if (!o.account || o.account.includes("/")) throw new Error(`bad account ${o.account}`);
     if (o.sessionId !== undefined && !/^[0-9a-f-]{8,64}$/i.test(o.sessionId)) throw new Error("bad session id");
     const sessionId = o.sessionId ?? crypto.randomUUID();
-    const envVar = ENV_FOR[o.provider];
-    const env: Record<string, string> = { ...(envVar ? { [envVar]: o.configDir } : {}), AGENT_SWITCH_HOST_PANE: "1", ...(o.env ?? {}) };
-    for (const k of Object.keys(env)) if (!/^[A-Z_][A-Z0-9_]*$/.test(k)) throw new Error(`bad env name ${k}`);
+    const key = `${o.provider}/${o.account}/${sessionId}`;
+    const envArgs = TmuxHost.envArgs(o, key);
     const settings = o.provider === "claude" ? this.ensureHookSettings(hookBin) : null;
     const argv = TmuxHost.programArgv(o, sessionId, settings);
-    const envArgs = Object.entries(env).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
     const name = `${o.account}:${sessionId.slice(0, 8)}`;
     const exists = this.tmux(["has-session", "-t", `=${HOST_SESSION}`]).ok;
     const r = exists
@@ -151,7 +160,7 @@ export class TmuxHost {
     // Keep a finished program's window, so its last screen can still be read.
     this.tmux(["set-option", "-w", "-t", r.out.trim(), "remain-on-exit", "on"]);
     const hosted: HostedSession = {
-      key: `${o.provider}/${o.account}/${sessionId}`,
+      key,
       provider: o.provider,
       account: o.account,
       sessionId,
@@ -188,6 +197,48 @@ export class TmuxHost {
     if (!s) return null;
     const r = this.tmux(["capture-pane", "-p", "-J", "-t", s.window, "-S", `-${Math.max(1, Math.min(lines, 5000))}`]);
     return r.ok ? r.out : null;
+  }
+
+  /**
+   * Replace the program in a hosted session's window, keeping the window: the
+   * in-place takeover (another account) and a next-turn model change both use
+   * it, between turns. The session keeps its id; its key follows the account.
+   */
+  respawn(key: string, o: StartOptions, hookBin = "agent-switch"): HostedSession {
+    const reg = this.readRegistry();
+    const cur = reg[key];
+    if (!cur) throw new Error(`no hosted session ${key}`);
+    if (!o.account || o.account.includes("/")) throw new Error(`bad account ${o.account}`);
+    const nextKey = `${cur.provider}/${o.account}/${cur.sessionId}`;
+    const settings = cur.provider === "claude" ? this.ensureHookSettings(hookBin) : null;
+    const argv = TmuxHost.programArgv({ ...o, provider: cur.provider }, cur.sessionId, settings);
+    const r = this.tmux(["respawn-pane", "-k", "-t", cur.window, "-c", o.cwd, ...TmuxHost.envArgs({ ...o, provider: cur.provider }, nextKey), "--", ...argv]);
+    if (!r.ok) throw new Error(`tmux could not restart the session: ${r.err}`);
+    const next: HostedSession = { ...cur, key: nextKey, account: o.account, cwd: o.cwd };
+    delete reg[key];
+    reg[nextKey] = next;
+    this.writeRegistry(reg);
+    return next;
+  }
+
+  /**
+   * A view of one hosted session for one viewer: a session linked to `host`
+   * (so each viewer can show its own window) that tmux destroys when the viewer
+   * detaches. Closing a view never ends the hosted session. Returns the argv
+   * that attaches a terminal to it.
+   */
+  view(key: string, viewerId: string): string[] {
+    const s = this.readRegistry()[key];
+    if (!s) throw new Error(`no hosted session ${key}`);
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(viewerId)) throw new Error("bad viewer id");
+    const name = `view-${viewerId}`;
+    if (!this.tmux(["has-session", "-t", `=${name}`]).ok) {
+      const r = this.tmux(["new-session", "-d", "-s", name, "-t", `=${HOST_SESSION}`]);
+      if (!r.ok) throw new Error(`tmux could not open a view: ${r.err}`);
+      this.tmux(["set-option", "-t", `=${name}`, "destroy-unattached", "on"]);
+    }
+    this.tmux(["select-window", "-t", `=${name}:${s.window}`]);
+    return [this.tmuxBin, "-L", this.socket, "-f", "/dev/null", "attach-session", "-t", `=${name}`];
   }
 
   /** End a hosted session: kill its window and forget it. Explicit, never a side effect of closing a view. */

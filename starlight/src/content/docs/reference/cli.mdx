@@ -235,10 +235,10 @@ suggested. The background service must be running.
 | `rebind [<account>]` <Badge text="macOS" variant="caution" /> <Badge text="Claude only" variant="note" /> | Switch the account of a running Claude session. See [below](#rebind). |
 | `handoff extract <session-id> --from <profile> --to <tool>` | Write a short brief to continue a session in another tool (lossy). |
 | `handoff seed --to <profile> --brief <path>` | Start the target tool on that brief. |
-| `compact <profile> [--clear] [--dry-run] [--force]` | Type `/compact` (or `/clear`) into a session started with `run --tmux`. Claude and Codex. |
+| `compact <profile\|session> [--clear] [--dry-run] [--force]` | Type `/compact` (or `/clear`) into a session started with `run --tmux`, or into a hosted session named by its key from `host list` (refused while someone else is typing into it). Claude and Codex. |
 | `hooks install\|uninstall\|status [profile]` <Badge text="Claude only" variant="note" /> | Add the hooks that tell the app when Claude needs you or finished. |
 | `store status\|import\|rebuild [--json]` | The local event store behind the v3 views: show it, bring in the hook events, or rebuild its views from the stored events. Needs Node 22.13 or later. |
-| `host start <profile> [--cwd DIR]\|list\|end <session>` <Badge text="macOS & Linux" variant="caution" /> | Run a Claude or Codex session in Agent Switch's own tmux server, so it keeps running when the window closes. Needs tmux. |
+| `host start [profile] [--cwd DIR]\|list\|attach <session>\|end <session> [--yes]` <Badge text="macOS & Linux" variant="caution" /> | Run a Claude or Codex session in Agent Switch's own tmux server, so it keeps running when the window closes. Without a profile it starts where a plain `claude` would. `attach` opens it in this terminal; detaching leaves it running. `end` stops it, after asking. Needs tmux. |
 | `alerts on\|off\|status [--threshold 80,95]` | Log a notification when a session's context passes these marks (default off). |
 | `desktop` <Badge text="Claude only" variant="note" /> | Which accounts ran sessions in each Claude Desktop window. |
 

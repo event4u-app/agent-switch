@@ -43,10 +43,10 @@ function profileExistsSafe(providerId: ProviderId, name: string): boolean {
   return /^[A-Za-z0-9_-]+$/.test(name) && profileExists(providerId, name);
 }
 
-function resolveDir(providerId: ProviderId, plain = false): { name: string | null; why: string[]; blocked?: string; note?: string } {
+export function resolveDir(providerId: ProviderId, plain = false, cwd = process.cwd()): { name: string | null; why: string[]; blocked?: string; note?: string } {
   return resolveForDir({
     providerId,
-    mapping: plain ? null : resolveMapping(process.cwd(), providerId),
+    mapping: plain ? null : resolveMapping(cwd, providerId),
     names: listProfiles(providerId),
     threshold: (n) => readProtection(providerId, n).thresholdPct,
     active: activeFor(providerId),

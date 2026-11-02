@@ -73,7 +73,7 @@ test("the host runs several sessions per account by argv, on its own server, and
     assert.deepEqual(ofA.argv, ["--session-id", a.sessionId, "--settings", host.settingsFile]);
     assert.equal(fs.realpathSync(ofA.cwd), fs.realpathSync(cwd));
     assert.equal(ofA.cfg, "/cfg/work");
-    assert.equal(ofA.pane, "1");
+    assert.equal(ofA.pane, a.key, "the window knows its own session key");
     assert.equal(ofA.parent, "claude/work/parent", "lineage env reaches the program");
     assert.equal(seen.find((s) => s.argv.includes(c.sessionId))!.cfg, "/cfg/side");
 
@@ -97,6 +97,40 @@ test("the host runs several sessions per account by argv, on its own server, and
   assert.equal(spawnSync("tmux", ["ls"], { encoding: "utf8" }).stdout, before, "the user's default server is untouched");
 });
 
+test("respawn keeps the window and the session id, moves the key to the new account; a view never ends the session", gate, () => {
+  const root = tmp();
+  const out = path.join(root, "out");
+  fs.mkdirSync(out);
+  const bin = stubBin(root);
+  const socket = `as-test-r-${process.pid}`;
+  const host = new TmuxHost(root, { socket });
+  try {
+    const s = host.start({ provider: "claude", account: "work", configDir: "/cfg/work", cwd: root, bin, env: { AS_STUB_OUT: out } }, "h");
+    assert.ok(waitFor(() => fs.readdirSync(out).length === 1));
+    fs.rmSync(out, { recursive: true });
+    fs.mkdirSync(out);
+    const moved = host.respawn(s.key, { provider: "claude", account: "side", configDir: "/cfg/side", cwd: root, bin, args: ["--resume", s.sessionId, "--model", "sonnet"], env: { AS_STUB_OUT: out } }, "h");
+    assert.equal(moved.key, `claude/side/${s.sessionId}`);
+    assert.equal(moved.window, s.window, "same window");
+    assert.ok(waitFor(() => fs.readdirSync(out).length === 1), "the new program started");
+    const seen = JSON.parse(fs.readFileSync(path.join(out, fs.readdirSync(out)[0]), "utf8"));
+    assert.deepEqual(seen.argv, ["--settings", host.settingsFile, "--resume", s.sessionId, "--model", "sonnet"]);
+    assert.equal(seen.cfg, "/cfg/side");
+    assert.equal(seen.pane, moved.key);
+    assert.deepEqual(host.list().map((r) => r.key), [moved.key]);
+
+    const attach = host.view(moved.key, "app1");
+    assert.deepEqual(attach.slice(-3), ["attach-session", "-t", "=view-app1"]);
+    const viewWin = spawnSync("tmux", ["-L", socket, "display-message", "-p", "-t", "=view-app1:", "#{window_id}"], { encoding: "utf8" }).stdout.trim();
+    assert.equal(viewWin, moved.window, "the view shows that session's window");
+    spawnSync("tmux", ["-L", socket, "kill-session", "-t", "=view-app1"]);
+    assert.equal(host.list()[0].alive, true, "closing the view leaves the session running");
+    assert.throws(() => host.view(moved.key, "../x"));
+  } finally {
+    host.killServer();
+  }
+});
+
 test("a finished program is reported as not alive and its last screen stays readable", gate, () => {
   const root = tmp();
   const bin = path.join(root, "quick");
@@ -114,4 +148,43 @@ test("a finished program is reported as not alive and its last screen stays read
 test("2.x per-profile tmux names are listed, read-only", () => {
   const host = new TmuxHost(tmp(), { socket: "never-used" });
   assert.deepEqual(host.legacy({ "asw-claude-work": { provider: "claude", profile: "work" } }), [{ name: "asw-claude-work", provider: "claude", profile: "work", legacy: true }]);
+});
+
+test("CLI: compact reaches a hosted session through the lease; host end asks first", gate, async () => {
+  const { execFileSync, spawnSync: run } = await import("node:child_process");
+  const CLI = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../dist/index.js");
+  if (!fs.existsSync(CLI)) return;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "h-"));
+  const cfg = path.join(home, "codex", "work", "config");
+  fs.mkdirSync(cfg, { recursive: true });
+  fs.writeFileSync(path.join(cfg, "auth.json"), "{}");
+  const bin = path.join(home, "echoer");
+  fs.writeFileSync(bin, '#!/bin/sh\nwhile IFS= read -r l; do echo "got: $l"; done\n', { mode: 0o755 });
+  const socket = `as-test-cli-${process.pid}`;
+  const host = new TmuxHost(home, { socket });
+  const s = host.start({ provider: "codex", account: "work", configDir: cfg, cwd: home, bin });
+  try {
+    const env = { ...process.env, AGENT_SWITCH_HOME: home, AGENT_SWITCH_HOST_SOCKET: socket };
+    execFileSync("node", [CLI, "compact", s.key], { env, encoding: "utf8" });
+    let screen = "";
+    for (let i = 0; i < 40 && !screen.includes("got: /compact"); i++) {
+      run("sleep", ["0.05"]);
+      screen = host.capture(s.key) ?? "";
+    }
+    assert.match(screen, /got: \/compact/);
+
+    const { InputLeases } = await import("../src/host/lease.js");
+    new InputLeases(home).acquire(s.key, { id: "app-x", pid: process.pid, kind: "app" });
+    const refused = run("node", [CLI, "compact", s.key], { env, encoding: "utf8" });
+    assert.notEqual(refused.status, 0);
+    assert.match(refused.stderr, /being typed into by app/);
+
+    const noYes = run("node", [CLI, "host", "end", s.key], { env, encoding: "utf8", input: "" });
+    assert.notEqual(noYes.status, 0, "no terminal, no --yes: not ended");
+    assert.equal(host.list().length, 1);
+    assert.equal(run("node", [CLI, "host", "end", s.key, "--yes"], { env, encoding: "utf8" }).status, 0);
+    assert.equal(host.list().length, 0);
+  } finally {
+    host.killServer();
+  }
 });

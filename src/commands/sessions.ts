@@ -47,6 +47,8 @@ import {
 import { readTelemetryConfig, writeTelemetryConfig } from "../notify.js";
 import { appendNotification } from "../notifications.js";
 import { readTmuxRegistry, sendKeysArgs, tmuxSessionName } from "../tmux.js";
+import { TmuxHost } from "../host/tmux-host.js";
+import { InputLeases, LeaseHeld } from "../host/lease.js";
 import { cacheForRow, contextForRow, desktopScan, formatContext } from "./shared.js";
 import { compactCacheLine, formatCache } from "../cache-words.js";
 
@@ -114,6 +116,7 @@ const IDLE_GUARD_MS: Record<string, number> = { claude: 15_000, codex: 5_000 };
  * Refuses while a turn is in flight (idle guard) unless --force. Own-session.
  */
 export function cmdCompact(providerId: ProviderId, name?: string, flags: Record<string, string | boolean> = {}): void {
+  if (name?.includes("/")) return compactHosted(name, flags);
   if (providerId !== "claude" && providerId !== "codex") die(`compact supports claude and codex (not ${providerId})`);
   const profile = requireProfile(providerId, name, "compact");
   const clear = !!flags.clear;
@@ -161,6 +164,51 @@ export function cmdCompact(providerId: ProviderId, name?: string, flags: Record<
   const res = spawnSync("tmux", argv, { stdio: "ignore" });
   if (res.status === 0) console.log(`Sent ${literal} to the managed pane "${sess}".`);
   else die(`tmux send-keys failed (is the pane still open?). Run ${literal} yourself in the session.`);
+}
+
+/**
+ * `compact <provider/account/session>` on a v3 hosted session: the same gates as
+ * above, and the text goes in through the input lease — so it is refused while
+ * the app (or anyone else) is typing into that session.
+ */
+function compactHosted(key: string, flags: Record<string, string | boolean>): void {
+  const [providerId, account, sessionId] = key.split("/");
+  if ((providerId !== "claude" && providerId !== "codex") || !account || !sessionId) die(`not a hosted session key: ${key}`);
+  const clear = !!flags.clear;
+  const force = !!flags.force;
+  const literal = clear ? "/clear" : "/compact";
+  if (!TmuxHost.available()) die("hosted sessions need tmux");
+  const host = new TmuxHost(ROOT);
+  if (!host.windowOf(key)) die(`no hosted session ${key}. List them with: agent-switch host list`);
+  if (clear && !force) die("/clear discards the whole conversation. Re-run with --force if you really mean it (or use /compact to summarize instead).");
+  const cfg = configDir(providerId, account);
+  const rows = providerId === "codex" ? listCodexSessions(cfg, 50) : listSessions(cfg, 50);
+  const target = rows.find((r) => r.sessionId === sessionId && r.file);
+  if (target?.file && !force && turnInFlight(target.file, Date.now(), IDLE_GUARD_MS[providerId] ?? 15_000)) {
+    die(`a turn looks in-flight in ${key}. Wait for it, or pass --force.`);
+  }
+  if (!clear && target) {
+    const line = compactCacheLine(cacheForRow(providerId, target, readEvents(eventFile(ROOT, providerId, account))), Date.now());
+    if (line) console.log(line);
+  }
+  if (flags["dry-run"]) {
+    console.log(`[dry-run] would type ${literal} into ${key}`);
+    return;
+  }
+  const leases = new InputLeases(ROOT);
+  const me = { id: `cli-${process.pid}`, pid: process.pid, kind: "cli" };
+  try {
+    leases.acquire(key, me);
+  } catch (err) {
+    if (err instanceof LeaseHeld) die(`${key} is being typed into by ${err.lease.holder.kind}; wait, or hand the input over there.`);
+    throw err;
+  }
+  try {
+    leases.type(host, key, me, literal, { enter: true });
+  } finally {
+    leases.release(key, me);
+  }
+  console.log(`Sent ${literal} to ${key}.`);
 }
 
 /**

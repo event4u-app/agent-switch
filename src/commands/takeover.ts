@@ -5,7 +5,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { ROOT, configDir, die, listProfiles, readJson, requireProfile } from "../profiles.js";
+import { ROOT, configDir, die, listProfiles, readBinaryPath, readJson, requireProfile } from "../profiles.js";
 import { ProviderId, provider } from "../providers.js";
 import { resolveProviderValue } from "../args.js";
 import { extractBrief, writeBrief, sweepBriefs, seedPrompt } from "../handoff.js";
@@ -34,6 +34,7 @@ import { cmdRun } from "./profiles.js";
 import { cacheForRow, desktopScan, launch, sameOrganization, tildePath } from "./shared.js";
 import { moveCacheLine } from "../cache-words.js";
 import { eventFile, readEvents } from "../hooks.js";
+import { TmuxHost } from "../host/tmux-host.js";
 
 /** M5 fallback: open the resume in a NEW terminal (macOS Terminal.app), else
  *  print it. Used when --in-place is asked for but there is no managed pane. */
@@ -55,6 +56,17 @@ function spawnNewTerminal(command: string): void {
  * Exits the process.
  */
 function resumeInPlace(providerId: ProviderId, target: string, resumeArgs: string[], resumeCommand: string): void {
+  // A v3 hosted window names its own session key; respawn that window on the target.
+  const hostedKey = process.env.AGENT_SWITCH_HOST_PANE;
+  if (hostedKey && TmuxHost.available()) {
+    const host = new TmuxHost(ROOT);
+    if (host.windowOf(hostedKey)) {
+      const p = provider(providerId);
+      const moved = host.respawn(hostedKey, { provider: providerId, account: target, configDir: configDir(providerId, target), cwd: process.cwd(), bin: readBinaryPath(providerId) ?? p.binary, args: resumeArgs });
+      console.log(`Handed the session over to "${target}" in its hosted window (${moved.key}).`);
+      process.exit(0);
+    }
+  }
   const mgmt = currentManagedSession(currentTmuxSessionName(), readTmuxRegistry());
   if (!mgmt) {
     spawnNewTerminal(resumeCommand); // M5 — no managed pane to respawn
