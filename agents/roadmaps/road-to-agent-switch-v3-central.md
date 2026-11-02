@@ -456,11 +456,14 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 
 ## Phase 7 — Sessions window and attention (spec §5, §7.1–§7.5, §10.7)
 
-- [ ] Needs-you zone on the attention queue: `NeedRow` with the verb and keys per
+- [x] Needs-you zone on the attention queue: `NeedRow` with the verb and keys per
       kind, the top item open, ⌘J focus with the warn Marker and key line, at most
       3 rows plus "N more ›", one digest row, hidden when empty. "Allow" and
       "Reply" only where an approval channel exists (S2); otherwise the verb is
       "Focus terminal" (D-approve).
+      → `gui/src/v3/needs.tsx` (`NeedsZone`, `NeedRow`, `keysFor`, `nextFocus`)
+      on `needs --json` (`listNeeds`, `needsLater` in `ipc.ts`). Items AS cannot
+      answer carry "Focus terminal" as their verb and keys.
 - [ ] Children in the GUI (spec §5.2, §7.3, §9.3; moved here from Phase 2):
       children unfold under the row (`ChildLine`, provenance in the tooltip,
       "relation unknown ⓘ" / "counted" inline), helper sessions collapsed by
