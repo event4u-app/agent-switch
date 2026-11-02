@@ -410,8 +410,15 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       plus two: every terminal colour ≥ 4.5:1 on the terminal background, and
       the spec's theme order. GUI coverage stays above the floor (84.5 % lines).
       Wiring into the window is the `AcRoot` step below.
-- [ ] 2.11 migration: the old `agent-switch-theme` keeps its mode and gets the
+- [x] 2.11 migration: the old `agent-switch-theme` keeps its mode and gets the
       Agent Switch palette, so the update changes nothing visible. Test.
+      → `gui/src/v3/appearance.ts`: a stored v3 choice, else the 2.11 mode with
+      the Agent Switch palette, else — accounts exist but 2.11 stored nothing
+      (it followed the system) — the Agent Switch palette following the system;
+      only a new install gets Darcula (the reference would have switched those
+      silent 2.11 users to Darcula). A test parses `gui/src/index.css` and found
+      the reference's Agent Switch palettes off in overlay, shadow and three
+      account colours; they are now exact (reported conflict, spec wins).
 - [ ] Shared component changes (spec §0): `ui/Segmented` selected = raise fill,
       `RowMenu`/`Select`/`Toaster` at 12 px, `AcRoot` takes `style`. They reach the
       2.11 screens too — render-check those screens in the same change.
