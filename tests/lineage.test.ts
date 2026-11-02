@@ -117,3 +117,18 @@ test("clearedFrom: a /clear links to the last session of the same Claude process
   assert.equal(pidFrom("0"), undefined);
   assert.equal(pidFrom("12; rm"), undefined);
 });
+
+test("codexSessionMeta: cwd and thread source from the first line, even when it is longer than the read window", async () => {
+  const { codexSessionMeta } = await import("../src/sessions.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-cx-"));
+  const write = (name: string, payload: object) => {
+    const f = path.join(dir, name);
+    fs.writeFileSync(f, JSON.stringify({ type: "session_meta", payload }) + "\n" + JSON.stringify({ type: "event_msg" }) + "\n");
+    return f;
+  };
+  assert.deepEqual(codexSessionMeta(write("a.jsonl", { cwd: "/code/app", thread_source: "user", source: "exec" })), { cwd: "/code/app", threadSource: "user" });
+  assert.deepEqual(codexSessionMeta(write("b.jsonl", { cwd: "/code/a\"b", thread_source: "subagent", base_instructions: "x".repeat(400_000) })), { cwd: '/code/a"b', threadSource: "subagent" });
+  fs.writeFileSync(path.join(dir, "c.jsonl"), JSON.stringify({ type: "event_msg" }) + "\n");
+  assert.equal(codexSessionMeta(path.join(dir, "c.jsonl")), null);
+  assert.equal(codexSessionMeta(path.join(dir, "missing.jsonl")), null);
+});

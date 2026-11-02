@@ -401,7 +401,7 @@ export async function cmdSessions(
         prs,
         ...(store ? libraryFacts(store, key, { transcript: r.file ?? "", sessionDir: path.join(configDir(providerId, r.profile), "projects", r.projectDir, r.sessionId), fileHistory: path.join(configDir(providerId, r.profile), "file-history", r.sessionId) }) : {}),
         ...kids,
-        ...(parent ? { parent } : relationUnknown(r.cwd, false, TEMP_ROOTS) ? { relation: "unknown" } : {}),
+        ...(parent ? { parent } : r.codexThreadSource ? { root: false, relation: "unknown" } : relationUnknown(r.cwd, false, TEMP_ROOTS) ? { relation: "unknown" } : {}),
       };
     });
     store?.close();
@@ -409,7 +409,12 @@ export async function cmdSessions(
       type Row = (typeof json)[number];
       const keyOf = (r: Row) => `${providerId}/${r.profile}/${r.sessionId}`;
       const nest = (n: TreeNode<Row>): unknown => ({ ...n.row, sessions: n.children.map(nest) });
-      console.log(JSON.stringify(buildTree(json, keyOf, (r) => (r as { parent?: string }).parent).map(nest), null, 2));
+      // A Codex subagent thread is no root; without a parent it can name, it is grouped apart.
+      const isRoot = (r: Row) => (r as { root?: boolean }).root !== false;
+      const tree: unknown[] = buildTree(json.filter(isRoot), keyOf, (r) => (r as { parent?: string }).parent).map(nest);
+      const loose = json.filter((r) => !isRoot(r));
+      if (loose.length) tree.push({ relation: "unknown", sessions: loose });
+      console.log(JSON.stringify(tree, null, 2));
       return;
     }
     console.log(JSON.stringify(json, null, 2));
