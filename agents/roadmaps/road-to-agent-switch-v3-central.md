@@ -548,14 +548,18 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 
 ## Phase 9 — Pages (spec §10.1–§10.6, §11)
 
-- [ ] Pages share `PageBody` and `PageHeader` (spec §6.7): centred, max 960,
+- [x] Pages share `PageBody` and `PageHeader` (spec §6.7): centred, max 960,
       tables as 10 px cards with muted column heads.
-- [ ] Accounts page: the 2.11 table kept, with "Usage history" and "Projects &
+      → `gui/src/v3/pages.tsx`: `PageBody` (centred, max 960) on `PageHeader`, tables as 10 px cards with muted heads.
+- [x] Accounts page: the 2.11 table kept, with "Usage history" and "Projects &
       pools" as views, every window as a full `LimitBar`.
-- [ ] All sessions page: filter, State and Tool segmented controls, the labelled
+      → `AccountsPage`: grouped per tool with the account plain `claude`/`codex` starts on, every window a full `LimitBar` with freshness, Use / Sign in / terminal; Usage history and Projects & pools are the 2.11 screens passed in as views.
+- [x] All sessions page: filter, State and Tool segmented controls, the labelled
       batch bar, the columns of spec §10.2.
-- [ ] Library page on Phase 4 data (search, All / Pinned / Archived, vault size,
+      → `AllSessionsPage` with `filterSessions` (words, State, Tool), checkbox selection → labelled `BatchBar`, the §10.2 columns.
+- [x] Library page on Phase 4 data (search, All / Pinned / Archived, vault size,
       deadline banner, Resume… / can't resume, Archive/Restore).
+      → `LibraryPage`: search, All / Pinned / Archived, vault size, `nextDeadline` banner with Keep it, Resume… or can't resume, Archive / Restore, auto-keep switch.
 - [ ] Tools page; updates also arrive as Needs-you items and never touch running
       sessions.
 - [ ] Settings page with its left nav; Appearance (mode, theme cards with live
