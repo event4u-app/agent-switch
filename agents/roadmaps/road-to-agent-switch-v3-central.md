@@ -379,19 +379,24 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 
 ## Phase 5 — Open in…
 
-- [ ] M7 `agent-switch open <session> --with vscode|cursor|phpstorm|idea|finder|terminal [--line N]`
+- [x] M7 `agent-switch open <session> --with vscode|cursor|phpstorm|idea|finder|terminal [--line N]`
       via the editors' official launchers; target = worktree root; installed
       editors detected via `apps --json`, missing ones hidden.
-- [ ] Open targets per spec §7.7: default target (⌘O) and last used target;
+      → `src/open-in.ts` + `open <session> [--with …] [--file] [--line]`: worktree root, the tool's own launcher (CLI on PATH, else the macOS app via `open -na`). Installed editors are found on PATH and in the app folders — `apps --json` lists the agents' desktop apps, not editors, so it could not serve here. `open <app> [profile]` keeps working.
+- [x] Open targets per spec §7.7: default target (⌘O) and last used target;
       Editor, Agent app (only the app of the session's tool, "opens this project"
       until S9 says more), Terminal (focus / new here / attach tmux), Files (reveal
       / copy path), Web (PR / CI run).
-- [ ] "Focus terminal" for sessions running in the user's own terminal (tty
+      → `open-targets <session> --json`: installed targets, default, last used, the agent app of the session's tool ("opens the app", S9), Terminal (focus for a Claude session, attach when hosted), Web (PR, checks). Copying a path is the app's clipboard, not a CLI target.
+- [x] "Focus terminal" for sessions running in the user's own terminal (tty
       lookup; macOS automation error -1743 explained, not swallowed).
-- [ ] Security: allowlisted executables only, canonical path inside a known
+      → `focus <session>` (`src/focus-terminal.ts`): pid from the host's registry → tty → the Terminal.app or iTerm2 tab owning it; -1743 is reported with where to allow it. macOS only.
+- [x] Security: allowlisted executables only, canonical path inside a known
       worktree, argv only, never a URL taken from PR text.
-- [ ] Default target global with per-repo override (Decision E-editor; Settings ›
+      → only the launchers in `LAUNCHERS`, argv only, `confine()` resolves symlinks and refuses anything outside the session's folder; no URL is passed, PR URLs are only listed for the app to show.
+- [x] Default target global with per-repo override (Decision E-editor; Settings ›
       Open in, spec §10.5).
+      → `open-default <target> [--repo DIR]`, keyed on the main checkout so all its worktrees share it; a default that is not installed falls back to the first installed editor.
 
 ## Phase 6 — Design system and window frame (spec §0–§4, §12)
 

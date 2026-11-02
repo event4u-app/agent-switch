@@ -6,17 +6,17 @@
 
 ## Overall
 
-**44 / 80 steps done · 55%**
+**49 / 80 steps done · 61%**
 
 ```text
-██████████████████████░░░░░░░░░░░░░░░░░░   55%
+████████████████████████░░░░░░░░░░░░░░░░   61%
 ```
 
 ## Open roadmaps
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 80 | 36 | 44 | 0 | 0 | 0 | ██████░░░░ 55% |
+| 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 80 | 31 | 49 | 0 | 0 | 0 | ██████░░░░ 61% |
 
 ---
 
@@ -46,7 +46,7 @@
 
 ### [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md)
 
-**agent-switch v3.0 "Central" — sessions that survive, a tree, git/PR, a library** — 44 / 80 done (55%)
+**agent-switch v3.0 "Central" — sessions that survive, a tree, git/PR, a library** — 49 / 80 done (61%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
@@ -55,7 +55,7 @@
 | 2 | Tree and lineage | ✅ done | 0 | 9 | 0 | 0 | 100% |
 | 3 | Git and PR facts | 🟡 in progress | 1 | 7 | 0 | 0 | 88% |
 | 4 | Library and vault | ✅ done | 0 | 9 | 0 | 0 | 100% |
-| 5 | Open in… | ⬜ not started | 5 | 0 | 0 | 0 | 0% |
+| 5 | Open in… | ✅ done | 0 | 5 | 0 | 0 | 100% |
 | 6 | Design system and window frame (spec §0–§4, §12) | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
 | 7 | Sessions window and attention (spec §5, §7.1–§7.5, §10.7) | ⬜ not started | 7 | 0 | 0 | 0 | 0% |
 | 8 | Workbench, dialogs and tool windows (spec §6, §7.6–§7.7, §8, §9) | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
