@@ -560,8 +560,9 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 - [x] Library page on Phase 4 data (search, All / Pinned / Archived, vault size,
       deadline banner, Resume… / can't resume, Archive/Restore).
       → `LibraryPage`: search, All / Pinned / Archived, vault size, `nextDeadline` banner with Keep it, Resume… or can't resume, Archive / Restore, auto-keep switch.
-- [ ] Tools page; updates also arrive as Needs-you items and never touch running
+- [x] Tools page; updates also arrive as Needs-you items and never touch running
       sessions.
+      → `gui/src/v3/tools.tsx`: `ToolsPage` holds the 2.11 Tools screen; `updateNeeds` turns each installed tool behind its latest version into one Update item ("Running sessions keep the version they started with"); its verb opens the Tools page.
 - [x] Settings page with its left nav; Appearance (mode, theme cards with live
       mini previews grouped as in §10.5, accent, terminal colours, contrast note,
       "About <theme>"); Open in. The Agents and Remote entries arrive with v3.2.
@@ -572,10 +573,12 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       terminal colours, contrast note, About <theme> with its source),
       `OpenInSettings` on `open-targets` rows (missing apps hidden, default and
       per-repo, Focus terminal). Agents and Remote are not listed until v3.2.
-- [ ] First run (spec §10.6): one path, no tour; shell integration shown before
+- [x] First run (spec §10.6): one path, no tour; shell integration shown before
       it changes anything.
-- [ ] Every row of the 2.11 map (spec §11) is reachable in ≤ 2 clicks from the
+      → `gui/src/v3/firstrun.tsx`: detected tools with sign-in state, Add as “work” / Sign in… / Install…, `addAllLabel`, then the exact `shellenv` lines and the rc file before anything is written; Not now writes nothing.
+- [x] Every row of the 2.11 map (spec §11) is reachable in ≤ 2 clicks from the
       main window.
+      → `gui/src/v3/window.tsx` assembles the window (frame, zones, tabs, pages, tool windows, overlays, session ⋯ menu; one `act` callback out). `reach.test.tsx` clicks every §11 row from a fresh window and counts: all ≤ 2 (tray and pet are their own surfaces). Mounting `V3Window` in place of the 2.11 window needs the data adapter from the 2.11 store — not a step of this roadmap; named in the PR.
 
 ## Phase 10 — Codex and Antigravity parity
 
@@ -591,6 +594,9 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       persisted hook trust. Open: both Codex accounts here are signed out
       ("access token could not be refreshed"), so the payloads could not be
       captured; signing in is the user's step.
+      Rechecked 2026-11-02: `codex login status` says "Logged in using
+      ChatGPT" for both, yet a real `codex exec` turn fails on each with the
+      same refresh error — the status line only reads the file.
 - [x] Antigravity: "not readable" label until a structured source exists
       (ACP in `later/road-to-agent-switch-v3-reach.md`); it can be started from
       New session like any terminal-only tool.
