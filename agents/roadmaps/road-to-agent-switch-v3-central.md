@@ -239,8 +239,11 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 - [ ] Engine health for the title bar and the system banner (spec §4.1, §6.6):
       "Engine stopped" with restart; hosted sessions keep running in tmux and AS
       reconnects.
-- [ ] Windows: in-app PTY sessions are labelled **ephemeral** until a native host
+- [x] Windows: in-app PTY sessions are labelled **ephemeral** until a native host
       exists (see `later/road-to-agent-switch-v3-reach.md`).
+      → `hostingMode()` in `src/host/tmux-host.ts` (also without tmux on Linux and
+      macOS); `host list --json` reports `mode`, `host start` refuses with the
+      reason. The start dialog's "Host in Agent Switch" card shows it (Phase 8).
 
 ## Phase 2 — Tree and lineage
 
@@ -398,6 +401,8 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       mirror (D-mirror).
 - [ ] Dialogs (spec §8): New session (prefill remembered per project, tool /
       model / thinking, account box with all windows, pace estimate in words,
+      "Host in Agent Switch" saying "ends when the app closes" where `hostingMode`
+      is `ephemeral`,
       "Why? ›" with the 2.11 routing lines, "Where it runs" radio cards with "Your
       terminal" default, command preview, primary names the outcome); near-limit
       decision sheet on the existing arm and rebind paths; End session listing

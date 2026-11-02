@@ -6,17 +6,17 @@
 
 ## Overall
 
-**15 / 75 steps done · 20%**
+**16 / 75 steps done · 21%**
 
 ```text
-████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   20%
+████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   21%
 ```
 
 ## Open roadmaps
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 75 | 60 | 15 | 0 | 0 | 0 | ██░░░░░░░░ 20% |
+| 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 75 | 59 | 16 | 0 | 0 | 0 | ██░░░░░░░░ 21% |
 
 ---
 
@@ -46,12 +46,12 @@
 
 ### [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md)
 
-**agent-switch v3.0 "Central" — sessions that survive, a tree, git/PR, a library** — 15 / 75 done (20%)
+**agent-switch v3.0 "Central" — sessions that survive, a tree, git/PR, a library** — 16 / 75 done (21%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 0 | Contracts and spikes (gate for everything below) | ✅ done | 0 | 10 | 0 | 0 | 100% |
-| 1 | Engine, event store, host | 🟡 in progress | 5 | 5 | 0 | 0 | 50% |
+| 1 | Engine, event store, host | 🟡 in progress | 4 | 6 | 0 | 0 | 60% |
 | 2 | Tree and lineage | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
 | 3 | Git and PR facts | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
 | 4 | Library and vault | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
