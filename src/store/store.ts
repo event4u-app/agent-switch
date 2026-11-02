@@ -192,6 +192,21 @@ export class Store {
   /** Append one event. Returns false when `(producer, seq)` was already stored. */
   ingest(input: IngestInput): boolean {
     const c = checkRecord(input);
+    // One write transaction for the event and its projection: both land or neither,
+    // and IMMEDIATE takes the write lock up front through busy_timeout instead of
+    // upgrading a read lock mid-way, which SQLite answers with "database is locked".
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const stored = this.ingestInTx(input, c);
+      this.db.exec("COMMIT");
+      return stored;
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  private ingestInTx(input: IngestInput, c: ReturnType<typeof checkRecord>): boolean {
     const res = this.db.run(
       "INSERT INTO events (producer, seq, kind, provider, account, session, at, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (producer, seq) DO NOTHING",
       input.producer,
