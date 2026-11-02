@@ -39,6 +39,7 @@ const VALUE_FLAGS = new Set([
   "after-pid",
   "format",
   "session",
+  "cwd",
 ]);
 
 export interface ParsedArgs {
