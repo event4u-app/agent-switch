@@ -227,12 +227,20 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       every provider; `host start` without a profile uses `resolveDir` (folder
       rules, pools, guard) and records the pick; `takeover --in-place` respawns the
       hosted window, `compact <key>` types through the input lease.
-- [ ] Attention queue (spec §5.1, §7.4): one queue ordered approvals → questions →
+- [x] Attention queue (spec §5.1, §7.4): one queue ordered approvals → questions →
       limit decisions → failing CI → sign-ins → updates; "Later" snoozes an item
       until it changes; finished items stay as history (the 2.11 activity list);
       a "while you were away" digest after a long absence (merged PRs, CI breaks,
       finished turns, limit resets). An answer given in one place clears the item
       everywhere (spec §13.5). `agent-switch needs --json`.
+      → `src/attention.ts` + `agent-switch needs [--json] | needs later <id>`. The
+      queue is derived on every read, so an answer anywhere clears it; only
+      snoozes, history and the last read are stored (`<root>/attention.json`).
+      Sources today: hook events + transcripts (approvals, questions, limit
+      stops, sign-outs), cached usage vs protect (limits), account sign-in.
+      Failing CI joins in Phase 3 (and the digest gains merged PRs and CI breaks
+      there), tool updates with the Tools page (Phase 9). Approvals say "Focus
+      terminal" until AS installs the approval hook (D-approve).
 - [ ] Per-session facts for the session bar from S8: model and thinking level
       from the transcript (`message.model`, `effort`), context used from the
       transcript reader — each with its source; unknown stays unknown.
@@ -282,7 +290,7 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       `UNKNOWN`. GitLab (`glab`) after GitHub works.
 - [ ] No `gh` or no login → one honest line with a fix button; AS never stores a
       GitHub token itself.
-- [ ] Failing CI and merge conflicts become attention items and the session's
+- [ ] Failing CI and merge conflicts become attention items (kind `ci` in `src/attention.ts`; the digest counts merged PRs and CI breaks) and the session's
       blocker (spec §5.1, §6.3, §9.1); "Fix" / "Send to agent" sends the failing
       check's name and log link to a hosted session through the input lease —
       never into a session AS does not host.
