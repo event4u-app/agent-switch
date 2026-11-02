@@ -479,10 +479,15 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 - [ ] Peek card on hover (~400 ms): account, model, thinking; branch, `#PR`,
       children; last output line (hosted: `capture-pane`; otherwise only where a
       source exists, else left out).
-- [ ] Limits strip and limits popover: tightest window per account, colours from
+- [x] Limits strip and limits popover: tightest window per account, colours from
       the account's protect value, stale data greyed with its age, "sign in ›";
       the popover with all windows, the pace tick and the pace line in words plus
       its one-line legend; "Move its session…" opens the decision sheet.
+      → `gui/src/v3/limits.tsx`: `paceFor` (even use by now, for 5 h and week
+      windows), `LimitsStrip`/`LimitRow` (tightest window, numbers only when not
+      OK, greyed with its age after 10 min, no tick on small bars, sign in ›),
+      `LimitsPopover` with ticks, `PaceLine` in words and its legend from the
+      account's protect value.
 - [ ] Inbox popover (focus mode), ⌃Tab switcher, ⌘K palette (sessions incl.
       Library, branches & PRs, commands; `>` for commands).
 - [ ] Tray (spec §10.7): the same components in the same order; "Start session"
