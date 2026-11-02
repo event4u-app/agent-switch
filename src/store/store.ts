@@ -195,7 +195,7 @@ export class Store {
     // One write transaction for the event and its projection: both land or neither,
     // and IMMEDIATE takes the write lock up front through busy_timeout instead of
     // upgrading a read lock mid-way, which SQLite answers with "database is locked".
-    this.db.exec("BEGIN IMMEDIATE");
+    this.beginWrite();
     try {
       const stored = this.ingestInTx(input, c);
       this.db.exec("COMMIT");
@@ -203,6 +203,25 @@ export class Store {
     } catch (err) {
       this.db.exec("ROLLBACK");
       throw err;
+    }
+  }
+
+  /**
+   * BEGIN IMMEDIATE, retried while another writer holds the lock. busy_timeout
+   * should cover this, but on Windows SQLite was seen answering BUSY within
+   * 400 ms of an 8-writer run (CI), so the wait is also ours: bounded at ~5 s.
+   */
+  private beginWrite(): void {
+    const deadline = Date.now() + 5000;
+    for (let delay = 5; ; delay = Math.min(delay * 2, 100)) {
+      try {
+        this.db.exec("BEGIN IMMEDIATE");
+        return;
+      } catch (err) {
+        const busy = (err as { errcode?: number }).errcode === 5 || /database is locked/.test(String((err as Error).message));
+        if (!busy || Date.now() > deadline) throw err;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
+      }
     }
   }
 
