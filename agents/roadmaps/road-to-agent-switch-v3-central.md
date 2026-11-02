@@ -314,9 +314,14 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       rate-limit pressure; chip states for every axis incl. `UNKNOWN`.
       → `refreshIntervalMs` / `due`; the daemon refreshes due repos each cycle and
       logs a missing gh once per change.
-- [ ] Pause the PR refresh while the app is hidden (the daemon needs a signal
+- [x] Pause the PR refresh while the app is hidden (the daemon needs a signal
       from the app; none exists yet).
-- [ ] GitLab merge requests through `glab`, after GitHub works.
+      → The app reports `agent-switch app-visibility visible|hidden` on every
+      visibility change; the daemon skips the refresh while a "hidden" younger
+      than 30 min stands. No app, or a stale report, refreshes as before.
+- [ ] GitLab merge requests through `glab`, after GitHub works. Open: `glab` is
+      not installed here and no session works in a GitLab repository, so there
+      is nothing to verify the API shape against.
 - [x] No `gh` or no login → one honest line with a fix button; AS never stores a
       GitHub token itself.
       → `GhUnavailable` with `fix` (`gh auth login` / install link); `pr status` prints one line, `--json` gives `problem: {message, fix}` for the app's button. No token is read or stored.
