@@ -237,6 +237,7 @@ suggested. The background service must be running.
 | `handoff seed --to <profile> --brief <path>` | Start the target tool on that brief. |
 | `compact <profile> [--clear] [--dry-run] [--force]` | Type `/compact` (or `/clear`) into a session started with `run --tmux`. Claude and Codex. |
 | `hooks install\|uninstall\|status [profile]` <Badge text="Claude only" variant="note" /> | Add the hooks that tell the app when Claude needs you or finished. |
+| `store status\|import\|rebuild [--json]` | The local event store behind the v3 views: show it, bring in the hook events, or rebuild its views from the stored events. Needs Node 22.13 or later. |
 | `alerts on\|off\|status [--threshold 80,95]` | Log a notification when a session's context passes these marks (default off). |
 | `desktop` <Badge text="Claude only" variant="note" /> | Which accounts ran sessions in each Claude Desktop window. |
 
