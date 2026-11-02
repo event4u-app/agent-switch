@@ -103,10 +103,12 @@ export interface Digest {
   finishedTurns: number;
   stoppedOnError: number;
   resolved: number;
+  mergedPrs: number;
+  ciBreaks: number;
 }
 
 /** One digest row after a long absence, never several. Pure. */
-export function digest(state: AttentionState, now: string, events: readonly { event: string; at: string }[]): Digest | null {
+export function digest(state: AttentionState, now: string, events: readonly { event: string; at: string }[], prs: readonly { lifecycle: string; ci: string; updatedAt: string }[] = []): Digest | null {
   if (!state.lastSeenAt || Date.parse(now) - Date.parse(state.lastSeenAt) < AWAY_MS) return null;
   const since = state.lastSeenAt;
   const after = (at: string) => at > since;
@@ -115,8 +117,10 @@ export function digest(state: AttentionState, now: string, events: readonly { ev
     finishedTurns: events.filter((e) => e.event === "Stop" && after(e.at)).length,
     stoppedOnError: events.filter((e) => e.event === "StopFailure" && after(e.at)).length,
     resolved: state.history.filter((h) => after(h.doneAt)).length,
+    mergedPrs: prs.filter((p) => p.lifecycle === "MERGED" && after(p.updatedAt)).length,
+    ciBreaks: prs.filter((p) => p.lifecycle === "OPEN" && p.ci === "FAILURE" && after(p.updatedAt)).length,
   };
-  return d.finishedTurns + d.stoppedOnError + d.resolved > 0 ? d : null;
+  return d.finishedTurns + d.stoppedOnError + d.resolved + d.mergedPrs + d.ciBreaks > 0 ? d : null;
 }
 
 export const emptyState = (): AttentionState => ({ snoozed: {}, last: {}, history: [], lastSeenAt: null });

@@ -239,6 +239,8 @@ suggested. The background service must be running.
 | `hooks install\|uninstall\|status [profile]` <Badge text="Claude only" variant="note" /> | Add the hooks that tell the app when Claude needs you or finished. |
 | `needs [--json]` · `needs later <id>` | Everything waiting for you, most urgent first: approvals, questions, accounts at their limit, sign-ins. `later` hides one until it changes. |
 | `engine status\|restart [--json]` | Whether the background engine answers, and how many hosted sessions keep running either way. `restart` restarts the background service it runs in. |
+| `pr status [--json] [--refresh]` | For each session in a GitHub repository: its PR by head commit, with lifecycle, merge conflicts, review and CI kept apart. Uses the GitHub CLI (`gh`) you are signed in with; Agent Switch stores no token. |
+| `worktrees [--json]` | The git worktrees of the repositories your sessions work in, and which session is in which. |
 | `store status\|import\|rebuild [--json]` | The local event store behind the v3 views: show it, bring in the hook events, or rebuild its views from the stored events. Needs Node 22.13 or later. |
 | `host start [profile] [--cwd DIR]\|list\|attach <session>\|end <session> [--yes]` <Badge text="macOS & Linux" variant="caution" /> | Run a Claude or Codex session in Agent Switch's own tmux server, so it keeps running when the window closes. Without a profile it starts where a plain `claude` would. `attach` opens it in this terminal; detaching leaves it running. `end` stops it, after asking. Needs tmux. |
 | `alerts on\|off\|status [--threshold 80,95]` | Log a notification when a session's context passes these marks (default off). |

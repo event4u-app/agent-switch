@@ -51,6 +51,7 @@ import {
 } from "../hooks.js";
 import { buildTree, childSource, childrenWithHooks, countSubagentFiles, helperIndex, relationUnknown, type TreeNode } from "../lineage.js";
 import { gitFacts, type GitFacts } from "../git-facts.js";
+import { githubRepo, prCacheFile, prsForHead, readPrCache } from "../pr-facts.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "../notify.js";
 import { appendNotification } from "../notifications.js";
 import { readTmuxRegistry, sendKeysArgs, tmuxSessionName } from "../tmux.js";
@@ -116,7 +117,7 @@ export function cmdHooks(sub?: string, name?: string): void {
  * (start or turn end), else the live process's folder, else the transcript's
  * first folder — `cwdSource` says which. null outside a repo.
  */
-function gitFor(r: SessionRow, events: readonly HookEventRecord[]): (GitFacts & { cwd: string; cwdSource: "hook" | "process" | "transcript" }) | null {
+export function gitFor(r: SessionRow, events: readonly HookEventRecord[]): (GitFacts & { cwd: string; cwdSource: "hook" | "process" | "transcript" }) | null {
   const hook = lastHookCwd(events, r.sessionId);
   const proc = !hook && r.pid ? pidCwd(r.pid) : null;
   const cwd = hook ?? proc ?? r.cwd;
@@ -364,6 +365,7 @@ export function cmdSessions(
     // Helpers can name a parent on another account, so every account's events count.
     const allEvents = new Map(listProfiles(providerId).map((p) => [p, eventsOf.get(p) ?? (providerId === "claude" ? readEvents(eventFile(ROOT, providerId, p)) : [])]));
     const helpers = helperIndex(providerId, allEvents);
+    const prCache = readPrCache(prCacheFile(ROOT));
     const json = all.map((r) => {
       const c = contextForRow(providerId, r);
       const key = `${providerId}/${r.profile}/${r.sessionId}`;
@@ -379,6 +381,8 @@ export function cmdSessions(
       }
       const parent = helpers.parentOf.get(key);
       const git = gitFor(r, eventsOf.get(r.profile) ?? []);
+      const repo = githubRepo(git?.remote ?? null);
+      const prs = repo ? prsForHead(prCache, repo, git?.headSha ?? null) : [];
       return {
         provider: providerId,
         ...r,
@@ -388,6 +392,8 @@ export function cmdSessions(
           : null,
         cache: cacheOf(r),
         git,
+        // From the cache the background refresh keeps; this call reads no network.
+        prs,
         ...kids,
         ...(parent ? { parent } : relationUnknown(r.cwd, false, TEMP_ROOTS) ? { relation: "unknown" } : {}),
       };

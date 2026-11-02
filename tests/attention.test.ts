@@ -63,7 +63,12 @@ test("one digest row after a long absence, with what happened meanwhile; none af
     { event: "StopFailure", at: "2026-11-02T09:40:00.000Z" },
   ];
   const later = new Date(Date.parse(seen) + AWAY_MS + 1).toISOString();
-  assert.deepEqual(digest(state, later, events), { since: seen, finishedTurns: 2, stoppedOnError: 1, resolved: 1 });
+  const prs = [
+    { lifecycle: "MERGED", ci: "SUCCESS", updatedAt: "2026-11-02T09:10:00.000Z" },
+    { lifecycle: "MERGED", ci: "SUCCESS", updatedAt: "2026-11-01T09:10:00.000Z" },
+    { lifecycle: "OPEN", ci: "FAILURE", updatedAt: "2026-11-02T09:20:00.000Z" },
+  ];
+  assert.deepEqual(digest(state, later, events, prs), { since: seen, finishedTurns: 2, stoppedOnError: 1, resolved: 1, mergedPrs: 1, ciBreaks: 1 });
   assert.equal(digest(state, new Date(Date.parse(seen) + AWAY_MS - 1).toISOString(), events), null);
   assert.equal(digest({ ...state, history: [] }, later, []), null, "nothing happened: no row");
 });
@@ -76,4 +81,14 @@ test("the state file is private and survives a round-trip", () => {
   if (process.platform !== "win32") assert.equal(fs.statSync(file).mode & 0o777, 0o600);
   fs.writeFileSync(file, "{broken");
   assert.deepEqual(readAttention(file), emptyState());
+});
+
+test("ciCandidates: failing CI and conflicts on open PRs; Fix only where AS hosts the session", async () => {
+  const { ciCandidates } = await import("../src/commands/needs.js");
+  const pr = (number: number, over: object) => ({ repo: "o/r", number, url: "", headRepo: "o/r", headSha: "aaa", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "NONE", ci: "SUCCESS", failingChecks: [], updatedAt: "2026-11-02T10:00:00Z", ...over });
+  const cache = { "o/r": { fetchedAt: "t", rateRemaining: null, rateLimit: null, prs: [pr(1, { ci: "FAILURE", failingChecks: ["test"] }), pr(2, { mergeable: "CONFLICTING" }), pr(3, { lifecycle: "MERGED", ci: "FAILURE" })] } };
+  const row = (key: string) => ({ key, row: { summary: "work" } as any, git: { remote: "git@github.com:o/r.git", headSha: "aaa" } as any });
+  const items = ciCandidates([row("claude/w/hosted"), row("claude/w/hosted")], cache as any, new Set(["claude/w/hosted"]));
+  assert.deepEqual(items.map((c) => [c.subject, c.what, c.detail, c.verb]), [["o/r#1", "CI failing on #1", "test", undefined], ["o/r#2", "#2 has a merge conflict", undefined, undefined]], "merged PRs ignored, each PR once");
+  assert.deepEqual(ciCandidates([row("claude/w/own")], cache as any, new Set()).map((c) => c.verb), ["Focus terminal", "Focus terminal"]);
 });

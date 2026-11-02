@@ -516,6 +516,8 @@ interface RunOptions {
   maxCycles?: number;
   /** Test seam: false = do not start the v3 engine (store + protocol socket). */
   engine?: boolean;
+  /** Test seam: false = no PR refresh. */
+  prs?: boolean;
 }
 
 /** One poll cycle: refresh the state cache for the selected profiles. Returns
@@ -707,6 +709,26 @@ async function pollOnce(
   return total;
 }
 
+/**
+ * Keep the PR cache fresh for the repos the sessions work in: due repos only
+ * (60 s with a live session, 5 min otherwise, doubled when the rate limit runs
+ * low), one gh call each. A missing or signed-out gh is logged once per state
+ * change, never retried per repo.
+ */
+let lastPrProblem: string | null = null;
+async function refreshPrs(log: (l: string) => void): Promise<void> {
+  try {
+    const { refreshForSessions, sessionsWithGit } = await import("./commands/pr.js");
+    const r = refreshForSessions(sessionsWithGit(), false);
+    const problem = r.problem ? `${r.problem.message} (${r.problem.fix})` : null;
+    if (problem !== lastPrProblem) log(problem ? `PRs off: ${problem}` : "PRs: gh available");
+    lastPrProblem = problem;
+    for (const e of r.errors) log(`PRs: ${e}`);
+  } catch (err: any) {
+    log(`PRs: ${err?.message ?? err}`);
+  }
+}
+
 /** Run the daemon loop. Single-instance; SIGTERM-clean. */
 export async function runDaemon(opts: RunOptions = {}): Promise<void> {
   const log = opts.log ?? ((l: string) => console.log(`[daemon] ${new Date().toISOString()} ${l}`));
@@ -750,6 +772,7 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
     try {
       const { failures, attempted } = await pollOnce(state, thresholds, notifiedReset, backoff, baseInterval, log);
       consecutiveFailures = nextConsecutiveFailures(consecutiveFailures, failures, attempted);
+      if (opts.prs !== false) await refreshPrs(log);
     } catch (err: any) {
       consecutiveFailures++;
       state.lastError = String(err?.message ?? err);
