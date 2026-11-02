@@ -388,6 +388,14 @@ test("library: pin copies to the vault, name/tag/search, restore after Claude de
     run(home, ["sessions", "vault", "claude/work/7f3c2a91-4b1e", "restore"]);
     assert.equal(fs.readFileSync(file, "utf8"), original);
     assert.deepEqual(JSON.parse(run(home, ["sessions", "search", "nothing-like-this", "--json"])), []);
+
+    // A Codex session is one rollout file: pinned, vaulted and restored the same way.
+    const rollout = seedCodexRollout(home, "work", CODEX_UUID);
+    run(home, ["sessions", "pin", CODEX_UUID]);
+    const codexOriginal = fs.readFileSync(rollout, "utf8");
+    fs.rmSync(rollout);
+    run(home, ["sessions", "vault", `codex/work/${CODEX_UUID}`, "restore"]);
+    assert.equal(fs.readFileSync(rollout, "utf8"), codexOriginal);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

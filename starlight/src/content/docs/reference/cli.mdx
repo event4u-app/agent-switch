@@ -231,7 +231,7 @@ suggested. The background service must be running.
 | `sessions preview <session-id> [--from <profile>]` | The first turns of one session. |
 | `sessions rm <session-id> --yes [--from <profile>] [--purge]` | Move a session to the trash; `--purge` deletes it for good. |
 | `sessions restore <trash-id\|session-id> [--from <profile>]` | Bring a removed session back. |
-| `sessions pin\|unpin\|archive\|unarchive <session>` | Keep a session in the library. A pinned session is copied into the vault, so Claude's own cleanup cannot take it; archived is not deleted. Claude, needs Node 22.13 or later. |
+| `sessions pin\|unpin\|archive\|unarchive <session>` | Keep a session in the library. A pinned session is copied into the vault, so Claude's own cleanup cannot take it; archived is not deleted. Claude and Codex, needs Node 22.13 or later. |
 | `sessions name <session> <name>` · `sessions tag\|untag <session> <tag>` | Name and tag a session for the library. |
 | `sessions search <words>` | Search sessions by name, tag, summary, folder, branch or `#PR`. |
 | `sessions vault <session> [restore]` | Copy a session into the vault now, or put a vaulted session back after Claude deleted it. |

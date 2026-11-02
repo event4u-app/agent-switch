@@ -8,7 +8,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { configDir, die, listProfiles, ROOT } from "../profiles.js";
-import { locateSession } from "../sessions.js";
+import { locateCodexSession, locateSession } from "../sessions.js";
 import { Store, storeFile } from "../store/store.js";
 import { StoreUnavailable } from "../store/driver.js";
 import {
@@ -56,22 +56,32 @@ async function openStore(): Promise<Store> {
   }
 }
 
-/** A session id (or full key) → its key and files, searching every Claude account. */
+/** A session id (or full key) → its key and files, searching every Claude, then Codex account. */
 export function resolveSession(idOrKey: string): { key: string; files: SessionFiles; account: string } | null {
   const parts = idOrKey.split("/");
   const id = parts[parts.length - 1];
   if (!/^[A-Za-z0-9-]{4,64}$/.test(id)) return null;
-  const accounts = parts.length === 3 && parts[0] === "claude" ? [parts[1]] : listProfiles("claude");
-  for (const account of accounts) {
-    const cfg = configDir("claude", account);
-    const loc = locateSession(cfg, id);
-    if (loc) return { key: `claude/${account}/${id}`, account, files: filesFor(cfg, loc.projectDir, id) };
+  const want = parts.length === 3 ? parts[0] : null;
+  if (!want || want === "claude") {
+    for (const account of want ? [parts[1]] : listProfiles("claude")) {
+      const cfg = configDir("claude", account);
+      const loc = locateSession(cfg, id);
+      if (loc) return { key: `claude/${account}/${id}`, account, files: filesFor(cfg, loc.projectDir, id) };
+    }
+  }
+  if (!want || want === "codex") {
+    // A Codex session is one rollout file; there is no session folder or file history.
+    for (const account of want ? [parts[1]] : listProfiles("codex")) {
+      const cfg = configDir("codex", account);
+      const loc = locateCodexSession(cfg, id);
+      if (loc) return { key: `codex/${account}/${id}`, account, files: { transcript: loc.rollout, sessionDir: path.join(cfg, ".none", id), fileHistory: path.join(cfg, ".none", `${id}-history`) } };
+    }
   }
   // A transcript Claude already deleted is still known to the vault, with the paths it came from.
   if (parts.length === 3) {
     try {
       const m = JSON.parse(fs.readFileSync(path.join(vaultDir(ROOT, idOrKey), "manifest.json"), "utf8"));
-      const cfg = configDir("claude", parts[1]);
+      const cfg = configDir(parts[0] === "codex" ? "codex" : "claude", parts[1]);
       const inside = (p: unknown) => typeof p === "string" && path.resolve(p).startsWith(cfg + path.sep);
       if (inside(m.source?.transcript) && inside(m.source?.sessionDir) && inside(m.source?.fileHistory)) return { key: idOrKey, account: parts[1], files: m.source };
     } catch {
@@ -177,7 +187,7 @@ export async function libraryRound(nowMs = Date.now()): Promise<{ autoKept: numb
   try {
     const cache = readPrCache(prCacheFile(ROOT));
     const auto = autoKeepOn();
-    for (const r of sessionsWithGit(20).filter((x) => x.key.startsWith("claude/"))) {
+    for (const r of sessionsWithGit(20)) {
       const prs = prsForRow(r, cache);
       const e = libraryEntry(store, r.key);
       const open = prs.some((p) => p.lifecycle === "OPEN" || p.lifecycle === "DRAFT");
@@ -272,6 +282,7 @@ export function cmdResume(arg: string | undefined, flags: Record<string, string 
   const how = (typeof flags.how === "string" ? flags.how : "continue") as How;
   if (!["continue", "fork", "account", "brief"].includes(how)) die("--how is one of continue, fork, account, brief");
   const s = resolveSession(arg);
+  if (s?.key.startsWith("codex/")) die("resume with a preflight is for Claude sessions; a Codex session resumes with: agent-switch takeover " + s.key.split("/")[2] + " --provider codex --to <profile>");
   if (!s || !fs.existsSync(s.files.transcript)) die(`no Claude session ${arg} with a transcript${s ? "; restore it from the vault first: agent-switch sessions vault " + s.key + " restore" : ""}`);
   const id = s.key.split("/")[2];
   const cfg = configDir("claude", s.account);
