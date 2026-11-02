@@ -446,9 +446,13 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       the Sessions window, workbench and right windows are slots filled by the
       Phase 7/8 ports. Tests cover focus mode and the pill, one right window,
       the dots, the title bar.
-- [ ] Keyboard (spec §12): every listed key; no app key steals a key the CLI needs
+- [x] Keyboard (spec §12): every listed key; no app key steals a key the CLI needs
       while the terminal has focus; Ctrl+Shift on Linux/Windows; all keys
       rebindable.
+      → `gui/src/v3/keys.ts`: the §12 table, `actionFor` with the terminal rule
+      (⌘ on macOS stays; elsewhere Ctrl+Shift while the terminal has focus, and
+      Esc and Ctrl+Tab stay the CLI's), labels that show the keys that work right
+      now, and order-independent rebinds that never steal another action's key.
 
 ## Phase 7 — Sessions window and attention (spec §5, §7.1–§7.5, §10.7)
 
