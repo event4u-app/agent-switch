@@ -436,11 +436,16 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       §3.6 formats (`pct`, `duration`, `resetIn`, `age`, `checkedAgo`);
       `design-guard.test.ts` enforces no inset-shadow bars anywhere and only the
       §3.1 radii in v3 code (shown to fail on a planted `rounded-lg`).
-- [ ] Window frame (spec §4): title bar (search field → palette, "Engine
+- [x] Window frame (spec §4): title bar (search field → palette, "Engine
       stopped", inbox pill only in focus mode, "Start session" as the only filled
       chrome button, settings gear), left and right stripes with corner dots, one
       right tool window at a time and closed by default, tone order rail → panel →
       bg.
+      → `gui/src/v3/frame.tsx`: TitleBar, Stripe, `useFrame` and `Shell`, taken
+      from the reference without its demo data (no `data.ts` in the product);
+      the Sessions window, workbench and right windows are slots filled by the
+      Phase 7/8 ports. Tests cover focus mode and the pill, one right window,
+      the dots, the title bar.
 - [ ] Keyboard (spec §12): every listed key; no app key steals a key the CLI needs
       while the terminal has focus; Ctrl+Shift on Linux/Windows; all keys
       rebindable.
