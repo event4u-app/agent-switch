@@ -196,9 +196,13 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       event-shaped JSON and are imported; they stay in place for the 2.x readers.
       Other JSON state (arms, mappings, settings) is not event data and stays.
       Node 20 has no SQLite: there the store reports itself unavailable.
-- [ ] Engine protocol v1 over a 0600 Unix socket (Windows: named pipe); commands
+- [x] Engine protocol v1 over a 0600 Unix socket (Windows: named pipe); commands
       carry an idempotency key. CLI `--json` stays stable
       (`tests/cli-snapshot.test.ts`).
+      → `src/protocol/messages.ts`, `src/engine/{server,client,run}.ts`: line JSON,
+      ops `hello · ingest · sessions · children`, idem cache, 64 KiB line cap; a
+      second engine refuses, a stale socket is taken over. The daemon starts it
+      (`<root>/engine.sock`) and keeps polling when it cannot.
 - [ ] M2 `as-hook`: tiny native relay stdin → engine socket, file-line fallback.
       Gate: p95 < 20 ms against the node baseline measured in
       `road-to-hooks-that-keep-up` Phase 0.
