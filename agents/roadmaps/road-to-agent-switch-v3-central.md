@@ -16,7 +16,7 @@ tree_pin: ff38137
 > Follow-ups (parked, pull trigger named in each):
 > [`later/road-to-agent-switch-v3-client.md`](later/road-to-agent-switch-v3-client.md) (v3.1),
 > [`later/road-to-agent-switch-v3-reach.md`](later/road-to-agent-switch-v3-reach.md) (v3.2).
-> Prerequisite: [`road-to-hooks-that-keep-up.md`](road-to-hooks-that-keep-up.md).
+> Prerequisite (done, archived): [`road-to-hooks-that-keep-up.md`](archive/road-to-hooks-that-keep-up.md).
 
 ## Branch model (owner, 2026-11-02)
 
@@ -54,7 +54,8 @@ tree_pin: ff38137
   (`rest.tsx`) says Health = "Ready" in the title bar and names an "Accounts
   zone"; spec §4.1/§11 say "Engine stopped" only while the engine is down, and
   §5.3 a Limits strip.
-- **Conflicts that need the owner:** D-mirror, D-vault, D-approve (Decisions).
+- **Conflicts decided by the owner (2026-11-02):** D-mirror, D-vault, D-approve
+  (Decisions) — confirmed deviations from the spec, listed in the fidelity matrix.
 
 ## Goal
 
@@ -324,7 +325,8 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 - [ ] Needs-you zone on the attention queue: `NeedRow` with the verb and keys per
       kind, the top item open, ⌘J focus with the warn Marker and key line, at most
       3 rows plus "N more ›", one digest row, hidden when empty. "Allow" and
-      "Reply" only where an approval channel exists (S2, D-approve).
+      "Reply" only where an approval channel exists (S2); otherwise the verb is
+      "Focus terminal" (D-approve).
 - [ ] Sessions zone: the shared order (needs you → CI failing → working → rest),
       one trailing slot by priority, second line on the active row (and on every
       row in comfortable density), "Done today N ›" with "Clean up",
@@ -357,13 +359,15 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       only while Summary is closed, never twice.
 - [ ] Session in the user's own terminal (spec §6.5): "Runs in … · read-only
       here", "Focus terminal ⌘↵", "Take over here…" that explains the move first;
-      body per D-mirror.
+      the body shows the session's facts and its last transcript line, no PTY
+      mirror (D-mirror).
 - [ ] Dialogs (spec §8): New session (prefill remembered per project, tool /
       model / thinking, account box with all windows, pace estimate in words,
       "Why? ›" with the 2.11 routing lines, "Where it runs" radio cards with "Your
       terminal" default, command preview, primary names the outcome); near-limit
       decision sheet on the existing arm and rebind paths; End session listing
-      what stops with it.
+      what stops with it and saying whether this session is kept in the vault
+      (D-vault).
 - [ ] Right tool windows (spec §9): Summary (next step, PR with provenance, git
       line, limit block only near the limit, More ›), Changes (worktree vs HEAD,
       "Commit…"; "Review changes" arrives with v3.1), Children.
@@ -451,9 +455,9 @@ time and wire it to the engine as its data exists.
 | C4 | Fix the hook race before or after reproducing it | decided: after (`road-to-hooks-that-keep-up` Phase 0 → 1) |
 | D-design | Is the v3 UI spec binding? | decided: yes, strict fidelity (owner, 2026-11-02: "das Design als Grundlage") |
 | D-sketch | Earlier UI sketch layout and quick input on rows | decided: superseded by the design (Design basis) |
-| D-mirror | Spec §6.5 shows a read-only mirror of a session in the user's own terminal; AS cannot read a foreign PTY | **owner** — recommendation: v3.0 shows the session's facts and last transcript line there; a full read-only view comes with the v3.1 timeline reader |
-| D-vault | Spec §8.3 says "the transcript is kept in the vault either way"; Phase 4 vaults only pinned and auto-kept sessions | **owner** — recommendation: keep the vault scope, change the dialog line to say whether this session is kept |
-| D-approve | Spec §5.1 offers "Allow"/"Reply" for every approval; for a session without an approval channel (own terminal without hooks, or S2 red) AS cannot answer | **owner** — recommendation: there the row's verb is "Focus terminal" |
+| D-mirror | Spec §6.5 shows a read-only mirror of a session in the user's own terminal; AS cannot read a foreign PTY | decided (owner, 2026-11-02): v3.0 shows the session's facts and last transcript line there; a full read-only view comes with the v3.1 timeline reader |
+| D-vault | Spec §8.3 says "the transcript is kept in the vault either way"; Phase 4 vaults only pinned and auto-kept sessions | decided (owner, 2026-11-02): the vault scope stays (pinned and auto-kept); the End dialog says whether this session is kept |
+| D-approve | Spec §5.1 offers "Allow"/"Reply" for every approval; for a session without an approval channel (own terminal without hooks, or S2 red) AS cannot answer | decided (owner, 2026-11-02): there the row's verb is "Focus terminal" |
 | S-density | Spec §15.1: comfortable density as default? | **owner** (from the design) — spec today: compact |
 | S-limits | Spec §15.2: Limits strip at the bottom or under the session list? | **owner** (from the design) — spec today: bottom |
 | S-desktop | Spec §15.3: Desktop apps resume or only open the project? | decided by Spike S9; until then "opens this project" |

@@ -26,8 +26,10 @@ import {
 // format and (b) the scrubbed fixtures committed by scripts/spikes/t1+t3.
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const FIX_CLAUDE = path.join(HERE, "fixtures", "claude-transcript-lines.jsonl");
-const FIX_CODEX = path.join(HERE, "fixtures", "codex-rollout-lines.jsonl");
+// The tests run from dist-test/tests; the fixtures stay in the source tree.
+const FIXTURES = path.join(HERE, "..", "..", "tests", "fixtures");
+const FIX_CLAUDE = path.join(FIXTURES, "claude-transcript-lines.jsonl");
+const FIX_CODEX = path.join(FIXTURES, "codex-rollout-lines.jsonl");
 
 function tmpFile(lines: string[]): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-telem-"));
@@ -155,7 +157,6 @@ test("readCodexContext: reads last non-null-info token_count, in-band window", (
 // ---------- fixtures (real scrubbed shapes from the spikes) ----------
 
 test("fixtures: real scrubbed claude lines parse into a reading", () => {
-  if (!fs.existsSync(FIX_CLAUDE)) return; // fixtures optional in a fresh clone until t1 runs
   const r = readClaudeContext(FIX_CLAUDE, { claudeVersion: "2.1.210" });
   assert.ok(r, "expected a reading from the claude fixture");
   assert.ok(r!.contextTokens > 0, "fixture reading should have context tokens");
@@ -163,7 +164,6 @@ test("fixtures: real scrubbed claude lines parse into a reading", () => {
 });
 
 test("fixtures: real scrubbed codex lines parse into a reading", () => {
-  if (!fs.existsSync(FIX_CODEX)) return;
   const r = readCodexContext(FIX_CODEX);
   assert.ok(r, "expected a reading from the codex fixture");
   assert.ok(r!.contextTokens > 0);

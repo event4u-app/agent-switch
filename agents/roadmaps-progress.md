@@ -2,11 +2,11 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change. A repository that does not commit this file has no git history for it — regenerate to see the current state.
 >
-> 2 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 1 open roadmap · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**0 / 84 steps done · 0%**
+**0 / 75 steps done · 0%**
 
 ```text
 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   0%
@@ -17,7 +17,6 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 75 | 75 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
-| 2 | [road-to-hooks-that-keep-up.md](roadmaps/road-to-hooks-that-keep-up.md) | 3 | 9 | 9 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
 
 ---
 
@@ -63,16 +62,6 @@
 | 9 | Pages (spec §10.1–§10.6, §11) | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
 | 10 | Codex and Antigravity parity | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
 
-### [road-to-hooks-that-keep-up.md](roadmaps/road-to-hooks-that-keep-up.md)
-
-**hooks that keep up (non-blocking, lossless, subagent-aware)** — 0 / 9 done (0%)
-
-| # | Phase | State | Open | Done | Deferred | Cancelled | % |
-|---|---|---|---:|---:|---:|---:|---:|
-| 0 | Measure first | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
-| 1 | Fix | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
-| 2 | Subagent events | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
-
 ## Age
 
 Days since each active roadmap landed at its path and since its last ticked step, read from `git log` (`—` = unknown, or never ticked).
@@ -80,5 +69,4 @@ Days since each active roadmap landed at its path and since its last ticked step
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 0 | — |
-| [road-to-hooks-that-keep-up.md](roadmaps/road-to-hooks-that-keep-up.md) | 0 | — |
 

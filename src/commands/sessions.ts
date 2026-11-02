@@ -31,6 +31,7 @@ import {
   installHooks,
   uninstallHooks,
   hooksInstalled,
+  hooksNeedMigration,
   readSettings,
   appendEvent,
   eventFile,
@@ -38,7 +39,9 @@ import {
   readEvents,
   waitingSessions,
   hookNotice,
-  resumeFields,
+  recordFromPayload,
+  childrenOf,
+  hooksRecordSubagents,
   HookEventRecord,
 } from "../hooks.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "../notify.js";
@@ -75,7 +78,16 @@ export function cmdHooks(sub?: string, name?: string): void {
   for (const p of profiles) {
     const cfg = configDir("claude", p);
     if (action === "status") {
-      console.log(`claude/${p}: ${hooksInstalled(readSettings(cfg)) ? "installed" : "not installed"}`);
+      const settings = readSettings(cfg);
+      // An install from ≤ 2.11 held every turn until the hook exited; bring it
+      // to the non-blocking shape on sight. Only our own entries change.
+      if (hooksNeedMigration(settings)) {
+        installHooks(cfg);
+        console.log(`claude/${p}: installed (migrated to non-blocking hooks)`);
+        sharedWarn = true;
+        continue;
+      }
+      console.log(`claude/${p}: ${hooksInstalled(settings) ? "installed" : "not installed"}`);
       continue;
     }
     const res = action === "install" ? installHooks(cfg) : uninstallHooks(cfg);
@@ -194,15 +206,7 @@ export function cmdHookEvent(): void {
     if (!cfg) return;
     const who = profileFromConfigDir(cfg, ROOT);
     if (!who) return;
-    const rec: HookEventRecord = {
-      event: typeof o.hook_event_name === "string" ? o.hook_event_name : "unknown",
-      source: typeof o.source === "string" ? o.source : undefined,
-      sessionId: typeof o.session_id === "string" ? o.session_id : undefined,
-      error: typeof o.error === "string" ? o.error : undefined,
-      notificationType: typeof o.notification_type === "string" ? o.notification_type : undefined,
-      resume: resumeFields(o),
-      at: new Date().toISOString(),
-    };
+    const rec = recordFromPayload(o, new Date().toISOString());
     appendEvent(eventFile(ROOT, who.provider, who.profile), rec);
     // Session awareness: surface "Claude needs you / finished / stopped" as a
     // notification the GUI routes to the pet. dedupe=false — each turn is a
@@ -233,6 +237,8 @@ export function cmdSessions(
 
   const all: (SessionRow & { profile: string; surface?: string })[] = [];
   const eventsOf = new Map<string, HookEventRecord[]>();
+  // Profiles whose hooks see subagents; elsewhere `children` stays absent.
+  const seesChildren = new Set<string>();
   // Claude Desktop's own sessions, filed by account (see desktop-sessions.ts).
   const desktop = providerId === "claude" ? desktopScan().rows : [];
   for (const p of profiles) {
@@ -246,6 +252,7 @@ export function cmdSessions(
       const mtime = new Map(rows.map((r) => [r.sessionId, r.mtimeMs]));
       const events = readEvents(eventFile(ROOT, providerId, p));
       eventsOf.set(p, events);
+      if (hooksRecordSubagents(readSettings(cfg))) seesChildren.add(p);
       const waiting = waitingSessions(events, (id) => mtime.get(id) ?? null);
       // Hooks report a prompt; an open question also shows in the transcript itself.
       for (const r of rows) {
@@ -282,6 +289,7 @@ export function cmdSessions(
               ? { pct: c.pct, contextTokens: c.contextTokens, windowTokens: c.windowTokens, model: c.model, confidence: c.confidence }
               : null,
             cache: cacheOf(r),
+            ...(seesChildren.has(r.profile) ? { children: childrenOf(eventsOf.get(r.profile) ?? [], r.sessionId) } : {}),
           };
         }),
         null,

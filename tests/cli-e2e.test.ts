@@ -251,6 +251,36 @@ test("`sessions --json` lists seeded transcripts with metadata only (GUI contrac
   }
 });
 
+test("`sessions --json` lists a session's subagents from its hooks, and leaves `children` out without them", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work");
+    seedTranscript(home, "work", "-tmp-proj", "0000-parent");
+    const before = JSON.parse(run(home, ["sessions", "--json"]));
+    assert.ok(!("children" in before[0]), "no hooks: no children field, not an empty list");
+
+    run(home, ["hooks", "install", "work"]);
+    assert.deepEqual(JSON.parse(run(home, ["sessions", "--json"]))[0].children, [], "hooks, no subagent yet: empty");
+
+    const cfg = path.join(home, "claude", "work", "config");
+    const hook = (payload: object) =>
+      execFileSync("node", [CLI, "__hook-event"], { env: { ...process.env, AGENT_SWITCH_HOME: home, CLAUDE_CONFIG_DIR: cfg }, input: JSON.stringify(payload) });
+    for (let i = 1; i <= 4; i++) {
+      hook({ hook_event_name: "SubagentStart", session_id: "0000-parent", agent_id: `a${i}`, agent_type: "general-purpose", cwd: i <= 2 ? `/tmp/proj/.worktrees/w${i}` : "/tmp/proj" });
+    }
+    hook({ hook_event_name: "SubagentStop", session_id: "0000-parent", agent_id: "a1", agent_type: "general-purpose", cwd: "/tmp/proj/.worktrees/w1", last_assistant_message: "secret answer" });
+
+    const kids = JSON.parse(run(home, ["sessions", "--json"]))[0].children;
+    assert.equal(kids.length, 4, "4 subagents, 4 children");
+    assert.deepEqual(kids[0], { agentId: "a1", type: "general-purpose", state: "done", cwd: "/tmp/proj/.worktrees/w1" });
+    assert.deepEqual(kids.slice(1).map((k: any) => k.state), ["running", "running", "running"]);
+    const ring = fs.readFileSync(path.join(home, "events", "claude-work.jsonl"), "utf8");
+    assert.ok(!ring.includes("secret answer"), "the subagent's answer is never stored");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("`sessions` shows each Claude session's prompt-cache state (road-to-sessions-that-show-their-cache)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
