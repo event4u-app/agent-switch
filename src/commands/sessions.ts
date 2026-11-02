@@ -31,6 +31,7 @@ import {
   installHooks,
   uninstallHooks,
   hooksInstalled,
+  hooksNeedMigration,
   readSettings,
   appendEvent,
   eventFile,
@@ -75,7 +76,16 @@ export function cmdHooks(sub?: string, name?: string): void {
   for (const p of profiles) {
     const cfg = configDir("claude", p);
     if (action === "status") {
-      console.log(`claude/${p}: ${hooksInstalled(readSettings(cfg)) ? "installed" : "not installed"}`);
+      const settings = readSettings(cfg);
+      // An install from ≤ 2.11 held every turn until the hook exited; bring it
+      // to the non-blocking shape on sight. Only our own entries change.
+      if (hooksNeedMigration(settings)) {
+        installHooks(cfg);
+        console.log(`claude/${p}: installed (migrated to non-blocking hooks)`);
+        sharedWarn = true;
+        continue;
+      }
+      console.log(`claude/${p}: ${hooksInstalled(settings) ? "installed" : "not installed"}`);
       continue;
     }
     const res = action === "install" ? installHooks(cfg) : uninstallHooks(cfg);

@@ -39,7 +39,7 @@ export const HOOK_MARKER = "asw_managed";
 export const EVENT_RING_CAP = 500;
 
 export interface HookEntry {
-  hooks: { type: "command"; command: string; [HOOK_MARKER]?: true }[];
+  hooks: { type: "command"; command: string; async?: true; [HOOK_MARKER]?: true }[];
   [HOOK_MARKER]?: true;
 }
 
@@ -48,12 +48,14 @@ export function hookCommand(bin = "agent-switch"): string {
   return `${bin} __hook-event`;
 }
 
-/** Build the marker-keyed entry for one event. `async: true` = non-blocking. */
+/** Build the marker-keyed entry for one event. `async: true` sits on the
+ *  command handler: Claude Code ignores it on the matcher group and holds the
+ *  turn until the hook exits (agents/evidence/hook-blocking-probe-2026-11.md). */
 export function buildHookEntry(bin = "agent-switch"): HookEntry {
   return {
     [HOOK_MARKER]: true,
-    hooks: [{ type: "command", command: hookCommand(bin), [HOOK_MARKER]: true }],
-  } as HookEntry & { async?: boolean };
+    hooks: [{ type: "command", command: hookCommand(bin), async: true, [HOOK_MARKER]: true }],
+  };
 }
 
 type Settings = Record<string, any>;
@@ -75,22 +77,47 @@ function isOurs(entry: any): boolean {
   return !!entry && typeof entry === "object" && entry[HOOK_MARKER] === true;
 }
 
-/** Are our hooks present for every event? (idempotency check). Pure. */
+/** Ours, and in the current shape: no group-level `async`, every handler async.
+ *  An entry written by agent-switch ≤ 2.11 fails this and gets migrated. */
+function isCurrent(entry: any): boolean {
+  return isOurs(entry) && !("async" in entry) && Array.isArray(entry.hooks) && entry.hooks.length > 0 && entry.hooks.every((h: any) => h?.async === true);
+}
+
+/** Are our hooks present, in the current shape, for every event? Pure. */
 export function hooksInstalled(settings: Settings): boolean {
   const hooks = settings.hooks;
   if (!hooks || typeof hooks !== "object") return false;
-  return HOOK_EVENTS.every((ev) => Array.isArray(hooks[ev]) && hooks[ev].some(isOurs));
+  return HOOK_EVENTS.every((ev) => Array.isArray(hooks[ev]) && hooks[ev].some(isCurrent) && hooks[ev].filter(isOurs).length === 1);
 }
 
-/** Return a NEW settings object with our hook entries added (idempotent) —
- *  pure, so it is unit-testable without touching disk. Preserves every entry
- *  the user already has; adds ours only where missing. */
+/** Some entry of ours is present but the install is not current — an install
+ *  from agent-switch ≤ 2.11, or a partial one. `hooks status` migrates it. */
+export function hooksNeedMigration(settings: Settings): boolean {
+  const hooks = settings.hooks;
+  if (!hooks || typeof hooks !== "object") return false;
+  const anyOurs = Object.values(hooks).some((arr) => Array.isArray(arr) && arr.some(isOurs));
+  return anyOurs && !hooksInstalled(settings);
+}
+
+/** Return a NEW settings object with our hook entries added or brought to the
+ *  current shape (idempotent) — pure, so it is unit-testable without touching
+ *  disk. Every entry the user has stays as it is, where it is; an old entry of
+ *  ours is replaced in its own position, and duplicates of ours are dropped. */
 export function withHooksInstalled(settings: Settings, bin = "agent-switch"): Settings {
   const next: Settings = { ...settings, hooks: { ...(settings.hooks ?? {}) } };
   for (const ev of HOOK_EVENTS) {
-    const existing: any[] = Array.isArray(next.hooks[ev]) ? [...next.hooks[ev]] : [];
-    if (!existing.some(isOurs)) existing.push({ ...buildHookEntry(bin), async: true });
-    next.hooks[ev] = existing;
+    const existing: any[] = Array.isArray(next.hooks[ev]) ? next.hooks[ev] : [];
+    const out: any[] = [];
+    let placed = false;
+    for (const e of existing) {
+      if (!isOurs(e)) out.push(e);
+      else if (!placed) {
+        out.push(isCurrent(e) ? e : buildHookEntry(bin));
+        placed = true;
+      }
+    }
+    if (!placed) out.push(buildHookEntry(bin));
+    next.hooks[ev] = out;
   }
   return next;
 }
@@ -205,12 +232,29 @@ export function eventFile(root: string, provider: string, profile: string): stri
   return path.join(root, "events", `${provider}-${profile}.jsonl`);
 }
 
-export function readEvents(file: string): HookEventRecord[] {
+function readLines(file: string): HookEventRecord[] {
+  let raw: string;
   try {
-    return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    raw = fs.readFileSync(file, "utf8");
   } catch {
     return [];
   }
+  const out: HookEventRecord[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line) continue;
+    try {
+      out.push(JSON.parse(line));
+    } catch {
+      // a torn or foreign line costs that line only
+    }
+  }
+  return out;
+}
+
+/** The ring as one ordered list: kept "needs you" lines, the previous
+ *  generation, then the live file. */
+export function readEvents(file: string): HookEventRecord[] {
+  return [...readLines(`${file}.pin`), ...readLines(`${file}.1`), ...readLines(file)];
 }
 
 /**
@@ -234,14 +278,99 @@ export function waitingSessions(events: readonly HookEventRecord[], mtimeMs: (se
   return out;
 }
 
-/** Append one event, trimming the ring to EVENT_RING_CAP. Tolerant of a
- *  malformed existing file (starts fresh). */
-export function appendEvent(file: string, rec: HookEventRecord): void {
-  const all = readEvents(file);
-  all.push(rec);
-  const trimmed = all.slice(-EVENT_RING_CAP);
+/** The live file rotates once it reaches this size — about EVENT_RING_CAP
+ *  records — so the ring holds one to two generations. */
+export const ROTATE_BYTES = EVENT_RING_CAP * 256;
+/** A rotation lock older than this was left by a crashed writer. */
+const STALE_LOCK_MS = 30_000;
+/** Kept "needs you" lines older than this are dropped at the next rotation. */
+const PIN_MAX_AGE_MS = 7 * 24 * 3600_000;
+const PINNED_EVENTS = new Set(["Notification", "StopFailure"]);
+
+/**
+ * Append one event. Lossless under concurrent hook processes: the record is a
+ * single O_APPEND write of one short line (well under PIPE_BUF), so writers
+ * never overwrite each other. Size is bounded by rotation, not by rewriting:
+ * past `rotateBytes` one writer takes the lock, renames the live file to `.1`
+ * (dropping the generation before it) and goes on. A writer that finds the lock
+ * held skips the rotation — the append path never waits. Before a generation is
+ * dropped, each session whose last event in it is a Notification or StopFailure
+ * keeps that line in `.pin`, so a burst of other events cannot hide that a
+ * session needs you.
+ */
+export function appendEvent(file: string, rec: HookEventRecord, opts: { rotateBytes?: number } = {}): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, trimmed.map((r) => JSON.stringify(r)).join("\n") + "\n", { mode: 0o600 });
+  let size = 0;
+  let fd: number;
+  try {
+    fd = fs.openSync(file, "a+", 0o600); // a+: append-only writes, and the last byte is readable
+  } catch {
+    return;
+  }
+  try {
+    size = fs.fstatSync(fd).size;
+    // A file cut off mid-line would glue this record onto the broken one.
+    let lead = "";
+    if (size > 0) {
+      const last = Buffer.alloc(1);
+      fs.readSync(fd, last, 0, 1, size - 1);
+      if (last[0] !== 0x0a) lead = "\n";
+    }
+    const line = lead + JSON.stringify(rec) + "\n";
+    fs.writeSync(fd, line);
+    size += Buffer.byteLength(line);
+  } finally {
+    fs.closeSync(fd);
+  }
+  if (size >= (opts.rotateBytes ?? ROTATE_BYTES)) rotate(file, opts.rotateBytes ?? ROTATE_BYTES);
+}
+
+function takeLock(lock: string): boolean {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      fs.closeSync(fs.openSync(lock, "wx", 0o600));
+      return true;
+    } catch {
+      try {
+        if (Date.now() - fs.statSync(lock).mtimeMs < STALE_LOCK_MS) return false;
+        fs.unlinkSync(lock);
+      } catch {
+        // gone in between: try once more
+      }
+    }
+  }
+  return false;
+}
+
+function rotate(file: string, rotateBytes: number): void {
+  const lock = `${file}.lock`;
+  if (!takeLock(lock)) return;
+  try {
+    // Another writer may have rotated between our append and the lock.
+    if (fs.statSync(file).size < rotateBytes) return;
+    const pins = new Map<string, HookEventRecord>();
+    for (const e of readLines(`${file}.pin`)) if (e.sessionId) pins.set(e.sessionId, e);
+    for (const e of readLines(`${file}.1`)) {
+      if (!e.sessionId) continue;
+      if (PINNED_EVENTS.has(e.event)) pins.set(e.sessionId, e);
+      else pins.delete(e.sessionId);
+    }
+    const cutoff = Date.now() - PIN_MAX_AGE_MS;
+    const kept = [...pins.values()].filter((e) => Date.parse(e.at) >= cutoff);
+    const tmp = `${file}.pin.tmp`;
+    fs.writeFileSync(tmp, kept.map((e) => JSON.stringify(e) + "\n").join(""), { mode: 0o600 });
+    fs.renameSync(tmp, `${file}.pin`);
+    // Atomic: a writer that opened the old file finishes its line in `.1`.
+    fs.renameSync(file, `${file}.1`);
+  } catch {
+    // rotation is housekeeping; the next append tries again
+  } finally {
+    try {
+      fs.unlinkSync(lock);
+    } catch {
+      // already gone
+    }
+  }
 }
 
 /** Map a running claude's CLAUDE_CONFIG_DIR back to {provider, profile} using
