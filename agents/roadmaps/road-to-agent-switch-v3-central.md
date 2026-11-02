@@ -286,10 +286,11 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       → `docs/lineage-contract.md`, version 1.
 - [x] `agent-switch sessions --tree --json`.
       → `buildTree` nests reported children; property-tested: each row once, no cycles.
-- [ ] `/clear` edge: link the new session to the one it cleared through process
+- [x] `/clear` edge: link the new session to the one it cleared through process
       continuity (the same Claude process before and after), not through timing.
-      Needs a pid-stable source in the hook (the hook runs under `sh`, so its
-      parent pid is not Claude's).
+      → Measured live: hooks get `CLAUDE_PID`, equal before and after `/clear`.
+      `clearedFrom` in `src/hooks.ts` links a `source: clear` start to the last
+      start of the same pid (`kind: cleared`, "via hook"); no pid, no edge.
 
 ## Phase 3 — Git and PR facts
 
