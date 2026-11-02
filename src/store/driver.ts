@@ -46,11 +46,21 @@ export async function openDriver(file: string): Promise<Driver> {
     const mod: any = await import("bun:sqlite" as string);
     return wrap(`bun:sqlite`, new mod.Database(file));
   }
-  let mod: any;
+  // Node 22 flags node:sqlite as experimental and prints that on stderr of every
+  // command that opens the store; that one notice is not the user's business.
+  const emit = process.emitWarning;
+  process.emitWarning = ((w: string | Error, ...rest: unknown[]) => {
+    if (!String(typeof w === "string" ? w : w.message).startsWith("SQLite is an experimental feature")) (emit as (...a: unknown[]) => void).call(process, w, ...rest);
+  }) as typeof process.emitWarning;
   try {
-    mod = await import("node:sqlite" as string);
-  } catch {
-    throw new StoreUnavailable(`node:sqlite is not available in Node ${process.versions.node}; the event store needs Node 22.13 or later (or Bun)`);
+    let mod: any;
+    try {
+      mod = await import("node:sqlite" as string);
+    } catch {
+      throw new StoreUnavailable(`node:sqlite is not available in Node ${process.versions.node}; the event store needs Node 22.13 or later (or Bun)`);
+    }
+    return wrap("node:sqlite", new mod.DatabaseSync(file));
+  } finally {
+    process.emitWarning = emit;
   }
-  return wrap("node:sqlite", new mod.DatabaseSync(file));
 }
