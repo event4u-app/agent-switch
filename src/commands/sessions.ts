@@ -313,6 +313,12 @@ export async function cmdSessions(
   name?: string,
   flags: Record<string, string | boolean> = {},
 ): Promise<void> {
+  if (providerExplicit && providerId === "antigravity") {
+    // Not readable: Antigravity keeps no transcript Agent Switch can parse yet (an ACP source is v3.2).
+    if (flags.json) console.log("[]");
+    else console.log("Antigravity sessions are not readable yet. Start one hosted with: agent-switch host start <profile> --provider antigravity");
+    return;
+  }
   if (providerExplicit && providerId !== "claude" && providerId !== "codex") {
     die(`sessions supports claude and codex for now (${providerId} parity is gated on its Phase-0 spike — see scripts/spikes/)`);
   }

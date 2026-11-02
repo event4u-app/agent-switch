@@ -67,7 +67,8 @@ export interface StartOptions {
   sessionId?: string;
 }
 
-const ENV_FOR: Record<string, string> = { claude: "CLAUDE_CONFIG_DIR", codex: "CODEX_HOME" };
+// Antigravity reads its account from HOME (src/providers.ts).
+const ENV_FOR: Record<string, string> = { claude: "CLAUDE_CONFIG_DIR", codex: "CODEX_HOME", antigravity: "HOME" };
 
 export class HostUnavailable extends Error {}
 

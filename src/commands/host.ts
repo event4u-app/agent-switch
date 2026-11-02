@@ -30,7 +30,8 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
   const host = new TmuxHost(ROOT);
   try {
     if (action === "start") {
-      if (providerId !== "claude" && providerId !== "codex") die(`hosting supports claude and codex for now`);
+      // Antigravity is terminal-only: it runs hosted, but AS cannot read its sessions yet.
+      if (providerId !== "claude" && providerId !== "codex" && providerId !== "antigravity") die(`hosting supports claude, codex and antigravity`);
       const cwd = path.resolve(typeof flags.cwd === "string" ? flags.cwd : process.cwd());
       // No account named: the same routing, folder rules and guard as a plain start.
       const profile = arg ? requireProfile(providerId, arg, "host start") : routed(providerId, cwd);

@@ -195,3 +195,8 @@ test("hostingMode: persistent only with tmux and not on Windows; everything else
   assert.equal(hostingMode("linux", false), "ephemeral");
   assert.equal(hostingMode("win32", true), "ephemeral");
 });
+
+test("an Antigravity account reaches its hosted window through HOME", () => {
+  const args = TmuxHost.envArgs({ provider: "antigravity", configDir: "/as/antigravity/work/config" }, "antigravity/work/x1234");
+  assert.deepEqual(args.slice(0, 2), ["-e", "HOME=/as/antigravity/work/config"]);
+});

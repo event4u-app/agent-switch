@@ -227,7 +227,7 @@ suggested. The background service must be running.
 
 | Command | What it does |
 | --- | --- |
-| `sessions [profile] [--recent N]` | Recent and running sessions per account, with context %. Claude and Codex. |
+| `sessions [profile] [--recent N]` | Recent and running sessions per account, with context %. Claude and Codex; Antigravity sessions are not readable yet. |
 | `sessions preview <session-id> [--from <profile>]` | The first turns of one session. |
 | `sessions rm <session-id> --yes [--from <profile>] [--purge]` | Move a session to the trash; `--purge` deletes it for good. |
 | `sessions restore <trash-id\|session-id> [--from <profile>]` | Bring a removed session back. |
@@ -253,7 +253,7 @@ suggested. The background service must be running.
 | `pr status [--json] [--refresh]` | For each session in a GitHub repository: its PR by head commit, with lifecycle, merge conflicts, review and CI kept apart. Uses the GitHub CLI (`gh`) you are signed in with; Agent Switch stores no token. |
 | `worktrees [--json]` | The git worktrees of the repositories your sessions work in, and which session is in which. |
 | `store status\|import\|rebuild [--json]` | The local event store behind the v3 views: show it, bring in the hook events, or rebuild its views from the stored events. Needs Node 22.13 or later. |
-| `host start [profile] [--cwd DIR]\|list\|attach <session>\|end <session> [--yes]` <Badge text="macOS & Linux" variant="caution" /> | Run a Claude or Codex session in Agent Switch's own tmux server, so it keeps running when the window closes. Without a profile it starts where a plain `claude` would. `attach` opens it in this terminal; detaching leaves it running. `end` stops it, after asking. Needs tmux. |
+| `host start [profile] [--cwd DIR]\|list\|attach <session>\|end <session> [--yes]` <Badge text="macOS & Linux" variant="caution" /> | Run a Claude, Codex or Antigravity session in Agent Switch's own tmux server, so it keeps running when the window closes. Without a profile it starts where a plain `claude` would. `attach` opens it in this terminal; detaching leaves it running. `end` stops it, after asking. Needs tmux. |
 | `alerts on\|off\|status [--threshold 80,95]` | Log a notification when a session's context passes these marks (default off). |
 | `desktop` <Badge text="Claude only" variant="note" /> | Which accounts ran sessions in each Claude Desktop window. |
 
