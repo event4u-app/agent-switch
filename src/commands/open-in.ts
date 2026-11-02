@@ -10,7 +10,7 @@ import * as path from "node:path";
 
 import { die, ROOT } from "../profiles.js";
 import { eventFile, lastHookCwd, readEvents } from "../hooks.js";
-import { gitFacts } from "../git-facts.js";
+import { canonical, gitFacts } from "../git-facts.js";
 import { readSessionHeader } from "../sessions.js";
 import { liveSessions } from "../api.js";
 import { configDir } from "../profiles.js";
@@ -45,7 +45,7 @@ function where(arg: string | undefined): Where {
   const root = git?.toplevel ?? cwd;
   // Per-repo settings key on the main checkout, so every worktree of a repo shares them.
   const common = git ? spawnSync("git", ["-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", timeout: 1000 }).stdout?.trim() : "";
-  const repo = git ? (common ? path.dirname(common) : root) : null;
+  const repo = git ? canonical(common ? path.dirname(common) : root) : null;
   return { key: s.key, provider, account, sessionId, root, repo, remote: git?.remote ?? null, headSha: git?.headSha ?? null };
 }
 
@@ -102,10 +102,10 @@ export function cmdOpenTargets(arg: string | undefined, flags: Record<string, st
 export function cmdOpenDefault(target: string | undefined, flags: Record<string, string | boolean>): void {
   if (!target || !TARGET_IDS.includes(target as TargetId)) die(`usage: agent-switch open-default ${TARGET_IDS.join("|")} [--repo DIR]`);
   const s = readOpenSettings(openSettingsFile(ROOT));
-  if (typeof flags.repo === "string") s.perRepo[path.resolve(flags.repo)] = target as TargetId;
+  if (typeof flags.repo === "string") s.perRepo[canonical(flags.repo)] = target as TargetId;
   else s.default = target as TargetId;
   writeOpenSettings(openSettingsFile(ROOT), s);
-  console.log(typeof flags.repo === "string" ? `Default for ${path.resolve(flags.repo)}: ${target}.` : `Default: ${target}.`);
+  console.log(typeof flags.repo === "string" ? `Default for ${canonical(flags.repo)}: ${target}.` : `Default: ${target}.`);
 }
 
 export function cmdFocus(arg: string | undefined): void {

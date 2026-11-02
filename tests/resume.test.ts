@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as path from "node:path";
 
 import { preflight, shellLine, type GitProbe, type PreflightInput } from "../src/resume.js";
 
@@ -34,8 +35,10 @@ test("branch gone but commit reachable, or the checkout dirty: a new worktree at
     const p = preflight(input(), probe(over));
     assert.equal(p.target, "new_worktree");
     assert.match(p.suggestion, /new worktree at the session's last commit/);
-    assert.deepEqual(p.commands[0], ["git", "-C", "/code/app", "worktree", "add", "--detach", "/code/app-resume-7f3c2a91", "abc1234"]);
-    assert.deepEqual(p.commands[1].slice(0, 5), ["agent-switch", "run", "work", "--cwd", "/code/app-resume-7f3c2a91"]);
+    // A sibling of the checkout, joined the platform's way.
+    const wt = path.join("/code", "app-resume-7f3c2a91");
+    assert.deepEqual(p.commands[0], ["git", "-C", "/code/app", "worktree", "add", "--detach", wt, "abc1234"]);
+    assert.deepEqual(p.commands[1].slice(0, 5), ["agent-switch", "run", "work", "--cwd", wt]);
   }
   const lost = preflight(input(), probe({ branchExists: false, commitReachable: false }));
   assert.equal(lost.target, "same_cwd", "no commit to start a worktree from");

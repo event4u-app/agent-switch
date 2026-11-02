@@ -73,7 +73,7 @@ function mtime(p: string): number {
 
 /** One spelling per folder: git prints long, forward-slash paths while the caller may hold
  *  a symlink or a Windows 8.3 short name for the same place. */
-function canonical(p: string): string {
+export function canonical(p: string): string {
   try {
     return fs.realpathSync.native(p);
   } catch {
