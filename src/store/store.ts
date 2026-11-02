@@ -175,6 +175,9 @@ export class Store {
     // The timeout first: switching to WAL needs a lock another opener may hold for a moment.
     db.exec("PRAGMA busy_timeout = 5000");
     db.exec("PRAGMA journal_mode = WAL");
+    // WAL's recommended pairing: a commit no longer waits on fsync (durable across a
+    // crash of the process; the last commits can go only with the machine's power).
+    db.exec("PRAGMA synchronous = NORMAL");
     db.exec(SCHEMA);
     const { user_version } = db.get<{ user_version: number }>("PRAGMA user_version")!;
     if (user_version > STORE_SCHEMA_VERSION) {
@@ -208,12 +211,14 @@ export class Store {
 
   /**
    * BEGIN IMMEDIATE, retried while another writer holds the lock. busy_timeout
-   * should cover this, but on Windows SQLite was seen answering BUSY within
-   * 400 ms of an 8-writer run (CI), so the wait is also ours: bounded at ~5 s.
+   * should cover this, but on Windows SQLite answered BUSY early in an 8-writer
+   * CI run, and a writer backing off long kept losing to the others. So the wait
+   * is ours: short jittered sleeps, bounded at 15 s.
    */
   private beginWrite(): void {
-    const deadline = Date.now() + 5000;
-    for (let delay = 5; ; delay = Math.min(delay * 2, 100)) {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const delay = 1 + Math.floor(Math.random() * 10);
       try {
         this.db.exec("BEGIN IMMEDIATE");
         return;
