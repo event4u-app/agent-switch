@@ -419,9 +419,15 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       silent 2.11 users to Darcula). A test parses `gui/src/index.css` and found
       the reference's Agent Switch palettes off in overlay, shadow and three
       account colours; they are now exact (reported conflict, spec wins).
-- [ ] Shared component changes (spec §0): `ui/Segmented` selected = raise fill,
+- [x] Shared component changes (spec §0): `ui/Segmented` selected = raise fill,
       `RowMenu`/`Select`/`Toaster` at 12 px, `AcRoot` takes `style`. They reach the
       2.11 screens too — render-check those screens in the same change.
+      → Applied from the reference patch. Render check with the existing
+      screenshot pipeline (`gui/scripts/screenshots`, German run into a temp
+      folder, before vs after): 7 of 15 2.11 captures change, each only where a
+      segmented control shows its selection (raise fill instead of the orange
+      outline, checked by eye on `sessions`); nothing clipped or moved. 637 GUI
+      tests pass.
 - [ ] Visual grammar kit (spec §3): the one radius scale, `Marker` and the tab
       frame for "where you are", state dots vs the `AccountMark` tick, three chip
       kinds, button kinds with one filled button per surface, one number and
