@@ -523,7 +523,7 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       the body shows the session's facts and its last transcript line, no PTY
       mirror (D-mirror).
       → `ExternalBody`: where it runs, Focus terminal (⌘↵, `agent-switch focus`), Take over here…, the session's facts and last transcript line (D-mirror). `SystemBanner` + `engineDownText` for the engine.
-- [ ] Dialogs (spec §8): New session (prefill remembered per project, tool /
+- [x] Dialogs (spec §8): New session (prefill remembered per project, tool /
       model / thinking, account box with all windows, pace estimate in words,
       "Host in Agent Switch" saying "ends when the app closes" where `hostingMode`
       is `ephemeral`,
@@ -532,6 +532,12 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       decision sheet on the existing arm and rebind paths; End session listing
       what stops with it and saying whether this session is kept in the vault
       (D-vault).
+      → `gui/src/v3/dialogs.tsx`: `Modal` (Esc closes, one primary), `Choice`
+      radio cards, `NewSessionDialog` (the tool's own thinking levels, account
+      box with bars, pace in words, Why?, where it runs — ephemeral said where
+      there is no tmux —, command preview, "Start in …" / "Start here"),
+      `DecisionSheet` (after this turn by default, unchecked sessions stay),
+      `EndDialog` (what stops, whether this session is kept: D-vault).
 - [ ] Right tool windows (spec §9): Summary (next step, PR with provenance, git
       line, limit block only near the limit, More ›), Changes (worktree vs HEAD,
       "Commit…"; "Review changes" arrives with v3.1), Children.
