@@ -76,6 +76,6 @@ Days since each active roadmap landed at its path and since its last ticked step
 
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
-| [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | — | — |
-| [road-to-hooks-that-keep-up.md](roadmaps/road-to-hooks-that-keep-up.md) | — | — |
+| [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 0 | — |
+| [road-to-hooks-that-keep-up.md](roadmaps/road-to-hooks-that-keep-up.md) | 0 | — |
 

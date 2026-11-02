@@ -13,6 +13,11 @@ tree_pin: ff38137
 > **Pull trigger:** [`road-to-agent-switch-v3-client.md`](road-to-agent-switch-v3-client.md)
 > closed, and owner decisions E4/E5 below answered.
 
+## Branch
+
+Targets `dev/v3` (branch model in
+[`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)).
+
 ## Owner demands answered here
 
 D12 learn from the two analysed clients · D13 other agents and local models ·

@@ -15,6 +15,11 @@ tree_pin: ff38137
 > closed (store, host, input lease and library in place). Parked because every
 > phase here builds on them.
 
+## Branch
+
+Targets `dev/v3` (branch model in
+[`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)).
+
 ## Owner demands answered here
 
 D7 Claude-Desktop replacement · D8 view switch terminal ⇄ own GUI · D9 text input,

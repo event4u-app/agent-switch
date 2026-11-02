@@ -16,6 +16,16 @@ tree_pin: ff38137
 > [`later/road-to-agent-switch-v3-reach.md`](later/road-to-agent-switch-v3-reach.md) (v3.2).
 > Prerequisite: [`road-to-hooks-that-keep-up.md`](road-to-hooks-that-keep-up.md).
 
+## Branch model (owner, 2026-11-02)
+
+- **All v3 work lands on `dev/v3`**, cut from `main@ff38137`. Every PR of the four
+  v3 roadmaps targets `dev/v3`, never `main`.
+- `dev/v3` merges into `main` **once, when v3 is complete** — a production-trunk
+  merge, so it waits for the owner's explicit go on that turn.
+- `main` keeps shipping 2.x; `main` is merged into `dev/v3` after every 2.x
+  release, so the final merge does not carry months of drift.
+- CI runs on PRs into `dev/v3` and on pushes to it (`.github/workflows/ci.yml`).
+
 ## Goal
 
 agent-switch becomes the switch-and-session center the owner asked for: every
@@ -270,6 +280,7 @@ they are the fastest visible value. The tree (Phase 2) needs the hook roadmap.
 
 | Risk | Mitigation |
 |---|---|
+| `dev/v3` drifts from `main` while 2.x keeps shipping | merge `main` into `dev/v3` after every 2.x release; conflicts resolved there, never on the final merge |
 | Scope: v3.0 alone is large for one maintainer | Phase 0 → 1 first; Phases 2–5 parallel only after Phase 1 |
 | Undocumented host internals (transcript layout, cleanup) | fixtures per CC version, honest degrade |
 | tmux missing (Windows, minimal Linux) | ephemeral label; native host later |
