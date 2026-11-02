@@ -500,9 +500,10 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 
 ## Phase 8 — Workbench, dialogs and tool windows (spec §6, §7.6–§7.7, §8, §9)
 
-- [ ] Tab strip: page tabs first, session tabs with state dot and `⌘1…⌘9`;
+- [x] Tab strip: page tabs first, session tabs with state dot and `⌘1…⌘9`;
       closing a session tab detaches, never ends.
-- [ ] Session bar: `[Terminal | Chat]` (Chat disabled until v3.1 and for
+      → `TabStrip` in `gui/src/v3/workbench.tsx`: pages first with their close button, sessions with state dot and ⌘1…⌘9, the active tab framed; closing a session tab only removes the tab (the session list owns ending).
+- [x] Session bar: `[Terminal | Chat]` (Chat disabled until v3.1 and for
       non-hosted sessions, with the reason), account chip (opens the decision
       sheet, never switches), model and thinking chips → model popover for the next
       turn (S8), locked with the reason for sessions in the user's own terminal,
@@ -510,15 +511,18 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       applied by respawning the hosted session in place between turns with
       `--resume … --model … --effort …` — never by typing `/model` or `/effort`,
       which change the account's defaults (S8).
-- [ ] Terminal body: the hosted session's real PTY in xterm with the theme's
+      → `SessionBar`: Chat disabled with the reason (not hosted, or until v3.1), account chip opens the sheet, model and thinking chips locked with the reason outside AS, `ctx %`; the next-turn change is `agent-switch host respawn <key> --model … --effort …`, refused while a turn runs, never typed (CLI test).
+- [x] Terminal body: the hosted session's real PTY in xterm with the theme's
       terminal tokens, 12.5 px mono, line height 1.5, xterm's custom glyphs for the
       CLI's rounded boxes; never re-rendered or summarised (spec §6.4); typing goes
       through the input lease (D5). Blocker strip
       only while Summary is closed, never twice.
-- [ ] Session in the user's own terminal (spec §6.5): "Runs in … · read-only
+      → `HostedTerminal` runs `agent-switch host attach <key>` in the 2.11 `XtermBox`, now with the theme's terminal palette, 12.5 px / 1.5 and xterm's custom glyphs; closing it detaches the view only. `BlockerStrip` only while Summary is closed.
+- [x] Session in the user's own terminal (spec §6.5): "Runs in … · read-only
       here", "Focus terminal ⌘↵", "Take over here…" that explains the move first;
       the body shows the session's facts and its last transcript line, no PTY
       mirror (D-mirror).
+      → `ExternalBody`: where it runs, Focus terminal (⌘↵, `agent-switch focus`), Take over here…, the session's facts and last transcript line (D-mirror). `SystemBanner` + `engineDownText` for the engine.
 - [ ] Dialogs (spec §8): New session (prefill remembered per project, tool /
       model / thinking, account box with all windows, pace estimate in words,
       "Host in Agent Switch" saying "ends when the app closes" where `hostingMode`

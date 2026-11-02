@@ -6,17 +6,17 @@
 
 ## Overall
 
-**64 / 81 steps done · 79%**
+**68 / 81 steps done · 84%**
 
 ```text
-████████████████████████████████░░░░░░░░   79%
+██████████████████████████████████░░░░░░   84%
 ```
 
 ## Open roadmaps
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 81 | 17 | 64 | 0 | 0 | 0 | ████████░░ 79% |
+| 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 81 | 13 | 68 | 0 | 0 | 0 | ████████░░ 84% |
 
 ---
 
@@ -46,7 +46,7 @@
 
 ### [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md)
 
-**agent-switch v3.0 "Central" — sessions that survive, a tree, git/PR, a library** — 64 / 81 done (79%)
+**agent-switch v3.0 "Central" — sessions that survive, a tree, git/PR, a library** — 68 / 81 done (84%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
@@ -58,7 +58,7 @@
 | 5 | Open in… | ✅ done | 0 | 5 | 0 | 0 | 100% |
 | 6 | Design system and window frame (spec §0–§4, §12) | ✅ done | 0 | 6 | 0 | 0 | 100% |
 | 7 | Sessions window and attention (spec §5, §7.1–§7.5, §10.7) | ✅ done | 0 | 7 | 0 | 0 | 100% |
-| 8 | Workbench, dialogs and tool windows (spec §6, §7.6–§7.7, §8, §9) | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
+| 8 | Workbench, dialogs and tool windows (spec §6, §7.6–§7.7, §8, §9) | 🟡 in progress | 2 | 4 | 0 | 0 | 67% |
 | 9 | Pages (spec §10.1–§10.6, §11) | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
 | 10 | Codex and Antigravity parity | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
 
