@@ -360,7 +360,10 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       changed since its copy (which covers the end of a session without making
       a hook wait for a copy); `store status` shows the vault size;
       `sessions vault <key> restore` puts it back to the paths in its manifest.
-- [ ] Codex rollouts in the vault too (the library resolves Claude sessions only).
+- [x] Codex rollouts in the vault too (the library resolves Claude sessions only).
+      → `resolveSession` finds Codex rollouts as well; pin, vault and restore work
+      the same (e2e). `sessions resume` stays Claude-only and says how to resume
+      a Codex session instead.
 - [x] Merged sessions archive themselves after 24 h into the Library; "Clean up"
       under "Done today" removes merged worktrees and skips dirty ones (spec §5.2,
       §13.8).
