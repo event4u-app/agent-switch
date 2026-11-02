@@ -400,6 +400,26 @@ describe("Desktop pet", () => {
   });
 });
 
+describe("Quit", () => {
+  it("asks before quitting instead of quitting on the click", () => {
+    const quit = vi.fn(() => Promise.resolve());
+    function Overlay() {
+      return <p data-testid="overlay">{useAS().overlay.kind}</p>;
+    }
+    render(
+      <AcRoot>
+        <ASProvider initial={fixture()} startScreen="settings" startSettingsTab="general" actions={() => ({ quit })}>
+          <Settings />
+          <Overlay />
+        </ASProvider>
+      </AcRoot>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Quit" }));
+    expect(screen.getByTestId("overlay").textContent).toBe("quit");
+    expect(quit).not.toHaveBeenCalled();
+  });
+});
+
 describe("Advanced", () => {
   it("sets the guard and gates uninstall behind the typed word", async () => {
     const setGuard = vi.fn(() => Promise.resolve());

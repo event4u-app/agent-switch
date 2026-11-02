@@ -366,3 +366,23 @@ describe("terminal overlay", () => {
     expect(terminalRun({ kind: "terminal", run: { args: ["run", "work"], title: "t" } }).args).toEqual(["run", "work"]);
   });
 });
+
+describe("Quit confirmation", () => {
+  it("quits only after the user confirms", () => {
+    const quit = vi.fn(() => Promise.resolve());
+    mount(fixture(), { overlay: { kind: "quit" }, act: { quit } });
+    expect(screen.getByRole("dialog", { name: "Quit Agent Switch?" })).toBeTruthy();
+    expect(quit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Quit" }));
+    expect(quit).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("where").textContent).toMatch(/\/none$/);
+  });
+
+  it("cancel keeps the app running", () => {
+    const quit = vi.fn(() => Promise.resolve());
+    mount(fixture(), { overlay: { kind: "quit" }, act: { quit } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(quit).not.toHaveBeenCalled();
+    expect(screen.getByTestId("where").textContent).toMatch(/\/none$/);
+  });
+});

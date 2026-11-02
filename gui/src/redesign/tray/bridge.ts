@@ -21,7 +21,7 @@ export const TRAY_GO_EVENT = "tray:go";
 export const TRAY_APP_EVENT = "tray:app";
 export const MAIN_WINDOW = "main";
 
-export type ForwardedOverlay = Extract<Overlay, { kind: "start" | "account" | "session" | "limit" | "notifications" }>;
+export type ForwardedOverlay = Extract<Overlay, { kind: "start" | "account" | "session" | "limit" | "notifications" | "quit" }>;
 export type ForwardedScreen = Extract<Screen, "tools" | "health">;
 
 const FORWARDED_SCREENS: readonly ForwardedScreen[] = ["tools", "health"];
@@ -51,6 +51,8 @@ export function forwardedOverlay(x: unknown): ForwardedOverlay | null {
       return str(o.attentionId) ? { kind: "limit", attentionId: o.attentionId } : null;
     case "notifications":
       return { kind: "notifications" };
+    case "quit":
+      return { kind: "quit" };
     default:
       return null;
   }

@@ -48,6 +48,8 @@ export type Overlay =
   | { kind: "add-account"; tool?: string }
   | { kind: "limit"; attentionId: string }
   | { kind: "notifications" }
+  /** Asks before the app quits; confirming quits. Restart never routes here. */
+  | { kind: "quit" }
   | { kind: "reauth"; accountId: string }
   | { kind: "fix"; checkId: string }
   | { kind: "terminal"; toolId: string; action: "install" | "update" }

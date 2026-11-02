@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import * as ipc from "../../ipc.js";
 import { LangKeyed } from "../../i18n/LangKeyed.js";
 import { AcRoot } from "../../ui/AcRoot.js";
 import { createActions } from "../../vm/actions.js";
@@ -89,7 +88,7 @@ function TrayFrame() {
         onOpenApp={() => void openMainWindow()}
         onGo={(screen) => void goInMain(screen)}
         onOpenAccountApp={(appId, accountId) => void openAppFromTray(appId, accountId)}
-        onQuit={() => void ipc.quitApp().catch(() => {})}
+        onQuit={() => void forwardToMain({ kind: "quit" })}
       />
     </div>
   );

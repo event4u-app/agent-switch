@@ -194,6 +194,7 @@ describe("tray bridge", () => {
     expect(forwardable({ kind: "session", id: "claude:a" })).toBe(true);
     expect(forwardable({ kind: "limit", attentionId: "x" })).toBe(true);
     expect(forwardable({ kind: "notifications" })).toBe(true);
+    expect(forwardable({ kind: "quit" })).toBe(true);
     expect(forwardable({ kind: "start", cwd: "/x", tool: "claude" })).toBe(true);
     // Never a terminal (it would run a command) or anything else.
     expect(forwardable({ kind: "terminal", run: { args: ["uninstall"], title: "x" } })).toBe(false);

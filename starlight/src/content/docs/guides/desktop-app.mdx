@@ -158,6 +158,11 @@ every account's meters, and **Start session**. On macOS, each signed-in
 account whose tool has a desktop app gets a button that opens that app as this
 account. A right click shows the classic menu with **Show agent-switch** and **Quit**.
 
+Quitting always asks first, from the popover's power button, the menu's
+**Quit** and **Settings › General › Quit** alike: the main window opens with a
+confirmation, and agent-switch only quits when you confirm. Restarting after an
+update does not ask.
+
 ![The menu-bar popover: three items that need you, each account's meters, and Start session](/agent-switch/media/screenshots/tray.png)
 
 Disabled accounts are hidden from the popover. To show them, turn on
