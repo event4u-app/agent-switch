@@ -206,9 +206,12 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 - [ ] M2 `as-hook`: tiny native relay stdin → engine socket, file-line fallback.
       Gate: p95 < 20 ms against the node baseline measured in
       `road-to-hooks-that-keep-up` Phase 0.
-- [ ] M3 host (tmux): N sessions per account, started via argv (never typed),
+- [x] M3 host (tmux): N sessions per account, started via argv (never typed),
       Claude with a pre-generated `--session-id`, hooks via `--settings`; survives
       an app restart. Old per-profile names stay readable for one release.
+      → `src/host/tmux-host.ts`, `agent-switch host start|list|end`. Verified live:
+      `claude agents --json` reports the session id AS chose. Hooks reach the
+      session through `<root>/host/hooks-settings.json`.
 - [ ] Single writer per hosted session: one input lease, read-only mirrors for
       other viewers, explicit handover, stale-lease recovery.
 - [ ] Hosted session controls: detach (close tab) vs **end** (own, confirmed
