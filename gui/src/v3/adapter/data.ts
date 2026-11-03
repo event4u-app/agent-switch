@@ -347,8 +347,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       return {
         key,
         hosted: hosted.has(key) || !!env.chats?.has(key),
-        // v3.1: the chat view is there for every session this window can host.
-        chatAvailable: true,
+        // v3.1: chat and terminal share one conversation for Claude and Codex.
+        chatAvailable: r.provider === "claude" || r.provider === "codex",
         view: env.chats?.has(key) ? "chat" : "terminal",
         account: { name: r.profile, color: colorOf(r), fiveH: fiveH(a), protect: a?.threshold ?? 98 },
         model: r.context?.model ?? null,

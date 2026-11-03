@@ -32,6 +32,7 @@ import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
 import { useChats } from "./chats.js";
 import { ReviewHost } from "./ReviewHost.js";
+import { viewStep } from "./viewSwitch.js";
 import { fold } from "../timeline.js";
 import { sessionFromRow } from "../../vm/build.js";
 import { ChatView } from "../chatview.js";
@@ -237,6 +238,68 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     },
   };
   const act = (a: V3Action) => void dispatchV3(a, deps);
+
+  // The [Terminal | Chat] switch (Phase 4): only between turns, so a switch
+  // asked for during a turn is armed and happens when the turn ends.
+  const [armed, setArmed] = useState<ReadonlyMap<string, "terminal" | "chat">>(new Map());
+  const arm = (key: string, to: "terminal" | "chat" | null) =>
+    setArmed((m) => {
+      if ((m.get(key) ?? null) === to) return m;
+      const n = new Map(m);
+      if (to) n.set(key, to);
+      else n.delete(key);
+      return n;
+    });
+  const chatRunning = (key: string) => {
+    const tab = chats.tabOf(key);
+    const c = tab ? chats.states.get(tab) : undefined;
+    return !!c && c.status === "ready" && fold(c.events).running;
+  };
+  const terminalRunning = (key: string) => {
+    const r = byKey.get(key);
+    return !!r && sessionFromRow(r, s.now).state === "working";
+  };
+  function switchView(key: string, to: "terminal" | "chat") {
+    const tab = chats.tabOf(key);
+    const step = viewStep(to, { inChat: !!tab, hosted: hostedKeys.has(key), chatRunning: chatRunning(key), terminalRunning: terminalRunning(key) });
+    const armTo = (t: "terminal" | "chat") => {
+      if (armed.get(key) !== t) s.toast({ tone: "info", text: `Switches to the ${t} after this turn` });
+      arm(key, t);
+    };
+    switch (step.do) {
+      case "none":
+        return;
+      case "no-terminal":
+        return s.toast({ tone: "info", text: "This session started in the chat view; it has no terminal here" });
+      case "arm":
+        return armTo(step.to);
+      case "close-chat":
+        arm(key, null);
+        // Closing the chat ends its bridge, which brings the program back in the window.
+        chats.close(tab!);
+        return void setTimeout(refresh, 1500);
+      case "open-chat":
+        void ipc
+          .viewSwitch(key, "chat")
+          .then(() => {
+            arm(key, null);
+            chats.open(key, { key, mode: "default" });
+          })
+          .catch((e: unknown) => {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (/switch after this turn/.test(msg)) return armTo("chat");
+            arm(key, null);
+            s.toast({ tone: "alert", text: msg });
+          });
+    }
+  }
+  deps.switchView = switchView;
+  useEffect(() => {
+    for (const [key, to] of armed) {
+      if (to === "terminal" ? !chatRunning(key) : !terminalRunning(key)) switchView(key, to);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [armed, chats.states, byKey]);
 
   const history = useUsageHistory(s.accounts, s.now);
   const slots: V3Slots = {

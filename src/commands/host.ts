@@ -18,6 +18,12 @@ import { resolveDir } from "./routing.js";
 
 export async function cmdHost(providerId: ProviderId, sub: string | undefined, arg: string | undefined, flags: Record<string, string | boolean>): Promise<void> {
   const action = sub ?? "list";
+  if (action === "parked") {
+    // The program of a hosted window while its conversation is open in the chat view.
+    console.log(`\n  This session is open in the chat view of Agent Switch.\n  It comes back here when the chat closes, or switch with [Terminal] in the session bar.\n`);
+    setInterval(() => {}, 1 << 30);
+    return;
+  }
   if (!["start", "list", "end", "attach", "respawn"].includes(action)) die("usage: agent-switch host start [profile] [--provider P] [--cwd DIR] | list | attach <session> | respawn <session> [--model M] [--effort E] | end <session> [--yes]");
   const mode = hostingMode(process.platform, TmuxHost.available());
   if (action === "list" && flags.json && mode === "ephemeral") {

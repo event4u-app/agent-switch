@@ -53,6 +53,8 @@ export interface DispatchDeps {
   openTab?: (key: string) => void;
   /** The session runs in this window's chat: model changes go through its bridge. */
   chatOf?: (key: string) => { setModel: (m: string) => void } | null;
+  /** The session bar's [Terminal | Chat] switch. */
+  switchView?: (key: string, to: "terminal" | "chat") => void;
 }
 
 /** Claude's `--model` aliases. */
@@ -193,7 +195,7 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
     case "clean-up":
       return deps.open({ kind: "confirm", title: "Clean up merged worktrees?", body: "Removes the worktrees of sessions whose PR is merged. A worktree with changes is skipped.", confirm: "Clean up", onConfirm: () => void run(deps, "Clean up", deps.ipc.cleanupMerged()) });
     case "view":
-      return;
+      return deps.switchView?.(a.key, a.view);
     case "model":
     case "thinking": {
       const chat = deps.chatOf?.(a.key);

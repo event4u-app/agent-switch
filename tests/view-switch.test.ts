@@ -1,0 +1,96 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+
+import { TmuxHost, type HostedSession } from "../src/host/tmux-host.js";
+import { resumeArgs, toChat, toTerminal, ViewRefused, type ViewDeps } from "../src/commands/view.js";
+
+function fakeHost(rows: HostedSession[]) {
+  const log: string[] = [];
+  const host: ViewDeps["host"] = {
+    list: () => rows.map((r) => ({ ...r, alive: true })),
+    park: (key, argv) => {
+      log.push(`park ${key} ${argv.join(" ")}`);
+      const r = rows.find((x) => x.key === key)!;
+      r.parked = true;
+      return r;
+    },
+    respawn: (key, o) => {
+      log.push(`respawn ${key} ${o.bin} ${(o.args ?? []).join(" ")}`);
+      return rows.find((x) => x.key === key)!;
+    },
+    unparked: (key) => {
+      delete rows.find((x) => x.key === key)!.parked;
+    },
+  };
+  return { host, log };
+}
+const row = (over: Partial<HostedSession> = {}): HostedSession => ({ key: "claude/work/s1", provider: "claude", account: "work", sessionId: "s1", window: "@1", cwd: "/w", startedAt: "t", ...over });
+const deps = (host: ViewDeps["host"], over: Partial<ViewDeps> = {}): ViewDeps => ({ host, turnRunning: () => false, writer: () => null, bin: (p) => p, configDir: (p, a) => `/cfg/${p}/${a}`, parked: (k) => ["notice", k], ...over });
+
+test("terminal → chat parks the window; chat → terminal resumes the same conversation", () => {
+  const rows = [row()];
+  const { host, log } = fakeHost(rows);
+  assert.equal(toChat(deps(host), "claude/work/s1").parked, true);
+  assert.equal(toChat(deps(host), "claude/work/s1").parked, true, "already in chat: nothing happens");
+  toTerminal(deps(host), "claude/work/s1");
+  assert.equal(rows[0].parked, undefined);
+  toTerminal(deps(host), "claude/work/s1");
+  assert.deepEqual(log, ["park claude/work/s1 notice claude/work/s1", "respawn claude/work/s1 claude --resume s1"]);
+  assert.deepEqual(resumeArgs("codex", "t1"), ["resume", "t1"]);
+});
+
+test("refusals: not hosted, a provider without a shared conversation, a running turn, a second writer", () => {
+  const { host } = fakeHost([row(), row({ key: "antigravity/me/a1", provider: "antigravity", account: "me", sessionId: "a1" })]);
+  const refused = (f: () => unknown, re: RegExp) => assert.throws(f, (e: unknown) => e instanceof ViewRefused && re.test(e.message));
+  refused(() => toChat(deps(host), "claude/work/elsewhere"), /^Chat needs a session hosted in Agent Switch$/);
+  refused(() => toChat(deps(host), "antigravity/me/a1"), /keep the view they started in/);
+  refused(() => toChat(deps(host, { turnRunning: () => true }), "claude/work/s1"), /switch after this turn/);
+  refused(() => toChat(deps(host, { writer: () => "app bridge:42" }), "claude/work/s1"), /already has a writer \(app bridge:42\)/);
+  toChat(deps(host), "claude/work/s1");
+  refused(() => toTerminal(deps(host, { writer: () => "app bridge:42" }), "claude/work/s1"), /close the chat first/);
+});
+
+const gate = { skip: TmuxHost.available() ? false : "tmux is not installed here" };
+
+test("20 switches on a real tmux window: one program at a time, always the same conversation", gate, () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-view-")));
+  const out = path.join(dir, "out");
+  fs.mkdirSync(out);
+  const bin = path.join(dir, "fake-claude");
+  fs.writeFileSync(bin, `#!/bin/sh\necho "$$ $*" >> "${out}/runs"\nwhile IFS= read -r l; do :; done\n`, { mode: 0o755 });
+  const notice = path.join(dir, "notice");
+  fs.writeFileSync(notice, `#!/bin/sh\necho "parked $$" >> "${out}/runs"\nwhile IFS= read -r l; do :; done\n`, { mode: 0o755 });
+  const socket = `asw-view-${process.pid}`;
+  const host = new TmuxHost(dir, { socket });
+  try {
+    const s = host.start({ provider: "claude", account: "work", configDir: dir, cwd: dir, bin, sessionId: "0000aaaa-1111-2222-3333-444455556666" });
+    const d: ViewDeps = { host, turnRunning: () => false, writer: () => null, bin: () => bin, configDir: () => dir, parked: () => [notice] };
+    const lines = () => (fs.existsSync(path.join(out, "runs")) ? fs.readFileSync(path.join(out, "runs"), "utf8").trim().split("\n") : []);
+    const wait = (n: number) => {
+      const end = Date.now() + 5000;
+      while (lines().length < n && Date.now() < end) spawnSync("sleep", ["0.05"]);
+    };
+    wait(1);
+    for (let i = 0; i < 20; i++) {
+      const step = i % 2 === 0 ? toChat(d, s.key) : toTerminal(d, s.key);
+      assert.equal(step.key, s.key);
+      wait(i + 2);
+    }
+    const runs = lines();
+    assert.equal(runs.length, 21, runs.join("\n"));
+    runs.forEach((l, i) => {
+      if (i === 0) assert.match(l, /--session-id 0000aaaa/);
+      else if (i % 2 === 1) assert.match(l, /^parked \d+$/, `switch ${i} parks`);
+      else assert.match(l, /--resume 0000aaaa-1111-2222-3333-444455556666$/, `switch ${i} resumes the same conversation`);
+    });
+    const panes = host.run(["list-panes", "-t", s.window, "-F", "#{pane_pid} #{pane_dead}"]).out.trim().split("\n");
+    assert.equal(panes.length, 1, "one pane, one program");
+    assert.equal(host.list().find((x) => x.key === s.key)?.parked, undefined, "ends in the terminal");
+  } finally {
+    spawnSync("tmux", ["-L", socket, "kill-server"]);
+  }
+});

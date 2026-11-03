@@ -119,6 +119,12 @@ describe("dispatchV3", () => {
     expect(e.toast).toHaveBeenCalled();
   });
 
+  it("the view switch goes to the window's switch", () => {
+    const d = { ...deps(), switchView: vi.fn() };
+    dispatchV3({ type: "view", key: "claude/work/h", view: "chat" }, d);
+    expect(d.switchView).toHaveBeenCalledWith("claude/work/h", "chat");
+  });
+
   it("model and thinking: a pick, then respawn; nothing for a session not hosted", async () => {
     const d = deps();
     dispatchV3({ type: "model", key: "claude/work/a" }, d);

@@ -72,3 +72,31 @@ test("bridge refuses a bypass mode before it starts anything", () => {
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /approvals are never bypassed/);
 });
+
+test("bridge: a hosted session parked for the chat gets its terminal back when the chat's bridge ends", { skip: spawnSync("tmux", ["-V"]).status === 0 ? false : "tmux is not installed here" }, () => {
+  const h = home();
+  const id = "9f640d3b-0a51-47b5-944c-934d3148a098";
+  const key = `claude/work/${id}`;
+  const log = path.join(h, "runs");
+  const fake = path.join(h, "fake-claude-log.mjs");
+  fs.writeFileSync(fake, `#!${process.execPath}\nimport fs from "node:fs";\nfs.appendFileSync(${JSON.stringify(log)}, process.argv.slice(2).join(" ") + "\\n");\nprocess.stdin.on("data", () => {});\nprocess.stdin.on("end", () => process.exit(0));\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(h, "state.json"), JSON.stringify({ active: {}, binaryPaths: { claude: fake } }));
+  const socket = `asw-bc-${process.pid}`;
+  const env = { ...process.env, AGENT_SWITCH_HOME: h, AGENT_SWITCH_HOST_SOCKET: socket };
+  const hostMod = new URL("../src/host/tmux-host.js", import.meta.url).href;
+  const go = (code: string, input = "") => spawnSync(process.execPath, ["--input-type=module", "-e", code], { env, encoding: "utf8", input, timeout: 20_000 });
+  try {
+    const started = go(`const { TmuxHost } = await import(${JSON.stringify(hostMod)}); const host = new TmuxHost(process.env.AGENT_SWITCH_HOME); host.start({ provider: "claude", account: "work", configDir: "/tmp", cwd: process.env.AGENT_SWITCH_HOME, bin: ${JSON.stringify(fake)}, sessionId: ${JSON.stringify(id)} }); host.park(${JSON.stringify(key)}, ["sh", "-c", "read x"]);`);
+    assert.equal(started.status, 0, started.stderr);
+    const bridged = go(`const { cmdBridge } = await import(${JSON.stringify(mod)}); await cmdBridge("claude", ${JSON.stringify(id)}, {});`);
+    assert.equal(bridged.status, 0, bridged.stderr);
+    const end = Date.now() + 5000;
+    const runs = () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").trim().split("\n") : []);
+    while (!runs().some((l) => l.includes(`--resume ${id}`) && !l.includes("-p")) && Date.now() < end) spawnSync("sleep", ["0.05"]);
+    assert.ok(runs().some((l) => /--resume 9f640d3b/.test(l) && !/(^| )-p( |$)/.test(l)), `the window runs the program again, resuming: ${runs().join(" | ")}`);
+    const reg = JSON.parse(fs.readFileSync(path.join(h, "host", "sessions.json"), "utf8"));
+    assert.equal(reg[key].parked, undefined, "no longer parked");
+  } finally {
+    spawnSync("tmux", ["-L", socket, "kill-server"]);
+  }
+});

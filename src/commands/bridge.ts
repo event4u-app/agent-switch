@@ -19,6 +19,7 @@ import { clearPending, writePending, type PendingItem } from "../bridge/pending.
 import { liveSessions } from "../api.js";
 import { eventFile, lastHookCwd, readEvents } from "../hooks.js";
 import { InputLeases, LeaseHeld, type Holder } from "../host/lease.js";
+import { restoreAfterChat } from "./view.js";
 import { configDir, die, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
 import { provider as providerOf, type ProviderId } from "../providers.js";
 import { readSessionHeader } from "../sessions.js";
@@ -171,6 +172,8 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
     clearInterval(renew);
     clearPending(ROOT, t.key);
     if (t.sessionId) leases.release(t.key, holder);
+    // A hosted session switched to chat gets its terminal back (Phase 4).
+    if (t.sessionId) restoreAfterChat(t.key);
   };
 
   let send: (c: BridgeCommand) => void;

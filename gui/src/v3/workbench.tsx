@@ -90,7 +90,7 @@ function BarChip({ children, title, locked, onClick }: { children: ReactNode; ti
 export function SessionBar({ s, openIn, on }: { s: BarSession; openIn: ReactNode; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: () => void; thinking: () => void; menu: () => void } }) {
   const t = tone(s.account.fiveH, s.account.protect);
   const chatOff = !s.hosted || !s.chatAvailable;
-  const chatWhy = !s.hosted ? "Chat needs a session hosted in Agent Switch" : "Chat arrives with the next version";
+  const chatWhy = !s.hosted ? "Chat needs a session hosted in Agent Switch" : "This tool keeps the view it started in";
   return (
     <div className="flex h-10 shrink-0 items-center gap-1 overflow-hidden border-b border-ac-line bg-ac-panel px-2">
       <div role="radiogroup" aria-label="View" className="mr-1 inline-flex h-7 shrink-0 items-center rounded-md border border-ac-line bg-ac-bg p-0.5">

@@ -225,8 +225,8 @@ export async function sessionReview(key: string, scope: ReviewScope): Promise<{ 
   return { files: Array.isArray(o.files) ? o.files : [], shared: Array.isArray(o.shared) ? o.shared : [], base: typeof o.base === "string" ? o.base : null };
 }
 
-/** A review action; a refusal comes back as an Error with the CLI's reason. */
-async function reviewCall(args: string[]): Promise<string> {
+/** A CLI action answering `--json` with ok/error; a refusal comes back as an Error with the CLI's reason. */
+async function cliCall(args: string[]): Promise<string> {
   const out = await cli(args).execute();
   let o: { ok?: boolean; error?: string; done?: string; commit?: string } = {};
   try {
@@ -238,9 +238,11 @@ async function reviewCall(args: string[]): Promise<string> {
   return o.done ?? o.commit ?? "";
 }
 
-export const reviewAct = (key: string, action: "stage" | "unstage" | "discard", file: string, hunk?: string) => reviewCall(["diff", key, action, "--file", file, ...(hunk ? ["--hunk", hunk] : []), "--json"]);
-export const reviewUndo = (key: string) => reviewCall(["diff", key, "undo", "--json"]);
-export const reviewCommit = (key: string, message: string) => reviewCall(["diff", key, "commit", "--message", message, "--json"]);
+export const reviewAct = (key: string, action: "stage" | "unstage" | "discard", file: string, hunk?: string) => cliCall(["diff", key, action, "--file", file, ...(hunk ? ["--hunk", hunk] : []), "--json"]);
+export const reviewUndo = (key: string) => cliCall(["diff", key, "undo", "--json"]);
+/** `view <session> chat|terminal`: the session bar's switch for a hosted session. */
+export const viewSwitch = (key: string, to: "chat" | "terminal") => cliCall(["view", key, to, "--json"]);
+export const reviewCommit = (key: string, message: string) => cliCall(["diff", key, "commit", "--message", message, "--json"]);
 
 /** `sessions name <session> <name>`: the library name. */
 export async function renameSession(key: string, name: string): Promise<void> {

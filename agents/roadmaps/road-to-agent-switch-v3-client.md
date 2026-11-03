@@ -191,14 +191,33 @@ drag & drop upload · D10 diffs, collapsible · D11 "a real client".
 
 ## Phase 4 — Terminal ⇄ chat switch
 
-- [ ] The session bar's `[Terminal | Chat]` switch (spec §6.2): only between
+- [x] The session bar's `[Terminal | Chat]` switch (spec §6.2): only between
       turns; disabled with "Chat needs a session hosted in Agent Switch" for
       sessions in the user's own terminal; one writer per session; handover via `respawn-pane` +
       `--resume` (`src/tmux.ts` in-place mechanism); "switch after this turn"
       (arm pattern, `src/rebind-arm.ts`).
-- [ ] Offered only where the adapter declares a shared conversation (Claude,
+      → `agent-switch view <s> chat|terminal` (`src/commands/view.ts`): to chat,
+      the hosted window is parked (`TmuxHost.park` — its program replaced by a
+      waiting notice, window and key kept), then the chat's bridge resumes the
+      conversation; when that bridge ends, the window gets the program back with
+      `--resume` (`restoreAfterChat` in the bridge's exit). Refused during a
+      turn and while another writer holds the lease. In the window a switch
+      asked for during a turn is armed and happens when the turn ends
+      (`adapter/viewSwitch.ts`); a chat started in the chat view has no
+      terminal to go back to and says so. The arm lives in the window rather
+      than in `rebind-arm` — the turn end it waits for is in front of it.
+- [x] Offered only where the adapter declares a shared conversation (Claude,
       Codex); otherwise the view is fixed at start.
-- [ ] Second-writer rejection test; 20 switches without mixing.
+      → Chat is offered for Claude and Codex (`SHARED_CONVERSATION`); for
+      others the switch stays disabled: "This tool keeps the view it started
+      in". Codex comes back with `codex resume <id>` (unit test; no live Codex
+      run, its sign-ins here do not refresh).
+- [x] Second-writer rejection test; 20 switches without mixing.
+      → The bridge refuses a held lease (`tests/bridge-command.test.ts`), and
+      `view chat` refuses a live writer (`tests/view-switch.test.ts`). 20
+      switches on a real tmux window: one pane, one program at a time, every
+      return resuming the same conversation id. A bridge ending over a parked
+      session restores the program in the window (real tmux).
 
 ## Phase 5 — Desktop parity
 
