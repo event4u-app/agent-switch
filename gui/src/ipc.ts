@@ -151,6 +151,12 @@ export async function setLibraryFlag(key: string, flag: "pin" | "archive", on: b
   await runCli(["sessions", on ? flag : `un${flag}`, key]);
 }
 
+/** `timeline <session> --json`: one page of the session's history as AS events. */
+export async function sessionTimeline(key: string, limit = 200, before?: number): Promise<{ events: import("./v3/timeline.js").AsEvent[]; from: number; total: number; version: string | null; newerThanFixtures: boolean }> {
+  const o = JSON.parse(await runCli(["timeline", key, "--json", "--limit", String(limit), ...(before !== undefined ? ["--before", String(before)] : [])]));
+  return { events: Array.isArray(o.events) ? o.events : [], from: Number(o.from) || 0, total: Number(o.total) || 0, version: typeof o.version === "string" ? o.version : null, newerThanFixtures: o.newerThanFixtures === true };
+}
+
 /** `sessions name <session> <name>`: the library name. */
 export async function renameSession(key: string, name: string): Promise<void> {
   await runCli(["sessions", "name", key, name]);

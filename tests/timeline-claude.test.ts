@@ -74,6 +74,10 @@ test("a failed turn says why before it ends; unknown control requests and odd li
   assert.deepEqual(fromClaudeLine({ type: "user", isSidechain: true, message: { content: "x" } }, st), [], "a subagent's own lines live in its own file");
 });
 
+test("a transcript's turn_duration line ends the turn", () => {
+  assert.deepEqual(fromClaudeLine({ type: "system", subtype: "turn_duration", durationMs: 4200 }, claudeState()), [{ t: "turn.end", ok: true, durationMs: 4200, costUsd: null }]);
+});
+
 test("questions and plans become their own events", () => {
   const st = claudeState();
   const q = fromClaudeLine({ type: "assistant", message: { id: "m1", content: [{ type: "tool_use", id: "t1", name: "AskUserQuestion", input: { questions: [{ question: "Which DB?", options: [{ label: "SQLite" }, { label: "Postgres" }] }] } }] } }, st);

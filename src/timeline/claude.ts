@@ -153,6 +153,8 @@ export function fromClaudeLine(line: unknown, st: ClaudeState): AsEvent[] {
     return out;
   }
   if (type === "system" && e.subtype === "init") return [];
+  // The transcript's own record that a turn ended (a stream says it with `result`).
+  if (type === "system" && e.subtype === "turn_duration") return [{ t: "turn.end", ok: true, durationMs: typeof e.durationMs === "number" ? e.durationMs : null, costUsd: null }];
   return [{ t: "unknown", kind: type ? `${type}${e.subtype ? `:${str(e.subtype)}` : ""}` : "line" }];
 }
 

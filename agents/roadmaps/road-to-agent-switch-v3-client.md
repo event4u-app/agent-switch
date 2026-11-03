@@ -91,7 +91,14 @@ drag & drop upload · D10 diffs, collapsible · D11 "a real client".
       a new session, a Write approval asked and answered, the file written, the
       turn ended. Found on the way: a bridge whose agent binary failed to start
       never exited (test red first).
-- [ ] Virtualised list; 50 real sessions render.
+- [x] Virtualised list; 50 real sessions render.
+      → `gui/src/v3/{timeline.ts,virtual.tsx,chat.tsx}` (windowing without a new
+      dependency); a session in the user's own terminal now shows its read-only
+      timeline (D-mirror's v3.1 promise). The 50 newest real transcripts on the
+      owner's machine (127.6 MB, Claude Code 2.1.314/2.1.316) mapped without an
+      error in 364 ms, slowest 89 ms; that run surfaced `system:turn_duration`,
+      now a turn end. GUI: 50 sessions render, a 2700-row session keeps < 60
+      rows in the DOM.
 
 ## Phase 2 — Interactive chat view
 
