@@ -53,10 +53,10 @@ One claim is corrected:
 
 ## Phase 2 — frame elements (P1)
 
-- [ ] **Sessions window header**: 36 px, "Sessions" with `+` (⌘N) and `⋯`. The
+- [x] **Sessions window header**: 36 px, "Sessions" with `+` (⌘N) and `⋯`. The
   `⋯` menu has Select, Group by project, Density and Show pinned only. Density
   is stored next to the appearance.
-- [ ] **Start on a session**: restore the last tabs and the active tab.
+- [x] **Start on a session**: restore the last tabs and the active tab.
   Otherwise open the first live session. With no session at all, show the
   workbench empty state (title, one line, Start session ⌘N, Open Library).
 - [x] **Open is a split button**: the main part opens the default target (⌘O)
@@ -83,9 +83,9 @@ One claim is corrected:
   `—`.
 - [ ] **Limit rows without data**: "no data yet" instead of an empty track,
   and "sign in ›" when not signed in.
-- [ ] **Empty states**: the Sessions zone shows "No sessions running. Start one
+- [x] **Empty states**: the Sessions zone shows "No sessions running. Start one
   ⌘N".
-- [ ] **One trailing glyph per row**: the children toggle shows only on hover,
+- [x] **One trailing glyph per row**: the children toggle shows only on hover,
   on the active row or while open.
 
 ## Phase 4 — details (P2)

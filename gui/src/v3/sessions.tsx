@@ -6,7 +6,7 @@
  * reference boards; the data is `sessions --json`.
  */
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Bot, ChevronRight, CircleX, TriangleAlert } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
@@ -123,14 +123,18 @@ export function SessionRow({
   onCheck: (key: string) => void;
 }) {
   const second = active || comfortable;
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (active) ref.current?.scrollIntoView?.({ block: "nearest" });
+  }, [active]);
   return (
-    <div>
+    <div ref={ref}>
       <div
         role="button"
         tabIndex={0}
         aria-current={active ? "true" : undefined}
         onClick={() => (selecting ? onCheck(s.key) : onSelect(s.key))}
-        className={cn("relative rounded-md pl-2.5 pr-2", second ? "py-1.5" : "py-1", active ? "bg-ac-raise" : "hover:bg-ac-raise")}
+        className={cn("group/row relative rounded-md pl-2.5 pr-2", second ? "py-1.5" : "py-1", active ? "bg-ac-raise" : "hover:bg-ac-raise")}
       >
         {active && <Marker />}
         <div className="flex h-5 min-w-0 items-center gap-2">
@@ -151,7 +155,8 @@ export function SessionRow({
               aria-label={open ? "Hide children" : `Show ${childNoun(s)}`}
               aria-expanded={!!open}
               onClick={(e) => (e.stopPropagation(), onToggleChildren(s.key))}
-              className="inline-flex size-4 shrink-0 items-center justify-center rounded text-ac-muted hover:text-ac-text"
+              // One trailing slot per row (spec §5.2): the toggle shows on hover, on the active row, or while open.
+              className={cn("inline-flex size-4 shrink-0 items-center justify-center rounded text-ac-muted hover:text-ac-text", !(active || open) && "opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100")}
             >
               <ChevronRight className={cn("size-3", open && "rotate-90")} />
             </button>
@@ -188,6 +193,8 @@ export function SessionsZone({
   onCheck,
   onCleanUp,
   onDoneToday,
+  onStart,
+  projectOf,
   batch,
 }: {
   sessions: RowSession[];
@@ -202,20 +209,43 @@ export function SessionsZone({
   onCheck: (key: string) => void;
   onCleanUp: () => void;
   onDoneToday: () => void;
+  /** The empty zone's one action (spec §5.2). */
+  onStart?: () => void;
+  /** Group by project: the project of a row, or null for rows outside a repo. */
+  projectOf?: (key: string) => string | null;
   batch: BatchActions;
 }) {
   const live = liveOrder(sessions);
   const done = sessions.filter((s) => s.doneToday).length;
+  // Grouped: one header per project, in the order the live list first meets it.
+  const groups = projectOf ? [...new Set(live.map((s) => projectOf(s.key) ?? ""))] : [""];
+  const rowsOf = (g: string) => (projectOf ? live.filter((s) => (projectOf(s.key) ?? "") === g) : live);
   return (
     <section aria-label="Sessions">
-      <div className="mx-3 border-t border-ac-line" />
-      <div className="sticky top-0 flex h-8 items-center gap-2 bg-ac-panel px-3">
+      <div className="mx-3.5 my-1.5 h-px bg-ac-line" />
+      <div className="sticky top-0 z-[1] flex h-8 items-center gap-2 bg-ac-panel px-3.5">
         <span className="text-[11px] font-semibold text-ac-soft">Sessions</span>
         <span className="text-[11px] text-ac-muted">{live.length}</span>
       </div>
       {selection && <BatchBar compact count={selection.size} actions={batch} className="mx-1.5 mb-1" />}
       <div className="px-1.5">
-        {live.map((s) => (
+        {live.length === 0 && (
+          <p className="px-2 py-1.5 text-[12px] text-ac-muted">
+            No sessions running.{" "}
+            {onStart && (
+              <button type="button" onClick={onStart} className="text-ac-brand-text hover:underline">
+                Start one ⌘N
+              </button>
+            )}
+          </p>
+        )}
+        {groups.map((g) => [
+          projectOf && (
+            <div key={`h:${g}`} className="truncate px-2 pb-0.5 pt-1.5 text-[10.5px] font-medium text-ac-muted" title={g || undefined}>
+              {g ? g.split("/").pop() : "No project"}
+            </div>
+          ),
+          ...rowsOf(g).map((s) => (
           <SessionRow
             key={s.key}
             s={s}
@@ -228,9 +258,10 @@ export function SessionsZone({
             onToggleChildren={onToggleChildren}
             onCheck={onCheck}
           />
-        ))}
+          )),
+        ])}
         {done > 0 && (
-          <div className="flex h-7 items-center gap-1 px-2 text-[12px] text-ac-muted">
+          <div className="mt-0.5 flex h-7 items-center gap-1 px-2.5 text-[11.5px] text-ac-muted">
             <button type="button" onClick={onDoneToday} className="inline-flex items-center gap-1 hover:text-ac-text">
               <ChevronRight className="size-3" /> Done today {done}
             </button>

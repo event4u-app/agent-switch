@@ -97,7 +97,7 @@ export function NeedsZone({
   const updates = away ? away.finishedTurns + away.stoppedOnError + away.resolved + away.mergedPrs + away.ciBreaks : 0;
   return (
     <section aria-label="Needs you">
-      <div className="sticky top-0 flex h-8 items-center gap-2 bg-ac-panel px-3">
+      <div className="sticky top-0 z-[1] flex h-8 items-center gap-2 bg-ac-panel px-3.5">
         <span className="text-[11px] font-semibold text-ac-soft">Needs you</span>
         <span className="text-[11px] text-ac-muted">{items.length}</span>
         <span className="ml-auto font-ac-mono text-[10.5px] text-ac-muted">⌘J</span>
@@ -112,7 +112,7 @@ export function NeedsZone({
           <NeedRow key={n.id} n={n} top={i === 0 && !focusedId} focused={n.id === focusedId} onVerb={onVerb} />
         ))}
         {items.length > MAX_ROWS && (
-          <button type="button" onClick={onMore} className="px-2 text-[11px] text-ac-muted hover:text-ac-text">
+          <button type="button" onClick={onMore} className="h-6 px-2 text-[11px] text-ac-muted hover:text-ac-text">
             {items.length - MAX_ROWS} more ›
           </button>
         )}

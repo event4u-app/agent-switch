@@ -21,7 +21,7 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
   it("Overview: needs you, running now, what's left — on screen", () => {
     const w = open();
     expect(screen.getByText("94% of 5h")).toBeTruthy();
-    expect(screen.getByText("Event store")).toBeTruthy();
+    expect(within(screen.getByLabelText("Sessions window")).getByText("Event store")).toBeTruthy();
     expect(screen.getByText("Limits")).toBeTruthy();
     expect(w.clicks()).toBe(0);
   });
@@ -40,7 +40,7 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
 
   it("Session sheet: move, take over, hand off, compact — session row, then ⋯", () => {
     const w = open();
-    w.click(screen.getByText("Event store"));
+    w.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
     w.click(screen.getByLabelText("Session actions: rename, pin, move, detach, end"));
     const menu = screen.getByRole("menu");
     for (const item of ["Move to another account…", "Take over here…", "Hand off…", "Compact"]) expect(within(menu).getByText(item)).toBeTruthy();
@@ -149,7 +149,7 @@ describe("v3.1 Review page", () => {
     const act = vi.fn();
     const review = vi.fn((key: string) => <p>{`review of ${key}`}</p>);
     render(<V3Window data={{ ...data(), changes: () => [{ path: "a.ts", status: "M", added: 1, removed: 0 }] as never }} slots={{ ...slots, review }} act={act} />);
-    fireEvent.click(screen.getByText("Event store"));
+    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
     fireEvent.click(screen.getByLabelText("Changes"));
     fireEvent.click(screen.getByText("Review changes"));
     expect(screen.getByText("review of s1")).toBeTruthy();
@@ -159,7 +159,7 @@ describe("v3.1 Review page", () => {
 
   it("without a review slot, Review stays disabled", () => {
     render(<V3Window data={{ ...data(), changes: () => [{ path: "a.ts", status: "M", added: 1, removed: 0 }] as never }} slots={slots} act={vi.fn()} />);
-    fireEvent.click(screen.getByText("Event store"));
+    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
     fireEvent.click(screen.getByLabelText("Changes"));
     expect((screen.getByText("Review changes").closest("button") as HTMLButtonElement).disabled).toBe(true);
   });

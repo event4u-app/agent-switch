@@ -83,3 +83,80 @@ describe("Open in (spec §7.7)", () => {
     expect(screen.queryByRole("menu", { name: "Open in" })).toBeNull();
   });
 });
+
+describe("Sessions window header (spec §5)", () => {
+  it("has the title, + for a new session and ⋯ for the view", () => {
+    mount();
+    const win = screen.getByLabelText("Sessions window");
+    fireEvent.click(within(win).getByRole("button", { name: /New session/ }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("⋯ offers select, group by project, density and pinned only", () => {
+    const store = { load: vi.fn(() => null), save: vi.fn() };
+    const d = data();
+    render(
+      <V3Window
+        data={{
+          ...d,
+          sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow" }],
+          table: [{ ...({} as never), key: "s1", project: "/code/agent-switch" }, { ...({} as never), key: "s2", project: "/code/shop" }],
+          library: [{ ...({} as never), key: "s2", pinned: true }],
+        }}
+        slots={slots}
+        act={vi.fn()}
+        layout={store}
+      />,
+    );
+    const view = () => (fireEvent.click(screen.getByLabelText("Select · group by project · density · show pinned")), screen.getByRole("menu", { name: "Sessions view" }));
+    expect(within(view()).getAllByRole("menuitem").map((b) => b.textContent)).toEqual(["Select", "Group by project", "DensityCompact", "Show pinned only"]);
+    fireEvent.click(within(screen.getByRole("menu", { name: "Sessions view" })).getByText("Group by project"));
+    const win = screen.getByLabelText("Sessions window");
+    expect(within(win).getByText("agent-switch")).toBeTruthy();
+    expect(within(win).getByText("shop")).toBeTruthy();
+    fireEvent.click(within(view()).getByText("Show pinned only"));
+    expect(within(win).queryByText("Event store")).toBeNull();
+    expect(within(win).getByText("Checkout flow")).toBeTruthy();
+    fireEvent.click(within(view()).getByText("Density"));
+    expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ comfortable: true, groupByProject: true, pinnedOnly: true }));
+    fireEvent.click(within(view()).getByText("Select"));
+    expect(within(win).getAllByRole("checkbox").length).toBeGreaterThan(0);
+  });
+});
+
+describe("start on a session (gap §4a)", () => {
+  it("opens the first live session when nothing was saved", () => {
+    mount();
+    expect(screen.getByRole("tab", { name: /Event store/ }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("restores the saved tabs and the active one", () => {
+    const d = data();
+    const two = [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow" }];
+    render(<V3Window data={{ ...d, sessions: two }} slots={slots} act={vi.fn()} layout={{ load: () => ({ tabs: ["s1", "s2"], active: "s2" }), save: vi.fn() }} />);
+    expect(screen.getAllByRole("tab").map((t) => t.getAttribute("aria-selected"))).toEqual(["false", "true"]);
+  });
+
+  it("with no sessions: the workbench empty state and the zone's one action", () => {
+    const { act } = mount({ sessions: [], needs: [] });
+    expect(screen.getByText("No sessions yet")).toBeTruthy();
+    expect(screen.getByText("No sessions running.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open Library" }));
+    expect(screen.getByRole("tab", { name: /Library/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Start session/ }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(act).not.toHaveBeenCalled();
+  });
+});
+
+describe("one trailing glyph per row (spec §5.2)", () => {
+  it("the children toggle is hidden at rest and shows on the active row", () => {
+    const d = data();
+    const kids = { ...d.sessions[0], key: "s2", title: "Checkout flow", children: [{ id: "c", label: "Explore", kind: "subagent", state: "working" as const, source: "hook" as const }] };
+    render(<V3Window data={{ ...d, sessions: [d.sessions[0], kids] }} slots={slots} act={vi.fn()} />);
+    const toggle = screen.getByLabelText("Show 1 subagent");
+    expect(toggle.className).toMatch(/opacity-0/);
+    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Checkout flow"));
+    expect(screen.getByLabelText("Show 1 subagent").className).not.toMatch(/opacity-0/);
+  });
+});

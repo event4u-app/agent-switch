@@ -6,8 +6,10 @@
  * window owns layout state only — never a session, an account or a file.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { FileCode, Layers, Library, ListTree, Settings, Wrench } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Ellipsis, FileCode, Layers, Library, ListTree, Plus, Settings, Wrench } from "lucide-react";
+import { Button, IconButton } from "../ui/Button.js";
+import { Kbd } from "../ui/Typography.js";
 import type { ToolEntry } from "../vm/types.js";
 import { DecisionSheet, NewSessionDialog, type MoveHow, type NewSessionFacts, type NewSessionPlan, type SheetSession } from "./dialogs.js";
 import { Shell, useFrame, type PageId } from "./frame.js";
@@ -22,7 +24,8 @@ import type { Appearance } from "./themes/resolve.js";
 import { ToolsPage, updateNeeds } from "./tools.js";
 import { BlockerStrip, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type TabItem } from "./workbench.js";
 import type { BatchActions } from "./kit.js";
-import { OpenInButton, OpenInMenu, monogram, type OpenFacts, type OpenPick } from "./menus.js";
+import { Menu, OpenInButton, OpenInMenu, monogram, type OpenFacts, type OpenPick } from "./menus.js";
+import { startTabs, type LayoutStore } from "./layout.js";
 
 export interface V3Data {
   nowMs: number;
@@ -126,17 +129,21 @@ export const PAGE_COMMANDS: PaletteEntry[] = [
   { id: "page:settings", group: "commands", title: "Settings", hint: "⌘," },
 ];
 
-export function V3Window({ data, slots, act, focus }: { data: V3Data; slots: V3Slots; act: (a: V3Action) => void; focus?: { key: string; n: number } }) {
+export function V3Window({ data, slots, act, focus, layout }: { data: V3Data; slots: V3Slots; act: (a: V3Action) => void; focus?: { key: string; n: number }; layout?: LayoutStore }) {
+  const saved = useMemo(() => layout?.load() ?? null, [layout]);
   const [pages, setPages] = useState<Page[]>([]);
   const [sessionTabs, setSessionTabs] = useState<string[]>([]);
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | { decide: string } | { menu: string } | { openin: string }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { decide: string } | { menu: string } | { openin: string }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
   const [openKids, setOpenKids] = useState<Set<string>>(new Set());
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [moreOpen, setMoreOpen] = useState(false);
+  const [comfortable, setComfortable] = useState(saved?.comfortable ?? false);
+  const [groupByProject, setGroupByProject] = useState(saved?.groupByProject ?? false);
+  const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
 
   const openPage = useCallback((p: Page) => {
     setPages((cur) => (cur.includes(p) ? cur : [...cur, p]));
@@ -147,6 +154,22 @@ export function V3Window({ data, slots, act, focus }: { data: V3Data; slots: V3S
     setSessionTabs((cur) => (cur.includes(key) ? cur : [...cur, key]));
     setActive(key);
   };
+  // The window opens where the user left off, else on the first live session;
+  // once, when the sessions are first known (they arrive after the first paint).
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current || !data.sessions.length) return;
+    started.current = true;
+    if (active) return;
+    const s = startTabs(saved, data.sessions);
+    setSessionTabs((cur) => [...new Set([...s.tabs, ...cur])]);
+    setActive(s.active);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.sessions]);
+  useEffect(() => {
+    if (started.current) layout?.save({ tabs: sessionTabs, active: active?.startsWith("page:") ? null : active, comfortable, groupByProject, pinnedOnly });
+  }, [layout, sessionTabs, active, comfortable, groupByProject, pinnedOnly]);
+
   // The app opens a tab itself: a new chat, a Needs-you item that lives in a chat.
   useEffect(() => {
     if (focus) openSession(focus.key);
@@ -285,6 +308,23 @@ export function V3Window({ data, slots, act, focus }: { data: V3Data; slots: V3S
           {next && <BlockerStrip text={next.text} action={next.action} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
           {slots.body(activeSession)}
         </>
+      ) : data.sessions.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center">
+          <div className="w-[480px] max-w-full px-6 text-center">
+            <h2 className="text-[16px] font-semibold text-ac-text">No sessions yet</h2>
+            <p className="mt-1 text-[13px] text-ac-muted">
+              Start one here, or run <span className="font-ac-mono">claude</span> in your terminal — it shows up on its own.
+            </p>
+            <div className="mt-4 flex justify-center gap-2">
+              <Button variant="primary" size="sm" onClick={() => setOverlay("new")}>
+                <Plus className="size-3.5" /> Start session <Kbd className="border-transparent bg-transparent text-ac-on-color">⌘N</Kbd>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => openPage("library")}>
+                Open Library
+              </Button>
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="flex flex-1 items-center justify-center text-[13px] text-ac-muted">Pick a session, or start one with ⌘N.</div>
       )}
@@ -302,13 +342,28 @@ export function V3Window({ data, slots, act, focus }: { data: V3Data; slots: V3S
     return s && <ChildrenWindow noun={childNoun(s)} children={s.children} onHide={() => frame.setRight(null)} />;
   })();
 
+  const pinned = new Set(data.library.filter((l) => l.pinned).map((l) => l.key));
   const sessionsWindow = (
     <aside aria-label="Sessions window" className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-ac-line bg-ac-panel">
-      <div className="min-h-0 flex-1 relative overflow-y-auto">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-ac-line px-3">
+        <span className="text-[12px] font-semibold text-ac-text">Sessions</span>
+        <span className="ml-auto flex items-center">
+          <IconButton label="New session  ⌘N" className="size-7" onClick={() => setOverlay("new")}>
+            <Plus />
+          </IconButton>
+          <IconButton label="Select · group by project · density · show pinned" aria-expanded={overlay === "sessions-menu"} className="size-7" onClick={() => setOverlay((o) => (o === "sessions-menu" ? null : "sessions-menu"))}>
+            <Ellipsis />
+          </IconButton>
+        </span>
+      </div>
+      <div className="relative min-h-0 flex-1 overflow-y-auto pb-2">
         <NeedsZone items={needs} away={data.away} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
         <SessionsZone
-          sessions={data.sessions}
+          sessions={pinnedOnly ? data.sessions.filter((x) => pinned.has(x.key)) : data.sessions}
           activeKey={activeSession}
+          comfortable={comfortable}
+          projectOf={groupByProject ? (k) => data.table.find((t) => t.key === k)?.project ?? null : undefined}
+          onStart={() => setOverlay("new")}
           selection={selection}
           openKeys={openKids}
           onSelect={openSession}
@@ -346,6 +401,19 @@ export function V3Window({ data, slots, act, focus }: { data: V3Data; slots: V3S
       <NewSessionDialog initial={data.newSession.initial} facts={data.newSession.facts} onClose={close} onChooseAccount={() => act({ type: "choose-account" })} onStart={(plan) => (close(), act({ type: "start", plan }))} />
     ) : decision ? (
       <DecisionSheet {...decision} room={null} onClose={close} onKeep={() => (close(), act({ type: "keep-account", account: decision.account }))} onDecide={(how, moves) => (close(), act({ type: "move", how, moves }))} />
+    ) : overlay === "sessions-menu" ? (
+      <div className="absolute left-[260px] top-[84px] z-10">
+        <Menu
+          label="Sessions view"
+          width={240}
+          items={[
+            { id: "select", label: "Select", onClick: () => (close(), setSelection(new Set())) },
+            { id: "group", label: "Group by project", checked: groupByProject, onClick: () => (close(), setGroupByProject((v) => !v)) },
+            { id: "density", label: "Density", hint: comfortable ? "Comfortable" : "Compact", onClick: () => (close(), setComfortable((v) => !v)) },
+            { id: "pinned", label: "Show pinned only", checked: pinnedOnly, onClick: () => (close(), setPinnedOnly((v) => !v)) },
+          ]}
+        />
+      </div>
     ) : openMenuOf ? (
       // Outside the session bar, which clips at 40 px (spec §7.7); anchored under the caret.
       <div className="absolute right-[52px] top-[118px] z-10">

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { AccountsPage, AllSessionsPage, LibraryPage, byProject, filterSessions, nextDeadline, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
 
 afterEach(cleanup);

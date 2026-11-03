@@ -24,6 +24,7 @@ import { Act } from "../kit.js";
 import type { ChangedFile } from "../panels.js";
 import type { Appearance } from "../themes/resolve.js";
 import { V3Window, type V3Action, type V3Slots } from "../window.js";
+import { localLayout } from "../layout.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
 import { sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
@@ -350,7 +351,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
 
   return (
     <>
-      <V3Window data={data} slots={slots} act={act} focus={focus} />
+      <V3Window data={data} slots={slots} act={act} focus={focus} layout={localLayout} />
       {chats.runners}
       <OverlayHost />
       <Toaster toasts={s.toasts} onDismiss={s.dismissToast} />
