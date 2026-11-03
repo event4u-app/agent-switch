@@ -12,6 +12,7 @@ import { enable as autostartEnable, disable as autostartDisable, isEnabled as au
 import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, AutoSwitchTag, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow, SessionPreview } from "./transforms.js";
 import type { AppNotification, NotificationKind } from "./notifications.js";
 import {
+  parseAgents,
   parseChanges,
   parseEngine,
   parseHistory,
@@ -19,6 +20,7 @@ import {
   parseLibrary,
   parseOpenTargets,
   parsePrStatus,
+  type AgentsList,
   type EngineHealth,
   type HistoryRow,
   type HostList,
@@ -119,6 +121,16 @@ export async function hostList(): Promise<HostList> {
 /** `pr status --json`: refreshes what is due through `gh`, then reads the cache. */
 export async function prStatus(): Promise<PrStatus> {
   return parsePrStatus(JSON.parse(await runCli(["pr", "status", "--json"])));
+}
+
+/** `agents --json`: Settings › Agents (v3.2). */
+export async function agentsList(): Promise<AgentsList> {
+  return parseAgents(JSON.parse(await runCli(["agents", "--json"])));
+}
+
+/** `agents on|off <id>`. */
+export async function setAgentEnabled(id: string, on: boolean): Promise<void> {
+  await runCli(["agents", on ? "on" : "off", id]);
 }
 
 /** `open-targets --json` without a session: the Open-in settings page. */

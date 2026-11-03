@@ -1,13 +1,15 @@
 /**
- * Settings (spec §10.5): the left nav, Appearance and Open in. The other
- * sections are the 2.11 settings screens, passed in by section. Agents and
- * Remote arrive with v3.2 and are not listed until then.
+ * Settings (spec §10.5): the left nav, Appearance, Open in and Agents (v3.2).
+ * The other sections are the 2.11 settings screens, passed in by section.
+ * Remote arrives with v3.2 Phase 2 and is not listed until then.
  */
 
 import type { CSSProperties, ReactNode } from "react";
-import { Check, ExternalLink, Monitor, Moon, Sun } from "lucide-react";
+import { useState } from "react";
+import { Check, Cpu, ExternalLink, Monitor, Moon, Plus, Sun } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { AcRoot } from "../ui/AcRoot.js";
+import { Button } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
 import { Select } from "../ui/Select.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
@@ -16,7 +18,7 @@ import { Chip, Marker, PageHeader } from "./kit.js";
 import { THEMES, themeById, type ThemeDef, type ThemeGroup } from "./themes/registry.js";
 import { resolveTheme, type Accent, type Appearance } from "./themes/resolve.js";
 
-export const SETTINGS_NAV = ["General", "Appearance", "Sign-ins", "Protection", "Distribution", "Notifications", "Desktop pet", "Providers", "Open in", "Updates", "Advanced"] as const;
+export const SETTINGS_NAV = ["General", "Appearance", "Sign-ins", "Protection", "Distribution", "Notifications", "Desktop pet", "Providers", "Open in", "Agents", "Updates", "Advanced"] as const;
 export type SettingsSection = (typeof SETTINGS_NAV)[number];
 
 export function SettingsPage({ current, onSection, children }: { current: SettingsSection; onSection: (s: SettingsSection) => void; children: ReactNode }) {
@@ -240,5 +242,92 @@ export function OpenInSettings({ targets, defaultTarget, perRepo, focusTerminal,
         <p className="mt-2 text-[11px] text-ac-muted">Launchers are allowlisted, paths must be inside a known worktree, arguments are passed as argv — never as a URL scheme.</p>
       </Group>
     </>
+  );
+}
+
+// ---------- Agents (v3.2) ----------
+
+export interface AgentRowView {
+  id: string;
+  name: string;
+  binary: string;
+  cls: "deep" | "acp" | "terminal";
+  enabled: boolean;
+  version: string | null;
+  local: { runner: string; model: string } | null;
+}
+
+export interface AgentSuggestionView {
+  id: string;
+  name: string;
+  install: string[];
+}
+
+const CLASSES = {
+  deep: { label: "deep", detail: "accounts, limits, switching" },
+  acp: { label: "ACP", detail: "chat view; limits only if reported" },
+  terminal: { label: "terminal only", detail: "dock tab, no structured view" },
+};
+
+const RUNNER: Record<string, string> = { ollama: "Ollama", lmstudio: "LM Studio" };
+const COLS = "grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_120px_minmax(0,1.3fr)_56px]";
+
+/** Settings › Agents (spec §10.5): one row per agent with its class and a switch. */
+export function AgentsSettings({ agents, suggestions, on }: { agents: AgentRowView[]; suggestions: AgentSuggestionView[]; on: { toggle: (id: string, value: boolean) => void; install: (id: string) => void } }) {
+  const [adding, setAdding] = useState(false);
+  return (
+    <Group title="Agents" detail="Every agent goes through the same session model. AS installs nothing silently and runs no model itself — local models come through agents that support them.">
+      <div className="rounded-[10px] border border-ac-line bg-ac-panel">
+        <div className={cn("grid gap-3 border-b border-ac-line px-4 py-2 text-[11px] font-medium text-ac-muted", COLS)}>
+          <span>Agent</span>
+          <span>Binary</span>
+          <span>Class</span>
+          <span>Model</span>
+          <span />
+        </div>
+        {agents.map((a) => (
+          <div key={a.id} className={cn("grid items-center gap-3 border-b border-ac-line px-4 py-2.5 last:border-b-0", COLS)}>
+            <span className="truncate text-[13px] text-ac-text">{a.name}</span>
+            <span className="truncate font-ac-mono text-xs text-ac-soft" title={a.version ? `${a.binary} ${a.version}` : `${a.binary} · not found on this machine`}>
+              {a.binary}
+            </span>
+            <span title={CLASSES[a.cls].detail}>
+              <Chip>{CLASSES[a.cls].label}</Chip>
+            </span>
+            <span className="min-w-0">
+              {a.local ? (
+                <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-ac-ok-text">
+                  <Cpu className="size-3.5 shrink-0" />
+                  <span className="truncate">
+                    local · {RUNNER[a.local.runner] ?? a.local.runner} · {a.local.model}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-xs text-ac-faint">provider default</span>
+              )}
+            </span>
+            <span className="flex justify-end">
+              <Switch checked={a.enabled} onChange={(v) => on.toggle(a.id, v)} label={`Use ${a.name}`} />
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="relative mt-2 flex items-center gap-2">
+        <Button size="sm" onClick={() => setAdding((v) => !v)} aria-expanded={adding} disabled={!suggestions.length}>
+          <Plus /> Add agent
+        </Button>
+        <span className="text-[11px] text-ac-muted">Suggestions from the ACP agent list · install commands run visibly in the terminal sheet</span>
+        {adding && (
+          <div role="menu" aria-label="Add agent" className="absolute left-0 top-9 z-20 w-[320px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
+            {suggestions.map((s) => (
+              <button key={s.id} type="button" role="menuitem" onClick={() => (setAdding(false), on.install(s.id))} className="flex w-full flex-col items-start rounded-md px-2.5 py-1.5 text-left hover:bg-ac-raise">
+                <span className="text-[13px] text-ac-text">{s.name}</span>
+                <span className="font-ac-mono text-[11px] text-ac-muted">{s.install.join(" ")}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </Group>
   );
 }

@@ -12,7 +12,8 @@
  * Per frame it checks: no page scroll, no text clipped without an ellipsis, no
  * button, tab or menu entry wrapped onto a second line, nothing outside the
  * window. Findings and PNGs go to V3_OUT (default: a temp dir); a finding
- * fails the run. The PNGs show the seeded temp home's paths and are not for
+ * fails the run. `V3_CLICKS="Settings ⌘,|Agents"` opens a page first by the
+ * accessible names of its buttons. The PNGs show the seeded temp home's paths and are not for
  * publishing.
  */
 
@@ -213,6 +214,11 @@ async function main() {
           await row.click().catch(() => {});
           await page.waitForTimeout(1200);
         } else void first;
+        // V3_CLICKS="Settings ⌘,|Agents": open a page by the accessible names of its buttons.
+        for (const name of (process.env.V3_CLICKS ?? "").split("|").filter(Boolean)) {
+          await page.getByRole("button", { name, exact: true }).first().click().catch(() => {});
+          await page.waitForTimeout(800);
+        }
         if (process.env.V3_EVAL) log(JSON.stringify(await page.evaluate(process.env.V3_EVAL)));
         if (process.env.V3_PROBE)
           log(JSON.stringify(await page.evaluate((sel) => [...document.querySelectorAll(sel)].map((e) => { const r = document.createRange(); r.selectNodeContents(e); const t = r.getBoundingClientRect(); return { text: e.textContent.slice(0, 50), box: e.getBoundingClientRect().width, client: e.clientWidth, scroll: e.scrollWidth, textWidth: t.width }; }), process.env.V3_PROBE)));

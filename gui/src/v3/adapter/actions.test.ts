@@ -22,6 +22,7 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
     setLibraryFlag: vi.fn(async () => {}),
     setAutoKeep: vi.fn(async () => {}),
     setOpenDefault: vi.fn(async () => {}),
+    setAgentEnabled: vi.fn(async () => {}),
     cleanupMerged: vi.fn(async () => {}),
     engineRestart: vi.fn(async () => {}),
     renameSession: vi.fn(async () => {}),

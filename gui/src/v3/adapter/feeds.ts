@@ -192,3 +192,46 @@ export function parseHistory(v: unknown): HistoryRow[] {
     .filter((h) => typeof h.id === "string" && typeof h.doneAt === "string")
     .map((h) => ({ id: h.id as string, kind: str(h.kind) ?? "", who: str(h.who) ?? "", what: str(h.what) ?? "", doneAt: h.doneAt as string }));
 }
+
+export interface AgentInfo {
+  id: string;
+  name: string;
+  binary: string;
+  cls: "deep" | "acp" | "terminal";
+  enabled: boolean;
+  builtin: boolean;
+  version: string | null;
+  local: { runner: string; model: string } | null;
+}
+
+export interface AgentSuggestion {
+  id: string;
+  name: string;
+  licence: string;
+  install: string[];
+}
+
+export interface AgentsList {
+  agents: AgentInfo[];
+  suggestions: AgentSuggestion[];
+}
+
+/** `agents --json`. A row without an id or a known class is dropped. */
+export function parseAgents(v: unknown): AgentsList {
+  const o = obj(v);
+  const classes = new Set(["deep", "acp", "terminal"]);
+  const local = (l: unknown) => {
+    const x = obj(l);
+    return typeof x.runner === "string" && typeof x.model === "string" ? { runner: x.runner, model: x.model } : null;
+  };
+  return {
+    agents: arr(o.agents)
+      .map(obj)
+      .filter((a) => typeof a.id === "string" && classes.has(a.cls as string))
+      .map((a) => ({ id: a.id as string, name: str(a.name) ?? (a.id as string), binary: str(a.binary) ?? "", cls: a.cls as AgentInfo["cls"], enabled: a.enabled !== false, builtin: a.builtin === true, version: str(a.version), local: local(a.localMarker) })),
+    suggestions: arr(o.suggestions)
+      .map(obj)
+      .filter((x) => typeof x.id === "string")
+      .map((x) => ({ id: x.id as string, name: str(x.name) ?? (x.id as string), licence: str(x.licence) ?? "", install: arr(x.install).filter((w): w is string => typeof w === "string") })),
+  };
+}

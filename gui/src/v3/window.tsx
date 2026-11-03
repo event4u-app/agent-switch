@@ -17,7 +17,7 @@ import { InboxPopover, Palette, type DoneItem, type PaletteEntry } from "./overl
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
 import { SessionsZone, childNoun, type RowSession } from "./sessions.js";
-import { AppearanceSettings, OpenInSettings, SettingsPage, type OpenTarget, type SettingsSection } from "./settings.js";
+import { AgentsSettings, AppearanceSettings, OpenInSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
 import { ToolsPage, updateNeeds } from "./tools.js";
 import { BlockerStrip, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type TabItem } from "./workbench.js";
@@ -41,6 +41,8 @@ export interface V3Data {
   appearance: Appearance;
   prefersDark: boolean;
   openIn: { targets: OpenTarget[]; defaultTarget: string | null; perRepo: Record<string, string>; focusTerminal: boolean };
+  /** Settings › Agents (v3.2). */
+  agents: { rows: AgentRowView[]; suggestions: AgentSuggestionView[] };
   newSession: { initial: NewSessionPlan; facts: NewSessionFacts };
   /** The near-limit decision, by account key ("claude/work") or by session key — a limit item's subject is either. */
   decision: (subject: string) => { account: string; pctUsed: number; window: string; resetsIn: string; sessions: SheetSession[]; suggestion: string } | null;
@@ -94,6 +96,8 @@ export type V3Action =
   | { type: "appearance"; value: Appearance }
   | { type: "open-default"; target: string; repo?: string }
   | { type: "focus-terminal-setting"; value: boolean }
+  | { type: "agent-enabled"; id: string; value: boolean }
+  | { type: "agent-install"; id: string }
   | { type: "restart-engine" };
 
 export const SESSION_MENU = ["Rename…", "Pin", "Move to another account…", "Take over here…", "Hand off…", "Compact", "Detach", "End…"] as const;
@@ -213,6 +217,8 @@ export function V3Window({ data, slots, act, focus }: { data: V3Data; slots: V3S
           <AppearanceSettings a={data.appearance} prefersDark={data.prefersDark} onChange={(value) => act({ type: "appearance", value })} />
         ) : section === "Open in" ? (
           <OpenInSettings {...data.openIn} on={{ setDefault: (target, repo) => act({ type: "open-default", target, repo }), focusTerminal: (value) => act({ type: "focus-terminal-setting", value }) }} />
+        ) : section === "Agents" ? (
+          <AgentsSettings agents={data.agents.rows} suggestions={data.agents.suggestions} on={{ toggle: (id, value) => act({ type: "agent-enabled", id, value }), install: (id) => act({ type: "agent-install", id }) }} />
         ) : (
           slots.settings(section)
         )}
