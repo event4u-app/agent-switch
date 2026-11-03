@@ -50,6 +50,8 @@ const VALUE_FLAGS = new Set([
   "mode",
   "before",
   "query",
+  "hunk",
+  "scope",
 ]);
 
 export interface ParsedArgs {

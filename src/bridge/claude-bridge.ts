@@ -32,6 +32,8 @@ export type BridgeCommand =
   /** Answers to an open question, by question text. */
   | { cmd: "answer"; id: string; answers: Record<string, string> }
   | { cmd: "interrupt" }
+  /** Ask the agent for a code review (Codex `review/start`); Claude has none. */
+  | { cmd: "review"; target: "uncommitted" | { baseBranch: string } }
   | { cmd: "set-model"; model: string }
   | { cmd: "set-mode"; mode: PermissionMode }
   | { cmd: "close" };
@@ -256,6 +258,8 @@ export class ClaudeBridge {
         this.mode = c.mode;
         this.write({ type: "control_request", request_id: crypto.randomUUID(), request: { subtype: "set_permission_mode", mode: c.mode } });
         return;
+      case "review":
+        return this.o.out({ bridge: "error", message: "Claude has no review command here; ask for a review in the chat" });
       case "close":
         this.child?.stdin?.end();
         return;

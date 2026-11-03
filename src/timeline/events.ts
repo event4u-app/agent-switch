@@ -30,7 +30,8 @@ export type AsEvent =
   | { t: "approval.resolved"; id: string; decision: "allow" | "deny" }
   | { t: "question.requested"; id: string; questions: { question: string; options: string[] }[] }
   | { t: "subagent.started"; id: string; type: string; description: string }
-  | { t: "subagent.finished"; id: string; ok: boolean }
+  /** `agentId` links the row to the subagent's hook record (its worktree). */
+  | { t: "subagent.finished"; id: string; ok: boolean; agentId?: string }
   | { t: "limits"; status: string; resetsAt: string | null }
   | { t: "turn.end"; ok: boolean; durationMs: number | null; costUsd: number | null }
   | { t: "error"; message: string }

@@ -95,7 +95,7 @@ function userLine(e: Json, st: ClaudeState): AsEvent[] {
       summary = `+${lines.length}`;
     }
     out.push({ t: "tool.finished", id: toolId, ok, summary });
-    if (SUBAGENT_TOOLS.has(name)) out.push({ t: "subagent.finished", id: toolId, ok: ok && str(tur.status) !== "failed" });
+    if (SUBAGENT_TOOLS.has(name)) out.push({ t: "subagent.finished", id: toolId, ok: ok && str(tur.status) !== "failed", ...(str(tur.agentId) ? { agentId: str(tur.agentId) } : {}) });
   }
   return out;
 }

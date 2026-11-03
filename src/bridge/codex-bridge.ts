@@ -212,6 +212,12 @@ export class CodexBridge {
       }
       case "steer":
         return this.steer(c.text);
+      case "review": {
+        if (!this.threadId) return this.o.out({ bridge: "error", message: "the thread has not started yet" });
+        const target = c.target === "uncommitted" ? { type: "uncommittedChanges" } : { type: "baseBranch", branch: c.target.baseBranch };
+        void this.o.server.call("review/start", { threadId: this.threadId, target }).catch((e: unknown) => this.o.out({ bridge: "error", message: e instanceof Error ? e.message : String(e) }));
+        return;
+      }
       case "interrupt":
         this.queue.length = 0;
         if (this.threadId && this.turnId && this.turnId !== "starting") void this.o.server.call("turn/interrupt", { threadId: this.threadId, turnId: this.turnId }).catch(() => {});

@@ -152,6 +152,8 @@ test("claude bridge: deny, unknown approvals, modes and images", async () => {
   assert.match((out.at(-1) as { message: string }).message, /not offered/);
   b.command({ cmd: "set-mode", mode: "plan" });
   assert.deepEqual((f.written.at(-1) as { request: unknown }).request, { subtype: "set_permission_mode", mode: "plan" });
+  b.command({ cmd: "review", target: "uncommitted" });
+  assert.match((out.at(-1) as { message: string }).message, /no review command/);
   b.command({ cmd: "set-model", model: "sonnet" });
   assert.deepEqual((f.written.at(-1) as { request: unknown }).request, { subtype: "set_model", model: "sonnet" });
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString("base64");
@@ -220,6 +222,11 @@ test("codex bridge: history from thread/read, a turn with an approval, the queue
   await tick();
   assert.ok(c.calls().length === 0, "no unexpected calls");
   assert.deepEqual(out.at(-1), { bridge: "queued", count: 0 }, "the queued message went out after the turn");
+  b.command({ cmd: "review", target: "uncommitted" });
+  b.command({ cmd: "review", target: { baseBranch: "main" } });
+  await tick();
+  assert.deepEqual(c.calls().map((x) => [x.method, (x as unknown as { params: { target: unknown } }).params.target]), [["review/start", { type: "uncommittedChanges" }], ["review/start", { type: "baseBranch", branch: "main" }]]);
+  c.calls().length = 0;
   c.ask(78, "item/tool/requestUserInput", {});
   await tick();
   assert.deepEqual(events(out).at(-1), { t: "unknown", kind: "codex-request:item/tool/requestUserInput" });

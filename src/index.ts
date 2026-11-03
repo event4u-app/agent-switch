@@ -50,6 +50,7 @@ import { visibilityFile, writeVisibility } from "./app-visibility.js";
 import { cmdPr, cmdWorktrees } from "./commands/pr.js";
 import { cmdChanges } from "./commands/changes.js";
 import { cmdBridge, cmdFiles, cmdTimeline } from "./commands/bridge.js";
+import { cmdDiff } from "./commands/diff.js";
 import { cmdEngine } from "./commands/engine.js";
 import { cmdNeeds } from "./commands/needs.js";
 import { cmdHost } from "./commands/host.js";
@@ -189,6 +190,7 @@ async function main(): Promise<void> {
     case "timeline": return cmdTimeline(positional[0], flags);
     case "bridge": return cmdBridge(providerId, positional[0], flags);
     case "files": return cmdFiles(positional[0], flags);
+    case "diff": return cmdDiff(positional[0], positional[1], flags);
     case "engine": return cmdEngine(positional[0], flags);
     case "needs": return cmdNeeds(positional[0], positional[1], flags);
     case "host": return cmdHost(providerId, positional[0], positional[1], flags);
