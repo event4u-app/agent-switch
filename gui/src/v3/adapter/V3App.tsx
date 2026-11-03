@@ -19,7 +19,7 @@ import { AcRoot } from "../../ui/AcRoot.js";
 import { Toaster } from "../../ui/Toaster.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
 import { ASProvider, useAS } from "../../vm/store.js";
-import { Choice, Modal, type NewSessionPlan } from "../dialogs.js";
+import { Modal, type NewSessionPlan } from "../dialogs.js";
 import { Act } from "../kit.js";
 import type { ChangedFile } from "../panels.js";
 import type { Appearance } from "../themes/resolve.js";
@@ -56,20 +56,7 @@ function usePrefersDark(): boolean {
 
 const terminalAppFor = (platform: string) => (platform === "mac" ? "Terminal.app" : platform === "windows" ? "Windows Terminal" : "your terminal");
 
-type Pick = Parameters<DispatchDeps["pick"]>[0];
 type Prompt = Parameters<DispatchDeps["prompt"]>[0];
-
-function PickSheet({ req, onClose }: { req: Pick; onClose: () => void }) {
-  return (
-    <Modal title={req.title} width={420} onClose={onClose} footer={<Act onClick={onClose}>Cancel</Act>}>
-      <div role="radiogroup" className="flex flex-col gap-2">
-        {req.options.map((o) => (
-          <Choice key={o} on={o === req.current} title={o} onPick={() => (onClose(), req.onPick(o))} />
-        ))}
-      </div>
-    </Modal>
-  );
-}
 
 function PromptSheet({ req, onClose }: { req: Prompt; onClose: () => void }) {
   const [v, setV] = useState(req.initial);
@@ -142,7 +129,6 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const { appearance, prefersDark, vars } = theme;
   const setAppearanceState = theme.setAppearance;
   const [focusTerminal, setFocusTerminalState] = useState(getFocusTerminal);
-  const [pick, setPick] = useState<Pick | null>(null);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [changes, setChanges] = useState<Map<string, ChangedFile[]>>(new Map());
   const changesAt = useRef(new Map<string, number>());
@@ -231,7 +217,6 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     hosted: (k) => hostedKeys.has(k),
     setAppearance: (a) => (saveAppearance(a), setAppearanceState(a)),
     setFocusTerminal: (on) => (setFocusTerminalFlag(on), setFocusTerminalState(on)),
-    pick: setPick,
     prompt: setPrompt,
     newChat,
     openTab,
@@ -364,7 +349,6 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       {chats.runners}
       <OverlayHost />
       <Toaster toasts={s.toasts} onDismiss={s.dismissToast} />
-      {pick && <PickSheet req={pick} onClose={() => setPick(null)} />}
       {prompt && <PromptSheet req={prompt} onClose={() => setPrompt(null)} />}
     </>
   );

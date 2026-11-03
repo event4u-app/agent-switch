@@ -101,6 +101,9 @@ export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount
         <button type="button" onClick={(e) => (e.stopPropagation(), onSignIn(a.key))} className="shrink-0 text-[11px] text-ac-muted hover:text-ac-text">
           sign in ›
         </button>
+      ) : !a.windows.length ? (
+        // Not read yet: never an empty track, which reads as 0 % used.
+        <span className="shrink-0 text-[11px] text-ac-muted">no data yet</span>
       ) : (
         <>
           {(t === "warn" || t === "alert") && top && (

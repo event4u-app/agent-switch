@@ -233,3 +233,52 @@ describe("the v3 keyboard (spec §12)", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });
+
+describe("Limits popover (spec §7.5)", () => {
+  it("a row opens the popover with every window; the row keeps its fill; Move opens the decision sheet", () => {
+    mount();
+    const strip = screen.getByLabelText("Limits");
+    fireEvent.click(within(strip).getByText("work"));
+    const pop = screen.getByRole("dialog", { name: "work limits" });
+    expect(within(pop).getByText("5h")).toBeTruthy();
+    expect(within(strip).getByText("work").closest("[role=button]")!.className).toMatch(/bg-ac-raise/);
+    fireEvent.click(within(pop).getByText("Move its session…"));
+    expect(screen.queryByRole("dialog", { name: "work limits" })).toBeNull();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("Open Accounts opens the Accounts page", () => {
+    mount();
+    fireEvent.click(within(screen.getByLabelText("Limits")).getByText("work"));
+    fireEvent.click(screen.getByText("Open Accounts"));
+    expect(screen.getByRole("tab", { name: /Accounts/ })).toBeTruthy();
+  });
+
+  it("an account not read yet says so instead of an empty bar", () => {
+    const d = data();
+    mount({ limits: [{ ...d.limits[0], windows: [] }] });
+    expect(within(screen.getByLabelText("Limits")).getByText("no data yet")).toBeTruthy();
+  });
+});
+
+describe("Model popover (spec §7.6)", () => {
+  const models = () => ({ models: [{ id: "opus", label: "Opus", hint: "deepest" }, { id: "sonnet", label: "Sonnet", hint: "balanced" }], current: "opus", thinking: ["low", "high"], currentThinking: "high" });
+
+  it("opens under the chip, marks only the chosen model and changes it for the next turn", () => {
+    const { act } = mount({ models });
+    fireEvent.click(screen.getByTitle("Model for the next turn"));
+    const pop = screen.getByRole("dialog", { name: "Model and thinking" });
+    expect(within(pop).getAllByRole("menuitemradio").map((b) => b.getAttribute("aria-checked"))).toEqual(["true", "false"]);
+    expect(within(pop).getByText("Applies from the next turn.", { exact: false })).toBeTruthy();
+    fireEvent.click(within(pop).getByText("Sonnet"));
+    expect(act).toHaveBeenCalledWith({ type: "set-model", key: "s1", model: "sonnet" });
+    expect(screen.queryByRole("dialog", { name: "Model and thinking" })).toBeNull();
+  });
+
+  it("the thinking chip opens the same popover; the segmented control sets the level", () => {
+    const { act } = mount({ models });
+    fireEvent.click(screen.getByTitle("Thinking for the next turn"));
+    fireEvent.click(screen.getByRole("radio", { name: "Low" }));
+    expect(act).toHaveBeenCalledWith({ type: "set-thinking", key: "s1", level: "low" });
+  });
+});

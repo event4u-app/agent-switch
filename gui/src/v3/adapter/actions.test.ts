@@ -47,7 +47,6 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
     hosted: (k: string) => k === "claude/work/h",
     setAppearance: vi.fn(),
     setFocusTerminal: vi.fn(),
-    pick: vi.fn(),
     prompt: vi.fn(),
   };
   return d satisfies DispatchDeps;
@@ -144,18 +143,15 @@ describe("dispatchV3", () => {
     expect(d.switchView).toHaveBeenCalledWith("claude/work/h", "chat");
   });
 
-  it("model and thinking: a pick, then respawn; nothing for a session not hosted", async () => {
+  it("model and thinking respawn a hosted session; nothing for a session not hosted", async () => {
     const d = deps();
-    dispatchV3({ type: "model", key: "claude/work/a" }, d);
-    expect(d.pick).not.toHaveBeenCalled();
-    dispatchV3({ type: "thinking", key: "claude/work/h" }, d);
-    const req = d.pick.mock.calls[0][0];
-    expect(req.options).toContain("high");
-    req.onPick("high");
-    await flush();
+    await dispatchV3({ type: "set-model", key: "claude/work/a", model: "sonnet" }, d);
+    await dispatchV3({ type: "set-thinking", key: "claude/work/a", level: "high" }, d);
+    expect(d.ipc.hostRespawn).not.toHaveBeenCalled();
+    await dispatchV3({ type: "set-thinking", key: "claude/work/h", level: "high" }, d);
     expect(d.ipc.hostRespawn).toHaveBeenCalledWith("claude/work/h", { effort: "high" });
-    dispatchV3({ type: "model", key: "claude/work/h" }, d);
-    expect(d.pick.mock.calls[1][0].current).toBe("opus");
+    await dispatchV3({ type: "set-model", key: "claude/work/h", model: "sonnet" }, d);
+    expect(d.ipc.hostRespawn).toHaveBeenLastCalledWith("claude/work/h", { model: "sonnet" });
   });
 
   it("blocker: a waiting session focuses its terminal first", async () => {
@@ -218,11 +214,10 @@ describe("dispatchV3", () => {
     const d = deps();
     const setModel = vi.fn();
     const chatOf = (k: string) => (k === "claude/work/a" ? { setModel } : null);
-    dispatchV3({ type: "model", key: "claude/work/a" }, { ...d, chatOf });
-    d.pick.mock.calls[0][0].onPick("sonnet");
+    dispatchV3({ type: "set-model", key: "claude/work/a", model: "sonnet" }, { ...d, chatOf });
     expect(setModel).toHaveBeenCalledWith("sonnet");
     expect(d.ipc.hostRespawn).not.toHaveBeenCalled();
-    dispatchV3({ type: "thinking", key: "claude/work/a" }, { ...d, chatOf });
+    dispatchV3({ type: "set-thinking", key: "claude/work/a", level: "high" }, { ...d, chatOf });
     expect(d.toast).toHaveBeenCalledWith({ tone: "info", text: expect.stringMatching(/terminal view/) });
   });
 

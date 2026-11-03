@@ -6,17 +6,17 @@
 
 ## Overall
 
-**9 / 23 steps done · 39%**
+**12 / 23 steps done · 52%**
 
 ```text
-████████████████░░░░░░░░░░░░░░░░░░░░░░░░   39%
+█████████████████████░░░░░░░░░░░░░░░░░░░   52%
 ```
 
 ## Open roadmaps
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-v3-design-gap.md](roadmaps/road-to-v3-design-gap.md) | 4 | 23 | 14 | 9 | 0 | 0 | 0 | ████░░░░░░ 39% |
+| 1 | [road-to-v3-design-gap.md](roadmaps/road-to-v3-design-gap.md) | 4 | 23 | 11 | 12 | 0 | 0 | 0 | █████░░░░░ 52% |
 
 ---
 
@@ -45,13 +45,13 @@
 
 ### [road-to-v3-design-gap.md](roadmaps/road-to-v3-design-gap.md)
 
-**close the v3 design gap — dev/v3 against the boards** — 9 / 23 done (39%)
+**close the v3 design gap — dev/v3 against the boards** — 12 / 23 done (52%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 1 | broken or invisible (P0) | ✅ done | 0 | 3 | 0 | 0 | 100% |
-| 2 | frame elements (P1) | 🟡 in progress | 2 | 4 | 0 | 0 | 67% |
-| 3 | real data (P1) | 🟡 in progress | 3 | 2 | 0 | 0 | 40% |
+| 2 | frame elements (P1) | ✅ done | 0 | 6 | 0 | 0 | 100% |
+| 3 | real data (P1) | 🟡 in progress | 2 | 3 | 0 | 0 | 60% |
 | 4 | details (P2) | ⬜ not started | 9 | 0 | 0 | 0 | 0% |
 
 ## Age

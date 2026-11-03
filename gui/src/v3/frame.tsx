@@ -186,7 +186,7 @@ export function Shell({
   actions: { onSearch: () => void; onStart: () => void; onSettings: () => void; onInbox: () => void; onRestart: () => void };
 }) {
   return (
-    <div className="relative flex h-full min-h-0 flex-col bg-ac-bg">
+    <div data-v3-shell className="relative flex h-full min-h-0 flex-col bg-ac-bg">
       <TitleBar health={health} inbox={frame.sessionsShown ? null : inbox} inboxOpen={inboxOpen} {...actions} />
       <div className="flex min-h-0 flex-1">
         <Stripe side="left" items={leftItems(!frame.sessionsShown && needsYou)} active={frame.sessionsShown ? "sessions" : null} onSelect={frame.selectLeft} />

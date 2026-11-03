@@ -4,13 +4,14 @@
  * banner. Adapted from the reference boards; data and actions come in as props.
  */
 
-import type { ReactNode } from "react";
-import { Brain, ChevronDown, CircleX, Ellipsis, Lock, MessageSquareText, SquareTerminal, TriangleAlert, X } from "lucide-react";
+import type { MouseEvent, ReactNode } from "react";
+import { Brain, Check, ChevronDown, CircleX, Ellipsis, Lock, MessageSquareText, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
 import { Act, AccountMark } from "./kit.js";
+import { Segmented } from "../ui/Segmented.js";
 import { tone } from "./limits.js";
 import { XtermBox } from "../redesign/screens/terminal-sheet.js";
 import type { TermBackend } from "../terminal.js";
@@ -72,7 +73,7 @@ export interface BarSession {
 }
 
 /** Session-bar chip: opens a popover; a locked chip keeps its shape and says why. */
-function BarChip({ children, title, locked, onClick }: { children: ReactNode; title: string; locked?: boolean; onClick: () => void }) {
+function BarChip({ children, title, locked, onClick }: { children: ReactNode; title: string; locked?: boolean; onClick: (e: MouseEvent<HTMLButtonElement>) => void }) {
   return (
     <button
       type="button"
@@ -87,7 +88,13 @@ function BarChip({ children, title, locked, onClick }: { children: ReactNode; ti
   );
 }
 
-export function SessionBar({ s, openIn, on }: { s: BarSession; openIn: ReactNode; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: () => void; thinking: () => void; menu: () => void } }) {
+/** A chip's left edge inside the window shell, where its popover anchors. */
+const shellX = (e: MouseEvent<HTMLElement>): number => {
+  const shell = e.currentTarget.closest("[data-v3-shell]");
+  return Math.round(e.currentTarget.getBoundingClientRect().left - (shell?.getBoundingClientRect().left ?? 0));
+};
+
+export function SessionBar({ s, openIn, on }: { s: BarSession; openIn: ReactNode; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; thinking: (x: number) => void; menu: () => void } }) {
   const t = tone(s.account.fiveH, s.account.protect);
   const chatOff = !s.hosted || !s.chatAvailable;
   const chatWhy = !s.hosted ? "Chat needs a session hosted in Agent Switch" : "This tool keeps the view it started in";
@@ -129,10 +136,10 @@ export function SessionBar({ s, openIn, on }: { s: BarSession; openIn: ReactNode
           <span className={cn("font-ac-mono text-[10.5px]", t === "ok" || t === "none" ? "text-ac-muted" : t === "warn" ? "text-ac-warn-text" : "text-ac-alert-text")}>{s.account.fiveH == null ? "—" : `${s.account.fiveH}%`}</span>
         </span>
       </BarChip>
-      <BarChip title={s.hosted ? "Model for the next turn" : "Locked: change it in your terminal (/model)"} locked={!s.hosted} onClick={on.model}>
+      <BarChip title={s.hosted ? "Model for the next turn" : "Locked: change it in your terminal (/model)"} locked={!s.hosted} onClick={(e) => on.model(shellX(e))}>
         {s.model ?? "model"}
       </BarChip>
-      <BarChip title={s.hosted ? "Thinking for the next turn" : "Locked: change it in your terminal"} locked={!s.hosted} onClick={on.thinking}>
+      <BarChip title={s.hosted ? "Thinking for the next turn" : "Locked: change it in your terminal"} locked={!s.hosted} onClick={(e) => on.thinking(shellX(e))}>
         <Brain className="size-3.5 text-ac-muted" /> {s.thinking ?? "—"}
       </BarChip>
       {s.contextPct != null && (
@@ -145,6 +152,45 @@ export function SessionBar({ s, openIn, on }: { s: BarSession; openIn: ReactNode
       <IconButton label="Session actions: rename, pin, move, detach, end" className="size-7" onClick={on.menu}>
         <Ellipsis />
       </IconButton>
+    </div>
+  );
+}
+
+// ---------- model popover ----------
+
+export interface ModelChoices {
+  models: { id: string; label: string; hint: string }[];
+  /** The model the session runs, as an id from `models`, when it is one of them. */
+  current: string | null;
+  thinking: string[];
+  currentThinking: string | null;
+  /** The thinking level cannot change here (a chat sets it when it starts). */
+  thinkingWhy?: string;
+}
+
+/** Under the model chip (spec §7.6): the models with only the chosen one checked, thinking as a segmented control. */
+export function ModelPopover({ c, onModel, onThinking }: { c: ModelChoices; onModel: (id: string) => void; onThinking: (level: string) => void }) {
+  return (
+    <div role="dialog" aria-label="Model and thinking" className="w-[320px] rounded-xl border border-ac-line2 bg-ac-panel p-3" style={{ boxShadow: "var(--ac-shadow)" }}>
+      <div className="ac-caps mb-2">Model · next turn</div>
+      {c.models.map((m) => (
+        <button key={m.id} type="button" role="menuitemradio" aria-checked={m.id === c.current} onClick={() => onModel(m.id)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-ac-raise">
+          <span className="inline-flex size-4 items-center justify-center">{m.id === c.current && <Check className="size-3.5 text-ac-brand-text" />}</span>
+          <span className="text-[13px] text-ac-text">{m.label}</span>
+          <span className="ml-auto text-[11px] text-ac-muted">{m.hint}</span>
+        </button>
+      ))}
+      {c.thinking.length > 0 && (
+        <>
+          <div className="ac-caps mb-2 mt-3">Thinking</div>
+          {c.thinkingWhy ? (
+            <p className="text-[11px] leading-snug text-ac-muted">{c.thinkingWhy}</p>
+          ) : (
+            <Segmented size="sm" fill label="Thinking" value={c.currentThinking ?? ""} onChange={onThinking} options={c.thinking.map((t) => ({ value: t, label: t[0].toUpperCase() + t.slice(1) }))} />
+          )}
+        </>
+      )}
+      <p className="mt-2.5 text-[11px] leading-snug text-ac-muted">Applies from the next turn. The levels come from the tool itself — Codex shows its reasoning levels here.</p>
     </div>
   );
 }

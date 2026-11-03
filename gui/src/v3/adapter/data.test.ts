@@ -253,4 +253,26 @@ describe("worktreeOf", () => {
     expect([of("a1"), of("a2"), of("nope")]).toEqual(["agent-a1", null, null]);
     expect(worktreeOf(undefined)("a1")).toBeNull();
   });
+
+  it("model choices: Claude's aliases with the running one checked; Codex only its reasoning levels", () => {
+    const rows = [row("a", { context: { pct: 1, model: "claude-opus-4-7", effort: "high" } as never }), row("c", { provider: "codex" as never })];
+    const d = toV3Data(vmWith([], rows), emptyFeeds(), env({ chats: new Set(["claude/work/a"]) }));
+    const a = d.models!("claude/work/a")!;
+    expect(a.models.map((m) => m.id)).toEqual(["opus", "sonnet", "haiku"]);
+    expect([a.current, a.currentThinking]).toEqual(["opus", "high"]);
+    expect(a.thinkingWhy).toMatch(/chat starts/);
+    const c = d.models!("codex/work/c")!;
+    expect(c.models).toEqual([]);
+    expect(c.thinking).toEqual(["minimal", "low", "medium", "high"]);
+    expect(d.models!("nope")).toBeNull();
+  });
+
+  it("Open-in: the agent apps are the installed desktop apps of a tool", () => {
+    const vm = { ...emptyViewModel(NOW), surfaces: [
+      { id: "claude-desktop", tool: "claude", name: "Claude Desktop", kind: "desktop", detected: true },
+      { id: "codex-desktop", tool: "codex", name: "Codex", kind: "desktop", detected: false },
+      { id: "codex-ide", tool: "codex", name: "Codex IDE", kind: "desktop", detected: true },
+    ] as never };
+    expect(toV3Data(vm, emptyFeeds(), env()).openIn.agentApps).toEqual([{ id: "claude-desktop", label: "Claude Desktop", tool: "claude" }]);
+  });
 });

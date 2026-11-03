@@ -70,10 +70,10 @@ One claim is corrected:
   ↵ (its verb) and L (later). ⇧↵ always, ⌫ deny and Y yes are not wired: a
   `needs --json` item carries no approval id, which `needs allow|deny` needs
   (carried below).
-- [ ] **Limits popover**: a click on a limits row opens `LimitsPopover`
+- [x] **Limits popover**: a click on a limits row opens `LimitsPopover`
   anchored to the strip, with "Move its session…" and "Open Accounts". The row
   keeps its raise fill while open.
-- [ ] **Model popover**: an anchored popover under the chip (w 320) with
+- [x] **Model popover**: an anchored popover under the chip (w 320) with
   "Model · next turn", one row per model, Thinking as a `Segmented`, and the
   note. It replaces the centred pick sheet for model and thinking.
 
@@ -84,7 +84,7 @@ One claim is corrected:
 - [ ] **No `—` placeholders**: table cells stay empty, chips show the muted
   field name ("Thinking", "Model"), and the bar's limit reads empty instead of
   `—`.
-- [ ] **Limit rows without data**: "no data yet" instead of an empty track,
+- [x] **Limit rows without data**: "no data yet" instead of an empty track,
   and "sign in ›" when not signed in.
 - [x] **Empty states**: the Sessions zone shows "No sessions running. Start one
   ⌘N".

@@ -13,7 +13,7 @@ import { Kbd } from "../ui/Typography.js";
 import type { ToolEntry } from "../vm/types.js";
 import { DecisionSheet, NewSessionDialog, type MoveHow, type NewSessionFacts, type NewSessionPlan, type SheetSession } from "./dialogs.js";
 import { Shell, useFrame, type PageId } from "./frame.js";
-import { LimitsStrip, type LimitAccount } from "./limits.js";
+import { LimitsPopover, LimitsStrip, type LimitAccount } from "./limits.js";
 import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
 import { InboxPopover, Palette, type DoneItem, type PaletteEntry } from "./overlays.js";
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
@@ -22,7 +22,7 @@ import { SessionsZone, childNoun, type RowSession } from "./sessions.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
 import { ToolsPage, updateNeeds } from "./tools.js";
-import { BlockerStrip, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type TabItem } from "./workbench.js";
+import { BlockerStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
 import type { BatchActions } from "./kit.js";
 import { Menu, OpenInButton, OpenInMenu, monogram, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
@@ -57,6 +57,8 @@ export interface V3Data {
   /** The near-limit decision, by account key ("claude/work") or by session key — a limit item's subject is either. */
   decision: (subject: string) => { account: string; pctUsed: number; window: string; resetsIn: string; sessions: SheetSession[]; suggestion: string } | null;
   bar: (key: string) => BarSession | null;
+  /** What the model popover offers for a session; absent: the chips stay closed. */
+  models?: (key: string) => ModelChoices | null;
   summary: (key: string) => SummaryFacts | null;
   changes: (key: string) => ChangedFile[];
   next: (key: string) => { text: string; action: string } | null;
@@ -96,7 +98,8 @@ export type V3Action =
   | { type: "clean-up" }
   | { type: "view"; key: string; view: "terminal" | "chat" }
   | { type: "open-in"; key: string; pick: Exclude<OpenPick, { kind: "configure" }> | { kind: "default" } }
-  | { type: "model" | "thinking"; key: string }
+  | { type: "set-model"; key: string; model: string }
+  | { type: "set-thinking"; key: string; level: string }
   | { type: "blocker"; key: string }
   | { type: "create-pr" | "open-pr" | "review" | "commit"; key: string }
   | { type: "account"; op: "add" | "refresh" | "use" | "sign-in" | "terminal" | "more"; key?: string }
@@ -158,7 +161,7 @@ export function V3Window({
   const [pages, setPages] = useState<Page[]>([]);
   const [sessionTabs, setSessionTabs] = useState<string[]>([]);
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { switcher: number } | { decide: string } | { menu: string } | { openin: string }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { switcher: number } | { limits: string } | { model: string; x: number } | { decide: string } | { menu: string } | { openin: string }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -400,7 +403,7 @@ export function V3Window({
                 />
               ) : null
             }
-            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => setOverlay({ decide: activeSession }), model: () => act({ type: "model", key: activeSession }), thinking: () => act({ type: "thinking", key: activeSession }), menu: () => setOverlay({ menu: activeSession }) }}
+            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => setOverlay({ decide: activeSession }), model: (x) => setOverlay({ model: activeSession, x }), thinking: (x) => setOverlay({ model: activeSession, x }), menu: () => setOverlay({ menu: activeSession }) }}
           />
           {next && <BlockerStrip text={next.text} action={next.action} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
           {slots.body(activeSession)}
@@ -439,6 +442,10 @@ export function V3Window({
     return s && <ChildrenWindow noun={childNoun(s)} children={s.children} onHide={() => frame.setRight(null)} />;
   })();
 
+  const modelOf = overlay && typeof overlay === "object" && "model" in overlay ? overlay.model : null;
+  const modelChoices = modelOf ? (data.models?.(modelOf) ?? null) : null;
+  const limitsOpen = overlay && typeof overlay === "object" && "limits" in overlay ? overlay.limits : null;
+  const limitsAccount = limitsOpen ? data.limits.find((a) => a.key === limitsOpen) : undefined;
   const pinned = new Set(data.library.filter((l) => l.pinned).map((l) => l.key));
   const sessionsWindow = (
     <aside aria-label="Sessions window" className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-ac-line bg-ac-panel">
@@ -471,7 +478,7 @@ export function V3Window({
           batch={batch([...(selection ?? [])])}
         />
       </div>
-      <LimitsStrip accounts={data.limits} nowMs={data.nowMs} openKey={null} onOpen={(key) => setOverlay({ decide: key })} onSignIn={(key) => act({ type: "account", op: "sign-in", key })} />
+      <LimitsStrip accounts={data.limits} nowMs={data.nowMs} openKey={limitsOpen} onOpen={(key) => setOverlay((o) => (o && typeof o === "object" && "limits" in o && o.limits === key ? null : { limits: key }))} onSignIn={(key) => act({ type: "account", op: "sign-in", key })} />
     </aside>
   );
 
@@ -508,6 +515,15 @@ export function V3Window({
           return s ? [{ key: k, title: s.title, state: s.state, account: s.account.name, color: b?.account.color ?? "blue", branch: s.branch, needsYou: s.needsYou }] : [];
         })}
       />
+    ) : modelOf && modelChoices ? (
+      <div className="absolute top-[124px] z-10" style={{ left: overlay && typeof overlay === "object" && "x" in overlay ? overlay.x : 0 }}>
+        <ModelPopover c={modelChoices} onModel={(model) => (close(), act({ type: "set-model", key: modelOf, model }))} onThinking={(level) => (close(), act({ type: "set-thinking", key: modelOf, level }))} />
+      </div>
+    ) : limitsAccount ? (
+      // Anchored beside the Limits strip; it never switches anything by itself (spec §7.5).
+      <div className="absolute bottom-[40px] left-[352px] z-10">
+        <LimitsPopover a={limitsAccount} nowMs={data.nowMs} onMove={() => setOverlay({ decide: limitsAccount.key })} onAccounts={() => (close(), openPage("accounts"))} />
+      </div>
     ) : overlay === "sessions-menu" ? (
       <div className="absolute left-[260px] top-[84px] z-10">
         <Menu
