@@ -282,3 +282,20 @@ describe("Model popover (spec §7.6)", () => {
     expect(act).toHaveBeenCalledWith({ type: "set-thinking", key: "s1", level: "low" });
   });
 });
+
+describe("real data without placeholders (gap §5a–§5b)", () => {
+  it("unknown model, thinking and 5h read as the muted field names, never a dash", () => {
+    const d = data();
+    mount({ bar: () => ({ ...d.bar("s1")!, model: null, thinking: null, account: { ...d.bar("s1")!.account, fiveH: null } }) });
+    const bar = screen.getByTitle("Model for the next turn").parentElement!;
+    expect(bar.textContent).not.toContain("—");
+    expect(screen.getByTitle("Model for the next turn").textContent).toBe("Model");
+    expect(screen.getByTitle("Thinking for the next turn").textContent!.trim()).toBe("Thinking");
+  });
+
+  it("the model chip shows the label and keeps the raw id in its tooltip", () => {
+    const d = data();
+    mount({ bar: () => ({ ...d.bar("s1")!, model: "Opus 4.7", modelId: "claude-opus-4-7" }) });
+    expect(screen.getByTitle("claude-opus-4-7").textContent).toBe("Opus 4.7");
+  });
+});

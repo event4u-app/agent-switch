@@ -20,6 +20,7 @@ import { ChatTimeline } from "../chat.js";
 import { ExternalBody, HostedTerminal } from "../workbench.js";
 import { useTimeline } from "./useTimeline.js";
 import { worktreeOf } from "./data.js";
+import { modelLabel } from "../model-label.js";
 
 /** The 2.11 settings screens behind the v3 settings nav. Appearance, Open in,
  *  Agents and Remote are v3's own and never reach this function. */
@@ -58,11 +59,11 @@ export function SessionBody({ sessionKey, row, hosted, vars, followTheme, where,
   const facts = row ? (
     <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1">
       <dt className="text-ac-faint">Folder</dt>
-      <dd className="truncate font-ac-mono text-[12px]">{row.cwd ?? "—"}</dd>
+      <dd className="truncate font-ac-mono text-[12px]">{row.cwd ?? ""}</dd>
       <dt className="text-ac-faint">Branch</dt>
-      <dd>{row.git?.branch ?? "—"}</dd>
+      <dd>{row.git?.branch ?? ""}</dd>
       <dt className="text-ac-faint">Model</dt>
-      <dd>{row.context?.model ?? "—"}</dd>
+      <dd title={row.context?.model ?? undefined}>{modelLabel(row.context?.model) ?? ""}</dd>
       <dt className="text-ac-faint">Account</dt>
       <dd>{row.profile}</dd>
     </dl>

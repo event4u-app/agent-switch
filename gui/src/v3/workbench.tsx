@@ -67,7 +67,9 @@ export interface BarSession {
   chatAvailable: boolean;
   view: "terminal" | "chat";
   account: { name: string; color: IdentityColor; fiveH: number | null; protect: number };
+  /** The model's display name ("Opus 4.7"); `modelId` is the raw id for the tooltip. */
   model: string | null;
+  modelId?: string | null;
   thinking: string | null;
   contextPct: number | null;
 }
@@ -133,14 +135,15 @@ export function SessionBar({ s, openIn, on }: { s: BarSession; openIn: ReactNode
           <span className="relative h-1.5 w-8 rounded-full bg-ac-raise">
             <span className={cn("absolute inset-y-0 left-0 rounded-full", t === "alert" ? "bg-ac-alert" : t === "warn" ? "bg-ac-warn" : "bg-ac-ok")} style={{ width: `${s.account.fiveH ?? 0}%` }} />
           </span>
-          <span className={cn("font-ac-mono text-[10.5px]", t === "ok" || t === "none" ? "text-ac-muted" : t === "warn" ? "text-ac-warn-text" : "text-ac-alert-text")}>{s.account.fiveH == null ? "—" : `${s.account.fiveH}%`}</span>
+          {s.account.fiveH != null && <span className={cn("font-ac-mono text-[10.5px]", t === "ok" || t === "none" ? "text-ac-muted" : t === "warn" ? "text-ac-warn-text" : "text-ac-alert-text")}>{s.account.fiveH}%</span>}
         </span>
       </BarChip>
       <BarChip title={s.hosted ? "Model for the next turn" : "Locked: change it in your terminal (/model)"} locked={!s.hosted} onClick={(e) => on.model(shellX(e))}>
-        {s.model ?? "model"}
+        {/* Unknown: the field's name, muted — never a dash (gap §5b). */}
+        {s.model ? <span title={s.modelId ?? undefined}>{s.model}</span> : <span className="text-ac-muted">Model</span>}
       </BarChip>
       <BarChip title={s.hosted ? "Thinking for the next turn" : "Locked: change it in your terminal"} locked={!s.hosted} onClick={(e) => on.thinking(shellX(e))}>
-        <Brain className="size-3.5 text-ac-muted" /> {s.thinking ?? "—"}
+        <Brain className="size-3.5 text-ac-muted" /> {s.thinking ? s.thinking[0].toUpperCase() + s.thinking.slice(1) : <span className="text-ac-muted">Thinking</span>}
       </BarChip>
       {s.contextPct != null && (
         <span className="ml-1 shrink-0 whitespace-nowrap font-ac-mono text-[11px] text-ac-muted" title="Context used">

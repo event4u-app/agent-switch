@@ -113,7 +113,7 @@ describe("toV3Data", () => {
     };
     const d = toV3Data(vmWith([account("work", { state: "near-limit" })], [r]), feeds, env());
     expect(d.sessions[0]).toMatchObject({ key: "claude/work/a1", needsYou: true, pr: { number: 12, ci: "FAILURE" }, account: { name: "work", nearLimit: true } });
-    expect(d.bar("claude/work/a1")).toMatchObject({ hosted: true, model: "opus", thinking: "high", contextPct: 41, account: { fiveH: 40, protect: 90 } });
+    expect(d.bar("claude/work/a1")).toMatchObject({ hosted: true, model: "Opus", modelId: "opus", thinking: "high", contextPct: 41, account: { fiveH: 40, protect: 90 } });
     const s = d.summary("claude/work/a1")!;
     expect(s.next).toEqual({ text: "Waits for you in its terminal", action: "Focus terminal" });
     expect(s.pr?.failingChecks).toEqual(["lint"]);

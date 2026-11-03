@@ -79,9 +79,9 @@ One claim is corrected:
 
 ## Phase 3 — real data (P1)
 
-- [ ] **Model labels**: `modelLabel("claude-opus-4-7")` → "Opus 4.7"
+- [x] **Model labels**: `modelLabel("claude-opus-4-7")` → "Opus 4.7"
   everywhere a model is shown, with the raw id in the tooltip.
-- [ ] **No `—` placeholders**: table cells stay empty, chips show the muted
+- [x] **No `—` placeholders**: table cells stay empty, chips show the muted
   field name ("Thinking", "Model"), and the bar's limit reads empty instead of
   `—`.
 - [x] **Limit rows without data**: "no data yet" instead of an empty track,

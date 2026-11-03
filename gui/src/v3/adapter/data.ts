@@ -17,6 +17,7 @@ import type { OpenTarget } from "../settings.js";
 import type { Appearance } from "../themes/resolve.js";
 import { SESSION_MENU, type SessionMenuItem, type V3Data } from "../window.js";
 import type { BarSession, ModelChoices } from "../workbench.js";
+import { modelLabel } from "../model-label.js";
 import { parsePr, type HistoryRow, type PrFacts } from "./feeds.js";
 import type { V3Feeds } from "./useFeeds.js";
 
@@ -267,7 +268,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       account: { name: r.profile, color: colorOf(r) },
       branch: r.git?.branch ?? null,
       pr: pr ? { number: pr.number, ci: pr.ci } : null,
-      model: r.context?.model ?? null,
+      model: modelLabel(r.context?.model),
       thinking: (r.context as { effort?: string | null } | null | undefined)?.effort ?? null,
       contextPct: r.context?.pct ?? null,
       lastActiveMs: r.mtimeMs,
@@ -379,7 +380,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
         chatAvailable: r.provider === "claude" || r.provider === "codex",
         view: env.chats?.has(key) ? "chat" : "terminal",
         account: { name: r.profile, color: colorOf(r), fiveH: fiveH(a), protect: a?.threshold ?? 98 },
-        model: r.context?.model ?? null,
+        model: modelLabel(r.context?.model),
+        modelId: r.context?.model ?? null,
         thinking: (r.context as { effort?: string | null } | null | undefined)?.effort ?? null,
         contextPct: r.context?.pct ?? null,
       };
@@ -456,7 +458,7 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
   const mins = Number.isFinite(resetsAt) ? Math.max(0, Math.round((resetsAt - now) / 60_000)) : null;
   const sessions: SheetSession[] = rows
     .filter((r) => (only ? sessionKey(r) === only : r.live && accountId(r.provider, r.profile) === a.id))
-    .map((r) => ({ key: sessionKey(r), title: r.library?.name || r.summary || r.sessionId.slice(0, 8), model: r.context?.model ?? null, target: best?.name ?? "" }));
+    .map((r) => ({ key: sessionKey(r), title: r.library?.name || r.summary || r.sessionId.slice(0, 8), model: modelLabel(r.context?.model), target: best?.name ?? "" }));
   return {
     account: a.name,
     pctUsed: w.utilization ?? 0,

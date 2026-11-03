@@ -271,8 +271,8 @@ export function AllSessionsPage({ sessions, nowMs, onOpen, batch }: { sessions: 
                   <span className="truncate">{s.branch ?? "no repo"}</span>
                   {s.pr && <span className={cn("shrink-0", s.pr.ci === "FAILURE" && "text-ac-alert-text")}>#{s.pr.number}</span>}
                 </span>
-                <span className="truncate text-xs text-ac-soft">{[s.model, s.thinking].filter(Boolean).join(" · ") || "—"}</span>
-                <span className="font-ac-mono text-[11px] text-ac-muted">{s.contextPct == null ? "—" : `${Math.round(s.contextPct)}%`}</span>
+                <span className="truncate text-xs text-ac-soft">{[s.model, s.thinking].filter(Boolean).join(" · ")}</span>
+                <span className="font-ac-mono text-[11px] text-ac-muted">{s.contextPct == null ? "" : `${Math.round(s.contextPct)}%`}</span>
                 <span className="text-right text-xs text-ac-muted">{duration(nowMs - s.lastActiveMs)}</span>
               </div>
             ))}
@@ -388,7 +388,7 @@ export function LibraryPage({ rows, vaultBytes, autoKeep, nowMs, on }: { rows: L
               )}
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-xs text-ac-soft">{e.project ?? "—"}</span>
+              <span className="block truncate text-xs text-ac-soft">{e.project ?? ""}</span>
               {e.branch && (
                 <span className="mt-0.5 flex min-w-0 items-center gap-1.5 font-ac-mono text-[11px] text-ac-muted">
                   <GitBranch className="size-3 shrink-0" />
