@@ -93,11 +93,13 @@ One claim is corrected:
 
 ## Phase 4 — details (P2)
 
-- [ ] **Engine banner** under the session bar, with one action, "Restart
+- [x] **Engine banner** under the session bar, with one action, "Restart
   engine".
-- [ ] **Hover peek** after 400 ms on a session row, one card at a time.
-- [ ] **"internal lines not shown"** becomes a muted row in the timeline, not
-  a footer.
+- [x] **Hover peek** after 400 ms on a session row, one card at a time.
+- [x] **"internal lines not shown"** is no longer a footer: the count and its
+  kinds sit in the tooltip of "read-only here" (the report's alternative). A
+  row at each drop place was tried and rejected: a recorded transcript drops
+  bookkeeping lines between almost every turn, which gave ten scattered rows.
 - [ ] **Decision sheet**: "Room left" with every account of the tool, a state
   dot on each session row, and a one-line detail on all three "How" cards.
 - [ ] **Library "Last"** reads `now`, `3 h`, `Oct 28`.

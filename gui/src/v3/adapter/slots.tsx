@@ -2,7 +2,7 @@
  *  (hosted terminal or the user's own terminal) and the
  *  2.11 settings sections v3 keeps. */
 
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 
 import { tauriBackend } from "../../terminal.js";
 import type { SessionRow } from "../../transforms.js";
@@ -16,9 +16,10 @@ import { ProvidersSettings } from "../../redesign/screens/settings/providers.js"
 import { SignInSettings } from "../../redesign/screens/settings/sign-ins.js";
 import { UpdatesSettings } from "../../redesign/screens/settings/updates.js";
 import type { SettingsSection } from "../settings.js";
-import { ChatTimeline } from "../chat.js";
+import { ChatTimeline, hiddenText } from "../chat.js";
+import { fold } from "../timeline.js";
 import { ExternalBody, HostedTerminal } from "../workbench.js";
-import { useTimeline } from "./useTimeline.js";
+import { useTimeline, type TimelineState } from "./useTimeline.js";
 import { worktreeOf } from "./data.js";
 import { modelLabel } from "../model-label.js";
 
@@ -68,13 +69,20 @@ export function SessionBody({ sessionKey, row, hosted, vars, followTheme, where,
       <dd>{row.profile}</dd>
     </dl>
   ) : null;
-  return <ExternalBody where={row?.surface === "desktop-app" ? "Claude Desktop" : where} facts={facts} lastLine={null} onFocus={onFocus} onTakeOver={onTakeOver} timeline={<ReadOnlyTimeline sessionKey={sessionKey} row={row} />} />;
+  return <ExternalSession sessionKey={sessionKey} row={row} where={row?.surface === "desktop-app" ? "Claude Desktop" : where} facts={facts} onFocus={onFocus} onTakeOver={onTakeOver} />;
+}
+
+/** One read of the transcript feeds the timeline and the "read-only here"
+ *  tooltip, which carries the count of lines not drawn (gap §5e). */
+function ExternalSession({ sessionKey, row, where, facts, onFocus, onTakeOver }: { sessionKey: string; row: SessionRow | undefined; where: string; facts: ReactNode; onFocus: () => void; onTakeOver: () => void }) {
+  const t = useTimeline(sessionKey);
+  const hidden = useMemo(() => hiddenText(fold(t.events).hidden), [t.events]);
+  return <ExternalBody where={where} facts={facts} lastLine={null} onFocus={onFocus} onTakeOver={onTakeOver} readOnlyTitle={hidden} timeline={<ReadOnlyTimeline t={t} row={row} />} />;
 }
 
 /** The read-only timeline of a session running elsewhere (ADR-010). Falls back
  *  to the facts while it loads or when it cannot be read. */
-export function ReadOnlyTimeline({ sessionKey, row }: { sessionKey: string; row?: SessionRow }) {
-  const t = useTimeline(sessionKey);
+export function ReadOnlyTimeline({ t, row }: { t: TimelineState; row?: SessionRow }) {
   if (!t.loaded) return <p className="m-auto text-[13px] text-ac-muted">Reading the conversation…</p>;
   const notice = t.error ? (
     <p role="status" className="shrink-0 border-b border-ac-line bg-ac-warn-tint px-4 py-1.5 text-xs text-ac-warn-text">

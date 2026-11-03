@@ -225,13 +225,13 @@ export function BlockerStrip({ text, action, summaryOpen, onAction, onDismiss }:
  * session's facts and its last transcript line; a full read-only view comes
  * with the v3.1 timeline reader.
  */
-export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver, timeline }: { where: string; facts: ReactNode; lastLine: string | null; onFocus: () => void; onTakeOver: () => void; timeline?: ReactNode }) {
+export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver, timeline, readOnlyTitle }: { where: string; facts: ReactNode; lastLine: string | null; onFocus: () => void; onTakeOver: () => void; timeline?: ReactNode; readOnlyTitle?: string | null }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-3 border-b border-ac-line bg-ac-panel px-4 py-2">
         <SquareTerminal className="size-4 shrink-0 text-ac-muted" />
         <span className="min-w-0 flex-1 text-xs text-ac-soft">
-          Runs in <span className="text-ac-text">{where}</span> · read-only here
+          Runs in <span className="text-ac-text">{where}</span> · <span title={readOnlyTitle ?? undefined}>read-only here</span>
         </span>
         <Act kind="accent" kbd="⌘↵" onClick={onFocus}>
           Focus terminal

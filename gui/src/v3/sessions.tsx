@@ -111,6 +111,7 @@ export function SessionRow({
   onSelect,
   onToggleChildren,
   onCheck,
+  onPeek,
 }: {
   s: RowSession;
   active?: boolean;
@@ -121,6 +122,8 @@ export function SessionRow({
   onSelect: (key: string) => void;
   onToggleChildren: (key: string) => void;
   onCheck: (key: string) => void;
+  /** Hover: the row's top edge inside the window shell; null when the pointer leaves. */
+  onPeek?: (key: string | null, y: number) => void;
 }) {
   const second = active || comfortable;
   const ref = useRef<HTMLDivElement>(null);
@@ -133,7 +136,15 @@ export function SessionRow({
         role="button"
         tabIndex={0}
         aria-current={active ? "true" : undefined}
-        onClick={() => (selecting ? onCheck(s.key) : onSelect(s.key))}
+        onClick={() => (onPeek?.(null, 0), selecting ? onCheck(s.key) : onSelect(s.key))}
+        onMouseEnter={
+          onPeek &&
+          ((e) => {
+            const shell = e.currentTarget.closest("[data-v3-shell]");
+            onPeek(s.key, Math.round(e.currentTarget.getBoundingClientRect().top - (shell?.getBoundingClientRect().top ?? 0)));
+          })
+        }
+        onMouseLeave={onPeek && (() => onPeek(null, 0))}
         className={cn("group/row relative rounded-md pl-2.5 pr-2", second ? "py-1.5" : "py-1", active ? "bg-ac-raise" : "hover:bg-ac-raise")}
       >
         {active && <Marker />}
@@ -195,6 +206,7 @@ export function SessionsZone({
   onDoneToday,
   onStart,
   projectOf,
+  onPeek,
   batch,
 }: {
   sessions: RowSession[];
@@ -213,6 +225,7 @@ export function SessionsZone({
   onStart?: () => void;
   /** Group by project: the project of a row, or null for rows outside a repo. */
   projectOf?: (key: string) => string | null;
+  onPeek?: (key: string | null, y: number) => void;
   batch: BatchActions;
 }) {
   const live = liveOrder(sessions);
@@ -257,6 +270,7 @@ export function SessionsZone({
             onSelect={onSelect}
             onToggleChildren={onToggleChildren}
             onCheck={onCheck}
+            onPeek={onPeek}
           />
           )),
         ])}

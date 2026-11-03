@@ -3,7 +3,7 @@
  * or wired differently from the boards, each checked through the real window.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { V3Window, type V3Data } from "./window.js";
 import { data, slots } from "./window-fixture.js";
 
@@ -297,5 +297,33 @@ describe("real data without placeholders (gap §5a–§5b)", () => {
     const d = data();
     mount({ bar: () => ({ ...d.bar("s1")!, model: "Opus 4.7", modelId: "claude-opus-4-7" }) });
     expect(screen.getByTitle("claude-opus-4-7").textContent).toBe("Opus 4.7");
+  });
+});
+
+describe("hover peek and engine banner (gap §4d–§4e)", () => {
+  it("a row hovered for 400 ms shows one peek card; leaving hides it", () => {
+    vi.useFakeTimers();
+    try {
+      const d = data();
+      mount({ table: [{ key: "s1", title: "Event store", state: "working", live: true, tool: "claude", account: { name: "work", color: "teal" }, branch: "feat/store", pr: null, model: "Opus 4.7", thinking: "high", contextPct: 40, lastActiveMs: d.nowMs - 120_000 }] });
+      const row = within(screen.getByLabelText("Sessions window")).getByText("Event store").closest("[role=button]")!;
+      fireEvent.mouseEnter(row);
+      act(() => void vi.advanceTimersByTime(399));
+      expect(screen.queryByRole("tooltip")).toBeNull();
+      act(() => void vi.advanceTimersByTime(1));
+      expect(screen.getByRole("tooltip").textContent).toContain("Opus 4.7");
+      fireEvent.mouseLeave(row);
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("the engine banner sits under the session bar with one action, Restart engine", () => {
+    const { act: a } = mount();
+    const banner = screen.getByRole("alert");
+    expect(banner.previousElementSibling?.textContent).toContain("Terminal");
+    fireEvent.click(within(banner).getByText("Restart engine"));
+    expect(a).toHaveBeenCalledWith({ type: "restart-engine" });
   });
 });

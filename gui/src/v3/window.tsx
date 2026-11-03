@@ -15,7 +15,7 @@ import { DecisionSheet, NewSessionDialog, type MoveHow, type NewSessionFacts, ty
 import { Shell, useFrame, type PageId } from "./frame.js";
 import { LimitsPopover, LimitsStrip, type LimitAccount } from "./limits.js";
 import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
-import { InboxPopover, Palette, type DoneItem, type PaletteEntry } from "./overlays.js";
+import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
 import { SessionsZone, childNoun, type RowSession } from "./sessions.js";
@@ -23,7 +23,7 @@ import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, Set
 import type { Appearance } from "./themes/resolve.js";
 import { ToolsPage, updateNeeds } from "./tools.js";
 import { BlockerStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
-import type { BatchActions } from "./kit.js";
+import { Act, type BatchActions } from "./kit.js";
 import { Menu, OpenInButton, OpenInMenu, monogram, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, type Action, type Binding } from "./keys.js";
@@ -172,6 +172,15 @@ export function V3Window({
   const [groupByProject, setGroupByProject] = useState(saved?.groupByProject ?? false);
   const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
   const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
+  // Hover peek (spec §5.2): after 400 ms on a row, one card at a time, never while a layer is open.
+  const [peek, setPeek] = useState<{ key: string; y: number } | null>(null);
+  const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onPeek = (key: string | null, y: number) => {
+    if (peekTimer.current) clearTimeout(peekTimer.current);
+    if (!key) return setPeek(null);
+    peekTimer.current = setTimeout(() => setPeek({ key, y }), 400);
+  };
+  useEffect(() => () => void (peekTimer.current && clearTimeout(peekTimer.current)), []);
 
   const openPage = useCallback((p: Page) => {
     setPages((cur) => (cur.includes(p) ? cur : [...cur, p]));
@@ -373,6 +382,19 @@ export function V3Window({
 
   const openMenuOf = overlay && typeof overlay === "object" && "openin" in overlay ? overlay.openin : null;
 
+  // Under the session bar: it belongs to the body (gap §4e); its one action restarts the engine.
+  const engineBanner = data.health.state === "down" && (
+    <SystemBanner
+      action={
+        <Act kind="accent" onClick={() => act({ type: "restart-engine" })}>
+          Restart engine
+        </Act>
+      }
+    >
+      {engineDownText(data.health.sinceMs, data.nowMs, data.health.hostedRunning)}
+    </SystemBanner>
+  );
+
   const centre = (
     <section className="flex min-w-0 flex-1 flex-col bg-ac-bg">
       <TabStrip
@@ -384,9 +406,7 @@ export function V3Window({
           if (active === id) setActive(sessionTabs[0] ?? null);
         }}
       />
-      {data.health.state === "down" && (
-        <SystemBanner action={null}>{engineDownText(data.health.sinceMs, data.nowMs, data.health.hostedRunning)}</SystemBanner>
-      )}
+      {!(activeSession && bar) && engineBanner}
       {active?.startsWith("page:") ? (
         page(active.slice(5) as Page)
       ) : activeSession && bar ? (
@@ -405,6 +425,7 @@ export function V3Window({
             }
             on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => setOverlay({ decide: activeSession }), model: (x) => setOverlay({ model: activeSession, x }), thinking: (x) => setOverlay({ model: activeSession, x }), menu: () => setOverlay({ menu: activeSession }) }}
           />
+          {engineBanner}
           {next && <BlockerStrip text={next.text} action={next.action} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
           {slots.body(activeSession)}
         </>
@@ -446,6 +467,12 @@ export function V3Window({
   const modelChoices = modelOf ? (data.models?.(modelOf) ?? null) : null;
   const limitsOpen = overlay && typeof overlay === "object" && "limits" in overlay ? overlay.limits : null;
   const limitsAccount = limitsOpen ? data.limits.find((a) => a.key === limitsOpen) : undefined;
+  const peekFacts = (key: string) => {
+    const s = data.sessions.find((x) => x.key === key);
+    const t = data.table.find((x) => x.key === key);
+    if (!s || !t) return null;
+    return { title: s.title, lastActiveMs: t.lastActiveMs, tool: t.tool[0].toUpperCase() + t.tool.slice(1), account: t.account.name, color: t.account.color, model: t.model, thinking: t.thinking, branch: t.branch, pr: s.pr ? { number: s.pr.number, state: s.pr.ci === "FAILURE" ? "CI failing" : "open" } : null, children: s.children.reduce((n, c) => n + (c.count ?? 1), 0), lastLine: null };
+  };
   const pinned = new Set(data.library.filter((l) => l.pinned).map((l) => l.key));
   const sessionsWindow = (
     <aside aria-label="Sessions window" className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-ac-line bg-ac-panel">
@@ -468,6 +495,7 @@ export function V3Window({
           comfortable={comfortable}
           projectOf={groupByProject ? (k) => data.table.find((t) => t.key === k)?.project ?? null : undefined}
           onStart={() => setOverlay("new")}
+          onPeek={onPeek}
           selection={selection}
           openKeys={openKids}
           onSelect={openSession}
@@ -581,7 +609,14 @@ export function V3Window({
       sessionsWindow={sessionsWindow}
       centre={centre}
       rightWindow={rightWindow}
-      overlay={overlayNode}
+      overlay={
+        overlayNode ??
+        (peek && peekFacts(peek.key) && (
+          <div className="pointer-events-none absolute left-[352px] z-10" style={{ top: peek.y }}>
+            <PeekCard f={peekFacts(peek.key)!} nowMs={data.nowMs} />
+          </div>
+        ))
+      }
       actions={{ onSearch: () => setOverlay("palette"), onStart: () => setOverlay("new"), onSettings: () => openPage("settings"), onInbox: () => setOverlay((o) => (o === "inbox" ? null : "inbox")), onRestart: () => act({ type: "restart-engine" }) }}
     />
   );
