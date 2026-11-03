@@ -174,7 +174,9 @@ reachable behind a setting for one release, then goes.
       strip and the engine-down banner; a session tab showed its bar (account,
       model, thinking, context), the own-terminal body and Open ▾. Six minutes
       with window hide/show and the tray loaded: no "Scoped command … not
-      found" line. Rows exercised: overview, session tab, open-in, health.
+      found" line. Rows exercised: overview, session tab, open-in, health;
+      the owner then clicked through overview, library and start session
+      live in the same run.
       Note for the owner: the installed CLI on PATH is still 2.11, which has
       none of the v3 commands; `tauri dev` needs this branch's CLI first on
       PATH until v3 ships.
