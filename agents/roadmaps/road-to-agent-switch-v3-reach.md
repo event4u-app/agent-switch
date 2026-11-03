@@ -12,24 +12,27 @@ tree_pin: ff38137
 > arrival the same day: the v3 UI design (`design/`), whose Agents and Remote
 > boards are v3.2.
 >
-> **Pull trigger:** [`road-to-agent-switch-v3-client.md`](../archive/road-to-agent-switch-v3-client.md)
+> **Pull trigger:** [`road-to-agent-switch-v3-client.md`](archive/road-to-agent-switch-v3-client.md)
 > closed, and owner decisions E4/E5 below answered.
+> **Activated 2026-11-03** by the owner ("v3-reach aus later zurückholen"):
+> v3-client is closed; E4, E5 and E-remote-default stay open and gate only
+> Phases 2–3 — Phase 0 and Phase 1 do not depend on them.
 
 ## Branch
 
 Targets `dev/v3` (branch model in
-[`road-to-agent-switch-v3-central.md`](../archive/road-to-agent-switch-v3-central.md)).
+[`road-to-agent-switch-v3-central.md`](archive/road-to-agent-switch-v3-central.md)).
 
 ## Design basis (binding)
 
-The v3 UI spec [`docs/design/agent-switch-v3-ui-spec.md`](../../../docs/design/agent-switch-v3-ui-spec.md)
+The v3 UI spec [`docs/design/agent-switch-v3-ui-spec.md`](../../docs/design/agent-switch-v3-ui-spec.md)
 is the spec here too, at strict fidelity (rules in
-[`road-to-agent-switch-v3-central.md`](../archive/road-to-agent-switch-v3-central.md)
+[`road-to-agent-switch-v3-central.md`](archive/road-to-agent-switch-v3-central.md)
 § Design basis). This roadmap builds its v3.2 boards: Settings › Agents and
 Settings › Remote (§10.5), Antigravity as a tool in New session (§8.1), and
 behaviour rule §13.5 for remote approvals. Reference code:
 `gui/src/v3/settings3.tsx` in
-[`docs/design/agent-switch-v3-reference.patch`](../../../docs/design/agent-switch-v3-reference.patch).
+[`docs/design/agent-switch-v3-reference.patch`](../../docs/design/agent-switch-v3-reference.patch).
 
 ## Owner demands answered here
 
