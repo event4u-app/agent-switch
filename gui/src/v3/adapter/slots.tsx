@@ -23,8 +23,8 @@ import { ExternalBody, HostedTerminal } from "../workbench.js";
 import { useTimeline } from "./useTimeline.js";
 import { worktreeOf } from "./data.js";
 
-/** The 2.11 settings screens behind the v3 settings nav. Appearance, Open in and
- *  Agents are v3's own and never reach this function. */
+/** The 2.11 settings screens behind the v3 settings nav. Appearance, Open in,
+ *  Agents and Remote are v3's own and never reach this function. */
 export function settingsSection(section: SettingsSection): ReactNode {
   switch (section) {
     case "General":
@@ -48,6 +48,7 @@ export function settingsSection(section: SettingsSection): ReactNode {
     case "Appearance":
     case "Open in":
     case "Agents":
+    case "Remote":
       return null;
   }
 }

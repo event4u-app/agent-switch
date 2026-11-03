@@ -26,6 +26,8 @@ export interface DispatchIpc {
   setAutoKeep(on: boolean): Promise<void>;
   setOpenDefault(target: string, repo?: string): Promise<void>;
   setAgentEnabled(id: string, on: boolean): Promise<void>;
+  setRemoteControl(account: string, on: boolean): Promise<void>;
+  setRemoteSsh(on: boolean): Promise<void>;
   cleanupMerged(): Promise<void>;
   engineRestart(): Promise<void>;
   renameSession(key: string, name: string): Promise<void>;
@@ -254,6 +256,10 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       return deps.setFocusTerminal(a.value);
     case "agent-enabled":
       return run(deps, a.value ? "Agent on" : "Agent off", deps.ipc.setAgentEnabled(a.id, a.value));
+    case "remote-rc":
+      return run(deps, "Remote Control", deps.ipc.setRemoteControl(a.account, a.value));
+    case "remote-ssh":
+      return run(deps, "Remote over SSH", deps.ipc.setRemoteSsh(a.value));
     case "agent-install":
       return deps.open({ kind: "terminal", run: { args: ["agents", "install", a.id], title: `Install ${a.id}` } });
     case "restart-engine":

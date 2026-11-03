@@ -12,6 +12,7 @@ function deps(over: Partial<FeedDeps> = {}): FeedDeps {
     library: ok({ autoKeep: true, vaultBytes: 0, entries: [] }),
     openTargets: ok({ default: null, perRepo: {}, targets: [] }),
     agents: ok({ agents: [], suggestions: [] }),
+    remote: ok({ remoteControlAccounts: [], ssh: false }),
     codexRows: ok([]),
     ...over,
   };
@@ -24,13 +25,14 @@ describe("pollFeeds", () => {
     expect(d.library).not.toHaveBeenCalled();
     expect(d.openTargets).not.toHaveBeenCalled();
     expect(d.agents).not.toHaveBeenCalled();
+    expect(d.remote).not.toHaveBeenCalled();
     expect(f.engine?.running).toBe(true);
     expect(f.readAt).toEqual({ needs: 100, engine: 100, host: 100, codexRows: 100 });
   });
 
   it("a slow round reads everything", async () => {
     const f = await pollFeeds(emptyFeeds(), deps(), true, 5);
-    expect(Object.keys(f.readAt).sort()).toEqual(["agents", "codexRows", "engine", "host", "library", "needs", "openTargets"]);
+    expect(Object.keys(f.readAt).sort()).toEqual(["agents", "codexRows", "engine", "host", "library", "needs", "openTargets", "remote"]);
   });
 
   it("a failing read keeps the last good value and its time", async () => {
@@ -44,7 +46,7 @@ describe("pollFeeds", () => {
 
   it("everything failing on the first read leaves the empty state", async () => {
     const all = fail();
-    const f = await pollFeeds(emptyFeeds(), { needs: all, engine: all, host: all, library: all, openTargets: all, agents: all, codexRows: all }, true, 1);
+    const f = await pollFeeds(emptyFeeds(), { needs: all, engine: all, host: all, library: all, openTargets: all, agents: all, remote: all, codexRows: all }, true, 1);
     expect(f).toEqual(emptyFeeds());
   });
 });

@@ -8,10 +8,10 @@ import { useEffect, useRef, useState } from "react";
 import * as ipc from "../../ipc.js";
 import type { SessionRow } from "../../transforms.js";
 import type { AwayDigest, NeedItem } from "../needs.js";
-import type { AgentsList, EngineHealth, HistoryRow, HostList, LibraryList, OpenTargetsGlobal } from "./feeds.js";
+import type { AgentsList, RemoteState, EngineHealth, HistoryRow, HostList, LibraryList, OpenTargetsGlobal } from "./feeds.js";
 
 export const FEEDS_POLL_MS = 10_000;
-/** Library, Open-in and Agents settings change only through the app: every 6th tick. */
+/** Library, Open-in, Agents and Remote settings change only through the app: every 6th tick. */
 export const SLOW_EVERY = 6;
 
 export interface V3Feeds {
@@ -21,15 +21,16 @@ export interface V3Feeds {
   library: LibraryList | null;
   openTargets: OpenTargetsGlobal | null;
   agents: AgentsList | null;
+  remote: RemoteState | null;
   /** `sessions --provider codex --json`; the 2.11 poll reads Claude only. */
   codexRows: SessionRow[];
   /** Feed name → epoch ms of its last good read. */
   readAt: Partial<Record<FeedName, number>>;
 }
 
-export type FeedName = "needs" | "engine" | "host" | "library" | "openTargets" | "agents" | "codexRows";
+export type FeedName = "needs" | "engine" | "host" | "library" | "openTargets" | "agents" | "remote" | "codexRows";
 
-export const emptyFeeds = (): V3Feeds => ({ needs: null, engine: null, host: null, library: null, openTargets: null, agents: null, codexRows: [], readAt: {} });
+export const emptyFeeds = (): V3Feeds => ({ needs: null, engine: null, host: null, library: null, openTargets: null, agents: null, remote: null, codexRows: [], readAt: {} });
 
 export interface FeedDeps {
   needs: () => Promise<NonNullable<V3Feeds["needs"]>>;
@@ -38,6 +39,7 @@ export interface FeedDeps {
   library: () => Promise<LibraryList>;
   openTargets: () => Promise<OpenTargetsGlobal>;
   agents: () => Promise<AgentsList>;
+  remote: () => Promise<RemoteState>;
   codexRows: () => Promise<SessionRow[]>;
 }
 
@@ -48,12 +50,13 @@ export const realDeps: FeedDeps = {
   library: ipc.libraryList,
   openTargets: ipc.openTargetsGlobal,
   agents: ipc.agentsList,
+  remote: ipc.remoteStatus,
   codexRows: () => ipc.listSessions(undefined, 20, "codex"),
 };
 
 /** One poll round. `slow` adds the reads that change rarely. */
 export async function pollFeeds(prev: V3Feeds, deps: FeedDeps, slow: boolean, now: number): Promise<V3Feeds> {
-  const names: FeedName[] = ["needs", "engine", "host", "codexRows", ...(slow ? (["library", "openTargets", "agents"] as FeedName[]) : [])];
+  const names: FeedName[] = ["needs", "engine", "host", "codexRows", ...(slow ? (["library", "openTargets", "agents", "remote"] as FeedName[]) : [])];
   const results = await Promise.allSettled(names.map((n) => deps[n]()));
   const next: V3Feeds = { ...prev, readAt: { ...prev.readAt } };
   results.forEach((r, i) => {

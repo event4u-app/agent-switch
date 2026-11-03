@@ -13,6 +13,7 @@ import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, AutoSwitchTag, U
 import type { AppNotification, NotificationKind } from "./notifications.js";
 import {
   parseAgents,
+  parseRemote,
   parseChanges,
   parseEngine,
   parseHistory,
@@ -21,6 +22,7 @@ import {
   parseOpenTargets,
   parsePrStatus,
   type AgentsList,
+  type RemoteState,
   type EngineHealth,
   type HistoryRow,
   type HostList,
@@ -126,6 +128,21 @@ export async function prStatus(): Promise<PrStatus> {
 /** `agents --json`: Settings › Agents (v3.2). */
 export async function agentsList(): Promise<AgentsList> {
   return parseAgents(JSON.parse(await runCli(["agents", "--json"])));
+}
+
+/** `remote --json`: Settings › Remote (v3.2). */
+export async function remoteStatus(): Promise<RemoteState> {
+  return parseRemote(JSON.parse(await runCli(["remote", "--json"])));
+}
+
+/** `remote rc on|off <account>`. */
+export async function setRemoteControl(account: string, on: boolean): Promise<void> {
+  await runCli(["remote", "rc", on ? "on" : "off", account]);
+}
+
+/** `remote ssh on|off`. */
+export async function setRemoteSsh(on: boolean): Promise<void> {
+  await runCli(["remote", "ssh", on ? "on" : "off"]);
 }
 
 /** `agents on|off <id>`. */

@@ -235,3 +235,14 @@ export function parseAgents(v: unknown): AgentsList {
       .map((x) => ({ id: x.id as string, name: str(x.name) ?? (x.id as string), licence: str(x.licence) ?? "", install: arr(x.install).filter((w): w is string => typeof w === "string") })),
   };
 }
+
+export interface RemoteState {
+  remoteControlAccounts: string[];
+  ssh: boolean;
+}
+
+/** `remote --json`. Anything unreadable reads as off. */
+export function parseRemote(v: unknown): RemoteState {
+  const o = obj(v);
+  return { remoteControlAccounts: arr(o.remoteControlAccounts).filter((a): a is string => typeof a === "string"), ssh: o.ssh === true };
+}

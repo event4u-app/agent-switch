@@ -1,12 +1,11 @@
 /**
- * Settings (spec §10.5): the left nav, Appearance, Open in and Agents (v3.2).
- * The other sections are the 2.11 settings screens, passed in by section.
- * Remote arrives with v3.2 Phase 2 and is not listed until then.
+ * Settings (spec §10.5): the left nav, Appearance, Open in, Agents and Remote
+ * (v3.2). The other sections are the 2.11 settings screens, passed in by section.
  */
 
 import type { CSSProperties, ReactNode } from "react";
 import { useState } from "react";
-import { Check, Cpu, ExternalLink, Monitor, Moon, Plus, Sun } from "lucide-react";
+import { Check, Cpu, ExternalLink, Globe, KeyRound, Lock, Monitor, Moon, Plus, Server, Sun, Wifi } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { AcRoot } from "../ui/AcRoot.js";
 import { Button } from "../ui/Button.js";
@@ -18,7 +17,7 @@ import { Chip, Marker, PageHeader } from "./kit.js";
 import { THEMES, themeById, type ThemeDef, type ThemeGroup } from "./themes/registry.js";
 import { resolveTheme, type Accent, type Appearance } from "./themes/resolve.js";
 
-export const SETTINGS_NAV = ["General", "Appearance", "Sign-ins", "Protection", "Distribution", "Notifications", "Desktop pet", "Providers", "Open in", "Agents", "Updates", "Advanced"] as const;
+export const SETTINGS_NAV = ["General", "Appearance", "Sign-ins", "Protection", "Distribution", "Notifications", "Desktop pet", "Providers", "Open in", "Agents", "Remote", "Updates", "Advanced"] as const;
 export type SettingsSection = (typeof SETTINGS_NAV)[number];
 
 export function SettingsPage({ current, onSection, children }: { current: SettingsSection; onSection: (s: SettingsSection) => void; children: ReactNode }) {
@@ -329,5 +328,83 @@ export function AgentsSettings({ agents, suggestions, on }: { agents: AgentRowVi
         )}
       </div>
     </Group>
+  );
+}
+
+// ---------- Remote (v3.2) ----------
+
+function Stage({ title, detail, icon: Icon, state, onToggle, children }: { title: string; detail: string; icon: typeof Globe; state: "on" | "off" | "later"; onToggle?: (v: boolean) => void; children?: ReactNode }) {
+  return (
+    <div className={cn("rounded-[10px] border bg-ac-panel p-4", state === "on" ? "border-ac-brand-line" : "border-ac-line", state === "later" && "opacity-75")}>
+      <div className="flex items-start gap-3">
+        <span className={cn("inline-flex size-8 shrink-0 items-center justify-center rounded-md", state === "on" ? "bg-ac-brand-tint text-ac-brand-text" : "bg-ac-raise text-ac-muted")}>
+          <Icon className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[13.5px] font-semibold text-ac-text">{title}</span>
+            {state === "later" && <span className="text-[11px] text-ac-muted">not available yet</span>}
+          </div>
+          <p className="mt-0.5 text-xs text-ac-muted">{detail}</p>
+          {children}
+        </div>
+        {state !== "later" && onToggle && <Switch checked={state === "on"} onChange={onToggle} label={title} />}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Settings › Remote (spec §10.5). Every stage is off until turned on. R1's
+ * devices are Anthropic's to manage; an SSH login is the owner; the tailnet
+ * phone client and its paired devices come later (council review 2026-11-03).
+ */
+export function RemoteSettings({ claudeAccounts, remoteControl, ssh, on }: { claudeAccounts: string[]; remoteControl: string[]; ssh: boolean; on: { rc: (account: string, value: boolean) => void; ssh: (value: boolean) => void } }) {
+  const r1 = remoteControl.length > 0;
+  return (
+    <>
+      <Group title="Reach your sessions from elsewhere" detail="In stages. No stage opens a port outside your own network. Remote devices may answer approvals — never loosen permission modes.">
+        <div className="space-y-3">
+          <Stage icon={Globe} state={r1 ? "on" : "off"} title="Claude Remote Control" detail="Per session or account: starts with --remote-control. Uses Anthropic's own channel; no inbound port." onToggle={(v) => claudeAccounts.forEach((a) => on.rc(a, v))}>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {claudeAccounts.map((a) => (
+                <button key={a} type="button" onClick={() => on.rc(a, !remoteControl.includes(a))} aria-pressed={remoteControl.includes(a)}>
+                  {remoteControl.includes(a) ? (
+                    <Chip kind="status" tone="ok">
+                      {a} · on
+                    </Chip>
+                  ) : (
+                    <Chip>{a} · off</Chip>
+                  )}
+                </button>
+              ))}
+              <span className="text-[11px] text-ac-muted">Codex: use the ChatGPT app's remote connections</span>
+            </div>
+          </Stage>
+          <Stage icon={Wifi} state={ssh ? "on" : "off"} title="Own tunnel (SSH / Tailscale)" detail="ssh <this machine> agent-switch remote rpc — open approvals, allow once or deny. An SSH login is you; the phone web client inside your tailnet comes later." onToggle={on.ssh}>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-ac-muted">
+              <span className="inline-flex items-center gap-1.5">
+                <Lock className="size-3.5" /> SSH is the sign-in
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <KeyRound className="size-3.5" /> no port, no stored token
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Check className="size-3.5" /> scopes: view · approve
+              </span>
+            </div>
+          </Stage>
+          <Stage icon={Server} state="later" title="End-to-end encrypted relay" detail="Only with E2E encryption and a self-hostable relay." />
+        </div>
+      </Group>
+      <Group title="Paired devices">
+        <Card>
+          <Row title="No paired devices" detail="Pairing comes with the phone web client inside your tailnet. Claude Remote Control devices are managed in Claude.">
+            <span />
+          </Row>
+        </Card>
+        <p className="mt-2 text-[11px] text-ac-muted">Terminal write, uploads and git write are separate scopes, off by default.</p>
+      </Group>
+    </>
   );
 }
