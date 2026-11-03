@@ -15,8 +15,8 @@ tree_pin: ff38137
 >
 > Follow-ups (parked, pull trigger named in each):
 > [`road-to-agent-switch-v3-client.md`](road-to-agent-switch-v3-client.md) (v3.1),
-> [`later/road-to-agent-switch-v3-reach.md`](later/road-to-agent-switch-v3-reach.md) (v3.2).
-> Prerequisite (done, archived): [`road-to-hooks-that-keep-up.md`](archive/road-to-hooks-that-keep-up.md).
+> [`later/road-to-agent-switch-v3-reach.md`](../later/road-to-agent-switch-v3-reach.md) (v3.2).
+> Prerequisite (done, archived): [`road-to-hooks-that-keep-up.md`](road-to-hooks-that-keep-up.md).
 
 ## Branch model (owner, 2026-11-02)
 
@@ -30,12 +30,12 @@ tree_pin: ff38137
 
 ## Design basis (binding)
 
-- **The UI spec is the spec.** [`docs/design/agent-switch-v3-ui-spec.md`](../../docs/design/agent-switch-v3-ui-spec.md)
+- **The UI spec is the spec.** [`docs/design/agent-switch-v3-ui-spec.md`](../../../docs/design/agent-switch-v3-ui-spec.md)
   says what every v3 element is for, how it looks and how it behaves. It is built
   1:1 (`design.fidelity_mode` default `strict`): every visible deviation — font,
   control, component, layout, spacing, colour, an added or omitted element —
   needs the owner's confirmation first. Section numbers below (`§n`) point into it.
-- **Reference boards:** [`docs/design/agent-switch-v3-reference.patch`](../../docs/design/agent-switch-v3-reference.patch)
+- **Reference boards:** [`docs/design/agent-switch-v3-reference.patch`](../../../docs/design/agent-switch-v3-reference.patch)
   adds `gui/src/v3/` (boards on demo data, theme registry + resolver + tests) and
   five shared `gui/src/ui/` changes. It applies cleanly on `ff38137`. Its code is
   adapted, not re-derived (Phase 6), but it is **not** merged as it is: applied
@@ -330,9 +330,13 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       → The app reports `agent-switch app-visibility visible|hidden` on every
       visibility change; the daemon skips the refresh while a "hidden" younger
       than 30 min stands. No app, or a stale report, refreshes as before.
-- [ ] GitLab merge requests through `glab`, after GitHub works. Open: `glab` is
+- [-] GitLab merge requests through `glab`, after GitHub works. Open: `glab` is
       not installed here and no session works in a GitLab repository, so there
       is nothing to verify the API shape against.
+      → Carried, owner decision 2026-11-03 ("aktuell habe ich nichts für
+      GitLab"): moved unchanged to
+      [`later/road-to-agent-switch-v3-reach.md`](../later/road-to-agent-switch-v3-reach.md)
+      § Later, with its trigger. Closes there.
 - [x] No `gh` or no login → one honest line with a fix button; AS never stores a
       GitHub token itself.
       → `GhUnavailable` with `fix` (`gh auth login` / install link); `pr status` prints one line, `--json` gives `problem: {message, fix}` for the app's button. No token is read or stored.

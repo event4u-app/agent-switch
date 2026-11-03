@@ -14,7 +14,7 @@ execution:
 > renders `RedesignApp`, so `npm run tauri dev` shows the 2.11 window. Owner
 > observation the same turn: "es startet nur das alte GUI und nicht das neue".
 >
-> Parent: [`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)
+> Parent: [`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)
 > (Phases 6–9 built the components this roadmap feeds).
 
 ## Branch
