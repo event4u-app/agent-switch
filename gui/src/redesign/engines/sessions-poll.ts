@@ -30,6 +30,7 @@ export function sessionsPatch(accounts: readonly Account[], rows: readonly Sessi
   for (const x of sessions) if (x.state !== "done" && x.accountId) running.set(x.accountId, (running.get(x.accountId) ?? 0) + 1);
   return {
     sessions,
+    sessionRows: [...rows],
     accounts: accounts.map((a) => (a.tool === "claude" ? { ...a, liveSessions: running.get(a.id) ?? 0 } : a)),
   };
 }

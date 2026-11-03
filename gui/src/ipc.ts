@@ -11,6 +11,22 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { enable as autostartEnable, disable as autostartDisable, isEnabled as autostartIsEnabled } from "@tauri-apps/plugin-autostart";
 import type { ProfileRow, StatusJson, ProviderId, ProfileLabel, AutoSwitchTag, UsageSnapshot, ProvidersStatus, ProviderSurface, SessionRow, SessionPreview } from "./transforms.js";
 import type { AppNotification, NotificationKind } from "./notifications.js";
+import {
+  parseChanges,
+  parseEngine,
+  parseHistory,
+  parseHostList,
+  parseLibrary,
+  parseOpenTargets,
+  parsePrStatus,
+  type EngineHealth,
+  type HistoryRow,
+  type HostList,
+  type LibraryList,
+  type OpenTargetsGlobal,
+  type PrStatus,
+} from "./v3/adapter/feeds.js";
+type ChangedFileRow = ReturnType<typeof parseChanges>[number];
 import { parseAgentConfigVersion } from "./agent-config.js";
 import type { BubbleAction } from "./pet/model.js";
 import { getPetPresence, getPetWelcomed, setPetWelcomedFlag } from "./settings-store.js";
@@ -70,10 +86,95 @@ function cli(args: string[]) {
   return Command.create((inTrayWindow() && trayScope(args)) || "agent-switch", args);
 }
 
-/** The attention queue (`agent-switch needs --json`). */
-export async function listNeeds(): Promise<{ items: import("./v3/needs.js").NeedItem[]; away: import("./v3/needs.js").AwayDigest | null }> {
+/** The attention queue (`agent-switch needs --json`), with the resolved items
+ *  newest first. */
+export async function listNeeds(): Promise<{ items: import("./v3/needs.js").NeedItem[]; away: import("./v3/needs.js").AwayDigest | null; history: HistoryRow[] }> {
   const o = JSON.parse(await runCli(["needs", "--json"]));
-  return { items: Array.isArray(o.items) ? o.items : [], away: o.away ?? null };
+  return { items: Array.isArray(o.items) ? o.items : [], away: o.away ?? null, history: parseHistory(o.history) };
+}
+
+/** `engine status --json`. A CLI that cannot answer reads as a stopped engine. */
+export async function engineStatus(): Promise<EngineHealth> {
+  try {
+    return parseEngine(JSON.parse(await runCli(["engine", "status", "--json"])));
+  } catch (e) {
+    return { running: false, reason: e instanceof Error ? e.message : String(e), hostedRunning: 0 };
+  }
+}
+
+/** `engine restart`. */
+export async function engineRestart(): Promise<void> {
+  await runCli(["engine", "restart"]);
+}
+
+/** `host list --json`: hosted sessions and whether hosting persists (tmux). */
+export async function hostList(): Promise<HostList> {
+  return parseHostList(JSON.parse(await runCli(["host", "list", "--json"])));
+}
+
+/** `pr status --json`: refreshes what is due through `gh`, then reads the cache. */
+export async function prStatus(): Promise<PrStatus> {
+  return parsePrStatus(JSON.parse(await runCli(["pr", "status", "--json"])));
+}
+
+/** `open-targets --json` without a session: the Open-in settings page. */
+export async function openTargetsGlobal(): Promise<OpenTargetsGlobal> {
+  return parseOpenTargets(JSON.parse(await runCli(["open-targets", "--json"])));
+}
+
+/** `open-default <target> [--repo DIR]`. */
+export async function setOpenDefault(target: string, repo?: string): Promise<void> {
+  await runCli(["open-default", target, ...(repo ? ["--repo", repo] : [])]);
+}
+
+/** `open <session> [--with T]`: open the session's worktree with its default or `target`. */
+export async function openSessionIn(key: string, target?: string): Promise<void> {
+  await runCli(["open", key, ...(target ? ["--with", target] : [])]);
+}
+
+/** `focus <session>`: bring the session's terminal tab to the front (macOS). */
+export async function focusSessionTerminal(key: string): Promise<void> {
+  await runCli(["focus", key]);
+}
+
+/** `sessions library --json`. */
+export async function libraryList(): Promise<LibraryList> {
+  return parseLibrary(JSON.parse(await runCli(["sessions", "library", "--json"])));
+}
+
+/** `sessions pin|unpin|archive|unarchive <session>`. */
+export async function setLibraryFlag(key: string, flag: "pin" | "archive", on: boolean): Promise<void> {
+  await runCli(["sessions", on ? flag : `un${flag}`, key]);
+}
+
+/** `sessions keep auto on|off`. */
+export async function setAutoKeep(on: boolean): Promise<void> {
+  await runCli(["sessions", "keep", "auto", on ? "on" : "off"]);
+}
+
+/** `changes <session> --json`: the session's changed files against HEAD. */
+export async function sessionChanges(key: string): Promise<ChangedFileRow[]> {
+  return parseChanges(JSON.parse(await runCli(["changes", key, "--json"])));
+}
+
+/** `host start [profile] --cwd DIR`: a hosted session. */
+export async function hostStart(provider: ProviderId, cwd: string, profile?: string): Promise<void> {
+  await runCli(["host", "start", ...(profile ? [profile] : []), "--provider", provider, "--cwd", cwd, "--json"]);
+}
+
+/** `host end <session> --yes`. */
+export async function hostEnd(key: string): Promise<void> {
+  await runCli(["host", "end", key, "--yes"]);
+}
+
+/** `host respawn <session> --model M | --effort E`: next-turn model or thinking. */
+export async function hostRespawn(key: string, change: { model?: string; effort?: string }): Promise<void> {
+  await runCli(["host", "respawn", key, ...(change.model ? ["--model", change.model] : []), ...(change.effort ? ["--effort", change.effort] : [])]);
+}
+
+/** `sessions cleanup --yes`: remove the worktrees of merged sessions (dirty ones skipped). */
+export async function cleanupMerged(): Promise<void> {
+  await runCli(["sessions", "cleanup", "--yes"]);
 }
 
 /** "Later": hide one item until it changes. */

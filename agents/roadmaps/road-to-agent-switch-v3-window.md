@@ -66,22 +66,34 @@ reachable behind a setting for one release, then goes.
 
 ## Phase 1 — Reads
 
-- [ ] IPC wrappers with tests: `engineStatus`, `hostList`, `sessionsTree`,
+- [x] IPC wrappers with tests: `engineStatus`, `hostList`, `sessionsTree`,
       `prStatus`, `worktrees`, `openTargets`, `setOpenDefault`. Each parses
       defensively (unknown fields ignored, missing → empty).
-- [ ] CLI `library list --json`: every library entry with pin, archive, tags,
+      → `gui/src/ipc.ts` (+ the write calls the actions need: open, focus, pin,
+      archive, auto-keep, host start/end/respawn, cleanup, engine restart),
+      parsers in `gui/src/v3/adapter/feeds.ts`. `sessions --json` already carries
+      git, PRs, children, parent and library per row, so no `sessionsTree` call:
+      the view model now keeps those raw rows (`ViewModel.sessionRows`).
+      `worktrees` is not needed by any field. `open-targets` without a session
+      is new (the settings page's view).
+- [x] CLI `library list --json`: every library entry with pin, archive, tags,
       vault state and bytes, cleanup deadline; plus `autoKeep`. Docs row in
       `reference/cli.mdx`.
-- [ ] CLI `changes <session> --json`: changed files in the session's worktree
+      → named `sessions library [--json]` to sit with `sessions pin|archive|…`
+      (`libraryList` in `src/commands/library.ts`); e2e in `tests/library.test.ts`.
+- [x] CLI `changes <session> --json`: changed files in the session's worktree
       vs HEAD (status, path, added, removed). Refuses a path outside the
       session's folder. Docs row.
+      → `src/commands/changes.ts`, `tests/changes.test.ts` (parsers + a real repo).
 - [ ] "Done today": `needs --json` gains `done` (items resolved since local
       midnight, newest first, at most 20), or the GUI derives it from session
       state transitions — pick the one the store already records; test both
       the empty and the full case.
-- [ ] `useV3Feeds()`: one poll for the v3-only reads, same cadence and
+- [x] `useV3Feeds()`: one poll for the v3-only reads, same cadence and
       hidden-window back-off as `useSessionsPoll`; feeds keep their last good
       value with a timestamp.
+      → `gui/src/v3/adapter/useFeeds.ts`; library and Open-in every 6th tick;
+      `pr status` is not polled (it calls `gh`; rows read its cache).
 
 ## Phase 2 — Mapping
 

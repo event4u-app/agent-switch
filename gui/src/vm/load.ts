@@ -153,6 +153,7 @@ export async function loadViewModel(): Promise<ViewModel> {
     now,
     accounts,
     sessions: (value(sessionsR) ?? []).map((s) => sessionFromRow(s, now)),
+    sessionRows: value(sessionsR) ?? [],
     rules: bindingsFromMappings(value(mappingsR) ?? []),
     pools,
     attention: deriveAttention(accounts, tools, toolsCheckedAt, now),
