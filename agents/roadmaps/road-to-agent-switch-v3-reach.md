@@ -77,15 +77,33 @@ D14 access from anywhere.
 
 ## Phase 1 — ACP agents and local models
 
-- [ ] M15 agent registry (name, binary, args, ACP yes/no) in settings; the ACP
+- [x] M15 agent registry (name, binary, args, ACP yes/no) in settings; the ACP
       agent list as suggestions; ACP driver for Gemini, Antigravity (after S6),
       OpenCode, Goose, Qwen Code — all through the AS event model.
-- [ ] Three classes shown honestly: deep (Claude, Codex: accounts + limits),
+      → `src/agents.ts` (`<ROOT>/agents.json`, argv only), `agent-switch agents`
+      (`list|suggest|install|add|remove|on|off|local`); one ACP driver for all of
+      them, `src/bridge/acp-bridge.ts`, behind `bridge --new --agent <id>` and
+      `bridge acp/<agent>/<session>` (resume through `session/load`; AS keeps
+      the session index, ACP has no listing). No fs/terminal offered, permission
+      requests become approvals, no mode changes. Antigravity: S6 red, so not
+      driven over ACP and not suggested. Verified against a scripted ACP agent
+      over the built CLI (`tests/cli-e2e-acp.test.ts`) and Gemini 0.50's real
+      handshake; a live Gemini/OpenCode/Goose/Qwen turn is open in Acceptance.
+- [x] Three classes shown honestly: deep (Claude, Codex: accounts + limits),
       ACP (limits only if reported), terminal-only — Settings › Agents lists one row
       per agent with its class ("deep" / "ACP" / "terminal only") and a switch
       (spec §10.5).
-- [ ] M16 "local" marker for agents configured with a local model; optional local
+      → `AgentsSettings` in `gui/src/v3/settings.tsx` from the reference board,
+      fed by `agents --json`; "Add agent" opens the suggestions and runs
+      `agents install <id>` in the terminal sheet. `v3-render` with
+      `V3_CLICKS="Settings ⌘,|Agents"`: three themes at 1440×900, clean.
+- [x] M16 "local" marker for agents configured with a local model; optional local
       model for titles/summaries, otherwise none.
+      → `localMarker`: named by the user (`agents local <id> ollama:<model>`),
+      else read from OpenCode's own config (a provider whose `baseURL` is on
+      this machine) or Codex's `--oss --local-provider`. Shown as "local ·
+      Ollama · <model>". Titles and summaries: none — AS takes them from the
+      transcript and calls no model, so no local title model was added.
 
 ## Phase 2 — Remote stage 1 (host-native)
 
