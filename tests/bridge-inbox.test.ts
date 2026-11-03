@@ -56,7 +56,7 @@ test("submitAnswer refuses bad ids and decisions; inboxes are per session", () =
   assert.throws(() => submitAnswer(r, KEY, { approvalId: "a1", decision: "always" as never, source: "cli" }), /allow or deny/);
   assert.notEqual(inboxDir(r, KEY), inboxDir(r, "claude/work/s2"));
   submitAnswer(r, KEY, { approvalId: "a1", decision: "deny", source: "cli" });
-  assert.equal(fs.statSync(inboxDir(r, KEY)).mode & 0o777, 0o700);
+  if (process.platform !== "win32") assert.equal(fs.statSync(inboxDir(r, KEY)).mode & 0o777, 0o700);
 });
 
 test("waitAck returns null when no bridge answers in time", async () => {

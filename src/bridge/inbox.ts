@@ -75,8 +75,13 @@ export async function waitAck(root: string, key: string, nonce: string, timeoutM
 function readRequest(file: string): InboxRequest | null {
   let fd: number | null = null;
   try {
+    // Windows has no O_NOFOLLOW: refuse a link by lstat, then make sure the
+    // file opened is the one that was checked.
+    const before = fs.lstatSync(file);
+    if (!before.isFile()) return null;
     fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
-    if (!fs.fstatSync(fd).isFile()) return null;
+    const opened = fs.fstatSync(fd);
+    if (!opened.isFile() || opened.ino !== before.ino || opened.dev !== before.dev) return null;
     const o = JSON.parse(fs.readFileSync(fd, "utf8"));
     if (!o || !ID.test(o.approvalId) || (o.decision !== "allow" && o.decision !== "deny") || typeof o.at !== "string") return null;
     return { approvalId: o.approvalId, decision: o.decision, source: typeof o.source === "string" ? o.source.slice(0, 20) : "unknown", at: o.at };

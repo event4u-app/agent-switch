@@ -15,6 +15,7 @@ test("cutMarkedPath takes only what sits between the markers", () => {
 
 test("loginShellPath ignores a failing exit status but needs the markers", () => {
   const run = (() => ({ status: 1, stdout: "noise __ASPATH__/x:/y__END__" })) as never;
+  if (process.platform === "win32") return void assert.equal(loginShellPath("/bin/zsh", "/h", run), null, "no login shell on Windows");
   assert.equal(loginShellPath("/bin/zsh", "/h", run), "/x:/y");
   const silent = (() => ({ status: 0, stdout: "" })) as never;
   assert.equal(loginShellPath("/bin/zsh", "/h", silent), null);
