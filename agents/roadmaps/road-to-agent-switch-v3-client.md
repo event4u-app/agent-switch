@@ -221,9 +221,17 @@ drag & drop upload · D10 diffs, collapsible · D11 "a real client".
 
 ## Phase 5 — Desktop parity
 
-- [ ] Projects view; MCP and plugin management per account (read + open config,
+- [x] Projects view; MCP and plugin management per account (read + open config,
       no own installer); what Claude Desktop does that this client does not, listed
       honestly on the docs site.
+      → All sessions › Group "Projects": sessions by repository (worktrees join
+      their main checkout), most recent first. Accounts › "MCP & plugins" reads
+      `agent-switch mcp --json` (`src/commands/mcp.ts`): servers by name,
+      transport and scope from `.claude.json` / Codex `config.toml`, Claude
+      plugins from `settings.json`; never a command line, env or header (test).
+      "Reveal config" shows the file; nothing is installed. Docs:
+      `guides/chat-view` with "What this client does not do"; the docs build
+      and its link check pass.
 
 ## Acceptance
 

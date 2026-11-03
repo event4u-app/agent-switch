@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { AccountsPage, AllSessionsPage, LibraryPage, filterSessions, nextDeadline, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
+import { AccountsPage, AllSessionsPage, LibraryPage, byProject, filterSessions, nextDeadline, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
 
 afterEach(cleanup);
 const NOW = Date.UTC(2026, 10, 2, 12);
@@ -72,5 +72,26 @@ describe("Library page (spec §10.3)", () => {
     expect(screen.getByText("Old")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Restore"));
     expect(on.archive).toHaveBeenCalledWith("b", false);
+  });
+});
+
+describe("All sessions › Projects", () => {
+  it("groups by project, most recently active first, no project last; List is the default", () => {
+    const rows = [
+      sess("a", { title: "A", project: "agent-switch", lastActiveMs: NOW - 9_000 }),
+      sess("b", { title: "B", project: null, lastActiveMs: NOW }),
+      sess("c", { title: "C", project: "web", lastActiveMs: NOW - 1_000 }),
+      sess("d", { title: "D", project: "agent-switch", lastActiveMs: NOW - 2_000 }),
+    ];
+    expect(byProject(rows).map((g) => [g.project, g.rows.map((r) => r.key)])).toEqual([
+      ["web", ["c"]],
+      ["agent-switch", ["a", "d"]],
+      [null, ["b"]],
+    ]);
+    render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    expect(screen.queryByText("No project")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "Projects" }));
+    expect(screen.getByText("agent-switch")).toBeTruthy();
+    expect(screen.getByText("No project")).toBeTruthy();
   });
 });

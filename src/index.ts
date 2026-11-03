@@ -52,6 +52,7 @@ import { cmdChanges } from "./commands/changes.js";
 import { cmdBridge, cmdFiles, cmdTimeline } from "./commands/bridge.js";
 import { cmdDiff } from "./commands/diff.js";
 import { cmdView } from "./commands/view.js";
+import { cmdMcp } from "./commands/mcp.js";
 import { cmdEngine } from "./commands/engine.js";
 import { cmdNeeds } from "./commands/needs.js";
 import { cmdHost } from "./commands/host.js";
@@ -193,6 +194,7 @@ async function main(): Promise<void> {
     case "files": return cmdFiles(positional[0], flags);
     case "diff": return cmdDiff(positional[0], positional[1], flags);
     case "view": return cmdView(positional[0], positional[1], flags);
+    case "mcp": return cmdMcp(positional[0], positional[1], flags);
     case "engine": return cmdEngine(positional[0], flags);
     case "needs": return cmdNeeds(positional[0], positional[1], flags);
     case "host": return cmdHost(providerId, positional[0], positional[1], flags);

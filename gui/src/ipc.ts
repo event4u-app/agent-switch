@@ -240,6 +240,26 @@ async function cliCall(args: string[]): Promise<string> {
 
 export const reviewAct = (key: string, action: "stage" | "unstage" | "discard", file: string, hunk?: string) => cliCall(["diff", key, action, "--file", file, ...(hunk ? ["--hunk", hunk] : []), "--json"]);
 export const reviewUndo = (key: string) => cliCall(["diff", key, "undo", "--json"]);
+export interface McpAccountJson {
+  key: string;
+  provider: "claude" | "codex";
+  account: string;
+  configFile: string;
+  servers: { name: string; transport: "stdio" | "http" | "sse" | "unknown"; scope: string }[];
+  plugins: { name: string; enabled: boolean }[];
+}
+
+/** `mcp --json`: each account's MCP servers and plugins, names only. */
+export async function mcpList(): Promise<McpAccountJson[]> {
+  const o = JSON.parse(await runCli(["mcp", "--json"]));
+  return Array.isArray(o) ? o : [];
+}
+
+/** `mcp open <provider/account>`: reveal the account's config file. */
+export async function mcpOpen(key: string): Promise<void> {
+  await runCli(["mcp", "open", key, "--json"]);
+}
+
 /** `view <session> chat|terminal`: the session bar's switch for a hosted session. */
 export const viewSwitch = (key: string, to: "chat" | "terminal") => cliCall(["view", key, to, "--json"]);
 export const reviewCommit = (key: string, message: string) => cliCall(["diff", key, "commit", "--message", message, "--json"]);

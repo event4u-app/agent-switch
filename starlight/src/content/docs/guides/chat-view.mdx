@@ -1,0 +1,88 @@
+---
+title: Chat view and review
+description: Work with Claude Code or Codex in Agent Switch's own chat view — approvals, questions, images, review and commit — and what it deliberately does not do.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Every session can run in a terminal, as it always has. Sessions hosted in Agent
+Switch can also open in a **chat view**: the same conversation, drawn as
+messages, tool cards and diffs, with approvals and questions as cards you answer
+in place.
+
+<Aside type="caution" title="Terminal stays the default">
+Anthropic counts a client view like this one as programmatic use of Claude Code.
+How that is billed is currently paused, not settled. The terminal remains the
+default; the chat view is something you choose per session.
+</Aside>
+
+## Start a chat, or switch one
+
+- **New session in chat view** (command palette) starts a session directly in a
+  chat.
+- The session bar's **Terminal | Chat** switch moves a hosted Claude or Codex
+  session between the two. It happens only between turns; asked for during a
+  turn, it waits and switches when the turn ends. While the chat is open, the
+  terminal window shows a notice and writes nothing — one conversation never has
+  two writers. Closing the chat brings the program back in the terminal,
+  resuming the same conversation.
+- From the command line: `agent-switch view <session> chat|terminal`.
+
+## In the chat
+
+- **Approvals** — *Allow once*, *Always allow* (the rule the agent itself
+  proposes), or *Deny*. The same approval appears in **Needs you**; answering it
+  anywhere answers it everywhere.
+- **Questions** the agent asks are a form; your answers go back as its tool
+  result.
+- **Messages** you send during a turn are queued and sent when it ends. With
+  Codex, <kbd>⌥</kbd><kbd>↵</kbd> adds to the running turn instead.
+- **Stop** (<kbd>⌘</kbd><kbd>.</kbd>) interrupts the turn.
+- **@** completes files of the repository, **/** the agent's commands. Pasted or
+  dropped images are sent as images; other dropped files are attached as a copy.
+- **Mode**: *Ask before edits*, *Edit without asking* or *Plan only*. Approvals
+  are never bypassed.
+
+## Review and commit
+
+**Changes › Review changes** opens a review of the session:
+
+- **Scopes**: *This turn*, *Session* (since the session began), *Worktree vs
+  main* (including changes made through shell commands and new files), *Staged*.
+- Every change says whether it is committed, staged or not staged. Stage,
+  unstage or discard a single change or a whole file — locked while a turn runs.
+  A discard can be undone.
+- A **comment** on a change is sent to the session as its next prompt.
+- **Commit N staged…** runs `git commit` with your repository's hooks; **Create
+  PR** opens a pull request. With Codex, *Ask Codex to review* starts its own
+  review.
+- From the command line: `agent-switch diff <session>`.
+
+## MCP servers and plugins
+
+**Accounts › MCP & plugins** lists, per account, the MCP servers and plugins
+configured in that tool's own settings — names, transport and where they apply.
+*Reveal config* shows the file. Agent Switch reads and shows; it installs and
+changes nothing. Use `claude mcp add` / `codex mcp add` or edit the file.
+
+## What this client does not do
+
+Things you may know from Claude Desktop or another full client that the chat view
+here does not offer — on purpose, or not yet:
+
+- **No rewind or checkpoints.** Rewinding a conversation stays in the terminal.
+- **No change of thinking in a running chat.** Thinking is set when the chat
+  starts; switch to the terminal to change it. The model can be changed.
+- **No installer for MCP servers, plugins or connectors.** They are read and
+  shown, never installed or edited.
+- **Projects are folders, not knowledge bases.** *All sessions › Projects* groups
+  sessions by repository. There are no project instructions or uploaded
+  knowledge files.
+- **No rendered previews** of web pages, documents or artifacts; diffs and text
+  only.
+- **Local only.** Sessions run on this machine; there are no cloud or remote
+  sessions in the chat view.
+- **A file dropped from the Finder is a copy.** The app cannot see where it came
+  from; to point the agent at a repository file, type `@` and pick it.
+- **Sessions in your own terminal cannot switch.** Only sessions hosted in Agent
+  Switch have a chat view; Antigravity keeps the view it started in.

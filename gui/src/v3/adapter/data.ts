@@ -239,6 +239,13 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     return l ? [{ ...l, email: a.identity, label: a.label, isDefault: a.isDefault, running: a.liveSessions }] : [];
   });
 
+  // A project is the repository (its main checkout, so worktrees join it), else the folder.
+  const projectOf = (r: SessionRow): string | null => {
+    const dir = r.git?.toplevel ?? r.cwd ?? null;
+    if (!dir) return null;
+    const wt = /^(.*?)(?:-wt\/[^/]+|\/\.worktrees?\/[^/]+)$/.exec(dir);
+    return (wt ? wt[1] : dir).split("/").filter(Boolean).pop() ?? null;
+  };
   const table: TableSession[] = rows.map((r) => {
     const pr = prsOf(r)[0];
     return {
@@ -254,6 +261,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       thinking: (r.context as { effort?: string | null } | null | undefined)?.effort ?? null,
       contextPct: r.context?.pct ?? null,
       lastActiveMs: r.mtimeMs,
+      project: projectOf(r),
     };
   });
 

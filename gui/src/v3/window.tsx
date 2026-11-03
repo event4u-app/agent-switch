@@ -61,6 +61,8 @@ export interface V3Slots {
   usageHistory: ReactNode;
   pools: ReactNode;
   poolCount: number;
+  /** Accounts › MCP & plugins (v3.1). */
+  mcp?: ReactNode;
   tools: ReactNode;
   /** v3.1: the Review page of one session (spec §10.9). Absent: Review and Commit stay disabled. */
   review?: (key: string) => ReactNode;
@@ -189,6 +191,7 @@ export function V3Window({ data, slots, act, focus }: { data: V3Data; slots: V3S
           history={slots.usageHistory}
           pools={slots.pools}
           poolCount={slots.poolCount}
+          mcp={slots.mcp}
           on={{ add: () => act({ type: "account", op: "add" }), refresh: () => act({ type: "account", op: "refresh" }), use: (key) => act({ type: "account", op: "use", key }), signIn: (key) => act({ type: "account", op: "sign-in", key }), terminal: (key) => act({ type: "account", op: "terminal", key }), more: (key) => act({ type: "account", op: "more", key }) }}
         />
       );

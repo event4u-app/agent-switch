@@ -32,6 +32,7 @@ import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
 import { useChats } from "./chats.js";
 import { ReviewHost } from "./ReviewHost.js";
+import { McpHost } from "./McpHost.js";
 import { viewStep } from "./viewSwitch.js";
 import { fold } from "../timeline.js";
 import { sessionFromRow } from "../../vm/build.js";
@@ -348,6 +349,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     },
     usageHistory: <UsageHistory history={history} />,
     pools: <PoolsSection />,
+    mcp: <McpHost toast={(t) => s.toast(t)} />,
     poolCount: s.pools.length,
     tools: <ToolList />,
     settings: settingsSection,
