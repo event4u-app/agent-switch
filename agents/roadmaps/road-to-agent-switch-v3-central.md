@@ -14,7 +14,7 @@ tree_pin: ff38137
 > reader map back (V*, M*, S*, E*, K*).
 >
 > Follow-ups (parked, pull trigger named in each):
-> [`later/road-to-agent-switch-v3-client.md`](later/road-to-agent-switch-v3-client.md) (v3.1),
+> [`road-to-agent-switch-v3-client.md`](road-to-agent-switch-v3-client.md) (v3.1),
 > [`later/road-to-agent-switch-v3-reach.md`](later/road-to-agent-switch-v3-reach.md) (v3.2).
 > Prerequisite (done, archived): [`road-to-hooks-that-keep-up.md`](archive/road-to-hooks-that-keep-up.md).
 
@@ -81,7 +81,7 @@ user sees follows the v3 UI spec.
 | D16 | take the design as the basis (second arrival, 2026-11-02) | Design basis, Phases 6–9 |
 
 D7–D11 (Claude-Desktop-class client, view switch, drag & drop, diffs) are in
-`later/road-to-agent-switch-v3-client.md`; D12–D14 (other agents, local models,
+`road-to-agent-switch-v3-client.md`; D12–D14 (other agents, local models,
 access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 
 ## Constraints (binding)

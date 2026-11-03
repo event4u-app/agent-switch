@@ -1,6 +1,6 @@
 ---
 complexity: large
-status: planned
+status: in-progress
 tree_pin: ff38137
 ---
 
@@ -12,25 +12,25 @@ tree_pin: ff38137
 > see what changed as a collapsible diff "like Codex/git". Second arrival the same
 > day: the v3 UI design (`design/`), whose chat and review boards are v3.1.
 >
-> **Pull trigger:** [`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)
+> **Pull trigger:** [`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)
 > closed (store, host, input lease and library in place). Parked because every
 > phase here builds on them.
 
 ## Branch
 
 Targets `dev/v3` (branch model in
-[`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)).
+[`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)).
 
 ## Design basis (binding)
 
-The v3 UI spec [`docs/design/agent-switch-v3-ui-spec.md`](../../../docs/design/agent-switch-v3-ui-spec.md)
+The v3 UI spec [`docs/design/agent-switch-v3-ui-spec.md`](../../docs/design/agent-switch-v3-ui-spec.md)
 is the spec here too, at strict fidelity (rules in
-[`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)
+[`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)
 § Design basis). This roadmap builds its v3.1 boards: Chat view (§10.8), Review
 (§10.9), the `[Terminal | Chat]` switch (§6.2), "Review changes" in the Changes
 window (§9.2), `⌘.` (§12) and behaviour rules §13.3–§13.5. Reference code:
 `gui/src/v3/v31.tsx` in
-[`docs/design/agent-switch-v3-reference.patch`](../../../docs/design/agent-switch-v3-reference.patch).
+[`docs/design/agent-switch-v3-reference.patch`](../../docs/design/agent-switch-v3-reference.patch).
 
 ## Owner demands answered here
 
@@ -54,16 +54,27 @@ drag & drop upload · D10 diffs, collapsible · D11 "a real client".
 
 ## Phase 0 — Spikes and ADRs
 
-- [ ] Spike: long-lived stream-json process with `CLAUDE_CONFIG_DIR`, OAuth login
+- [x] Spike: long-lived stream-json process with `CLAUDE_CONFIG_DIR`, OAuth login
       and image content blocks.
-- [ ] Spike S2 moved to v3.0 Phase 0 (the Needs-you zone needs it first); reuse its
+      → `agents/evidence/v31-phase0-spikes-2026-11.md` § C1: one process carried two turns, the profile's OAuth login
+      worked from `CLAUDE_CONFIG_DIR`, a base64 PNG block was read correctly.
+- [x] Spike S2 moved to v3.0 Phase 0 (the Needs-you zone needs it first); reuse its
       result for the approval card here.
-- [ ] Spike: does `codex app-server` list and resume threads started in the CLI?
-- [ ] ADR: bridge process model (CLI stdio process `agent-switch bridge` spawned by
+      → `agents/evidence/v31-phase0-spikes-2026-11.md` § C2: S2 reused; for the bridge `--permission-prompt-tool stdio`
+      gives `can_use_tool` requests on stdout, answered on stdin (deny and allow
+      both verified).
+- [x] Spike: does `codex app-server` list and resume threads started in the CLI?
+      → `agents/evidence/v31-phase0-spikes-2026-11.md` § C3: yes, once `thread/list` names the source kinds; `thread/read`
+      and `thread/resume` work. A Codex turn was not run (both logins fail to
+      refresh, central blocker).
+- [x] ADR: bridge process model (CLI stdio process `agent-switch bridge` spawned by
       the engine vs in-engine manager; no new Tauri capability) and the per-session
       write lock.
-- [ ] ADR: timeline reader for Claude history (extends ADR-002), fixtures per CC
+      → `docs/adr/ADR-009-v31-bridge-process-and-write-lock.md`: a CLI process
+      per session, spawned by the GUI, holding the session's input lease.
+- [x] ADR: timeline reader for Claude history (extends ADR-002), fixtures per CC
       version; "open in terminal" when in doubt.
+      → `docs/adr/ADR-010-v31-timeline-reader.md`.
 
 ## Phase 1 — Read-only timeline
 

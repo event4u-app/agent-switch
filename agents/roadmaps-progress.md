@@ -2,14 +2,14 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change. A repository that does not commit this file has no git history for it — regenerate to see the current state.
 >
-> 1 open roadmap · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 2 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**78 / 81 steps done · 96%**
+**83 / 106 steps done · 78%**
 
 ```text
-██████████████████████████████████████░░   96%
+███████████████████████████████░░░░░░░░░   78%
 ```
 
 ## Open roadmaps
@@ -17,10 +17,11 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 81 | 3 | 78 | 0 | 0 | 0 | ██████████ 96% |
+| 2 | [road-to-agent-switch-v3-client.md](roadmaps/road-to-agent-switch-v3-client.md) | 6 | 25 | 20 | 5 | 0 | 0 | 0 | ██░░░░░░░░ 20% |
 
 ---
 
-## Parked — `later/` (11 roadmaps, not active backlog)
+## Parked — `later/` (10 roadmaps, not active backlog)
 
 > Excluded from the table above and from `/roadmap:process-*` by design. Listed here so a resume condition is visible without opening the file.
 
@@ -32,7 +33,6 @@
 | [road-to-agent-switch-gui-service.md](roadmaps/later/road-to-agent-switch-gui-service.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-agent-switch-native-updater.md](roadmaps/later/road-to-agent-switch-native-updater.md) | 2 (2 you) | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-agent-switch-statusline-usage.md](roadmaps/later/road-to-agent-switch-statusline-usage.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
-| [road-to-agent-switch-v3-client.md](roadmaps/later/road-to-agent-switch-v3-client.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-agent-switch-v3-reach.md](roadmaps/later/road-to-agent-switch-v3-reach.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-deferred-followups.md](roadmaps/later/road-to-deferred-followups.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-host-signals-followups.md](roadmaps/later/road-to-host-signals-followups.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
@@ -62,6 +62,19 @@
 | 9 | Pages (spec §10.1–§10.6, §11) | ✅ done | 0 | 8 | 0 | 0 | 100% |
 | 10 | Codex and Antigravity parity | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
 
+### [road-to-agent-switch-v3-client.md](roadmaps/road-to-agent-switch-v3-client.md)
+
+**agent-switch v3.1 "Client" — chat view, diffs, terminal ⇄ chat** — 5 / 25 done (20%)
+
+| # | Phase | State | Open | Done | Deferred | Cancelled | % |
+|---|---|---|---:|---:|---:|---:|---:|
+| 0 | Spikes and ADRs | ✅ done | 0 | 5 | 0 | 0 | 100% |
+| 1 | Read-only timeline | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 2 | Interactive chat view | ⬜ not started | 7 | 0 | 0 | 0 | 0% |
+| 3 | Changes and review | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
+| 4 | Terminal ⇄ chat switch | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 5 | Desktop parity | ⬜ not started | 1 | 0 | 0 | 0 | 0% |
+
 ## Age
 
 Days since each active roadmap landed at its path and since its last ticked step, read from `git log` (`—` = unknown, or never ticked).
@@ -69,4 +82,5 @@ Days since each active roadmap landed at its path and since its last ticked step
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 1 | 1 |
+| [road-to-agent-switch-v3-client.md](roadmaps/road-to-agent-switch-v3-client.md) | — | — |
 

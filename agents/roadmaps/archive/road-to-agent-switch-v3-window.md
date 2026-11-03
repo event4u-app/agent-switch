@@ -219,7 +219,7 @@ reachable behind a setting for one release, then goes.
 ## Not here
 
 - Chat/timeline view, diffs inline, terminal ⇄ chat — v3.1
-  (`later/road-to-agent-switch-v3-client.md`).
+  (`road-to-agent-switch-v3-client.md`).
 - Removing the 2.11 window — one release after this ships.
 
 ## Risks
