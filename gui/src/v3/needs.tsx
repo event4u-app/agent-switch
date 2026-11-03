@@ -102,7 +102,7 @@ export function NeedsZone({
         <span className="text-[11px] text-ac-muted">{items.length}</span>
         <span className="ml-auto font-ac-mono text-[10.5px] text-ac-muted">⌘J</span>
       </div>
-      <div className="px-1.5 pb-1">
+      <div className="px-1.5">
         {away && updates > 0 && (
           <button type="button" onClick={onAway} className="flex h-6 w-full items-center rounded-md px-2 text-left text-[12px] text-ac-soft hover:bg-ac-raise">
             While you were away · {updates} updates ›

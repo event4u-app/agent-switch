@@ -125,8 +125,8 @@ export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount
 export function LimitsStrip({ accounts, nowMs, openKey, onOpen, onSignIn }: { accounts: LimitAccount[]; nowMs: number; openKey: string | null; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
   const ordered = [...accounts.filter((a) => a.tool === "claude"), ...accounts.filter((a) => a.tool === "codex")];
   return (
-    <section aria-label="Limits" className="border-t border-ac-line px-1.5 pb-2">
-      <div className="flex h-8 items-center px-2 text-[11px] font-semibold text-ac-soft">Limits</div>
+    <section aria-label="Limits" className="relative shrink-0 border-t border-ac-line px-1.5 pb-1.5 pt-1">
+      <div className="flex h-7 items-center px-2 text-[11px] font-semibold text-ac-soft">Limits</div>
       {ordered.map((a) => (
         <LimitRow key={a.key} a={a} nowMs={nowMs} open={a.key === openKey} onOpen={onOpen} onSignIn={onSignIn} />
       ))}

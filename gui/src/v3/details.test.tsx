@@ -38,7 +38,7 @@ describe("Decision sheet (spec §8.2)", () => {
         resetsIn="1h 18m"
         suggestion="work"
         sessions={[{ key: "s1", title: "Fix wedge", model: "Sonnet 5.5", target: "work", state: "working" }]}
-        targets={[{ name: "work", color: "teal" }, { name: "home", color: "violet" }]}
+        targets={[{ name: "work", color: "teal" }, { name: "home", color: "purple" }]}
         room={<RoomLeft accounts={[limit, { ...limit, key: "claude/home", name: "home", windows: [] }]} nowMs={NOW} />}
         onDecide={onDecide}
         onKeep={vi.fn()}

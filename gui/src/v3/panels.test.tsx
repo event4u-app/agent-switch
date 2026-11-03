@@ -21,9 +21,9 @@ describe("right tool windows (spec §9)", () => {
     expect(onNext).toHaveBeenCalledOnce();
     expect(screen.getByText("CI failing")).toBeTruthy();
     expect(screen.getByText("open · conflict · review required")).toBeTruthy();
-    expect(screen.getByText("e2e (chromium)")).toBeTruthy();
+    expect(screen.getByText("e2e (chromium) failed")).toBeTruthy();
     expect(screen.getByText("3 changed")).toBeTruthy();
-    expect(screen.getByText("↑1 ↓0")).toBeTruthy();
+    expect(screen.getByText("3 changed").parentElement!.textContent).toBe("3 changed · ↑1 ↓0");
     expect(screen.getByText("Pull request").getAttribute("title")).toBe("GitHub · refreshed every 60 s while the session runs");
   });
 

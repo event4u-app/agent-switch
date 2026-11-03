@@ -55,6 +55,8 @@ describe("Open in (spec §7.7)", () => {
     const { act } = mount(withTargets());
     openSession();
     fireEvent.click(screen.getByRole("button", { name: "Open in…" }));
+    // Hover opens the submenu, and the click that follows keeps it open.
+    fireEvent.mouseEnter(screen.getByRole("menuitem", { name: /Agent app/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Agent app/ }));
     const sub = screen.getByRole("menu", { name: "Agent app" });
     expect(sub.textContent).toContain("Claude Desktop");
@@ -150,14 +152,32 @@ describe("start on a session (gap §4a)", () => {
 });
 
 describe("one trailing glyph per row (spec §5.2)", () => {
-  it("the children toggle is hidden at rest and shows on the active row", () => {
+  const kid = (state: "working" | "done") => [{ id: "c", label: "Explore", kind: "subagent", state, source: "hook" as const }];
+
+  it("running children: the count is the slot and unfolds them; no second glyph", () => {
     const d = data();
-    const kids = { ...d.sessions[0], key: "s2", title: "Checkout flow", children: [{ id: "c", label: "Explore", kind: "subagent", state: "working" as const, source: "hook" as const }] };
-    render(<V3Window data={{ ...d, sessions: [d.sessions[0], kids] }} slots={slots} act={vi.fn()} />);
+    render(<V3Window data={{ ...d, sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow", account: { name: "work", nearLimit: false }, children: kid("working") }] }} slots={slots} act={vi.fn()} />);
+    const slot = screen.getByLabelText("Show 1 subagent");
+    expect(slot.textContent).toBe("1");
+    expect(slot.className).not.toMatch(/opacity-0/);
+    fireEvent.click(slot);
+    expect(screen.getByText("Explore")).toBeTruthy();
+    expect(screen.getByLabelText("Hide children")).toBeTruthy();
+  });
+
+  it("finished children in an empty slot: a chevron on hover only", () => {
+    const d = data();
+    render(<V3Window data={{ ...d, sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow", account: { name: "work", nearLimit: false }, children: kid("done") }] }} slots={slots} act={vi.fn()} />);
     const toggle = screen.getByLabelText("Show 1 subagent");
     expect(toggle.className).toMatch(/opacity-0/);
-    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Checkout flow"));
-    expect(screen.getByLabelText("Show 1 subagent").className).not.toMatch(/opacity-0/);
+    expect(toggle.className).toMatch(/group-hover\/row:opacity-100/);
+  });
+
+  it("a slot taken by a higher priority keeps its glyph alone", () => {
+    const d = data();
+    render(<V3Window data={{ ...d, sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow", account: { name: "side", nearLimit: true }, children: kid("working") }] }} slots={slots} act={vi.fn()} />);
+    expect(screen.queryByLabelText("Show 1 subagent")).toBeNull();
+    expect(screen.getByTitle("side is near its limit")).toBeTruthy();
   });
 });
 
@@ -305,13 +325,19 @@ describe("hover peek and engine banner (gap §4d–§4e)", () => {
     vi.useFakeTimers();
     try {
       const d = data();
-      mount({ table: [{ key: "s1", title: "Event store", state: "working", live: true, tool: "claude", account: { name: "work", color: "teal" }, branch: "feat/store", pr: null, model: "Opus 4.7", thinking: "high", contextPct: 40, lastActiveMs: d.nowMs - 120_000 }] });
-      const row = within(screen.getByLabelText("Sessions window")).getByText("Event store").closest("[role=button]")!;
+      const t = { key: "s1", title: "Event store", state: "working" as const, live: true, tool: "claude" as const, account: { name: "work", color: "teal" as const }, branch: "feat/store", pr: null, model: "Opus 4.7", thinking: "high", contextPct: 40, lastActiveMs: d.nowMs - 120_000 };
+      mount({ sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow" }], table: [t, { ...t, key: "s2", title: "Checkout flow", model: "Sonnet 4.6" }] });
+      const win = screen.getByLabelText("Sessions window");
+      // The active row (opened at start) shows its facts in the workbench, not in a peek.
+      fireEvent.mouseEnter(within(win).getByText("Event store").closest("[role=button]")!);
+      act(() => void vi.advanceTimersByTime(500));
+      expect(screen.queryByRole("tooltip")).toBeNull();
+      const row = within(win).getByText("Checkout flow").closest("[role=button]")!;
       fireEvent.mouseEnter(row);
       act(() => void vi.advanceTimersByTime(399));
       expect(screen.queryByRole("tooltip")).toBeNull();
       act(() => void vi.advanceTimersByTime(1));
-      expect(screen.getByRole("tooltip").textContent).toContain("Opus 4.7");
+      expect(screen.getByRole("tooltip").textContent).toContain("Sonnet 4.6");
       fireEvent.mouseLeave(row);
       expect(screen.queryByRole("tooltip")).toBeNull();
     } finally {

@@ -85,6 +85,12 @@ export function trailing(s: RowSession): ReactNode {
   return null;
 }
 
+/** The trailing slot is the running-children count (nothing of higher priority took it). Pure. */
+export function childrenSlot(s: RowSession): boolean {
+  if (s.account.nearLimit || s.pr?.ci === "FAILURE" || s.pr?.mergeable === "CONFLICTING" || (s.needsYou && s.state !== "needs-you")) return false;
+  return s.children.some((c) => c.state === "working");
+}
+
 const VIA: Record<ChildSource, string> = { hook: "via hook", lineage: "via lineage", host: "via host", counted: "counted", unknown: "relation unknown" };
 
 /** Provenance inline only when it matters (unknown, counted); otherwise in the tooltip. */
@@ -126,6 +132,7 @@ export function SessionRow({
   onPeek?: (key: string | null, y: number) => void;
 }) {
   const second = active || comfortable;
+  const slot = trailing(s);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (active) ref.current?.scrollIntoView?.({ block: "nearest" });
@@ -159,18 +166,21 @@ export function SessionRow({
           <span key={active ? "on" : "off"} className={cn("min-w-0 flex-1 truncate text-[13px]", active ? "font-medium text-ac-text" : "text-ac-soft")} title={s.title}>
             {s.title}
           </span>
-          {trailing(s)}
-          {s.children.length > 0 && (
+          {/* One trailing slot per row (spec §5.2, boards "Work" and "Hover a row"): the children
+              unfold from the row's own children count; a chevron shows only while they are open. */}
+          {s.children.length > 0 && (open || childrenSlot(s) || !slot) ? (
             <button
               type="button"
               aria-label={open ? "Hide children" : `Show ${childNoun(s)}`}
               aria-expanded={!!open}
               onClick={(e) => (e.stopPropagation(), onToggleChildren(s.key))}
-              // One trailing slot per row (spec §5.2): the toggle shows on hover, on the active row, or while open.
-              className={cn("inline-flex size-4 shrink-0 items-center justify-center rounded text-ac-muted hover:text-ac-text", !(active || open) && "opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100")}
+              // An empty slot shows the chevron on hover only, so a row at rest carries no extra glyph.
+              className={cn("inline-flex shrink-0 items-center gap-0.5 rounded text-ac-muted hover:text-ac-text", !open && !slot && "opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100")}
             >
-              <ChevronRight className={cn("size-3", open && "rotate-90")} />
+              {open ? <ChevronRight className="size-3 rotate-90" /> : (slot ?? <ChevronRight className="size-3" />)}
             </button>
+          ) : (
+            slot
           )}
         </div>
         {second && (
@@ -275,8 +285,8 @@ export function SessionsZone({
           )),
         ])}
         {done > 0 && (
-          <div className="mt-0.5 flex h-7 items-center gap-1 px-2.5 text-[11.5px] text-ac-muted">
-            <button type="button" onClick={onDoneToday} className="inline-flex items-center gap-1 hover:text-ac-text">
+          <div className="mt-0.5 flex h-7 items-center gap-2 px-2.5 text-[11.5px] text-ac-muted">
+            <button type="button" onClick={onDoneToday} className="inline-flex items-center gap-2 hover:text-ac-text">
               <ChevronRight className="size-3" /> Done today {done}
             </button>
             <button type="button" onClick={onCleanUp} title="Removes worktrees whose PR merged; dirty ones are skipped" className="ml-auto hover:text-ac-text">

@@ -175,9 +175,12 @@ export function V3Window({
   // Hover peek (spec §5.2): after 400 ms on a row, one card at a time, never while a layer is open.
   const [peek, setPeek] = useState<{ key: string; y: number } | null>(null);
   const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeRef = useRef<string | null>(null);
+  activeRef.current = active;
   const onPeek = (key: string | null, y: number) => {
     if (peekTimer.current) clearTimeout(peekTimer.current);
-    if (!key) return setPeek(null);
+    // The active row already shows its facts in the workbench.
+    if (!key || key === activeRef.current) return setPeek(null);
     peekTimer.current = setTimeout(() => setPeek({ key, y }), 400);
   };
   useEffect(() => () => void (peekTimer.current && clearTimeout(peekTimer.current)), []);
@@ -471,7 +474,7 @@ export function V3Window({
     const s = data.sessions.find((x) => x.key === key);
     const t = data.table.find((x) => x.key === key);
     if (!s || !t) return null;
-    return { title: s.title, lastActiveMs: t.lastActiveMs, tool: t.tool[0].toUpperCase() + t.tool.slice(1), account: t.account.name, color: t.account.color, model: t.model, thinking: t.thinking, branch: t.branch, pr: s.pr ? { number: s.pr.number, state: s.pr.ci === "FAILURE" ? "CI failing" : "open" } : null, children: s.children.reduce((n, c) => n + (c.count ?? 1), 0), lastLine: null };
+    return { title: s.title, state: s.state, lastActiveMs: t.lastActiveMs, tool: t.tool[0].toUpperCase() + t.tool.slice(1), account: t.account.name, color: t.account.color, model: t.model, thinking: t.thinking, branch: t.branch, pr: s.pr ? { number: s.pr.number, state: s.pr.ci === "FAILURE" ? "CI failing" : "open" } : null, children: s.children.reduce((n, c) => n + (c.count ?? 1), 0), lastLine: null };
   };
   const pinned = new Set(data.library.filter((l) => l.pinned).map((l) => l.key));
   const sessionsWindow = (

@@ -116,7 +116,7 @@ export function OpenInMenu({ f, onPick }: { f: OpenFacts; onPick: (p: OpenPick) 
   const def = byId(f.defaultTarget);
   const last = f.lastUsed && f.lastUsed !== f.defaultTarget ? byId(f.lastUsed) : null;
   const target = (t: OpenTarget, hint?: string, kbd?: string): MenuItem => ({ id: t.target, label: t.label, icon: <AppMono m={monogram(t.target, t.label)} />, hint, kbd, checked: hint === "default" && !kbd, onClick: () => onPick({ kind: "target", target: t.target }) });
-  const subItem = (id: Sub, label: string, icon: ReactNode, hint?: string): MenuItem => ({ id, label, icon, hint, sub: true, active: sub === id, onClick: () => setSub((s) => (s === id ? null : id)), onHover: () => setSub(id) });
+  const subItem = (id: Sub, label: string, icon: ReactNode, hint?: string): MenuItem => ({ id, label, icon, hint, sub: true, active: sub === id, onClick: () => setSub(id), onHover: () => setSub(id) });
 
   const main: MenuItem[] = [
     ...(def ? [target(def, "default", "1")] : []),
