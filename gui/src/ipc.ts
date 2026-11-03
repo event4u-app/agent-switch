@@ -51,12 +51,16 @@ export function trayScope(args: readonly string[]): string | null {
   return TRAY_READ_SCOPES.find(([, re]) => re.test(line))?.[0] ?? null;
 }
 
-function inTrayWindow(): boolean {
+function currentLabel(): string {
   try {
-    return getCurrentWebviewWindow().label === "tray";
+    return getCurrentWebviewWindow().label;
   } catch {
-    return false; // not in Tauri (tests)
+    return "main"; // not in Tauri (tests)
   }
+}
+
+function inTrayWindow(): boolean {
+  return currentLabel() === "tray";
 }
 
 /** The shell-scope name to run `agent-switch <args>` under in this window. In
@@ -80,6 +84,9 @@ export async function needsLater(id: string): Promise<void> {
 /** Tell the background service whether the window is shown, so it can pause
  *  work only the window displays (the PR refresh). Best-effort. */
 export async function reportVisibility(visible: boolean): Promise<void> {
+  // Only the main window's visibility pauses the refresh; the tray and pet
+  // capabilities hold no plain `agent-switch` entry, so a call there is refused.
+  if (currentLabel() !== "main") return;
   try {
     await cli(["app-visibility", visible ? "visible" : "hidden"]).execute();
   } catch {
