@@ -35,7 +35,7 @@ const captured = (r: string) =>
     .readFileSync(fixture, "utf8")
     .split("\n")
     .filter(Boolean)
-    .map((l) => JSON.parse(l.replaceAll("<ROOT>", r)));
+    .map((l) => JSON.parse(l.replaceAll("<ROOT>", JSON.stringify(r).slice(1, -1))));
 const ring = (r: string, name: string) => {
   try {
     return fs.readFileSync(path.join(r, "events", name), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
