@@ -2,7 +2,7 @@
 
 # v3.1 Phase 0 spikes — 2026-11-03
 
-Roadmap: `agents/roadmaps/road-to-agent-switch-v3-client.md` Phase 0.
+Roadmap: `agents/roadmaps/archive/road-to-agent-switch-v3-client.md` Phase 0.
 Binaries: Claude Code 2.1.316, codex-cli 0.166.0, macOS. Account: one of the
 owner's Claude profiles via `CLAUDE_CONFIG_DIR`, model `haiku` to keep the spend
 small. Scripts were throwaway and are summarised here, not committed.

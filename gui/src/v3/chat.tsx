@@ -144,6 +144,7 @@ export function QuestionCard({ row, onAnswer }: { row: Extract<ChatRow, { k: "qu
           <div role="radiogroup" aria-label={q.question} className="mt-1.5 flex flex-wrap gap-1.5">
             {q.options.map((o) => (
               <Button key={o} size="sm" role="radio" aria-checked={picked[q.question] === o} variant={picked[q.question] === o ? "primary" : undefined} disabled={!onAnswer} onClick={() => choose(q.question, o)}>
+                {picked[q.question] === o && <Check />}
                 {o}
               </Button>
             ))}

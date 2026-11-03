@@ -1,6 +1,6 @@
 ---
 complexity: large
-status: in-progress
+status: done
 tree_pin: ff38137
 ---
 
@@ -23,14 +23,14 @@ Targets `dev/v3` (branch model in
 
 ## Design basis (binding)
 
-The v3 UI spec [`docs/design/agent-switch-v3-ui-spec.md`](../../docs/design/agent-switch-v3-ui-spec.md)
+The v3 UI spec [`docs/design/agent-switch-v3-ui-spec.md`](../../../docs/design/agent-switch-v3-ui-spec.md)
 is the spec here too, at strict fidelity (rules in
 [`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)
 § Design basis). This roadmap builds its v3.1 boards: Chat view (§10.8), Review
 (§10.9), the `[Terminal | Chat]` switch (§6.2), "Review changes" in the Changes
 window (§9.2), `⌘.` (§12) and behaviour rules §13.3–§13.5. Reference code:
 `gui/src/v3/v31.tsx` in
-[`docs/design/agent-switch-v3-reference.patch`](../../docs/design/agent-switch-v3-reference.patch).
+[`docs/design/agent-switch-v3-reference.patch`](../../../docs/design/agent-switch-v3-reference.patch).
 
 ## Owner demands answered here
 
@@ -241,12 +241,13 @@ drag & drop upload · D10 diffs, collapsible · D11 "a real client".
 - Discard has undo; Bash changes appear in the worktree diff.
 - The chat and review boards pass the design acceptance of spec §14 (three themes,
   1440×900, no clipping or wraps) and get their rows in the fidelity matrix.
+  → `agents/evidence/v31-fidelity-2026-11.md`.
 
 ## Decisions
 
 | ID | Question | Status |
 |---|---|---|
-| C-diff | Diff rendering library | decided in Phase 3 by a bundle-size/a11y comparison, no new runtime dep for the CLI |
+| C-diff | Diff rendering library | **decided (Phase 3):** no library — the chat's own `DiffLines` (unified) plus a split view in `review.tsx`, plain text rows a screen reader reads in order; 0 KB added, no new runtime dependency in the GUI or the CLI. A library would only add syntax colouring, which no board asks for. Revisit-if: syntax colouring becomes a requirement. |
 | C-send | Spec proposal: "Queue" becomes "Send" when no turn runs (§10.8) | **owner** — marked "proposal" in the spec, not built until confirmed |
 | C-bill | Anthropic counts the client view as programmatic use; the billing split is only paused (since 2026-06-15) | risk, not a decision — terminal stays default |
 
