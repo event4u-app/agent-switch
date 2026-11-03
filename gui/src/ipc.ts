@@ -58,6 +58,10 @@ const TRAY_READ_SCOPES: readonly [string, RegExp][] = [
   ["as-read-activity", /^activity --limit [0-9]{1,4} --json$/],
   ["as-read-guard", /^guard --json$/],
   ["as-read-usage", /^status --provider (claude|codex|antigravity) [A-Za-z0-9._][A-Za-z0-9._-]* --json$/],
+  ["as-read-desktop", /^desktop --json$/],
+  ["as-read-launchers", /^launcher list --json$/],
+  ["as-read-needs", /^needs --json$/],
+  ["as-read-host", /^host list --json$/],
 ];
 
 /** The tray scope name for `args`, or null when the tray may not run it. */

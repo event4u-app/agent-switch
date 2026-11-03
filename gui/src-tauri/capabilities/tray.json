@@ -142,6 +142,40 @@
             },
             "--json"
           ]
+        },
+        {
+          "name": "as-read-needs",
+          "cmd": "agent-switch",
+          "args": [
+            "needs",
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-host",
+          "cmd": "agent-switch",
+          "args": [
+            "host",
+            "list",
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-desktop",
+          "cmd": "agent-switch",
+          "args": [
+            "desktop",
+            "--json"
+          ]
+        },
+        {
+          "name": "as-read-launchers",
+          "cmd": "agent-switch",
+          "args": [
+            "launcher",
+            "list",
+            "--json"
+          ]
         }
       ]
     }
