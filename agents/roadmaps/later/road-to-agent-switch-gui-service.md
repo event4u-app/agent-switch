@@ -21,9 +21,9 @@ React UI that reads that state and drives switching through the existing CLI.
 
 ## Prerequisites
 
-- [x] [`road-to-agent-switch-cross-platform.md`](archive/road-to-agent-switch-cross-platform.md)
+- [x] [`road-to-agent-switch-cross-platform.md`](../archive/road-to-agent-switch-cross-platform.md)
       complete (per-OS abstraction + CI). (Completed & archived — PR #1.)
-- [x] [`road-to-agent-switch-multi-provider.md`](archive/road-to-agent-switch-multi-provider.md)
+- [x] [`road-to-agent-switch-multi-provider.md`](../archive/road-to-agent-switch-multi-provider.md)
       complete (the GUI shows all three providers).
 - [x] GUI stack decided (see `## Blockers § gui-stack`).
 

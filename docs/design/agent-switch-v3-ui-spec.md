@@ -6,7 +6,7 @@ says what every element is for, how it looks and how it behaves, so a local
 agent can build the real app from it. Where the reference code and this text
 disagree, this text wins. Report the conflict.
 
-Roadmap context: `agents/roadmaps/road-to-agent-switch-v3-central.md`
+Roadmap context: `agents/roadmaps/archive/road-to-agent-switch-v3-central.md`
 (v3.0 "Central"). The parked follow-ups are v3.1 "Client" (chat view and
 review) and v3.2 "Reach" (more agents, remote). Boards that belong to v3.1 or
 v3.2 are marked as such below. They are proposals too.

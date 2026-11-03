@@ -12,19 +12,19 @@ tree_pin: ff38137
 > arrival the same day: the v3 UI design (`design/`), whose Agents and Remote
 > boards are v3.2.
 >
-> **Pull trigger:** [`road-to-agent-switch-v3-client.md`](road-to-agent-switch-v3-client.md)
+> **Pull trigger:** [`road-to-agent-switch-v3-client.md`](../archive/road-to-agent-switch-v3-client.md)
 > closed, and owner decisions E4/E5 below answered.
 
 ## Branch
 
 Targets `dev/v3` (branch model in
-[`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)).
+[`road-to-agent-switch-v3-central.md`](../archive/road-to-agent-switch-v3-central.md)).
 
 ## Design basis (binding)
 
 The v3 UI spec [`docs/design/agent-switch-v3-ui-spec.md`](../../../docs/design/agent-switch-v3-ui-spec.md)
 is the spec here too, at strict fidelity (rules in
-[`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)
+[`road-to-agent-switch-v3-central.md`](../archive/road-to-agent-switch-v3-central.md)
 § Design basis). This roadmap builds its v3.2 boards: Settings › Agents and
 Settings › Remote (§10.5), Antigravity as a tool in New session (§8.1), and
 behaviour rule §13.5 for remote approvals. Reference code:
@@ -94,7 +94,11 @@ D14 access from anywhere.
 - Remote stage 3, E2E relay — trigger: E4 = yes and stages 1/2 shown insufficient.
 - Full-text search over contents — trigger: timeline reader stable over two CC
   versions.
-- Agent View as second host, Agent Teams, OTel export; GitLab/Azure DevOps PRs;
+- GitLab merge requests through `glab`, the GitHub PR facts' twin (match by head
+  SHA, the same four axes, one batched call per repo) — carried from v3-central
+  Phase 3 on 2026-11-03 — trigger: a session works in a GitLab repository and
+  `glab` is installed, so the API shape can be checked against real answers.
+- Agent View as second host, Agent Teams, OTel export; Azure DevOps PRs;
   encrypted versioned vault backups.
 - Team features without credential pooling — trigger: own request.
 

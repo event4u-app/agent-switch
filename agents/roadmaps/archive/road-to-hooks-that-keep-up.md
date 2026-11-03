@@ -11,13 +11,13 @@ tree_pin: ff38137
 > This roadmap carries the defect half that every later phase depends on (proposal
 > step V0.1 and the subagent event half of P1).
 >
-> Sibling: [`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)
+> Sibling: [`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)
 > builds the session tree on top of the events this roadmap makes trustworthy.
 
 ## Branch
 
 Targets `dev/v3` like all v3 work (branch model in
-[`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)). The
+[`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)). The
 defect also exists in 2.x; shipping a backport to `main` early is a separate
 owner decision, not part of this roadmap.
 
