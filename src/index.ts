@@ -50,6 +50,7 @@ import { visibilityFile, writeVisibility } from "./app-visibility.js";
 import { cmdPr, cmdWorktrees } from "./commands/pr.js";
 import { cmdChanges } from "./commands/changes.js";
 import { cmdBridge, cmdFiles, cmdTimeline } from "./commands/bridge.js";
+import { cmdAgents } from "./commands/agents.js";
 import { cmdDiff } from "./commands/diff.js";
 import { cmdView } from "./commands/view.js";
 import { cmdMcp } from "./commands/mcp.js";
@@ -191,6 +192,7 @@ async function main(): Promise<void> {
     case "changes": return cmdChanges(positional[0], flags);
     case "timeline": return cmdTimeline(positional[0], flags);
     case "bridge": return cmdBridge(providerId, positional[0], flags);
+    case "agents": return cmdAgents(positional, flags, rest.includes("--") ? rest.slice(rest.indexOf("--") + 1) : undefined);
     case "files": return cmdFiles(positional[0], flags);
     case "diff": return cmdDiff(positional[0], positional[1], flags);
     case "view": return cmdView(positional[0], positional[1], flags);

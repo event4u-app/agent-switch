@@ -52,6 +52,9 @@ const VALUE_FLAGS = new Set([
   "query",
   "hunk",
   "scope",
+  "name",
+  "binary",
+  "agent",
 ]);
 
 export interface ParsedArgs {
