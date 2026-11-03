@@ -335,7 +335,8 @@ async function main() {
     await page.addInitScript(installTauriShim, {
       statics,
       windowLabel,
-      storage: { "agent-switch-theme": "dark", ...(LANG !== "en" ? { "agent-switch-language": LANG } : {}) },
+      // The README scenes are the 2.11 window's; the v3 window has its own render check (v3-render.mjs).
+      storage: { "agent-switch-theme": "dark", "agent-switch-ui-window": "2.11", ...(LANG !== "en" ? { "agent-switch-language": LANG } : {}) },
     });
     await page.goto(`${base}/${file}`);
     return { context, page };
