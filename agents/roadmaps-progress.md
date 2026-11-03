@@ -2,14 +2,14 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change. A repository that does not commit this file has no git history for it — regenerate to see the current state.
 >
-> 1 open roadmap · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 2 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**78 / 81 steps done · 96%**
+**78 / 97 steps done · 80%**
 
 ```text
-██████████████████████████████████████░░   96%
+████████████████████████████████░░░░░░░░   80%
 ```
 
 ## Open roadmaps
@@ -17,6 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 81 | 3 | 78 | 0 | 0 | 0 | ██████████ 96% |
+| 2 | [road-to-agent-switch-v3-window.md](roadmaps/road-to-agent-switch-v3-window.md) | 4 | 16 | 16 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
 
 ---
 
@@ -62,11 +63,23 @@
 | 9 | Pages (spec §10.1–§10.6, §11) | ✅ done | 0 | 8 | 0 | 0 | 100% |
 | 10 | Codex and Antigravity parity | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
 
+### [road-to-agent-switch-v3-window.md](roadmaps/road-to-agent-switch-v3-window.md)
+
+**v3 window live — a data adapter from the 2.11 store and the v3 CLI** — 0 / 16 done (0%)
+
+| # | Phase | State | Open | Done | Deferred | Cancelled | % |
+|---|---|---|---:|---:|---:|---:|---:|
+| 1 | Reads | ⬜ not started | 5 | 0 | 0 | 0 | 0% |
+| 2 | Mapping | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
+| 3 | Slots and mounting | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
+| 4 | Proof | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+
 ## Age
 
 Days since each active roadmap landed at its path and since its last ticked step, read from `git log` (`—` = unknown, or never ticked).
 
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
-| [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 0 | 0 |
+| [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 1 | 1 |
+| [road-to-agent-switch-v3-window.md](roadmaps/road-to-agent-switch-v3-window.md) | — | — |
 
