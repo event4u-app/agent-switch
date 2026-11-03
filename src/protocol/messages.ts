@@ -7,7 +7,7 @@
 
 export const PROTOCOL_VERSION = 1;
 
-export const OPS = ["hello", "ingest", "sessions", "children"] as const;
+export const OPS = ["hello", "ingest", "hook", "sessions", "children"] as const;
 export type Op = (typeof OPS)[number];
 
 export interface Request {

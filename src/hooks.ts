@@ -45,18 +45,26 @@ export interface HookEntry {
   [HOOK_MARKER]?: true;
 }
 
-/** The command Claude runs for each hook — reads stdin + CLAUDE_CONFIG_DIR. */
-export function hookCommand(bin = "agent-switch"): string {
-  return `${bin} __hook-event`;
+/** The command Claude runs for each hook — reads stdin + CLAUDE_CONFIG_DIR.
+ *  With the `as-hook` relay installed the relay runs first and calls the same
+ *  CLI command only when the engine does not take the event. */
+export function hookCommand(bin = "agent-switch", relay?: string | null): string {
+  return relay ? `'${relay.replace(/'/g, "'\\''")}' ${bin} __hook-event` : `${bin} __hook-event`;
+}
+
+/** The installed relay, `<root>/bin/as-hook`, or null while there is none. */
+export function relayPath(root: string, platform: NodeJS.Platform = process.platform): string | null {
+  const p = path.join(root, "bin", platform === "win32" ? "as-hook.exe" : "as-hook");
+  return fs.existsSync(p) ? p : null;
 }
 
 /** Build the marker-keyed entry for one event. `async: true` sits on the
  *  command handler: Claude Code ignores it on the matcher group and holds the
  *  turn until the hook exits (agents/evidence/hook-blocking-probe-2026-11.md). */
-export function buildHookEntry(bin = "agent-switch"): HookEntry {
+export function buildHookEntry(bin = "agent-switch", relay?: string | null): HookEntry {
   return {
     [HOOK_MARKER]: true,
-    hooks: [{ type: "command", command: hookCommand(bin), async: true, [HOOK_MARKER]: true }],
+    hooks: [{ type: "command", command: hookCommand(bin, relay), async: true, [HOOK_MARKER]: true }],
   };
 }
 
@@ -80,16 +88,24 @@ function isOurs(entry: any): boolean {
 }
 
 /** Ours, and in the current shape: no group-level `async`, every handler async.
- *  An entry written by agent-switch ≤ 2.11 fails this and gets migrated. */
-function isCurrent(entry: any): boolean {
-  return isOurs(entry) && !("async" in entry) && Array.isArray(entry.hooks) && entry.hooks.length > 0 && entry.hooks.every((h: any) => h?.async === true);
+ *  An entry written by agent-switch ≤ 2.11 fails this and gets migrated. Given
+ *  a command, it must also be that command — so an install made before the
+ *  relay existed moves to it, and one made with it moves back when it is gone. */
+function isCurrent(entry: any, command?: string): boolean {
+  return (
+    isOurs(entry) &&
+    !("async" in entry) &&
+    Array.isArray(entry.hooks) &&
+    entry.hooks.length > 0 &&
+    entry.hooks.every((h: any) => h?.async === true && (command === undefined || h?.command === command))
+  );
 }
 
-/** Are our hooks present, in the current shape, for every event? Pure. */
-export function hooksInstalled(settings: Settings): boolean {
+/** Are our hooks present, in the current shape (and with `command`, when given), for every event? Pure. */
+export function hooksInstalled(settings: Settings, command?: string): boolean {
   const hooks = settings.hooks;
   if (!hooks || typeof hooks !== "object") return false;
-  return HOOK_EVENTS.every((ev) => Array.isArray(hooks[ev]) && hooks[ev].some(isCurrent) && hooks[ev].filter(isOurs).length === 1);
+  return HOOK_EVENTS.every((ev) => Array.isArray(hooks[ev]) && hooks[ev].some((e: any) => isCurrent(e, command)) && hooks[ev].filter(isOurs).length === 1);
 }
 
 /** Does this install record subagents? `sessions --json` leaves `children`
@@ -101,18 +117,19 @@ export function hooksRecordSubagents(settings: Settings): boolean {
 
 /** Some entry of ours is present but the install is not current — an install
  *  from agent-switch ≤ 2.11, or a partial one. `hooks status` migrates it. */
-export function hooksNeedMigration(settings: Settings): boolean {
+export function hooksNeedMigration(settings: Settings, command?: string): boolean {
   const hooks = settings.hooks;
   if (!hooks || typeof hooks !== "object") return false;
   const anyOurs = Object.values(hooks).some((arr) => Array.isArray(arr) && arr.some(isOurs));
-  return anyOurs && !hooksInstalled(settings);
+  return anyOurs && !hooksInstalled(settings, command);
 }
 
 /** Return a NEW settings object with our hook entries added or brought to the
  *  current shape (idempotent) — pure, so it is unit-testable without touching
  *  disk. Every entry the user has stays as it is, where it is; an old entry of
  *  ours is replaced in its own position, and duplicates of ours are dropped. */
-export function withHooksInstalled(settings: Settings, bin = "agent-switch"): Settings {
+export function withHooksInstalled(settings: Settings, bin = "agent-switch", relay?: string | null): Settings {
+  const command = hookCommand(bin, relay);
   const next: Settings = { ...settings, hooks: { ...(settings.hooks ?? {}) } };
   for (const ev of HOOK_EVENTS) {
     const existing: any[] = Array.isArray(next.hooks[ev]) ? next.hooks[ev] : [];
@@ -121,11 +138,11 @@ export function withHooksInstalled(settings: Settings, bin = "agent-switch"): Se
     for (const e of existing) {
       if (!isOurs(e)) out.push(e);
       else if (!placed) {
-        out.push(isCurrent(e) ? e : buildHookEntry(bin));
+        out.push(isCurrent(e, command) ? e : buildHookEntry(bin, relay));
         placed = true;
       }
     }
-    if (!placed) out.push(buildHookEntry(bin));
+    if (!placed) out.push(buildHookEntry(bin, relay));
     next.hooks[ev] = out;
   }
   return next;
@@ -147,10 +164,10 @@ export function withHooksRemoved(settings: Settings): Settings {
   return next;
 }
 
-export function installHooks(configDir: string, bin = "agent-switch"): { changed: boolean } {
+export function installHooks(configDir: string, bin = "agent-switch", relay?: string | null): { changed: boolean } {
   const before = readSettings(configDir);
-  if (hooksInstalled(before)) return { changed: false };
-  writeSettings(configDir, withHooksInstalled(before, bin));
+  if (hooksInstalled(before, hookCommand(bin, relay))) return { changed: false };
+  writeSettings(configDir, withHooksInstalled(before, bin, relay));
   return { changed: true };
 }
 

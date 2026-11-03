@@ -249,6 +249,7 @@ suggested. The background service must be running.
 | `handoff seed --to <profile> --brief <path>` | Start the target tool on that brief. |
 | `compact <profile\|session> [--clear] [--dry-run] [--force]` | Type `/compact` (or `/clear`) into a session started with `run --tmux`, or into a hosted session named by its key from `host list` (refused while someone else is typing into it). Claude and Codex. |
 | `hooks install\|uninstall\|status [profile]` <Badge text="Claude only" variant="note" /> | Add the hooks that tell the app when Claude needs you or finished. |
+| `hooks relay <file>\|off` <Badge text="Claude only" variant="note" /> | Use the `as-hook` relay from the release page for those hooks (about 5 ms per event instead of 45), or stop using it. |
 | `needs [--json]` · `needs later <id>` | Everything waiting for you, most urgent first: approvals, questions, accounts at their limit, sign-ins. `later` hides one until it changes. |
 | `engine status\|restart [--json]` | Whether the background engine answers, and how many hosted sessions keep running either way. `restart` restarts the background service it runs in. |
 | `pr status [--json] [--refresh]` | For each session in a GitHub repository: its PR by head commit, with lifecycle, merge conflicts, review and CI kept apart. Uses the GitHub CLI (`gh`) you are signed in with; Agent Switch stores no token. |
@@ -388,7 +389,7 @@ Used by the desktop app and by hooks; not for direct use.
 | Command | Used by |
 | --- | --- |
 | `app-visibility visible\|hidden` | The desktop app, when its window is shown or hidden; the background PR refresh pauses while it is hidden. |
-| `__hook-event` | Claude Code hooks installed by `hooks install`. |
+| `__hook-event` | Claude Code hooks installed by `hooks install`, and the `as-hook` relay when the app is not running. |
 | `notify --kind K --title T --message M` | The desktop app, to log a notification. |
 | `gui-settings` | The desktop app, for its start-at-login and pet-intro settings. |
 

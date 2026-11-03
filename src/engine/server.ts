@@ -10,14 +10,19 @@ import * as fs from "node:fs";
 import * as net from "node:net";
 
 import { MAX_LINE_BYTES, PROTOCOL_VERSION, ProtocolError, parseRequest, type Request, type Response } from "../protocol/messages.js";
-import { IngestRejected, sessionKey, type Store } from "../store/store.js";
+import { HOOK_ENV_KEYS, takeInHook } from "../hook-intake.js";
+import { IngestRejected, ringProducer, ringSeq, sessionKey, type Store } from "../store/store.js";
 
 export type Handler = (req: Request) => unknown;
 
 export class EngineRunning extends Error {}
 
-/** Answers `hello`, `ingest`, `sessions`, `children` from one store. */
-export function storeHandler(store: Store): Handler {
+/**
+ * Answers `hello`, `ingest`, `hook`, `sessions`, `children` from one store.
+ * `hook` answers only after the ring line is written and the store row
+ * committed — the relay's acknowledgement point (src/hook-intake.ts).
+ */
+export function storeHandler(store: Store, root?: string): Handler {
   return (req) => {
     const p = req.params ?? {};
     switch (req.op) {
@@ -30,6 +35,22 @@ export function storeHandler(store: Store): Handler {
         } catch (err) {
           if (err instanceof IngestRejected) throw new ProtocolError("rejected", err.message);
           throw err;
+        }
+      }
+      case "hook": {
+        if (!root) throw new ProtocolError("rejected", "this engine takes no hook events");
+        const env: Record<string, string> = {};
+        const given = (p.env ?? {}) as Record<string, unknown>;
+        for (const k of HOOK_ENV_KEYS) if (typeof given[k] === "string") env[k] = given[k] as string;
+        const t = takeInHook(p.payload, env, root);
+        if (!t) return { stored: false, reason: "no account" };
+        // The ring line is the durable copy; from here on the answer is "stored",
+        // or the relay's fallback would write the line a second time.
+        try {
+          store.ingest({ producer: ringProducer(t.provider, t.account), seq: ringSeq(t.line), provider: t.provider, account: t.account, record: t.record as unknown as Record<string, unknown> });
+          return { stored: true, indexed: true };
+        } catch {
+          return { stored: true, indexed: false };
         }
       }
       case "sessions":

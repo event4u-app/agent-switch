@@ -26,6 +26,35 @@ jobs:
       # a real Claude Code login and live network, so CI runs the unit suite only.
       - run: npm test
 
+  relay:
+    # The as-hook relay (road-to-agent-switch-v3-central M2): its unit tests, the
+    # relay tests against the real binary, and the latency / lost-event probe on
+    # each platform. The probe fails the job on a lost or doubled event; its
+    # latency table goes to the job summary (the 20 ms budget is read there, not
+    # gated on a shared runner's noise).
+    name: hook relay ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --manifest-path relay/Cargo.toml
+      - run: cargo build --release --manifest-path relay/Cargo.toml
+      - run: npm ci
+      - run: npm run build
+      - run: npx tsc -p tsconfig.test.json
+      - run: node --test tests/hook-relay.test.js
+        working-directory: dist-test
+      - run: node scripts/spikes/m2-hook-relay.mjs 50 | tee -a "$GITHUB_STEP_SUMMARY"
+        shell: bash
+
   pack:
     name: tarball smoke (ubuntu · node 22)
     runs-on: ubuntu-latest

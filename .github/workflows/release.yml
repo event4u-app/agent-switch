@@ -105,3 +105,30 @@ jobs:
           test -f "$exe" || { echo "missing $exe"; ls gui/src-tauri/target/release; exit 1; }
           cp "$exe" "agent-switch_${TAG}_x64-portable.exe"
           gh release upload "$TAG" "agent-switch_${TAG}_x64-portable.exe" --clobber
+
+      # The as-hook relay (road-to-agent-switch-v3-central M2), one binary per
+      # platform next to the installers. Users put it in place with
+      # `agent-switch hooks relay <file>`; nothing downloads it on its own.
+      - name: Build and upload the as-hook relay
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          case "${{ matrix.os }}" in
+            macos-*)
+              cargo build --release --manifest-path relay/Cargo.toml --target aarch64-apple-darwin
+              cargo build --release --manifest-path relay/Cargo.toml --target x86_64-apple-darwin
+              lipo -create -output "as-hook_${TAG}_macos-universal" \
+                relay/target/aarch64-apple-darwin/release/as-hook relay/target/x86_64-apple-darwin/release/as-hook
+              gh release upload "$TAG" "as-hook_${TAG}_macos-universal" --clobber ;;
+            ubuntu-*)
+              cargo build --release --manifest-path relay/Cargo.toml
+              cp relay/target/release/as-hook "as-hook_${TAG}_linux-x64"
+              gh release upload "$TAG" "as-hook_${TAG}_linux-x64" --clobber ;;
+            windows-*)
+              cargo build --release --manifest-path relay/Cargo.toml
+              cp relay/target/release/as-hook.exe "as-hook_${TAG}_windows-x64.exe"
+              gh release upload "$TAG" "as-hook_${TAG}_windows-x64.exe" --clobber ;;
+          esac

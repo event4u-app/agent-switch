@@ -35,18 +35,13 @@ import {
   uninstallHooks,
   hooksInstalled,
   hooksNeedMigration,
+  hookCommand,
+  relayPath,
   readSettings,
-  appendEvent,
   eventFile,
-  profileFromConfigDir,
   readEvents,
   waitingSessions,
-  hookNotice,
-  recordFromPayload,
   lastHookCwd,
-  lineageFromEnv,
-  clearedFrom,
-  pidFrom,
   hooksRecordSubagents,
   HookEventRecord,
 } from "../hooks.js";
@@ -55,8 +50,8 @@ import { gitFacts, type GitFacts } from "../git-facts.js";
 import { githubRepo, prCacheFile, prsForHead, readPrCache } from "../pr-facts.js";
 import { Store, storeFile } from "../store/store.js";
 import { libraryFacts } from "./library.js";
+import { takeInHook } from "../hook-intake.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "../notify.js";
-import { appendNotification } from "../notifications.js";
 import { readTmuxRegistry, sendKeysArgs, tmuxSessionName } from "../tmux.js";
 import { TmuxHost } from "../host/tmux-host.js";
 import { InputLeases, LeaseHeld } from "../host/lease.js";
@@ -81,29 +76,31 @@ function ageOf(mtimeMs: number): string {
  */
 export function cmdHooks(sub?: string, name?: string): void {
   const action = sub ?? "status";
+  if (action === "relay") return cmdHooksRelay(name);
   if (!["install", "uninstall", "status"].includes(action)) {
-    die("usage: agent-switch hooks install|uninstall|status [profile]");
+    die("usage: agent-switch hooks install|uninstall|status [profile] · hooks relay <as-hook binary>|off");
   }
   const profiles = name ? [requireProfile("claude", name, "hooks")] : listProfiles("claude");
   if (profiles.length === 0) die("no claude profiles");
 
   let sharedWarn = false;
+  const relay = relayPath(ROOT);
   for (const p of profiles) {
     const cfg = configDir("claude", p);
     if (action === "status") {
       const settings = readSettings(cfg);
       // An install from ≤ 2.11 held every turn until the hook exited; bring it
       // to the non-blocking shape on sight. Only our own entries change.
-      if (hooksNeedMigration(settings)) {
-        installHooks(cfg);
-        console.log(`claude/${p}: installed (migrated to non-blocking hooks)`);
+      if (hooksNeedMigration(settings, hookCommand("agent-switch", relay))) {
+        installHooks(cfg, "agent-switch", relay);
+        console.log(`claude/${p}: installed (migrated to ${relay ? "the as-hook relay" : "non-blocking hooks"})`);
         sharedWarn = true;
         continue;
       }
       console.log(`claude/${p}: ${hooksInstalled(settings) ? "installed" : "not installed"}`);
       continue;
     }
-    const res = action === "install" ? installHooks(cfg) : uninstallHooks(cfg);
+    const res = action === "install" ? installHooks(cfg, "agent-switch", relay) : uninstallHooks(cfg);
     console.log(`claude/${p}: ${action} ${res.changed ? "done" : "(no change)"}`);
     if (res.changed) sharedWarn = true;
   }
@@ -279,32 +276,40 @@ export function cmdAlerts(sub?: string, flags: Record<string, string | boolean> 
  */
 export function cmdHookEvent(): void {
   try {
-    const raw = fs.readFileSync(0, "utf8"); // stdin
-    const o = JSON.parse(raw);
-    const cfg = process.env.CLAUDE_CONFIG_DIR;
-    if (!cfg) return;
-    const who = profileFromConfigDir(cfg, ROOT);
-    if (!who) return;
-    const rec = recordFromPayload(o, new Date().toISOString());
-    if (rec.event === "SessionStart") {
-      const hostPid = pidFrom(process.env.CLAUDE_PID);
-      if (hostPid) rec.hostPid = hostPid;
-      const cleared = clearedFrom(rec, rec.source === "clear" ? readEvents(eventFile(ROOT, who.provider, who.profile)) : []);
-      const lineage = cleared
-        ? ({ parent: `${who.provider}/${who.profile}/${cleared}`, kind: "cleared", source: "hook" } as const)
-        : lineageFromEnv(process.env, rec.sessionId, rec.sessionId ? `${who.provider}/${who.profile}/${rec.sessionId}` : undefined);
-      if (lineage) rec.lineage = lineage;
-    }
-    appendEvent(eventFile(ROOT, who.provider, who.profile), rec);
-    // Session awareness: surface "Claude needs you / finished / stopped" as a
-    // notification the GUI routes to the pet. dedupe=false — each turn is a
-    // distinct moment, so a solo session's repeated turns are never collapsed.
-    // Best-effort; a hook must never throw.
-    const notice = hookNotice(rec, who);
-    if (notice) appendNotification(notice, undefined, undefined, false);
+    takeInHook(JSON.parse(fs.readFileSync(0, "utf8")), process.env, ROOT);
   } catch {
     // never throw from a hook
   }
+}
+
+/**
+ * `agent-switch hooks relay <file>|off` — put the `as-hook` relay at
+ * `<root>/bin/as-hook` (or take it away) and move every profile that has our
+ * hooks to it (or back to the CLI). The relay is built from `relay/` and
+ * attached to each release; Agent Switch never downloads it itself.
+ */
+function cmdHooksRelay(file?: string): void {
+  if (!file) die("usage: agent-switch hooks relay <as-hook binary>|off");
+  const dest = path.join(ROOT, "bin", process.platform === "win32" ? "as-hook.exe" : "as-hook");
+  if (file === "off") fs.rmSync(dest, { force: true });
+  else {
+    if (!fs.statSync(file, { throwIfNoEntry: false })?.isFile()) die(`no file at ${file}`);
+    const probe = spawnSync(file, [], { input: "", timeout: 5000 });
+    if (probe.error || probe.status !== 0) die(`${file} does not run as a relay here (${probe.error?.message ?? `exit ${probe.status}`})`);
+    fs.mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 });
+    fs.copyFileSync(file, `${dest}.tmp`);
+    fs.chmodSync(`${dest}.tmp`, 0o755);
+    fs.renameSync(`${dest}.tmp`, dest);
+  }
+  const relay = relayPath(ROOT);
+  const command = hookCommand("agent-switch", relay);
+  for (const p of listProfiles("claude")) {
+    const cfg = configDir("claude", p);
+    if (!hooksNeedMigration(readSettings(cfg), command)) continue;
+    installHooks(cfg, "agent-switch", relay);
+    console.log(`claude/${p}: hooks now run ${relay ? "through the relay" : "the CLI directly"}`);
+  }
+  console.log(relay ? `Relay installed at ${relay}.` : "Relay removed; hooks run the CLI directly.");
 }
 
 export async function cmdSessions(

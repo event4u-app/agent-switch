@@ -203,12 +203,20 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       ops `hello · ingest · sessions · children`, idem cache, 64 KiB line cap; a
       second engine refuses, a stale socket is taken over. The daemon starts it
       (`<root>/engine.sock`) and keeps polling when it cannot.
-- [ ] M2 `as-hook`: tiny native relay stdin → engine socket, file-line fallback.
+- [x] M2 `as-hook`: tiny native relay stdin → engine socket, file-line fallback.
       Gate: p95 < 20 ms against the node baseline measured in
       `road-to-hooks-that-keep-up` Phase 0. No longer waiting on the owner: E1
       (council 2026-11-03) makes this step define the acknowledgement point
       first and measure that path under contention on all three platforms; the
       relay's runtime follows from the measurement.
+      → Ack = durably stored (`src/hook-intake.ts`; the engine's `hook` op
+      answers only after the ring line). Runtime from the measurement: `node -e 0`
+      alone is p95 34–48 ms, so the relay is native (`relay/`, Rust, no deps).
+      Relay p95 3.9 / 5.7 / 10.5 ms (Linux / macOS / Windows CI) vs. CLI
+      98.9 / 92.6 / 172.7 ms; 0 lost and 0 doubled at 50 parallel; 50 hooks at
+      one instant run 25–222 ms p95 on 4–5 cores — reported, gate read per hook
+      (`agents/evidence/hook-relay-latency-2026-11.md`, ADR-006 Amendment 1).
+      `agent-switch hooks relay <file>|off`; releases attach the binaries.
 - [x] M3 host (tmux): N sessions per account, started via argv (never typed),
       Claude with a pre-generated `--session-id`, hooks via `--settings`; survives
       an app restart. Old per-profile names stay readable for one release.

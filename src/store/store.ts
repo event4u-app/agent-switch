@@ -367,15 +367,23 @@ export function importEventRings(store: Store, root: string): { files: number; r
         out.rejected++;
         continue;
       }
-      const seq = crypto.createHash("sha256").update(line).digest("hex").slice(0, 32);
       try {
-        if (store.ingest({ producer: `ring:${provider}-${account}`, seq, provider, account, record })) out.stored++;
+        if (store.ingest({ producer: ringProducer(provider, account), seq: ringSeq(line), provider, account, record })) out.stored++;
       } catch {
         out.rejected++;
       }
     }
   }
   return out;
+}
+
+/** A ring line's identity in the store, so the engine's own write and a later ring import are one row. */
+export function ringSeq(line: string): string {
+  return crypto.createHash("sha256").update(line).digest("hex").slice(0, 32);
+}
+
+export function ringProducer(provider: string, account: string): string {
+  return `ring:${provider}-${account}`;
 }
 
 // Oldest generation first, so arrival order in the store matches the ring.

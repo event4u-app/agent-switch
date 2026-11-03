@@ -29,7 +29,7 @@ export async function startEngine(root: string, log: (l: string) => void): Promi
   const address = engineAddress(root);
   let server: net.Server;
   try {
-    server = await startEngineServer(address, storeHandler(store));
+    server = await startEngineServer(address, storeHandler(store, root));
   } catch (err: any) {
     store.close();
     log(`engine off: ${err?.message ?? err}`);
