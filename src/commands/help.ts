@@ -35,7 +35,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch sessions preview <session-id> [--provider claude|codex] [--from <profile>]   the first turns of one session (Claude; JSON)
   agent-switch sessions rm <session-id> --yes [--from <profile>] [--purge] [--json]   move one session to the trash (--purge deletes it for good)
   agent-switch sessions restore <trash-id|session-id> [--from <profile>]   bring a removed session back
-  agent-switch hooks install|uninstall|status [profile]   manage lifecycle push hooks in Claude settings.json
+  agent-switch hooks install|uninstall|status [profile] [--provider codex]   manage lifecycle push hooks (Claude settings.json, Codex hooks.json)
   agent-switch alerts on|off|status [--threshold 80,95]   record context/usage crossings to the notification log (off by default)
   agent-switch compact <profile> [--clear] [--dry-run] [--force]   type /compact (or /clear) into the profile's managed tmux pane
   agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place] [--print-only] [--force]   move a session to another profile and resume it

@@ -163,6 +163,30 @@ test("as-hook with an engine: the engine stores it once and the CLI is not run",
   }
 });
 
+test("as-hook forwards CODEX_HOME: a Codex hook reaches the engine and its account's ring", { skip: relaySkip || storeSkip || (process.platform === "win32" && !process.env.CI ? "the engine pipe name is per user" : false) }, async () => {
+  const { startEngine } = await import("../src/engine/run.js");
+  const r = root();
+  const codexHome = path.join(r, "codex", "work", "config");
+  fs.mkdirSync(codexHome, { recursive: true });
+  const engine = await startEngine(r, () => {});
+  assert.ok(engine);
+  try {
+    const payload = { hook_event_name: "Stop", session_id: "cx1", cwd: r, transcript_path: path.join(codexHome, "sessions", "rollout-cx1.jsonl") };
+    const code = await new Promise<number | null>((resolve) => {
+      const c = spawn(relayBin!, fakeCli(r), { env: { ...process.env, AGENT_SWITCH_HOME: r, CODEX_HOME: codexHome, CLAUDE_CONFIG_DIR: "" } });
+      c.stdin.end(JSON.stringify(payload));
+      c.on("exit", resolve);
+    });
+    assert.equal(code, 0);
+    assert.equal(fallbacks(r).length, 0, "the engine took it");
+    const lines = fs.readFileSync(path.join(r, "events", "codex-work.jsonl"), "utf8").split("\n").filter(Boolean);
+    assert.equal(lines.length, 1);
+    assert.equal(JSON.parse(lines[0]).sessionId, "cx1");
+  } finally {
+    await engine!.stop();
+  }
+});
+
 test("hooks relay <file> moves installed profiles to the relay, and off moves them back", { skip: relaySkip }, () => {
   const r = root();
   const cli = path.resolve(here, "../../dist/index.js");

@@ -22,8 +22,9 @@ const MAX_PAYLOAD: usize = 60 * 1024;
 const ANSWER_TIMEOUT: Duration = Duration::from_millis(1500);
 
 /// The hook environment forwarded to the engine (src/hook-intake.ts HOOK_ENV_KEYS).
-const ENV_KEYS: [&str; 7] = [
+const ENV_KEYS: [&str; 8] = [
     "CLAUDE_CONFIG_DIR",
+    "CODEX_HOME",
     "CLAUDE_PID",
     "AGENT_SWITCH_PARENT_SESSION",
     "AGENT_SWITCH_PARENT_KIND",

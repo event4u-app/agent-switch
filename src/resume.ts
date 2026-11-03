@@ -53,11 +53,18 @@ export interface GitProbe {
   dirty(dir: string): boolean;
 }
 
+/** Resume runs on request, not on a hot path: a busy Windows machine needs more than 1 s for a cold `git status`. */
+const PROBE_TIMEOUT_MS = 5000;
+
 export const realGit: GitProbe = {
   exists: (d) => fs.existsSync(d),
-  branchExists: (d, b) => spawnSync("git", ["-C", d, "rev-parse", "--verify", "--quiet", `refs/heads/${b}`], { timeout: 1000 }).status === 0,
-  commitReachable: (d, sha) => spawnSync("git", ["-C", d, "cat-file", "-e", `${sha}^{commit}`], { timeout: 1000 }).status === 0,
-  dirty: (d) => (spawnSync("git", ["-C", d, "status", "--porcelain"], { encoding: "utf8", timeout: 1000 }).stdout ?? "").trim().length > 0,
+  branchExists: (d, b) => spawnSync("git", ["-C", d, "rev-parse", "--verify", "--quiet", `refs/heads/${b}`], { timeout: PROBE_TIMEOUT_MS }).status === 0,
+  commitReachable: (d, sha) => spawnSync("git", ["-C", d, "cat-file", "-e", `${sha}^{commit}`], { timeout: PROBE_TIMEOUT_MS }).status === 0,
+  // No answer is not "clean": resuming into unseen changes is the outcome this check exists to prevent.
+  dirty: (d) => {
+    const r = spawnSync("git", ["-C", d, "status", "--porcelain"], { encoding: "utf8", timeout: PROBE_TIMEOUT_MS });
+    return r.status !== 0 || (r.stdout ?? "").trim().length > 0;
+  },
 };
 
 /** Pure given the probe: what to check, what to suggest, which commands run. */
