@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as path from "node:path";
 
-import { preflight, shellLine, type GitProbe, type PreflightInput } from "../src/resume.js";
+import { preflight, realGit, shellLine, type GitProbe, type PreflightInput } from "../src/resume.js";
 
 const probe = (over: Partial<Record<keyof GitProbe, boolean>> = {}): GitProbe => ({
   exists: () => over.exists ?? true,
@@ -63,3 +63,10 @@ test("shellLine quotes only what needs it", () => {
   assert.equal(shellLine(["agent-switch", "run", "work", "--", "--resume", "id"]), "agent-switch run work -- --resume id");
   assert.equal(shellLine(["git", "-C", "/my repo/it's"]), "git -C '/my repo/it'\\''s'");
 });
+
+test("a checkout git cannot answer for counts as not clean, so resume never lands on it", () => {
+  // A status that fails or times out says nothing about open changes; reading it as clean resumed into them.
+  const notARepo = path.join(path.parse(process.cwd()).root, "no-such-folder-asw-resume");
+  assert.equal(realGit.dirty(notARepo), true);
+});
+
