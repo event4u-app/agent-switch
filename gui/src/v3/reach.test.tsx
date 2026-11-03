@@ -4,56 +4,10 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { V3Window, type V3Data, type V3Slots } from "./window.js";
-import { DEFAULT_APPEARANCE } from "./themes/resolve.js";
-import type { LimitAccount } from "./limits.js";
+import { V3Window } from "./window.js";
+import { data, slots } from "./window-fixture.js";
 
 afterEach(cleanup);
-const NOW = Date.UTC(2026, 10, 2, 12);
-const limit: LimitAccount = { key: "claude/work", tool: "claude", name: "work", color: "teal", protect: 98, next: true, signIn: false, checkedMs: NOW, windows: [{ label: "5h", used: 94, resetsAtMs: NOW + 3_600_000, pace: null }] };
-
-function data(): V3Data {
-  return {
-    nowMs: NOW,
-    health: { state: "down", sinceMs: NOW - 120_000, hostedRunning: 1 },
-    needs: [{ id: "l", kind: "limit", subject: "claude/work", who: "work", what: "94% of 5h", verb: "Decide", since: new Date(NOW).toISOString(), version: "1" }],
-    away: null,
-    history: [{ id: "h", who: "Checkout flow", what: "asked you", doneAt: new Date(NOW - 600_000).toISOString() }],
-    sessions: [{ key: "s1", title: "Event store", state: "working", account: { name: "work", nearLimit: true }, branch: "feat/store", pr: null, children: [], needsYou: false }],
-    limits: [limit],
-    accounts: [{ ...limit, email: "me@example.com", label: null, isDefault: true, running: 1 }],
-    table: [],
-    library: [],
-    vaultBytes: 0,
-    autoKeep: true,
-    tools: [{ id: "codex", name: "Codex", role: "agent", present: true, version: "0.1", latest: "0.2", healthy: true }],
-    palette: [],
-    appearance: DEFAULT_APPEARANCE,
-    prefersDark: true,
-    openIn: { targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true }], defaultTarget: "vscode", perRepo: {}, focusTerminal: true },
-    remote: { remoteControl: ["work"], ssh: false },
-    agents: { rows: [{ id: "opencode", name: "OpenCode", binary: "opencode", cls: "acp", enabled: true, version: "2.2.5", local: { runner: "ollama", model: "qwen3-coder:30b" } }], suggestions: [{ id: "goose", name: "Goose", install: ["brew", "install", "block-goose-cli"] }] },
-    newSession: {
-      initial: { folder: "~/code/x", gitState: null, worktree: false, tool: "claude", model: "Opus", thinking: "High", where: "terminal" },
-      facts: { terminalApp: "Terminal.app", hosting: "persistent", thinkingLevels: { claude: ["High"], codex: ["high"], antigravity: ["default"] }, account: { name: "work", color: "teal", reason: "most room", limits: limit, why: ["work has the most room"], paceText: null }, command: "claude", nowMs: NOW },
-    },
-    decision: () => ({ account: "work", pctUsed: 94, window: "5h", resetsIn: "1h", sessions: [{ key: "s1", title: "Event store", model: "Opus", target: "side" }], suggestion: "side" }),
-    bar: () => ({ key: "s1", hosted: true, chatAvailable: false, view: "terminal", account: { name: "work", color: "teal", fiveH: 94, protect: 98 }, model: "Opus", thinking: "high", contextPct: 40 }),
-    summary: () => null,
-    changes: () => [],
-    next: () => null,
-  };
-}
-const slots: V3Slots = {
-  body: () => <p>terminal body</p>,
-  openIn: () => null,
-  usageHistory: <p>usage history view</p>,
-  pools: <p>projects and pools view</p>,
-  poolCount: 2,
-  tools: <p>agent-config card</p>,
-  settings: (s) => <p>{`${s} section`}</p>,
-};
-
 function open() {
   const act = vi.fn();
   render(<V3Window data={data()} slots={slots} act={act} />);
@@ -67,7 +21,7 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
   it("Overview: needs you, running now, what's left — on screen", () => {
     const w = open();
     expect(screen.getByText("94% of 5h")).toBeTruthy();
-    expect(screen.getByText("Event store")).toBeTruthy();
+    expect(within(screen.getByLabelText("Sessions window")).getByText("Event store")).toBeTruthy();
     expect(screen.getByText("Limits")).toBeTruthy();
     expect(w.clicks()).toBe(0);
   });
@@ -86,7 +40,7 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
 
   it("Session sheet: move, take over, hand off, compact — session row, then ⋯", () => {
     const w = open();
-    w.click(screen.getByText("Event store"));
+    w.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
     w.click(screen.getByLabelText("Session actions: rename, pin, move, detach, end"));
     const menu = screen.getByRole("menu");
     for (const item of ["Move to another account…", "Take over here…", "Hand off…", "Compact"]) expect(within(menu).getByText(item)).toBeTruthy();
@@ -195,7 +149,7 @@ describe("v3.1 Review page", () => {
     const act = vi.fn();
     const review = vi.fn((key: string) => <p>{`review of ${key}`}</p>);
     render(<V3Window data={{ ...data(), changes: () => [{ path: "a.ts", status: "M", added: 1, removed: 0 }] as never }} slots={{ ...slots, review }} act={act} />);
-    fireEvent.click(screen.getByText("Event store"));
+    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
     fireEvent.click(screen.getByLabelText("Changes"));
     fireEvent.click(screen.getByText("Review changes"));
     expect(screen.getByText("review of s1")).toBeTruthy();
@@ -205,7 +159,7 @@ describe("v3.1 Review page", () => {
 
   it("without a review slot, Review stays disabled", () => {
     render(<V3Window data={{ ...data(), changes: () => [{ path: "a.ts", status: "M", added: 1, removed: 0 }] as never }} slots={slots} act={vi.fn()} />);
-    fireEvent.click(screen.getByText("Event store"));
+    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
     fireEvent.click(screen.getByLabelText("Changes"));
     expect((screen.getByText("Review changes").closest("button") as HTMLButtonElement).disabled).toBe(true);
   });

@@ -97,12 +97,12 @@ export function NeedsZone({
   const updates = away ? away.finishedTurns + away.stoppedOnError + away.resolved + away.mergedPrs + away.ciBreaks : 0;
   return (
     <section aria-label="Needs you">
-      <div className="sticky top-0 flex h-8 items-center gap-2 bg-ac-panel px-3">
+      <div className="sticky top-0 z-[1] flex h-8 items-center gap-2 bg-ac-panel px-3.5">
         <span className="text-[11px] font-semibold text-ac-soft">Needs you</span>
         <span className="text-[11px] text-ac-muted">{items.length}</span>
         <span className="ml-auto font-ac-mono text-[10.5px] text-ac-muted">⌘J</span>
       </div>
-      <div className="px-1.5 pb-1">
+      <div className="px-1.5">
         {away && updates > 0 && (
           <button type="button" onClick={onAway} className="flex h-6 w-full items-center rounded-md px-2 text-left text-[12px] text-ac-soft hover:bg-ac-raise">
             While you were away · {updates} updates ›
@@ -112,7 +112,7 @@ export function NeedsZone({
           <NeedRow key={n.id} n={n} top={i === 0 && !focusedId} focused={n.id === focusedId} onVerb={onVerb} />
         ))}
         {items.length > MAX_ROWS && (
-          <button type="button" onClick={onMore} className="px-2 text-[11px] text-ac-muted hover:text-ac-text">
+          <button type="button" onClick={onMore} className="h-6 px-2 text-[11px] text-ac-muted hover:text-ac-text">
             {items.length - MAX_ROWS} more ›
           </button>
         )}

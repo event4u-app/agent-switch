@@ -360,7 +360,9 @@ body {
 }
 /* The chat composer shows focus on its frame (focus-within), not on the bare field. */
 .as-ac textarea[data-composer]:focus-visible,
-.as-ac input[role="combobox"]:focus-visible {
+.as-ac input[role="combobox"]:focus-visible,
+/* The palette is the focus context as a whole; its rows keep their own ring. */
+.as-ac input[data-palette]:focus-visible {
   outline: none;
 }
 .as-ac .as-icon-light {

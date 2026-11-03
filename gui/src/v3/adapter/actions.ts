@@ -12,7 +12,7 @@ import type { ProviderId } from "../../transforms.js";
 import type { NeedItem } from "../needs.js";
 import type { Appearance } from "../themes/resolve.js";
 import type { SessionMenuItem, V3Action } from "../window.js";
-import { menuFor, NEW_CHAT, nextStep, sessionKey, THINKING_LEVELS } from "./data.js";
+import { menuFor, NEW_CHAT, nextStep, sessionKey } from "./data.js";
 import { parsePr } from "./feeds.js";
 
 /** The CLI calls the dispatcher makes (a subset of `ipc.ts`, injectable for tests). */
@@ -31,6 +31,8 @@ export interface DispatchIpc {
   cleanupMerged(): Promise<void>;
   engineRestart(): Promise<void>;
   renameSession(key: string, name: string): Promise<void>;
+  openSessionIn(key: string, target?: string): Promise<void>;
+  openApp(appId: string, name: string): Promise<void>;
 }
 
 export interface DispatchDeps {
@@ -46,8 +48,6 @@ export interface DispatchDeps {
   hosted: (key: string) => boolean;
   setAppearance: (a: Appearance) => void;
   setFocusTerminal: (on: boolean) => void;
-  /** A choice the user makes in a small sheet (model, thinking). */
-  pick: (req: { title: string; options: string[]; current: string | null; onPick: (v: string) => void }) => void;
   /** One line of text (rename). */
   prompt: (req: { title: string; initial: string; onSubmit: (v: string) => void }) => void;
   /** Start a new session in the chat view and open its tab. */
@@ -61,7 +61,6 @@ export interface DispatchDeps {
 }
 
 /** Claude's `--model` aliases. */
-export const MODEL_ALIASES = ["opus", "sonnet", "haiku"];
 
 const vmSessionId = (key: string) => {
   const [provider, , id] = key.split("/");
@@ -155,6 +154,8 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
     case "need-more":
     case "away":
       return deps.refresh();
+    case "need-later":
+      return run(deps, "Later", deps.ipc.needsLater(a.id));
     case "needs-later-all":
       return run(deps, "Later", Promise.all(deps.needs().map((n) => deps.ipc.needsLater(n.id))));
     case "start": {
@@ -199,24 +200,25 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       return deps.open({ kind: "confirm", title: "Clean up merged worktrees?", body: "Removes the worktrees of sessions whose PR is merged. A worktree with changes is skipped.", confirm: "Clean up", onConfirm: () => void run(deps, "Clean up", deps.ipc.cleanupMerged()) });
     case "view":
       return deps.switchView?.(a.key, a.view);
-    case "model":
-    case "thinking": {
+    case "open-in": {
+      const p = a.pick;
+      if (p.kind === "pr") return deps.openUrl(p.url);
+      if (p.kind === "focus") return run(deps, "Focus", deps.ipc.focusSessionTerminal(a.key));
+      // The app opens on the session's own account; it never resumes the conversation (spike S9).
+      if (p.kind === "app") return run(deps, "Open", deps.ipc.openApp(p.app, a.key.split("/")[1] ?? ""));
+      if (p.kind === "target") return run(deps, "Open", deps.ipc.openSessionIn(a.key, p.target));
+      return run(deps, "Open", deps.ipc.openSessionIn(a.key));
+    }
+    case "set-model": {
       const chat = deps.chatOf?.(a.key);
-      if (chat) {
-        if (a.type === "thinking") return deps.toast({ tone: "info", text: "Thinking is set when the chat starts; switch to the terminal view to change it" });
-        const row = deps.rows().get(a.key);
-        return deps.pick({ title: "Model for the next turn", options: MODEL_ALIASES, current: row?.context?.model ?? null, onPick: (v) => chat.setModel(v) });
-      }
+      if (chat) return chat.setModel(a.model);
       if (!deps.hosted(a.key)) return;
-      const row = deps.rows().get(a.key);
-      const model = a.type === "model";
-      const options = model ? MODEL_ALIASES : THINKING_LEVELS[row?.provider === "codex" ? "codex" : "claude"];
-      return deps.pick({
-        title: model ? "Model for the next turn" : "Thinking for the next turn",
-        options,
-        current: model ? (row?.context?.model ?? null) : null,
-        onPick: (v) => void run(deps, model ? "Model change" : "Thinking change", deps.ipc.hostRespawn(a.key, model ? { model: v } : { effort: v })),
-      });
+      return run(deps, "Model change", deps.ipc.hostRespawn(a.key, { model: a.model }));
+    }
+    case "set-thinking": {
+      if (deps.chatOf?.(a.key)) return deps.toast({ tone: "info", text: "Thinking is set when the chat starts; switch to the terminal view to change it" });
+      if (!deps.hosted(a.key)) return;
+      return run(deps, "Thinking change", deps.ipc.hostRespawn(a.key, { effort: a.level }));
     }
     case "blocker":
       return blocker(a.key, deps);

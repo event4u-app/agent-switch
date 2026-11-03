@@ -195,10 +195,16 @@ export interface ChatHandlers {
   worktreeOf?: (agentId: string) => string | null;
 }
 
+/** "3 internal lines not shown" with the kinds, for a tooltip; null when nothing was dropped. Pure. */
+export function hiddenText(hidden: Record<string, number>): string | null {
+  const n = Object.values(hidden).reduce((a, b) => a + b, 0);
+  if (!n) return null;
+  return [`${n} internal ${n === 1 ? "line" : "lines"} not shown`, ...Object.entries(hidden).map(([k, c]) => `${k}: ${c}`)].join("\n");
+}
+
 /** The timeline of one session. `notice` sits above it (version or read-only banner). */
 export function ChatTimeline({ events, on = {}, notice }: { events: readonly AsEvent[]; on?: ChatHandlers; notice?: ReactNode }) {
   const f = useMemo(() => fold(events), [events]);
-  const hiddenCount = Object.values(f.hidden).reduce((a, b) => a + b, 0);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {notice}
@@ -206,11 +212,6 @@ export function ChatTimeline({ events, on = {}, notice }: { events: readonly AsE
         <p className="m-auto text-[13px] text-ac-muted">Nothing in this session yet.</p>
       ) : (
         <VirtualList label="Conversation" className="relative min-h-0 flex-1 overflow-y-auto px-6 py-4" items={f.rows} keyOf={(r) => `${r.k}:${r.id}`} render={(r) => <ChatRowView row={r} on={on} />} />
-      )}
-      {hiddenCount > 0 && (
-        <p className="shrink-0 px-6 pb-1 text-right text-[10.5px] text-ac-faint" title={Object.entries(f.hidden).map(([k, n]) => `${k}: ${n}`).join("\n")}>
-          {hiddenCount} internal {hiddenCount === 1 ? "line" : "lines"} not shown
-        </p>
       )}
     </div>
   );

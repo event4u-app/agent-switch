@@ -271,8 +271,8 @@ export function AllSessionsPage({ sessions, nowMs, onOpen, batch }: { sessions: 
                   <span className="truncate">{s.branch ?? "no repo"}</span>
                   {s.pr && <span className={cn("shrink-0", s.pr.ci === "FAILURE" && "text-ac-alert-text")}>#{s.pr.number}</span>}
                 </span>
-                <span className="truncate text-xs text-ac-soft">{[s.model, s.thinking].filter(Boolean).join(" · ") || "—"}</span>
-                <span className="font-ac-mono text-[11px] text-ac-muted">{s.contextPct == null ? "—" : `${Math.round(s.contextPct)}%`}</span>
+                <span className="truncate text-xs text-ac-soft">{[s.model, s.thinking].filter(Boolean).join(" · ")}</span>
+                <span className="font-ac-mono text-[11px] text-ac-muted">{s.contextPct == null ? "" : `${Math.round(s.contextPct)}%`}</span>
                 <span className="text-right text-xs text-ac-muted">{duration(nowMs - s.lastActiveMs)}</span>
               </div>
             ))}
@@ -285,6 +285,15 @@ export function AllSessionsPage({ sessions, nowMs, onOpen, batch }: { sessions: 
 }
 
 // ---------- Library (spec §10.3) ----------
+
+/** Library "Last": "now", "3 h", then a short date ("Oct 28"). Pure for a given locale. */
+export function lastSeen(ms: number, nowMs: number, locale?: string): string {
+  const d = nowMs - ms;
+  if (d < 60_000) return "now";
+  if (d < 3_600_000) return `${Math.floor(d / 60_000)} min`;
+  if (d < 86_400_000) return `${Math.floor(d / 3_600_000)} h`;
+  return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(ms));
+}
 
 export interface LibraryRow {
   key: string;
@@ -388,7 +397,7 @@ export function LibraryPage({ rows, vaultBytes, autoKeep, nowMs, on }: { rows: L
               )}
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-xs text-ac-soft">{e.project ?? "—"}</span>
+              <span className="block truncate text-xs text-ac-soft">{e.project ?? ""}</span>
               {e.branch && (
                 <span className="mt-0.5 flex min-w-0 items-center gap-1.5 font-ac-mono text-[11px] text-ac-muted">
                   <GitBranch className="size-3 shrink-0" />
@@ -401,7 +410,9 @@ export function LibraryPage({ rows, vaultBytes, autoKeep, nowMs, on }: { rows: L
                 </span>
               )}
             </span>
-            <span className="text-xs text-ac-muted">{duration(nowMs - e.lastMs)}</span>
+            <span className="text-xs text-ac-muted" title={new Date(e.lastMs).toLocaleString()}>
+              {lastSeen(e.lastMs, nowMs)}
+            </span>
             <VaultCell v={e.vault} />
             <span className="flex items-center justify-end gap-1">
               {e.transcript || e.vault.state === "saved" ? (

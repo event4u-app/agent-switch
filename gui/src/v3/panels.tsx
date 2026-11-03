@@ -5,10 +5,10 @@
  */
 
 import type { ReactNode } from "react";
-import { CircleX, ExternalLink, FolderGit2, Minus } from "lucide-react";
+import { CircleX, ExternalLink, FolderGit2, GitBranch, Minus } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
-import { Act, Disclosure } from "./kit.js";
+import { Act } from "./kit.js";
 import { ChildLine, type ChildModel } from "./sessions.js";
 
 function Window({ title, aside, onHide, children }: { title: string; aside?: ReactNode; onHide: () => void; children: ReactNode }) {
@@ -52,34 +52,42 @@ export interface SummaryFacts {
   more: { id: string; host: string; library: string; children: string };
 }
 
+const REVIEW: Record<string, string> = { REVIEW_REQUIRED: "review required", APPROVED: "approved", CHANGES_REQUESTED: "changes requested" };
+
+/** "open · conflict · changes requested": lifecycle, mergeability, review — no review word when none is asked for. Pure. */
+export function prLine(pr: { lifecycle: string; mergeable: string; review: string }): string {
+  const merge = pr.mergeable === "CONFLICTING" ? "conflict" : pr.mergeable === "MERGEABLE" ? "mergeable" : pr.mergeable === "UNKNOWN" || !pr.mergeable ? "" : pr.mergeable.toLowerCase();
+  return [pr.lifecycle.toLowerCase(), merge, REVIEW[pr.review] ?? ""].filter(Boolean).join(" · ");
+}
+
 export function SummaryWindow({ f, onNext, onCreatePr, onOpenPr, onHide, moreOpen, onToggleMore }: { f: SummaryFacts; onNext: () => void; onCreatePr: () => void; onOpenPr: () => void; onHide: () => void; moreOpen: boolean; onToggleMore: () => void }) {
   return (
     <Window title="Summary" onHide={onHide}>
       {f.next && (
-        <div className="mx-3.5 mt-3 rounded-[10px] border border-ac-line bg-ac-bg p-3">
-          <p className="text-[12.5px] text-ac-soft">{f.next.text}</p>
-          <Act kind="accent" className="mt-2" onClick={onNext}>
-            {f.next.action}
-          </Act>
+        <div className="m-3 rounded-[10px] border border-ac-line bg-ac-bg p-3">
+          <p className="text-[12.5px] leading-snug text-ac-text">{f.next.text}</p>
+          <div className="mt-2">
+            <Act kind="accent" onClick={onNext}>
+              {f.next.action}
+            </Act>
+          </div>
         </div>
       )}
       <Sect title="Pull request" source="GitHub · refreshed every 60 s while the session runs">
         {f.pr ? (
           <>
-            <div className="flex items-center gap-1.5 text-xs">
-              {f.pr.ci === "FAILURE" && <CircleX className="size-3.5 text-ac-alert" />}
-              <span className="font-ac-mono text-ac-text">#{f.pr.number}</span>
+            <div className="flex min-w-0 items-center gap-1.5 text-xs">
+              {f.pr.ci === "FAILURE" && <CircleX className="size-3.5 shrink-0 text-ac-alert" />}
+              <span className="text-ac-text">#{f.pr.number}</span>
               <span className={f.pr.ci === "FAILURE" ? "text-ac-alert-text" : "text-ac-soft"}>{f.pr.ci === "FAILURE" ? "CI failing" : `CI ${f.pr.ci.toLowerCase()}`}</span>
-              <IconButton label="Open on GitHub" className="ml-auto size-6" onClick={onOpenPr}>
-                <ExternalLink />
-              </IconButton>
+              <button type="button" aria-label="Open on GitHub" title="Open on GitHub" onClick={onOpenPr} className="ml-auto inline-flex shrink-0 text-ac-muted hover:text-ac-text">
+                <ExternalLink className="size-3.5" />
+              </button>
             </div>
-            <div className="mt-0.5 text-[11px] text-ac-muted">
-              {f.pr.lifecycle.toLowerCase()} · {f.pr.mergeable === "CONFLICTING" ? "conflict" : f.pr.mergeable.toLowerCase()} · review {f.pr.review.toLowerCase().replace(/_/g, " ")}
-            </div>
+            <div className="pl-5 text-xs text-ac-muted">{prLine(f.pr)}</div>
             {f.pr.failingChecks.map((c) => (
-              <div key={c} className="truncate pl-5 font-ac-mono text-[11px] text-ac-alert-text">
-                {c}
+              <div key={c} className="mt-1 truncate pl-5 text-xs text-ac-alert-text">
+                {c} failed
               </div>
             ))}
           </>
@@ -94,22 +102,24 @@ export function SummaryWindow({ f, onNext, onCreatePr, onOpenPr, onHide, moreOpe
       </Sect>
       {f.git && (
         <Sect title="Git" source="from the session's hooks">
-          <div className="flex items-center gap-1.5 text-xs text-ac-soft">
-            <span className="truncate font-ac-mono">{f.git.branch ?? "(detached)"}</span>
-            {f.git.worktree && <FolderGit2 className="size-3.5 text-ac-muted" aria-label="worktree" />}
-            <span className={cn(f.git.changed ? "text-ac-warn-text" : "text-ac-muted")}>{f.git.changed ? `${f.git.changed} changed` : "clean"}</span>
-            {f.git.ahead != null && (
-              <span className="ml-auto font-ac-mono text-[11px] text-ac-muted">
-                ↑{f.git.ahead} ↓{f.git.behind ?? 0}
-              </span>
-            )}
+          <div className="flex min-w-0 items-center gap-1.5 text-xs text-ac-soft">
+            <GitBranch className="size-3.5 shrink-0 text-ac-muted" aria-hidden />
+            <span className="truncate">{f.git.branch ?? "(detached)"}</span>
+            {f.git.worktree && <FolderGit2 className="size-3.5 shrink-0 text-ac-muted" aria-label="worktree" />}
+            <span className="ml-auto shrink-0 text-ac-muted">
+              {f.git.changed ? <span className="text-ac-warn-text">{f.git.changed} changed</span> : "clean"}
+              {f.git.ahead || f.git.behind ? ` · ↑${f.git.ahead ?? 0} ↓${f.git.behind ?? 0}` : ""}
+            </span>
           </div>
         </Sect>
       )}
       {f.limit && <Sect title="Limit">{f.limit}</Sect>}
-      <div className="px-3.5 py-2.5">
-        <Disclosure open={moreOpen} label="More ›" onToggle={onToggleMore}>
-          <dl className="space-y-0.5 text-xs">
+      <Sect title="More">
+        <button type="button" aria-expanded={moreOpen} onClick={onToggleMore} className="text-xs text-ac-muted hover:text-ac-text">
+          ID, host, library, children ›
+        </button>
+        {moreOpen && (
+          <dl className="mt-1.5 space-y-0.5 text-xs">
             {(
               [
                 ["ID", f.more.id],
@@ -124,8 +134,8 @@ export function SummaryWindow({ f, onNext, onCreatePr, onOpenPr, onHide, moreOpe
               </div>
             ))}
           </dl>
-        </Disclosure>
-      </div>
+        )}
+      </Sect>
     </Window>
   );
 }

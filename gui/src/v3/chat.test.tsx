@@ -1,19 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import fx from "./fixtures/timeline-claude-2.1.316.json";
-import { ChatTimeline } from "./chat.js";
+import { ChatTimeline, hiddenText } from "./chat.js";
 import type { AsEvent } from "./timeline.js";
 
 afterEach(cleanup);
 
 describe("ChatTimeline", () => {
-  it("draws the recorded session: bubbles, Update with its diff, the Task row, hidden lines counted", () => {
+  it("draws the recorded session: bubbles, Update with its diff, the Task row; no footer for hidden lines", () => {
     render(<ChatTimeline events={fx.transcript as AsEvent[]} />);
     expect(screen.getByText(/Create a file notes\.md/)).toBeTruthy();
     expect(screen.getAllByText("Update").length).toBeGreaterThan(0);
     expect(screen.getByText("Task")).toBeTruthy();
     expect(screen.getByText("subagent · via hook")).toBeTruthy();
-    expect(screen.getByText(/internal lines not shown/)).toBeTruthy();
+    // The count moved into the "read-only here" tooltip (gap §5e).
+    expect(screen.queryByText(/internal lines? not shown/)).toBeNull();
     const edit = screen.getAllByRole("button", { expanded: false }).find((b) => b.textContent?.includes("−1"))!;
     fireEvent.click(edit);
     expect(screen.getByText("beta")).toBeTruthy();
@@ -49,5 +50,13 @@ describe("ChatTimeline", () => {
   it("an empty session says so", () => {
     render(<ChatTimeline events={[]} />);
     expect(screen.getByText("Nothing in this session yet.")).toBeTruthy();
+  });
+});
+
+describe("hiddenText", () => {
+  it("counts the dropped lines with their kinds, and says nothing when none were dropped", () => {
+    expect(hiddenText({})).toBeNull();
+    expect(hiddenText({ "file-history-snapshot": 2, summary: 1 })).toBe("3 internal lines not shown\nfile-history-snapshot: 2\nsummary: 1");
+    expect(hiddenText({ x: 1 })).toBe("1 internal line not shown\nx: 1");
   });
 });

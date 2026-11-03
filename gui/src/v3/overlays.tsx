@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowRight, Check, Hash, Search } from "lucide-react";
+import { ArrowRight, Check, GitBranch, Hash, Search } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { Kbd } from "../ui/Typography.js";
@@ -72,6 +72,7 @@ export function Palette({ entries, onOpen, onClose }: { entries: PaletteEntry[];
           <Search className="size-4 text-ac-muted" />
           <input
             autoFocus
+            data-palette
             aria-label="Search"
             value={query}
             onChange={(e) => (setQuery(e.target.value), setCursor(0))}
@@ -179,6 +180,7 @@ export function Switcher({ recent, pick, onClose }: { recent: RecentSession[]; p
 
 export interface PeekFacts {
   title: string;
+  state?: SessionState;
   lastActiveMs: number;
   tool: string;
   account: string;
@@ -193,27 +195,26 @@ export interface PeekFacts {
 
 export function PeekCard({ f, nowMs }: { f: PeekFacts; nowMs: number }) {
   return (
-    <div role="tooltip" className="w-[300px] rounded-xl border border-ac-line2 bg-ac-panel p-3 text-[12px]" style={{ boxShadow: "var(--ac-shadow)" }}>
+    <div role="tooltip" className="w-[300px] rounded-xl border border-ac-line2 bg-ac-panel p-3" style={{ boxShadow: "var(--ac-shadow)" }}>
       <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate font-medium text-ac-text">{f.title}</span>
-        <span className="shrink-0 text-[11px] text-ac-muted">{duration(nowMs - f.lastActiveMs)} ago</span>
+        {f.state && <SessionStateIcon state={f.state} />}
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ac-text">{f.title}</span>
+        <span className="shrink-0 text-[11px] text-ac-muted">{nowMs - f.lastActiveMs < 60_000 ? "now" : `${duration(nowMs - f.lastActiveMs)} ago`}</span>
       </div>
-      <div className="mt-1.5 flex items-center gap-1.5 text-ac-soft">
-        <AccountMark color={f.color} /> {f.tool} · {f.account}
-        {f.model && <> · {f.model}</>}
-        {f.thinking && <> · {f.thinking}</>}
+      <div className="mt-1.5 space-y-1 text-xs text-ac-muted">
+        <div className="flex items-center gap-2 text-ac-soft">
+          <AccountMark color={f.color} /> {[f.tool, f.account, f.model, f.thinking].filter(Boolean).join(" · ")}
+        </div>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <GitBranch className="size-3.5 shrink-0" />
+          <span className="truncate">
+            {f.branch ?? "no repo"}
+            {f.pr ? ` · #${f.pr.number} ${f.pr.state}` : ""}
+            {f.children > 0 ? ` · ${f.children} children` : ""}
+          </span>
+        </div>
+        {f.lastLine && <div className="truncate font-ac-mono text-[11px]">{f.lastLine}</div>}
       </div>
-      <div className="mt-1 truncate text-ac-muted">
-        <span className="font-ac-mono">{f.branch ?? "no repo"}</span>
-        {f.pr && (
-          <>
-            {" "}
-            · #{f.pr.number} {f.pr.state}
-          </>
-        )}
-        {f.children > 0 && <> · {f.children} children</>}
-      </div>
-      {f.lastLine && <div className="mt-1.5 truncate font-ac-mono text-[11px] text-ac-muted">{f.lastLine}</div>}
     </div>
   );
 }

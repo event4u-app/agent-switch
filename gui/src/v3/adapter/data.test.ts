@@ -113,7 +113,7 @@ describe("toV3Data", () => {
     };
     const d = toV3Data(vmWith([account("work", { state: "near-limit" })], [r]), feeds, env());
     expect(d.sessions[0]).toMatchObject({ key: "claude/work/a1", needsYou: true, pr: { number: 12, ci: "FAILURE" }, account: { name: "work", nearLimit: true } });
-    expect(d.bar("claude/work/a1")).toMatchObject({ hosted: true, model: "opus", thinking: "high", contextPct: 41, account: { fiveH: 40, protect: 90 } });
+    expect(d.bar("claude/work/a1")).toMatchObject({ hosted: true, model: "Opus", modelId: "opus", thinking: "high", contextPct: 41, account: { fiveH: 40, protect: 90 } });
     const s = d.summary("claude/work/a1")!;
     expect(s.next).toEqual({ text: "Waits for you in its terminal", action: "Focus terminal" });
     expect(s.pr?.failingChecks).toEqual(["lint"]);
@@ -172,9 +172,9 @@ describe("toV3Data", () => {
   });
 
   it("Open-in: agent apps never reach the settings list", () => {
-    const feeds = { ...emptyFeeds(), openTargets: { default: "vscode", perRepo: { "/r": "finder" }, targets: [{ target: "vscode", label: "VS Code", kind: "editor" as const, installed: true }] } };
+    const feeds = { ...emptyFeeds(), openTargets: { default: "vscode", perRepo: { "/r": "finder" }, lastUsed: "finder", targets: [{ target: "vscode", label: "VS Code", kind: "editor" as const, installed: true }] } };
     const d = toV3Data(emptyViewModel(NOW), feeds, env({ focusTerminal: false }));
-    expect(d.openIn).toEqual({ targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true }], defaultTarget: "vscode", perRepo: { "/r": "finder" }, focusTerminal: false });
+    expect(d.openIn).toEqual({ targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true }], defaultTarget: "vscode", lastUsed: "finder", perRepo: { "/r": "finder" }, focusTerminal: false, agentApps: [] });
     expect(d.openIn.targets.some((t) => t.kind === "agent-app")).toBe(false);
   });
 });
@@ -252,5 +252,27 @@ describe("worktreeOf", () => {
     const of = worktreeOf(r);
     expect([of("a1"), of("a2"), of("nope")]).toEqual(["agent-a1", null, null]);
     expect(worktreeOf(undefined)("a1")).toBeNull();
+  });
+
+  it("model choices: Claude's aliases with the running one checked; Codex only its reasoning levels", () => {
+    const rows = [row("a", { context: { pct: 1, model: "claude-opus-4-7", effort: "high" } as never }), row("c", { provider: "codex" as never })];
+    const d = toV3Data(vmWith([], rows), emptyFeeds(), env({ chats: new Set(["claude/work/a"]) }));
+    const a = d.models!("claude/work/a")!;
+    expect(a.models.map((m) => m.id)).toEqual(["opus", "sonnet", "haiku"]);
+    expect([a.current, a.currentThinking]).toEqual(["opus", "high"]);
+    expect(a.thinkingWhy).toMatch(/chat starts/);
+    const c = d.models!("codex/work/c")!;
+    expect(c.models).toEqual([]);
+    expect(c.thinking).toEqual(["minimal", "low", "medium", "high"]);
+    expect(d.models!("nope")).toBeNull();
+  });
+
+  it("Open-in: the agent apps are the installed desktop apps of a tool", () => {
+    const vm = { ...emptyViewModel(NOW), surfaces: [
+      { id: "claude-desktop", tool: "claude", name: "Claude Desktop", kind: "desktop", detected: true },
+      { id: "codex-desktop", tool: "codex", name: "Codex", kind: "desktop", detected: false },
+      { id: "codex-ide", tool: "codex", name: "Codex IDE", kind: "desktop", detected: true },
+    ] as never };
+    expect(toV3Data(vm, emptyFeeds(), env()).openIn.agentApps).toEqual([{ id: "claude-desktop", label: "Claude Desktop", tool: "claude" }]);
   });
 });

@@ -7,6 +7,7 @@ import { ChatTimeline } from "./chat.js";
 import { Composer, MODE_LABEL } from "./composer.js";
 import { fold } from "./timeline.js";
 import type { BridgeActions, BridgeState } from "./adapter/useBridge.js";
+import { modelLabel } from "./model-label.js";
 
 const secs = (ms: number | null) => (ms === null ? null : ms < 60_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`);
 
@@ -27,7 +28,7 @@ export function ChatView({ b, findFiles, worktreeOf }: { b: BridgeState & Bridge
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-7 shrink-0 items-center gap-2 border-b border-ac-line px-4 text-[11px] text-ac-muted">
-        <span className="font-ac-mono">{b.session?.model ?? "…"}</span>
+        <span className="font-ac-mono" title={b.session?.model ?? undefined}>{modelLabel(b.session?.model) ?? "…"}</span>
         <span>·</span>
         <span>{MODE_LABEL[b.mode]}</span>
         {f.lastTurn && (

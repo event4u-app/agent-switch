@@ -19,15 +19,17 @@ import { AcRoot } from "../../ui/AcRoot.js";
 import { Toaster } from "../../ui/Toaster.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
 import { ASProvider, useAS } from "../../vm/store.js";
-import { Choice, Modal, type NewSessionPlan } from "../dialogs.js";
+import { Modal, type NewSessionPlan } from "../dialogs.js";
 import { Act } from "../kit.js";
 import type { ChangedFile } from "../panels.js";
 import type { Appearance } from "../themes/resolve.js";
 import { V3Window, type V3Action, type V3Slots } from "../window.js";
+import { localLayout } from "../layout.js";
+import { KEYS_STORAGE, withRebinds } from "../keys.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
 import { sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
-import { OpenInMenu, SessionBody, settingsSection } from "./slots.js";
+import { SessionBody, settingsSection } from "./slots.js";
 import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
 import { useChats } from "./chats.js";
@@ -54,20 +56,7 @@ function usePrefersDark(): boolean {
 
 const terminalAppFor = (platform: string) => (platform === "mac" ? "Terminal.app" : platform === "windows" ? "Windows Terminal" : "your terminal");
 
-type Pick = Parameters<DispatchDeps["pick"]>[0];
 type Prompt = Parameters<DispatchDeps["prompt"]>[0];
-
-function PickSheet({ req, onClose }: { req: Pick; onClose: () => void }) {
-  return (
-    <Modal title={req.title} width={420} onClose={onClose} footer={<Act onClick={onClose}>Cancel</Act>}>
-      <div role="radiogroup" className="flex flex-col gap-2">
-        {req.options.map((o) => (
-          <Choice key={o} on={o === req.current} title={o} onPick={() => (onClose(), req.onPick(o))} />
-        ))}
-      </div>
-    </Modal>
-  );
-}
 
 function PromptSheet({ req, onClose }: { req: Prompt; onClose: () => void }) {
   const [v, setV] = useState(req.initial);
@@ -140,7 +129,6 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const { appearance, prefersDark, vars } = theme;
   const setAppearanceState = theme.setAppearance;
   const [focusTerminal, setFocusTerminalState] = useState(getFocusTerminal);
-  const [pick, setPick] = useState<Pick | null>(null);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [changes, setChanges] = useState<Map<string, ChangedFile[]>>(new Map());
   const changesAt = useRef(new Map<string, number>());
@@ -229,7 +217,6 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     hosted: (k) => hostedKeys.has(k),
     setAppearance: (a) => (saveAppearance(a), setAppearanceState(a)),
     setFocusTerminal: (on) => (setFocusTerminalFlag(on), setFocusTerminalState(on)),
-    pick: setPick,
     prompt: setPrompt,
     newChat,
     openTab,
@@ -303,6 +290,14 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   }, [armed, chats.states, byKey]);
 
   const history = useUsageHistory(s.accounts, s.now);
+  // The user's rebinds on top of the defaults; a blocked store keeps the defaults.
+  const keys = useMemo(() => {
+    try {
+      return withRebinds(localStorage.getItem(KEYS_STORAGE));
+    } catch {
+      return withRebinds(null);
+    }
+  }, []);
   const slots: V3Slots = {
     body: (key) => {
       const tab = chats.tabOf(key);
@@ -322,13 +317,6 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       />
       );
     },
-    openIn: (key) => (
-      <OpenInMenu
-        targets={data.openIn.targets}
-        defaultTarget={data.openIn.defaultTarget}
-        onOpen={(target) => void ipc.openSessionIn(key, target).catch((e: unknown) => s.toast({ tone: "alert", text: `Open failed: ${e instanceof Error ? e.message : String(e)}` }))}
-      />
-    ),
     review: (key) => {
       const tab = chats.tabOf(key);
       const chat = tab ? chats.states.get(tab) : undefined;
@@ -357,11 +345,10 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
 
   return (
     <>
-      <V3Window data={data} slots={slots} act={act} focus={focus} />
+      <V3Window data={data} slots={slots} act={act} focus={focus} layout={localLayout} keys={keys} />
       {chats.runners}
       <OverlayHost />
       <Toaster toasts={s.toasts} onDismiss={s.dismissToast} />
-      {pick && <PickSheet req={pick} onClose={() => setPick(null)} />}
       {prompt && <PromptSheet req={prompt} onClose={() => setPrompt(null)} />}
     </>
   );

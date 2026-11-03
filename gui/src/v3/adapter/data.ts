@@ -16,7 +16,8 @@ import type { ChildModel, ChildSource, RowSession } from "../sessions.js";
 import type { OpenTarget } from "../settings.js";
 import type { Appearance } from "../themes/resolve.js";
 import { SESSION_MENU, type SessionMenuItem, type V3Data } from "../window.js";
-import type { BarSession } from "../workbench.js";
+import type { BarSession, ModelChoices } from "../workbench.js";
+import { modelLabel } from "../model-label.js";
 import { parsePr, type HistoryRow, type PrFacts } from "./feeds.js";
 import type { V3Feeds } from "./useFeeds.js";
 
@@ -55,6 +56,16 @@ export const NEW_CHAT = "chat:new";
 export const sessionKey = (r: Pick<SessionRow, "provider" | "profile" | "sessionId">) => `${r.provider}/${r.profile}/${r.sessionId}`;
 
 /** Local midnight before `now`. */
+/** Claude's model aliases for the next turn (`--model`), with the boards' hints (spec §7.6). */
+export const CLAUDE_MODELS: ModelChoices["models"] = [
+  { id: "opus", label: "Opus", hint: "deepest · uses the most limit" },
+  { id: "sonnet", label: "Sonnet", hint: "balanced" },
+  { id: "haiku", label: "Haiku", hint: "fast · light on limits" },
+];
+
+/** The desktop apps Open in may offer, one per tool. */
+const AGENT_APPS = ["claude-desktop", "codex-desktop"];
+
 export function startOfDay(now: number): number {
   const d = new Date(now);
   d.setHours(0, 0, 0, 0);
@@ -257,7 +268,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       account: { name: r.profile, color: colorOf(r) },
       branch: r.git?.branch ?? null,
       pr: pr ? { number: pr.number, ci: pr.ci } : null,
-      model: r.context?.model ?? null,
+      model: modelLabel(r.context?.model),
       thinking: (r.context as { effort?: string | null } | null | undefined)?.effort ?? null,
       contextPct: r.context?.pct ?? null,
       lastActiveMs: r.mtimeMs,
@@ -345,7 +356,15 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     palette,
     appearance: env.appearance,
     prefersDark: env.prefersDark,
-    openIn: { targets, defaultTarget: feeds.openTargets?.default ?? null, perRepo: feeds.openTargets?.perRepo ?? {}, focusTerminal: env.focusTerminal },
+    openIn: {
+      targets,
+      defaultTarget: feeds.openTargets?.default ?? null,
+      lastUsed: feeds.openTargets?.lastUsed ?? null,
+      perRepo: feeds.openTargets?.perRepo ?? {},
+      focusTerminal: env.focusTerminal,
+      // Only the desktop apps of a tool, and only where they are installed (spec §7.7).
+      agentApps: vm.surfaces.filter((x) => x.kind === "desktop" && x.detected && AGENT_APPS.includes(x.id)).map((x) => ({ id: x.id, label: x.name, tool: x.tool })),
+    },
     agents: { rows: feeds.agents?.agents ?? [], suggestions: feeds.agents?.suggestions ?? [] },
     remote: { remoteControl: feeds.remote?.remoteControlAccounts ?? [], ssh: feeds.remote?.ssh ?? false },
     newSession: { initial: env.plan, facts },
@@ -361,9 +380,25 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
         chatAvailable: r.provider === "claude" || r.provider === "codex",
         view: env.chats?.has(key) ? "chat" : "terminal",
         account: { name: r.profile, color: colorOf(r), fiveH: fiveH(a), protect: a?.threshold ?? 98 },
-        model: r.context?.model ?? null,
+        model: modelLabel(r.context?.model),
+        modelId: r.context?.model ?? null,
         thinking: (r.context as { effort?: string | null } | null | undefined)?.effort ?? null,
         contextPct: r.context?.pct ?? null,
+      };
+    },
+    models: (key): ModelChoices | null => {
+      const r = byKey.get(key);
+      if (!r || (r.provider !== "claude" && r.provider !== "codex")) return null;
+      const id = (r.context?.model ?? "").toLowerCase();
+      const effort = (r.context as { effort?: string | null } | null | undefined)?.effort ?? null;
+      // Codex keeps the model its config names; only its reasoning level changes here.
+      const models = r.provider === "claude" ? CLAUDE_MODELS : [];
+      return {
+        models,
+        current: models.find((m) => id.includes(m.id))?.id ?? null,
+        thinking: THINKING_LEVELS[r.provider],
+        currentThinking: effort,
+        thinkingWhy: env.chats?.has(key) ? "Set when the chat starts; switch to the terminal view to change it." : undefined,
       };
     },
     summary: (key): SummaryFacts | null => {
@@ -423,9 +458,12 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
   const mins = Number.isFinite(resetsAt) ? Math.max(0, Math.round((resetsAt - now) / 60_000)) : null;
   const sessions: SheetSession[] = rows
     .filter((r) => (only ? sessionKey(r) === only : r.live && accountId(r.provider, r.profile) === a.id))
-    .map((r) => ({ key: sessionKey(r), title: r.library?.name || r.summary || r.sessionId.slice(0, 8), model: r.context?.model ?? null, target: best?.name ?? "" }));
+    .map((r) => ({ key: sessionKey(r), title: r.library?.name || r.summary || r.sessionId.slice(0, 8), model: modelLabel(r.context?.model), target: best?.name ?? "", state: sessionFromRow(r, now).state }));
   return {
     account: a.name,
+    tool: a.tool,
+    // The accounts a session can move to, emptiest first; the picker offers these only.
+    targets: others.map((x) => ({ name: x.name, color: x.color })),
     pctUsed: w.utilization ?? 0,
     window: windowLabel(w.key, w.label),
     resetsIn: mins === null ? "unknown" : mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`,

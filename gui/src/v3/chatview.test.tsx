@@ -33,7 +33,7 @@ describe("ChatView", () => {
   it("header: model, mode, the last turn and what it cost; the approval card answers through the bridge", () => {
     const c = chat();
     render(<ChatView b={c} />);
-    expect(screen.getByText("claude-haiku-5-5")).toBeTruthy();
+    expect(screen.getByTitle("claude-haiku-5-5").textContent).toBe("Haiku 5.5"); expect(screen.getByText("Haiku 5.5")).toBeTruthy();
     expect(screen.getAllByText("Ask before edits").length).toBeGreaterThan(0);
     expect(screen.getByText(/^last turn \d+ s$/)).toBeTruthy();
     expect(screen.getByText(/^\$0\.004$/)).toBeTruthy();

@@ -101,6 +101,9 @@ export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount
         <button type="button" onClick={(e) => (e.stopPropagation(), onSignIn(a.key))} className="shrink-0 text-[11px] text-ac-muted hover:text-ac-text">
           sign in ›
         </button>
+      ) : !a.windows.length ? (
+        // Not read yet: never an empty track, which reads as 0 % used.
+        <span className="shrink-0 text-[11px] text-ac-muted">no data yet</span>
       ) : (
         <>
           {(t === "warn" || t === "alert") && top && (
@@ -122,8 +125,8 @@ export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount
 export function LimitsStrip({ accounts, nowMs, openKey, onOpen, onSignIn }: { accounts: LimitAccount[]; nowMs: number; openKey: string | null; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
   const ordered = [...accounts.filter((a) => a.tool === "claude"), ...accounts.filter((a) => a.tool === "codex")];
   return (
-    <section aria-label="Limits" className="border-t border-ac-line px-1.5 pb-2">
-      <div className="flex h-8 items-center px-2 text-[11px] font-semibold text-ac-soft">Limits</div>
+    <section aria-label="Limits" className="relative shrink-0 border-t border-ac-line px-1.5 pb-1.5 pt-1">
+      <div className="flex h-7 items-center px-2 text-[11px] font-semibold text-ac-soft">Limits</div>
       {ordered.map((a) => (
         <LimitRow key={a.key} a={a} nowMs={nowMs} open={a.key === openKey} onOpen={onOpen} onSignIn={onSignIn} />
       ))}
@@ -187,6 +190,34 @@ export function LimitsPopover({ a, nowMs, onMove, onAccounts }: { a: LimitAccoun
           Open Accounts
         </button>
       </div>
+    </div>
+  );
+}
+
+/** "Room left" in the decision sheet: every account of the tool with all its windows (spec §8.2). */
+export function RoomLeft({ accounts, nowMs }: { accounts: LimitAccount[]; nowMs: number }) {
+  if (!accounts.length) return null;
+  return (
+    <div className="rounded-[10px] border border-ac-line bg-ac-bg">
+      {accounts.map((a) => (
+        <div key={a.key} className="rounded-md px-2 py-1.5 hover:bg-ac-raise">
+          <div className="flex min-w-0 items-center gap-2">
+            <AccountMark color={a.color} />
+            <span className="truncate text-xs font-medium text-ac-text">{a.name}</span>
+            {a.next && <span className="shrink-0 text-[10.5px] text-ac-info-text">→ next</span>}
+            <span className="ml-auto shrink-0 font-ac-mono text-[10.5px] text-ac-muted">{a.checkedMs === null ? "" : nowMs - a.checkedMs < 60_000 ? "just now" : `${duration(nowMs - a.checkedMs)} ago`}</span>
+          </div>
+          {a.windows.length ? (
+            <div className="mt-1.5 space-y-1 pl-4">
+              {a.windows.map((w) => (
+                <LimitBar key={w.label} w={w} protect={a.protect} stale={isStale(a, nowMs)} nowMs={nowMs} />
+              ))}
+            </div>
+          ) : (
+            <div className="mt-1 pl-4 text-[11px] text-ac-muted">{a.signIn ? "No usage before the first sign-in" : "no data yet"}</div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

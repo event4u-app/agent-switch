@@ -63,6 +63,19 @@ export function XtermBox({
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
+    // customGlyphs only draws the rounded box arcs with a GPU renderer; the DOM
+    // renderer falls back to the font, which leaves gaps (spec §6.4). Without
+    // WebGL the DOM renderer stays.
+    let disposed = false;
+    if (look)
+      void import("@xterm/addon-webgl")
+        .then(({ WebglAddon }) => {
+          if (disposed) return;
+          const gl = new WebglAddon();
+          gl.onContextLoss(() => gl.dispose());
+          term.loadAddon(gl);
+        })
+        .catch(() => undefined);
     try {
       fit.fit();
     } catch {
@@ -81,6 +94,7 @@ export function XtermBox({
     const ro = new ResizeObserver(refit);
     ro.observe(host);
     return () => {
+      disposed = true;
       ro.disconnect();
       void ctrl.dispose();
       term.dispose();
@@ -89,7 +103,14 @@ export function XtermBox({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // `data-terminal`: app shortcuts ignore keys typed in here (useGlobalShortcuts).
-  return <div ref={hostRef} data-terminal className="min-h-[260px] w-full flex-1 overflow-hidden" />;
+  if (!look) return <div ref={hostRef} data-terminal className="min-h-[260px] w-full flex-1 overflow-hidden" />;
+  // v3: 16/20 px inside, on the terminal's own background (spec §6.4). The
+  // wrapper is padded, never the host, because FitAddon measures the host.
+  return (
+    <div data-terminal-frame className="flex min-h-0 w-full flex-1 px-5 py-4" style={{ background: look.theme.background }}>
+      <div ref={hostRef} data-terminal className="min-h-0 w-full flex-1 overflow-hidden" />
+    </div>
+  );
 }
 
 type Phase = { kind: "running" } | { kind: "finished"; code: number | null } | { kind: "failed"; message: string };

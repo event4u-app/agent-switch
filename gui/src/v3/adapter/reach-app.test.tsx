@@ -5,7 +5,7 @@
  * fills them from what the CLI actually prints.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
 const NOW = Date.now();
 
@@ -88,7 +88,7 @@ async function mount({ engineRunning = true } = {}) {
   (globalThis as { __cli?: unknown }).__cli = fixture(engineRunning);
   calls.length = 0;
   render(<V3App />);
-  await screen.findByText("Event store", {}, { timeout: 3000 });
+  await screen.findAllByText("Event store", {}, { timeout: 3000 });
 }
 
 let clicks = 0;
@@ -103,7 +103,7 @@ describe("V3App on fixture CLI output (spec §11)", () => {
   it("Overview: the needs item and the running session come from the CLI", async () => {
     await mount();
     expect(await screen.findByText("94% of 5h")).toBeTruthy();
-    expect(screen.getByText("Event store")).toBeTruthy();
+    expect(within(screen.getByLabelText("Sessions window")).getByText("Event store")).toBeTruthy();
     expect(screen.getByText("Limits")).toBeTruthy();
   });
 
@@ -116,7 +116,7 @@ describe("V3App on fixture CLI output (spec §11)", () => {
 
   it("Session sheet actions: session row, then ⋯", async () => {
     await mount();
-    click(screen.getByText("Event store"));
+    click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
     click(await screen.findByLabelText("Session actions: rename, pin, move, detach, end"));
     expect(screen.getByRole("menu")).toBeTruthy();
     expect(clicks).toBe(2);

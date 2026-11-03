@@ -28,7 +28,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.d.ts"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.d.ts", "src/v3/design-fixture/**"],
       reporter: ["text-summary"],
       // Floor = the 2026-11-01 measurement minus 1 point, rounded down. Raise it
       // when coverage rises; never lower it (roadmap 4.2).

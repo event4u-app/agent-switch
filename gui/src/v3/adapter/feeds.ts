@@ -44,6 +44,7 @@ export interface PrStatus {
 export interface OpenTargetsGlobal {
   default: string | null;
   perRepo: Record<string, string>;
+  lastUsed: string | null;
   targets: { target: string; label: string; kind: "editor" | "files" | "terminal"; installed: boolean }[];
 }
 
@@ -135,6 +136,7 @@ export function parseOpenTargets(v: unknown): OpenTargetsGlobal {
   return {
     default: str(o.default),
     perRepo,
+    lastUsed: str(o.lastUsed),
     targets: arr(o.targets)
       .map(obj)
       .filter((t) => typeof t.target === "string" && kinds.has(t.kind as string))
