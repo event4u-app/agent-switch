@@ -101,7 +101,10 @@ test("timeline and files: the session as AS events; repository files by query", 
   assert.ok(JSON.parse(f.stdout).files.includes("a.txt"));
 });
 
-test("bridge: a session driven over stdin — attachments, model, mode, interrupt, an unknown approval, close", gate, () => {
+// The stand-in agent is a script with a shebang, which Windows cannot spawn directly.
+const unixGate = { skip: gate.skip || (process.platform === "win32" ? "a shebang stand-in agent does not spawn on Windows" : false) };
+
+test("bridge: a session driven over stdin — attachments, model, mode, interrupt, an unknown approval, close", unixGate, () => {
   const { home, repo, run } = setup();
   const seen = path.join(home, "agent-stdin");
   const fake = path.join(home, "fake-claude.mjs");

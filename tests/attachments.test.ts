@@ -41,7 +41,8 @@ test("a file in the session's folder is named by its path; one outside is staged
   assert.match(r.ref, /^@.+[\\/][0-9a-f]{16}-notes\.txt$/);
   const staged = r.ref.slice(1);
   assert.equal(fs.readFileSync(staged, "utf8"), "hello");
-  assert.equal(fs.statSync(staged).mode & 0o777, 0o600);
+  // Windows has no POSIX modes; the staging folder under the user's profile is what keeps it private there.
+  if (process.platform !== "win32") assert.equal(fs.statSync(staged).mode & 0o777, 0o600);
   assert.deepEqual(resolveAttachment({ path: outside }, o), r, "the same file stages to the same name");
   const pic = path.join(o.root, "shot.dat");
   fs.writeFileSync(pic, PNG);
