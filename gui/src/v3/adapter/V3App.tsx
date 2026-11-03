@@ -31,6 +31,9 @@ import { OpenInMenu, SessionBody, settingsSection } from "./slots.js";
 import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
 import { useChats } from "./chats.js";
+import { ReviewHost } from "./ReviewHost.js";
+import { fold } from "../timeline.js";
+import { sessionFromRow } from "../../vm/build.js";
 import { ChatView } from "../chatview.js";
 
 const CHANGES_FRESH_MS = 10_000;
@@ -262,6 +265,24 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
         onOpen={(target) => void ipc.openSessionIn(key, target).catch((e: unknown) => s.toast({ tone: "alert", text: `Open failed: ${e instanceof Error ? e.message : String(e)}` }))}
       />
     ),
+    review: (key) => {
+      const tab = chats.tabOf(key);
+      const chat = tab ? chats.states.get(tab) : undefined;
+      const row = byKey.get(key);
+      const running = (chat ? chat.status === "ready" && fold(chat.events).running : false) || (row ? sessionFromRow(row, s.now).state === "working" : false);
+      return (
+        <ReviewHost
+          sessionKey={chat?.session?.key ?? key}
+          title={data.sessions.find((x) => x.key === key)?.title ?? row?.summary ?? key}
+          running={running}
+          comment={chat && chat.status === "ready" ? (text) => chat.send(text) : undefined}
+          agentReview={chat && key.startsWith("codex/") ? chat.review : undefined}
+          toast={(t) => s.toast({ tone: t.tone, text: t.text })}
+          askMessage={(onSubmit) => setPrompt({ title: "Commit message", initial: "", onSubmit })}
+          createPr={() => act({ type: "create-pr", key })}
+        />
+      );
+    },
     usageHistory: <UsageHistory history={history} />,
     pools: <PoolsSection />,
     poolCount: s.pools.length,

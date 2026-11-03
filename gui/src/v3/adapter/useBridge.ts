@@ -27,6 +27,8 @@ export interface BridgeActions {
   deny: (id: string) => void;
   answer: (id: string, answers: Record<string, string>) => void;
   interrupt: () => void;
+  /** Codex: ask the agent to review the uncommitted changes. */
+  review: () => void;
   setModel: (model: string) => void;
   setMode: (mode: ipc.BridgeSpec["mode"]) => void;
   close: () => void;
@@ -101,6 +103,7 @@ export function useBridge(spec: ipc.BridgeSpec | null, deps: BridgeDeps = realDe
     deny: (id) => send({ cmd: "deny", id }),
     answer: (id, answers) => send({ cmd: "answer", id, answers }),
     interrupt: () => send({ cmd: "interrupt" }),
+    review: () => send({ cmd: "review", target: "uncommitted" }),
     setModel: (model) => send({ cmd: "set-model", model }),
     setMode: (mode) => (set((p) => ({ ...p, mode })), send({ cmd: "set-mode", mode })),
     close: () => send({ cmd: "close" }),

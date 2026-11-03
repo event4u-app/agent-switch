@@ -59,6 +59,39 @@ function seed() {
   return s;
 }
 
+/** A small repository with a committed feature, a staged, an unstaged and a new file — what the Review page reads. */
+function reviewRepo(home) {
+  const r = path.join(home, "repo");
+  fs.mkdirSync(path.join(r, "src", "engine"), { recursive: true });
+  const g = (...a) => spawnSync("git", ["-C", r, "-c", "user.name=t", "-c", "user.email=t@example.com", ...a], { encoding: "utf8" });
+  g("init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(r, "src", "engine", "ingest.ts"), "export function ingest(lines: string[]) {\n  return lines.map((l) => l.trim());\n}\n");
+  fs.writeFileSync(path.join(r, "src", "engine", "store.ts"), "export const store = new Map<string, string>();\n");
+  g("add", ".");
+  g("commit", "-qm", "base");
+  g("checkout", "-qb", "feat/ingest");
+  fs.writeFileSync(path.join(r, "src", "engine", "ingest.ts"), "export function ingest(lines: string[]) {\n  return lines.map((l) => l.trim()).filter(Boolean);\n}\n");
+  g("commit", "-qam", "skip blank lines");
+  fs.writeFileSync(path.join(r, "src", "engine", "store.ts"), "export const store = new Map<string, string>();\nexport const size = () => store.size;\n");
+  g("add", "src/engine/store.ts");
+  fs.writeFileSync(path.join(r, "src", "engine", "ingest.ts"), "export function ingest(lines: string[]) {\n  // Blank lines carry no event.\n  return lines.map((l) => l.trim()).filter(Boolean);\n}\n");
+  fs.writeFileSync(path.join(r, "hello.txt"), "hi\n");
+  return r;
+}
+
+/** `diff <key> …` against the prepared repository: the real review code; only the session → folder lookup is replaced. */
+function diffInRepo(repo, args, env) {
+  const [, key, action] = args;
+  const flag = (n) => (args.indexOf(`--${n}`) >= 0 ? args[args.indexOf(`--${n}`) + 1] : undefined);
+  const t = { key, provider: "claude", account: "work", sessionId: "x", cwd: repo, transcript: null };
+  const mod = path.resolve(GUI, "..", "dist", "commands", "diff.js");
+  const body = action && !action.startsWith("--")
+    ? `const r = action === "undo" ? { done: d.undo(t) } : action === "commit" ? { commit: d.commitStaged(t, flag.message) } : d.act(t, action, flag.file, flag.hunk ?? null); console.log(JSON.stringify({ ok: true, ...r }));`
+    : `console.log(JSON.stringify({ key: t.key, scope: flag.scope, shared: [], ...d.review(t, flag.scope ?? "worktree") }));`;
+  const code = `const d = await import(${JSON.stringify(mod)}); const t = ${JSON.stringify(t)}; const action = ${JSON.stringify(action)}; const flag = ${JSON.stringify({ scope: flag("scope"), file: flag("file"), hunk: flag("hunk"), message: flag("message") })}; try { ${body} } catch (e) { console.log(JSON.stringify({ ok: false, error: e.message })); process.exitCode = 2; }`;
+  return spawnSync(process.execPath, ["--input-type=module", "-e", code], { env, encoding: "utf8", timeout: 20_000 });
+}
+
 const FIXED = new Set(["status", "auth-status", "tooling", "doctor", "apps", "providers"]);
 
 async function main() {
@@ -73,6 +106,7 @@ async function main() {
   try {
     for (const [theme, a] of THEMES) {
       const s = seed();
+      const repo = reviewRepo(s.home);
       const kids = new Map();
       const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, colorScheme: a.mode === "light" ? "light" : "dark", locale: "en-US" });
       await context.route(/^(?!http:\/\/127\.0\.0\.1).*/, (r) => (r.request().url().startsWith("data:") ? r.continue() : r.abort()));
@@ -87,7 +121,7 @@ async function main() {
           if (args[0] === "status") return ok(fx.statusJson("claude", args[3] ?? "work", Date.now()));
           return ok(args[0] === "tooling" ? fx.TOOLING : args[0] === "doctor" ? fx.DOCTOR : args[0] === "apps" ? fx.APPS : args[0] === "providers" ? fx.PROVIDERS_STATUS : []);
         }
-        const r = spawnSync(process.execPath, [CLI, ...args], { env: s.env, encoding: "utf8", cwd: options?.cwd || s.home, timeout: 20_000 });
+        const r = args[0] === "diff" ? diffInRepo(repo, args, s.env) : spawnSync(process.execPath, [CLI, ...args], { env: s.env, encoding: "utf8", cwd: options?.cwd || s.home, timeout: 20_000 });
         return { code: r.status ?? 1, signal: null, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
       });
       await page.exposeFunction("__asSpawn", async ({ args }) => {
@@ -141,6 +175,16 @@ async function main() {
         await step("the answer arrives", () => page.getByText(/^done$/i).first().waitFor({ timeout: 15_000 }));
         await step("the card shows the decision", () => page.getByText(/Write allowed/).waitFor({ timeout: 5_000 }));
         await page.screenshot({ path: path.join(OUT, `chat-done-${theme}.png`) });
+        (findings[theme] ??= []).push(...(await page.evaluate(inspect)));
+        await step("open Changes", () => page.getByLabel("Changes", { exact: true }).click());
+        await step("Review changes", () => page.getByText("Review changes").click());
+        await step("the review lists the files", () => page.getByText("3 files changed").waitFor({ timeout: 15_000 }));
+        await page.screenshot({ path: path.join(OUT, `review-${theme}.png`) });
+        (findings[theme] ??= []).push(...(await page.evaluate(inspect)));
+        await step("stage a hunk", () => page.getByText("Stage hunk").first().click());
+        await step("git staged it", () => page.getByText(/^Staged /).first().waitFor({ timeout: 15_000 }));
+        await step("split layout", () => page.getByRole("radio", { name: "Split" }).click());
+        await page.screenshot({ path: path.join(OUT, `review-split-${theme}.png`) });
         (findings[theme] ??= []).push(...(await page.evaluate(inspect)), ...errors.map((e) => `page error: ${e}`));
       } catch {
         await page.screenshot({ path: path.join(OUT, `chat-failed-${theme}.png`) });

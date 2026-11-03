@@ -21,6 +21,7 @@ function chat(over: Partial<Chat> = {}): Chat {
     deny: vi.fn(),
     answer: vi.fn(),
     interrupt: vi.fn(),
+    review: vi.fn(),
     setModel: vi.fn(),
     setMode: vi.fn(),
     close: vi.fn(),

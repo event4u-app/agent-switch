@@ -153,18 +153,41 @@ drag & drop upload · D10 diffs, collapsible · D11 "a real client".
 
 ## Phase 3 — Changes and review
 
-- [ ] Review page tab per spec §10.9: scope segmented This turn (diff events) /
+- [x] Review page tab per spec §10.9: scope segmented This turn (diff events) /
       Session / Worktree vs main (merge-base) / Staged, plus Unified / Split.
       Bash-made changes visible via `git diff`. Opened from "Review changes" in the
       Changes window.
-- [ ] File tree with the Marker on the current file; `agent-switch diff --json`.
-- [ ] While a turn runs: the info strip, and stage / discard / revert disabled with
+      → `gui/src/v3/review.tsx` + `adapter/ReviewHost.tsx`, a page tab per
+      session ("Review · <title>"). "Worktree vs main" compares with the merge
+      base of origin's HEAD (else main/master) and lists Bash changes and new
+      files; "Session" starts at the commit HEAD was on when the transcript
+      began; "This turn" reads the last turn's diff events. `npm --prefix gui run v31-chat` opens it
+      from Changes › Review changes over a real repository, stages a change and
+      switches to Split — 1440×900, three themes, render checks clean.
+- [x] File tree with the Marker on the current file; `agent-switch diff --json`.
+- [x] While a turn runs: the info strip, and stage / discard / revert disabled with
       "Unlocks when the turn ends" (§13.4).
-- [ ] Discard / stage / unstage hunks with preflight (index lock, diff hash) and
+      → In the page and again in the CLI: `diff` refuses an action while the
+      transcript shows an unfinished turn or the session's bridge has an open
+      approval.
+- [x] Discard / stage / unstage hunks with preflight (index lock, diff hash) and
       undo; only while no turn runs. Several sessions in one worktree → conflict flag.
-- [ ] A line comment is "sent when the turn ends" as the next prompt; "Commit N
+      → `src/commands/diff.ts`: `git apply` with the exact hunk after a
+      `--check`; refused on `index.lock`, on a hunk that changed since it was
+      shown (its hash), on a running turn. A discard keeps the patch (a new file:
+      a copy) under the state root, and `diff <s> undo` puts it back unless the
+      file moved on. Other live sessions in the same worktree come back as
+      `shared` and show a warning. Tests run against real repositories
+      (`tests/diff-review.test.ts`).
+- [x] A line comment is "sent when the turn ends" as the next prompt; "Commit N
       staged…" and "Create PR"; Codex `review/start`.
-- [ ] Rewind via the terminal (no own rewind rebuild).
+      → A comment goes to the session's chat, whose bridge queues it while a
+      turn runs (without a chat here the button says to open the chat view).
+      "Commit N staged…" asks for a message and runs `git commit` with the
+      repository's hooks; "Create PR" is the existing action. Codex: "Ask Codex
+      to review" sends `review/start` on the uncommitted changes (bridge test).
+- [x] Rewind via the terminal (no own rewind rebuild).
+      → The page says "Rewind stays in the terminal"; nothing is rebuilt.
 
 ## Phase 4 — Terminal ⇄ chat switch
 

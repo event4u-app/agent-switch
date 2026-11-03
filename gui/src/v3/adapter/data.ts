@@ -385,7 +385,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       return n && { text: n.text, action: n.action };
     },
     menu: (key) => menuFor(byKey.get(key), hosted.has(key)),
-    commitAvailable: false,
+    // v3.1: "Commit…" opens the Review page, where staged changes are committed.
+    commitAvailable: true,
   };
 }
 
