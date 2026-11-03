@@ -372,16 +372,17 @@ export function hookNotice(
   who: { provider: string; profile: string },
 ): { kind: "info" | "warning"; title: string; message: string } | null {
   const name = `${who.provider}/${who.profile}`;
+  const tool = who.provider === "codex" ? "Codex" : "Claude";
   if (rec.event === "StopFailure") {
     const reason = (rec.error && STOP_REASONS[rec.error]) ?? `stopped with an error${rec.error ? ` (${rec.error})` : ""}`;
-    return { kind: "warning", title: "Claude stopped", message: `${name} ${reason}.` };
+    return { kind: "warning", title: `${tool} stopped`, message: `${name} ${reason}.` };
   }
   if (rec.event === "Notification") {
     const wait = rec.notificationType ? HOST_WAIT_TEXT[rec.notificationType] : undefined;
-    if (wait) return { kind: rec.notificationType === "quota_auto_resume_fired" ? "info" : "warning", title: "Claude at the limit", message: `${name} ${wait}.` };
-    return { kind: "warning", title: "Claude is waiting", message: `${name} needs your input.` };
+    if (wait) return { kind: rec.notificationType === "quota_auto_resume_fired" ? "info" : "warning", title: `${tool} at the limit`, message: `${name} ${wait}.` };
+    return { kind: "warning", title: `${tool} is waiting`, message: `${name} needs your input.` };
   }
-  if (rec.event === "Stop") return { kind: "info", title: "Claude finished", message: `${name} finished its turn.` };
+  if (rec.event === "Stop") return { kind: "info", title: `${tool} finished`, message: `${name} finished its turn.` };
   return null;
 }
 
