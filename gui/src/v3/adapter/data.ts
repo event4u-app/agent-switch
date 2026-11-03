@@ -55,6 +55,9 @@ export const NEW_CHAT = "chat:new";
 export const sessionKey = (r: Pick<SessionRow, "provider" | "profile" | "sessionId">) => `${r.provider}/${r.profile}/${r.sessionId}`;
 
 /** Local midnight before `now`. */
+/** The desktop apps Open in may offer, one per tool. */
+const AGENT_APPS = ["claude-desktop", "codex-desktop"];
+
 export function startOfDay(now: number): number {
   const d = new Date(now);
   d.setHours(0, 0, 0, 0);
@@ -345,7 +348,15 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     palette,
     appearance: env.appearance,
     prefersDark: env.prefersDark,
-    openIn: { targets, defaultTarget: feeds.openTargets?.default ?? null, perRepo: feeds.openTargets?.perRepo ?? {}, focusTerminal: env.focusTerminal },
+    openIn: {
+      targets,
+      defaultTarget: feeds.openTargets?.default ?? null,
+      lastUsed: feeds.openTargets?.lastUsed ?? null,
+      perRepo: feeds.openTargets?.perRepo ?? {},
+      focusTerminal: env.focusTerminal,
+      // Only the desktop apps of a tool, and only where they are installed (spec §7.7).
+      agentApps: vm.surfaces.filter((x) => x.kind === "desktop" && x.detected && AGENT_APPS.includes(x.id)).map((x) => ({ id: x.id, label: x.name, tool: x.tool })),
+    },
     agents: { rows: feeds.agents?.agents ?? [], suggestions: feeds.agents?.suggestions ?? [] },
     remote: { remoteControl: feeds.remote?.remoteControlAccounts ?? [], ssh: feeds.remote?.ssh ?? false },
     newSession: { initial: env.plan, facts },

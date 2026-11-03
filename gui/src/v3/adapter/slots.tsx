@@ -1,9 +1,8 @@
 /** The pieces of the v3 window that come from elsewhere: the session body
- *  (hosted terminal or the user's own terminal), the Open ▾ menu, and the
+ *  (hosted terminal or the user's own terminal) and the
  *  2.11 settings sections v3 keeps. */
 
-import { useState, type ReactNode } from "react";
-import { ChevronDown } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { tauriBackend } from "../../terminal.js";
 import type { SessionRow } from "../../transforms.js";
@@ -16,8 +15,7 @@ import { ProtectionSettings } from "../../redesign/screens/settings/protection.j
 import { ProvidersSettings } from "../../redesign/screens/settings/providers.js";
 import { SignInSettings } from "../../redesign/screens/settings/sign-ins.js";
 import { UpdatesSettings } from "../../redesign/screens/settings/updates.js";
-import { Act } from "../kit.js";
-import type { OpenTarget, SettingsSection } from "../settings.js";
+import type { SettingsSection } from "../settings.js";
 import { ChatTimeline } from "../chat.js";
 import { ExternalBody, HostedTerminal } from "../workbench.js";
 import { useTimeline } from "./useTimeline.js";
@@ -51,37 +49,6 @@ export function settingsSection(section: SettingsSection): ReactNode {
     case "Remote":
       return null;
   }
-}
-
-/** Open ▾ for one session: the installed targets, the default first. */
-export function OpenInMenu({ targets, defaultTarget, onOpen }: { targets: OpenTarget[]; defaultTarget: string | null; onOpen: (target: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const usable = targets.filter((t) => t.installed && t.kind !== "agent-app");
-  if (!usable.length) return null;
-  const ordered = [...usable].sort((a, b) => Number(b.target === defaultTarget) - Number(a.target === defaultTarget));
-  return (
-    <div className="relative shrink-0">
-      <Act onClick={() => setOpen((v) => !v)} title="Open this session's worktree">
-        Open <ChevronDown className="size-3.5" />
-      </Act>
-      {open && (
-        <div role="menu" aria-label="Open in" className="absolute right-0 top-8 z-20 w-[200px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
-          {ordered.map((t) => (
-            <button
-              key={t.target}
-              type="button"
-              role="menuitem"
-              onClick={() => (setOpen(false), onOpen(t.target))}
-              className="flex h-8 w-full items-center justify-between rounded-md px-2.5 text-left text-[13px] text-ac-soft hover:bg-ac-raise"
-            >
-              {t.label}
-              {t.target === defaultTarget && <span className="text-[11px] text-ac-faint">default</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 /** The session body: Agent Switch's own terminal for a hosted session, the

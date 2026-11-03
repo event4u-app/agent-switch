@@ -27,7 +27,7 @@ import { V3Window, type V3Action, type V3Slots } from "../window.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
 import { sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
-import { OpenInMenu, SessionBody, settingsSection } from "./slots.js";
+import { SessionBody, settingsSection } from "./slots.js";
 import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
 import { useChats } from "./chats.js";
@@ -322,13 +322,6 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       />
       );
     },
-    openIn: (key) => (
-      <OpenInMenu
-        targets={data.openIn.targets}
-        defaultTarget={data.openIn.defaultTarget}
-        onOpen={(target) => void ipc.openSessionIn(key, target).catch((e: unknown) => s.toast({ tone: "alert", text: `Open failed: ${e instanceof Error ? e.message : String(e)}` }))}
-      />
-    ),
     review: (key) => {
       const tab = chats.tabOf(key);
       const chat = tab ? chats.states.get(tab) : undefined;

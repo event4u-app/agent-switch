@@ -31,6 +31,8 @@ export interface DispatchIpc {
   cleanupMerged(): Promise<void>;
   engineRestart(): Promise<void>;
   renameSession(key: string, name: string): Promise<void>;
+  openSessionIn(key: string, target?: string): Promise<void>;
+  openApp(appId: string, name: string): Promise<void>;
 }
 
 export interface DispatchDeps {
@@ -199,6 +201,15 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       return deps.open({ kind: "confirm", title: "Clean up merged worktrees?", body: "Removes the worktrees of sessions whose PR is merged. A worktree with changes is skipped.", confirm: "Clean up", onConfirm: () => void run(deps, "Clean up", deps.ipc.cleanupMerged()) });
     case "view":
       return deps.switchView?.(a.key, a.view);
+    case "open-in": {
+      const p = a.pick;
+      if (p.kind === "pr") return deps.openUrl(p.url);
+      if (p.kind === "focus") return run(deps, "Focus", deps.ipc.focusSessionTerminal(a.key));
+      // The app opens on the session's own account; it never resumes the conversation (spike S9).
+      if (p.kind === "app") return run(deps, "Open", deps.ipc.openApp(p.app, a.key.split("/")[1] ?? ""));
+      if (p.kind === "target") return run(deps, "Open", deps.ipc.openSessionIn(a.key, p.target));
+      return run(deps, "Open", deps.ipc.openSessionIn(a.key));
+    }
     case "model":
     case "thinking": {
       const chat = deps.chatOf?.(a.key);

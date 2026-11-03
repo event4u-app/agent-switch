@@ -28,6 +28,8 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
     cleanupMerged: vi.fn(async () => {}),
     engineRestart: vi.fn(async () => {}),
     renameSession: vi.fn(async () => {}),
+    openSessionIn: vi.fn(async () => {}),
+    openApp: vi.fn(async () => {}),
   };
   const rows = new Map<string, SessionRow>([
     ["claude/work/a", row("a", { prs: [PR], git: { toplevel: "/r", branch: "feat/x", headSha: "h", dirty: false, changed: 0, ahead: 1, behind: 0, upstream: "origin/feat/x", remote: "git@github.com:o/r.git", worktree: false, cwd: "/r", cwdSource: "hook" } })],
@@ -54,6 +56,20 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe("dispatchV3", () => {
+  it("open-in: default, a target, the tool's app on the session's account, the PR, focus", async () => {
+    const d = deps();
+    await dispatchV3({ type: "open-in", key: "claude/work/a", pick: { kind: "default" } }, d);
+    expect(d.ipc.openSessionIn).toHaveBeenLastCalledWith("claude/work/a");
+    await dispatchV3({ type: "open-in", key: "claude/work/a", pick: { kind: "target", target: "vscode" } }, d);
+    expect(d.ipc.openSessionIn).toHaveBeenLastCalledWith("claude/work/a", "vscode");
+    await dispatchV3({ type: "open-in", key: "codex/home/a", pick: { kind: "app", app: "codex-desktop" } }, d);
+    expect(d.ipc.openApp).toHaveBeenCalledWith("codex-desktop", "home");
+    dispatchV3({ type: "open-in", key: "claude/work/a", pick: { kind: "pr", url: "https://github.com/o/r/pull/9" } }, d);
+    expect(d.openUrl).toHaveBeenCalledWith("https://github.com/o/r/pull/9");
+    await dispatchV3({ type: "open-in", key: "claude/work/a", pick: { kind: "focus" } }, d);
+    expect(d.ipc.focusSessionTerminal).toHaveBeenCalledWith("claude/work/a");
+  });
+
   it("needs: approval focuses the terminal, CI opens the checks, sign-in opens re-auth", async () => {
     const d = deps();
     await dispatchV3({ type: "need", item: need({}) }, d);

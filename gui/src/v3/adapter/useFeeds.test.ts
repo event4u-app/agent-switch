@@ -10,7 +10,7 @@ function deps(over: Partial<FeedDeps> = {}): FeedDeps {
     engine: ok({ running: true, reason: null, hostedRunning: 1 }),
     host: ok({ mode: "persistent" as const, hosted: [] }),
     library: ok({ autoKeep: true, vaultBytes: 0, entries: [] }),
-    openTargets: ok({ default: null, perRepo: {}, targets: [] }),
+    openTargets: ok({ default: null, perRepo: {}, lastUsed: null, targets: [] }),
     agents: ok({ agents: [], suggestions: [] }),
     remote: ok({ remoteControlAccounts: [], ssh: false }),
     codexRows: ok([]),

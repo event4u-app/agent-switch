@@ -22,6 +22,7 @@ import type { Appearance } from "./themes/resolve.js";
 import { ToolsPage, updateNeeds } from "./tools.js";
 import { BlockerStrip, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type TabItem } from "./workbench.js";
 import type { BatchActions } from "./kit.js";
+import { OpenInButton, OpenInMenu, monogram, type OpenFacts, type OpenPick } from "./menus.js";
 
 export interface V3Data {
   nowMs: number;
@@ -40,7 +41,7 @@ export interface V3Data {
   palette: PaletteEntry[];
   appearance: Appearance;
   prefersDark: boolean;
-  openIn: { targets: OpenTarget[]; defaultTarget: string | null; perRepo: Record<string, string>; focusTerminal: boolean };
+  openIn: { targets: OpenTarget[]; defaultTarget: string | null; lastUsed: string | null; perRepo: Record<string, string>; focusTerminal: boolean; agentApps: { id: string; label: string; tool: string }[] };
   /** Settings › Agents (v3.2). */
   agents: { rows: AgentRowView[]; suggestions: AgentSuggestionView[] };
   /** Settings › Remote (v3.2): R1 accounts and the SSH stage. */
@@ -61,7 +62,6 @@ export interface V3Data {
 export interface V3Slots {
   /** The session body: the hosted terminal or the user's-own-terminal view. */
   body: (key: string) => ReactNode;
-  openIn: (key: string) => ReactNode;
   usageHistory: ReactNode;
   pools: ReactNode;
   poolCount: number;
@@ -87,6 +87,7 @@ export type V3Action =
   | { type: "batch"; op: keyof BatchActions; keys: string[] }
   | { type: "clean-up" }
   | { type: "view"; key: string; view: "terminal" | "chat" }
+  | { type: "open-in"; key: string; pick: Exclude<OpenPick, { kind: "configure" }> | { kind: "default" } }
   | { type: "model" | "thinking"; key: string }
   | { type: "blocker"; key: string }
   | { type: "create-pr" | "open-pr" | "review" | "commit"; key: string }
@@ -129,7 +130,7 @@ export function V3Window({ data, slots, act, focus }: { data: V3Data; slots: V3S
   const [pages, setPages] = useState<Page[]>([]);
   const [sessionTabs, setSessionTabs] = useState<string[]>([]);
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | { decide: string } | { menu: string }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | { decide: string } | { menu: string } | { openin: string }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -232,6 +233,23 @@ export function V3Window({ data, slots, act, focus }: { data: V3Data; slots: V3S
     );
   };
 
+  const openFacts = (key: string): OpenFacts => {
+    const tool = key.split("/")[0];
+    const app = data.openIn.agentApps.find((a) => a.tool === tool);
+    const pr = data.summary(key)?.pr;
+    return {
+      targets: data.openIn.targets,
+      defaultTarget: data.openIn.defaultTarget,
+      lastUsed: data.openIn.lastUsed,
+      agentApp: app ? { id: app.id, label: app.label } : null,
+      pr: pr ? { number: pr.number, url: pr.url } : null,
+      focusable: !data.bar(key)?.hosted,
+    };
+  };
+  const openDefault = (key: string) => act({ type: "open-in", key, pick: { kind: "default" } });
+  const defTarget = data.openIn.targets.find((t) => t.installed && t.target === data.openIn.defaultTarget) ?? null;
+  const openMenuOf = overlay && typeof overlay === "object" && "openin" in overlay ? overlay.openin : null;
+
   const centre = (
     <section className="flex min-w-0 flex-1 flex-col bg-ac-bg">
       <TabStrip
@@ -252,7 +270,16 @@ export function V3Window({ data, slots, act, focus }: { data: V3Data; slots: V3S
         <>
           <SessionBar
             s={bar}
-            openIn={slots.openIn(activeSession)}
+            openIn={
+              data.openIn.targets.length ? (
+                <OpenInButton
+                  def={defTarget && { label: defTarget.label, mono: monogram(defTarget.target, defTarget.label) }}
+                  open={openMenuOf === activeSession}
+                  onDefault={() => openDefault(activeSession)}
+                  onMenu={() => setOverlay((o) => (o && typeof o === "object" && "openin" in o ? null : { openin: activeSession }))}
+                />
+              ) : null
+            }
             on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => setOverlay({ decide: activeSession }), model: () => act({ type: "model", key: activeSession }), thinking: () => act({ type: "thinking", key: activeSession }), menu: () => setOverlay({ menu: activeSession }) }}
           />
           {next && <BlockerStrip text={next.text} action={next.action} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
@@ -319,6 +346,18 @@ export function V3Window({ data, slots, act, focus }: { data: V3Data; slots: V3S
       <NewSessionDialog initial={data.newSession.initial} facts={data.newSession.facts} onClose={close} onChooseAccount={() => act({ type: "choose-account" })} onStart={(plan) => (close(), act({ type: "start", plan }))} />
     ) : decision ? (
       <DecisionSheet {...decision} room={null} onClose={close} onKeep={() => (close(), act({ type: "keep-account", account: decision.account }))} onDecide={(how, moves) => (close(), act({ type: "move", how, moves }))} />
+    ) : openMenuOf ? (
+      // Outside the session bar, which clips at 40 px (spec §7.7); anchored under the caret.
+      <div className="absolute right-[52px] top-[118px] z-10">
+        <OpenInMenu
+          f={openFacts(openMenuOf)}
+          onPick={(p) => {
+            close();
+            if (p.kind === "configure") return (setSection("Open in"), openPage("settings"));
+            act({ type: "open-in", key: openMenuOf, pick: p });
+          }}
+        />
+      </div>
     ) : overlay && typeof overlay === "object" && "menu" in overlay ? (
       <div role="menu" aria-label="Session actions" className="absolute right-3 top-[124px] z-10 w-[240px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
         {(data.menu ? data.menu(overlay.menu) : SESSION_MENU).map((item) => (
