@@ -14,7 +14,7 @@ execution:
 > renders `RedesignApp`, so `npm run tauri dev` shows the 2.11 window. Owner
 > observation the same turn: "es startet nur das alte GUI und nicht das neue".
 >
-> Parent: [`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)
+> Parent: [`road-to-agent-switch-v3-central.md`](../road-to-agent-switch-v3-central.md)
 > (Phases 6–9 built the components this roadmap feeds).
 
 ## Branch
@@ -167,13 +167,43 @@ reachable behind a setting for one release, then goes.
 
 ## Phase 4 — Proof
 
-- [ ] Smoke: `npm run tauri dev` opens the v3 window with real accounts and
+- [x] Smoke: `npm run tauri dev` opens the v3 window with real accounts and
       sessions; record which spec §11 rows were exercised live.
-- [ ] Render check at 1440×900 in darcula, github-light and one high-contrast
+      → 2026-11-03, the owner's machine, CLI from this branch on PATH: the
+      window opened on 10 live sessions, "Done today 8", six accounts in the
+      strip and the engine-down banner; a session tab showed its bar (account,
+      model, thinking, context), the own-terminal body and Open ▾. Six minutes
+      with window hide/show and the tray loaded: no "Scoped command … not
+      found" line. Rows exercised: overview, session tab, open-in, health.
+      Note for the owner: the installed CLI on PATH is still 2.11, which has
+      none of the v3 commands; `tauri dev` needs this branch's CLI first on
+      PATH until v3 ships.
+- [x] Render check at 1440×900 in darcula, github-light and one high-contrast
       theme with real data (long names, 0 and 40 sessions, engine down) —
       nothing clipped, per the parent's design acceptance.
-- [ ] GUI coverage floor holds; `reach.test.tsx` runs against `V3App` with
+      → `npm --prefix gui run v3-render` (`gui/scripts/screenshots/v3-render.mjs`):
+      3 themes × seeded / 40 sessions / none, real CLI on a seeded home, checks
+      page scroll, clipping without ellipsis, text past a clipping edge,
+      wrapped controls and that the theme reaches the window. Found and fixed,
+      each seen red first: (1) the v3 theme never reached the window — the
+      `.as-ac` root's defaults won over tokens on <html>, so every theme drew
+      the 2.11 palette; the tokens now go on the root; (2) absolutely placed
+      screen-reader text in tables escaped the unpositioned scroll containers
+      and made the whole document scroll (1921 px at 40 rows); every v3
+      scroll container is positioned now; (3) Chromium kept the ellipsis
+      decision when only the weight changed, so a selected title ran past its
+      edge; the title node is re-created on selection (session row, theme
+      name; component test red without it). All nine frames clean.
+- [x] GUI coverage floor holds; `reach.test.tsx` runs against `V3App` with
       the adapter on fixture CLI output, not only against raw props.
+      `gui/src/v3/adapter/reach-app.test.tsx` mounts `V3App` behind a mocked
+      shell that answers from fixture CLI lines (9 rows: overview, library,
+      session actions, near-limit decision, open-in, activity, engine
+      down/up, start + why). Seen red first: the decision row failed until the
+      fixture carried `status --provider` usage — a limit need without a
+      known window opens no sheet. Full suite 76 files / 818 tests green;
+      coverage 91.3 / 85.7 / 73.4 / 91.3 (floor 78 / 82 / 69 / 78); `tsc
+      --noEmit` clean.
 
 ## Acceptance
 
