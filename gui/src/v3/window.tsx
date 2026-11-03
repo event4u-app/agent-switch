@@ -499,6 +499,7 @@ export function V3Window({
           projectOf={groupByProject ? (k) => data.table.find((t) => t.key === k)?.project ?? null : undefined}
           onStart={() => setOverlay("new")}
           onPeek={onPeek}
+          divider={needs.length > 0 || !!data.away}
           selection={selection}
           openKeys={openKids}
           onSelect={openSession}

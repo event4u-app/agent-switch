@@ -107,6 +107,49 @@ export function ChildLine({ c }: { c: ChildModel }) {
   );
 }
 
+/**
+ * Chromium can drop a truncated span's "…" after the span's row is restyled
+ * (hover, focus, a click on the active row; a font weight loading on first
+ * use; a width change), and the text then runs past the edge. Measured in
+ * v3-render: correct before the click, clipped after it, correct again once
+ * the span is laid out anew. Re-laying the span out after such an event
+ * makes it decide again.
+ */
+function useEllipsisRefresh(ref: { current: HTMLElement | null }, remount: unknown) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const refresh = () => {
+      if (el.scrollWidth <= el.clientWidth) return;
+      el.style.display = "none";
+      void el.offsetWidth;
+      el.style.display = "";
+    };
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(refresh);
+    ro?.observe(el);
+    const fonts = typeof document === "undefined" ? undefined : document.fonts;
+    fonts?.addEventListener?.("loadingdone", refresh);
+    let frame = 0;
+    const later = () => {
+      if (typeof requestAnimationFrame === "undefined") return refresh();
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(refresh);
+    };
+    later();
+    // Pointer and focus on the row restyle it, which can drop the "…" again.
+    const row = el.closest("[role=button]");
+    const events = ["mouseenter", "mouseleave", "focus", "click"] as const;
+    for (const e of events) row?.addEventListener(e, later);
+    return () => {
+      ro?.disconnect();
+      fonts?.removeEventListener?.("loadingdone", refresh);
+      for (const e of events) row?.removeEventListener(e, later);
+      if (frame) cancelAnimationFrame(frame);
+    };
+    // `remount`: the span is keyed and replaced; observe the new one.
+  }, [ref, remount]);
+}
+
 export function SessionRow({
   s,
   active,
@@ -134,6 +177,8 @@ export function SessionRow({
   const second = active || comfortable;
   const slot = trailing(s);
   const ref = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLSpanElement>(null);
+  useEllipsisRefresh(titleRef, active);
   useEffect(() => {
     if (active) ref.current?.scrollIntoView?.({ block: "nearest" });
   }, [active]);
@@ -163,7 +208,7 @@ export function SessionRow({
           )}
           {/* Keyed on the weight: Chromium keeps the ellipsis decision of the old weight
               when only font-weight changes, and the heavier title then runs past the edge. */}
-          <span key={active ? "on" : "off"} className={cn("min-w-0 flex-1 truncate text-[13px]", active ? "font-medium text-ac-text" : "text-ac-soft")} title={s.title}>
+          <span key={active ? "on" : "off"} ref={titleRef} className={cn("min-w-0 flex-1 truncate text-[13px]", active ? "font-medium text-ac-text" : "text-ac-soft")} title={s.title}>
             {s.title}
           </span>
           {/* One trailing slot per row (spec §5.2, boards "Work" and "Hover a row"): the children
@@ -217,6 +262,7 @@ export function SessionsZone({
   onStart,
   projectOf,
   onPeek,
+  divider = true,
   batch,
 }: {
   sessions: RowSession[];
@@ -236,6 +282,8 @@ export function SessionsZone({
   /** Group by project: the project of a row, or null for rows outside a repo. */
   projectOf?: (key: string) => string | null;
   onPeek?: (key: string | null, y: number) => void;
+  /** The line under the Needs-you zone; absent when that zone is hidden. */
+  divider?: boolean;
   batch: BatchActions;
 }) {
   const live = liveOrder(sessions);
@@ -245,7 +293,7 @@ export function SessionsZone({
   const rowsOf = (g: string) => (projectOf ? live.filter((s) => (projectOf(s.key) ?? "") === g) : live);
   return (
     <section aria-label="Sessions">
-      <div className="mx-3.5 my-1.5 h-px bg-ac-line" />
+      {divider ? <div className="mx-3.5 my-1.5 h-px bg-ac-line" /> : <div className="h-2" />}
       <div className="sticky top-0 z-[1] flex h-8 items-center gap-2 bg-ac-panel px-3.5">
         <span className="text-[11px] font-semibold text-ac-soft">Sessions</span>
         <span className="text-[11px] text-ac-muted">{live.length}</span>

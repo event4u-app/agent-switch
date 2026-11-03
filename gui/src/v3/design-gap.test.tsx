@@ -353,3 +353,31 @@ describe("hover peek and engine banner (gap §4d–§4e)", () => {
     expect(a).toHaveBeenCalledWith({ type: "restart-engine" });
   });
 });
+
+describe("empty home (gap §5d)", () => {
+  it("no line hangs under the header when the Needs-you zone is hidden", () => {
+    mount({ sessions: [], needs: [], away: null, tools: [] });
+    const zone = within(screen.getByLabelText("Sessions window")).getByLabelText("Sessions");
+    expect(zone.querySelector(".h-px")).toBeNull();
+  });
+});
+
+describe("a long active title keeps its ellipsis (v3-render, seeded)", () => {
+  it("an overflowing title is laid out anew after the row is hovered", () => {
+    const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => (cb(0), 1));
+    try {
+      const d = data();
+      mount({ sessions: [{ ...d.sessions[0], title: "Knowledge map: edge filter for stale links" }] });
+      const title = within(screen.getByLabelText("Sessions window")).getByText("Knowledge map: edge filter for stale links");
+      Object.defineProperty(title, "scrollWidth", { configurable: true, value: 257 });
+      Object.defineProperty(title, "clientWidth", { configurable: true, value: 253 });
+      const shown: string[] = [];
+      const style = title.style;
+      Object.defineProperty(title, "style", { configurable: true, value: new Proxy(style, { set: (t, k, v) => (k === "display" && shown.push(v), Reflect.set(t, k, v)) }) });
+      fireEvent.mouseEnter(title.closest("[role=button]")!);
+      expect(shown).toEqual(["none", ""]);
+    } finally {
+      raf.mockRestore();
+    }
+  });
+});

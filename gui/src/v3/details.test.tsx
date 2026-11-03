@@ -1,7 +1,7 @@
 /** Gap report §6: the details of dialogs and pages, each against the board. */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { readFileSync } from "node:fs";
+import css from "../index.css?raw";
 import { DecisionSheet } from "./dialogs.js";
 import { RoomLeft } from "./limits.js";
 import { lastSeen } from "./pages.js";
@@ -78,7 +78,6 @@ describe("Decision sheet (spec §8.2)", () => {
 
 describe("palette input", () => {
   it("draws no focus ring of its own; the palette is the focus context", () => {
-    const css = readFileSync(`${process.cwd()}/src/index.css`, "utf8");
     expect(css).toMatch(/\.as-ac input\[data-palette\]:focus-visible\s*\{\s*outline: none;/);
   });
 });
