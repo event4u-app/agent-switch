@@ -390,7 +390,8 @@
   {
    "t": "subagent.finished",
    "id": "toolu_01DuCWm5Z2WWRPJdy7vqcwSn",
-   "ok": true
+   "ok": true,
+   "agentId": "a5eecd939d393506b"
   },
   {
    "t": "unknown",

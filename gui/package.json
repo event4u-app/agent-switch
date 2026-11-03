@@ -11,7 +11,8 @@
     "screenshots": "node scripts/screenshots/capture.mjs",
     "tauri": "tauri",
     "coverage": "vitest run --coverage",
-    "v3-render": "node scripts/screenshots/v3-render.mjs"
+    "v3-render": "node scripts/screenshots/v3-render.mjs",
+    "v31-chat": "node scripts/screenshots/v31-chat.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.3.1",

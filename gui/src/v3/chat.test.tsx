@@ -36,6 +36,16 @@ describe("ChatTimeline", () => {
     expect(screen.getByText("Same rule as the terminal prompt · never bypassed")).toBeTruthy();
   });
 
+  it("a subagent with a worktree from its hook shows the violet badge; without one, none", () => {
+    const ev = fx.transcript as AsEvent[];
+    const agentId = (ev.find((e) => e.t === "subagent.finished") as { agentId?: string }).agentId!;
+    const { unmount } = render(<ChatTimeline events={ev} on={{ worktreeOf: (id) => (id === agentId ? "es-migrate" : null) }} />);
+    expect(screen.getByText("es-migrate")).toBeTruthy();
+    unmount();
+    render(<ChatTimeline events={ev} />);
+    expect(screen.queryByText("es-migrate")).toBeNull();
+  });
+
   it("an empty session says so", () => {
     render(<ChatTimeline events={[]} />);
     expect(screen.getByText("Nothing in this session yet.")).toBeTruthy();

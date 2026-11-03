@@ -6,7 +6,7 @@
  * window owns layout state only — never a session, an account or a file.
  */
 
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Layers, Library, ListTree, Settings, Wrench } from "lucide-react";
 import type { ToolEntry } from "../vm/types.js";
 import { DecisionSheet, NewSessionDialog, type MoveHow, type NewSessionFacts, type NewSessionPlan, type SheetSession } from "./dialogs.js";
@@ -113,7 +113,7 @@ export const PAGE_COMMANDS: PaletteEntry[] = [
   { id: "page:settings", group: "commands", title: "Settings", hint: "⌘," },
 ];
 
-export function V3Window({ data, slots, act }: { data: V3Data; slots: V3Slots; act: (a: V3Action) => void }) {
+export function V3Window({ data, slots, act, focus }: { data: V3Data; slots: V3Slots; act: (a: V3Action) => void; focus?: { key: string; n: number } }) {
   const [pages, setPages] = useState<Page[]>([]);
   const [sessionTabs, setSessionTabs] = useState<string[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -134,6 +134,12 @@ export function V3Window({ data, slots, act }: { data: V3Data; slots: V3Slots; a
     setSessionTabs((cur) => (cur.includes(key) ? cur : [...cur, key]));
     setActive(key);
   };
+  // The app opens a tab itself: a new chat, a Needs-you item that lives in a chat.
+  useEffect(() => {
+    if (focus) openSession(focus.key);
+    // focus.n is the request; the key alone repeats.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.n]);
 
   // Tool updates join the queue (spec §10.4); limit items open the decision sheet.
   const needs = useMemo(() => [...data.needs, ...updateNeeds(data.tools, new Date(data.nowMs).toISOString())], [data.needs, data.tools, data.nowMs]);

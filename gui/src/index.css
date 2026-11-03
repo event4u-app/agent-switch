@@ -358,6 +358,8 @@ body {
 .as-ac [role="listbox"]:focus-visible {
   outline: none;
 }
+/* The chat composer shows focus on its frame (focus-within), not on the bare field. */
+.as-ac textarea[data-composer]:focus-visible,
 .as-ac input[role="combobox"]:focus-visible {
   outline: none;
 }

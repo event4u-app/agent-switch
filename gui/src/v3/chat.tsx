@@ -3,7 +3,7 @@
  *  caller passes the approval and question handlers (a bridged session). */
 
 import { useMemo, useState, type ReactNode } from "react";
-import { Check, ChevronDown, ChevronRight, Hand, ListChecks, MessageCircleQuestion, TriangleAlert } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, FolderGit2, Hand, ListChecks, MessageCircleQuestion, TriangleAlert } from "lucide-react";
 
 import { cn } from "../lib/utils.js";
 import { Button } from "../ui/Button.js";
@@ -14,7 +14,7 @@ import { VirtualList } from "./virtual.js";
 
 export function Bubble({ children, images = 0 }: { children: ReactNode; images?: number }) {
   return (
-    <div className="ml-auto max-w-[78%] whitespace-pre-wrap rounded-[10px] bg-ac-raise px-3.5 py-2 text-[13px] text-ac-text">
+    <div className="ml-auto w-fit max-w-[78%] whitespace-pre-wrap rounded-[10px] bg-ac-raise px-3.5 py-2 text-[13px] text-ac-text">
       {children}
       {images > 0 && <span className="mt-1 block text-[11px] text-ac-muted">{images === 1 ? "1 image" : `${images} images`}</span>}
     </div>
@@ -71,7 +71,7 @@ export function ToolCard({ row }: { row: Extract<ChatRow, { k: "tool" }> }) {
   );
 }
 
-export function SubagentRow({ row }: { row: Extract<ChatRow, { k: "subagent" }> }) {
+export function SubagentRow({ row, worktree }: { row: Extract<ChatRow, { k: "subagent" }>; worktree?: string | null }) {
   return (
     <div className="flex items-center gap-2 rounded-[10px] border border-ac-line bg-ac-panel px-3 py-1.5 text-xs">
       <SessionStateIcon state={row.state === "running" ? "working" : "done"} />
@@ -80,6 +80,12 @@ export function SubagentRow({ row }: { row: Extract<ChatRow, { k: "subagent" }> 
         {row.type} · {row.description}
       </span>
       {row.state === "failed" && <span className="shrink-0 text-[11px] text-ac-alert-text">failed</span>}
+      {worktree && (
+        <span className="inline-flex shrink-0 items-center gap-1 font-ac-mono text-[11px] text-ac-violet-text" title="The subagent's own worktree, from its hook">
+          <FolderGit2 className="size-3" />
+          {worktree}
+        </span>
+      )}
       <span className="ml-auto shrink-0 text-[10.5px] text-ac-faint">subagent · via hook</span>
     </div>
   );
@@ -120,7 +126,14 @@ export function ApprovalCard({ row, onAllow, onAlways, onDeny }: { row: Extract<
   );
 }
 
-export function QuestionCard({ row, onAnswer }: { row: Extract<ChatRow, { k: "question" }>; onAnswer?: (answer: string) => void }) {
+export function QuestionCard({ row, onAnswer }: { row: Extract<ChatRow, { k: "question" }>; onAnswer?: (answers: Record<string, string>) => void }) {
+  const [picked, setPicked] = useState<Record<string, string>>({});
+  const choose = (q: string, o: string) => {
+    const next = { ...picked, [q]: o };
+    setPicked(next);
+    // One pick per question; the answers go together once each question has one.
+    if (onAnswer && row.questions.every((x) => next[x.question])) onAnswer(next);
+  };
   return (
     <div className="rounded-[10px] border border-ac-info bg-ac-info-tint p-3 text-[13px]">
       {row.questions.map((q) => (
@@ -128,9 +141,9 @@ export function QuestionCard({ row, onAnswer }: { row: Extract<ChatRow, { k: "qu
           <div className="flex items-center gap-2 font-medium text-ac-info-text">
             <MessageCircleQuestion className="size-4" /> {q.question}
           </div>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
+          <div role="radiogroup" aria-label={q.question} className="mt-1.5 flex flex-wrap gap-1.5">
             {q.options.map((o) => (
-              <Button key={o} size="sm" disabled={!onAnswer} onClick={() => onAnswer?.(`${q.question} → ${o}`)}>
+              <Button key={o} size="sm" role="radio" aria-checked={picked[q.question] === o} variant={picked[q.question] === o ? "primary" : undefined} disabled={!onAnswer} onClick={() => choose(q.question, o)}>
                 {o}
               </Button>
             ))}
@@ -150,11 +163,11 @@ function ChatRowView({ row, on }: { row: ChatRow; on: ChatHandlers }) {
     case "tool":
       return <ToolCard row={row} />;
     case "subagent":
-      return <SubagentRow row={row} />;
+      return <SubagentRow row={row} worktree={row.agentId ? on.worktreeOf?.(row.agentId) : null} />;
     case "approval":
       return <ApprovalCard row={row} onAllow={on.approve && (() => on.approve!(row.id, false))} onAlways={on.approve && (() => on.approve!(row.id, true))} onDeny={on.deny && (() => on.deny!(row.id))} />;
     case "question":
-      return <QuestionCard row={row} onAnswer={on.answer} />;
+      return <QuestionCard row={row} onAnswer={on.answer && ((a) => on.answer!(row.id, a))} />;
     case "plan":
       return (
         <div className="rounded-[10px] border border-ac-line bg-ac-panel px-3 py-2 text-[13px] text-ac-soft">
@@ -176,7 +189,9 @@ function ChatRowView({ row, on }: { row: ChatRow; on: ChatHandlers }) {
 export interface ChatHandlers {
   approve?: (id: string, always: boolean) => void;
   deny?: (id: string) => void;
-  answer?: (text: string) => void;
+  answer?: (id: string, answers: Record<string, string>) => void;
+  /** A subagent's worktree name from its hook record, when it has one. */
+  worktreeOf?: (agentId: string) => string | null;
 }
 
 /** The timeline of one session. `notice` sits above it (version or read-only banner). */

@@ -33,6 +33,10 @@ export interface AdapterEnv {
   changes: ReadonlyMap<string, ChangedFile[]>;
   /** Ask for a session's changed files; the caller dedupes and reads. */
   wantChanges: (key: string) => void;
+  /** Sessions this window shows in the chat view (their bridges run here). */
+  chats?: ReadonlySet<string>;
+  /** Chats with no session row yet (a new chat before the poll sees it): drawn from these. */
+  chatRows?: readonly SessionRow[];
   /** Where a plain start in the plan's folder would go and why (`dir --json`); null until read. */
   route?: { profile: string | null; why: string[]; blocked?: string } | null;
 }
@@ -44,6 +48,9 @@ export const THINKING_LEVELS: NewSessionFacts["thinkingLevels"] = {
 };
 
 const WEEK_MS = 7 * 86_400_000;
+
+/** The palette command that starts a new session straight in the chat view. */
+export const NEW_CHAT = "chat:new";
 
 export const sessionKey = (r: Pick<SessionRow, "provider" | "profile" | "sessionId">) => `${r.provider}/${r.profile}/${r.sessionId}`;
 
@@ -120,6 +127,18 @@ export function childrenOf(r: SessionRow): ChildModel[] {
   return out;
 }
 
+/** A subagent's worktree name, from the session's hook record of its children. Pure. */
+export function worktreeOf(r: SessionRow | undefined): (agentId: string) => string | null {
+  const byAgent = new Map<string, string>();
+  for (const c of r?.children ?? []) {
+    const o = c as Record<string, unknown>;
+    const cwd = typeof o.cwd === "string" ? o.cwd : "";
+    const m = /[\\/]worktrees[\\/]([^\\/]+)[\\/]?$/.exec(cwd);
+    if (typeof o.agentId === "string" && m) byAgent.set(o.agentId, m[1]);
+  }
+  return (agentId) => byAgent.get(agentId) ?? null;
+}
+
 /** Menu entries that do something for this session. Detach has no meaning
  *  outside the attached terminal view, which closing its tab already does;
  *  End and Compact reach only sessions Agent Switch hosts. Pure. */
@@ -184,7 +203,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
   const hostedOnly: SessionRow[] = (feeds.host?.hosted ?? [])
     .filter((h) => h.alive && !seen.has(h.key) && h.provider && h.account && h.sessionId)
     .map((h) => ({ provider: h.provider as SessionRow["provider"], profile: h.account, sessionId: h.sessionId, projectDir: "", cwd: h.cwd || null, mtimeMs: Date.parse(h.startedAt) || now, live: true, summary: null }));
-  const rows = [...read, ...hostedOnly];
+  const chatOnly = (env.chatRows ?? []).filter((r) => !seen.has(sessionKey(r)) && !hostedOnly.some((h) => sessionKey(h) === sessionKey(r)));
+  const rows = [...read, ...hostedOnly, ...chatOnly];
   const byKey = new Map(rows.map((r) => [sessionKey(r), r]));
   const accounts = new Map(vm.accounts.map((a) => [a.id, a]));
   const accountOf = (r: SessionRow) => accounts.get(accountId(r.provider, r.profile));
@@ -271,6 +291,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     }),
   ];
 
+  palette.push({ id: NEW_CHAT, group: "commands", title: "New session in chat view", meta: "Claude, in this window" });
+
   const targets: OpenTarget[] = (feeds.openTargets?.targets ?? []).map((t) => ({ target: t.target, label: t.label, kind: t.kind, installed: t.installed }));
 
   // The account the CLI's routing picks for this folder; the default account until that is read.
@@ -324,9 +346,10 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       const a = accountOf(r);
       return {
         key,
-        hosted: hosted.has(key),
-        chatAvailable: false,
-        view: "terminal",
+        hosted: hosted.has(key) || !!env.chats?.has(key),
+        // v3.1: the chat view is there for every session this window can host.
+        chatAvailable: true,
+        view: env.chats?.has(key) ? "chat" : "terminal",
         account: { name: r.profile, color: colorOf(r), fiveH: fiveH(a), protect: a?.threshold ?? 98 },
         model: r.context?.model ?? null,
         thinking: (r.context as { effort?: string | null } | null | undefined)?.effort ?? null,

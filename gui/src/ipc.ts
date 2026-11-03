@@ -196,6 +196,12 @@ export async function openBridge(spec: BridgeSpec, onLine: (line: string) => voi
   };
 }
 
+/** `files <session> --query Q --json`: repository files for `@` in the composer. */
+export async function sessionFiles(key: string, query: string): Promise<string[]> {
+  const o = JSON.parse(await runCli(["files", key, "--query", query, "--json"]));
+  return Array.isArray(o.files) ? o.files.filter((f: unknown): f is string => typeof f === "string") : [];
+}
+
 /** `sessions name <session> <name>`: the library name. */
 export async function renameSession(key: string, name: string): Promise<void> {
   await runCli(["sessions", "name", key, name]);

@@ -21,7 +21,7 @@ export type AsEvent =
   | { t: "approval.resolved"; id: string; decision: "allow" | "deny" }
   | { t: "question.requested"; id: string; questions: { question: string; options: string[] }[] }
   | { t: "subagent.started"; id: string; type: string; description: string }
-  | { t: "subagent.finished"; id: string; ok: boolean }
+  | { t: "subagent.finished"; id: string; ok: boolean; agentId?: string }
   | { t: "limits"; status: string; resetsAt: string | null }
   | { t: "turn.end"; ok: boolean; durationMs: number | null; costUsd: number | null }
   | { t: "error"; message: string }
@@ -38,7 +38,7 @@ export type ChatRow =
   | { k: "user"; id: string; text: string; images: number }
   | { k: "assistant"; id: string; text: string; live: boolean }
   | { k: "tool"; id: string; name: string; summary: string; state: "running" | "ok" | "failed"; result: string | null; diffs: FileDiff[] }
-  | { k: "subagent"; id: string; type: string; description: string; state: "running" | "ok" | "failed" }
+  | { k: "subagent"; id: string; type: string; description: string; state: "running" | "ok" | "failed"; agentId: string | null }
   | { k: "approval"; id: string; tool: string; summary: string; resolved: "allow" | "deny" | null }
   | { k: "question"; id: string; questions: { question: string; options: string[] }[] }
   | { k: "plan"; id: string; text: string }
@@ -116,11 +116,11 @@ export function fold(events: readonly AsEvent[]): Folded {
         break;
       }
       case "subagent.started":
-        push({ k: "subagent", id: e.id, type: e.type, description: e.description, state: "running" });
+        push({ k: "subagent", id: e.id, type: e.type, description: e.description, state: "running", agentId: null });
         break;
       case "subagent.finished": {
         const r = get("subagent", e.id);
-        if (r) rows[at.get(`subagent:${e.id}`)!] = { ...r, state: e.ok ? "ok" : "failed" };
+        if (r) rows[at.get(`subagent:${e.id}`)!] = { ...r, state: e.ok ? "ok" : "failed", agentId: e.agentId ?? r.agentId };
         break;
       }
       case "approval.requested":

@@ -26,9 +26,12 @@ import type { Appearance } from "../themes/resolve.js";
 import { V3Window, type V3Action, type V3Slots } from "../window.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
-import { sessionKey, toV3Data, type AdapterEnv } from "./data.js";
+import { sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
 import { OpenInMenu, SessionBody, settingsSection } from "./slots.js";
+import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
+import { useChats } from "./chats.js";
+import { ChatView } from "../chatview.js";
 
 const CHANGES_FRESH_MS = 10_000;
 
@@ -174,6 +177,19 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     };
   }, [lastFolder]);
 
+  const byKeyRef = useRef(new Map<string, SessionRow>());
+  const titleOf = (key: string) => byKeyRef.current.get(key)?.summary ?? key.split("/")[1] ?? "A session";
+  const chats = useChats(titleOf);
+  const [focus, setFocus] = useState<{ key: string; n: number } | undefined>(undefined);
+  const openTab = (key: string) => setFocus((f) => ({ key: chats.tabOf(key) ?? key, n: (f?.n ?? 0) + 1 }));
+  const newChat = () => {
+    const profile = route?.profile ? route.profile.slice(route.profile.indexOf("/") + 1) : s.accounts.find((a) => a.tool === "claude" && a.isDefault)?.name;
+    if (!profile || lastFolder === "~") return s.toast({ tone: "warn", text: "No Claude account or folder to start a chat in yet" });
+    const tab = `claude/${profile}/chat-${Date.now().toString(36)}`;
+    chats.open(tab, { new: { profile, provider: "claude", cwd: lastFolder }, mode: "default" });
+    openTab(tab);
+  };
+
   const data = toV3Data(s, feeds, {
     now: s.now,
     appearance,
@@ -185,9 +201,16 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     changes,
     wantChanges,
     route,
+    chats: chats.keys,
+    // A new chat that the CLI already lists under its real key needs no stand-in row.
+    chatRows: chats.rows.filter((r) => {
+      const real = chats.states.get(sessionKey(r))?.session?.key;
+      return !real || !(s.sessionRows ?? []).some((x) => sessionKey(x) === real);
+    }),
   });
 
   const byKey = useMemo(() => new Map(rows.map((r) => [sessionKey(r), r])), [rows]);
+  byKeyRef.current = byKey;
   const hostedKeys = new Set((feeds.host?.hosted ?? []).filter((h) => h.alive).map((h) => h.key));
   const deps: DispatchDeps = {
     ipc,
@@ -203,12 +226,22 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     setFocusTerminal: (on) => (setFocusTerminalFlag(on), setFocusTerminalState(on)),
     pick: setPick,
     prompt: setPrompt,
+    newChat,
+    openTab,
+    chatOf: (key) => {
+      const tab = chats.tabOf(key);
+      return tab ? (chats.states.get(tab) ?? null) : null;
+    },
   };
   const act = (a: V3Action) => void dispatchV3(a, deps);
 
   const history = useUsageHistory(s.accounts, s.now);
   const slots: V3Slots = {
-    body: (key) => (
+    body: (key) => {
+      const tab = chats.tabOf(key);
+      const chat = tab ? chats.states.get(tab) : undefined;
+      if (tab) return chat ? <ChatView b={chat} findFiles={(q) => ipc.sessionFiles(chat.session?.key ?? key, q)} worktreeOf={worktreeOf(byKey.get(chat.session?.key ?? key))} /> : <p className="m-auto text-[13px] text-ac-muted">Starting the chat…</p>;
+      return (
       <SessionBody
         sessionKey={key}
         row={byKey.get(key)}
@@ -220,7 +253,8 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
         onTakeOver={() => s.open({ kind: "session", id: `${key.split("/")[0]}:${key.split("/")[2]}` })}
         onExit={refresh}
       />
-    ),
+      );
+    },
     openIn: (key) => (
       <OpenInMenu
         targets={data.openIn.targets}
@@ -237,7 +271,8 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
 
   return (
     <>
-      <V3Window data={data} slots={slots} act={act} />
+      <V3Window data={data} slots={slots} act={act} focus={focus} />
+      {chats.runners}
       <OverlayHost />
       <Toaster toasts={s.toasts} onDismiss={s.dismissToast} />
       {pick && <PickSheet req={pick} onClose={() => setPick(null)} />}

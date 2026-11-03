@@ -102,23 +102,54 @@ drag & drop upload · D10 diffs, collapsible · D11 "a real client".
 
 ## Phase 2 — Interactive chat view
 
-- [ ] Chat body per spec §10.8: user bubble right-aligned on raise, assistant
+- [x] Chat body per spec §10.8: user bubble right-aligned on raise, assistant
       prose plain, collapsible tool cards (state dot, tool name, argument in
       mono; "Update" opens to a diff), the subagent "Task" row with the violet
       worktree badge and "subagent · via hook".
-- [ ] Composer per spec §10.8: attachment chips, the queue placeholder while a
+      → `gui/src/v3/chat.tsx` (from the reference board). The worktree badge
+      comes from the subagent's hook record (`sessions --json` children, joined
+      by `agentId`); the transcript itself names no worktree, so without a hook
+      record there is no badge.
+- [x] Composer per spec §10.8: attachment chips, the queue placeholder while a
       turn runs, Attach, Mode ("Ask before edits ▾"), "Stop ⌘.", "Queue ↵";
       `@`-files and slash commands; messages typed during a turn are queued, not
       sent (§13.4).
-- [ ] Drag & drop / paste: images as content blocks, repo files as `@path`, external
+      → `gui/src/v3/composer.tsx`; `@` completes through `agent-switch files`, `/`
+      from the commands Claude reports at start; the bridge queues while a turn
+      runs. The idle placeholder ("Message — …") is not drawn in the spec and
+      follows its wording; "Queue" stays "Queue" (C-send is a proposal).
+- [x] Drag & drop / paste: images as content blocks, repo files as `@path`, external
       files into a per-session attachment staging area (size limit, MIME sniff,
       SHA-256, TTL cleanup, symlink-race safe).
-- [ ] Approval card per spec §10.8: "✓ Allow once ↵", "Always allow “<rule>”",
+      → `src/bridge/attachments.ts`: type from the bytes, 20 MB, staged by
+      SHA-256 with `wx` (never through a planted name), links refused, read with
+      `O_NOFOLLOW`, 7-day TTL on bridge start. Repository files come as `@path`
+      through `@` completion; a file dropped from the Finder has no path in the
+      webview and is staged as a copy.
+- [x] Approval card per spec §10.8: "✓ Allow once ↵", "Always allow “<rule>”",
       "Deny", and "Same rule as the terminal prompt · never bypassed"; one decision
       with the Needs-you row and the terminal (§13.5); questions as forms.
-- [ ] Stop and "interrupt now"; steering for Codex.
-- [ ] Model / mode switch; context and cost header; notifications.
-- [ ] Start a new session directly in the client view.
+      → "Always allow" sends the rule the agent itself proposes
+      (`permission_suggestions`). Open approvals and questions are written per
+      bridge (`src/bridge/pending.ts`) and appear in `needs` as "Open chat";
+      answering anywhere removes them. Questions (`AskUserQuestion`) come on the
+      same control channel and are answered with `updatedInput.answers` —
+      verified live.
+- [x] Stop and "interrupt now"; steering for Codex.
+      → Stop ⌘. sends `interrupt` (verified live: the turn ends as
+      interrupted). Codex: ⌥↵ during a turn steers it (`turn/steer`); Claude has
+      no steering, the message is queued.
+- [x] Model / mode switch; context and cost header; notifications.
+      → Model through the bridge (`set_model`, verified live), mode in the
+      composer (`set_permission_mode`, verified; no bypass value exists in the
+      menu or the bridge). A one-line header: model, mode, last turn, cost.
+      Approvals, questions and finished turns notify while the window is
+      hidden. Thinking is fixed for a chat (the stream has no control for it).
+- [x] Start a new session directly in the client view.
+      → Palette "New session in chat view" (`bridge --new`). `npm --prefix gui run v31-chat`: the
+      whole path offline — palette, new chat, message, approval card, Allow
+      once, the answer — real CLI bridge, a stand-in Claude replaying the
+      recorded stream, 1440×900 in three themes, render checks clean.
 
 ## Phase 3 — Changes and review
 

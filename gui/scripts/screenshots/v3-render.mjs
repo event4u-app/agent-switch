@@ -113,7 +113,7 @@ function shape(seed, kind) {
 }
 
 /** Runs in the page: everything that looks clipped, wrapped or out of bounds. */
-function inspect() {
+export function inspect() {
   const out = [];
   const de = document.documentElement;
   if (de.scrollWidth > innerWidth + 1 || de.scrollHeight > innerHeight + 1) out.push(`page scrolls: ${de.scrollWidth}×${de.scrollHeight}`);
@@ -237,7 +237,8 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exitCode = 1;
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]))
+  main().catch((e) => {
+    console.error(e);
+    process.exitCode = 1;
+  });
