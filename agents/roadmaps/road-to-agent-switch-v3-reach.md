@@ -55,11 +55,25 @@ D14 access from anywhere.
 
 ## Phase 0 — Spikes
 
-- [ ] S6: Antigravity ACP server — origin, licence, behaviour with AS profiles.
-- [ ] S7: local models via OpenCode and via `codex --oss` + Ollama.
-- [ ] Gemini ACP `session/load` and history.
-- [ ] GUI PATH bootstrap for version managers (nvm, volta, mise, asdf, nix) plus
+- [x] S6: Antigravity ACP server — origin, licence, behaviour with AS profiles.
+      → `agents/evidence/v32-phase0-spikes-2026-11.md` § S6: **red.** Google's `agy_acp_server` (registry
+      `antigravity-acp`, proprietary, ~300 MB) — Google's terms name third-party
+      clients on the Antigravity login as a breach; not run. E6 does not fire,
+      Antigravity stays terminal only.
+- [x] S7: local models via OpenCode and via `codex --oss` + Ollama.
+      → `agents/evidence/v32-phase0-spikes-2026-11.md` § S7: OpenCode takes an `@ai-sdk/openai-compatible`
+      provider block (Ollama `:11434/v1`, LM Studio `:1234/v1`), Codex takes
+      `--oss --local-provider`. No live turn: Ollama is not installed and running
+      downloaded binaries was refused in this session (open in Acceptance).
+- [x] Gemini ACP `session/load` and history.
+      → `agents/evidence/v32-phase0-spikes-2026-11.md`: `loadSession: true`, no `session/list`; load is
+      auth-gated, and the personal Google login is refused for Gemini CLI by
+      Google (`UNSUPPORTED_CLIENT`). AS keeps the session id itself.
+- [x] GUI PATH bootstrap for version managers (nvm, volta, mise, asdf, nix) plus
       CLI version probe.
+      → `src/agent-path.ts`: login-shell PATH cut between markers plus the
+      version-manager dirs on disk (mise's shims are not on the login PATH);
+      `probeVersion` on that PATH (`tests/agent-path.test.ts`).
 
 ## Phase 1 — ACP agents and local models
 

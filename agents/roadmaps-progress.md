@@ -6,17 +6,17 @@
 
 ## Overall
 
-**0 / 11 steps done · 0%**
+**4 / 11 steps done · 36%**
 
 ```text
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   0%
+██████████████░░░░░░░░░░░░░░░░░░░░░░░░░░   36%
 ```
 
 ## Open roadmaps
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-agent-switch-v3-reach.md](roadmaps/road-to-agent-switch-v3-reach.md) | 4 | 11 | 11 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
+| 1 | [road-to-agent-switch-v3-reach.md](roadmaps/road-to-agent-switch-v3-reach.md) | 4 | 11 | 7 | 4 | 0 | 0 | 0 | ████░░░░░░ 36% |
 
 ---
 
@@ -44,11 +44,11 @@
 
 ### [road-to-agent-switch-v3-reach.md](roadmaps/road-to-agent-switch-v3-reach.md)
 
-**agent-switch v3.2 "Reach" — more agents, local models, access from anywhere** — 0 / 11 done (0%)
+**agent-switch v3.2 "Reach" — more agents, local models, access from anywhere** — 4 / 11 done (36%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
-| 0 | Spikes | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
+| 0 | Spikes | ✅ done | 0 | 4 | 0 | 0 | 100% |
 | 1 | ACP agents and local models | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
 | 2 | Remote stage 1 (host-native) | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
 | 3 | Remote stage 2 (own tunnel) | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
@@ -59,5 +59,5 @@ Days since each active roadmap landed at its path and since its last ticked step
 
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
-| [road-to-agent-switch-v3-reach.md](roadmaps/road-to-agent-switch-v3-reach.md) | — | — |
+| [road-to-agent-switch-v3-reach.md](roadmaps/road-to-agent-switch-v3-reach.md) | 0 | — |
 
