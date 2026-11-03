@@ -94,9 +94,23 @@ fn exchange(addr: &str, line: &str) -> std::io::Result<String> {
     read_line(&mut s)
 }
 
+/// ERROR_PIPE_BUSY: every listening instance of the pipe is taken. Many hooks at
+/// once hit this; the engine opens the next instance within milliseconds.
+#[cfg(windows)]
+const ERROR_PIPE_BUSY: i32 = 231;
+
 #[cfg(windows)]
 fn exchange(addr: &str, line: &str) -> std::io::Result<String> {
-    let mut p = std::fs::OpenOptions::new().read(true).write(true).open(addr)?;
+    let deadline = std::time::Instant::now() + ANSWER_TIMEOUT;
+    let mut p = loop {
+        match std::fs::OpenOptions::new().read(true).write(true).open(addr) {
+            Ok(p) => break p,
+            Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY) && std::time::Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(2))
+            }
+            Err(e) => return Err(e),
+        }
+    };
     p.write_all(line.as_bytes())?;
     read_line(&mut p)
 }
