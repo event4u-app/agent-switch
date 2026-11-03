@@ -39,10 +39,40 @@ engine), `relay-fallback` (no engine: relay, then the CLI).
 The relay's own CPU is below the 10 ms resolution of `time -p`; the engine's
 share runs in the engine process and is not in this column.
 
-### CI (GitHub-hosted runners, Node 22)
+### CI (GitHub-hosted runners, Node 22.23.4, PR #140 head `b6a3faa`, run 41589890962)
 
-See the next section; filled from the `hook relay <os>` job summaries of the
-PR's head.
+macOS arm64, 5 cores:
+
+| path | seq wall p50 ms | seq wall p95 ms | CPU p50 ms | CPU s / 100 | 50-parallel wall p95 ms | events expected | in ring | in store |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| node-floor | 29.9 | 33.9 | 20.0 | 1.90 | 241.1 | 0 | 0 | – |
+| cli | 72.4 | 92.6 | 70.0 | 6.62 | 725.0 | 100 | 100 | – |
+| relay | 4.8 | 5.7 | 0.0 | 0.00 | 24.8 | 100 | 100 | 100 |
+| relay-fallback | 69.6 | 82.6 | 70.0 | 6.46 | 903.3 | 100 | 100 | – |
+
+(macOS numbers from run 41589220672; the fix in between touched only the Windows path.)
+
+Linux x64, 4 cores:
+
+| path | seq wall p50 ms | seq wall p95 ms | CPU p50 ms | CPU s / 100 | 50-parallel wall p95 ms | events expected | in ring | in store |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| node-floor | 26.9 | 35.6 | 10.0 | 1.44 | 395.9 | 0 | 0 | – |
+| cli | 96.7 | 98.9 | 100.0 | 9.66 | 1813.7 | 100 | 100 | – |
+| relay | 3.3 | 3.9 | 0.0 | 0.00 | 62.2 | 100 | 100 | 100 |
+| relay-fallback | 96.2 | 99.3 | 100.0 | 9.52 | 2046.7 | 100 | 100 | – |
+
+Windows x64, 4 cores (no `time`, so no CPU column):
+
+| path | seq wall p50 ms | seq wall p95 ms | CPU p50 ms | CPU s / 100 | 50-parallel wall p95 ms | events expected | in ring | in store |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| node-floor | 45.7 | 48.0 | – | – | 740.5 | 0 | 0 | – |
+| cli | 158.0 | 172.7 | – | – | 3151.5 | 100 | 100 | – |
+| relay | 8.7 | 10.5 | – | – | 222.1 | 100 | 100 | 100 |
+| relay-fallback | 164.0 | 171.5 | – | – | 3392.1 | 100 | 100 | – |
+
+The first Windows run doubled events: with 20 hooks at once every pipe instance
+was taken (`ERROR_PIPE_BUSY`) and 9 relays fell back. The relay now retries a
+busy pipe until its answer timeout; the run above has 0 doubles.
 
 ## Reading
 
@@ -52,7 +82,17 @@ PR's head.
   native (Rust, no dependencies, ~350 KB), and the engine stays on Node: E1's
   "no runtime switch" holds for the engine, and the measurement settles the
   relay.
-- **0 events lost**, sequentially and with 50 hooks at once, on every path.
+- **The 20 ms gate holds per hook on all three platforms**: relay p95 3.9 ms
+  (Linux), 5.7 ms (macOS), 10.5 ms (Windows), against 98.9 / 92.6 / 172.7 ms
+  for the 2.x CLI.
+- **50 hooks started at the same instant do not fit 20 ms on a 4–5 core
+  runner** (p95 24.8 ms macOS, 62.2 ms Linux, 222 ms Windows) — the queue is the
+  engine's single event loop and the runner's cores, and the CLI path is 14–29×
+  slower under the same load. The gate is read as per-hook latency; the burst is
+  reported here, not hidden. Revisit-if: a real session shows hook bursts of
+  that size, or the engine's `hook` op takes more than a few ms per event.
+- **0 events lost, 0 doubled**, sequentially and with 50 hooks at once, on every
+  path and platform.
 - **Harness fault found on the way:** with the engine inside the measuring
   process, `spawnSync` blocked it; every relay call waited 1.5 s and fell back,
   and 51 of 151 ring lines were doubles. That is the designed failure mode
