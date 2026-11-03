@@ -284,6 +284,10 @@ export const settings = {
 
   // Advanced
   "settings.advanced.diagnosticsUnavailable": "Not available yet — the CLI has no diagnostics export. Health shows every check.",
+  "settings.advanced.window": "Main window",
+  "settings.advanced.windowDetail": "The new window, or the one from 2.11 for this release. Switching reloads the window.",
+  "settings.advanced.windowV3": "New",
+  "settings.advanced.windowPrevious": "Previous",
   "settings.advanced.sameAccount": "Same account in two places",
   "settings.advanced.sameAccountDetail": "Warn is safe for most setups; Block only for sign-ins that break when shared.",
   "settings.advanced.policyNotRead": "The current policy wasn't read — pick one to set it.",

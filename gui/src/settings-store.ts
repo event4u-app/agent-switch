@@ -880,3 +880,63 @@ export function setLanguagePrefFlag(pref: LanguagePref): void {
     /* no/blocked localStorage → in-memory only for this session */
   }
 }
+
+// ---- v3 window ----
+
+const UI_WINDOW_KEY = "agent-switch-ui-window";
+export type UiWindow = "v3" | "2.11";
+
+/** Which main window opens. v3 unless the user chose the previous one. */
+export function getUiWindow(): UiWindow {
+  try {
+    return localStorage.getItem(UI_WINDOW_KEY) === "2.11" ? "2.11" : "v3";
+  } catch {
+    return "v3";
+  }
+}
+
+export function setUiWindow(w: UiWindow): void {
+  try {
+    localStorage.setItem(UI_WINDOW_KEY, w);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const APPEARANCE_KEY = "agent-switch-appearance";
+
+/** The stored v3 appearance as JSON, or null; the caller validates and migrates. */
+export function getAppearanceRaw(): string | null {
+  try {
+    return localStorage.getItem(APPEARANCE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setAppearanceRaw(json: string): void {
+  try {
+    localStorage.setItem(APPEARANCE_KEY, json);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const FOCUS_TERMINAL_KEY = "agent-switch-focus-terminal";
+
+/** Open-in settings: bring the session's terminal tab to the front on open. Default on. */
+export function getFocusTerminal(): boolean {
+  try {
+    return localStorage.getItem(FOCUS_TERMINAL_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setFocusTerminalFlag(on: boolean): void {
+  try {
+    localStorage.setItem(FOCUS_TERMINAL_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}

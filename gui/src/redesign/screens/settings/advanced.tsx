@@ -7,6 +7,7 @@ import { Segmented } from "../../../ui/Segmented.js";
 import { SettingGroup, SettingRow } from "../../../ui/Setting.js";
 import { TextInput } from "../../../ui/TextInput.js";
 import { useAS } from "../../../vm/store.js";
+import { getUiWindow, setUiWindow, type UiWindow } from "../../../settings-store.js";
 import type { GuardPolicy } from "../../../vm/types.js";
 import { uninstallArmed, useFoundation, useRun } from "./prefs.js";
 import { WithReason } from "./shared.js";
@@ -37,6 +38,21 @@ export function AdvancedSettings() {
   return (
     <>
       <SettingGroup>
+        <SettingRow title={t("settings.advanced.window")} detail={t("settings.advanced.windowDetail")}>
+          <Segmented<UiWindow>
+            label={t("settings.advanced.window")}
+            size="sm"
+            value={getUiWindow()}
+            onChange={(w) => {
+              setUiWindow(w);
+              location.reload();
+            }}
+            options={[
+              { value: "v3", label: t("settings.advanced.windowV3") },
+              { value: "2.11", label: t("settings.advanced.windowPrevious") },
+            ]}
+          />
+        </SettingRow>
         <SettingRow
           title={t("settings.advanced.sameAccount")}
           detail={

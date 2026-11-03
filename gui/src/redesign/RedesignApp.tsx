@@ -17,7 +17,7 @@ import { t } from "../i18n/index.js";
 /** One `act`: the session/tool actions, the foundation readouts (protection,
  *  pools, folder rules) and the account extras — switches carry their
  *  notification and shared-setup relink (engines/switch-effects.ts). */
-function allActions(getVm: () => ViewModel, reload: () => Promise<void>): Actions {
+export function allActions(getVm: () => ViewModel, reload: () => Promise<void>): Actions {
   return withSwitchEffects(
     { ...createActions(getVm, reload), ...createFoundationActions(getVm, reload), ...createAccountActions() },
     getVm,

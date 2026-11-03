@@ -15,7 +15,7 @@ import { Tray } from "./Tray.js";
 export const TRAY_MAX_HEIGHT = 720;
 
 /** Overlays opened in the popover go to the main window. */
-function TrayBridge() {
+export function TrayBridge() {
   const s = useAS();
   const { overlay, close } = s;
   useEffect(() => {
@@ -30,7 +30,7 @@ function TrayBridge() {
 /** Re-read on every show — the slow parts (tooling sweep, latest versions,
  *  doctor) come from the cache, the sweep re-runs only when a minute old;
  *  Escape hides the popover. */
-function TrayLifecycle() {
+export function TrayLifecycle() {
   const { reload } = useAS();
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -61,7 +61,7 @@ function TrayLifecycle() {
 }
 
 /** The window follows the card's height (Rust keeps it anchored to the icon). */
-function useFitWindow() {
+export function useFitWindow() {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -95,7 +95,7 @@ function TrayFrame() {
 }
 
 /** Switching from the tray carries the same notice + relink as in the window. */
-function trayActions(getVm: () => ViewModel, reload: () => Promise<void>) {
+export function trayActions(getVm: () => ViewModel, reload: () => Promise<void>) {
   return withSwitchEffects(createActions(getVm, reload), getVm);
 }
 

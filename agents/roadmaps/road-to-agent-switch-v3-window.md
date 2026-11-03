@@ -134,20 +134,36 @@ reachable behind a setting for one release, then goes.
 
 ## Phase 3 — Slots and mounting
 
-- [ ] `V3App.tsx`: `ASProvider` + engines + `V3Window` with the adapter;
+- [x] `V3App.tsx`: `ASProvider` + engines + `V3Window` with the adapter;
       slots wired to the 2.11 screens named above and to `HostedTerminal`.
-- [ ] Setting `ui.window: "v3" | "2.11"` (GUI settings store), default `v3`
+      → `gui/src/v3/adapter/{V3App,slots,appearance}.tsx|ts`. The 2.11 overlay
+      host and toaster sit over the window; theme tokens go on <html> before
+      first paint. The user's-own-terminal body shows folder, branch, model and
+      account; its last transcript line is not read yet (no CLI for it), so the
+      line is left out rather than filled with the summary.
+- [x] Setting `ui.window: "v3" | "2.11"` (GUI settings store), default `v3`
       on `dev/v3`. `main.tsx` picks the app by it; Settings › Appearance
       offers "Use the previous window" for one release.
-- [ ] Tray: `tray-main.tsx` mounts `V3Tray` with the same adapter. Every read
+      → `getUiWindow`/`setUiWindow` (settings-store); the switch sits in
+      Settings › Advanced (a 2.11 screen, shown in both windows, en + de), not in
+      the designed Appearance page, so the v3 design gains no element.
+- [x] Tray: `tray-main.tsx` mounts `V3Tray` with the same adapter. Every read
       the tray makes gets its own scope in `capabilities/tray.json` and
       `TRAY_READ_SCOPES` (`needs --json`, `engine status --json`,
       `host list --json`); `ipc-tray-scope.test.ts` checks the two stay in
       step. No write enters the tray capability.
-- [ ] The tray and pet windows make no call outside their capability: a test
+      → `V3TrayApp.tsx`; scopes `as-read-needs`, `as-read-host`. Every tray
+      action opens the main window (start forwards the start overlay).
+- [x] The tray and pet windows make no call outside their capability: a test
       walks every IPC function a tray/pet entry imports and asserts its args
       match a scope (the `app-visibility` miss, fixed 2026-11-03 in
       `reportVisibility`, is the case this guards).
+      → `tray-calls.test.ts` runs the tray's whole load with the label "tray"
+      and checks every shell call against `tray.json`. Seen red first: the 2.11
+      loader's `desktop --json` and `launcher list --json` were outside the
+      scope (logged as "Scoped command agent-switch not found" on every tray
+      load since they were added); both are reads and now have their own scope.
+      The pet window makes no shell call at all.
 
 ## Phase 4 — Proof
 
