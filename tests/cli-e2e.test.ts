@@ -445,6 +445,9 @@ test("open: targets for a session's worktree root, a default per repo, and nothi
     assert.deepEqual(t.agentApp, { app: "claude-desktop", label: "Claude Desktop", note: "opens the app" });
     assert.deepEqual(t.targets.map((x: any) => x.target), ["vscode", "cursor", "phpstorm", "idea", "finder", "terminal"]);
     run(home, ["open-default", "finder", "--repo", repo]);
+    const g = JSON.parse(run(home, ["open-targets", "--json"]));
+    assert.deepEqual(g.perRepo, { [repo]: "finder" }, "without a session: the settings page's view");
+    assert.deepEqual(g.targets.map((x: any) => x.target), t.targets.map((x: any) => x.target));
     if (t.targets.find((x: any) => x.target === "finder").installed) {
       const p = JSON.parse(run(home, ["open", "9999-open", "--dry-run"]));
       assert.equal(p.target, "finder", "the repo's default");

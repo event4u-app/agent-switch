@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { SessionsZone, childNoun, childrenFromCli, liveOrder, type RowSession } from "./sessions.js";
+import { SessionRow, SessionsZone, childNoun, childrenFromCli, liveOrder, type RowSession } from "./sessions.js";
 
 afterEach(cleanup);
 const s = (key: string, over: Partial<RowSession> = {}): RowSession => ({ key, title: `title ${key}`, state: "idle", account: { name: "work", nearLimit: false }, branch: "main", pr: null, children: [], needsYou: false, ...over });
@@ -79,5 +79,18 @@ describe("Sessions zone (spec §5.2)", () => {
     expect(screen.getByText(/Done today 2/)).toBeTruthy();
     fireEvent.click(screen.getByText("Clean up"));
     expect(onCleanUp).toHaveBeenCalledOnce();
+  });
+});
+
+describe("SessionRow title", () => {
+  it("is a new node when selection changes its weight, so the browser decides the ellipsis again", () => {
+    const s: RowSession = { key: "k", title: "Knowledge map: edge filter for stale links", state: "idle", account: { name: "work", nearLimit: false }, branch: null, pr: null, children: [], needsYou: false };
+    const on = { onSelect: () => {}, onToggleChildren: () => {}, onCheck: () => {} };
+    const { rerender } = render(<SessionRow s={s} {...on} />);
+    const before = screen.getByTitle(s.title);
+    rerender(<SessionRow s={s} active {...on} />);
+    const after = screen.getByTitle(s.title);
+    expect(after).not.toBe(before);
+    expect(after.className).toContain("font-medium");
   });
 });

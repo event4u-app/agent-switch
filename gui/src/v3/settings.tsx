@@ -22,7 +22,7 @@ export type SettingsSection = (typeof SETTINGS_NAV)[number];
 export function SettingsPage({ current, onSection, children }: { current: SettingsSection; onSection: (s: SettingsSection) => void; children: ReactNode }) {
   return (
     <div className="flex min-h-0 flex-1">
-      <nav aria-label="Settings" className="w-[220px] shrink-0 space-y-0.5 overflow-y-auto border-r border-ac-line bg-ac-panel p-3">
+      <nav aria-label="Settings" className="w-[220px] shrink-0 space-y-0.5 relative overflow-y-auto border-r border-ac-line bg-ac-panel p-3">
         {SETTINGS_NAV.map((n) => (
           <button key={n} type="button" aria-current={n === current ? "page" : undefined} onClick={() => onSection(n)} className={cn("relative flex h-8 w-full items-center rounded-md px-2.5 text-left text-[13px]", n === current ? "bg-ac-raise font-medium text-ac-text" : "text-ac-muted hover:text-ac-text")}>
             {n === current && <Marker />}
@@ -30,7 +30,7 @@ export function SettingsPage({ current, onSection, children }: { current: Settin
           </button>
         ))}
       </nav>
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 min-w-0 flex-1 relative overflow-y-auto">
         <div className="mx-auto max-w-[920px] px-8 pb-10 pt-6">
           <PageHeader title={current} />
           {children}
@@ -162,7 +162,8 @@ export function AppearanceSettings({ a, prefersDark, onChange }: { a: Appearance
                     <Swatch def={t} accent={a.accent} selected={selected} />
                     <div className="mt-1.5 flex items-center gap-1.5">
                       {selected && <Check className="size-3.5 shrink-0 text-ac-brand-text" />}
-                      <span className={cn("truncate text-[13px]", selected ? "font-semibold text-ac-text" : "text-ac-soft")}>{t.name}</span>
+                      {/* Keyed on the weight, see SessionRow: the ellipsis must be decided again. */}
+                      <span key={selected ? "on" : "off"} className={cn("truncate text-[13px]", selected ? "font-semibold text-ac-text" : "text-ac-soft")}>{t.name}</span>
                       {t.id === "darcula" && <Chip>default</Chip>}
                     </div>
                     <div className="truncate text-[11px] text-ac-muted">{t.note}</div>

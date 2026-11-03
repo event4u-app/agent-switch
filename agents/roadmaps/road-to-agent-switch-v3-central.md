@@ -205,7 +205,10 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       (`<root>/engine.sock`) and keeps polling when it cannot.
 - [ ] M2 `as-hook`: tiny native relay stdin → engine socket, file-line fallback.
       Gate: p95 < 20 ms against the node baseline measured in
-      `road-to-hooks-that-keep-up` Phase 0.
+      `road-to-hooks-that-keep-up` Phase 0. No longer waiting on the owner: E1
+      (council 2026-11-03) makes this step define the acknowledgement point
+      first and measure that path under contention on all three platforms; the
+      relay's runtime follows from the measurement.
 - [x] M3 host (tmux): N sessions per account, started via argv (never typed),
       Claude with a pre-generated `--session-id`, hooks via `--settings`; survives
       an app restart. Old per-profile names stay readable for one release.
@@ -645,10 +648,10 @@ time and wire it to the engine as its data exists.
 
 | ID | Question | Status |
 |---|---|---|
-| E1 | Engine runtime: Node (`node:sqlite`) or Bun | **owner** — recommendation Bun if S4 is green (owner wish 2026-10-28) |
-| E2 | Positioning as "center and client for all your agents and accounts" | **owner** — recommendation yes, with v3.0 |
+| E1 | Engine runtime: Node (`node:sqlite`) or Bun | decided (council 2026-11-03 (anthropic + openai, owner-delegated; `agents/runtime/council/responses/v3-decisions-2026-11-03.json`), both seats): no runtime switch on the current numbers — neither measurement is an end-to-end p95 and Bun's 20.4 ms also misses < 20 ms. Keep Node 20 compatibility, the engine owns the store, hooks send bounded messages over the socket. M2 first defines the acknowledgement point (received vs. durably stored) and measures that path under contention on macOS, Linux and Windows; the runtime follows from that measurement. Revisit-if: the measured Node path cannot meet the budget and another can, or packaging fails. Relaxing the 20 ms budget is a recorded decision, never a silent one |
+| E2 | Positioning as "center and client for all your agents and accounts" | decided (council 2026-11-03 (anthropic + openai, owner-delegated; `agents/runtime/council/responses/v3-decisions-2026-11-03.json`), both seats): keep the current positioning through v3.0 and describe what ships (engine, hosted sessions, needs queue, library). "Client" waits until the v3.1 client workflows work across a named support matrix. Revisit-if: v3.1 ships |
 | E3 | Monorepo vs split | decided: one repo (one maintainer, one CI); layout per Phase 0 ADR |
-| E7 | Hooks for self-started sessions: keep opt-in or offer once at first start | **owner** — recommendation offer once with preview |
+| E7 | Hooks for self-started sessions: keep opt-in or offer once at first start | decided (council 2026-11-03 (anthropic + openai, owner-delegated; `agents/runtime/council/responses/v3-decisions-2026-11-03.json`), both seats): offer once at first start with the exact preview and explicit consent; nothing installs without it. Back up the settings file before writing, keep unrelated hooks, detect a change since the preview, removal deletes only our entries. Revisit-if: an install causes settings loss or an agent start failure — then stop offering for that configuration |
 | E-editor | Default editor global or per repo | decided: global default, per-repo override (cheap, no lock-in; spec §10.5 agrees) |
 | E-token | Remove all OAuth-token reads (proposal V0.2)? Collides with ADR-003 (rebind reads `fetchProfile`, `src/rebind.ts:147`) and ADR-004 (`src/token-freshen.ts:161`) — the proposal missed both callers | decided (owner, 2026-11-02): only the usage query moves off the token — statusline first, then a control query over the unmodified binary; rebind and token-freshen keep their narrow reads (`later/road-to-agent-switch-statusline-usage.md` Phase 6) |
 | C2 | Helper sessions collapsed by default | decided: yes (noise; expandable) |
@@ -662,10 +665,10 @@ time and wire it to the engine as its data exists.
 | D-mirror | Spec §6.5 shows a read-only mirror of a session in the user's own terminal; AS cannot read a foreign PTY | decided (owner, 2026-11-02): v3.0 shows the session's facts and last transcript line there; a full read-only view comes with the v3.1 timeline reader |
 | D-vault | Spec §8.3 says "the transcript is kept in the vault either way"; Phase 4 vaults only pinned and auto-kept sessions | decided (owner, 2026-11-02): the vault scope stays (pinned and auto-kept); the End dialog says whether this session is kept |
 | D-approve | Spec §5.1 offers "Allow"/"Reply" for every approval; for a session without an approval channel (own terminal without hooks, or S2 red) AS cannot answer | decided (owner, 2026-11-02): there the row's verb is "Focus terminal". S2 is green: the channel exists wherever AS hooks are installed, hosted or not, so "Focus terminal" applies to sessions without AS hooks |
-| S-density | Spec §15.1: comfortable density as default? | **owner** (from the design) — spec today: compact |
-| S-limits | Spec §15.2: Limits strip at the bottom or under the session list? | **owner** (from the design) — spec today: bottom |
-| S-desktop | Spec §15.3: Desktop apps resume or only open the project? | S9: Claude Desktop 4.29.0 can do neither through its launcher (no folder type; only `claude://`, which the roadmap excludes). The spec's "opens this project" would overclaim | **owner** — recommendation: the Agent-app entry says "opens the app"; re-check per app version |
-| S-proposals | Spec proposals: ⇧/⌘-click multi-select (§5.2), "Start here" when hosted (§8.1) | **owner** — both marked "proposal" in the spec, not built until confirmed |
+| S-density | Spec §15.1: comfortable density as default? | decided (council 2026-11-03 (anthropic + openai, owner-delegated; `agents/runtime/council/responses/v3-decisions-2026-11-03.json`), both seats): compact, as the spec says. Revisit-if: accessibility checks or real use show selection errors that comfortable fixes |
+| S-limits | Spec §15.2: Limits strip at the bottom or under the session list? | decided (council 2026-11-03 (anthropic + openai, owner-delegated; `agents/runtime/council/responses/v3-decisions-2026-11-03.json`), both seats): bottom, as the spec says; a limit that blocks a start is also explained at that action. Revisit-if: users repeatedly miss it |
+| S-desktop | Spec §15.3: Desktop apps resume or only open the project? | S9: Claude Desktop 4.29.0 can do neither through its launcher (no folder type; only `claude://`, which the roadmap excludes). The spec's "opens this project" would overclaim | decided (council 2026-11-03 (anthropic + openai, owner-delegated; `agents/runtime/council/responses/v3-decisions-2026-11-03.json`), both seats): option (c) — hide the agent-app entry for every app and version where opening this project is not verified; enable it per verified agent and platform. Revisit-if: a permitted mechanism opens a project, tested with spaces in paths and a missing folder |
+| S-proposals | Spec proposals: ⇧/⌘-click multi-select (§5.2), "Start here" when hosted (§8.1) | decided (council 2026-11-03 (anthropic + openai, owner-delegated; `agents/runtime/council/responses/v3-decisions-2026-11-03.json`)): both deferred to v3.1. Multi-select: both seats defer (eligibility, partial failure, destructive batches undefined). "Start here": one seat defers, one would ship it only if it reuses the normal start flow; the narrower answer is taken, the condition is the revisit-if: "Start here" reuses the New-session flow and re-checks folder and worktree before launch |
 
 ## Not in v3.0 (kills, with reason)
 
@@ -688,3 +691,6 @@ time and wire it to the engine as its data exists.
 | agmux is broader | win on trust, persistence, platforms, AC integration — not breadth |
 | Shared component changes alter the 2.11 screens | render-check the 2.11 screens in the same change (Phase 6) |
 | The approval hook holds a turn | S2 measures it; timeout falls back to the terminal prompt |
+| A needs-you item outlives its request (late event after the approval was answered) | council 2026-11-03: stable request ids and lifecycle reconciliation; an item never authorizes on its own — verify in M2 and the needs view |
+| Hooks outlive an uninstall or upgrade and point at a missing binary | council 2026-11-03: the hook command degrades to a no-op when the engine is gone; native agent prompts keep working — covered with E7's install work |
+| The event store keeps sensitive hook payloads | council 2026-11-03: store the minimal fields, define retention and deletion before broader ingestion |

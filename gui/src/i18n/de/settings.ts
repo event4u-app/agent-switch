@@ -300,6 +300,10 @@ export const settings: { readonly [K in keyof typeof en]: string } = {
   // Advanced
   "settings.advanced.diagnosticsUnavailable":
     "Noch nicht verfügbar – die CLI hat keinen Diagnose-Export. Zustand zeigt jede Prüfung.",
+  "settings.advanced.window": "Hauptfenster",
+  "settings.advanced.windowDetail": "Das neue Fenster oder für diese Version noch das aus 2.11. Beim Wechsel lädt das Fenster neu.",
+  "settings.advanced.windowV3": "Neu",
+  "settings.advanced.windowPrevious": "Vorheriges",
   "settings.advanced.sameAccount": "Gleiches Konto an zwei Orten",
   "settings.advanced.sameAccountDetail":
     "Warnen passt für die meisten Setups; Blockieren nur für Anmeldungen, die beim Teilen kaputtgehen.",

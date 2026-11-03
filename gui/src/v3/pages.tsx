@@ -18,7 +18,7 @@ import { LimitBar, isStale, type LimitAccount } from "./limits.js";
 
 export function PageBody({ eyebrow, title, sub, actions, children }: { eyebrow?: string; title?: string; sub?: ReactNode; actions?: ReactNode; children: ReactNode }) {
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="min-h-0 flex-1 relative overflow-y-auto">
       <div className="mx-auto w-full max-w-[960px] px-8 pb-10 pt-6">
         {title && <PageHeader eyebrow={eyebrow} title={title} sub={sub} actions={actions} />}
         {children}

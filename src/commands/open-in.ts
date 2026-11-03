@@ -75,6 +75,16 @@ export function cmdOpenSession(arg: string | undefined, flags: Record<string, st
 
 /** The data behind the Open ▾ menu (spec §7.7). */
 export function cmdOpenTargets(arg: string | undefined, flags: Record<string, string | boolean>): void {
+  if (!arg) {
+    // No session: what the Open-in settings page shows (spec §10.5).
+    const s = readOpenSettings(openSettingsFile(ROOT));
+    const targets = menu(realEnv);
+    const out = { default: defaultTarget(s, null, targets), perRepo: s.perRepo, lastUsed: s.lastUsed, targets };
+    if (flags.json) return void console.log(JSON.stringify(out, null, 2));
+    for (const e of targets) console.log(`  ${e.installed ? "•" : " "} ${e.target}${e.target === out.default ? "  (default)" : ""}${e.installed ? "" : "  not installed"}`);
+    for (const [repo, t] of Object.entries(s.perRepo)) console.log(`  ${repo} → ${t}`);
+    return;
+  }
   const w = where(arg);
   const settings = readOpenSettings(openSettingsFile(ROOT));
   const entries = menu(realEnv, w.root);

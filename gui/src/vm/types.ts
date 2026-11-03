@@ -304,4 +304,7 @@ export interface ViewModel {
   trayShowDisabled: boolean;
   /** Epoch ms of the next usage refresh; null = no schedule known. */
   usageNextAt: number | null;
+  /** The raw `sessions --json` rows behind `sessions`, for the v3 window
+   *  (git, PRs, children, library); empty until the first read. */
+  sessionRows?: import("../transforms.js").SessionRow[];
 }

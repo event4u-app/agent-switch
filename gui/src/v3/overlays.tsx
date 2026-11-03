@@ -88,7 +88,7 @@ export function Palette({ entries, onOpen, onClose }: { entries: PaletteEntry[];
             </button>
           </span>
         </div>
-        <div className="max-h-[520px] overflow-y-auto p-2">
+        <div className="max-h-[520px] relative overflow-y-auto p-2">
           {(["sessions", "branches", "commands"] as const).map((g) => {
             const list = ordered.filter((h) => h.group === g);
             if (!list.length) return null;

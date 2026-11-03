@@ -101,6 +101,17 @@ export interface SessionRow {
   cache?: SessionCache | null;
   /** Git facts of the folder the session works in now; null outside a repo. */
   git?: SessionGit | null;
+  /** v3: PRs on the session's head commit, from the PR cache (newest first). */
+  prs?: unknown[];
+  /** v3: helper sessions and subagents (`sessions --json` → children). */
+  children?: unknown[];
+  childCount?: number;
+  /** v3: the session key of the parent, when this one is a helper. */
+  parent?: string;
+  /** v3: library entry and whether the transcript is kept. */
+  library?: { name: string | null; tags: string[]; pinned: boolean; archived: boolean; autoKept: boolean } | null;
+  kept?: unknown;
+  canResume?: boolean;
 }
 
 /** `sessions --json` → `git`; `cwdSource` says where the folder came from. */

@@ -118,6 +118,12 @@ export async function cmdLibrary(action: string, arg: string | undefined, value:
       else for (const h of hits) console.log(`${h.key}  ${lib.get(h.key)?.name ?? h.summary ?? ""}  ${h.branch ?? ""}`);
       return;
     }
+    if (action === "library") {
+      const l = libraryList(store);
+      if (flags.json) console.log(JSON.stringify(l, null, 2));
+      else for (const e of l.entries) console.log(`${describe(e)}  ${e.kept.state === "kept" ? "kept" : e.kept.state === "at-risk" ? `${e.kept.daysLeft}d left` : "lost"}`);
+      return;
+    }
     if (action === "keep") {
       // `sessions keep auto on|off`: the Library's "Auto-keep sessions with an open PR".
       if (arg !== "auto" || (value !== "on" && value !== "off")) die("usage: agent-switch sessions keep auto on|off");
@@ -220,6 +226,31 @@ export async function libraryRound(nowMs = Date.now()): Promise<{ autoKept: numb
 
 function autoArchived(store: Store, key: string): boolean {
   return !!store.db.get("SELECT 1 AS x FROM library_auto_archived WHERE key = ?", key);
+}
+
+/** The Library page: every library entry with its session facts where the
+ *  session is still on disk, plus the vault total and the auto-keep switch. */
+export function libraryList(store: Store, nowMs = Date.now()) {
+  const recent = new Map(sessionsWithGit(50).map((r) => [r.key, r]));
+  const cache = readPrCache(prCacheFile(ROOT));
+  const entries = libraryAll(store).map((e) => {
+    const s = resolveSession(e.key);
+    const r = recent.get(e.key);
+    const pr = r ? prsForRow(r, cache)[0] : undefined;
+    const f = libraryFacts(store, e.key, s?.files ?? null, nowMs);
+    const mtime = s && fs.existsSync(s.files.transcript) ? fs.statSync(s.files.transcript).mtimeMs : null;
+    return {
+      ...e,
+      summary: r?.row.summary ?? null,
+      cwd: r?.git?.cwd ?? r?.row.cwd ?? null,
+      branch: r?.git?.branch ?? null,
+      pr: pr ? { number: pr.number, lifecycle: pr.lifecycle } : null,
+      lastMs: mtime ?? Date.parse(e.updatedAt),
+      kept: f.kept,
+      canResume: f.canResume,
+    };
+  });
+  return { autoKeep: autoKeepOn(), vaultBytes: vaultBytes(store), entries };
 }
 
 /** The Library page's facts per session: entry, kept state, deadline. */
