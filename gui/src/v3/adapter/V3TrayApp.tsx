@@ -2,6 +2,8 @@
  *  scopes (capabilities/tray.json), so it reads the queue and the hosted
  *  sessions and nothing else; every action opens or drives the main window. */
 
+import type { CSSProperties } from "react";
+
 import { LangKeyed } from "../../i18n/LangKeyed.js";
 import * as ipc from "../../ipc.js";
 import { forwardToMain, openMainWindow } from "../../redesign/tray/bridge.js";
@@ -13,6 +15,7 @@ import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
 import { V3Tray } from "../tray.js";
 import { toV3Data } from "./data.js";
 import { useV3Feeds, type FeedDeps } from "./useFeeds.js";
+import { useTheme } from "./V3App.js";
 
 const notInTray = () => Promise.reject(new Error("not read in the tray"));
 
@@ -60,8 +63,9 @@ function V3TrayFrame() {
 
 /** Second entry (tray.html) when the v3 window is on. */
 export default function V3TrayApp() {
+  const { vars, mode } = useTheme();
   return (
-    <AcRoot>
+    <AcRoot mode={mode} style={vars as CSSProperties}>
       <ASProvider initial={emptyViewModel()} load={loadViewModel} actions={trayActions}>
         <LangKeyed>
           <V3TrayFrame />

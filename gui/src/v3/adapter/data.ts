@@ -33,6 +33,8 @@ export interface AdapterEnv {
   changes: ReadonlyMap<string, ChangedFile[]>;
   /** Ask for a session's changed files; the caller dedupes and reads. */
   wantChanges: (key: string) => void;
+  /** Where a plain start in the plan's folder would go and why (`dir --json`); null until read. */
+  route?: { profile: string | null; why: string[]; blocked?: string } | null;
 }
 
 export const THINKING_LEVELS: NewSessionFacts["thinkingLevels"] = {
@@ -271,7 +273,10 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
 
   const targets: OpenTarget[] = (feeds.openTargets?.targets ?? []).map((t) => ({ target: t.target, label: t.label, kind: t.kind, installed: t.installed }));
 
-  const defaultClaude = vm.accounts.find((a) => a.tool === env.plan.tool && a.isDefault) ?? vm.accounts.find((a) => a.tool === env.plan.tool);
+  // The account the CLI's routing picks for this folder; the default account until that is read.
+  const routedName = env.route?.profile ? env.route.profile.slice(env.route.profile.indexOf("/") + 1) : null;
+  const routed = routedName ? vm.accounts.find((a) => a.tool === env.plan.tool && a.name === routedName) : undefined;
+  const defaultClaude = routed ?? vm.accounts.find((a) => a.tool === env.plan.tool && a.isDefault) ?? vm.accounts.find((a) => a.tool === env.plan.tool);
   const planLimits = defaultClaude ? limitAccount(defaultClaude, now) : null;
   const facts: NewSessionFacts = {
     terminalApp: env.terminalApp,
@@ -280,9 +285,10 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     account: {
       name: defaultClaude?.name ?? "—",
       color: defaultClaude?.color ?? "blue",
-      reason: defaultClaude?.isDefault ? "the account for plain starts" : "the only account of this tool",
+      reason: env.route?.blocked ? env.route.blocked : routed ? (env.route?.why[0] ?? "the folder's rule") : defaultClaude?.isDefault ? "the account for plain starts" : "the only account of this tool",
       limits: planLimits ?? { key: "none", tool: "claude", name: "—", color: "blue", protect: 98, next: false, signIn: false, checkedMs: null, windows: [] },
-      why: [],
+      // Reasons belong to the routed account; shown beside another one they would mislead.
+      why: routed ? (env.route?.why ?? []) : [],
       paceText: null,
     },
     command: startCommand(env.plan, defaultClaude?.name ?? null),

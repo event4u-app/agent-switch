@@ -230,3 +230,16 @@ describe("pieces", () => {
     expect(startCommand({ ...p, where: "terminal", tool: "codex", folder: "/r" }, null)).toBe("agent-switch run --provider codex --cwd /r");
   });
 });
+
+describe("start dialog routing", () => {
+  it("takes the account and reasons from `dir --json`, the default account until it is read", () => {
+    const vm = vmWith([account("work", { isDefault: true }), account("side")], []);
+    const before = toV3Data(vm, emptyFeeds(), env()).newSession.facts.account;
+    expect([before.name, before.why]).toEqual(["work", []]);
+    const after = toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/side", why: ["folder rule ~/r → side", "side has the most room"] } })).newSession.facts.account;
+    expect([after.name, after.reason, after.why]).toEqual(["side", "folder rule ~/r → side", ["folder rule ~/r → side", "side has the most room"]]);
+    expect(toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: [], blocked: "no account may start here" } })).newSession.facts.account.reason).toBe("no account may start here");
+    const unknown = toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/gone", why: ["gone has room"] } })).newSession.facts.account;
+    expect([unknown.name, unknown.why]).toEqual(["work", []]);
+  });
+});

@@ -2,7 +2,7 @@
  *  the adapter in between. 2.11 overlays (start, re-auth, session sheet,
  *  terminal runs) open over it for the flows v3 has no dialog of its own for. */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { LangKeyed } from "../../i18n/LangKeyed.js";
 import * as ipc from "../../ipc.js";
@@ -26,7 +26,7 @@ import type { Appearance } from "../themes/resolve.js";
 import { V3Window, type V3Action, type V3Slots } from "../window.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
-import { sessionKey, toV3Data } from "./data.js";
+import { sessionKey, toV3Data, type AdapterEnv } from "./data.js";
 import { OpenInMenu, SessionBody, settingsSection } from "./slots.js";
 import { useV3Feeds } from "./useFeeds.js";
 
@@ -96,7 +96,30 @@ function PromptSheet({ req, onClose }: { req: Prompt; onClose: () => void }) {
   );
 }
 
-export function V3Frame() {
+export interface ThemeState {
+  appearance: Appearance;
+  setAppearance: (a: Appearance) => void;
+  prefersDark: boolean;
+  vars: Record<string, string>;
+}
+
+/** The appearance and its resolved tokens. They go on the `.as-ac` root, whose
+ *  stylesheet defaults would otherwise win over tokens set higher up. */
+export function useTheme(): ThemeState & { mode: "dark" | "light" } {
+  const prefersDark = usePrefersDark();
+  const [appearance, setAppearance] = useState<Appearance>(loadAppearance);
+  const { vars, mode } = useMemo(() => themeVars(appearance, prefersDark), [appearance, prefersDark]);
+  useEffect(() => void applyAppearance(appearance, prefersDark), [appearance, prefersDark]);
+  // The other window (main ↔ tray) changed it: follow.
+  useEffect(() => {
+    const on = (e: StorageEvent) => (e.key === null || e.key === "agent-switch-appearance") && setAppearance(loadAppearance());
+    window.addEventListener("storage", on);
+    return () => window.removeEventListener("storage", on);
+  }, []);
+  return { appearance, setAppearance, prefersDark, vars, mode };
+}
+
+export function V3Frame({ theme }: { theme: ThemeState }) {
   const s = useAS();
   const sRef = useRef(s);
   sRef.current = s;
@@ -106,10 +129,8 @@ export function V3Frame() {
     if (req && sRef.current.act.openApp) void sRef.current.act.openApp(req.appId, req.accountId);
   });
   const { feeds, refresh: refreshFeeds } = useV3Feeds();
-  const prefersDark = usePrefersDark();
-  const [appearance, setAppearanceState] = useState<Appearance>(loadAppearance);
-  const vars = useMemo(() => themeVars(appearance, prefersDark).vars, [appearance, prefersDark]);
-  useEffect(() => void applyAppearance(appearance, prefersDark), [appearance, prefersDark]);
+  const { appearance, prefersDark, vars } = theme;
+  const setAppearanceState = theme.setAppearance;
   const [focusTerminal, setFocusTerminalState] = useState(getFocusTerminal);
   const [pick, setPick] = useState<Pick | null>(null);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
@@ -140,6 +161,18 @@ export function V3Frame() {
   const lastFolder = rows.find((r) => r.cwd)?.cwd ?? "~";
   const plan: NewSessionPlan = { folder: lastFolder, gitState: null, worktree: false, tool: "claude", model: "opus", thinking: "high", where: feeds.host?.mode === "persistent" ? "hosted" : "terminal" };
   const terminalApp = terminalAppFor(s.platform);
+  const [route, setRoute] = useState<AdapterEnv["route"]>(null);
+  useEffect(() => {
+    if (lastFolder === "~") return;
+    let alive = true;
+    ipc
+      .resolveDir("claude", lastFolder)
+      .then((r) => alive && setRoute({ profile: r.profile, why: r.why ?? [], ...(r.blocked ? { blocked: r.blocked } : {}) }))
+      .catch(() => alive && setRoute(null));
+    return () => {
+      alive = false;
+    };
+  }, [lastFolder]);
 
   const data = toV3Data(s, feeds, {
     now: s.now,
@@ -151,6 +184,7 @@ export function V3Frame() {
     terminalApp,
     changes,
     wantChanges,
+    route,
   });
 
   const byKey = useMemo(() => new Map(rows.map((r) => [sessionKey(r), r])), [rows]);
@@ -214,11 +248,12 @@ export function V3Frame() {
 
 /** The main window, v3. */
 export default function V3App() {
+  const theme = useTheme();
   return (
-    <AcRoot className="h-full">
+    <AcRoot className="h-full" mode={theme.mode} style={theme.vars as CSSProperties}>
       <ASProvider initial={emptyViewModel()} load={loadViewModel} actions={allActions} onNoticesRead={setNotifLastRead}>
         <LangKeyed>
-          <V3Frame />
+          <V3Frame theme={theme} />
         </LangKeyed>
       </ASProvider>
     </AcRoot>
