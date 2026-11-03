@@ -4,7 +4,7 @@ import type { SessionRow } from "../../transforms.js";
 import { emptyViewModel } from "../../vm/load.js";
 import type { Account, ViewModel } from "../../vm/types.js";
 import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
-import { childrenOf, decisionFor, doneToday, nextStep, sessionKey, startCommand, toV3Data, windowLabel, type AdapterEnv } from "./data.js";
+import { childrenOf, decisionFor, doneToday, nextStep, sessionKey, startCommand, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
 import { emptyFeeds, type V3Feeds } from "./useFeeds.js";
 
 const NOW = Date.parse("2026-11-03T15:00:00");
@@ -60,7 +60,9 @@ describe("toV3Data", () => {
   it("with no reads at all: the documented empty state, nothing throws", () => {
     const d = toV3Data(emptyViewModel(NOW), emptyFeeds(), env());
     expect(d.health).toEqual({ state: "ready" });
-    expect([d.needs, d.history, d.sessions, d.limits, d.accounts, d.table, d.library, d.palette, d.openIn.targets]).toEqual([[], [], [], [], [], [], [], [], []]);
+    expect([d.needs, d.history, d.sessions, d.limits, d.accounts, d.table, d.library, d.openIn.targets]).toEqual([[], [], [], [], [], [], [], []]);
+    // Only the command that starts a chat.
+    expect(d.palette.map((p) => p.id)).toEqual(["chat:new"]);
     expect(d.away).toBeNull();
     expect(d.autoKeep).toBe(true);
     expect(d.bar("claude/x/y")).toBeNull();
@@ -241,5 +243,14 @@ describe("start dialog routing", () => {
     expect(toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: [], blocked: "no account may start here" } })).newSession.facts.account.reason).toBe("no account may start here");
     const unknown = toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/gone", why: ["gone has room"] } })).newSession.facts.account;
     expect([unknown.name, unknown.why]).toEqual(["work", []]);
+  });
+});
+
+describe("worktreeOf", () => {
+  it("names a subagent's worktree from its hook record, and only that", () => {
+    const r = row("p", { children: [{ kind: "subagent", agentId: "a1", cwd: "/r/.claude/worktrees/agent-a1" }, { kind: "subagent", agentId: "a2", cwd: "/r" }, { kind: "helper", sessionKey: "k" }] });
+    const of = worktreeOf(r);
+    expect([of("a1"), of("a2"), of("nope")]).toEqual(["agent-a1", null, null]);
+    expect(worktreeOf(undefined)("a1")).toBeNull();
   });
 });

@@ -49,7 +49,7 @@ describe("workbench (spec §6)", () => {
     rerender(<SessionBar s={bar()} openIn={null} on={on} />);
     fireEvent.click(screen.getByText("Opus 5.5").closest("button")!);
     expect(on.model).toHaveBeenCalledOnce();
-    expect(screen.getByRole("radio", { name: /Chat/ }).getAttribute("title")).toBe("Chat arrives with the next version");
+    expect(screen.getByRole("radio", { name: /Chat/ }).getAttribute("title")).toBe("This tool keeps the view it started in");
   });
 
   it("the blocker shows only while Summary is closed, with one action", () => {

@@ -119,6 +119,12 @@ describe("dispatchV3", () => {
     expect(e.toast).toHaveBeenCalled();
   });
 
+  it("the view switch goes to the window's switch", () => {
+    const d = { ...deps(), switchView: vi.fn() };
+    dispatchV3({ type: "view", key: "claude/work/h", view: "chat" }, d);
+    expect(d.switchView).toHaveBeenCalledWith("claude/work/h", "chat");
+  });
+
   it("model and thinking: a pick, then respawn; nothing for a session not hosted", async () => {
     const d = deps();
     dispatchV3({ type: "model", key: "claude/work/a" }, d);
@@ -176,6 +182,29 @@ describe("dispatchV3", () => {
     expect(d.setFocusTerminal).toHaveBeenCalledWith(false);
     await dispatchV3({ type: "restart-engine" }, d);
     expect(d.ipc.engineRestart).toHaveBeenCalled();
+  });
+
+  it("a chat's approval opens the chat; the palette starts a new chat", () => {
+    const d = deps();
+    const openTab = vi.fn();
+    const newChat = vi.fn();
+    dispatchV3({ type: "need", item: need({ verb: "Open chat", subject: "claude/work/h" }) }, { ...d, openTab, newChat });
+    expect(openTab).toHaveBeenCalledWith("claude/work/h");
+    expect(d.ipc.focusSessionTerminal).not.toHaveBeenCalled();
+    dispatchV3({ type: "palette", entry: { id: "chat:new", group: "commands", title: "New session in chat view" }, newTab: false }, { ...d, openTab, newChat });
+    expect(newChat).toHaveBeenCalled();
+  });
+
+  it("in a chat, the model changes through its bridge; thinking says where to change it", () => {
+    const d = deps();
+    const setModel = vi.fn();
+    const chatOf = (k: string) => (k === "claude/work/a" ? { setModel } : null);
+    dispatchV3({ type: "model", key: "claude/work/a" }, { ...d, chatOf });
+    d.pick.mock.calls[0][0].onPick("sonnet");
+    expect(setModel).toHaveBeenCalledWith("sonnet");
+    expect(d.ipc.hostRespawn).not.toHaveBeenCalled();
+    dispatchV3({ type: "thinking", key: "claude/work/a" }, { ...d, chatOf });
+    expect(d.toast).toHaveBeenCalledWith({ tone: "info", text: expect.stringMatching(/terminal view/) });
   });
 
   it("a failing CLI call becomes an alert toast, never a throw", async () => {

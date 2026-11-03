@@ -6,8 +6,8 @@
  * window owns layout state only — never a session, an account or a file.
  */
 
-import { useCallback, useMemo, useState, type ReactNode } from "react";
-import { Layers, Library, ListTree, Settings, Wrench } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { FileCode, Layers, Library, ListTree, Settings, Wrench } from "lucide-react";
 import type { ToolEntry } from "../vm/types.js";
 import { DecisionSheet, NewSessionDialog, type MoveHow, type NewSessionFacts, type NewSessionPlan, type SheetSession } from "./dialogs.js";
 import { Shell, useFrame, type PageId } from "./frame.js";
@@ -61,7 +61,11 @@ export interface V3Slots {
   usageHistory: ReactNode;
   pools: ReactNode;
   poolCount: number;
+  /** Accounts › MCP & plugins (v3.1). */
+  mcp?: ReactNode;
   tools: ReactNode;
+  /** v3.1: the Review page of one session (spec §10.9). Absent: Review and Commit stay disabled. */
+  review?: (key: string) => ReactNode;
   /** The 2.11 settings screens v3 keeps, by section. */
   settings: (section: SettingsSection) => ReactNode;
 }
@@ -95,8 +99,8 @@ export type V3Action =
 export const SESSION_MENU = ["Rename…", "Pin", "Move to another account…", "Take over here…", "Hand off…", "Compact", "Detach", "End…"] as const;
 export type SessionMenuItem = (typeof SESSION_MENU)[number];
 
-type Page = PageId | "sessions-table";
-const PAGE_TAB: Record<Page, { label: string; icon: ReactNode }> = {
+type Page = PageId | "sessions-table" | `review:${string}`;
+const PAGE_TAB: Record<PageId | "sessions-table", { label: string; icon: ReactNode }> = {
   accounts: { label: "Accounts", icon: <Layers className="size-3.5" /> },
   library: { label: "Library", icon: <Library className="size-3.5" /> },
   tools: { label: "Tools", icon: <Wrench className="size-3.5" /> },
@@ -113,7 +117,7 @@ export const PAGE_COMMANDS: PaletteEntry[] = [
   { id: "page:settings", group: "commands", title: "Settings", hint: "⌘," },
 ];
 
-export function V3Window({ data, slots, act }: { data: V3Data; slots: V3Slots; act: (a: V3Action) => void }) {
+export function V3Window({ data, slots, act, focus }: { data: V3Data; slots: V3Slots; act: (a: V3Action) => void; focus?: { key: string; n: number } }) {
   const [pages, setPages] = useState<Page[]>([]);
   const [sessionTabs, setSessionTabs] = useState<string[]>([]);
   const [active, setActive] = useState<string | null>(null);
@@ -134,6 +138,12 @@ export function V3Window({ data, slots, act }: { data: V3Data; slots: V3Slots; a
     setSessionTabs((cur) => (cur.includes(key) ? cur : [...cur, key]));
     setActive(key);
   };
+  // The app opens a tab itself: a new chat, a Needs-you item that lives in a chat.
+  useEffect(() => {
+    if (focus) openSession(focus.key);
+    // focus.n is the request; the key alone repeats.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.n]);
 
   // Tool updates join the queue (spec §10.4); limit items open the decision sheet.
   const needs = useMemo(() => [...data.needs, ...updateNeeds(data.tools, new Date(data.nowMs).toISOString())], [data.needs, data.tools, data.nowMs]);
@@ -148,7 +158,13 @@ export function V3Window({ data, slots, act }: { data: V3Data; slots: V3Slots; a
   const bar = activeSession ? data.bar(activeSession) : null;
   const next = activeSession && !dismissed.has(activeSession) ? data.next(activeSession) : null;
   const tabs: TabItem[] = [
-    ...pages.map((p) => ({ kind: "page" as const, id: `page:${p}`, ...PAGE_TAB[p] })),
+    ...pages.map((p) => ({
+      kind: "page" as const,
+      id: `page:${p}`,
+      ...(p.startsWith("review:")
+        ? { label: `Review · ${data.sessions.find((x) => x.key === p.slice(7))?.title ?? p.slice(7)}`, icon: <FileCode className="size-3.5" /> }
+        : PAGE_TAB[p as PageId | "sessions-table"]),
+    })),
     ...sessionTabs.map((k) => {
       const s = data.sessions.find((x) => x.key === k);
       return { kind: "session" as const, id: k, title: s?.title ?? k, state: s?.state ?? "idle" };
@@ -163,6 +179,7 @@ export function V3Window({ data, slots, act }: { data: V3Data; slots: V3Slots; a
   });
 
   const page = (p: Page): ReactNode => {
+    if (p.startsWith("review:")) return slots.review ? slots.review(p.slice(7)) : null;
     if (p === "accounts")
       return (
         <AccountsPage
@@ -174,6 +191,7 @@ export function V3Window({ data, slots, act }: { data: V3Data; slots: V3Slots; a
           history={slots.usageHistory}
           pools={slots.pools}
           poolCount={slots.poolCount}
+          mcp={slots.mcp}
           on={{ add: () => act({ type: "account", op: "add" }), refresh: () => act({ type: "account", op: "refresh" }), use: (key) => act({ type: "account", op: "use", key }), signIn: (key) => act({ type: "account", op: "sign-in", key }), terminal: (key) => act({ type: "account", op: "terminal", key }), more: (key) => act({ type: "account", op: "more", key }) }}
         />
       );
@@ -240,7 +258,7 @@ export function V3Window({ data, slots, act }: { data: V3Data; slots: V3Slots; a
       const f = data.summary(activeSession);
       return f && <SummaryWindow f={f} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} />;
     }
-    if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} reviewAvailable={false} commitAvailable={data.commitAvailable ?? true} onReview={() => act({ type: "review", key: activeSession })} onCommit={() => act({ type: "commit", key: activeSession })} onHide={() => frame.setRight(null)} />;
+    if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={() => (slots.review ? openPage(`review:${activeSession}`) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openPage(`review:${activeSession}`) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} />;
     const s = data.sessions.find((x) => x.key === activeSession);
     return s && <ChildrenWindow noun={childNoun(s)} children={s.children} onHide={() => frame.setRight(null)} />;
   })();

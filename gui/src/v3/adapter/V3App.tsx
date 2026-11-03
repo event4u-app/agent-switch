@@ -26,9 +26,17 @@ import type { Appearance } from "../themes/resolve.js";
 import { V3Window, type V3Action, type V3Slots } from "../window.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
-import { sessionKey, toV3Data, type AdapterEnv } from "./data.js";
+import { sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
 import { OpenInMenu, SessionBody, settingsSection } from "./slots.js";
+import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
+import { useChats } from "./chats.js";
+import { ReviewHost } from "./ReviewHost.js";
+import { McpHost } from "./McpHost.js";
+import { viewStep } from "./viewSwitch.js";
+import { fold } from "../timeline.js";
+import { sessionFromRow } from "../../vm/build.js";
+import { ChatView } from "../chatview.js";
 
 const CHANGES_FRESH_MS = 10_000;
 
@@ -174,6 +182,19 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     };
   }, [lastFolder]);
 
+  const byKeyRef = useRef(new Map<string, SessionRow>());
+  const titleOf = (key: string) => byKeyRef.current.get(key)?.summary ?? key.split("/")[1] ?? "A session";
+  const chats = useChats(titleOf);
+  const [focus, setFocus] = useState<{ key: string; n: number } | undefined>(undefined);
+  const openTab = (key: string) => setFocus((f) => ({ key: chats.tabOf(key) ?? key, n: (f?.n ?? 0) + 1 }));
+  const newChat = () => {
+    const profile = route?.profile ? route.profile.slice(route.profile.indexOf("/") + 1) : s.accounts.find((a) => a.tool === "claude" && a.isDefault)?.name;
+    if (!profile || lastFolder === "~") return s.toast({ tone: "warn", text: "No Claude account or folder to start a chat in yet" });
+    const tab = `claude/${profile}/chat-${Date.now().toString(36)}`;
+    chats.open(tab, { new: { profile, provider: "claude", cwd: lastFolder }, mode: "default" });
+    openTab(tab);
+  };
+
   const data = toV3Data(s, feeds, {
     now: s.now,
     appearance,
@@ -185,9 +206,16 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     changes,
     wantChanges,
     route,
+    chats: chats.keys,
+    // A new chat that the CLI already lists under its real key needs no stand-in row.
+    chatRows: chats.rows.filter((r) => {
+      const real = chats.states.get(sessionKey(r))?.session?.key;
+      return !real || !(s.sessionRows ?? []).some((x) => sessionKey(x) === real);
+    }),
   });
 
   const byKey = useMemo(() => new Map(rows.map((r) => [sessionKey(r), r])), [rows]);
+  byKeyRef.current = byKey;
   const hostedKeys = new Set((feeds.host?.hosted ?? []).filter((h) => h.alive).map((h) => h.key));
   const deps: DispatchDeps = {
     ipc,
@@ -203,12 +231,84 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     setFocusTerminal: (on) => (setFocusTerminalFlag(on), setFocusTerminalState(on)),
     pick: setPick,
     prompt: setPrompt,
+    newChat,
+    openTab,
+    chatOf: (key) => {
+      const tab = chats.tabOf(key);
+      return tab ? (chats.states.get(tab) ?? null) : null;
+    },
   };
   const act = (a: V3Action) => void dispatchV3(a, deps);
 
+  // The [Terminal | Chat] switch (Phase 4): only between turns, so a switch
+  // asked for during a turn is armed and happens when the turn ends.
+  const [armed, setArmed] = useState<ReadonlyMap<string, "terminal" | "chat">>(new Map());
+  const arm = (key: string, to: "terminal" | "chat" | null) =>
+    setArmed((m) => {
+      if ((m.get(key) ?? null) === to) return m;
+      const n = new Map(m);
+      if (to) n.set(key, to);
+      else n.delete(key);
+      return n;
+    });
+  const chatRunning = (key: string) => {
+    const tab = chats.tabOf(key);
+    const c = tab ? chats.states.get(tab) : undefined;
+    return !!c && c.status === "ready" && fold(c.events).running;
+  };
+  const terminalRunning = (key: string) => {
+    const r = byKey.get(key);
+    return !!r && sessionFromRow(r, s.now).state === "working";
+  };
+  function switchView(key: string, to: "terminal" | "chat") {
+    const tab = chats.tabOf(key);
+    const step = viewStep(to, { inChat: !!tab, hosted: hostedKeys.has(key), chatRunning: chatRunning(key), terminalRunning: terminalRunning(key) });
+    const armTo = (t: "terminal" | "chat") => {
+      if (armed.get(key) !== t) s.toast({ tone: "info", text: `Switches to the ${t} after this turn` });
+      arm(key, t);
+    };
+    switch (step.do) {
+      case "none":
+        return;
+      case "no-terminal":
+        return s.toast({ tone: "info", text: "This session started in the chat view; it has no terminal here" });
+      case "arm":
+        return armTo(step.to);
+      case "close-chat":
+        arm(key, null);
+        // Closing the chat ends its bridge, which brings the program back in the window.
+        chats.close(tab!);
+        return void setTimeout(refresh, 1500);
+      case "open-chat":
+        void ipc
+          .viewSwitch(key, "chat")
+          .then(() => {
+            arm(key, null);
+            chats.open(key, { key, mode: "default" });
+          })
+          .catch((e: unknown) => {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (/switch after this turn/.test(msg)) return armTo("chat");
+            arm(key, null);
+            s.toast({ tone: "alert", text: msg });
+          });
+    }
+  }
+  deps.switchView = switchView;
+  useEffect(() => {
+    for (const [key, to] of armed) {
+      if (to === "terminal" ? !chatRunning(key) : !terminalRunning(key)) switchView(key, to);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [armed, chats.states, byKey]);
+
   const history = useUsageHistory(s.accounts, s.now);
   const slots: V3Slots = {
-    body: (key) => (
+    body: (key) => {
+      const tab = chats.tabOf(key);
+      const chat = tab ? chats.states.get(tab) : undefined;
+      if (tab) return chat ? <ChatView b={chat} findFiles={(q) => ipc.sessionFiles(chat.session?.key ?? key, q)} worktreeOf={worktreeOf(byKey.get(chat.session?.key ?? key))} /> : <p className="m-auto text-[13px] text-ac-muted">Starting the chat…</p>;
+      return (
       <SessionBody
         sessionKey={key}
         row={byKey.get(key)}
@@ -220,7 +320,8 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
         onTakeOver={() => s.open({ kind: "session", id: `${key.split("/")[0]}:${key.split("/")[2]}` })}
         onExit={refresh}
       />
-    ),
+      );
+    },
     openIn: (key) => (
       <OpenInMenu
         targets={data.openIn.targets}
@@ -228,8 +329,27 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
         onOpen={(target) => void ipc.openSessionIn(key, target).catch((e: unknown) => s.toast({ tone: "alert", text: `Open failed: ${e instanceof Error ? e.message : String(e)}` }))}
       />
     ),
+    review: (key) => {
+      const tab = chats.tabOf(key);
+      const chat = tab ? chats.states.get(tab) : undefined;
+      const row = byKey.get(key);
+      const running = (chat ? chat.status === "ready" && fold(chat.events).running : false) || (row ? sessionFromRow(row, s.now).state === "working" : false);
+      return (
+        <ReviewHost
+          sessionKey={chat?.session?.key ?? key}
+          title={data.sessions.find((x) => x.key === key)?.title ?? row?.summary ?? key}
+          running={running}
+          comment={chat && chat.status === "ready" ? (text) => chat.send(text) : undefined}
+          agentReview={chat && key.startsWith("codex/") ? chat.review : undefined}
+          toast={(t) => s.toast({ tone: t.tone, text: t.text })}
+          askMessage={(onSubmit) => setPrompt({ title: "Commit message", initial: "", onSubmit })}
+          createPr={() => act({ type: "create-pr", key })}
+        />
+      );
+    },
     usageHistory: <UsageHistory history={history} />,
     pools: <PoolsSection />,
+    mcp: <McpHost toast={(t) => s.toast(t)} />,
     poolCount: s.pools.length,
     tools: <ToolList />,
     settings: settingsSection,
@@ -237,7 +357,8 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
 
   return (
     <>
-      <V3Window data={data} slots={slots} act={act} />
+      <V3Window data={data} slots={slots} act={act} focus={focus} />
+      {chats.runners}
       <OverlayHost />
       <Toaster toasts={s.toasts} onDismiss={s.dismissToast} />
       {pick && <PickSheet req={pick} onClose={() => setPick(null)} />}

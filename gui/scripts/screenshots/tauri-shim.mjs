@@ -46,10 +46,30 @@ export function installTauriShim({ statics, windowLabel, storage }) {
     }
   }
 
+  // Long-lived children (the chat bridge): the host spawns, lines come back on the Channel.
+  const children = new Map(); // pid → { channel, index }
+  window.__asChild = (pid, event) => {
+    const c = children.get(pid);
+    if (!c) return;
+    const cb = callbacks.get(c.channel);
+    if (cb) cb({ message: event, index: c.index++ });
+  };
+
   async function invoke(cmd, args = {}) {
     if (cmd === "plugin:shell|execute") {
       return window.__asHost({ program: args.program, args: args.args ?? [], options: args.options ?? {} });
     }
+    if (cmd === "plugin:shell|spawn") {
+      if (!window.__asSpawn) throw new Error("spawn is not available in this harness");
+      const pid = await window.__asSpawn({ program: args.program, args: args.args ?? [], options: args.options ?? {} });
+      children.set(pid, { channel: args.onEvent.id, index: 0 });
+      return pid;
+    }
+    if (cmd === "plugin:shell|stdin_write") {
+      const data = typeof args.buffer === "string" ? args.buffer : new TextDecoder().decode(new Uint8Array(args.buffer));
+      return window.__asStdin(args.pid, data);
+    }
+    if (cmd === "plugin:shell|kill") return window.__asKill(args.pid);
     if (cmd === "plugin:event|listen") {
       const id = nextId++;
       const arr = listeners.get(args.event) ?? [];

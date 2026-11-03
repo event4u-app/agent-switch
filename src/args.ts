@@ -47,6 +47,11 @@ const VALUE_FLAGS = new Set([
   "file",
   "line",
   "repo",
+  "mode",
+  "before",
+  "query",
+  "hunk",
+  "scope",
 ]);
 
 export interface ParsedArgs {

@@ -125,10 +125,10 @@ export interface AccountActions {
   more: (key: string) => void;
 }
 
-export type AccountsView = "accounts" | "history" | "pools";
+export type AccountsView = "accounts" | "history" | "pools" | "mcp";
 
 /** Usage history and Projects & pools are the 2.11 screens, passed in as views (spec §10.1). */
-export function AccountsPage({ accounts, nowMs, nextRefreshMs, view, onView, history, pools, poolCount, on }: { accounts: PageAccount[]; nowMs: number; nextRefreshMs: number | null; view: AccountsView; onView: (v: AccountsView) => void; history: ReactNode; pools: ReactNode; poolCount: number; on: AccountActions }) {
+export function AccountsPage({ accounts, nowMs, nextRefreshMs, view, onView, history, pools, poolCount, mcp, on }: { accounts: PageAccount[]; nowMs: number; nextRefreshMs: number | null; view: AccountsView; onView: (v: AccountsView) => void; history: ReactNode; pools: ReactNode; poolCount: number; mcp?: ReactNode; on: AccountActions }) {
   const groups = (["claude", "codex", "antigravity"] as const).map((t) => [t, accounts.filter((a) => a.tool === t)] as const).filter(([, l]) => l.length);
   return (
     <PageBody
@@ -150,6 +150,7 @@ export function AccountsPage({ accounts, nowMs, nextRefreshMs, view, onView, his
             { value: "accounts", label: `Accounts ${accounts.length}` },
             { value: "history", label: "Usage history" },
             { value: "pools", label: `Projects & pools ${poolCount}` },
+            ...(mcp ? [{ value: "mcp" as const, label: "MCP & plugins" }] : []),
           ]}
         />
         {nextRefreshMs != null && <span className="ml-auto text-xs text-ac-muted">next refresh in {duration(nextRefreshMs)}</span>}
@@ -159,6 +160,7 @@ export function AccountsPage({ accounts, nowMs, nextRefreshMs, view, onView, his
       </div>
       {view === "history" && history}
       {view === "pools" && pools}
+      {view === "mcp" && mcp}
       {view === "accounts" &&
         groups.map(([tool, list]) => {
           const name = tool === "claude" ? "Claude" : tool === "codex" ? "Codex" : "Antigravity";
@@ -208,6 +210,16 @@ export interface TableSession {
   thinking: string | null;
   contextPct: number | null;
   lastActiveMs: number;
+  /** The repository (or folder) the session works in, for the Projects grouping. */
+  project?: string | null;
+}
+
+/** Sessions grouped by project, the most recently active project first; no project last. Pure. */
+export function byProject(rows: readonly TableSession[]): { project: string | null; rows: TableSession[] }[] {
+  const m = new Map<string | null, TableSession[]>();
+  for (const r of rows) m.set(r.project ?? null, [...(m.get(r.project ?? null) ?? []), r]);
+  const last = (l: TableSession[]) => Math.max(...l.map((r) => r.lastActiveMs));
+  return [...m].map(([project, l]) => ({ project, rows: l })).sort((a, b) => (a.project === null ? 1 : b.project === null ? -1 : last(b.rows) - last(a.rows)));
 }
 
 export function filterSessions(rows: readonly TableSession[], q: string, state: "all" | "live" | "done", tool: "any" | TableSession["tool"]): TableSession[] {
@@ -219,7 +231,9 @@ export function AllSessionsPage({ sessions, nowMs, onOpen, batch }: { sessions: 
   const [state, setState] = useState<"all" | "live" | "done">("all");
   const [tool, setTool] = useState<"any" | TableSession["tool"]>("any");
   const [sel, setSel] = useState<Set<string>>(new Set());
+  const [group, setGroup] = useState<"none" | "project">("none");
   const rows = useMemo(() => filterSessions(sessions, q, state, tool), [sessions, q, state, tool]);
+  const sections = useMemo(() => (group === "project" ? byProject(rows) : [{ project: null as string | null, rows }]), [rows, group]);
   const live = sessions.filter((s) => s.live).length;
   const cols = "grid-cols-[24px_minmax(0,1.6fr)_120px_minmax(0,1.2fr)_120px_70px_80px]";
   const toggle = (k: string) => setSel((c) => (c.has(k) ? new Set([...c].filter((x) => x !== k)) : new Set([...c, k])));
@@ -229,31 +243,42 @@ export function AllSessionsPage({ sessions, nowMs, onOpen, batch }: { sessions: 
         <Filter value={q} onChange={setQ} placeholder="Filter…" width={300} />
         <Segmented size="sm" label="State" value={state} onChange={setState} options={[{ value: "all", label: `All ${sessions.length}` }, { value: "live", label: `Live ${live}` }, { value: "done", label: `Done ${sessions.length - live}` }]} />
         <Segmented size="sm" label="Tool" value={tool} onChange={setTool} options={[{ value: "any", label: "Any tool" }, { value: "claude", label: "Claude" }, { value: "codex", label: "Codex" }, { value: "antigravity", label: "Antigravity" }]} />
+        <Segmented size="sm" label="Group" value={group} onChange={setGroup} options={[{ value: "none", label: "List" }, { value: "project", label: "Projects" }]} />
       </div>
       {sel.size > 0 && <BatchBar count={sel.size} className="mb-2" actions={batch([...sel])} />}
-      <Table cols={cols} heads={["", "Session", "Account", "Branch · PR", "Model", "Context", "Active"]}>
-        {rows.map((s) => (
-          <div key={s.key} onClick={() => onOpen(s.key)} className={cn("grid cursor-default items-center gap-3 border-b border-ac-line px-3 py-2 last:border-b-0 hover:bg-ac-raise", cols)}>
-            <input type="checkbox" aria-label={`Select ${s.title}`} checked={sel.has(s.key)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(s.key)} />
-            <span className="flex min-w-0 items-center gap-2">
-              <SessionStateIcon state={s.state} />
-              <span className="truncate text-[13px] text-ac-text">{s.title}</span>
-            </span>
-            <span className="flex min-w-0 items-center gap-1.5 text-xs text-ac-soft">
-              <AccountMark color={s.account.color} />
-              <span className="truncate">{s.account.name}</span>
-            </span>
-            <span className="flex min-w-0 items-center gap-1.5 font-ac-mono text-[11px] text-ac-muted">
-              <GitBranch className="size-3 shrink-0" />
-              <span className="truncate">{s.branch ?? "no repo"}</span>
-              {s.pr && <span className={cn("shrink-0", s.pr.ci === "FAILURE" && "text-ac-alert-text")}>#{s.pr.number}</span>}
-            </span>
-            <span className="truncate text-xs text-ac-soft">{[s.model, s.thinking].filter(Boolean).join(" · ") || "—"}</span>
-            <span className="font-ac-mono text-[11px] text-ac-muted">{s.contextPct == null ? "—" : `${Math.round(s.contextPct)}%`}</span>
-            <span className="text-right text-xs text-ac-muted">{duration(nowMs - s.lastActiveMs)}</span>
-          </div>
-        ))}
-      </Table>
+      {sections.map((sec) => (
+        <div key={sec.project ?? "-"} className={group === "project" ? "mb-4" : undefined}>
+          {group === "project" && (
+            <div className="mb-1.5 flex items-center gap-2">
+              <span className="ac-caps">{sec.project ?? "No project"}</span>
+              <span className="font-ac-mono text-[11px] text-ac-faint">{sec.rows.length}</span>
+            </div>
+          )}
+          <Table cols={cols} heads={["", "Session", "Account", "Branch · PR", "Model", "Context", "Active"]}>
+            {sec.rows.map((s) => (
+              <div key={s.key} onClick={() => onOpen(s.key)} className={cn("grid cursor-default items-center gap-3 border-b border-ac-line px-3 py-2 last:border-b-0 hover:bg-ac-raise", cols)}>
+                <input type="checkbox" aria-label={`Select ${s.title}`} checked={sel.has(s.key)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(s.key)} />
+                <span className="flex min-w-0 items-center gap-2">
+                  <SessionStateIcon state={s.state} />
+                  <span className="truncate text-[13px] text-ac-text">{s.title}</span>
+                </span>
+                <span className="flex min-w-0 items-center gap-1.5 text-xs text-ac-soft">
+                  <AccountMark color={s.account.color} />
+                  <span className="truncate">{s.account.name}</span>
+                </span>
+                <span className="flex min-w-0 items-center gap-1.5 font-ac-mono text-[11px] text-ac-muted">
+                  <GitBranch className="size-3 shrink-0" />
+                  <span className="truncate">{s.branch ?? "no repo"}</span>
+                  {s.pr && <span className={cn("shrink-0", s.pr.ci === "FAILURE" && "text-ac-alert-text")}>#{s.pr.number}</span>}
+                </span>
+                <span className="truncate text-xs text-ac-soft">{[s.model, s.thinking].filter(Boolean).join(" · ") || "—"}</span>
+                <span className="font-ac-mono text-[11px] text-ac-muted">{s.contextPct == null ? "—" : `${Math.round(s.contextPct)}%`}</span>
+                <span className="text-right text-xs text-ac-muted">{duration(nowMs - s.lastActiveMs)}</span>
+              </div>
+            ))}
+          </Table>
+        </div>
+      ))}
       {!rows.length && <p className="mt-3 text-xs text-ac-muted">No session matches.</p>}
     </PageBody>
   );

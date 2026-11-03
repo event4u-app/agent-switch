@@ -18,7 +18,10 @@ import { SignInSettings } from "../../redesign/screens/settings/sign-ins.js";
 import { UpdatesSettings } from "../../redesign/screens/settings/updates.js";
 import { Act } from "../kit.js";
 import type { OpenTarget, SettingsSection } from "../settings.js";
+import { ChatTimeline } from "../chat.js";
 import { ExternalBody, HostedTerminal } from "../workbench.js";
+import { useTimeline } from "./useTimeline.js";
+import { worktreeOf } from "./data.js";
 
 /** The 2.11 settings screens behind the v3 settings nav. Appearance and Open in
  *  are v3's own and never reach this function. */
@@ -95,5 +98,22 @@ export function SessionBody({ sessionKey, row, hosted, vars, followTheme, where,
       <dd>{row.profile}</dd>
     </dl>
   ) : null;
-  return <ExternalBody where={row?.surface === "desktop-app" ? "Claude Desktop" : where} facts={facts} lastLine={null} onFocus={onFocus} onTakeOver={onTakeOver} />;
+  return <ExternalBody where={row?.surface === "desktop-app" ? "Claude Desktop" : where} facts={facts} lastLine={null} onFocus={onFocus} onTakeOver={onTakeOver} timeline={<ReadOnlyTimeline sessionKey={sessionKey} row={row} />} />;
+}
+
+/** The read-only timeline of a session running elsewhere (ADR-010). Falls back
+ *  to the facts while it loads or when it cannot be read. */
+export function ReadOnlyTimeline({ sessionKey, row }: { sessionKey: string; row?: SessionRow }) {
+  const t = useTimeline(sessionKey);
+  if (!t.loaded) return <p className="m-auto text-[13px] text-ac-muted">Reading the conversation…</p>;
+  const notice = t.error ? (
+    <p role="status" className="shrink-0 border-b border-ac-line bg-ac-warn-tint px-4 py-1.5 text-xs text-ac-warn-text">
+      The conversation could not be read: {t.error}
+    </p>
+  ) : t.newerThanFixtures ? (
+    <p role="status" className="shrink-0 border-b border-ac-line bg-ac-info-tint px-4 py-1.5 text-xs text-ac-info-text">
+      Claude Code {t.version} is newer than the versions Agent Switch was tested with — some steps may show as not shown. Focus the terminal to see everything.
+    </p>
+  ) : null;
+  return <ChatTimeline events={t.events} notice={notice} on={{ worktreeOf: worktreeOf(row) }} />;
 }

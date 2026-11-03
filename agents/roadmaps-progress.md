@@ -20,7 +20,7 @@
 
 ---
 
-## Parked — `later/` (11 roadmaps, not active backlog)
+## Parked — `later/` (10 roadmaps, not active backlog)
 
 > Excluded from the table above and from `/roadmap:process-*` by design. Listed here so a resume condition is visible without opening the file.
 
@@ -32,7 +32,6 @@
 | [road-to-agent-switch-gui-service.md](roadmaps/later/road-to-agent-switch-gui-service.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-agent-switch-native-updater.md](roadmaps/later/road-to-agent-switch-native-updater.md) | 2 (2 you) | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-agent-switch-statusline-usage.md](roadmaps/later/road-to-agent-switch-statusline-usage.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
-| [road-to-agent-switch-v3-client.md](roadmaps/later/road-to-agent-switch-v3-client.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-agent-switch-v3-reach.md](roadmaps/later/road-to-agent-switch-v3-reach.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-deferred-followups.md](roadmaps/later/road-to-deferred-followups.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-host-signals-followups.md](roadmaps/later/road-to-host-signals-followups.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->

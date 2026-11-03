@@ -12,7 +12,7 @@ import type { ProviderId } from "../../transforms.js";
 import type { NeedItem } from "../needs.js";
 import type { Appearance } from "../themes/resolve.js";
 import type { SessionMenuItem, V3Action } from "../window.js";
-import { menuFor, nextStep, sessionKey, THINKING_LEVELS } from "./data.js";
+import { menuFor, NEW_CHAT, nextStep, sessionKey, THINKING_LEVELS } from "./data.js";
 import { parsePr } from "./feeds.js";
 
 /** The CLI calls the dispatcher makes (a subset of `ipc.ts`, injectable for tests). */
@@ -47,6 +47,14 @@ export interface DispatchDeps {
   pick: (req: { title: string; options: string[]; current: string | null; onPick: (v: string) => void }) => void;
   /** One line of text (rename). */
   prompt: (req: { title: string; initial: string; onSubmit: (v: string) => void }) => void;
+  /** Start a new session in the chat view and open its tab. */
+  newChat?: () => void;
+  /** Open a session's tab (its chat, where an approval waits). */
+  openTab?: (key: string) => void;
+  /** The session runs in this window's chat: model changes go through its bridge. */
+  chatOf?: (key: string) => { setModel: (m: string) => void } | null;
+  /** The session bar's [Terminal | Chat] switch. */
+  switchView?: (key: string, to: "terminal" | "chat") => void;
 }
 
 /** Claude's `--model` aliases. */
@@ -96,6 +104,8 @@ function createPr(row: SessionRow | undefined, deps: DispatchDeps): void {
 }
 
 function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
+  // A chat's approval or question is answered in the chat (spec §13.5: one decision).
+  if (n.verb === "Open chat" && deps.openTab) return deps.openTab(n.subject);
   if (n.kind === "approval" || n.kind === "question") return run(deps, "Focus", deps.ipc.focusSessionTerminal(n.subject));
   if (n.kind === "ci") {
     const url = prUrl(deps.rows().get(n.subject));
@@ -185,9 +195,15 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
     case "clean-up":
       return deps.open({ kind: "confirm", title: "Clean up merged worktrees?", body: "Removes the worktrees of sessions whose PR is merged. A worktree with changes is skipped.", confirm: "Clean up", onConfirm: () => void run(deps, "Clean up", deps.ipc.cleanupMerged()) });
     case "view":
-      return;
+      return deps.switchView?.(a.key, a.view);
     case "model":
     case "thinking": {
+      const chat = deps.chatOf?.(a.key);
+      if (chat) {
+        if (a.type === "thinking") return deps.toast({ tone: "info", text: "Thinking is set when the chat starts; switch to the terminal view to change it" });
+        const row = deps.rows().get(a.key);
+        return deps.pick({ title: "Model for the next turn", options: MODEL_ALIASES, current: row?.context?.model ?? null, onPick: (v) => chat.setModel(v) });
+      }
       if (!deps.hosted(a.key)) return;
       const row = deps.rows().get(a.key);
       const model = a.type === "model";
@@ -227,6 +243,7 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       if (a.op === "resume") return deps.open({ kind: "terminal", run: { args: ["sessions", "resume", a.key, "--yes"], title: "Resume" } });
       return run(deps, a.op === "pin" ? "Pin" : "Archive", deps.ipc.setLibraryFlag(a.key, a.op, a.value));
     case "palette":
+      if (a.entry.id === NEW_CHAT) return deps.newChat?.();
       return;
     case "appearance":
       return deps.setAppearance(a.value);

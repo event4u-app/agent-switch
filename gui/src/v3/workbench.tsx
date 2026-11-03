@@ -90,7 +90,7 @@ function BarChip({ children, title, locked, onClick }: { children: ReactNode; ti
 export function SessionBar({ s, openIn, on }: { s: BarSession; openIn: ReactNode; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: () => void; thinking: () => void; menu: () => void } }) {
   const t = tone(s.account.fiveH, s.account.protect);
   const chatOff = !s.hosted || !s.chatAvailable;
-  const chatWhy = !s.hosted ? "Chat needs a session hosted in Agent Switch" : "Chat arrives with the next version";
+  const chatWhy = !s.hosted ? "Chat needs a session hosted in Agent Switch" : "This tool keeps the view it started in";
   return (
     <div className="flex h-10 shrink-0 items-center gap-1 overflow-hidden border-b border-ac-line bg-ac-panel px-2">
       <div role="radiogroup" aria-label="View" className="mr-1 inline-flex h-7 shrink-0 items-center rounded-md border border-ac-line bg-ac-bg p-0.5">
@@ -176,7 +176,7 @@ export function BlockerStrip({ text, action, summaryOpen, onAction, onDismiss }:
  * session's facts and its last transcript line; a full read-only view comes
  * with the v3.1 timeline reader.
  */
-export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver }: { where: string; facts: ReactNode; lastLine: string | null; onFocus: () => void; onTakeOver: () => void }) {
+export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver, timeline }: { where: string; facts: ReactNode; lastLine: string | null; onFocus: () => void; onTakeOver: () => void; timeline?: ReactNode }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-3 border-b border-ac-line bg-ac-panel px-4 py-2">
@@ -191,14 +191,17 @@ export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver }: { 
           Take over here…
         </Act>
       </div>
-      <div className="min-h-0 flex-1 space-y-3 relative overflow-y-auto px-5 py-4 text-[12.5px] text-ac-soft">
-        {facts}
-        {lastLine && (
-          <div className="rounded-[10px] border border-ac-line px-3 py-2 font-ac-mono text-[12px]" style={{ background: "var(--as-term-bg)", color: "var(--as-term-fg)" }}>
-            {lastLine}
-          </div>
-        )}
-      </div>
+      {/* v3.1: the read-only timeline replaces the facts once it can be read (D-mirror). */}
+      {timeline ?? (
+        <div className="min-h-0 flex-1 space-y-3 relative overflow-y-auto px-5 py-4 text-[12.5px] text-ac-soft">
+          {facts}
+          {lastLine && (
+            <div className="rounded-[10px] border border-ac-line px-3 py-2 font-ac-mono text-[12px]" style={{ background: "var(--as-term-bg)", color: "var(--as-term-fg)" }}>
+              {lastLine}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

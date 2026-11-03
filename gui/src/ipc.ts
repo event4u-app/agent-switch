@@ -151,6 +151,119 @@ export async function setLibraryFlag(key: string, flag: "pin" | "archive", on: b
   await runCli(["sessions", on ? flag : `un${flag}`, key]);
 }
 
+/** `timeline <session> --json`: one page of the session's history as AS events. */
+export async function sessionTimeline(key: string, limit = 200, before?: number): Promise<{ events: import("./v3/timeline.js").AsEvent[]; from: number; total: number; version: string | null; newerThanFixtures: boolean }> {
+  const o = JSON.parse(await runCli(["timeline", key, "--json", "--limit", String(limit), ...(before !== undefined ? ["--before", String(before)] : [])]));
+  return { events: Array.isArray(o.events) ? o.events : [], from: Number(o.from) || 0, total: Number(o.total) || 0, version: typeof o.version === "string" ? o.version : null, newerThanFixtures: o.newerThanFixtures === true };
+}
+
+export type BridgeSpec =
+  | { key: string; mode: "default" | "acceptEdits" | "plan"; model?: string }
+  | { new: { profile: string; provider: "claude" | "codex"; cwd: string }; mode: "default" | "acceptEdits" | "plan"; model?: string };
+
+/** The spawn scope (capabilities/default.json `shell:allow-spawn`) and arguments for a bridge. Pure. */
+export function bridgeArgs(spec: BridgeSpec): { scope: string; args: string[] } {
+  const model = spec.model ? ["--model", spec.model] : [];
+  if ("key" in spec) return { scope: spec.model ? "as-bridge-model" : "as-bridge", args: ["bridge", spec.key, "--mode", spec.mode, ...model] };
+  const n = spec.new;
+  return { scope: spec.model ? "as-bridge-new-model" : "as-bridge-new", args: ["bridge", "--new", n.profile, "--provider", n.provider, "--cwd", n.cwd, "--mode", spec.mode, ...model] };
+}
+
+export interface BridgeProcess {
+  send(command: object): Promise<void>;
+  kill(): Promise<void>;
+}
+
+/** Start `agent-switch bridge`: every stdout line is handed to `onLine`. */
+export async function openBridge(spec: BridgeSpec, onLine: (line: string) => void, onClose: (code: number | null) => void): Promise<BridgeProcess> {
+  const { scope, args } = bridgeArgs(spec);
+  const cmd = Command.create(scope, args);
+  let buf = "";
+  cmd.stdout.on("data", (d: string) => {
+    buf += d.endsWith("\n") ? d : `${d}\n`;
+    let i: number;
+    while ((i = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, i).trim();
+      buf = buf.slice(i + 1);
+      if (line) onLine(line);
+    }
+  });
+  cmd.on("close", (e: { code: number | null }) => onClose(e.code));
+  const child = await cmd.spawn();
+  return {
+    send: (command) => child.write(JSON.stringify(command) + "\n"),
+    kill: () => child.kill(),
+  };
+}
+
+/** `files <session> --query Q --json`: repository files for `@` in the composer. */
+export async function sessionFiles(key: string, query: string): Promise<string[]> {
+  const o = JSON.parse(await runCli(["files", key, "--query", query, "--json"]));
+  return Array.isArray(o.files) ? o.files.filter((f: unknown): f is string => typeof f === "string") : [];
+}
+
+export type ReviewScope = "turn" | "session" | "worktree" | "staged";
+export interface ReviewHunkJson {
+  oldStart: number;
+  newStart: number;
+  lines: string[];
+  layer: "committed" | "staged" | "unstaged" | "turn";
+  hash: string;
+  header: string;
+}
+export interface ReviewFileJson {
+  path: string;
+  status: "A" | "M" | "D" | "R" | "?";
+  added: number;
+  removed: number;
+  hunks: ReviewHunkJson[];
+}
+
+/** `diff <session> --scope S --json`: the Review page's files. */
+export async function sessionReview(key: string, scope: ReviewScope): Promise<{ files: ReviewFileJson[]; shared: string[]; base: string | null }> {
+  const o = JSON.parse(await runCli(["diff", key, "--scope", scope, "--json"]));
+  return { files: Array.isArray(o.files) ? o.files : [], shared: Array.isArray(o.shared) ? o.shared : [], base: typeof o.base === "string" ? o.base : null };
+}
+
+/** A CLI action answering `--json` with ok/error; a refusal comes back as an Error with the CLI's reason. */
+async function cliCall(args: string[]): Promise<string> {
+  const out = await cli(args).execute();
+  let o: { ok?: boolean; error?: string; done?: string; commit?: string } = {};
+  try {
+    o = JSON.parse(out.stdout.trim().split("\n").pop() ?? "{}");
+  } catch {
+    /* not JSON: fall through to the exit code */
+  }
+  if (out.code !== 0 || o.ok === false) throw new Error(o.error || out.stderr || `agent-switch ${args.join(" ")} failed`);
+  return o.done ?? o.commit ?? "";
+}
+
+export const reviewAct = (key: string, action: "stage" | "unstage" | "discard", file: string, hunk?: string) => cliCall(["diff", key, action, "--file", file, ...(hunk ? ["--hunk", hunk] : []), "--json"]);
+export const reviewUndo = (key: string) => cliCall(["diff", key, "undo", "--json"]);
+export interface McpAccountJson {
+  key: string;
+  provider: "claude" | "codex";
+  account: string;
+  configFile: string;
+  servers: { name: string; transport: "stdio" | "http" | "sse" | "unknown"; scope: string }[];
+  plugins: { name: string; enabled: boolean }[];
+}
+
+/** `mcp --json`: each account's MCP servers and plugins, names only. */
+export async function mcpList(): Promise<McpAccountJson[]> {
+  const o = JSON.parse(await runCli(["mcp", "--json"]));
+  return Array.isArray(o) ? o : [];
+}
+
+/** `mcp open <provider/account>`: reveal the account's config file. */
+export async function mcpOpen(key: string): Promise<void> {
+  await runCli(["mcp", "open", key, "--json"]);
+}
+
+/** `view <session> chat|terminal`: the session bar's switch for a hosted session. */
+export const viewSwitch = (key: string, to: "chat" | "terminal") => cliCall(["view", key, to, "--json"]);
+export const reviewCommit = (key: string, message: string) => cliCall(["diff", key, "commit", "--message", message, "--json"]);
+
 /** `sessions name <session> <name>`: the library name. */
 export async function renameSession(key: string, name: string): Promise<void> {
   await runCli(["sessions", "name", key, name]);

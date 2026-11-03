@@ -1,0 +1,259 @@
+---
+complexity: large
+status: done
+tree_pin: ff38137
+---
+
+# Roadmap: agent-switch v3.1 "Client" — chat view, diffs, terminal ⇄ chat
+
+> **Source:** `agents/tmp.old/inbox-2026-11-b/` — owner turn 2 (2026-11-02): pin and
+> resume old sessions, "a real replacement for Claude Desktop", switch the view
+> between plain terminal and an own GUI over it with text input and drag & drop,
+> see what changed as a collapsible diff "like Codex/git". Second arrival the same
+> day: the v3 UI design (`design/`), whose chat and review boards are v3.1.
+>
+> **Pull trigger:** [`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)
+> closed (store, host, input lease and library in place). Parked because every
+> phase here builds on them.
+
+## Branch
+
+Targets `dev/v3` (branch model in
+[`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)).
+
+## Design basis (binding)
+
+The v3 UI spec [`docs/design/agent-switch-v3-ui-spec.md`](../../../docs/design/agent-switch-v3-ui-spec.md)
+is the spec here too, at strict fidelity (rules in
+[`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)
+§ Design basis). This roadmap builds its v3.1 boards: Chat view (§10.8), Review
+(§10.9), the `[Terminal | Chat]` switch (§6.2), "Review changes" in the Changes
+window (§9.2), `⌘.` (§12) and behaviour rules §13.3–§13.5. Reference code:
+`gui/src/v3/v31.tsx` in
+[`docs/design/agent-switch-v3-reference.patch`](../../../docs/design/agent-switch-v3-reference.patch).
+
+## Owner demands answered here
+
+D7 Claude-Desktop replacement · D8 view switch terminal ⇄ own GUI · D9 text input,
+drag & drop upload · D10 diffs, collapsible · D11 "a real client".
+
+## Constraints (binding)
+
+- **No Claude Agent SDK** (proprietary licence, login grey zone, runtime
+  dependency). Claude is driven via the unmodified binary: `claude -p
+  --input-format stream-json --output-format stream-json --verbose
+  --include-partial-messages --resume <id>`. A second assistant proposed
+  "SDK first"; declined for these reasons.
+- **Approvals stay real approvals** — never `bypassPermissions`, never `--bare`;
+  on resume pass `--permission-mode` explicitly (`-p` resume does not restore it).
+- **Terminal stays the default view**; the chat view is opt-in per session.
+- A session running in the user's own terminal is **read-only** in the client,
+  with a "take over?" banner — never steered remotely.
+- The bridge never writes host index files.
+- Codex uses the same AS event model — no provider-specific chat screen.
+
+## Phase 0 — Spikes and ADRs
+
+- [x] Spike: long-lived stream-json process with `CLAUDE_CONFIG_DIR`, OAuth login
+      and image content blocks.
+      → `agents/evidence/v31-phase0-spikes-2026-11.md` § C1: one process carried two turns, the profile's OAuth login
+      worked from `CLAUDE_CONFIG_DIR`, a base64 PNG block was read correctly.
+- [x] Spike S2 moved to v3.0 Phase 0 (the Needs-you zone needs it first); reuse its
+      result for the approval card here.
+      → `agents/evidence/v31-phase0-spikes-2026-11.md` § C2: S2 reused; for the bridge `--permission-prompt-tool stdio`
+      gives `can_use_tool` requests on stdout, answered on stdin (deny and allow
+      both verified).
+- [x] Spike: does `codex app-server` list and resume threads started in the CLI?
+      → `agents/evidence/v31-phase0-spikes-2026-11.md` § C3: yes, once `thread/list` names the source kinds; `thread/read`
+      and `thread/resume` work. A Codex turn was not run (both logins fail to
+      refresh, central blocker).
+- [x] ADR: bridge process model (CLI stdio process `agent-switch bridge` spawned by
+      the engine vs in-engine manager; no new Tauri capability) and the per-session
+      write lock.
+      → `docs/adr/ADR-009-v31-bridge-process-and-write-lock.md`: a CLI process
+      per session, spawned by the GUI, holding the session's input lease.
+- [x] ADR: timeline reader for Claude history (extends ADR-002), fixtures per CC
+      version; "open in terminal" when in doubt.
+      → `docs/adr/ADR-010-v31-timeline-reader.md`.
+
+## Phase 1 — Read-only timeline
+
+- [x] AS event model v1 (`turn`, `message.delta`, `tool.*` with `parentToolId`,
+      `diff`, `plan`, `approval.*`, `question.requested`, `subagent.*`, `limits`,
+      `error`, `unknown` passed through — never dropped).
+      → `src/timeline/{events,claude,codex}.ts`; recorded fixtures
+      `tests/fixtures/timeline/claude-2.1.316.jsonl` (transcript, anonymised) and
+      `claude-stream-2.1.316.jsonl`; the Codex fixture is synthetic from the
+      app-server schema (no Codex login can run a turn).
+- [x] Claude via the bridge, Codex via `codex app-server` (`thread/read`).
+      → `agent-switch bridge` / `timeline` (`src/commands/bridge.ts`,
+      `src/bridge/{claude,codex}-bridge.ts`). Live run against Claude 2.1.316:
+      a new session, a Write approval asked and answered, the file written, the
+      turn ended. Found on the way: a bridge whose agent binary failed to start
+      never exited (test red first).
+- [x] Virtualised list; 50 real sessions render.
+      → `gui/src/v3/{timeline.ts,virtual.tsx,chat.tsx}` (windowing without a new
+      dependency); a session in the user's own terminal now shows its read-only
+      timeline (D-mirror's v3.1 promise). The 50 newest real transcripts on the
+      owner's machine (127.6 MB, Claude Code 2.1.314/2.1.316) mapped without an
+      error in 364 ms, slowest 89 ms; that run surfaced `system:turn_duration`,
+      now a turn end. GUI: 50 sessions render, a 2700-row session keeps < 60
+      rows in the DOM.
+
+## Phase 2 — Interactive chat view
+
+- [x] Chat body per spec §10.8: user bubble right-aligned on raise, assistant
+      prose plain, collapsible tool cards (state dot, tool name, argument in
+      mono; "Update" opens to a diff), the subagent "Task" row with the violet
+      worktree badge and "subagent · via hook".
+      → `gui/src/v3/chat.tsx` (from the reference board). The worktree badge
+      comes from the subagent's hook record (`sessions --json` children, joined
+      by `agentId`); the transcript itself names no worktree, so without a hook
+      record there is no badge.
+- [x] Composer per spec §10.8: attachment chips, the queue placeholder while a
+      turn runs, Attach, Mode ("Ask before edits ▾"), "Stop ⌘.", "Queue ↵";
+      `@`-files and slash commands; messages typed during a turn are queued, not
+      sent (§13.4).
+      → `gui/src/v3/composer.tsx`; `@` completes through `agent-switch files`, `/`
+      from the commands Claude reports at start; the bridge queues while a turn
+      runs. The idle placeholder ("Message — …") is not drawn in the spec and
+      follows its wording; "Queue" stays "Queue" (C-send is a proposal).
+- [x] Drag & drop / paste: images as content blocks, repo files as `@path`, external
+      files into a per-session attachment staging area (size limit, MIME sniff,
+      SHA-256, TTL cleanup, symlink-race safe).
+      → `src/bridge/attachments.ts`: type from the bytes, 20 MB, staged by
+      SHA-256 with `wx` (never through a planted name), links refused, read with
+      `O_NOFOLLOW`, 7-day TTL on bridge start. Repository files come as `@path`
+      through `@` completion; a file dropped from the Finder has no path in the
+      webview and is staged as a copy.
+- [x] Approval card per spec §10.8: "✓ Allow once ↵", "Always allow “<rule>”",
+      "Deny", and "Same rule as the terminal prompt · never bypassed"; one decision
+      with the Needs-you row and the terminal (§13.5); questions as forms.
+      → "Always allow" sends the rule the agent itself proposes
+      (`permission_suggestions`). Open approvals and questions are written per
+      bridge (`src/bridge/pending.ts`) and appear in `needs` as "Open chat";
+      answering anywhere removes them. Questions (`AskUserQuestion`) come on the
+      same control channel and are answered with `updatedInput.answers` —
+      verified live.
+- [x] Stop and "interrupt now"; steering for Codex.
+      → Stop ⌘. sends `interrupt` (verified live: the turn ends as
+      interrupted). Codex: ⌥↵ during a turn steers it (`turn/steer`); Claude has
+      no steering, the message is queued.
+- [x] Model / mode switch; context and cost header; notifications.
+      → Model through the bridge (`set_model`, verified live), mode in the
+      composer (`set_permission_mode`, verified; no bypass value exists in the
+      menu or the bridge). A one-line header: model, mode, last turn, cost.
+      Approvals, questions and finished turns notify while the window is
+      hidden. Thinking is fixed for a chat (the stream has no control for it).
+- [x] Start a new session directly in the client view.
+      → Palette "New session in chat view" (`bridge --new`). `npm --prefix gui run v31-chat`: the
+      whole path offline — palette, new chat, message, approval card, Allow
+      once, the answer — real CLI bridge, a stand-in Claude replaying the
+      recorded stream, 1440×900 in three themes, render checks clean.
+
+## Phase 3 — Changes and review
+
+- [x] Review page tab per spec §10.9: scope segmented This turn (diff events) /
+      Session / Worktree vs main (merge-base) / Staged, plus Unified / Split.
+      Bash-made changes visible via `git diff`. Opened from "Review changes" in the
+      Changes window.
+      → `gui/src/v3/review.tsx` + `adapter/ReviewHost.tsx`, a page tab per
+      session ("Review · <title>"). "Worktree vs main" compares with the merge
+      base of origin's HEAD (else main/master) and lists Bash changes and new
+      files; "Session" starts at the commit HEAD was on when the transcript
+      began; "This turn" reads the last turn's diff events. `npm --prefix gui run v31-chat` opens it
+      from Changes › Review changes over a real repository, stages a change and
+      switches to Split — 1440×900, three themes, render checks clean.
+- [x] File tree with the Marker on the current file; `agent-switch diff --json`.
+- [x] While a turn runs: the info strip, and stage / discard / revert disabled with
+      "Unlocks when the turn ends" (§13.4).
+      → In the page and again in the CLI: `diff` refuses an action while the
+      transcript shows an unfinished turn or the session's bridge has an open
+      approval.
+- [x] Discard / stage / unstage hunks with preflight (index lock, diff hash) and
+      undo; only while no turn runs. Several sessions in one worktree → conflict flag.
+      → `src/commands/diff.ts`: `git apply` with the exact hunk after a
+      `--check`; refused on `index.lock`, on a hunk that changed since it was
+      shown (its hash), on a running turn. A discard keeps the patch (a new file:
+      a copy) under the state root, and `diff <s> undo` puts it back unless the
+      file moved on. Other live sessions in the same worktree come back as
+      `shared` and show a warning. Tests run against real repositories
+      (`tests/diff-review.test.ts`).
+- [x] A line comment is "sent when the turn ends" as the next prompt; "Commit N
+      staged…" and "Create PR"; Codex `review/start`.
+      → A comment goes to the session's chat, whose bridge queues it while a
+      turn runs (without a chat here the button says to open the chat view).
+      "Commit N staged…" asks for a message and runs `git commit` with the
+      repository's hooks; "Create PR" is the existing action. Codex: "Ask Codex
+      to review" sends `review/start` on the uncommitted changes (bridge test).
+- [x] Rewind via the terminal (no own rewind rebuild).
+      → The page says "Rewind stays in the terminal"; nothing is rebuilt.
+
+## Phase 4 — Terminal ⇄ chat switch
+
+- [x] The session bar's `[Terminal | Chat]` switch (spec §6.2): only between
+      turns; disabled with "Chat needs a session hosted in Agent Switch" for
+      sessions in the user's own terminal; one writer per session; handover via `respawn-pane` +
+      `--resume` (`src/tmux.ts` in-place mechanism); "switch after this turn"
+      (arm pattern, `src/rebind-arm.ts`).
+      → `agent-switch view <s> chat|terminal` (`src/commands/view.ts`): to chat,
+      the hosted window is parked (`TmuxHost.park` — its program replaced by a
+      waiting notice, window and key kept), then the chat's bridge resumes the
+      conversation; when that bridge ends, the window gets the program back with
+      `--resume` (`restoreAfterChat` in the bridge's exit). Refused during a
+      turn and while another writer holds the lease. In the window a switch
+      asked for during a turn is armed and happens when the turn ends
+      (`adapter/viewSwitch.ts`); a chat started in the chat view has no
+      terminal to go back to and says so. The arm lives in the window rather
+      than in `rebind-arm` — the turn end it waits for is in front of it.
+- [x] Offered only where the adapter declares a shared conversation (Claude,
+      Codex); otherwise the view is fixed at start.
+      → Chat is offered for Claude and Codex (`SHARED_CONVERSATION`); for
+      others the switch stays disabled: "This tool keeps the view it started
+      in". Codex comes back with `codex resume <id>` (unit test; no live Codex
+      run, its sign-ins here do not refresh).
+- [x] Second-writer rejection test; 20 switches without mixing.
+      → The bridge refuses a held lease (`tests/bridge-command.test.ts`), and
+      `view chat` refuses a live writer (`tests/view-switch.test.ts`). 20
+      switches on a real tmux window: one pane, one program at a time, every
+      return resuming the same conversation id. A bridge ending over a parked
+      session restores the program in the window (real tmux).
+
+## Phase 5 — Desktop parity
+
+- [x] Projects view; MCP and plugin management per account (read + open config,
+      no own installer); what Claude Desktop does that this client does not, listed
+      honestly on the docs site.
+      → All sessions › Group "Projects": sessions by repository (worktrees join
+      their main checkout), most recent first. Accounts › "MCP & plugins" reads
+      `agent-switch mcp --json` (`src/commands/mcp.ts`): servers by name,
+      transport and scope from `.claude.json` / Codex `config.toml`, Claude
+      plugins from `settings.json`; never a command line, env or header (test).
+      "Reveal config" shows the file; nothing is installed. Docs:
+      `guides/chat-view` with "What this client does not do"; the docs build
+      and its link check pass.
+
+## Acceptance
+
+- A full workflow (prompt, approval, edit, image, question, stop, review, commit,
+  PR) without the terminal, for Claude and Codex.
+- 20 terminal ⇄ chat switches without mixing; a second writer is rejected.
+- Discard has undo; Bash changes appear in the worktree diff.
+- The chat and review boards pass the design acceptance of spec §14 (three themes,
+  1440×900, no clipping or wraps) and get their rows in the fidelity matrix.
+  → `agents/evidence/v31-fidelity-2026-11.md`.
+
+## Decisions
+
+| ID | Question | Status |
+|---|---|---|
+| C-diff | Diff rendering library | **decided (Phase 3):** no library — the chat's own `DiffLines` (unified) plus a split view in `review.tsx`, plain text rows a screen reader reads in order; 0 KB added, no new runtime dependency in the GUI or the CLI. A library would only add syntax colouring, which no board asks for. Revisit-if: syntax colouring becomes a requirement. |
+| C-send | Spec proposal: "Queue" becomes "Send" when no turn runs (§10.8) | **owner** — marked "proposal" in the spec, not built until confirmed |
+| C-bill | Anthropic counts the client view as programmatic use; the billing split is only paused (since 2026-06-15) | risk, not a decision — terminal stays default |
+
+## Risk Register
+
+| Risk | Mitigation |
+|---|---|
+| Undocumented transcript layout | fixtures, version check, honest degrade |
+| Provider policy change on programmatic use | terminal default; chat opt-in |

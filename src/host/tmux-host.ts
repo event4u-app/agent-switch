@@ -37,6 +37,8 @@ export interface HostedSession {
   window: string;
   cwd: string;
   startedAt: string;
+  /** The conversation is open in the chat view; the window shows a notice instead of the program. */
+  parked?: boolean;
 }
 
 export interface HostedRow extends HostedSession {
@@ -230,6 +232,31 @@ export class TmuxHost {
     reg[nextKey] = next;
     this.writeRegistry(reg);
     return next;
+  }
+
+  /**
+   * Park a hosted session for the chat view (road-to-agent-switch-v3-client
+   * Phase 4): the program in its window is replaced by `argv` (a notice that
+   * waits), so the chat's bridge is the conversation's only writer. The window,
+   * the key and the registry entry stay; `respawn` brings the program back.
+   */
+  park(key: string, argv: string[]): HostedSession {
+    const reg = this.readRegistry();
+    const cur = reg[key];
+    if (!cur) throw new Error(`no hosted session ${key}`);
+    const r = this.tmux(["respawn-pane", "-k", "-t", cur.window, "-c", cur.cwd, "-e", `AGENT_SWITCH_HOST_PANE=${key}`, "--", ...argv]);
+    if (!r.ok) throw new Error(`tmux could not park the session: ${r.err}`);
+    reg[key] = { ...cur, parked: true };
+    this.writeRegistry(reg);
+    return reg[key];
+  }
+
+  /** Mark a hosted session as no longer parked (after `respawn` restored its program). */
+  unparked(key: string): void {
+    const reg = this.readRegistry();
+    if (!reg[key]) return;
+    delete reg[key].parked;
+    this.writeRegistry(reg);
   }
 
   /**

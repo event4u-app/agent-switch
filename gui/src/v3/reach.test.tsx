@@ -158,3 +158,24 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
     expect(w.clicks()).toBe(2);
   });
 });
+
+describe("v3.1 Review page", () => {
+  it("Changes › Review changes opens a Review tab for the session; it closes like any page", () => {
+    const act = vi.fn();
+    const review = vi.fn((key: string) => <p>{`review of ${key}`}</p>);
+    render(<V3Window data={{ ...data(), changes: () => [{ path: "a.ts", status: "M", added: 1, removed: 0 }] as never }} slots={{ ...slots, review }} act={act} />);
+    fireEvent.click(screen.getByText("Event store"));
+    fireEvent.click(screen.getByLabelText("Changes"));
+    fireEvent.click(screen.getByText("Review changes"));
+    expect(screen.getByText("review of s1")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /Review · Event store/ })).toBeTruthy();
+    expect(act).not.toHaveBeenCalledWith({ type: "review", key: "s1" });
+  });
+
+  it("without a review slot, Review stays disabled", () => {
+    render(<V3Window data={{ ...data(), changes: () => [{ path: "a.ts", status: "M", added: 1, removed: 0 }] as never }} slots={slots} act={vi.fn()} />);
+    fireEvent.click(screen.getByText("Event store"));
+    fireEvent.click(screen.getByLabelText("Changes"));
+    expect((screen.getByText("Review changes").closest("button") as HTMLButtonElement).disabled).toBe(true);
+  });
+});
