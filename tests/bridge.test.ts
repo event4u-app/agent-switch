@@ -179,7 +179,9 @@ function codex(thread: unknown) {
   const note = (method: string, params: unknown) => f.stdout.write(JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n");
   const ask = (id: number, method: string, params: unknown) => f.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
   const answered = () => f.written.filter((w) => w.result !== undefined);
-  setInterval(() => {
+  // Kept referenced (not unref'd): on Node ≤ 22 an unref'd poll lets the event loop
+  // drain while a test still awaits the server's reply. `stop()` ends it.
+  const poll = setInterval(() => {
     for (const w of f.written.splice(0)) {
       if (w.result !== undefined) (f as unknown as { answers: unknown[] }).answers.push(w);
       else if (w.method === "initialize") reply(w.id, {});
@@ -189,14 +191,15 @@ function codex(thread: unknown) {
       else if (w.method === "turn/interrupt") reply(w.id, {});
       else if (w.method && w.id !== undefined) (f as unknown as { calls: unknown[] }).calls.push(w);
     }
-  }, 2).unref();
+  }, 2);
   Object.assign(f, { answers: [], calls: [] });
-  return { f, server, note, ask, answered, answers: () => (f as unknown as { answers: { id: unknown; result: unknown }[] }).answers, calls: () => (f as unknown as { calls: { method: string }[] }).calls };
+  return { f, server, note, ask, answered, stop: () => clearInterval(poll), answers: () => (f as unknown as { answers: { id: unknown; result: unknown }[] }).answers, calls: () => (f as unknown as { calls: { method: string }[] }).calls };
 }
 
-test("codex bridge: history from thread/read, a turn with an approval, the queue", async () => {
+test("codex bridge: history from thread/read, a turn with an approval, the queue", async (t) => {
   const thread = JSON.parse(fs.readFileSync(path.join(FIX, "codex-thread-0.166.0.json"), "utf8"));
   const c = codex(thread);
+  t.after(c.stop);
   const out: BridgeOutput[] = [];
   const b = new CodexBridge({ key: "codex/w/thr_1", threadId: "thr_1", cwd: "/work", server: c.server, out: (o) => out.push(o) });
   await b.start();

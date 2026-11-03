@@ -17,6 +17,9 @@ function repo() {
   fs.mkdirSync(r);
   const g = (...a: string[]) => execFileSync("git", ["-C", r, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { encoding: "utf8" });
   g("init", "-q", "-b", "main");
+  // The commit under test runs plain `git commit`: give the repo an identity (CI has none).
+  g("config", "user.name", "t");
+  g("config", "user.email", "t@example.com");
   fs.writeFileSync(path.join(r, "a.txt"), "one\ntwo\nthree\n");
   fs.writeFileSync(path.join(r, "b.txt"), "b1\nb2\n");
   g("add", ".");
