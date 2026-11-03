@@ -10,7 +10,9 @@ import { X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
-import type { IdentityColor } from "../vm/types.js";
+import type { IdentityColor, SessionState } from "../vm/types.js";
+import { ChevronDown } from "lucide-react";
+import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { AccountMark, Disclosure, Label } from "./kit.js";
 import { LimitBar, type LimitAccount } from "./limits.js";
 
@@ -179,12 +181,41 @@ export interface SheetSession {
   title: string;
   model: string | null;
   target: string;
+  state?: SessionState;
 }
 
-export function DecisionSheet({ account, pctUsed, window, resetsIn, sessions, room, suggestion, onDecide, onKeep, onClose }: { account: string; pctUsed: number; window: string; resetsIn: string; sessions: SheetSession[]; room: ReactNode; suggestion: string; onDecide: (how: MoveHow, moves: { key: string; target: string }[]) => void; onKeep: () => void; onClose: () => void }) {
+export function DecisionSheet({
+  account,
+  pctUsed,
+  window,
+  resetsIn,
+  sessions,
+  room,
+  suggestion,
+  targets = [],
+  onDecide,
+  onKeep,
+  onClose,
+}: {
+  account: string;
+  pctUsed: number;
+  window: string;
+  resetsIn: string;
+  sessions: SheetSession[];
+  room: ReactNode;
+  suggestion: string;
+  /** The accounts a session can move to (same tool), for the per-session picker. */
+  targets?: { name: string; color: IdentityColor }[];
+  onDecide: (how: MoveHow, moves: { key: string; target: string }[]) => void;
+  onKeep: () => void;
+  onClose: () => void;
+}) {
   const [how, setHow] = useState<MoveHow>("after-turn");
   const [checked, setChecked] = useState<Set<string>>(new Set(sessions.map((s) => s.key)));
-  const target = sessions[0]?.target ?? suggestion;
+  const [chosen, setChosen] = useState<Record<string, string>>(() => Object.fromEntries(sessions.map((s) => [s.key, s.target])));
+  const [picking, setPicking] = useState<string | null>(null);
+  const target = chosen[sessions[0]?.key ?? ""] ?? suggestion;
+  const colorOf = (name: string) => targets.find((t) => t.name === name)?.color ?? "blue";
   return (
     <Modal
       kicker="Near limit"
@@ -197,28 +228,53 @@ export function DecisionSheet({ account, pctUsed, window, resetsIn, sessions, ro
           <Button variant="ghost" size="sm" onClick={onKeep}>
             Keep going on {account}
           </Button>
-          <Button variant="primary" size="sm" disabled={checked.size === 0} onClick={() => onDecide(how, sessions.filter((s) => checked.has(s.key)).map((s) => ({ key: s.key, target: s.target })))}>
+          <Button variant="primary" size="sm" disabled={checked.size === 0 || !target} onClick={() => onDecide(how, sessions.filter((s) => checked.has(s.key)).map((s) => ({ key: s.key, target: chosen[s.key] ?? s.target })))}>
             Continue on {target}
           </Button>
         </>
       }
     >
       <Label>Sessions on {account}</Label>
-      {sessions.map((s) => (
-        <label key={s.key} className="flex h-8 items-center gap-2 text-[12.5px] text-ac-soft">
-          <input type="checkbox" checked={checked.has(s.key)} onChange={() => setChecked((c) => (c.has(s.key) ? new Set([...c].filter((k) => k !== s.key)) : new Set([...c, s.key])))} />
-          <span className="min-w-0 flex-1 truncate text-ac-text">{s.title}</span>
-          <span className="text-ac-muted">{s.model}</span>
-          <span>→ {s.target}</span>
-        </label>
-      ))}
-      <Label className="mt-3">How</Label>
-      <div role="radiogroup" aria-label="How" className="flex flex-col gap-2">
-        <Choice on={how === "after-turn"} onPick={() => setHow("after-turn")} title={`After this turn, continue on ${target}`} />
-        <Choice on={how === "now"} onPick={() => setHow("now")} title="Switch now" detail="Rebind; checked for this Claude version, falls back safely." />
-        <Choice on={how === "brief"} onPick={() => setHow("brief")} title="New session with a brief" />
+      <div className="mb-4 rounded-[10px] border border-ac-line bg-ac-bg">
+        {sessions.map((s) => {
+          const to = chosen[s.key] ?? s.target;
+          return (
+            <div key={s.key} className="relative flex items-center gap-2.5 px-3 py-2 text-xs">
+              <input type="checkbox" aria-label={`Move ${s.title}`} checked={checked.has(s.key)} onChange={() => setChecked((c) => (c.has(s.key) ? new Set([...c].filter((k) => k !== s.key)) : new Set([...c, s.key])))} />
+              {s.state && <SessionStateIcon state={s.state} />}
+              <span className="min-w-0 flex-1 truncate text-ac-text">{s.title}</span>
+              <span className="shrink-0 text-ac-muted">{s.model ? `${s.model} · →` : "→"}</span>
+              <button
+                type="button"
+                aria-label={`Target account for ${s.title}`}
+                aria-haspopup="listbox"
+                aria-expanded={picking === s.key}
+                disabled={targets.length < 2}
+                onClick={() => setPicking((p) => (p === s.key ? null : s.key))}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-ac-line2 px-2 py-0.5 text-ac-text disabled:cursor-default"
+              >
+                <AccountMark color={colorOf(to)} /> {to || "no other account"} {targets.length > 1 && <ChevronDown className="size-3 text-ac-muted" />}
+              </button>
+              {picking === s.key && (
+                <div role="listbox" aria-label="Target account" className="absolute right-3 top-9 z-10 w-[180px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
+                  {targets.map((t) => (
+                    <button key={t.name} type="button" role="option" aria-selected={t.name === to} onClick={() => (setChosen((c) => ({ ...c, [s.key]: t.name })), setPicking(null))} className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-ac-soft hover:bg-ac-raise">
+                      <AccountMark color={t.color} /> {t.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
-      <Label className="mt-3" aside={`suggested: ${suggestion}`}>
+      <Label>How</Label>
+      <div role="radiogroup" aria-label="How" className="flex flex-col gap-2">
+        <Choice on={how === "after-turn"} onPick={() => setHow("after-turn")} title={`After this turn, continue on ${target}`} detail={`Hands the conversation over with its context; ${account} keeps its history.`} />
+        <Choice on={how === "now"} onPick={() => setHow("now")} title="Switch now (rebind)" detail={`Checked for this Claude version. If it fails, the session stays on ${account}.`} />
+        <Choice on={how === "brief"} onPick={() => setHow("brief")} title="New session with a brief" detail={`Starts fresh on ${target} with a summary of this one.`} />
+      </div>
+      <Label className="mt-4" aside={`suggested: ${suggestion}`}>
         Room left
       </Label>
       {room}

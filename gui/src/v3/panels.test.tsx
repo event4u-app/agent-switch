@@ -20,7 +20,7 @@ describe("right tool windows (spec §9)", () => {
     fireEvent.click(screen.getByText("Send to agent"));
     expect(onNext).toHaveBeenCalledOnce();
     expect(screen.getByText("CI failing")).toBeTruthy();
-    expect(screen.getByText("open · conflict · review review required")).toBeTruthy();
+    expect(screen.getByText("open · conflict · review required")).toBeTruthy();
     expect(screen.getByText("e2e (chromium)")).toBeTruthy();
     expect(screen.getByText("3 changed")).toBeTruthy();
     expect(screen.getByText("↑1 ↓0")).toBeTruthy();

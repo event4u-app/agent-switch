@@ -458,9 +458,12 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
   const mins = Number.isFinite(resetsAt) ? Math.max(0, Math.round((resetsAt - now) / 60_000)) : null;
   const sessions: SheetSession[] = rows
     .filter((r) => (only ? sessionKey(r) === only : r.live && accountId(r.provider, r.profile) === a.id))
-    .map((r) => ({ key: sessionKey(r), title: r.library?.name || r.summary || r.sessionId.slice(0, 8), model: modelLabel(r.context?.model), target: best?.name ?? "" }));
+    .map((r) => ({ key: sessionKey(r), title: r.library?.name || r.summary || r.sessionId.slice(0, 8), model: modelLabel(r.context?.model), target: best?.name ?? "", state: sessionFromRow(r, now).state }));
   return {
     account: a.name,
+    tool: a.tool,
+    // The accounts a session can move to, emptiest first; the picker offers these only.
+    targets: others.map((x) => ({ name: x.name, color: x.color })),
     pctUsed: w.utilization ?? 0,
     window: windowLabel(w.key, w.label),
     resetsIn: mins === null ? "unknown" : mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`,

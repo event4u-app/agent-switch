@@ -193,3 +193,31 @@ export function LimitsPopover({ a, nowMs, onMove, onAccounts }: { a: LimitAccoun
     </div>
   );
 }
+
+/** "Room left" in the decision sheet: every account of the tool with all its windows (spec §8.2). */
+export function RoomLeft({ accounts, nowMs }: { accounts: LimitAccount[]; nowMs: number }) {
+  if (!accounts.length) return null;
+  return (
+    <div className="rounded-[10px] border border-ac-line bg-ac-bg">
+      {accounts.map((a) => (
+        <div key={a.key} className="rounded-md px-2 py-1.5 hover:bg-ac-raise">
+          <div className="flex min-w-0 items-center gap-2">
+            <AccountMark color={a.color} />
+            <span className="truncate text-xs font-medium text-ac-text">{a.name}</span>
+            {a.next && <span className="shrink-0 text-[10.5px] text-ac-info-text">→ next</span>}
+            <span className="ml-auto shrink-0 font-ac-mono text-[10.5px] text-ac-muted">{a.checkedMs === null ? "" : nowMs - a.checkedMs < 60_000 ? "just now" : `${duration(nowMs - a.checkedMs)} ago`}</span>
+          </div>
+          {a.windows.length ? (
+            <div className="mt-1.5 space-y-1 pl-4">
+              {a.windows.map((w) => (
+                <LimitBar key={w.label} w={w} protect={a.protect} stale={isStale(a, nowMs)} nowMs={nowMs} />
+              ))}
+            </div>
+          ) : (
+            <div className="mt-1 pl-4 text-[11px] text-ac-muted">{a.signIn ? "No usage before the first sign-in" : "no data yet"}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}

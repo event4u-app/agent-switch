@@ -72,6 +72,7 @@ export function Palette({ entries, onOpen, onClose }: { entries: PaletteEntry[];
           <Search className="size-4 text-ac-muted" />
           <input
             autoFocus
+            data-palette
             aria-label="Search"
             value={query}
             onChange={(e) => (setQuery(e.target.value), setCursor(0))}

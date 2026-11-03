@@ -5,7 +5,7 @@
  */
 
 import type { ReactNode } from "react";
-import { CircleX, ExternalLink, FolderGit2, Minus } from "lucide-react";
+import { CircleX, ExternalLink, FolderGit2, GitBranch, Minus } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { Act, Disclosure } from "./kit.js";
@@ -52,6 +52,14 @@ export interface SummaryFacts {
   more: { id: string; host: string; library: string; children: string };
 }
 
+const REVIEW: Record<string, string> = { REVIEW_REQUIRED: "review required", APPROVED: "approved", CHANGES_REQUESTED: "changes requested" };
+
+/** "open · conflict · changes requested": lifecycle, mergeability, review — no review word when none is asked for. Pure. */
+export function prLine(pr: { lifecycle: string; mergeable: string; review: string }): string {
+  const merge = pr.mergeable === "CONFLICTING" ? "conflict" : pr.mergeable === "MERGEABLE" ? "mergeable" : pr.mergeable === "UNKNOWN" || !pr.mergeable ? "" : pr.mergeable.toLowerCase();
+  return [pr.lifecycle.toLowerCase(), merge, REVIEW[pr.review] ?? ""].filter(Boolean).join(" · ");
+}
+
 export function SummaryWindow({ f, onNext, onCreatePr, onOpenPr, onHide, moreOpen, onToggleMore }: { f: SummaryFacts; onNext: () => void; onCreatePr: () => void; onOpenPr: () => void; onHide: () => void; moreOpen: boolean; onToggleMore: () => void }) {
   return (
     <Window title="Summary" onHide={onHide}>
@@ -75,7 +83,7 @@ export function SummaryWindow({ f, onNext, onCreatePr, onOpenPr, onHide, moreOpe
               </IconButton>
             </div>
             <div className="mt-0.5 text-[11px] text-ac-muted">
-              {f.pr.lifecycle.toLowerCase()} · {f.pr.mergeable === "CONFLICTING" ? "conflict" : f.pr.mergeable.toLowerCase()} · review {f.pr.review.toLowerCase().replace(/_/g, " ")}
+              {prLine(f.pr)}
             </div>
             {f.pr.failingChecks.map((c) => (
               <div key={c} className="truncate pl-5 font-ac-mono text-[11px] text-ac-alert-text">
@@ -95,8 +103,9 @@ export function SummaryWindow({ f, onNext, onCreatePr, onOpenPr, onHide, moreOpe
       {f.git && (
         <Sect title="Git" source="from the session's hooks">
           <div className="flex items-center gap-1.5 text-xs text-ac-soft">
+            <GitBranch className="size-3.5 shrink-0 text-ac-muted" aria-hidden />
             <span className="truncate font-ac-mono">{f.git.branch ?? "(detached)"}</span>
-            {f.git.worktree && <FolderGit2 className="size-3.5 text-ac-muted" aria-label="worktree" />}
+            {f.git.worktree && <FolderGit2 className="size-3.5 shrink-0 text-ac-muted" aria-label="worktree" />}
             <span className={cn(f.git.changed ? "text-ac-warn-text" : "text-ac-muted")}>{f.git.changed ? `${f.git.changed} changed` : "clean"}</span>
             {f.git.ahead != null && (
               <span className="ml-auto font-ac-mono text-[11px] text-ac-muted">

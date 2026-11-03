@@ -286,6 +286,15 @@ export function AllSessionsPage({ sessions, nowMs, onOpen, batch }: { sessions: 
 
 // ---------- Library (spec §10.3) ----------
 
+/** Library "Last": "now", "3 h", then a short date ("Oct 28"). Pure for a given locale. */
+export function lastSeen(ms: number, nowMs: number, locale?: string): string {
+  const d = nowMs - ms;
+  if (d < 60_000) return "now";
+  if (d < 3_600_000) return `${Math.floor(d / 60_000)} min`;
+  if (d < 86_400_000) return `${Math.floor(d / 3_600_000)} h`;
+  return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(ms));
+}
+
 export interface LibraryRow {
   key: string;
   name: string;
@@ -401,7 +410,9 @@ export function LibraryPage({ rows, vaultBytes, autoKeep, nowMs, on }: { rows: L
                 </span>
               )}
             </span>
-            <span className="text-xs text-ac-muted">{duration(nowMs - e.lastMs)}</span>
+            <span className="text-xs text-ac-muted" title={new Date(e.lastMs).toLocaleString()}>
+              {lastSeen(e.lastMs, nowMs)}
+            </span>
             <VaultCell v={e.vault} />
             <span className="flex items-center justify-end gap-1">
               {e.transcript || e.vault.state === "saved" ? (

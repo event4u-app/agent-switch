@@ -100,12 +100,12 @@ One claim is corrected:
   kinds sit in the tooltip of "read-only here" (the report's alternative). A
   row at each drop place was tried and rejected: a recorded transcript drops
   bookkeeping lines between almost every turn, which gave ten scattered rows.
-- [ ] **Decision sheet**: "Room left" with every account of the tool, a state
+- [x] **Decision sheet**: "Room left" with every account of the tool, a state
   dot on each session row, and a one-line detail on all three "How" cards.
-- [ ] **Library "Last"** reads `now`, `3 h`, `Oct 28`.
-- [ ] **Summary**: PR line without "review" ("changes requested"), Git line
+- [x] **Library "Last"** reads `now`, `3 h`, `Oct 28`.
+- [x] **Summary**: PR line without "review" ("changes requested"), Git line
   with branch and worktree icons.
-- [ ] **Palette input** has no focus ring of its own.
+- [x] **Palette input** has no focus ring of its own.
 - [ ] **Render harness**: the gap kit's fixture page (`gui/design.html`, never
   in the build) and `design-scenes.mjs`, so each scene can be re-rendered and
   compared with the boards.

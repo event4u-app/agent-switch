@@ -10,10 +10,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Ellipsis, FileCode, Layers, Library, ListTree, Plus, Settings, Wrench } from "lucide-react";
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
-import type { ToolEntry } from "../vm/types.js";
+import type { IdentityColor, ToolEntry } from "../vm/types.js";
 import { DecisionSheet, NewSessionDialog, type MoveHow, type NewSessionFacts, type NewSessionPlan, type SheetSession } from "./dialogs.js";
 import { Shell, useFrame, type PageId } from "./frame.js";
-import { LimitsPopover, LimitsStrip, type LimitAccount } from "./limits.js";
+import { LimitsPopover, LimitsStrip, RoomLeft, type LimitAccount } from "./limits.js";
 import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
@@ -55,7 +55,7 @@ export interface V3Data {
   remote: { remoteControl: string[]; ssh: boolean };
   newSession: { initial: NewSessionPlan; facts: NewSessionFacts };
   /** The near-limit decision, by account key ("claude/work") or by session key — a limit item's subject is either. */
-  decision: (subject: string) => { account: string; pctUsed: number; window: string; resetsIn: string; sessions: SheetSession[]; suggestion: string } | null;
+  decision: (subject: string) => { account: string; tool?: string; targets?: { name: string; color: IdentityColor }[]; pctUsed: number; window: string; resetsIn: string; sessions: SheetSession[]; suggestion: string } | null;
   bar: (key: string) => BarSession | null;
   /** What the model popover offers for a session; absent: the chips stay closed. */
   models?: (key: string) => ModelChoices | null;
@@ -532,7 +532,7 @@ export function V3Window({
     ) : overlay === "new" ? (
       <NewSessionDialog initial={data.newSession.initial} facts={data.newSession.facts} onClose={close} onChooseAccount={() => act({ type: "choose-account" })} onStart={(plan) => (close(), act({ type: "start", plan }))} />
     ) : decision ? (
-      <DecisionSheet {...decision} room={null} onClose={close} onKeep={() => (close(), act({ type: "keep-account", account: decision.account }))} onDecide={(how, moves) => (close(), act({ type: "move", how, moves }))} />
+      <DecisionSheet {...decision} room={<RoomLeft accounts={data.limits.filter((a) => a.tool === (decision.tool ?? data.limits.find((l) => l.name === decision.account)?.tool))} nowMs={data.nowMs} />} onClose={close} onKeep={() => (close(), act({ type: "keep-account", account: decision.account }))} onDecide={(how, moves) => (close(), act({ type: "move", how, moves }))} />
     ) : overlay && typeof overlay === "object" && "switcher" in overlay ? (
       <Switcher
         pick={overlay.switcher}
