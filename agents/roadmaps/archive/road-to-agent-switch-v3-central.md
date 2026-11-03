@@ -15,7 +15,7 @@ tree_pin: ff38137
 >
 > Follow-ups (parked, pull trigger named in each):
 > [`road-to-agent-switch-v3-client.md`](road-to-agent-switch-v3-client.md) (v3.1),
-> [`later/road-to-agent-switch-v3-reach.md`](../later/road-to-agent-switch-v3-reach.md) (v3.2).
+> [`road-to-agent-switch-v3-reach.md`](../road-to-agent-switch-v3-reach.md) (v3.2).
 > Prerequisite (done, archived): [`road-to-hooks-that-keep-up.md`](road-to-hooks-that-keep-up.md).
 
 ## Branch model (owner, 2026-11-02)
@@ -82,7 +82,7 @@ user sees follows the v3 UI spec.
 
 D7–D11 (Claude-Desktop-class client, view switch, drag & drop, diffs) are in
 `road-to-agent-switch-v3-client.md`; D12–D14 (other agents, local models,
-access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
+access from anywhere) in `road-to-agent-switch-v3-reach.md`.
 
 ## Constraints (binding)
 
@@ -266,7 +266,7 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       the background service the engine lives in. The title-bar label and banner
       read this in Phase 6/8; reconnecting is the app polling it.
 - [x] Windows: in-app PTY sessions are labelled **ephemeral** until a native host
-      exists (see `later/road-to-agent-switch-v3-reach.md`).
+      exists (see `road-to-agent-switch-v3-reach.md`).
       → `hostingMode()` in `src/host/tmux-host.ts` (also without tmux on Linux and
       macOS); `host list --json` reports `mode`, `host start` refuses with the
       reason. The start dialog's "Host in Agent Switch" card shows it (Phase 8).
@@ -335,7 +335,7 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       is nothing to verify the API shape against.
       → Carried, owner decision 2026-11-03 ("aktuell habe ich nichts für
       GitLab"): moved unchanged to
-      [`later/road-to-agent-switch-v3-reach.md`](../later/road-to-agent-switch-v3-reach.md)
+      [`road-to-agent-switch-v3-reach.md`](../road-to-agent-switch-v3-reach.md)
       § Later, with its trigger. Closes there.
 - [x] No `gh` or no login → one honest line with a fix button; AS never stores a
       GitHub token itself.
@@ -622,7 +622,7 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       captured here (subagents, PermissionRequest, compaction) are not
       installed.
 - [x] Antigravity: "not readable" label until a structured source exists
-      (ACP in `later/road-to-agent-switch-v3-reach.md`); it can be started from
+      (ACP in `road-to-agent-switch-v3-reach.md`); it can be started from
       New session like any terminal-only tool.
       → `sessions --provider antigravity` says "not readable yet" (`--json`: `[]`);
       `host start <profile> --provider antigravity` runs `agy` with the account's
