@@ -93,6 +93,20 @@ the background, so a turn never waits for them. Run `hooks install` again after
 an update to pick up new events; `hooks status` also brings hooks installed by
 2.11 or older, which made each turn wait, to the background form.
 
+Codex accounts get the same hooks in their own `hooks.json`, next to any hooks
+you have there:
+
+```bash
+agent-switch hooks install work --provider codex
+```
+
+They report when a Codex session starts, ends a turn and ends, with its working
+folder, never what you or Codex wrote. Codex runs a hook only after you approved
+it: the next time you start `codex` for that account, it asks, and you choose
+"Trust all and continue" or review them. Agent Switch never approves hooks for
+you; `hooks status --provider codex` tells you whether they run yet. A relay
+added or removed later changes the hooks, so Codex asks once more.
+
 ## Compacting from outside <Badge text="macOS & Linux" variant="caution" />
 
 ```bash
