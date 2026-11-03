@@ -157,6 +157,8 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
     case "need-more":
     case "away":
       return deps.refresh();
+    case "need-later":
+      return run(deps, "Later", deps.ipc.needsLater(a.id));
     case "needs-later-all":
       return run(deps, "Later", Promise.all(deps.needs().map((n) => deps.ipc.needsLater(n.id))));
     case "start": {

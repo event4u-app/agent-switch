@@ -100,8 +100,8 @@ describe("Sessions window header (spec §5)", () => {
         data={{
           ...d,
           sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow" }],
-          table: [{ ...({} as never), key: "s1", project: "/code/agent-switch" }, { ...({} as never), key: "s2", project: "/code/shop" }],
-          library: [{ ...({} as never), key: "s2", pinned: true }],
+          table: [{ key: "s1", project: "/code/agent-switch" }, { key: "s2", project: "/code/shop" }] as never,
+          library: [{ key: "s2", pinned: true }] as never,
         }}
         slots={slots}
         act={vi.fn()}
@@ -158,5 +158,78 @@ describe("one trailing glyph per row (spec §5.2)", () => {
     expect(toggle.className).toMatch(/opacity-0/);
     fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Checkout flow"));
     expect(screen.getByLabelText("Show 1 subagent").className).not.toMatch(/opacity-0/);
+  });
+});
+
+describe("the v3 keyboard (spec §12)", () => {
+  const press = (key: string, mods: Partial<KeyboardEventInit> = {}) => fireEvent.keyDown(window, { key, metaKey: true, ...mods });
+  const mountMac = (over: Partial<V3Data> = {}) => {
+    const act = vi.fn();
+    render(<V3Window data={{ ...data(), ...over }} slots={slots} act={act} platform="mac" />);
+    return act;
+  };
+
+  it("⌘K palette, ⌘N new session, ⌘, settings, Esc closes", () => {
+    mountMac();
+    press("k");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    press("n");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    press(",");
+    expect(screen.getByRole("tab", { name: /Settings/ })).toBeTruthy();
+  });
+
+  it("⌘J focuses the next Needs-you item with its key line; ↵ runs its verb, L defers it", () => {
+    const act = mountMac({
+      needs: [
+        { id: "a", kind: "ci", subject: "s1", who: "Event store", what: "CI failing", verb: "Open checks", since: new Date().toISOString(), version: "1" },
+        { id: "b", kind: "signin", subject: "claude/home", who: "home", what: "signed out", verb: "Sign in", since: new Date().toISOString(), version: "1" },
+      ],
+    });
+    press("j");
+    expect(screen.getByText("↵ open checks · L later")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "l" });
+    expect(act).toHaveBeenCalledWith({ type: "need-later", id: "a" });
+    expect(screen.getByText("↵ sign in · L later")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(act).toHaveBeenCalledWith(expect.objectContaining({ type: "need", item: expect.objectContaining({ id: "b" }) }));
+  });
+
+  it("⌘B hides the Sessions window, ⌘⇧M opens the decision sheet, ⌘O opens the default target", () => {
+    const act = mountMac();
+    press("b");
+    expect(screen.queryByLabelText("Sessions window")).toBeNull();
+    press("o");
+    expect(act).toHaveBeenCalledWith({ type: "open-in", key: "s1", pick: { kind: "default" } });
+    press("m", { shiftKey: true });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("⌘2 selects the second session tab; ⌃Tab cycles recent sessions and picks on release", () => {
+    const d = data();
+    mountMac({ sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow" }] });
+    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Checkout flow"));
+    press("1");
+    expect(screen.getByRole("tab", { name: /Event store/ }).getAttribute("aria-selected")).toBe("true");
+    press("2");
+    expect(screen.getByRole("tab", { name: /Checkout flow/ }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(window, { key: "Tab", ctrlKey: true });
+    expect(screen.getByRole("dialog", { name: "Recent sessions" })).toBeTruthy();
+    fireEvent.keyUp(window, { key: "Control" });
+    expect(screen.queryByRole("dialog", { name: "Recent sessions" })).toBeNull();
+    expect(screen.getByRole("tab", { name: /Checkout flow/ }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("keys typed into the terminal stay there off macOS", () => {
+    const act = vi.fn();
+    render(<V3Window data={data()} slots={{ ...slots, body: () => <div data-terminal tabIndex={0}>term</div> }} act={act} platform="other" />);
+    (screen.getByText("term") as HTMLElement).focus();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.keyDown(window, { key: "K", ctrlKey: true, shiftKey: true });
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });

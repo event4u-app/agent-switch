@@ -26,6 +26,10 @@ import { BlockerStrip, SessionBar, SystemBanner, TabStrip, engineDownText, type 
 import type { BatchActions } from "./kit.js";
 import { Menu, OpenInButton, OpenInMenu, monogram, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
+import { actionFor, DEFAULT_KEYS, type Action, type Binding } from "./keys.js";
+import { nextFocus } from "./needs.js";
+import { Switcher } from "./overlays.js";
+import { liveOrder } from "./sessions.js";
 
 export interface V3Data {
   nowMs: number;
@@ -80,6 +84,7 @@ export interface V3Slots {
 export type V3Action =
   | { type: "need"; item: NeedItem }
   | { type: "need-more" }
+  | { type: "need-later"; id: string }
   | { type: "away" }
   | { type: "needs-later-all" }
   | { type: "start"; plan: NewSessionPlan }
@@ -129,12 +134,31 @@ export const PAGE_COMMANDS: PaletteEntry[] = [
   { id: "page:settings", group: "commands", title: "Settings", hint: "⌘," },
 ];
 
-export function V3Window({ data, slots, act, focus, layout }: { data: V3Data; slots: V3Slots; act: (a: V3Action) => void; focus?: { key: string; n: number }; layout?: LayoutStore }) {
+/** ⌘ on macOS, Ctrl elsewhere (spec §12). */
+const PLATFORM: "mac" | "other" = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent) ? "mac" : "other";
+
+export function V3Window({
+  data,
+  slots,
+  act,
+  focus,
+  layout,
+  keys = DEFAULT_KEYS,
+  platform = PLATFORM,
+}: {
+  data: V3Data;
+  slots: V3Slots;
+  act: (a: V3Action) => void;
+  focus?: { key: string; n: number };
+  layout?: LayoutStore;
+  keys?: Record<Action, Binding>;
+  platform?: "mac" | "other";
+}) {
   const saved = useMemo(() => layout?.load() ?? null, [layout]);
   const [pages, setPages] = useState<Page[]>([]);
   const [sessionTabs, setSessionTabs] = useState<string[]>([]);
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { decide: string } | { menu: string } | { openin: string }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { switcher: number } | { decide: string } | { menu: string } | { openin: string }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -144,6 +168,7 @@ export function V3Window({ data, slots, act, focus, layout }: { data: V3Data; sl
   const [comfortable, setComfortable] = useState(saved?.comfortable ?? false);
   const [groupByProject, setGroupByProject] = useState(saved?.groupByProject ?? false);
   const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
+  const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
 
   const openPage = useCallback((p: Page) => {
     setPages((cur) => (cur.includes(p) ? cur : [...cur, p]));
@@ -271,6 +296,78 @@ export function V3Window({ data, slots, act, focus, layout }: { data: V3Data; sl
   };
   const openDefault = (key: string) => act({ type: "open-in", key, pick: { kind: "default" } });
   const defTarget = data.openIn.targets.find((t) => t.installed && t.target === data.openIn.defaultTarget) ?? null;
+  // The v3 keyboard (spec §12): one listener; app keys never take a key the CLI
+  // needs while the terminal has focus (keys.ts).
+  const keyRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
+  keyRef.current = (e: KeyboardEvent) => {
+    const inTerminal = !!(document.activeElement as HTMLElement | null)?.closest?.("[data-terminal]");
+    const typing = !inTerminal && /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement as HTMLElement | null)?.tagName ?? "");
+    const focused = focusedNeed ? needs.find((n) => n.id === focusedNeed) : undefined;
+    if (focused && !typing && !inTerminal && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // A focused Needs-you item answers to its own keys (spec §5.1).
+      if (e.key === "Enter" && !e.shiftKey) return void (e.preventDefault(), setFocusedNeed(null), onVerb(focused));
+      if (e.key.toLowerCase() === "l") return void (e.preventDefault(), setFocusedNeed(nextFocus(needs.filter((n) => n.id !== focused.id), focused.id)), act({ type: "need-later", id: focused.id }));
+    }
+    const a = actionFor(e, keys, platform, inTerminal);
+    if (!a || (typing && a !== "close" && a !== "palette")) return;
+    const recent = sessionTabs.length ? sessionTabs : liveOrder(data.sessions).map((s) => s.key);
+    const handled = ((): boolean => {
+      switch (a) {
+        case "palette":
+          return (setOverlay("palette"), true);
+        case "newSession":
+          return (setOverlay("new"), true);
+        case "nextNeed": {
+          const id = nextFocus(needs, focusedNeed);
+          if (!id) return false;
+          frame.setSessionsShown(true);
+          return (setFocusedNeed(id), true);
+        }
+        case "toggleSessions":
+          return (frame.selectLeft("sessions"), true);
+        case "toggleSummary":
+          return (frame.selectRight("summary"), true);
+        case "openDefault":
+          return activeSession ? (openDefault(activeSession), true) : false;
+        case "moveSession":
+          return activeSession ? (setOverlay({ decide: activeSession }), true) : false;
+        case "switcher":
+          return recent.length ? (setOverlay((o) => ({ switcher: o && typeof o === "object" && "switcher" in o ? (o.switcher + 1) % recent.length : Math.min(1, recent.length - 1) })), true) : false;
+        case "settings":
+          return (openPage("settings"), true);
+        case "close":
+          if (!overlay && !selection && !focusedNeed) return false;
+          return (setOverlay(null), setSelection(null), setFocusedNeed(null), true);
+        case "stopTurn":
+          return false;
+        default: {
+          const key = sessionTabs[Number(a.slice(3)) - 1];
+          return key ? (setActive(key), true) : false;
+        }
+      }
+    })();
+    if (handled) e.preventDefault();
+  };
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => keyRef.current(e);
+    // Releasing ⌃ picks the session the switcher points at.
+    const up = (e: KeyboardEvent) => {
+      if (e.key === "Control") switcherUp.current();
+    };
+    window.addEventListener("keydown", on);
+    window.addEventListener("keyup", up);
+    return () => (window.removeEventListener("keydown", on), window.removeEventListener("keyup", up));
+  }, []);
+  const switcherUp = useRef<() => void>(() => undefined);
+  const recentKeys = sessionTabs.length ? sessionTabs : liveOrder(data.sessions).map((s) => s.key);
+  switcherUp.current = () => {
+    if (overlay && typeof overlay === "object" && "switcher" in overlay) {
+      const key = recentKeys[overlay.switcher];
+      setOverlay(null);
+      if (key) openSession(key);
+    }
+  };
+
   const openMenuOf = overlay && typeof overlay === "object" && "openin" in overlay ? overlay.openin : null;
 
   const centre = (
@@ -357,7 +454,7 @@ export function V3Window({ data, slots, act, focus, layout }: { data: V3Data; sl
         </span>
       </div>
       <div className="relative min-h-0 flex-1 overflow-y-auto pb-2">
-        <NeedsZone items={needs} away={data.away} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
+        <NeedsZone items={needs} away={data.away} focusedId={focusedNeed} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
         <SessionsZone
           sessions={pinnedOnly ? data.sessions.filter((x) => pinned.has(x.key)) : data.sessions}
           activeKey={activeSession}
@@ -401,6 +498,16 @@ export function V3Window({ data, slots, act, focus, layout }: { data: V3Data; sl
       <NewSessionDialog initial={data.newSession.initial} facts={data.newSession.facts} onClose={close} onChooseAccount={() => act({ type: "choose-account" })} onStart={(plan) => (close(), act({ type: "start", plan }))} />
     ) : decision ? (
       <DecisionSheet {...decision} room={null} onClose={close} onKeep={() => (close(), act({ type: "keep-account", account: decision.account }))} onDecide={(how, moves) => (close(), act({ type: "move", how, moves }))} />
+    ) : overlay && typeof overlay === "object" && "switcher" in overlay ? (
+      <Switcher
+        pick={overlay.switcher}
+        onClose={close}
+        recent={recentKeys.flatMap((k) => {
+          const s = data.sessions.find((x) => x.key === k);
+          const b = data.bar(k);
+          return s ? [{ key: k, title: s.title, state: s.state, account: s.account.name, color: b?.account.color ?? "blue", branch: s.branch, needsYou: s.needsYou }] : [];
+        })}
+      />
     ) : overlay === "sessions-menu" ? (
       <div className="absolute left-[260px] top-[84px] z-10">
         <Menu

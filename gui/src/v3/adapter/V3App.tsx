@@ -25,6 +25,7 @@ import type { ChangedFile } from "../panels.js";
 import type { Appearance } from "../themes/resolve.js";
 import { V3Window, type V3Action, type V3Slots } from "../window.js";
 import { localLayout } from "../layout.js";
+import { KEYS_STORAGE, withRebinds } from "../keys.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
 import { sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
@@ -304,6 +305,14 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   }, [armed, chats.states, byKey]);
 
   const history = useUsageHistory(s.accounts, s.now);
+  // The user's rebinds on top of the defaults; a blocked store keeps the defaults.
+  const keys = useMemo(() => {
+    try {
+      return withRebinds(localStorage.getItem(KEYS_STORAGE));
+    } catch {
+      return withRebinds(null);
+    }
+  }, []);
   const slots: V3Slots = {
     body: (key) => {
       const tab = chats.tabOf(key);
@@ -351,7 +360,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
 
   return (
     <>
-      <V3Window data={data} slots={slots} act={act} focus={focus} layout={localLayout} />
+      <V3Window data={data} slots={slots} act={act} focus={focus} layout={localLayout} keys={keys} />
       {chats.runners}
       <OverlayHost />
       <Toaster toasts={s.toasts} onDismiss={s.dismissToast} />

@@ -64,9 +64,12 @@ One claim is corrected:
   last used (2), the Editor / Agent app / Terminal / Files / Web submenus and
   Configure targets…. The agent app is only the one of the session's tool, with
   "opens this project".
-- [ ] **Keyboard wired**: `useV3Keys` in `window.tsx` over `actionFor`, and
+- [x] **Keyboard wired**: `useV3Keys` in `window.tsx` over `actionFor`, and
   `data-terminal` focus is respected. ⌘K, ⌘N, ⌘J (next need with focus), ⌘B,
-  ⌘I, ⌘O, ⌘1–9, ⌃Tab, ⌘⇧M, ⌘, and Esc work.
+  ⌘I, ⌘O, ⌘1–9, ⌃Tab, ⌘⇧M, ⌘, and Esc work. A focused item answers to
+  ↵ (its verb) and L (later). ⇧↵ always, ⌫ deny and Y yes are not wired: a
+  `needs --json` item carries no approval id, which `needs allow|deny` needs
+  (carried below).
 - [ ] **Limits popover**: a click on a limits row opens `LimitsPopover`
   anchored to the strip, with "Move its session…" and "Open Accounts". The row
   keeps its raise fill while open.
@@ -115,6 +118,14 @@ One claim is corrected:
 | G1 | Library "All": should archived rows show with an "archived" chip, as on the boards, or should "All" be renamed "Active"? | The report names it as the owner's call; both are defensible. |
 | G2 | Sessions in the user's own terminal: keep the chat-style read-only timeline (ADR-010 D-mirror), or render it in terminal style (mono 12.5/1.5, `--as-term-bg`)? | It changes a recorded decision (ADR-010). |
 | G3 | Terminal font: IBM Plex Mono as on the boards, or SF Mono (`ui-monospace`)? | Optional per the report (§1c); taste. |
+
+## Carried
+
+- **Approval keys on a focused item** (⇧↵ always, ⌫ deny, Y yes): the needs
+  feed has to carry the approval id first, and "always" is never offered from
+  outside the chat (remote rule of v3.2). Trigger: the needs item gains an
+  approval id. Until then the key line keeps the spec text, and those three
+  keys do nothing.
 
 ## Risk register
 
