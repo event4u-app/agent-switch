@@ -31,6 +31,8 @@ function data(): V3Data {
     appearance: DEFAULT_APPEARANCE,
     prefersDark: true,
     openIn: { targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true }], defaultTarget: "vscode", perRepo: {}, focusTerminal: true },
+    remote: { remoteControl: ["work"], ssh: false },
+    agents: { rows: [{ id: "opencode", name: "OpenCode", binary: "opencode", cls: "acp", enabled: true, version: "2.2.5", local: { runner: "ollama", model: "qwen3-coder:30b" } }], suggestions: [{ id: "goose", name: "Goose", install: ["brew", "install", "block-goose-cli"] }] },
     newSession: {
       initial: { folder: "~/code/x", gitState: null, worktree: false, tool: "claude", model: "Opus", thinking: "High", where: "terminal" },
       facts: { terminalApp: "Terminal.app", hosting: "persistent", thinkingLevels: { claude: ["High"], codex: ["high"], antigravity: ["default"] }, account: { name: "work", color: "teal", reason: "most room", limits: limit, why: ["work has the most room"], paceText: null }, command: "claude", nowMs: NOW },
@@ -134,6 +136,35 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
     expect(screen.getAllByText("VS Code").length).toBeGreaterThan(0);
     expect(screen.getByText("Default for the Open button (⌘O)")).toBeTruthy();
     expect(w.clicks()).toBe(2);
+  });
+
+  it("Agents (v3.2): Settings › Agents — class, local model, switch, Add agent", () => {
+    const w = open();
+    w.click(screen.getByLabelText("Settings ⌘,"));
+    w.click(screen.getByRole("button", { name: "Agents" }));
+    expect(screen.getByText("OpenCode")).toBeTruthy();
+    expect(screen.getByText("ACP")).toBeTruthy();
+    expect(screen.getByText(/local · Ollama · qwen3-coder:30b/)).toBeTruthy();
+    expect(w.clicks()).toBe(2);
+    fireEvent.click(screen.getByRole("switch", { name: "Use OpenCode" }));
+    expect(w.act).toHaveBeenCalledWith({ type: "agent-enabled", id: "opencode", value: false });
+    fireEvent.click(screen.getByText("Add agent"));
+    fireEvent.click(within(screen.getByRole("menu", { name: "Add agent" })).getByText("Goose"));
+    expect(w.act).toHaveBeenCalledWith({ type: "agent-install", id: "goose" });
+  });
+
+  it("Remote (v3.2): Settings › Remote — stages off until turned on, R3 later, no paired devices yet", () => {
+    const w = open();
+    w.click(screen.getByLabelText("Settings ⌘,"));
+    w.click(screen.getByRole("button", { name: "Remote" }));
+    expect(w.clicks()).toBe(2);
+    expect(screen.getByText("work · on")).toBeTruthy();
+    expect(screen.getByText("not available yet")).toBeTruthy();
+    expect(screen.getByText("No paired devices")).toBeTruthy();
+    fireEvent.click(screen.getByRole("switch", { name: "Own tunnel (SSH / Tailscale)" }));
+    expect(w.act).toHaveBeenCalledWith({ type: "remote-ssh", value: true });
+    fireEvent.click(screen.getByText("work · on"));
+    expect(w.act).toHaveBeenCalledWith({ type: "remote-rc", account: "work", value: false });
   });
 
   it("Activity, notifications: the inbox behind the pill, with today's history", () => {

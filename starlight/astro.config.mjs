@@ -92,6 +92,7 @@ export default defineConfig({
 						{ slug: 'guides/projects-and-pools' },
 						{ slug: 'guides/move-a-session' },
 						{ slug: 'guides/chat-view' },
+						{ slug: 'guides/remote-access' },
 						{ slug: 'guides/desktop-app' },
 						{ slug: 'guides/notifications-and-pet' },
 						{ slug: 'guides/share-settings' },

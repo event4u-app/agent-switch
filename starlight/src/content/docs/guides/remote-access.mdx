@@ -1,0 +1,90 @@
+---
+title: Remote access and other agents
+description: Reach your sessions from elsewhere in stages — Claude Remote Control and your own SSH login — and run ACP agents and local models next to Claude Code and Codex.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Remote access, in stages
+
+Every stage is **off** until you turn it on, in **Settings › Remote** or with
+`agent-switch remote`. Each stage says who decides what, because they differ.
+
+| Stage | What it does | Who enforces devices and revocation |
+|---|---|---|
+| **R1 Claude Remote Control** | A hosted Claude session starts with Claude Remote Control under its title, so you can follow and answer it from claude.ai/code or the Claude app. | Anthropic. Claude opens the channel outbound; Agent Switch opens nothing and cannot limit which of your devices connect. |
+| **R2 your own SSH login** | `ssh <host> agent-switch remote rpc` lists what needs you and answers open approvals: allow once or deny. | Your SSH setup. An SSH login is you — it could run any command — so `remote rpc` is a convenience, not a sandbox. |
+| **R3 end-to-end relay** | Not available. It will only exist with end-to-end encryption and a relay you can host yourself. | — |
+
+```sh
+agent-switch remote                      # which stage is on
+agent-switch remote rc on work           # R1 for new hosted Claude sessions of "work"
+agent-switch host start work --remote-control --title "Checkout flow"   # R1 for one session
+agent-switch remote ssh on               # R2
+```
+
+### Engine on the server, you on the laptop
+
+Run Agent Switch where your sessions run (a server, a desktop at home) and reach
+it with your normal SSH login. Nothing listens on a port:
+
+```sh
+ssh devbox agent-switch needs                              # what waits for you
+ssh devbox agent-switch needs deny claude/work/<session> <approval>
+echo '{"id":1,"method":"needs.list"}' | ssh devbox agent-switch remote rpc
+```
+
+`remote rpc` reads one JSON request per line and answers one per line. Its whole
+surface is three methods:
+
+| Method | Does |
+|---|---|
+| `needs.list` | approvals, questions, accounts at their limit — the Needs-you list |
+| `approval.allow_once` | `{ "session": "<key>", "approval": "<id>" }` — allow this one call |
+| `approval.deny` | the same, deny |
+
+Anything else answers `not_implemented`. No remote path can change a permission
+mode, a model, a setting, an agent or an account, turn on "always allow", or
+start or end a session.
+
+### One decision per approval
+
+An approval in a chat the app runs can be answered in the chat card, from the
+CLI (`agent-switch needs allow|deny <session> <approval>`) or over SSH. All of
+them go to the chat's own bridge, which applies the first answer while the
+approval is still open and refuses the rest. A request older than two minutes is
+refused, never applied late. The answer you get back says `applied` or why not.
+
+<Aside type="note" title="Not yet">
+A phone web client inside your Tailscale network, with paired devices and
+scopes, comes later: it needs HTTPS through Tailscale and its own tests for
+revocation and restarts before it may answer approvals.
+</Aside>
+
+## Other agents and local models
+
+Settings › Agents lists every agent with its class:
+
+- **deep** — Claude Code and Codex: accounts, limits, switching.
+- **ACP** — any agent that speaks the Agent Client Protocol: the chat view,
+  approvals and history through the same model; limits only if the agent
+  reports them.
+- **terminal only** — Antigravity. Google's own ACP server for it is not used:
+  Google's terms do not allow third-party clients on the Antigravity login.
+
+`agent-switch agents suggest` lists Gemini CLI, OpenCode, Goose and Qwen Code.
+`agents install <id>` runs the install command where you see it and adds the
+agent; `agents add` takes any other ACP agent as a binary and its arguments.
+A chat with one starts with `agent-switch bridge --new --agent <id> --cwd DIR`
+or from the app.
+
+Agent Switch runs no model itself. A local model comes through an agent that
+supports one — OpenCode with an Ollama or LM Studio provider in its
+`opencode.json`, or Codex with `--oss --local-provider ollama` — and the agent
+row then reads `local · Ollama · <model>`. `agents local <id> ollama:<model>`
+marks one by hand.
+
+<Aside type="caution" title="Gemini sign-in">
+Google no longer serves Gemini CLI to personal Google logins. Use a Gemini API
+key or Vertex AI login for Gemini in Agent Switch.
+</Aside>

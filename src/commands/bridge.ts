@@ -14,7 +14,12 @@ import * as readline from "node:readline";
 
 import { ClaudeBridge, PERMISSION_MODES, type BridgeCommand, type BridgeOutput, type PermissionMode } from "../bridge/claude-bridge.js";
 import { AppServer, CodexBridge } from "../bridge/codex-bridge.js";
+import { AcpBridge, spawnAcp } from "../bridge/acp-bridge.js";
+import { findAcpSession, parseAcpKey, recordAcpSession } from "../acp-sessions.js";
+import { agentSearchPath } from "../agent-path.js";
+import { CLASS_LABEL, findAgent, type Agent } from "../agents.js";
 import { cleanStaging, stagingDir } from "../bridge/attachments.js";
+import { bridgeApplier, drainInbox } from "../bridge/inbox.js";
 import { clearPending, writePending, type PendingItem } from "../bridge/pending.js";
 import { liveSessions } from "../api.js";
 import { eventFile, lastHookCwd, readEvents } from "../hooks.js";
@@ -30,6 +35,7 @@ import { resolveSession } from "./library.js";
 import { resolveDir } from "./routing.js";
 
 export const LEASE_RENEW_MS = 5_000;
+const INBOX_POLL_MS = 300;
 const DEFAULT_PAGE = 200;
 
 export interface Target {
@@ -117,7 +123,98 @@ function runsElsewhere(t: Target): boolean {
   return liveSessions(configDir("claude", t.account)).some((s) => s.sessionId === t.sessionId);
 }
 
+/** What an ACP bridge runs: the agent row and, for a resume, the session. */
+export function acpTarget(arg: string | undefined, flags: Record<string, string | boolean>, cwdNow: string = process.cwd()): { agent: Agent; sessionId: string | null; cwd: string; key: string } {
+  if (flags.new) {
+    const id = String(flags.agent);
+    const agent = findAgent(id);
+    if (!agent) die(`no agent ${id} — agent-switch agents add ${id}`);
+    if (agent.cls !== "acp") die(`${agent.name} is ${CLASS_LABEL[agent.cls]}, not an ACP agent`);
+    if (!agent.enabled) die(`${agent.name} is switched off (agent-switch agents on ${agent.id})`);
+    return { agent, sessionId: null, cwd: path.resolve(typeof flags.cwd === "string" ? flags.cwd : cwdNow), key: `acp/${agent.id}/` };
+  }
+  const parts = parseAcpKey(arg ?? "");
+  if (!parts) die(`not an ACP session key: ${arg}`);
+  const agent = findAgent(parts.agent);
+  if (!agent || agent.cls !== "acp") die(`no ACP agent ${parts.agent}`);
+  const s = findAcpSession(arg!);
+  if (!s) die(`${arg} was not started by Agent Switch; its folder is unknown`);
+  return { agent, sessionId: parts.sessionId, cwd: s.cwd, key: s.key };
+}
+
+async function cmdAcpBridge(arg: string | undefined, flags: Record<string, string | boolean>): Promise<void> {
+  const t = acpTarget(arg, flags);
+  const out = (o: BridgeOutput) => process.stdout.write(JSON.stringify(o) + "\n");
+  const leases = new InputLeases(ROOT);
+  const holder: Holder = { id: `bridge:${process.pid}`, pid: process.pid, kind: "app" };
+  let key = t.key;
+  if (t.sessionId) {
+    try {
+      leases.acquire(key, holder);
+    } catch (err) {
+      if (!(err instanceof LeaseHeld)) throw err;
+      out({ bridge: "error", message: err.message });
+      process.exitCode = 3;
+      return;
+    }
+  }
+  let pendingNow: PendingItem[] = [];
+  const renew = setInterval(() => parseAcpKey(key) && leases.acquire(key, holder), LEASE_RENEW_MS);
+  const searchPath = agentSearchPath();
+  const server = spawnAcp(t.agent.binary, t.agent.args, t.cwd, searchPath);
+  let send: (c: BridgeCommand) => void = () => {};
+  let openNow: () => readonly string[] = () => [];
+  // Answers from outside the chat (CLI, SSH): the bridge decides, once (spec §13.5).
+  const inbox = setInterval(() => parseAcpKey(key) && drainInbox(ROOT, key, bridgeApplier(openNow, (c) => send(c))), INBOX_POLL_MS);
+  const finished = new Promise<void>((res) => {
+    const b = new AcpBridge({
+      key,
+      sessionId: t.sessionId,
+      cwd: t.cwd,
+      server,
+      out: (o) => (out(o), "bridge" in o && o.bridge === "exit" && res()),
+      onSession: (id) => {
+        key = recordAcpSession(t.agent.id, id, t.cwd).key;
+        try {
+          leases.acquire(key, holder);
+        } catch {
+          /* a brand-new id: nobody else can hold it */
+        }
+      },
+      onApprovals: (items) => {
+        const since = new Date().toISOString();
+        const prev = new Map(pendingNow.map((i) => [i.id, i.since]));
+        pendingNow = items.map((i) => ({ ...i, since: prev.get(i.id) ?? since }));
+        writePending(ROOT, { key, pid: process.pid, items: pendingNow });
+      },
+    });
+    send = (c) => b.command(c);
+    openNow = () => b.openApprovals;
+    b.start().catch((e: unknown) => {
+      out({ bridge: "error", message: e instanceof Error ? e.message : String(e) });
+      server.close();
+    });
+  });
+  const rl = readline.createInterface({ input: process.stdin });
+  rl.on("line", (line) => {
+    if (!line.trim()) return;
+    try {
+      send(JSON.parse(line) as BridgeCommand);
+    } catch {
+      out({ bridge: "error", message: "not a JSON command" });
+    }
+  });
+  rl.on("close", () => send({ cmd: "close" }));
+  await finished;
+  rl.close();
+  clearInterval(renew);
+  clearInterval(inbox);
+  clearPending(ROOT, key);
+  if (parseAcpKey(key)) leases.release(key, holder);
+}
+
 export async function cmdBridge(providerId: ProviderId, arg: string | undefined, flags: Record<string, string | boolean>): Promise<void> {
+  if ((flags.new && typeof flags.agent === "string") || arg?.startsWith("acp/")) return cmdAcpBridge(arg, flags);
   const mode = (typeof flags.mode === "string" ? flags.mode : "default") as PermissionMode;
   if (!PERMISSION_MODES.includes(mode)) die(`--mode is one of ${PERMISSION_MODES.join(", ")} (approvals are never bypassed)`);
   const model = typeof flags.model === "string" ? flags.model : undefined;
@@ -170,19 +267,23 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
   const renew = setInterval(() => t.sessionId && leases.acquire(t.key, holder), LEASE_RENEW_MS);
   const done = () => {
     clearInterval(renew);
+    clearInterval(inbox);
     clearPending(ROOT, t.key);
     if (t.sessionId) leases.release(t.key, holder);
     // A hosted session switched to chat gets its terminal back (Phase 4).
     if (t.sessionId) restoreAfterChat(t.key);
   };
 
-  let send: (c: BridgeCommand) => void;
+  let send: (c: BridgeCommand) => void = () => {};
+  let openNow: () => readonly string[] = () => [];
+  const inbox = setInterval(() => t.sessionId && drainInbox(ROOT, t.key, bridgeApplier(openNow, (c) => send(c))), INBOX_POLL_MS);
   let finished: Promise<void>;
   if (t.provider === "codex") {
     const server = AppServer.spawn(readBinaryPath("codex") ?? providerOf("codex").binary, configDir("codex", t.account));
     finished = new Promise((res) => {
       const b = new CodexBridge({ key: t.key, threadId: t.sessionId, cwd: t.cwd, server, out: (o) => (out(o), "bridge" in o && o.bridge === "exit" && res()), onSession: (id) => sessionNamed(id), onApprovals: (items) => approvals(items) });
       send = (c) => b.command(c);
+      openNow = () => b.openApprovals;
       b.start().catch((e: unknown) => out({ bridge: "error", message: e instanceof Error ? e.message : String(e) }));
     });
   } else {
@@ -201,6 +302,7 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
         out: (o) => (out(o), "bridge" in o && o.bridge === "exit" && res()),
       });
       send = (c) => b.command(c);
+      openNow = () => b.openApprovals;
       b.start();
     });
   }

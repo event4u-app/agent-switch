@@ -26,6 +26,8 @@ export const TRAY_DEPS: FeedDeps = {
   engine: notInTray,
   library: notInTray,
   openTargets: notInTray,
+  agents: notInTray,
+  remote: notInTray,
   codexRows: notInTray,
 };
 

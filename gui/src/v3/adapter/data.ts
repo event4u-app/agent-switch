@@ -346,6 +346,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     appearance: env.appearance,
     prefersDark: env.prefersDark,
     openIn: { targets, defaultTarget: feeds.openTargets?.default ?? null, perRepo: feeds.openTargets?.perRepo ?? {}, focusTerminal: env.focusTerminal },
+    agents: { rows: feeds.agents?.agents ?? [], suggestions: feeds.agents?.suggestions ?? [] },
+    remote: { remoteControl: feeds.remote?.remoteControlAccounts ?? [], ssh: feeds.remote?.ssh ?? false },
     newSession: { initial: env.plan, facts },
     decision: (subject) => decisionFor(subject, vm, rows, now),
     bar: (key): BarSession | null => {

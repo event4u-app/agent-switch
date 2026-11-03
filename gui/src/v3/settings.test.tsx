@@ -7,7 +7,7 @@ import { THEMES, themeById } from "./themes/registry.js";
 afterEach(cleanup);
 
 describe("Settings (spec §10.5)", () => {
-  it("the left nav marks the current section; Agents and Remote wait for v3.2", () => {
+  it("the left nav marks the current section; Agents and Remote sit after Open in (spec order)", () => {
     const onSection = vi.fn();
     render(
       <SettingsPage current="Appearance" onSection={onSection}>
@@ -15,8 +15,8 @@ describe("Settings (spec §10.5)", () => {
       </SettingsPage>,
     );
     expect(screen.getByRole("button", { name: "Appearance" }).getAttribute("aria-current")).toBe("page");
-    expect(SETTINGS_NAV).not.toContain("Agents");
-    expect(SETTINGS_NAV).not.toContain("Remote");
+    expect(SETTINGS_NAV.indexOf("Agents")).toBe(SETTINGS_NAV.indexOf("Open in") + 1);
+    expect(SETTINGS_NAV.indexOf("Remote")).toBe(SETTINGS_NAV.indexOf("Agents") + 1);
     fireEvent.click(screen.getByRole("button", { name: "Open in" }));
     expect(onSection).toHaveBeenCalledWith("Open in");
   });

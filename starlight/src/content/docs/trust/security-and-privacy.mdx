@@ -14,6 +14,11 @@ take it on faith. Everything here describes the code; the source is on
 
 - Agent Switch is a local tool. There is **no server, no account, no
   telemetry**, and it never listens on a port.
+- Remote access is off until you turn it on, stage by stage
+  ([Remote access](/agent-switch/guides/remote-access/)). Claude Remote
+  Control runs over Anthropic's own channel; an SSH login to your machine is
+  you. Neither opens a port in Agent Switch, and no remote path can change a
+  permission mode or a setting.
 - Each login stays where the provider's own tool put it. Agent Switch does not
   hold, forward or share logins.
 - It does not sit in your traffic. Claude Code, Codex and Antigravity talk to

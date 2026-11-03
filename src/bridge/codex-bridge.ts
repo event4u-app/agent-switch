@@ -65,7 +65,7 @@ export class AppServer {
     }
   }
 
-  private send(o: Json): void {
+  send(o: Json): void {
     this.child.stdin?.write(JSON.stringify({ jsonrpc: "2.0", ...o }) + "\n");
   }
 
