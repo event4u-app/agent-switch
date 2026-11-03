@@ -77,11 +77,17 @@ replayed, or one account's login is used to serve another account's session
 without you choosing it. This describes what the code does; it is not legal
 advice.
 
-## No bundled dashboard server
+## No server outside your own network, no relay without end-to-end encryption
 
 agent-switch ships a CLI (zero runtime dependencies) and an optional
-tray GUI that is a thin client of the CLI's `--json` contract. It does
-not run a web server, does not open ports, and does not grow a hosted
-dashboard. **Instead:** the GUI renders what the CLI already knows; for
-agent governance surfaces, agent-config's own local UI is embedded via
-its documented contract rather than rebuilt.
+desktop app that is a thin client of the CLI's `--json` contract. It does
+not grow a hosted dashboard, and nothing it runs is reachable from outside
+your own network. Reaching your sessions from elsewhere comes in stages,
+each off until you turn it on: Claude Remote Control (Anthropic's own
+channel, which Claude opens outbound) and your own SSH login
+(`ssh <host> agent-switch remote rpc`). Neither makes agent-switch listen on
+a port. A relay that carries your sessions over the internet will only exist
+with end-to-end encryption and a relay you can host yourself. **Instead:**
+the app renders what the CLI already knows; for agent governance surfaces,
+agent-config's own local UI is embedded via its documented contract rather
+than rebuilt.
