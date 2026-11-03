@@ -148,7 +148,7 @@ export function cmdNeeds(sub: string | undefined, arg: string | undefined, flags
     return;
   }
   if (sub === "fix") return fixCi(arg, candidates);
-  if (sub !== undefined) die("usage: agent-switch needs [--json] | needs later <id> | needs fix <id>");
+  if (sub !== undefined) die("usage: agent-switch needs [--json] | needs later <id> | needs fix <id> | needs allow|deny <session> <approval>");
   const now = new Date().toISOString();
   const items = buildQueue(candidates, state);
   const away = digest(state, now, listProfiles("claude").flatMap((p) => readEvents(eventFile(ROOT, "claude", p))), Object.values(readPrCache(prCacheFile(ROOT))).flatMap((r) => r.prs));

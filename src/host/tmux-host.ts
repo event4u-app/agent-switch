@@ -39,6 +39,8 @@ export interface HostedSession {
   startedAt: string;
   /** The conversation is open in the chat view; the window shows a notice instead of the program. */
   parked?: boolean;
+  /** Started with Claude Remote Control under this name (v3.2 R1); a respawn keeps it. */
+  remoteControl?: string;
 }
 
 export interface HostedRow extends HostedSession {
@@ -180,6 +182,7 @@ export class TmuxHost {
       window: r.out.trim(),
       cwd: o.cwd,
       startedAt: new Date().toISOString(),
+      ...(o.args?.includes("--remote-control") ? { remoteControl: o.args[o.args.indexOf("--remote-control") + 1] } : {}),
     };
     const reg = this.readRegistry();
     reg[hosted.key] = hosted;

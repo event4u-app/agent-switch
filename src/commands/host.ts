@@ -11,6 +11,7 @@ import * as readline from "node:readline";
 import { appendPick } from "../picks.js";
 import { configDir, die, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
 import { provider, type ProviderId } from "../providers.js";
+import { readRemote, remoteControlArgs } from "../remote.js";
 import { HostUnavailable, TmuxHost, hostingMode } from "../host/tmux-host.js";
 import { listSessions } from "../sessions.js";
 import { turnInFlight } from "../telemetry.js";
@@ -24,7 +25,7 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
     setInterval(() => {}, 1 << 30);
     return;
   }
-  if (!["start", "list", "end", "attach", "respawn"].includes(action)) die("usage: agent-switch host start [profile] [--provider P] [--cwd DIR] | list | attach <session> | respawn <session> [--model M] [--effort E] | end <session> [--yes]");
+  if (!["start", "list", "end", "attach", "respawn"].includes(action)) die("usage: agent-switch host start [profile] [--provider P] [--cwd DIR] [--remote-control] [--title T] | list | attach <session> | respawn <session> [--model M] [--effort E] | end <session> [--yes]");
   const mode = hostingMode(process.platform, TmuxHost.available());
   if (action === "list" && flags.json && mode === "ephemeral") {
     console.log(JSON.stringify({ mode, hosted: [], legacy: [] }));
@@ -44,7 +45,9 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
       // No account named: the same routing, folder rules and guard as a plain start.
       const profile = arg ? requireProfile(providerId, arg, "host start") : routed(providerId, cwd);
       const bin = readBinaryPath(providerId) ?? provider(providerId).binary;
-      const s = host.start({ provider: providerId, account: profile, configDir: configDir(providerId, profile), cwd, bin }, hookCommandPrefix());
+      // R1: Claude Remote Control when asked for this session or on for the account (off by default).
+      const args = remoteControlArgs(providerId, profile, flags["remote-control"] === true, typeof flags.title === "string" ? flags.title : path.basename(cwd), readRemote());
+      const s = host.start({ provider: providerId, account: profile, configDir: configDir(providerId, profile), cwd, bin, ...(args.length ? { args } : {}) }, hookCommandPrefix());
       if (flags.json) console.log(JSON.stringify(s));
       else console.log(`Started ${s.key} in ${cwd}. It keeps running when you close the window; end it with: agent-switch host end ${s.key}`);
       return;
@@ -68,7 +71,7 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
       const rows = listSessions(cfg, 50);
       const row = rows.find((r) => r.sessionId === cur.sessionId);
       if (row?.file && !flags.force && turnInFlight(row.file, Date.now(), 15_000)) die(`a turn is running in ${cur.key}; the change applies from the next turn — try again when it ends, or pass --force`);
-      const args = ["--resume", cur.sessionId];
+      const args = ["--resume", cur.sessionId, ...(cur.remoteControl ? ["--remote-control", cur.remoteControl] : [])];
       if (typeof flags.model === "string") args.push("--model", flags.model);
       if (typeof flags.effort === "string") args.push("--effort", flags.effort);
       const moved = host.respawn(cur.key, { provider: "claude", account: cur.account, configDir: cfg, cwd: cur.cwd, bin: readBinaryPath("claude") ?? provider("claude").binary, args }, hookCommandPrefix());

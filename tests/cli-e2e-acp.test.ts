@@ -84,3 +84,37 @@ test("bridge --agent: a turn with an approval answered, then a resume by key", g
   assert.match(run("bridge", "acp/fake/unknown-9").stderr, /not started by Agent Switch/);
   assert.match(run("bridge", "acp/fake/..%2f").stderr, /not an ACP session key/);
 });
+
+test("an approval answered from outside the chat: needs deny, then remote rpc over the same bridge decision", gate, async () => {
+  const { work, env, run } = setup();
+  assert.equal(run("agents", "add", "fake", "--binary", process.execPath, "--", FAKE).status, 0);
+  const outside: { status: number | null; stdout: string }[] = [];
+  let turns = 0;
+  const lines = await bridge(env, ["--new", "--agent", "fake", "--cwd", work], (o, write) => {
+    if (o.bridge === "ready") write({ cmd: "send", text: "go" });
+    if (o.event?.t === "approval.requested") {
+      // Answered by another process, through the bridge's inbox — never by this chat.
+      const r = spawn(process.execPath, [CLI, "needs", "deny", "acp/fake/fake-1", o.event.id, "--json"], { env });
+      let out = "";
+      r.stdout.on("data", (d) => (out += d));
+      r.on("exit", (status) => outside.push({ status, stdout: out }));
+    }
+    if (o.event?.t === "turn.end" && ++turns === 1) write({ cmd: "close" });
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  assert.deepEqual(outside.map((x) => [x.status, JSON.parse(x.stdout)]), [[0, { status: "applied", reason: "denied" }]]);
+  assert.equal(lines.find((o) => o.event?.t === "message" && o.event.role === "assistant")?.event.text, "you picked no");
+
+  const late = run("needs", "allow", "acp/fake/fake-1", "t1", "--json");
+  assert.equal(late.status, 2);
+  assert.equal(JSON.parse(late.stdout).status, "no-bridge", "no bridge, nothing applied");
+
+  const rpcRun = (input: string) => spawnSync(process.execPath, [CLI, "remote", "rpc"], { env, input, encoding: "utf8" });
+  const off = rpcRun(JSON.stringify({ id: 1, method: "needs.list" }) + "\n");
+  assert.equal(JSON.parse(off.stdout).error.code, "off");
+  assert.equal(run("remote", "ssh", "on").status, 0);
+  const res = rpcRun([{ id: 1, method: "needs.list" }, { id: 2, method: "settings.set", params: { mode: "bypassPermissions" } }].map((x) => JSON.stringify(x)).join("\n") + "\n").stdout.trim().split("\n").map((l) => JSON.parse(l));
+  assert.equal(res[0].ok, true);
+  assert.deepEqual(res[1].error.code, "not_implemented");
+  assert.deepEqual(JSON.parse(run("remote", "--json").stdout), { remoteControlAccounts: [], ssh: true });
+});
