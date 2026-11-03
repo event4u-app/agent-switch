@@ -97,6 +97,8 @@ export interface CodexBridgeOptions {
   cwd: string;
   out: (o: BridgeOutput) => void;
   server: AppServer;
+  onSession?: (threadId: string) => void;
+  onApprovals?: (open: { id: string; tool: string; summary: string }[]) => void;
 }
 
 /** Approval decisions per request method. */
@@ -109,7 +111,11 @@ export class CodexBridge {
   private threadId: string | null;
   private turnId: string | null = null;
   private readonly queue: string[] = [];
-  private readonly pending = new Map<string, { rpcId: number | string; method: string }>();
+  private readonly pending = new Map<string, { rpcId: number | string; method: string; tool: string; summary: string }>();
+
+  private approvalsChanged(): void {
+    this.o.onApprovals?.([...this.pending.entries()].map(([id, p]) => ({ id, tool: p.tool, summary: p.summary })));
+  }
 
   constructor(private readonly o: CodexBridgeOptions) {
     this.threadId = o.threadId;
@@ -131,6 +137,11 @@ export class CodexBridge {
     } else {
       const r = await this.o.server.call("thread/start", { cwd: this.o.cwd });
       this.threadId = str(obj(r.thread).id) || null;
+      if (this.threadId) {
+        const [provider, account] = this.o.key.split("/");
+        this.o.out({ bridge: "session", key: `${provider}/${account}/${this.threadId}`, model: str(r.model) || null, mode: null, commands: [] });
+        this.o.onSession?.(this.threadId);
+      }
     }
     this.o.out({ bridge: "ready", key: this.o.key, mode: "default" });
   }
@@ -159,8 +170,9 @@ export class CodexBridge {
       return;
     }
     const approvalId = str(p.approvalId) || str(p.itemId) || String(id);
-    this.pending.set(approvalId, { rpcId: id, method });
     const command = str(p.command);
+    this.pending.set(approvalId, { rpcId: id, method, tool: method.includes("fileChange") ? "Edit" : "Bash", summary: command || str(p.reason) });
+    this.approvalsChanged();
     this.emit({ t: "approval.requested", id: approvalId, tool: method.includes("fileChange") ? "Edit" : "Bash", summary: command || str(p.reason), input: command ? { command } : {} });
   }
 
@@ -192,6 +204,7 @@ export class CodexBridge {
         const p = this.pending.get(c.id);
         if (!p) return this.o.out({ bridge: "error", message: `no open approval ${c.id}` });
         this.pending.delete(c.id);
+        this.approvalsChanged();
         const d = ACCEPT[p.method];
         this.o.server.respond(p.rpcId, { decision: c.cmd === "deny" ? d.deny : c.always ? d.always : d.once });
         this.emit({ t: "approval.resolved", id: c.id, decision: c.cmd === "approve" ? "allow" : "deny" });
@@ -203,6 +216,9 @@ export class CodexBridge {
         this.queue.length = 0;
         if (this.threadId && this.turnId && this.turnId !== "starting") void this.o.server.call("turn/interrupt", { threadId: this.threadId, turnId: this.turnId }).catch(() => {});
         return;
+      case "answer":
+        // Codex asks no structured questions over this protocol; the answer goes as the next message.
+        return this.command({ cmd: "send", text: Object.entries(c.answers).map(([q, a]) => `${q} → ${a}`).join("\n") });
       case "set-model":
       case "set-mode":
         // Codex takes model and approval policy per turn (turn/start); the next turn uses them.

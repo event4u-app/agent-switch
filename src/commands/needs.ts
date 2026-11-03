@@ -29,6 +29,7 @@ import { sessionsWithGit } from "./pr.js";
 import { githubRepo, prCacheFile, prsForHead, readPrCache } from "../pr-facts.js";
 import { TmuxHost } from "../host/tmux-host.js";
 import { InputLeases, LeaseHeld } from "../host/lease.js";
+import { readPending } from "../bridge/pending.js";
 
 const HOST_WAIT = /^quota_auto_resume_(armed|fired|cancelled|setting)$/;
 
@@ -80,7 +81,26 @@ export function gatherCandidates(): Candidate[] {
     }
   }
   out.push(...ciCandidates());
+  out.push(...bridgeCandidates());
   return out;
+}
+
+/** Approvals and questions waiting in a chat the app runs (spec §13.5): one decision, wherever it is made. */
+export function bridgeCandidates(files = readPending(ROOT)): Candidate[] {
+  return files.flatMap((f) =>
+    f.items.map((i): Candidate => {
+      const question = i.tool === "AskUserQuestion";
+      return {
+        kind: question ? "question" : "approval",
+        subject: f.key,
+        who: i.summary ? `${i.tool} · ${i.summary}` : i.tool,
+        what: question ? "asks you in the chat" : "wants your approval in the chat",
+        since: i.since,
+        version: i.id,
+        verb: "Open chat",
+      };
+    }),
+  );
 }
 
 /**

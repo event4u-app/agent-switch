@@ -8,11 +8,14 @@
  * session's history, read-only (ADR-010).
  */
 
+import { spawnSync } from "node:child_process";
 import * as path from "node:path";
 import * as readline from "node:readline";
 
 import { ClaudeBridge, PERMISSION_MODES, type BridgeCommand, type BridgeOutput, type PermissionMode } from "../bridge/claude-bridge.js";
 import { AppServer, CodexBridge } from "../bridge/codex-bridge.js";
+import { cleanStaging, stagingDir } from "../bridge/attachments.js";
+import { clearPending, writePending, type PendingItem } from "../bridge/pending.js";
 import { liveSessions } from "../api.js";
 import { eventFile, lastHookCwd, readEvents } from "../hooks.js";
 import { InputLeases, LeaseHeld, type Holder } from "../host/lease.js";
@@ -88,6 +91,25 @@ export async function cmdTimeline(arg: string | undefined, flags: Record<string,
   }
 }
 
+/** Files of the session's repository whose path contains every word of `query`, for `@` in the composer. Pure. */
+export function matchFiles(all: readonly string[], query: string, max = 50): string[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const hits = all.filter((f) => words.every((w) => f.toLowerCase().includes(w)));
+  // Shorter paths and name hits first: "store" finds src/store.ts before src/a/b/store-test/x.ts.
+  const score = (f: string) => (words.some((w) => path.basename(f).toLowerCase().includes(w)) ? 0 : 1000) + f.length;
+  return hits.sort((a, b) => score(a) - score(b)).slice(0, max);
+}
+
+export function cmdFiles(arg: string | undefined, flags: Record<string, string | boolean>): void {
+  if (!arg) die("usage: agent-switch files <session> [--query WORDS] [--json]");
+  const t = target(arg);
+  const r = spawnSync("git", ["-C", t.cwd, "ls-files", "--cached", "--others", "--exclude-standard"], { encoding: "utf8", timeout: 3000, maxBuffer: 32 * 1024 * 1024 });
+  const all = r.status === 0 ? r.stdout.split("\n").filter(Boolean) : [];
+  const files = matchFiles(all, typeof flags.query === "string" ? flags.query : "");
+  if (flags.json) return void console.log(JSON.stringify({ key: t.key, files }));
+  for (const f of files) console.log(f);
+}
+
 /** Refuse a session that runs elsewhere: the bridge must be its only writer. */
 function runsElsewhere(t: Target): boolean {
   if (!t.sessionId || t.provider !== "claude") return false;
@@ -111,6 +133,7 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
   }
 
   const out = (o: BridgeOutput) => process.stdout.write(JSON.stringify(o) + "\n");
+  cleanStaging(ROOT);
   const leases = new InputLeases(ROOT);
   const holder: Holder = { id: `bridge:${process.pid}`, pid: process.pid, kind: "app" };
   if (t.sessionId) {
@@ -125,9 +148,28 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
       throw err;
     }
   }
-  const renew = t.sessionId ? setInterval(() => leases.acquire(t.key, holder), LEASE_RENEW_MS) : null;
+  let pendingNow: PendingItem[] = [];
+  /** A new session gets its key once the agent names it: the lease and the queue entry follow. */
+  const sessionNamed = (id: string) => {
+    if (t.sessionId) return;
+    t.key = `${t.provider}/${t.account}/${id}`;
+    t.sessionId = id;
+    try {
+      leases.acquire(t.key, holder);
+    } catch {
+      /* a brand-new id: nobody else can hold it */
+    }
+  };
+  const approvals = (items: { id: string; tool: string; summary: string }[]) => {
+    const since = new Date().toISOString();
+    const prev = new Map(pendingNow.map((i) => [i.id, i.since]));
+    pendingNow = items.map((i) => ({ ...i, since: prev.get(i.id) ?? since }));
+    writePending(ROOT, { key: t.key, pid: process.pid, items: pendingNow });
+  };
+  const renew = setInterval(() => t.sessionId && leases.acquire(t.key, holder), LEASE_RENEW_MS);
   const done = () => {
-    if (renew) clearInterval(renew);
+    clearInterval(renew);
+    clearPending(ROOT, t.key);
     if (t.sessionId) leases.release(t.key, holder);
   };
 
@@ -136,7 +178,7 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
   if (t.provider === "codex") {
     const server = AppServer.spawn(readBinaryPath("codex") ?? providerOf("codex").binary, configDir("codex", t.account));
     finished = new Promise((res) => {
-      const b = new CodexBridge({ key: t.key, threadId: t.sessionId, cwd: t.cwd, server, out: (o) => (out(o), "bridge" in o && o.bridge === "exit" && res()) });
+      const b = new CodexBridge({ key: t.key, threadId: t.sessionId, cwd: t.cwd, server, out: (o) => (out(o), "bridge" in o && o.bridge === "exit" && res()), onSession: (id) => sessionNamed(id), onApprovals: (items) => approvals(items) });
       send = (c) => b.command(c);
       b.start().catch((e: unknown) => out({ bridge: "error", message: e instanceof Error ? e.message : String(e) }));
     });
@@ -150,6 +192,9 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
         sessionId: t.sessionId,
         mode,
         model,
+        staging: stagingDir(ROOT, t.key),
+        onSession: (id) => sessionNamed(id),
+        onApprovals: (items) => approvals(items),
         out: (o) => (out(o), "bridge" in o && o.bridge === "exit" && res()),
       });
       send = (c) => b.command(c);

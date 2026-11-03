@@ -90,6 +90,27 @@ test("claude bridge: the account's config dir, a turn with an approval answered 
   assert.ok(events(out).some((e) => e.t === "approval.resolved"));
 });
 
+test("claude bridge: names the session once, reports open approvals as they change", async () => {
+  const f = fakeChild();
+  const out: BridgeOutput[] = [];
+  const sessions: string[] = [];
+  const reported: string[][] = [];
+  const b = new ClaudeBridge({ key: "claude/work/new", bin: "x", configDir: "/c", cwd: "/w", sessionId: null, mode: "default", out: (o) => out.push(o), spawn: () => f.child, onSession: (id) => sessions.push(id), onApprovals: (a) => reported.push(a.map((x) => `${x.id}:${x.tool}:${x.summary}`)) });
+  b.start();
+  const init = { type: "system", subtype: "init", session_id: "abc-123", model: "claude-haiku-5-5", permissionMode: "default", slash_commands: ["compact", 7, "review"] };
+  f.stdout.write(JSON.stringify(init) + "\n" + JSON.stringify(init) + "\n");
+  await tick();
+  assert.deepEqual(out.filter((o) => "bridge" in o && o.bridge === "session"), [{ bridge: "session", key: "claude/work/abc-123", model: "claude-haiku-5-5", mode: "default", commands: ["compact", "review"] }], "once, with the real id");
+  assert.deepEqual(sessions, ["abc-123"]);
+  f.stdout.write(JSON.stringify({ type: "control_request", request_id: "r1", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "ls" } } }) + "\n");
+  await tick();
+  b.command({ cmd: "deny", id: "r1" });
+  f.stdout.write(JSON.stringify({ type: "control_request", request_id: "r2", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "pwd" } } }) + "\n");
+  await tick();
+  b.command({ cmd: "interrupt" });
+  assert.deepEqual(reported, [["r1:Bash:ls"], [], ["r2:Bash:pwd"], []], "an interrupt drops the open request too");
+});
+
 test("claude bridge: a message typed during a turn waits for the turn to end; interrupt clears the queue", async () => {
   const { b, f, out } = claude();
   b.command({ cmd: "send", text: "first" });
@@ -106,6 +127,19 @@ test("claude bridge: a message typed during a turn waits for the turn to end; in
   assert.deepEqual((f.written.at(-1) as { request: unknown }).request, { subtype: "interrupt" });
 });
 
+test("claude bridge: a question arrives as a form and is answered with the chosen options", async () => {
+  const { b, f, out } = claude();
+  f.stdout.write(JSON.stringify({ type: "control_request", request_id: "q1", request: { subtype: "can_use_tool", tool_name: "AskUserQuestion", input: { questions: [{ question: "Colour?", options: [{ label: "Red" }, { label: "Blue" }] }] } } }) + "\n");
+  await tick();
+  assert.deepEqual(events(out).at(-1), { t: "question.requested", id: "q1", questions: [{ question: "Colour?", options: ["Red", "Blue"] }] });
+  b.command({ cmd: "answer", id: "q1", answers: { "Colour?": "Blue" } });
+  const resp = f.written.at(-1) as { response: { response: { behavior: string; updatedInput: { answers: unknown } } } };
+  assert.equal(resp.response.response.behavior, "allow");
+  assert.deepEqual(resp.response.response.updatedInput.answers, { "Colour?": "Blue" });
+  b.command({ cmd: "answer", id: "q1", answers: {} });
+  assert.deepEqual(out.at(-1), { bridge: "error", message: "no open question q1" });
+});
+
 test("claude bridge: deny, unknown approvals, modes and images", async () => {
   const { b, f, out } = claude();
   f.stdout.write(JSON.stringify({ type: "control_request", request_id: "r1", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "rm -rf x" } } }) + "\n");
@@ -120,10 +154,13 @@ test("claude bridge: deny, unknown approvals, modes and images", async () => {
   assert.deepEqual((f.written.at(-1) as { request: unknown }).request, { subtype: "set_permission_mode", mode: "plan" });
   b.command({ cmd: "set-model", model: "sonnet" });
   assert.deepEqual((f.written.at(-1) as { request: unknown }).request, { subtype: "set_model", model: "sonnet" });
-  assert.deepEqual(ClaudeBridge.content("look", [{ image: { mediaType: "image/png", data: "AAA" } }]), [
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString("base64");
+  assert.deepEqual(ClaudeBridge.content("look", [{ image: { mediaType: "image/png", data: png } }]), [
     { type: "text", text: "look" },
-    { type: "image", source: { type: "base64", media_type: "image/png", data: "AAA" } },
+    { type: "image", source: { type: "base64", media_type: "image/png", data: png } },
   ]);
+  b.command({ cmd: "send", text: "x", attachments: [{ image: { mediaType: "image/png", data: Buffer.from("nope").toString("base64") } }] });
+  assert.match((out.at(-1) as { message: string }).message, /not an image/, "a refused attachment is an error, not a crash");
   f.stdout.write("{broken\n");
   await tick();
   assert.deepEqual(events(out).at(-1), { t: "unknown", kind: "unparsable" });

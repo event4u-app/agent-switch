@@ -53,10 +53,21 @@ function firstLine(s: string, n = 120): string {
   return l.length > n ? `${l.slice(0, n - 1)}…` : l;
 }
 
+/** User-role lines Claude writes itself: slash-command output, the interrupt note. Not prompts. */
+export function notAPrompt(text: string): string | null {
+  const t = text.trim();
+  if (/^<(local-command-stdout|local-command-stderr|command-name|command-message|command-args)>/.test(t)) return "local-command";
+  if (/^\[Request interrupted by user/.test(t)) return "interrupted";
+  return null;
+}
+
 function userLine(e: Json, st: ClaudeState): AsEvent[] {
   const msg = obj(e.message);
   const out: AsEvent[] = [];
   const id = str(e.uuid) || str(msg.id) || `u${st.tools.size}`;
+  const textOf = typeof msg.content === "string" ? msg.content : arr(msg.content).map(obj).filter((b) => b.type === "text").map((b) => str(b.text)).join("\n");
+  const own = textOf ? notAPrompt(textOf) : null;
+  if (own && (typeof msg.content === "string" || !arr(msg.content).some((b) => obj(b).type === "tool_result"))) return [{ t: "unknown", kind: own }];
   if (typeof msg.content === "string") {
     out.push({ t: "turn", id, at: str(e.timestamp) || null }, { t: "message", id, role: "user", text: msg.content, images: 0 });
     return out;
@@ -137,6 +148,9 @@ export function fromClaudeLine(line: unknown, st: ClaudeState): AsEvent[] {
     if (r.subtype === "can_use_tool") {
       const tool = str(r.tool_name);
       const input = obj(r.input);
+      // A question is asked through the same channel; it is answered, not allowed.
+      if (tool === "AskUserQuestion")
+        return [{ t: "question.requested", id: str(e.request_id), questions: arr(input.questions).map((q) => ({ question: str(obj(q).question), options: arr(obj(q).options).map((o) => str(obj(o).label) || str(o)) })) }];
       return [{ t: "approval.requested", id: str(e.request_id), tool, summary: toolSummary(tool, input), input }];
     }
     return [{ t: "unknown", kind: `control_request:${str(r.subtype)}` }];

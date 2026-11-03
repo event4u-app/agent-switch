@@ -74,6 +74,14 @@ test("a failed turn says why before it ends; unknown control requests and odd li
   assert.deepEqual(fromClaudeLine({ type: "user", isSidechain: true, message: { content: "x" } }, st), [], "a subagent's own lines live in its own file");
 });
 
+test("lines Claude writes in the user role are not prompts", () => {
+  const st = claudeState();
+  assert.deepEqual(fromClaudeLine({ type: "user", message: { content: "<local-command-stdout>Set model to `sonnet`</local-command-stdout>" } }, st), [{ t: "unknown", kind: "local-command" }]);
+  assert.deepEqual(fromClaudeLine({ type: "user", message: { content: [{ type: "text", text: "[Request interrupted by user]" }] } }, st), [{ t: "unknown", kind: "interrupted" }]);
+  assert.deepEqual(fromClaudeLine({ type: "user", message: { content: "<command-name>/model</command-name>" } }, st), [{ t: "unknown", kind: "local-command" }]);
+  assert.equal(fromClaudeLine({ type: "user", message: { content: "please explain <local-command-stdout> tags" } }, st)[0].t, "turn", "only a line that starts with it");
+});
+
 test("a transcript's turn_duration line ends the turn", () => {
   assert.deepEqual(fromClaudeLine({ type: "system", subtype: "turn_duration", durationMs: 4200 }, claudeState()), [{ t: "turn.end", ok: true, durationMs: 4200, costUsd: null }]);
 });

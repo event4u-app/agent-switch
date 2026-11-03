@@ -12,24 +12,25 @@ import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { spawn as nodeSpawn } from "node:child_process";
 import * as crypto from "node:crypto";
 
+import { AttachmentRefused, resolveAttachment, type Incoming } from "./attachments.js";
 import { claudeState, fromClaudeLine } from "../timeline/claude.js";
+import { toolSummary } from "../timeline/events.js";
 import type { AsEvent } from "../timeline/events.js";
 
 export const PERMISSION_MODES = ["default", "acceptEdits", "plan"] as const;
 export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
-export interface Attachment {
-  /** An image block: base64 data and its MIME type. */
-  image?: { mediaType: string; data: string };
-}
+export type { Incoming as Attachment } from "./attachments.js";
 
 /** What the window sends; one JSON object per stdin line. */
 export type BridgeCommand =
-  | { cmd: "send"; text: string; attachments?: Attachment[] }
+  | { cmd: "send"; text: string; attachments?: Incoming[] }
   /** Add to the running turn where the agent supports it (Codex); queued otherwise. */
   | { cmd: "steer"; text: string }
   | { cmd: "approve"; id: string; always?: boolean }
   | { cmd: "deny"; id: string; message?: string }
+  /** Answers to an open question, by question text. */
+  | { cmd: "answer"; id: string; answers: Record<string, string> }
   | { cmd: "interrupt" }
   | { cmd: "set-model"; model: string }
   | { cmd: "set-mode"; mode: PermissionMode }
@@ -39,6 +40,8 @@ export type BridgeCommand =
 export type BridgeOutput =
   | { bridge: "ready"; key: string; mode: PermissionMode }
   | { bridge: "queued"; count: number }
+  /** What the agent reported at the start of a turn: the real session id (for a new one), model, mode, slash commands. */
+  | { bridge: "session"; key: string; model: string | null; mode: string | null; commands: string[] }
   | { bridge: "exit"; code: number | null }
   | { bridge: "error"; message: string }
   | { event: AsEvent };
@@ -52,6 +55,12 @@ export interface ClaudeBridgeOptions {
   sessionId: string | null;
   mode: PermissionMode;
   model?: string;
+  /** Where dropped files outside the session's folder are copied. */
+  staging?: string;
+  /** Told the session id once the agent names it (a new session has none before). */
+  onSession?: (sessionId: string) => void;
+  /** Told whenever the open approvals change, so the Needs-you queue can show them. */
+  onApprovals?: (open: { id: string; tool: string; summary: string }[]) => void;
   out: (o: BridgeOutput) => void;
   spawn?: (cmd: string, args: string[], opts: SpawnOptions) => ChildProcess;
 }
@@ -82,6 +91,7 @@ export class ClaudeBridge {
   /** Open approval requests: id → the agent's request, for "always allow". */
   private readonly pending = new Map<string, Json>();
   private mode: PermissionMode;
+  private announced = false;
 
   constructor(private readonly o: ClaudeBridgeOptions) {
     this.mode = o.mode;
@@ -127,12 +137,32 @@ export class ClaudeBridge {
         this.o.out({ event: { t: "unknown", kind: "unparsable" } });
         continue;
       }
-      if (e.type === "control_request") this.pending.set(String(e.request_id), e);
+      if (e.type === "control_request" && (e.request as Json | undefined)?.subtype === "can_use_tool") {
+        this.pending.set(String(e.request_id), e);
+        this.approvalsChanged();
+      }
+      if (e.type === "system" && e.subtype === "init" && !this.announced) {
+        this.announced = true;
+        const [provider, account] = this.o.key.split("/");
+        const commands = Array.isArray(e.slash_commands) ? (e.slash_commands as unknown[]).filter((c): c is string => typeof c === "string") : [];
+        this.o.out({ bridge: "session", key: `${provider}/${account}/${String(e.session_id)}`, model: typeof e.model === "string" ? e.model : null, mode: typeof e.permissionMode === "string" ? e.permissionMode : null, commands });
+        this.o.onSession?.(String(e.session_id));
+      }
       for (const ev of fromClaudeLine(e, this.st)) {
         this.o.out({ event: ev });
         if (ev.t === "turn.end") this.turnEnded();
       }
     }
+  }
+
+  private approvalsChanged(): void {
+    this.o.onApprovals?.(
+      [...this.pending.entries()].map(([id, e]) => {
+        const r = (e.request ?? {}) as Json;
+        const tool = String(r.tool_name ?? "");
+        return { id, tool, summary: toolSummary(tool, (r.input ?? {}) as Record<string, unknown>) };
+      }),
+    );
   }
 
   private turnEnded(): void {
@@ -154,17 +184,27 @@ export class ClaudeBridge {
     this.o.out({ event: { t: "message", id, role: "user", text, images: blocks.filter((b) => b.type === "image").length } });
   }
 
-  /** Content blocks for a user message. */
-  static content(text: string, attachments: Attachment[] = []): unknown[] | string {
-    const images = attachments.filter((a) => a.image).map((a) => ({ type: "image", source: { type: "base64", media_type: a.image!.mediaType, data: a.image!.data } }));
-    return images.length ? [...(text ? [{ type: "text", text }] : []), ...images] : text;
+  /** Content for a user message: images as blocks, files as `@` references in the text. */
+  static content(text: string, attachments: Incoming[] = [], opts: { cwd: string; staging: string } = { cwd: "/", staging: "/" }): unknown[] | string {
+    const resolved = attachments.map((a) => resolveAttachment(a, opts));
+    const refs = resolved.flatMap((r) => (r.kind === "ref" ? [r.ref] : []));
+    const full = [text, ...refs].filter(Boolean).join(" ");
+    const images = resolved.flatMap((r) => (r.kind === "image" ? [{ type: "image", source: { type: "base64", media_type: r.mediaType, data: r.data } }] : []));
+    return images.length ? [...(full ? [{ type: "text", text: full }] : []), ...images] : full;
   }
 
   command(c: BridgeCommand): void {
     switch (c.cmd) {
       case "steer":
       case "send": {
-        const msg = { type: "user", message: { role: "user", content: ClaudeBridge.content(c.text, c.cmd === "send" ? c.attachments : undefined) } };
+        let content: unknown;
+        try {
+          content = ClaudeBridge.content(c.text, c.cmd === "send" ? c.attachments : undefined, { cwd: this.o.cwd, staging: this.o.staging ?? this.o.cwd });
+        } catch (err) {
+          if (err instanceof AttachmentRefused || (err as NodeJS.ErrnoException).code) return this.o.out({ bridge: "error", message: (err as Error).message });
+          throw err;
+        }
+        const msg = { type: "user", message: { role: "user", content } };
         if (this.running) {
           this.queue.push(msg);
           this.o.out({ bridge: "queued", count: this.queue.length });
@@ -176,6 +216,7 @@ export class ClaudeBridge {
         const req = this.pending.get(c.id);
         if (!req) return this.o.out({ bridge: "error", message: `no open approval ${c.id}` });
         this.pending.delete(c.id);
+        this.approvalsChanged();
         const r = (req.request ?? {}) as Json;
         const response =
           c.cmd === "approve"
@@ -190,9 +231,22 @@ export class ClaudeBridge {
         this.o.out({ event: { t: "approval.resolved", id: c.id, decision: c.cmd === "approve" ? "allow" : "deny" } });
         return;
       }
+      case "answer": {
+        const req = this.pending.get(c.id);
+        if (!req) return this.o.out({ bridge: "error", message: `no open question ${c.id}` });
+        this.pending.delete(c.id);
+        this.approvalsChanged();
+        const input = ((req.request ?? {}) as Json).input ?? {};
+        this.write({ type: "control_response", response: { subtype: "success", request_id: c.id, response: { behavior: "allow", updatedInput: { ...(input as Json), answers: c.answers } } } });
+        return;
+      }
       case "interrupt":
         this.queue.length = 0;
         this.write({ type: "control_request", request_id: crypto.randomUUID(), request: { subtype: "interrupt" } });
+        if (this.pending.size) {
+          this.pending.clear();
+          this.approvalsChanged();
+        }
         return;
       case "set-model":
         this.write({ type: "control_request", request_id: crypto.randomUUID(), request: { subtype: "set_model", model: c.model } });

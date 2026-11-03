@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "agent-switch GUI: window control + running the agent-switch CLI",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-show",
@@ -27,9 +29,100 @@
         {
           "name": "agent-config-version",
           "cmd": "agent-config",
-          "args": ["--version"]
+          "args": [
+            "--version"
+          ]
         }
       ]
-    }
+    },
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "as-bridge",
+          "cmd": "agent-switch",
+          "args": [
+            "bridge",
+            {
+              "validator": "(claude|codex)/[A-Za-z0-9._-]+/[A-Za-z0-9-]{4,64}"
+            },
+            "--mode",
+            {
+              "validator": "default|acceptEdits|plan"
+            }
+          ]
+        },
+        {
+          "name": "as-bridge-model",
+          "cmd": "agent-switch",
+          "args": [
+            "bridge",
+            {
+              "validator": "(claude|codex)/[A-Za-z0-9._-]+/[A-Za-z0-9-]{4,64}"
+            },
+            "--mode",
+            {
+              "validator": "default|acceptEdits|plan"
+            },
+            "--model",
+            {
+              "validator": "[A-Za-z0-9._-]{1,64}"
+            }
+          ]
+        },
+        {
+          "name": "as-bridge-new",
+          "cmd": "agent-switch",
+          "args": [
+            "bridge",
+            "--new",
+            {
+              "validator": "[A-Za-z0-9._-]{1,64}"
+            },
+            "--provider",
+            {
+              "validator": "claude|codex"
+            },
+            "--cwd",
+            {
+              "validator": "[^\\r\\n\\u0000]{1,1024}"
+            },
+            "--mode",
+            {
+              "validator": "default|acceptEdits|plan"
+            }
+          ]
+        },
+        {
+          "name": "as-bridge-new-model",
+          "cmd": "agent-switch",
+          "args": [
+            "bridge",
+            "--new",
+            {
+              "validator": "[A-Za-z0-9._-]{1,64}"
+            },
+            "--provider",
+            {
+              "validator": "claude|codex"
+            },
+            "--cwd",
+            {
+              "validator": "[^\\r\\n\\u0000]{1,1024}"
+            },
+            "--mode",
+            {
+              "validator": "default|acceptEdits|plan"
+            },
+            "--model",
+            {
+              "validator": "[A-Za-z0-9._-]{1,64}"
+            }
+          ]
+        }
+      ]
+    },
+    "shell:allow-stdin-write",
+    "shell:allow-kill"
   ]
 }

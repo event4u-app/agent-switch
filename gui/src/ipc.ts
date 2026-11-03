@@ -157,6 +157,45 @@ export async function sessionTimeline(key: string, limit = 200, before?: number)
   return { events: Array.isArray(o.events) ? o.events : [], from: Number(o.from) || 0, total: Number(o.total) || 0, version: typeof o.version === "string" ? o.version : null, newerThanFixtures: o.newerThanFixtures === true };
 }
 
+export type BridgeSpec =
+  | { key: string; mode: "default" | "acceptEdits" | "plan"; model?: string }
+  | { new: { profile: string; provider: "claude" | "codex"; cwd: string }; mode: "default" | "acceptEdits" | "plan"; model?: string };
+
+/** The spawn scope (capabilities/default.json `shell:allow-spawn`) and arguments for a bridge. Pure. */
+export function bridgeArgs(spec: BridgeSpec): { scope: string; args: string[] } {
+  const model = spec.model ? ["--model", spec.model] : [];
+  if ("key" in spec) return { scope: spec.model ? "as-bridge-model" : "as-bridge", args: ["bridge", spec.key, "--mode", spec.mode, ...model] };
+  const n = spec.new;
+  return { scope: spec.model ? "as-bridge-new-model" : "as-bridge-new", args: ["bridge", "--new", n.profile, "--provider", n.provider, "--cwd", n.cwd, "--mode", spec.mode, ...model] };
+}
+
+export interface BridgeProcess {
+  send(command: object): Promise<void>;
+  kill(): Promise<void>;
+}
+
+/** Start `agent-switch bridge`: every stdout line is handed to `onLine`. */
+export async function openBridge(spec: BridgeSpec, onLine: (line: string) => void, onClose: (code: number | null) => void): Promise<BridgeProcess> {
+  const { scope, args } = bridgeArgs(spec);
+  const cmd = Command.create(scope, args);
+  let buf = "";
+  cmd.stdout.on("data", (d: string) => {
+    buf += d.endsWith("\n") ? d : `${d}\n`;
+    let i: number;
+    while ((i = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, i).trim();
+      buf = buf.slice(i + 1);
+      if (line) onLine(line);
+    }
+  });
+  cmd.on("close", (e: { code: number | null }) => onClose(e.code));
+  const child = await cmd.spawn();
+  return {
+    send: (command) => child.write(JSON.stringify(command) + "\n"),
+    kill: () => child.kill(),
+  };
+}
+
 /** `sessions name <session> <name>`: the library name. */
 export async function renameSession(key: string, name: string): Promise<void> {
   await runCli(["sessions", "name", key, name]);

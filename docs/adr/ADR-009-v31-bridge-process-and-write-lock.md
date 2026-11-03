@@ -14,7 +14,7 @@ approval requests, and make sure nothing else types into the same session.
 Options:
 
 1. **`agent-switch bridge <session>`** — a CLI process with a line protocol on
-   stdin/stdout, spawned by the GUI through the shell scope it already has.
+   stdin/stdout, spawned by the GUI through a narrow shell spawn scope.
 2. **A bridge manager inside the engine** — the engine owns the agent processes;
    the GUI talks to them over the engine socket.
 
@@ -22,17 +22,23 @@ Options:
 
 Option 1.
 
-- The GUI spawns `agent-switch bridge <session> --json`. The main window's
-  capability already allows `agent-switch` with any arguments, so no new Tauri
-  capability is added.
+- The GUI spawns `agent-switch bridge <session> --mode <m> [--model <m>]` (or
+  `bridge --new …`). *Corrected during Phase 2:* the main window could already
+  **execute** `agent-switch` with any arguments, but a long-lived process with
+  stdin needs **spawn** and **stdin-write**. Those are added for the main window
+  only, and spawn is scoped to `agent-switch bridge` with fixed argument shapes
+  and validators (session key, mode without a bypass value, model name, folder
+  without line breaks) — narrower than the existing execute scope.
+  `gui/src/ipc-bridge-scope.test.ts` checks the shapes against the capability.
 - The bridge spawns the agent: Claude with `-p --input-format stream-json
   --output-format stream-json --verbose --include-partial-messages --resume <id>
   --permission-prompt-tool stdio --permission-mode <the session's mode>` (the
   mode is passed every time: `-p` resume does not restore it); Codex with `codex
   app-server` and `thread/resume`.
 - **stdout**: one JSON event per line, AS event model v1 (Phase 1).
-  **stdin**: one JSON command per line — `send`, `approve`, `deny`, `answer`,
-  `interrupt`, `set-model`, `set-mode`, `close`.
+  **stdin**: one JSON command per line — `send`, `steer`, `approve`, `deny`,
+  `interrupt`, `set-model`, `set-mode`, `close`. A question's answer is sent as
+  the next message.
 - **Write lock**: on start the bridge takes the session's input lease
   (`src/host/lease.ts`, holder `bridge:<pid>`), renews it while it runs and
   releases it on exit. A second bridge, or typing into the hosted terminal, meets

@@ -49,6 +49,7 @@ const VALUE_FLAGS = new Set([
   "repo",
   "mode",
   "before",
+  "query",
 ]);
 
 export interface ParsedArgs {
