@@ -159,4 +159,19 @@ test("libraryRound: open PR → auto-kept and vaulted; merged > 24 h → archive
   st.close();
   assert.equal(round().archived, 0, "the user's unarchive sticks");
   assert.equal((await entry())!.archived, false);
+
+  // `sessions library --json`: the page's rows, from the store plus the session on disk.
+  const cli = new URL("../src/index.js", import.meta.url).pathname;
+  const r = spawnSync(process.execPath, [cli, "sessions", "library", "--json"], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  const l = JSON.parse(r.stdout);
+  assert.equal(l.autoKeep, true);
+  assert.ok(l.vaultBytes > 0);
+  assert.equal(l.entries.length, 1);
+  const e = l.entries[0];
+  assert.equal(e.key, KEY8);
+  assert.deepEqual([e.pinned, e.archived, e.autoKept, e.branch, e.canResume], [false, false, false, "main", true]);
+  assert.deepEqual(e.pr, { number: 7, lifecycle: "MERGED" });
+  assert.equal(e.kept.state, "kept");
+  assert.equal(e.cwd, repo);
 });
