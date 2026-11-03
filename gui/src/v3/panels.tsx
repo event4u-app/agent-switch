@@ -139,7 +139,7 @@ export interface ChangedFile {
   removed: number;
 }
 
-export function ChangesWindow({ files, onReview, onCommit, onHide, reviewAvailable }: { files: ChangedFile[]; onReview: () => void; onCommit: () => void; onHide: () => void; reviewAvailable: boolean }) {
+export function ChangesWindow({ files, onReview, onCommit, onHide, reviewAvailable, commitAvailable = true }: { files: ChangedFile[]; onReview: () => void; onCommit: () => void; onHide: () => void; reviewAvailable: boolean; commitAvailable?: boolean }) {
   const added = files.reduce((n, f) => n + f.added, 0);
   const removed = files.reduce((n, f) => n + f.removed, 0);
   return (
@@ -165,7 +165,9 @@ export function ChangesWindow({ files, onReview, onCommit, onHide, reviewAvailab
         <Act kind="accent" onClick={onReview} disabled={!reviewAvailable} title={reviewAvailable ? undefined : "Review arrives with the next version"}>
           Review changes
         </Act>
-        <Act onClick={onCommit}>Commit…</Act>
+        <Act onClick={onCommit} disabled={!commitAvailable} title={commitAvailable ? undefined : "Commit arrives with the next version"}>
+          Commit…
+        </Act>
       </div>
     </Window>
   );

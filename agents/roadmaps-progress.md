@@ -6,10 +6,10 @@
 
 ## Overall
 
-**78 / 97 steps done · 80%**
+**87 / 97 steps done · 90%**
 
 ```text
-████████████████████████████████░░░░░░░░   80%
+████████████████████████████████████░░░░   90%
 ```
 
 ## Open roadmaps
@@ -17,7 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 81 | 3 | 78 | 0 | 0 | 0 | ██████████ 96% |
-| 2 | [road-to-agent-switch-v3-window.md](roadmaps/road-to-agent-switch-v3-window.md) | 4 | 16 | 16 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
+| 2 | [road-to-agent-switch-v3-window.md](roadmaps/road-to-agent-switch-v3-window.md) | 4 | 16 | 7 | 9 | 0 | 0 | 0 | ██████░░░░ 56% |
 
 ---
 
@@ -65,12 +65,12 @@
 
 ### [road-to-agent-switch-v3-window.md](roadmaps/road-to-agent-switch-v3-window.md)
 
-**v3 window live — a data adapter from the 2.11 store and the v3 CLI** — 0 / 16 done (0%)
+**v3 window live — a data adapter from the 2.11 store and the v3 CLI** — 9 / 16 done (56%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
-| 1 | Reads | ⬜ not started | 5 | 0 | 0 | 0 | 0% |
-| 2 | Mapping | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
+| 1 | Reads | ✅ done | 0 | 5 | 0 | 0 | 100% |
+| 2 | Mapping | ✅ done | 0 | 4 | 0 | 0 | 100% |
 | 3 | Slots and mounting | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
 | 4 | Proof | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
 
@@ -81,5 +81,5 @@ Days since each active roadmap landed at its path and since its last ticked step
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 1 | 1 |
-| [road-to-agent-switch-v3-window.md](roadmaps/road-to-agent-switch-v3-window.md) | — | — |
+| [road-to-agent-switch-v3-window.md](roadmaps/road-to-agent-switch-v3-window.md) | 0 | 0 |
 

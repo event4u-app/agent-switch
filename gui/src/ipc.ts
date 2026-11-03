@@ -147,6 +147,11 @@ export async function setLibraryFlag(key: string, flag: "pin" | "archive", on: b
   await runCli(["sessions", on ? flag : `un${flag}`, key]);
 }
 
+/** `sessions name <session> <name>`: the library name. */
+export async function renameSession(key: string, name: string): Promise<void> {
+  await runCli(["sessions", "name", key, name]);
+}
+
 /** `sessions keep auto on|off`. */
 export async function setAutoKeep(on: boolean): Promise<void> {
   await runCli(["sessions", "keep", "auto", on ? "on" : "off"]);

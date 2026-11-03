@@ -85,10 +85,13 @@ reachable behind a setting for one release, then goes.
       vs HEAD (status, path, added, removed). Refuses a path outside the
       session's folder. Docs row.
       → `src/commands/changes.ts`, `tests/changes.test.ts` (parsers + a real repo).
-- [ ] "Done today": `needs --json` gains `done` (items resolved since local
+- [x] "Done today": `needs --json` gains `done` (items resolved since local
       midnight, newest first, at most 20), or the GUI derives it from session
       state transitions — pick the one the store already records; test both
       the empty and the full case.
+      → `needs --json` already returns `history` (resolved items, newest first);
+      the adapter keeps today's (`doneToday` in `adapter/data.ts`), tested empty,
+      full, across midnight and with a bad date.
 - [x] `useV3Feeds()`: one poll for the v3-only reads, same cadence and
       hidden-window back-off as `useSessionsPoll`; feeds keep their last good
       value with a timestamp.
@@ -97,22 +100,37 @@ reachable behind a setting for one release, then goes.
 
 ## Phase 2 — Mapping
 
-- [ ] `toV3Data(vm, feeds, now)` in `gui/src/v3/adapter/data.ts`, field by
+- [x] `toV3Data(vm, feeds, now)` in `gui/src/v3/adapter/data.ts`, field by
       field per the table above. Property tests: every session key in
       `sessions` resolves in `bar`/`summary`; no account appears twice in
       `limits`; a missing feed yields the documented empty state.
-- [ ] Session key: one join key across `sessions --json`, `host list`,
+      → `gui/src/v3/adapter/data.ts` + `data.test.ts` (seeded property test over
+      60 rows; the duplicate-account check was seen red before the dedupe).
+- [x] Session key: one join key across `sessions --json`, `host list`,
       `needs`, `pr status`, library (provider + session id). A row that only
       one source knows still renders (state "unknown", no PR).
-- [ ] `dispatchV3(action)` in `gui/src/v3/adapter/actions.ts`: every
+      → `sessionKey()`; a hosted session with no transcript yet gets a row from
+      `host list` alone (no PR, title from its folder).
+- [x] `dispatchV3(action)` in `gui/src/v3/adapter/actions.ts`: every
       `V3Action` variant mapped onto an existing `Actions` call or CLI command
       (`takeover`, `rebind`, `host start|end|respawn`, `compact`,
       `sessions pin|archive|keep auto`, `open`, `open-default`, `focus`,
       `engine restart`, `pr`). An exhaustive `switch` with `never` so a new
       variant cannot go unmapped.
-- [ ] Controls without a backing command are hidden, not dead: list them in
+      → `gui/src/v3/adapter/actions.ts` + `actions.test.ts`. A CLI failure is an
+      alert toast, never a throw. Flows the window has no dialog for reuse the
+      2.11 overlays (session sheet for take over / hand off / brief, start,
+      re-auth, add account, terminal runs). PR pages open through a narrowed
+      shell-open scope (`tauri.conf.json`: `github.com/<o>/<r>/pull/<n>[/checks]`
+      and `compare/<branch>?expand=1` only), locked by a test.
+- [x] Controls without a backing command are hidden, not dead: list them in
       the PR body with the reason (e.g. "Review" when no reviewer is
       configured).
+      → Session menu per session (`menuFor`): Detach never (closing the tab
+      detaches), End and Compact only for hosted sessions, moves not for
+      Antigravity. "Commit…" disabled with its reason like "Review" — no commit
+      flow until v3.1. Model and thinking chips stay locked outside hosted
+      sessions, as the design already draws them.
 
 ## Phase 3 — Slots and mounting
 

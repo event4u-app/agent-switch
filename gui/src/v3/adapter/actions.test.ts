@@ -1,0 +1,232 @@
+import { describe, expect, it, vi } from "vitest";
+
+import type { SessionRow } from "../../transforms.js";
+import { emptyViewModel } from "../../vm/load.js";
+import type { NeedItem } from "../needs.js";
+import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
+import type { V3Action } from "../window.js";
+import { dispatchV3, githubSlug, menuFor, type DispatchDeps } from "./actions.js";
+import { decisionFor } from "./data.js";
+
+const PR = { number: 9, url: "https://github.com/o/r/pull/9", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "NONE", ci: "FAILURE", failingChecks: ["lint"] };
+const row = (id: string, over: Partial<SessionRow> = {}): SessionRow => ({ provider: "claude", profile: "work", sessionId: id, projectDir: "-r", cwd: "/r", mtimeMs: 0, live: true, ...over });
+const need = (over: Partial<NeedItem>): NeedItem => ({ id: "n", kind: "approval", subject: "claude/work/a", who: "w", what: "x", verb: "v", since: "", version: "", ...over });
+
+function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "limit", subject: "claude/work" })]) {
+  const ipc = {
+    focusSessionTerminal: vi.fn(async () => {}),
+    needsLater: vi.fn(async () => {}),
+    hostStart: vi.fn(async () => {}),
+    hostEnd: vi.fn(async () => {}),
+    hostRespawn: vi.fn(async () => {}),
+    setLibraryFlag: vi.fn(async () => {}),
+    setAutoKeep: vi.fn(async () => {}),
+    setOpenDefault: vi.fn(async () => {}),
+    cleanupMerged: vi.fn(async () => {}),
+    engineRestart: vi.fn(async () => {}),
+    renameSession: vi.fn(async () => {}),
+  };
+  const rows = new Map<string, SessionRow>([
+    ["claude/work/a", row("a", { prs: [PR], git: { toplevel: "/r", branch: "feat/x", headSha: "h", dirty: false, changed: 0, ahead: 1, behind: 0, upstream: "origin/feat/x", remote: "git@github.com:o/r.git", worktree: false, cwd: "/r", cwdSource: "hook" } })],
+    ["claude/work/h", row("h", { context: { pct: 1, model: "opus", contextTokens: 1, windowTokens: 2, confidence: "high", source: "transcript" } as never })],
+  ]);
+  const d = {
+    ipc,
+    act: { rebind: vi.fn(async () => {}), armRebind: vi.fn(async () => {}), refreshUsage: vi.fn(async () => {}), setDefault: vi.fn(async () => {}) },
+    open: vi.fn(),
+    toast: vi.fn(),
+    openUrl: vi.fn(),
+    refresh: vi.fn(),
+    rows: () => rows,
+    needs: () => needs,
+    hosted: (k: string) => k === "claude/work/h",
+    setAppearance: vi.fn(),
+    setFocusTerminal: vi.fn(),
+    pick: vi.fn(),
+    prompt: vi.fn(),
+  };
+  return d satisfies DispatchDeps;
+}
+
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
+describe("dispatchV3", () => {
+  it("needs: approval focuses the terminal, CI opens the checks, sign-in opens re-auth", async () => {
+    const d = deps();
+    await dispatchV3({ type: "need", item: need({}) }, d);
+    expect(d.ipc.focusSessionTerminal).toHaveBeenCalledWith("claude/work/a");
+    dispatchV3({ type: "need", item: need({ kind: "ci" }) }, d);
+    expect(d.openUrl).toHaveBeenCalledWith("https://github.com/o/r/pull/9/checks");
+    dispatchV3({ type: "need", item: need({ kind: "signin", subject: "claude/home" }) }, d);
+    expect(d.open).toHaveBeenCalledWith({ kind: "reauth", accountId: "claude:home" });
+  });
+
+  it("later for all, and keep an account dismisses only its limit items", async () => {
+    const d = deps();
+    await dispatchV3({ type: "needs-later-all" }, d);
+    expect(d.ipc.needsLater.mock.calls).toEqual([["n1"], ["n2"]]);
+    d.ipc.needsLater.mockClear();
+    await dispatchV3({ type: "keep-account", account: "work" }, d);
+    expect(d.ipc.needsLater.mock.calls).toEqual([["n2"]]);
+    expect(d.refresh).toHaveBeenCalled();
+  });
+
+  it("start: hosted runs host start, terminal opens the 2.11 start flow", async () => {
+    const d = deps();
+    const plan = { folder: "/r", gitState: null, worktree: false, tool: "claude" as const, model: "", thinking: "", where: "hosted" as const };
+    await dispatchV3({ type: "start", plan }, d);
+    expect(d.ipc.hostStart).toHaveBeenCalledWith("claude", "/r");
+    dispatchV3({ type: "start", plan: { ...plan, where: "terminal" } }, d);
+    expect(d.open).toHaveBeenCalledWith({ kind: "start", cwd: "/r", tool: "claude" });
+  });
+
+  it("move: now rebinds, after the turn arms, a brief opens the session sheet", async () => {
+    const d = deps();
+    await dispatchV3({ type: "move", how: "now", moves: [{ key: "claude/work/a", target: "home" }] }, d);
+    expect(d.act.rebind).toHaveBeenCalledWith("claude:a", "claude:home");
+    await dispatchV3({ type: "move", how: "after-turn", moves: [{ key: "claude/work/a", target: "home" }] }, d);
+    expect(d.act.armRebind).toHaveBeenCalledWith("claude:a", "claude:home");
+    await dispatchV3({ type: "move", how: "brief", moves: [{ key: "claude/work/a", target: "home" }] }, d);
+    expect(d.open).toHaveBeenCalledWith({ kind: "session", id: "claude:a" });
+  });
+
+  it("session menu: rename asks, pin pins, End asks first and only then ends", async () => {
+    const d = deps();
+    dispatchV3({ type: "session-menu", key: "claude/work/h", item: "Rename…" }, d);
+    d.prompt.mock.calls[0][0].onSubmit("new name");
+    await flush();
+    expect(d.ipc.renameSession).toHaveBeenCalledWith("claude/work/h", "new name");
+    await dispatchV3({ type: "session-menu", key: "claude/work/h", item: "Pin" }, d);
+    expect(d.ipc.setLibraryFlag).toHaveBeenCalledWith("claude/work/h", "pin", true);
+    dispatchV3({ type: "session-menu", key: "claude/work/h", item: "End…" }, d);
+    expect(d.ipc.hostEnd).not.toHaveBeenCalled();
+    d.open.mock.calls.at(-1)![0].onConfirm();
+    await flush();
+    expect(d.ipc.hostEnd).toHaveBeenCalledWith("claude/work/h");
+    dispatchV3({ type: "session-menu", key: "claude/work/h", item: "Compact" }, d);
+    expect(d.open).toHaveBeenLastCalledWith({ kind: "terminal", run: { args: ["compact", "claude/work/h"], title: "Compact" } });
+  });
+
+  it("batch End ends only hosted sessions, after asking", async () => {
+    const d = deps();
+    dispatchV3({ type: "batch", op: "onEnd", keys: ["claude/work/a", "claude/work/h"] }, d);
+    d.open.mock.calls[0][0].onConfirm();
+    await flush();
+    expect(d.ipc.hostEnd.mock.calls).toEqual([["claude/work/h"]]);
+    const e = deps();
+    dispatchV3({ type: "batch", op: "onEnd", keys: ["claude/work/a"] }, e);
+    expect(e.open).not.toHaveBeenCalled();
+    expect(e.toast).toHaveBeenCalled();
+  });
+
+  it("model and thinking: a pick, then respawn; nothing for a session not hosted", async () => {
+    const d = deps();
+    dispatchV3({ type: "model", key: "claude/work/a" }, d);
+    expect(d.pick).not.toHaveBeenCalled();
+    dispatchV3({ type: "thinking", key: "claude/work/h" }, d);
+    const req = d.pick.mock.calls[0][0];
+    expect(req.options).toContain("high");
+    req.onPick("high");
+    await flush();
+    expect(d.ipc.hostRespawn).toHaveBeenCalledWith("claude/work/h", { effort: "high" });
+    dispatchV3({ type: "model", key: "claude/work/h" }, d);
+    expect(d.pick.mock.calls[1][0].current).toBe("opus");
+  });
+
+  it("blocker: a waiting session focuses its terminal first", async () => {
+    const d = deps();
+    await dispatchV3({ type: "blocker", key: "claude/work/a" }, d);
+    expect(d.ipc.focusSessionTerminal).toHaveBeenCalledWith("claude/work/a");
+    expect(d.openUrl).not.toHaveBeenCalled();
+  });
+
+  it("blocker and PR actions open the right page", () => {
+    const d = deps([]);
+    dispatchV3({ type: "blocker", key: "claude/work/a" }, d);
+    expect(d.openUrl).toHaveBeenLastCalledWith("https://github.com/o/r/pull/9/checks");
+    dispatchV3({ type: "open-pr", key: "claude/work/a" }, d);
+    expect(d.openUrl).toHaveBeenLastCalledWith("https://github.com/o/r/pull/9");
+    dispatchV3({ type: "create-pr", key: "claude/work/a" }, d);
+    expect(d.openUrl).toHaveBeenLastCalledWith("https://github.com/o/r/compare/feat%2Fx?expand=1");
+    dispatchV3({ type: "create-pr", key: "claude/work/h" }, d);
+    expect(d.toast).toHaveBeenCalled();
+  });
+
+  it("accounts, library, settings, engine", async () => {
+    const d = deps();
+    dispatchV3({ type: "account", op: "add" }, d);
+    expect(d.open).toHaveBeenLastCalledWith({ kind: "add-account" });
+    await dispatchV3({ type: "account", op: "use", key: "claude:home" }, d);
+    expect(d.act.setDefault).toHaveBeenCalledWith("claude:home");
+    dispatchV3({ type: "account", op: "more", key: "claude:home" }, d);
+    expect(d.open).toHaveBeenLastCalledWith({ kind: "account", id: "claude:home" });
+    dispatchV3({ type: "account", op: "terminal", key: "codex:cx" }, d);
+    expect(d.open.mock.calls.at(-1)![0]).toMatchObject({ kind: "terminal", run: { title: "cx" } });
+    await dispatchV3({ type: "library", op: "archive", key: "k", value: true }, d);
+    expect(d.ipc.setLibraryFlag).toHaveBeenLastCalledWith("k", "archive", true);
+    await dispatchV3({ type: "library", op: "auto-keep", value: false }, d);
+    expect(d.ipc.setAutoKeep).toHaveBeenCalledWith(false);
+    dispatchV3({ type: "library", op: "resume", key: "k" }, d);
+    expect(d.open).toHaveBeenLastCalledWith({ kind: "terminal", run: { args: ["sessions", "resume", "k", "--yes"], title: "Resume" } });
+    dispatchV3({ type: "appearance", value: DEFAULT_APPEARANCE }, d);
+    expect(d.setAppearance).toHaveBeenCalledWith(DEFAULT_APPEARANCE);
+    await dispatchV3({ type: "open-default", target: "finder", repo: "/r" }, d);
+    expect(d.ipc.setOpenDefault).toHaveBeenCalledWith("finder", "/r");
+    dispatchV3({ type: "focus-terminal-setting", value: false }, d);
+    expect(d.setFocusTerminal).toHaveBeenCalledWith(false);
+    await dispatchV3({ type: "restart-engine" }, d);
+    expect(d.ipc.engineRestart).toHaveBeenCalled();
+  });
+
+  it("a failing CLI call becomes an alert toast, never a throw", async () => {
+    const d = deps();
+    d.ipc.engineRestart.mockRejectedValueOnce(new Error("service down"));
+    await dispatchV3({ type: "restart-engine" }, d);
+    expect(d.toast).toHaveBeenCalledWith({ tone: "alert", text: "Engine restart failed: service down" });
+    expect(d.refresh).not.toHaveBeenCalled();
+  });
+
+  it("every action type is handled without throwing", () => {
+    const all: V3Action[] = [
+      { type: "need-more" }, { type: "away" }, { type: "choose-account" }, { type: "clean-up" }, { type: "view", key: "k", view: "chat" },
+      { type: "review", key: "k" }, { type: "commit", key: "k" }, { type: "palette", entry: { id: "x", group: "commands", title: "x" }, newTab: false },
+      { type: "batch", op: "onPin", keys: ["k"] }, { type: "batch", op: "onArchive", keys: ["k"] }, { type: "batch", op: "onClean", keys: [] },
+      { type: "account", op: "refresh" }, { type: "account", op: "sign-in", key: "claude:x" },
+    ];
+    for (const a of all) expect(() => dispatchV3(a, deps())).not.toThrow();
+  });
+});
+
+describe("menuFor", () => {
+  it("Detach never; End and Compact only when hosted; moves not for Antigravity", () => {
+    expect(menuFor(row("a"), false)).toEqual(["Rename…", "Pin", "Move to another account…", "Take over here…", "Hand off…"]);
+    expect(menuFor(row("a"), true)).toEqual(["Rename…", "Pin", "Move to another account…", "Take over here…", "Hand off…", "Compact", "End…"]);
+    expect(menuFor(row("a", { provider: "antigravity" }), true)).toEqual(["Rename…", "Pin", "Compact", "End…"]);
+  });
+});
+
+describe("decisionFor a single session", () => {
+  it("moves only that session", () => {
+    const vm = { ...emptyViewModel(0), accounts: [{ id: "claude:work", tool: "claude", name: "work", windows: [{ key: "five_hour", label: "5h", utilization: 50, resetsAt: null }], state: "ready" }, { id: "claude:home", tool: "claude", name: "home", windows: [], state: "ready" }] as never };
+    const d = decisionFor("claude/work/a", vm, [row("a"), row("b")], 0)!;
+    expect(d.sessions.map((s) => s.key)).toEqual(["claude/work/a"]);
+  });
+});
+
+describe("githubSlug", () => {
+  it.each([
+    ["git@github.com:o/r.git", "o/r"],
+    ["https://github.com/o/r", "o/r"],
+    ["https://github.com/o/r.js.git", "o/r.js"],
+    ["https://gitlab.com/o/r", null],
+    [null, null],
+  ])("%s → %s", (r, s) => expect(githubSlug(r)).toBe(s));
+});
+
+import tauriConf from "../../../src-tauri/tauri.conf.json?raw";
+
+describe("the shell open scope admits exactly the PR pages the adapter opens", () => {
+  const scope = new RegExp(`^(?:${JSON.parse(tauriConf).plugins.shell.open})$`);
+  it.each(["https://github.com/o/r/pull/9", "https://github.com/o/r/pull/9/checks", `https://github.com/o/r/compare/${encodeURIComponent("feat/x")}?expand=1`])("allows %s", (u) => expect(scope.test(u)).toBe(true));
+  it.each(["https://github.com/o/r/settings", "http://github.com/o/r/pull/9", "https://github.com.evil.io/o/r/pull/9", "https://github.com/o/r/compare/x?expand=1&y=2", "https://github.com/o/r/pull/9/../../x"])("refuses %s", (u) => expect(scope.test(u)).toBe(false));
+});

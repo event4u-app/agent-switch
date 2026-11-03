@@ -48,6 +48,10 @@ export interface V3Data {
   summary: (key: string) => SummaryFacts | null;
   changes: (key: string) => ChangedFile[];
   next: (key: string) => { text: string; action: string } | null;
+  /** The session-menu entries that do something for this session; all when absent. */
+  menu?: (key: string) => readonly SessionMenuItem[];
+  /** "Commit…" in the Changes window; disabled with its reason when false. */
+  commitAvailable?: boolean;
 }
 
 export interface V3Slots {
@@ -136,6 +140,7 @@ export function V3Window({ data, slots, act }: { data: V3Data; slots: V3Slots; a
   const onVerb = (n: NeedItem) => {
     if (n.kind === "limit") setOverlay({ decide: n.subject });
     else if (n.kind === "update") openPage("tools");
+    else if ((n.kind === "approval" || n.kind === "question") && data.bar(n.subject)?.hosted) openSession(n.subject);
     else act({ type: "need", item: n });
   };
 
@@ -235,7 +240,7 @@ export function V3Window({ data, slots, act }: { data: V3Data; slots: V3Slots; a
       const f = data.summary(activeSession);
       return f && <SummaryWindow f={f} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} />;
     }
-    if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} reviewAvailable={false} onReview={() => act({ type: "review", key: activeSession })} onCommit={() => act({ type: "commit", key: activeSession })} onHide={() => frame.setRight(null)} />;
+    if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} reviewAvailable={false} commitAvailable={data.commitAvailable ?? true} onReview={() => act({ type: "review", key: activeSession })} onCommit={() => act({ type: "commit", key: activeSession })} onHide={() => frame.setRight(null)} />;
     const s = data.sessions.find((x) => x.key === activeSession);
     return s && <ChildrenWindow noun={childNoun(s)} children={s.children} onHide={() => frame.setRight(null)} />;
   })();
@@ -271,6 +276,8 @@ export function V3Window({ data, slots, act }: { data: V3Data; slots: V3Slots; a
         onOpen={(entry, newTab) => {
           close();
           if (entry.id.startsWith("page:")) openPage(entry.id.slice(5) as Page);
+          else if (entry.group === "sessions") openSession(entry.id);
+          else if (entry.group === "branches" && entry.id.startsWith("pr:")) openSession(entry.id.slice(3));
           else act({ type: "palette", entry, newTab });
         }}
       />
@@ -284,7 +291,7 @@ export function V3Window({ data, slots, act }: { data: V3Data; slots: V3Slots; a
       <DecisionSheet {...decision} room={null} onClose={close} onKeep={() => (close(), act({ type: "keep-account", account: decision.account }))} onDecide={(how, moves) => (close(), act({ type: "move", how, moves }))} />
     ) : overlay && typeof overlay === "object" && "menu" in overlay ? (
       <div role="menu" aria-label="Session actions" className="absolute right-3 top-[124px] z-10 w-[240px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
-        {SESSION_MENU.map((item) => (
+        {(data.menu ? data.menu(overlay.menu) : SESSION_MENU).map((item) => (
           <button
             key={item}
             type="button"
