@@ -599,15 +599,24 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
       codex-cli 0.166.0) for `cwd` and `thread_source`; a thread not started by
       the user is `root: false, relation: "unknown"` and `--tree` groups it apart.
       Codex sessions now get git facts too.
-- [ ] Codex hooks per `CODEX_HOME` (user level only). Measured: codex-cli
+- [x] Codex hooks per `CODEX_HOME` (user level only). Measured: codex-cli
       0.166.0 has hooks (`[hooks]` in config.toml — SessionStart/End, Stop,
       SubagentStart/Stop, PermissionRequest, Pre/PostCompact, …) behind a
-      persisted hook trust. Open: both Codex accounts here are signed out
-      ("access token could not be refreshed"), so the payloads could not be
-      captured; signing in is the user's step.
-      Rechecked 2026-11-02: `codex login status` says "Logged in using
-      ChatGPT" for both, yet a real `codex exec` turn fails on each with the
-      same refresh error — the status line only reads the file.
+      persisted hook trust.
+      → Captured live on 0.166.0 after both accounts were signed in again
+      (2026-11-03; `tests/fixtures/codex-hooks-0.166.0.jsonl`): the stdin is
+      Claude's shape (`session_id`, `hook_event_name`, `cwd`, `transcript_path`)
+      and the hook runs with `CODEX_HOME`. `hooks install --provider codex`
+      writes SessionStart, Stop and SessionEnd into `$CODEX_HOME/hooks.json`
+      beside the user's own groups (`src/codex-hooks.ts`); the intake picks the
+      account whose dir holds the transcript, so an inherited
+      `CLAUDE_CONFIG_DIR` does not claim a Codex event, and the relay forwards
+      `CODEX_HOME`. Codex runs the hooks only after the user approves them when
+      `codex` starts; Agent Switch never writes that approval — `hooks status`
+      recomputes Codex's trust hash (checked against hashes Codex wrote) and
+      says approved / not approved yet / changed / switched off. The events not
+      captured here (subagents, PermissionRequest, compaction) are not
+      installed.
 - [x] Antigravity: "not readable" label until a structured source exists
       (ACP in `later/road-to-agent-switch-v3-reach.md`); it can be started from
       New session like any terminal-only tool.
