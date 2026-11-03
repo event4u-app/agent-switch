@@ -181,7 +181,7 @@ async function main(): Promise<void> {
       if (positional[0] === "cleanup") return cmdCleanup(flags);
       if (positional[0] === "resume") return cmdResume(positional[1], flags);
       return cmdSessions(providerId, providerExplicit, positional[0], flags);
-    case "hooks": return cmdHooks(positional[0], positional[1]);
+    case "hooks": return cmdHooks(positional[0], positional[1], providerExplicit ? providerId : "claude");
     case "store": return cmdStore(positional[0], flags);
     case "app-visibility":
       if (positional[0] !== "visible" && positional[0] !== "hidden") die("usage: agent-switch app-visibility visible|hidden");

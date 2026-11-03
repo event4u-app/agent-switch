@@ -51,6 +51,7 @@ import { githubRepo, prCacheFile, prsForHead, readPrCache } from "../pr-facts.js
 import { Store, storeFile } from "../store/store.js";
 import { libraryFacts } from "./library.js";
 import { takeInHook } from "../hook-intake.js";
+import { codexHomeTrust, codexHooksNeedMigration, installCodexHooks, readCodexHooks, uninstallCodexHooks, type CodexTrust } from "../codex-hooks.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "../notify.js";
 import { readTmuxRegistry, sendKeysArgs, tmuxSessionName } from "../tmux.js";
 import { TmuxHost } from "../host/tmux-host.js";
@@ -68,18 +69,21 @@ function ageOf(mtimeMs: number): string {
 }
 
 /**
- * `agent-switch hooks install|uninstall|status [profile]` — manage the
- * lifecycle push hooks in Claude profiles' settings.json. Additive,
- * marker-keyed, idempotent, share-aware (settings.json may be a shared,
- * fork-prone link — after an edit the user should run `share sync`). Claude
- * only (the hook contract is Claude Code's).
+ * `agent-switch hooks install|uninstall|status [profile] [--provider codex]` —
+ * manage the lifecycle push hooks. Claude: our entries in each profile's
+ * settings.json — additive, marker-keyed, idempotent, share-aware
+ * (settings.json may be a shared, fork-prone link — after an edit the user
+ * should run `share sync`). Codex: our groups in each account's
+ * `$CODEX_HOME/hooks.json`, which run once the user approved them in Codex.
  */
-export function cmdHooks(sub?: string, name?: string): void {
+export function cmdHooks(sub?: string, name?: string, providerId: ProviderId = "claude"): void {
   const action = sub ?? "status";
   if (action === "relay") return cmdHooksRelay(name);
   if (!["install", "uninstall", "status"].includes(action)) {
-    die("usage: agent-switch hooks install|uninstall|status [profile] · hooks relay <as-hook binary>|off");
+    die("usage: agent-switch hooks install|uninstall|status [profile] [--provider claude|codex] · hooks relay <as-hook binary>|off");
   }
+  if (providerId === "codex") return cmdCodexHooks(action, name);
+  if (providerId !== "claude") die(`hooks supports claude and codex (not ${providerId})`);
   const profiles = name ? [requireProfile("claude", name, "hooks")] : listProfiles("claude");
   if (profiles.length === 0) die("no claude profiles");
 
@@ -111,6 +115,35 @@ export function cmdHooks(sub?: string, name?: string): void {
   }
 }
 
+const CODEX_TRUST_TEXT: Record<CodexTrust, string> = {
+  approved: "installed, approved in Codex",
+  awaiting: "installed, not approved yet — start `codex` once for this account and choose \"Trust all and continue\" (or review them)",
+  changed: "installed, changed since you approved it — Codex asks again at its next start",
+  disabled: "installed, switched off in Codex",
+};
+
+function cmdCodexHooks(action: string, name?: string): void {
+  const profiles = name ? [requireProfile("codex", name, "hooks")] : listProfiles("codex");
+  if (profiles.length === 0) die("no codex profiles");
+  const relay = relayPath(ROOT);
+  const command = hookCommand("agent-switch", relay);
+  let ask = false;
+  for (const p of profiles) {
+    const home = configDir("codex", p);
+    if (action === "status") {
+      // A relay that came or went since the install: follow it, as for Claude.
+      if (codexHooksNeedMigration(readCodexHooks(home), command)) installCodexHooks(home, "agent-switch", relay);
+      const trust = codexHomeTrust(home);
+      console.log(`codex/${p}: ${trust ? CODEX_TRUST_TEXT[trust] : "not installed"}`);
+      continue;
+    }
+    const res = action === "install" ? installCodexHooks(home, "agent-switch", relay) : uninstallCodexHooks(home);
+    const trust = action === "install" ? codexHomeTrust(home) : null;
+    console.log(`codex/${p}: ${action} ${res.changed ? "done" : "(no change)"}${trust ? ` · ${CODEX_TRUST_TEXT[trust]}` : ""}`);
+    if (trust && trust !== "approved") ask = true;
+  }
+  if (ask) console.log("\nCodex runs a hook only after you approved it. Agent Switch never approves hooks for you.");
+}
 
 /**
  * Git facts for a session, from the folder it works in now: the newest hook
@@ -309,6 +342,12 @@ function cmdHooksRelay(file?: string): void {
     installHooks(cfg, "agent-switch", relay);
     console.log(`claude/${p}: hooks now run ${relay ? "through the relay" : "the CLI directly"}`);
   }
+  for (const p of listProfiles("codex")) {
+    const home = configDir("codex", p);
+    if (!codexHooksNeedMigration(readCodexHooks(home), command)) continue;
+    installCodexHooks(home, "agent-switch", relay);
+    console.log(`codex/${p}: hooks now run ${relay ? "through the relay" : "the CLI directly"} — Codex asks you to approve the changed hooks at its next start`);
+  }
   console.log(relay ? `Relay installed at ${relay}.` : "Relay removed; hooks run the CLI directly.");
 }
 
@@ -347,6 +386,8 @@ export async function cmdSessions(
     // stay recent-only (no live marking).
     const rows: (SessionRow & { surface?: string })[] = providerId === "codex" ? listCodexSessions(cfg, limit) : listSessions(cfg, limit);
     if (providerId === "claude") markLive(cfg, rows); // POSIX: pid→cwd→dir match; win32: recent-only
+    // Codex hooks (`hooks install --provider codex`) report the folder a session works in now.
+    if (providerId === "codex") eventsOf.set(p, readEvents(eventFile(ROOT, providerId, p)));
     if (providerId === "claude") {
       const mtime = new Map(rows.map((r) => [r.sessionId, r.mtimeMs]));
       const events = readEvents(eventFile(ROOT, providerId, p));
