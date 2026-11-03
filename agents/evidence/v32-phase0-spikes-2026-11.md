@@ -2,7 +2,7 @@
 
 # v3.2 Phase 0 spikes — 2026-11-03
 
-Roadmap: `agents/roadmaps/road-to-agent-switch-v3-reach.md` Phase 0.
+Roadmap: `agents/roadmaps/archive/road-to-agent-switch-v3-reach.md` Phase 0.
 Machine: macOS (arm64), Gemini CLI 0.50.0, agy 1.4.12, codex-cli 0.166.0,
 Claude Code 2.1.316. OpenCode, Goose, Qwen Code, Ollama and LM Studio are not
 installed. Scripts were throwaway (an ACP JSON-RPC probe over stdio) and are

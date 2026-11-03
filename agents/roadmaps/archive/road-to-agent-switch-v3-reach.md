@@ -1,6 +1,6 @@
 ---
 complexity: large
-status: planned
+status: done
 tree_pin: ff38137
 ---
 
@@ -12,7 +12,7 @@ tree_pin: ff38137
 > arrival the same day: the v3 UI design (`design/`), whose Agents and Remote
 > boards are v3.2.
 >
-> **Pull trigger:** [`road-to-agent-switch-v3-client.md`](archive/road-to-agent-switch-v3-client.md)
+> **Pull trigger:** [`road-to-agent-switch-v3-client.md`](road-to-agent-switch-v3-client.md)
 > closed, and owner decisions E4/E5 below answered.
 > **Activated 2026-11-03** by the owner ("v3-reach aus later zurückholen"):
 > v3-client is closed; E4, E5 and E-remote-default stay open and gate only
@@ -21,18 +21,18 @@ tree_pin: ff38137
 ## Branch
 
 Targets `dev/v3` (branch model in
-[`road-to-agent-switch-v3-central.md`](archive/road-to-agent-switch-v3-central.md)).
+[`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)).
 
 ## Design basis (binding)
 
-The v3 UI spec [`docs/design/agent-switch-v3-ui-spec.md`](../../docs/design/agent-switch-v3-ui-spec.md)
+The v3 UI spec [`docs/design/agent-switch-v3-ui-spec.md`](../../../docs/design/agent-switch-v3-ui-spec.md)
 is the spec here too, at strict fidelity (rules in
-[`road-to-agent-switch-v3-central.md`](archive/road-to-agent-switch-v3-central.md)
+[`road-to-agent-switch-v3-central.md`](road-to-agent-switch-v3-central.md)
 § Design basis). This roadmap builds its v3.2 boards: Settings › Agents and
 Settings › Remote (§10.5), Antigravity as a tool in New session (§8.1), and
 behaviour rule §13.5 for remote approvals. Reference code:
 `gui/src/v3/settings3.tsx` in
-[`docs/design/agent-switch-v3-reference.patch`](../../docs/design/agent-switch-v3-reference.patch).
+[`docs/design/agent-switch-v3-reference.patch`](../../../docs/design/agent-switch-v3-reference.patch).
 
 ## Owner demands answered here
 
@@ -107,26 +107,71 @@ D14 access from anywhere.
 
 ## Phase 2 — Remote stage 1 (host-native)
 
-- [ ] Settings › Remote (spec §10.5): the stages R1 Claude Remote Control, R2 own
+- [x] Settings › Remote (spec §10.5): the stages R1 Claude Remote Control, R2 own
       tunnel (SSH/Tailscale), R3 E2E relay ("later"); paired devices with their
       scopes; no stage opens a port outside the user's network. An approval
       answered remotely is the same decision as the terminal prompt (§13.5).
-- [ ] M17 per-session / per-account switch "Remote Control on" → start with
+      → `RemoteSettings` in `gui/src/v3/settings.tsx` from the reference board,
+      every stage off until turned on (E-remote-default). One decision:
+      `src/bridge/inbox.ts` — an outside answer is a request the owning bridge
+      applies only while the approval is open, acknowledged applied/rejected,
+      stale after 2 min, allow-once/deny only. Deviations from the board, from
+      the council review (`agents/evidence/reviews/council-feat-v3-reach-agents.findings.md`): R2's text says SSH is the
+      sign-in instead of naming device tokens, and "Paired devices" says none
+      exist yet (the phone client is carried to Later). `v3-render` with
+      `V3_CLICKS="Settings ⌘,|Remote"`: three themes, clean.
+- [x] M17 per-session / per-account switch "Remote Control on" → start with
       `--remote-control "<name>"`; no inbound port. Codex: pointer to the ChatGPT
       app's remote connections.
+      → `agent-switch remote rc on|off <account>` and `host start
+      --remote-control [--title T]`; the name is the title reduced to a safe
+      60-character set; a respawn keeps it; never a permission mode
+      (`src/remote.ts`, `tests/remote.test.ts`). Claude 2.1.316 has the flag.
+      Anthropic's channel decides which devices connect — said on the board and
+      in the guide, not promised by AS.
 
 ## Phase 3 — Remote stage 2 (own tunnel)
 
-- [ ] M18 engine socket over SSH stream forwarding or Tailscale; guide "engine on
+- [x] M18 engine socket over SSH stream forwarding or Tailscale; guide "engine on
       the server, app on the laptop". Optional phone web client **only inside the
       tailnet**, token-gated, all rules above.
-- [ ] `NON-GOALS.md` updated per E5 in the same change.
+      → Over SSH without forwarding a socket: `ssh <host> agent-switch remote rpc`
+      (JSON lines; `needs.list`, `approval.allow_once`, `approval.deny`; anything
+      else `not_implemented`; off until `remote ssh on`). Guide:
+      `starlight/src/content/docs/guides/remote-access.mdx`. Verified over the
+      built CLI: an approval of a running chat denied from another process, a
+      late answer with no bridge refused, rpc off/on, an unknown method refused
+      (`tests/cli-e2e-acp.test.ts`). Council-routed carry: the optional phone
+      web client and the desktop app reading a remote engine are in Later below
+      (both members: no browser mutations before HTTPS, account-scoped devices
+      and revocation/restart tests; Tailscale is not installed here to test).
+- [x] `NON-GOALS.md` updated per E5 in the same change.
+      → "No server outside your own network, no relay without end-to-end
+      encryption"; the security page names the remote stages.
 
 ## Later (trigger named)
+
+The items carried on 2026-11-03 (phone client, desktop app on a remote engine,
+live acceptance turns) live on in
+[`road-to-agent-switch-v3-reach-carried.md`](../later/road-to-agent-switch-v3-reach-carried.md).
 
 - Own session host (fd hand-over, Windows via ConPTY) — trigger: Windows demand or
   tmux problems in daily use.
 - Remote stage 3, E2E relay — trigger: E4 = yes and stages 1/2 shown insufficient.
+- Phone web client inside the tailnet (carried from M18 on 2026-11-03, council
+  review in `agents/evidence/reviews/council-feat-v3-reach-agents.findings.md`): Tailscale HTTPS, device secret only as a
+  Secure HttpOnly SameSite=Strict cookie, pairing code in the fragment with
+  per-code attempt limits, devices scoped per account, timeline view separate
+  from approvals, through the bridge inbox's one decision — trigger: Tailscale
+  installed on a test machine, so HTTPS serving, revocation races and restart
+  behaviour can be tested end to end.
+- Live acceptance turns (carried from Acceptance on 2026-11-03): one ACP agent
+  and one local-model agent run a turn in the chat view, and one hosted Claude
+  session is followed from claude.ai/code through Remote Control — trigger: a
+  Gemini API-key login, or OpenCode/Codex with Ollama or LM Studio installed.
+- Desktop app on the laptop reading an engine on a server (carried from M18 on
+  2026-11-03) — trigger: the CLI over SSH (`remote rpc`) shown insufficient in
+  daily use.
 - Full-text search over contents — trigger: timeline reader stable over two CC
   versions.
 - GitLab merge requests through `glab`, the GitHub PR facts' twin (match by head
@@ -140,18 +185,28 @@ D14 access from anywhere.
 ## Acceptance
 
 - One ACP agent and one local-model agent run a turn in the client view.
+  → **Not shown live.** The ACP path ran over the built CLI against a scripted
+  ACP agent (`tests/cli-e2e-acp.test.ts`), and Gemini 0.50's real handshake
+  answered; a real turn needs a login Google still serves (API key or Vertex)
+  or an installed local runner. Carried to Later with that trigger.
 - Remote stage 1 and 2 work without AS opening a port outside the tailnet; a
   remote client cannot change a permission mode (test).
+  → No stage opens a port at all. `tests/remote.test.ts` sends `settings.set`,
+  `session.set_mode` with `bypassPermissions`, `approval.allow_always` and
+  prototype names: every one `not_implemented`; R1 args never carry a
+  permission mode. A live Remote Control session was not opened.
 - The Agents and Remote boards pass the design acceptance of spec §14 and get
   their rows in the fidelity matrix.
+  → `agents/evidence/v32-fidelity-2026-11.md`.
 
 ## Decisions
 
 | ID | Question | Status |
 |---|---|---|
-| E4 | Pursue remote stage 3 (relay) at all? | **owner** — recommendation: stages 1 and 2 first; relay only with E2E + self-hosting |
-| E5 | Change `NON-GOALS.md` "no server" → "no server outside your own network, no relay without E2E" | **owner** — recommendation yes, with this roadmap |
-| E-remote-default | The Remote board shows R1 and R2 "on"; the constraints keep every networked stage opt-in | **owner** — recommendation: off until the user turns a stage on; the board shows a configured state |
+| E4 | Pursue remote stage 3 (relay) at all? | decided by the owner 2026-11-03: stages 1 and 2 first; relay only with E2E + self-hosting (stays in Later) |
+| E5 | Change `NON-GOALS.md` "no server" → "no server outside your own network, no relay without E2E" | decided by the owner 2026-11-03: yes, done in Phase 3 |
+| E-remote-default | The Remote board shows R1 and R2 "on"; the constraints keep every networked stage opt-in | decided by the owner 2026-11-03: off until the user turns a stage on; the board shows the configured state |
+| E-phone | Build the tailnet phone web client in Phase 3? | council 2026-11-03 (`agents/evidence/reviews/council-feat-v3-reach-agents.findings.md`), owner chose "use the council": carried to Later — revisit when Tailscale can be tested and the shared arbitration has shipped |
 | E6 | Antigravity via Google's ACP server instead of terminal only | decided: yes after S6 is green |
 
 ## Risk Register
