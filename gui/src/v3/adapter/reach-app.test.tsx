@@ -127,7 +127,10 @@ describe("V3App on fixture CLI output (spec §11)", () => {
     const before = calls.length;
     click(await screen.findByText("Decide"));
     expect(await screen.findByText(/Nothing changes until you choose/)).toBeTruthy();
-    expect(calls.slice(before).filter((c) => !c.args.includes("--json"))).toEqual([]);
+    // Nothing moves or switches until a choice is made. Background engines (the
+    // updater, the usage refresh) may run meanwhile; they are not the sheet's doing.
+    const MOVES = new Set(["rebind", "takeover", "use", "handoff", "host", "compact"]);
+    expect(calls.slice(before).filter((c) => MOVES.has(c.args[0]))).toEqual([]);
     expect(clicks).toBe(1);
   });
 
