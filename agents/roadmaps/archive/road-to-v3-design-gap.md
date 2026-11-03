@@ -1,6 +1,6 @@
 ---
 complexity: large
-status: active
+status: done
 tree_pin: faedbeb
 execution:
   mode: autonomous
@@ -16,10 +16,10 @@ execution:
 
 ## Branch
 
-Targets `dev/v3`. Spec: [`docs/design/agent-switch-v3-ui-spec.md`](../../docs/design/agent-switch-v3-ui-spec.md),
+Targets `dev/v3`. Spec: [`docs/design/agent-switch-v3-ui-spec.md`](../../../docs/design/agent-switch-v3-ui-spec.md),
 strict fidelity. Reference code: `gui/src/v3/menus.tsx`, `dialogs.tsx`
 (`ModelPopover`) and `frame.tsx` in
-[`docs/design/agent-switch-v3-reference.patch`](../../docs/design/agent-switch-v3-reference.patch).
+[`docs/design/agent-switch-v3-reference.patch`](../../../docs/design/agent-switch-v3-reference.patch).
 
 ## Verification of the report against faedbeb
 
@@ -49,7 +49,8 @@ One claim is corrected:
 - [x] **Rounded, continuous `╭─╮` boxes**: load `@xterm/addon-webgl` (the
   version whose peer matches `@xterm/xterm` 6) for the v3 terminal. If it does
   not load, fall back silently. Checked once in the real Tauri window on
-  macOS; until then it is carried as the acceptance point.
+  macOS; until then it is carried as the acceptance point
+  ([`later/road-to-v3-design-gap-carried.md`](../later/road-to-v3-design-gap-carried.md)).
 
 ## Phase 2 — frame elements (P1)
 
@@ -106,10 +107,10 @@ One claim is corrected:
 - [x] **Summary**: PR line without "review" ("changes requested"), Git line
   with branch and worktree icons.
 - [x] **Palette input** has no focus ring of its own.
-- [ ] **Render harness**: the gap kit's fixture page (`gui/design.html`, never
+- [x] **Render harness**: the gap kit's fixture page (`gui/design.html`, never
   in the build) and `design-scenes.mjs`, so each scene can be re-rendered and
   compared with the boards.
-- [ ] **Fidelity evidence** for this roadmap in
+- [x] **Fidelity evidence** for this roadmap in
   `agents/evidence/v3-design-gap-fidelity-2026-11.md`, one row per finding with
   the evidence taken.
 
@@ -123,11 +124,19 @@ One claim is corrected:
 
 ## Carried
 
-- **Approval keys on a focused item** (⇧↵ always, ⌫ deny, Y yes): the needs
-  feed has to carry the approval id first, and "always" is never offered from
-  outside the chat (remote rule of v3.2). Trigger: the needs item gains an
-  approval id. Until then the key line keeps the spec text, and those three
-  keys do nothing.
+Carried to [`later/road-to-v3-design-gap-carried.md`](../later/road-to-v3-design-gap-carried.md),
+each with its trigger: the real macOS window check (WebGL arcs, padding), the
+approval keys on a focused Needs-you item, and the owner decisions G1–G3.
+
+## Outcome
+
+Evidence: [`agents/evidence/v3-design-gap-fidelity-2026-11.md`](../../evidence/v3-design-gap-fidelity-2026-11.md).
+Deviations from the report's own fixes, each because the boards say otherwise
+or the measurement did: the row's children unfold from its count (no chevron
+on the active or hovered row); "internal lines" moved into a tooltip instead
+of a row. Two defects found on the way were fixed in the same run: a hover
+that opened a submenu closed it on click, and a long active title lost its
+ellipsis after the first hover.
 
 ## Risk register
 
