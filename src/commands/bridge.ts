@@ -19,6 +19,7 @@ import { findAcpSession, parseAcpKey, recordAcpSession } from "../acp-sessions.j
 import { agentSearchPath } from "../agent-path.js";
 import { CLASS_LABEL, findAgent, type Agent } from "../agents.js";
 import { cleanStaging, stagingDir } from "../bridge/attachments.js";
+import { bridgeApplier, drainInbox } from "../bridge/inbox.js";
 import { clearPending, writePending, type PendingItem } from "../bridge/pending.js";
 import { liveSessions } from "../api.js";
 import { eventFile, lastHookCwd, readEvents } from "../hooks.js";
@@ -34,6 +35,7 @@ import { resolveSession } from "./library.js";
 import { resolveDir } from "./routing.js";
 
 export const LEASE_RENEW_MS = 5_000;
+const INBOX_POLL_MS = 300;
 const DEFAULT_PAGE = 200;
 
 export interface Target {
@@ -161,6 +163,9 @@ async function cmdAcpBridge(arg: string | undefined, flags: Record<string, strin
   const searchPath = agentSearchPath();
   const server = spawnAcp(t.agent.binary, t.agent.args, t.cwd, searchPath);
   let send: (c: BridgeCommand) => void = () => {};
+  let openNow: () => readonly string[] = () => [];
+  // Answers from outside the chat (CLI, SSH): the bridge decides, once (spec §13.5).
+  const inbox = setInterval(() => parseAcpKey(key) && drainInbox(ROOT, key, bridgeApplier(openNow, (c) => send(c))), INBOX_POLL_MS);
   const finished = new Promise<void>((res) => {
     const b = new AcpBridge({
       key,
@@ -184,6 +189,7 @@ async function cmdAcpBridge(arg: string | undefined, flags: Record<string, strin
       },
     });
     send = (c) => b.command(c);
+    openNow = () => b.openApprovals;
     b.start().catch((e: unknown) => {
       out({ bridge: "error", message: e instanceof Error ? e.message : String(e) });
       server.close();
@@ -202,6 +208,7 @@ async function cmdAcpBridge(arg: string | undefined, flags: Record<string, strin
   await finished;
   rl.close();
   clearInterval(renew);
+  clearInterval(inbox);
   clearPending(ROOT, key);
   if (parseAcpKey(key)) leases.release(key, holder);
 }
@@ -260,19 +267,23 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
   const renew = setInterval(() => t.sessionId && leases.acquire(t.key, holder), LEASE_RENEW_MS);
   const done = () => {
     clearInterval(renew);
+    clearInterval(inbox);
     clearPending(ROOT, t.key);
     if (t.sessionId) leases.release(t.key, holder);
     // A hosted session switched to chat gets its terminal back (Phase 4).
     if (t.sessionId) restoreAfterChat(t.key);
   };
 
-  let send: (c: BridgeCommand) => void;
+  let send: (c: BridgeCommand) => void = () => {};
+  let openNow: () => readonly string[] = () => [];
+  const inbox = setInterval(() => t.sessionId && drainInbox(ROOT, t.key, bridgeApplier(openNow, (c) => send(c))), INBOX_POLL_MS);
   let finished: Promise<void>;
   if (t.provider === "codex") {
     const server = AppServer.spawn(readBinaryPath("codex") ?? providerOf("codex").binary, configDir("codex", t.account));
     finished = new Promise((res) => {
       const b = new CodexBridge({ key: t.key, threadId: t.sessionId, cwd: t.cwd, server, out: (o) => (out(o), "bridge" in o && o.bridge === "exit" && res()), onSession: (id) => sessionNamed(id), onApprovals: (items) => approvals(items) });
       send = (c) => b.command(c);
+      openNow = () => b.openApprovals;
       b.start().catch((e: unknown) => out({ bridge: "error", message: e instanceof Error ? e.message : String(e) }));
     });
   } else {
@@ -291,6 +302,7 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
         out: (o) => (out(o), "bridge" in o && o.bridge === "exit" && res()),
       });
       send = (c) => b.command(c);
+      openNow = () => b.openApprovals;
       b.start();
     });
   }
