@@ -38,21 +38,27 @@ export function XtermBox({
   backend,
   onExit,
   onError,
+  look,
 }: {
   args: string[];
   backend: TermBackend;
   onExit: (code: number | null) => void;
   onError?: (message: string) => void;
+  /** The v3 workbench passes its theme's terminal palette and type; the sheet keeps the default look. */
+  look?: { theme: Record<string, string>; fontSize: number; lineHeight: number };
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     const term = new XTerm({
-      fontSize: 12,
+      fontSize: look?.fontSize ?? 12,
+      lineHeight: look?.lineHeight ?? 1,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
       cursorBlink: true,
-      theme: { background: cssVar("--ac-bg", "#0b0b10"), foreground: cssVar("--ac-soft", "#e5e5ea") },
+      // The CLI's ╭─╮ boxes as xterm's own rounded glyphs (spec §6.4).
+      customGlyphs: true,
+      theme: look?.theme ?? { background: cssVar("--ac-bg", "#0b0b10"), foreground: cssVar("--ac-soft", "#e5e5ea") },
     });
     const fit = new FitAddon();
     term.loadAddon(fit);

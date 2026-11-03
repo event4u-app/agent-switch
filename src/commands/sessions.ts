@@ -4,6 +4,8 @@
  */
 
 import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { configDir, die, listProfiles, requireProfile, readBinaryPath, ROOT } from "../profiles.js";
 import { ProviderId, provider, resolveBinary } from "../providers.js";
@@ -20,6 +22,7 @@ import {
   locateCodexSession,
   markLive,
   openQuestion,
+  pidCwd,
   restoreSession,
   sharedHistory,
   sweepTrash,
@@ -40,13 +43,23 @@ import {
   waitingSessions,
   hookNotice,
   recordFromPayload,
-  childrenOf,
+  lastHookCwd,
+  lineageFromEnv,
+  clearedFrom,
+  pidFrom,
   hooksRecordSubagents,
   HookEventRecord,
 } from "../hooks.js";
+import { buildTree, childSource, childrenWithHooks, countSubagentFiles, helperIndex, relationUnknown, type TreeNode } from "../lineage.js";
+import { gitFacts, type GitFacts } from "../git-facts.js";
+import { githubRepo, prCacheFile, prsForHead, readPrCache } from "../pr-facts.js";
+import { Store, storeFile } from "../store/store.js";
+import { libraryFacts } from "./library.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "../notify.js";
 import { appendNotification } from "../notifications.js";
 import { readTmuxRegistry, sendKeysArgs, tmuxSessionName } from "../tmux.js";
+import { TmuxHost } from "../host/tmux-host.js";
+import { InputLeases, LeaseHeld } from "../host/lease.js";
 import { cacheForRow, contextForRow, desktopScan, formatContext } from "./shared.js";
 import { compactCacheLine, formatCache } from "../cache-words.js";
 
@@ -102,6 +115,26 @@ export function cmdHooks(sub?: string, name?: string): void {
 }
 
 
+/**
+ * Git facts for a session, from the folder it works in now: the newest hook
+ * (start or turn end), else the live process's folder, else the transcript's
+ * first folder — `cwdSource` says which. null outside a repo.
+ */
+export function gitFor(r: SessionRow, events: readonly HookEventRecord[]): (GitFacts & { cwd: string; cwdSource: "hook" | "process" | "transcript" }) | null {
+  const hook = lastHookCwd(events, r.sessionId);
+  const proc = !hook && r.pid ? pidCwd(r.pid) : null;
+  const cwd = hook ?? proc ?? r.cwd;
+  if (!cwd) return null;
+  // Many sessions share a folder: ask git once per folder per run.
+  if (!gitMemo.has(cwd)) gitMemo.set(cwd, gitFacts(cwd));
+  const facts = gitMemo.get(cwd)!;
+  return facts ? { ...facts, cwd, cwdSource: hook ? "hook" : proc ? "process" : "transcript" } : null;
+}
+const gitMemo = new Map<string, GitFacts | null>();
+
+/** Where helper runs (council seats, scripted `claude -p`) usually work. */
+const TEMP_ROOTS = [...new Set([os.tmpdir(), "/tmp", "/private/tmp", "/var/folders", "/private/var/folders"])];
+
 /** Idle-guard window per provider (council #10): a Claude turn runs 15–60s, a
  *  Codex turn can be sub-second. In-flight = last transcript entry non-finalized
  *  AND younger than this. */
@@ -114,6 +147,7 @@ const IDLE_GUARD_MS: Record<string, number> = { claude: 15_000, codex: 5_000 };
  * Refuses while a turn is in flight (idle guard) unless --force. Own-session.
  */
 export function cmdCompact(providerId: ProviderId, name?: string, flags: Record<string, string | boolean> = {}): void {
+  if (name?.includes("/")) return compactHosted(name, flags);
   if (providerId !== "claude" && providerId !== "codex") die(`compact supports claude and codex (not ${providerId})`);
   const profile = requireProfile(providerId, name, "compact");
   const clear = !!flags.clear;
@@ -164,6 +198,51 @@ export function cmdCompact(providerId: ProviderId, name?: string, flags: Record<
 }
 
 /**
+ * `compact <provider/account/session>` on a v3 hosted session: the same gates as
+ * above, and the text goes in through the input lease — so it is refused while
+ * the app (or anyone else) is typing into that session.
+ */
+function compactHosted(key: string, flags: Record<string, string | boolean>): void {
+  const [providerId, account, sessionId] = key.split("/");
+  if ((providerId !== "claude" && providerId !== "codex") || !account || !sessionId) die(`not a hosted session key: ${key}`);
+  const clear = !!flags.clear;
+  const force = !!flags.force;
+  const literal = clear ? "/clear" : "/compact";
+  if (!TmuxHost.available()) die("hosted sessions need tmux");
+  const host = new TmuxHost(ROOT);
+  if (!host.windowOf(key)) die(`no hosted session ${key}. List them with: agent-switch host list`);
+  if (clear && !force) die("/clear discards the whole conversation. Re-run with --force if you really mean it (or use /compact to summarize instead).");
+  const cfg = configDir(providerId, account);
+  const rows = providerId === "codex" ? listCodexSessions(cfg, 50) : listSessions(cfg, 50);
+  const target = rows.find((r) => r.sessionId === sessionId && r.file);
+  if (target?.file && !force && turnInFlight(target.file, Date.now(), IDLE_GUARD_MS[providerId] ?? 15_000)) {
+    die(`a turn looks in-flight in ${key}. Wait for it, or pass --force.`);
+  }
+  if (!clear && target) {
+    const line = compactCacheLine(cacheForRow(providerId, target, readEvents(eventFile(ROOT, providerId, account))), Date.now());
+    if (line) console.log(line);
+  }
+  if (flags["dry-run"]) {
+    console.log(`[dry-run] would type ${literal} into ${key}`);
+    return;
+  }
+  const leases = new InputLeases(ROOT);
+  const me = { id: `cli-${process.pid}`, pid: process.pid, kind: "cli" };
+  try {
+    leases.acquire(key, me);
+  } catch (err) {
+    if (err instanceof LeaseHeld) die(`${key} is being typed into by ${err.lease.holder.kind}; wait, or hand the input over there.`);
+    throw err;
+  }
+  try {
+    leases.type(host, key, me, literal, { enter: true });
+  } finally {
+    leases.release(key, me);
+  }
+  console.log(`Sent ${literal} to ${key}.`);
+}
+
+/**
  * `agent-switch alerts on|off|status [--threshold a,b]` — toggle whether the
  * daemon records context/usage crossings into the shared notification log
  * (off by default) and set the per-session context thresholds. Own-session
@@ -207,6 +286,15 @@ export function cmdHookEvent(): void {
     const who = profileFromConfigDir(cfg, ROOT);
     if (!who) return;
     const rec = recordFromPayload(o, new Date().toISOString());
+    if (rec.event === "SessionStart") {
+      const hostPid = pidFrom(process.env.CLAUDE_PID);
+      if (hostPid) rec.hostPid = hostPid;
+      const cleared = clearedFrom(rec, rec.source === "clear" ? readEvents(eventFile(ROOT, who.provider, who.profile)) : []);
+      const lineage = cleared
+        ? ({ parent: `${who.provider}/${who.profile}/${cleared}`, kind: "cleared", source: "hook" } as const)
+        : lineageFromEnv(process.env, rec.sessionId, rec.sessionId ? `${who.provider}/${who.profile}/${rec.sessionId}` : undefined);
+      if (lineage) rec.lineage = lineage;
+    }
     appendEvent(eventFile(ROOT, who.provider, who.profile), rec);
     // Session awareness: surface "Claude needs you / finished / stopped" as a
     // notification the GUI routes to the pet. dedupe=false — each turn is a
@@ -219,12 +307,18 @@ export function cmdHookEvent(): void {
   }
 }
 
-export function cmdSessions(
+export async function cmdSessions(
   providerId: ProviderId,
   providerExplicit: boolean,
   name?: string,
   flags: Record<string, string | boolean> = {},
-): void {
+): Promise<void> {
+  if (providerExplicit && providerId === "antigravity") {
+    // Not readable: Antigravity keeps no transcript Agent Switch can parse yet (an ACP source is v3.2).
+    if (flags.json) console.log("[]");
+    else console.log("Antigravity sessions are not readable yet. Start one hosted with: agent-switch host start <profile> --provider antigravity");
+    return;
+  }
   if (providerExplicit && providerId !== "claude" && providerId !== "codex") {
     die(`sessions supports claude and codex for now (${providerId} parity is gated on its Phase-0 spike — see scripts/spikes/)`);
   }
@@ -276,26 +370,60 @@ export function cmdSessions(
     return a ? { target: a.target, createdAt: a.createdAt, expiresAt: a.expiresAt } : null;
   };
   const cacheOf = (r: SessionRow & { profile: string }) => cacheForRow(providerId, r, eventsOf.get(r.profile) ?? []);
-  if (flags.json) {
-    console.log(
-      JSON.stringify(
-        all.map((r) => {
-          const c = contextForRow(providerId, r);
-          return {
-            provider: providerId,
-            ...r,
-            armed: armedFor(r),
-            context: c
-              ? { pct: c.pct, contextTokens: c.contextTokens, windowTokens: c.windowTokens, model: c.model, confidence: c.confidence }
-              : null,
-            cache: cacheOf(r),
-            ...(seesChildren.has(r.profile) ? { children: childrenOf(eventsOf.get(r.profile) ?? [], r.sessionId) } : {}),
-          };
-        }),
-        null,
-        2,
-      ),
-    );
+  if (flags.json || flags.tree) {
+    // Helpers can name a parent on another account, so every account's events count.
+    const allEvents = new Map(listProfiles(providerId).map((p) => [p, eventsOf.get(p) ?? (providerId === "claude" ? readEvents(eventFile(ROOT, providerId, p)) : [])]));
+    const helpers = helperIndex(providerId, allEvents);
+    const prCache = readPrCache(prCacheFile(ROOT));
+    // The library lives in the event store; without SQLite (Node 20) it is left out.
+    const store = providerId === "claude" ? await Store.open(storeFile(ROOT)).catch(() => null) : null;
+    const json = all.map((r) => {
+      const c = contextForRow(providerId, r);
+      const key = `${providerId}/${r.profile}/${r.sessionId}`;
+      let kids: Record<string, unknown> = {};
+      if (seesChildren.has(r.profile)) {
+        const children = childrenWithHooks(key, eventsOf.get(r.profile) ?? [], helpers);
+        kids = { children, childCount: children.length, childSource: childSource(children) };
+      } else {
+        const named = childrenWithHooks(key, [], helpers);
+        const counted = providerId === "claude" ? countSubagentFiles(configDir(providerId, r.profile), r.projectDir, r.sessionId) : 0;
+        if (named.length) kids = { children: named, childCount: named.length + counted, childSource: counted ? `${childSource(named)}+counted` : childSource(named) };
+        else if (counted) kids = { childCount: counted, childSource: "counted" };
+      }
+      const parent = helpers.parentOf.get(key);
+      const git = gitFor(r, eventsOf.get(r.profile) ?? []);
+      const repo = githubRepo(git?.remote ?? null);
+      const prs = repo ? prsForHead(prCache, repo, git?.headSha ?? null) : [];
+      return {
+        provider: providerId,
+        ...r,
+        armed: armedFor(r),
+        context: c
+          ? { pct: c.pct, contextTokens: c.contextTokens, windowTokens: c.windowTokens, model: c.model, effort: c.effort ?? null, confidence: c.confidence, source: "transcript" }
+          : null,
+        cache: cacheOf(r),
+        git,
+        // From the cache the background refresh keeps; this call reads no network.
+        prs,
+        ...(store ? libraryFacts(store, key, { transcript: r.file ?? "", sessionDir: path.join(configDir(providerId, r.profile), "projects", r.projectDir, r.sessionId), fileHistory: path.join(configDir(providerId, r.profile), "file-history", r.sessionId) }) : {}),
+        ...kids,
+        ...(parent ? { parent } : r.codexThreadSource ? { root: false, relation: "unknown" } : relationUnknown(r.cwd, false, TEMP_ROOTS) ? { relation: "unknown" } : {}),
+      };
+    });
+    store?.close();
+    if (flags.tree) {
+      type Row = (typeof json)[number];
+      const keyOf = (r: Row) => `${providerId}/${r.profile}/${r.sessionId}`;
+      const nest = (n: TreeNode<Row>): unknown => ({ ...n.row, sessions: n.children.map(nest) });
+      // A Codex subagent thread is no root; without a parent it can name, it is grouped apart.
+      const isRoot = (r: Row) => (r as { root?: boolean }).root !== false;
+      const tree: unknown[] = buildTree(json.filter(isRoot), keyOf, (r) => (r as { parent?: string }).parent).map(nest);
+      const loose = json.filter((r) => !isRoot(r));
+      if (loose.length) tree.push({ relation: "unknown", sessions: loose });
+      console.log(JSON.stringify(tree, null, 2));
+      return;
+    }
+    console.log(JSON.stringify(json, null, 2));
     return;
   }
   const providerFlag = providerId === "claude" ? "" : ` --provider ${providerId}`;

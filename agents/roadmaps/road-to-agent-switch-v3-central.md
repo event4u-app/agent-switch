@@ -138,267 +138,471 @@ access from anywhere) in `later/road-to-agent-switch-v3-reach.md`.
 
 ## Phase 0 — Contracts and spikes (gate for everything below)
 
-- [ ] ADR draft: v3 module split — engine (CLI + daemon), host, app, `as-hook`;
+- [x] ADR draft: v3 module split — engine (CLI + daemon), host, app, `as-hook`;
       protocol types shared between app and engine.
-- [ ] ADR draft: identity model (namespaced ids, edge provenance + confidence,
+      → `docs/adr/ADR-006-v3-module-split.md` (Proposed).
+- [x] ADR draft: identity model (namespaced ids, edge provenance + confidence,
       state axes kept separate: library / runtime / PR / capability — no single
       `status` column).
-- [ ] ADR draft: v3 GUI code — how `gui/src/v3/` grows from the reference boards
+      → `docs/adr/ADR-007-v3-identity-model.md` (Proposed).
+- [x] ADR draft: v3 GUI code — how `gui/src/v3/` grows from the reference boards
       (port board by board, wired to the engine, each with tests; demo data never
       in the product bundle; the coverage floor is kept, never lowered or
       side-stepped by excludes).
-- [ ] Spike S3: `--settings` hook injection together with `CLAUDE_CONFIG_DIR` and
+      → `docs/adr/ADR-008-v3-gui-code-from-the-reference-boards.md` (Proposed).
+- [x] Spike S3: `--settings` hook injection together with `CLAUDE_CONFIG_DIR` and
       the user's own settings (does it merge or replace?).
-- [ ] Spike S4: event-store runtime — Node `node:sqlite` vs Bun `bun:sqlite`
+      → `agents/evidence/v3-phase0-spikes-2026-11.md` § S3: `--settings` adds to project and local hooks, even under a narrowed `--setting-sources`.
+- [x] Spike S4: event-store runtime — Node `node:sqlite` vs Bun `bun:sqlite`
       (WAL, concurrent writer, packaging). Feeds Decision E1.
-- [ ] Spike T-S1: live `SubagentStart/Stop` payloads incl. `agent_transcript_path`;
+      → `agents/evidence/v3-phase0-spikes-2026-11.md` § S4: both correct and fast; `node:sqlite` needs Node ≥ 22.13 (engine floor is 20), a Bun-compiled CLI is 61 MB and already hits hook p95 20.4 ms. E1 stays with the owner.
+- [x] Spike T-S1: live `SubagentStart/Stop` payloads incl. `agent_transcript_path`;
       T-S2: hook `cwd` of a subagent under `isolation: worktree`; T-S3: does a
       council child (`claude --print`) inherit AS hooks/env — especially when the
       parent got its hooks via `--settings` (argv-only, probably not inherited);
       T-S4: `claude agents --json` per `CLAUDE_CONFIG_DIR`. Fixtures under
       `scripts/spikes/`.
-- [ ] Spike S5: tmux backend per rjprins/agmux rules (own server
+      → `agents/evidence/v3-phase0-spikes-2026-11.md` § T-S1…T-S4: worktree subagents report `<repo>/.claude/worktrees/agent-<id>`; a child `claude -p` inherits env vars but not `--settings` hooks; `claude agents --json` lists live sessions per account.
+- [x] Spike S5: tmux backend per rjprins/agmux rules (own server
       `-L as-<uid> -f /dev/null`, one window per session, linked view session per
       viewer, `refresh-client` on attach) on macOS and Linux.
-- [ ] Spike S2 (moved here from v3.1, because the Needs-you zone shows "Allow" and
+      → `agents/evidence/v3-phase0-spikes-2026-11.md` § S5: all seven checks green on macOS (tmux 3.7b) and Linux (tmux 3.5a).
+- [x] Spike S2 (moved here from v3.1, because the Needs-you zone shows "Allow" and
       "Reply" in v3.0, spec §5.1): `PermissionRequest` hook as approval channel vs
       `--permission-prompt-tool` — latency, abort, always-allow, answering a
       question. The approval hook is the one hook that waits by nature; measure
       that its timeout falls back to the terminal prompt and never holds a turn
       longer than the prompt would. Feeds D-approve.
-- [ ] Spike S8: next-turn model and thinking change for a hosted session (spec
+      → `agents/evidence/v3-phase0-spikes-2026-11.md` § S2: the hook answers approvals next to the terminal prompt; first answer wins; timeout leaves the normal prompt.
+- [x] Spike S8: next-turn model and thinking change for a hosted session (spec
       §6.2, §7.6, §13.2) — which of the tool's own commands sets each (Claude:
       model and effort; Codex: reasoning levels), sent through the input lease
       between turns; and the source of `ctx %` per session (hook, transcript or
       status line), with its provenance.
-- [ ] Spike S9 (spec §15.3): can Claude Desktop / Codex Desktop resume the same
+      → `agents/evidence/v3-phase0-spikes-2026-11.md` § S8: `/model` and `/effort` persist as the account's defaults, so AS never types them; next-turn changes go through the in-place respawn with `--model`/`--effort`. Model and effort per answer come from the transcript; `ctx %` from the existing transcript reader.
+- [x] Spike S9 (spec §15.3): can Claude Desktop / Codex Desktop resume the same
       conversation when opened on the worktree root, per app version? Until it is
       verified the Open menu says "opens this project" (spec §13.10).
+      → `agents/evidence/v3-phase0-spikes-2026-11.md` § S9: Claude Desktop 4.29.0 takes no folder and cannot resume a CLI session through its launcher; Codex Desktop not installed. See S-desktop.
 
 ## Phase 1 — Engine, event store, host
 
-- [ ] M1 event store (SQLite, WAL): `sessions`, `lineage`, `events`, `library`,
+- [x] M1 event store (SQLite, WAL): `sessions`, `lineage`, `events`, `library`,
       `vault`, `git_facts`, `pr_cache`, `attention`. Existing JSON files migrated;
       read compatibility for one release. Ingest is append-only, schema-checked,
       deduped, ordered per producer; projections are rebuildable.
-- [ ] Engine protocol v1 over a 0600 Unix socket (Windows: named pipe); commands
+      → `src/store/` (`node:sqlite` or `bun:sqlite`, so E1 stays open);
+      `agent-switch store status|import|rebuild`. The hook rings are the only
+      event-shaped JSON and are imported; they stay in place for the 2.x readers.
+      Other JSON state (arms, mappings, settings) is not event data and stays.
+      Node 20 has no SQLite: there the store reports itself unavailable.
+- [x] Engine protocol v1 over a 0600 Unix socket (Windows: named pipe); commands
       carry an idempotency key. CLI `--json` stays stable
       (`tests/cli-snapshot.test.ts`).
+      → `src/protocol/messages.ts`, `src/engine/{server,client,run}.ts`: line JSON,
+      ops `hello · ingest · sessions · children`, idem cache, 64 KiB line cap; a
+      second engine refuses, a stale socket is taken over. The daemon starts it
+      (`<root>/engine.sock`) and keeps polling when it cannot.
 - [ ] M2 `as-hook`: tiny native relay stdin → engine socket, file-line fallback.
       Gate: p95 < 20 ms against the node baseline measured in
       `road-to-hooks-that-keep-up` Phase 0.
-- [ ] M3 host (tmux): N sessions per account, started via argv (never typed),
+- [x] M3 host (tmux): N sessions per account, started via argv (never typed),
       Claude with a pre-generated `--session-id`, hooks via `--settings`; survives
       an app restart. Old per-profile names stay readable for one release.
-- [ ] Single writer per hosted session: one input lease, read-only mirrors for
+      → `src/host/tmux-host.ts`, `agent-switch host start|list|end`. Verified live:
+      `claude agents --json` reports the session id AS chose. Hooks reach the
+      session through `<root>/host/hooks-settings.json`.
+- [x] Single writer per hosted session: one input lease, read-only mirrors for
       other viewers, explicit handover, stale-lease recovery.
-- [ ] Hosted session controls: detach (close tab) vs **end** (own, confirmed
+      → `src/host/lease.ts`: O_EXCL lease file per session, renewal within 15 s,
+      recovery from a dead or silent holder, handover only by the holder; typing
+      is `send-keys -l` and only for the holder. Mirrors read `capture-pane`.
+      The 12-process race test fails when the exclusive create is removed.
+- [x] Hosted session controls: detach (close tab) vs **end** (own, confirmed
       action); `AGENT_SWITCH_HOST_PANE` exported for non-Claude providers; starts go
       through the existing guard/pool path; `takeover --in-place` and `compact`
       move to the new host names.
-- [ ] Attention queue (spec §5.1, §7.4): one queue ordered approvals → questions →
+      → `host attach` opens a per-viewer view that tmux drops on detach; `host end`
+      asks (or needs `--yes`); `AGENT_SWITCH_HOST_PANE` carries the session key for
+      every provider; `host start` without a profile uses `resolveDir` (folder
+      rules, pools, guard) and records the pick; `takeover --in-place` respawns the
+      hosted window, `compact <key>` types through the input lease.
+- [x] Attention queue (spec §5.1, §7.4): one queue ordered approvals → questions →
       limit decisions → failing CI → sign-ins → updates; "Later" snoozes an item
       until it changes; finished items stay as history (the 2.11 activity list);
       a "while you were away" digest after a long absence (merged PRs, CI breaks,
       finished turns, limit resets). An answer given in one place clears the item
       everywhere (spec §13.5). `agent-switch needs --json`.
-- [ ] Per-session facts for the session bar from S8: model, thinking level,
-      context used — each with its source; unknown stays unknown.
-- [ ] Engine health for the title bar and the system banner (spec §4.1, §6.6):
+      → `src/attention.ts` + `agent-switch needs [--json] | needs later <id>`. The
+      queue is derived on every read, so an answer anywhere clears it; only
+      snoozes, history and the last read are stored (`<root>/attention.json`).
+      Sources today: hook events + transcripts (approvals, questions, limit
+      stops, sign-outs), cached usage vs protect (limits), account sign-in.
+      Failing CI joins in Phase 3 (and the digest gains merged PRs and CI breaks
+      there), tool updates with the Tools page (Phase 9). Approvals say "Focus
+      terminal" until AS installs the approval hook (D-approve).
+- [x] Per-session facts for the session bar from S8: model and thinking level
+      from the transcript (`message.model`, `effort`), context used from the
+      transcript reader — each with its source; unknown stays unknown.
+      → `sessions --json` `context` now carries `model`, `effort` (per-turn first)
+      and `pct` with `source: "transcript"`; a transcript without effort gives
+      `null`.
+- [x] Engine health for the title bar and the system banner (spec §4.1, §6.6):
       "Engine stopped" with restart; hosted sessions keep running in tmux and AS
       reconnects.
-- [ ] Windows: in-app PTY sessions are labelled **ephemeral** until a native host
+      → `agent-switch engine status|restart [--json]`: `running`, `reason`, and
+      `hostedRunning` (hosted sessions alive in tmux either way); restart restarts
+      the background service the engine lives in. The title-bar label and banner
+      read this in Phase 6/8; reconnecting is the app polling it.
+- [x] Windows: in-app PTY sessions are labelled **ephemeral** until a native host
       exists (see `later/road-to-agent-switch-v3-reach.md`).
+      → `hostingMode()` in `src/host/tmux-host.ts` (also without tmux on Linux and
+      macOS); `host list --json` reports `mode`, `host start` refuses with the
+      reason. The start dialog's "Host in Agent Switch" card shows it (Phase 8).
 
 ## Phase 2 — Tree and lineage
 
-- [ ] M4 subagents from hook events (`road-to-hooks-that-keep-up` Phase 2);
+- [x] M4 subagents from hook events (`road-to-hooks-that-keep-up` Phase 2);
       without hooks: counted from the session directory, content not read.
-- [ ] Lineage contract `AGENT_SWITCH_PARENT_SESSION|KIND|LABEL` env vars,
+      → hook children since `road-to-hooks-that-keep-up`; without subagent hooks `countSubagentFiles` counts `<session>/subagents/agent-*.jsonl` by name (`childSource: "counted"`).
+- [x] Lineage contract `AGENT_SWITCH_PARENT_SESSION|KIND|LABEL` env vars,
       published as a versioned doc; AC adopts it in its own PR, no reverse
       dependency.
-- [ ] Council seats running as `claude --print` in a temp dir are grouped as
+      → `lineageFromEnv` in `src/hooks.ts`, read at `SessionStart` by `__hook-event`, stored as a `lineage` edge (`source: lineage`, confidence `reported`). AC's own PR is theirs to open.
+- [x] Council seats running as `claude --print` in a temp dir are grouped as
       "helper sessions" under their parent; collapsed by default (C2).
-- [ ] Continuation edges from takeover, handoff and fork.
-- [ ] Never guess a parent; an unproven edge is shown as "relation unknown".
+      → a seat that sets `KIND=council` shows under its parent with its label (`src/lineage.ts`); collapsing is the Sessions window's job (Phase 7, ChildLine).
+- [x] Continuation edges from takeover, handoff and fork.
+      → `takeover` (also `--fork`, also in place) starts the resumed session with `AGENT_SWITCH_PARENT_KIND=continued_from`, shown "via host". `handoff` only prints a command for the user to run, so it has no edge yet.
+- [x] Never guess a parent; an unproven edge is shown as "relation unknown".
       Temp-orphan criteria: temp `cwd` and never on a TTY. "continued from" is drawn
       apart from "started by"; `clear`/`compact` are edges too.
-- [ ] `sessions --json`: `children`, `childCount`, `childSource`. GUI per spec
-      §5.2, §7.3, §9.3: children unfold under the row (`ChildLine`, provenance in
-      the tooltip, "relation unknown ⓘ" / "counted" inline), the `Bot` + count
-      trailing slot, the Children tool window, `N children` in the peek card;
-      counters count roots only. The pet stays unchanged (spec §11).
-- [ ] Lineage doc `docs/lineage-contract.md` (`AGENT_SWITCH_PARENT_SESSION`,
+      → no edge without a report; an unclaimed session in a temp folder carries `relation: "unknown"` (TTY history is not recorded, so the temp folder alone marks it). `continued_from` ≠ `started_by`. Compaction keeps the id (an event, not an edge); `/clear` is not provable from the hook payload — carried as its own step below.
+- [x] `sessions --json`: `children`, `childCount`, `childSource`.
+      → `children` with `kind` / `state` / `source`, `childCount`, `childSource`,
+      and `parent` on a child. The GUI half moved to Phase 7 (Sessions zone).
+- [x] Lineage doc `docs/lineage-contract.md` (`AGENT_SWITCH_PARENT_SESSION`,
       `_AGENT`, `_KIND`, `_LABEL`).
-- [ ] `agent-switch sessions --tree --json`.
+      → `docs/lineage-contract.md`, version 1.
+- [x] `agent-switch sessions --tree --json`.
+      → `buildTree` nests reported children; property-tested: each row once, no cycles.
+- [x] `/clear` edge: link the new session to the one it cleared through process
+      continuity (the same Claude process before and after), not through timing.
+      → Measured live: hooks get `CLAUDE_PID`, equal before and after `/clear`.
+      `clearedFrom` in `src/hooks.ts` links a `source: clear` start to the last
+      start of the same pid (`kind: cleared`, "via hook"); no pid, no edge.
 
 ## Phase 3 — Git and PR facts
 
-- [ ] M5 branch, worktree, dirty, ahead/behind from the last hook `cwd`; fills the
+- [x] M5 branch, worktree, dirty, ahead/behind from the last hook `cwd`; fills the
       existing `branch` field (`gui/src/vm/build.ts:257`). For sessions without
       hooks: cwd fallback chain hook → `/proc`/`lsof` → transcript header, with
       `branchSource`. `headSha`, `remote`; 1 s git timeout; cache key
       `(toplevel, .git/HEAD mtime)`.
-- [ ] PR matched by head repo + head SHA (several candidates allowed); lifecycle,
+      → `src/git-facts.ts`; `sessions --json` `git` with `cwdSource: hook ·
+      process · transcript`; the GUI's `branch` reads it. Deviation from the
+      plan, on evidence: status is read fresh each time — a new untracked file
+      changes neither HEAD nor index mtime, so that cache key showed a stale
+      "clean" (test). Only the remote URL is cached; within one run, one git call
+      per folder. SessionStart and Stop now carry the folder, so a worktree
+      switch shows after the next turn (e2e).
+- [x] PR matched by head repo + head SHA (several candidates allowed); lifecycle,
       mergeability, review and CI kept as separate axes; one batched `gh` GraphQL
       query per repo, ETag/backoff, rate-limit aware. `MERGED`/`CLOSED` stay stored.
-- [ ] Polling cadence: 60 s while a session runs, 5 min idle, paused when the app
-      is hidden, halved on rate-limit pressure; chip states for every axis incl.
-      `UNKNOWN`. GitLab (`glab`) after GitHub works.
-- [ ] No `gh` or no login → one honest line with a fix button; AS never stores a
+      → `src/pr-facts.ts`: one GraphQL call per repo (verified live against this repo: 50 PRs, 50 points of 5000), matched by head commit, four axes each with UNKNOWN, cache `<root>/pr-cache.json`. GraphQL has no ETag; the back-off reads GitHub's own `rateLimit` instead. `sessions --json` lists `prs` from the cache only.
+- [x] Polling cadence: 60 s while a session runs, 5 min idle, halved on
+      rate-limit pressure; chip states for every axis incl. `UNKNOWN`.
+      → `refreshIntervalMs` / `due`; the daemon refreshes due repos each cycle and
+      logs a missing gh once per change.
+- [x] Pause the PR refresh while the app is hidden (the daemon needs a signal
+      from the app; none exists yet).
+      → The app reports `agent-switch app-visibility visible|hidden` on every
+      visibility change; the daemon skips the refresh while a "hidden" younger
+      than 30 min stands. No app, or a stale report, refreshes as before.
+- [ ] GitLab merge requests through `glab`, after GitHub works. Open: `glab` is
+      not installed here and no session works in a GitLab repository, so there
+      is nothing to verify the API shape against.
+- [x] No `gh` or no login → one honest line with a fix button; AS never stores a
       GitHub token itself.
-- [ ] Failing CI and merge conflicts become attention items and the session's
+      → `GhUnavailable` with `fix` (`gh auth login` / install link); `pr status` prints one line, `--json` gives `problem: {message, fix}` for the app's button. No token is read or stored.
+- [x] Failing CI and merge conflicts become attention items (kind `ci` in `src/attention.ts`; the digest counts merged PRs and CI breaks) and the session's
       blocker (spec §5.1, §6.3, §9.1); "Fix" / "Send to agent" sends the failing
       check's name and log link to a hosted session through the input lease —
       never into a session AS does not host.
-- [ ] `agent-switch pr status`, `agent-switch worktrees`.
+      → `ciCandidates` in `src/commands/needs.ts` (open PRs only, each once);
+      `needs fix <id>` types the PR, its failing checks and the checks URL into a
+      hosted session through the input lease, and refuses for any other
+      session. The digest counts merged PRs and CI breaks. The blocker strip and
+      Summary's next step read the same facts in Phase 8.
+- [x] `agent-switch pr status`, `agent-switch worktrees`.
+      → both, with `--json`; `worktrees` groups linked worktrees by their main checkout and names the sessions in each.
 
 ## Phase 4 — Library and vault
 
-- [ ] M6 pin, name, tags, archive (separate from trash) and search in the store,
+- [x] M6 pin, name, tags, archive (separate from trash) and search in the store,
       not in localStorage.
-- [ ] Show "deleted by Claude in N days" from `cleanupPeriodDays`; the Library's
+      → `src/library.ts` + `sessions pin|unpin|name|tag|untag|archive|unarchive|search`; library table in the store (the app kept no pins in localStorage, so there was nothing to move).
+- [x] Show "deleted by Claude in N days" from `cleanupPeriodDays`; the Library's
       deadline banner and "Kept?" states kept / at risk (≤ 7 days in amber) / lost
       (spec §10.3).
-- [ ] Vault copy of pinned sessions (jsonl + `<id>/` + `file-history/<id>`),
+      → `keptState` from `cleanupPeriodDays` (default 30); `sessions --json` carries `library`, `kept` (`kept · at-risk · lost`), `vault`, `canResume`. The banner itself is the Library page (Phase 9).
+- [x] Vault copy of pinned sessions (jsonl + `<id>/` + `file-history/<id>`),
       verified by hash; a pin whose transcript is gone shows "transcript gone" and
       "can't resume".
-- [ ] "Auto-keep sessions with an open PR", on by default (spec §10.3): such a
+      → `vaultCopy`: copy into a temp folder, hash-check, swap in; symlinks are not followed; a pin is copied at once. A lost transcript gives `kept: lost`, `canResume: false`.
+- [x] "Auto-keep sessions with an open PR", on by default (spec §10.3): such a
       session is kept like a pin until its PR is merged or closed.
-- [ ] Vault write on `SessionEnd` of a kept session: copy → checksum → never
-      move; Codex rollouts too; size shown ("vault 11.6 MB"). A session Claude
-      deleted can be restored from the vault.
-- [ ] Merged sessions archive themselves after 24 h into the Library; "Clean up"
+      → `libraryRound` sets and releases `autoKept` from the PR cache; `sessions keep auto on|off` (default on).
+- [x] Vault write on `SessionEnd` of a kept session: copy → checksum → never
+      move; size shown ("vault 11.6 MB"). A session Claude deleted can be
+      restored from the vault.
+      → The daemon's library round copies every kept session whose transcript
+      changed since its copy (which covers the end of a session without making
+      a hook wait for a copy); `store status` shows the vault size;
+      `sessions vault <key> restore` puts it back to the paths in its manifest.
+- [x] Codex rollouts in the vault too (the library resolves Claude sessions only).
+      → `resolveSession` finds Codex rollouts as well; pin, vault and restore work
+      the same (e2e). `sessions resume` stays Claude-only and says how to resume
+      a Codex session instead.
+- [x] Merged sessions archive themselves after 24 h into the Library; "Clean up"
       under "Done today" removes merged worktrees and skips dirty ones (spec §5.2,
       §13.8).
-- [ ] CLI: `agent-switch sessions pin|name|tag|archive …`; search over name,
+      → `libraryRound` archives once per session (`library_auto_archived`), so an unarchive sticks; `sessions cleanup [--yes]` removes merged linked worktrees from the main checkout, without `--force`, skipping dirty ones.
+- [x] CLI: `agent-switch sessions pin|name|tag|archive …`; search over name,
       summary, folder, branch, PR.
-- [ ] Resume (spec §8.4): preflight (folder, branch/SHA, dirty main checkout,
+      → as above, plus `sessions vault` and `sessions keep`; search matches every word.
+- [x] Resume (spec §8.4): preflight (folder, branch/SHA, dirty main checkout,
       account with numbers), restore targets `same_cwd | worktree | new_worktree`
       with the suggestion in words; Continue, Fork, Other account (existing handoff
       path), New with brief; the exact command is previewed and copyable.
+      → `src/resume.ts` + `sessions resume <session> [--how …] [--to …] [--yes]`: checks in words, `new_worktree` at the last commit when the branch is gone or the checkout dirty, exact commands (`--json` adds copyable lines); nothing runs without `--yes`.
 
 ## Phase 5 — Open in…
 
-- [ ] M7 `agent-switch open <session> --with vscode|cursor|phpstorm|idea|finder|terminal [--line N]`
+- [x] M7 `agent-switch open <session> --with vscode|cursor|phpstorm|idea|finder|terminal [--line N]`
       via the editors' official launchers; target = worktree root; installed
       editors detected via `apps --json`, missing ones hidden.
-- [ ] Open targets per spec §7.7: default target (⌘O) and last used target;
+      → `src/open-in.ts` + `open <session> [--with …] [--file] [--line]`: worktree root, the tool's own launcher (CLI on PATH, else the macOS app via `open -na`). Installed editors are found on PATH and in the app folders — `apps --json` lists the agents' desktop apps, not editors, so it could not serve here. `open <app> [profile]` keeps working.
+- [x] Open targets per spec §7.7: default target (⌘O) and last used target;
       Editor, Agent app (only the app of the session's tool, "opens this project"
       until S9 says more), Terminal (focus / new here / attach tmux), Files (reveal
       / copy path), Web (PR / CI run).
-- [ ] "Focus terminal" for sessions running in the user's own terminal (tty
+      → `open-targets <session> --json`: installed targets, default, last used, the agent app of the session's tool ("opens the app", S9), Terminal (focus for a Claude session, attach when hosted), Web (PR, checks). Copying a path is the app's clipboard, not a CLI target.
+- [x] "Focus terminal" for sessions running in the user's own terminal (tty
       lookup; macOS automation error -1743 explained, not swallowed).
-- [ ] Security: allowlisted executables only, canonical path inside a known
+      → `focus <session>` (`src/focus-terminal.ts`): pid from the host's registry → tty → the Terminal.app or iTerm2 tab owning it; -1743 is reported with where to allow it. macOS only.
+- [x] Security: allowlisted executables only, canonical path inside a known
       worktree, argv only, never a URL taken from PR text.
-- [ ] Default target global with per-repo override (Decision E-editor; Settings ›
+      → only the launchers in `LAUNCHERS`, argv only, `confine()` resolves symlinks and refuses anything outside the session's folder; no URL is passed, PR URLs are only listed for the app to show.
+- [x] Default target global with per-repo override (Decision E-editor; Settings ›
       Open in, spec §10.5).
+      → `open-default <target> [--repo DIR]`, keyed on the main checkout so all its worktrees share it; a default that is not installed falls back to the first installed editor.
 
 ## Phase 6 — Design system and window frame (spec §0–§4, §12)
 
-- [ ] Themes (spec §2): the 18 themes in spec order, Darcula for new installs;
+- [x] Themes (spec §2): the 18 themes in spec order, Darcula for new installs;
       `--ac-*` tokens from `resolveTheme` only (no raw colours except account
       identity colours); the resolver enforces the contrast floors, including
       terminal ANSI ≥ 4.5:1; accent = theme or Agent Switch orange; "Terminal uses
       the theme's colours" on by default. Ported from `themes/*` with their tests;
       every new token gets a floor.
-- [ ] 2.11 migration: the old `agent-switch-theme` keeps its mode and gets the
+      → `gui/src/v3/themes/` adapted from the reference patch with its tests,
+      plus two: every terminal colour ≥ 4.5:1 on the terminal background, and
+      the spec's theme order. GUI coverage stays above the floor (84.5 % lines).
+      Wiring into the window is the `AcRoot` step below.
+- [x] 2.11 migration: the old `agent-switch-theme` keeps its mode and gets the
       Agent Switch palette, so the update changes nothing visible. Test.
-- [ ] Shared component changes (spec §0): `ui/Segmented` selected = raise fill,
+      → `gui/src/v3/appearance.ts`: a stored v3 choice, else the 2.11 mode with
+      the Agent Switch palette, else — accounts exist but 2.11 stored nothing
+      (it followed the system) — the Agent Switch palette following the system;
+      only a new install gets Darcula (the reference would have switched those
+      silent 2.11 users to Darcula). A test parses `gui/src/index.css` and found
+      the reference's Agent Switch palettes off in overlay, shadow and three
+      account colours; they are now exact (reported conflict, spec wins).
+- [x] Shared component changes (spec §0): `ui/Segmented` selected = raise fill,
       `RowMenu`/`Select`/`Toaster` at 12 px, `AcRoot` takes `style`. They reach the
       2.11 screens too — render-check those screens in the same change.
-- [ ] Visual grammar kit (spec §3): the one radius scale, `Marker` and the tab
+      → Applied from the reference patch. Render check with the existing
+      screenshot pipeline (`gui/scripts/screenshots`, German run into a temp
+      folder, before vs after): 7 of 15 2.11 captures change, each only where a
+      segmented control shows its selection (raise fill instead of the orange
+      outline, checked by eye on `sessions`); nothing clipped or moved. 637 GUI
+      tests pass.
+- [x] Visual grammar kit (spec §3): the one radius scale, `Marker` and the tab
       frame for "where you are", state dots vs the `AccountMark` tick, three chip
       kinds, button kinds with one filled button per surface, one number and
       duration format.
-- [ ] Window frame (spec §4): title bar (search field → palette, "Engine
+      → `gui/src/v3/kit.tsx` adapted with handlers on every control and the
+      §3.6 formats (`pct`, `duration`, `resetIn`, `age`, `checkedAgo`);
+      `design-guard.test.ts` enforces no inset-shadow bars anywhere and only the
+      §3.1 radii in v3 code (shown to fail on a planted `rounded-lg`).
+- [x] Window frame (spec §4): title bar (search field → palette, "Engine
       stopped", inbox pill only in focus mode, "Start session" as the only filled
       chrome button, settings gear), left and right stripes with corner dots, one
       right tool window at a time and closed by default, tone order rail → panel →
       bg.
-- [ ] Keyboard (spec §12): every listed key; no app key steals a key the CLI needs
+      → `gui/src/v3/frame.tsx`: TitleBar, Stripe, `useFrame` and `Shell`, taken
+      from the reference without its demo data (no `data.ts` in the product);
+      the Sessions window, workbench and right windows are slots filled by the
+      Phase 7/8 ports. Tests cover focus mode and the pill, one right window,
+      the dots, the title bar.
+- [x] Keyboard (spec §12): every listed key; no app key steals a key the CLI needs
       while the terminal has focus; Ctrl+Shift on Linux/Windows; all keys
       rebindable.
+      → `gui/src/v3/keys.ts`: the §12 table, `actionFor` with the terminal rule
+      (⌘ on macOS stays; elsewhere Ctrl+Shift while the terminal has focus, and
+      Esc and Ctrl+Tab stay the CLI's), labels that show the keys that work right
+      now, and order-independent rebinds that never steal another action's key.
 
 ## Phase 7 — Sessions window and attention (spec §5, §7.1–§7.5, §10.7)
 
-- [ ] Needs-you zone on the attention queue: `NeedRow` with the verb and keys per
+- [x] Needs-you zone on the attention queue: `NeedRow` with the verb and keys per
       kind, the top item open, ⌘J focus with the warn Marker and key line, at most
       3 rows plus "N more ›", one digest row, hidden when empty. "Allow" and
       "Reply" only where an approval channel exists (S2); otherwise the verb is
       "Focus terminal" (D-approve).
-- [ ] Sessions zone: the shared order (needs you → CI failing → working → rest),
+      → `gui/src/v3/needs.tsx` (`NeedsZone`, `NeedRow`, `keysFor`, `nextFocus`)
+      on `needs --json` (`listNeeds`, `needsLater` in `ipc.ts`). Items AS cannot
+      answer carry "Focus terminal" as their verb and keys.
+- [x] Children in the GUI (spec §5.2, §7.3, §9.3; moved here from Phase 2):
+      children unfold under the row (`ChildLine`, provenance in the tooltip,
+      "relation unknown ⓘ" / "counted" inline), helper sessions collapsed by
+      default (C2), the `Bot` + count trailing slot, the Children tool window,
+      `N children` in the peek card; counters count roots only. The pet stays
+      unchanged (spec §11).
+      → `gui/src/v3/sessions.tsx`: `childrenFromCli` maps `sessions --json` children (subagents, helpers, counted), `ChildLine` with provenance in the tooltip and "relation unknown ⓘ" / "counted" inline, rows folded by default (C2), the `Bot` + count slot, `childNoun`. The Children tool window and the peek card's count use the same model (Phase 8 / next step); the pet is untouched.
+- [x] Sessions zone: the shared order (needs you → CI failing → working → rest),
       one trailing slot by priority, second line on the active row (and on every
       row in comfortable density), "Done today N ›" with "Clean up",
       multi-select with the batch bar.
-- [ ] Peek card on hover (~400 ms): account, model, thinking; branch, `#PR`,
+      → `SessionsZone`, `SessionRow`, `liveOrder`, `trailing` in `gui/src/v3/sessions.tsx`: one order, one trailing slot by priority, Marker and second line on the active row (every row in comfortable density), Done today with Clean up, multi-select with the compact batch bar.
+- [x] Peek card on hover (~400 ms): account, model, thinking; branch, `#PR`,
       children; last output line (hosted: `capture-pane`; otherwise only where a
       source exists, else left out).
-- [ ] Limits strip and limits popover: tightest window per account, colours from
+      → `PeekCard` in `gui/src/v3/overlays.tsx` (account, tool, model, thinking; branch, PR, children; last output line). The ~400 ms hover delay and where the last line comes from (hosted: `capture-pane`) are the window's wiring.
+- [x] Limits strip and limits popover: tightest window per account, colours from
       the account's protect value, stale data greyed with its age, "sign in ›";
       the popover with all windows, the pace tick and the pace line in words plus
       its one-line legend; "Move its session…" opens the decision sheet.
-- [ ] Inbox popover (focus mode), ⌃Tab switcher, ⌘K palette (sessions incl.
+      → `gui/src/v3/limits.tsx`: `paceFor` (even use by now, for 5 h and week
+      windows), `LimitsStrip`/`LimitRow` (tightest window, numbers only when not
+      OK, greyed with its age after 10 min, no tick on small bars, sign in ›),
+      `LimitsPopover` with ticks, `PaceLine` in words and its legend from the
+      account's protect value.
+- [x] Inbox popover (focus mode), ⌃Tab switcher, ⌘K palette (sessions incl.
       Library, branches & PRs, commands; `>` for commands).
-- [ ] Tray (spec §10.7): the same components in the same order; "Start session"
+      → `InboxPopover` (full queue, first focused, All later, Earlier today), `Switcher` (Marker on the current pick, needs-you chip, ⌘N hints), `Palette` (grouped, `filterPalette` with `>` for commands and the Last-week scope, ↑↓/↵/⌘↵).
+- [x] Tray (spec §10.7): the same components in the same order; "Start session"
       and "Open Agent Switch".
+      → `gui/src/v3/tray.tsx` (`V3Tray`): `NeedsZone`, `SessionsZone` (5 rows in
+      the shared order, then N more), `LimitsStrip`, Start session and Open
+      Agent Switch. It replaces the 2.11 tray only when the v3 window does.
 
 ## Phase 8 — Workbench, dialogs and tool windows (spec §6, §7.6–§7.7, §8, §9)
 
-- [ ] Tab strip: page tabs first, session tabs with state dot and `⌘1…⌘9`;
+- [x] Tab strip: page tabs first, session tabs with state dot and `⌘1…⌘9`;
       closing a session tab detaches, never ends.
-- [ ] Session bar: `[Terminal | Chat]` (Chat disabled until v3.1 and for
+      → `TabStrip` in `gui/src/v3/workbench.tsx`: pages first with their close button, sessions with state dot and ⌘1…⌘9, the active tab framed; closing a session tab only removes the tab (the session list owns ending).
+- [x] Session bar: `[Terminal | Chat]` (Chat disabled until v3.1 and for
       non-hosted sessions, with the reason), account chip (opens the decision
       sheet, never switches), model and thinking chips → model popover for the next
       turn (S8), locked with the reason for sessions in the user's own terminal,
-      `ctx %`, Open ▾ split button, ⋯ menu.
-- [ ] Terminal body: the hosted session's real PTY in xterm with the theme's
+      `ctx %`, Open ▾ split button, ⋯ menu. A model or thinking change is
+      applied by respawning the hosted session in place between turns with
+      `--resume … --model … --effort …` — never by typing `/model` or `/effort`,
+      which change the account's defaults (S8).
+      → `SessionBar`: Chat disabled with the reason (not hosted, or until v3.1), account chip opens the sheet, model and thinking chips locked with the reason outside AS, `ctx %`; the next-turn change is `agent-switch host respawn <key> --model … --effort …`, refused while a turn runs, never typed (CLI test).
+- [x] Terminal body: the hosted session's real PTY in xterm with the theme's
       terminal tokens, 12.5 px mono, line height 1.5, xterm's custom glyphs for the
       CLI's rounded boxes; never re-rendered or summarised (spec §6.4); typing goes
       through the input lease (D5). Blocker strip
       only while Summary is closed, never twice.
-- [ ] Session in the user's own terminal (spec §6.5): "Runs in … · read-only
+      → `HostedTerminal` runs `agent-switch host attach <key>` in the 2.11 `XtermBox`, now with the theme's terminal palette, 12.5 px / 1.5 and xterm's custom glyphs; closing it detaches the view only. `BlockerStrip` only while Summary is closed.
+- [x] Session in the user's own terminal (spec §6.5): "Runs in … · read-only
       here", "Focus terminal ⌘↵", "Take over here…" that explains the move first;
       the body shows the session's facts and its last transcript line, no PTY
       mirror (D-mirror).
-- [ ] Dialogs (spec §8): New session (prefill remembered per project, tool /
+      → `ExternalBody`: where it runs, Focus terminal (⌘↵, `agent-switch focus`), Take over here…, the session's facts and last transcript line (D-mirror). `SystemBanner` + `engineDownText` for the engine.
+- [x] Dialogs (spec §8): New session (prefill remembered per project, tool /
       model / thinking, account box with all windows, pace estimate in words,
+      "Host in Agent Switch" saying "ends when the app closes" where `hostingMode`
+      is `ephemeral`,
       "Why? ›" with the 2.11 routing lines, "Where it runs" radio cards with "Your
       terminal" default, command preview, primary names the outcome); near-limit
       decision sheet on the existing arm and rebind paths; End session listing
       what stops with it and saying whether this session is kept in the vault
       (D-vault).
-- [ ] Right tool windows (spec §9): Summary (next step, PR with provenance, git
+      → `gui/src/v3/dialogs.tsx`: `Modal` (Esc closes, one primary), `Choice`
+      radio cards, `NewSessionDialog` (the tool's own thinking levels, account
+      box with bars, pace in words, Why?, where it runs — ephemeral said where
+      there is no tmux —, command preview, "Start in …" / "Start here"),
+      `DecisionSheet` (after this turn by default, unchecked sessions stay),
+      `EndDialog` (what stops, whether this session is kept: D-vault).
+- [x] Right tool windows (spec §9): Summary (next step, PR with provenance, git
       line, limit block only near the limit, More ›), Changes (worktree vs HEAD,
       "Commit…"; "Review changes" arrives with v3.1), Children.
+      → `gui/src/v3/panels.tsx`: `SummaryWindow` (next step + one action, PR
+      axes with failing checks and provenance tooltip, git in one line, limit
+      only when near, More), `ChangesWindow` with `changedFiles` (numstat +
+      porcelain; Review waits for v3.1), `ChildrenWindow` with the provenance note.
 
 ## Phase 9 — Pages (spec §10.1–§10.6, §11)
 
-- [ ] Pages share `PageBody` and `PageHeader` (spec §6.7): centred, max 960,
+- [x] Pages share `PageBody` and `PageHeader` (spec §6.7): centred, max 960,
       tables as 10 px cards with muted column heads.
-- [ ] Accounts page: the 2.11 table kept, with "Usage history" and "Projects &
+      → `gui/src/v3/pages.tsx`: `PageBody` (centred, max 960) on `PageHeader`, tables as 10 px cards with muted heads.
+- [x] Accounts page: the 2.11 table kept, with "Usage history" and "Projects &
       pools" as views, every window as a full `LimitBar`.
-- [ ] All sessions page: filter, State and Tool segmented controls, the labelled
+      → `AccountsPage`: grouped per tool with the account plain `claude`/`codex` starts on, every window a full `LimitBar` with freshness, Use / Sign in / terminal; Usage history and Projects & pools are the 2.11 screens passed in as views.
+- [x] All sessions page: filter, State and Tool segmented controls, the labelled
       batch bar, the columns of spec §10.2.
-- [ ] Library page on Phase 4 data (search, All / Pinned / Archived, vault size,
+      → `AllSessionsPage` with `filterSessions` (words, State, Tool), checkbox selection → labelled `BatchBar`, the §10.2 columns.
+- [x] Library page on Phase 4 data (search, All / Pinned / Archived, vault size,
       deadline banner, Resume… / can't resume, Archive/Restore).
-- [ ] Tools page; updates also arrive as Needs-you items and never touch running
+      → `LibraryPage`: search, All / Pinned / Archived, vault size, `nextDeadline` banner with Keep it, Resume… or can't resume, Archive / Restore, auto-keep switch.
+- [x] Tools page; updates also arrive as Needs-you items and never touch running
       sessions.
-- [ ] Settings page with its left nav; Appearance (mode, theme cards with live
+      → `gui/src/v3/tools.tsx`: `ToolsPage` holds the 2.11 Tools screen; `updateNeeds` turns each installed tool behind its latest version into one Update item ("Running sessions keep the version they started with"); its verb opens the Tools page.
+- [x] Settings page with its left nav; Appearance (mode, theme cards with live
       mini previews grouped as in §10.5, accent, terminal colours, contrast note,
       "About <theme>"); Open in. The Agents and Remote entries arrive with v3.2.
-- [ ] First run (spec §10.6): one path, no tour; shell integration shown before
+      → `gui/src/v3/settings.tsx`: `SettingsPage` (left nav with Marker; the other
+      sections are the 2.11 screens passed in), `AppearanceSettings` (mode with
+      Sync with OS, every theme as a mini preview on its real tokens grouped
+      JetBrains / Agent Switch / Popular / Accessibility, `pickTheme`, accent,
+      terminal colours, contrast note, About <theme> with its source),
+      `OpenInSettings` on `open-targets` rows (missing apps hidden, default and
+      per-repo, Focus terminal). Agents and Remote are not listed until v3.2.
+- [x] First run (spec §10.6): one path, no tour; shell integration shown before
       it changes anything.
-- [ ] Every row of the 2.11 map (spec §11) is reachable in ≤ 2 clicks from the
+      → `gui/src/v3/firstrun.tsx`: detected tools with sign-in state, Add as “work” / Sign in… / Install…, `addAllLabel`, then the exact `shellenv` lines and the rc file before anything is written; Not now writes nothing.
+- [x] Every row of the 2.11 map (spec §11) is reachable in ≤ 2 clicks from the
       main window.
+      → `gui/src/v3/window.tsx` assembles the window (frame, zones, tabs, pages, tool windows, overlays, session ⋯ menu; one `act` callback out). `reach.test.tsx` clicks every §11 row from a fresh window and counts: all ≤ 2 (tray and pet are their own surfaces). Mounting `V3Window` in place of the 2.11 window needs the data adapter from the 2.11 store — not a step of this roadmap; named in the PR.
 
 ## Phase 10 — Codex and Antigravity parity
 
-- [ ] Codex hooks per `CODEX_HOME` (user level only); Codex `cwd` from
-      `session_meta`; Codex subagent rollouts grouped, not listed as roots.
-- [ ] Antigravity: "not readable" label until a structured source exists
+- [x] Codex `cwd` from `session_meta`; Codex subagent rollouts grouped, not
+      listed as roots.
+      → `codexSessionMeta` reads the first line (≤ 256 KiB; fields measured on
+      codex-cli 0.166.0) for `cwd` and `thread_source`; a thread not started by
+      the user is `root: false, relation: "unknown"` and `--tree` groups it apart.
+      Codex sessions now get git facts too.
+- [ ] Codex hooks per `CODEX_HOME` (user level only). Measured: codex-cli
+      0.166.0 has hooks (`[hooks]` in config.toml — SessionStart/End, Stop,
+      SubagentStart/Stop, PermissionRequest, Pre/PostCompact, …) behind a
+      persisted hook trust. Open: both Codex accounts here are signed out
+      ("access token could not be refreshed"), so the payloads could not be
+      captured; signing in is the user's step.
+      Rechecked 2026-11-02: `codex login status` says "Logged in using
+      ChatGPT" for both, yet a real `codex exec` turn fails on each with the
+      same refresh error — the status line only reads the file.
+- [x] Antigravity: "not readable" label until a structured source exists
       (ACP in `later/road-to-agent-switch-v3-reach.md`); it can be started from
       New session like any terminal-only tool.
+      → `sessions --provider antigravity` says "not readable yet" (`--json`: `[]`);
+      `host start <profile> --provider antigravity` runs `agy` with the account's
+      HOME. The New-session dialog offers it in Phase 8.
 
 ## Ordering
 
@@ -457,10 +661,10 @@ time and wire it to the engine as its data exists.
 | D-sketch | Earlier UI sketch layout and quick input on rows | decided: superseded by the design (Design basis) |
 | D-mirror | Spec §6.5 shows a read-only mirror of a session in the user's own terminal; AS cannot read a foreign PTY | decided (owner, 2026-11-02): v3.0 shows the session's facts and last transcript line there; a full read-only view comes with the v3.1 timeline reader |
 | D-vault | Spec §8.3 says "the transcript is kept in the vault either way"; Phase 4 vaults only pinned and auto-kept sessions | decided (owner, 2026-11-02): the vault scope stays (pinned and auto-kept); the End dialog says whether this session is kept |
-| D-approve | Spec §5.1 offers "Allow"/"Reply" for every approval; for a session without an approval channel (own terminal without hooks, or S2 red) AS cannot answer | decided (owner, 2026-11-02): there the row's verb is "Focus terminal" |
+| D-approve | Spec §5.1 offers "Allow"/"Reply" for every approval; for a session without an approval channel (own terminal without hooks, or S2 red) AS cannot answer | decided (owner, 2026-11-02): there the row's verb is "Focus terminal". S2 is green: the channel exists wherever AS hooks are installed, hosted or not, so "Focus terminal" applies to sessions without AS hooks |
 | S-density | Spec §15.1: comfortable density as default? | **owner** (from the design) — spec today: compact |
 | S-limits | Spec §15.2: Limits strip at the bottom or under the session list? | **owner** (from the design) — spec today: bottom |
-| S-desktop | Spec §15.3: Desktop apps resume or only open the project? | decided by Spike S9; until then "opens this project" |
+| S-desktop | Spec §15.3: Desktop apps resume or only open the project? | S9: Claude Desktop 4.29.0 can do neither through its launcher (no folder type; only `claude://`, which the roadmap excludes). The spec's "opens this project" would overclaim | **owner** — recommendation: the Agent-app entry says "opens the app"; re-check per app version |
 | S-proposals | Spec proposals: ⇧/⌘-click multi-select (§5.2), "Start here" when hosted (§8.1) | **owner** — both marked "proposal" in the spec, not built until confirmed |
 
 ## Not in v3.0 (kills, with reason)

@@ -14,6 +14,12 @@ test("parseArgs consumes --provider's value (flag-first) — value does NOT leak
   assert.deepEqual(p.positional, ["opfer"]); // NOT ["codex", "opfer"]
 });
 
+test("parseArgs gives `host start --cwd DIR` its folder, not a stray positional", () => {
+  const p = parseArgs(["host", "start", "work", "--cwd", "/tmp/repo"]);
+  assert.deepEqual(p.positional, ["start", "work"]);
+  assert.equal(p.flags.cwd, "/tmp/repo");
+});
+
 test("parseArgs handles the flag AFTER the positional too", () => {
   const p = parseArgs(["remove", "opfer", "--provider", "codex"]);
   assert.equal(p.providerId, "codex");

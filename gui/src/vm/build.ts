@@ -254,7 +254,7 @@ export function sessionFromRow(row: SessionRow, now: number): Session {
     accountId: accountId(row.provider, row.profile),
     project: cwd ? basename(cwd) : t("vm.build.unknownFolder"),
     cwd,
-    branch: null,
+    branch: row.git?.branch ?? null,
     title: summary ?? t("vm.build.sessionTitle", { id: row.sessionId.slice(0, 8) }),
     state,
     startedAt: row.birthtimeMs ?? row.mtimeMs,

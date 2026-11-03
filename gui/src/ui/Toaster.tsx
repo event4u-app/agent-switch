@@ -14,7 +14,7 @@ const DOT = { info: "bg-ac-info", ok: "bg-ac-ok", warn: "bg-ac-warn", alert: "bg
 
 function ToastRow({ item, onDismiss }: { item: ToastItem; onDismiss: (id: number) => void }) {
   return (
-    <div className="pointer-events-auto flex items-center gap-3 rounded-lg border border-ac-line2 bg-ac-panel py-2 pl-3 pr-1.5 shadow-lg">
+    <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-ac-line2 bg-ac-panel py-2 pl-3 pr-1.5 shadow-lg">
       <span className={cn("size-2 shrink-0 rounded-full", DOT[item.tone ?? "info"])} aria-hidden />
       <span className="min-w-0 flex-1 text-xs text-ac-text">{item.text}</span>
       {item.action && (

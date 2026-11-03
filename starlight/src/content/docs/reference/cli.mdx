@@ -227,16 +227,33 @@ suggested. The background service must be running.
 
 | Command | What it does |
 | --- | --- |
-| `sessions [profile] [--recent N]` | Recent and running sessions per account, with context %. Claude and Codex. |
+| `sessions [profile] [--recent N]` | Recent and running sessions per account, with context %. Claude and Codex; Antigravity sessions are not readable yet. |
 | `sessions preview <session-id> [--from <profile>]` | The first turns of one session. |
 | `sessions rm <session-id> --yes [--from <profile>] [--purge]` | Move a session to the trash; `--purge` deletes it for good. |
 | `sessions restore <trash-id\|session-id> [--from <profile>]` | Bring a removed session back. |
+| `sessions pin\|unpin\|archive\|unarchive <session>` | Keep a session in the library. A pinned session is copied into the vault, so Claude's own cleanup cannot take it; archived is not deleted. Claude and Codex, needs Node 22.13 or later. |
+| `sessions name <session> <name>` · `sessions tag\|untag <session> <tag>` | Name and tag a session for the library. |
+| `sessions search <words>` | Search sessions by name, tag, summary, folder, branch or `#PR`. |
+| `sessions vault <session> [restore]` | Copy a session into the vault now, or put a vaulted session back after Claude deleted it. |
+| `sessions keep auto on\|off` | Keep sessions with an open PR like pinned ones (on by default). |
+| `sessions resume <session> [--how continue\|fork\|account\|brief] [--to <profile>] [--yes]` | Check what changed since (folder, branch, commit, uncommitted changes, account), suggest where to resume — a new worktree at the last commit when your checkout has changes — and show the exact commands; `--yes` runs them. Claude. |
+| `open <session> [--with vscode\|cursor\|phpstorm\|idea\|finder\|terminal] [--file F] [--line N]` | Open a session's worktree (or one file in it) with that tool's own launcher; without `--with`, the default target. Paths outside the session's folder are refused. |
+| `open-targets <session> [--json]` | What the Open menu offers for a session: installed targets, the default and the last used one, its agent app, its PR. |
+| `open-default <target> [--repo DIR]` | Set the default Open target, for every repository or for one. |
+| `focus <session>` <Badge text="macOS" variant="caution" /> | Bring the Terminal.app or iTerm2 tab a Claude session runs in to the front. |
+| `sessions cleanup [--yes]` | Remove the worktrees of sessions whose PR is merged; a worktree with changes is skipped. |
 | `takeover <session-id> --to <profile>` | Move a session to another account and resume it there. Claude and Codex. See [below](#takeover). |
 | `rebind [<account>]` <Badge text="macOS" variant="caution" /> <Badge text="Claude only" variant="note" /> | Switch the account of a running Claude session. See [below](#rebind). |
 | `handoff extract <session-id> --from <profile> --to <tool>` | Write a short brief to continue a session in another tool (lossy). |
 | `handoff seed --to <profile> --brief <path>` | Start the target tool on that brief. |
-| `compact <profile> [--clear] [--dry-run] [--force]` | Type `/compact` (or `/clear`) into a session started with `run --tmux`. Claude and Codex. |
+| `compact <profile\|session> [--clear] [--dry-run] [--force]` | Type `/compact` (or `/clear`) into a session started with `run --tmux`, or into a hosted session named by its key from `host list` (refused while someone else is typing into it). Claude and Codex. |
 | `hooks install\|uninstall\|status [profile]` <Badge text="Claude only" variant="note" /> | Add the hooks that tell the app when Claude needs you or finished. |
+| `needs [--json]` · `needs later <id>` | Everything waiting for you, most urgent first: approvals, questions, accounts at their limit, sign-ins. `later` hides one until it changes. |
+| `engine status\|restart [--json]` | Whether the background engine answers, and how many hosted sessions keep running either way. `restart` restarts the background service it runs in. |
+| `pr status [--json] [--refresh]` | For each session in a GitHub repository: its PR by head commit, with lifecycle, merge conflicts, review and CI kept apart. Uses the GitHub CLI (`gh`) you are signed in with; Agent Switch stores no token. |
+| `worktrees [--json]` | The git worktrees of the repositories your sessions work in, and which session is in which. |
+| `store status\|import\|rebuild [--json]` | The local event store behind the v3 views: show it, bring in the hook events, or rebuild its views from the stored events. Needs Node 22.13 or later. |
+| `host start [profile] [--cwd DIR]\|list\|attach <session>\|respawn <session>\|end <session> [--yes]` <Badge text="macOS & Linux" variant="caution" /> | Run a Claude, Codex or Antigravity session in Agent Switch's own tmux server, so it keeps running when the window closes. Without a profile it starts where a plain `claude` would. `attach` opens it in this terminal; detaching leaves it running. `end` stops it, after asking. `respawn <session> [--model M] [--effort E]` restarts it in place on another model or thinking level, between turns. Needs tmux. |
 | `alerts on\|off\|status [--threshold 80,95]` | Log a notification when a session's context passes these marks (default off). |
 | `desktop` <Badge text="Claude only" variant="note" /> | Which accounts ran sessions in each Claude Desktop window. |
 
@@ -361,6 +378,7 @@ Used by the desktop app and by hooks; not for direct use.
 
 | Command | Used by |
 | --- | --- |
+| `app-visibility visible\|hidden` | The desktop app, when its window is shown or hidden; the background PR refresh pauses while it is hidden. |
 | `__hook-event` | Claude Code hooks installed by `hooks install`. |
 | `notify --kind K --title T --message M` | The desktop app, to log a notification. |
 | `gui-settings` | The desktop app, for its start-at-login and pet-intro settings. |

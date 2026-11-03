@@ -1,0 +1,160 @@
+/**
+ * Spec §11: every 2.11 function stays reachable in at most two clicks from the
+ * main window. Each row starts from a fresh window and counts its clicks.
+ */
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { V3Window, type V3Data, type V3Slots } from "./window.js";
+import { DEFAULT_APPEARANCE } from "./themes/resolve.js";
+import type { LimitAccount } from "./limits.js";
+
+afterEach(cleanup);
+const NOW = Date.UTC(2026, 10, 2, 12);
+const limit: LimitAccount = { key: "claude/work", tool: "claude", name: "work", color: "teal", protect: 98, next: true, signIn: false, checkedMs: NOW, windows: [{ label: "5h", used: 94, resetsAtMs: NOW + 3_600_000, pace: null }] };
+
+function data(): V3Data {
+  return {
+    nowMs: NOW,
+    health: { state: "down", sinceMs: NOW - 120_000, hostedRunning: 1 },
+    needs: [{ id: "l", kind: "limit", subject: "claude/work", who: "work", what: "94% of 5h", verb: "Decide", since: new Date(NOW).toISOString(), version: "1" }],
+    away: null,
+    history: [{ id: "h", who: "Checkout flow", what: "asked you", doneAt: new Date(NOW - 600_000).toISOString() }],
+    sessions: [{ key: "s1", title: "Event store", state: "working", account: { name: "work", nearLimit: true }, branch: "feat/store", pr: null, children: [], needsYou: false }],
+    limits: [limit],
+    accounts: [{ ...limit, email: "me@example.com", label: null, isDefault: true, running: 1 }],
+    table: [],
+    library: [],
+    vaultBytes: 0,
+    autoKeep: true,
+    tools: [{ id: "codex", name: "Codex", role: "agent", present: true, version: "0.1", latest: "0.2", healthy: true }],
+    palette: [],
+    appearance: DEFAULT_APPEARANCE,
+    prefersDark: true,
+    openIn: { targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true }], defaultTarget: "vscode", perRepo: {}, focusTerminal: true },
+    newSession: {
+      initial: { folder: "~/code/x", gitState: null, worktree: false, tool: "claude", model: "Opus", thinking: "High", where: "terminal" },
+      facts: { terminalApp: "Terminal.app", hosting: "persistent", thinkingLevels: { claude: ["High"], codex: ["high"], antigravity: ["default"] }, account: { name: "work", color: "teal", reason: "most room", limits: limit, why: ["work has the most room"], paceText: null }, command: "claude", nowMs: NOW },
+    },
+    decision: () => ({ account: "work", pctUsed: 94, window: "5h", resetsIn: "1h", sessions: [{ key: "s1", title: "Event store", model: "Opus", target: "side" }], suggestion: "side" }),
+    bar: () => ({ key: "s1", hosted: true, chatAvailable: false, view: "terminal", account: { name: "work", color: "teal", fiveH: 94, protect: 98 }, model: "Opus", thinking: "high", contextPct: 40 }),
+    summary: () => null,
+    changes: () => [],
+    next: () => null,
+  };
+}
+const slots: V3Slots = {
+  body: () => <p>terminal body</p>,
+  openIn: () => null,
+  usageHistory: <p>usage history view</p>,
+  pools: <p>projects and pools view</p>,
+  poolCount: 2,
+  tools: <p>agent-config card</p>,
+  settings: (s) => <p>{`${s} section`}</p>,
+};
+
+function open() {
+  const act = vi.fn();
+  render(<V3Window data={data()} slots={slots} act={act} />);
+  let clicks = 0;
+  const click = (el: Element) => (clicks++, fireEvent.click(el));
+  return { act, click, clicks: () => clicks };
+}
+const stripe = (name: string) => screen.getByLabelText(name);
+
+describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
+  it("Overview: needs you, running now, what's left — on screen", () => {
+    const w = open();
+    expect(screen.getByText("94% of 5h")).toBeTruthy();
+    expect(screen.getByText("Event store")).toBeTruthy();
+    expect(screen.getByText("Limits")).toBeTruthy();
+    expect(w.clicks()).toBe(0);
+  });
+
+  it("Sessions list, filters, trash: the window, All sessions (palette), Library (stripe)", () => {
+    const w = open();
+    w.click(screen.getByText("Go to session, account, branch, PR, or run a command…"));
+    w.click(screen.getByText("All sessions"));
+    expect(screen.getByText("Scan, filter and act on many sessions at once.")).toBeTruthy();
+    expect(w.clicks()).toBeLessThanOrEqual(2);
+    cleanup();
+    const v = open();
+    v.click(stripe("Library"));
+    expect(screen.getByText(/Pinned sessions are kept in the vault/)).toBeTruthy();
+  });
+
+  it("Session sheet: move, take over, hand off, compact — session row, then ⋯", () => {
+    const w = open();
+    w.click(screen.getByText("Event store"));
+    w.click(screen.getByLabelText("Session actions: rename, pin, move, detach, end"));
+    const menu = screen.getByRole("menu");
+    for (const item of ["Move to another account…", "Take over here…", "Hand off…", "Compact"]) expect(within(menu).getByText(item)).toBeTruthy();
+    expect(w.clicks()).toBe(2);
+  });
+
+  it("Near-limit decision: Needs-you Decide opens the same sheet, never automatic", () => {
+    const w = open();
+    expect(screen.queryByText("Nothing changes until you choose.", { exact: false })).toBeNull();
+    w.click(screen.getByText("Decide"));
+    expect(screen.getByText(/Nothing changes until you choose/)).toBeTruthy();
+    expect(w.act).not.toHaveBeenCalled();
+    expect(w.clicks()).toBe(1);
+  });
+
+  it("Accounts, sign-ins, usage history; pools and projects; protection", () => {
+    const w = open();
+    w.click(stripe("Accounts"));
+    w.click(screen.getByRole("radio", { name: "Usage history" }));
+    expect(screen.getByText("usage history view")).toBeTruthy();
+    expect(w.clicks()).toBe(2);
+    cleanup();
+    const p = open();
+    p.click(stripe("Accounts"));
+    p.click(screen.getByRole("radio", { name: "Projects & pools 2" }));
+    expect(screen.getByText("projects and pools view")).toBeTruthy();
+    cleanup();
+    const s = open();
+    s.click(screen.getByLabelText("Settings ⌘,"));
+    s.click(screen.getByRole("button", { name: "Protection" }));
+    expect(screen.getByText("Protection section")).toBeTruthy();
+    expect(s.clicks()).toBe(2);
+  });
+
+  it("Tools, agent-config card, updates — Tools page; the update is a Needs-you item", () => {
+    const w = open();
+    expect(screen.getByText("0.1 → 0.2")).toBeTruthy();
+    w.click(stripe("Tools"));
+    expect(screen.getByText("agent-config card")).toBeTruthy();
+    expect(w.clicks()).toBe(1);
+  });
+
+  it("Apps (detected editors): Settings › Open in", () => {
+    const w = open();
+    w.click(screen.getByLabelText("Settings ⌘,"));
+    w.click(screen.getByRole("button", { name: "Open in" }));
+    expect(screen.getAllByText("VS Code").length).toBeGreaterThan(0);
+    expect(screen.getByText("Default for the Open button (⌘O)")).toBeTruthy();
+    expect(w.clicks()).toBe(2);
+  });
+
+  it("Activity, notifications: the inbox behind the pill, with today's history", () => {
+    const w = open();
+    w.click(stripe("Sessions ⌘B"));
+    w.click(screen.getByTitle("Needs you · ⌘J jumps to the next one"));
+    expect(screen.getByText("Earlier today")).toBeTruthy();
+    expect(w.clicks()).toBe(2);
+  });
+
+  it("Health: the title bar says the engine stopped", () => {
+    open();
+    expect(screen.getByText("Engine stopped")).toBeTruthy();
+    expect(screen.getByText(/hosted session keeps running in tmux/)).toBeTruthy();
+  });
+
+  it("Start session with the routing explanation: Start, then Why?", () => {
+    const w = open();
+    w.click(screen.getByText("Start session"));
+    w.click(screen.getByText("Why? ›"));
+    expect(screen.getByText("work has the most room")).toBeTruthy();
+    expect(w.clicks()).toBe(2);
+  });
+});

@@ -32,6 +32,8 @@ import * as path from "node:path";
 import { ROOT, activeFor, configDir, isDisabled, labelFor, listProfiles, readAutoSwitch, readBinaryPath } from "./profiles.js";
 import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
+import { startEngine } from "./engine/run.js";
+import { appHidden, visibilityFile } from "./app-visibility.js";
 import { fetchUsage, liveSessionPids, liveSessions, readProfileCredential } from "./api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { keepAliveSweep } from "./login-keepalive.js";
@@ -513,6 +515,10 @@ interface RunOptions {
   log?: (line: string) => void;
   /** Test seam: stop after N cycles (default: run forever). */
   maxCycles?: number;
+  /** Test seam: false = do not start the v3 engine (store + protocol socket). */
+  engine?: boolean;
+  /** Test seam: false = no PR refresh. */
+  prs?: boolean;
 }
 
 /** One poll cycle: refresh the state cache for the selected profiles. Returns
@@ -704,6 +710,37 @@ async function pollOnce(
   return total;
 }
 
+/**
+ * Keep the PR cache fresh for the repos the sessions work in: due repos only
+ * (60 s with a live session, 5 min otherwise, doubled when the rate limit runs
+ * low), one gh call each. A missing or signed-out gh is logged once per state
+ * change, never retried per repo.
+ */
+let lastPrProblem: string | null = null;
+async function refreshPrs(log: (l: string) => void): Promise<void> {
+  try {
+    if (appHidden(visibilityFile(ROOT))) return; // only the app shows PRs; it asks again when shown
+    const { refreshForSessions, sessionsWithGit } = await import("./commands/pr.js");
+    const r = refreshForSessions(sessionsWithGit(), false);
+    const problem = r.problem ? `${r.problem.message} (${r.problem.fix})` : null;
+    if (problem !== lastPrProblem) log(problem ? `PRs off: ${problem}` : "PRs: gh available");
+    lastPrProblem = problem;
+    for (const e of r.errors) log(`PRs: ${e}`);
+  } catch (err: any) {
+    log(`PRs: ${err?.message ?? err}`);
+  }
+}
+
+async function libraryRoundLogged(log: (l: string) => void): Promise<void> {
+  try {
+    const { libraryRound } = await import("./commands/library.js");
+    const r = await libraryRound();
+    if (r.autoKept || r.released || r.archived || r.copied) log(`library: ${r.autoKept} auto-kept, ${r.released} released, ${r.archived} archived, ${r.copied} copied to the vault`);
+  } catch (err: any) {
+    log(`library: ${err?.message ?? err}`);
+  }
+}
+
 /** Run the daemon loop. Single-instance; SIGTERM-clean. */
 export async function runDaemon(opts: RunOptions = {}): Promise<void> {
   const log = opts.log ?? ((l: string) => console.log(`[daemon] ${new Date().toISOString()} ${l}`));
@@ -714,11 +751,13 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
     return;
   }
   let running = true;
+  // v3 engine: store + protocol socket. Off (with a log line) where SQLite is missing.
+  const engine = opts.engine === false ? null : await startEngine(ROOT, log);
   const stop = () => {
     running = false;
     releaseSingleInstance(process.pid);
     log("stopped.");
-    process.exit(0);
+    void (engine?.stop() ?? Promise.resolve()).finally(() => process.exit(0));
   };
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
@@ -745,6 +784,8 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
     try {
       const { failures, attempted } = await pollOnce(state, thresholds, notifiedReset, backoff, baseInterval, log);
       consecutiveFailures = nextConsecutiveFailures(consecutiveFailures, failures, attempted);
+      if (opts.prs !== false) await refreshPrs(log);
+      if (opts.prs !== false) await libraryRoundLogged(log);
     } catch (err: any) {
       consecutiveFailures++;
       state.lastError = String(err?.message ?? err);
@@ -761,5 +802,6 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
     await new Promise((r) => setTimeout(r, wait + jitter));
   }
   stopArmWatcher();
+  await engine?.stop();
   releaseSingleInstance(process.pid);
 }

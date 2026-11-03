@@ -12,7 +12,7 @@
  * (~/.agent-switch/<name>) are migrated on first run (see migrateLegacyLayout).
  */
 
-import { die, migrateLegacyLayout } from "./profiles.js";
+import { die, migrateLegacyLayout, ROOT } from "./profiles.js";
 import { parseArgs, parseRun } from "./args.js";
 import { runDoctor } from "./doctor.js";
 import { TOOL_IDS } from "./tooling.js";
@@ -41,6 +41,16 @@ import {
   cmdWhoami,
 } from "./commands/profiles.js";
 import { cmdRebind } from "./commands/rebind.js";
+import { cmdStore } from "./commands/store.js";
+import { cmdFocus, cmdOpenDefault, cmdOpenSession, cmdOpenTargets } from "./commands/open-in.js";
+import { findApp } from "./apps.js";
+import { cmdCleanup, cmdLibrary, cmdResume } from "./commands/library.js";
+const LIBRARY_ACTIONS = new Set(["pin", "unpin", "name", "tag", "untag", "archive", "unarchive", "search", "keep", "vault"]);
+import { visibilityFile, writeVisibility } from "./app-visibility.js";
+import { cmdPr, cmdWorktrees } from "./commands/pr.js";
+import { cmdEngine } from "./commands/engine.js";
+import { cmdNeeds } from "./commands/needs.js";
+import { cmdHost } from "./commands/host.js";
 import { cmdDir, cmdGuard, cmdMap, cmdMappings, cmdPicks, cmdPool, cmdUnmap } from "./commands/routing.js";
 import {
   cmdAlerts,
@@ -124,7 +134,11 @@ async function main(): Promise<void> {
     case "gui": return cmdGui(flags["after-pid"]);
     case "update": case "upgrade": return cmdUpdate();
     case "check-update": case "check-updates": return cmdCheckUpdate(!!flags.json);
-    case "open": return cmdOpen(positional[0], positional[1]);
+    // `open <app> [profile]` opens a desktop app on an account; `open <session> [--with …]` opens a session's folder.
+    case "open": return flags.with !== undefined || flags.file !== undefined || (positional[0] && !findApp(positional[0])) ? cmdOpenSession(positional[0], flags) : cmdOpen(positional[0], positional[1]);
+    case "open-targets": return cmdOpenTargets(positional[0], flags);
+    case "open-default": return cmdOpenDefault(positional[0], flags);
+    case "focus": return cmdFocus(positional[0]);
     case "launcher": case "launchers": return cmdLauncher(positional[0], positional.slice(1), flags);
     case "app-settings": return cmdAppSettings(positional[0], positional.slice(1), flags);
     case "apps": return cmdApps(!!flags.json);
@@ -158,8 +172,20 @@ async function main(): Promise<void> {
       if (positional[0] === "rm") return cmdSessionsRm(providerId, providerExplicit, positional[1], flags);
       if (positional[0] === "restore") return cmdSessionsRestore(providerId, providerExplicit, positional[1], flags);
       if (positional[0] === "preview") return cmdSessionsPreview(providerId, providerExplicit, positional[1], flags);
+      if (positional[0] && LIBRARY_ACTIONS.has(positional[0])) return cmdLibrary(positional[0], positional[1], positional.slice(2).join(" ") || undefined, flags);
+      if (positional[0] === "cleanup") return cmdCleanup(flags);
+      if (positional[0] === "resume") return cmdResume(positional[1], flags);
       return cmdSessions(providerId, providerExplicit, positional[0], flags);
     case "hooks": return cmdHooks(positional[0], positional[1]);
+    case "store": return cmdStore(positional[0], flags);
+    case "app-visibility":
+      if (positional[0] !== "visible" && positional[0] !== "hidden") die("usage: agent-switch app-visibility visible|hidden");
+      return writeVisibility(visibilityFile(ROOT), positional[0] === "visible");
+    case "pr": return cmdPr(positional[0], flags);
+    case "worktrees": return cmdWorktrees(flags);
+    case "engine": return cmdEngine(positional[0], flags);
+    case "needs": return cmdNeeds(positional[0], positional[1], flags);
+    case "host": return cmdHost(providerId, positional[0], positional[1], flags);
     case "alerts": return cmdAlerts(positional[0], flags);
     case "compact": return cmdCompact(providerId, positional[0], flags);
     case "takeover": return cmdTakeover(providerId, providerExplicit, positional[0], flags);

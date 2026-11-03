@@ -106,6 +106,14 @@ test("readClaudeContext: skips sidechain, synthetic, and streaming intermediates
   assert.equal(r.timestamp, "real");
 });
 
+test("readClaudeContext: the effort of the last answer, per turn first (S8)", () => {
+  const withEffort = (extra: object) => JSON.stringify({ ...JSON.parse(asst({ input_tokens: 10 })), ...extra });
+  assert.equal(readClaudeContext(tmpFile([withEffort({ effort: "high", perTurnEffort: "low" })]))!.effort, "low");
+  assert.equal(readClaudeContext(tmpFile([withEffort({ effort: "high" })]))!.effort, "high");
+  assert.equal(readClaudeContext(tmpFile([asst({ input_tokens: 10 })]))!.effort, null, "older Claude Code: unknown, not guessed");
+  assert.equal(readClaudeContext(tmpFile([withEffort({ effort: { level: "max" } })]))!.effort, "max", "the object form the hooks use");
+});
+
 test("readClaudeContext: unknown model → tokens without pct", () => {
   const f = tmpFile([
     asst({ input_tokens: 1234, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 }, { model: "claude-future-9" }),

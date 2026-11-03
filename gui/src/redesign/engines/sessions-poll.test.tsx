@@ -6,7 +6,7 @@ import { ASProvider, useAS, type Store } from "../../vm/store.js";
 import type { Account } from "../../vm/types.js";
 import { sessionsPatch, SESSIONS_POLL_MS, useSessionsPoll } from "./sessions-poll.js";
 
-const h = vi.hoisted(() => ({ rows: [] as unknown[], calls: 0, notes: [] as string[] }));
+const h = vi.hoisted(() => ({ rows: [] as unknown[], calls: 0, notes: [] as string[], visibility: [] as boolean[] }));
 vi.mock("./bus.js", async (orig) => ({
   ...(await orig<typeof import("./bus.js")>()),
   notify: async (kind: string, title: string, message: string, opts?: { repeat?: boolean }) =>
@@ -17,6 +17,9 @@ vi.mock("../../ipc.js", async (orig) => ({
   listSessions: async () => {
     h.calls++;
     return h.rows;
+  },
+  reportVisibility: async (visible: boolean) => {
+    h.visibility.push(visible);
   },
 }));
 
@@ -116,6 +119,30 @@ describe("sessions poll", () => {
         await vi.advanceTimersByTimeAsync(4 * SESSIONS_POLL_MS);
       });
       expect(h.calls).toBe(2);
+    } finally {
+      vis.mockRestore();
+    }
+  });
+
+  it("tells the background service when the window is hidden and shown again", async () => {
+    h.visibility = [];
+    let state: DocumentVisibilityState = "visible";
+    const vis = vi.spyOn(document, "visibilityState", "get").mockImplementation(() => state);
+    try {
+      function Host() {
+        useSessionsPoll();
+        return null;
+      }
+      render(
+        <ASProvider initial={emptyViewModel(NOW)}>
+          <Host />
+        </ASProvider>,
+      );
+      state = "hidden";
+      document.dispatchEvent(new Event("visibilitychange"));
+      state = "visible";
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(h.visibility).toEqual([false, true]);
     } finally {
       vis.mockRestore();
     }

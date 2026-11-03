@@ -152,6 +152,10 @@ export interface SessionRow {
   live: boolean;
   /** The host registry's state word for a live session (`idle`, `busy`, …). */
   hostStatus?: string;
+  /** Codex: who started the thread, when it was not the user (a subagent thread is no root). */
+  codexThreadSource?: string;
+  /** The live process, when the host's registry names this session. */
+  pid?: number;
   /** How `live` was decided: the registry named this session, or the cwd guess. */
   liveSource?: "registry" | "cwd";
   /** Waiting on the user: an open question in the transcript, or a hook prompt. */
@@ -259,6 +263,7 @@ export function markLive(
     if (row) {
       row.live = true;
       row.liveSource = "registry";
+      row.pid = s.pid;
       if (s.status) row.hostStatus = s.status;
       continue;
     }
@@ -693,7 +698,48 @@ export function listCodexSessions(configDir: string, limit: number): SessionRow[
     });
   }
   rows.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return rows.slice(0, limit);
+  const top = rows.slice(0, limit);
+  for (const r of top) {
+    const meta = r.file ? codexSessionMeta(r.file) : null;
+    if (!meta) continue;
+    r.cwd = meta.cwd;
+    if (meta.threadSource && meta.threadSource !== "user") r.codexThreadSource = meta.threadSource;
+  }
+  return top;
+}
+
+/**
+ * What a Codex rollout's first line (`session_meta`) says about where the
+ * session works and who started it. Reads at most 256 KiB — the line also
+ * carries the base instructions — and keeps only these fields. Measured on
+ * codex-cli 0.166.0: `cwd`, `source` (`exec`, …), `thread_source` (`user`, …).
+ */
+export function codexSessionMeta(file: string): { cwd: string | null; threadSource: string | null } | null {
+  let head: string;
+  try {
+    const fd = fs.openSync(file, "r");
+    try {
+      const buf = Buffer.alloc(256 * 1024);
+      head = buf.subarray(0, fs.readSync(fd, buf, 0, buf.length, 0)).toString("utf8");
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+  const line = head.split("\n")[0];
+  try {
+    const o = JSON.parse(line);
+    if (o?.type !== "session_meta") return null;
+    const p = o.payload ?? {};
+    return { cwd: typeof p.cwd === "string" ? p.cwd : null, threadSource: typeof p.thread_source === "string" ? p.thread_source : null };
+  } catch {
+    // A first line longer than the window: take the two fields by pattern, nothing else.
+    const cwd = /"cwd":"((?:[^"\\]|\\.)*)"/.exec(line)?.[1];
+    const ts = /"thread_source":"([a-z_]+)"/.exec(line)?.[1];
+    if (!line.startsWith('{"') || !line.includes('"session_meta"')) return null;
+    return { cwd: cwd ? JSON.parse(`"${cwd}"`) : null, threadSource: ts ?? null };
+  }
 }
 
 export interface CodexSessionLocation {

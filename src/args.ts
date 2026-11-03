@@ -39,6 +39,14 @@ const VALUE_FLAGS = new Set([
   "after-pid",
   "format",
   "session",
+  "cwd",
+  "how",
+  "with",
+  "effort",
+  "model",
+  "file",
+  "line",
+  "repo",
 ]);
 
 export interface ParsedArgs {

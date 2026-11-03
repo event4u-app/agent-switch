@@ -177,9 +177,72 @@ export interface HookEventRecord {
   /** SubagentStart/Stop: which subagent; `sessionId` is its parent. */
   agentId?: string;
   agentType?: string;
-  /** SubagentStart/Stop: where the subagent works (a worktree shows here). */
+  /** SessionStart, Stop, SubagentStart/Stop: the working folder at that moment (a worktree shows here). */
   cwd?: string;
+  /** SessionStart: who started this session, from the env it inherited
+   *  (docs/lineage-contract.md). Never inferred from timing or folders. */
+  lineage?: Lineage;
+  /** SessionStart: the Claude process (`CLAUDE_PID`), to tell a `/clear` in the same process from a new start. */
+  hostPid?: number;
   at: string; // ISO
+}
+
+export const LINEAGE_KINDS = ["subagent", "council", "arena", "court", "helper", "other", "continued_from"] as const;
+
+/** A positive integer pid from an env value, or undefined. */
+export function pidFrom(v: string | undefined): number | undefined {
+  return v && /^[1-9][0-9]{0,9}$/.test(v) ? Number(v) : undefined;
+}
+
+/**
+ * `/clear` starts a new session id in the same Claude process. The previous
+ * session of that process — the last SessionStart with the same host pid and
+ * another id — is the one that was cleared. Nothing else links them: without a
+ * pid on both sides there is no edge. Pure.
+ */
+export function clearedFrom(rec: HookEventRecord, earlier: readonly HookEventRecord[]): string | undefined {
+  if (rec.event !== "SessionStart" || rec.source !== "clear" || !rec.hostPid || !rec.sessionId) return undefined;
+  for (let i = earlier.length - 1; i >= 0; i--) {
+    const e = earlier[i];
+    if (e.event === "SessionStart" && e.hostPid === rec.hostPid && e.sessionId && e.sessionId !== rec.sessionId) return e.sessionId;
+  }
+  return undefined;
+}
+
+export interface Lineage {
+  /** The parent's session key (`provider/account/sessionId`) or bare session id. */
+  parent: string;
+  kind: (typeof LINEAGE_KINDS)[number] | "started_by" | "cleared";
+  label?: string;
+  /** The parent's tool, when the parent named it. */
+  agent?: string;
+  /** `lineage`: the parent set AGENT_SWITCH_PARENT_*; `host`: started inside an AS-hosted window
+   *  or resumed by AS; `hook`: the host's own hook data (a `/clear` in the same process). */
+  source: "lineage" | "host" | "hook";
+}
+
+const PARENT_RE = /^(?:[a-z][a-z0-9-]*\/[^/\s]{1,64}\/)?[A-Za-z0-9][A-Za-z0-9-]{3,63}$/;
+
+/**
+ * The lineage a session inherited through its environment. The contract's vars
+ * win; otherwise a session started inside an AS-hosted window (which exports
+ * AGENT_SWITCH_HOST_PANE) is that window's child — unless it IS that window's
+ * session. Malformed values are dropped, never guessed around. Pure.
+ */
+export function lineageFromEnv(env: Record<string, string | undefined>, ownSessionId: string | undefined, ownKey?: string): Lineage | undefined {
+  // A full key on another account with the same id is a continuation (takeover), not the session itself.
+  const own = (parent: string) => !!ownSessionId && (parent === ownSessionId || (parent.includes("/") ? (ownKey ? parent === ownKey : parent.endsWith(`/${ownSessionId}`)) : false));
+  const p = env.AGENT_SWITCH_PARENT_SESSION;
+  if (p && PARENT_RE.test(p) && !own(p)) {
+    const kind = (LINEAGE_KINDS as readonly string[]).includes(env.AGENT_SWITCH_PARENT_KIND ?? "") ? (env.AGENT_SWITCH_PARENT_KIND as Lineage["kind"]) : "other";
+    const label = env.AGENT_SWITCH_PARENT_LABEL?.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 80);
+    const agent = env.AGENT_SWITCH_PARENT_AGENT && /^[a-z][a-z0-9-]{0,30}$/.test(env.AGENT_SWITCH_PARENT_AGENT) ? env.AGENT_SWITCH_PARENT_AGENT : undefined;
+    // continued_from is set by AS itself when it resumes a session elsewhere (takeover, fork).
+    return { parent: p, kind, ...(label ? { label } : {}), ...(agent ? { agent } : {}), source: kind === "continued_from" ? "host" : "lineage" };
+  }
+  const h = env.AGENT_SWITCH_HOST_PANE;
+  if (h && PARENT_RE.test(h) && h.includes("/") && !own(h)) return { parent: h, kind: "started_by", source: "host" };
+  return undefined;
 }
 
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -201,8 +264,9 @@ export function recordFromPayload(o: any, at: string): HookEventRecord {
   if (event === "SubagentStart" || event === "SubagentStop") {
     rec.agentId = str(o.agent_id);
     rec.agentType = str(o.agent_type);
-    rec.cwd = str(o.cwd);
   }
+  // Where the session works right now: a mid-session worktree switch shows at the next Stop.
+  if (["SessionStart", "Stop", "SubagentStart", "SubagentStop"].includes(event)) rec.cwd = str(o.cwd);
   for (const k of Object.keys(rec) as (keyof HookEventRecord)[]) if (rec[k] === undefined) delete rec[k];
   return rec;
 }
@@ -244,6 +308,15 @@ export function resumeFields(o: any): HookEventRecord["resume"] {
     contextTokens: num(o.context_tokens),
     cacheLikelyExpired: o.prompt_cache_likely_expired,
   };
+}
+
+/** The folder a session's newest hook reported, or null. Subagent events name the subagent's folder, not the session's. */
+export function lastHookCwd(events: readonly HookEventRecord[], sessionId: string): string | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e.sessionId === sessionId && e.cwd && (e.event === "SessionStart" || e.event === "Stop")) return e.cwd;
+  }
+  return null;
 }
 
 /** The newest resume facts recorded for one session, or null. */

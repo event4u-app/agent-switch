@@ -66,6 +66,27 @@ function cli(args: string[]) {
   return Command.create((inTrayWindow() && trayScope(args)) || "agent-switch", args);
 }
 
+/** The attention queue (`agent-switch needs --json`). */
+export async function listNeeds(): Promise<{ items: import("./v3/needs.js").NeedItem[]; away: import("./v3/needs.js").AwayDigest | null }> {
+  const o = JSON.parse(await runCli(["needs", "--json"]));
+  return { items: Array.isArray(o.items) ? o.items : [], away: o.away ?? null };
+}
+
+/** "Later": hide one item until it changes. */
+export async function needsLater(id: string): Promise<void> {
+  await runCli(["needs", "later", id]);
+}
+
+/** Tell the background service whether the window is shown, so it can pause
+ *  work only the window displays (the PR refresh). Best-effort. */
+export async function reportVisibility(visible: boolean): Promise<void> {
+  try {
+    await cli(["app-visibility", visible ? "visible" : "hidden"]).execute();
+  } catch {
+    /* an older CLI without the command: nothing pauses, nothing breaks */
+  }
+}
+
 async function runCli(args: string[]): Promise<string> {
   const out = await cli(args).execute();
   if (out.code !== 0) throw new Error(out.stderr || `agent-switch ${args.join(" ")} failed`);

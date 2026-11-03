@@ -26,7 +26,7 @@ export function RowMenu({ trigger, items, align = "end" }: { trigger: ReactEleme
         <Menu.Content
           align={align}
           sideOffset={6}
-          className="ac-dialog z-50 min-w-[240px] rounded-lg border border-ac-line2 bg-ac-panel p-1 shadow-[var(--ac-shadow)]"
+          className="ac-dialog z-50 min-w-[240px] rounded-xl border border-ac-line2 bg-ac-panel p-1 shadow-[var(--ac-shadow)]"
         >
           {items.map((item) => (
             <Fragment key={item.id}>

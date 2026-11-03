@@ -25,6 +25,7 @@ import {
   resumeFields,
   resumeFactsFor,
   recordFromPayload,
+  lastHookCwd,
   childrenOf,
   hooksRecordSubagents,
 } from "../src/hooks.js";
@@ -378,9 +379,21 @@ test("recordFromPayload keeps the subagent's id, type, parent and cwd from a liv
   for (const banned of ["last_assistant_message", "transcript", "\"ok\"", "prompt_id"]) assert.ok(!raw.includes(banned), `${banned} not recorded`);
 });
 
-test("recordFromPayload adds no subagent fields to other events", () => {
+test("recordFromPayload adds no subagent fields to other events, and keeps the folder of a turn", () => {
   const rec = recordFromPayload({ hook_event_name: "Stop", session_id: "s1", cwd: "/x", agent_id: "nope" }, at);
-  assert.deepEqual(rec, { event: "Stop", sessionId: "s1", at });
+  assert.deepEqual(rec, { event: "Stop", sessionId: "s1", cwd: "/x", at });
+  assert.deepEqual(recordFromPayload({ hook_event_name: "Notification", session_id: "s1", cwd: "/x" }, at), { event: "Notification", sessionId: "s1", at }, "only starts and turn ends carry a folder");
+});
+
+test("lastHookCwd: the newest start or turn end of that session; a subagent's folder never counts", () => {
+  const ev = [
+    { event: "SessionStart", sessionId: "s1", cwd: "/repo", at },
+    { event: "Stop", sessionId: "s1", cwd: "/repo/.worktrees/w", at },
+    { event: "SubagentStart", sessionId: "s1", cwd: "/elsewhere", agentId: "a", at },
+    { event: "Stop", sessionId: "s2", cwd: "/other", at },
+  ];
+  assert.equal(lastHookCwd(ev, "s1"), "/repo/.worktrees/w");
+  assert.equal(lastHookCwd(ev, "s3"), null);
 });
 
 test("childrenOf: one entry per subagent of that session, running until its stop or the parent's end", () => {

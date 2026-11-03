@@ -65,7 +65,7 @@ export function Select({
           <SelectPrimitive.Content
             position="popper"
             sideOffset={4}
-            className="ac-dialog z-50 max-h-[320px] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-lg border border-ac-line2 bg-ac-panel shadow-[var(--ac-shadow)]"
+            className="ac-dialog z-50 max-h-[320px] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-xl border border-ac-line2 bg-ac-panel shadow-[var(--ac-shadow)]"
           >
             <SelectPrimitive.Viewport className="p-1">
               {options.map((o) => (

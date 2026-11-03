@@ -6,6 +6,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { shellLine } from "../src/resume.js";
+
 // End-to-end smokes over the BUILT CLI (`dist/index.js`) — the layer the round-2
 // blocker (F1) lived in, previously untested. Requires `npm run build` first
 // (CI runs it); skips cleanly otherwise so a bare `npm test` never false-fails.
@@ -258,6 +260,13 @@ test("`sessions --json` lists a session's subagents from its hooks, and leaves `
     seedTranscript(home, "work", "-tmp-proj", "0000-parent");
     const before = JSON.parse(run(home, ["sessions", "--json"]));
     assert.ok(!("children" in before[0]), "no hooks: no children field, not an empty list");
+    // Without hooks only a count of subagent transcripts, by file name.
+    const sub = path.join(home, "claude", "work", "config", "projects", "-tmp-proj", "0000-parent", "subagents");
+    fs.mkdirSync(sub, { recursive: true });
+    fs.writeFileSync(path.join(sub, "agent-x.jsonl"), "");
+    const counted = JSON.parse(run(home, ["sessions", "--json"]))[0];
+    assert.deepEqual([counted.childCount, counted.childSource, "children" in counted], [1, "counted", false]);
+    fs.rmSync(sub, { recursive: true });
 
     run(home, ["hooks", "install", "work"]);
     assert.deepEqual(JSON.parse(run(home, ["sessions", "--json"]))[0].children, [], "hooks, no subagent yet: empty");
@@ -272,10 +281,179 @@ test("`sessions --json` lists a session's subagents from its hooks, and leaves `
 
     const kids = JSON.parse(run(home, ["sessions", "--json"]))[0].children;
     assert.equal(kids.length, 4, "4 subagents, 4 children");
-    assert.deepEqual(kids[0], { agentId: "a1", type: "general-purpose", state: "done", cwd: "/tmp/proj/.worktrees/w1" });
+    assert.deepEqual(kids[0], { kind: "subagent", agentId: "a1", type: "general-purpose", state: "done", cwd: "/tmp/proj/.worktrees/w1", source: "hook" });
     assert.deepEqual(kids.slice(1).map((k: any) => k.state), ["running", "running", "running"]);
     const ring = fs.readFileSync(path.join(home, "events", "claude-work.jsonl"), "utf8");
     assert.ok(!ring.includes("secret answer"), "the subagent's answer is never stored");
+
+    // A council seat names its parent through the lineage contract; a child of a
+    // hosted window through AGENT_SWITCH_HOST_PANE. Both arrive via the seat's own hook.
+    seedTranscript(home, "work", "-tmp-seat", "1111-seat");
+    seedTranscript(home, "work", "-tmp-kid", "2222-kid");
+    const seat = (payload: object, env: Record<string, string>) =>
+      execFileSync("node", [CLI, "__hook-event"], { env: { ...process.env, AGENT_SWITCH_HOME: home, CLAUDE_CONFIG_DIR: cfg, ...env }, input: JSON.stringify(payload) });
+    seat({ hook_event_name: "SessionStart", session_id: "1111-seat", source: "startup" }, { AGENT_SWITCH_PARENT_SESSION: "claude/work/0000-parent", AGENT_SWITCH_PARENT_KIND: "council", AGENT_SWITCH_PARENT_LABEL: "seat 1" });
+    seat({ hook_event_name: "SessionStart", session_id: "2222-kid", source: "startup" }, { AGENT_SWITCH_HOST_PANE: "claude/work/0000-parent" });
+    const rows = JSON.parse(run(home, ["sessions", "--json"]));
+    const parentRow = rows.find((r: any) => r.sessionId === "0000-parent");
+    assert.deepEqual(parentRow.children.slice(4).map((c: any) => [c.kind, c.sessionKey, c.source]), [["council", "claude/work/1111-seat", "lineage"], ["started_by", "claude/work/2222-kid", "host"]]);
+    assert.equal(parentRow.childCount, 6);
+    assert.equal(parentRow.childSource, "hook+host+lineage");
+    assert.equal(rows.find((r: any) => r.sessionId === "1111-seat").parent, "claude/work/0000-parent");
+
+    // /clear in the same Claude process: the new session hangs under the cleared one.
+    seedTranscript(home, "work", "-tmp-clr", "3333-before");
+    seedTranscript(home, "work", "-tmp-clr", "4444-after");
+    seat({ hook_event_name: "SessionStart", session_id: "3333-before", source: "startup" }, { CLAUDE_PID: "4242" });
+    seat({ hook_event_name: "SessionStart", session_id: "4444-after", source: "clear" }, { CLAUDE_PID: "4242" });
+    const after = JSON.parse(run(home, ["sessions", "--json"])).find((r: any) => r.sessionId === "4444-after");
+    assert.equal(after.parent, "claude/work/3333-before");
+
+    const tree = JSON.parse(run(home, ["sessions", "--tree", "--json"]));
+    assert.deepEqual(tree.map((r: any) => r.sessionId).sort(), ["0000-parent", "3333-before"], "roots only");
+    const node = (id: string) => tree.find((r: any) => r.sessionId === id);
+    assert.deepEqual(node("0000-parent").sessions.map((r: any) => r.sessionId).sort(), ["1111-seat", "2222-kid"]);
+    assert.deepEqual(node("3333-before").sessions.map((r: any) => r.sessionId), ["4444-after"]);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`needs` lists what waits, says where to answer, hides on later and keeps history", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work"); // .claude.json without an account: not signed in
+    const cfg = path.join(home, "claude", "work", "config");
+    fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "a@example.com", accountUuid: "u" } }));
+    const file = seedTranscript(home, "work", "-tmp-proj", "0000-asks");
+    const t = new Date(Date.now() - 60_000);
+    fs.utimesSync(file, t, t);
+    fs.mkdirSync(path.join(home, "events"));
+    fs.writeFileSync(path.join(home, "events", "claude-work.jsonl"), JSON.stringify({ event: "Notification", sessionId: "0000-asks", notificationType: "permission_prompt", at: new Date(t.getTime() + 1000).toISOString() }) + "\n");
+    seed(home, "claude", "side"); // no account at all
+
+    const first = JSON.parse(run(home, ["needs", "--json"]));
+    assert.deepEqual(first.items.map((i: any) => [i.kind, i.who, i.verb]), [["approval", "seeded", "Focus terminal"], ["signin", "side", "Sign in"]]);
+
+    run(home, ["needs", "later", first.items[1].id]);
+    assert.equal(JSON.parse(run(home, ["needs", "--json"])).items.length, 1, "later hides it");
+
+    fs.utimesSync(file, new Date(), new Date()); // the user answered in the terminal
+    const after = JSON.parse(run(home, ["needs", "--json"]));
+    assert.deepEqual(after.items, []);
+    assert.equal(after.history[0].kind, "approval", "the answered prompt is history");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`sessions --json` git facts follow the folder of the newest turn (a worktree switch shows after the next turn)", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    const repo = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
+    const g = (...a: string[]) => execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { stdio: "ignore" });
+    g("init", "-q", "-b", "main");
+    fs.writeFileSync(path.join(repo, "a"), "1");
+    g("add", ".");
+    g("commit", "-qm", "one");
+    g("worktree", "add", "-q", "-b", "feat/wt", path.join(repo, ".wt"));
+    seed(home, "claude", "work");
+    const dir = path.join(home, "claude", "work", "config", "projects", "-repo");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "5555-git.jsonl"), JSON.stringify({ cwd: repo, summary: "git" }) + "\n");
+    const before = JSON.parse(run(home, ["sessions", "--json"]))[0].git;
+    assert.deepEqual([before.branch, before.worktree, before.cwdSource], ["main", false, "transcript"]);
+
+    run(home, ["hooks", "install", "work"]);
+    execFileSync("node", [CLI, "__hook-event"], { env: { ...process.env, AGENT_SWITCH_HOME: home, CLAUDE_CONFIG_DIR: path.join(home, "claude", "work", "config") }, input: JSON.stringify({ hook_event_name: "Stop", session_id: "5555-git", cwd: path.join(repo, ".wt") }) });
+    const after = JSON.parse(run(home, ["sessions", "--json"]))[0].git;
+    assert.deepEqual([after.branch, after.worktree, after.cwdSource], ["feat/wt", true, "hook"]);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("library: pin copies to the vault, name/tag/search, restore after Claude deleted the transcript", { ...gate, skip: gate.skip || (Number(process.versions.node.split(".")[0]) < 22 ? "the library needs node:sqlite" : false) }, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work");
+    const file = seedTranscript(home, "work", "-tmp-lib", "7f3c2a91-4b1e");
+    run(home, ["sessions", "pin", "7f3c2a91-4b1e"]);
+    run(home, ["sessions", "name", "7f3c2a91-4b1e", "Release", "notes"]);
+    run(home, ["sessions", "tag", "7f3c2a91-4b1e", "docs"]);
+    const hits = JSON.parse(run(home, ["sessions", "search", "release", "--json"]));
+    assert.deepEqual(hits.map((h: any) => [h.key, h.library.name, h.library.tags, h.library.pinned]), [["claude/work/7f3c2a91-4b1e", "Release notes", ["docs"], true]]);
+    assert.ok(fs.existsSync(path.join(home, "vault", "claude", "work", "7f3c2a91-4b1e", "transcript.jsonl")), "pinning copied it");
+
+    const original = fs.readFileSync(file, "utf8");
+    fs.rmSync(file); // Claude's cleanup
+    run(home, ["sessions", "vault", "claude/work/7f3c2a91-4b1e", "restore"]);
+    assert.equal(fs.readFileSync(file, "utf8"), original);
+    assert.deepEqual(JSON.parse(run(home, ["sessions", "search", "nothing-like-this", "--json"])), []);
+
+    // A Codex session is one rollout file: pinned, vaulted and restored the same way.
+    const rollout = seedCodexRollout(home, "work", CODEX_UUID);
+    run(home, ["sessions", "pin", CODEX_UUID]);
+    const codexOriginal = fs.readFileSync(rollout, "utf8");
+    fs.rmSync(rollout);
+    run(home, ["sessions", "vault", `codex/work/${CODEX_UUID}`, "restore"]);
+    assert.equal(fs.readFileSync(rollout, "utf8"), codexOriginal);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`sessions resume`: a dirty checkout gets a new worktree at the session's last commit, with the commands", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    const repo = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-res-")));
+    const g = (...a: string[]) => execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { encoding: "utf8" });
+    g("init", "-q", "-b", "main");
+    fs.writeFileSync(path.join(repo, "a"), "1");
+    g("add", ".");
+    g("commit", "-qm", "one");
+    const sha = g("rev-parse", "HEAD").trim();
+    fs.writeFileSync(path.join(repo, "a"), "work in progress");
+    seed(home, "claude", "work");
+    const dir = path.join(home, "claude", "work", "config", "projects", "-repo");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "6666-resume.jsonl"), JSON.stringify({ cwd: repo }) + "\n");
+    const p = JSON.parse(run(home, ["sessions", "resume", "6666-resume", "--json"]));
+    assert.equal(p.target, "new_worktree");
+    assert.ok(p.checks.some((c: any) => !c.ok && /not committed/.test(c.text)));
+    assert.deepEqual(p.commands[0], ["git", "-C", repo, "worktree", "add", "--detach", `${repo}-resume-6666-res`, sha]);
+    // Quoted by the same rule the command uses (a Windows path always is: it has backslashes).
+    assert.equal(p.commandLines[1], shellLine(["agent-switch", "run", "work", "--cwd", `${repo}-resume-6666-res`, "--", "--resume", "6666-resume"]));
+    assert.equal(fs.existsSync(`${repo}-resume-6666-res`), false, "nothing ran without --yes");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("open: targets for a session's worktree root, a default per repo, and nothing outside its folder", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    const repo = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-open-")));
+    execFileSync("git", ["-C", repo, "init", "-q", "-b", "main"]);
+    fs.mkdirSync(path.join(repo, "src"));
+    seed(home, "claude", "work");
+    const dir = path.join(home, "claude", "work", "config", "projects", "-repo");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "9999-open.jsonl"), JSON.stringify({ cwd: path.join(repo, "src") }) + "\n");
+    const t = JSON.parse(run(home, ["open-targets", "9999-open", "--json"]));
+    assert.equal(t.root, repo, "the worktree root, not the subfolder");
+    assert.deepEqual(t.agentApp, { app: "claude-desktop", label: "Claude Desktop", note: "opens the app" });
+    assert.deepEqual(t.targets.map((x: any) => x.target), ["vscode", "cursor", "phpstorm", "idea", "finder", "terminal"]);
+    run(home, ["open-default", "finder", "--repo", repo]);
+    if (t.targets.find((x: any) => x.target === "finder").installed) {
+      const p = JSON.parse(run(home, ["open", "9999-open", "--dry-run"]));
+      assert.equal(p.target, "finder", "the repo's default");
+      assert.ok(p.args.includes(repo));
+    }
+    const out = spawnSync("node", [CLI, "open", "9999-open", "--with", "finder", "--file", "../..", "--dry-run"], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
+    assert.notEqual(out.status, 0);
+    assert.match(out.stderr, /outside the session's folder/);
+    assert.match(spawnSync("node", [CLI, "open", "nope-no-such"], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" }).stderr, /unknown app "nope-no-such" and no session/);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
@@ -1133,7 +1311,7 @@ test("auth-status --json, doctor --json and activity --json never contain a toke
 
 test("pools: dir --json resolves a pool rule to the freshest member and explains why", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
-  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
+  const repo = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
   try {
     for (const n of ["a", "b"]) {
       const cfg = path.join(home, "claude", n, "config");
@@ -1231,7 +1409,7 @@ test("remove refuses a profile with an active rebind; --force drops it (stash cl
 
 test("mappings renders a pool rule as a pool; activity --limit 0 is rejected", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
-  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
+  const repo = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
   try {
     seed(home, "claude", "a");
     run(home, ["pool", "create", "Work"]);
@@ -1796,7 +1974,7 @@ test("browsers --json lists installed browsers as {id, name}", gate, () => {
 
 test("dir: a folder bound to a pool that no longer exists is refused with exit 86, never started elsewhere", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-pool-gone-"));
-  const folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-pool-folder-")));
+  const folder = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-pool-folder-")));
   try {
     seed(home, "claude", "personal");
     run(home, ["use", "personal"]);
@@ -1837,7 +2015,7 @@ test("import: a seeded import is marked as sharing the default login, and doctor
 
 test("dir: a folder bound to a disabled account is refused with exit 86, never started on another one", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bound-off-"));
-  const folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-bound-folder-")));
+  const folder = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-bound-folder-")));
   try {
     seed(home, "claude", "work");
     seed(home, "claude", "personal");
@@ -1856,7 +2034,7 @@ test("dir: a folder bound to a disabled account is refused with exit 86, never s
 
 test("dir: balances on the app's latest usage read without the background service", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-latest-dir-"));
-  const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-latest-cwd-")));
+  const cwd = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-latest-cwd-")));
   try {
     const now = Date.now();
     const reset = new Date(now + 3 * 3600e3).toISOString();
@@ -1881,7 +2059,7 @@ test("dir: balances on the app's latest usage read without the background servic
 
 test("mark-shared: marking a profile by hand makes balancing skip it, --off clears it", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-mark-"));
-  const cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-mark-cwd-")));
+  const cwd = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-mark-cwd-")));
   try {
     seed(home, "claude", "work");
     run(home, ["mark-shared", "work"]);
