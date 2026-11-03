@@ -5,8 +5,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { TmuxHost, type HostedSession } from "../src/host/tmux-host.js";
-import { resumeArgs, toChat, toTerminal, ViewRefused, type ViewDeps } from "../src/commands/view.js";
+import type { HostedSession } from "../src/host/tmux-host.js";
+import type { ViewDeps } from "../src/commands/view.js";
+
+// State root for this file, set before the modules that read it at import.
+const HOME = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-view-home-")));
+process.env.AGENT_SWITCH_HOME = HOME;
+const { TmuxHost } = await import("../src/host/tmux-host.js");
+const { parkedArgv, realViewDeps, restoreAfterChat, resumeArgs, toChat, toTerminal, ViewRefused } = await import("../src/commands/view.js");
+const { InputLeases } = await import("../src/host/lease.js");
 
 function fakeHost(rows: HostedSession[]) {
   const log: string[] = [];
@@ -93,4 +100,25 @@ test("20 switches on a real tmux window: one program at a time, always the same 
   } finally {
     spawnSync("tmux", ["-L", socket, "kill-server"]);
   }
+});
+
+test("restoreAfterChat: only a parked session is brought back; it never throws", () => {
+  const rows = [row({ parked: true }), row({ key: "claude/work/s2", sessionId: "s2" })];
+  const { host, log } = fakeHost(rows);
+  assert.equal(restoreAfterChat("claude/work/s2", deps(host)), null, "not parked: nothing to do");
+  assert.equal(restoreAfterChat("claude/work/s1", deps(host)), "claude/work/s1");
+  assert.deepEqual(log, ["respawn claude/work/s1 claude --resume s1"]);
+  rows[0].parked = true;
+  assert.equal(restoreAfterChat("claude/work/s1", deps(host, { writer: () => "app bridge:1" })), null, "a refusal is swallowed");
+  assert.equal(restoreAfterChat("claude/work/gone", deps(host)), null);
+});
+
+test("realViewDeps: the writer is a live lease holder; an unknown session runs no turn", () => {
+  const d = realViewDeps();
+  assert.equal(d.writer("claude/work/s1"), null);
+  new InputLeases(HOME).acquire("claude/work/s1", { id: "bridge:1", pid: process.pid, kind: "app" });
+  assert.equal(d.writer("claude/work/s1"), "app bridge:1");
+  assert.equal(d.turnRunning("claude/nobody/nothing"), false);
+  assert.equal(d.configDir("claude", "work"), path.join(HOME, "claude", "work", "config"));
+  assert.deepEqual(parkedArgv("k", "/cli.js"), [process.execPath, "/cli.js", "host", "parked", "k"]);
 });

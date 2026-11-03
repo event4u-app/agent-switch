@@ -265,8 +265,19 @@ export function commitStaged(t: Target, message: string): string {
 
 /** Other live sessions working in the same worktree (a conflict risk for stage/discard). */
 export function sharedWorktree(t: Target, others: readonly { key: string; toplevel: string | null; live: boolean }[]): string[] {
-  const top = git(t.cwd, ["rev-parse", "--show-toplevel"]).out.trim();
-  return others.filter((o) => o.live && o.key !== t.key && o.toplevel === top).map((o) => o.key);
+  const top = samePathKey(git(t.cwd, ["rev-parse", "--show-toplevel"]).out.trim());
+  return others.filter((o) => o.live && o.key !== t.key && o.toplevel && samePathKey(o.toplevel) === top).map((o) => o.key);
+}
+
+/** One spelling per folder: git writes `C:/Users/…`, Node `C:\Users\…` and 8.3 short names; Windows ignores case. */
+function samePathKey(p: string): string {
+  let r = path.resolve(p);
+  try {
+    r = fs.realpathSync.native(r);
+  } catch {
+    /* gone: compare as written */
+  }
+  return process.platform === "win32" ? r.toLowerCase() : r;
 }
 
 export function cmdDiff(arg: string | undefined, action: string | undefined, flags: Record<string, string | boolean>): void {

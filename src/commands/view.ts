@@ -13,7 +13,7 @@ import { provider as providerOf } from "../providers.js";
 import { InputLeases } from "../host/lease.js";
 import { TmuxHost, type HostedSession } from "../host/tmux-host.js";
 import { turnInFlight } from "../telemetry.js";
-import { target } from "./bridge.js";
+import { listSessions } from "../sessions.js";
 
 export class ViewRefused extends Error {}
 
@@ -74,13 +74,12 @@ export function realViewDeps(): ViewDeps {
   const leases = new InputLeases(ROOT);
   return {
     host,
+    // Claude's transcript says whether a turn is open; Codex is checked by its bridge (app-server).
     turnRunning: (key) => {
-      try {
-        const t = target(key);
-        return !!t.transcript && turnInFlight(t.transcript, Date.now(), 120_000);
-      } catch {
-        return false;
-      }
+      const [provider, account, id] = key.split("/");
+      if (provider !== "claude" || !account || !id) return false;
+      const row = listSessions(configDir("claude", account), 50).find((r) => r.sessionId === id);
+      return !!row?.file && turnInFlight(row.file, Date.now(), 120_000);
     },
     writer: (key) => {
       const l = leases.read(key);
@@ -93,9 +92,10 @@ export function realViewDeps(): ViewDeps {
 }
 
 /** After a chat's bridge ends: a parked hosted session gets its terminal back. Never throws. */
-export function restoreAfterChat(key: string, d: ViewDeps = realViewDeps()): string | null {
+export function restoreAfterChat(key: string, deps?: ViewDeps): string | null {
   try {
-    if (!TmuxHost.available()) return null;
+    if (!deps && !TmuxHost.available()) return null;
+    const d = deps ?? realViewDeps();
     const s = d.host.list().find((x) => x.key === key);
     if (!s?.parked) return null;
     return toTerminal(d, key).key;

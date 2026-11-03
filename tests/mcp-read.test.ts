@@ -4,7 +4,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { readClaude, readCodex } from "../src/commands/mcp.js";
+// State root for this file, set before the modules that read it at import.
+const HOME = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-mcp-home-")));
+process.env.AGENT_SWITCH_HOME = HOME;
+const { cmdMcp, readAll, readClaude, readCodex } = await import("../src/commands/mcp.js");
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "asw-mcp-"));
 
@@ -37,4 +40,25 @@ test("Codex: [mcp_servers.<name>] tables, quoted or not, by transport", () => {
   assert.deepEqual(a.servers, [{ name: "docs", transport: "stdio", scope: "user" }, { name: "web-search", transport: "http", scope: "user" }]);
   assert.deepEqual(a.plugins, []);
   assert.doesNotMatch(JSON.stringify(a), /SECRET/);
+});
+
+test("readAll and the listing: every Claude and Codex account, with what it has or that it has nothing", () => {
+  const claude = path.join(HOME, "claude", "work", "config");
+  const codex = path.join(HOME, "codex", "me", "config");
+  fs.mkdirSync(claude, { recursive: true });
+  fs.mkdirSync(codex, { recursive: true });
+  fs.writeFileSync(path.join(claude, ".claude.json"), JSON.stringify({ projects: { "/r": { mcpServers: { db: { url: "https://x" } } } } }));
+  fs.writeFileSync(path.join(claude, "settings.json"), JSON.stringify({ enabledPlugins: { "p@m": false } }));
+  assert.deepEqual(readAll().map((a) => [a.key, a.servers.length, a.plugins.length]), [["claude/work", 1, 1], ["codex/me", 0, 0]]);
+  const lines: string[] = [];
+  const log = console.log;
+  console.log = (m: string) => void lines.push(m);
+  try {
+    cmdMcp(undefined, undefined, {});
+    cmdMcp(undefined, undefined, { json: true });
+  } finally {
+    console.log = log;
+  }
+  assert.deepEqual(lines.slice(0, 5), [`claude/work  ${path.join(claude, ".claude.json")}`, "  mcp db (http) in /r", "  plugin p@m (off)", `codex/me  ${path.join(codex, "config.toml")}`, "  nothing configured"]);
+  assert.deepEqual(JSON.parse(lines[5]).map((a: { key: string }) => a.key), ["claude/work", "codex/me"]);
 });

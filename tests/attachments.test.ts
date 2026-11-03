@@ -38,7 +38,7 @@ test("a file in the session's folder is named by its path; one outside is staged
   const outside = path.join(o.root, "notes.txt");
   fs.writeFileSync(outside, "hello");
   const r = resolveAttachment({ path: outside }, o) as { ref: string };
-  assert.match(r.ref, /^@.+\/[0-9a-f]{16}-notes\.txt$/);
+  assert.match(r.ref, /^@.+[\\/][0-9a-f]{16}-notes\.txt$/);
   const staged = r.ref.slice(1);
   assert.equal(fs.readFileSync(staged, "utf8"), "hello");
   assert.equal(fs.statSync(staged).mode & 0o777, 0o600);
