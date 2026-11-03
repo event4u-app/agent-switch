@@ -161,8 +161,9 @@ test("libraryRound: open PR → auto-kept and vaulted; merged > 24 h → archive
   assert.equal((await entry())!.archived, false);
 
   // `sessions library --json`: the page's rows, from the store plus the session on disk.
-  const cli = new URL("../src/index.js", import.meta.url).pathname;
-  const r = spawnSync(process.execPath, [cli, "sessions", "library", "--json"], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
+  // The command module only: the CLI entry would load every command into the coverage run.
+  const mod = new URL("../src/commands/library.js", import.meta.url).href;
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e", `const { cmdLibrary } = await import(${JSON.stringify(mod)}); await cmdLibrary("library", undefined, undefined, { json: true });`], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   const l = JSON.parse(r.stdout);
   assert.equal(l.autoKeep, true);
