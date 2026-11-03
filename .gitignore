@@ -19,3 +19,4 @@ gui/src-tauri/gen/
 
 # code-graph cache, lock and opt-in markers (the map itself is tracked)
 agents/map/.build/
+relay/target/

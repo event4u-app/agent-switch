@@ -22,7 +22,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { buildHookEntry, HOOK_EVENTS } from "../hooks.js";
+import { buildHookEntry, HOOK_EVENTS, relayPath } from "../hooks.js";
 import { readTmuxRegistry, type TmuxRegistry } from "../tmux.js";
 
 export const HOST_SESSION = "host";
@@ -128,7 +128,7 @@ export class TmuxHost {
 
   /** The `--settings` file that carries AS's hooks into hosted Claude sessions. */
   ensureHookSettings(bin = "agent-switch"): string {
-    const hooks = Object.fromEntries(HOOK_EVENTS.map((ev) => [ev, [buildHookEntry(bin)]]));
+    const hooks = Object.fromEntries(HOOK_EVENTS.map((ev) => [ev, [buildHookEntry(bin, relayPath(this.root))]]));
     fs.mkdirSync(path.dirname(this.settingsFile), { recursive: true, mode: 0o700 });
     fs.writeFileSync(this.settingsFile, JSON.stringify({ hooks }, null, 2) + "\n", { mode: 0o600 });
     return this.settingsFile;

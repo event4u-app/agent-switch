@@ -1,0 +1,20 @@
+[package]
+name = "as-hook"
+version = "0.1.0"
+edition = "2021"
+description = "Agent Switch hook relay: stdin → engine socket, CLI fallback"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "as-hook"
+path = "src/main.rs"
+
+[dependencies]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
