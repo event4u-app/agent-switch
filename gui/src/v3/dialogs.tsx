@@ -33,7 +33,7 @@ export function Modal({ title, kicker, sub, width = 600, children, footer, onClo
             <X />
           </IconButton>
         </div>
-        <div className="min-h-0 overflow-y-auto px-5 py-4">{children}</div>
+        <div className="min-h-0 relative overflow-y-auto px-5 py-4">{children}</div>
         <div className="flex items-center justify-end gap-2 border-t border-ac-line bg-ac-rail px-5 py-3">{footer}</div>
       </div>
     </div>

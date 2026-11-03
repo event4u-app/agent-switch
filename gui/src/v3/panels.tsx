@@ -23,7 +23,7 @@ function Window({ title, aside, onHide, children }: { title: string; aside?: Rea
           </IconButton>
         </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      <div className="min-h-0 flex-1 relative overflow-y-auto">{children}</div>
     </aside>
   );
 }

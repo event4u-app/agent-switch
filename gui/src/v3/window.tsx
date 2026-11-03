@@ -247,7 +247,7 @@ export function V3Window({ data, slots, act }: { data: V3Data; slots: V3Slots; a
 
   const sessionsWindow = (
     <aside aria-label="Sessions window" className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-ac-line bg-ac-panel">
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 relative overflow-y-auto">
         <NeedsZone items={needs} away={data.away} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
         <SessionsZone
           sessions={data.sessions}

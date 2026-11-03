@@ -139,7 +139,9 @@ export function SessionRow({
           ) : (
             <SessionStateIcon state={s.state} />
           )}
-          <span className={cn("min-w-0 flex-1 truncate text-[13px]", active ? "font-medium text-ac-text" : "text-ac-soft")} title={s.title}>
+          {/* Keyed on the weight: Chromium keeps the ellipsis decision of the old weight
+              when only font-weight changes, and the heavier title then runs past the edge. */}
+          <span key={active ? "on" : "off"} className={cn("min-w-0 flex-1 truncate text-[13px]", active ? "font-medium text-ac-text" : "text-ac-soft")} title={s.title}>
             {s.title}
           </span>
           {trailing(s)}
