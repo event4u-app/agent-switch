@@ -6,10 +6,10 @@
 
 ## Overall
 
-**83 / 106 steps done · 78%**
+**85 / 106 steps done · 80%**
 
 ```text
-███████████████████████████████░░░░░░░░░   78%
+████████████████████████████████░░░░░░░░   80%
 ```
 
 ## Open roadmaps
@@ -17,7 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 11 | 81 | 3 | 78 | 0 | 0 | 0 | ██████████ 96% |
-| 2 | [road-to-agent-switch-v3-client.md](roadmaps/road-to-agent-switch-v3-client.md) | 6 | 25 | 20 | 5 | 0 | 0 | 0 | ██░░░░░░░░ 20% |
+| 2 | [road-to-agent-switch-v3-client.md](roadmaps/road-to-agent-switch-v3-client.md) | 6 | 25 | 18 | 7 | 0 | 0 | 0 | ███░░░░░░░ 28% |
 
 ---
 
@@ -64,12 +64,12 @@
 
 ### [road-to-agent-switch-v3-client.md](roadmaps/road-to-agent-switch-v3-client.md)
 
-**agent-switch v3.1 "Client" — chat view, diffs, terminal ⇄ chat** — 5 / 25 done (20%)
+**agent-switch v3.1 "Client" — chat view, diffs, terminal ⇄ chat** — 7 / 25 done (28%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 0 | Spikes and ADRs | ✅ done | 0 | 5 | 0 | 0 | 100% |
-| 1 | Read-only timeline | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 1 | Read-only timeline | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
 | 2 | Interactive chat view | ⬜ not started | 7 | 0 | 0 | 0 | 0% |
 | 3 | Changes and review | ⬜ not started | 6 | 0 | 0 | 0 | 0% |
 | 4 | Terminal ⇄ chat switch | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
@@ -82,5 +82,5 @@ Days since each active roadmap landed at its path and since its last ticked step
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
 | [road-to-agent-switch-v3-central.md](roadmaps/road-to-agent-switch-v3-central.md) | 1 | 1 |
-| [road-to-agent-switch-v3-client.md](roadmaps/road-to-agent-switch-v3-client.md) | — | — |
+| [road-to-agent-switch-v3-client.md](roadmaps/road-to-agent-switch-v3-client.md) | 0 | 0 |
 

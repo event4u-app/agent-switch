@@ -1,0 +1,31 @@
+{
+  "_note": "Synthetic, built from `codex app-server generate-json-schema` (codex-cli 0.166.0) ThreadReadResponse shapes: no Codex login could run a turn when it was written. Replace with a recorded thread once one can.",
+  "thread": {
+    "id": "thr_1",
+    "turns": [
+      {
+        "id": "turn_1",
+        "status": "completed",
+        "startedAt": 1793700000,
+        "durationMs": 4200,
+        "items": [
+          { "type": "userMessage", "id": "i1", "content": [{ "type": "text", "text": "rename foo to bar in util.ts" }, { "type": "localImage", "path": "/work/shot.png" }] },
+          { "type": "reasoning", "id": "i2", "summary": [], "content": [] },
+          { "type": "commandExecution", "id": "i3", "command": "rg -n foo util.ts", "cwd": "/work", "status": "completed", "exitCode": 0, "aggregatedOutput": "3:const foo = 1;\n", "commandActions": [] },
+          { "type": "fileChange", "id": "i4", "status": "completed", "changes": [{ "path": "util.ts", "kind": { "type": "update", "move_path": null }, "diff": "@@ -3 +3 @@\n-const foo = 1;\n+const bar = 1;\n" }] },
+          { "type": "agentMessage", "id": "i5", "text": "Renamed foo to bar." },
+          { "type": "imageGeneration", "id": "i6", "status": "completed" }
+        ]
+      },
+      {
+        "id": "turn_2",
+        "status": "failed",
+        "error": { "message": "usage limit reached" },
+        "items": [
+          { "type": "userMessage", "id": "i7", "content": [{ "type": "text", "text": "now run the tests" }] },
+          { "type": "commandExecution", "id": "i8", "command": "npm test", "cwd": "/work", "status": "failed", "exitCode": 1, "aggregatedOutput": "1 failing\n", "commandActions": [] }
+        ]
+      }
+    ]
+  }
+}

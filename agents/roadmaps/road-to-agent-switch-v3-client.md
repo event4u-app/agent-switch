@@ -78,10 +78,19 @@ drag & drop upload · D10 diffs, collapsible · D11 "a real client".
 
 ## Phase 1 — Read-only timeline
 
-- [ ] AS event model v1 (`turn`, `message.delta`, `tool.*` with `parentToolId`,
+- [x] AS event model v1 (`turn`, `message.delta`, `tool.*` with `parentToolId`,
       `diff`, `plan`, `approval.*`, `question.requested`, `subagent.*`, `limits`,
       `error`, `unknown` passed through — never dropped).
-- [ ] Claude via the bridge, Codex via `codex app-server` (`thread/read`).
+      → `src/timeline/{events,claude,codex}.ts`; recorded fixtures
+      `tests/fixtures/timeline/claude-2.1.316.jsonl` (transcript, anonymised) and
+      `claude-stream-2.1.316.jsonl`; the Codex fixture is synthetic from the
+      app-server schema (no Codex login can run a turn).
+- [x] Claude via the bridge, Codex via `codex app-server` (`thread/read`).
+      → `agent-switch bridge` / `timeline` (`src/commands/bridge.ts`,
+      `src/bridge/{claude,codex}-bridge.ts`). Live run against Claude 2.1.316:
+      a new session, a Write approval asked and answered, the file written, the
+      turn ended. Found on the way: a bridge whose agent binary failed to start
+      never exited (test red first).
 - [ ] Virtualised list; 50 real sessions render.
 
 ## Phase 2 — Interactive chat view
