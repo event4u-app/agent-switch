@@ -13,6 +13,11 @@
  * `agent-switch-autostart-defaulted`. With that key present the default already
  * ran, so the current OS state IS the user's choice — it is recorded as is and
  * never switched back on.
+ *
+ * The login item stores the executable path of the app that wrote it, and
+ * every update installs into a new versioned folder — so a stored `enabled`
+ * re-writes it on each launch, or login keeps starting the first version that
+ * enabled it. A dev build touches none of this: login must never start it.
  */
 
 export type AutostartPref =
@@ -30,6 +35,7 @@ export interface AutostartDeps {
   osDisable: () => Promise<void>;
   osIsEnabled: () => Promise<boolean>;
   legacyDefaulted: () => boolean;
+  devBuild: () => boolean;
 }
 
 export const LEGACY_AUTOSTART_KEY = "agent-switch-autostart-defaulted";
@@ -44,6 +50,10 @@ async function osState(d: AutostartDeps): Promise<boolean | null> {
 
 /** Run once per launch. Never throws. */
 export async function reconcileAutostart(d: AutostartDeps): Promise<AutostartStatus> {
+  if (d.devBuild()) {
+    const on = await osState(d);
+    return on === null ? "degraded" : on ? "enabled" : "disabled";
+  }
   let pref: AutostartPref;
   try {
     pref = await d.readPref();
@@ -53,7 +63,11 @@ export async function reconcileAutostart(d: AutostartDeps): Promise<AutostartSta
     return (await osState(d)) ? "enabled" : "degraded";
   }
   if (pref.state === "disabled") return "disabled";
-  if (pref.state === "enabled") return (await osState(d)) ? "enabled" : "degraded";
+  if (pref.state === "enabled") {
+    if (!(await osState(d))) return "degraded";
+    await d.osEnable().catch(() => {});
+    return "enabled";
+  }
 
   if (d.legacyDefaulted()) {
     const on = await osState(d);

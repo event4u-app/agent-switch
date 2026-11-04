@@ -1787,6 +1787,42 @@ test("activate: points terminals at this CLI and leaves a service that isn't ins
   }
 });
 
+test("activate --auto: a source-checkout build leaves terminals and the service where they are", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    const installed = "/opt/homebrew/lib/node_modules/@event4u/agent-switch/dist/index.js";
+    fs.writeFileSync(path.join(home, "active-cli"), `${installed}\n`);
+    const r = JSON.parse(run(home, ["activate", "--auto", "--json"]));
+    assert.equal(r.cli, fs.realpathSync(CLI));
+    assert.equal(r.service, "skipped");
+    assert.equal(r.skipped, "source-checkout");
+    assert.equal(r.active, installed);
+    assert.equal(fs.readFileSync(path.join(home, "active-cli"), "utf8").trim(), installed);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("activate --auto: an installed build (under node_modules) takes terminals over", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const prefix = fs.mkdtempSync(path.join(os.tmpdir(), "asw-npm-"));
+  try {
+    const pkg = path.join(prefix, "lib", "node_modules", "@event4u", "agent-switch");
+    fs.mkdirSync(pkg, { recursive: true });
+    fs.cpSync(path.dirname(CLI), path.join(pkg, "dist"), { recursive: true });
+    fs.copyFileSync(path.resolve(path.dirname(CLI), "../package.json"), path.join(pkg, "package.json"));
+    const cli = fs.realpathSync(path.join(pkg, "dist", "index.js"));
+    fs.writeFileSync(path.join(home, "active-cli"), "/Users/dev/agent-switch/dist/index.js\n");
+    const r = JSON.parse(execFileSync("node", [cli, "activate", "--auto", "--json"], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" }));
+    assert.equal(r.cli, cli);
+    assert.equal(r.service, "not-installed");
+    assert.equal(fs.readFileSync(path.join(home, "active-cli"), "utf8").trim(), cli);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(prefix, { recursive: true, force: true });
+  }
+});
+
 test("shell wrapper: `claude` asks the activated CLI, and falls back to agent-switch on PATH when it is gone", { skip: gate.skip || (spawnSync("bash", ["--version"]).status !== 0 ? "no bash" : false) }, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));

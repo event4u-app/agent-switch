@@ -129,7 +129,7 @@ async function main(): Promise<void> {
     case "deactivate": return cmdDeactivate(providerId);
     case "label": return cmdLabel(providerId, positional[0], positional[1]);
     case "color": case "colour": return cmdColor(providerId, positional[0], positional[1]);
-    case "activate": return cmdActivate(!!flags.json);
+    case "activate": return cmdActivate(!!flags.json, !!flags.auto);
     case "desktop": return cmdDesktop(!!flags.json);
     case "disable": return cmdDisable(providerId, positional[0], true);
     case "enable": return cmdDisable(providerId, positional[0], false);

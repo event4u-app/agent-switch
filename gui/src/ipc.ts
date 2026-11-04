@@ -703,9 +703,13 @@ export async function setProfileLabel(provider: ProviderId, name: string, label:
 }
 
 /** `activate`: terminals and the background service use the CLI this window
- *  runs — the dev build under `task gui:dev`, the installed one otherwise. */
-export async function activateCli(): Promise<{ cli: string; service: "repointed" | "unchanged" | "not-installed" }> {
-  return JSON.parse(await runCli(["activate", "--json"]));
+ *  runs. With `auto` (the start-up claim) a source-checkout CLI — the dev build
+ *  under `task gui:dev` — claims nothing and reports `skipped`. */
+export async function activateCli(opts: { auto?: boolean } = {}): Promise<
+  | { cli: string; service: "repointed" | "unchanged" | "not-installed" }
+  | { cli: string; service: "skipped"; skipped: "source-checkout"; active: string | null }
+> {
+  return JSON.parse(await runCli(opts.auto ? ["activate", "--auto", "--json"] : ["activate", "--json"]));
 }
 
 /** `shellenv install`: add the loader line to the user's shell startup file. */
@@ -805,6 +809,7 @@ const autostartDeps: AutostartDeps = {
   osEnable: () => autostartEnable(),
   osDisable: () => autostartDisable(),
   osIsEnabled: () => autostartIsEnabled(),
+  devBuild: () => import.meta.env.DEV,
   legacyDefaulted: () => {
     try {
       return localStorage.getItem(LEGACY_AUTOSTART_KEY) === "1";

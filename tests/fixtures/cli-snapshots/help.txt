@@ -40,7 +40,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch remove [--provider P] <name> [--force] [--yes]   delete a profile (asks on a terminal; --yes skips)
   agent-switch label [--provider P] <name> [Work|Personal|Other|none]   tag a profile
   agent-switch desktop [--json]                which accounts ran sessions in each Claude Desktop instance
-  agent-switch activate [--json]               make this CLI the one terminals and the background service use
+  agent-switch activate [--auto] [--json]      make this CLI the one terminals and the background service use (--auto: not from a source checkout — what the app runs on start)
   agent-switch disable|enable [--provider P] <name>   keep a profile but stop using it / turn it back on
   agent-switch color [--provider P] <name> [orange|red|yellow|green|teal|blue|purple|pink|none]   pick a profile's colour
   agent-switch autoswitch on|off|status [--provider P] [--threshold <1-100>]   notify + suggest near a usage limit; never switches automatically (default OFF)

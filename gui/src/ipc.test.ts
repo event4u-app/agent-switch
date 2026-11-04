@@ -17,6 +17,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/plugin-autostart", () => ({ enable: asEnable, disable: asDisable, isEnabled: asIsEnabled }));
 
 import {
+  activateCli,
   listProfiles,
   activeStatus,
   switchProfile,
@@ -326,6 +327,14 @@ describe("ipc", () => {
     await setAutostart(false);
     expect(asDisable).toHaveBeenCalled();
     expect(create).toHaveBeenLastCalledWith("agent-switch", ["gui-settings", "set", "autostart", "disabled", "--by", "user"]);
+  });
+
+  it("activateCli: the start-up claim passes --auto; an explicit one does not", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: '{"cli":"/x","service":"skipped","skipped":"source-checkout","active":"/y"}', stderr: "" });
+    expect(await activateCli({ auto: true })).toEqual({ cli: "/x", service: "skipped", skipped: "source-checkout", active: "/y" });
+    expect(create).toHaveBeenLastCalledWith("agent-switch", ["activate", "--auto", "--json"]);
+    await activateCli();
+    expect(create).toHaveBeenLastCalledWith("agent-switch", ["activate", "--json"]);
   });
 
   it("compactArgs builds `compact <profile>` (embedded-terminal builder, like takeoverArgs)", () => {

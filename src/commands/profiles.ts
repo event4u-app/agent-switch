@@ -503,15 +503,37 @@ export function cmdDisable(providerId: ProviderId, name: string | undefined, dis
   if (wasActive) console.log(`It was the active ${providerId} profile — new sessions now use the default login until you pick another.`);
 }
 
+/** Every npm-style install (global, nvm, Windows) lives under a `node_modules`
+ *  segment; a build anywhere else is a repo or worktree checkout. */
+export function isSourceCheckoutCli(cli: string): boolean {
+  return !cli.split(/[\\/]/).includes("node_modules");
+}
+
 /**
- * Make this CLI the one terminals and the background service use. Each app runs
- * it on start, so a dev build and an installed app each bring their own CLI:
- * the shell wrapper reads <home>/active-cli, and a service installed from the
- * other CLI is re-installed onto this one. An uninstalled service stays so.
+ * Make this CLI the one terminals and the background service use: the shell
+ * wrapper reads <home>/active-cli, and a service installed from the other CLI
+ * is re-installed onto this one. An uninstalled service stays so.
+ *
+ * Every app runs it on start with `auto`. A source-checkout build then claims
+ * nothing: launching a dev GUI must not move the everyday terminals and the
+ * service onto code that is half-built, gets rebuilt under them, or is deleted
+ * with its worktree. Without `auto` it is a deliberate switch and always runs.
  */
-export function cmdActivate(json: boolean): void {
+export function cmdActivate(json: boolean, auto = false): void {
   // The CLI entry point (dist/index.js), not this module in dist/commands/.
   const cli = fs.realpathSync(fileURLToPath(new URL("../index.js", import.meta.url)));
+  if (auto && isSourceCheckoutCli(cli)) {
+    let active: string | null = null;
+    try {
+      active = fs.readFileSync(path.join(ROOT, "active-cli"), "utf8").trim() || null;
+    } catch {
+      /* never activated */
+    }
+    if (json) return void console.log(JSON.stringify({ cli, service: "skipped", skipped: "source-checkout", active }));
+    console.log(`Left terminals and the service alone: ${cli} is a source checkout.`);
+    console.log("Run `agent-switch activate` from it to switch on purpose.");
+    return;
+  }
   ensureRoot();
   fs.writeFileSync(path.join(ROOT, "active-cli"), `${cli}\n`, { mode: 0o600 });
   const before = serviceTarget();
