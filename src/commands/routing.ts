@@ -12,10 +12,15 @@ import {
   activeFor,
   isDisabled,
   sharesDefaultLogin,
+  readBinaryPath,
   readGuard,
+  readStrategy,
+  setStrategy,
   setGuard,
 } from "../profiles.js";
-import { ProviderId, PROVIDER_IDS, provider } from "../providers.js";
+import { spawnSync } from "node:child_process";
+
+import { ProviderId, PROVIDER_IDS, provider, resolveBinary } from "../providers.js";
 import { readProtection } from "../protection.js";
 import {
   POOL_PREFIX,
@@ -30,12 +35,12 @@ import {
   renamePool,
   suggestPoolsFromLabels,
 } from "../pools.js";
-import { resolveForDir } from "../dir-resolve.js";
+import { START_STRATEGIES, resolveForDir, type StartStrategy } from "../dir-resolve.js";
 import { appendPick, readPicks, PICKS_MAX_LINES } from "../picks.js";
 import { GUARD_POLICIES, GUARD_REFUSED_EXIT, GuardPolicy, OVERRIDE_ENV, isGuardPolicy } from "../single-load.js";
 import { mappingRows, removeMapping, resolveMapping, setMapping, setPaused, normalizePath } from "../mappings.js";
 import { liveSessionPids } from "../api.js";
-import { cachedUsage, checkSingleLoad, logActivity, parseMemberArg, tildePath } from "./shared.js";
+import { cachedUsage, checkSingleLoad, launch, logActivity, parseMemberArg, tildePath } from "./shared.js";
 
 /** Profile names are validated by `profileDir`, which exits on a bad name —
  *  a pool ref or a stale mapping must never kill the shell wrapper's hot path. */
@@ -43,8 +48,13 @@ function profileExistsSafe(providerId: ProviderId, name: string): boolean {
   return /^[A-Za-z0-9_-]+$/.test(name) && profileExists(providerId, name);
 }
 
-function resolveDir(providerId: ProviderId, plain = false): { name: string | null; why: string[]; blocked?: string; note?: string } {
-  return resolveForDir({
+export function resolveDir(
+  providerId: ProviderId,
+  plain = false,
+  cwd = process.cwd(),
+  exclude: readonly string[] = [],
+): { name: string | null; why: string[]; blocked?: string; note?: string } {
+  const r = resolveForDir({
     providerId,
     mapping: plain ? null : resolveMapping(process.cwd(), providerId),
     names: listProfiles(providerId),
@@ -52,7 +62,9 @@ function resolveDir(providerId: ProviderId, plain = false): { name: string | nul
     active: activeFor(providerId),
     exists: (n) => profileExistsSafe(providerId, n),
     signedIn: (n) => identity(providerId, n) !== null,
-    disabled: (n) => isDisabled(providerId, n),
+    // An excluded account is out for THIS start only — the caller just saw it
+    // fail (a limit, an outage) and asks for another one.
+    disabled: (n) => isDisabled(providerId, n) || exclude.includes(n),
     sharesDefaultLogin: (n) => profileExistsSafe(providerId, n) && sharesDefaultLogin(providerId, n),
     pool: (id) => findPool(id),
     usage: (n) => cachedUsage(providerId, n),
@@ -65,9 +77,13 @@ function resolveDir(providerId: ProviderId, plain = false): { name: string | nul
       return p.hasLiveSessionSignal && process.env[p.envVar] !== dir && liveSessionPids(dir).length > 0;
     },
     guard: readGuard(),
+    strategy: readStrategy(providerId),
     now: Date.now(),
     displayPath: tildePath,
   });
+  // The resolver says "disabled" for any account it may not use; name the
+  // caller's exclusion as such so `picks` does not read like a setting changed.
+  return exclude.length === 0 ? r : { ...r, why: r.why.map((w) => w.replace(/^Skipped (\S+?\/(\S+)): disabled$/, (m, key, n) => (exclude.includes(n) && !isDisabled(providerId, n) ? `Skipped ${key}: excluded by the caller` : m))) };
 }
 
 /**
@@ -81,8 +97,8 @@ function resolveDir(providerId: ProviderId, plain = false): { name: string | nul
  * a free one or shares the best. The distinct exit code lets the wrapper block
  * on that refusal without ever blocking on a missing or older `agent-switch`.
  */
-export function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = false): void {
-  const r = resolveDir(providerId, plain);
+export function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = false, exclude: readonly string[] = []): void {
+  const r = resolveDir(providerId, plain, process.cwd(), exclude);
   if (json) {
     console.log(
       JSON.stringify(
@@ -322,4 +338,59 @@ export function cmdPool(sub: string | undefined, args: string[], flags: Record<s
   } catch (e) {
     die((e as Error).message);
   }
+}
+
+/**
+ * `agent-switch exec [--provider P] [--exclude a,b] [--plain] -- <args…>` — the
+ * shellenv wrapper for callers that are not a shell. A tool that spawns
+ * `codex exec …` as a subprocess never runs the wrapper function, so it always
+ * lands on the default login; `agent-switch exec --provider codex -- exec …`
+ * resolves the account exactly like a wrapped start (folder rule > balanced
+ * pick > active), records the pick, and runs the binary with the provider's
+ * env var set. Exit code, stdin/stdout/stderr pass straight through.
+ *
+ * No usable account → the binary runs on its own default login, as the wrapper
+ * does, with one line on stderr saying so. A folder rule that cannot be served
+ * refuses with {@link GUARD_REFUSED_EXIT}.
+ */
+export function cmdExec(a: { providerId: ProviderId; exclude: string[]; plain: boolean; args: string[] }): void {
+  const r = resolveDir(a.providerId, a.plain, process.cwd(), a.exclude);
+  appendPick({ provider: a.providerId, chosen: r.name ? `${a.providerId}/${r.name}` : null, why: r.why, blocked: r.blocked, note: r.note });
+  if (r.blocked) {
+    console.error(`agent-switch: not starting here — ${r.blocked}.`);
+    process.exit(GUARD_REFUSED_EXIT);
+  }
+  const p = provider(a.providerId);
+  if (!r.name) {
+    console.error(`agent-switch: no usable ${a.providerId} account${a.exclude.length ? ` besides ${a.exclude.join(", ")}` : ""} — starting on ${p.binary}'s own default login.`);
+    const res = spawnSync(resolveBinary(p.binary, readBinaryPath(a.providerId)), a.args, { stdio: "inherit" });
+    process.exit(res.status ?? 1);
+  }
+  if (r.note) console.error(`agent-switch: ${r.note}.`);
+  process.exit(launch(p, r.name, a.args));
+}
+
+/** `agent-switch strategy [balance|fill] [--provider P] [--json]` — how a start
+ *  with no folder rule picks its account. `balance` (default) spreads starts by
+ *  what each account would lose at its reset; `fill` stays on the preferred
+ *  account until it reaches its limit. */
+export function cmdStrategy(providerId: ProviderId, sub: string | undefined, json = false): void {
+  if (sub !== undefined && sub !== "status") {
+    if (!(START_STRATEGIES as readonly string[]).includes(sub)) die("usage: agent-switch strategy [balance|fill|status] [--provider P] [--json]");
+    const next = sub as StartStrategy;
+    if (readStrategy(providerId) !== next) {
+      setStrategy(providerId, next);
+      logActivity("settings", null, `${providerId} start strategy ${next}`, "user changed it");
+    }
+  }
+  const strategy = readStrategy(providerId);
+  if (json) {
+    console.log(JSON.stringify({ provider: providerId, strategy }));
+    return;
+  }
+  console.log(
+    strategy === "fill"
+      ? `${providerId}: fill — new starts stay on the preferred account until it reaches its limit, then go to the one with the most headroom.`
+      : `${providerId}: balance — new starts go to the account that would lose the most at its next reset.`,
+  );
 }

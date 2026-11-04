@@ -17,6 +17,8 @@ import { ProviderId, PROVIDER_IDS, isProviderId } from "./providers.js";
  *  (the bug behind `notify`/`providers --surface` silently losing their args). */
 const VALUE_FLAGS = new Set([
   "provider",
+  "exclude",
+  "prompt",
   "browser",
   "shell",
   "source",
@@ -94,6 +96,45 @@ export function parseArgs(argv: string[]): ParsedArgs {
  * general parser. Strip only `--provider <val>` and `--cwd <dir>` (before any
  * bare `--`), take the name, pass the rest.
  */
+/** `agent-switch exec [--provider P] [--exclude a,b] [--plain] [--] <args…>` —
+ *  start the provider's binary on the account `dir` resolves, for callers that
+ *  are not a shell (a subprocess never sees the shellenv wrapper function). */
+export interface ExecArgs {
+  providerId: ProviderId;
+  /** Profile names this start must not land on (e.g. the one that just hit its limit). */
+  exclude: string[];
+  /** Skip folder rules, balance across all accounts (`dir --plain`). */
+  plain: boolean;
+  args: string[];
+}
+
+export function parseExec(rest: string[]): ExecArgs {
+  const end = rest.indexOf("--");
+  const own = end >= 0 ? rest.slice(0, end) : [];
+  const args = end >= 0 ? rest.slice(end + 1) : [...rest];
+  let providerId: ProviderId = "claude";
+  const exclude: string[] = [];
+  let plain = false;
+  // Without a separator our own flags may still lead: peel them off the front
+  // only, so a binary flag that happens to share a name is never eaten.
+  const src = end >= 0 ? own : args;
+  while (src.length > 0 && src[0].startsWith("--")) {
+    const flag = src.shift()!;
+    if (flag === "--provider") providerId = resolveProviderValue(src.shift());
+    else if (flag === "--exclude") {
+      const v = src.shift();
+      if (!v) throw new Error("--exclude needs a profile name (comma-separate several)");
+      exclude.push(...v.split(",").map((x) => x.trim()).filter(Boolean));
+    } else if (flag === "--plain") plain = true;
+    else if (end >= 0) throw new Error(`unknown exec option: ${flag}`);
+    else {
+      src.unshift(flag);
+      break;
+    }
+  }
+  return { providerId, exclude, plain, args };
+}
+
 export interface RunArgs {
   providerId: ProviderId;
   name?: string;
