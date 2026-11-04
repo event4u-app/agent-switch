@@ -15,7 +15,9 @@
  *
  * Codex banked resets: when the active Codex profile is over the threshold and
  * holds a reset credit, the daemon NOTIFIES that one is available (once per
- * reset cycle). It never redeems one — that is an explicit user action
+ * reset cycle). It redeems one only when the user opted in (`auto-reset on`,
+ * default off): then a Codex account that reached 100 % gets one credit, at
+ * most once per reset cycle. Otherwise redeeming stays an explicit user action
  * (`agent-switch reset`, or the GUI's confirmed button). It also fires the
  * per-profile protection notice (see `protection.ts`): a warning only, nothing
  * is paused or switched.
@@ -29,16 +31,17 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { ROOT, activeFor, configDir, isDisabled, labelFor, listProfiles, readAutoSwitch, readBinaryPath } from "./profiles.js";
+import { ROOT, activeFor, configDir, isDisabled, labelFor, listProfiles, readAutoSwitch, readBinaryPath, readCodexAutoReset } from "./profiles.js";
 import { ProviderId } from "./providers.js";
 import { profileDir } from "./profiles.js";
 import { startEngine } from "./engine/run.js";
 import { appHidden, visibilityFile } from "./app-visibility.js";
 import { fetchUsage, liveSessionPids, liveSessions, readProfileCredential } from "./api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "./token-freshen.js";
-import { keepAliveSweep } from "./login-keepalive.js";
-import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, SwitchCandidate, ThresholdState, UsageSnapshot, type Crossing } from "./usage.js";
-import { readCodexUsage } from "./codex-usage.js";
+import { codexProfilesWithSession, keepAliveSweep } from "./login-keepalive.js";
+import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, freedAfterReset, resetPassed, SwitchCandidate, ThresholdState, UsageSnapshot, type Crossing } from "./usage.js";
+import { readCodexUsage, rolloutUsage } from "./codex-usage.js";
+import { autoRedeemDue, redeemResetCredit, resetReflected, usageAfterRedeem } from "./codex-reset.js";
 import { LATEST_FILE, recordHistorySample, writeLatestSnapshot } from "./history.js";
 import { appendNotification, markOsNotified, Notification } from "./notifications.js";
 import { readOsNotifications } from "./profiles.js";
@@ -56,6 +59,9 @@ import { readEvents, eventFile } from "./hooks.js";
 import { autoContinueState, protectionNotice, readProtection } from "./protection.js";
 import { execFileSync } from "node:child_process";
 import { appendActivity } from "./activity.js";
+import { CONTINUE_TEXT, typeIntoHosted } from "./commands/continue.js";
+import { InputLeases } from "./host/lease.js";
+import { TmuxHost } from "./host/tmux-host.js";
 import { rebind } from "./rebind.js";
 import { armsFile, watchArmsOnce, type ArmWatchDeps } from "./rebind-arm.js";
 
@@ -153,6 +159,9 @@ export interface DaemonState {
   fetchFailingSince?: Record<string, string>;
   /** "provider/<name>" → the window cycle the protection warning last fired for. */
   protectionNotified?: Record<string, string>;
+  /** `codex/<name>` → the reset cycle a credit was auto-redeemed in (opt-in
+   *  auto-reset). Persisted so a restart cannot redeem the same cycle twice. */
+  autoRedeemed?: Record<string, string>;
 }
 
 // ---------- state file (the cache) ----------
@@ -488,6 +497,15 @@ export function armWatchDeps(log: (l: string) => void): ArmWatchDeps {
     activity: (target, action, reason, ok) => {
       appendActivity({ kind: "rebind", target, action, reason, ok });
     },
+    continueSession: (key) => {
+      if (!TmuxHost.available()) return "no hosted sessions here";
+      try {
+        typeIntoHosted(new TmuxHost(ROOT), new InputLeases(ROOT), key, { id: `daemon-${process.pid}`, pid: process.pid, kind: "daemon" }, CONTINUE_TEXT);
+        return true;
+      } catch (err) {
+        return (err as Error).message;
+      }
+    },
     log,
   };
 }
@@ -552,6 +570,56 @@ function loginStampFor(provider: ProviderId, name: string): string | null {
   }
 }
 
+/**
+ * Opt-in auto-reset (`auto-reset on`): a Codex account that reached its limit
+ * gets one banked credit redeemed, at most once per reset cycle — the cycle is
+ * recorded BEFORE the call, so a redeem that errors or "succeeds" without
+ * clearing the limit is never retried in the same cycle. Returns the snapshot
+ * to keep: the re-read one when the redeem went through.
+ */
+async function maybeAutoRedeem(name: string, snapshot: UsageSnapshot, state: DaemonState, log: (l: string) => void): Promise<UsageSnapshot> {
+  if (!readCodexAutoReset()) return snapshot;
+  const key = `codex/${name}`;
+  const due = autoRedeemDue(snapshot, state.autoRedeemed?.[key]);
+  if (!due) return snapshot;
+  state.autoRedeemed = { ...(state.autoRedeemed ?? {}), [key]: due.cycle };
+  const dir = configDir("codex", name);
+  const r = await redeemResetCredit(dir);
+  appendActivity({
+    kind: "redeem",
+    target: key,
+    action: r.ok ? "redeemed one banked reset" : `redeem failed: ${r.reason ?? "unknown"}`,
+    reason: "limit reached with auto-reset on",
+    ok: r.ok,
+  });
+  if (!r.ok) {
+    log(`auto-reset: ${key} at its limit — redeem failed (${r.reason ?? "unknown"}); not retried this cycle`);
+    return snapshot;
+  }
+  log(`auto-reset: ${key} at its limit — redeemed one banked reset (${(snapshot.resetCredits ?? 1) - 1} left)`);
+  notify({ kind: "info", title: "Codex reset redeemed", message: `codex/${name} reached its limit — one banked reset was redeemed automatically.`, key: `codex-auto-reset:${key}` });
+  const after = await usageAfterRedeem(() => readCodexUsage(dir), snapshot);
+  return after && resetReflected(snapshot, after) ? after : snapshot;
+}
+
+/**
+ * Take a Codex profile's newest session-file limits into the caches when they
+ * are newer than the last capture. Reset credits are not in the session file,
+ * so the last known count is carried over. Returns the snapshot it kept.
+ */
+function applyRolloutUsage(name: string, state: DaemonState): UsageSnapshot | null {
+  const key = `codex/${name}`;
+  const prev = state.profiles[key];
+  const since = Date.parse(prev?.capturedAt ?? "");
+  const local = rolloutUsage(configDir("codex", name), isNaN(since) ? 0 : since);
+  if (!local) return null;
+  const snap: UsageSnapshot = { ...local, resetCredits: prev?.resetCredits ?? null };
+  state.profiles[key] = snap;
+  recordHistorySample(path.join(profileDir("codex", name), "usage-history.json"), snap);
+  writeLatestSnapshot(path.join(profileDir("codex", name), LATEST_FILE), snap);
+  return snap;
+}
+
 interface CycleResult {
   failures: number;
   attempted: number;
@@ -569,7 +637,11 @@ async function pollProvider(
   const names = listProfiles(provider).filter((n) => !isDisabled(provider, n));
   const active = activeFor(provider);
   const autoSwitch = readAutoSwitch(provider);
-  const isLive = (n: string) => (provider === "claude" ? liveSessionPids(configDir("claude", n)).length > 0 : false);
+  // Codex writes no session pid file; its running processes are read from the
+  // process table once per cycle (CODEX_HOME = the profile).
+  const codexLive = provider === "codex" ? codexProfilesWithSession(names) : null;
+  const isLive = (n: string) =>
+    provider === "claude" ? liveSessionPids(configDir("claude", n)).length > 0 : (codexLive?.has(n) ?? false);
   // Every start without a folder rule is balanced across all enabled accounts
   // (dir-resolve.ts), so each one needs fresh numbers — at the pool cadence.
   const pooled = names;
@@ -577,9 +649,13 @@ async function pollProvider(
     const t = Date.parse(state.profiles[`${provider}/${n}`]?.capturedAt ?? "");
     return isNaN(t) ? null : t;
   };
-  const targets = dueTargets(provider, selectPollTargets(names, active, isLive, autoSwitch.enabled, pooled, lastCaptured), backoff, Date.now(), (n) =>
-    loginStampFor(provider, n),
-  );
+  const thresholdOf = (n: string) => readProtection(provider, n).thresholdPct;
+  const selected = selectPollTargets(names, active, isLive, autoSwitch.enabled, pooled, lastCaptured);
+  // An account that sat at its limit until a reset that has now passed is read
+  // at once — "free again" should not wait for the 5-minute pool cadence.
+  // Backoff still applies: a failing read is not retried every cycle.
+  const afterReset = names.filter((n) => !selected.includes(n) && resetPassed(state.profiles[`${provider}/${n}`], thresholdOf(n), Date.now()));
+  const targets = dueTargets(provider, [...selected, ...afterReset], backoff, Date.now(), (n) => loginStampFor(provider, n));
   let failures = 0;
   const polled: SwitchCandidate[] = [];
 
@@ -587,7 +663,7 @@ async function pollProvider(
   state.fetchFailingSince = state.fetchFailingSince ?? {};
   for (const name of targets) {
     const key = `${provider}/${name}`;
-    const snapshot = await snapshotFor(provider, name, log);
+    let snapshot = await snapshotFor(provider, name, log);
     const nextBackoff = snapshot ? undefined : nextProfileBackoff(backoff.get(key), false, baseMs, Date.now(), loginStampFor(provider, name));
     if (nextBackoff) backoff.set(key, nextBackoff);
     else backoff.delete(key);
@@ -602,6 +678,11 @@ async function pollProvider(
         notify({ ...notice, key: `fetch-failed:${key}` }, { os: notice.os });
       }
       continue;
+    }
+    if (provider === "codex") snapshot = await maybeAutoRedeem(name, snapshot, state, log);
+    if (freedAfterReset(state.profiles[key], snapshot, thresholdOf(name), Date.now())) {
+      log(`reset: ${key} is free again`);
+      notify({ kind: "info", title: "Limit reset", message: `${key} is free again — its limit has reset.`, key: `free-again:${key}` });
     }
     delete state.fetchFailingSince[key];
     if (state.notifiedFetchFail[key]) {
@@ -631,6 +712,15 @@ async function pollProvider(
       }
       const tNotice = thresholdNotice(key, crossings, pNotice !== null);
       if (tNotice) notify(tNotice);
+    }
+  }
+
+  // Codex writes its limits into the session file after every turn: a free,
+  // local readout that is newer than any poll while a session works.
+  if (provider === "codex") {
+    for (const name of names) {
+      const local = applyRolloutUsage(name, state);
+      if (local && !polled.some((p) => p.name === name)) polled.push({ name, snapshot: local });
     }
   }
 

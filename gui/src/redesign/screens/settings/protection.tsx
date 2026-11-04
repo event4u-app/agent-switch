@@ -3,7 +3,7 @@ import { tagLabel } from "../account-logic.js";
 import { t, type TKey } from "../../../i18n/index.js";
 import * as ipc from "../../../ipc.js";
 import type { AutoSwitchMap } from "../../../ipc.js";
-import { getAutoSwitchGlobal, setAutoSwitchGlobalFlag } from "../../../settings-store.js";
+import { getAutoSwitchGlobal, getLimitAutoOpen, setAutoSwitchGlobalFlag, setLimitAutoOpen } from "../../../settings-store.js";
 import { fireNearLimitIfCrossed } from "../../engines/near-limit.js";
 import type { AutoSwitchTag, ProviderId } from "../../../transforms.js";
 import { AccountDot } from "../../../ui/AccountDot.js";
@@ -210,6 +210,103 @@ export function ProtectionSettings() {
             );
           })}
       </SettingGroup>
+      <StartStrategyGroup />
+      <LimitAutoOpenGroup />
+      <CodexAutoResetGroup />
     </>
+  );
+}
+
+/** "Ask me when a session reaches its limit" — opens the decision sheet by itself. */
+function LimitAutoOpenGroup() {
+  const [on, setOn] = useState(getLimitAutoOpen);
+  return (
+    <SettingGroup title={t("settings.protection.atTheLimit")}>
+      <SettingRow title={t("settings.protection.limitAutoOpen")} detail={t("settings.protection.limitAutoOpenDetail")}>
+        <Switch
+          label={t("settings.protection.limitAutoOpen")}
+          checked={on}
+          onChange={(v) => {
+            setLimitAutoOpen(v);
+            setOn(v);
+          }}
+        />
+      </SettingRow>
+    </SettingGroup>
+  );
+}
+
+const STRATEGY_TOOLS: ProviderId[] = ["claude", "codex"];
+
+/** "New sessions" — the CLI's `strategy`, per tool. */
+function StartStrategyGroup() {
+  const run = useRun();
+  const [values, setValues] = useState<Partial<Record<ProviderId, ipc.StartStrategy>>>({});
+  useEffect(() => {
+    for (const p of STRATEGY_TOOLS) {
+      ipc
+        .getStrategy(p)
+        .then((v) => setValues((cur) => ({ ...cur, [p]: v })))
+        .catch(() => {});
+    }
+  }, []);
+
+  async function change(p: ProviderId, next: ipc.StartStrategy) {
+    const prev = values[p];
+    setValues((cur) => ({ ...cur, [p]: next }));
+    const ok = await run(async () => (await ipc.setStrategy(p, next), true));
+    if (!ok) setValues((cur) => ({ ...cur, [p]: prev }));
+  }
+
+  return (
+    <SettingGroup title={t("settings.protection.newSessions")} detail={t("settings.protection.newSessionsDetail")}>
+      {STRATEGY_TOOLS.map((p) => {
+        const name = TOOL_LABEL[p];
+        return (
+          <SettingRow key={p} title={t("settings.protection.strategyFor", { name })}>
+            <div className="w-[220px]">
+              <Select
+                ariaLabel={t("settings.protection.strategyFor", { name })}
+                value={values[p] ?? "balance"}
+                disabled={values[p] === undefined}
+                onChange={(v) => void change(p, v as ipc.StartStrategy)}
+                options={[
+                  { value: "balance", label: t("settings.protection.strategyBalance"), hint: t("settings.protection.strategyBalanceHint") },
+                  { value: "fill", label: t("settings.protection.strategyFill"), hint: t("settings.protection.strategyFillHint") },
+                ]}
+              />
+            </div>
+          </SettingRow>
+        );
+      })}
+    </SettingGroup>
+  );
+}
+
+/** "Redeem Codex resets automatically" — the CLI's `auto-reset`. Off by
+ *  default: a banked reset is scarce and cannot be returned. */
+function CodexAutoResetGroup() {
+  const run = useRun();
+  // null until read: the switch stays disabled rather than showing a guess.
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    ipc
+      .getCodexAutoReset()
+      .then(setOn)
+      .catch(() => setOn(null));
+  }, []);
+
+  async function toggle(next: boolean) {
+    setOn(next);
+    const ok = await run(async () => (await ipc.setCodexAutoReset(next), true));
+    if (!ok) setOn(!next);
+  }
+
+  return (
+    <SettingGroup title={t("settings.protection.codexResets")}>
+      <SettingRow title={t("settings.protection.autoReset")} detail={t("settings.protection.autoResetDetail")}>
+        <Switch label={t("settings.protection.autoReset")} checked={on ?? false} disabled={on === null} onChange={(v) => void toggle(v)} />
+      </SettingRow>
+    </SettingGroup>
   );
 }

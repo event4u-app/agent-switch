@@ -751,6 +751,22 @@ export async function setAutoSwitch(
   await runCli(args);
 }
 
+/** The message a session is sent after its account was switched at a limit
+ *  (mirrors the CLI's `CONTINUE_TEXT`). */
+export const CONTINUE_TEXT = "Continue where you left off.";
+
+/** Type the continuation into a session Agent Switch hosts (`continue`). */
+export async function continueSession(key: string): Promise<void> {
+  await runCli(["continue", key]);
+}
+
+/** Move a hosted session (`provider/account/id`) to `target` in its own window
+ *  and resume it there with the continuation (`takeover --in-place --hosted`). */
+export async function takeoverHosted(key: string, target: string): Promise<void> {
+  const [provider, , id] = key.split("/");
+  await runCli(["takeover", id, "--to", target, "--provider", provider, "--in-place", "--hosted", key, "--prompt", CONTINUE_TEXT]);
+}
+
 /** Manually redeem one banked Codex rate-limit reset. Consumes a real credit —
  *  the caller confirms first. */
 export async function redeemReset(provider: ProviderId, name: string): Promise<void> {
@@ -1128,6 +1144,30 @@ export async function getKeepSignedIn(): Promise<boolean> {
 
 export async function setKeepSignedIn(on: boolean): Promise<void> {
   await runCli(["keep-signed-in", on ? "on" : "off"]);
+}
+
+/** How a start with no folder rule picks its account (`strategy`):
+ *  `balance` spreads starts, `fill` uses the preferred account up first. */
+export type StartStrategy = "balance" | "fill";
+
+export async function getStrategy(provider: ProviderId): Promise<StartStrategy> {
+  const { strategy } = JSON.parse(await runCli(["strategy", "status", "--provider", provider, "--json"]));
+  return strategy === "fill" ? "fill" : "balance";
+}
+
+export async function setStrategy(provider: ProviderId, strategy: StartStrategy): Promise<void> {
+  await runCli(["strategy", strategy, "--provider", provider]);
+}
+
+/** "Redeem Codex resets automatically" (`auto-reset`): the service redeems one
+ *  banked reset when a Codex account reaches 100 %, once per reset cycle. */
+export async function getCodexAutoReset(): Promise<boolean> {
+  const { enabled } = JSON.parse(await runCli(["auto-reset", "status", "--json"]));
+  return enabled === true;
+}
+
+export async function setCodexAutoReset(on: boolean): Promise<void> {
+  await runCli(["auto-reset", on ? "on" : "off"]);
 }
 
 // ---- desktop pet (road-to-desktop-pet) --------------------------------------

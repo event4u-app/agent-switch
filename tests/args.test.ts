@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseArgs, parseRun, resolveProviderValue } from "../src/args.js";
+import { parseArgs, parseExec, parseRun, resolveProviderValue } from "../src/args.js";
 
 // Round-2 review F1: a value-flag's VALUE must never leak into the positionals.
 // `remove --provider codex opfer` must target `opfer`, not `codex`.
@@ -143,4 +143,21 @@ test("`rebind side --when-idle --session s-1` keeps the session id out of the po
   assert.equal(p.flags["when-idle"], true);
   assert.equal(p.flags.session, "s-1");
   assert.equal(p.flags.profile, "work");
+});
+
+test("parseExec: own flags only before `--`; everything after reaches the binary untouched", () => {
+  assert.deepEqual(parseExec(["--provider", "codex", "--", "exec", "--json", "-"]), {
+    providerId: "codex",
+    exclude: [],
+    plain: false,
+    args: ["exec", "--json", "-"],
+  });
+  assert.deepEqual(parseExec(["--provider", "codex", "--exclude", "Matze1,Matze2", "--plain", "--", "exec", "--provider", "x"]), {
+    providerId: "codex",
+    exclude: ["Matze1", "Matze2"],
+    plain: true,
+    args: ["exec", "--provider", "x"],
+  });
+  assert.deepEqual(parseExec(["exec", "-"]), { providerId: "claude", exclude: [], plain: false, args: ["exec", "-"] }, "no separator: all of it is the binary's");
+  assert.throws(() => parseExec(["--exclude"]), /--exclude needs/);
 });

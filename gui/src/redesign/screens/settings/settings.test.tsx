@@ -31,6 +31,10 @@ const ipcMock = vi.hoisted(() => ({
   setOsNotify: vi.fn(),
   getKeepSignedIn: vi.fn(),
   setKeepSignedIn: vi.fn(),
+  getCodexAutoReset: vi.fn(),
+  getStrategy: vi.fn(),
+  setStrategy: vi.fn(),
+  setCodexAutoReset: vi.fn(),
   getNotifyConfig: vi.fn(),
   setNotify: vi.fn(),
   installSessionHooks: vi.fn(),
@@ -128,6 +132,10 @@ beforeEach(() => {
   ipcMock.setOsNotify.mockResolvedValue(undefined);
   ipcMock.getKeepSignedIn.mockResolvedValue(true);
   ipcMock.setKeepSignedIn.mockResolvedValue(undefined);
+  ipcMock.getCodexAutoReset.mockResolvedValue(false);
+  ipcMock.getStrategy.mockImplementation(async (p: string) => (p === "codex" ? "fill" : "balance"));
+  ipcMock.setStrategy.mockResolvedValue(undefined);
+  ipcMock.setCodexAutoReset.mockResolvedValue(undefined);
   ipcMock.getNotifyConfig.mockResolvedValue({ notify: true, contextThresholds: [80, 95] });
   ipcMock.installSessionHooks.mockResolvedValue(undefined);
   ipcMock.uninstallSessionHooks.mockResolvedValue(undefined);
@@ -318,6 +326,34 @@ describe("Sign-ins", () => {
 });
 
 describe("Protection", () => {
+  it("reads Redeem Codex resets automatically from the CLI (off by default) and writes a change back", async () => {
+    mount("protection");
+    const sw = () => screen.getByRole("switch", { name: "Redeem Codex resets automatically" }) as HTMLButtonElement;
+    await waitFor(() => expect(sw().disabled).toBe(false));
+    expect(sw().getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(sw());
+    await waitFor(() => expect(ipcMock.setCodexAutoReset).toHaveBeenCalledWith(true));
+    expect(sw().getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("reads the start strategy per tool and writes a change back", async () => {
+    mount("protection");
+    await waitFor(() => expect(ipcMock.getStrategy).toHaveBeenCalledWith("codex"));
+    expect(ipcMock.getStrategy).toHaveBeenCalledWith("claude");
+    expect(screen.getByText("Claude starts")).toBeTruthy();
+    expect(screen.getByText("Codex starts")).toBeTruthy();
+  });
+
+  it("turns the auto-reset switch back when the write fails", async () => {
+    ipcMock.setCodexAutoReset.mockRejectedValueOnce(new Error("cli failed"));
+    mount("protection");
+    const sw = () => screen.getByRole("switch", { name: "Redeem Codex resets automatically" }) as HTMLButtonElement;
+    await waitFor(() => expect(sw().disabled).toBe(false));
+    fireEvent.click(sw());
+    await waitFor(() => expect(sw().getAttribute("aria-checked")).toBe("false"));
+    expect(ipcMock.setCodexAutoReset).toHaveBeenCalledWith(true);
+  });
+
   it("writes per-account protection and near-limit notifications", async () => {
     localStorage.setItem("agent-switch-autoswitch-global", "on");
     const setProtection = vi.fn(() => Promise.resolve());

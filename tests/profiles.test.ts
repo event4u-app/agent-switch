@@ -59,6 +59,8 @@ test("activeFor / setActive are per-provider", () => {
     binaryPaths: {},
     osNotifications: false,
     keepSignedIn: true,
+    codexAutoReset: false,
+    strategy: {},
     rebind: { disabled: false, consecutiveFailures: 0 },
     guard: "block",
   }); // clean baseline (shared STATE_FILE)
@@ -143,6 +145,8 @@ test("legacy global auto-switch migrates onto every provider", () => {
     binaryPaths: {},
     osNotifications: false,
     keepSignedIn: true,
+    codexAutoReset: false,
+    strategy: {},
     rebind: { disabled: false, consecutiveFailures: 0 },
     guard: "block",
   });
@@ -204,6 +208,33 @@ test("keepSignedIn defaults ON, also for a state file that predates it, and pers
   assert.equal(P.readKeepSignedIn(), false);
   P.setKeepSignedIn(true);
   assert.equal(P.readKeepSignedIn(), true);
+});
+
+test("codexAutoReset defaults OFF — redeeming a scarce credit is opt-in — and persists a change", () => {
+  fs.rmSync(P.STATE_FILE, { force: true });
+  assert.equal(P.readCodexAutoReset(), false);
+  fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: {}, keepSignedIn: true }));
+  assert.equal(P.readCodexAutoReset(), false); // upgraded install without the key → off
+  P.setCodexAutoReset(true);
+  assert.equal(P.readCodexAutoReset(), true);
+  P.setActive("codex", null); // survives an unrelated state write
+  assert.equal(P.readCodexAutoReset(), true);
+  P.setCodexAutoReset(false);
+  assert.equal(P.readCodexAutoReset(), false);
+});
+
+test("start strategy defaults to balance per provider, ignores junk, and persists a change", () => {
+  fs.rmSync(P.STATE_FILE, { force: true });
+  assert.equal(P.readStrategy("codex"), "balance");
+  fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: {}, strategy: { codex: "fill", claude: "nonsense" } }));
+  assert.equal(P.readStrategy("codex"), "fill");
+  assert.equal(P.readStrategy("claude"), "balance", "an unknown value reads as the default");
+  P.setStrategy("claude", "fill");
+  P.setActive("codex", null); // survives an unrelated state write
+  assert.equal(P.readStrategy("claude"), "fill");
+  assert.equal(P.readStrategy("codex"), "fill");
+  P.setStrategy("codex", "balance");
+  assert.equal(P.readStrategy("codex"), "balance");
 });
 
 test("renameProfile moves the config dir and carries active + label", () => {

@@ -4,6 +4,7 @@
  * exported for tests; this hook only composes them inside the store.
  */
 
+import { useLimitAutoOpen } from "./limit-open.js";
 import { useNotificationEngine } from "./notifications.js";
 import { usePetAndTray } from "./pet.js";
 import { useSessionsPoll } from "./sessions-poll.js";
@@ -18,4 +19,5 @@ export function useEngines(): void {
   useUpdateWatchers();
   usePetAndTray();
   useStartupEngines();
+  useLimitAutoOpen();
 }

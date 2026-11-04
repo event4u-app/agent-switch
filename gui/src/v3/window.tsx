@@ -15,6 +15,7 @@ import { DecisionSheet, NewSessionDialog, type MoveHow, type NewSessionFacts, ty
 import { Shell, useFrame, type PageId } from "./frame.js";
 import { LimitsPopover, LimitsStrip, RoomLeft, type LimitAccount } from "./limits.js";
 import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
+import { limitToOpen, markLimitOpened, openedLimits } from "./adapter/limit-auto.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
@@ -85,6 +86,7 @@ export interface V3Slots {
 
 export type V3Action =
   | { type: "need"; item: NeedItem }
+  | { type: "reveal" }
   | { type: "need-more" }
   | { type: "need-later"; id: string }
   | { type: "away" }
@@ -148,6 +150,7 @@ export function V3Window({
   layout,
   keys = DEFAULT_KEYS,
   platform = PLATFORM,
+  autoOpenLimits = false,
 }: {
   data: V3Data;
   slots: V3Slots;
@@ -156,6 +159,9 @@ export function V3Window({
   layout?: LayoutStore;
   keys?: Record<Action, Binding>;
   platform?: "mac" | "other";
+  /** Open a limit's decision sheet by itself (the app passes the user's setting;
+   *  spec §11's "never automatic" stays the component default). */
+  autoOpenLimits?: boolean;
 }) {
   const saved = useMemo(() => layout?.load() ?? null, [layout]);
   const [pages, setPages] = useState<Page[]>([]);
@@ -219,6 +225,18 @@ export function V3Window({
 
   // Tool updates join the queue (spec §10.4); limit items open the decision sheet.
   const needs = useMemo(() => [...data.needs, ...updateNeeds(data.tools, new Date(data.nowMs).toISOString())], [data.needs, data.tools, data.nowMs]);
+  // A session at its limit opens its decision sheet by itself (once per item
+  // version) and brings the window forward — the user still confirms the move.
+  useEffect(() => {
+    if (!autoOpenLimits || overlay !== null) return;
+    const n = limitToOpen(needs, openedLimits(), (subject) => (data.decision(subject)?.sessions.length ?? 0) > 0);
+    if (!n) return;
+    markLimitOpened(n);
+    setOverlay({ decide: n.subject });
+    act({ type: "reveal" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needs, overlay, autoOpenLimits]);
+
   const onVerb = (n: NeedItem) => {
     if (n.kind === "limit") setOverlay({ decide: n.subject });
     else if (n.kind === "update") openPage("tools");

@@ -127,7 +127,8 @@ test("dueTargets over several cycles: a dead login waits, a healthy one never do
 test("pollProvider is wired through dueTargets and stamps each failure with the login", () => {
   const src = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../src/daemon.ts"), "utf8");
   const body = src.slice(src.indexOf("async function pollProvider("), src.indexOf("async function pollOnce("));
-  assert.match(body, /dueTargets\(provider, selectPollTargets\(/);
+  assert.match(body, /const selected = selectPollTargets\(/);
+  assert.match(body, /dueTargets\(provider, \[\.\.\.selected, \.\.\.afterReset\]/, "scheduled and after-reset reads both go through the backoff");
   assert.match(body, /nextProfileBackoff\(.*loginStampFor\(provider, name\)\)/);
 });
 
@@ -164,9 +165,15 @@ test("a cached snapshot is fresh by its OWN capture time, not by the last poll",
 
 // D3: the daemon never redeems a Codex reset credit on its own — it only says
 // one is available, once per reset cycle.
-test("D3: daemon source never calls the Codex redeem endpoint", () => {
+test("D3 (amended 2026-11-04): the daemon redeems only behind the opt-in auto-reset switch", () => {
   const src = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../src/daemon.ts"), "utf8");
-  assert.doesNotMatch(src, /redeemResetCredit/, "the daemon must not import or call the redeem path");
+  const calls = src.match(/redeemResetCredit\(/g) ?? [];
+  assert.equal(calls.length, 1, "exactly one redeem call site");
+  const fn = src.slice(src.indexOf("async function maybeAutoRedeem"));
+  const body = fn.slice(0, fn.indexOf("\n}\n"));
+  assert.match(body, /redeemResetCredit\(/, "the one call site lives in maybeAutoRedeem");
+  assert.match(body.split("\n")[1] ?? "", /if \(!readCodexAutoReset\(\)\) return snapshot;/, "its first statement bails out unless the user opted in");
+  assert.ok(body.indexOf("state.autoRedeemed =") < body.indexOf("redeemResetCredit("), "the cycle is recorded before the call — a failed redeem is never retried in the same cycle");
 });
 
 test("D3: codexResetNotice fires once per cycle, only over the threshold with a credit", () => {

@@ -14,7 +14,7 @@ import { ToolList } from "../../redesign/screens/tools.js";
 import { UsageHistory, useUsageHistory } from "../../redesign/screens/usage-history.js";
 import { openExternal } from "../../redesign/screens/tools.js";
 import { appRequest, useTrayRequests } from "../../redesign/tray/bridge.js";
-import { getFocusTerminal, setFocusTerminalFlag, setNotifLastRead } from "../../settings-store.js";
+import { getFocusTerminal, getLimitAutoOpen, setFocusTerminalFlag, setNotifLastRead } from "../../settings-store.js";
 import { AcRoot } from "../../ui/AcRoot.js";
 import { Toaster } from "../../ui/Toaster.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
@@ -212,6 +212,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     toast: s.toast,
     openUrl: openExternal,
     refresh,
+    reveal: () => void ipc.showWindow().catch(() => {}),
     rows: () => byKey,
     needs: () => feeds.needs?.items ?? [],
     hosted: (k) => hostedKeys.has(k),
@@ -345,7 +346,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
 
   return (
     <>
-      <V3Window data={data} slots={slots} act={act} focus={focus} layout={localLayout} keys={keys} />
+      <V3Window data={data} slots={slots} act={act} focus={focus} layout={localLayout} keys={keys} autoOpenLimits={getLimitAutoOpen()} />
       {chats.runners}
       <OverlayHost />
       <Toaster toasts={s.toasts} onDismiss={s.dismissToast} />

@@ -954,3 +954,23 @@ test("rebind refuses a profile sharing the default install's login, on either si
     assert.ok(!f.calls.some((c) => c.startsWith("kcAdd:")), "nothing moved");
   }
 });
+
+test("rebind refuses a target account whose own profile runs a live session — moving its login would sign that session out", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  f.deps.liveSession = (name) => name === "A";
+  await assert.rejects(() => rebind({ account: "A", profile: "P" }, f.deps), /"A" has a live session/);
+  assert.ok(!f.calls.some((c) => c.startsWith("kcAdd:") || c.startsWith("kcDelete:")), "no credential touched");
+  assert.equal(f.kc.get(aSvc), cred("tokA"), "the target keeps its own login");
+});
+
+test("rebind ignores a live session on the RUNNING profile — that session is the one being switched", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  f.deps.liveSession = (name) => name === "P";
+  await rebind({ account: "A", profile: "P" }, f.deps);
+  assert.equal(f.kc.get(pSvc), cred("tokA"));
+  assert.ok(f.calls.some((c) => c.startsWith(`kcAdd:${pSvc}`)), "the running profile now holds the target's login");
+});

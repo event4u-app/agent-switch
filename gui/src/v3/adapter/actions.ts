@@ -12,6 +12,7 @@ import type { ProviderId } from "../../transforms.js";
 import type { NeedItem } from "../needs.js";
 import type { Appearance } from "../themes/resolve.js";
 import type { SessionMenuItem, V3Action } from "../window.js";
+import type { MoveHow } from "../dialogs.js";
 import { menuFor, NEW_CHAT, nextStep, sessionKey } from "./data.js";
 import { parsePr } from "./feeds.js";
 
@@ -33,6 +34,8 @@ export interface DispatchIpc {
   renameSession(key: string, name: string): Promise<void>;
   openSessionIn(key: string, target?: string): Promise<void>;
   openApp(appId: string, name: string): Promise<void>;
+  continueSession(key: string): Promise<void>;
+  takeoverHosted(key: string, target: string): Promise<void>;
 }
 
 export interface DispatchDeps {
@@ -43,6 +46,8 @@ export interface DispatchDeps {
   openUrl: (url: string) => void;
   /** Re-read the v3 feeds and the view model after a change. */
   refresh: () => void;
+  /** Bring the window forward (a limit opened its decision sheet). */
+  reveal?: () => void;
   rows: () => ReadonlyMap<string, SessionRow>;
   needs: () => readonly NeedItem[];
   hosted: (key: string) => boolean;
@@ -55,7 +60,7 @@ export interface DispatchDeps {
   /** Open a session's tab (its chat, where an approval waits). */
   openTab?: (key: string) => void;
   /** The session runs in this window's chat: model changes go through its bridge. */
-  chatOf?: (key: string) => { setModel: (m: string) => void } | null;
+  chatOf?: (key: string) => { setModel: (m: string) => void; send?: (text: string) => void } | null;
   /** The session bar's [Terminal | Chat] switch. */
   switchView?: (key: string, to: "terminal" | "chat") => void;
 }
@@ -105,6 +110,34 @@ function createPr(row: SessionRow | undefined, deps: DispatchDeps): void {
   deps.openUrl(`https://github.com/${slug}/compare/${encodeURIComponent(branch)}?expand=1`);
 }
 
+/** The message a switched session is sent so it carries on. */
+const CONTINUE = "Continue where you left off.";
+
+/**
+ * One confirmed move. Claude keeps its conversation through `rebind` and is
+ * then told to continue where Agent Switch can type (a hosted window, a chat);
+ * "after this turn" arms the switch and the service continues it. Codex has no
+ * live login switch: the session moves (`takeover`) and resumes on the target
+ * with the continuation — in its window when hosted, else in the app's terminal
+ * (which refuses while codex still runs in the user's own terminal).
+ */
+async function moveOne(key: string, target: string, how: MoveHow, deps: DispatchDeps): Promise<void> {
+  const [provider] = key.split("/");
+  if (how === "brief") return void deps.open({ kind: "session", id: vmSessionId(key) });
+  if (provider === "codex") {
+    if (deps.hosted(key)) return deps.ipc.takeoverHosted(key, target);
+    const id = key.split("/")[2];
+    return void deps.open({ kind: "terminal", run: { title: `Continue on ${target}`, args: ["takeover", id, "--to", target, "--provider", "codex", "--prompt", CONTINUE] } });
+  }
+  const to = accountId(provider, target);
+  if (how === "after-turn") return deps.act.armRebind?.(vmSessionId(key), to);
+  await deps.act.rebind?.(vmSessionId(key), to);
+  const chat = deps.chatOf?.(key);
+  if (chat?.send) return chat.send(CONTINUE);
+  if (deps.hosted(key)) return deps.ipc.continueSession(key);
+  deps.toast({ tone: "info", text: `Now on ${target} — type one message in its terminal to continue` });
+}
+
 function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
   // A chat's approval or question is answered in the chat (spec §13.5: one decision).
   if (n.verb === "Open chat" && deps.openTab) return deps.openTab(n.subject);
@@ -151,6 +184,8 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
   switch (a.type) {
     case "need":
       return onNeed(a.item, deps);
+    case "reveal":
+      return deps.reveal?.();
     case "need-more":
     case "away":
       return deps.refresh();
@@ -169,15 +204,7 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       return run(
         deps,
         "Move",
-        Promise.all(
-          a.moves.map(({ key, target }) => {
-            const [provider] = key.split("/");
-            const to = accountId(provider, target);
-            if (a.how === "now") return deps.act.rebind?.(vmSessionId(key), to);
-            if (a.how === "after-turn") return deps.act.armRebind?.(vmSessionId(key), to);
-            return deps.open({ kind: "session", id: vmSessionId(key) });
-          }),
-        ),
+        Promise.all(a.moves.map(({ key, target }) => moveOne(key, target, a.how, deps))),
       );
     case "keep-account": {
       const limits = deps.needs().filter((n) => n.kind === "limit" && n.subject.split("/")[1] === a.account);

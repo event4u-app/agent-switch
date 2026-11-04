@@ -100,6 +100,58 @@ export function runsOnProfile(pids: number[], envVar: string, dir: string, envOf
   });
 }
 
+/** The profiles among `names` that a running process serves — {@link runsOnProfile}
+ *  per profile over ONE process list, so a poll cycle runs `pgrep` once. */
+export function profilesWithSession(
+  pids: number[],
+  names: readonly string[],
+  envVar: string,
+  dirOf: (name: string) => string,
+  envOf: (pid: number) => string | null,
+): Set<string> {
+  if (pids.length === 0) return new Set();
+  const envs = new Map<number, string | null>();
+  const cachedEnv = (pid: number) => {
+    if (!envs.has(pid)) envs.set(pid, envOf(pid));
+    return envs.get(pid) ?? null;
+  };
+  return new Set(names.filter((n) => runsOnProfile(pids, envVar, dirOf(n), cachedEnv)));
+}
+
+/**
+ * How many running processes serve each profile — for a display count, so an
+ * unreadable environment counts for none here (the refresh guard above treats
+ * it as a session instead, which is the safe side for a refresh).
+ */
+export function sessionCounts(
+  pids: number[],
+  names: readonly string[],
+  envVar: string,
+  dirOf: (name: string) => string,
+  envOf: (pid: number) => string | null,
+): Map<string, number> {
+  const counts = new Map(names.map((n) => [n, 0] as [string, number]));
+  for (const pid of pids) {
+    const env = envOf(pid);
+    if (env === null) continue;
+    const hit = names.find((n) => runsOnProfile([pid], envVar, dirOf(n), () => env));
+    if (hit) counts.set(hit, (counts.get(hit) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** Running `codex` processes per Codex profile (live, from the process table). */
+export function codexSessionCounts(names: readonly string[]): Map<string, number> {
+  const prov = provider("codex");
+  return sessionCounts(pidsOf(prov.binary), names, prov.envVar, (n) => prov.configDirFor(configDir("codex", n)), processEnv);
+}
+
+/** Codex profiles with a running `codex` process right now (live, from the process table). */
+export function codexProfilesWithSession(names: readonly string[]): Set<string> {
+  const prov = provider("codex");
+  return profilesWithSession(pidsOf(prov.binary), names, prov.envVar, (n) => prov.configDirFor(configDir("codex", n)), processEnv);
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

@@ -658,3 +658,26 @@ test("dir: with guard block and every pool member busy, the pool shares a member
   assert.equal(stale.blocked, undefined);
   assert.match(stale.note ?? "", /sharing claude\/stale$/);
 });
+
+test("plain start, strategy fill: stays on the preferred account while it has room, even when another would lose more", () => {
+  const r = plain({ star: weekSnap(10, 0, 144), soon: weekSnap(10, 40, 10) }, { strategy: "fill" });
+  assert.equal(r.name, "star");
+  assert.ok(r.why.some((w) => /^Strategy fill — staying on claude\/star until it reaches its limit/.test(w)), r.why.join("\n"));
+});
+
+test("plain start, strategy fill: the preferred account at its limit hands over to the balanced pick", () => {
+  const r = plain({ star: weekSnap(99, 50, 144), soon: weekSnap(10, 40, 10), late: weekSnap(10, 0, 144) }, { strategy: "fill" });
+  assert.equal(r.name, "soon");
+  assert.ok(r.why.some((w) => /^Strategy fill — claude\/star is at its limit \(at 99% of its 5h window/.test(w)), r.why.join("\n"));
+});
+
+test("plain start, strategy fill: a busy preferred account under guard block still gives way like any start", () => {
+  const r = plain({ star: weekSnap(10, 0, 144), soon: weekSnap(10, 40, 10) }, { strategy: "fill", guard: "block", live: (n) => n === "star" });
+  assert.equal(r.name, "soon");
+});
+
+test("plain start, strategy fill without a preferred account balances, and says why", () => {
+  const r = plain({ star: weekSnap(10, 0, 144), soon: weekSnap(10, 40, 10) }, { strategy: "fill", active: null });
+  assert.equal(r.name, "soon");
+  assert.ok(r.why.some((w) => w.startsWith("Strategy fill needs a preferred account")), r.why.join("\n"));
+});

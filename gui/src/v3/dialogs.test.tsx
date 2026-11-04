@@ -55,6 +55,33 @@ describe("New session (spec §8.1)", () => {
 });
 
 describe("decision sheet and End (spec §8.2, §8.3)", () => {
+  it("never switches onto an account running its own session; a brief may still start there", () => {
+    const onDecide = vi.fn();
+    render(
+      <DecisionSheet
+        account="side"
+        pctUsed={100}
+        window="5h"
+        resetsIn="1 h"
+        suggestion="work"
+        room={null}
+        onKeep={vi.fn()}
+        onClose={vi.fn()}
+        onDecide={onDecide}
+        targets={[{ name: "work", color: "blue", busy: true }]}
+        sessions={[{ key: "a", title: "Fix wedge", model: "Opus", target: "work" }]}
+      />,
+    );
+    const go = screen.getByRole("button", { name: "Continue on work" }) as HTMLButtonElement;
+    expect(go.disabled).toBe(true);
+    expect(screen.getByRole("alert").textContent).toMatch(/work is running a session of its own/);
+    fireEvent.click(screen.getByRole("radio", { name: /New session with a brief/ }));
+    expect(go.disabled).toBe(false);
+    fireEvent.click(go);
+    expect(onDecide).toHaveBeenCalledWith("brief", [{ key: "a", target: "work" }]);
+    cleanup();
+  });
+
   it("nothing changes until a choice; the default is after this turn; unchecked sessions are not moved", () => {
     const onDecide = vi.fn();
     render(<DecisionSheet account="side" pctUsed={94} window="5h" resetsIn="1h 18m" suggestion="work" room={null} onKeep={vi.fn()} onClose={vi.fn()} onDecide={onDecide} sessions={[{ key: "a", title: "Fix wedge", model: "Opus", target: "work" }, { key: "b", title: "Docs", model: "Sonnet", target: "work" }]} />);

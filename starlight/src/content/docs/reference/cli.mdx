@@ -104,7 +104,9 @@ background service stops checking its usage.
 | `use <name>` | Set the preferred account for a tool. A preference, not a pin — see below. |
 | `deactivate` | Clear the preferred account. |
 | `run <name> [--cwd DIR] [--tmux] [--force] [-- args…]` | Start the tool on one named account. |
-| `dir [--guard] [--json] [--plain]` | Which account a start in this folder would use, and why. |
+| `dir [--guard] [--json] [--plain] [--exclude a,b]` | Which account a start in this folder would use, and why. |
+| `exec [--exclude a,b] [--plain] -- <args…>` | Start the tool on the account `dir` picks, from a script or another tool. |
+| `strategy [balance\|fill]` | How a start with no folder rule picks: `balance` (default) spreads starts, `fill` stays on the preferred account until it reaches its limit. |
 | `picks [--limit N]` | Which account each start from your terminal chose, and why (newest 500 kept). |
 | `map <name\|pool:<id>> [dir]` | Pin a folder (default: the current one) to an account or a pool. |
 | `map --pause\|--resume [dir]` | Pause a folder rule without deleting it, or turn it back on. |
@@ -124,13 +126,34 @@ asks `agent-switch dir` first. The order is:
    or the best account in that pool.
 2. **No folder rule:** a balanced start across all of that tool's accounts.
 3. **The preferred account** (`use`) on a tie, or when no account has usage
-   numbers from the last 10 minutes.
+   numbers from the last 10 minutes. With `strategy fill`, the preferred account
+   takes every start until it reaches its limit; then the balanced pick decides.
 
 `dir --json` prints `{profile, configDir, why[], blocked?, note?}`. `--plain`
 ignores folder rules. A folder rule that cannot be served (its account is
 disabled or removed, or its pool has no usable account) refuses the start with
 exit code `86`. Details:
 [Which account a session uses](/agent-switch/concepts/which-account/).
+
+`--exclude a,b` leaves those accounts out of this one pick, for a caller that
+just saw one of them fail (a limit, an outage) and wants another.
+
+### `exec`
+
+The shell integration only works in a shell. A tool that starts `codex` or
+`claude` as a subprocess (a script, a review bot, a council of models) never
+runs it, so every start lands on the tool's own default login. `exec` does the
+shell integration's job without a shell:
+
+```bash
+agent-switch exec --provider codex -- exec --json -
+```
+
+It picks the account like a terminal start (and records it in `picks`), sets
+`CODEX_HOME` / `CLAUDE_CONFIG_DIR` for that account and runs the tool with
+everything after `--`. Input, output and the exit code pass straight through.
+With no usable account the tool runs on its own default login, with one line on
+stderr saying so. A folder rule that cannot be served exits `86`.
 
 ### `run`
 
@@ -194,7 +217,8 @@ The integration defines `claude`, `codex` and `agy` wrappers plus `asw`
 | `protection set <provider/name> [--on\|--off] [--threshold N]` | Change one account's limit protection. |
 | `protection wait on\|off\|default <claude/name>` <Badge text="Claude only" variant="note" /> | At 100%: let Claude Code wait for the reset (`on`), stop (`off`), or follow Claude Code's own default (`default`, removes the setting). |
 | `autoswitch on\|off\|status [--threshold N] [--tag T]` | Limit suggestions: a notification that names the account with the most room. Never switches. Default off. |
-| `reset <name> --provider codex [--yes]` | Use one banked Codex limit reset. Asks first on a terminal. |
+| `reset <name> --provider codex [--yes]` | Use one banked Codex limit reset. Asks first on a terminal, then waits until the usage readout shows the cleared limit. |
+| `auto-reset [on\|off\|status]` | At 100 % the background service uses one banked Codex reset by itself, at most once per reset cycle (default off). |
 | `keep-signed-in [on\|off\|status]` | Let the background service keep unused logins from running out (default on). Each provider's own tool does the refresh; Antigravity on macOS only. |
 
 <Aside>
@@ -298,6 +322,11 @@ the new account from its next message.
 | `rebind --cancel [--profile <p>]` | Drop a waiting `--when-idle` switch. |
 | `rebind --restore [--profile <p>]` | Give the session its own account back. |
 | `rebind --reset` | Re-enable `rebind` after it turned itself off following 3 failed attempts. |
+| `continue <provider/account/session> [--text "…"]` | Type one message (default “Continue where you left off.”) into a session Agent Switch hosts. |
+
+`rebind` moves the target account's login into the running session, so the
+target's own account is signed out while it is lent. It therefore refuses a
+target that has a running session of its own: that session would lose its login.
 
 See [Move a session](/agent-switch/guides/move-a-session/).
 

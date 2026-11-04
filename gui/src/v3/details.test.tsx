@@ -29,9 +29,10 @@ describe("Library Last", () => {
 });
 
 describe("Decision sheet (spec §8.2)", () => {
-  const sheet = (onDecide = vi.fn()) =>
+  const sheet = (onDecide = vi.fn(), tool?: string) =>
     render(
       <DecisionSheet
+        tool={tool}
         account="side"
         pctUsed={94}
         window="5h"
@@ -62,10 +63,22 @@ describe("Decision sheet (spec §8.2)", () => {
     sheet();
     const how = screen.getByRole("radiogroup", { name: "How" });
     expect(within(how).getAllByRole("radio").map((r) => r.textContent)).toEqual([
-      "After this turn, continue on workHands the conversation over with its context; side keeps its history.",
-      "Switch now (rebind)Checked for this Claude version. If it fails, the session stays on side.",
+      "After this turn, continue on workSwitches when the turn ends, then carries on by itself where Agent Switch hosts the session.",
+      "Switch now and continueChecked for this Claude version. The session adopts work and is told to continue; if the switch fails, it stays on side.",
       "New session with a briefStarts fresh on work with a summary of this one.",
     ]);
+  });
+
+  it("Codex: one move-and-continue card (no live login switch) and the brief", () => {
+    const onDecide = vi.fn();
+    sheet(onDecide, "codex");
+    const how = screen.getByRole("radiogroup", { name: "How" });
+    expect(within(how).getAllByRole("radio").map((r) => r.textContent)).toEqual([
+      "Move and continue on workMoves the conversation to work and resumes it there with “continue”. End codex in your own terminal first; a session Agent Switch hosts moves in its window.",
+      "New session with a briefStarts fresh on work with a summary of this one.",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Continue on work" }));
+    expect(onDecide).toHaveBeenCalledWith("after-turn", [{ key: "s1", target: "work" }]);
   });
 
   it("Room left lists every account of the tool with all its windows", () => {

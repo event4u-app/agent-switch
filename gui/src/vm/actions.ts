@@ -36,6 +36,13 @@ export interface Actions {
   rebind?(sessionId: string, targetAccountId: string): Promise<void>;
   /** Arm a live switch for when the session's turn ends (D3). */
   armRebind?(sessionId: string, targetAccountId: string): Promise<void>;
+  /** Tell a session to continue after its account was switched. True when the
+   *  message was typed (a session Agent Switch hosts); false when it runs in
+   *  the user's own terminal and needs one message from them. */
+  continueSession?(sessionId: string): Promise<boolean>;
+  /** The `takeover` arguments that move a session to `targetAccountId` and
+   *  resume it there with the continuation (Codex at a limit). */
+  moveAndContinueArgs?(sessionId: string, targetAccountId: string): string[];
   /** Drop a session's armed switch. */
   cancelArm?(sessionId: string): Promise<void>;
   openApp?(appId: string, accountId: string): Promise<void>;
@@ -141,6 +148,19 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
       const p = session(id);
       await ipc.rebindTo(splitAccountId(target)[1], p.profile);
     }),
+    continueSession: async (id: string) => {
+      const p = session(id);
+      try {
+        await ipc.continueSession(`${p.provider}/${p.profile}/${p.sessionId}`);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    moveAndContinueArgs: (id: string, target: string) => {
+      const p = session(id);
+      return ["takeover", p.sessionId, "--to", splitAccountId(target)[1], "--provider", p.provider, "--from", p.profile, "--prompt", ipc.CONTINUE_TEXT];
+    },
     armRebind: thenReload(async (id: string, target: string) => {
       const p = session(id);
       await ipc.armRebind(splitAccountId(target)[1], p.profile, p.sessionId);

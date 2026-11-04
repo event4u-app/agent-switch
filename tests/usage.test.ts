@@ -9,6 +9,8 @@ import {
   pickSwitchTarget,
   windowPace,
   sameResetCycle,
+  resetPassed,
+  freedAfterReset,
   type ThresholdState,
   type UsageSnapshot,
   type UsageWindow,
@@ -222,4 +224,23 @@ test("sameResetCycle: tolerant for timestamps, exact for anything unparsable", (
   assert.equal(sameResetCycle(null, "2026-10-31T18:00:00Z"), false);
   assert.equal(sameResetCycle("R1", "R1"), true);
   assert.equal(sameResetCycle("R1", "R2"), false);
+});
+
+const win = (u: number, resetsAt: string | null) => ({ windows: [{ key: "five_hour", label: "5h", utilization: u, resetsAt }], routines: null, capturedAt: AT });
+
+test("resetPassed: a window at the threshold whose reset time has passed — re-read it now", () => {
+  const now = Date.parse("2026-11-04T13:00:00Z");
+  assert.equal(resetPassed(win(100, "2026-11-04T12:59:00Z"), 98, now), true);
+  assert.equal(resetPassed(win(100, "2026-11-04T13:05:00Z"), 98, now), false, "reset still ahead");
+  assert.equal(resetPassed(win(60, "2026-11-04T12:59:00Z"), 98, now), false, "was not at the threshold — nothing to announce");
+  assert.equal(resetPassed(win(100, null), 98, now), false, "no reset time");
+  assert.equal(resetPassed(undefined, 98, now), false);
+});
+
+test("freedAfterReset: the old snapshot was stuck at the threshold, the new one is below it", () => {
+  const now = Date.parse("2026-11-04T13:00:00Z");
+  const stuck = win(100, "2026-11-04T12:59:00Z");
+  assert.equal(freedAfterReset(stuck, win(0, "2026-11-04T18:00:00Z"), 98, now), true);
+  assert.equal(freedAfterReset(stuck, win(100, "2026-11-04T12:59:00Z"), 98, now), false, "the readout has not caught up");
+  assert.equal(freedAfterReset(win(100, "2026-11-04T13:30:00Z"), win(10, null), 98, now), false, "freed before its reset: a redeem, announced elsewhere");
 });
