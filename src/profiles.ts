@@ -8,6 +8,7 @@ import * as path from "node:path";
 import { ProviderId, PROVIDER_IDS, provider, isProviderId } from "./providers.js";
 import { CredentialStore, credentialStore } from "./credentials.js";
 import { DEFAULT_GUARD_POLICY, FRESH_INSTALL_GUARD_POLICY, GuardPolicy, isGuardPolicy } from "./single-load.js";
+import { START_STRATEGIES, type StartStrategy } from "./start-strategy.js";
 
 export const HOME = os.homedir();
 export const ROOT = process.env.AGENT_SWITCH_HOME ?? path.join(HOME, ".agent-switch");
@@ -119,6 +120,12 @@ export interface State {
    *  login (token-freshen.ts). Default true — also for a state file written
    *  before the key existed, because that is what the service already did. */
   keepSignedIn: boolean;
+  /** "Redeem Codex resets automatically": the service redeems one banked reset
+   *  credit when a Codex account reaches its limit (at most once per reset
+   *  cycle). Default false — a credit is scarce and cannot be returned. */
+  codexAutoReset: boolean;
+  /** How a plain start picks per provider (`dir-resolve.ts`); absent = `balance`. */
+  strategy: Partial<Record<ProviderId, StartStrategy>>;
   /** Rollback / circuit-breaker for the `rebind` write path (ADR-003). */
   rebind: RebindKillSwitch;
   /**
@@ -332,16 +339,18 @@ export function readState(): State {
     const binaryPaths = normalizeBinaryPaths(raw?.binaryPaths);
     const osNotifications = raw?.osNotifications === true;
     const keepSignedIn = raw?.keepSignedIn !== false;
+    const codexAutoReset = raw?.codexAutoReset === true;
+    const strategy = normalizeStrategy(raw?.strategy);
     const rebind = normalizeRebindState(raw?.rebind);
     const guard = normalizeGuard(raw?.guard);
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, rebind, guard };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, strategy, rebind, guard };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, rebind, guard };
+      return { active: { ...emptyActive(), ...raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, strategy, rebind, guard };
     }
-    return { active: emptyActive(), labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, rebind, guard };
+    return { active: emptyActive(), labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, strategy, rebind, guard };
   } catch {
     /* absent / unparsable → default */
   }
@@ -349,7 +358,7 @@ export function readState(): State {
   // 2.1.0 install can have profiles and no state file — that user must keep the
   // pre-2.2 default (block), not be treated as new.
   const fresh = !fs.existsSync(STATE_FILE) && listAllProfiles().length === 0;
-  return { active: emptyActive(), labels: {}, colors: {}, disabled: [], autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, keepSignedIn: true, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
+  return { active: emptyActive(), labels: {}, colors: {}, disabled: [], autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, keepSignedIn: true, codexAutoReset: false, strategy: {}, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
 }
 
 export function readOsNotifications(): boolean {
@@ -372,6 +381,39 @@ export function setKeepSignedIn(on: boolean): void {
   return withFileLockSync(STATE_FILE, () => {
     const state = readState();
     state.keepSignedIn = on;
+    writeState(state);
+  });
+}
+
+function normalizeStrategy(raw: unknown): Partial<Record<ProviderId, StartStrategy>> {
+  const out: Partial<Record<ProviderId, StartStrategy>> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (isProviderId(k) && (START_STRATEGIES as readonly unknown[]).includes(v)) out[k] = v as StartStrategy;
+  }
+  return out;
+}
+
+export function readStrategy(providerId: ProviderId): StartStrategy {
+  return readState().strategy[providerId] ?? "balance";
+}
+
+export function setStrategy(providerId: ProviderId, strategy: StartStrategy): void {
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    state.strategy = { ...state.strategy, [providerId]: strategy };
+    writeState(state);
+  });
+}
+
+export function readCodexAutoReset(): boolean {
+  return readState().codexAutoReset;
+}
+
+export function setCodexAutoReset(on: boolean): void {
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    state.codexAutoReset = on;
     writeState(state);
   });
 }
