@@ -75,14 +75,20 @@ export interface BarSession {
 }
 
 /** Session-bar chip: opens a popover; a locked chip keeps its shape and says why. */
-function BarChip({ children, title, locked, onClick }: { children: ReactNode; title: string; locked?: boolean; onClick: (e: MouseEvent<HTMLButtonElement>) => void }) {
+function BarChip({ children, title, locked, open, onClick }: { children: ReactNode; title: string; locked?: boolean; open?: boolean; onClick: (e: MouseEvent<HTMLButtonElement>) => void }) {
   return (
     <button
       type="button"
       title={title}
       aria-disabled={locked || undefined}
+      aria-expanded={locked ? undefined : !!open}
+      data-popover-trigger=""
       onClick={locked ? undefined : onClick}
-      className={cn("inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-xs text-ac-soft", locked ? "cursor-not-allowed opacity-60" : "hover:bg-ac-raise hover:text-ac-text")}
+      className={cn(
+        "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-xs",
+        open ? "bg-ac-raise text-ac-text shadow-[inset_0_0_0_1px_var(--ac-line2)]" : "text-ac-soft",
+        locked ? "cursor-not-allowed opacity-60" : !open && "hover:bg-ac-raise hover:text-ac-text",
+      )}
     >
       {children}
       {locked ? <Lock className="size-3 text-ac-muted" /> : <ChevronDown className="size-3 text-ac-muted" />}
@@ -96,7 +102,7 @@ const shellX = (e: MouseEvent<HTMLElement>): number => {
   return Math.round(e.currentTarget.getBoundingClientRect().left - (shell?.getBoundingClientRect().left ?? 0));
 };
 
-export function SessionBar({ s, openIn, on }: { s: BarSession; openIn: ReactNode; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; thinking: (x: number) => void; menu: () => void } }) {
+export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; thinking: (x: number) => void; menu: () => void } }) {
   const t = tone(s.account.fiveH, s.account.protect);
   const chatOff = !s.hosted || !s.chatAvailable;
   const chatWhy = !s.hosted ? "Chat needs a session hosted in Agent Switch" : "This tool keeps the view it started in";
@@ -138,11 +144,11 @@ export function SessionBar({ s, openIn, on }: { s: BarSession; openIn: ReactNode
           {s.account.fiveH != null && <span className={cn("font-ac-mono text-[10.5px]", t === "ok" || t === "none" ? "text-ac-muted" : t === "warn" ? "text-ac-warn-text" : "text-ac-alert-text")}>{s.account.fiveH}%</span>}
         </span>
       </BarChip>
-      <BarChip title={s.hosted ? "Model for the next turn" : "Locked: change it in your terminal (/model)"} locked={!s.hosted} onClick={(e) => on.model(shellX(e))}>
+      <BarChip title={s.hosted ? "Model for the next turn" : "Locked: change it in your terminal (/model)"} locked={!s.hosted} open={chipOpen === "model"} onClick={(e) => on.model(shellX(e))}>
         {/* Unknown: the field's name, muted — never a dash (gap §5b). */}
         {s.model ? <span title={s.modelId ?? undefined}>{s.model}</span> : <span className="text-ac-muted">Model</span>}
       </BarChip>
-      <BarChip title={s.hosted ? "Thinking for the next turn" : "Locked: change it in your terminal"} locked={!s.hosted} onClick={(e) => on.thinking(shellX(e))}>
+      <BarChip title={s.hosted ? "Thinking for the next turn" : "Locked: change it in your terminal"} locked={!s.hosted} open={chipOpen === "thinking"} onClick={(e) => on.thinking(shellX(e))}>
         <Brain className="size-3.5 text-ac-muted" /> {s.thinking ? s.thinking[0].toUpperCase() + s.thinking.slice(1) : <span className="text-ac-muted">Thinking</span>}
       </BarChip>
       {s.contextPct != null && (
@@ -285,7 +291,8 @@ export function xtermTheme(vars: Record<string, string>, followTheme: boolean): 
   return { ...base, ...Object.fromEntries(names.map((n, i) => [n, vars[`--as-ansi-${i}`]]).filter(([, v]) => v)) };
 }
 
-export const TERMINAL_LOOK = { fontSize: 12.5, lineHeight: 1.5 } as const;
+/** The boards' terminal type: IBM Plex Mono 12.5 px on a 1.5 CSS line (spec §6.4). */
+export const TERMINAL_LOOK = { fontSize: 12.5, lineHeight: 1.5, fontFamily: '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace' } as const;
 
 /**
  * The hosted session's real PTY: `agent-switch host attach <key>` in xterm (the

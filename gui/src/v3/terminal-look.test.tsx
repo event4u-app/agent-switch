@@ -6,6 +6,11 @@ vi.mock("@xterm/xterm", () => ({
   Terminal: class {
     rows = 24;
     cols = 80;
+    options: Record<string, unknown> = {};
+    onRender() {
+      return { dispose() {} };
+    }
+    refresh() {}
     loadAddon(a: { name?: string }) {
       loaded.push(a.name ?? "fit");
     }
@@ -32,7 +37,8 @@ vi.mock("@xterm/addon-webgl", () => ({
 
 import type { TermBackend } from "../terminal.js";
 import { HostedTerminal } from "./workbench.js";
-import { XtermBox } from "../redesign/screens/terminal-sheet.js";
+import { XtermBox, webglCanvasSane, xtermLineHeight } from "../redesign/screens/terminal-sheet.js";
+import { TERMINAL_LOOK } from "./workbench.js";
 
 beforeAll(() => {
   globalThis.ResizeObserver ??= class {
@@ -78,5 +84,37 @@ describe("the v3 terminal look (spec §6.4)", () => {
     await flush();
     expect(container.querySelector("[data-terminal-frame]")).toBeNull();
     expect(loaded).not.toContain("webgl");
+  });
+});
+
+describe("terminal type as on the boards (G3: IBM Plex Mono, 12.5 px on an 18.75 px line)", () => {
+  it("uses Plex Mono first", () => {
+    expect(TERMINAL_LOOK.fontFamily.startsWith('"IBM Plex Mono"')).toBe(true);
+  });
+
+  it("translates the CSS line height into xterm's, which scales the font's own height", async () => {
+    const orig = document.createElement.bind(document);
+    const spy = vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      const el = orig(tag);
+      if (tag === "canvas") (el as HTMLCanvasElement).getContext = (() => ({ font: "", measureText: () => ({ fontBoundingBoxAscent: 13, fontBoundingBoxDescent: 3 }) })) as never;
+      return el;
+    });
+    const ua = vi.spyOn(navigator, "userAgent", "get").mockReturnValue("WebKit");
+    // 12.5 × 1.5 = 18.75 px; the font is 16 px tall → 18.75 / 16.
+    expect(await xtermLineHeight(TERMINAL_LOOK)).toBeCloseTo(18.75 / 16, 5);
+    spy.mockRestore();
+    ua.mockRestore();
+  });
+
+  it("keeps WebGL only where its canvas holds the device pixels of its CSS box", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<div class="xterm-screen"><canvas class="xterm-link-layer"></canvas><canvas></canvas></div>';
+    const gl = host.querySelectorAll("canvas")[1];
+    gl.getBoundingClientRect = () => ({ width: 998 }) as DOMRect;
+    gl.width = 998;
+    expect(webglCanvasSane(host, 2), "CSS-sized canvas on a 2× screen draws text twice as large").toBe(false);
+    gl.width = 1996;
+    expect(webglCanvasSane(host, 2)).toBe(true);
+    expect(webglCanvasSane(host, 1)).toBe(true);
   });
 });
