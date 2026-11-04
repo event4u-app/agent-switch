@@ -96,17 +96,34 @@ Because Codex reports usage, everything that depends on it works:
 - **Limit protection and suggestions.** Protection warns at 98% by default, and
   `autoswitch on --provider codex` suggests another account near the limit.
 
+## Fresh limits
+
+The background service reads a Codex account's limits every minute while
+`codex` runs on it, and every 5 minutes otherwise. Codex also writes its limits
+into its own session file after every turn; the service takes those numbers as
+soon as they are newer, without a network call. When an account that sat at its
+limit passes its reset time, it is read again right away and you get one "free
+again" notice.
+
 ## Banked resets
 
 A ChatGPT plan can hold banked rate-limit resets. The desktop app shows how
 many each account has. With limit suggestions on for Codex
 (`agent-switch autoswitch on --provider codex`), the notice for a preferred
 account over the threshold also says when a reset is available.
-Agent Switch never redeems one for you. To redeem one yourself:
+To redeem one yourself:
 
 ```bash
 agent-switch reset work --provider codex
 ```
+
+`reset` waits until the usage readout shows the cleared limit, so the app and
+the next start see the new numbers right away.
+
+Agent Switch redeems one for you only if you turn it on
+(`agent-switch auto-reset on`, or Settings › Protection › Redeem Codex resets
+automatically). It is off by default. When it is on, an account that reaches
+100 % gets one of its own banked resets, at most once per reset cycle.
 
 <Aside type="caution">
 A reset is a real, scarce credit and cannot be returned. `reset` asks first on
