@@ -81,7 +81,10 @@ export function NeedsZone({
   onVerb,
   onMore,
   onAway,
+  tray,
 }: {
+  /** The tray card's variant (board "tray"): a 24 px head without the ⌘J hint. */
+  tray?: boolean;
   items: NeedItem[];
   away: AwayDigest | null;
   focusedId?: string | null;
@@ -96,11 +99,11 @@ export function NeedsZone({
   if (focused && !shown.includes(focused)) shown[shown.length - 1] = focused;
   const updates = away ? away.finishedTurns + away.stoppedOnError + away.resolved + away.mergedPrs + away.ciBreaks : 0;
   return (
-    <section aria-label="Needs you">
-      <div className="sticky top-0 z-[1] flex h-8 items-center gap-2 bg-ac-panel px-3.5">
+    <section aria-label="Needs you" className={tray ? "pt-1" : undefined}>
+      <div className={cn("flex items-center gap-2 bg-ac-panel px-3.5", tray ? "h-6" : "sticky top-0 z-[1] h-8")}>
         <span className="text-[11px] font-semibold text-ac-soft">Needs you</span>
         <span className="text-[11px] text-ac-muted">{items.length}</span>
-        <span className="ml-auto font-ac-mono text-[10.5px] text-ac-muted">⌘J</span>
+        {!tray && <span className="ml-auto font-ac-mono text-[10.5px] text-ac-muted">⌘J</span>}
       </div>
       <div className="px-1.5">
         {away && updates > 0 && (

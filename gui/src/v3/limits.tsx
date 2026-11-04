@@ -68,7 +68,7 @@ export function LimitBar({ w, protect, stale, nowMs }: { w: LimitWindow; protect
   const t = stale ? "none" : tone(w.used, protect);
   return (
     <div className="grid grid-cols-[76px_1fr_36px_64px] items-center gap-2">
-      <span className="truncate text-[11px] text-ac-muted">{w.label}</span>
+      <span className="truncate text-[11px] text-ac-muted">{w.label.replace("week · ", "week ")}</span>
       <span className="relative block h-1.5 rounded-full bg-ac-raise">
         <span className={cn("absolute inset-y-0 left-0 rounded-full", FILL[t], stale && "opacity-50")} style={{ width: `${w.used ?? 0}%` }} />
         {w.pace != null && <span data-testid="pace-tick" className="absolute -top-1 h-3.5 w-0.5 -translate-x-1/2 rounded-full bg-ac-text" style={{ left: `${w.pace}%` }} />}
@@ -86,7 +86,7 @@ export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount
   const t = stale ? "none" : tone(top?.used ?? null, a.protect);
   const tip = a.windows.map((w) => `${w.label} ${pct(w.used)}${w.resetsAtMs ? ` · resets in ${duration(w.resetsAtMs - nowMs)}` : ""}`).join("\n");
   return (
-    <div role="button" tabIndex={0} onClick={() => onOpen(a.key)} title={tip} className={cn("flex h-6 items-center gap-2 rounded-md px-2", open ? "bg-ac-raise" : "hover:bg-ac-raise")}>
+    <div role="button" tabIndex={0} data-popover-trigger="" onClick={() => onOpen(a.key)} title={tip} className={cn("flex h-6 items-center gap-2 rounded-md px-2", open ? "bg-ac-raise" : "hover:bg-ac-raise")}>
       <span className="min-w-0 flex-1 truncate text-xs text-ac-soft">
         {a.name}
         {a.tool === "codex" && <span className="text-ac-muted"> · Codex</span>}
@@ -95,7 +95,7 @@ export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount
             →
           </span>
         )}
-        {stale && <span className="ml-1 text-[11px] text-ac-muted"> · {duration(nowMs - a.checkedMs!)} old</span>}
+        {stale && <span className="text-[11px] text-ac-muted"> · {duration(nowMs - a.checkedMs!)} old</span>}
       </span>
       {a.signIn ? (
         <button type="button" onClick={(e) => (e.stopPropagation(), onSignIn(a.key))} className="shrink-0 text-[11px] text-ac-muted hover:text-ac-text">
@@ -205,6 +205,11 @@ export function RoomLeft({ accounts, nowMs }: { accounts: LimitAccount[]; nowMs:
             <AccountMark color={a.color} />
             <span className="truncate text-xs font-medium text-ac-text">{a.name}</span>
             {a.next && <span className="shrink-0 text-[10.5px] text-ac-info-text">→ next</span>}
+            {!isStale(a, nowMs) && (tone(tightest(a)?.used ?? null, a.protect) === "warn" || tone(tightest(a)?.used ?? null, a.protect) === "alert") && (
+              <Chip kind="status" tone="warn">
+                Near limit
+              </Chip>
+            )}
             <span className="ml-auto shrink-0 font-ac-mono text-[10.5px] text-ac-muted">{a.checkedMs === null ? "" : nowMs - a.checkedMs < 60_000 ? "just now" : `${duration(nowMs - a.checkedMs)} ago`}</span>
           </div>
           {a.windows.length ? (

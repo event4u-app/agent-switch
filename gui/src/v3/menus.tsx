@@ -4,7 +4,7 @@
  * it never sits inside a bar that clips its children.
  */
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Check, ChevronDown, ChevronRight, Code, Folder, GitPullRequest, Laptop, Settings2, SquareTerminal } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { Kbd } from "../ui/Typography.js";
@@ -26,6 +26,33 @@ export interface MenuItem {
   note?: string;
   onClick?: () => void;
   onHover?: () => void;
+}
+
+/** Marks the button that opens a floating layer, so pressing it again toggles instead of closing and reopening. */
+export const POPOVER_TRIGGER = { "data-popover-trigger": "" } as const;
+
+/**
+ * A floating layer anchored in the window. It closes on a press anywhere outside
+ * itself (spec §7.4: menus and popovers close on an outside click or Esc).
+ */
+export function Anchored({ className, style, onClose, children }: { className?: string; style?: CSSProperties; onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const down = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      if (!t || ref.current?.contains(t) || t.closest?.("[data-popover-trigger]")) return;
+      close.current();
+    };
+    document.addEventListener("pointerdown", down, true);
+    return () => document.removeEventListener("pointerdown", down, true);
+  }, []);
+  return (
+    <div ref={ref} className={className} style={style}>
+      {children}
+    </div>
+  );
 }
 
 export function Menu({ items, width = 260, label, className }: { items: MenuItem[]; width?: number; label?: string; className?: string }) {
@@ -84,7 +111,7 @@ export function OpenInButton({ def, open, onDefault, onMenu }: { def: { label: s
         {def && <AppMono m={def.mono} />}
         Open
       </button>
-      <button type="button" aria-label="Open in…" aria-haspopup="menu" aria-expanded={open} onClick={onMenu} className={cn("inline-flex items-center border-l border-ac-line2 px-1.5 hover:text-ac-text", open && "bg-ac-bg text-ac-text")}>
+      <button type="button" data-popover-trigger="" aria-label="Open in…" aria-haspopup="menu" aria-expanded={open} onClick={onMenu} className={cn("inline-flex items-center border-l border-ac-line2 px-1.5 hover:text-ac-text", open && "bg-ac-bg text-ac-text")}>
         <ChevronDown className="size-3.5" />
       </button>
     </span>

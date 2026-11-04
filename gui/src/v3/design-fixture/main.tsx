@@ -11,6 +11,7 @@ import { AcRoot } from "../../ui/AcRoot.js";
 import { themeById } from "../themes/registry.js";
 import { DEFAULT_APPEARANCE, resolveTheme, type Accent } from "../themes/resolve.js";
 import { V3Window, type V3Data, type V3Slots } from "../window.js";
+import { V3Tray } from "../tray.js";
 import { ExternalBody, HostedTerminal } from "../workbench.js";
 import type { LimitAccount } from "../limits.js";
 import type { RowSession } from "../sessions.js";
@@ -107,13 +108,14 @@ const data: V3Data = {
     { id: "pr:claude/work/s-store", group: "branches", title: "#142 engine: SQLite event store (M1)", meta: "open · agent-switch" },
     { id: "cmd:move", group: "commands", title: "Move session to another account…", meta: "opens the decision sheet", hint: "⌘⇧M" },
   ],
-  appearance: { ...DEFAULT_APPEARANCE, dark: THEME, light: THEME, mode: themeById(THEME).mode, accent: ACCENT },
+  appearance: { ...DEFAULT_APPEARANCE, ...(themeById(THEME).mode === "dark" ? { dark: THEME } : { light: THEME }), mode: themeById(THEME).mode, accent: ACCENT },
   prefersDark: true,
   openIn: {
     targets: [
-      { target: "phpstorm", label: "PhpStorm", kind: "editor", installed: true },
-      { target: "vscode", label: "VS Code", kind: "editor", installed: true },
+      { target: "vscode", label: "VS Code", kind: "editor", installed: true, app: null, launcher: "/usr/local/bin/code" },
+      { target: "phpstorm", label: "PhpStorm", kind: "editor", installed: true, app: "/Applications/PhpStorm.app", launcher: "/usr/local/bin/phpstorm" },
       { target: "cursor", label: "Cursor", kind: "editor", installed: false },
+      { target: "idea", label: "IntelliJ IDEA", kind: "editor", installed: false },
       { target: "terminal", label: "Terminal", kind: "terminal", installed: true },
       { target: "finder", label: "Finder", kind: "files", installed: true },
     ],
@@ -151,6 +153,7 @@ const data: V3Data = {
     resetsIn: "1h 18m",
     sessions: [{ key: "claude/side/s-wedge", title: "Fix wedge on daemon restart", model: "Sonnet 5.5", target: "work", state: "working" }],
     suggestion: "work",
+    suggestionWhy: "next in this project's pool",
   }),
   models: (key) =>
     key.startsWith("codex")
@@ -210,6 +213,16 @@ function App() {
     tools: <p className="text-[13px] text-ac-muted">(2.11 tool list)</p>,
     settings: (s) => <p className="text-[13px] text-ac-muted">{`(2.11 ${s} section)`}</p>,
   };
+  if (q.get("view") === "tray") {
+    const noop = () => {};
+    return (
+      <AcRoot className="h-full" mode={def.mode} style={vars as CSSProperties}>
+        <div className="flex h-full items-start justify-center bg-ac-bg p-5">
+          <V3Tray needs={data.needs} away={data.away} sessions={data.sessions} accounts={data.limits} nowMs={data.nowMs} on={{ verb: noop, moreNeeds: noop, away: noop, session: noop, moreSessions: noop, account: noop, signIn: noop, start: noop, open: noop }} />
+        </div>
+      </AcRoot>
+    );
+  }
   return (
     <AcRoot className="h-full" mode={def.mode} style={vars as CSSProperties}>
       <V3Window data={data} slots={slots} act={(a) => console.log("[act]", JSON.stringify(a).slice(0, 200))} />

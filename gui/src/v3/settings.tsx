@@ -14,6 +14,7 @@ import { Select } from "../ui/Select.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { Switch } from "../ui/Switch.js";
 import { Chip, Marker, PageHeader } from "./kit.js";
+import { Anchored, monogram } from "./menus.js";
 import { THEMES, themeById, type ThemeDef, type ThemeGroup } from "./themes/registry.js";
 import { resolveTheme, type Accent, type Appearance } from "./themes/resolve.js";
 
@@ -67,14 +68,16 @@ const Card = ({ children }: { children: ReactNode }) => <div className="rounded-
 
 // ---------- Appearance ----------
 
-/** Fixed sample lines for the mini preview: colours only, no session data. */
-const SAMPLE: [string, number | null][][] = [
-  [["╭─ ", 8], ["Claude", 13], [" ─╮", 8]],
-  [["> ", 12], ["run the tests", null]],
-  [["✓ ", 10], ["41 passed", null]],
-  [["✗ ", 9], ["1 failed", 9], [" e2e/checkout", 8]],
-  [["⏺ ", 11], ["Edit ", 14], ["src/store.ts", 12]],
-  [["  +12 ", 2], ["−3", 1]],
+/** Fixed sample lines for the mini preview (the boards' terminal, lines 5–12): colours only, no session data. */
+const SAMPLE: [text: string, ansi: number | null, bold?: boolean][][] = [
+  [["> ", 8], ["dedupe events per producer, then add the projection rebuild test", null]],
+  [[" ", null]],
+  [["● ", 7], ["Read", null, true], ["(src/engine/store.ts)", 8]],
+  [["  ⎿  Read 214 lines", 8]],
+  [["● ", 7], ["Update", null, true], ["(src/engine/ingest.ts)", 8]],
+  [["  ⎿  Updated src/engine/ingest.ts with ", 8], ["+38", 2], [" ", 8], ["-6", 1]],
+  [["      42 ", 8], ["+  const key = `${e.producer}:${e.seq}`;", 2]],
+  [["      43 ", 8], ["+  if (seen.has(key)) return { deduped: true };", 2]],
 ];
 
 /** A themed miniature: the theme's real tokens on a fixed sample (spec §10.5). */
@@ -87,7 +90,8 @@ export function Swatch({ def, accent, selected }: { def: ThemeDef; accent: Accen
           <span className="size-1.5 rounded-full bg-ac-alert" />
           <span className="size-1.5 rounded-full bg-ac-warn" />
           <span className="size-1.5 rounded-full bg-ac-ok" />
-          <span className="ml-auto h-3 w-9 rounded bg-ac-brand" />
+          <span className="ml-2 h-2.5 w-10 rounded-sm bg-ac-brand-tint shadow-[inset_0_0_0_1px_var(--ac-brand-line)]" />
+          <span className="ml-auto h-3 w-9 rounded-sm bg-ac-brand" />
         </div>
         <div className="flex h-[92px]">
           <div className="w-[30%] shrink-0 space-y-1 border-r border-ac-line bg-ac-rail p-1.5">
@@ -101,8 +105,8 @@ export function Swatch({ def, accent, selected }: { def: ThemeDef; accent: Accen
           <div aria-hidden className="min-w-0 flex-1 overflow-hidden px-2 py-1.5 font-ac-mono text-[7.5px] leading-[1.45]" style={{ background: "var(--as-term-bg)", color: "var(--as-term-fg)" }}>
             {SAMPLE.map((segs, i) => (
               <div key={i} className="whitespace-pre">
-                {segs.map(([t, a], j) => (
-                  <span key={j} style={{ color: a != null ? `var(--as-ansi-${a})` : undefined }}>
+                {segs.map(([t, a, bold], j) => (
+                  <span key={j} className={bold ? "font-semibold" : undefined} style={{ color: a != null ? `var(--as-ansi-${a})` : undefined }}>
                     {t}
                   </span>
                 ))}
@@ -134,7 +138,7 @@ export function AppearanceSettings({ a, prefersDark, onChange }: { a: Appearance
   const lights = THEMES.filter((t) => t.mode === "light").length;
   return (
     <>
-      <Group title="Theme" detail="Colours for the whole app, the tray, the pet bubble and the terminal.">
+      <Group title="Theme" detail="Colours for the whole app, the tray, the pet bubble and the terminal dock.">
         <div className="mb-4 flex items-center gap-3">
           <Segmented
             label="Mode"
@@ -146,11 +150,9 @@ export function AppearanceSettings({ a, prefersDark, onChange }: { a: Appearance
               { value: "system", label: <span className="inline-flex items-center gap-1.5"><Monitor className="size-3.5" />Sync with OS</span> },
             ]}
           />
-          {a.mode === "system" && (
-            <span className="text-xs text-ac-muted">
-              dark → <span className="text-ac-text">{themeById(a.dark).name}</span>, light → <span className="text-ac-text">{themeById(a.light).name}</span>
-            </span>
-          )}
+          <span className="text-xs text-ac-muted">
+            With “Sync with OS”: dark → <span className="text-ac-text">{themeById(a.dark).name}</span>, light → <span className="text-ac-text">{themeById(a.light).name}</span>
+          </span>
         </div>
         {GROUPS.map((g) => (
           <div key={g.id} className="mb-4">
@@ -208,17 +210,34 @@ export interface OpenTarget {
   label: string;
   kind: "editor" | "files" | "terminal" | "agent-app";
   installed: boolean;
+  /** Where it was found: the app bundle and the launcher on PATH. */
+  app?: string | null;
+  launcher?: string | null;
 }
 
-export function OpenInSettings({ targets, defaultTarget, perRepo, focusTerminal, on }: { targets: OpenTarget[]; defaultTarget: string | null; perRepo: Record<string, string>; focusTerminal: boolean; on: { setDefault: (target: string, repo?: string) => void; focusTerminal: (v: boolean) => void } }) {
+/** "/Applications/PhpStorm.app · phpstorm launcher", or the launcher's path alone. Pure. */
+export function targetWhere(t: OpenTarget): string {
+  if (!t.installed) return "not installed";
+  const name = t.launcher ? t.launcher.split("/").pop()! : null;
+  if (t.app && name) return `${t.app} · ${name} launcher`;
+  return t.app ?? t.launcher ?? (t.kind === "files" || t.kind === "terminal" ? "built in" : "");
+}
+
+export function OpenInSettings({ targets, agentApps = [], defaultTarget, perRepo, focusTerminal, on }: { targets: OpenTarget[]; agentApps?: { id: string; label: string; tool: string }[]; defaultTarget: string | null; perRepo: Record<string, string>; focusTerminal: boolean; on: { setDefault: (target: string, repo?: string) => void; focusTerminal: (v: boolean) => void } }) {
   const usable = targets.filter((t) => t.installed);
   const options = usable.map((t) => ({ value: t.target, label: t.label }));
   return (
     <>
-      <Group title="Targets" detail="What “Open in” offers. Editors open the worktree root with their own launcher; missing apps stay hidden.">
+      <Group title="Targets" detail="What “Open in” offers. Agent apps only for their own tool; editors open the worktree root with their own launcher. Missing apps stay hidden.">
         <Card>
-          {targets.map((t) => (
-            <Row key={t.target} title={t.label} detail={t.kind}>
+          {agentApps.map((a) => (
+            <Row key={a.id} title={<TargetTitle mono={monogram(a.id, a.label)} label={a.label} />} detail={<span className="font-ac-mono">{`${a.tool === "codex" ? "Codex" : "Claude"} sessions`}</span>}>
+              <span className="text-xs text-ac-soft">found</span>
+            </Row>
+          ))}
+          {/* Terminal and Finder are built in; the list names what has to be found (board "editors"). */}
+          {targets.filter((t) => t.kind === "editor").map((t) => (
+            <Row key={t.target} title={<TargetTitle mono={monogram(t.target, t.label)} label={t.label} />} detail={<span className="font-ac-mono">{targetWhere(t)}</span>}>
               <span className={cn("text-xs", t.installed ? "text-ac-soft" : "text-ac-muted")}>{t.installed ? "found" : "not installed · hidden"}</span>
             </Row>
           ))}
@@ -234,13 +253,22 @@ export function OpenInSettings({ targets, defaultTarget, perRepo, focusTerminal,
               <Select ariaLabel={`Default for ${repo}`} value={target} onChange={(v) => on.setDefault(v, repo)} options={options} />
             </Row>
           ))}
-          <Row title="Focus terminal" detail="For sessions in your own terminal. macOS asks once for Automation access.">
+          <Row title="Focus terminal" detail="For sessions in your own terminal. macOS asks once for Automation access (error −1743 is explained, not hidden).">
             <Switch checked={focusTerminal} onChange={on.focusTerminal} label="Focus terminal" />
           </Row>
         </Card>
         <p className="mt-2 text-[11px] text-ac-muted">Launchers are allowlisted, paths must be inside a known worktree, arguments are passed as argv — never as a URL scheme.</p>
       </Group>
     </>
+  );
+}
+
+function TargetTitle({ mono, label }: { mono: string; label: string }) {
+  return (
+    <span className="flex items-center gap-2.5">
+      <span className="inline-flex w-4 shrink-0 justify-center font-ac-mono text-[10px] font-semibold text-ac-soft">{mono}</span>
+      {label}
+    </span>
   );
 }
 
@@ -312,12 +340,13 @@ export function AgentsSettings({ agents, suggestions, on }: { agents: AgentRowVi
         ))}
       </div>
       <div className="relative mt-2 flex items-center gap-2">
-        <Button size="sm" onClick={() => setAdding((v) => !v)} aria-expanded={adding} disabled={!suggestions.length}>
+        <Button size="sm" data-popover-trigger="" onClick={() => setAdding((v) => !v)} aria-expanded={adding} disabled={!suggestions.length}>
           <Plus /> Add agent
         </Button>
         <span className="text-[11px] text-ac-muted">Suggestions from the ACP agent list · install commands run visibly in the terminal sheet</span>
         {adding && (
-          <div role="menu" aria-label="Add agent" className="absolute left-0 top-9 z-20 w-[320px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
+          <Anchored onClose={() => setAdding(false)} className="absolute left-0 top-9 z-20">
+          <div role="menu" aria-label="Add agent" className="w-[320px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
             {suggestions.map((s) => (
               <button key={s.id} type="button" role="menuitem" onClick={() => (setAdding(false), on.install(s.id))} className="flex w-full flex-col items-start rounded-md px-2.5 py-1.5 text-left hover:bg-ac-raise">
                 <span className="text-[13px] text-ac-text">{s.name}</span>
@@ -325,6 +354,7 @@ export function AgentsSettings({ agents, suggestions, on }: { agents: AgentRowVi
               </button>
             ))}
           </div>
+          </Anchored>
         )}
       </div>
     </Group>

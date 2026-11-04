@@ -52,7 +52,10 @@ const SCENES = {
   editors: ["", [["click", "[aria-label^=Settings]"], ["click", "role=button[name='Open in']"]]],
   offline: ["&health=down", ROW],
   morning: ["&away=1", ROW],
+  tray: ["&view=tray", []],
 };
+/** Scenes with their own viewport (the board size). */
+const VIEWPORT = { tray: { width: 480, height: 700 } };
 
 const only = process.env.DS_ONLY ? new Set(process.env.DS_ONLY.split(",")) : null;
 fs.mkdirSync(OUT, { recursive: true });
@@ -64,10 +67,10 @@ const findings = {};
 try {
   for (const [name, [query, steps]] of Object.entries(SCENES)) {
     if (only && !only.has(name)) continue;
-    const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: DSF });
+    const page = await browser.newPage({ viewport: VIEWPORT[name] ?? { width: 1440, height: 900 }, deviceScaleFactor: DSF });
     const errs = [];
     page.on("pageerror", (e) => errs.push(`page error: ${e.message}`));
-    await page.goto(`${base}/design.html?theme=${THEME}${query}`);
+    await page.goto(`${base}/design.html?theme=${THEME}${query}${process.env.DS_QUERY ?? ""}`);
     await page.waitForTimeout(1500);
     for (const [kind, arg] of steps) {
       try {

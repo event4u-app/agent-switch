@@ -61,6 +61,7 @@ export function TitleBar({
         <button
           type="button"
           title="Needs you · ⌘J jumps to the next one"
+          data-popover-trigger=""
           aria-pressed={!!inboxOpen}
           onClick={onInbox}
           className={cn(

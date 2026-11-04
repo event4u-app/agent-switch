@@ -62,14 +62,19 @@ describe("Library page (spec §10.3)", () => {
     expect(screen.getByText(/kept · 2.0 MB/)).toBeTruthy();
   });
 
-  it("a gone transcript cannot resume; Pinned and Archived views; archive toggles", () => {
+  it("a gone transcript cannot resume; All shows archived rows with their chip (G1); Pinned and Archived views; archive toggles", () => {
     const on = { autoKeep: vi.fn(), pin: vi.fn(), resume: vi.fn(), archive: vi.fn() };
     const rows = [lib("a", { name: "Gone", pinned: true, transcript: false, vault: { state: "unavailable" } }), lib("b", { name: "Old", archived: true })];
     render(<LibraryPage rows={rows} vaultBytes={0} autoKeep={false} nowMs={NOW} on={on} />);
     expect(screen.getByText("can't resume")).toBeTruthy();
+    // As on the boards: All is everything, an archived row carries its chip.
+    expect(screen.getByText("Old")).toBeTruthy();
+    expect(screen.getByText("archived")).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "Pinned 1" }));
     expect(screen.queryByText("Old")).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "Archived 1" }));
     expect(screen.getByText("Old")).toBeTruthy();
+    expect(screen.queryByText("Gone")).toBeNull();
     fireEvent.click(screen.getByLabelText("Restore"));
     expect(on.archive).toHaveBeenCalledWith("b", false);
   });

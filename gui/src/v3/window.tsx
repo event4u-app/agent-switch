@@ -25,7 +25,7 @@ import type { Appearance } from "./themes/resolve.js";
 import { ToolsPage, updateNeeds } from "./tools.js";
 import { BlockerStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
 import { Act, type BatchActions } from "./kit.js";
-import { Menu, OpenInButton, OpenInMenu, monogram, type OpenFacts, type OpenPick } from "./menus.js";
+import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, type Action, type Binding } from "./keys.js";
 import { nextFocus } from "./needs.js";
@@ -56,7 +56,7 @@ export interface V3Data {
   remote: { remoteControl: string[]; ssh: boolean };
   newSession: { initial: NewSessionPlan; facts: NewSessionFacts };
   /** The near-limit decision, by account key ("claude/work") or by session key — a limit item's subject is either. */
-  decision: (subject: string) => { account: string; tool?: string; targets?: { name: string; color: IdentityColor }[]; pctUsed: number; window: string; resetsIn: string; sessions: SheetSession[]; suggestion: string } | null;
+  decision: (subject: string) => { account: string; tool?: string; targets?: { name: string; color: IdentityColor }[]; pctUsed: number; window: string; resetsIn: string; sessions: SheetSession[]; suggestion: string; suggestionWhy?: string } | null;
   bar: (key: string) => BarSession | null;
   /** What the model popover offers for a session; absent: the chips stay closed. */
   models?: (key: string) => ModelChoices | null;
@@ -167,7 +167,7 @@ export function V3Window({
   const [pages, setPages] = useState<Page[]>([]);
   const [sessionTabs, setSessionTabs] = useState<string[]>([]);
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { switcher: number } | { limits: string } | { model: string; x: number } | { decide: string } | { menu: string } | { openin: string }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking" } | { decide: string } | { menu: string } | { openin: string }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -434,6 +434,7 @@ export function V3Window({
         <>
           <SessionBar
             s={bar}
+            chipOpen={overlay && typeof overlay === "object" && "chip" in overlay ? overlay.chip : null}
             openIn={
               data.openIn.targets.length ? (
                 <OpenInButton
@@ -444,7 +445,7 @@ export function V3Window({
                 />
               ) : null
             }
-            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => setOverlay({ decide: activeSession }), model: (x) => setOverlay({ model: activeSession, x }), thinking: (x) => setOverlay({ model: activeSession, x }), menu: () => setOverlay({ menu: activeSession }) }}
+            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => setOverlay({ decide: activeSession }), model: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "model" ? null : { model: activeSession, x, chip: "model" })), thinking: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "thinking" ? null : { model: activeSession, x, chip: "thinking" })), menu: () => setOverlay({ menu: activeSession }) }}
           />
           {engineBanner}
           {next && <BlockerStrip text={next.text} action={next.action} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
@@ -503,7 +504,7 @@ export function V3Window({
           <IconButton label="New session  ⌘N" className="size-7" onClick={() => setOverlay("new")}>
             <Plus />
           </IconButton>
-          <IconButton label="Select · group by project · density · show pinned" aria-expanded={overlay === "sessions-menu"} className="size-7" onClick={() => setOverlay((o) => (o === "sessions-menu" ? null : "sessions-menu"))}>
+          <IconButton {...POPOVER_TRIGGER} label="Select · group by project · density · show pinned" aria-expanded={overlay === "sessions-menu"} className="size-7" onClick={() => setOverlay((o) => (o === "sessions-menu" ? null : "sessions-menu"))}>
             <Ellipsis />
           </IconButton>
         </span>
@@ -548,9 +549,9 @@ export function V3Window({
         }}
       />
     ) : overlay === "inbox" ? (
-      <div className="absolute right-3 top-11 z-10">
+      <Anchored onClose={close} className="absolute right-3 top-11 z-10">
         <InboxPopover items={needs} history={data.history} focusedId={null} nowMs={data.nowMs} onVerb={(n) => (close(), onVerb(n))} onAllLater={() => (close(), act({ type: "needs-later-all" }))} />
-      </div>
+      </Anchored>
     ) : overlay === "new" ? (
       <NewSessionDialog initial={data.newSession.initial} facts={data.newSession.facts} onClose={close} onChooseAccount={() => act({ type: "choose-account" })} onStart={(plan) => (close(), act({ type: "start", plan }))} />
     ) : decision ? (
@@ -566,16 +567,16 @@ export function V3Window({
         })}
       />
     ) : modelOf && modelChoices ? (
-      <div className="absolute top-[124px] z-10" style={{ left: overlay && typeof overlay === "object" && "x" in overlay ? overlay.x : 0 }}>
+      <Anchored onClose={close} className="absolute top-[124px] z-10" style={{ left: overlay && typeof overlay === "object" && "x" in overlay ? overlay.x - 11 : 0 }}>
         <ModelPopover c={modelChoices} onModel={(model) => (close(), act({ type: "set-model", key: modelOf, model }))} onThinking={(level) => (close(), act({ type: "set-thinking", key: modelOf, level }))} />
-      </div>
+      </Anchored>
     ) : limitsAccount ? (
       // Anchored beside the Limits strip; it never switches anything by itself (spec §7.5).
-      <div className="absolute bottom-[40px] left-[352px] z-10">
+      <Anchored onClose={close} className="absolute bottom-[40px] left-[352px] z-10">
         <LimitsPopover a={limitsAccount} nowMs={data.nowMs} onMove={() => setOverlay({ decide: limitsAccount.key })} onAccounts={() => (close(), openPage("accounts"))} />
-      </div>
+      </Anchored>
     ) : overlay === "sessions-menu" ? (
-      <div className="absolute left-[260px] top-[84px] z-10">
+      <Anchored onClose={close} className="absolute left-[260px] top-[84px] z-10">
         <Menu
           label="Sessions view"
           width={240}
@@ -586,10 +587,10 @@ export function V3Window({
             { id: "pinned", label: "Show pinned only", checked: pinnedOnly, onClick: () => (close(), setPinnedOnly((v) => !v)) },
           ]}
         />
-      </div>
+      </Anchored>
     ) : openMenuOf ? (
       // Outside the session bar, which clips at 40 px (spec §7.7); anchored under the caret.
-      <div className="absolute right-[52px] top-[118px] z-10">
+      <Anchored onClose={close} className="absolute right-[81px] top-[122px] z-10">
         <OpenInMenu
           f={openFacts(openMenuOf)}
           onPick={(p) => {
@@ -598,9 +599,10 @@ export function V3Window({
             act({ type: "open-in", key: openMenuOf, pick: p });
           }}
         />
-      </div>
+      </Anchored>
     ) : overlay && typeof overlay === "object" && "menu" in overlay ? (
-      <div role="menu" aria-label="Session actions" className="absolute right-3 top-[124px] z-10 w-[240px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
+      <Anchored onClose={close} className="absolute right-[54px] top-[122px] z-10">
+      <div role="menu" aria-label="Session actions" className="w-[240px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
         {(data.menu ? data.menu(overlay.menu) : SESSION_MENU).map((item) => (
           <button
             key={item}
@@ -618,6 +620,7 @@ export function V3Window({
           </button>
         ))}
       </div>
+      </Anchored>
     ) : null;
 
   return (

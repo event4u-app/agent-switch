@@ -33,6 +33,36 @@ function cssVar(name: string, fallback: string): string {
 
 /** xterm bound to the Rust pty, sized to its box (same wiring as the legacy
  *  EmbeddedTerminal). */
+/**
+ * The xterm lineHeight that gives a CSS line of `fontSize × lineHeight` px:
+ * xterm scales the font's measured height (ascent + descent), not its size.
+ */
+export async function xtermLineHeight(look: { fontSize: number; lineHeight: number; fontFamily?: string }): Promise<number> {
+  const font = `${look.fontSize}px ${look.fontFamily ?? "monospace"}`;
+  try {
+    await document.fonts?.load(font);
+  } catch {
+    /* measure the fallback */
+  }
+  // jsdom has no canvas; there is nothing to measure.
+  if (typeof navigator !== "undefined" && /jsdom/i.test(navigator.userAgent)) return look.lineHeight;
+  const ctx = typeof document !== "undefined" ? document.createElement("canvas").getContext?.("2d") : null;
+  if (!ctx) return look.lineHeight;
+  ctx.font = font;
+  const m = ctx.measureText("W");
+  const natural = (m.fontBoundingBoxAscent ?? 0) + (m.fontBoundingBoxDescent ?? 0);
+  if (!(natural > 0)) return look.lineHeight;
+  return Math.max(1, (look.fontSize * look.lineHeight) / natural);
+}
+
+/** True when the WebGL canvas in `host` holds the device pixels its CSS box needs (or there is none to check). */
+export function webglCanvasSane(host: HTMLElement, dpr = window.devicePixelRatio || 1): boolean {
+  const canvas = [...host.querySelectorAll<HTMLCanvasElement>(".xterm-screen canvas")].find((c) => !c.classList.contains("xterm-link-layer") && c.getBoundingClientRect().width > 0);
+  if (!canvas) return true;
+  const css = canvas.getBoundingClientRect().width;
+  return canvas.width >= Math.floor(css * dpr) - 1;
+}
+
 export function XtermBox({
   args,
   backend,
@@ -45,7 +75,7 @@ export function XtermBox({
   onExit: (code: number | null) => void;
   onError?: (message: string) => void;
   /** The v3 workbench passes its theme's terminal palette and type; the sheet keeps the default look. */
-  look?: { theme: Record<string, string>; fontSize: number; lineHeight: number };
+  look?: { theme: Record<string, string>; fontSize: number; lineHeight: number; fontFamily?: string };
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -53,8 +83,9 @@ export function XtermBox({
     if (!host) return;
     const term = new XTerm({
       fontSize: look?.fontSize ?? 12,
-      lineHeight: look?.lineHeight ?? 1,
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      // v3 starts at 1 and gets its CSS line height once the font is measured (below).
+      lineHeight: 1,
+      fontFamily: look?.fontFamily ?? "ui-monospace, SFMono-Regular, Menlo, monospace",
       cursorBlink: true,
       // The CLI's ╭─╮ boxes as xterm's own rounded glyphs (spec §6.4).
       customGlyphs: true,
@@ -67,13 +98,24 @@ export function XtermBox({
     // renderer falls back to the font, which leaves gaps (spec §6.4). Without
     // WebGL the DOM renderer stays.
     let disposed = false;
-    if (look)
+    if (look && !location.search.includes("nogl"))
       void import("@xterm/addon-webgl")
         .then(({ WebglAddon }) => {
           if (disposed) return;
           const gl = new WebglAddon();
           gl.onContextLoss(() => gl.dispose());
           term.loadAddon(gl);
+          // Some engines give the WebGL canvas CSS-pixel size while the glyphs are
+          // drawn in device pixels, so text comes out at twice its size on a 2×
+          // screen. Keep WebGL only where its canvas really is device-sized.
+          // Checked on every render: the canvas is resized after fits and font changes.
+          const watch = term.onRender(() => {
+            if (disposed || webglCanvasSane(host)) return;
+            watch.dispose();
+            gl.dispose();
+            term.refresh(0, term.rows - 1);
+          });
+          gl.onContextLoss(() => watch.dispose());
         })
         .catch(() => undefined);
     try {
@@ -81,6 +123,19 @@ export function XtermBox({
     } catch {
       /* not laid out yet — the observer fits */
     }
+    // xterm's lineHeight multiplies the font's own height, CSS's multiplies the
+    // font size. The boards use the CSS meaning, so translate it once the font
+    // is loaded and measurable.
+    if (look)
+      void xtermLineHeight(look).then((lh) => {
+        if (disposed || lh === term.options.lineHeight) return;
+        term.options.lineHeight = lh;
+        try {
+          fit.fit();
+        } catch {
+          /* the observer fits */
+        }
+      });
     term.focus();
     const ctrl = attachTerminal(term, backend, args, onExit, onError);
     const refit = () => {
