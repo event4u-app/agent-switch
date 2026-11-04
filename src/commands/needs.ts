@@ -28,7 +28,8 @@ import { cachedUsage } from "./shared.js";
 import { sessionsWithGit } from "./pr.js";
 import { githubRepo, prCacheFile, prsForHead, readPrCache } from "../pr-facts.js";
 import { TmuxHost } from "../host/tmux-host.js";
-import { InputLeases, LeaseHeld } from "../host/lease.js";
+import { InputLeases } from "../host/lease.js";
+import { typeIntoHosted } from "./continue.js";
 import { readPending } from "../bridge/pending.js";
 
 const HOST_WAIT = /^quota_auto_resume_(armed|fired|cancelled|setting)$/;
@@ -184,19 +185,10 @@ function fixCi(id: string | undefined, candidates: Candidate[]): void {
   });
   if (!session) die("the session for this PR is gone");
   const text = `${c.what}${c.detail ? `: ${c.detail}` : ""}. Logs: https://github.com/${repo}/pull/${num}/checks — please find the cause and fix it.`;
-  const host = new TmuxHost(ROOT);
-  const leases = new InputLeases(ROOT);
-  const me = { id: `cli-${process.pid}`, pid: process.pid, kind: "cli" };
   try {
-    leases.acquire(session.key, me);
+    typeIntoHosted(new TmuxHost(ROOT), new InputLeases(ROOT), session.key, { id: `cli-${process.pid}`, pid: process.pid, kind: "cli" }, text);
   } catch (err) {
-    if (err instanceof LeaseHeld) die(`${session.key} is being typed into by ${err.lease.holder.kind}; wait, or hand the input over there.`);
-    throw err;
-  }
-  try {
-    leases.type(host, session.key, me, text, { enter: true });
-  } finally {
-    leases.release(session.key, me);
+    die(`${(err as Error).message}.`);
   }
   console.log(`Sent to ${session.key}: ${text}`);
 }

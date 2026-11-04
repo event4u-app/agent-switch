@@ -210,3 +210,21 @@ test("isIdleEdge is exactly busy → idle", () => {
   assert.equal(isIdleEdge("busy", "busy"), false);
   assert.equal(isIdleEdge("busy", null), false);
 });
+
+test("after the armed switch, a hosted session is told to continue; one in its own terminal is named", async () => {
+  const f = file();
+  armRebind({ profile: "work", target: "side", live: [reg("s-1", "busy")], now: T0 }, f);
+  const typed: string[] = [];
+  const w = watcher(f, ["busy", "idle"], { continueSession: (key) => (typed.push(key), true) });
+  await w.step();
+  await w.step();
+  assert.deepEqual(typed, ["claude/work/s-1"]);
+  assert.match(w.notes.find((n) => n.kind === "success")!.message, /carries on by itself/);
+
+  const g = file();
+  armRebind({ profile: "work", target: "side", live: [reg("s-1", "busy")], now: T0 }, g);
+  const v = watcher(g, ["busy", "idle"], { continueSession: () => "not hosted" });
+  await v.step();
+  await v.step();
+  assert.match(v.notes.find((n) => n.kind === "success")!.message, /Type one message in its terminal to continue/);
+});
