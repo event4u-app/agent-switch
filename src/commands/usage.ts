@@ -29,7 +29,7 @@ import { checkAuth, fetchProfile, fetchUsage } from "../api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "../token-freshen.js";
 import { formatSnapshot, parseUsage } from "../usage.js";
 import { readCodexUsage } from "../codex-usage.js";
-import { redeemResetCredit } from "../codex-reset.js";
+import { redeemResetCredit, resetReflected, usageAfterRedeem } from "../codex-reset.js";
 import {
   authStatusFor,
   claudeSnapshot,
@@ -133,10 +133,21 @@ export async function cmdReset(providerId: ProviderId, name?: string, yes = fals
     console.log("Cancelled — nothing redeemed.");
     return;
   }
-  const r = await redeemResetCredit(configDir("codex", n));
+  const dir = configDir("codex", n);
+  const before = await readCodexUsage(dir);
+  const r = await redeemResetCredit(dir);
   logActivity("redeem", `codex/${n}`, r.ok ? "redeemed one banked reset" : `redeem failed: ${r.reason ?? "unknown"}`, "user ran `agent-switch reset`", r.ok);
   if (r.ok) {
     console.log(`Redeemed a reset for codex/${n} (windows_reset=${r.windowsReset ?? "?"}).`);
+    // Cache the cleared numbers now, not at the next poll: the GUI reloads right
+    // after this returns and `dir` balances on the cached snapshot.
+    const after = await usageAfterRedeem(() => readCodexUsage(dir), before);
+    if (after) {
+      recordHistorySample(path.join(profileDir("codex", n), "usage-history.json"), after);
+      writeLatestSnapshot(path.join(profileDir("codex", n), LATEST_FILE), after);
+      formatSnapshot(after).forEach((l) => console.log(l));
+      if (!resetReflected(before, after)) console.log("  (the usage readout has not caught up yet — it updates with the next poll)");
+    }
   } else {
     die(`reset failed: ${r.reason ?? "unknown"}`);
   }
