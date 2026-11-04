@@ -46,7 +46,8 @@ routing is account-level and explicit. The background daemon
 (`src/daemon.ts`) never switches anything on its own: with the opt-in,
 default-off near-limit notifications it *notifies* you and *suggests* the
 account with the most headroom; on Codex it tells you when a banked reset
-is available but never redeems one. A new session can be placed by a
+is available and redeems one only if you turned on `auto-reset` (default
+off) — a reset credit of your own account, at most once per reset cycle. A new session can be placed by a
 folder rule, including a rule that points at a pool you created yourself
 (`agent-switch pool`), which picks the member with the most fresh headroom
 and says why (`agent-switch dir --json`). Without a folder rule, a new session is balanced across your enabled

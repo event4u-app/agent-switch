@@ -78,6 +78,8 @@ agent-switch takeover 5b1f7c2e --to personal
 | `--from <account>` | Look only in this account |
 | `--keep-source` | Fork instead of move: the source keeps its session, and the target continues as a new session with its own id. Claude only, needs an interactive terminal. |
 | `--in-place` | Resume inside the tmux pane of a session started with `agent-switch run <account> --tmux`. Without such a pane, it opens a new Terminal window on macOS, or prints the command elsewhere. |
+| `--prompt "…"` | The first message of the resumed session, e.g. `--prompt "Continue where you left off."` after a limit |
+| `--hosted <key>` | With `--in-place`: the Agent Switch window to resume in (`provider/account/session-id`); the app passes it |
 | `--print-only` | Move the session, but print the resume command instead of starting it |
 | `--force` | Move even though the source account has a live session |
 | `--json` | Machine-readable result, including the cache reading |
@@ -99,9 +101,10 @@ it. To look before you move, use `sessions preview`.
 - **Shared history.** When both accounts share one history through
   `share on --history`, there is nothing to move: `takeover` just resumes the
   session on the target.
-- **Codex.** A Codex move is move-only (no `--keep-source`), and Codex has no
-  live-session signal: make sure no Codex session is running on the source
-  account.
+- **Codex.** A Codex move is move-only (no `--keep-source`). While `codex` is
+  still running on the source account, the move is refused: end it in its
+  terminal first. A session Agent Switch hosts moves in its own window with
+  `--in-place`. `--force` skips the check.
 
 ### Claude Desktop sessions <Badge text="macOS" variant="caution" />
 
@@ -179,7 +182,34 @@ armed.
   `agent-switch rebind --reset` once the cause is fixed. `--restore` always
   works.
 
+- It refuses a target account that runs a session of its own: the switch moves
+  that account's login away, so its session would be signed out. The list and
+  the desktop app mark such an account as busy and never suggest it.
+
 A rebound account cannot be removed until you restore it.
+
+## When a session reaches its limit
+
+With **Settings › Protection › Ask me when a session reaches its limit** on (the
+default), the desktop app comes forward with the decision as soon as a session
+stops at its usage limit, with the best free account preselected. Nothing moves
+until you confirm.
+
+- **Claude:** the session is switched with `rebind` and told to continue
+  (“Continue where you left off.”) where Agent Switch can type: a window or chat
+  it hosts. A session in your own terminal needs one message from you. A switch
+  armed for the end of the turn continues the same way.
+- **Codex:** Codex cannot switch a running login, so the session is moved with
+  `takeover` and resumed on the other account with that message — in its window
+  when Agent Switch hosts it, else in the app's terminal (end codex in your own
+  terminal first).
+
+To send the message yourself to a hosted session:
+
+```bash
+agent-switch continue claude/work/5b1f7c2e
+agent-switch continue codex/work/019a… --text "Go on with the tests."
+```
 
 ## Carry work to another tool with `handoff`
 
