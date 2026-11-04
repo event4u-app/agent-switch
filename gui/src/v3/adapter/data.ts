@@ -312,7 +312,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
 
   palette.push({ id: NEW_CHAT, group: "commands", title: "New session in chat view", meta: "Claude, in this window" });
 
-  const targets: OpenTarget[] = (feeds.openTargets?.targets ?? []).map((t) => ({ target: t.target, label: t.label, kind: t.kind, installed: t.installed }));
+  const targets: OpenTarget[] = (feeds.openTargets?.targets ?? []).map((t) => ({ target: t.target, label: t.label, kind: t.kind, installed: t.installed, app: t.app, launcher: t.launcher }));
 
   // The account the CLI's routing picks for this folder; the default account until that is read.
   const routedName = env.route?.profile ? env.route.profile.slice(env.route.profile.indexOf("/") + 1) : null;
@@ -471,5 +471,7 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
     resetsIn: mins === null ? "unknown" : mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`,
     sessions,
     suggestion: best?.name ?? "",
+    // The order above: an idle account first, then the least used 5h window.
+    suggestionWhy: best ? (best.liveSessions > 0 ? "least used, but runs a session" : "most room left, no session running") : undefined,
   };
 }

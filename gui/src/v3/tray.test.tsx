@@ -33,4 +33,27 @@ describe("tray (spec §10.7)", () => {
     fireEvent.click(screen.getByText("Open Agent Switch"));
     expect(handlers.open).toHaveBeenCalledOnce();
   });
+
+  it("looks like the tray board: logo head, 24 px zone heads without ⌘J, Start filled and Open plain on the left", () => {
+    const { container } = render(
+      <V3Tray
+        nowMs={0}
+        needs={[{ id: "n", kind: "approval", subject: "x", who: "Theme system", what: "wants to run", verb: "Allow", since: "", version: "1" }]}
+        away={null}
+        sessions={[s("1")]}
+        accounts={[]}
+        on={on()}
+      />,
+    );
+    const head = container.firstElementChild!.firstElementChild!;
+    expect(head.textContent).toBe("Agent Switch");
+    expect(head.querySelector("img")).not.toBeNull();
+    expect(container.textContent).not.toContain("⌘J");
+    for (const zone of ["Needs you", "Sessions"]) expect(screen.getByText(zone).parentElement!.className).toContain("h-6");
+    const start = screen.getByText("Start session").closest("button")!;
+    const open = screen.getByText("Open Agent Switch").closest("button")!;
+    expect(start.className).not.toContain("flex-1");
+    expect(open.className).not.toContain("flex-1");
+    expect(open.className).not.toMatch(/\bborder\b/);
+  });
 });

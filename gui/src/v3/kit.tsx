@@ -8,7 +8,7 @@
  *  - PageHeader, BatchBar, Later, Disclosure.
  */
 import type { ReactNode } from "react";
-import { Archive, ChevronDown, ChevronRight, Clock, FolderMinus, Pin, X } from "lucide-react";
+import { Archive, Check, ChevronDown, ChevronRight, Clock, FolderMinus, Pin, X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { identityColor } from "../ui/AccountDot.js";
 import { Button, IconButton } from "../ui/Button.js";
@@ -217,3 +217,16 @@ export const resetIn = (ms: number) => `↻ ${duration(ms)}`;
 /** "14m old" for stale data; "checked 1m ago" for a fresh reading. */
 export const age = (ms: number) => `${duration(ms)} old`;
 export const checkedAgo = (ms: number) => (ms < 60_000 ? "checked just now" : `checked ${duration(ms)} ago`);
+
+/** The one checkbox (boards "decide", "table", "new"): a rounded square, filled with the accent when on. */
+export function CheckBox({ checked, onChange, label, size = 16, children }: { checked: boolean; onChange: () => void; label?: string; size?: 14 | 16; children?: ReactNode }) {
+  return (
+    <label className={cn("inline-flex shrink-0 cursor-pointer items-center gap-2", children && "text-xs text-ac-soft")} onClick={(e) => e.stopPropagation()}>
+      <input type="checkbox" className="peer sr-only" aria-label={label} checked={checked} onChange={onChange} />
+      <span className={cn("inline-flex items-center justify-center rounded border text-ac-on-color peer-focus-visible:ring-2 peer-focus-visible:ring-ac-brand-line", size === 14 ? "size-3.5" : "size-4", checked ? "border-ac-brand bg-ac-brand" : "border-ac-line2")}>
+        {checked && size === 16 && <Check className="size-3" />}
+      </span>
+      {children}
+    </label>
+  );
+}

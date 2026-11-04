@@ -51,6 +51,37 @@ describe("Open in (spec §7.7)", () => {
     expect(items).toEqual(["PSPhpStormdefault1", "VSVS Codelast used2", "Editor", "Agent app", "Terminal", "Files", "WebPR #142", "Configure targets…"]);
   });
 
+  it("closes on a press outside it, and the caret toggles it", () => {
+    mount(withTargets());
+    openSession();
+    const caret = screen.getByRole("button", { name: "Open in…" });
+    fireEvent.click(caret);
+    // A press inside the menu keeps it open.
+    fireEvent.pointerDown(screen.getByRole("menuitem", { name: /Editor/ }));
+    expect(screen.queryByRole("menu", { name: "Open in" })).not.toBeNull();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menu", { name: "Open in" })).toBeNull();
+    // The caret opens it and, pressed again, closes it (never close-then-reopen).
+    fireEvent.click(caret);
+    fireEvent.pointerDown(caret);
+    fireEvent.click(caret);
+    expect(screen.queryByRole("menu", { name: "Open in" })).toBeNull();
+  });
+
+  it("every anchored popover closes on a press outside it", () => {
+    const models = () => ({ models: [{ id: "opus", label: "Opus", hint: "deepest" }], current: "opus", thinking: ["high"], currentThinking: "high" });
+    mount({ ...withTargets(), models });
+    openSession();
+    fireEvent.click(screen.getByTitle("Model for the next turn"));
+    expect(screen.queryByRole("dialog", { name: "Model and thinking" })).not.toBeNull();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("dialog", { name: "Model and thinking" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Session actions/ }));
+    expect(screen.queryByRole("menu", { name: "Session actions" })).not.toBeNull();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menu", { name: "Session actions" })).toBeNull();
+  });
+
   it("offers only the agent app of the session's own tool, as opening the project", () => {
     const { act } = mount(withTargets());
     openSession();

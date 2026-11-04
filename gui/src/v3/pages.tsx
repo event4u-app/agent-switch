@@ -5,7 +5,7 @@
  */
 
 import { useMemo, useState, type ReactNode } from "react";
-import { Archive, ArchiveRestore, CircleAlert, Clock, Ellipsis, GitBranch, LogIn, Pin, Play, Plus, RefreshCw, Search, Shield, SquareTerminal, Tag, Vault } from "lucide-react";
+import { Archive, ArchiveRestore, CircleAlert, CircleCheck, CircleX, Clock, Copy, LoaderCircle, Ellipsis, GitBranch, LogIn, Pin, Play, Plus, RefreshCw, Search, Shield, SquareTerminal, Tag, Vault } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
@@ -13,8 +13,8 @@ import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { Switch } from "../ui/Switch.js";
 import { TextInput } from "../ui/TextInput.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
-import { Act, AccountMark, BatchBar, Chip, PageHeader, checkedAgo, duration, type BatchActions } from "./kit.js";
-import { LimitBar, isStale, type LimitAccount } from "./limits.js";
+import { Act, AccountMark, BatchBar, CheckBox, Chip, PageHeader, checkedAgo, duration, type BatchActions } from "./kit.js";
+import { LimitBar, isStale, tightest, tone, type LimitAccount } from "./limits.js";
 
 export function PageBody({ eyebrow, title, sub, actions, children }: { eyebrow?: string; title?: string; sub?: ReactNode; actions?: ReactNode; children: ReactNode }) {
   return (
@@ -78,8 +78,28 @@ function AccountRowFull({ a, i, nowMs, on }: { a: PageAccount; i: number; nowMs:
           <span className="truncate text-[13px] font-medium text-ac-text">{a.name}</span>
           {a.isDefault && <Chip>Default</Chip>}
           {a.next && <Chip>next</Chip>}
+          {a.signIn ? (
+            <Chip>Sign-in needed</Chip>
+          ) : (
+            !stale &&
+            (tone(tightest(a)?.used ?? null, a.protect) === "warn" || tone(tightest(a)?.used ?? null, a.protect) === "alert") && (
+              <Chip kind="status" tone="warn">
+                Near limit
+              </Chip>
+            )
+          )}
         </div>
-        {(a.email || a.label) && <div className="mt-0.5 truncate pl-[11px] text-[11.5px] text-ac-muted">{[a.email, a.label].filter(Boolean).join(" · ")}</div>}
+        {(a.email || a.label) && (
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-[11px] text-[11.5px] text-ac-muted">
+            {a.email && <span className="truncate">{a.email}</span>}
+            {a.email && (
+              <button type="button" title="Copy e-mail" aria-label={`Copy ${a.email}`} onClick={() => void navigator.clipboard?.writeText(a.email!)} className="shrink-0 text-ac-faint hover:text-ac-text">
+                <Copy className="size-3" />
+              </button>
+            )}
+            {a.label && <span className="shrink-0">{a.email ? `· ${a.label}` : a.label}</span>}
+          </div>
+        )}
       </div>
       <span className="text-xs text-ac-muted">{a.running ? `${a.running} running` : "idle"}</span>
       <div className="min-w-0 space-y-1">
@@ -257,23 +277,26 @@ export function AllSessionsPage({ sessions, nowMs, onOpen, batch }: { sessions: 
           <Table cols={cols} heads={["", "Session", "Account", "Branch · PR", "Model", "Context", "Active"]}>
             {sec.rows.map((s) => (
               <div key={s.key} onClick={() => onOpen(s.key)} className={cn("grid cursor-default items-center gap-3 border-b border-ac-line px-3 py-2 last:border-b-0 hover:bg-ac-raise", cols)}>
-                <input type="checkbox" aria-label={`Select ${s.title}`} checked={sel.has(s.key)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(s.key)} />
+                <CheckBox label={`Select ${s.title}`} checked={sel.has(s.key)} onChange={() => toggle(s.key)} />
                 <span className="flex min-w-0 items-center gap-2">
                   <SessionStateIcon state={s.state} />
                   <span className="truncate text-[13px] text-ac-text">{s.title}</span>
                 </span>
                 <span className="flex min-w-0 items-center gap-1.5 text-xs text-ac-soft">
                   <AccountMark color={s.account.color} />
-                  <span className="truncate">{s.account.name}</span>
+                  <span className="truncate">
+                    {s.tool === "claude" ? "Claude" : s.tool === "codex" ? "Codex" : "Antigravity"} · {s.account.name}
+                  </span>
                 </span>
                 <span className="flex min-w-0 items-center gap-1.5 font-ac-mono text-[11px] text-ac-muted">
                   <GitBranch className="size-3 shrink-0" />
                   <span className="truncate">{s.branch ?? "no repo"}</span>
-                  {s.pr && <span className={cn("shrink-0", s.pr.ci === "FAILURE" && "text-ac-alert-text")}>#{s.pr.number}</span>}
+                  {s.pr && <span className="shrink-0">#{s.pr.number}</span>}
+                  {s.pr && <CiGlyph ci={s.pr.ci} />}
                 </span>
                 <span className="truncate text-xs text-ac-soft">{[s.model, s.thinking].filter(Boolean).join(" · ")}</span>
                 <span className="font-ac-mono text-[11px] text-ac-muted">{s.contextPct == null ? "" : `${Math.round(s.contextPct)}%`}</span>
-                <span className="text-right text-xs text-ac-muted">{duration(nowMs - s.lastActiveMs)}</span>
+                <span className="text-right text-xs text-ac-muted">{lastSeen(s.lastActiveMs, nowMs)}</span>
               </div>
             ))}
           </Table>
@@ -282,6 +305,14 @@ export function AllSessionsPage({ sessions, nowMs, onOpen, batch }: { sessions: 
       {!rows.length && <p className="mt-3 text-xs text-ac-muted">No session matches.</p>}
     </PageBody>
   );
+}
+
+/** A PR's checks as one glyph (board "table"): running, passed, failed. */
+function CiGlyph({ ci }: { ci: string }) {
+  if (ci === "FAILURE" || ci === "ERROR") return <CircleX className="size-3 shrink-0 text-ac-alert" aria-label="CI failing" />;
+  if (ci === "SUCCESS") return <CircleCheck className="size-3 shrink-0 text-ac-ok" aria-label="CI passed" />;
+  if (ci === "PENDING" || ci === "EXPECTED") return <LoaderCircle className="size-3 shrink-0 text-ac-warn" aria-label="CI running" />;
+  return null;
 }
 
 // ---------- Library (spec §10.3) ----------
@@ -344,7 +375,8 @@ export function nextDeadline(rows: readonly LibraryRow[]): LibraryRow | null {
 export function LibraryPage({ rows, vaultBytes, autoKeep, nowMs, on }: { rows: LibraryRow[]; vaultBytes: number; autoKeep: boolean; nowMs: number; on: { autoKeep: (v: boolean) => void; pin: (key: string, pinned: boolean) => void; resume: (key: string) => void; archive: (key: string, archived: boolean) => void } }) {
   const [q, setQ] = useState("");
   const [show, setShow] = useState<"all" | "pinned" | "archived">("all");
-  const visible = rows.filter((r) => (show === "all" ? !r.archived : show === "pinned" ? r.pinned && !r.archived : r.archived) && matches(q, r.name, r.summary, r.project, r.branch, r.pr ? `#${r.pr.number}` : null, ...r.tags));
+  // "All" is everything, archived rows included with their chip (G1, as on the boards).
+  const visible = rows.filter((r) => (show === "all" ? true : show === "pinned" ? r.pinned : r.archived) && matches(q, r.name, r.summary, r.project, r.branch, r.pr ? `#${r.pr.number}` : null, ...r.tags));
   const deadline = nextDeadline(rows);
   const cols = "grid-cols-[24px_minmax(0,1.7fr)_minmax(0,1fr)_64px_150px_132px]";
   return (
@@ -359,7 +391,7 @@ export function LibraryPage({ rows, vaultBytes, autoKeep, nowMs, on }: { rows: L
     >
       <div className="mb-3 flex items-center gap-2">
         <Filter value={q} onChange={setQ} placeholder="Name, summary, folder, branch, PR…" width={340} />
-        <Segmented size="sm" label="Show" value={show} onChange={setShow} options={[{ value: "all", label: "All" }, { value: "pinned", label: `Pinned ${rows.filter((r) => r.pinned && !r.archived).length}` }, { value: "archived", label: `Archived ${rows.filter((r) => r.archived).length}` }]} />
+        <Segmented size="sm" label="Show" value={show} onChange={setShow} options={[{ value: "all", label: "All" }, { value: "pinned", label: `Pinned ${rows.filter((r) => r.pinned).length}` }, { value: "archived", label: `Archived ${rows.filter((r) => r.archived).length}` }]} />
         <span className="ml-auto text-xs text-ac-muted">vault {mb(vaultBytes)}</span>
       </div>
       {deadline && (

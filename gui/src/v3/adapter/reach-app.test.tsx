@@ -164,7 +164,7 @@ describe("V3App on fixture CLI output (spec §11)", () => {
   it("Start session: Start, then Why?", async () => {
     await mount();
     click(screen.getByText("Start session"));
-    click(await screen.findByText("Why? ›"));
+    click(await screen.findByRole("button", { name: "Why?" }));
     expect(clicks).toBe(2);
   });
 });

@@ -155,7 +155,7 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
   it("Start session with the routing explanation: Start, then Why?", () => {
     const w = open();
     w.click(screen.getByText("Start session"));
-    w.click(screen.getByText("Why? ›"));
+    w.click(screen.getByRole("button", { name: "Why?" }));
     expect(screen.getByText("work has the most room")).toBeTruthy();
     expect(w.clicks()).toBe(2);
   });

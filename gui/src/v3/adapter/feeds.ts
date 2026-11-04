@@ -45,7 +45,7 @@ export interface OpenTargetsGlobal {
   default: string | null;
   perRepo: Record<string, string>;
   lastUsed: string | null;
-  targets: { target: string; label: string; kind: "editor" | "files" | "terminal"; installed: boolean }[];
+  targets: { target: string; label: string; kind: "editor" | "files" | "terminal"; installed: boolean; app?: string | null; launcher?: string | null }[];
 }
 
 export type KeptState = { state: "kept"; bytes: number } | { state: "at-risk"; daysLeft: number } | { state: "lost" };
@@ -140,7 +140,7 @@ export function parseOpenTargets(v: unknown): OpenTargetsGlobal {
     targets: arr(o.targets)
       .map(obj)
       .filter((t) => typeof t.target === "string" && kinds.has(t.kind as string))
-      .map((t) => ({ target: t.target as string, label: str(t.label) ?? (t.target as string), kind: t.kind as "editor" | "files" | "terminal", installed: t.installed === true })),
+      .map((t) => ({ target: t.target as string, label: str(t.label) ?? (t.target as string), kind: t.kind as "editor" | "files" | "terminal", installed: t.installed === true, app: str(t.app), launcher: str(t.launcher) })),
   };
 }
 

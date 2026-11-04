@@ -35,7 +35,12 @@ describe("feed parsers", () => {
 
   it("open targets: an unknown kind is dropped", () => {
     const o = parseOpenTargets({ default: "vscode", lastUsed: "cursor", perRepo: { "/r": "finder", bad: 1 }, targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true }, { target: "x", kind: "agent-app" }] });
-    expect(o).toEqual({ default: "vscode", perRepo: { "/r": "finder" }, lastUsed: "cursor", targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true }] });
+    expect(o).toEqual({ default: "vscode", perRepo: { "/r": "finder" }, lastUsed: "cursor", targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true, app: null, launcher: null }] });
+  });
+
+  it("open targets: where each one was found", () => {
+    const o = parseOpenTargets({ targets: [{ target: "phpstorm", label: "PhpStorm", kind: "editor", installed: true, app: "/Applications/PhpStorm.app", launcher: "/usr/local/bin/phpstorm" }] });
+    expect(o.targets[0]).toMatchObject({ app: "/Applications/PhpStorm.app", launcher: "/usr/local/bin/phpstorm" });
   });
 
   it("library: kept states and a PR", () => {

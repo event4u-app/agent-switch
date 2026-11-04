@@ -40,9 +40,9 @@ describe("New session (spec §8.1)", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
     expect(screen.queryByRole("radio", { name: "Max" })).toBeNull();
     expect(screen.queryByText("work has the most room")).toBeNull();
-    fireEvent.click(screen.getByText("Why? ›"));
+    fireEvent.click(screen.getByRole("button", { name: "Why?" }));
     expect(screen.getByText("work has the most room")).toBeTruthy();
-    fireEvent.click(screen.getByText("Command preview ›"));
+    fireEvent.click(screen.getByRole("button", { name: "Command preview" }));
     expect(screen.getByText("CLAUDE_CONFIG_DIR=… claude")).toBeTruthy();
   });
 

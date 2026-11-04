@@ -5,16 +5,18 @@
  * and actions come in as props, nothing here starts or moves anything itself.
  */
 
-import { useEffect, useState, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ChevronRight, Play, X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
 import { ChevronDown } from "lucide-react";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
-import { AccountMark, Disclosure, Label } from "./kit.js";
+import { Kbd } from "../ui/Typography.js";
+import { AccountMark, CheckBox, Disclosure, Label } from "./kit.js";
 import { LimitBar, type LimitAccount } from "./limits.js";
+import { Anchored } from "./menus.js";
 
 export function Modal({ title, kicker, sub, width = 600, children, footer, onClose }: { title: string; kicker?: string; sub?: ReactNode; width?: number; children: ReactNode; footer: ReactNode; onClose: () => void }) {
   useEffect(() => {
@@ -89,66 +91,100 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
     onChange?.(next);
   };
   const toolName = p.tool === "claude" ? "Claude" : p.tool === "codex" ? "Codex" : "Antigravity";
-  const primary = p.where === "terminal" ? `▶ Start in ${facts.terminalApp}` : "▶ Start here";
+  // ⌘↵ starts right away (the subtitle promises it).
+  const start = useRef(() => onStart(p));
+  start.current = () => onStart(p);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.preventDefault(), start.current());
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
   return (
     <Modal
       title={`${toolName} in ${p.folder}`}
       kicker="New session"
+      sub="Everything below is prefilled from your last start here — ⌘↵ starts right away."
       width={620}
       onClose={onClose}
       footer={
         <>
           <span className="mr-auto text-[11px] text-ac-muted">Remembered for this project</span>
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" size="sm" onClick={() => onStart(p)}>
-            {primary} <span className="font-ac-mono text-[10px] opacity-70">⌘↵</span>
+          <Button variant="primary" onClick={() => onStart(p)}>
+            <Play /> {p.where === "terminal" ? `Start in ${facts.terminalApp}` : "Start here"} <Kbd>⌘↵</Kbd>
           </Button>
         </>
       }
     >
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-4">
         <div>
           <Label aside={p.gitState ?? undefined}>Folder</Label>
-          <div className="flex h-8 items-center rounded-md border border-ac-line2 bg-ac-bg px-2.5 font-ac-mono text-xs text-ac-text">{p.folder}</div>
-          <label className="mt-1.5 flex items-center gap-1.5 text-xs text-ac-soft">
-            <input type="checkbox" checked={p.worktree} onChange={(e) => set({ worktree: e.target.checked })} /> In a new worktree
-          </label>
+          <Field mono>{p.folder}</Field>
+          <div className="mt-2">
+            <CheckBox checked={p.worktree} onChange={() => set({ worktree: !p.worktree })}>
+              In a new worktree
+            </CheckBox>
+          </div>
         </div>
         <div>
           <Label>Tool</Label>
-          <Segmented label="Tool" size="sm" value={p.tool} onChange={(tool) => set({ tool, thinking: facts.thinkingLevels[tool][0] ?? p.thinking })} options={[{ value: "claude", label: "Claude" }, { value: "codex", label: "Codex" }, { value: "antigravity", label: "Antigravity" }]} />
+          <Segmented label="Tool" size="sm" fill value={p.tool} onChange={(tool) => set({ tool, thinking: facts.thinkingLevels[tool][0] ?? p.thinking })} options={[{ value: "claude", label: "Claude" }, { value: "codex", label: "Codex" }, { value: "antigravity", label: "Antigravity" }]} />
         </div>
         <div>
           <Label>Model</Label>
-          <div className="flex h-8 items-center rounded-md border border-ac-line2 bg-ac-bg px-2.5 text-xs text-ac-text">{p.model}</div>
+          <Field>
+            {p.model ? (
+              <>
+                {p.model} {p.model === initial.model && <span className="text-ac-muted">· last used here</span>}
+              </>
+            ) : (
+              <span className="text-ac-muted">Model</span>
+            )}
+          </Field>
         </div>
         <div>
           <Label aside="higher = slower, uses more limit">Thinking</Label>
-          <Segmented label="Thinking" size="sm" value={p.thinking} onChange={(thinking) => set({ thinking })} options={facts.thinkingLevels[p.tool].map((l) => ({ value: l, label: l }))} />
+          <Segmented label="Thinking" size="sm" fill value={p.thinking} onChange={(thinking) => set({ thinking })} options={facts.thinkingLevels[p.tool].map((l) => ({ value: l, label: l[0].toUpperCase() + l.slice(1) }))} />
         </div>
       </div>
-      <div className="mt-4 rounded-[10px] border border-ac-line p-3">
-        <Label aside={<button type="button" onClick={onChooseAccount} className="hover:text-ac-text">Choose another…</button>}>Account</Label>
-        <div className="flex items-center gap-2 text-[13px] text-ac-text">
-          Automatic → <AccountMark color={facts.account.color} /> {facts.account.name}
-          <span className="ml-auto text-[11px] text-ac-muted">{facts.account.reason}</span>
-        </div>
-        <div className="mt-2 space-y-1.5">
-          {facts.account.limits.windows.map((w) => (
-            <LimitBar key={w.label} w={w} protect={facts.account.limits.protect} nowMs={facts.nowMs} />
-          ))}
-        </div>
-        {facts.account.paceText && <p className="mt-2 text-[11.5px] text-ac-muted">{facts.account.paceText}</p>}
-        <div className="mt-2">
-          <Disclosure open={why} label="Why? ›" onToggle={() => setWhy((v) => !v)}>
-            <ul className="space-y-0.5 text-[11.5px] text-ac-muted">
+      <div className="mt-4">
+        <Label
+          aside={
+            <button type="button" onClick={onChooseAccount} className="text-ac-info-text hover:underline">
+              Choose another…
+            </button>
+          }
+        >
+          Account
+        </Label>
+        <div className="rounded-[10px] border border-ac-line bg-ac-bg px-3 py-2.5">
+          <div className="flex items-center gap-2 text-[13px] text-ac-text">
+            <span className="text-ac-muted">Automatic →</span>
+            <AccountMark color={facts.account.color} /> {facts.account.name}
+            <span className="ml-auto text-[11px] text-ac-muted">{facts.account.reason}</span>
+          </div>
+          <div className="mt-2 space-y-1 rounded-md px-2 py-1.5">
+            {facts.account.limits.windows.map((w) => (
+              <LimitBar key={w.label} w={w} protect={facts.account.limits.protect} nowMs={facts.nowMs} />
+            ))}
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-ac-muted">
+            <span>{facts.account.paceText ?? ""}</span>
+            <button type="button" aria-expanded={why} onClick={() => setWhy((v) => !v)} className="inline-flex shrink-0 items-center gap-1 hover:text-ac-text">
+              <ChevronRight className={cn("size-3 transition-transform", why && "rotate-90")} /> Why?
+            </button>
+          </div>
+          {why && (
+            <ul className="mt-1.5 space-y-0.5 text-[11.5px] text-ac-muted">
               {facts.account.why.map((l) => (
                 <li key={l}>{l}</li>
               ))}
             </ul>
-          </Disclosure>
+          )}
         </div>
       </div>
       <div className="mt-4">
@@ -163,12 +199,21 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
           />
         </div>
       </div>
-      <div className="mt-3">
-        <Disclosure open={preview} label="Command preview ›" onToggle={() => setPreview((v) => !v)}>
-          <pre className="whitespace-pre-wrap rounded-md bg-ac-bg px-2.5 py-2 font-ac-mono text-[11px] text-ac-soft">{facts.command}</pre>
-        </Disclosure>
-      </div>
+      <button type="button" aria-expanded={preview} onClick={() => setPreview((v) => !v)} className="mt-3 inline-flex items-center gap-1 text-[11.5px] text-ac-muted hover:text-ac-text">
+        <ChevronRight className={cn("size-3 transition-transform", preview && "rotate-90")} /> Command preview
+      </button>
+      {preview && <pre className="mt-1.5 whitespace-pre-wrap rounded-md bg-ac-bg px-2.5 py-2 font-ac-mono text-[11px] text-ac-soft">{facts.command}</pre>}
     </Modal>
+  );
+}
+
+/** A picker-shaped field (spec §8.1): the value, then a chevron. */
+function Field({ children, mono }: { children: ReactNode; mono?: boolean }) {
+  return (
+    <div className={cn("flex h-8 items-center gap-2 rounded-md border border-ac-line2 bg-ac-bg px-2.5 text-xs text-ac-text", mono && "font-ac-mono")}>
+      <span className="min-w-0 truncate">{children}</span>
+      <ChevronDown className="ml-auto size-3.5 shrink-0 text-ac-faint" />
+    </div>
   );
 }
 
@@ -192,6 +237,7 @@ export function DecisionSheet({
   sessions,
   room,
   suggestion,
+  suggestionWhy,
   targets = [],
   tool = "claude",
   onDecide,
@@ -205,6 +251,8 @@ export function DecisionSheet({
   sessions: SheetSession[];
   room: ReactNode;
   suggestion: string;
+  /** Why that account is suggested, in words ("most room left"). */
+  suggestionWhy?: string;
   /** The accounts a session can move to (same tool), for the per-session picker. */
   targets?: { name: string; color: IdentityColor; busy?: boolean }[];
   /** Codex has no live login switch: both switch modes move the session and resume it. */
@@ -232,10 +280,10 @@ export function DecisionSheet({
       onClose={onClose}
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onKeep}>
+          <Button variant="ghost" onClick={onKeep}>
             Keep going on {account}
           </Button>
-          <Button variant="primary" size="sm" disabled={checked.size === 0 || !target || blocked.length > 0} onClick={() => onDecide(how, sessions.filter((s) => checked.has(s.key)).map((s) => ({ key: s.key, target: chosen[s.key] ?? s.target })))}>
+          <Button variant="primary" disabled={checked.size === 0 || !target || blocked.length > 0} onClick={() => onDecide(how, sessions.filter((s) => checked.has(s.key)).map((s) => ({ key: s.key, target: chosen[s.key] ?? s.target })))}>
             Continue on {target}
           </Button>
         </>
@@ -247,7 +295,7 @@ export function DecisionSheet({
           const to = chosen[s.key] ?? s.target;
           return (
             <div key={s.key} className="relative flex items-center gap-2.5 px-3 py-2 text-xs">
-              <input type="checkbox" aria-label={`Move ${s.title}`} checked={checked.has(s.key)} onChange={() => setChecked((c) => (c.has(s.key) ? new Set([...c].filter((k) => k !== s.key)) : new Set([...c, s.key])))} />
+              <CheckBox size={14} label={`Move ${s.title}`} checked={checked.has(s.key)} onChange={() => setChecked((c) => (c.has(s.key) ? new Set([...c].filter((k) => k !== s.key)) : new Set([...c, s.key])))} />
               {s.state && <SessionStateIcon state={s.state} />}
               <span className="min-w-0 flex-1 truncate text-ac-text">{s.title}</span>
               <span className="shrink-0 text-ac-muted">{s.model ? `${s.model} · →` : "→"}</span>
@@ -256,6 +304,7 @@ export function DecisionSheet({
                 aria-label={`Target account for ${s.title}`}
                 aria-haspopup="listbox"
                 aria-expanded={picking === s.key}
+                data-popover-trigger=""
                 disabled={targets.length < 2}
                 onClick={() => setPicking((p) => (p === s.key ? null : s.key))}
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-ac-line2 px-2 py-0.5 text-ac-text disabled:cursor-default"
@@ -263,7 +312,8 @@ export function DecisionSheet({
                 <AccountMark color={colorOf(to)} /> {to || "no other account"} {targets.length > 1 && <ChevronDown className="size-3 text-ac-muted" />}
               </button>
               {picking === s.key && (
-                <div role="listbox" aria-label="Target account" className="absolute right-3 top-9 z-10 w-[180px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
+                <Anchored onClose={() => setPicking(null)} className="absolute right-3 top-9 z-10">
+                <div role="listbox" aria-label="Target account" className="w-[180px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
                   {targets.map((t) => (
                     <button key={t.name} type="button" role="option" aria-selected={t.name === to} onClick={() => (setChosen((c) => ({ ...c, [s.key]: t.name })), setPicking(null))} className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-ac-soft hover:bg-ac-raise">
                       <AccountMark color={t.color} /> {t.name}
@@ -271,6 +321,7 @@ export function DecisionSheet({
                     </button>
                   ))}
                 </div>
+                </Anchored>
               )}
             </div>
           );
@@ -293,7 +344,7 @@ export function DecisionSheet({
           {[...new Set(blocked)].join(", ")} {blocked.length === 1 ? "is" : "are"} running a session of {blocked.length === 1 ? "its" : "their"} own — switching would sign it out. Pick another account, or start a new session with a brief.
         </p>
       )}
-      <Label className="mt-4" aside={`suggested: ${suggestion}`}>
+      <Label className="mt-4" aside={suggestion ? `suggested: ${suggestion}${suggestionWhy ? ` — ${suggestionWhy}` : ""}` : undefined}>
         Room left
       </Label>
       {room}
@@ -311,13 +362,13 @@ export function EndDialog({ title, stops, kept, onEnd, onCloseTab, onClose }: { 
       onClose={onClose}
       footer={
         <>
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="secondary" size="sm" onClick={onCloseTab}>
+          <Button variant="secondary" onClick={onCloseTab}>
             Just close the tab
           </Button>
-          <Button variant="danger" size="sm" onClick={onEnd}>
+          <Button variant="danger" onClick={onEnd}>
             End session
           </Button>
         </>

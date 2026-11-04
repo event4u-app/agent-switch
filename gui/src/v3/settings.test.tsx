@@ -49,4 +49,29 @@ describe("Settings (spec §10.5)", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Focus terminal" }));
     expect(on.focusTerminal).toHaveBeenCalledWith(false);
   });
+
+  it("Open in: each target with its monogram and where it was found; agent apps first (board \"editors\")", () => {
+    const on = { setDefault: vi.fn(), focusTerminal: vi.fn() };
+    render(
+      <OpenInSettings
+        defaultTarget="phpstorm"
+        perRepo={{}}
+        focusTerminal
+        on={on}
+        agentApps={[{ id: "claude-desktop", label: "Claude Desktop", tool: "claude" }]}
+        targets={[
+          { target: "phpstorm", label: "PhpStorm", kind: "editor", installed: true, app: "/Applications/PhpStorm.app", launcher: "/usr/local/bin/phpstorm" },
+          { target: "vscode", label: "VS Code", kind: "editor", installed: true, app: null, launcher: "/usr/local/bin/code" },
+          { target: "cursor", label: "Cursor", kind: "editor", installed: false },
+        ]}
+      />,
+    );
+    expect(screen.getByText("/Applications/PhpStorm.app · phpstorm launcher")).toBeTruthy();
+    expect(screen.getByText("/usr/local/bin/code")).toBeTruthy();
+    expect(screen.getByText("not installed")).toBeTruthy();
+    expect(screen.getByText("Claude sessions")).toBeTruthy();
+    expect(screen.getByText("PS")).toBeTruthy();
+    const names = [...document.querySelectorAll("span")].map((e) => e.textContent).filter((t) => t === "CClaude Desktop" || t === "PSPhpStorm");
+    expect(names).toEqual(["CClaude Desktop", "PSPhpStorm"]);
+  });
 });

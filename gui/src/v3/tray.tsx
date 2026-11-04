@@ -4,6 +4,7 @@
  * "Start session" and "Open Agent Switch".
  */
 
+import { AppLogo } from "../ui/AppLogo.js";
 import { Button } from "../ui/Button.js";
 import type { BatchActions } from "./kit.js";
 import { LimitsStrip, type LimitAccount } from "./limits.js";
@@ -42,31 +43,40 @@ export function V3Tray({
   const live = liveOrder(sessions);
   const shown = live.slice(0, TRAY_SESSIONS);
   return (
-    <div className="w-[360px] rounded-xl border border-ac-line2 bg-ac-panel" style={{ boxShadow: "var(--ac-shadow)" }}>
-      <NeedsZone items={needs} away={away} onVerb={on.verb} onMore={on.moreNeeds} onAway={on.away} />
-      <SessionsZone
-        sessions={shown}
-        activeKey={null}
-        selection={null}
-        openKeys={new Set()}
-        onSelect={on.session}
-        onToggleChildren={() => {}}
-        onCheck={() => {}}
-        onCleanUp={() => {}}
-        onDoneToday={() => {}}
-        batch={noBatch}
-      />
-      {live.length > TRAY_SESSIONS && (
-        <button type="button" onClick={on.moreSessions} className="px-3.5 text-[11px] text-ac-muted hover:text-ac-text">
-          {live.length - TRAY_SESSIONS} more ›
-        </button>
-      )}
+    <div className="w-[360px] overflow-hidden rounded-xl border border-ac-line2 bg-ac-panel" style={{ boxShadow: "var(--ac-shadow)" }}>
+      <div className="flex items-center gap-2 border-b border-ac-line px-3 py-2.5">
+        <AppLogo className="size-5" />
+        <span className="text-[13px] font-semibold text-ac-text">Agent Switch</span>
+      </div>
+      <NeedsZone tray items={needs} away={away} onVerb={on.verb} onMore={on.moreNeeds} onAway={on.away} />
+      <div className="pb-1">
+        <SessionsZone
+          tray
+          divider={needs.length > 0 || !!away}
+          sessions={shown}
+          activeKey={null}
+          selection={null}
+          openKeys={new Set()}
+          onSelect={on.session}
+          onToggleChildren={() => {}}
+          onCheck={() => {}}
+          onCleanUp={() => {}}
+          onDoneToday={() => {}}
+          onStart={on.start}
+          batch={noBatch}
+        />
+        {live.length > TRAY_SESSIONS && (
+          <button type="button" onClick={on.moreSessions} className="ml-1.5 h-6 px-2 text-[11px] text-ac-muted hover:text-ac-text">
+            {live.length - TRAY_SESSIONS} more ›
+          </button>
+        )}
+      </div>
       <LimitsStrip accounts={accounts} nowMs={nowMs} openKey={null} onOpen={on.account} onSignIn={on.signIn} />
-      <div className="flex gap-2 border-t border-ac-line p-2">
-        <Button variant="primary" size="sm" className="flex-1" onClick={on.start}>
+      <div className="flex items-center gap-2 border-t border-ac-line px-3 py-2">
+        <Button variant="primary" size="sm" onClick={on.start}>
           Start session
         </Button>
-        <Button variant="secondary" size="sm" className="flex-1" onClick={on.open}>
+        <Button variant="ghost" size="sm" onClick={on.open}>
           Open Agent Switch
         </Button>
       </div>
