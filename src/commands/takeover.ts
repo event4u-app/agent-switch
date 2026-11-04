@@ -10,6 +10,7 @@ import { ProviderId, provider } from "../providers.js";
 import { resolveProviderValue } from "../args.js";
 import { extractBrief, writeBrief, sweepBriefs, seedPrompt } from "../handoff.js";
 import { liveSessionPids } from "../api.js";
+import { codexProfilesWithSession } from "../login-keepalive.js";
 import {
   assertValidSessionId,
   cleanupForkVehicle,
@@ -36,6 +37,11 @@ import { moveCacheLine } from "../cache-words.js";
 import { eventFile, readEvents } from "../hooks.js";
 import { TmuxHost } from "../host/tmux-host.js";
 
+/** POSIX single-quote for a printed command line (the prompt may hold spaces). */
+export function shellQuote(a: string): string {
+  return /^[A-Za-z0-9_./:=@-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`;
+}
+
 /** M5 fallback: open the resume in a NEW terminal (macOS Terminal.app), else
  *  print it. Used when --in-place is asked for but there is no managed pane. */
 function spawnNewTerminal(command: string): void {
@@ -55,9 +61,10 @@ function spawnNewTerminal(command: string): void {
  * never a user's own terminal. Otherwise fall back to M5 (spawn a new terminal).
  * Exits the process.
  */
-function resumeInPlace(providerId: ProviderId, target: string, resumeArgs: string[], resumeCommand: string, env: Record<string, string> = {}): void {
-  // A v3 hosted window names its own session key; respawn that window on the target.
-  const hostedKey = process.env.AGENT_SWITCH_HOST_PANE;
+function resumeInPlace(providerId: ProviderId, target: string, resumeArgs: string[], resumeCommand: string, env: Record<string, string> = {}, hosted?: string): void {
+  // A v3 hosted window names its own session key (or the app names it with
+  // --hosted); respawn that window on the target.
+  const hostedKey = hosted ?? process.env.AGENT_SWITCH_HOST_PANE;
   if (hostedKey && TmuxHost.available()) {
     const host = new TmuxHost(ROOT);
     if (host.windowOf(hostedKey)) {
@@ -171,13 +178,18 @@ export function cmdTakeover(
   const printOnly = !!flags["print-only"];
   const json = !!flags.json;
   const inPlace = !!flags["in-place"];
+  // The first message of the resumed session, e.g. "continue where you left
+  // off" after a limit — so the moved session carries on by itself.
+  const prompt = typeof flags.prompt === "string" && flags.prompt.trim() ? flags.prompt : undefined;
+  const hosted = typeof flags.hosted === "string" ? flags.hosted : undefined;
+  if (hosted && !inPlace) die("--hosted names the window to respawn; it needs --in-place.");
   if (inPlace && (printOnly || json)) die("--in-place cannot be combined with --print-only or --json.");
   if (inPlace && keepSource) {
     die("--in-place cannot be combined with --keep-source (the fork-cleanup needs a separate interactive step).");
   }
 
   if (providerId === "codex") {
-    return takeoverCodex(sessionId, target, { keepSource, printOnly, json, inPlace, from: flags.from, force: !!flags.force });
+    return takeoverCodex(sessionId, target, { keepSource, printOnly, json, inPlace, from: flags.from, force: !!flags.force, prompt, hosted });
   }
 
   // Source resolution: --from, or a scan across every Claude profile. More than
@@ -223,8 +235,8 @@ export function cmdTakeover(
     );
   }
 
-  const resumeArgs = ["--resume", sessionId, ...(keepSource ? ["--fork-session"] : [])];
-  const resumeCommand = `agent-switch run ${target} -- ${resumeArgs.join(" ")}`;
+  const resumeArgs = ["--resume", sessionId, ...(keepSource ? ["--fork-session"] : []), ...(prompt ? [prompt] : [])];
+  const resumeCommand = `agent-switch run ${target} -- ${resumeArgs.map(shellQuote).join(" ")}`;
   // The resumed session reports where it came from (docs/lineage-contract.md).
   const continued = { AGENT_SWITCH_PARENT_SESSION: `claude/${source}/${sessionId}`, AGENT_SWITCH_PARENT_KIND: "continued_from" };
 
@@ -271,7 +283,7 @@ export function cmdTakeover(
     process.exit(rc);
   }
   console.log(`Resume it with:\n  ${resumeCommand}`);
-  if (inPlace) resumeInPlace("claude", target, resumeArgs, resumeCommand, continued); // exits: respawn managed pane, else M5
+  if (inPlace) resumeInPlace("claude", target, resumeArgs, resumeCommand, continued, hosted); // exits: respawn managed pane, else M5
   if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("claude"), target, resumeArgs, continued));
 }
 
@@ -337,7 +349,7 @@ function takeoverDesktop(
 function takeoverCodex(
   sessionId: string,
   target: string,
-  opts: { keepSource: boolean; printOnly: boolean; json: boolean; inPlace: boolean; from: string | boolean | undefined; force: boolean },
+  opts: { keepSource: boolean; printOnly: boolean; json: boolean; inPlace: boolean; from: string | boolean | undefined; force: boolean; prompt?: string; hosted?: string },
 ): void {
   const { keepSource, printOnly, json, inPlace, from } = opts;
   if (keepSource) {
@@ -362,8 +374,18 @@ function takeoverCodex(
   const { profile: source, loc } = hits[0] as { profile: string; loc: NonNullable<ReturnType<typeof locateCodexSession>> };
   if (source === target) die(`session ${sessionId} is already in profile "${target}"`);
 
-  const resumeArgs = ["resume", sessionId];
-  const resumeCommand = `agent-switch run ${target} --provider codex -- ${resumeArgs.join(" ")}`;
+  // Codex keeps writing its session file while it runs. Moving the file under a
+  // running process would leave two writers on one session; a hosted window is
+  // respawned (the old process ends), anything else must be ended first.
+  if (!inPlace && !opts.force && !printOnly && !json && codexProfilesWithSession([source]).has(source)) {
+    die(
+      `codex/${source} still has codex running — end that session first (quit codex in its terminal), then move it. ` +
+        "A session Agent Switch hosts moves in place with --in-place. --force skips this check.",
+    );
+  }
+
+  const resumeArgs = ["resume", sessionId, ...(opts.prompt ? [opts.prompt] : [])];
+  const resumeCommand = `agent-switch run ${target} --provider codex -- ${resumeArgs.map(shellQuote).join(" ")}`;
 
   let result;
   try {
@@ -382,6 +404,6 @@ function takeoverCodex(
   console.log(`Resume it with:\n  ${resumeCommand}`);
   console.log("The prompt cache is not shared across organizations: unless both accounts belong to one, the first turn here reads the whole conversation again, uncached.");
   const continued = { AGENT_SWITCH_PARENT_SESSION: `codex/${source}/${sessionId}`, AGENT_SWITCH_PARENT_KIND: "continued_from" };
-  if (inPlace) resumeInPlace("codex", target, resumeArgs, resumeCommand, continued); // exits
+  if (inPlace) resumeInPlace("codex", target, resumeArgs, resumeCommand, continued, opts.hosted); // exits
   if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("codex"), target, resumeArgs, continued));
 }

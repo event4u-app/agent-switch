@@ -13,7 +13,7 @@
  */
 
 import { die, migrateLegacyLayout, ROOT } from "./profiles.js";
-import { parseArgs, parseRun } from "./args.js";
+import { parseArgs, parseExec, parseRun } from "./args.js";
 import { runDoctor } from "./doctor.js";
 import { TOOL_IDS } from "./tooling.js";
 import { currentVersion } from "./updates.js";
@@ -58,7 +58,7 @@ import { cmdMcp } from "./commands/mcp.js";
 import { cmdEngine } from "./commands/engine.js";
 import { cmdNeeds } from "./commands/needs.js";
 import { cmdHost } from "./commands/host.js";
-import { cmdDir, cmdGuard, cmdMap, cmdMappings, cmdPicks, cmdPool, cmdUnmap } from "./commands/routing.js";
+import { cmdDir, cmdExec, cmdStrategy, cmdGuard, cmdMap, cmdMappings, cmdPicks, cmdPool, cmdUnmap } from "./commands/routing.js";
 import {
   cmdAlerts,
   cmdCompact,
@@ -73,6 +73,7 @@ import {
   cmdActivity,
   cmdGuiSettings,
   cmdKeepSignedIn,
+  cmdAutoReset,
   cmdNotifications,
   cmdNotify,
   cmdOsNotify,
@@ -90,6 +91,7 @@ import {
   cmdUpdate,
 } from "./commands/system.js";
 import { cmdHandoff, cmdTakeover } from "./commands/takeover.js";
+import { cmdContinue } from "./commands/continue.js";
 import { cmdAuthStatus, cmdAutoswitch, cmdProtection, cmdReset, cmdStatus, cmdUsageHistory } from "./commands/usage.js";
 
 async function main(): Promise<void> {
@@ -153,6 +155,7 @@ async function main(): Promise<void> {
     case "notifications": return cmdNotifications(positional[0], !!flags.json);
     case "os-notify": return cmdOsNotify(positional[0], !!flags.json);
     case "keep-signed-in": return cmdKeepSignedIn(positional[0], !!flags.json);
+    case "auto-reset": return cmdAutoReset(positional[0], !!flags.json);
     case "uninstall": return cmdUninstall(flags);
     case "run": {
       let r: ReturnType<typeof parseRun>;
@@ -168,7 +171,14 @@ async function main(): Promise<void> {
     case "status": return cmdStatus(providerExplicit ? providerId : undefined, positional[0], !!flags.json);
     case "current": return cmdCurrent(providerExplicit ? providerId : undefined);
     case "whoami": return cmdWhoami(providerId, positional[0]);
-    case "dir": return cmdDir(providerId, !!flags.guard, !!flags.json, !!flags.plain);
+    case "dir": return cmdDir(providerId, !!flags.guard, !!flags.json, !!flags.plain, typeof flags.exclude === "string" ? flags.exclude.split(",").map((x) => x.trim()).filter(Boolean) : []);
+    case "continue": return cmdContinue(positional[0], typeof flags.text === "string" ? flags.text : undefined);
+    case "strategy": return cmdStrategy(providerId, positional[0], !!flags.json);
+    case "exec": {
+      let e: ReturnType<typeof parseExec>;
+      try { e = parseExec(rest); } catch (err) { die((err as Error).message); }
+      return cmdExec(e);
+    }
     case "guard": return cmdGuard(positional[0], !!flags.json);
     case "map": return cmdMap(providerId, positional[0], positional[1], flags);
     case "unmap": return cmdUnmap(providerExplicit ? providerId : undefined, positional[0]);
