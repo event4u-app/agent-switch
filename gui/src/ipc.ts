@@ -529,6 +529,7 @@ const autostartDeps: AutostartDeps = {
   osEnable: () => autostartEnable(),
   osDisable: () => autostartDisable(),
   osIsEnabled: () => autostartIsEnabled(),
+  devBuild: () => import.meta.env.DEV,
   legacyDefaulted: () => {
     try {
       return localStorage.getItem(LEGACY_AUTOSTART_KEY) === "1";
