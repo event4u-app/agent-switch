@@ -10,6 +10,8 @@ import {
   keepAlive,
   keepAliveDue,
   runsOnProfile,
+  profilesWithSession,
+  sessionCounts,
 } from "../src/login-keepalive.js";
 
 const NOW = Date.parse("2026-11-01T12:00:00.000Z");
@@ -131,4 +133,26 @@ test("keepAlive: nothing runs for a fresh or unreadable login; a CLI that cannot
   assert.deepEqual([...fresh.runs, ...unreadable.runs], []);
   const missing = harness({ expiry: NOW - DAY, refreshOk: false });
   assert.deepEqual(await keepAlive("/p", missing.deps), { outcome: "unavailable", reason: "codex: ENOENT" });
+});
+
+test("profilesWithSession: the profiles a running CLI process serves, from one process list", () => {
+  const env: Record<number, string | null> = {
+    1: "CODEX_HOME=/as/codex/a/config\0PATH=/bin",
+    2: "CODEX_HOME=/as/codex/b/config",
+  };
+  const dirOf = (n: string) => `/as/codex/${n}/config`;
+  assert.deepEqual([...profilesWithSession([1, 2], ["a", "b", "c"], "CODEX_HOME", dirOf, (p) => env[p] ?? null)].sort(), ["a", "b"]);
+  assert.deepEqual([...profilesWithSession([], ["a"], "CODEX_HOME", dirOf, () => null)], [], "no process, no session");
+});
+
+test("sessionCounts: running processes per profile; an unreadable environment counts for none", () => {
+  const env: Record<number, string | null> = {
+    1: "CODEX_HOME=/as/codex/a/config",
+    2: "CODEX_HOME=/as/codex/a/config",
+    3: "CODEX_HOME=/as/codex/b/config",
+    4: null,
+    5: "CODEX_HOME=/as/codex/a/configX",
+  };
+  const counts = sessionCounts([1, 2, 3, 4, 5], ["a", "b", "c"], "CODEX_HOME", (n) => `/as/codex/${n}/config`, (p) => env[p] ?? null);
+  assert.deepEqual(Object.fromEntries(counts), { a: 2, b: 1, c: 0 });
 });

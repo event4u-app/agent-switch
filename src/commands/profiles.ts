@@ -46,6 +46,7 @@ import { renamePoolMember } from "../pools.js";
 import { GUARD_REFUSED_EXIT } from "../single-load.js";
 import { mappingRows, pruneMappings, setMapping } from "../mappings.js";
 import { liveSessionPids } from "../api.js";
+import { codexSessionCounts } from "../login-keepalive.js";
 import { serviceInstall, serviceTarget } from "../service.js";
 import { fileURLToPath } from "node:url";
 import { removeLaunchersFor, renameLaunchersFor } from "../launchers.js";
@@ -345,6 +346,8 @@ export function cmdList(providerId?: ProviderId, json = false): void {
   if (json) {
     // The GUI IPC contract: the profile list (identity/active/live) — NOT usage.
     // Usage stays behind `status --json` (active profile only, anti-rotation).
+    // Codex has no session pid file: count its processes once for all profiles.
+    const codexLive = providers.includes("codex") ? codexSessionCounts(listProfiles("codex")) : new Map<string, number>();
     const rows = providers.flatMap((pid) =>
       listProfiles(pid).map((n) => ({
         provider: pid,
@@ -354,7 +357,7 @@ export function cmdList(providerId?: ProviderId, json = false): void {
         color: colorOf(pid, n),
         disabled: isDisabled(pid, n),
         active: activeFor(pid) === n,
-        liveSessions: pid === "claude" ? liveSessionPids(configDir("claude", n)).length : 0,
+        liveSessions: pid === "claude" ? liveSessionPids(configDir("claude", n)).length : pid === "codex" ? (codexLive.get(n) ?? 0) : 0,
       })),
     );
     console.log(JSON.stringify(rows, null, 2));
