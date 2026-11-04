@@ -10,8 +10,8 @@
  *   accounts changes, which is how a new sign-in inherits the shared tree.
  *
  * - make this window's CLI the one terminals and the background service use
- *   (`agent-switch activate`), so a dev build and the installed app each bring
- *   their own.
+ *   (`agent-switch activate --auto`), so each installed app brings its own; a
+ *   dev build's source-checkout CLI claims nothing.
  *
  * Theme and launch-at-login are applied before first paint in main.tsx.
  */
@@ -51,9 +51,10 @@ export function useStartupEngines(): void {
   const s = useAS();
   useEffect(() => {
     void setMinimizeToDock(getMinimizeToDock()).catch(() => {});
-    // Whichever app starts (dev build or the installed one) claims terminals
-    // and the background service for its own CLI.
-    void activateCli().catch(() => {});
+    // An installed app claims terminals and the background service for its own
+    // CLI; under `task gui:dev` the CLI declines (`skipped`), so the everyday
+    // setup stays on the installed version.
+    void activateCli({ auto: true }).catch(() => {});
   }, []);
 
   const claudeKey = s.readiness === "starting" ? null : s.accounts.filter((a) => a.tool === "claude").map((a) => a.name).sort().join("\n");
