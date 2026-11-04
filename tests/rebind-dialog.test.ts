@@ -137,3 +137,25 @@ test("buildRebindDialog carries same-organization per row but never ranks by it 
   assert.deepEqual(d.rows.map((r) => [r.profile, r.sameOrg]), [["team", true], ["other", false], ["unknown", null]]);
   assert.equal(d.suggestedProfile, "other", "most headroom wins even though the cache would not move along");
 });
+
+test("a busy account (own live session) is never the suggestion, and picking it resolves to `busy`, not a switch", () => {
+  const snap = (u: number) => ({ windows: [{ key: "five_hour", label: "5h", utilization: u, resetsAt: null }], routines: null, capturedAt: "2026-11-04T08:00:00Z" });
+  const d = buildRebindDialog(
+    [
+      { name: "run", snapshot: snap(99) },
+      { name: "free", snapshot: snap(60) },
+      { name: "busy", snapshot: snap(5), busy: true },
+    ],
+    "run",
+  );
+  assert.equal(d.suggestedProfile, "free", "most headroom among the accounts nobody is using");
+  assert.deepEqual(d.rows.map((r) => [r.profile, r.busy]), [["run", false], ["free", false], ["busy", true]]);
+  assert.deepEqual(resolveRebindChoice("2", d), { kind: "busy", profile: "busy" });
+  assert.deepEqual(resolveRebindChoice("1", d), { kind: "target", profile: "free" });
+});
+
+test("every other account busy → no suggestion", () => {
+  const d = buildRebindDialog([{ name: "run", snapshot: null }, { name: "b", snapshot: null, busy: true }], "run");
+  assert.equal(d.suggestedProfile, null);
+  assert.deepEqual(resolveRebindChoice("", d), { kind: "invalid" });
+});

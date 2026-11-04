@@ -24,6 +24,9 @@ export interface RebindDialogCandidate {
   /** Same organization as the running account, so the prompt cache moves along;
    *  null when either side is unknown. Shown, never ranked. */
   sameOrg?: boolean | null;
+  /** The account's own profile runs a live session. `rebind` moves the login
+   *  away from it, so that session would be signed out — never a target. */
+  busy?: boolean;
 }
 
 /** One rendered row. `maxUtil` is the profile's own highest window utilization
@@ -35,6 +38,8 @@ export interface RebindDialogRow {
   maxUtil: number | null;
   isRunning: boolean;
   sameOrg: boolean | null;
+  /** See {@link RebindDialogCandidate.busy}: shown, never suggested or switched to. */
+  busy: boolean;
 }
 
 export interface RebindDialog {
@@ -60,6 +65,7 @@ export function buildRebindDialog(
     maxUtil: c.snapshot ? maxUtilization(c.snapshot) : null,
     isRunning: c.name === runningProfile,
     sameOrg: c.sameOrg ?? null,
+    busy: c.busy === true,
   }));
 
   // Suggestion = lowest known max-utilization among the non-running rows (most
@@ -67,7 +73,7 @@ export function buildRebindDialog(
   // maxUtilization helper — no new ranking invented. Ties keep the first row.
   let best: RebindDialogRow | null = null;
   for (const r of rows) {
-    if (r.isRunning || r.maxUtil === null) continue;
+    if (r.isRunning || r.busy || r.maxUtil === null) continue;
     if (best === null || r.maxUtil < (best.maxUtil as number)) best = r;
   }
 
@@ -82,6 +88,7 @@ export function selectableRows(dialog: RebindDialog): RebindDialogRow[] {
 
 export type RebindChoice =
   | { kind: "target"; profile: string }
+  | { kind: "busy"; profile: string }
   | { kind: "cancel" }
   | { kind: "invalid" };
 
@@ -103,7 +110,8 @@ export function resolveRebindChoice(input: string, dialog: RebindDialog): Rebind
 
   const n = Number(trimmed);
   if (Number.isInteger(n) && n >= 1 && n <= selectable.length) {
-    return { kind: "target", profile: selectable[n - 1].profile };
+    const row = selectable[n - 1];
+    return row.busy ? { kind: "busy", profile: row.profile } : { kind: "target", profile: row.profile };
   }
   return { kind: "invalid" };
 }

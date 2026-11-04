@@ -30,7 +30,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 
-import { fetchProfile } from "./api.js";
+import { fetchProfile, liveSessionPids } from "./api.js";
 import { verifyCCBinary, type ContractVerdict } from "./cc-contract.js";
 import * as keychain from "./keychain.js";
 import { withProperLock } from "./locks.js";
@@ -121,6 +121,10 @@ export interface RebindDeps {
   /** True for a profile seeded from the default install by `import` — moving or
    *  refreshing its login would sign the default install out. Default: never. */
   sharesDefaultLogin?: (name: string) => boolean;
+  /** True while a Claude session runs on this profile's own config dir. The
+   *  target's store is emptied by the move, so a session there would lose its
+   *  login on its next credential read. Default: never. */
+  liveSession?: (name: string) => boolean;
 }
 
 /**
@@ -196,6 +200,7 @@ export function defaultDeps(): RebindDeps {
     verifyCCContract: (v) => verifyCCBinary(v),
     resolveAccount: resolveAccountViaApi,
     sharesDefaultLogin: (name) => sharesDefaultLogin("claude", name),
+    liveSession: (name) => liveSessionPids(configDir("claude", name)).length > 0,
   };
 }
 
@@ -669,6 +674,16 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
         `"${name}" shares its login with the default install — rebinding would refresh or move it and sign the default install out. Give it its own login first: agent-switch login ${name}`,
       );
     }
+  }
+
+  // The move empties the target's own store. A session running on the target
+  // profile itself would read that empty store and drop to "please log in" —
+  // the borrowed login is not lent, it is taken away. Refuse before anything moves.
+  if (d.liveSession?.(account)) {
+    throw new RebindRefused(
+      `"${account}" has a live session of its own — rebinding would move its login away and sign that session out. ` +
+        `End the session on "${account}" first, or switch to an account nobody is using.`,
+    );
   }
 
   const pConfig = configDir("claude", profile);

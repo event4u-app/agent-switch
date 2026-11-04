@@ -54,7 +54,13 @@ async function rebindDialog(running: string): Promise<void> {
   for (const n of others) {
     // Same usage read path `status` uses (daemon cache when fresh, else the
     // OAuth /usage endpoint); null when unreadable — the row shows no %.
-    candidates.push({ name: n, snapshot: await claudeSnapshot(n), label: labelFor("claude", n), sameOrg: sameOrganization(running, n) });
+    candidates.push({
+      name: n,
+      snapshot: await claudeSnapshot(n),
+      label: labelFor("claude", n),
+      sameOrg: sameOrganization(running, n),
+      busy: liveSessions(configDir("claude", n)).length > 0,
+    });
   }
   const dialog = buildRebindDialog(candidates, running);
   const rows = selectableRows(dialog);
@@ -87,7 +93,8 @@ async function rebindDialog(running: string): Promise<void> {
     const label = r.label ? ` [${r.label}]` : "";
     const util = r.maxUtil === null ? "usage n/a" : `${r.maxUtil}% used`;
     const org = r.sameOrg === true ? "  · same org" : "";
-    console.log(`  ${i + 1}) ${(r.profile + label).padEnd(24)} ${util}${org}${marker}`);
+    const busy = r.busy ? "  · busy (own session running — not available)" : "";
+    console.log(`  ${i + 1}) ${(r.profile + label).padEnd(24)} ${util}${org}${busy}${marker}`);
   });
   const enterHint = dialog.suggestedProfile ?? "(no suggestion)";
   console.log(`  [enter] = ${enterHint}   ·   q = cancel (stay on "${running}")`);
@@ -111,6 +118,10 @@ async function rebindDialog(running: string): Promise<void> {
   }
   if (choice.kind === "invalid") {
     console.log(`No valid selection — stayed on "${running}".`);
+    return;
+  }
+  if (choice.kind === "busy") {
+    console.log(`"${choice.profile}" has a session of its own running — switching would sign it out. Stayed on "${running}".`);
     return;
   }
   const cacheLine = rebindCacheLine(running, choice.profile);
