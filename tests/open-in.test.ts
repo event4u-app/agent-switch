@@ -31,6 +31,17 @@ test("menu lists every target and marks what is installed", () => {
   assert.deepEqual(m.filter((e) => e.installed).map((e) => e.target), ["vscode", "finder"]);
 });
 
+test("menu says where each target was found: the app bundle and its launcher (Settings › Open in)", () => {
+  const m = menu(env("darwin", ["phpstorm", "code"], ["PhpStorm", "Visual Studio Code"]));
+  const by = (t: string) => m.find((e) => e.target === t)!;
+  assert.equal(by("phpstorm").app, "/Applications/PhpStorm.app");
+  assert.equal(by("phpstorm").launcher, "/usr/local/bin/phpstorm");
+  assert.equal(by("vscode").launcher, "/usr/local/bin/code");
+  assert.equal(by("cursor").app, null, "not installed: nothing to show");
+  assert.equal(by("cursor").launcher, null);
+  assert.equal(by("finder").app, null, "a system target names no path it did not look up");
+});
+
 test("confine: only paths inside the session's folder, symlinks resolved", () => {
   const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-open-")));
   fs.mkdirSync(path.join(root, "src"));

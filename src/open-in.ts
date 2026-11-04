@@ -106,11 +106,28 @@ export interface MenuEntry {
   label: string;
   kind: Launcher["kind"];
   installed: boolean;
+  /** The app bundle found for it (macOS), or null. */
+  app: string | null;
+  /** Its launcher on PATH, or null. */
+  launcher: string | null;
 }
 
-/** Every target with whether it can open here. Pure given `env`. */
+/** Where a target was found: its app bundle and its launcher. System targets name nothing. Pure given `env`. */
+export function locate(target: TargetId, env: Env): { app: string | null; launcher: string | null } {
+  const l = LAUNCHERS[target];
+  if (target === "finder" || target === "terminal") return { app: null, launcher: null };
+  const launcher = l.cli ? env.onPath(l.cli) : null;
+  let app: string | null = null;
+  if (env.platform === "darwin") for (const name of l.macApps ?? []) if ((app = env.macApp(name))) break;
+  return { app, launcher };
+}
+
+/** Every target with whether it can open here, and where it was found. Pure given `env`. */
 export function menu(env: Env, dir = "/"): MenuEntry[] {
-  return TARGET_IDS.map((t) => ({ target: t, label: LAUNCHERS[t].label, kind: LAUNCHERS[t].kind, installed: plan(t, dir, env) !== null }));
+  return TARGET_IDS.map((t) => {
+    const installed = plan(t, dir, env) !== null;
+    return { target: t, label: LAUNCHERS[t].label, kind: LAUNCHERS[t].kind, installed, ...(installed ? locate(t, env) : { app: null, launcher: null }) };
+  });
 }
 
 // ---------- default and last used ----------
