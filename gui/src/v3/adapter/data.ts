@@ -453,7 +453,9 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
   const w = a.windows.find((x) => x.key === "five_hour") ?? a.windows[0];
   if (!w) return null;
   const others = vm.accounts.filter((x) => x.tool === a.tool && x.id !== a.id && !x.disabled && x.state !== "signed-out");
-  const best = others.sort((x, y) => (fiveH(x) ?? 0) - (fiveH(y) ?? 0))[0];
+  // A switch moves the target's login into the session, so an account running
+  // its own session is never the suggestion (it would be signed out).
+  const best = others.sort((x, y) => Number(x.liveSessions > 0) - Number(y.liveSessions > 0) || (fiveH(x) ?? 0) - (fiveH(y) ?? 0))[0];
   const resetsAt = w.resetsAt ? Date.parse(w.resetsAt) : NaN;
   const mins = Number.isFinite(resetsAt) ? Math.max(0, Math.round((resetsAt - now) / 60_000)) : null;
   const sessions: SheetSession[] = rows
@@ -463,7 +465,7 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
     account: a.name,
     tool: a.tool,
     // The accounts a session can move to, emptiest first; the picker offers these only.
-    targets: others.map((x) => ({ name: x.name, color: x.color })),
+    targets: others.map((x) => ({ name: x.name, color: x.color, busy: x.liveSessions > 0 })),
     pctUsed: w.utilization ?? 0,
     window: windowLabel(w.key, w.label),
     resetsIn: mins === null ? "unknown" : mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`,

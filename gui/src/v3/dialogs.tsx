@@ -193,6 +193,7 @@ export function DecisionSheet({
   room,
   suggestion,
   targets = [],
+  tool = "claude",
   onDecide,
   onKeep,
   onClose,
@@ -205,7 +206,9 @@ export function DecisionSheet({
   room: ReactNode;
   suggestion: string;
   /** The accounts a session can move to (same tool), for the per-session picker. */
-  targets?: { name: string; color: IdentityColor }[];
+  targets?: { name: string; color: IdentityColor; busy?: boolean }[];
+  /** Codex has no live login switch: both switch modes move the session and resume it. */
+  tool?: string;
   onDecide: (how: MoveHow, moves: { key: string; target: string }[]) => void;
   onKeep: () => void;
   onClose: () => void;
@@ -216,6 +219,10 @@ export function DecisionSheet({
   const [picking, setPicking] = useState<string | null>(null);
   const target = chosen[sessions[0]?.key ?? ""] ?? suggestion;
   const colorOf = (name: string) => targets.find((t) => t.name === name)?.color ?? "blue";
+  const isBusy = (name: string) => targets.find((t) => t.name === name)?.busy === true;
+  // Both switch modes move the target's login into the session; a target with a
+  // session of its own would be signed out. A brief starts fresh and may share it.
+  const blocked = how !== "brief" ? sessions.filter((s) => checked.has(s.key) && isBusy(chosen[s.key] ?? s.target)).map((s) => chosen[s.key] ?? s.target) : [];
   return (
     <Modal
       kicker="Near limit"
@@ -228,7 +235,7 @@ export function DecisionSheet({
           <Button variant="ghost" size="sm" onClick={onKeep}>
             Keep going on {account}
           </Button>
-          <Button variant="primary" size="sm" disabled={checked.size === 0 || !target} onClick={() => onDecide(how, sessions.filter((s) => checked.has(s.key)).map((s) => ({ key: s.key, target: chosen[s.key] ?? s.target })))}>
+          <Button variant="primary" size="sm" disabled={checked.size === 0 || !target || blocked.length > 0} onClick={() => onDecide(how, sessions.filter((s) => checked.has(s.key)).map((s) => ({ key: s.key, target: chosen[s.key] ?? s.target })))}>
             Continue on {target}
           </Button>
         </>
@@ -260,6 +267,7 @@ export function DecisionSheet({
                   {targets.map((t) => (
                     <button key={t.name} type="button" role="option" aria-selected={t.name === to} onClick={() => (setChosen((c) => ({ ...c, [s.key]: t.name })), setPicking(null))} className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-ac-soft hover:bg-ac-raise">
                       <AccountMark color={t.color} /> {t.name}
+                      {t.busy && <span className="ml-auto text-[11px] text-ac-muted">in use</span>}
                     </button>
                   ))}
                 </div>
@@ -270,10 +278,21 @@ export function DecisionSheet({
       </div>
       <Label>How</Label>
       <div role="radiogroup" aria-label="How" className="flex flex-col gap-2">
-        <Choice on={how === "after-turn"} onPick={() => setHow("after-turn")} title={`After this turn, continue on ${target}`} detail={`Hands the conversation over with its context; ${account} keeps its history.`} />
-        <Choice on={how === "now"} onPick={() => setHow("now")} title="Switch now (rebind)" detail={`Checked for this Claude version. If it fails, the session stays on ${account}.`} />
+        {tool === "codex" ? (
+          <Choice on={how !== "brief"} onPick={() => setHow("now")} title={`Move and continue on ${target}`} detail={`Moves the conversation to ${target} and resumes it there with “continue”. End codex in your own terminal first; a session Agent Switch hosts moves in its window.`} />
+        ) : (
+          <>
+            <Choice on={how === "after-turn"} onPick={() => setHow("after-turn")} title={`After this turn, continue on ${target}`} detail={`Switches when the turn ends, then carries on by itself where Agent Switch hosts the session.`} />
+            <Choice on={how === "now"} onPick={() => setHow("now")} title="Switch now and continue" detail={`Checked for this Claude version. The session adopts ${target} and is told to continue; if the switch fails, it stays on ${account}.`} />
+          </>
+        )}
         <Choice on={how === "brief"} onPick={() => setHow("brief")} title="New session with a brief" detail={`Starts fresh on ${target} with a summary of this one.`} />
       </div>
+      {blocked.length > 0 && (
+        <p role="alert" className="mt-2 text-xs text-ac-warn-text">
+          {[...new Set(blocked)].join(", ")} {blocked.length === 1 ? "is" : "are"} running a session of {blocked.length === 1 ? "its" : "their"} own — switching would sign it out. Pick another account, or start a new session with a brief.
+        </p>
+      )}
       <Label className="mt-4" aside={`suggested: ${suggestion}`}>
         Room left
       </Label>

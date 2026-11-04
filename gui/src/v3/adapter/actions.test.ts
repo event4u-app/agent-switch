@@ -30,6 +30,8 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
     renameSession: vi.fn(async () => {}),
     openSessionIn: vi.fn(async () => {}),
     openApp: vi.fn(async () => {}),
+    continueSession: vi.fn(async () => {}),
+    takeoverHosted: vi.fn(async () => {}),
   };
   const rows = new Map<string, SessionRow>([
     ["claude/work/a", row("a", { prs: [PR], git: { toplevel: "/r", branch: "feat/x", headSha: "h", dirty: false, changed: 0, ahead: 1, behind: 0, upstream: "origin/feat/x", remote: "git@github.com:o/r.git", worktree: false, cwd: "/r", cwdSource: "hook" } })],
@@ -106,6 +108,29 @@ describe("dispatchV3", () => {
     expect(d.act.armRebind).toHaveBeenCalledWith("claude:a", "claude:home");
     await dispatchV3({ type: "move", how: "brief", moves: [{ key: "claude/work/a", target: "home" }] }, d);
     expect(d.open).toHaveBeenCalledWith({ kind: "session", id: "claude:a" });
+  });
+
+  it("move: a Claude switch carries on — typed into a hosted window, else the user is told to send one message", async () => {
+    const d = deps();
+    await dispatchV3({ type: "move", how: "now", moves: [{ key: "claude/work/h", target: "home" }] }, d);
+    expect(d.act.rebind).toHaveBeenCalledWith("claude:h", "claude:home");
+    expect(d.ipc.continueSession).toHaveBeenCalledWith("claude/work/h");
+    await dispatchV3({ type: "move", how: "now", moves: [{ key: "claude/work/a", target: "home" }] }, d);
+    expect(d.ipc.continueSession).toHaveBeenCalledTimes(1);
+    expect(d.toast).toHaveBeenCalledWith({ tone: "info", text: "Now on home — type one message in its terminal to continue" });
+  });
+
+  it("move: Codex moves the session and resumes it with the continuation — in place when hosted, else in the app's terminal", async () => {
+    const d = { ...deps(), hosted: (k: string) => k === "codex/work/h" };
+    await dispatchV3({ type: "move", how: "now", moves: [{ key: "codex/work/h", target: "home" }] }, d);
+    expect(d.ipc.takeoverHosted).toHaveBeenCalledWith("codex/work/h", "home");
+    await dispatchV3({ type: "move", how: "after-turn", moves: [{ key: "codex/work/x", target: "home" }] }, d);
+    expect(d.open).toHaveBeenCalledWith({
+      kind: "terminal",
+      run: { title: "Continue on home", args: ["takeover", "x", "--to", "home", "--provider", "codex", "--prompt", "Continue where you left off."] },
+    });
+    expect(d.act.rebind).not.toHaveBeenCalled();
+    expect(d.act.armRebind).not.toHaveBeenCalled();
   });
 
   it("session menu: rename asks, pin pins, End asks first and only then ends", async () => {

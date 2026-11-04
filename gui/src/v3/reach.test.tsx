@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { V3Window } from "./window.js";
 import { data, slots } from "./window-fixture.js";
+import { installMemoryStorage } from "../redesign/engines/test-storage.js";
+
+installMemoryStorage();
 
 afterEach(cleanup);
 function open() {
@@ -54,6 +57,20 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
     expect(screen.getByText(/Nothing changes until you choose/)).toBeTruthy();
     expect(w.act).not.toHaveBeenCalled();
     expect(w.clicks()).toBe(1);
+  });
+
+  it("Near-limit decision with the app's 'ask me at the limit' on: opens by itself once, moves nothing", () => {
+    localStorage.clear?.();
+    const act = vi.fn();
+    render(<V3Window data={data()} slots={slots} act={act} autoOpenLimits />);
+    expect(screen.getByText(/Nothing changes until you choose/)).toBeTruthy();
+    expect(act).toHaveBeenCalledWith({ type: "reveal" });
+    expect(act.mock.calls.every(([a]) => a.type === "reveal")).toBe(true);
+    cleanup();
+    const again = vi.fn();
+    render(<V3Window data={data()} slots={slots} act={again} autoOpenLimits />);
+    expect(screen.queryByText("Nothing changes until you choose.", { exact: false })).toBeNull();
+    expect(again).not.toHaveBeenCalled();
   });
 
   it("Accounts, sign-ins, usage history; pools and projects; protection", () => {

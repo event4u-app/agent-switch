@@ -8,6 +8,7 @@ import {
   limitOptions,
   limitSession,
   limitTargets,
+  switchTargets,
   liveSwitch,
   overviewSub,
   plainStart,
@@ -234,6 +235,28 @@ describe("near-limit options", () => {
     expect(alone.find((o) => o.id === "continue-elsewhere")?.disabled).toBe(true);
     const linux = limitOptions(side, ses("a", { accountId: side.id }), limitTargets(side, [side, work], NOW), "linux");
     expect(linux.find((o) => o.id === "switch")?.detail).toBe("Not available here: Live switching works on macOS only today.");
+  });
+
+  it("never offers a live switch onto an account running a session of its own — it would be signed out", () => {
+    const busy = acc("busy", { liveSessions: 1 });
+    const targets = limitTargets(side, [side, busy, work], NOW);
+    expect(switchTargets(targets).map((r) => r.account.name)).toEqual(["work"]);
+    const allBusy = limitOptions(side, ses("a", { accountId: side.id }), limitTargets(side, [side, busy], NOW), "mac");
+    const sw = allBusy.find((o) => o.id === "switch")!;
+    expect(sw.disabled).toBe(true);
+    expect(sw.detail).toBe("Not available here: every other Claude account is running a session of its own — switching would sign it out.");
+    expect(allBusy.find((o) => o.id === "continue-elsewhere")?.disabled).toBe(false);
+  });
+
+  it("Codex: the switch is a move that resumes on the target — offered on any platform, busy targets allowed", () => {
+    const cside = acc("cside", { tool: "codex", id: "codex:cside", state: "limited" });
+    const cbusy = acc("cbusy", { tool: "codex", id: "codex:cbusy", liveSessions: 1 });
+    const targets = limitTargets(cside, [cside, cbusy], NOW);
+    const opts = limitOptions(cside, ses("c", { accountId: cside.id, tool: "codex" }), targets, "linux");
+    const sw = opts.find((o) => o.id === "switch")!;
+    expect(sw.disabled).toBe(false);
+    expect(sw.title).toBe("Move this session and continue");
+    expect(sw.detail).toMatch(/resumes it there/);
   });
 
   it("finds the account's newest running session when the item names none", () => {
