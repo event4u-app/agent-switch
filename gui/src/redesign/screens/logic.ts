@@ -288,6 +288,14 @@ export function limitTargets(account: Account, accounts: readonly Account[], now
   return rankAccounts(accounts, account.tool, now).filter((r) => r.account.id !== account.id && r.rank != null);
 }
 
+/** The targets a LIVE switch may use: a switch moves the target's login into
+ *  this session, so an account running a session of its own would be signed
+ *  out (the CLI refuses it). Continuing elsewhere starts a new session and may
+ *  share a busy account. */
+export function switchTargets(targets: readonly RankedAccount[]): RankedAccount[] {
+  return targets.filter((r) => r.account.liveSessions === 0);
+}
+
 /** Design `vR` options, gated by what the backend can do today. */
 export function limitOptions(
   account: Account,
@@ -298,6 +306,18 @@ export function limitOptions(
   const noSession = t("sessions.limit.noSession", { name: account.name });
   const noTarget = t("sessions.limit.noTarget", { tool: TOOL_LABEL[account.tool] });
   const live = session ? liveSwitch(session, platform) : null;
+  // Codex cannot switch a running login: the "switch" is a move that resumes
+  // the conversation on the target with "continue" (takeover). Any platform,
+  // and a target running its own codex session is fine — it is a new session there.
+  const codexMove: LimitOption | null =
+    account.tool === "codex"
+      ? {
+          id: "switch",
+          title: t("sessions.limit.moveTitle"),
+          detail: !session ? noSession : !targets.length ? noTarget : t("sessions.limit.moveDetail"),
+          disabled: !session || !targets.length,
+        }
+      : null;
   return [
     {
       id: "pause",
@@ -306,7 +326,7 @@ export function limitOptions(
       disabled: true,
       isDefault: true,
     },
-    {
+    codexMove ?? {
       id: "switch",
       title: t("sessions.limit.switchTitle"),
       detail: !session
@@ -315,8 +335,10 @@ export function limitOptions(
           ? t("sessions.limit.notAvailable", { reason: live?.reason ?? "" })
           : !targets.length
             ? noTarget
-            : t("sessions.limit.switchDetail"),
-      disabled: !session || !live?.ok || !targets.length,
+            : !switchTargets(targets).length
+              ? t("sessions.limit.notAvailable", { reason: t("sessions.limit.allBusy", { tool: TOOL_LABEL[account.tool] }) })
+              : t("sessions.limit.switchDetail"),
+      disabled: !session || !live?.ok || !switchTargets(targets).length,
     },
     {
       id: "continue-elsewhere",

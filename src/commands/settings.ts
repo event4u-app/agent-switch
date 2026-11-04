@@ -3,7 +3,7 @@
  * notifications, gui-settings, activity.
  */
 
-import { die, readOsNotifications, setOsNotifications, readKeepSignedIn, setKeepSignedIn } from "../profiles.js";
+import { die, readOsNotifications, setOsNotifications, readKeepSignedIn, setKeepSignedIn, readCodexAutoReset, setCodexAutoReset } from "../profiles.js";
 import { readActivity, ACTIVITY_MAX_LINES } from "../activity.js";
 import { readGuiSettings, writeGuiSettings, applyGuiSetting, type GuiSettingUpdate } from "../gui-settings.js";
 import { appendNotification, readNotifications, clearNotifications, NotificationKind } from "../notifications.js";
@@ -57,6 +57,25 @@ export function cmdKeepSignedIn(sub: string | undefined, json = false): void {
   const enabled = readKeepSignedIn();
   if (json) console.log(JSON.stringify({ enabled }));
   else console.log(`Keep accounts signed in ${enabled ? "ON" : "OFF"} (Claude, Codex and Antigravity accounts; needs the background service).`);
+}
+
+/** `agent-switch auto-reset [on|off|status] [--json]` — whether the service
+ *  redeems a banked Codex reset credit by itself when a Codex account reaches
+ *  its limit (once per reset cycle). Default off: a credit cannot be returned. */
+export function cmdAutoReset(sub: string | undefined, json = false): void {
+  if (sub === "on" || sub === "off") {
+    const on = sub === "on";
+    if (readCodexAutoReset() !== on) {
+      setCodexAutoReset(on);
+      logActivity("settings", null, `redeem Codex resets automatically ${on ? "on" : "off"}`, "user changed it");
+    }
+  } else if (sub && sub !== "status") die("usage: agent-switch auto-reset [on|off|status] [--json]");
+  const enabled = readCodexAutoReset();
+  if (json) console.log(JSON.stringify({ enabled }));
+  else
+    console.log(
+      `Redeem Codex resets automatically ${enabled ? "ON" : "OFF"} — at 100 % the service redeems one banked reset, once per reset cycle (needs the background service).`,
+    );
 }
 
 /** `agent-switch notifications [clear] [--json]` — list the recent

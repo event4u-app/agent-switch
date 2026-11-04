@@ -317,6 +317,19 @@ test("`sessions preview` degrades to an empty preview for an unknown id and for 
   }
 });
 
+test("`takeover --prompt` resumes with that first message, quoted for the shell", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "privat");
+    seed(home, "claude", "work");
+    seedTranscript(home, "privat", "-tmp-proj", "0000-prompt-id");
+    const out = run(home, ["takeover", "0000-prompt-id", "--to", "work", "--print-only", "--prompt", "Continue where you left off"]);
+    assert.match(out, /run work -- --resume 0000-prompt-id 'Continue where you left off'/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("`takeover --print-only` moves the transcript between profiles and prints the resume command", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {

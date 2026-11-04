@@ -14,7 +14,7 @@ import { SessionStateIcon } from "../../ui/SessionStateIcon.js";
 import { Caps } from "../../ui/Typography.js";
 import { TOOL_LABEL } from "../../vm/rules.js";
 import { useAS } from "../../vm/store.js";
-import { limitOptions, limitSession, limitTargets, type LimitChoice } from "./logic.js";
+import { limitOptions, limitSession, limitTargets, switchTargets, type LimitChoice } from "./logic.js";
 
 const PRIMARY: Record<LimitChoice, (name: string) => string> = {
   pause: () => t("sessions.near.pauseResume"),
@@ -38,7 +38,12 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
   if (!item || !account) return null;
 
   const selected = options.find((o) => o.id === choice);
-  const targetAccount = s.accountById(target);
+  // A live switch may only land on an account nobody is using; fall back to the
+  // first such one when the remembered pick is not in this choice's list.
+  // Codex moves the session instead of switching its login, so any target works.
+  const shown = choice === "switch" && account?.tool !== "codex" ? switchTargets(targets) : targets;
+  const targetId = shown.some((r) => r.account.id === target) ? target : (shown[0]?.account.id ?? "");
+  const targetAccount = s.accountById(targetId);
   const needsTarget = choice === "switch" || choice === "continue-elsewhere";
   const done = () => {
     s.update((vm) => ({ attention: vm.attention.filter((a) => a.id !== item.id) }));
@@ -46,13 +51,26 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
 
   const go = async () => {
     if (!session || !targetAccount) return;
-    if (choice === "switch") {
+    if (choice === "switch" && account.tool === "codex") {
+      // Move + resume with "continue" in the app's terminal; takeover refuses
+      // while codex still runs in the user's own terminal and says so there.
+      done();
+      s.open({
+        kind: "terminal",
+        run: {
+          kicker: t("sessions.limit.moveTitle"),
+          title: `${session.project} → ${TOOL_LABEL[targetAccount.tool]} · ${targetAccount.name}`,
+          args: s.act.moveAndContinueArgs!(session.id, targetAccount.id),
+        },
+      });
+    } else if (choice === "switch") {
       setBusy(true);
       try {
         await s.act.rebind!(session.id, targetAccount.id);
+        // Same conversation, new login: one message from the user makes it carry on.
         done();
         s.close();
-        s.toast({ text: t("sessions.sheet.nowRunsOn", { project: session.project, name: targetAccount.name }), tone: "ok" });
+        s.toast({ text: t("sessions.sheet.typeToContinue", { project: session.project, name: targetAccount.name }), tone: "ok" });
       } catch (e) {
         s.toast({
           text: t("sessions.sheet.switchFailed", { project: session.project, name: account.name, error: e instanceof Error ? e.message : String(e) }),
@@ -83,7 +101,7 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
     }
   };
 
-  const actionMissing = (choice === "switch" && !s.act.rebind) || (choice === "continue-elsewhere" && !s.act.handoffBrief);
+  const actionMissing = (choice === "switch" && (account.tool === "codex" ? !s.act.moveAndContinueArgs : !s.act.rebind)) || (choice === "continue-elsewhere" && !s.act.handoffBrief);
 
   return (
     <Sheet
@@ -103,7 +121,7 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
             disabled={!selected || selected.disabled || busy || actionMissing || (needsTarget && !targetAccount)}
             onClick={() => void go()}
           >
-            {PRIMARY[choice](targetAccount?.name ?? "…")}
+            {choice === "switch" && account.tool === "codex" ? t("sessions.near.continueOn", { name: targetAccount?.name ?? "…" }) : PRIMARY[choice](targetAccount?.name ?? "…")}
           </Button>
         </>
       }
@@ -163,12 +181,12 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
             );
           })}
         </div>
-        {needsTarget && targets.length > 0 && (
+        {needsTarget && shown.length > 0 && (
           <Select
             label={choice === "switch" ? t("sessions.near.switchToLabel") : t("sessions.near.continueOnLabel")}
-            value={target}
+            value={targetId}
             onChange={setTarget}
-            options={targets.map((r) => ({
+            options={shown.map((r) => ({
               value: r.account.id,
               label: `${TOOL_LABEL[r.account.tool]} · ${r.account.name}`,
               hint: r.reason,

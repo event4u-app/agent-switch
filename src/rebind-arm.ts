@@ -167,6 +167,9 @@ export interface ArmWatchDeps {
   activity(target: string, action: string, reason: string, ok: boolean): void;
   log(line: string): void;
   now?(): number;
+  /** Type the continuation into the switched session (`provider/account/id`):
+   *  true when it was sent, else why not (not hosted, someone typing there). */
+  continueSession?(key: string): true | string;
 }
 
 /** `busy → idle`: the host reported a turn running, and now reports it over. */
@@ -226,8 +229,12 @@ export async function watchArmsOnce(d: ArmWatchDeps): Promise<string[]> {
   for (const a of due) {
     d.log(`arm: claude/${a.profile} turn ended — switching to ${a.target}`);
     try {
-      const r = await d.rebind({ account: a.target, profile: a.profile });
-      d.notify({ kind: "success", title: `${a.profile} now runs on ${a.target}`, message: `Switched when the turn ended, as you armed it. ${r.uxNote}`.trim(), key: `arm:${a.profile}` });
+      await d.rebind({ account: a.target, profile: a.profile });
+      // The session keeps its conversation; one message makes it carry on.
+      const sent = d.continueSession?.(`claude/${a.profile}/${a.sessionId}`);
+      const next = sent === true ? "It carries on by itself." : "Type one message in its terminal to continue.";
+      if (sent !== undefined && sent !== true) d.log(`arm: claude/${a.profile} not continued automatically: ${sent}`);
+      d.notify({ kind: "success", title: `${a.profile} now runs on ${a.target}`, message: `Switched when the turn ended, as you armed it. ${next}`, key: `arm:${a.profile}` });
       d.activity(`claude/${a.profile}`, `now serves ${a.target}'s account`, "the armed switch ran when the turn ended", true);
     } catch (e) {
       const why = e instanceof Error ? e.message : String(e);

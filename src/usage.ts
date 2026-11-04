@@ -263,3 +263,22 @@ export function detectCrossings(
   }
   return { crossings, state };
 }
+
+/** Was any window at/over `threshold` with a reset time that has now passed?
+ *  Such a profile is re-read at once instead of waiting for its cadence. */
+export function resetPassed(snap: UsageSnapshot | undefined | null, threshold: number, now: number): boolean {
+  if (!snap) return false;
+  return snap.windows.some((w) => {
+    if (typeof w.utilization !== "number" || w.utilization < threshold || !w.resetsAt) return false;
+    const t = Date.parse(w.resetsAt);
+    return !isNaN(t) && t <= now;
+  });
+}
+
+/** The old snapshot was stuck at the threshold until a reset that has passed,
+ *  and the new one is below the threshold everywhere — the account is free again. */
+export function freedAfterReset(prev: UsageSnapshot | undefined | null, next: UsageSnapshot, threshold: number, now: number): boolean {
+  if (!resetPassed(prev, threshold, now)) return false;
+  const m = maxUtilization(next);
+  return m !== null && m < threshold;
+}

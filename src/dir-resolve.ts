@@ -29,8 +29,11 @@ import { describe, level, weigh, type Weighed } from "./balance.js";
 import { ProviderId } from "./providers.js";
 import { isPoolRef, poolIdOf, parseMember, type Pool } from "./pools.js";
 import type { GuardPolicy } from "./single-load.js";
+import type { StartStrategy } from "./start-strategy.js";
 
 export const FRESH_USAGE_MS = 10 * 60_000;
+
+export { START_STRATEGIES, type StartStrategy } from "./start-strategy.js";
 export const DEFAULT_LIMIT_PCT = 95;
 
 export interface CachedUsage {
@@ -61,6 +64,10 @@ export interface ResolveInputs {
   live?: (name: string) => boolean;
   /** The single-load guard policy (default `off` → live sessions only break ties). */
   guard?: GuardPolicy;
+  /** How a plain start picks: `balance` (default) spreads starts by what each
+   *  account would lose at its reset; `fill` stays on the preferred account
+   *  until it reaches its limit, then balances across the rest. */
+  strategy?: StartStrategy;
   now: number;
   /** Display form of a folder path (e.g. `~/x`). */
   displayPath?: (p: string) => string;
@@ -181,12 +188,49 @@ export function resolveForDir(i: ResolveInputs): Resolution {
  *  caller gave no profile list. */
 function balancePlain(i: ResolveInputs, why: string[]): Resolution {
   if (!i.names) return fallbackToActive(i, why);
+  if (i.strategy === "fill") {
+    const kept = fillPreferred(i, why);
+    if (kept) return kept;
+  }
   const n = i.names.length;
   why.push(`No folder rule — balancing across ${n} ${i.providerId} account${n === 1 ? "" : "s"} by what each would lose at its reset`);
   const best = pickBalanced(i, i.names, why, i.active);
   if (best) return { name: best, why };
   why.push("No account has fresh usage to weigh — using the plain-start account");
   return fallbackToActive(i, why);
+}
+
+/**
+ * Strategy `fill`: the preferred account takes the start while it can take
+ * work and is below its limit (or its usage is unknown — nothing says it is
+ * full). At its limit, busy under guard `block`, or with no preferred account,
+ * null: the caller balances across the rest.
+ */
+function fillPreferred(i: ResolveInputs, why: string[]): Resolution | null {
+  const a = i.active;
+  if (!a || !i.exists(a)) {
+    why.push("Strategy fill needs a preferred account (agent-switch use <name>) — balancing instead");
+    return null;
+  }
+  const key = `${i.providerId}/${a}`;
+  if (!takesWork(i, a)) {
+    why.push(`Strategy fill — ${key} cannot take work right now, balancing across the rest`);
+    return null;
+  }
+  if (busy(i, a)) {
+    why.push(`Strategy fill — ${key} already has a live session, balancing across the rest`);
+    return null;
+  }
+  const u = i.usage(a);
+  if (u.snapshot && u.capturedMs !== null && i.now - u.capturedMs <= FRESH_USAGE_MS) {
+    const w = weigh(u.snapshot, i.now, i.threshold?.(a) ?? DEFAULT_LIMIT_PCT);
+    if (!w.usable) {
+      why.push(`Strategy fill — ${key} is at its limit (${w.why}), balancing across the rest`);
+      return null;
+    }
+  }
+  why.push(`Strategy fill — staying on ${key} until it reaches its limit`);
+  return { name: a, why };
 }
 
 /**

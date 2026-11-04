@@ -103,3 +103,113 @@ export async function readCodexUsage(configDir: string, capturedAt: string = new
   }
   return parseCodexUsage(raw, capturedAt);
 }
+
+/**
+ * One rollout line → a usage snapshot, when it is a `token_count` event that
+ * carries `rate_limits`. Codex writes one after every turn, with the same
+ * numbers the live endpoint returns (window in minutes, reset in epoch seconds)
+ * — a local, network-free readout that is as fresh as the last turn. No reset
+ * credits in it (null: unknown, never 0).
+ */
+export function parseRolloutRateLimits(o: any): UsageSnapshot | null {
+  if (o?.type !== "event_msg" || o?.payload?.type !== "token_count") return null;
+  const rl = o.payload.rate_limits;
+  if (!rl || typeof rl !== "object") return null;
+  const windows: UsageWindow[] = [];
+  for (const w of [rl.primary, rl.secondary]) {
+    if (!w || typeof w !== "object") continue;
+    const win = toWindow({
+      used_percent: w.used_percent,
+      limit_window_seconds: typeof w.window_minutes === "number" ? w.window_minutes * 60 : undefined,
+      reset_at: w.resets_at,
+    });
+    if (win) windows.push(win);
+  }
+  if (windows.length === 0) return null;
+  const at = typeof o.timestamp === "string" && !isNaN(Date.parse(o.timestamp)) ? new Date(o.timestamp).toISOString() : null;
+  if (!at) return null;
+  return { windows, routines: null, capturedAt: at, resetCredits: null };
+}
+
+/** How much of a rollout's end is read for its last `rate_limits` line. */
+const ROLLOUT_TAIL_BYTES = 512 * 1024;
+
+function newestRollout(sessionsDir: string): { file: string; mtimeMs: number } | null {
+  const sortedDirs = (dir: string): string[] => {
+    try {
+      return fs.readdirSync(dir).filter((n) => /^\d+$/.test(n)).sort().reverse();
+    } catch {
+      return [];
+    }
+  };
+  // sessions/YYYY/MM/DD — the two newest day folders cover a session that
+  // started before midnight and is still writing.
+  const days: string[] = [];
+  for (const y of sortedDirs(sessionsDir)) {
+    for (const m of sortedDirs(path.join(sessionsDir, y))) {
+      for (const d of sortedDirs(path.join(sessionsDir, y, m))) {
+        days.push(path.join(sessionsDir, y, m, d));
+        if (days.length >= 2) break;
+      }
+      if (days.length >= 2) break;
+    }
+    if (days.length >= 2) break;
+  }
+  let best: { file: string; mtimeMs: number } | null = null;
+  for (const day of days) {
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(day).filter((n) => n.endsWith(".jsonl"));
+    } catch {
+      continue;
+    }
+    for (const n of names) {
+      try {
+        const st = fs.statSync(path.join(day, n));
+        if (!best || st.mtimeMs > best.mtimeMs) best = { file: path.join(day, n), mtimeMs: st.mtimeMs };
+      } catch {
+        /* vanished between list and stat */
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * The newest `rate_limits` a Codex home's own session files carry, when it is
+ * newer than `notBeforeMs` (the last capture) — else null. Local reads only:
+ * the newest rollout's tail, scanned from the end.
+ */
+export function rolloutUsage(codexHome: string, notBeforeMs: number): UsageSnapshot | null {
+  const newest = newestRollout(path.join(codexHome, "sessions"));
+  if (!newest || newest.mtimeMs <= notBeforeMs) return null;
+  let text: string;
+  try {
+    const fd = fs.openSync(newest.file, "r");
+    try {
+      const size = fs.fstatSync(fd).size;
+      const len = Math.min(size, ROLLOUT_TAIL_BYTES);
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, size - len);
+      text = buf.toString("utf8");
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+  const lines = text.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].includes('"rate_limits"')) continue;
+    let o: unknown;
+    try {
+      o = JSON.parse(lines[i]);
+    } catch {
+      continue;
+    }
+    const snap = parseRolloutRateLimits(o);
+    if (!snap) continue;
+    return Date.parse(snap.capturedAt) > notBeforeMs ? snap : null;
+  }
+  return null;
+}

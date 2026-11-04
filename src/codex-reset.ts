@@ -21,6 +21,7 @@
 
 import { randomUUID } from "node:crypto";
 import { codexTokenOf } from "./codex-usage.js";
+import { maxUtilization, sameResetCycle, type UsageSnapshot } from "./usage.js";
 
 const BASE = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits";
 
@@ -90,4 +91,66 @@ export async function redeemResetCredit(configDir: string): Promise<RedeemResult
   } catch (e: any) {
     return { ok: false, reason: String(e?.message ?? e) };
   }
+}
+
+/**
+ * Did a redeem show up in the usage readout? The consume call answers at once,
+ * but `wham/usage` keeps reporting the old numbers for a few seconds — a reader
+ * that trusts the first read after a redeem caches the limit it just cleared.
+ * Only a drop of the highest window counts; an unreadable read proves nothing.
+ */
+export function resetReflected(before: UsageSnapshot | null, after: UsageSnapshot | null): boolean {
+  if (!after) return false;
+  const was = before ? maxUtilization(before) : null;
+  if (was === null || was === 0) return true;
+  const now = maxUtilization(after);
+  return now !== null && now < was;
+}
+
+export interface AfterRedeemOptions {
+  attempts: number;
+  delayMs: number;
+  sleep: (ms: number) => Promise<void>;
+}
+
+export const AFTER_REDEEM_DEFAULTS: AfterRedeemOptions = {
+  attempts: 8,
+  delayMs: 2_500,
+  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+};
+
+/**
+ * Re-read usage after a redeem until the reset shows, bounded by `attempts`.
+ * Returns the first reflected snapshot, else the last readable one (null only
+ * when no read succeeded) — the caller caches it either way.
+ */
+export async function usageAfterRedeem(
+  read: () => Promise<UsageSnapshot | null>,
+  before: UsageSnapshot | null,
+  opts: AfterRedeemOptions = AFTER_REDEEM_DEFAULTS,
+): Promise<UsageSnapshot | null> {
+  let last: UsageSnapshot | null = null;
+  for (let i = 0; i < opts.attempts; i++) {
+    await opts.sleep(opts.delayMs);
+    const s = await read();
+    if (s) last = s;
+    if (resetReflected(before, s)) return s;
+  }
+  return last;
+}
+
+/**
+ * Should the opt-in auto-reset redeem a credit for this snapshot? Only when a
+ * window has actually reached its limit (the account is stopped, not merely
+ * busy), a credit is known to be banked, and no credit was redeemed in this
+ * window's reset cycle yet. The cycle guard is what keeps an upstream redeem
+ * that "succeeds" without clearing the limit from burning the whole balance.
+ */
+export function autoRedeemDue(snap: UsageSnapshot, lastRedeemedCycle: string | undefined): { cycle: string } | null {
+  if (typeof snap.resetCredits !== "number" || snap.resetCredits <= 0) return null;
+  const stuck = snap.windows.find((w) => typeof w.utilization === "number" && w.utilization >= 100);
+  if (!stuck) return null;
+  const cycle = stuck.resetsAt ?? "";
+  if (lastRedeemedCycle !== undefined && sameResetCycle(lastRedeemedCycle, cycle)) return null;
+  return { cycle };
 }
