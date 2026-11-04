@@ -880,3 +880,23 @@ export function setLanguagePrefFlag(pref: LanguagePref): void {
     /* no/blocked localStorage → in-memory only for this session */
   }
 }
+
+const LIMIT_AUTO_OPEN_KEY = "agent-switch-limit-auto-open";
+
+/** Open the decision sheet by itself when a session reaches its limit. Default
+ *  on (owner request 2026-11-04); the move still waits for the user's choice. */
+export function getLimitAutoOpen(): boolean {
+  try {
+    return localStorage.getItem(LIMIT_AUTO_OPEN_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setLimitAutoOpen(on: boolean): void {
+  try {
+    localStorage.setItem(LIMIT_AUTO_OPEN_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { AcRoot } from "../../ui/AcRoot.js";
 import type { Actions } from "../../vm/actions.js";
 import { emptyViewModel } from "../../vm/load.js";
@@ -348,8 +348,27 @@ describe("Start session", () => {
 });
 
 describe("Near-limit sheet", () => {
-  it("offers only what the backend can do", () => {
+  const freeWork = () => {
+    const f = fixture();
+    return { ...f, accounts: f.accounts.map((a) => (a.name === "work" ? { ...a, liveSessions: 0 } : a)) };
+  };
+
+  it("does not offer a live switch onto an account running its own session", () => {
     mount(fixture(), { overlay: { kind: "limit", attentionId: "limit:claude:side" }, act: { rebind: vi.fn(), handoffBrief: vi.fn() } });
+    expect((screen.getByRole("radio", { name: /Switch this session/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/running a session of its own/)).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /Continue/ }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("a confirmed switch rebinds the session to the chosen account", async () => {
+    const rebind = vi.fn(async () => {});
+    mount(freeWork(), { overlay: { kind: "limit", attentionId: "limit:claude:side" }, act: { rebind, handoffBrief: vi.fn() } });
+    fireEvent.click(screen.getByRole("button", { name: "Switch to work" }));
+    await waitFor(() => expect(rebind).toHaveBeenCalledWith("claude:budmigo", "claude:work"));
+  });
+
+  it("offers only what the backend can do", () => {
+    mount(freeWork(), { overlay: { kind: "limit", attentionId: "limit:claude:side" }, act: { rebind: vi.fn(), handoffBrief: vi.fn() } });
     const pause = screen.getByRole("radio", { name: /Pause at 98 %/ }) as HTMLButtonElement;
     expect(pause.disabled).toBe(true);
     expect(screen.getByText(/Pausing needs the protection engine/)).toBeTruthy();

@@ -467,6 +467,10 @@ export async function setAutoSwitch(
   await runCli(args);
 }
 
+/** The message a session is sent after its account was switched at a limit
+ *  (mirrors the CLI's `CONTINUE_TEXT`). */
+export const CONTINUE_TEXT = "Continue where you left off.";
+
 /** Manually redeem one banked Codex rate-limit reset. Consumes a real credit —
  *  the caller confirms first. */
 export async function redeemReset(provider: ProviderId, name: string): Promise<void> {
@@ -843,6 +847,30 @@ export async function getKeepSignedIn(): Promise<boolean> {
 
 export async function setKeepSignedIn(on: boolean): Promise<void> {
   await runCli(["keep-signed-in", on ? "on" : "off"]);
+}
+
+/** How a start with no folder rule picks its account (`strategy`):
+ *  `balance` spreads starts, `fill` uses the preferred account up first. */
+export type StartStrategy = "balance" | "fill";
+
+export async function getStrategy(provider: ProviderId): Promise<StartStrategy> {
+  const { strategy } = JSON.parse(await runCli(["strategy", "status", "--provider", provider, "--json"]));
+  return strategy === "fill" ? "fill" : "balance";
+}
+
+export async function setStrategy(provider: ProviderId, strategy: StartStrategy): Promise<void> {
+  await runCli(["strategy", strategy, "--provider", provider]);
+}
+
+/** "Redeem Codex resets automatically" (`auto-reset`): the service redeems one
+ *  banked reset when a Codex account reaches 100 %, once per reset cycle. */
+export async function getCodexAutoReset(): Promise<boolean> {
+  const { enabled } = JSON.parse(await runCli(["auto-reset", "status", "--json"]));
+  return enabled === true;
+}
+
+export async function setCodexAutoReset(on: boolean): Promise<void> {
+  await runCli(["auto-reset", on ? "on" : "off"]);
 }
 
 // ---- desktop pet (road-to-desktop-pet) --------------------------------------
