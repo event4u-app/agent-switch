@@ -290,7 +290,18 @@ async function main() {
         const appearance = JSON.stringify({ ...a, accent: "theme", terminalFollows: true });
         await page.addInitScript(installTauriShim, { statics, windowLabel: TRAY ? "tray" : "main", storage: { "agent-switch-ui-window": "v3", "agent-switch-appearance": appearance } });
         await page.goto(`http://127.0.0.1:${port}/${TRAY ? "tray.html" : "index.html"}`);
-        await page.waitForTimeout(Number(process.env.V3_WAIT || 6000));
+        // The window marks when its first read settled; wait for that, not a fixed time:
+        // a slow first load used to be photographed as an empty home and pass as clean.
+        const missing = [];
+        if (TRAY) await page.waitForTimeout(Number(process.env.V3_WAIT || 6000));
+        else {
+          await page
+            .waitForSelector('[aria-label="Sessions window"][data-loaded="true"]', { timeout: Number(process.env.V3_WAIT || 60_000) })
+            .catch(() => missing.push("first read never settled (Sessions window stays data-loaded=false)"));
+          await page.waitForTimeout(1000);
+          // A home with sessions must show them: an empty list there is a regression, not a clean frame.
+          if (kind !== "empty" && !(await page.locator('[aria-label="Sessions"] [role="button"]').count())) missing.push("no session rows on a home that has sessions");
+        }
         const first = page.locator("[aria-label='Sessions'] button, nav button").filter({ hasText: /\w/ }).first();
         const row = page.getByRole("button").filter({ hasText: kind === "forty" ? /Refactor|Investigate|Write/ : /Knowledge|agent|data|galawork/ }).first();
         // Forty: the long names sit under "Done today"; open it so they are on screen.
@@ -310,7 +321,7 @@ async function main() {
         if (process.env.V3_EVAL) log(JSON.stringify(await page.evaluate(process.env.V3_EVAL)));
         if (process.env.V3_PROBE)
           log(JSON.stringify(await page.evaluate((sel) => [...document.querySelectorAll(sel)].map((e) => { const r = document.createRange(); r.selectNodeContents(e); const t = r.getBoundingClientRect(); return { text: e.textContent.slice(0, 50), box: e.getBoundingClientRect().width, client: e.clientWidth, scroll: e.scrollWidth, textWidth: t.width }; }), process.env.V3_PROBE)));
-        const findings = [...(await page.evaluate(inspect)), ...errors.map((e) => `page error: ${e}`)];
+        const findings = [...missing, ...(await page.evaluate(inspect)), ...errors.map((e) => `page error: ${e}`)];
         report[name] = findings;
         failed += findings.length;
         await page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage: !!process.env.V3_FULL });

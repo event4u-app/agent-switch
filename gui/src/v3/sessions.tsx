@@ -263,6 +263,7 @@ export function SessionsZone({
   projectOf,
   onPeek,
   divider = true,
+  loading,
   tray,
   batch,
 }: {
@@ -287,6 +288,8 @@ export function SessionsZone({
   onPeek?: (key: string | null, y: number) => void;
   /** The line under the Needs-you zone; absent when that zone is hidden. */
   divider?: boolean;
+  /** The first read has not settled: say nothing rather than "No sessions running". */
+  loading?: boolean;
   batch: BatchActions;
 }) {
   const live = liveOrder(sessions);
@@ -303,7 +306,7 @@ export function SessionsZone({
       </div>
       {selection && <BatchBar compact count={selection.size} actions={batch} className="mx-1.5 mb-1" />}
       <div className="px-1.5">
-        {live.length === 0 && (
+        {live.length === 0 && !loading && (
           <p className="px-2 py-1.5 text-[12px] text-ac-muted">
             No sessions running.{" "}
             {onStart && (

@@ -57,6 +57,7 @@ function V3TrayFrame() {
         sessions={d.sessions}
         accounts={d.limits}
         nowMs={d.nowMs}
+        loading={!s.loaded}
         on={{ verb: main, moreNeeds: main, away: main, session: main, moreSessions: main, account: main, signIn: main, start: () => void forwardToMain({ kind: "start" }), open: main }}
       />
     </div>

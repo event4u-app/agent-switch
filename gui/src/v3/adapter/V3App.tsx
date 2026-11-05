@@ -200,6 +200,8 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       return !real || !(s.sessionRows ?? []).some((x) => sessionKey(x) === real);
     }),
   });
+  // Until the first read settles, empty lists are "not read yet" (no empty states).
+  data.loading = !s.loaded;
 
   const byKey = useMemo(() => new Map(rows.map((r) => [sessionKey(r), r])), [rows]);
   byKeyRef.current = byKey;

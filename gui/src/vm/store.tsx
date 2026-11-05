@@ -93,6 +93,10 @@ export interface Store extends ViewModel {
    *  Only the latest call's result applies (an older one landing later is dropped). */
   reload: () => Promise<void>;
   loading: boolean;
+  /** The first read has settled (with data or an error). Before that, empty
+   *  lists mean "not read yet", not "there is nothing" — screens must not say
+   *  "No sessions" then. */
+  loaded: boolean;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -139,6 +143,7 @@ export function ASProvider({
   const [toolsTab, setToolsTab] = useState<ToolsTab>(startToolsTab);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(!load);
   const toastSeq = useRef(0);
   const reloadSeq = useRef(0);
   const vmRef = useRef(vm);
@@ -168,7 +173,10 @@ export function ASProvider({
     } catch (e) {
       if (latest()) setVm((prev) => ({ ...prev, error: e instanceof Error ? e.message : String(e) }));
     } finally {
-      if (latest()) setLoading(false);
+      if (latest()) {
+        setLoading(false);
+        setLoaded(true);
+      }
     }
   }, [load]);
 
@@ -231,8 +239,9 @@ export function ASProvider({
       dismissToast,
       reload,
       loading,
+      loaded,
     }),
-    [vm, screen, settingsTab, accountsTab, toolsTab, overlay, act, toasts, toast, dismissToast, reload, loading, onNoticesRead, terminalHolds],
+    [vm, screen, settingsTab, accountsTab, toolsTab, overlay, act, toasts, toast, dismissToast, reload, loading, loaded, onNoticesRead, terminalHolds],
   );
 
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;

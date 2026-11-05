@@ -193,6 +193,13 @@ describe("start on a session (gap §4a)", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(act).not.toHaveBeenCalled();
   });
+
+  it("while the first read runs: no empty state, no \"No sessions running\"", () => {
+    mount({ sessions: [], needs: [], loading: true });
+    expect(screen.queryByText("No sessions yet")).toBeNull();
+    expect(screen.queryByText("No sessions running.")).toBeNull();
+    expect(screen.getByLabelText("Sessions window").getAttribute("data-loaded")).toBe("false");
+  });
 });
 
 describe("one trailing glyph per row (spec §5.2)", () => {

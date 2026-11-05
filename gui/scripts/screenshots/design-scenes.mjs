@@ -30,7 +30,8 @@ const SCENES = {
   main: ["", ROW],
   summary: ["", [...CHECKOUT, ["click", "[aria-label^=Summary]"]]],
   conflict: ["", CHECKOUT],
-  needs: ["", [...ROW, ["press", "Meta+j"]]],
+  // ⌘J on macOS; elsewhere the focused terminal keeps Ctrl, so the app key becomes Ctrl+Shift+J (keys.ts).
+  needs: ["", [...ROW, ["press", process.platform === "darwin" ? "Meta+j" : "Control+Shift+j"]]],
   inbox: ["", [...ROW, ["click", "[aria-label^=Sessions]"], ["wait", 300], ["click", "[title^='Needs you']"]]],
   focus: ["", [...ROW, ["click", "[aria-label^=Sessions]"]]],
   palette: ["", [...ROW, ["click", "text=Go to session"]]],

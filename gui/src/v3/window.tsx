@@ -73,6 +73,8 @@ export interface V3Data {
   menu?: (key: string) => readonly SessionMenuItem[];
   /** "Commit…" in the Changes window; disabled with its reason when false. */
   commitAvailable?: boolean;
+  /** The first read has not settled yet: empty lists are "not read yet", so no empty state is shown. */
+  loading?: boolean;
 }
 
 export interface V3Slots {
@@ -551,9 +553,12 @@ export function V3Window({
           {next && <BlockerStrip text={next.text} action={next.action} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
           {slots.body(activeSession)}
         </>
+      ) : data.sessions.length === 0 && data.loading ? (
+        // First read still running: an empty list is not "no sessions" yet.
+        <div className="flex-1" aria-busy="true" />
       ) : data.sessions.length === 0 ? (
         <div className="flex flex-1 items-center justify-center">
-          <div className="w-[480px] max-w-full px-6 text-center">
+          <div className="w-[520px] max-w-full px-6 text-center">
             <h2 className="text-[16px] font-semibold text-ac-text">No sessions yet</h2>
             <p className="mt-1 text-[13px] text-ac-muted">
               Start one here, or run <span className="font-ac-mono">claude</span> in your terminal — it shows up on its own.
@@ -597,7 +602,7 @@ export function V3Window({
   };
   const pinned = new Set(data.library.filter((l) => l.pinned).map((l) => l.key));
   const sessionsWindow = (
-    <aside aria-label="Sessions window" className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-ac-line bg-ac-panel">
+    <aside aria-label="Sessions window" data-loaded={data.loading ? "false" : "true"} aria-busy={data.loading || undefined} className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-ac-line bg-ac-panel">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-ac-line px-3">
         <span className="text-[12px] font-semibold text-ac-text">Sessions</span>
         <span className="ml-auto flex items-center">
@@ -617,6 +622,7 @@ export function V3Window({
           comfortable={comfortable}
           projectOf={groupByProject ? (k) => data.table.find((t) => t.key === k)?.project ?? null : undefined}
           onStart={() => setOverlay("new")}
+          loading={data.loading}
           onPeek={onPeek}
           divider={needs.length > 0 || !!data.away}
           selection={selection}

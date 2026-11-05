@@ -20,8 +20,9 @@ function harness(props: { load?: () => Promise<ViewModel> } = {}) {
 
 function deferred<T>() {
   let resolve!: (v: T) => void;
-  const promise = new Promise<T>((r) => (resolve = r));
-  return { promise, resolve };
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((r, j) => ((resolve = r), (reject = j)));
+  return { promise, resolve, reject };
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -126,5 +127,29 @@ describe("store — reload ordering", () => {
     });
     expect(s().loading).toBe(false);
     expect(s().error).toBe("newer");
+  });
+  it("is not loaded until the latest read settles — an older one landing first does not count", async () => {
+    const calls: ReturnType<typeof deferred<ViewModel>>[] = [];
+    const load = () => {
+      const d = deferred<ViewModel>();
+      calls.push(d);
+      return d.promise;
+    };
+    const s = harness({ load });
+    expect(s().loaded).toBe(false);
+    act(() => {
+      void s().reload();
+    });
+    await act(async () => {
+      calls[0].resolve(emptyViewModel(2));
+      await flush();
+    });
+    expect(s().loaded).toBe(false);
+    await act(async () => {
+      calls[1].reject(new Error("cli failed"));
+      await flush();
+    });
+    // An error settles the first read too: screens may show their empty or error state now.
+    expect(s().loaded).toBe(true);
   });
 });
