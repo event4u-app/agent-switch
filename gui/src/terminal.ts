@@ -96,3 +96,27 @@ export const tauriBackend: TermBackend = {
     return invoke("term_close", { id });
   },
 };
+
+/** The subset of an xterm.js buffer `bufferText` reads. */
+export interface BufferLike {
+  readonly length: number;
+  getLine(y: number): { readonly isWrapped: boolean; translateToString(trimRight?: boolean): string } | undefined;
+}
+
+/**
+ * The whole scrollback as plain text (roadmap road-to-a-chat-that-reads-well
+ * 3.2): xterm already holds characters without escape codes; a line the
+ * terminal wrapped is joined back to the line it continues, trailing blank
+ * lines are dropped. Pure.
+ */
+export function bufferText(buf: BufferLike): string {
+  const lines: string[] = [];
+  for (let y = 0; y < buf.length; y++) {
+    const line = buf.getLine(y);
+    if (!line) continue;
+    if (line.isWrapped && lines.length) lines[lines.length - 1] += line.translateToString(false);
+    else lines.push(line.translateToString(false));
+  }
+  while (lines.length && !lines[lines.length - 1]!.trim()) lines.pop();
+  return lines.map((l) => l.replace(/\s+$/, "")).join("\n");
+}

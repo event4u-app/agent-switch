@@ -3,6 +3,8 @@ import type { ui as en } from "../en/ui.js";
 /** German copy – `ui` namespace. Informal "Du"; every English key, no extras. */
 export const ui: { readonly [K in keyof typeof en]: string } = {
   "ui.copy.copyText": "{text} kopieren",
+  "ui.copy.terminal": "Terminal-Ausgabe kopieren",
+  "ui.copy.terminalTitle": "Die ganze Terminal-Ausgabe als reinen Text kopieren, inklusive Scrollback",
   "ui.meter.windowUsed": "Fenster {label} genutzt",
   "ui.meter.windowChecked": "Fenster {label} · {checked}",
   "ui.meter.old": "{age} alt",

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { Check, ClipboardCopy } from "lucide-react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { t } from "../../i18n/index.js";
-import { attachTerminal, tauriBackend, type TermBackend } from "../../terminal.js";
+import { cn } from "../../lib/utils.js";
+import { attachTerminal, bufferText, tauriBackend, type TermBackend } from "../../terminal.js";
 import { Badge } from "../../ui/Badge.js";
 import { Button } from "../../ui/Button.js";
 import { Sheet } from "../../ui/Overlay.js";
@@ -78,6 +80,7 @@ export function XtermBox({
   look?: { theme: Record<string, string>; fontSize: number; lineHeight: number; fontFamily?: string };
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<XTerm | null>(null);
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -91,6 +94,7 @@ export function XtermBox({
       customGlyphs: true,
       theme: look?.theme ?? { background: cssVar("--ac-bg", "#0b0b10"), foreground: cssVar("--ac-soft", "#e5e5ea") },
     });
+    termRef.current = term;
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
@@ -152,6 +156,7 @@ export function XtermBox({
       disposed = true;
       ro.disconnect();
       void ctrl.dispose();
+      termRef.current = null;
       term.dispose();
     };
     // Mounted once per command; the host remounts via `key` on a new run.
@@ -162,9 +167,39 @@ export function XtermBox({
   // v3: 16/20 px inside, on the terminal's own background (spec §6.4). The
   // wrapper is padded, never the host, because FitAddon measures the host.
   return (
-    <div data-terminal-frame className="flex min-h-0 w-full flex-1 px-5 py-4" style={{ background: look.theme.background }}>
+    <div data-terminal-frame className="group/term relative flex min-h-0 w-full flex-1 px-5 py-4" style={{ background: look.theme.background }}>
       <div ref={hostRef} data-terminal className="min-h-0 w-full flex-1 overflow-hidden" />
+      <CopyScrollback read={() => (termRef.current ? bufferText(termRef.current.buffer.active) : "")} />
     </div>
+  );
+}
+
+/** Copies the terminal's whole scrollback as plain text; shown on hover/focus so
+ *  it never sits over the agent's output. */
+export function CopyScrollback({ read }: { read: () => string }) {
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const id = setTimeout(() => setDone(false), 1500);
+    return () => clearTimeout(id);
+  }, [done]);
+  const label = done ? t("common.copied") : t("ui.copy.terminal");
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={done ? t("common.copied") : t("ui.copy.terminalTitle")}
+      onClick={() => {
+        const text = read();
+        if (text) void navigator.clipboard?.writeText(text).then(() => setDone(true), () => {});
+      }}
+      className={cn(
+        "absolute right-2 top-2 inline-flex size-7 items-center justify-center rounded-md border border-ac-line bg-ac-panel text-ac-muted opacity-0 transition-opacity hover:text-ac-text focus-visible:opacity-100 group-hover/term:opacity-100 [&_svg]:size-3.5",
+        done && "opacity-100",
+      )}
+    >
+      {done ? <Check /> : <ClipboardCopy />}
+    </button>
   );
 }
 
