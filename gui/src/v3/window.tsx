@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { cn } from "../lib/utils.js";
 import { ArrowRightToLine, Copy, Ellipsis, FileCode, Layers, Library, ListTree, Pin, PinOff, Plus, RotateCcw, Settings, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
@@ -14,6 +15,10 @@ import type { IdentityColor, ToolEntry } from "../vm/types.js";
 import { DecisionSheet, NewSessionDialog, type MoveHow, type NewSessionFacts, type NewSessionPlan, type SheetMove, type SheetSession } from "./dialogs.js";
 import { Shell, useFrame, type PageId } from "./frame.js";
 import { LimitsPopover, LimitsStrip, RoomLeft, type LimitAccount } from "./limits.js";
+import { RunningOn, runningOn } from "./running-on.js";
+
+/** The model popover opened from the limits popover sits to its right (352 + 320 + 12 + 11). */
+const LIMITS_MODEL_X = 695;
 import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
 import { limitToOpen, markLimitOpened, openedLimits, wasOpened } from "./adapter/limit-auto.js";
 import { accountOfKey } from "../vm/switch-requests.js";
@@ -32,7 +37,7 @@ import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding }
 import { EMPTY_TABS, canReopen, closable, closeOthers, closeTab, closeToRight, closeUnpinned, isPageTab, moveTab, nextActive, openTab, pinTab, reopenTab, seedTabs, unpinTab, type TabState } from "./tabs.js";
 import { nextFocus } from "./needs.js";
 import { Switcher } from "./overlays.js";
-import { liveOrder } from "./sessions.js";
+import { GROUP_LABEL, SORT_LABEL, liveOrder, type GroupBy, type SortBy } from "./sessions.js";
 
 export interface V3Data {
   nowMs: number;
@@ -194,7 +199,7 @@ export function V3Window({
   const pages = strip.order.filter(isPageTab).map((id) => id.slice(5) as Page);
   const sessionTabs = strip.order.filter((id) => !isPageTab(id));
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking" } | { decide: string } | { menu: string } | { openin: string } | { tabMenu: string; x: number; y: number }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string } | { openin: string } | { tabMenu: string; x: number; y: number }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -203,7 +208,9 @@ export function V3Window({
   const [hintsDismissed, setHintsDismissed] = useState<Set<string>>(new Set());
   const [moreOpen, setMoreOpen] = useState(false);
   const [comfortable, setComfortable] = useState(saved?.comfortable ?? false);
-  const [groupByProject, setGroupByProject] = useState(saved?.groupByProject ?? false);
+  const [sortBy, setSortBy] = useState<SortBy>(saved?.sort ?? "activity");
+  // An older layout's "group by project" comes back as the project grouping.
+  const [groupBy, setGroupBy] = useState<GroupBy>(saved?.group ?? (saved?.groupByProject ? "project" : "none"));
   const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
   const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
   // Hover peek (spec §5.2): after 400 ms on a row, one card at a time, never while a layer is open.
@@ -244,10 +251,10 @@ export function V3Window({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.sessions]);
   useEffect(() => {
-    if (started.current) layout?.save({ tabs: sessionTabs, pinned: strip.pinned, active: active?.startsWith("page:") ? null : active, comfortable, groupByProject, pinnedOnly });
+    if (started.current) layout?.save({ tabs: sessionTabs, pinned: strip.pinned, active: active?.startsWith("page:") ? null : active, comfortable, pinnedOnly, sort: sortBy, group: groupBy });
     // sessionTabs is derived from strip.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, strip, active, comfortable, groupByProject, pinnedOnly]);
+  }, [layout, strip, active, comfortable, pinnedOnly, sortBy, groupBy]);
 
   /** Apply a change to the strip; when the active tab leaves, its neighbour takes over. */
   const changeStrip = (f: (s: TabState) => TabState) => {
@@ -609,7 +616,7 @@ export function V3Window({
           <IconButton label="New session  ⌘N" className="size-7" onClick={() => setOverlay("new")}>
             <Plus />
           </IconButton>
-          <IconButton {...POPOVER_TRIGGER} label="Select · group by project · density · show pinned" aria-expanded={overlay === "sessions-menu"} className="size-7" onClick={() => setOverlay((o) => (o === "sessions-menu" ? null : "sessions-menu"))}>
+          <IconButton {...POPOVER_TRIGGER} label="Select · density · show pinned" aria-expanded={overlay === "sessions-menu"} className="size-7" onClick={() => setOverlay((o) => (o === "sessions-menu" ? null : "sessions-menu"))}>
             <Ellipsis />
           </IconButton>
         </span>
@@ -620,7 +627,16 @@ export function V3Window({
           sessions={pinnedOnly ? data.sessions.filter((x) => pinned.has(x.key)) : data.sessions}
           activeKey={activeSession}
           comfortable={comfortable}
-          projectOf={groupByProject ? (k) => data.table.find((t) => t.key === k)?.project ?? null : undefined}
+          sort={sortBy}
+          group={groupBy}
+          lastActiveOf={(k) => data.table.find((t) => t.key === k)?.lastActiveMs ?? null}
+          groupOf={(k) => {
+            const t = data.table.find((x) => x.key === k);
+            if (!t) return null;
+            return groupBy === "project" ? (t.project ?? null) : groupBy === "account" ? t.account.name : groupBy === "tool" ? t.tool[0].toUpperCase() + t.tool.slice(1) : null;
+          }}
+          onView={(y) => setOverlay((o) => (o && typeof o === "object" && "listView" in o ? null : { listView: y }))}
+          viewOpen={!!overlay && typeof overlay === "object" && "listView" in overlay}
           onStart={() => setOverlay("new")}
           loading={data.loading}
           onPeek={onPeek}
@@ -673,13 +689,49 @@ export function V3Window({
         })}
       />
     ) : modelOf && modelChoices ? (
-      <Anchored onClose={close} className="absolute top-[124px] z-10" style={{ left: overlay && typeof overlay === "object" && "x" in overlay ? overlay.x - 11 : 0 }}>
+      <Anchored
+        onClose={close}
+        className={cn("absolute z-10", overlay && typeof overlay === "object" && "at" in overlay ? "bottom-[40px]" : "top-[124px]")}
+        style={{ left: overlay && typeof overlay === "object" && "x" in overlay ? overlay.x - 11 : 0 }}
+      >
         <ModelPopover c={modelChoices} onModel={(model) => (close(), act({ type: "set-model", key: modelOf, model }))} onThinking={(level) => (close(), act({ type: "set-thinking", key: modelOf, level }))} />
       </Anchored>
     ) : limitsAccount ? (
       // Anchored beside the Limits strip; it never switches anything by itself (spec §7.5).
       <Anchored onClose={close} className="absolute bottom-[40px] left-[352px] z-10">
-        <LimitsPopover a={limitsAccount} nowMs={data.nowMs} onMove={() => setOverlay({ decide: limitsAccount.key })} onAccounts={() => (close(), openPage("accounts"))} />
+        <LimitsPopover
+          a={limitsAccount}
+          nowMs={data.nowMs}
+          onMove={() => setOverlay({ decide: limitsAccount.key })}
+          onAccounts={() => (close(), openPage("accounts"))}
+          running={
+            <RunningOn
+              name={limitsAccount.name}
+              sessions={runningOn(limitsAccount, data.sessions).map((row) => {
+                const b = data.bar(row.key);
+                return { row, model: b?.model ?? null, thinking: b?.thinking ?? null, hosted: !!b?.hosted };
+              })}
+              onOpen={(key) => (close(), openSession(key))}
+              onShowChild={(key) => (close(), openSession(key), frame.selectRight("children"))}
+              onModel={(key, chip) => setOverlay({ model: key, x: LIMITS_MODEL_X, chip, at: "limits" })}
+            />
+          }
+        />
+      </Anchored>
+    ) : overlay && typeof overlay === "object" && "listView" in overlay ? (
+      // Beside the list, level with its control, so the rows it reorders stay in view.
+      <Anchored onClose={close} className="absolute left-[324px] z-10" style={{ top: overlay.listView }}>
+        <Menu
+          label="Sort and group"
+          width={232}
+          items={[
+            { note: "Sort by", label: "" },
+            ...(Object.keys(SORT_LABEL) as SortBy[]).map((k) => ({ id: `sort-${k}`, label: SORT_LABEL[k], checked: k === sortBy, hint: k === "activity" ? "default" : k === "status" ? "needs you first" : undefined, onClick: () => (close(), setSortBy(k)) })),
+            { divider: true, label: "" },
+            { note: "Group by", label: "" },
+            ...(Object.keys(GROUP_LABEL) as GroupBy[]).map((k) => ({ id: `group-${k}`, label: GROUP_LABEL[k], checked: k === groupBy, onClick: () => (close(), setGroupBy(k)) })),
+          ]}
+        />
       </Anchored>
     ) : overlay === "sessions-menu" ? (
       <Anchored onClose={close} className="absolute left-[260px] top-[84px] z-10">
@@ -688,7 +740,6 @@ export function V3Window({
           width={240}
           items={[
             { id: "select", label: "Select", onClick: () => (close(), setSelection(new Set())) },
-            { id: "group", label: "Group by project", checked: groupByProject, onClick: () => (close(), setGroupByProject((v) => !v)) },
             { id: "density", label: "Density", hint: comfortable ? "Comfortable" : "Compact", onClick: () => (close(), setComfortable((v) => !v)) },
             { id: "pinned", label: "Show pinned only", checked: pinnedOnly, onClick: () => (close(), setPinnedOnly((v) => !v)) },
           ]}

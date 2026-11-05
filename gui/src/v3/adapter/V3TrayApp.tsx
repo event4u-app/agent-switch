@@ -59,6 +59,7 @@ function V3TrayFrame() {
         nowMs={d.nowMs}
         loading={!s.loaded}
         ready={s.loaded ? s.readiness === "ready" : undefined}
+        lastActiveOf={(k) => d.table.find((t) => t.key === k)?.lastActiveMs ?? null}
         on={{ verb: main, moreNeeds: main, away: main, session: main, moreSessions: main, account: main, signIn: main, start: () => void forwardToMain({ kind: "start" }), open: main }}
       />
     </div>

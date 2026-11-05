@@ -100,3 +100,45 @@ test("bridge: a hosted session parked for the chat gets its terminal back when t
     spawnSync("tmux", ["-L", socket, "kill-server"]);
   }
 });
+
+test("bridge: an unknown session is refused on stdout, where the app reads", () => {
+  const h = home();
+  const r = run(h, `const { cmdBridge } = await import(${JSON.stringify(mod)}); await cmdBridge("claude", "claude/work/00000000-0000-4000-8000-000000000000", {});`);
+  assert.notEqual(r.status, 0);
+  assert.deepEqual(JSON.parse(r.stdout.trim()), { bridge: "error", message: "no Claude or Codex session claude/work/00000000-0000-4000-8000-000000000000" });
+});
+
+test("bridge: a hosted session before its first turn opens in the chat under its id, and its terminal comes back under the same id", { skip: spawnSync("tmux", ["-V"]).status === 0 ? false : "tmux is not installed here" }, () => {
+  const h = home();
+  const id = "1b2c3d4e-0000-4000-8000-00000000abcd";
+  const key = `claude/work/${id}`;
+  const log = path.join(h, "runs");
+  const fake = path.join(h, "fake-claude-log.mjs");
+  fs.writeFileSync(fake, `#!${process.execPath}\nimport fs from "node:fs";\nfs.appendFileSync(${JSON.stringify(log)}, process.argv.slice(2).join(" ") + "\\n");\nprocess.stdin.on("data", () => {});\nprocess.stdin.on("end", () => process.exit(0));\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(h, "state.json"), JSON.stringify({ active: {}, binaryPaths: { claude: fake } }));
+  const socket = `asw-bn-${process.pid}`;
+  const env = { ...process.env, AGENT_SWITCH_HOME: h, AGENT_SWITCH_HOST_SOCKET: socket };
+  const hostMod = new URL("../src/host/tmux-host.js", import.meta.url).href;
+  const go = (code: string, input = "") => spawnSync(process.execPath, ["--input-type=module", "-e", code], { env, encoding: "utf8", input, timeout: 20_000 });
+  try {
+    const started = go(`const { TmuxHost } = await import(${JSON.stringify(hostMod)}); const host = new TmuxHost(process.env.AGENT_SWITCH_HOME); host.start({ provider: "claude", account: "work", configDir: "/tmp", cwd: process.env.AGENT_SWITCH_HOME, bin: ${JSON.stringify(fake)}, sessionId: ${JSON.stringify(id)} }); host.park(${JSON.stringify(key)}, ["sh", "-c", "read x"]);`);
+    assert.equal(started.status, 0, started.stderr);
+    const bridged = go(`const { cmdBridge } = await import(${JSON.stringify(mod)}); await cmdBridge("claude", ${JSON.stringify(key)}, {});`);
+    assert.equal(bridged.status, 0, bridged.stderr);
+    assert.deepEqual(JSON.parse(bridged.stdout.trim().split("\n")[0]), { bridge: "ready", key, mode: "default" });
+    const runs = () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").trim().split("\n") : []);
+    const end = Date.now() + 5000;
+    const isChat = (l: string) => /(^| )-p( |$)/.test(l);
+    const after = () => runs().slice(runs().findIndex(isChat) + 1);
+    while (!after().length && Date.now() < end) spawnSync("sleep", ["0.05"]);
+    const chat = runs().find(isChat);
+    assert.ok(chat?.includes(`--session-id ${id}`) && !chat.includes("--resume"), `the chat starts the conversation under its id: ${chat}`);
+    const back = after()[0];
+    assert.ok(back && !isChat(back), `the window runs the program again after the chat: ${runs().join(" | ")}`);
+    assert.ok(back.includes(`--session-id ${id}`) && !back.includes("--resume"), `nothing to resume yet: ${back}`);
+    const reg = JSON.parse(fs.readFileSync(path.join(h, "host", "sessions.json"), "utf8"));
+    assert.equal(reg[key].parked, undefined, "no longer parked");
+  } finally {
+    spawnSync("tmux", ["-L", socket, "kill-server"]);
+  }
+});

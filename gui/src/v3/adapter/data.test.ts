@@ -104,12 +104,20 @@ describe("toV3Data", () => {
     })).toBe(true);
   });
 
+  it("a session in the user's own terminal opens as chat and keeps the view picked for it; a hosted one starts in the terminal", () => {
+    const vm = vmWith([account("work")], [row("own"), row("h1")]);
+    const feeds: V3Feeds = { ...emptyFeeds(), host: { mode: "persistent", hosted: [{ key: "claude/work/h1", provider: "claude", account: "work", sessionId: "h1", cwd: "/r", startedAt: "", alive: true, parked: false }] } };
+    expect(toV3Data(vm, feeds, env()).bar("claude/work/own")?.view).toBe("chat");
+    expect(toV3Data(vm, feeds, env({ ownViews: new Map([["claude/work/own", "terminal"]]) })).bar("claude/work/own")?.view).toBe("terminal");
+    expect(toV3Data(vm, feeds, env({ ownViews: new Map([["claude/work/h1", "chat"]]) })).bar("claude/work/h1")?.view).toBe("terminal");
+  });
+
   it("joins needs, hosting, PR and account into a row", () => {
     const r = row("a1", { prs: [{ number: 12, url: "https://github.com/o/r/pull/12", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "NONE", ci: "FAILURE", failingChecks: ["lint"] }], context: { pct: 41, model: "opus", contextTokens: 1, windowTokens: 2, confidence: "high", source: "transcript", effort: "high" } as never });
     const feeds: V3Feeds = {
       ...emptyFeeds(),
       needs: { items: [{ id: "n1", kind: "approval", subject: "claude/work/a1", who: "w", what: "x", verb: "Focus terminal", since: "", version: "" }], away: null, history: [] },
-      host: { mode: "persistent", hosted: [{ key: "claude/work/a1", provider: "claude", account: "work", sessionId: "a1", cwd: "/r", startedAt: "", alive: true }] },
+      host: { mode: "persistent", hosted: [{ key: "claude/work/a1", provider: "claude", account: "work", sessionId: "a1", cwd: "/r", startedAt: "", alive: true, parked: false }] },
     };
     const d = toV3Data(vmWith([account("work", { state: "near-limit" })], [r]), feeds, env());
     expect(d.sessions[0]).toMatchObject({ key: "claude/work/a1", needsYou: true, pr: { number: 12, ci: "FAILURE" }, account: { name: "work", nearLimit: true } });
@@ -122,7 +130,7 @@ describe("toV3Data", () => {
   });
 
   it("a hosted session without a transcript yet still gets a row, once", () => {
-    const h = (id: string) => ({ key: `claude/work/${id}`, provider: "claude", account: "work", sessionId: id, cwd: "/r/new", startedAt: new Date(NOW - 5000).toISOString(), alive: true });
+    const h = (id: string) => ({ key: `claude/work/${id}`, provider: "claude", account: "work", sessionId: id, cwd: "/r/new", startedAt: new Date(NOW - 5000).toISOString(), alive: true, parked: false });
     const feeds = { ...emptyFeeds(), host: { mode: "persistent" as const, hosted: [h("fresh"), h("a1"), { ...h("gone"), alive: false }] } };
     const d = toV3Data(vmWith([], [row("a1")]), feeds, env());
     expect(d.sessions.map((s) => [s.key, s.title])).toEqual([["claude/work/a1", "task a1"], ["claude/work/fresh", "new"]]);

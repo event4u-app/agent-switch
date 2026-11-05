@@ -204,8 +204,11 @@ const shellX = (e: MouseEvent<HTMLElement>): number => {
 
 export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; thinking: (x: number) => void; menu: () => void } }) {
   const t = tone(s.account.fiveH, s.account.protect);
-  const chatOff = !s.hosted || !s.chatAvailable;
-  const chatWhy = !s.hosted ? "Chat needs a session hosted in Agent Switch" : "This tool keeps the view it started in";
+  // A session in the user's own terminal shows both views read-only (the
+  // transcript as chat or in terminal style); only a hosted tool without a
+  // chat bridge keeps the view it started in.
+  const chatOff = s.hosted && !s.chatAvailable;
+  const chatWhy = "This tool keeps the view it started in";
   return (
     <div className="flex h-10 shrink-0 items-center gap-1 overflow-hidden border-b border-ac-line bg-ac-panel px-2">
       <div role="radiogroup" aria-label="View" className="mr-1 inline-flex h-7 shrink-0 items-center rounded-md border border-ac-line bg-ac-bg p-0.5">
@@ -223,7 +226,7 @@ export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn:
               role="radio"
               aria-checked={s.view === id}
               aria-disabled={off || undefined}
-              title={off ? chatWhy : `${label} · switches between turns`}
+              title={off ? chatWhy : s.hosted ? `${label} · switches between turns` : `${label} · read-only here — you type in your terminal`}
               onClick={off ? undefined : () => on.view(id)}
               className={cn("inline-flex h-full items-center gap-1.5 rounded-md px-2 text-xs", s.view === id ? "bg-ac-raise font-medium text-ac-text" : "text-ac-muted", off && "opacity-60")}
             >

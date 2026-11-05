@@ -117,6 +117,8 @@ export function useTheme(): ThemeState & { mode: "dark" | "light" } {
 
 export function V3Frame({ theme }: { theme: ThemeState }) {
   const s = useAS();
+  // Terminal or chat for each session that runs in the user's own terminal (both read-only).
+  const [ownViews, setOwnViews] = useState<ReadonlyMap<string, "terminal" | "chat">>(() => new Map());
   const sRef = useRef(s);
   sRef.current = s;
   useEngines();
@@ -194,6 +196,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     wantChanges,
     route,
     chats: chats.keys,
+    ownViews,
     // A new chat that the CLI already lists under its real key needs no stand-in row.
     chatRows: chats.rows.filter((r) => {
       const real = chats.states.get(sessionKey(r))?.session?.key;
@@ -206,6 +209,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const byKey = useMemo(() => new Map(rows.map((r) => [sessionKey(r), r])), [rows]);
   byKeyRef.current = byKey;
   const hostedKeys = new Set((feeds.host?.hosted ?? []).filter((h) => h.alive).map((h) => h.key));
+  const parkedKeys = new Set((feeds.host?.hosted ?? []).filter((h) => h.alive && h.parked).map((h) => h.key));
   const deps: DispatchDeps = {
     ipc,
     act: s.act,
@@ -252,7 +256,15 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   };
   function switchView(key: string, to: "terminal" | "chat") {
     const tab = chats.tabOf(key);
-    const step = viewStep(to, { inChat: !!tab, hosted: hostedKeys.has(key), chatRunning: chatRunning(key), terminalRunning: terminalRunning(key) });
+    // In the user's own terminal both views are read-only renderings of the
+    // transcript: switching only changes the drawing, nothing is started.
+    if (!tab && !hostedKeys.has(key)) return setOwnViews((m) => new Map(m).set(key, to));
+    const step = viewStep(to, { inChat: !!tab, hosted: hostedKeys.has(key), parked: parkedKeys.has(key), chatRunning: chatRunning(key), terminalRunning: terminalRunning(key) });
+    const restore = () =>
+      void ipc
+        .viewSwitch(key, "terminal")
+        .catch((e: unknown) => s.toast({ tone: "alert", text: e instanceof Error ? e.message : String(e) }))
+        .finally(refresh);
     const armTo = (t: "terminal" | "chat") => {
       if (armed.get(key) !== t) s.toast({ tone: "info", text: `Switches to the ${t} after this turn` });
       arm(key, t);
@@ -268,7 +280,11 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
         arm(key, null);
         // Closing the chat ends its bridge, which brings the program back in the window.
         chats.close(tab!);
-        return void setTimeout(refresh, 1500);
+        // A bridge that already ended (a failed start, a reloaded window) brings nothing back: ask once more. Idempotent.
+        return void setTimeout(() => (parkedKeys.has(key) ? restore() : refresh()), 1500);
+      case "restore":
+        arm(key, null);
+        return restore();
       case "open-chat":
         void ipc
           .viewSwitch(key, "chat")
@@ -311,6 +327,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
         sessionKey={key}
         row={byKey.get(key)}
         hosted={hostedKeys.has(key)}
+        ownView={ownViews.get(key) ?? "chat"}
         vars={vars}
         followTheme={appearance.terminalFollows}
         where={terminalApp}

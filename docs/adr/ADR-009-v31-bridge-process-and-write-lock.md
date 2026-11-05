@@ -34,7 +34,10 @@ Option 1.
   --output-format stream-json --verbose --include-partial-messages --resume <id>
   --permission-prompt-tool stdio --permission-mode <the session's mode>` (the
   mode is passed every time: `-p` resume does not restore it); Codex with `codex
-  app-server` and `thread/resume`.
+  app-server` and `thread/resume`. A hosted Claude session before its first turn
+  has no transcript to resume: the bridge reads its folder and account from the
+  host registry and passes `--session-id <id>` instead, and the window it came
+  from gets the same id back when the chat ends.
 - **stdout**: one JSON event per line, AS event model v1 (Phase 1).
   **stdin**: one JSON command per line — `send`, `steer`, `approve`, `deny`,
   `interrupt`, `set-model`, `set-mode`, `close`. A question's answer is sent as

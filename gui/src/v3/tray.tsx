@@ -15,7 +15,7 @@ import { Button } from "../ui/Button.js";
 import type { BatchActions } from "./kit.js";
 import { LimitRow, type LimitAccount } from "./limits.js";
 import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
-import { SessionsZone, liveOrder, type RowSession } from "./sessions.js";
+import { SessionsZone, sortLive, type RowSession } from "./sessions.js";
 import { TAB, TAB_ON } from "./workbench.js";
 
 export const TRAY_SESSIONS = 5;
@@ -41,8 +41,11 @@ export function V3Tray({
   nowMs,
   loading,
   ready,
+  lastActiveOf,
   on,
 }: {
+  /** Last activity per session key, for the window's default order. */
+  lastActiveOf?: (key: string) => number | null;
   /** The first read has not settled: no "No sessions running" yet. */
   loading?: boolean;
   /** Health as the tray reads it; omitted = not shown. */
@@ -65,7 +68,8 @@ export function V3Tray({
   };
 }) {
   const [picked, setPicked] = useState<TrayTool>("claude");
-  const all = liveOrder(sessions);
+  // The window's default order (activity); without times it stays the status order.
+  const all = sortLive(sessions, "activity", lastActiveOf ?? (() => null));
   const tools = trayTools(all);
   // A tool whose last session ended drops its tab; fall back to the default.
   const tab = tools.includes(picked) ? picked : "claude";
@@ -120,6 +124,8 @@ export function V3Tray({
             onDoneToday={() => {}}
             onStart={on.start}
             loading={loading}
+            sort="activity"
+            lastActiveOf={lastActiveOf}
             batch={noBatch}
           />
           {live.length > TRAY_SESSIONS && (
