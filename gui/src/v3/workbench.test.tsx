@@ -31,13 +31,13 @@ describe("workbench (spec §6)", () => {
     expect(onClose).toHaveBeenCalledWith("accounts");
   });
 
-  it("session bar: Chat is disabled with the reason, chips lock in the user's own terminal, the account chip only opens the sheet", () => {
+  it("session bar: in the user's own terminal both views switch (read-only) and the chips lock; the account chip only opens the sheet", () => {
     const on = handlers();
     const { rerender } = render(<SessionBar s={bar({ hosted: false })} openIn={null} on={on} />);
     const chat = screen.getByRole("radio", { name: /Chat/ });
-    expect(chat.getAttribute("title")).toBe("Chat needs a session hosted in Agent Switch");
+    expect(chat.getAttribute("title")).toBe("Chat · read-only here — you type in your terminal");
     fireEvent.click(chat);
-    expect(on.view).not.toHaveBeenCalled();
+    expect(on.view).toHaveBeenCalledWith("chat");
     const model = screen.getByText("Opus 5.5").closest("button")!;
     expect(model.getAttribute("title")).toBe("Locked: change it in your terminal (/model)");
     fireEvent.click(model);

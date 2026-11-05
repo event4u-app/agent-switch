@@ -104,6 +104,14 @@ describe("toV3Data", () => {
     })).toBe(true);
   });
 
+  it("a session in the user's own terminal opens as chat and keeps the view picked for it; a hosted one starts in the terminal", () => {
+    const vm = vmWith([account("work")], [row("own"), row("h1")]);
+    const feeds: V3Feeds = { ...emptyFeeds(), host: { mode: "persistent", hosted: [{ key: "claude/work/h1", provider: "claude", account: "work", sessionId: "h1", cwd: "/r", startedAt: "", alive: true }] } };
+    expect(toV3Data(vm, feeds, env()).bar("claude/work/own")?.view).toBe("chat");
+    expect(toV3Data(vm, feeds, env({ ownViews: new Map([["claude/work/own", "terminal"]]) })).bar("claude/work/own")?.view).toBe("terminal");
+    expect(toV3Data(vm, feeds, env({ ownViews: new Map([["claude/work/h1", "chat"]]) })).bar("claude/work/h1")?.view).toBe("terminal");
+  });
+
   it("joins needs, hosting, PR and account into a row", () => {
     const r = row("a1", { prs: [{ number: 12, url: "https://github.com/o/r/pull/12", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "NONE", ci: "FAILURE", failingChecks: ["lint"] }], context: { pct: 41, model: "opus", contextTokens: 1, windowTokens: 2, confidence: "high", source: "transcript", effort: "high" } as never });
     const feeds: V3Feeds = {
