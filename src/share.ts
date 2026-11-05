@@ -33,6 +33,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isAccountScopedKey } from "./claude-settings.js";
 
 type ItemKind = "file" | "dir" | "log";
 
@@ -169,12 +170,9 @@ function pointsAt(dst: string, src: string): boolean {
 }
 
 // Keys that must never propagate across profiles via a shared settings.json:
-// MCP server definitions (which can carry OAuth/device tokens) and any
-// token-/secret-shaped key. `.claude.json` / `.credentials.json` are already
-// excluded from sharing entirely; this closes the one shared surface that is a
-// whole-file symlink with no per-key filtering.
-const SENSITIVE_SETTINGS_KEY = /^(mcpServers$|.*(token|secret|api[_-]?key|credential|oauth).*)/i;
-
+// MCP server definitions (which can carry OAuth/device tokens), login and auth
+// settings, and credential-shaped names. One list with claude-settings.ts, so
+// sharing and the settings sync withhold the same keys.
 /** Reason string when a settings.json carries account-scoped keys that must not
  *  be shared, else null. Malformed JSON is not blocked — the guard targets the
  *  known sensitive keys, not file validity. Exported for the share guard test. */
@@ -186,8 +184,8 @@ export function settingsSharingRisk(settingsPath: string): string | null {
     return null;
   }
   if (!parsed || typeof parsed !== "object") return null;
-  const hit = Object.keys(parsed as Record<string, unknown>).find((k) => SENSITIVE_SETTINGS_KEY.test(k));
-  return hit ? `contains "${hit}" — MCP/token state is account-scoped and never shared` : null;
+  const hit = Object.keys(parsed as Record<string, unknown>).find((k) => isAccountScopedKey(k));
+  return hit ? `contains "${hit}" — MCP, login and credential settings are account-scoped and never shared` : null;
 }
 
 /** Link items from sourceDir into targetDir. Returns human-readable actions. */
