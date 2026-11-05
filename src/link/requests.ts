@@ -26,7 +26,7 @@ const PRUNE_AFTER_MS = 7 * 24 * 3_600_000;
 const DEFAULT_TTL_MS = 5 * 3_600_000;
 
 export type RequestState = "open" | "approved" | "declined" | "snoozed" | "executing" | "done" | "failed" | "expired";
-export type MoveHow = "after-turn" | "now" | "brief" | "handoff";
+export type MoveHow = "after-turn" | "now" | "handoff";
 export type Raiser = "as-daemon" | "as-gui" | "as-cli" | "ac";
 
 export interface Candidate {

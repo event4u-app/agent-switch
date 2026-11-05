@@ -19,7 +19,7 @@ function raise(over: Partial<RaiseInput> = {}): RaiseInput {
     session: "claude/work/sess-1",
     reason: { window: "five_hour", fill: 91, resetsAt: new Date(T0 + 90 * MIN).toISOString() },
     raisedBy: "as-daemon",
-    candidates: [{ target: "claude/home", provider: "claude", fill: 20, resetsAt: null, how: ["after-turn", "now", "brief"] }],
+    candidates: [{ target: "claude/home", provider: "claude", fill: 20, resetsAt: null, how: ["after-turn", "now"] }],
     ...over,
   };
 }

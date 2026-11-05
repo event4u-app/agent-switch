@@ -57,7 +57,7 @@ lock, compare-and-set on `rev`.
 { v: 1, id, rev, session: "provider/account/sessionId" | null,
   account: "provider/account", reason: { window, fill, resetsAt, etaFull? },
   raisedBy: "as-daemon" | "as-gui" | "ac", raisedAt, expiresAt,
-  candidates: [{ target, provider, fill, resetsAt, how: ["after-turn","now","brief","handoff"] }],
+  candidates: [{ target, provider, fill, resetsAt, how: ["after-turn","now","handoff"] }],
   state: "open" | "approved" | "declined" | "snoozed" | "executing" | "done" | "failed" | "expired",
   decision?: { target, how, by: "as-gui" | "as-cli" | "ac:<host>", at },
   outcome?: { at, detail, newSession? } }
@@ -113,7 +113,7 @@ CLI front door stays (it is the user's own tool).
       7 days. Red-first tests for: dedup, first-decision-wins under two
       concurrent writers, expiry, corrupt file ignored.
       verify: `npm test` filter `link/requests`.
-- [ ] **1.3 Candidates.** Reuse `pickSwitchTarget`/`balance.ts` for same-provider
+- [x] **1.3 Candidates.** Reuse `pickSwitchTarget`/`balance.ts` for same-provider
       targets, never lending an account with a live session (rebind-dialog
       `busy`); add one cross-provider handoff candidate when another provider
       has a usable account.
