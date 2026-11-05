@@ -484,6 +484,14 @@ test("doctor: shell integration, CLI on PATH, autostart, antigravity OS, isolati
   assert.match(iso.detail, /claude\/a \+ claude\/b/);
 });
 
+test("agentConfigLinkCheck: informational whichever way the user chose, never a warning", () => {
+  assert.equal(DR.agentConfigLinkCheck(true, true).status, "ok");
+  assert.equal(DR.agentConfigLinkCheck(true, false).status, "info");
+  const off = DR.agentConfigLinkCheck(false, true);
+  assert.equal(off.status, "info");
+  assert.equal(off.fix, "agent-switch link on");
+});
+
 // ---- plain starts: balance across accounts until their resets ----
 
 const H = 3_600_000;

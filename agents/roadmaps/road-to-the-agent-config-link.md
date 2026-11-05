@@ -149,7 +149,7 @@ CLI front door stays (it is the user's own tool).
 - [x] **2.3 Disabled behaviour.** `autoConnect: off` → empty tool list and
       `link_status.enabled=false`.
       verify: spawn test with the setting off.
-- [ ] **2.4 Doctor row** for the link (enabled, AC detected, AC entry present).
+- [x] **2.4 Doctor row** for the link (enabled, AC detected, AC entry present).
       verify: doctor test fixture.
 
 ## Phase 3 — GUI on `main` (2.x redesign)
