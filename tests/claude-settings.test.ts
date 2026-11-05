@@ -68,7 +68,8 @@ test("syncProfileSettings: writes the merge, keeps the file's mode, records the 
   fs.chmodSync(path.join(prof, "settings.json"), 0o644);
   assert.equal(syncProfileSettings(global, prof), "updated");
   assert.deepEqual(read(path.join(prof, "settings.json")), { theme: "light", env: { CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: "1" } });
-  assert.equal(fs.statSync(path.join(prof, "settings.json")).mode & 0o777, 0o644);
+  // Windows has no POSIX permission bits to keep.
+  if (process.platform !== "win32") assert.equal(fs.statSync(path.join(prof, "settings.json")).mode & 0o777, 0o644);
   assert.deepEqual(read(path.join(prof, SNAPSHOT)), { env: { CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: "1" } });
   assert.equal(syncProfileSettings(global, prof), "in-sync");
   // Removing the value globally removes it from the profile on the next sync.
