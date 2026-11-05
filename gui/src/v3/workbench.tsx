@@ -4,8 +4,8 @@
  * banner. Adapted from the reference boards; data and actions come in as props.
  */
 
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
-import { Brain, Check, ChevronDown, CircleX, Ellipsis, Lightbulb, Lock, MessageSquareText, SquareTerminal, TriangleAlert, X } from "lucide-react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { Brain, Check, ChevronDown, CircleX, Ellipsis, Lightbulb, Lock, MessageSquareText, Pin, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
@@ -26,27 +26,115 @@ const TAB_ON = "border-ac-line border-t-ac-brand bg-ac-bg text-ac-text";
 
 export type TabItem = { kind: "page"; id: string; label: string; icon: ReactNode } | { kind: "session"; id: string; title: string; state: SessionState };
 
-export function TabStrip({ tabs, activeId, onSelect, onClose }: { tabs: TabItem[]; activeId: string; onSelect: (id: string) => void; onClose: (id: string) => void }) {
-  // Page tabs come first (spec §6.1).
-  const ordered = [...tabs.filter((t) => t.kind === "page"), ...tabs.filter((t) => t.kind === "session")];
+/** Pointer travel before a press on a tab becomes a drag. */
+const DRAG_PX = 4;
+
+export function TabStrip({
+  tabs,
+  activeId,
+  onSelect,
+  onClose,
+  pinned,
+  onMenu,
+  onMove,
+}: {
+  tabs: TabItem[];
+  activeId: string;
+  onSelect: (id: string) => void;
+  onClose: (id: string) => void;
+  /** Pinned tabs: first, tinted, marked with a pin, no close button (owner request 2026-11-05). */
+  pinned?: ReadonlySet<string>;
+  /** Right click: the tab's menu at the pointer (window coordinates). */
+  onMenu?: (id: string, at: { x: number; y: number }) => void;
+  /** A tab dragged onto another one. */
+  onMove?: (id: string, target: string, side: "before" | "after") => void;
+}) {
+  const isPin = (id: string) => !!pinned?.has(id);
+  // Pinned first, then pages (spec §6.1), then sessions; the given order inside each.
+  const rank = (t: TabItem) => (isPin(t.id) ? 0 : t.kind === "page" ? 1 : 2);
+  const ordered = [...tabs].sort((a, b) => rank(a) - rank(b));
+  const [drag, setDrag] = useState<{ id: string; x0: number; moving: boolean; over: { id: string; side: "before" | "after" } | null } | null>(null);
+  const dragRef = useRef(drag);
+  dragRef.current = drag;
+  const moved = useRef(false);
+  const dragging = !!drag;
+  useEffect(() => {
+    if (!dragging) return;
+    const up = () => {
+      const d = dragRef.current;
+      if (d?.moving && d.over && d.over.id !== d.id) onMove?.(d.id, d.over.id, d.over.side);
+      moved.current = !!d?.moving;
+      setDrag(null);
+    };
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => (window.removeEventListener("pointerup", up), window.removeEventListener("pointercancel", up));
+    // Bound for the length of one drag; onMove is read when it ends.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragging]);
   let n = 0;
   return (
-    <div role="tablist" className="flex h-9 shrink-0 items-end gap-px border-b border-ac-line bg-ac-rail px-1">
+    <div role="tablist" className={cn("flex h-9 shrink-0 items-end gap-px border-b border-ac-line bg-ac-rail px-1", drag?.moving && "cursor-grabbing select-none")}>
       {ordered.map((t) => {
         const on = t.id === activeId;
+        const pin = isPin(t.id);
         const idx = t.kind === "session" ? ++n : 0;
+        const name = t.kind === "session" ? t.title : t.label;
+        const dropAt = drag?.moving && drag.over?.id === t.id && drag.id !== t.id ? drag.over.side : null;
         return (
           <div
             key={t.id}
             role="tab"
             aria-selected={on}
-            onClick={() => onSelect(t.id)}
-            title={t.kind === "session" ? `${t.title}${idx <= 9 ? ` · ⌘${idx}` : ""}` : t.label}
-            className={cn(TAB, t.kind === "session" ? "group min-w-[140px] max-w-[220px] shrink" : "shrink-0", on ? TAB_ON : "border-transparent text-ac-muted hover:bg-ac-raise hover:text-ac-text")}
+            data-tab-id={t.id}
+            data-pinned={pin || undefined}
+            onClick={() => {
+              // The click that ends a drag does not also select.
+              if (moved.current) return void (moved.current = false);
+              onSelect(t.id);
+            }}
+            onAuxClick={(e) => {
+              // Middle click closes, like a browser — never a pinned tab.
+              if (e.button === 1 && !pin) (e.preventDefault(), onClose(t.id));
+            }}
+            onContextMenu={(e) => {
+              if (!onMenu) return;
+              e.preventDefault();
+              onMenu(t.id, { x: e.clientX, y: e.clientY });
+            }}
+            onPointerDown={(e) => {
+              if (e.button !== 0 || !onMove || (e.target as HTMLElement).closest("button")) return;
+              moved.current = false;
+              setDrag({ id: t.id, x0: e.clientX, moving: false, over: null });
+            }}
+            onPointerMove={(e) => {
+              const d = dragRef.current;
+              if (!d) return;
+              const moving = d.moving || Math.abs(e.clientX - d.x0) >= DRAG_PX;
+              const r = e.currentTarget.getBoundingClientRect();
+              const side = e.clientX < r.left + r.width / 2 ? "before" : "after";
+              if (moving !== d.moving || d.over?.id !== t.id || d.over.side !== side) setDrag({ ...d, moving, over: { id: t.id, side } });
+            }}
+            title={`${name}${t.kind === "session" && idx <= 9 ? ` · ⌘${idx}` : ""}${pin ? " · pinned" : ""}`}
+            className={cn(
+              TAB,
+              t.kind === "session" ? "group min-w-[140px] max-w-[220px] shrink" : "shrink-0",
+              on ? TAB_ON : pin ? "border-transparent bg-ac-brand-tint text-ac-soft hover:text-ac-text" : "border-transparent text-ac-muted hover:bg-ac-raise hover:text-ac-text",
+              on && pin && "bg-ac-brand-tint",
+              drag?.moving && drag.id === t.id && "opacity-50",
+            )}
           >
+            {/* Where the dragged tab lands. */}
+            {dropAt && <span aria-hidden data-drop={dropAt} className={cn("pointer-events-none absolute inset-y-1 w-0.5 rounded-full bg-ac-brand", dropAt === "before" ? "-left-px" : "-right-px")} />}
             {t.kind === "session" ? <SessionStateIcon state={t.state} /> : t.icon}
-            <span className="truncate">{t.kind === "session" ? t.title : t.label}</span>
-            {t.kind === "session" ? (
+            <span className="truncate">{name}</span>
+            {pin ? (
+              // Pinned: no close button; it closes from its menu only.
+              <span className="ml-auto inline-flex shrink-0 items-center gap-1">
+                {t.kind === "session" && idx <= 9 && <span className="font-ac-mono text-[10px] text-ac-muted">⌘{idx}</span>}
+                <Pin aria-label="Pinned" className="size-3 text-ac-brand-text" />
+              </span>
+            ) : t.kind === "session" ? (
               // The shortcut sits in the slot; hover or focus swaps it for the close button (spec §6.1: closing keeps the session).
               <span className="relative ml-auto inline-flex h-4 min-w-4 shrink-0 items-center justify-end">
                 {idx <= 9 && <span className="font-ac-mono text-[10px] text-ac-muted group-hover:invisible group-focus-within:invisible">⌘{idx}</span>}

@@ -19,6 +19,7 @@ export type Action =
   | "stopTurn"
   | "settings"
   | "close"
+  | "reopenTab"
   | `tab${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`;
 
 /** `mod` is ⌘ on macOS and Ctrl elsewhere. */
@@ -41,6 +42,8 @@ export const DEFAULT_KEYS: Record<Action, Binding> = {
   stopTurn: { key: ".", mod: true },
   settings: { key: ",", mod: true },
   close: { key: "Escape" },
+  // Like a browser or an IDE: the last closed tab comes back.
+  reopenTab: { key: "t", mod: true, shift: true },
   ...(Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tab${i + 1}`, { key: String(i + 1), mod: true }])) as Record<`tab${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`, Binding>),
 };
 
