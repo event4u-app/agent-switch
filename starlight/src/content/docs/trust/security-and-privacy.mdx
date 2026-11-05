@@ -51,6 +51,11 @@ session files to show context %, the prompt cache and session previews.
 - `agent-switch rebind` switches a running Claude session to another of your
   accounts (macOS), and `rebind --restore` reverses it.
 
+When `agent-switch takeover` moves a session to another account, it also copies
+that account's answer to "do you trust this folder?" for the session's folder,
+but only if you already said yes on the source account. Tool permissions are
+never copied, and an answer the target account already gave is kept.
+
 Refreshing a login is always left to the provider's own tool. To keep idle
 accounts signed in, the background service runs that tool for the account:
 `claude doctor` for Claude, `codex app-server` asked to refresh its account for

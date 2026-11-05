@@ -29,12 +29,14 @@ test("newSessionArgs attaches-or-creates with the env exported and the cmd after
   ]);
 });
 
-test("respawnPaneArgs uses -k (kill+replace) and re-exports the target env", () => {
-  assert.deepEqual(T.respawnPaneArgs("asw-claude-work", "CLAUDE_CONFIG_DIR", "/cfg2", ["claude", "--resume", "x"]), [
+test("respawnPaneArgs uses -k (kill+replace), starts in the given folder and re-exports the target env", () => {
+  assert.deepEqual(T.respawnPaneArgs("asw-claude-work", "/repo/wt", "CLAUDE_CONFIG_DIR", "/cfg2", ["claude", "--resume", "x"]), [
     "respawn-pane",
     "-k",
     "-t",
     "asw-claude-work",
+    "-c",
+    "/repo/wt",
     "-e",
     "CLAUDE_CONFIG_DIR=/cfg2",
     "--",
