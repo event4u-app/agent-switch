@@ -4,8 +4,8 @@
  * banner. Adapted from the reference boards; data and actions come in as props.
  */
 
-import type { MouseEvent, ReactNode } from "react";
-import { Brain, Check, ChevronDown, CircleX, Ellipsis, Lock, MessageSquareText, SquareTerminal, TriangleAlert, X } from "lucide-react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { Brain, Check, ChevronDown, CircleX, Ellipsis, Lightbulb, Lock, MessageSquareText, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
@@ -15,6 +15,8 @@ import { Segmented } from "../ui/Segmented.js";
 import { tone } from "./limits.js";
 import { XtermBox } from "../redesign/screens/terminal-sheet.js";
 import type { TermBackend } from "../terminal.js";
+import type { SessionCache } from "../transforms.js";
+import { sessionHints, type Hint } from "./hints.js";
 
 // ---------- tab strip ----------
 
@@ -78,6 +80,10 @@ export interface BarSession {
   modelId?: string | null;
   thinking: string | null;
   contextPct: number | null;
+  /** For the usage hints (road-to-a-chat-that-reads-well Phase 6). */
+  tool?: string;
+  contextTokens?: number | null;
+  cache?: SessionCache | null;
 }
 
 /** Session-bar chip: opens a popover; a locked chip keeps its shape and says why. */
@@ -223,6 +229,38 @@ export function BlockerStrip({ text, action, summaryOpen, onAction, onDismiss }:
         {action}
       </Act>
       <IconButton label="Dismiss" className="size-6" onClick={onDismiss}>
+        <X />
+      </IconButton>
+    </div>
+  );
+}
+
+/**
+ * The most pressing usage hint for the session (Phase 6): clear or compact a
+ * full context, reply while the cache is warm, move before the limit. One at a
+ * time, re-read every few seconds (the cache hint counts down); a dismissed hint
+ * stays away until its situation changes.
+ */
+export function HintStrip({ s, dismissed, onDismiss, onAction }: { s: BarSession; dismissed: ReadonlySet<string>; onDismiss: (stateKey: string) => void; onAction: (h: Hint) => void }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 5_000);
+    return () => clearInterval(id);
+  }, []);
+  const hints = sessionHints({ tool: s.tool ?? "", contextPct: s.contextPct, contextTokens: s.contextTokens ?? null, cache: s.cache ?? null, account: { name: s.account.name, fiveH: s.account.fiveH, protect: s.account.protect }, nowMs: now }).filter((h) => !dismissed.has(`${s.key}|${h.stateKey}`));
+  const h = hints[0];
+  if (!h) return null;
+  return (
+    <div role="status" data-hint={h.id} className={cn("flex shrink-0 items-center gap-3 border-b border-ac-line px-4 py-1.5", h.tone === "warn" ? "bg-ac-warn-tint" : "bg-ac-panel")}>
+      <Lightbulb className={cn("size-4 shrink-0", h.tone === "warn" ? "text-ac-warn-text" : "text-ac-info-text")} />
+      <span className="min-w-0 flex-1 text-xs leading-snug text-ac-soft">{h.text}</span>
+      {hints.length > 1 && <span className="shrink-0 text-[11px] text-ac-faint">+{hints.length - 1}</span>}
+      {h.action && (
+        <Act kind="accent" onClick={() => onAction(h)}>
+          {h.action.label}
+        </Act>
+      )}
+      <IconButton label="Dismiss hint" className="size-6" onClick={() => onDismiss(`${s.key}|${h.stateKey}`)}>
         <X />
       </IconButton>
     </div>

@@ -386,6 +386,9 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
         modelId: r.context?.model ?? null,
         thinking: (r.context as { effort?: string | null } | null | undefined)?.effort ?? null,
         contextPct: r.context?.pct ?? null,
+        tool: r.provider,
+        contextTokens: r.context?.contextTokens ?? null,
+        cache: r.cache ?? null,
       };
     },
     models: (key): ModelChoices | null => {
