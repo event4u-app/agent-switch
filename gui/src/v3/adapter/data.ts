@@ -452,26 +452,72 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
   if (!a) return null;
   const w = a.windows.find((x) => x.key === "five_hour") ?? a.windows[0];
   if (!w) return null;
-  const others = vm.accounts.filter((x) => x.tool === a.tool && x.id !== a.id && !x.disabled && x.state !== "signed-out");
-  // A switch moves the target's login into the session, so an account running
-  // its own session is never the suggestion (it would be signed out).
-  const best = others.sort((x, y) => Number(x.liveSessions > 0) - Number(y.liveSessions > 0) || (fiveH(x) ?? 0) - (fiveH(y) ?? 0))[0];
+  const others = vm.accounts
+    .filter((x) => x.tool === a.tool && x.id !== a.id && !x.disabled && x.state !== "signed-out")
+    .sort((x, y) => roomOf(y) - roomOf(x) || x.liveSessions - y.liveSessions);
   const resetsAt = w.resetsAt ? Date.parse(w.resetsAt) : NaN;
   const mins = Number.isFinite(resetsAt) ? Math.max(0, Math.round((resetsAt - now) / 60_000)) : null;
-  const sessions: SheetSession[] = rows
+  const moving = rows
     .filter((r) => (only ? sessionKey(r) === only : r.live && accountId(r.provider, r.profile) === a.id))
-    .map((r) => ({ key: sessionKey(r), title: r.library?.name || r.summary || r.sessionId.slice(0, 8), model: modelLabel(r.context?.model), target: best?.name ?? "", state: sessionFromRow(r, now).state }));
+    .map((r) => ({ r, state: sessionFromRow(r, now).state }));
+  const assigned = spreadSessions(
+    moving.map(({ r, state }) => ({ key: sessionKey(r), demand: sessionDemand(r, state) })),
+    others,
+  );
+  const sessions: SheetSession[] = moving.map(({ r, state }) => ({ key: sessionKey(r), title: r.library?.name || r.summary || r.sessionId.slice(0, 8), model: modelLabel(r.context?.model), target: assigned.get(sessionKey(r)) ?? "", state }));
+  // The heaviest session's account: the one the sheet names when it names one.
+  const heaviest = [...moving].sort((x, y) => sessionDemand(y.r, y.state) - sessionDemand(x.r, x.state))[0];
+  const suggestion = (heaviest && assigned.get(sessionKey(heaviest.r))) ?? others[0]?.name ?? "";
+  const spread = new Set(sessions.map((s) => s.target)).size > 1;
   return {
     account: a.name,
     tool: a.tool,
-    // The accounts a session can move to, emptiest first; the picker offers these only.
+    // The accounts a session can move to, most room first; the picker offers these only.
     targets: others.map((x) => ({ name: x.name, color: x.color, busy: x.liveSessions > 0 })),
     pctUsed: w.utilization ?? 0,
     window: windowLabel(w.key, w.label),
     resetsIn: mins === null ? "unknown" : mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`,
     sessions,
-    suggestion: best?.name ?? "",
-    // The order above: an idle account first, then the least used 5h window.
-    suggestionWhy: best ? (best.liveSessions > 0 ? "least used, but runs a session" : "most room left, no session running") : undefined,
+    suggestion,
+    suggestionWhy: suggestion ? (spread ? "spread by expected use — the busiest session gets the most room" : "most room left") : undefined,
   };
+}
+
+/** Percent left on an account: its fullest 5h or week window decides. Pure. */
+function roomOf(a: Account): number {
+  const used = a.windows.filter((w) => w.key === "five_hour" || w.key === "seven_day").map((w) => w.utilization ?? 0);
+  return 100 - Math.max(0, ...used);
+}
+
+/** What a session is likely to spend next, relative to the others. Pure.
+ *  A guess from what is known now — nothing knows the work still ahead: a turn
+ *  in progress spends now, a bigger model and a fuller context cost more per
+ *  turn, and helper sessions spend alongside it. */
+export function sessionDemand(r: SessionRow, state: SessionState): number {
+  const activity = state === "working" ? 3 : state === "needs-you" || state === "waiting" || state === "pause-requested" ? 1.5 : 1;
+  const m = (r.context?.model ?? "").toLowerCase();
+  const model = m.includes("opus") || m.includes("fable") ? 2 : m.includes("haiku") ? 0.5 : 1;
+  const ctx = 1 + Math.min(100, Math.max(0, r.context?.pct ?? 0)) / 100;
+  return activity * model * ctx + 0.5 * (r.childCount ?? 0);
+}
+
+/** Percent points one unit of demand is assumed to take from an account, and
+ *  one session already running there. Both are rough weights, not measurements:
+ *  they only make the next pick see that an account has taken on work. */
+const POINTS_PER_DEMAND = 10;
+const POINTS_PER_RUNNING = 10;
+
+/** Each session to an account: the heaviest first, each to the account with the
+ *  most room left after what it already carries. Pure. */
+export function spreadSessions(sessions: { key: string; demand: number }[], accounts: Account[]): Map<string, string> {
+  const left = new Map(accounts.map((a) => [a.name, roomOf(a) - POINTS_PER_RUNNING * a.liveSessions]));
+  const out = new Map<string, string>();
+  for (const s of [...sessions].sort((x, y) => y.demand - x.demand)) {
+    let best: string | null = null;
+    for (const a of accounts) if (best === null || left.get(a.name)! > left.get(best)!) best = a.name;
+    if (best === null) break;
+    out.set(s.key, best);
+    left.set(best, left.get(best)! - POINTS_PER_DEMAND * s.demand);
+  }
+  return out;
 }
