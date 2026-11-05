@@ -655,7 +655,7 @@ The same components as the window, in this order:
 
 - It is the same session as the terminal; the switch is in the session bar.
 - **User bubble:** right-aligned, raise fill, 10 px.
-- **Assistant prose:** plain soft text.
+- **Assistant prose:** soft text rendered as markdown (owner request 2026-11-05): headings, lists and task lists, tables in a horizontal scroller, code in a 10 px panel with its language and a copy button, a `diff` fence in the diff view, `<details>` as a collapsed 10 px panel, links only for http(s). Other HTML stays literal text. Plan text the same. User bubbles stay plain. Dialect: `agents/evidence/markdown-corpus-2026-11.md`.
 - **Tool cards:** 10 px, collapsible (chevron); a state dot, the tool name and the argument in mono. "Update" opens to a diff with add/del line backgrounds.
 - **Subagent "Task" row:** state, worktree badge (violet) and "subagent · via hook".
 - **Approval card** (warn tint): "Claude wants to run a command", the command in mono, then "✓ Allow once ↵" (accent), "Always allow “npx vitest”" (secondary), "Deny" (danger), and "Same rule as the terminal prompt · never bypassed".

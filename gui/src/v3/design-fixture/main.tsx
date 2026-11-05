@@ -18,6 +18,9 @@ import type { LimitAccount } from "../limits.js";
 import type { RowSession } from "../sessions.js";
 import type { TermBackend } from "../../terminal.js";
 import { TERMINALS } from "./terminal.js";
+import { Bubble } from "../chat.js";
+import { FIXTURES } from "../markdown/fixtures.js";
+import { Markdown } from "../markdown/Markdown.js";
 
 const q = new URLSearchParams(location.search);
 const THEME = q.get("theme") || "darcula";
@@ -226,6 +229,19 @@ function App() {
     ),
     settings: (s) => <p className="text-[13px] text-ac-muted">{`(2.11 ${s} section)`}</p>,
   };
+  if (q.get("view") === "markdown") {
+    // Agent markdown (road-to-a-chat-that-reads-well 2.4): every fixture as an assistant reply.
+    return (
+      <AcRoot className="h-full" mode={def.mode} style={vars as CSSProperties}>
+        <div className="h-full space-y-4 overflow-y-auto bg-ac-bg px-6 py-4">
+          <Bubble>Zeige mir die letzten 4 Änderungen als Tabelle</Bubble>
+          {Object.entries(FIXTURES).map(([k, src]) => (
+            <Markdown key={k} source={src} className="max-w-[86%]" />
+          ))}
+        </div>
+      </AcRoot>
+    );
+  }
   if (q.get("view") === "tray") {
     const noop = () => {};
     return (
