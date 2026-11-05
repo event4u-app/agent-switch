@@ -2,7 +2,7 @@
  *  (hosted terminal or the user's own terminal) and the
  *  2.11 settings sections v3 keeps. */
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { tauriBackend } from "../../terminal.js";
 import type { SessionRow } from "../../transforms.js";
@@ -22,10 +22,20 @@ import { ExternalBody, HostedTerminal } from "../workbench.js";
 import { useTimeline, type TimelineState } from "./useTimeline.js";
 import { worktreeOf } from "./data.js";
 import { modelLabel } from "../model-label.js";
+import { AgentConfigCard, INSTALLABLE_TOOLS, NoAgentConfigCard, agentConfigMissing, forgetFailedReleaseLookups, isolatedLabel, sortTools, useAgentConfigLatest } from "../../redesign/screens/tools.js";
+import { useAS } from "../../vm/store.js";
+import { toolStatus } from "../../vm/rules.js";
+import { ToolsPage, type ToolRowView } from "../tools.js";
 
 /** The 2.11 settings screens behind the v3 settings nav. Appearance, Open in,
  *  Agents and Remote are v3's own and never reach this function. */
 export function settingsSection(section: SettingsSection): ReactNode {
+  const screen = legacyScreen(section);
+  // The 2.11 screens leave their spacing to the parent column, as in 2.11's Settings.
+  return screen && <div className="flex min-w-0 flex-col gap-5">{screen}</div>;
+}
+
+function legacyScreen(section: SettingsSection): ReactNode {
   switch (section) {
     case "General":
       return <GeneralSettings />;
@@ -94,4 +104,37 @@ export function ReadOnlyTimeline({ t, row }: { t: TimelineState; row?: SessionRo
     </p>
   ) : null;
   return <ChatTimeline events={t.events} notice={notice} on={{ worktreeOf: worktreeOf(row) }} />;
+}
+
+/** Tools on the store: the board's rows, then the 2.11 agent-config card
+ *  (spec §11). agent-config's latest comes from its releases, as in 2.11. */
+export function ToolsSlot() {
+  const s = useAS();
+  const [checking, setChecking] = useState(false);
+  useAgentConfigLatest(s);
+  const rows: ToolRowView[] = sortTools(s.tools).map((t) => ({
+    id: t.id,
+    name: t.name,
+    where: [t.present ? t.path : null, isolatedLabel(t.id, s.accounts)].filter(Boolean).join(" · ") || null,
+    version: t.present ? t.version : null,
+    status: toolStatus(t),
+    latest: t.latest,
+  }));
+  const terminal = (toolId: string, action: "install" | "update") => INSTALLABLE_TOOLS.has(toolId) && s.open({ kind: "terminal", toolId, action });
+  return (
+    <ToolsPage
+      rows={rows}
+      checking={checking}
+      on={{
+        check: () => {
+          forgetFailedReleaseLookups();
+          setChecking(true);
+          void Promise.resolve(s.act.recheckTools?.()).finally(() => setChecking(false));
+        },
+        update: (id) => terminal(id, "update"),
+        install: (id) => terminal(id, "install"),
+      }}
+      below={agentConfigMissing(s) ? <NoAgentConfigCard /> : <AgentConfigCard />}
+    />
+  );
 }

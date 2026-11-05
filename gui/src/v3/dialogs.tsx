@@ -221,6 +221,15 @@ function Field({ children, mono }: { children: ReactNode; mono?: boolean }) {
 
 export type MoveHow = "after-turn" | "now" | "brief";
 
+/** One session to move. `via: "takeover"` when the target runs a session of its
+ *  own: borrowing its login would sign that session out, so the conversation
+ *  moves to the target and resumes there instead. */
+export interface SheetMove {
+  key: string;
+  target: string;
+  via?: "takeover";
+}
+
 export interface SheetSession {
   key: string;
   title: string;
@@ -257,7 +266,7 @@ export function DecisionSheet({
   targets?: { name: string; color: IdentityColor; busy?: boolean }[];
   /** Codex has no live login switch: both switch modes move the session and resume it. */
   tool?: string;
-  onDecide: (how: MoveHow, moves: { key: string; target: string }[]) => void;
+  onDecide: (how: MoveHow, moves: SheetMove[]) => void;
   onKeep: () => void;
   onClose: () => void;
 }) {
@@ -268,9 +277,16 @@ export function DecisionSheet({
   const target = chosen[sessions[0]?.key ?? ""] ?? suggestion;
   const colorOf = (name: string) => targets.find((t) => t.name === name)?.color ?? "blue";
   const isBusy = (name: string) => targets.find((t) => t.name === name)?.busy === true;
-  // Both switch modes move the target's login into the session; a target with a
-  // session of its own would be signed out. A brief starts fresh and may share it.
-  const blocked = how !== "brief" ? sessions.filter((s) => checked.has(s.key) && isBusy(chosen[s.key] ?? s.target)).map((s) => chosen[s.key] ?? s.target) : [];
+  // Claude's live switch moves the target's login into the session, which would
+  // sign out a session running on the target — so those sessions move instead.
+  const moving = tool !== "codex" && how !== "brief" ? [...new Set(sessions.filter((s) => checked.has(s.key) && isBusy(chosen[s.key] ?? s.target)).map((s) => chosen[s.key] ?? s.target))] : [];
+  const moves = (): SheetMove[] =>
+    sessions
+      .filter((s) => checked.has(s.key))
+      .map((s) => {
+        const to = chosen[s.key] ?? s.target;
+        return moving.includes(to) ? { key: s.key, target: to, via: "takeover" as const } : { key: s.key, target: to };
+      });
   return (
     <Modal
       kicker="Near limit"
@@ -283,7 +299,7 @@ export function DecisionSheet({
           <Button variant="ghost" onClick={onKeep}>
             Keep going on {account}
           </Button>
-          <Button variant="primary" disabled={checked.size === 0 || !target || blocked.length > 0} onClick={() => onDecide(how, sessions.filter((s) => checked.has(s.key)).map((s) => ({ key: s.key, target: chosen[s.key] ?? s.target })))}>
+          <Button variant="primary" disabled={checked.size === 0 || !target} onClick={() => onDecide(how, moves())}>
             Continue on {target}
           </Button>
         </>
@@ -339,9 +355,9 @@ export function DecisionSheet({
         )}
         <Choice on={how === "brief"} onPick={() => setHow("brief")} title="New session with a brief" detail={`Starts fresh on ${target} with a summary of this one.`} />
       </div>
-      {blocked.length > 0 && (
-        <p role="alert" className="mt-2 text-xs text-ac-warn-text">
-          {[...new Set(blocked)].join(", ")} {blocked.length === 1 ? "is" : "are"} running a session of {blocked.length === 1 ? "its" : "their"} own — switching would sign it out. Pick another account, or start a new session with a brief.
+      {moving.length > 0 && (
+        <p role="status" className="mt-2 text-xs text-ac-muted">
+          {moving.join(", ")} {moving.length === 1 ? "runs a session of its" : "run sessions of their"} own, so this conversation moves to {moving.join(", ")} and resumes there — its own session keeps running. A session in your own terminal is ended there between turns; one Agent Switch hosts moves in its window.
         </p>
       )}
       <Label className="mt-4" aside={suggestion ? `suggested: ${suggestion}${suggestionWhy ? ` — ${suggestionWhy}` : ""}` : undefined}>

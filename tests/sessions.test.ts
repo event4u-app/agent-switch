@@ -90,6 +90,32 @@ test("readSessionHeader finds the cwd past Claude Code's leading metadata lines"
   }
 });
 
+test("readSessionHeader takes Claude Code's newest ai-title, which lands past the head", () => {
+  const root = tmp();
+  try {
+    // Current Claude Code writes no summary line; it repeats an ai-title record
+    // through the transcript, the first one about 1 MB in. The newest wins.
+    const pad = (n: number) => JSON.stringify({ type: "assistant", pad: "p".repeat(n) });
+    const title = (t: string) => JSON.stringify({ type: "ai-title", aiTitle: t, sessionId: UID });
+    const f = path.join(root, "titled.jsonl");
+    const lines = [JSON.stringify({ type: "user", cwd: "/repo", sessionId: UID }), pad(80 * 1024), title("First guess"), pad(80 * 1024), title("Import jobs every 15 minutes"), pad(2 * 1024)];
+    fs.writeFileSync(f, lines.join("\n") + "\n");
+    assert.deepEqual(readSessionHeader(f), { cwd: "/repo", summary: "Import jobs every 15 minutes" });
+
+    // A short transcript holds both in one read; the title outranks a legacy summary.
+    const small = path.join(root, "small.jsonl");
+    fs.writeFileSync(small, [JSON.stringify({ type: "summary", summary: "old" }), JSON.stringify({ type: "user", cwd: "/s" }), title("New")].join("\n") + "\n");
+    assert.deepEqual(readSessionHeader(small), { cwd: "/s", summary: "New" });
+
+    // A blank title is no title.
+    const blank = path.join(root, "blank.jsonl");
+    fs.writeFileSync(blank, [JSON.stringify({ type: "user", cwd: "/b", summary: "kept" }), title("  ")].join("\n") + "\n");
+    assert.deepEqual(readSessionHeader(blank), { cwd: "/b", summary: "kept" });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("readSessionHeader reads the legacy first-line header, defensively", () => {
   const root = tmp();
   try {

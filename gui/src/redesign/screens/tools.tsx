@@ -142,7 +142,7 @@ export function forgetFailedReleaseLookups(): void {
  *  its GitHub releases (as the classic window does) and is patched into the
  *  view model once per installed version. A failed lookup is retried on a
  *  later re-sweep (focus, "Check now") once RELEASE_RETRY_MS passed. */
-function useAgentConfigLatest(s: Store) {
+export function useAgentConfigLatest(s: Store) {
   const ac = s.tools.find((t) => t.id === "agent-config");
   const current = ac?.present ? ac.version : null;
   const known = ac?.latest != null;

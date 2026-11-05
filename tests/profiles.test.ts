@@ -297,14 +297,14 @@ test("binary paths: link round-trips, readBinaryPaths reflects it, unlink clears
 
 // ---------- single-load guard policy ----------------------------------------
 
-test("guard defaults to block when the key is absent (upgrade from an older state)", () => {
+test("guard defaults to warn when the key is absent (upgrade from an older state)", () => {
   fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: { claude: "work" } }));
-  assert.equal(P.readGuard(), "block");
+  assert.equal(P.readGuard(), "warn");
 });
 
 test("an unknown guard value degrades to the default instead of throwing", () => {
   fs.writeFileSync(P.STATE_FILE, JSON.stringify({ guard: "sometimes" }));
-  assert.equal(P.readGuard(), "block");
+  assert.equal(P.readGuard(), "warn");
 });
 
 test("setGuard round-trips every policy and leaves the rest of the state alone", () => {
@@ -332,7 +332,7 @@ test("a fresh install (no state file, no profiles) resolves the guard to warn", 
 test("profiles without a state file are an upgraded install (2.1.0 `add` without `use`), not a fresh one", () => {
   wipeToFresh();
   fs.mkdirSync(P.configDir("claude", "old"), { recursive: true });
-  assert.equal(P.readGuard(), "block");
+  assert.equal(P.readGuard(), "warn");
   wipeToFresh();
 });
 

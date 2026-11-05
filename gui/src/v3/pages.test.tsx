@@ -78,6 +78,20 @@ describe("Library page (spec §10.3)", () => {
     fireEvent.click(screen.getByLabelText("Restore"));
     expect(on.archive).toHaveBeenCalledWith("b", false);
   });
+
+  // A fresh vault is the common case. A header row in its own box with a
+  // footnote under it read as a broken table; the message sits in the table.
+  it("an empty library says how sessions get there, inside the table", () => {
+    const on = { autoKeep: vi.fn(), pin: vi.fn(), resume: vi.fn(), archive: vi.fn() };
+    const { rerender } = render(<LibraryPage rows={[]} vaultBytes={0} autoKeep nowMs={NOW} on={on} />);
+    const empty = screen.getByRole("status");
+    expect(empty.textContent).toMatch(/pin a session/i);
+    expect(empty.textContent).toMatch(/merged sessions/i);
+    expect(empty.closest(".rounded-\\[10px\\]")).not.toBeNull();
+    rerender(<LibraryPage rows={[lib("a", { name: "Kept" })]} vaultBytes={0} autoKeep nowMs={NOW} on={on} />);
+    fireEvent.change(screen.getByPlaceholderText(/Name, summary/), { target: { value: "zzz" } });
+    expect(screen.getByRole("status").textContent).toBe("No entry matches “zzz”.");
+  });
 });
 
 describe("All sessions › Projects", () => {

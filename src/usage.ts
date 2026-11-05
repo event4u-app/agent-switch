@@ -37,6 +37,12 @@ const WINDOW_DEFS: ReadonlyArray<readonly [string, string]> = [
   ["seven_day_sonnet", "7d Sonnet"],
 ];
 
+/** The display label of a window key, for sources that kept only the key
+ *  (the usage history). An unknown key is its own label. */
+export function windowLabel(key: string): string {
+  return WINDOW_DEFS.find(([k]) => k === key)?.[1] ?? (key === "monthly" ? "30d" : key);
+}
+
 /** One entry of the current `limits[]` shape → a window, or null to skip. This
  *  array is the ONLY place the per-model weekly limit (e.g. Fable) is exposed;
  *  `weekly_all` is the all-models weekly window, `session` the 5h window. */

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -347,6 +347,21 @@ test("`needs` lists what waits, says where to answer, hides on later and keeps h
   }
 });
 
+test("`needs` names a near-limit window by its label when the usage history is the newest source", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work");
+    fs.writeFileSync(path.join(home, "claude", "work", "config", ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "a@example.com", accountUuid: "u" } }));
+    // History samples keep only the key; the window still reads "5h", never "five_hour".
+    const at = new Date(Date.now() - 60_000).toISOString();
+    fs.writeFileSync(path.join(home, "claude", "work", "usage-history.json"), JSON.stringify({ samples: [{ at, windows: [{ key: "five_hour", utilization: 100 }, { key: "seven_day_opus", utilization: 99 }] }] }));
+    const limits = JSON.parse(run(home, ["needs", "--json"])).items.filter((i: any) => i.kind === "limit");
+    assert.deepEqual(limits.map((i: any) => i.what), ["100% of 5h"]);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("`sessions --json` git facts follow the folder of the newest turn (a worktree switch shows after the next turn)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
@@ -650,6 +665,68 @@ test("`takeover` refuses when the source profile has live sessions; `--force` ov
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("`takeover` only cares about THIS session: other live sessions on the source profile never block it", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "privat");
+    seed(home, "claude", "work");
+    seedTranscript(home, "privat", "-tmp-proj", "0000-mine-id");
+    const sess = path.join(home, "claude", "privat", "config", "sessions");
+    fs.mkdirSync(sess, { recursive: true });
+    fs.writeFileSync(path.join(sess, `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: "1111-other-id", status: "busy" }));
+
+    run(home, ["takeover", "0000-mine-id", "--to", "work", "--print-only"]);
+    assert.equal(fs.existsSync(path.join(home, "claude", "work", "config", "projects", "-tmp-proj", "0000-mine-id.jsonl")), true);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`takeover` of a running session refuses; `--stop-source` ends it between turns, never mid-turn", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const pid = sleeperPid();
+  try {
+    seed(home, "claude", "privat");
+    seed(home, "claude", "work");
+    seedTranscript(home, "privat", "-tmp-proj", "0000-run-id");
+    const sess = path.join(home, "claude", "privat", "config", "sessions");
+    fs.mkdirSync(sess, { recursive: true });
+    const pidFile = path.join(sess, `${pid}.json`);
+    fs.writeFileSync(pidFile, JSON.stringify({ pid: pid, sessionId: "0000-run-id", status: "busy" }));
+
+    assert.throws(() => run(home, ["takeover", "0000-run-id", "--to", "work", "--print-only"]), new RegExp(`session 0000-run-id is still running \\(PID ${pid}\\)`));
+    assert.throws(() => run(home, ["takeover", "0000-run-id", "--to", "work", "--print-only", "--stop-source"]), /mid-turn/);
+
+    fs.writeFileSync(pidFile, JSON.stringify({ pid: pid, sessionId: "0000-run-id", status: "idle" }));
+    run(home, ["takeover", "0000-run-id", "--to", "work", "--print-only", "--stop-source"]);
+    assert.equal(isAlive(pid), false, "the running session was ended");
+    assert.equal(fs.existsSync(path.join(home, "claude", "work", "config", "projects", "-tmp-proj", "0000-run-id.jsonl")), true);
+  } finally {
+    if (isAlive(pid)) process.kill(pid);
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+/** A process that lives 30 s. On POSIX it is orphaned on purpose: a direct child
+ *  would linger as a zombie (still "alive" to kill -0) because this test blocks
+ *  in spawnSync and never reaps it. Windows has no zombies, and `sh` there would
+ *  report an MSYS pid rather than a Windows one. */
+function sleeperPid(): number {
+  if (process.platform !== "win32") return Number(execFileSync("sh", ["-c", "sleep 30 >/dev/null 2>&1 & echo $!"], { encoding: "utf8" }).trim());
+  const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { detached: true, stdio: "ignore" });
+  child.unref();
+  return child.pid!;
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 test("`takeover --keep-source` refuses non-interactive runs (fork cleanup needs the TTY step)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
@@ -1269,12 +1346,12 @@ test("a fresh install starts with the guard on warn", gate, () => {
   }
 });
 
-test("a 2.1.0 install with profiles but no state.json keeps the guard on block", gate, () => {
+test("a 2.1.0 install with profiles but no state.json starts on warn, never refusing a second session", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
     seed(home, "claude", "work"); // `add` without `use` never wrote state.json
     assert.equal(fs.existsSync(path.join(home, "state.json")), false);
-    assert.equal(JSON.parse(run(home, ["guard", "--json"])).policy, "block");
+    assert.equal(JSON.parse(run(home, ["guard", "--json"])).policy, "warn");
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

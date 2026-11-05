@@ -55,7 +55,7 @@ describe("New session (spec §8.1)", () => {
 });
 
 describe("decision sheet and End (spec §8.2, §8.3)", () => {
-  it("never switches onto an account running its own session; a brief may still start there", () => {
+  it("an account running its own session is still a target: the session moves there instead of borrowing its login", () => {
     const onDecide = vi.fn();
     render(
       <DecisionSheet
@@ -73,10 +73,14 @@ describe("decision sheet and End (spec §8.2, §8.3)", () => {
       />,
     );
     const go = screen.getByRole("button", { name: "Continue on work" }) as HTMLButtonElement;
-    expect(go.disabled).toBe(true);
-    expect(screen.getByRole("alert").textContent).toMatch(/work is running a session of its own/);
-    fireEvent.click(screen.getByRole("radio", { name: /New session with a brief/ }));
     expect(go.disabled).toBe(false);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("status").textContent).toMatch(/work runs a session of its own, so this conversation moves to work and resumes there/);
+    fireEvent.click(go);
+    expect(onDecide).toHaveBeenCalledWith("after-turn", [{ key: "a", target: "work", via: "takeover" }]);
+    onDecide.mockClear();
+    fireEvent.click(screen.getByRole("radio", { name: /New session with a brief/ }));
+    expect(screen.queryByRole("status")).toBeNull();
     fireEvent.click(go);
     expect(onDecide).toHaveBeenCalledWith("brief", [{ key: "a", target: "work" }]);
     cleanup();

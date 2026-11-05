@@ -67,10 +67,17 @@ export interface PageAccount extends LimitAccount {
   running: number;
 }
 
+/** The accounts board's columns. Each has the width the board gives it as its
+ *  floor: below that the table scrolls sideways instead of drawing one column
+ *  over the next (the windows column alone needs its label, bar, number and reset). */
+const ACCOUNT_COLS = "grid-cols-[28px_minmax(184px,1.3fr)_88px_minmax(300px,2fr)_64px_120px]";
+/** The sum of those floors, the gaps and the row padding. */
+const ACCOUNT_TABLE_MIN = "min-w-[896px]";
+
 function AccountRowFull({ a, i, nowMs, on }: { a: PageAccount; i: number; nowMs: number; on: AccountActions }) {
   const stale = isStale(a, nowMs);
   return (
-    <div className="grid grid-cols-[28px_minmax(0,1.3fr)_88px_minmax(0,2fr)_64px_120px] items-center gap-4 border-b border-ac-line px-4 py-3 last:border-b-0 hover:bg-ac-raise">
+    <div className={`grid ${ACCOUNT_COLS} items-center gap-4 border-b border-ac-line px-4 py-3 last:border-b-0 hover:bg-ac-raise`}>
       <span className={cn("font-ac-mono text-[11px]", a.isDefault ? "text-ac-brand-text" : "text-ac-faint")}>{a.signIn ? "–" : `#${i + 1}`}</span>
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
@@ -195,8 +202,9 @@ export function AccountsPage({ accounts, nowMs, nextRefreshMs, view, onView, his
                   <AccountMark color={def.color} /> <span className="text-ac-text">{def.name}</span>
                 </span>
               </div>
-              <div className="overflow-hidden rounded-[10px] border border-ac-line bg-ac-panel">
-                <div className="grid grid-cols-[28px_minmax(0,1.3fr)_88px_minmax(0,2fr)_64px_120px] gap-4 border-b border-ac-line px-4 py-2 text-[11px] font-medium text-ac-muted">
+              <div className="overflow-x-auto overflow-y-hidden rounded-[10px] border border-ac-line bg-ac-panel">
+                <div className={ACCOUNT_TABLE_MIN}>
+                <div className={`grid ${ACCOUNT_COLS} gap-4 border-b border-ac-line px-4 py-2 text-[11px] font-medium text-ac-muted`}>
                   <span />
                   <span>Account</span>
                   <span>Used in</span>
@@ -207,6 +215,7 @@ export function AccountsPage({ accounts, nowMs, nextRefreshMs, view, onView, his
                 {list.map((a, i) => (
                   <AccountRowFull key={a.key} a={a} i={i} nowMs={nowMs} on={on} />
                 ))}
+                </div>
               </div>
             </section>
           );
@@ -392,7 +401,7 @@ export function LibraryPage({ rows, vaultBytes, autoKeep, nowMs, on }: { rows: L
       <div className="mb-3 flex items-center gap-2">
         <Filter value={q} onChange={setQ} placeholder="Name, summary, folder, branch, PR…" width={340} />
         <Segmented size="sm" label="Show" value={show} onChange={setShow} options={[{ value: "all", label: "All" }, { value: "pinned", label: `Pinned ${rows.filter((r) => r.pinned).length}` }, { value: "archived", label: `Archived ${rows.filter((r) => r.archived).length}` }]} />
-        <span className="ml-auto text-xs text-ac-muted">vault {mb(vaultBytes)}</span>
+        <span className="ml-auto whitespace-nowrap text-xs text-ac-muted">vault {mb(vaultBytes)}</span>
       </div>
       {deadline && (
         <div role="alert" className="mb-3 flex items-center gap-3 rounded-[10px] border border-ac-warn bg-ac-warn-tint px-3 py-2">
@@ -460,8 +469,12 @@ export function LibraryPage({ rows, vaultBytes, autoKeep, nowMs, on }: { rows: L
             </span>
           </div>
         ))}
+        {!visible.length && (
+          <p role="status" className="px-3 py-6 text-center text-xs text-ac-muted">
+            {q.trim() ? `No entry matches “${q.trim()}”.` : rows.length ? "Nothing in this view." : "Pin a session to keep it in the vault. Merged sessions move here on their own after 24 h."}
+          </p>
+        )}
       </Table>
-      {!visible.length && <p className="mt-3 text-xs text-ac-muted">Nothing here yet.</p>}
     </PageBody>
   );
 }

@@ -9,7 +9,7 @@ import { ROOT, configDir, die, listProfiles, readBinaryPath, readJson, requirePr
 import { ProviderId, provider } from "../providers.js";
 import { resolveProviderValue } from "../args.js";
 import { extractBrief, writeBrief, sweepBriefs, seedPrompt } from "../handoff.js";
-import { liveSessionPids } from "../api.js";
+import { liveSessions, type LiveSession } from "../api.js";
 import { codexProfilesWithSession } from "../login-keepalive.js";
 import {
   assertValidSessionId,
@@ -169,7 +169,7 @@ export function cmdTakeover(
   if (!sessionId || typeof flags.to !== "string") {
     die(
       "usage: agent-switch takeover <session-id> --to <profile> [--provider claude|codex] [--from <profile>] " +
-        "[--keep-source] [--print-only] [--force] [--json]\n" +
+        "[--keep-source] [--stop-source] [--print-only] [--force] [--json]\n" +
         "       (list candidates with: agent-switch sessions)",
     );
   }
@@ -225,14 +225,27 @@ export function cmdTakeover(
   const tgtCfg = configDir("claude", target);
 
   // Live guard: moving (or forking) under a running session risks interleaving
-  // and appends into a file we just moved. Conservative by design: ANY live
-  // session on the source profile blocks, `--force` overrides.
-  const livePids = liveSessionPids(srcCfg);
-  if (livePids.length > 0 && !flags.force) {
-    die(
-      `profile "${source}" has live Claude sessions (PIDs ${livePids.join(", ")}). ` +
-        "Close them first (or --force if you are sure this session is not one of them).",
-    );
+  // and appends into a file we just moved. Only THIS session matters — a profile
+  // may carry several — so each live process is matched by the session id its
+  // registry file names. One that names none cannot be ruled out and blocks;
+  // `--force` overrides. A hosted in-place move needs no stop: the respawn
+  // replaces that very process.
+  if (!flags.force) {
+    const live = liveSessions(srcCfg);
+    const unknown = live.filter((s) => s.sessionId === null).map((s) => s.pid);
+    if (unknown.length > 0) {
+      die(
+        `profile "${source}" has live Claude sessions (PIDs ${unknown.join(", ")}). ` +
+          "Close them first (or --force if you are sure this session is not one of them).",
+      );
+    }
+    const mine = live.filter((s) => s.sessionId === sessionId);
+    if (mine.length > 0 && !(inPlace && hosted)) {
+      if (!flags["stop-source"]) {
+        die(`session ${sessionId} is still running (PID ${mine.map((s) => s.pid).join(", ")}). End it first, or pass --stop-source to end it here between turns.`);
+      }
+      stopBetweenTurns(sessionId, mine);
+    }
   }
 
   const resumeArgs = ["--resume", sessionId, ...(keepSource ? ["--fork-session"] : []), ...(prompt ? [prompt] : [])];
@@ -406,4 +419,35 @@ function takeoverCodex(
   const continued = { AGENT_SWITCH_PARENT_SESSION: `codex/${source}/${sessionId}`, AGENT_SWITCH_PARENT_KIND: "continued_from" };
   if (inPlace) resumeInPlace("codex", target, resumeArgs, resumeCommand, continued, opts.hosted); // exits
   if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("codex"), target, resumeArgs, continued));
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err: any) {
+    return err?.code === "EPERM";
+  }
+}
+
+/** End the session's own process so it can move. Never mid-turn: the turn's
+ *  work would be lost. Waits for the exit so nothing appends after the move. */
+function stopBetweenTurns(sessionId: string, procs: LiveSession[]): void {
+  const busy = procs.filter((p) => p.status !== null && p.status !== "idle");
+  if (busy.length > 0) {
+    die(`session ${sessionId} is mid-turn (PID ${busy.map((p) => p.pid).join(", ")}, ${busy[0].status}). Wait until the turn ends, then move it.`);
+  }
+  for (const p of procs) {
+    try {
+      process.kill(p.pid, "SIGTERM");
+    } catch {
+      /* already gone */
+    }
+  }
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  const deadline = Date.now() + 10_000;
+  while (procs.some((p) => pidAlive(p.pid))) {
+    if (Date.now() > deadline) die(`session ${sessionId} did not end within 10 s (PID ${procs.filter((p) => pidAlive(p.pid)).map((p) => p.pid).join(", ")}). Nothing was moved.`);
+    Atomics.wait(sleeper, 0, 0, 100);
+  }
 }

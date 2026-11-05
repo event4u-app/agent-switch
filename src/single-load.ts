@@ -1,5 +1,8 @@
 /**
- * Single-load guard: one profile, one live session.
+ * Single-load guard: notice when a profile already carries a live session.
+ *
+ * Several sessions on one profile are legitimate, so the default only warns;
+ * refusing is an opt-in (`guard block`).
  *
  * The problem it solves: `agent-switch use` writes a GLOBAL active pointer and
  * the shell wrapper re-resolves it on every invocation, so nothing stops two
@@ -30,9 +33,10 @@ import { pidCwd } from "./sessions.js";
 /** How the guard reacts to a second load. */
 export type GuardPolicy = "block" | "warn" | "off";
 export const GUARD_POLICIES: readonly GuardPolicy[] = ["block", "warn", "off"];
-/** What a state file without a `guard` key meant before 2.2 — kept so an
- *  upgrade never changes a user's effective guard. */
-export const DEFAULT_GUARD_POLICY: GuardPolicy = "block";
+/** What a state file without a `guard` key (or with an unknown value) resolves
+ *  to. One profile may legitimately carry several sessions, so nothing refuses
+ *  a start unless the user chose `block` themselves. */
+export const DEFAULT_GUARD_POLICY: GuardPolicy = "warn";
 /** A fresh install (no state file and no profile yet) starts on `warn`: a second load is
  *  reported, never refused, so nothing changes how a tool starts. */
 export const FRESH_INSTALL_GUARD_POLICY: GuardPolicy = "warn";

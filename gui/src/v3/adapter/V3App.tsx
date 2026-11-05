@@ -10,7 +10,6 @@ import { allActions } from "../../redesign/RedesignApp.js";
 import { useEngines } from "../../redesign/engines/index.js";
 import { OverlayHost } from "../../redesign/Hosts.js";
 import { PoolsSection } from "../../redesign/screens/pools-panel.js";
-import { ToolList } from "../../redesign/screens/tools.js";
 import { UsageHistory, useUsageHistory } from "../../redesign/screens/usage-history.js";
 import { openExternal } from "../../redesign/screens/tools.js";
 import { appRequest, useTrayRequests } from "../../redesign/tray/bridge.js";
@@ -29,7 +28,7 @@ import { KEYS_STORAGE, withRebinds } from "../keys.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
 import { sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
-import { SessionBody, settingsSection } from "./slots.js";
+import { SessionBody, ToolsSlot, settingsSection } from "./slots.js";
 import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
 import { useChats } from "./chats.js";
@@ -340,7 +339,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     pools: <PoolsSection />,
     mcp: <McpHost toast={(t) => s.toast(t)} />,
     poolCount: s.pools.length,
-    tools: <ToolList />,
+    tools: <ToolsSlot />,
     settings: settingsSection,
   };
 

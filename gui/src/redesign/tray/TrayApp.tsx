@@ -67,8 +67,10 @@ export function useFitWindow() {
     const el = ref.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const fit = () => {
-      const height = Math.min(Math.ceil(el.getBoundingClientRect().height), TRAY_MAX_HEIGHT);
-      if (height > 0) void invoke("tray_resize", { height }).catch(() => {});
+      const r = el.getBoundingClientRect();
+      const height = Math.min(Math.ceil(r.height), TRAY_MAX_HEIGHT);
+      // The width too: the v2 card is 340 px, the v3 card 360 px.
+      if (height > 0) void invoke("tray_resize", { width: Math.ceil(r.width), height }).catch(() => {});
     };
     const ro = new ResizeObserver(fit);
     ro.observe(el);

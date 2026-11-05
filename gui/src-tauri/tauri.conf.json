@@ -14,8 +14,8 @@
     "windows": [
       {
         "title": "agent-switch",
-        "width": 1040,
-        "height": 620,
+        "width": 1440,
+        "height": 900,
         "minWidth": 640,
         "minHeight": 480,
         "visible": false,
