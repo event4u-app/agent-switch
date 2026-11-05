@@ -284,8 +284,6 @@ function StartStrategyGroup() {
   );
 }
 
-/** "Redeem Codex resets automatically" — the CLI's `auto-reset`. Off by
- *  default: a banked reset is scarce and cannot be returned. */
 /** "Let agent-config connect" — `agent-switch link` (default on). Off is the
  *  safety switch: `mcp serve` offers no tools and agent-config unwires itself. */
 function AgentConfigLinkGroup() {
@@ -313,6 +311,8 @@ function AgentConfigLinkGroup() {
   );
 }
 
+/** "Redeem Codex resets automatically" — the CLI's `auto-reset`. Off by
+ *  default: a banked reset is scarce and cannot be returned. */
 function CodexAutoResetGroup() {
   const run = useRun();
   // null until read: the switch stays disabled rather than showing a guess.
