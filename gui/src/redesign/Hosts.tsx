@@ -85,7 +85,7 @@ export function OverlayHost() {
   if (o.kind === "start") return <StartSessionDialog cwd={o.cwd} tool={o.tool} accountId={o.accountId} />;
   if (o.kind === "limit") return <NearLimitSheet key={o.attentionId} attentionId={o.attentionId} />;
   if (o.kind === "terminal")
-    return "run" in o ? <TerminalSheet run={terminalRun(o)} /> : <UpdateSheet key={`${o.toolId}:${o.action}`} toolId={o.toolId} action={o.action} />;
+    return "run" in o ? <TerminalSheet run={terminalRun(o)} more={o.more} /> : <UpdateSheet key={`${o.toolId}:${o.action}`} toolId={o.toolId} action={o.action} />;
   if (o.kind === "fix") return <FixDialog key={o.checkId} checkId={o.checkId} />;
   if (o.kind === "notifications") return <NotificationsSheet />;
   if (o.kind === "account") return <AccountSheet key={o.id} id={o.id} section={o.section} />;

@@ -104,6 +104,37 @@ describe("TerminalSheet", () => {
     expect(s().overlay.kind).toBe("start");
   });
 
+  it("several runs in one sheet: all start at once, a tab each, and it stays busy until the last one ends", async () => {
+    const sinks: ((e: TermEvent) => void)[] = [];
+    const backend = backendWith(async (_a, _r, _c, onEvent) => (sinks.push(onEvent), sinks.length));
+    const ref: { current: Store | null } = { current: null };
+    function Host() {
+      const s = useAS();
+      ref.current = s;
+      return s.overlay.kind === "terminal" && "run" in s.overlay ? <TerminalSheet run={s.overlay.run} more={s.overlay.more} backend={backend} /> : null;
+    }
+    render(
+      <AcRoot>
+        <ASProvider initial={emptyViewModel(1)} startOverlay={{ kind: "terminal", run: { args: ["takeover", "a", "--to", "home"], title: "Continue on home" }, more: [{ args: ["takeover", "b", "--to", "lab"], title: "Continue on lab" }] }}>
+          <Host />
+        </ASProvider>
+      </AcRoot>,
+    );
+    await act(flush);
+    expect(sinks).toHaveLength(2);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Continue on home", "Continue on lab"]);
+    act(() => sinks[0]({ kind: "exit", code: 0 }));
+    // One still runs: the sheet holds.
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    expect(ref.current!.overlay.kind).toBe("terminal");
+    fireEvent.click(screen.getByRole("tab", { name: "Continue on lab" }));
+    expect(screen.getByText("$ agent-switch takeover b --to lab")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("Running");
+    act(() => sinks[1]({ kind: "exit", code: 0 }));
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    expect(ref.current!.overlay.kind).toBe("none");
+  });
+
   it("the xterm wrapper is not a live region", async () => {
     mount(backendWith(async () => 1));
     await act(flush);

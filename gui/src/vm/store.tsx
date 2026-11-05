@@ -54,8 +54,9 @@ export type Overlay =
   | { kind: "fix"; checkId: string }
   | { kind: "terminal"; toolId: string; action: "install" | "update" }
   /** Any `agent-switch <args>` run in the built-in terminal (start, take over,
-   *  hand off, compact). Narrow with `"run" in overlay`. */
-  | { kind: "terminal"; run: TerminalRun }
+   *  hand off, compact). Narrow with `"run" in overlay`. `more` runs further
+   *  commands side by side in the same sheet (several sessions moving at once). */
+  | { kind: "terminal"; run: TerminalRun; more?: TerminalRun[] }
   | ({ kind: "confirm" } & ConfirmRequest);
 
 export interface Toast {
