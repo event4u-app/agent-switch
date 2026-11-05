@@ -78,6 +78,8 @@ export interface DecideArgs {
   /** approve: how; default the candidate's first offered move. */
   how?: MoveHow;
   by: string;
+  /** The deciding tool already carried the move out; record it as done. */
+  executed?: string;
 }
 
 export function decideSwitch(store: RequestStore, a: DecideArgs): { request: SwitchRequest; applied: boolean } {
@@ -86,6 +88,11 @@ export function decideSwitch(store: RequestStore, a: DecideArgs): { request: Swi
     const r = store.get(a.id);
     if (!r) throw new Error(`no switch request ${a.id}`);
     const c = a.target ? r.candidates.find((x) => x.target === a.target) : r.candidates[0];
+    if (a.executed !== undefined && a.target) {
+      parseAccount(a.target);
+      d = { kind: "approve", target: a.target, how: a.how ?? c?.how[0] ?? "now", by: a.by };
+      return store.decide(a.id, d, a.executed);
+    }
     if (!c) throw new Error(`${a.target} is not a candidate for request ${a.id} (candidates: ${r.candidates.map((x) => x.target).join(", ")})`);
     d = { kind: "approve", target: c.target, how: a.how ?? c.how[0], by: a.by };
   } else {

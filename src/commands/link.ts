@@ -37,7 +37,7 @@ const USAGE =
   "usage: agent-switch switch list [--all] [--json]\n" +
   "       agent-switch switch show <id> [--json]\n" +
   "       agent-switch switch request (--account provider/name | --session provider/account/id) [--by ac] [--json]\n" +
-  "       agent-switch switch decide <id> approve [--to provider/name] [--how after-turn|now|handoff] [--by <who>] [--json]\n" +
+  "       agent-switch switch decide <id> approve [--to provider/name] [--how after-turn|now|handoff] [--by <who>] [--executed <what>] [--json]\n" +
   "       agent-switch switch decide <id> decline|snooze [--by <who>] [--json]";
 
 const HOWS: readonly MoveHow[] = ["after-turn", "now", "handoff"];
@@ -73,7 +73,9 @@ export function cmdSwitch(sub: string | undefined, positional: string[], flags: 
       if (!id || (decision !== "approve" && decision !== "decline" && decision !== "snooze")) die(USAGE);
       const how = str("how");
       if (how !== undefined && !HOWS.includes(how as MoveHow)) die(`--how is one of ${HOWS.join(", ")}`);
-      const { request, applied } = decideSwitch(store, { id, decision, target: str("to"), how: how as MoveHow | undefined, by: str("by") ?? "as-cli" });
+      const executed = flags.executed === undefined ? undefined : typeof flags.executed === "string" ? flags.executed : "";
+      if (executed !== undefined && decision !== "approve") die("--executed records an approval the caller already carried out");
+      const { request, applied } = decideSwitch(store, { id, decision, target: str("to"), how: how as MoveHow | undefined, by: str("by") ?? "as-cli", executed });
       const text = applied
         ? `Decided: ${describeRequest(request)}`
         : `Not changed — the request is already ${request.state}${request.decision ? ` (by ${request.decision.by})` : ""}: ${describeRequest(request)}`;

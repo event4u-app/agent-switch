@@ -149,14 +149,19 @@ export class RequestStore {
     });
   }
 
-  /** Record the user's decision. Applied only while the request is open. */
-  decide(id: string, d: Decision): { request: SwitchRequest; applied: boolean } {
+  /**
+   * Record the user's decision. Applied only while the request is open.
+   * `executed`: the deciding tool already carried the move out itself (the app
+   * moving a session in its own terminal) — the request goes straight to
+   * `done` in the same write, so the service can never run it a second time.
+   */
+  decide(id: string, d: Decision, executed?: string): { request: SwitchRequest; applied: boolean } {
     return this.locked(() => {
       const found = this.read(id);
       if (!found) throw new Error(`no switch request ${id}`);
       const r = this.settle(found);
       if (r.state !== "open") return { request: r, applied: false };
-      if (d.kind === "approve") {
+      if (d.kind === "approve" && executed === undefined) {
         const c = r.candidates.find((x) => x.target === d.target);
         if (!c) throw new Error(`${d.target} is not a candidate for request ${id}`);
         if (!c.how.includes(d.how)) throw new Error(`"${d.how}" is not offered for ${d.target} (offered: ${c.how.join(", ")})`);
@@ -164,6 +169,11 @@ export class RequestStore {
       const at = new Date(this.now()).toISOString();
       const decision: SwitchRequest["decision"] =
         d.kind === "approve" ? { kind: "approve", target: d.target, how: d.how, by: d.by, at } : { kind: d.kind, by: d.by, at };
+      if (d.kind === "approve" && executed !== undefined) {
+        const done: SwitchRequest = { ...r, state: "done", decision, outcome: { at, ok: true, detail: executed || `moved to ${d.target}` }, rev: r.rev + 1 };
+        this.write(done);
+        return { request: done, applied: true };
+      }
       const state: RequestState = d.kind === "approve" ? "approved" : d.kind === "decline" ? "declined" : "snoozed";
       const next: SwitchRequest = { ...r, state, decision, rev: r.rev + 1 };
       this.write(next);

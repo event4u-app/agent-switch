@@ -133,3 +133,15 @@ test("request files are private to the user", { skip: process.platform === "win3
   const { request } = s.raise(raise());
   assert.equal(fs.statSync(path.join(dir, `${request.id}.json`)).mode & 0o777, 0o600);
 });
+
+test("a decision the deciding tool already carried out lands as done in one write, so nothing runs it again", () => {
+  const now = { t: T0 };
+  const { dir, s } = store(now);
+  const { request } = s.raise(raise());
+  // The app moved the session itself, to an account it picked (not necessarily a candidate).
+  const r = s.decide(request.id, { kind: "approve", target: "claude/other", how: "now", by: "as-gui" }, "rebound in the app");
+  assert.equal(r.applied, true);
+  assert.equal(r.request.state, "done");
+  assert.equal(r.request.outcome?.detail, "rebound in the app");
+  assert.equal(new RequestStore(dir, () => now.t).claim(request.id), null);
+});

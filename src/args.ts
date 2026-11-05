@@ -43,6 +43,7 @@ const VALUE_FLAGS = new Set([
   "session",
   "account",
   "how",
+  "executed",
 ]);
 
 export interface ParsedArgs {
