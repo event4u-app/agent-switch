@@ -16,6 +16,8 @@ describe("feed parsers", () => {
 
   it("engine: the CLI's status", () => {
     expect(parseEngine({ running: false, address: "/s", reason: "ECONNREFUSED", hostedRunning: 2, extra: 1 })).toEqual({ running: false, reason: "ECONNREFUSED", hostedRunning: 2 });
+    expect(parseEngine({ running: false, reason: "x", hostedRunning: 0, service: "other-cli" })).toEqual({ running: false, reason: "x", hostedRunning: 0, elsewhere: true });
+    expect(parseEngine({ running: false, reason: "x", hostedRunning: 0, service: "this-cli" })).toEqual({ running: false, reason: "x", hostedRunning: 0 });
   });
 
   it("host list: keeps rows with a key, fills the rest", () => {

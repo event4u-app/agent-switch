@@ -342,7 +342,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
   };
 
   const health: V3Data["health"] =
-    feeds.engine && !feeds.engine.running ? { state: "down", sinceMs: env.engineDownSince ?? now, hostedRunning: feeds.engine.hostedRunning } : { state: "ready" };
+    feeds.engine && !feeds.engine.running ? { state: "down", sinceMs: env.engineDownSince ?? now, hostedRunning: feeds.engine.hostedRunning, ...(feeds.engine.elsewhere ? { elsewhere: true as const } : {}) } : { state: "ready" };
 
   return {
     nowMs: now,

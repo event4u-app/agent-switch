@@ -8,6 +8,8 @@ export interface EngineHealth {
   running: boolean;
   reason: string | null;
   hostedRunning: number;
+  /** The background service runs another Agent Switch install, so a restart there cannot start this engine. */
+  elsewhere?: true;
 }
 
 export interface HostedRow {
@@ -89,7 +91,7 @@ const num = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFi
 
 export function parseEngine(v: unknown): EngineHealth {
   const o = obj(v);
-  return { running: o.running === true, reason: str(o.reason), hostedRunning: num(o.hostedRunning) };
+  return { running: o.running === true, reason: str(o.reason), hostedRunning: num(o.hostedRunning), ...(o.service === "other-cli" ? { elsewhere: true as const } : {}) };
 }
 
 export function parseHostList(v: unknown): HostList {

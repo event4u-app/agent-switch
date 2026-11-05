@@ -408,11 +408,13 @@ export function SystemBanner({ children, action }: { children: ReactNode; action
   );
 }
 
-/** "The engine stopped 2 min ago. Hosted sessions keep running in tmux; Agent Switch reconnects when it is back." Pure. */
-export function engineDownText(sinceMs: number, nowMs: number, hostedRunning: number): string {
+/** "The engine stopped 2 min ago. Hosted sessions keep running in tmux; Agent Switch reconnects when it is back."
+ *  When the background service belongs to another install, waiting cannot help: the text says so. Pure. */
+export function engineDownText(sinceMs: number, nowMs: number, hostedRunning: number, elsewhere?: boolean): string {
+  const hosted = (sep: string) => (hostedRunning ? ` ${hostedRunning === 1 ? "The hosted session keeps" : "Hosted sessions keep"} running in tmux${sep}` : "");
+  if (elsewhere) return `The background service runs another Agent Switch install, which has no engine for this window.${hosted(".")} Move the service here to start it.`;
   const mins = Math.max(1, Math.round((nowMs - sinceMs) / 60_000));
-  const hosted = hostedRunning ? ` ${hostedRunning === 1 ? "The hosted session keeps" : "Hosted sessions keep"} running in tmux;` : "";
-  return `The engine stopped ${mins} min ago.${hosted} Agent Switch reconnects when it is back.`;
+  return `The engine stopped ${mins} min ago.${hosted(";")} Agent Switch reconnects when it is back.`;
 }
 
 // ---------- terminal look ----------

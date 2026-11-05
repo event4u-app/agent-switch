@@ -41,7 +41,7 @@ import { GROUP_LABEL, SORT_LABEL, liveOrder, type GroupBy, type SortBy } from ".
 
 export interface V3Data {
   nowMs: number;
-  health: { state: "ready" } | { state: "down"; sinceMs: number; hostedRunning: number };
+  health: { state: "ready" } | { state: "down"; sinceMs: number; hostedRunning: number; elsewhere?: true };
   needs: NeedItem[];
   away: AwayDigest | null;
   history: DoneItem[];
@@ -510,11 +510,11 @@ export function V3Window({
     <SystemBanner
       action={
         <Act kind="accent" onClick={() => act({ type: "restart-engine" })}>
-          Restart engine
+          {data.health.elsewhere ? "Move service here" : "Restart engine"}
         </Act>
       }
     >
-      {engineDownText(data.health.sinceMs, data.nowMs, data.health.hostedRunning)}
+      {engineDownText(data.health.sinceMs, data.nowMs, data.health.hostedRunning, data.health.elsewhere)}
     </SystemBanner>
   );
 
