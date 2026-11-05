@@ -73,6 +73,8 @@ describe("workbench (spec §6)", () => {
   it("the engine banner says hosted sessions keep running", () => {
     expect(engineDownText(0, 2 * 60_000, 2)).toBe("The engine stopped 2 min ago. Hosted sessions keep running in tmux; Agent Switch reconnects when it is back.");
     expect(engineDownText(0, 10_000, 0)).toBe("The engine stopped 1 min ago. Agent Switch reconnects when it is back.");
+    expect(engineDownText(0, 10_000, 2, true)).toBe("The background service runs another Agent Switch install, which has no engine for this window. Hosted sessions keep running in tmux. Move the service here to start it.");
+    expect(engineDownText(0, 10_000, 0, true)).toBe("The background service runs another Agent Switch install, which has no engine for this window. Move the service here to start it.");
   });
 
   it("the terminal uses the theme's colours, or the agent's own on the theme background", () => {

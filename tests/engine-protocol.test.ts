@@ -184,7 +184,15 @@ test("CLI `engine status --json`: stopped without an engine, running with one", 
     new Promise<any>((resolve, reject) =>
       execFile("node", [CLI, "engine", "status", "--json"], { env: { ...process.env, AGENT_SWITCH_HOME: root, AGENT_SWITCH_HOST_SOCKET: `as-test-es-${process.pid}` }, encoding: "utf8" }, (err, out) => (err ? reject(err) : resolve(JSON.parse(out)))),
     );
-  assert.equal((await status()).running, false);
+  const stopped = await status();
+  assert.equal(stopped.running, false);
+  assert.equal(stopped.service, "not-installed");
+  assert.match(stopped.reason, /not reachable/);
+  // The service runs another install (an older version, a dev checkout): a restart there cannot start this engine.
+  fs.writeFileSync(path.join(root, "service-manifest.json"), JSON.stringify({ label: "x", files: ["/x.plist"], invocation: { exec: "/usr/bin/node", args: ["/elsewhere/dist/index.js", "service", "run"] } }));
+  const elsewhere = await status();
+  assert.equal(elsewhere.service, "other-cli");
+  assert.equal(elsewhere.reason, "the background service runs another Agent Switch (/elsewhere/dist/index.js); restarting it does not start this engine");
   const engine = await startEngine(root, () => {});
   try {
     const s = await status();
@@ -193,4 +201,12 @@ test("CLI `engine status --json`: stopped without an engine, running with one", 
   } finally {
     await engine!.stop();
   }
+});
+
+test("downReason: a service of another install is named first; otherwise the socket error stands", async () => {
+  const { downReason } = await import("../src/commands/engine.js");
+  assert.equal(downReason("other-cli", "ENOENT", "/a/index.js"), "the background service runs another Agent Switch (/a/index.js); restarting it does not start this engine");
+  assert.equal(downReason("other-cli", "ENOENT", null), "the background service runs another Agent Switch; restarting it does not start this engine");
+  assert.equal(downReason("this-cli", "ECONNREFUSED", "/a/index.js"), "ECONNREFUSED");
+  assert.equal(downReason("not-installed", "ENOENT", null), "ENOENT");
 });

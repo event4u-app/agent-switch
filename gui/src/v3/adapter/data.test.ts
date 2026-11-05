@@ -147,6 +147,8 @@ describe("toV3Data", () => {
   it("engine down: since when it was first seen down, with the hosted count", () => {
     const feeds = { ...emptyFeeds(), engine: { running: false, reason: "x", hostedRunning: 3 } };
     expect(toV3Data(emptyViewModel(NOW), feeds, env({ engineDownSince: NOW - 5000 })).health).toEqual({ state: "down", sinceMs: NOW - 5000, hostedRunning: 3 });
+    const elsewhere = { ...emptyFeeds(), engine: { running: false, reason: "x", hostedRunning: 0, elsewhere: true as const } };
+    expect(toV3Data(emptyViewModel(NOW), elsewhere, env({ engineDownSince: NOW - 5000 })).health).toEqual({ state: "down", sinceMs: NOW - 5000, hostedRunning: 0, elsewhere: true });
   });
 
   it("library rows: kept states map onto the vault cell", () => {
