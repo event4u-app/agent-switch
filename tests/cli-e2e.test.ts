@@ -597,6 +597,27 @@ test("`takeover` carries the source's folder trust to the target, never invents 
     fs.writeFileSync(cfg("work"), JSON.stringify({ theme: "light" }));
     run(home, ["takeover", "0000-untrusted-id", "--to", "team", "--print-only"]);
     assert.deepEqual(JSON.parse(fs.readFileSync(cfg("team"), "utf8")), {});
+
+    // The resume starts in the launch folder, which the source trusts only through a parent
+    // (a session that moved into a worktree below a trusted checkout). The parent's trust moves.
+    const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
+    const worktree = path.join(repo, ".claude", "worktrees", "wt");
+    fs.mkdirSync(worktree, { recursive: true });
+    fs.writeFileSync(cfg("privat"), JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } }));
+    fs.writeFileSync(cfg("team"), "{}");
+    seedTranscript(home, "privat", "-tmp-proj", "0000-parent-id");
+    const r = runFull(home, ["takeover", "0000-parent-id", "--to", "team", "--print-only"], worktree);
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(JSON.parse(fs.readFileSync(cfg("team"), "utf8")), { projects: { [repo]: { hasTrustDialogAccepted: true } } });
+
+    // A trusted sibling is not a parent: nothing moves.
+    fs.writeFileSync(cfg("team"), JSON.stringify({ projects: { [`${repo}-sibling`]: { hasTrustDialogAccepted: true } } }));
+    fs.writeFileSync(cfg("work"), "{}");
+    seedTranscript(home, "team", "-tmp-proj", "0000-sibling-id");
+    const s = runFull(home, ["takeover", "0000-sibling-id", "--to", "work", "--print-only"], worktree);
+    fs.rmSync(repo, { recursive: true, force: true });
+    assert.equal(s.status, 0, s.stderr);
+    assert.deepEqual(JSON.parse(fs.readFileSync(cfg("work"), "utf8")), {});
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
@@ -851,6 +872,51 @@ test("`takeover --provider codex --print-only` moves the rollout and prints the 
     );
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`takeover --provider codex` carries the source's project trust to the target, never invents or overrides it", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
+  try {
+    const toml = (p: string) => path.join(home, "codex", p, "config", "config.toml");
+    const rollout = (p: string, cwd: string) => {
+      const file = seedCodexRollout(home, p, CODEX_UUID);
+      fs.writeFileSync(file, `${JSON.stringify({ type: "session_meta", payload: { id: CODEX_UUID, cwd } })}\n{"opaque":1}\n`);
+    };
+    const worktree = path.join(repo, "wt");
+    fs.mkdirSync(worktree);
+    const key = JSON.stringify(repo);
+    for (const p of ["privat", "work", "team"]) seed(home, "codex", p);
+    fs.writeFileSync(toml("privat"), `model = "gpt-5"\n\n[projects.${key}]\ntrust_level = "trusted"\n\n[projects."/elsewhere"]\ntrust_level = "untrusted"\n`);
+    fs.writeFileSync(toml("work"), `model = "o3"\n`);
+    rollout("privat", worktree);
+    const r = runFull(home, ["takeover", CODEX_UUID, "--to", "work", "--provider", "codex", "--print-only"], worktree);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(fs.readFileSync(toml("work"), "utf8"), `model = "o3"\n\n[projects.${key}]\ntrust_level = "trusted"\n`);
+
+    // The target answered for that folder already ("untrusted"): its answer stands.
+    fs.writeFileSync(toml("team"), `[projects.${key}]\ntrust_level = "untrusted"\n`);
+    const t = runFull(home, ["takeover", CODEX_UUID, "--to", "team", "--provider", "codex", "--print-only"], worktree);
+    assert.equal(t.status, 0, t.stderr);
+    assert.equal(fs.readFileSync(toml("team"), "utf8"), `[projects.${key}]\ntrust_level = "untrusted"\n`);
+
+    // A table for the folder without trust_level: never a second header (invalid TOML).
+    fs.writeFileSync(toml("team"), `[projects.${key}]\nnote = "kept"\n`);
+    run(home, ["takeover", CODEX_UUID, "--to", "work", "--provider", "codex", "--print-only"]); // back to the trusting source
+    const h = runFull(home, ["takeover", CODEX_UUID, "--to", "team", "--provider", "codex", "--print-only"], worktree);
+    assert.equal(h.status, 0, h.stderr);
+    assert.equal(fs.readFileSync(toml("team"), "utf8"), `[projects.${key}]\nnote = "kept"\n`);
+
+    // The source trusts only a sibling: nothing moves, and a missing config.toml stays missing.
+    fs.writeFileSync(toml("team"), `[projects.${JSON.stringify(repo + "-sibling")}]\ntrust_level = "trusted"\n`);
+    fs.rmSync(toml("privat"));
+    const u = runFull(home, ["takeover", CODEX_UUID, "--to", "privat", "--provider", "codex", "--print-only"], worktree);
+    assert.equal(u.status, 0, u.stderr);
+    assert.equal(fs.existsSync(toml("privat")), false);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(repo, { recursive: true, force: true });
   }
 });
 

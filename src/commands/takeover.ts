@@ -16,6 +16,7 @@ import {
   cleanupForkVehicle,
   locateSession,
   locateCodexSession,
+  codexSessionMeta,
   readSessionHeader,
   sharedHistory,
   transferSession,
@@ -266,7 +267,7 @@ export function cmdTakeover(
   const cacheLine = moveCacheLine(cache, target, sameOrganization(source, target), now);
   if (cacheLine && !json) console.log(cacheLine);
 
-  carryFolderTrust(srcCfg, tgtCfg, readSessionHeader(loc.jsonl).cwd);
+  carryFolderTrust(srcCfg, tgtCfg, [readSessionHeader(loc.jsonl).cwd, process.cwd()]);
 
   // Shared-history mode (`share on --history`): both profiles already see one
   // projects/ tree — file ops would be self-moves. Degrade to the resume step.
@@ -315,17 +316,29 @@ export function cmdTakeover(
  * Enter leaves the moved session not running. The user already trusted this
  * folder on the source, so only that answer moves — never the source's tool
  * permissions, and never trust the source did not grant.
+ *
+ * The resume starts in the launch folder, which can differ from where the
+ * transcript began (a session that moved into a worktree). Claude accepts a
+ * trusted parent folder, so for each folder the nearest trusted ancestor the
+ * source has is the entry that moves.
  */
-function carryFolderTrust(srcCfg: string, tgtCfg: string, cwd: string | null): void {
-  if (!cwd) return;
-  if (readJson(path.join(srcCfg, ".claude.json"))?.projects?.[cwd]?.hasTrustDialogAccepted !== true) return;
+function carryFolderTrust(srcCfg: string, tgtCfg: string, folders: (string | null)[]): void {
+  const trusted = readJson(path.join(srcCfg, ".claude.json"))?.projects;
+  if (!trusted || typeof trusted !== "object") return;
+  const keys = nearestTrusted(folders, (dir) => trusted[dir]?.hasTrustDialogAccepted === true);
+  if (keys.size === 0) return;
   const file = path.join(tgtCfg, ".claude.json");
   const config = readJson(file);
   if (!config || typeof config !== "object") return;
   const projects = config.projects && typeof config.projects === "object" ? config.projects : (config.projects = {});
-  const entry = projects[cwd] && typeof projects[cwd] === "object" ? projects[cwd] : (projects[cwd] = {});
-  if (entry.hasTrustDialogAccepted === true) return;
-  entry.hasTrustDialogAccepted = true;
+  let changed = false;
+  for (const key of keys) {
+    const entry = projects[key] && typeof projects[key] === "object" ? projects[key] : (projects[key] = {});
+    if (entry.hasTrustDialogAccepted === true) continue;
+    entry.hasTrustDialogAccepted = true;
+    changed = true;
+  }
+  if (!changed) return;
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
   fs.renameSync(tmp, file);
@@ -384,6 +397,80 @@ function takeoverDesktop(
 }
 
 /**
+ * For each folder, the nearest folder at or above it that `isTrusted` accepts,
+ * spelled as the config spells it. Windows configs may key a path with forward
+ * slashes while `process.cwd()` gives backslashes, so both spellings are tried.
+ */
+function nearestTrusted(folders: (string | null)[], isTrusted: (key: string) => boolean): Set<string> {
+  const keys = new Set<string>();
+  for (const folder of folders) {
+    if (!folder) continue;
+    for (let dir = folder; ; dir = path.dirname(dir)) {
+      const hit = [dir, dir.replace(/\\/g, "/"), dir.replace(/\//g, "\\")].find(isTrusted);
+      if (hit !== undefined) { keys.add(hit); break; }
+      if (path.dirname(dir) === dir) break;
+    }
+  }
+  return keys;
+}
+
+const CODEX_PROJECT_HEADER = /^\[projects\.("(?:[^"\\]|\\.)*"|'[^']*')\]\s*$/;
+
+/** `trust_level` per `[projects."<path>"]` table of a codex config.toml. Other tables are skipped. */
+function codexProjectTrust(text: string): Map<string, string> {
+  const out = new Map<string, string>();
+  let key: string | null = null;
+  for (const line of text.split(/\r?\n/)) {
+    const header = CODEX_PROJECT_HEADER.exec(line);
+    if (header) {
+      try {
+        key = header[1].startsWith("'") ? header[1].slice(1, -1) : JSON.parse(header[1]);
+      } catch {
+        key = null;
+      }
+      // A table without trust_level still exists; a second header for it would be invalid TOML.
+      if (key !== null && !out.has(key)) out.set(key, "");
+      continue;
+    }
+    if (line.startsWith("[")) key = null;
+    const value = key !== null ? /^\s*trust_level\s*=\s*"([a-z_]+)"/.exec(line) : null;
+    if (value) out.set(key!, value[1]);
+  }
+  return out;
+}
+
+/**
+ * Codex's counterpart of `carryFolderTrust`: without a `trust_level` for the
+ * folder, the resumed session opens on codex's trust prompt. Only "trusted"
+ * moves, and a folder the target already answered for keeps its answer.
+ */
+function carryCodexTrust(srcHome: string, tgtHome: string, folders: (string | null)[]): void {
+  let source: string;
+  try {
+    source = fs.readFileSync(path.join(srcHome, "config.toml"), "utf8");
+  } catch {
+    return;
+  }
+  const trusted = codexProjectTrust(source);
+  const keys = nearestTrusted(folders, (dir) => trusted.get(dir) === "trusted");
+  if (keys.size === 0) return;
+  const file = path.join(tgtHome, "config.toml");
+  let text = "";
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch (err: any) {
+    if (err?.code !== "ENOENT") return;
+  }
+  const answered = codexProjectTrust(text);
+  const tables = [...keys].filter((k) => !answered.has(k)).map((k) => `[projects.${JSON.stringify(k)}]\ntrust_level = "trusted"\n`);
+  if (tables.length === 0) return;
+  const sep = text.length === 0 ? "" : text.endsWith("\n") ? "\n" : "\n\n";
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, text + sep + tables.join("\n"), { mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
+
+/**
  * Codex takeover — move-only (g03 outcome (a): a rollout moved into another
  * authenticated CODEX_HOME resumes immediately by id). Codex has no verified
  * fork spike, so `--keep-source` is refused rather than risk same-id
@@ -430,6 +517,8 @@ function takeoverCodex(
 
   const resumeArgs = ["resume", sessionId, ...(opts.prompt ? [opts.prompt] : [])];
   const resumeCommand = `agent-switch run ${target} --provider codex -- ${resumeArgs.map(shellQuote).join(" ")}`;
+
+  carryCodexTrust(configDir("codex", source), configDir("codex", target), [codexSessionMeta(loc.rollout)?.cwd ?? null, process.cwd()]);
 
   let result;
   try {
