@@ -183,7 +183,7 @@ CLI front door stays (it is the user's own tool).
 
 ## Phase 5 — Docs
 
-- [ ] **5.1 Starlight guide "Working with agent-config"** (link, setting,
+- [x] **5.1 Starlight guide "Working with agent-config"** (link, setting,
       tools, the request lifecycle) and README row.
       verify: starlight build.
 

@@ -91,6 +91,7 @@ export default defineConfig({
 						{ slug: 'guides/everyday-workflow' },
 						{ slug: 'guides/projects-and-pools' },
 						{ slug: 'guides/move-a-session' },
+						{ slug: 'guides/agent-config' },
 						{ slug: 'guides/desktop-app' },
 						{ slug: 'guides/notifications-and-pet' },
 						{ slug: 'guides/share-settings' },
