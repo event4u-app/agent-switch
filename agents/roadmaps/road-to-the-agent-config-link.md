@@ -108,7 +108,7 @@ CLI front door stays (it is the user's own tool).
       `--refresh`.
       verify: unit tests over fixture daemon-state (fresh, stale, past reset,
       Codex rollout, Antigravity without readout).
-- [ ] **1.2 Switch-request store.** `src/link/requests.ts`: create (dedup key),
+- [x] **1.2 Switch-request store.** `src/link/requests.ts`: create (dedup key),
       list, get, CAS decide, expire (`expiresAt` = window reset), prune after
       7 days. Red-first tests for: dedup, first-decision-wins under two
       concurrent writers, expiry, corrupt file ignored.
