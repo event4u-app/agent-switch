@@ -64,7 +64,7 @@ import {
 } from "./shared.js";
 
 export function cmdAdd(providerId: ProviderId, name: string | undefined, browserId?: string, isolated = false): void {
-  if (!name) die(`usage: agent-switch add [--provider ${providerId}] <profile> [--browser B [--isolated]]`);
+  if (!name) die(`usage: agent-switch add [--provider ${providerId}] <profile> [--browser B] [--isolated]`);
   if (profileExists(providerId, name)) die(`profile "${name}" already exists for ${providerId}`);
   const p = provider(providerId);
   const env = isolated ? isolatedEnv(browserId, providerId, name) : browserId ? browserEnv(browserId, providerId) : {};
