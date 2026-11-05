@@ -337,6 +337,9 @@ See [Move a session](/agent-switch/guides/move-a-session/).
 | --- | --- |
 | `share on\|sync\|off\|status [--source <profile\|default>]` <Badge text="Claude only" variant="note" /> | Use one set of settings, `CLAUDE.md`, skills, commands and agents in every Claude account. |
 | `share on --history` | Also share conversations and plans (macOS and Linux). |
+| `claude-settings [status\|sync]` <Badge text="Claude only" variant="note" /> | Apply `~/.claude/settings.json` to every Claude account. Runs on every change and before every start. A globally set value wins, lists such as allowed commands are united, and what only an account has stays. |
+| `claude-settings set <path> <json>` / `unset <path>` | Change one value in `~/.claude/settings.json` (`set env.DISABLE_AUTOUPDATER '"1"'`) and apply it everywhere. |
+| `claude-settings rule allow\|deny\|ask <rule> on\|off` | Add or remove one permission rule, such as `Bash(git *)`, for every account. |
 | `config export <profile>` <Badge text="Claude only" variant="note" /> | Write a settings-only bundle to stdout. Never contains logins. |
 | `config import <profile>` <Badge text="Claude only" variant="note" /> | Read such a bundle from stdin. |
 

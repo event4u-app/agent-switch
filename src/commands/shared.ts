@@ -22,6 +22,7 @@ import {
 } from "../profiles.js";
 import { Provider, ProviderId, provider, resolveBinary } from "../providers.js";
 import { credentialStore } from "../credentials.js";
+import { syncProfileSettings } from "../claude-settings.js";
 import { appendActivity, type ActivityKind } from "../activity.js";
 import { parseMember } from "../pools.js";
 import { type CachedUsage } from "../dir-resolve.js";
@@ -131,9 +132,20 @@ export function checkSingleLoad(
 }
 
 
+/** Bring a Claude profile's settings.json up to date with ~/.claude/settings.json
+ *  (src/claude-settings.ts). A failure never blocks the launch. */
+export function syncClaudeProfile(dir: string): void {
+  try {
+    syncProfileSettings(path.join(CLAUDE_HOME, "settings.json"), dir);
+  } catch {
+    /* the launch goes ahead with the profile's current file */
+  }
+}
+
 export function launch(p: Provider, name: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}): number {
   const home = configDir(p.id, name);
   const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv, [p.envVar]: home };
+  if (p.id === "claude") syncClaudeProfile(home);
   // Antigravity's agy CLI stores its token in the macOS keychain (fixed key) —
   // seed a per-profile keychain under this HOME so the token is isolated per
   // account (and macOS doesn't pop its "no keychain found" dialog). No-op off mac.
