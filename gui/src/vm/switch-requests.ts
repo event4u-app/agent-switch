@@ -35,3 +35,30 @@ export function answeredElsewhere(rows: readonly SwitchRequestRow[], accountId: 
 }
 
 export const askedByAgentConfig = (r: SwitchRequestRow | null): boolean => r?.raisedBy === "ac";
+
+/** `claude/work/<id>` or `claude/work` → `claude/work`. */
+export const accountOfKey = (key: string): string => key.split("/").slice(0, 2).join("/");
+
+/**
+ * The requests a set of moves answers (v3 decision sheet): each moved session
+ * answers its own open request, else its account's; a request is answered
+ * once, by the first session that reaches it. Keys are CLI keys
+ * (`claude/work/<id>`), targets account names on the same tool.
+ */
+export function requestsForMoves(
+  rows: readonly SwitchRequestRow[],
+  moves: readonly { key: string; target: string }[],
+  now: number,
+): { id: string; key: string; to: string }[] {
+  const open = rows.filter((r) => r.state === "open" && live(r, now));
+  const seen = new Set<string>();
+  const out: { id: string; key: string; to: string }[] = [];
+  for (const { key, target } of moves) {
+    const account = accountOfKey(key);
+    const r = open.find((x) => x.session === key) ?? open.find((x) => x.session === null && x.account === account);
+    if (!r || seen.has(r.id)) continue;
+    seen.add(r.id);
+    out.push({ id: r.id, key, to: `${key.split("/")[0]}/${target}` });
+  }
+  return out;
+}

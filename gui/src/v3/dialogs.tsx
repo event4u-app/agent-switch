@@ -14,11 +14,11 @@ import type { IdentityColor, SessionState } from "../vm/types.js";
 import { ChevronDown } from "lucide-react";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { Kbd } from "../ui/Typography.js";
-import { AccountMark, CheckBox, Disclosure, Label } from "./kit.js";
+import { AccountMark, CheckBox, Chip, Disclosure, Label } from "./kit.js";
 import { LimitBar, type LimitAccount } from "./limits.js";
 import { Anchored } from "./menus.js";
 
-export function Modal({ title, kicker, sub, width = 600, children, footer, onClose }: { title: string; kicker?: string; sub?: ReactNode; width?: number; children: ReactNode; footer: ReactNode; onClose: () => void }) {
+export function Modal({ title, kicker, badge, sub, width = 600, children, footer, onClose }: { title: string; kicker?: string; badge?: ReactNode; sub?: ReactNode; width?: number; children: ReactNode; footer: ReactNode; onClose: () => void }) {
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", esc);
@@ -29,7 +29,12 @@ export function Modal({ title, kicker, sub, width = 600, children, footer, onClo
       <div role="dialog" aria-label={title} className="flex max-h-full flex-col overflow-hidden rounded-xl border border-ac-line2 bg-ac-panel" style={{ width, boxShadow: "var(--ac-shadow)" }}>
         <div className="flex items-start justify-between gap-3 border-b border-ac-line px-5 pb-3 pt-4">
           <div>
-            {kicker && <div className="mb-1 text-xs text-ac-muted">{kicker}</div>}
+            {(kicker || badge) && (
+              <div className="mb-1 flex items-center gap-2 text-xs text-ac-muted">
+                {kicker}
+                {badge}
+              </div>
+            )}
             <h2 className="text-[16px] font-semibold text-ac-text">{title}</h2>
             {sub && <p className="mt-1 text-xs text-ac-muted">{sub}</p>}
           </div>
@@ -249,6 +254,7 @@ export function DecisionSheet({
   suggestionWhy,
   targets = [],
   tool = "claude",
+  askedByAgentConfig = false,
   onDecide,
   onKeep,
   onClose,
@@ -266,6 +272,8 @@ export function DecisionSheet({
   targets?: { name: string; color: IdentityColor; busy?: boolean }[];
   /** Codex has no live login switch: both switch modes move the session and resume it. */
   tool?: string;
+  /** agent-config asked this in the session; one answer counts for both. */
+  askedByAgentConfig?: boolean;
   onDecide: (how: MoveHow, moves: SheetMove[]) => void;
   onKeep: () => void;
   onClose: () => void;
@@ -297,6 +305,13 @@ export function DecisionSheet({
   return (
     <Modal
       kicker="Near limit"
+      badge={
+        askedByAgentConfig ? (
+          <Chip kind="status" tone="info" title="agent-config asked the same in your session. Answer here or there; the first answer counts for both.">
+            agent-config asked
+          </Chip>
+        ) : undefined
+      }
       title={`${account} is at ${pctUsed}% of its ${window} window`}
       sub={`Resets in ${resetsIn}. ${sessions.length} session${sessions.length === 1 ? " runs" : "s run"} on it. Nothing changes until you choose.`}
       width={580}

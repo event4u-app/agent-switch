@@ -15,7 +15,8 @@ import { DecisionSheet, NewSessionDialog, type MoveHow, type NewSessionFacts, ty
 import { Shell, useFrame, type PageId } from "./frame.js";
 import { LimitsPopover, LimitsStrip, RoomLeft, type LimitAccount } from "./limits.js";
 import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
-import { limitToOpen, markLimitOpened, openedLimits } from "./adapter/limit-auto.js";
+import { limitToOpen, markLimitOpened, openedLimits, wasOpened } from "./adapter/limit-auto.js";
+import { accountOfKey } from "../vm/switch-requests.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
@@ -55,8 +56,12 @@ export interface V3Data {
   /** Settings › Remote (v3.2): R1 accounts and the SSH stage. */
   remote: { remoteControl: string[]; ssh: boolean };
   newSession: { initial: NewSessionPlan; facts: NewSessionFacts };
+  /** The question shared with agent-config (road-to-the-agent-config-link):
+   *  open requests it raised, and accounts ("claude/work") whose limit was
+   *  already answered outside the app this cycle. */
+  link?: { asked: { id: string; account: string }[]; answered: string[] };
   /** The near-limit decision, by account key ("claude/work") or by session key — a limit item's subject is either. */
-  decision: (subject: string) => { account: string; tool?: string; targets?: { name: string; color: IdentityColor }[]; pctUsed: number; window: string; resetsIn: string; sessions: SheetSession[]; suggestion: string; suggestionWhy?: string } | null;
+  decision: (subject: string) => { account: string; tool?: string; targets?: { name: string; color: IdentityColor }[]; pctUsed: number; window: string; resetsIn: string; sessions: SheetSession[]; suggestion: string; suggestionWhy?: string; askedByAgentConfig?: boolean } | null;
   bar: (key: string) => BarSession | null;
   /** What the model popover offers for a session; absent: the chips stay closed. */
   models?: (key: string) => ModelChoices | null;
@@ -229,15 +234,26 @@ export function V3Window({
   const needs = useMemo(() => [...data.needs, ...updateNeeds(data.tools, new Date(data.nowMs).toISOString())], [data.needs, data.tools, data.nowMs]);
   // A session at its limit opens its decision sheet by itself (once per item
   // version) and brings the window forward — the user still confirms the move.
+  // agent-config's question opens it too (once per request), and a limit it
+  // already answered stays closed: one question, one answer for both tools.
+  const answered = data.link?.answered ?? [];
   useEffect(() => {
     if (!autoOpenLimits || overlay !== null) return;
-    const n = limitToOpen(needs, openedLimits(), (subject) => (data.decision(subject)?.sessions.length ?? 0) > 0);
-    if (!n) return;
-    markLimitOpened(n);
-    setOverlay({ decide: n.subject });
+    const hasSessions = (subject: string) => (data.decision(subject)?.sessions.length ?? 0) > 0;
+    const opened = openedLimits();
+    const n = limitToOpen(needs, opened, (subject) => !answered.includes(accountOfKey(subject)) && hasSessions(subject));
+    const asked = n ? null : (data.link?.asked ?? []).find((r) => !wasOpened(opened, { id: "request", version: r.id }) && hasSessions(r.account));
+    if (!n && !asked) return;
+    markLimitOpened(n ?? { id: "request", version: asked!.id });
+    setOverlay({ decide: n ? n.subject : asked!.account });
     act({ type: "reveal" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needs, overlay, autoOpenLimits]);
+  }, [needs, overlay, autoOpenLimits, data.link]);
+  // Answered in agent-config while the sheet is open: the sheet has nothing left to ask.
+  useEffect(() => {
+    if (typeof overlay === "object" && overlay !== null && "decide" in overlay && answered.includes(accountOfKey(overlay.decide))) setOverlay(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.link, overlay]);
 
   const onVerb = (n: NeedItem) => {
     if (n.kind === "limit") setOverlay({ decide: n.subject });
