@@ -42,7 +42,7 @@ import {
 } from "./commands/profiles.js";
 import { cmdRebind } from "./commands/rebind.js";
 import { cmdStore } from "./commands/store.js";
-import { cmdFocus, cmdOpenDefault, cmdOpenSession, cmdOpenTargets } from "./commands/open-in.js";
+import { cmdFocus, cmdOpenDefault, cmdOpenTerminal, cmdOpenSession, cmdOpenTargets } from "./commands/open-in.js";
 import { findApp } from "./apps.js";
 import { cmdCleanup, cmdLibrary, cmdResume } from "./commands/library.js";
 const LIBRARY_ACTIONS = new Set(["library", "pin", "unpin", "name", "tag", "untag", "archive", "unarchive", "search", "keep", "vault"]);
@@ -147,6 +147,7 @@ async function main(): Promise<void> {
     case "open": return flags.with !== undefined || flags.file !== undefined || (positional[0] && !findApp(positional[0])) ? cmdOpenSession(positional[0], flags) : cmdOpen(positional[0], positional[1]);
     case "open-targets": return cmdOpenTargets(positional[0], flags);
     case "open-default": return cmdOpenDefault(positional[0], flags);
+    case "open-terminal": return cmdOpenTerminal(positional[0]);
     case "focus": return cmdFocus(positional[0]);
     case "launcher": case "launchers": return cmdLauncher(positional[0], positional.slice(1), flags);
     case "app-settings": return cmdAppSettings(positional[0], positional.slice(1), flags);

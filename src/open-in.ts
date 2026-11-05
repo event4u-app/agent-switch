@@ -13,6 +13,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { openDirPlan, pickTerminal, terminalName, TERMINAL_IDS, type TerminalId } from "./terminals.js";
+
 export type TargetId = "vscode" | "cursor" | "phpstorm" | "idea" | "finder" | "terminal";
 export const TARGET_IDS: readonly TargetId[] = ["vscode", "cursor", "phpstorm", "idea", "finder", "terminal"];
 
@@ -75,7 +77,7 @@ export function confine(root: string, wanted: string = root): string {
  * How to open `dir` (optionally `file` at `line`) with `target`, or null when
  * that target is not installed. Pure given `env`.
  */
-export function plan(target: TargetId, dir: string, env: Env, file?: string, line?: number): Plan | null {
+export function plan(target: TargetId, dir: string, env: Env, file?: string, line?: number, terminal?: TerminalId | null): Plan | null {
   const l = LAUNCHERS[target];
   const at = file ? (line ? `${file}:${line}` : file) : null;
   if (target === "finder") {
@@ -84,9 +86,10 @@ export function plan(target: TargetId, dir: string, env: Env, file?: string, lin
     return env.onPath("xdg-open") ? { target, program: "xdg-open", args: [dir] } : null;
   }
   if (target === "terminal") {
-    if (env.platform === "darwin") return { target, program: "open", args: ["-a", "Terminal", dir] };
-    for (const t of ["x-terminal-emulator", "gnome-terminal", "konsole"]) if (env.onPath(t)) return { target, program: t, args: t === "konsole" ? ["--workdir", dir] : [`--working-directory=${dir}`] };
-    return null;
+    // The terminal chosen in Settings › Open in, else the platform's first installed one.
+    const id = pickTerminal(terminal, env);
+    const p = id ? openDirPlan(id, dir, env) : null;
+    return p ? { target, ...p } : null;
   }
   const cli = l.cli ? env.onPath(l.cli) : null;
   if (cli) {
@@ -122,11 +125,14 @@ export function locate(target: TargetId, env: Env): { app: string | null; launch
   return { app, launcher };
 }
 
-/** Every target with whether it can open here, and where it was found. Pure given `env`. */
-export function menu(env: Env, dir = "/"): MenuEntry[] {
+/** Every target with whether it can open here, and where it was found. The
+ *  terminal entry carries the name of the terminal it opens. Pure given `env`. */
+export function menu(env: Env, dir = "/", terminal?: TerminalId | null): MenuEntry[] {
   return TARGET_IDS.map((t) => {
-    const installed = plan(t, dir, env) !== null;
-    return { target: t, label: LAUNCHERS[t].label, kind: LAUNCHERS[t].kind, installed, ...(installed ? locate(t, env) : { app: null, launcher: null }) };
+    const installed = plan(t, dir, env, undefined, undefined, terminal) !== null;
+    const picked = t === "terminal" ? pickTerminal(terminal, env) : null;
+    const label = picked ? terminalName(picked) : LAUNCHERS[t].label;
+    return { target: t, label, kind: LAUNCHERS[t].kind, installed, ...(installed ? locate(t, env) : { app: null, launcher: null }) };
   });
 }
 
@@ -138,6 +144,8 @@ export interface OpenSettings {
   /** Per repository (main checkout path) overrides. */
   perRepo: Record<string, TargetId>;
   lastUsed: TargetId | null;
+  /** The terminal app "Terminal" opens (and a takeover's new window uses); null = the platform's first installed one. */
+  terminal: TerminalId | null;
 }
 
 export const openSettingsFile = (root: string) => path.join(root, "open-in.json");
@@ -150,9 +158,10 @@ export function readOpenSettings(file: string): OpenSettings {
       default: ok(o.default) ? o.default : null,
       perRepo: Object.fromEntries(Object.entries(o.perRepo ?? {}).filter(([, v]) => ok(v))) as Record<string, TargetId>,
       lastUsed: ok(o.lastUsed) ? o.lastUsed : null,
+      terminal: typeof o.terminal === "string" && (TERMINAL_IDS as readonly string[]).includes(o.terminal) ? (o.terminal as TerminalId) : null,
     };
   } catch {
-    return { default: null, perRepo: {}, lastUsed: null };
+    return { default: null, perRepo: {}, lastUsed: null, terminal: null };
   }
 }
 

@@ -54,7 +54,7 @@ test("confine: only paths inside the session's folder, symlinks resolved", () =>
 
 test("default target: the repo's, else the global one, else the first installed editor; settings are private", () => {
   const installed = menu(env("linux", ["code", "phpstorm", "xdg-open"]));
-  const s = { default: "phpstorm" as const, perRepo: { "/r": "vscode" as const }, lastUsed: null };
+  const s = { default: "phpstorm" as const, perRepo: { "/r": "vscode" as const }, lastUsed: null, terminal: "iterm" as const };
   assert.equal(defaultTarget(s, "/r", installed), "vscode");
   assert.equal(defaultTarget(s, "/other", installed), "phpstorm");
   assert.equal(defaultTarget({ ...s, default: "cursor" }, null, installed), "vscode", "a default that is not installed falls back");
@@ -62,8 +62,8 @@ test("default target: the repo's, else the global one, else the first installed 
   writeOpenSettings(f, s);
   assert.deepEqual(readOpenSettings(f), s);
   if (process.platform !== "win32") assert.equal(fs.statSync(f).mode & 0o777, 0o600);
-  fs.writeFileSync(f, JSON.stringify({ default: "rm -rf", perRepo: { "/r": "evil" } }));
-  assert.deepEqual(readOpenSettings(f), { default: null, perRepo: {}, lastUsed: null });
+  fs.writeFileSync(f, JSON.stringify({ default: "rm -rf", perRepo: { "/r": "evil" }, terminal: "rm -rf" }));
+  assert.deepEqual(readOpenSettings(f), { default: null, perRepo: {}, lastUsed: null, terminal: null });
 });
 
 test("focus terminal: the script only takes a real tty; -1743 is explained with the fix, not swallowed", async () => {
