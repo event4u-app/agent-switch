@@ -19,7 +19,7 @@ import { TOOL_IDS } from "./tooling.js";
 import { currentVersion } from "./updates.js";
 import { printCswapList } from "./cswap-list.js";
 import { cmdService } from "./service.js";
-import { cmdAppSettings, cmdApps, cmdDesktop, cmdLauncher, cmdOpen, cmdWeb } from "./commands/desktop.js";
+import { cmdAppSettings, cmdApps, cmdDesktop, cmdLauncher, cmdOpen, cmdSignInBrowser, cmdWeb } from "./commands/desktop.js";
 import { usage } from "./commands/help.js";
 import {
   cmdActivate,
@@ -123,8 +123,8 @@ async function main(): Promise<void> {
   }
 
   switch (cmd) {
-    case "add": return cmdAdd(providerId, positional[0], typeof flags.browser === "string" ? flags.browser : undefined);
-    case "login": return cmdLogin(providerId, positional[0], typeof flags.browser === "string" ? flags.browser : undefined);
+    case "add": return cmdAdd(providerId, positional[0], typeof flags.browser === "string" ? flags.browser : undefined, !!flags.isolated);
+    case "login": return cmdLogin(providerId, positional[0], typeof flags.browser === "string" ? flags.browser : undefined, !!flags.isolated);
     case "browsers": return cmdBrowsers(!!flags.json);
     case "import": return cmdImport(providerId, positional[0]);
     case "use": return cmdUse(providerId, positional[0]);
@@ -220,6 +220,7 @@ async function main(): Promise<void> {
     case "takeover": return cmdTakeover(providerId, providerExplicit, positional[0], flags);
     case "rebind": return cmdRebind(providerId, providerExplicit, positional[0], flags);
     case "web": return cmdWeb(positional[0]);
+    case "sign-in-browser": return cmdSignInBrowser(positional[0], flags);
     case "remove": case "rm": return cmdRemove(providerId, positional[0], !!flags.force, !!flags.yes);
     case "shellenv":
       return positional[0] === "install"
