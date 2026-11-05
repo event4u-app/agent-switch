@@ -133,6 +133,26 @@ describe("dispatchV3", () => {
     expect(d.act.armRebind).not.toHaveBeenCalled();
   });
 
+  it("move: several sessions from your own terminals all move — one terminal sheet carries every takeover", async () => {
+    const d = { ...deps(), hosted: (k: string) => k === "claude/work/h" };
+    await dispatchV3(
+      {
+        type: "move",
+        how: "after-turn",
+        moves: [
+          { key: "claude/work/x", target: "home", via: "takeover" },
+          { key: "claude/work/h", target: "lab", via: "takeover" },
+          { key: "claude/work/y", target: "lab", via: "takeover" },
+        ],
+      },
+      d,
+    );
+    expect(d.ipc.takeoverHosted).toHaveBeenCalledWith("claude/work/h", "lab");
+    const args = (id: string, to: string) => ["takeover", id, "--to", to, "--provider", "claude", "--stop-source", "--prompt", "Continue where you left off."];
+    expect(d.open).toHaveBeenCalledTimes(1);
+    expect(d.open).toHaveBeenCalledWith({ kind: "terminal", run: { title: "Continue on home", args: args("x", "home") }, more: [{ title: "Continue on lab", args: args("y", "lab") }] });
+  });
+
   it("move: Codex moves the session and resumes it with the continuation — in place when hosted, else in the app's terminal", async () => {
     const d = { ...deps(), hosted: (k: string) => k === "codex/work/h" };
     await dispatchV3({ type: "move", how: "now", moves: [{ key: "codex/work/h", target: "home" }] }, d);
