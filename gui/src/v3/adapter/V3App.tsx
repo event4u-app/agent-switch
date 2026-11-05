@@ -117,6 +117,8 @@ export function useTheme(): ThemeState & { mode: "dark" | "light" } {
 
 export function V3Frame({ theme }: { theme: ThemeState }) {
   const s = useAS();
+  // Terminal or chat for each session that runs in the user's own terminal (both read-only).
+  const [ownViews, setOwnViews] = useState<ReadonlyMap<string, "terminal" | "chat">>(() => new Map());
   const sRef = useRef(s);
   sRef.current = s;
   useEngines();
@@ -194,6 +196,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     wantChanges,
     route,
     chats: chats.keys,
+    ownViews,
     // A new chat that the CLI already lists under its real key needs no stand-in row.
     chatRows: chats.rows.filter((r) => {
       const real = chats.states.get(sessionKey(r))?.session?.key;
@@ -252,6 +255,9 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   };
   function switchView(key: string, to: "terminal" | "chat") {
     const tab = chats.tabOf(key);
+    // In the user's own terminal both views are read-only renderings of the
+    // transcript: switching only changes the drawing, nothing is started.
+    if (!tab && !hostedKeys.has(key)) return setOwnViews((m) => new Map(m).set(key, to));
     const step = viewStep(to, { inChat: !!tab, hosted: hostedKeys.has(key), chatRunning: chatRunning(key), terminalRunning: terminalRunning(key) });
     const armTo = (t: "terminal" | "chat") => {
       if (armed.get(key) !== t) s.toast({ tone: "info", text: `Switches to the ${t} after this turn` });
@@ -311,6 +317,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
         sessionKey={key}
         row={byKey.get(key)}
         hosted={hostedKeys.has(key)}
+        ownView={ownViews.get(key) ?? "chat"}
         vars={vars}
         followTheme={appearance.terminalFollows}
         where={terminalApp}
