@@ -9,7 +9,7 @@ import { Check, ChevronRight, Copy } from "lucide-react";
 import { cn } from "../../lib/utils.js";
 import { getChatMarkdown } from "../../settings-store.js";
 import { DiffLines } from "../chat.js";
-import { activateLink } from "./links.js";
+import { activateLink, copyLink, type LinkOutcome } from "./links.js";
 import type { Block, Inline } from "./nodes.js";
 import { parseMarkdown } from "./parse.js";
 
@@ -295,18 +295,53 @@ function inline(x: Inline, key: number, inert: boolean): ReactNode {
           {inlines(x.c, inert)}
         </span>
       ) : (
-        <a
-          key={key}
-          href={x.href}
-          title={x.href}
-          className="text-ac-brand-text underline decoration-ac-brand-line underline-offset-2 hover:decoration-current"
-          onClick={(e) => {
-            e.preventDefault();
-            void activateLink(x.href);
-          }}
-        >
+        <LinkView key={key} href={x.href}>
           {inlines(x.c, inert)}
-        </a>
+        </LinkView>
       );
   }
+}
+
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+/** The modifier that opens a link: ⌘ on macOS, Ctrl elsewhere. */
+export const OPEN_KEY = IS_MAC ? "⌘" : "Ctrl";
+
+const NOTE: Record<LinkOutcome, string> = {
+  copied: "Link copied",
+  opened: "Opened in the browser",
+  refused: "Not a link that can be copied or opened",
+};
+
+/** A link in agent output (owner, 2026-11-05): a click copies the address,
+ *  ⌘/Ctrl-click opens it in the browser. The tooltip shows the real address and
+ *  says so; a short note confirms what happened. */
+export function LinkView({ href, children }: { href: string; children: ReactNode }) {
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!note) return;
+    const id = setTimeout(() => setNote(null), 1800);
+    return () => clearTimeout(id);
+  }, [note]);
+  return (
+    <>
+      <a
+        href={href}
+        title={`${href}\nClick: copy link · ${OPEN_KEY}-click: open in browser`}
+        className="text-ac-brand-text underline decoration-ac-brand-line underline-offset-2 hover:decoration-current"
+        onClick={(e) => {
+          e.preventDefault();
+          const open = e.metaKey || e.ctrlKey;
+          void (open ? activateLink(href) : copyLink(href)).then((r) => setNote(open && r === "copied" ? "This address can only be copied — link copied" : NOTE[r]));
+        }}
+        onAuxClick={(e) => e.preventDefault()}
+      >
+        {children}
+      </a>
+      {note && (
+        <span role="status" className="ml-1.5 rounded bg-ac-raise px-1.5 py-px text-[11px] text-ac-muted">
+          {note}
+        </span>
+      )}
+    </>
+  );
 }

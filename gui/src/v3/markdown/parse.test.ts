@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseDiffFence } from "./diff.js";
 import { FIXTURES } from "./fixtures.js";
-import { activateLink, safeHref } from "./links.js";
+import { activateLink, copyLink, safeHref } from "./links.js";
 import type { Block, Inline } from "./nodes.js";
 import { parseMarkdown } from "./parse.js";
 
@@ -176,6 +176,16 @@ describe("activateLink", () => {
     expect(await activateLink("https://c.d/y", { open: deny, copy })).toBe("copied");
     expect(await activateLink("javascript:alert(1)", { open, copy })).toBe("refused");
     expect(calls).toEqual(["open https://a.b/x", "copy https://c.d/y"]);
+  });
+});
+
+describe("copyLink", () => {
+  it("copies the normalised address; a refused destination is never copied", async () => {
+    const copied: string[] = [];
+    const copy = async (t: string) => void copied.push(t);
+    expect(await copyLink("https://a.b", { copy })).toBe("copied");
+    expect(await copyLink("javascript:alert(1)", { copy })).toBe("refused");
+    expect(copied).toEqual(["https://a.b/"]);
   });
 });
 

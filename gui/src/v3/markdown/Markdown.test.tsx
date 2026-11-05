@@ -36,15 +36,40 @@ describe("Markdown — rendering (2.4)", () => {
     expect(container.textContent).toContain('<b onclick="x()">tag</b>');
   });
 
-  it("only http(s) links are anchors; a click goes to the native opener and never navigates", async () => {
+  it("only http(s) links are anchors; a click copies, ⌘/Ctrl-click opens, neither navigates", async () => {
+    const writeText = vi.fn(async (_t: string) => {});
+    Object.assign(navigator, { clipboard: { writeText } });
     const { container } = render(<Markdown source={FIXTURES.links!} />);
     const anchors = [...container.querySelectorAll("a")];
     expect(anchors.map((a) => a.getAttribute("href"))).toEqual(["https://github.com/event4u-app/agent-switch/pull/152", "https://example.com/a_b"]);
     expect(container.querySelector("img")).toBeNull();
-    const ev = new MouseEvent("click", { bubbles: true, cancelable: true });
-    await act(async () => void anchors[1]!.dispatchEvent(ev));
-    expect(ev.defaultPrevented).toBe(true);
-    expect(shellOpen).toHaveBeenCalledWith("https://example.com/a_b");
+    expect(anchors[1]!.getAttribute("title")).toMatch(/^https:\/\/example\.com\/a_b\nClick: copy link · (⌘|Ctrl)-click: open in browser$/);
+
+    const plain = new MouseEvent("click", { bubbles: true, cancelable: true });
+    await act(async () => void anchors[1]!.dispatchEvent(plain));
+    expect(plain.defaultPrevented).toBe(true);
+    expect(writeText).toHaveBeenCalledWith("https://example.com/a_b");
+    expect(shellOpen).not.toHaveBeenCalled();
+    expect(screen.getByRole("status").textContent).toBe("Link copied");
+
+    for (const mod of [{ metaKey: true }, { ctrlKey: true }]) {
+      shellOpen.mockClear();
+      const ev = new MouseEvent("click", { bubbles: true, cancelable: true, ...mod });
+      await act(async () => void anchors[1]!.dispatchEvent(ev));
+      expect(ev.defaultPrevented).toBe(true);
+      expect(shellOpen).toHaveBeenCalledWith("https://example.com/a_b");
+    }
+    expect(screen.getAllByRole("status").some((s) => s.textContent === "Opened in the browser")).toBe(true);
+  });
+
+  it("⌘-click on an address the app may not open copies it and says so", async () => {
+    const writeText = vi.fn(async (_t: string) => {});
+    Object.assign(navigator, { clipboard: { writeText } });
+    shellOpen.mockRejectedValueOnce(new Error("not allowed by the scope"));
+    const { container } = render(<Markdown source="see https://example.com/x" />);
+    await act(async () => void container.querySelector("a")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true })));
+    expect(writeText).toHaveBeenCalledWith("https://example.com/x");
+    expect(screen.getByRole("status").textContent).toBe("This address can only be copied — link copied");
   });
 
   it("task items are disabled checkboxes", () => {
