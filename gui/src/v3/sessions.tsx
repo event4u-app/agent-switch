@@ -6,8 +6,8 @@
  * reference boards; the data is `sessions --json`.
  */
 
-import { useEffect, useRef, type ReactNode } from "react";
-import { Bot, ChevronRight, CircleX, TriangleAlert } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Bot, ChevronDown, ChevronRight, CircleX, Folder, SquareTerminal, TriangleAlert } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import type { SessionState } from "../vm/types.js";
@@ -63,6 +63,28 @@ export function childNoun(s: RowSession): string {
 }
 
 /** One order everywhere (window, tray): needs you · CI failing · working · rest; done sessions are not listed. Pure. */
+export type SortBy = "activity" | "name" | "status";
+export type GroupBy = "none" | "project" | "account" | "tool";
+export const SORT_LABEL: Record<SortBy, string> = { activity: "Activity", name: "Name", status: "Status" };
+export const GROUP_LABEL: Record<GroupBy, string> = { none: "None", project: "Project / folder", account: "Account", tool: "Tool" };
+
+/**
+ * The live list in the chosen order. Activity (default) = most recent first —
+ * what needs you already sits in its own zone; status = `liveOrder`. A session
+ * without a known time sorts last. Pure.
+ */
+export function sortLive(sessions: readonly RowSession[], sort: SortBy, lastActiveMs: (key: string) => number | null): RowSession[] {
+  const live = liveOrder(sessions);
+  if (sort === "status") return live;
+  if (sort === "name") return [...live].sort((a, b) => a.title.localeCompare(b.title));
+  // Unknown times sort last and keep the status order among themselves.
+  return [...live].sort((a, b) => {
+    const x = lastActiveMs(a.key);
+    const y = lastActiveMs(b.key);
+    return x === y ? 0 : x === null ? 1 : y === null ? -1 : y - x;
+  });
+}
+
 export function liveOrder(sessions: readonly RowSession[]): RowSession[] {
   const rank = (x: RowSession) => (x.needsYou || x.state === "needs-you" ? 0 : x.pr?.ci === "FAILURE" ? 1 : x.state === "working" ? 2 : 3);
   return sessions.filter((s) => s.state !== "done").sort((a, b) => rank(a) - rank(b));
@@ -260,7 +282,12 @@ export function SessionsZone({
   onCleanUp,
   onDoneToday,
   onStart,
-  projectOf,
+  sort = "activity",
+  group = "none",
+  lastActiveOf = () => null,
+  groupOf,
+  onView,
+  viewOpen,
   onPeek,
   divider = true,
   loading,
@@ -283,8 +310,16 @@ export function SessionsZone({
   onDoneToday: () => void;
   /** The empty zone's one action (spec §5.2). */
   onStart?: () => void;
-  /** Group by project: the project of a row, or null for rows outside a repo. */
-  projectOf?: (key: string) => string | null;
+  /** The list's order and grouping (the zone head shows and opens them). */
+  sort?: SortBy;
+  group?: GroupBy;
+  /** Last activity of a row, for the activity order. */
+  lastActiveOf?: (key: string) => number | null;
+  /** The group a row belongs to (project, account or tool), or null for "none of them". */
+  groupOf?: (key: string) => string | null;
+  /** Opens the sort/group menu at the control's top inside the window shell; absent hides the control (tray). */
+  onView?: (y: number) => void;
+  viewOpen?: boolean;
   onPeek?: (key: string | null, y: number) => void;
   /** The line under the Needs-you zone; absent when that zone is hidden. */
   divider?: boolean;
@@ -292,17 +327,38 @@ export function SessionsZone({
   loading?: boolean;
   batch: BatchActions;
 }) {
-  const live = liveOrder(sessions);
+  const live = sortLive(sessions, sort, lastActiveOf);
   const done = sessions.filter((s) => s.doneToday).length;
-  // Grouped: one header per project, in the order the live list first meets it.
-  const groups = projectOf ? [...new Set(live.map((s) => projectOf(s.key) ?? ""))] : [""];
-  const rowsOf = (g: string) => (projectOf ? live.filter((s) => (projectOf(s.key) ?? "") === g) : live);
+  const grouped = group !== "none" && !!groupOf;
+  // Grouped: one header per group, in the order the sorted list first meets it; rows keep the sort inside.
+  const groups = grouped ? [...new Set(live.map((s) => groupOf!(s.key) ?? ""))] : [""];
+  const rowsOf = (g: string) => (grouped ? live.filter((s) => (groupOf!(s.key) ?? "") === g) : live);
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
+  const fold = (g: string) => setFolded((f) => (f.has(g) ? new Set([...f].filter((x) => x !== g)) : new Set([...f, g])));
   return (
     <section aria-label="Sessions">
       {divider ? <div className="mx-3.5 my-1.5 h-px bg-ac-line" /> : <div className="h-2" />}
       <div className={cn("flex items-center gap-2 bg-ac-panel px-3.5", tray ? "mt-0.5 h-6" : "sticky top-0 z-[1] h-8")}>
         <span className="text-[11px] font-semibold text-ac-soft">Sessions</span>
         <span className="text-[11px] text-ac-muted">{live.length}</span>
+        {onView && (
+          <button
+            type="button"
+            data-popover-trigger
+            aria-haspopup="menu"
+            aria-expanded={!!viewOpen}
+            onClick={(e) => {
+              const shell = e.currentTarget.closest("[data-v3-shell]");
+              onView(Math.round(e.currentTarget.getBoundingClientRect().top - (shell?.getBoundingClientRect().top ?? 0)));
+            }}
+            title="Sort and group"
+            className={cn("-mr-1.5 ml-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-ac-muted hover:bg-ac-raise hover:text-ac-text", viewOpen && "bg-ac-raise text-ac-text")}
+          >
+            {grouped && <>{GROUP_LABEL[group].split(" ")[0]} · </>}
+            {SORT_LABEL[sort]}
+            <ChevronDown className="size-3" />
+          </button>
+        )}
       </div>
       {selection && <BatchBar compact count={selection.size} actions={batch} className="mx-1.5 mb-1" />}
       <div className="px-1.5">
@@ -317,12 +373,22 @@ export function SessionsZone({
           </p>
         )}
         {groups.map((g) => [
-          projectOf && (
-            <div key={`h:${g}`} className="truncate px-2 pb-0.5 pt-1.5 text-[10.5px] font-medium text-ac-muted" title={g || undefined}>
-              {g ? g.split("/").pop() : "No project"}
-            </div>
+          grouped && (
+            <button
+              key={`h:${g}`}
+              type="button"
+              aria-expanded={!folded.has(g)}
+              onClick={() => fold(g)}
+              title={g ? `${GROUP_LABEL[group]}: ${g}` : undefined}
+              className="flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[11.5px] text-ac-muted hover:bg-ac-raise"
+            >
+              {folded.has(g) ? <ChevronRight className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />}
+              {group === "project" ? <Folder className="size-3.5 shrink-0" /> : group === "tool" ? <SquareTerminal className="size-3.5 shrink-0" /> : null}
+              <span className="min-w-0 truncate font-medium text-ac-soft">{g ? (group === "project" ? g.split("/").pop() : g) : group === "project" ? "No project" : "Other"}</span>
+              <span>{rowsOf(g).length}</span>
+            </button>
           ),
-          ...rowsOf(g).map((s) => (
+          ...(folded.has(g) ? [] : rowsOf(g)).map((s) => (
           <SessionRow
             key={s.key}
             s={s}

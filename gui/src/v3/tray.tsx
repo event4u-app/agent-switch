@@ -9,7 +9,7 @@ import { Button } from "../ui/Button.js";
 import type { BatchActions } from "./kit.js";
 import { LimitsStrip, type LimitAccount } from "./limits.js";
 import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
-import { SessionsZone, liveOrder, type RowSession } from "./sessions.js";
+import { SessionsZone, sortLive, type RowSession } from "./sessions.js";
 
 export const TRAY_SESSIONS = 5;
 
@@ -22,8 +22,11 @@ export function V3Tray({
   accounts,
   nowMs,
   loading,
+  lastActiveOf,
   on,
 }: {
+  /** Last activity per session key, for the window's default order. */
+  lastActiveOf?: (key: string) => number | null;
   /** The first read has not settled: no "No sessions running" yet. */
   loading?: boolean;
   needs: NeedItem[];
@@ -43,7 +46,8 @@ export function V3Tray({
     open: () => void;
   };
 }) {
-  const live = liveOrder(sessions);
+  // The window's default order (activity); without times it stays the status order.
+  const live = sortLive(sessions, "activity", lastActiveOf ?? (() => null));
   const shown = live.slice(0, TRAY_SESSIONS);
   return (
     <div className="w-[360px] overflow-hidden rounded-xl border border-ac-line2 bg-ac-panel" style={{ boxShadow: "var(--ac-shadow)" }}>
@@ -67,6 +71,8 @@ export function V3Tray({
           onDoneToday={() => {}}
           onStart={on.start}
           loading={loading}
+          sort="activity"
+          lastActiveOf={lastActiveOf}
           batch={noBatch}
         />
         {live.length > TRAY_SESSIONS && (
