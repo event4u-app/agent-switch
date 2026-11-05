@@ -172,14 +172,17 @@ export async function claudeSettings(): Promise<ClaudeSettingsStatus> {
   return parseClaudeSettings(JSON.parse(await runCli(["claude-settings", "status", "--json"])));
 }
 
-/** `claude-settings set <path> <json>`, or `unset` for undefined; applies to every Claude account. */
-export async function setClaudeSetting(path: string, value: unknown): Promise<void> {
-  await runCli(value === undefined ? ["claude-settings", "unset", path] : ["claude-settings", "set", path, JSON.stringify(value)]);
+/** `claude-settings set <path> <json>`, or `unset` for undefined; applies to every Claude account.
+ *  The path goes as a JSON array, so a key with a dot (a plugin id) stays one key. */
+export async function setClaudeSetting(path: string[], value: unknown): Promise<void> {
+  const at = JSON.stringify(path);
+  await runCli(value === undefined ? ["claude-settings", "unset", at] : ["claude-settings", "set", at, JSON.stringify(value)]);
 }
 
-/** `claude-settings rule allow|deny|ask <rule> on|off`. */
-export async function setClaudeRule(list: "allow" | "deny" | "ask", rule: string, on: boolean): Promise<void> {
-  await runCli(["claude-settings", "rule", list, rule, on ? "on" : "off"]);
+/** `claude-settings rule allow|deny|ask <rule>… on|off`: one call for a whole group. */
+export async function setClaudeRules(list: "allow" | "deny" | "ask", rules: string[], on: boolean): Promise<void> {
+  if (rules.length === 0) return;
+  await runCli(["claude-settings", "rule", list, ...rules, on ? "on" : "off"]);
 }
 
 /** `claude-settings sync`: apply the file to every Claude account now. */

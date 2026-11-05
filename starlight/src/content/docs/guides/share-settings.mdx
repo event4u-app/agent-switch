@@ -49,22 +49,35 @@ it alone and says so. Remove that copy if you want the shared one instead.
 
 `~/.claude/settings.json` reaches every Claude account, whether sharing is on or
 not, and whether an account has its own `settings.json` or not. agent-switch
-applies it on every change and before every start:
+applies it when you change it through agent-switch, and before every start that
+goes through agent-switch: `run`, a hosted session, and the shell wrapper behind
+a plain `claude`. An edit made in an editor reaches the other accounts at their
+next start, or at once with `claude-settings sync`.
 
 - A value set in `~/.claude/settings.json` wins over the account's own value.
-- Lists, such as the allowed commands, are combined. A rule Claude saved in one
-  account ("always allow") stays there.
+- A list, such as the allowed commands, gets the entries it lacks. A rule an
+  account already had, or Claude saved there ("always allow"), stays.
 - What only an account has stays with it.
-- A value you remove from `~/.claude/settings.json` is removed from the accounts
-  too, unless an account changed it itself.
-- MCP servers and token-, secret- or key-shaped values never leave the file:
-  they belong to one login.
+- Removing something from `~/.claude/settings.json` undoes exactly what the sync
+  did: an account gets its earlier value back, and loses only the list entries
+  the sync added. A value the account changed itself is left alone.
+- The first time the sync changes an account, it keeps that account's file as
+  `settings.json.pre-claude-settings`.
+- Account-scoped settings never leave the file: MCP servers, login and auth
+  settings (`forceLoginOrgUUID`, `apiKeyHelper`, …), the endpoint and provider
+  variables (`ANTHROPIC_BASE_URL`, `ANTHROPIC_CUSTOM_HEADERS`, `AWS_*`, …),
+  credential-shaped names and a proxy with a password. Commands inside hooks or a
+  status line are copied as written.
+- An account whose `settings.json` is a link (to this file, to another account's
+  under `share --source`, or to a dotfiles copy) is left alone.
+- A missing or unreadable `~/.claude/settings.json` changes nothing.
 
 ```bash
 agent-switch claude-settings status          # each account: up to date, applied at next start, own values
 agent-switch claude-settings sync            # apply now
 agent-switch claude-settings set env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY '"1"'
-agent-switch claude-settings rule allow "Bash(git *)" on
+agent-switch claude-settings rule allow "Bash(git *)" "Bash(ls *)" on
+agent-switch claude-settings set '["enabledPlugins","lsp@acme.tools"]' true   # a key with a dot
 ```
 
 The desktop app has the same in **Settings › Claude Code**: switches for the

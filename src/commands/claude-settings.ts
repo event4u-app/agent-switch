@@ -6,11 +6,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { configDir, die, listProfiles } from "../profiles.js";
-import { mergeSettings, profileExtras, readJson, setPath, shareable, SNAPSHOT, syncProfileSettings, toggleListEntry, writeGlobal, type SyncResult } from "../claude-settings.js";
+import { masked, mergeSettings, parsePath, profileExtras, readJson, setPath, shareable, SNAPSHOT, syncProfileSettings, toggleListEntries, withLock, writeGlobal, type SettingsJson, type SettingsObj, type SyncResult } from "../claude-settings.js";
 import { CLAUDE_HOME } from "./shared.js";
 
 export const GLOBAL_SETTINGS = path.join(CLAUDE_HOME, "settings.json");
 const LISTS = new Set(["allow", "deny", "ask"]);
+const USAGE = "usage: agent-switch claude-settings [status|sync|set <path> <json>|unset <path>|rule allow|deny|ask <rule>… on|off] [--json]";
 
 /** Apply the global settings to every Claude profile; returns name → result. Never throws. */
 export function syncAllClaudeSettings(globalFile = GLOBAL_SETTINGS): { name: string; result: SyncResult | "error"; error?: string }[] {
@@ -31,24 +32,34 @@ function status(globalFile: string) {
     const dir = configDir("claude", name);
     const file = path.join(dir, "settings.json");
     try {
-      if (exists && fs.existsSync(file) && fs.realpathSync(file) === fs.realpathSync(globalFile)) return { name, state: "linked", extras: [] as string[] };
+      if (fs.lstatSync(file).isSymbolicLink()) return { name, state: "linked", extras: [] as string[] };
     } catch {
-      /* dangling */
+      /* absent */
     }
     const own = fs.existsSync(file) ? readJson(file) : {};
     if (own === null) return { name, state: "invalid", extras: [] };
-    const merged = mergeSettings(value, own, readJson(path.join(dir, SNAPSHOT)));
+    const merged = mergeSettings(value, own, readJson(path.join(dir, SNAPSHOT))).value;
     return { name, state: JSON.stringify(merged) === JSON.stringify(own) ? "in-sync" : "pending", extras: profileExtras(own, value) };
   });
-  return { file: globalFile, exists, valid: !exists || global !== null, settings: global ?? {}, withheld, profiles };
+  // Account-scoped values are masked: the app shows this file, and screens get shared.
+  return { file: globalFile, exists, valid: !exists || global !== null, settings: masked(global ?? {}), withheld, profiles };
 }
 
-function parseValue(raw: string | undefined): unknown {
+function parseValue(raw: string | undefined): SettingsJson {
   if (raw === undefined) die("usage: agent-switch claude-settings set <path> <json-value>");
   try {
     return JSON.parse(raw);
   } catch {
     return raw; // a bare word is a string: `set model opus`
+  }
+}
+
+function pathArg(raw: string | undefined, usage: string): string[] {
+  if (!raw) die(usage);
+  try {
+    return parsePath(raw);
+  } catch (e) {
+    die((e as Error).message);
   }
 }
 
@@ -73,18 +84,30 @@ export function cmdClaudeSettings(sub: string | undefined, args: string[], flags
     return report(rows);
   }
 
-  const current = fs.existsSync(globalFile) ? readJson(globalFile) : {};
-  if (current === null) die(`${globalFile} is not valid JSON — fix it first, nothing was changed`);
-  let next = current;
-  if (sub === "set") next = setPath(current, args[0] ?? die("usage: agent-switch claude-settings set <path> <json-value>"), parseValue(args[1]) as never);
-  else if (sub === "unset") next = setPath(current, args[0] ?? die("usage: agent-switch claude-settings unset <path>"), undefined);
-  else if (sub === "rule") {
-    const [list, rule, onOff] = args;
-    if (!list || !LISTS.has(list) || !rule || (onOff !== "on" && onOff !== "off")) die("usage: agent-switch claude-settings rule allow|deny|ask <rule> on|off");
-    next = toggleListEntry(current, `permissions.${list}`, rule, onOff === "on");
-  } else die("usage: agent-switch claude-settings [status|sync|set <path> <json>|unset <path>|rule allow|deny|ask <rule> on|off] [--json]");
+  let change: (current: SettingsObj) => SettingsObj;
+  if (sub === "set") {
+    const at = pathArg(args[0], "usage: agent-switch claude-settings set <path> <json-value>");
+    const value = parseValue(args[1]);
+    change = (c) => setPath(c, at, value);
+  } else if (sub === "unset") {
+    const at = pathArg(args[0], "usage: agent-switch claude-settings unset <path>");
+    change = (c) => setPath(c, at, undefined);
+  } else if (sub === "rule") {
+    const list = args[0];
+    const onOff = args[args.length - 1];
+    const rules = args.slice(1, -1);
+    if (!list || !LISTS.has(list) || rules.length === 0 || (onOff !== "on" && onOff !== "off")) die("usage: agent-switch claude-settings rule allow|deny|ask <rule>… on|off");
+    change = (c) => toggleListEntries(c, ["permissions", list], rules, onOff === "on");
+  } else die(USAGE);
 
-  writeGlobal(globalFile, next);
+  // Read, change and write under one lock, so two quick edits cannot overwrite each other.
+  const written = withLock(globalFile, () => {
+    const current = fs.existsSync(globalFile) ? readJson(globalFile) : {};
+    if (current === null) return false;
+    writeGlobal(globalFile, change(current));
+    return true;
+  });
+  if (!written) die(`${globalFile} is not valid JSON — fix it first, nothing was changed`);
   const rows = syncAllClaudeSettings(globalFile);
   if (json) return void console.log(JSON.stringify({ profiles: rows }));
   console.log(`Updated ${globalFile}; applied to every Claude profile:`);

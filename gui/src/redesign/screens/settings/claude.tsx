@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronRight, FileCog, Plus, RefreshCw, Search } from "lucide-react";
 import {
   ENV_FLAGS,
@@ -68,22 +68,23 @@ function Section({ id, title, summary, open, onToggle, children }: { id: Section
 }
 
 /** A rule as a checkable pill. */
-function RulePill({ rule, on, onChange }: { rule: string; on: boolean; onChange: (on: boolean) => void }) {
+function RulePill({ rule, on, disabled, onChange }: { rule: string; on: boolean; disabled: boolean; onChange: (on: boolean) => void }) {
   return (
     <label
       className={cn(
-        "inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2 py-1 font-ac-mono text-[11px] transition-colors",
+        "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-ac-mono text-[11px] transition-colors",
         on ? "border-ac-brand-line bg-ac-brand-tint text-ac-text" : "border-ac-line text-ac-muted hover:text-ac-text",
+        disabled ? "cursor-wait opacity-60" : "cursor-pointer",
       )}
     >
-      <input type="checkbox" className="sr-only" checked={on} onChange={(e) => onChange(e.target.checked)} />
+      <input type="checkbox" className="sr-only" checked={on} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span className={cn("inline-flex size-3 items-center justify-center rounded border", on ? "border-ac-brand bg-ac-brand text-ac-bg" : "border-ac-line2")}>{on && <Check className="size-2.5" />}</span>
       {rule}
     </label>
   );
 }
 
-function RuleGroup({ g, onRule, onGroup }: { g: RuleGroupView; onRule: (rule: string, on: boolean) => void; onGroup: (g: RuleGroupView, on: boolean) => void }) {
+function RuleGroup({ g, busy, onRule, onGroup }: { g: RuleGroupView; busy: boolean; onRule: (rule: string, on: boolean) => void; onGroup: (g: RuleGroupView, on: boolean) => void }) {
   const all = g.on === g.rules.length;
   return (
     <div className="px-4 py-3">
@@ -91,14 +92,14 @@ function RuleGroup({ g, onRule, onGroup }: { g: RuleGroupView; onRule: (rule: st
         <span className="text-xs font-medium text-ac-soft">{t(g.title)}</span>
         <span className="text-[11px] text-ac-faint">{t("settings.claude.rules.count", { on: g.on, total: g.rules.length })}</span>
         {g.id !== "other" && (
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => onGroup(g, !all)}>
+          <Button size="sm" variant="ghost" className="ml-auto" disabled={busy} onClick={() => onGroup(g, !all)}>
             {all ? t("settings.claude.rules.none") : t("settings.claude.rules.all")}
           </Button>
         )}
       </div>
       <div className="flex flex-wrap gap-1.5">
         {g.rules.map((r) => (
-          <RulePill key={r.rule} rule={r.rule} on={r.on} onChange={(on) => onRule(r.rule, on)} />
+          <RulePill key={r.rule} rule={r.rule} on={r.on} disabled={busy} onChange={(on) => onRule(r.rule, on)} />
         ))}
       </div>
     </div>
@@ -127,10 +128,15 @@ export function ClaudeSettings({ load = ipc.claudeSettings }: { load?: () => Pro
   }, [load]);
   useEffect(() => void reload(), [reload]);
 
+  // One change at a time: each runs the CLI on the whole file, and two at once would overwrite each other.
+  const saving = useRef(false);
   const change = async (fn: () => Promise<void>) => {
+    if (saving.current) return;
+    saving.current = true;
     setBusy(true);
     await run(fn);
     await reload();
+    saving.current = false;
     setBusy(false);
   };
 
@@ -157,9 +163,9 @@ export function ClaudeSettings({ load = ipc.claudeSettings }: { load?: () => Pro
 
   const addRule = () => {
     const rule = draft.trim();
-    if (!validRule(rule)) return;
+    if (busy || !validRule(rule)) return;
     setDraft("");
-    void change(() => ipc.setClaudeRule("allow", rule, true));
+    void change(() => ipc.setClaudeRules("allow", [rule], true));
   };
 
   return (
@@ -194,19 +200,19 @@ export function ClaudeSettings({ load = ipc.claudeSettings }: { load?: () => Pro
           <div className="flex flex-col divide-y divide-ac-line">
             {flags.map((f) => (
               <SettingRow key={f.name} title={t(f.title)} detail={<><span>{t(f.detail)}</span> <span className="font-ac-mono text-ac-faint">{f.name}</span></>}>
-                <Switch label={t(f.title)} checked={env[f.name] === "1"} disabled={busy} onChange={(on) => void change(() => ipc.setClaudeSetting(`env.${f.name}`, on ? "1" : undefined))} />
+                <Switch label={t(f.title)} checked={env[f.name] === "1"} disabled={busy} onChange={(on) => void change(() => ipc.setClaudeSetting(["env", f.name], on ? "1" : undefined))} />
               </SettingRow>
             ))}
             {!q && (
               <>
                 <SettingRow title={t("settings.claude.model")} detail={t("settings.claude.modelDetail")}>
                   <div className="w-[160px]">
-                    <Select ariaLabel={t("settings.claude.model")} mono value={model} disabled={busy} onChange={(v) => void change(() => ipc.setClaudeSetting("model", v || undefined))} options={modelOptions} />
+                    <Select ariaLabel={t("settings.claude.model")} mono value={model} disabled={busy} onChange={(v) => void change(() => ipc.setClaudeSetting(["model"], v || undefined))} options={modelOptions} />
                   </div>
                 </SettingRow>
                 <SettingRow title={t("settings.claude.mode")} detail={t("settings.claude.modeDetail")}>
                   <div className="w-[160px]">
-                    <Select ariaLabel={t("settings.claude.mode")} value={perms.defaultMode ?? "default"} disabled={busy} onChange={(v) => void change(() => ipc.setClaudeSetting("permissions.defaultMode", v === "default" ? undefined : v))} options={MODES.map((m) => ({ value: m, label: t(MODE_LABEL[m]) }))} />
+                    <Select ariaLabel={t("settings.claude.mode")} value={perms.defaultMode ?? "default"} disabled={busy} onChange={(v) => void change(() => ipc.setClaudeSetting(["permissions", "defaultMode"], v === "default" ? undefined : v))} options={MODES.map((m) => ({ value: m, label: t(MODE_LABEL[m]) }))} />
                   </div>
                 </SettingRow>
               </>
@@ -222,10 +228,9 @@ export function ClaudeSettings({ load = ipc.claudeSettings }: { load?: () => Pro
               <RuleGroup
                 key={g.id}
                 g={g}
-                onRule={(rule, on) => void change(() => ipc.setClaudeRule("allow", rule, on))}
-                onGroup={(grp, on) => void change(async () => {
-                  for (const rule of groupToggle(grp, on)) await ipc.setClaudeRule("allow", rule, on);
-                })}
+                busy={busy}
+                onRule={(rule, on) => void change(() => ipc.setClaudeRules("allow", [rule], on))}
+                onGroup={(grp, on) => void change(() => ipc.setClaudeRules("allow", groupToggle(grp, on), on))}
               />
             ))}
             <div className="flex items-center gap-2 px-4 py-3">
@@ -248,7 +253,7 @@ export function ClaudeSettings({ load = ipc.claudeSettings }: { load?: () => Pro
               <div className="flex flex-col divide-y divide-ac-line">
                 {plugins.map((p) => (
                   <SettingRow key={p.id} title={<span className="font-ac-mono text-xs">{p.id}</span>}>
-                    <Switch label={p.id} checked={p.on} disabled={busy} onChange={(on) => void change(() => ipc.setClaudeSetting(`enabledPlugins.${p.id}`, on))} />
+                    <Switch label={p.id} checked={p.on} disabled={busy} onChange={(on) => void change(() => ipc.setClaudeSetting(["enabledPlugins", p.id], on))} />
                   </SettingRow>
                 ))}
               </div>
