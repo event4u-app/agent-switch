@@ -655,6 +655,7 @@ The same components as the window, in this order:
 ### 10.8 Chat view (v3.1, hosted sessions only)
 
 - It is the same session as the terminal; the switch is in the session bar.
+- **Usage hint strip** (under the session bar, terminal and chat alike; owner request 2026-11-05): the most pressing of — account near its 5-hour limit ("Move…"), context ≥ 60 % full ("New task? /clear … Same task: /compact", warn from 85 %; "Compact"), warm cache in its last 90 s ("A reply now reuses it"), cold cache re-sending ≥ 50k tokens ("Compact"). Warn tint for warnings, panel for hints, "+N" for the rest, ✕ hides it until its situation changes. Thresholds: `gui/src/v3/hints.ts`.
 - **Copy conversation** (header, right; a 28 px bar above a read-only timeline): the whole session as Markdown from the source text, edits as `diff` fences. The hosted terminal has "Copy terminal output" top right on hover: the scrollback as plain text.
 - **User bubble:** right-aligned, raise fill, 10 px.
 - **Assistant prose:** soft text rendered as markdown (owner request 2026-11-05): headings, lists and task lists, tables in a horizontal scroller, code in a 10 px panel with its language and a copy button, a `diff` fence in the diff view, `<details>` as a collapsed 10 px panel, links only for http(s). Other HTML stays literal text. Plan text the same. User bubbles stay plain. Dialect: `agents/evidence/markdown-corpus-2026-11.md`.

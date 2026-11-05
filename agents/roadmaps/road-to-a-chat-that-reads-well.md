@@ -157,15 +157,18 @@ cache warm, switch before the limit) is shown in the chat, from our own numbers.
 
 ## Phase 6 — Hints that save the account
 
-- [ ] **6.1 Rules.** From our values: context ≥ threshold → suggest `/clear`
+- [x] **6.1 Rules.** From our values: context ≥ threshold → suggest `/clear`
       or `/compact` with the token count; warm cache about to expire → "reply
       now"; cold cache → what the next turn re-sends; account near its limit →
       switch. Thresholds named, not guessed.
-      verify: pure rule tests in `gui/src/v3/` next to `timeline.ts`.
-- [ ] **6.2 In the chat.** A hint row in the chat (dismissible, never
+      verify: `gui/src/v3/hints.test.ts` against the named thresholds in
+      `hints.ts`.
+- [x] **6.2 In the chat.** A hint row in the chat (dismissible, never
       repeating the same hint for the same state) with a one-click action
       where one exists.
-      verify: render tests; screenshot.
+      verify: `hint-strip.test.tsx`; headless render of `design.html?view=hints`
+      (darcula, github-light). The strip sits under the session bar, so it
+      shows for terminal and chat sessions alike.
 
 ## Open owner decisions
 
