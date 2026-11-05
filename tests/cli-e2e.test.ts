@@ -348,6 +348,33 @@ test("`takeover --print-only` moves the transcript between profiles and prints t
   }
 });
 
+test("`takeover` carries the source's folder trust to the target, never invents it", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    const cfg = (p: string) => path.join(home, "claude", p, "config", ".claude.json");
+    seed(home, "claude", "privat");
+    seed(home, "claude", "work");
+    seed(home, "claude", "team");
+    fs.writeFileSync(cfg("privat"), JSON.stringify({ projects: { "/tmp/proj": { hasTrustDialogAccepted: true, allowedTools: ["Bash"] } } }));
+    fs.writeFileSync(cfg("work"), JSON.stringify({ theme: "light", projects: { "/other": { hasTrustDialogAccepted: true } } }));
+    seedTranscript(home, "privat", "-tmp-proj", "0000-trust-id");
+    run(home, ["takeover", "0000-trust-id", "--to", "work", "--print-only"]);
+    const work = JSON.parse(fs.readFileSync(cfg("work"), "utf8"));
+    assert.equal(work.projects["/tmp/proj"].hasTrustDialogAccepted, true);
+    assert.equal(work.projects["/tmp/proj"].allowedTools, undefined); // trust only, not the source's permissions
+    assert.equal(work.theme, "light");
+    assert.equal(work.projects["/other"].hasTrustDialogAccepted, true);
+
+    // The source never trusted the folder: the target stays as it was.
+    seedTranscript(home, "work", "-tmp-proj", "0000-untrusted-id");
+    fs.writeFileSync(cfg("work"), JSON.stringify({ theme: "light" }));
+    run(home, ["takeover", "0000-untrusted-id", "--to", "team", "--print-only"]);
+    assert.deepEqual(JSON.parse(fs.readFileSync(cfg("team"), "utf8")), {});
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("`takeover` names the cache cost before it moves, by organization (road-to-sessions-that-show-their-cache)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   const org = (profile: string, uuid: string) =>
