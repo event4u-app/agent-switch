@@ -2,14 +2,14 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change. A repository that does not commit this file has no git history for it — regenerate to see the current state.
 >
-> 1 open roadmap · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 2 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**16 / 17 steps done · 94%**
+**29 / 33 steps done · 88%**
 
 ```text
-██████████████████████████████████████░░   94%
+███████████████████████████████████░░░░░   88%
 ```
 
 ## Open roadmaps
@@ -17,6 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 1 | 16 | 0 | 0 | 0 | █████████░ 94% |
+| 2 | [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md) | 5 | 17 | 3 | 13 | 0 | 1 | 0 | ████████░░ 81% |
 
 ---
 
@@ -57,6 +58,18 @@
 | 5 | A browser agent-switch controls | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
 | 6 | Hints that save the account | ✅ done | 0 | 2 | 0 | 0 | 100% |
 
+### [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md)
+
+**the agent-config link — one switch decision, two tools** — 13 / 16 done (81%)
+
+| # | Phase | State | Open | Done | Deferred | Cancelled | % |
+|---|---|---|---:|---:|---:|---:|---:|
+| 1 | Core on `main` (2.x) | ✅ done | 0 | 6 | 0 | 1 | 100% |
+| 2 | MCP server and the setting (`main`) | ✅ done | 0 | 4 | 0 | 0 | 100% |
+| 3 | GUI on `main` (2.x redesign) | ✅ done | 0 | 2 | 0 | 0 | 100% |
+| 4 | v3 (`feat/v3-design-fidelity`) | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 5 | Docs | ✅ done | 0 | 1 | 0 | 0 | 100% |
+
 ## Age
 
 Days since each active roadmap landed at its path and since its last ticked step, read from `git log` (`—` = unknown, or never ticked).
@@ -64,4 +77,5 @@ Days since each active roadmap landed at its path and since its last ticked step
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 0 | 0 |
+| [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md) | — | — |
 

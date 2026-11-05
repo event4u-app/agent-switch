@@ -104,7 +104,7 @@ export function cmdMcp(sub: string | undefined, arg: string | undefined, flags: 
     if (!flags.json) console.log(`Revealed ${a.configFile}.`);
     return;
   }
-  if (sub) die("usage: agent-switch mcp [--json] · mcp open <provider/account>");
+  if (sub) die("usage: agent-switch mcp [--json] · mcp open <provider/account> · mcp serve");
   if (flags.json) return void console.log(JSON.stringify(all));
   for (const a of all) {
     console.log(`${a.key}  ${a.configFile}`);

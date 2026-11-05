@@ -69,6 +69,7 @@ export function emptyViewModel(now: number = Date.now()): ViewModel {
     hideSummaries: false,
     trayShowDisabled: false,
     usageNextAt: null,
+    switchRequests: [],
   };
 }
 
@@ -101,7 +102,7 @@ export async function loadViewModel(): Promise<ViewModel> {
   ]);
   // The foundation readouts. Each degrades on its own: an older CLI without
   // the command leaves that area unknown, never fakes it.
-  const [protectionR, authR, poolsR, mappingsR, doctorR, activityR, guardR, desktopR, launchersR] = await Promise.allSettled([
+  const [protectionR, authR, poolsR, mappingsR, doctorR, activityR, guardR, desktopR, launchersR, requestsR] = await Promise.allSettled([
     ipc.listProtection(),
     ipc.authStatus(),
     ipc.listPools(),
@@ -111,6 +112,7 @@ export async function loadViewModel(): Promise<ViewModel> {
     ipc.getGuard(),
     ipc.desktopInstances(),
     ipc.listLaunchers(),
+    ipc.listSwitchRequests(),
   ]);
   const readAt = Date.now();
 
@@ -175,5 +177,6 @@ export async function loadViewModel(): Promise<ViewModel> {
     hideSummaries: getHideSummaries(),
     trayShowDisabled: getTrayShowDisabled(),
     usageNextAt: getNextUsageRefreshAt() || null,
+    switchRequests: value(requestsR) ?? [],
   };
 }

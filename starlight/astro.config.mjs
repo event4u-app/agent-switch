@@ -93,6 +93,7 @@ export default defineConfig({
 						{ slug: 'guides/move-a-session' },
 						{ slug: 'guides/chat-view' },
 						{ slug: 'guides/remote-access' },
+						{ slug: 'guides/agent-config' },
 						{ slug: 'guides/desktop-app' },
 						{ slug: 'guides/notifications-and-pet' },
 						{ slug: 'guides/share-settings' },

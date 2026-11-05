@@ -307,4 +307,6 @@ export interface ViewModel {
   /** The raw `sessions --json` rows behind `sessions`, for the v3 window
    *  (git, PRs, children, library); empty until the first read. */
   sessionRows?: import("../transforms.js").SessionRow[];
+  /** Switch requests shared with agent-config (road-to-the-agent-config-link). */
+  switchRequests: import("../ipc.js").SwitchRequestRow[];
 }
