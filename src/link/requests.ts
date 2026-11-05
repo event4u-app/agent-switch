@@ -52,7 +52,8 @@ export interface SwitchRequest {
   candidates: Candidate[];
   state: RequestState;
   decision?: { kind: "approve" | "decline" | "snooze"; target?: string; how?: MoveHow; by: string; at: string };
-  outcome?: { at: string; ok: boolean; detail: string; newSession?: string };
+  /** `resume`: the command that opens the moved work when it could not open by itself. */
+  outcome?: { at: string; ok: boolean; detail: string; newSession?: string; resume?: string };
 }
 
 export type RaiseInput = Pick<SwitchRequest, "account" | "session" | "reason" | "raisedBy" | "candidates">;
@@ -181,11 +182,17 @@ export class RequestStore {
     });
   }
 
-  finish(id: string, o: { ok: boolean; detail: string; newSession?: string }): SwitchRequest | null {
+  finish(id: string, o: { ok: boolean; detail: string; newSession?: string; resume?: string }): SwitchRequest | null {
     return this.locked(() => {
       const r = this.read(id);
       if (!r || r.state !== "executing") return null;
-      const outcome = { at: new Date(this.now()).toISOString(), ok: o.ok, detail: o.detail, ...(o.newSession ? { newSession: o.newSession } : {}) };
+      const outcome = {
+        at: new Date(this.now()).toISOString(),
+        ok: o.ok,
+        detail: o.detail,
+        ...(o.newSession ? { newSession: o.newSession } : {}),
+        ...(o.resume ? { resume: o.resume } : {}),
+      };
       const next: SwitchRequest = { ...r, state: o.ok ? "done" : "failed", outcome, rev: r.rev + 1 };
       this.write(next);
       return next;

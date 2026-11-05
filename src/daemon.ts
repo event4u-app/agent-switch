@@ -59,6 +59,8 @@ import { execFileSync } from "node:child_process";
 import { appendActivity } from "./activity.js";
 import { rebind } from "./rebind.js";
 import { armsFile, watchArmsOnce, type ArmWatchDeps } from "./rebind-arm.js";
+import { executeApproved } from "./link/execute.js";
+import { REQUESTS_DIR, requestStore, selfRunner } from "./link/store.js";
 
 /** Append an event to the shared log and, when the operator opted into
  *  daemon-side OS notifications, fire a desktop notification too — marking the
@@ -512,6 +514,36 @@ export function startArmWatcher(deps: ArmWatchDeps, everyMs = ARM_WATCH_MS): () 
   return () => clearInterval(timer);
 }
 
+/** How often the daemon looks for switch requests the user approved. A tick
+ *  with no request directory returns at once. */
+export const REQUEST_WATCH_MS = 2_000;
+
+/** Carry out approved switch requests (road-to-the-agent-config-link). Only
+ *  requests the user approved — in the app, the CLI or agent-config — are run. */
+export function startRequestExecutor(log: (l: string) => void, everyMs = REQUEST_WATCH_MS): () => void {
+  let busy = false;
+  let ticks = 0;
+  const timer = setInterval(() => {
+    if (busy || !fs.existsSync(REQUESTS_DIR)) return;
+    busy = true;
+    try {
+      const store = requestStore();
+      for (const r of executeApproved(store, selfRunner)) {
+        const ok = r.state === "done";
+        log(`switch request ${r.id}: ${r.state} — ${r.outcome?.detail ?? ""}`);
+        notify({ kind: ok ? "success" : "error", title: ok ? "Moved" : "Move failed", message: `${r.account} → ${r.decision?.target}: ${r.outcome?.detail ?? ""}`, key: `switch:${r.id}` });
+      }
+      if (++ticks % 1800 === 0) store.prune();
+    } catch (err: any) {
+      log(`switch request error: ${String(err?.message ?? err)}`);
+    } finally {
+      busy = false;
+    }
+  }, everyMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+
 // ---------- the loop ----------
 
 interface RunOptions {
@@ -819,6 +851,7 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
 
   log(`started (pid ${process.pid}, base interval ${baseInterval}ms).`);
   const stopArmWatcher = startArmWatcher(armWatchDeps(log));
+  const stopRequestExecutor = startRequestExecutor(log);
   while (running) {
     try {
       const { failures, attempted } = await pollOnce(state, thresholds, notifiedReset, backoff, baseInterval, log);
@@ -839,5 +872,6 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
     await new Promise((r) => setTimeout(r, wait + jitter));
   }
   stopArmWatcher();
+  stopRequestExecutor();
   releaseSingleInstance(process.pid);
 }

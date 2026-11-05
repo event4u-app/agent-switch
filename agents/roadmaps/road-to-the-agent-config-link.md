@@ -118,7 +118,7 @@ CLI front door stays (it is the user's own tool).
       `busy`); add one cross-provider handoff candidate when another provider
       has a usable account.
       verify: unit tests incl. "every other account busy → only handoff".
-- [ ] **1.4 Executor.** Daemon tick: `approved → executing → done|failed`,
+- [x] **1.4 Executor.** Daemon tick: `approved → executing → done|failed`,
       mapping `how` onto the existing paths. Idempotent by id; a failed launch
       after transfer reports `failed` with the new location, never retries
       blind.
