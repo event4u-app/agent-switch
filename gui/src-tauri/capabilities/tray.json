@@ -176,6 +176,16 @@
             "list",
             "--json"
           ]
+        },
+        {
+          "name": "as-read-switch-requests",
+          "cmd": "agent-switch",
+          "args": [
+            "switch",
+            "list",
+            "--all",
+            "--json"
+          ]
         }
       ]
     }
