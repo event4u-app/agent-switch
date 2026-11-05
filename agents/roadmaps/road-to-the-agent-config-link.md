@@ -40,7 +40,7 @@ Phase 4, which owns them.
 | The move decision + execution live in the GUI only | `gui/src/v3/adapter/actions.ts:128-217`, `gui/src/v3/adapter/data.ts:446-512` |
 | Only persisted move state: rebind arms, no id, no queryable result | `src/rebind-arm.ts:24-246` |
 | No transfer/idempotency id on `takeover`, `rebind`, `continue` | `src/commands/takeover.ts`, `src/commands/continue.ts` |
-| `takeover --print-only` still transfers files | `src/commands/takeover.ts:277` before `:300`; Codex `:405` |
+| `takeover --print-only` moves and only skips the launch (documented) | `guides/move-a-session.mdx:84`, `tests/cli-e2e.test.ts:333` |
 | No MCP server, no MCP SDK; `mcp` only lists account configs | `src/commands/mcp.ts`, `package.json` (zero runtime deps) |
 | Only listener: `engine.sock` (0600), closed op allowlist, sync handler | `src/protocol/messages.ts:10,54-58`, `src/engine/server.ts` |
 | Default-on boolean pattern | `src/profiles.ts:331-361` (`keepSignedIn`) |
@@ -131,10 +131,11 @@ CLI front door stays (it is the user's own tool).
       second tick → same id.
 - [ ] **1.6 CLI.** `agent-switch switch list|show|request|decide|status --json`.
       verify: CLI tests for each verb's JSON shape and exit codes.
-- [ ] **1.7 Fix `--print-only` transferring files** (spotted while mapping:
-      the transfer runs before the print-only check, Claude and Codex). Move the
-      check before `transferSession`.
-      verify: red-first test asserting the source file is untouched.
+- [-] **1.7 ~~Fix `--print-only` transferring files~~ — cancelled, not a defect.**
+      Moving and only skipping the launch is the documented contract
+      (`starlight/src/content/docs/guides/move-a-session.mdx:84` "--print-only
+      still moves") and is pinned by `tests/cli-e2e.test.ts:333`. The mapping
+      read it as a preview flag; it never was one.
 
 ## Phase 2 — MCP server and the setting (`main`)
 
