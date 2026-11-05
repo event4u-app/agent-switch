@@ -3,7 +3,7 @@
 
 import { useMemo } from "react";
 
-import { ChatTimeline } from "./chat.js";
+import { ChatTimeline, CopyConversation } from "./chat.js";
 import { Composer, MODE_LABEL } from "./composer.js";
 import { fold } from "./timeline.js";
 import type { BridgeActions, BridgeState } from "./adapter/useBridge.js";
@@ -43,9 +43,12 @@ export function ChatView({ b, findFiles, worktreeOf }: { b: BridgeState & Bridge
             <span title="What the turns in this window cost, as Claude reports it">${cost.toFixed(cost < 1 ? 3 : 2)}</span>
           </>
         )}
-        {b.status === "starting" && <span className="ml-auto">Connecting…</span>}
+        <span className="ml-auto flex items-center gap-2">
+          {b.status === "starting" && <span>Connecting…</span>}
+          {f.rows.length > 0 && <CopyConversation rows={f.rows} />}
+        </span>
       </div>
-      <ChatTimeline events={b.events} notice={notice} on={b.status === "ready" ? { approve: b.approve, deny: b.deny, answer: b.answer, worktreeOf } : { worktreeOf }} />
+      <ChatTimeline copyBar={false} events={b.events} notice={notice} on={b.status === "ready" ? { approve: b.approve, deny: b.deny, answer: b.answer, worktreeOf } : { worktreeOf }} />
       <Composer
         running={running}
         queued={b.queued}

@@ -1,7 +1,8 @@
 /**
  * `agent-switch open <session> [--with <target>] [--file F] [--line N]`,
  * `agent-switch open-targets <session> [--json]`,
- * `agent-switch open-default <target> [--repo DIR]` and
+ * `agent-switch open-default <target> [--repo DIR]`,
+ * `agent-switch open-terminal <terminal>` and
  * `agent-switch focus <session>` (road-to-agent-switch-v3-central Phase 5).
  */
 
@@ -16,6 +17,7 @@ import { liveSessions } from "../api.js";
 import { configDir } from "../profiles.js";
 import { confine, defaultTarget, menu, OpenRefused, openSettingsFile, plan, readOpenSettings, realEnv, TARGET_IDS, writeOpenSettings, type TargetId } from "../open-in.js";
 import { focusSession, FocusFailed } from "../focus-terminal.js";
+import { pickTerminal, terminals, TERMINAL_IDS, type TerminalId } from "../terminals.js";
 import { githubRepo, prCacheFile, prsForHead, readPrCache } from "../pr-facts.js";
 import { resolveSession } from "./library.js";
 import { TmuxHost } from "../host/tmux-host.js";
@@ -52,7 +54,7 @@ function where(arg: string | undefined): Where {
 export function cmdOpenSession(arg: string | undefined, flags: Record<string, string | boolean>): void {
   const w = where(arg);
   const settings = readOpenSettings(openSettingsFile(ROOT));
-  const target = (typeof flags.with === "string" ? flags.with : defaultTarget(settings, w.repo, menu(realEnv, w.root))) as TargetId | null;
+  const target = (typeof flags.with === "string" ? flags.with : defaultTarget(settings, w.repo, menu(realEnv, w.root, settings.terminal))) as TargetId | null;
   if (!target) die("no editor found to open it with; pass --with " + TARGET_IDS.join("|"));
   if (!TARGET_IDS.includes(target)) die(`--with is one of ${TARGET_IDS.join(", ")}`);
   let dir: string;
@@ -65,7 +67,7 @@ export function cmdOpenSession(arg: string | undefined, flags: Record<string, st
     throw err;
   }
   const line = typeof flags.line === "string" && /^[1-9]\d{0,6}$/.test(flags.line) ? Number(flags.line) : undefined;
-  const p = plan(target, dir, realEnv, file, line);
+  const p = plan(target, dir, realEnv, file, line, settings.terminal);
   if (!p) die(`${target} is not installed here`);
   if (flags["dry-run"]) return void console.log(JSON.stringify(p));
   spawn(p.program, p.args, { detached: true, stdio: "ignore" }).unref();
@@ -78,8 +80,8 @@ export function cmdOpenTargets(arg: string | undefined, flags: Record<string, st
   if (!arg) {
     // No session: what the Open-in settings page shows (spec §10.5).
     const s = readOpenSettings(openSettingsFile(ROOT));
-    const targets = menu(realEnv);
-    const out = { default: defaultTarget(s, null, targets), perRepo: s.perRepo, lastUsed: s.lastUsed, targets };
+    const targets = menu(realEnv, "/", s.terminal);
+    const out = { default: defaultTarget(s, null, targets), perRepo: s.perRepo, lastUsed: s.lastUsed, targets, terminal: pickTerminal(s.terminal, realEnv), terminals: terminals(realEnv) };
     if (flags.json) return void console.log(JSON.stringify(out, null, 2));
     for (const e of targets) console.log(`  ${e.installed ? "•" : " "} ${e.target}${e.target === out.default ? "  (default)" : ""}${e.installed ? "" : "  not installed"}`);
     for (const [repo, t] of Object.entries(s.perRepo)) console.log(`  ${repo} → ${t}`);
@@ -87,7 +89,7 @@ export function cmdOpenTargets(arg: string | undefined, flags: Record<string, st
   }
   const w = where(arg);
   const settings = readOpenSettings(openSettingsFile(ROOT));
-  const entries = menu(realEnv, w.root);
+  const entries = menu(realEnv, w.root, settings.terminal);
   const repo = githubRepo(w.remote);
   const pr = repo ? prsForHead(readPrCache(prCacheFile(ROOT)), repo, w.headSha)[0] ?? null : null;
   const out = {
@@ -116,6 +118,16 @@ export function cmdOpenDefault(target: string | undefined, flags: Record<string,
   else s.default = target as TargetId;
   writeOpenSettings(openSettingsFile(ROOT), s);
   console.log(typeof flags.repo === "string" ? `Default for ${canonical(flags.repo)}: ${target}.` : `Default: ${target}.`);
+}
+
+/** Which terminal app "Terminal" opens, and where a takeover's new window starts. */
+export function cmdOpenTerminal(id: string | undefined): void {
+  if (!id || !TERMINAL_IDS.includes(id as TerminalId)) die(`usage: agent-switch open-terminal ${TERMINAL_IDS.join("|")}`);
+  const installed = terminals(realEnv).find((t) => t.id === id);
+  if (!installed?.installed) die(`${id} is not installed here (installed: ${terminals(realEnv).filter((t) => t.installed).map((t) => t.id).join(", ") || "none"})`);
+  const s = readOpenSettings(openSettingsFile(ROOT));
+  writeOpenSettings(openSettingsFile(ROOT), { ...s, terminal: id as TerminalId });
+  console.log(`Terminal: ${installed.name}.`);
 }
 
 export function cmdFocus(arg: string | undefined): void {

@@ -216,6 +216,8 @@ export const accounts: { readonly [K in keyof typeof en]: string } = {
   "accounts.reauth.withGoogle": "Mit Google anmelden",
   "accounts.reauth.openIn": "Anmeldung öffnen in",
   "accounts.reauth.defaultBrowser": "Standardbrowser",
+  "accounts.reauth.ownProfile": "Eigenes Browser-Profil für diesen Account",
+  "accounts.reauth.ownProfileDetail": "Meldet dich mit einem eigenen Profil dieses Browsers an, damit der Account seinen eigenen Google-Login behält. Melde dich dort einmal bei Google an.",
   "accounts.reauth.codexBrowser": "Codex öffnet selbst deinen Standardbrowser. Ist das der falsche, kopier den Link, den es unten zeigt, in den gewünschten Browser – die Anmeldung klappt in jedem Browser.",
   "accounts.reauth.unfinished": "Die Anmeldung wurde nicht abgeschlossen – nichts geändert. Versuch es noch mal.",
   "accounts.reauth.readFailed": "Die Anmeldung ließ sich nicht lesen: {error}",

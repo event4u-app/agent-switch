@@ -361,6 +361,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       defaultTarget: feeds.openTargets?.default ?? null,
       lastUsed: feeds.openTargets?.lastUsed ?? null,
       perRepo: feeds.openTargets?.perRepo ?? {},
+      terminal: feeds.openTargets?.terminal ?? null,
+      terminals: feeds.openTargets?.terminals ?? [],
       focusTerminal: env.focusTerminal,
       // Only the desktop apps of a tool, and only where they are installed (spec §7.7).
       agentApps: vm.surfaces.filter((x) => x.kind === "desktop" && x.detected && AGENT_APPS.includes(x.id)).map((x) => ({ id: x.id, label: x.name, tool: x.tool })),
@@ -384,6 +386,9 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
         modelId: r.context?.model ?? null,
         thinking: (r.context as { effort?: string | null } | null | undefined)?.effort ?? null,
         contextPct: r.context?.pct ?? null,
+        tool: r.provider,
+        contextTokens: r.context?.contextTokens ?? null,
+        cache: r.cache ?? null,
       };
     },
     models: (key): ModelChoices | null => {

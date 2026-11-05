@@ -247,7 +247,7 @@ export function AddAccountDialog({ tool: initialTool }: { tool?: string }) {
           </Card>
           {signIn.state === "pending" && (
             <div className="flex h-[240px] overflow-hidden rounded-lg border border-ac-line bg-ac-bg p-3">
-              <XtermBox key={signIn.run} args={signInArgs(provider, name, created, login.browser || undefined)} backend={tauriBackend} onExit={() => void finished()} />
+              <XtermBox key={signIn.run} args={signInArgs(provider, name, created, login.browser || undefined, login.isolated)} backend={tauriBackend} onExit={() => void finished()} />
             </div>
           )}
         </div>

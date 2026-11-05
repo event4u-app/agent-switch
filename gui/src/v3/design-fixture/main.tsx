@@ -18,6 +18,10 @@ import type { LimitAccount } from "../limits.js";
 import type { RowSession } from "../sessions.js";
 import type { TermBackend } from "../../terminal.js";
 import { TERMINALS } from "./terminal.js";
+import { Bubble } from "../chat.js";
+import { FIXTURES } from "../markdown/fixtures.js";
+import { Markdown } from "../markdown/Markdown.js";
+import { HintStrip, type BarSession } from "../workbench.js";
 
 const q = new URLSearchParams(location.search);
 const THEME = q.get("theme") || "darcula";
@@ -226,6 +230,41 @@ function App() {
     ),
     settings: (s) => <p className="text-[13px] text-ac-muted">{`(2.11 ${s} section)`}</p>,
   };
+  if (q.get("view") === "markdown") {
+    // Agent markdown (road-to-a-chat-that-reads-well 2.4): every fixture as an assistant reply.
+    return (
+      <AcRoot className="h-full" mode={def.mode} style={vars as CSSProperties}>
+        <div className="h-full space-y-4 overflow-y-auto bg-ac-bg px-6 py-4">
+          <Bubble>Zeige mir die letzten 4 Änderungen als Tabelle</Bubble>
+          {Object.entries(FIXTURES).map(([k, src]) => (
+            <Markdown key={k} source={src} className="max-w-[86%]" />
+          ))}
+        </div>
+      </AcRoot>
+    );
+  }
+  if (q.get("view") === "hints") {
+    // Usage hints (road-to-a-chat-that-reads-well 6.2), one strip per kind.
+    const b = (o: Partial<BarSession>): BarSession => ({ key: "k", hosted: true, chatAvailable: true, view: "chat", account: { name: "work", color: "teal", fiveH: 20, protect: 95 }, model: "Opus 4.7", thinking: null, contextPct: 10, tool: "claude", contextTokens: 20_000, cache: null, ...o });
+    const variants = [
+      b({ account: { name: "work", color: "teal", fiveH: 97, protect: 95 } }),
+      b({ contextPct: 66, contextTokens: 660_200 }),
+      b({ contextPct: 88, contextTokens: 176_000 }),
+      b({ cache: { state: "warm", ttl: "5m", lastResponseAt: null, expiresAt: new Date(Date.now() + 42_000).toISOString(), resendTokens: null, source: "transcript" }, contextTokens: 182_000 }),
+      b({ cache: { state: "cold", ttl: null, lastResponseAt: "2026-11-05T08:00:00Z", expiresAt: null, resendTokens: 240_000, source: "transcript" } }),
+    ];
+    return (
+      <AcRoot className="h-full" mode={def.mode} style={vars as CSSProperties}>
+        <div className="h-full space-y-3 bg-ac-bg p-4">
+          {variants.map((v, i) => (
+            <div key={i} className="overflow-hidden rounded-[10px] border border-ac-line">
+              <HintStrip s={v} dismissed={new Set()} onDismiss={() => {}} onAction={() => {}} />
+            </div>
+          ))}
+        </div>
+      </AcRoot>
+    );
+  }
   if (q.get("view") === "tray") {
     const noop = () => {};
     return (

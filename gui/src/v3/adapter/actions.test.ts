@@ -22,6 +22,7 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
     setLibraryFlag: vi.fn(async () => {}),
     setAutoKeep: vi.fn(async () => {}),
     setOpenDefault: vi.fn(async () => {}),
+    setOpenTerminal: vi.fn(async () => {}),
     setAgentEnabled: vi.fn(async () => {}),
     setRemoteControl: vi.fn(async () => {}),
     setRemoteSsh: vi.fn(async () => {}),
@@ -251,6 +252,8 @@ describe("dispatchV3", () => {
     expect(d.setAppearance).toHaveBeenCalledWith(DEFAULT_APPEARANCE);
     await dispatchV3({ type: "open-default", target: "finder", repo: "/r" }, d);
     expect(d.ipc.setOpenDefault).toHaveBeenCalledWith("finder", "/r");
+    await dispatchV3({ type: "open-terminal", id: "iterm" }, d);
+    expect(d.ipc.setOpenTerminal).toHaveBeenCalledWith("iterm");
     dispatchV3({ type: "focus-terminal-setting", value: false }, d);
     expect(d.setFocusTerminal).toHaveBeenCalledWith(false);
     await dispatchV3({ type: "restart-engine" }, d);

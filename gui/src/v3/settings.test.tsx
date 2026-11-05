@@ -50,6 +50,21 @@ describe("Settings (spec §10.5)", () => {
     expect(on.focusTerminal).toHaveBeenCalledWith(false);
   });
 
+  it("Open in: a Terminal row lists only installed terminals and shows the chosen one; no row without any", () => {
+    const on = { setDefault: vi.fn(), setTerminal: vi.fn(), focusTerminal: vi.fn() };
+    const terminals = [
+      { id: "terminal", name: "Terminal", installed: true },
+      { id: "iterm", name: "iTerm2", installed: true },
+      { id: "warp", name: "Warp", installed: false },
+    ];
+    const { unmount } = render(<OpenInSettings defaultTarget={null} perRepo={{}} focusTerminal on={on} targets={[]} terminal="iterm" terminals={terminals} />);
+    const select = screen.getByRole("combobox", { name: "Terminal app" });
+    expect(select.textContent).toContain("iTerm2");
+    unmount();
+    render(<OpenInSettings defaultTarget={null} perRepo={{}} focusTerminal on={on} targets={[]} terminal={null} terminals={[{ id: "warp", name: "Warp", installed: false }]} />);
+    expect(screen.queryByRole("combobox", { name: "Terminal app" })).toBeNull();
+  });
+
   it("Open in: each target with its monogram and where it was found; agent apps first (board \"editors\")", () => {
     const on = { setDefault: vi.fn(), focusTerminal: vi.fn() };
     render(

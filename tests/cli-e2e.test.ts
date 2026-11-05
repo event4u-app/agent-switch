@@ -2090,13 +2090,13 @@ test("notify: an identical notice is collapsed, unless --repeat says each one is
   }
 });
 
-test("browsers --json lists installed browsers as {id, name}", gate, () => {
+test("browsers --json lists installed browsers as {id, name, isolatable}", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
     const list = JSON.parse(run(home, ["browsers", "--json"]));
     assert.ok(Array.isArray(list));
-    for (const b of list) assert.deepEqual(Object.keys(b).sort(), ["id", "name"]);
-    if (process.platform === "darwin") assert.ok(list.some((b: { id: string }) => b.id === "safari"));
+    for (const b of list) assert.deepEqual(Object.keys(b).sort(), ["id", "isolatable", "name"]);
+    if (process.platform === "darwin") assert.ok(list.some((b: { id: string; isolatable: boolean }) => b.id === "safari" && b.isolatable === false));
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

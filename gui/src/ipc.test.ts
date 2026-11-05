@@ -154,6 +154,8 @@ describe("ipc", () => {
 
   it("loginArgs / sessionArgs build the args the embedded terminal runs (no external window)", () => {
     expect(loginArgs("codex", "work")).toEqual(["add", "work", "--provider", "codex"]);
+    expect(loginArgs("claude", "work", "chrome", true)).toEqual(["add", "work", "--provider", "claude", "--browser", "chrome", "--isolated"]);
+    expect(loginArgs("claude", "work", undefined, true)).toEqual(["add", "work", "--provider", "claude"]);
     expect(sessionArgs("antigravity", "g")).toEqual(["run", "g", "--provider", "antigravity"]);
     expect(sessionArgs("claude", "w", "/a b")).toEqual(["run", "w", "--provider", "claude", "--cwd", "/a b"]);
   });

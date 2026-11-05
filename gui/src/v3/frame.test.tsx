@@ -69,4 +69,17 @@ describe("window frame (spec §4)", () => {
     expect(actions.onStart).toHaveBeenCalledOnce();
     expect(actions.onSearch).toHaveBeenCalledOnce();
   });
+
+  it("the title bar drags the window: the bar and its empty areas carry the drag region, the controls do not", () => {
+    const { container } = render(<TitleBar health="down" inbox={{ count: 2, ciFailing: false }} {...actions} />);
+    const header = container.querySelector("header")!;
+    expect(header.hasAttribute("data-tauri-drag-region")).toBe(true);
+    // Tauri only starts a drag when the pressed element itself carries the attribute,
+    // so the stretch area around the search field needs it too.
+    const searchSlot = screen.getByText(/Go to session/).closest("button")!.parentElement!;
+    expect(searchSlot.hasAttribute("data-tauri-drag-region")).toBe(true);
+    for (const control of container.querySelectorAll("button")) {
+      expect(control.hasAttribute("data-tauri-drag-region")).toBe(false);
+    }
+  });
 });

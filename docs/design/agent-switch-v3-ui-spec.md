@@ -630,7 +630,8 @@ Updates also arrive as Needs-you items.
 - **Open in:**
   - Targets list. Agent apps are offered only for their own tool; editors open the worktree root.
   - Default for the Open button, globally and per repository.
-  - "Focus terminal" switch, with the macOS Automation note (error −1743 is explained, not hidden).
+  - "Terminal" select: only installed terminals (macOS: Terminal, iTerm2, Ghostty, Warp, WezTerm, kitty, Alacritty). It is what "Terminal › new here" opens and where a takeover's new window starts (Warp cannot run a command, so a takeover then uses Terminal).
+  - "Focus terminal" switch, with the macOS Automation note (error −1743 is explained, not hidden). Focus works with Terminal and iTerm2.
 - **Agents** (v3.2): one row per agent with its integration class ("deep" / "ACP" / "terminal only") and a switch.
 - **Remote** (v3.2):
   - Stages R1 Claude Remote Control (on), R2 own tunnel SSH/Tailscale (on), R3 E2E relay (later).
@@ -654,8 +655,10 @@ The same components as the window, in this order:
 ### 10.8 Chat view (v3.1, hosted sessions only)
 
 - It is the same session as the terminal; the switch is in the session bar.
+- **Usage hint strip** (under the session bar, terminal and chat alike; owner request 2026-11-05): the most pressing of — account near its 5-hour limit ("Move…"), context ≥ 60 % full ("New task? /clear … Same task: /compact", warn from 85 %; "Compact"), warm cache in its last 90 s ("A reply now reuses it"), cold cache re-sending ≥ 50k tokens ("Compact"). Warn tint for warnings, panel for hints, "+N" for the rest, ✕ hides it until its situation changes. Thresholds: `gui/src/v3/hints.ts`.
+- **Copy conversation** (header, right; a 28 px bar above a read-only timeline): the whole session as Markdown from the source text, edits as `diff` fences. The hosted terminal has "Copy terminal output" top right on hover: the scrollback as plain text.
 - **User bubble:** right-aligned, raise fill, 10 px.
-- **Assistant prose:** plain soft text.
+- **Assistant prose:** soft text rendered as markdown (owner request 2026-11-05): headings, lists and task lists, tables in a horizontal scroller, code in a 10 px panel with its language and a copy button, a `diff` fence in the diff view, `<details>` as a collapsed 10 px panel, links only for http(s). Other HTML stays literal text. Plan text the same. User bubbles stay plain. Dialect: `agents/evidence/markdown-corpus-2026-11.md`.
 - **Tool cards:** 10 px, collapsible (chevron); a state dot, the tool name and the argument in mono. "Update" opens to a diff with add/del line backgrounds.
 - **Subagent "Task" row:** state, worktree badge (violet) and "subagent · via hook".
 - **Approval card** (warn tint): "Claude wants to run a command", the command in mono, then "✓ Allow once ↵" (accent), "Always allow “npx vitest”" (secondary), "Deny" (danger), and "Same rule as the terminal prompt · never bypassed".

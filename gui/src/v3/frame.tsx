@@ -42,10 +42,10 @@ export function TitleBar({
   onRestart: () => void;
 }) {
   return (
-    <header className="relative flex h-11 shrink-0 items-center gap-2 border-b border-ac-line bg-ac-rail pl-[84px] pr-3">
-      <AppLogo className="size-6" />
-      <span className="mr-2 text-[13px] font-semibold text-ac-text">Agent Switch</span>
-      <div className="flex flex-1 justify-center">
+    <header data-tauri-drag-region className="relative flex h-11 shrink-0 items-center gap-2 border-b border-ac-line bg-ac-rail pl-[84px] pr-3">
+      <AppLogo className="pointer-events-none size-6" />
+      <span className="pointer-events-none mr-2 text-[13px] font-semibold text-ac-text">Agent Switch</span>
+      <div data-tauri-drag-region className="flex flex-1 justify-center self-stretch items-center">
         <button type="button" onClick={onSearch} className="inline-flex h-7 w-[420px] items-center gap-2 rounded-md border border-ac-line2 bg-ac-bg px-2.5 text-xs text-ac-muted">
           <Search className="size-3.5" />
           <span className="flex-1 truncate text-left">Go to session, account, branch, PR, or run a command…</span>

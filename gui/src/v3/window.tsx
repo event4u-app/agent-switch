@@ -23,7 +23,7 @@ import { SessionsZone, childNoun, type RowSession } from "./sessions.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
 import { updateNeeds } from "./tools.js";
-import { BlockerStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
+import { BlockerStrip, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
 import { Act, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
@@ -49,7 +49,7 @@ export interface V3Data {
   palette: PaletteEntry[];
   appearance: Appearance;
   prefersDark: boolean;
-  openIn: { targets: OpenTarget[]; defaultTarget: string | null; lastUsed: string | null; perRepo: Record<string, string>; focusTerminal: boolean; agentApps: { id: string; label: string; tool: string }[] };
+  openIn: { targets: OpenTarget[]; defaultTarget: string | null; lastUsed: string | null; perRepo: Record<string, string>; focusTerminal: boolean; agentApps: { id: string; label: string; tool: string }[]; terminal?: string | null; terminals?: { id: string; name: string; installed: boolean }[] };
   /** Settings › Agents (v3.2). */
   agents: { rows: AgentRowView[]; suggestions: AgentSuggestionView[] };
   /** Settings › Remote (v3.2): R1 accounts and the SSH stage. */
@@ -111,6 +111,7 @@ export type V3Action =
   | { type: "palette"; entry: PaletteEntry; newTab: boolean }
   | { type: "appearance"; value: Appearance }
   | { type: "open-default"; target: string; repo?: string }
+  | { type: "open-terminal"; id: string }
   | { type: "focus-terminal-setting"; value: boolean }
   | { type: "agent-enabled"; id: string; value: boolean }
   | { type: "agent-install"; id: string }
@@ -173,6 +174,7 @@ export function V3Window({
   const [selection, setSelection] = useState<Set<string> | null>(null);
   const [openKids, setOpenKids] = useState<Set<string>>(new Set());
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [hintsDismissed, setHintsDismissed] = useState<Set<string>>(new Set());
   const [moreOpen, setMoreOpen] = useState(false);
   const [comfortable, setComfortable] = useState(saved?.comfortable ?? false);
   const [groupByProject, setGroupByProject] = useState(saved?.groupByProject ?? false);
@@ -302,7 +304,7 @@ export function V3Window({
         {section === "Appearance" ? (
           <AppearanceSettings a={data.appearance} prefersDark={data.prefersDark} onChange={(value) => act({ type: "appearance", value })} />
         ) : section === "Open in" ? (
-          <OpenInSettings {...data.openIn} on={{ setDefault: (target, repo) => act({ type: "open-default", target, repo }), focusTerminal: (value) => act({ type: "focus-terminal-setting", value }) }} />
+          <OpenInSettings {...data.openIn} on={{ setDefault: (target, repo) => act({ type: "open-default", target, repo }), setTerminal: (id) => act({ type: "open-terminal", id }), focusTerminal: (value) => act({ type: "focus-terminal-setting", value }) }} />
         ) : section === "Agents" ? (
           <AgentsSettings agents={data.agents.rows} suggestions={data.agents.suggestions} on={{ toggle: (id, value) => act({ type: "agent-enabled", id, value }), install: (id) => act({ type: "agent-install", id }) }} />
         ) : section === "Remote" ? (
@@ -453,6 +455,12 @@ export function V3Window({
             on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => setOverlay({ decide: activeSession }), model: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "model" ? null : { model: activeSession, x, chip: "model" })), thinking: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "thinking" ? null : { model: activeSession, x, chip: "thinking" })), menu: () => setOverlay({ menu: activeSession }) }}
           />
           {engineBanner}
+          <HintStrip
+            s={bar}
+            dismissed={hintsDismissed}
+            onDismiss={(k) => setHintsDismissed((d) => new Set([...d, k]))}
+            onAction={(h) => (h.action?.kind === "switch" ? setOverlay({ decide: activeSession }) : act({ type: "session-menu", key: activeSession, item: "Compact" }))}
+          />
           {next && <BlockerStrip text={next.text} action={next.action} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
           {slots.body(activeSession)}
         </>

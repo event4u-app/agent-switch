@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ExternalLink, LoaderCircle, ShieldAlert } from "lucide-react";
 import { t, tp, type TKey } from "../../i18n/index.js";
 import { listBrowsers, listProfiles, type BrowserInfo } from "../../ipc.js";
-import { getLoginBrowser, setLoginBrowser } from "../../settings-store.js";
+import { getLoginBrowser, getLoginIsolated, setLoginBrowser, setLoginIsolated } from "../../settings-store.js";
 import { tauriBackend } from "../../terminal.js";
 import type { ProviderId } from "../../transforms.js";
 import { AccountDot } from "../../ui/AccountDot.js";
@@ -13,6 +13,7 @@ import { Copyable } from "../../ui/CopyButton.js";
 import { ago, expiry } from "../../ui/format.js";
 import { Dialog } from "../../ui/Overlay.js";
 import { Select } from "../../ui/Select.js";
+import { Switch } from "../../ui/Switch.js";
 import { TOOL_LABEL } from "../../vm/rules.js";
 import { useAS } from "../../vm/store.js";
 import type { Tool } from "../../vm/types.js";
@@ -59,20 +60,34 @@ export interface LoginBrowser {
   /** "" = the default browser; a remembered one that is gone falls back to it. */
   browser: string;
   pick(id: string): void;
+  /** The chosen browser can keep one profile per account. */
+  canIsolate: boolean;
+  /** The sign-in opens in the account's own browser profile. */
+  isolated: boolean;
+  setIsolated(on: boolean): void;
 }
 
 /** The browser a sign-in opens in, remembered across sign-ins. */
 export function useLoginBrowser(tool: Tool): LoginBrowser {
   const browsers = useBrowsers();
   const [picked, setPicked] = useState(getLoginBrowser);
+  const [isolatedPref, setIsolatedPref] = useState(getLoginIsolated);
   const choosable = tool === "claude" && browsers.length > 0;
+  const browser = choosable && browsers.some((b) => b.id === picked) ? picked : "";
+  const canIsolate = !!browser && browsers.some((b) => b.id === browser && b.isolatable);
   return {
     browsers,
     choosable,
-    browser: choosable && browsers.some((b) => b.id === picked) ? picked : "",
+    browser,
     pick: (id) => {
       setPicked(id);
       setLoginBrowser(id);
+    },
+    canIsolate,
+    isolated: canIsolate && isolatedPref,
+    setIsolated: (on) => {
+      setIsolatedPref(on);
+      setLoginIsolated(on);
     },
   };
 }
@@ -87,6 +102,15 @@ export function LoginBrowserField({ tool, login }: { tool: Tool; login: LoginBro
           onChange={(v) => login.pick(v === DEFAULT_BROWSER ? "" : v)}
           options={[{ value: DEFAULT_BROWSER, label: t("accounts.reauth.defaultBrowser") }, ...login.browsers.map((b) => ({ value: b.id, label: b.name }))]}
         />
+      )}
+      {login.choosable && login.canIsolate && (
+        <label className="flex items-start justify-between gap-3 text-xs">
+          <span>
+            <span className="block text-ac-text">{t("accounts.reauth.ownProfile")}</span>
+            <span className="block text-ac-muted">{t("accounts.reauth.ownProfileDetail")}</span>
+          </span>
+          <Switch checked={login.isolated} onChange={login.setIsolated} label={t("accounts.reauth.ownProfile")} />
+        </label>
       )}
       {tool === "codex" && login.browsers.length > 0 && (
         <p className="text-xs text-ac-muted">
@@ -216,7 +240,7 @@ export function ReauthDialog({ accountId }: { accountId: string }) {
           <>
             <p className="text-[13px] text-ac-soft">{t("accounts.reauth.finishInBrowser")}</p>
             <div className="flex h-[280px] overflow-hidden rounded-lg border border-ac-line bg-ac-bg p-3">
-              <XtermBox key={run} args={signInArgs(provider, a.name, true, browser || undefined)} backend={tauriBackend} onExit={(code) => void finished(code)} />
+              <XtermBox key={run} args={signInArgs(provider, a.name, true, browser || undefined, login.isolated)} backend={tauriBackend} onExit={(code) => void finished(code)} />
             </div>
           </>
         )}

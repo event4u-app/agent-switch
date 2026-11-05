@@ -5,6 +5,13 @@
  * variable is not run). So on macOS the choice becomes a tiny wrapper script
  * that hands the URL to that app; on Linux the browser binary itself is the
  * executable. Windows is not offered: nothing here has verified an override.
+ *
+ * Isolated sign-in (road-to-a-chat-that-reads-well Phase 5): a Chromium-family
+ * browser started normally — no automation flags, so Google SSO treats it as
+ * the user's own browser — with one `--user-data-dir` per account. Each
+ * account then keeps its own Google login, and `agent-switch web` uses the
+ * same folder, so web and CLI are one identity. Never an embedded webview:
+ * Google refuses OAuth there (`disallowed_useragent`).
  */
 
 import * as fs from "node:fs";
@@ -13,7 +20,15 @@ import * as path from "node:path";
 export interface BrowserInfo {
   id: string;
   name: string;
+  /** A Chromium-family browser that takes `--user-data-dir`: it can keep one profile per account. */
+  isolatable: boolean;
 }
+
+/** Chromium-family browsers whose `--user-data-dir` is documented. Arc and Dia
+ *  manage profiles themselves and are left out until verified. */
+const ISOLATABLE = new Set(["chrome", "chrome-canary", "chromium", "brave", "edge", "vivaldi"]);
+
+export const isIsolatable = (id: string) => ISOLATABLE.has(id);
 
 export interface BrowserDeps {
   platform: NodeJS.Platform;
@@ -77,13 +92,37 @@ export function locateBrowser(id: string, deps: BrowserDeps): string | null {
 
 export function listBrowsers(deps: BrowserDeps): BrowserInfo[] {
   const known = deps.platform === "darwin" ? MAC : deps.platform === "linux" ? LINUX : [];
-  return known.filter((b) => locateBrowser(b.id, deps) !== null).map(({ id, name }) => ({ id, name }));
+  return known.filter((b) => locateBrowser(b.id, deps) !== null).map(({ id, name }) => ({ id, name, isolatable: ISOLATABLE.has(id) }));
 }
 
 /** POSIX wrapper for `$BROWSER` that opens its URL argument in one macOS app. */
 export function browserWrapperScript(appPath: string): string {
   const quoted = `'${appPath.replace(/'/g, `'\\''`)}'`;
   return `#!/bin/sh\nexec /usr/bin/open -a ${quoted} "$@"\n`;
+}
+
+/**
+ * POSIX wrapper for `$BROWSER` that opens its URL in a Chromium-family browser
+ * with its own profile folder. macOS starts a new instance with `open -na` (a
+ * running instance with the same folder takes the URL over); Linux runs the
+ * binary. The flags only skip first-run screens. Pure.
+ */
+export function isolatedWrapperScript(platform: NodeJS.Platform, located: string, userDataDir: string): string {
+  const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+  const flags = `--user-data-dir=${q(userDataDir)} --no-first-run --no-default-browser-check`;
+  return platform === "darwin" ? `#!/bin/sh\nexec /usr/bin/open -na ${q(located)} --args ${flags} "$@"\n` : `#!/bin/sh\nexec ${q(located)} ${flags} "$@"\n`;
+}
+
+/** The first installed browser that can keep one profile per account, or null. */
+export function firstIsolatable(deps: BrowserDeps): string | null {
+  return listBrowsers(deps).find((b) => b.isolatable)?.id ?? null;
+}
+
+/** `$BROWSER` wrapper that hands the URL to `agent-switch sign-in-browser` in the
+ *  background (the caller must not wait on a browser window). Pure. */
+export function playwrightWrapperScript(node: string, cli: string, userDataDir: string): string {
+  const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+  return `#!/bin/sh\n${q(node)} ${q(cli)} sign-in-browser --dir ${q(userDataDir)} "$@" >/dev/null 2>&1 &\nexit 0\n`;
 }
 
 function whichOnPath(binary: string): string | null {

@@ -354,6 +354,26 @@ export function setShareSourceFlag(source: string): void {
   }
 }
 
+const LOGIN_ISOLATED_KEY = "agent-switch-login-isolated";
+
+/** Sign-ins in a Chromium-family browser use the account's own browser profile.
+ *  Default on: each account keeps its own Google login (road-to-a-chat-that-reads-well 5.2). */
+export function getLoginIsolated(): boolean {
+  try {
+    return localStorage.getItem(LOGIN_ISOLATED_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setLoginIsolated(on: boolean): void {
+  try {
+    localStorage.setItem(LOGIN_ISOLATED_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const LOGIN_BROWSER_KEY = "agent-switch-login-browser";
 
 /** The browser id (`agent-switch browsers`) the last sign-in opened in; "" =
@@ -918,6 +938,26 @@ export function getLimitAutoOpen(): boolean {
 export function setLimitAutoOpen(on: boolean): void {
   try {
     localStorage.setItem(LIMIT_AUTO_OPEN_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
+const CHAT_MARKDOWN_KEY = "agent-switch-chat-markdown";
+
+/** Render agent replies in the v3 chat as formatted markdown. Default on; off
+ *  shows every reply as plain text (roadmap road-to-a-chat-that-reads-well 2.6). */
+export function getChatMarkdown(): boolean {
+  try {
+    return localStorage.getItem(CHAT_MARKDOWN_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setChatMarkdown(on: boolean): void {
+  try {
+    localStorage.setItem(CHAT_MARKDOWN_KEY, on ? "on" : "off");
   } catch {
     /* no/blocked localStorage → in-memory only for this session */
   }

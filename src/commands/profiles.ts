@@ -9,6 +9,7 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   HOME,
+  browserDir,
   configDir,
   die,
   ensureRoot,
@@ -37,7 +38,7 @@ import {
   readProviders,
   ROOT,
 } from "../profiles.js";
-import { browserWrapperScript, defaultBrowserDeps, listBrowsers, locateBrowser } from "../browsers.js";
+import { browserWrapperScript, defaultBrowserDeps, firstIsolatable, isIsolatable, isolatedWrapperScript, listBrowsers, locateBrowser, playwrightWrapperScript } from "../browsers.js";
 import { Provider, ProviderId, PROVIDER_IDS, provider } from "../providers.js";
 import { borrowerOf, discardBinding, readBinding, releaseBorrowedAccount } from "../rebind.js";
 import { withProperLock } from "../locks.js";
@@ -62,11 +63,11 @@ import {
   logActivity,
 } from "./shared.js";
 
-export function cmdAdd(providerId: ProviderId, name: string | undefined, browserId?: string): void {
-  if (!name) die(`usage: agent-switch add [--provider ${providerId}] <profile> [--browser B]`);
+export function cmdAdd(providerId: ProviderId, name: string | undefined, browserId?: string, isolated = false): void {
+  if (!name) die(`usage: agent-switch add [--provider ${providerId}] <profile> [--browser B] [--isolated]`);
   if (profileExists(providerId, name)) die(`profile "${name}" already exists for ${providerId}`);
   const p = provider(providerId);
-  const env = browserId ? browserEnv(browserId, providerId) : {};
+  const env = isolated ? isolatedEnv(browserId, providerId, name) : browserId ? browserEnv(browserId, providerId) : {};
   ensureRoot();
   const dir = configDir(providerId, name);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -74,7 +75,7 @@ export function cmdAdd(providerId: ProviderId, name: string | undefined, browser
   // the sign-in; skip them the way `import` does and run the sign-in itself.
   if (providerId === "claude") seedClaudeOnboarding(dir);
   console.log(`Created ${providerId} profile "${name}".`);
-  const loginArgs = LOGIN_ARGS[providerId];
+  const loginArgs = loginArgsFor(providerId);
   console.log(
     loginArgs.length
       ? `Signing it in with \`${[p.binary, ...loginArgs].join(" ")}\` (finish it in the browser if one opens)...`
@@ -110,9 +111,11 @@ function seedClaudeOnboarding(dir: string): void {
 /**
  * `$BROWSER` for a sign-in in one specific browser. Only Claude Code is verified
  * to follow it; codex on macOS opens the system default regardless, so it is
- * told rather than silently ignored.
+ * told rather than silently ignored. With `isolateFor` (the profile name) a
+ * Chromium-family browser gets that profile's own browser folder — the one
+ * `agent-switch web` uses — so each account keeps its own Google login.
  */
-function browserEnv(browserId: string, providerId: ProviderId): NodeJS.ProcessEnv {
+function browserEnv(browserId: string, providerId: ProviderId, isolateFor?: string): NodeJS.ProcessEnv {
   if (process.platform === "win32") die("--browser is not supported on Windows yet.");
   const deps = defaultBrowserDeps(HOME);
   const located = locateBrowser(browserId, deps);
@@ -123,12 +126,57 @@ function browserEnv(browserId: string, providerId: ProviderId): NodeJS.ProcessEn
   if (providerId !== "claude") {
     console.log(`Note: ${provider(providerId).binary} opens your default browser itself. If that is the wrong one, open the link it prints in ${browserId} — the sign-in works from any browser.`);
   }
+  if (isolateFor) {
+    if (!isIsolatable(browserId)) die(`--isolated needs a Chromium-family browser (chrome, chrome-canary, chromium, brave, edge, vivaldi); ${browserId} is not one.`);
+    const userDataDir = browserDir(providerId, isolateFor);
+    fs.mkdirSync(userDataDir, { recursive: true, mode: 0o700 });
+    const wrapper = path.join(ROOT, "browsers", `${providerId}-${isolateFor}-${browserId}`);
+    fs.mkdirSync(path.dirname(wrapper), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(wrapper, isolatedWrapperScript(process.platform, located, userDataDir), { mode: 0o700 });
+    fs.chmodSync(wrapper, 0o700);
+    console.log(`Signing in with ${browserId}'s own profile for ${providerId}/${isolateFor} — sign in to Google there once; it stays for this account.`);
+    return { BROWSER: wrapper };
+  }
   if (process.platform !== "darwin") return { BROWSER: located };
   const wrapper = path.join(ROOT, "browsers", browserId);
   fs.mkdirSync(path.dirname(wrapper), { recursive: true, mode: 0o700 });
   fs.writeFileSync(wrapper, browserWrapperScript(located), { mode: 0o700 });
   fs.chmodSync(wrapper, 0o700);
   return { BROWSER: wrapper };
+}
+
+/**
+ * `$BROWSER` that keeps this account's sign-in in its own browser profile: the
+ * named or first installed Chromium-family browser, else a Playwright Chromium
+ * (Google SSO may refuse that one, so it says so).
+ */
+function isolatedEnv(browserId: string | undefined, providerId: ProviderId, name: string): NodeJS.ProcessEnv {
+  if (process.platform === "win32") die("--isolated is not supported on Windows yet.");
+  const id = browserId ?? firstIsolatable(defaultBrowserDeps(HOME));
+  if (id) return browserEnv(id, providerId, name);
+  const userDataDir = browserDir(providerId, name);
+  const wrapper = path.join(ROOT, "browsers", `${providerId}-${name}-playwright`);
+  fs.mkdirSync(path.dirname(wrapper), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(wrapper, playwrightWrapperScript(process.execPath, process.argv[1]!, userDataDir), { mode: 0o700 });
+  fs.chmodSync(wrapper, 0o700);
+  console.log("No Chrome, Brave, Edge, Vivaldi or Chromium is installed; signing in with Playwright's Chromium in this account's own profile. If Google refuses that browser, install one of them and sign in again.");
+  return { BROWSER: wrapper };
+}
+
+/** Codex's sign-in listens on 127.0.0.1:1455 (verified with codex-cli 0.166.0),
+ *  so a second one at the same time cannot start its server; that one signs in
+ *  with a device code instead. */
+function loginArgsFor(providerId: ProviderId): string[] {
+  const args = LOGIN_ARGS[providerId];
+  if (providerId !== "codex" || !portInUse(1455)) return args;
+  console.log("Another Codex sign-in is running (port 1455 is taken); this one uses a device code — open the link it prints and enter the code.");
+  return [...args, "--device-auth"];
+}
+
+/** A TCP listener on 127.0.0.1:`port`, checked synchronously in a child node. */
+export function portInUse(port: number): boolean {
+  const js = `require("net").connect(${port},"127.0.0.1").on("connect",()=>process.exit(0)).on("error",()=>process.exit(1))`;
+  return spawnSync(process.execPath, ["-e", js], { timeout: 2000 }).status === 0;
 }
 
 export function cmdBrowsers(json: boolean): void {
@@ -153,12 +201,13 @@ const LOGIN_ARGS: Record<ProviderId, string[]> = {
  * reads the stored login back: the identity in the config outlives a sign-out,
  * so only the credential proves the sign-in happened.
  */
-export function cmdLogin(providerId: ProviderId, name: string | undefined, browserId?: string): void {
+export function cmdLogin(providerId: ProviderId, name: string | undefined, browserId?: string, isolated = false): void {
   const n = requireProfile(providerId, name, "login");
   const p = provider(providerId);
-  const env = browserId ? browserEnv(browserId, providerId) : {};
-  console.log(`Signing ${providerId}/${n} in with \`${[p.binary, ...LOGIN_ARGS[providerId]].join(" ")}\` (finish it in the browser if one opens)...`);
-  const code = launch(p, n, LOGIN_ARGS[providerId], env);
+  const env = isolated ? isolatedEnv(browserId, providerId, n) : browserId ? browserEnv(browserId, providerId) : {};
+  const args = loginArgsFor(providerId);
+  console.log(`Signing ${providerId}/${n} in with \`${[p.binary, ...args].join(" ")}\` (finish it in the browser if one opens)...`);
+  const code = launch(p, n, args, env);
   const after = authStatusFor(providerId, n);
   const ok = after.state === "connected" || after.state === "expiring";
   logActivity("login", `${providerId}/${n}`, ok ? "signed in again" : "sign-in not confirmed", "user ran `agent-switch login`", ok);

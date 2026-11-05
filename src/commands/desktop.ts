@@ -65,6 +65,28 @@ export async function cmdWeb(name?: string): Promise<void> {
   await new Promise<void>((resolve) => context.on("close", resolve));
 }
 
+/**
+ * The sign-in browser of last resort (road-to-a-chat-that-reads-well 5.3): a
+ * Playwright Chromium with the account's own profile folder, used as `$BROWSER`
+ * when no Chromium-family browser is installed. The automation flag is left off,
+ * yet Google may still refuse its SSO here — the caller says so.
+ */
+export async function cmdSignInBrowser(url: string | undefined, flags: Record<string, string | boolean>): Promise<void> {
+  const dir = typeof flags.dir === "string" ? flags.dir : null;
+  if (!url || !/^https?:\/\//.test(url) || !dir) die("usage: agent-switch sign-in-browser --dir <profile browser dir> <http(s) url>");
+  let chromium: any;
+  try {
+    const mod: string = "playwright";
+    ({ chromium } = (await import(mod)) as any);
+  } catch {
+    die("playwright is not installed. Run:\n  npm install playwright && npx playwright install chromium");
+  }
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const context = await chromium.launchPersistentContext(dir, { headless: false, viewport: null, ignoreDefaultArgs: ["--enable-automation"] });
+  const page = context.pages()[0] ?? (await context.newPage());
+  await page.goto(url);
+  await new Promise<void>((resolve) => context.on("close", resolve));
+}
 
 export function cmdApps(json = false): void {
   if (json) {

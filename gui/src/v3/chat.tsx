@@ -2,13 +2,15 @@
  *  the timeline of one session drawn from AS events. Read-only unless the
  *  caller passes the approval and question handlers (a bridged session). */
 
-import { useMemo, useState, type ReactNode } from "react";
-import { Check, ChevronDown, ChevronRight, FolderGit2, Hand, ListChecks, MessageCircleQuestion, TriangleAlert } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Check, ChevronDown, ChevronRight, ClipboardCopy, FolderGit2, Hand, ListChecks, MessageCircleQuestion, TriangleAlert } from "lucide-react";
 
 import { cn } from "../lib/utils.js";
 import { Button } from "../ui/Button.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
+import { sessionMarkdown } from "./chat-export.js";
 import { Act } from "./kit.js";
+import { Markdown } from "./markdown/Markdown.js";
 import { fold, type AsEvent, type ChatRow, type DiffHunk } from "./timeline.js";
 import { VirtualList } from "./virtual.js";
 
@@ -21,7 +23,9 @@ export function Bubble({ children, images = 0 }: { children: ReactNode; images?:
   );
 }
 
-export function DiffLines({ hunks }: { hunks: DiffHunk[] }) {
+/** `numbered={false}`: the hunks carry no real line numbers (a diff typed into a
+ *  message without `@@` headers), so none are shown. */
+export function DiffLines({ hunks, numbered = true }: { hunks: DiffHunk[]; numbered?: boolean }) {
   return (
     <div className="font-ac-mono text-[11.5px] leading-[1.55]">
       {hunks.map((h, hi) => {
@@ -32,7 +36,7 @@ export function DiffLines({ hunks }: { hunks: DiffHunk[] }) {
           const n = k === "-" ? oldN++ : (k === " " && oldN++, newN++);
           return (
             <div key={`${hi}-${i}`} className="flex whitespace-pre px-3" style={{ background: k === "+" ? "var(--as-diff-add-line)" : k === "-" ? "var(--as-diff-del-line)" : undefined }}>
-              <span className="w-8 shrink-0 select-none text-right text-ac-faint">{n}</span>
+              {numbered && <span className="w-8 shrink-0 select-none text-right text-ac-faint">{n}</span>}
               <span className={cn("w-4 shrink-0 select-none text-center", k === "+" ? "text-ac-ok-text" : k === "-" ? "text-ac-alert-text" : "text-ac-faint")}>{k}</span>
               <span className="text-ac-soft">{l.slice(1)}</span>
             </div>
@@ -160,7 +164,7 @@ function ChatRowView({ row, on }: { row: ChatRow; on: ChatHandlers }) {
     case "user":
       return <Bubble images={row.images}>{row.text}</Bubble>;
     case "assistant":
-      return <p className={cn("max-w-[86%] whitespace-pre-wrap text-[13px] leading-relaxed text-ac-soft", row.live && "after:ml-0.5 after:animate-pulse after:content-['▍']")}>{row.text}</p>;
+      return <Markdown source={row.text} live={row.live} className={cn("max-w-[86%]", row.live && "[&>*:last-child]:after:ml-0.5 [&>*:last-child]:after:animate-pulse [&>*:last-child]:after:content-['▍']")} />;
     case "tool":
       return <ToolCard row={row} />;
     case "subagent":
@@ -175,7 +179,7 @@ function ChatRowView({ row, on }: { row: ChatRow; on: ChatHandlers }) {
           <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-ac-text">
             <ListChecks className="size-3.5" /> Plan
           </div>
-          <div className="whitespace-pre-wrap">{row.text}</div>
+          <Markdown source={row.text} />
         </div>
       );
     case "error":
@@ -202,12 +206,42 @@ export function hiddenText(hidden: Record<string, number>): string | null {
   return [`${n} internal ${n === 1 ? "line" : "lines"} not shown`, ...Object.entries(hidden).map(([k, c]) => `${k}: ${c}`)].join("\n");
 }
 
-/** The timeline of one session. `notice` sits above it (version or read-only banner). */
-export function ChatTimeline({ events, on = {}, notice }: { events: readonly AsEvent[]; on?: ChatHandlers; notice?: ReactNode }) {
+/** Copies the whole conversation as Markdown, from the source text of every row. */
+export function CopyConversation({ rows }: { rows: readonly ChatRow[] }) {
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const id = setTimeout(() => setDone(false), 1500);
+    return () => clearTimeout(id);
+  }, [done]);
+  const label = done ? "Copied" : "Copy conversation";
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={done ? "Copied as Markdown" : "Copy the whole conversation as Markdown"}
+      disabled={!rows.length}
+      onClick={() => void navigator.clipboard?.writeText(sessionMarkdown(rows)).then(() => setDone(true), () => {})}
+      className="inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] text-ac-muted hover:bg-ac-raise hover:text-ac-text disabled:opacity-50 [&_svg]:size-3.5"
+    >
+      {done ? <Check /> : <ClipboardCopy />}
+      {label}
+    </button>
+  );
+}
+
+/** The timeline of one session. `notice` sits above it (version or read-only banner).
+ *  `copyBar={false}`: the caller puts "Copy conversation" into its own header. */
+export function ChatTimeline({ events, on = {}, notice, copyBar = true }: { events: readonly AsEvent[]; on?: ChatHandlers; notice?: ReactNode; copyBar?: boolean }) {
   const f = useMemo(() => fold(events), [events]);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {notice}
+      {copyBar && f.rows.length > 0 && (
+        <div className="flex h-7 shrink-0 items-center justify-end border-b border-ac-line px-3">
+          <CopyConversation rows={f.rows} />
+        </div>
+      )}
       {f.rows.length === 0 ? (
         <p className="m-auto text-[13px] text-ac-muted">Nothing in this session yet.</p>
       ) : (

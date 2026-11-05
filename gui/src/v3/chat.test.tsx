@@ -11,13 +11,17 @@ describe("ChatTimeline", () => {
     render(<ChatTimeline events={fx.transcript as AsEvent[]} />);
     expect(screen.getByText(/Create a file notes\.md/)).toBeTruthy();
     expect(screen.getAllByText("Update").length).toBeGreaterThan(0);
-    expect(screen.getByText("Task")).toBeTruthy();
-    expect(screen.getByText("subagent · via hook")).toBeTruthy();
+    const subagentRow = screen.getByText("subagent · via hook").parentElement!;
+    expect(subagentRow.textContent).toContain("Task");
+    // The reply's `Task` is markdown inline code now, not literal backticks.
+    expect(screen.getAllByText("Task").some((el) => el.tagName === "CODE")).toBe(true);
     // The count moved into the "read-only here" tooltip (gap §5e).
     expect(screen.queryByText(/internal lines? not shown/)).toBeNull();
     const edit = screen.getAllByRole("button", { expanded: false }).find((b) => b.textContent?.includes("−1"))!;
+    expect(screen.getAllByText("beta").filter((el) => el.tagName === "SPAN")).toHaveLength(0);
     fireEvent.click(edit);
-    expect(screen.getByText("beta")).toBeTruthy();
+    // The diff line (a span in the diff view), not the reply's inline code.
+    expect(screen.getAllByText("beta").filter((el) => el.tagName === "SPAN")).toHaveLength(1);
   });
 
   it("an open approval offers allow once, always and deny only when the session is bridged", () => {

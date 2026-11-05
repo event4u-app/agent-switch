@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { attachTerminal, type TermBackend, type TerminalLike, type TermEvent } from "./terminal.js";
+import { attachTerminal, bufferText, type TermBackend, type TerminalLike, type TermEvent } from "./terminal.js";
 
 /** A fake terminal capturing writes + the onData callback. */
 function fakeTerm() {
@@ -128,5 +128,25 @@ describe("attachTerminal", () => {
     reject("gone");
     await disposed;
     expect(onError).not.toHaveBeenCalled();
+  });
+});
+
+describe("bufferText (road-to-a-chat-that-reads-well 3.2)", () => {
+  const buf = (rows: [text: string, wrapped?: boolean][]) => ({
+    length: rows.length,
+    getLine: (y: number) => {
+      const r = rows[y];
+      return r && { isWrapped: !!r[1], translateToString: () => r[0] };
+    },
+  });
+
+  it("joins wrapped rows, keeps blank rows inside, trims trailing spaces and trailing blank rows", () => {
+    const b = buf([["> run the tests   "], [""], ["● Bash(npm test -- src/v3/markdown/parse.te"], ["st.ts)", true], ["  ⎿  29 passed   "], ["   "], [""]]);
+    expect(bufferText(b)).toBe("> run the tests\n\n● Bash(npm test -- src/v3/markdown/parse.test.ts)\n  ⎿  29 passed");
+  });
+
+  it("an empty buffer is an empty string", () => {
+    expect(bufferText(buf([]))).toBe("");
+    expect(bufferText(buf([[""], ["  "]]))).toBe("");
   });
 });

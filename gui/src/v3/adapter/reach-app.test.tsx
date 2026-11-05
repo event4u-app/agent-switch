@@ -110,7 +110,9 @@ describe("V3App on fixture CLI output (spec §11)", () => {
   it("Library: one click on the stripe", async () => {
     await mount();
     click(screen.getByLabelText("Library"));
-    expect(await screen.findByText(/Pinned sessions are kept in the vault/)).toBeTruthy();
+    // The Library page reads its feed after the click; the macOS CI runner has needed
+    // just over the 1 s default (runs 41991687366 on dev/v3, 42012788370), never locally.
+    expect(await screen.findByText(/Pinned sessions are kept in the vault/, undefined, { timeout: 5000 })).toBeTruthy();
     expect(clicks).toBe(1);
   });
 
