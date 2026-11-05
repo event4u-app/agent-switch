@@ -19,9 +19,12 @@ describe("feed parsers", () => {
   });
 
   it("host list: keeps rows with a key, fills the rest", () => {
-    const h = parseHostList({ mode: "persistent", hosted: [{ key: "claude/w/1", alive: true, cwd: "/r" }, { nokey: 1 }], legacy: [] });
+    const h = parseHostList({ mode: "persistent", hosted: [{ key: "claude/w/1", alive: true, cwd: "/r" }, { key: "claude/w/2", parked: true }, { nokey: 1 }], legacy: [] });
     expect(h.mode).toBe("persistent");
-    expect(h.hosted).toEqual([{ key: "claude/w/1", provider: "", account: "", sessionId: "", cwd: "/r", startedAt: "", alive: true }]);
+    expect(h.hosted).toEqual([
+      { key: "claude/w/1", provider: "", account: "", sessionId: "", cwd: "/r", startedAt: "", alive: true, parked: false },
+      { key: "claude/w/2", provider: "", account: "", sessionId: "", cwd: "", startedAt: "", alive: false, parked: true },
+    ]);
   });
 
   it("pr status: by session key, a PR without a number is dropped, the problem is kept", () => {

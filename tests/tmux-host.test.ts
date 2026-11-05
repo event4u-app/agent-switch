@@ -217,11 +217,20 @@ test("CLI host respawn: same window, same session, the next turn on another mode
   try {
     const s = host.start({ provider: "claude", account: "work", configDir: cfg, cwd: home, bin, env: { AS_STUB_OUT: out } });
     assert.ok(waitFor(() => fs.readdirSync(out).length === 1));
-    fs.rmSync(out, { recursive: true });
-    fs.mkdirSync(out);
-    execFileSync("node", [CLI, "host", "respawn", s.key, "--model", "sonnet", "--effort", "low"], { env: { ...process.env, AGENT_SWITCH_HOME: home, AGENT_SWITCH_HOST_SOCKET: socket, AS_STUB_OUT: out } });
-    assert.ok(waitFor(() => fs.readdirSync(out).length === 1), "restarted");
-    const seen = JSON.parse(fs.readFileSync(path.join(out, fs.readdirSync(out)[0]), "utf8"));
+    const respawn = () => {
+      fs.rmSync(out, { recursive: true });
+      fs.mkdirSync(out);
+      execFileSync("node", [CLI, "host", "respawn", s.key, "--model", "sonnet", "--effort", "low"], { env: { ...process.env, AGENT_SWITCH_HOME: home, AGENT_SWITCH_HOST_SOCKET: socket, AS_STUB_OUT: out } });
+      assert.ok(waitFor(() => fs.readdirSync(out).length === 1), "restarted");
+      return JSON.parse(fs.readFileSync(path.join(out, fs.readdirSync(out)[0]), "utf8")).argv as string[];
+    };
+    // Before the first turn there is no transcript: resuming would end the program, so it starts again under its id.
+    const fresh = respawn();
+    assert.ok(fresh.includes("--session-id") && fresh[fresh.indexOf("--session-id") + 1] === s.sessionId && !fresh.includes("--resume"), fresh.join(" "));
+    assert.deepEqual(fresh.slice(-4), ["--model", "sonnet", "--effort", "low"]);
+    fs.mkdirSync(path.join(cfg, "projects", "-w"), { recursive: true });
+    fs.writeFileSync(path.join(cfg, "projects", "-w", `${s.sessionId}.jsonl`), "{}\n");
+    const seen = { argv: respawn() };
     assert.deepEqual(seen.argv.slice(-6), ["--resume", s.sessionId, "--model", "sonnet", "--effort", "low"]);
     assert.equal(host.list()[0].window, s.window);
     const screen = host.capture(s.key) ?? "";

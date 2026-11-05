@@ -12,7 +12,7 @@ import type { ViewDeps } from "../src/commands/view.js";
 const HOME = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-view-home-")));
 process.env.AGENT_SWITCH_HOME = HOME;
 const { TmuxHost } = await import("../src/host/tmux-host.js");
-const { parkedArgv, realViewDeps, restoreAfterChat, resumeArgs, toChat, toTerminal, ViewRefused } = await import("../src/commands/view.js");
+const { hasClaudeTranscript, parkedArgv, realViewDeps, restoreAfterChat, resumeArgs, toChat, toTerminal, ViewRefused } = await import("../src/commands/view.js");
 const { InputLeases } = await import("../src/host/lease.js");
 
 function fakeHost(rows: HostedSession[]) {
@@ -36,7 +36,7 @@ function fakeHost(rows: HostedSession[]) {
   return { host, log };
 }
 const row = (over: Partial<HostedSession> = {}): HostedSession => ({ key: "claude/work/s1", provider: "claude", account: "work", sessionId: "s1", window: "@1", cwd: "/w", startedAt: "t", ...over });
-const deps = (host: ViewDeps["host"], over: Partial<ViewDeps> = {}): ViewDeps => ({ host, turnRunning: () => false, writer: () => null, bin: (p) => p, configDir: (p, a) => `/cfg/${p}/${a}`, parked: (k) => ["notice", k], ...over });
+const deps = (host: ViewDeps["host"], over: Partial<ViewDeps> = {}): ViewDeps => ({ host, turnRunning: () => false, writer: () => null, bin: (p) => p, configDir: (p, a) => `/cfg/${p}/${a}`, parked: (k) => ["notice", k], hasConversation: () => true, ...over });
 
 test("terminal → chat parks the window; chat → terminal resumes the same conversation", () => {
   const rows = [row()];
@@ -48,6 +48,34 @@ test("terminal → chat parks the window; chat → terminal resumes the same con
   toTerminal(deps(host), "claude/work/s1");
   assert.deepEqual(log, ["park claude/work/s1 notice claude/work/s1", "respawn claude/work/s1 claude --resume s1"]);
   assert.deepEqual(resumeArgs("codex", "t1"), ["resume", "t1"]);
+});
+
+test("chat → terminal before the first turn: the program starts again under its id, there is nothing to resume", () => {
+  const rows = [row({ parked: true })];
+  const { host, log } = fakeHost(rows);
+  toTerminal(deps(host, { hasConversation: () => false }), "claude/work/s1");
+  assert.deepEqual(log, ["respawn claude/work/s1 claude "]);
+  assert.deepEqual(resumeArgs("claude", "s1", false), []);
+  assert.deepEqual(resumeArgs("codex", "t1", false), ["resume", "t1"], "Codex resumes its thread either way");
+});
+
+test("hasClaudeTranscript: a transcript in any project folder; no projects folder is no; an unreadable one counts as yes", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-view-tr-"));
+  assert.equal(hasClaudeTranscript(dir, "s1"), false, "no projects folder");
+  fs.mkdirSync(path.join(dir, "projects", "-a"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "projects", "-b"));
+  assert.equal(hasClaudeTranscript(dir, "s1"), false);
+  fs.writeFileSync(path.join(dir, "projects", "-b", "s1.jsonl"), "{}\n");
+  assert.equal(hasClaudeTranscript(dir, "s1"), true);
+  assert.equal(hasClaudeTranscript(dir, "s2"), false);
+  if (process.platform !== "win32" && process.getuid?.() !== 0) {
+    fs.chmodSync(path.join(dir, "projects"), 0o000);
+    try {
+      assert.equal(hasClaudeTranscript(dir, "s2"), true, "unreadable: never drop a resume");
+    } finally {
+      fs.chmodSync(path.join(dir, "projects"), 0o755);
+    }
+  }
 });
 
 test("refusals: not hosted, a provider without a shared conversation, a running turn, a second writer", () => {
@@ -75,7 +103,7 @@ test("20 switches on a real tmux window: one program at a time, always the same 
   const host = new TmuxHost(dir, { socket });
   try {
     const s = host.start({ provider: "claude", account: "work", configDir: dir, cwd: dir, bin, sessionId: "0000aaaa-1111-2222-3333-444455556666" });
-    const d: ViewDeps = { host, turnRunning: () => false, writer: () => null, bin: () => bin, configDir: () => dir, parked: () => [notice] };
+    const d: ViewDeps = { host, turnRunning: () => false, writer: () => null, bin: () => bin, configDir: () => dir, parked: () => [notice], hasConversation: () => true };
     const lines = () => (fs.existsSync(path.join(out, "runs")) ? fs.readFileSync(path.join(out, "runs"), "utf8").trim().split("\n") : []);
     const wait = (n: number) => {
       const end = Date.now() + 5000;

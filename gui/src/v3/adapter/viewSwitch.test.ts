@@ -15,5 +15,7 @@ describe("viewStep", () => {
     expect(viewStep("terminal", { ...chat, chatRunning: true })).toEqual({ do: "arm", to: "terminal" });
     expect(viewStep("terminal", { ...chat, hosted: false })).toEqual({ do: "no-terminal" });
     expect(viewStep("terminal", base)).toEqual({ do: "none" });
+    expect(viewStep("terminal", { ...base, hosted: true, parked: true })).toEqual({ do: "restore" });
+    expect(viewStep("terminal", { ...base, hosted: true })).toEqual({ do: "none" });
   });
 });

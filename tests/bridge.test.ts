@@ -9,7 +9,7 @@ import type { ChildProcess } from "node:child_process";
 
 import { ClaudeBridge, claudeArgs, type BridgeOutput } from "../src/bridge/claude-bridge.js";
 import { AppServer, CodexBridge } from "../src/bridge/codex-bridge.js";
-import { page } from "../src/commands/bridge.js";
+import { hostedTarget, page } from "../src/commands/bridge.js";
 
 const FIX = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../tests/fixtures/timeline");
 const STREAM = fs.readFileSync(path.join(FIX, "claude-stream-2.1.316.jsonl"), "utf8").split("\n").filter(Boolean);
@@ -60,6 +60,9 @@ test("claude args: the session's mode every time, resume, never a bypass", () =>
   assert.ok(claudeArgs({ sessionId: null, mode: "default" }).includes("--permission-prompt-tool"));
   assert.ok(!claudeArgs({ sessionId: null, mode: "plan" }).includes("--resume"));
   assert.throws(() => claudeArgs({ sessionId: null, mode: "bypassPermissions" as never }), /not offered/);
+  const fresh = claudeArgs({ sessionId: "s1", fresh: true, mode: "default" });
+  assert.deepEqual(fresh.slice(-2), ["--session-id", "s1"], "a reserved id without a conversation starts under that id");
+  assert.ok(!fresh.includes("--resume"));
 });
 
 test("claude bridge: the account's config dir, a turn with an approval answered as always-allow, events out", async () => {
@@ -245,4 +248,14 @@ test("timeline paging: newest last, before an index", () => {
   assert.deepEqual([prev.from, prev.events.length], [50, 200]);
   assert.deepEqual(page(ev, 200, 30).events.length, 30);
   assert.deepEqual(page([], 10).events, []);
+});
+
+test("hostedTarget: a hosted Claude session from the host registry, nothing else", () => {
+  const hosted = [
+    { key: "claude/work/s1", provider: "claude", account: "work", sessionId: "s1", cwd: "/w" },
+    { key: "codex/me/t1", provider: "codex", account: "me", sessionId: "t1", cwd: "/c" },
+  ];
+  assert.deepEqual(hostedTarget("claude/work/s1", hosted), { key: "claude/work/s1", provider: "claude", account: "work", sessionId: "s1", cwd: "/w", transcript: null });
+  assert.equal(hostedTarget("codex/me/t1", hosted), null);
+  assert.equal(hostedTarget("claude/work/s2", hosted), null);
 });
