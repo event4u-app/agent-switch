@@ -226,6 +226,29 @@ describe("pieces", () => {
     expect(decisionFor("claude/none", vm, [], NOW)).toBeNull();
   });
 
+  it("decisionFor spreads the sessions: the heaviest one gets the account with the most room", () => {
+    const w = (five: number, week: number) => [
+      { key: "five_hour", label: "5h", utilization: five, resetsAt: null },
+      { key: "seven_day", label: "Week", utilization: week, resetsAt: null },
+    ];
+    const vm = vmWith([account("work", { windows: w(90, 40) }), account("roomy", { windows: w(0, 10) }), account("mid", { windows: w(30, 20) }), account("tight", { windows: w(5, 85) })], []);
+    const ctx = (model: string, pct: number) => ({ model, pct }) as SessionRow["context"];
+    const rows = [row("small", { context: ctx("claude-haiku-4", 5) }), row("big", { context: ctx("claude-opus-5-5", 80), childCount: 2 }), row("medium", { context: ctx("claude-sonnet-5-5", 40) })];
+    const d = decisionFor("claude/work", vm, rows, NOW)!;
+    const to = Object.fromEntries(d.sessions.map((s) => [s.key.split("/")[2], s.target]));
+    // "tight" has the freest 5h window but its week is nearly spent: the week counts too.
+    // Once "roomy" carries the big session, "mid" has more left for the next ones.
+    expect(to).toEqual({ big: "roomy", medium: "mid", small: "mid" });
+    expect(d.suggestion).toBe("roomy");
+  });
+
+  it("decisionFor puts a second heavy session elsewhere once the emptiest account has taken one", () => {
+    const vm = vmWith([account("work", { windows: [{ key: "five_hour", label: "5h", utilization: 90, resetsAt: null }] }), account("a", { windows: [{ key: "five_hour", label: "5h", utilization: 0, resetsAt: null }] }), account("b", { windows: [{ key: "five_hour", label: "5h", utilization: 10, resetsAt: null }] })], []);
+    const heavy = { context: { model: "claude-opus-5-5", pct: 70 } as SessionRow["context"] };
+    const d = decisionFor("claude/work", vm, [row("x", heavy), row("y", heavy)], NOW)!;
+    expect(d.sessions.map((s) => s.target).sort()).toEqual(["a", "b"]);
+  });
+
   it("startCommand quotes what needs it", () => {
     const p = { folder: "/r/my app", gitState: null, worktree: false, tool: "claude" as const, model: "", thinking: "", where: "hosted" as const };
     expect(startCommand(p, "work")).toBe("agent-switch host start work --provider claude --cwd '/r/my app'");

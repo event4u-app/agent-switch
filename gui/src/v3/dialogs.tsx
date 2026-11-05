@@ -274,7 +274,14 @@ export function DecisionSheet({
   const [checked, setChecked] = useState<Set<string>>(new Set(sessions.map((s) => s.key)));
   const [chosen, setChosen] = useState<Record<string, string>>(() => Object.fromEntries(sessions.map((s) => [s.key, s.target])));
   const [picking, setPicking] = useState<string | null>(null);
-  const target = chosen[sessions[0]?.key ?? ""] ?? suggestion;
+  // Where the checked sessions go: one account the labels can name, or several.
+  const dests = [...new Set(sessions.filter((s) => checked.has(s.key)).map((s) => chosen[s.key] ?? s.target))];
+  const target = dests.length === 1 ? dests[0] : dests.length === 0 ? (chosen[sessions[0]?.key ?? ""] ?? suggestion) : "";
+  const spread = dests.length > 1;
+  const where = spread ? "the accounts above" : target;
+  // A brief starts one new session; it does not fan out.
+  const briefBlocked = how === "brief" && checked.size > 1;
+  const ready = checked.size > 0 && dests.every(Boolean) && !briefBlocked;
   const colorOf = (name: string) => targets.find((t) => t.name === name)?.color ?? "blue";
   const isBusy = (name: string) => targets.find((t) => t.name === name)?.busy === true;
   // Claude's live switch moves the target's login into the session, which would
@@ -299,8 +306,8 @@ export function DecisionSheet({
           <Button variant="ghost" onClick={onKeep}>
             Keep going on {account}
           </Button>
-          <Button variant="primary" disabled={checked.size === 0 || !target} onClick={() => onDecide(how, moves())}>
-            Continue on {target}
+          <Button variant="primary" disabled={!ready} onClick={() => onDecide(how, moves())}>
+            {spread ? `${tool === "codex" ? "Move" : "Switch"} ${checked.size} sessions` : `Continue on ${target}`}
           </Button>
         </>
       }
@@ -346,14 +353,14 @@ export function DecisionSheet({
       <Label>How</Label>
       <div role="radiogroup" aria-label="How" className="flex flex-col gap-2">
         {tool === "codex" ? (
-          <Choice on={how !== "brief"} onPick={() => setHow("now")} title={`Move and continue on ${target}`} detail={`Moves the conversation to ${target} and resumes it there with “continue”. End codex in your own terminal first; a session Agent Switch hosts moves in its window.`} />
+          <Choice on={how !== "brief"} onPick={() => setHow("now")} title={`Move and continue on ${where}`} detail={`Moves ${spread ? "each conversation to its account" : `the conversation to ${target}`} and resumes it there with “continue”. End codex in your own terminal first; a session Agent Switch hosts moves in its window.`} />
         ) : (
           <>
-            <Choice on={how === "after-turn"} onPick={() => setHow("after-turn")} title={`After this turn, continue on ${target}`} detail={`Switches when the turn ends, then carries on by itself where Agent Switch hosts the session.`} />
-            <Choice on={how === "now"} onPick={() => setHow("now")} title="Switch now and continue" detail={`Checked for this Claude version. The session adopts ${target} and is told to continue; if the switch fails, it stays on ${account}.`} />
+            <Choice on={how === "after-turn"} onPick={() => setHow("after-turn")} title={`After this turn, continue on ${where}`} detail={`Switches when the turn ends, then carries on by itself where Agent Switch hosts the session.`} />
+            <Choice on={how === "now"} onPick={() => setHow("now")} title="Switch now and continue" detail={spread ? `Checked for this Claude version. Each session adopts its account and is told to continue; a session whose switch fails stays on ${account}.` : `Checked for this Claude version. The session adopts ${target} and is told to continue; if the switch fails, it stays on ${account}.`} />
           </>
         )}
-        <Choice on={how === "brief"} onPick={() => setHow("brief")} title="New session with a brief" detail={`Starts fresh on ${target} with a summary of this one.`} />
+        <Choice on={how === "brief"} onPick={() => setHow("brief")} title="New session with a brief" detail={checked.size > 1 ? "Starts one session fresh with a summary — check only the session to brief." : `Starts fresh on ${target} with a summary of this one.`} />
       </div>
       {moving.length > 0 && (
         <p role="status" className="mt-2 text-xs text-ac-muted">

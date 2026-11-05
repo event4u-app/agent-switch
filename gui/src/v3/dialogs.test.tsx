@@ -95,6 +95,27 @@ describe("decision sheet and End (spec §8.2, §8.3)", () => {
     expect(onDecide).toHaveBeenCalledWith("after-turn", [{ key: "a", target: "work" }]);
   });
 
+  it("sessions bound for different accounts all move, each to its own; the labels stop naming one account", () => {
+    const onDecide = vi.fn();
+    const targets = [{ name: "work", color: "blue" as const }, { name: "lab", color: "pink" as const }];
+    render(<DecisionSheet account="side" pctUsed={94} window="5h" resetsIn="1h" suggestion="work" room={null} targets={targets} onKeep={vi.fn()} onClose={vi.fn()} onDecide={onDecide} sessions={[{ key: "a", title: "Fix wedge", model: "Opus", target: "work" }, { key: "b", title: "Docs", model: "Sonnet", target: "lab" }]} />);
+    expect(screen.queryByRole("button", { name: /^Continue on/ })).toBeNull();
+    expect(screen.getByRole("radio", { name: /After this turn, continue on the accounts above/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Switch 2 sessions" }));
+    expect(onDecide).toHaveBeenCalledWith("after-turn", [{ key: "a", target: "work" }, { key: "b", target: "lab" }]);
+    // Leaving one out: what is left goes to one account, and the button names it again.
+    fireEvent.click(screen.getAllByRole("checkbox")[1]);
+    expect(screen.getByRole("button", { name: "Continue on work" })).toBeTruthy();
+  });
+
+  it("a brief starts one new session: with two checked it cannot go", () => {
+    render(<DecisionSheet account="side" pctUsed={94} window="5h" resetsIn="1h" suggestion="work" room={null} onKeep={vi.fn()} onClose={vi.fn()} onDecide={vi.fn()} sessions={[{ key: "a", title: "Fix wedge", model: "Opus", target: "work" }, { key: "b", title: "Docs", model: "Sonnet", target: "work" }]} />);
+    fireEvent.click(screen.getByRole("radio", { name: /New session with a brief/ }));
+    expect((screen.getByRole("button", { name: "Continue on work" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getAllByRole("checkbox")[1]);
+    expect((screen.getByRole("button", { name: "Continue on work" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("End says what stops with it and whether this session is kept (D-vault); closing the tab is its own button", () => {
     const onCloseTab = vi.fn();
     const { rerender } = render(<EndDialog title="Event store" stops={["subagent general-purpose in .claude/worktrees/agent-a1"]} kept onEnd={vi.fn()} onCloseTab={onCloseTab} onClose={vi.fn()} />);

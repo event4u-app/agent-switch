@@ -175,10 +175,15 @@ type Phase = { kind: "running" } | { kind: "finished"; code: number | null } | {
  *  background" — and while it runs, only the Close buttons close the sheet:
  *  Escape goes to the program, a click outside does nothing, and the store
  *  refuses to put another overlay in its place. Closing reloads the view model. */
-export function TerminalSheet({ run, backend = tauriBackend }: { run: TerminalRun; backend?: TermBackend }) {
+export function TerminalSheet({ run, more = [], backend = tauriBackend }: { run: TerminalRun; more?: TerminalRun[]; backend?: TermBackend }) {
   const s = useAS();
-  const [phase, setPhase] = useState<Phase>({ kind: "running" });
-  const running = phase.kind === "running";
+  const runs = [run, ...more];
+  const [phases, setPhases] = useState<Phase[]>(() => runs.map(() => ({ kind: "running" })));
+  const [active, setActive] = useState(0);
+  const setPhase = (i: number, p: Phase) => setPhases((ps) => ps.map((x, j) => (j === i ? p : x)));
+  const phase = phases[active] ?? { kind: "running" };
+  // The sheet holds while any of its commands runs.
+  const running = phases.some((p) => p.kind === "running");
   const { setTerminalBusy } = s;
   useEffect(() => {
     setTerminalBusy(running);
@@ -204,20 +209,21 @@ export function TerminalSheet({ run, backend = tauriBackend }: { run: TerminalRu
         {t("sessions.term.finished", { code: phase.code == null ? "?" : String(phase.code) })}
       </Badge>
     );
+  const shown = runs[active] ?? run;
   return (
     <Sheet
       open
       onOpenChange={(o) => !o && close()}
       dismissible={!running}
       kicker={run.kicker ?? t("sessions.term.kicker")}
-      title={run.title}
+      title={runs.length > 1 ? shown.title : run.title}
       width={520}
       footer={
         <>
           <span className="mr-auto" role="status" aria-live="polite">
             {status}
           </span>
-          {phase.kind === "finished" && phase.code === 0 && offersRestart(run) && s.act.restart && <RestartButton restart={s.act.restart} />}
+          {phase.kind === "finished" && phase.code === 0 && offersRestart(shown) && s.act.restart && <RestartButton restart={s.act.restart} />}
           <Button size="sm" variant={running ? "secondary" : "primary"} onClick={close} title={running ? t("sessions.term.closingEnds") : undefined}>
             {t("common.close")}
           </Button>
@@ -225,16 +231,29 @@ export function TerminalSheet({ run, backend = tauriBackend }: { run: TerminalRu
       }
     >
       <div className="flex h-full min-h-[260px] flex-col gap-2">
-        <p className="font-ac-mono text-[11px] text-ac-faint">$ agent-switch {run.args.join(" ")}</p>
-        <div className="flex min-h-0 flex-1 overflow-hidden rounded-lg border border-ac-line bg-ac-bg p-3">
-          <XtermBox
-            key={run.args.join(" ")}
-            args={run.args}
-            backend={backend}
-            onExit={(code) => setPhase({ kind: "finished", code })}
-            onError={(message) => setPhase({ kind: "failed", message })}
-          />
-        </div>
+        {runs.length > 1 && (
+          <div role="tablist" aria-label={t("sessions.term.kicker")} className="flex flex-wrap gap-1">
+            {runs.map((r, i) => (
+              <button
+                key={r.args.join(" ")}
+                type="button"
+                role="tab"
+                aria-selected={i === active}
+                onClick={() => setActive(i)}
+                className={`rounded-md px-2 py-0.5 text-[12px] ${i === active ? "bg-ac-raise text-ac-text" : "text-ac-muted hover:text-ac-soft"}`}
+              >
+                {r.title}
+              </button>
+            ))}
+          </div>
+        )}
+        <p className="font-ac-mono text-[11px] text-ac-faint">$ agent-switch {shown.args.join(" ")}</p>
+        {/* Every command runs from the start; only the chosen one is shown. */}
+        {runs.map((r, i) => (
+          <div key={r.args.join(" ")} className={i === active ? "flex min-h-0 flex-1 overflow-hidden rounded-lg border border-ac-line bg-ac-bg p-3" : "hidden"}>
+            <XtermBox args={r.args} backend={backend} onExit={(code) => setPhase(i, { kind: "finished", code })} onError={(message) => setPhase(i, { kind: "failed", message })} />
+          </div>
+        ))}
       </div>
     </Sheet>
   );
