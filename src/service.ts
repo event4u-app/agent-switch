@@ -108,6 +108,11 @@ export function serviceTarget(): "not-installed" | "this-cli" | "other-cli" {
   return m.invocation && m.invocation.exec === me.exec && m.invocation.args.join("\0") === me.args.join("\0") ? "this-cli" : "other-cli";
 }
 
+/** The CLI file the installed service runs, as its manifest recorded it; null when unknown. */
+export function serviceCli(): string | null {
+  return readManifestRaw().invocation?.args[0] ?? null;
+}
+
 /** What `update` does with the service once the new version is on disk. Our
  *  own service is re-installed so it restarts on the new code; one that runs
  *  another CLI (a dev checkout) is not ours to re-point. */
