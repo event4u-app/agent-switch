@@ -112,15 +112,19 @@ cache warm, switch before the limit) is shown in the chat, from our own numbers.
 
 ## Phase 4 — Choose the terminal
 
-- [ ] **4.1 Detection.** Installed terminals (macOS: Terminal, iTerm2, Ghostty,
+- [x] **4.1 Detection.** Installed terminals (macOS: Terminal, iTerm2, Ghostty,
       Warp, WezTerm, kitty, Alacritty; Linux: on PATH), same pattern as
       `src/browsers.ts`.
       verify: unit tests with a fake env per platform.
-- [ ] **4.2 Setting + use.** A setting lists only what is installed; "Open in →
+- [x] **4.2 Setting + use.** A setting lists only what is installed; "Open in →
       Terminal", the takeover fallback (`src/commands/takeover.ts:45`) and any
       new-window start use it. Focus stays Terminal.app/iTerm2 and says so for
       the others.
-      verify: tests for each launcher's argv; manual run per installed terminal.
+      verify: `tests/terminals.test.ts` (argv per terminal, quoting, AppleScript
+      compiled with `osacompile`); live run on the owner's Mac 2026-11-05: iTerm2
+      ran a command in the given folder. Terminal.app and iTerm2 are the only
+      terminals installed there — Ghostty, Warp, WezTerm, kitty and Alacritty
+      follow their documented CLI, not run here.
 
 ## Phase 5 — A browser agent-switch controls
 

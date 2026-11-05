@@ -630,7 +630,8 @@ Updates also arrive as Needs-you items.
 - **Open in:**
   - Targets list. Agent apps are offered only for their own tool; editors open the worktree root.
   - Default for the Open button, globally and per repository.
-  - "Focus terminal" switch, with the macOS Automation note (error −1743 is explained, not hidden).
+  - "Terminal" select: only installed terminals (macOS: Terminal, iTerm2, Ghostty, Warp, WezTerm, kitty, Alacritty). It is what "Terminal › new here" opens and where a takeover's new window starts (Warp cannot run a command, so a takeover then uses Terminal).
+  - "Focus terminal" switch, with the macOS Automation note (error −1743 is explained, not hidden). Focus works with Terminal and iTerm2.
 - **Agents** (v3.2): one row per agent with its integration class ("deep" / "ACP" / "terminal only") and a switch.
 - **Remote** (v3.2):
   - Stages R1 Claude Remote Control (on), R2 own tunnel SSH/Tailscale (on), R3 E2E relay (later).
