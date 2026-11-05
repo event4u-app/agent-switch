@@ -22,6 +22,10 @@ import { Bubble } from "../chat.js";
 import { FIXTURES } from "../markdown/fixtures.js";
 import { Markdown } from "../markdown/Markdown.js";
 import { HintStrip, type BarSession } from "../workbench.js";
+import { ClaudeSettings } from "../../redesign/screens/settings/claude.js";
+import { SettingsPage } from "../settings.js";
+import { ASProvider } from "../../vm/store.js";
+import { emptyViewModel } from "../../vm/load.js";
 
 const q = new URLSearchParams(location.search);
 const THEME = q.get("theme") || "darcula";
@@ -240,6 +244,42 @@ function App() {
             <Markdown key={k} source={src} className="max-w-[86%]" />
           ))}
         </div>
+      </AcRoot>
+    );
+  }
+  if (q.get("view") === "claude-settings") {
+    // Settings › Claude Code with a made-up settings file (no IPC).
+    const fake = async () => ({
+      file: "~/.claude/settings.json",
+      exists: true,
+      valid: true,
+      withheld: [],
+      settings: {
+        env: { CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: "1", DISABLE_AUTOUPDATER: "1" },
+        permissions: { allow: ["Read(**)", "Bash(git *)", "Bash(ls *)", "Bash(cat *)", "Bash(grep *)", "Bash(rg *)", "Bash(npm *)", "Bash(npx *)", "Bash(gh pr view*)", "Bash(gh pr list*)", "Bash(gh run view*)", "Bash(make *)"], defaultMode: "auto" },
+        model: "opus[1m]",
+        enabledPlugins: { "typescript-lsp@claude-plugins-official": true },
+        hooks: { Stop: [{ hooks: [{ type: "command", command: "x" }] }], PreToolUse: [{ hooks: [{}, {}] }] },
+        theme: "dark",
+        skipAutoPermissionPrompt: true,
+      },
+      profiles: [
+        { name: "work", state: "in-sync" as const, extras: [] },
+        { name: "side", state: "pending" as const, extras: ["permissions.allow (+17)", "enabledPlugins.typescript-lsp@claude-plugins-official"] },
+        { name: "home", state: "linked" as const, extras: [] },
+      ],
+    });
+    return (
+      <AcRoot className="h-full" mode={def.mode} style={vars as CSSProperties}>
+        <ASProvider initial={emptyViewModel()} actions={() => ({})}>
+          <div className="flex h-full bg-ac-bg">
+            <SettingsPage current="Claude Code" onSection={() => {}}>
+              <div className="flex min-w-0 flex-col gap-5">
+                <ClaudeSettings load={fake} />
+              </div>
+            </SettingsPage>
+          </div>
+        </ASProvider>
       </AcRoot>
     );
   }

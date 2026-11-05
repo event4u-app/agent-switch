@@ -18,7 +18,7 @@ import { Anchored, monogram } from "./menus.js";
 import { THEMES, themeById, type ThemeDef, type ThemeGroup } from "./themes/registry.js";
 import { resolveTheme, type Accent, type Appearance } from "./themes/resolve.js";
 
-export const SETTINGS_NAV = ["General", "Appearance", "Sign-ins", "Protection", "Distribution", "Notifications", "Desktop pet", "Providers", "Open in", "Agents", "Remote", "Updates", "Advanced"] as const;
+export const SETTINGS_NAV = ["General", "Appearance", "Sign-ins", "Protection", "Distribution", "Notifications", "Desktop pet", "Providers", "Claude Code", "Open in", "Agents", "Remote", "Updates", "Advanced"] as const;
 export type SettingsSection = (typeof SETTINGS_NAV)[number];
 
 export function SettingsPage({ current, onSection, children }: { current: SettingsSection; onSection: (s: SettingsSection) => void; children: ReactNode }) {

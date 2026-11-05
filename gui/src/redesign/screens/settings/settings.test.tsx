@@ -199,7 +199,7 @@ describe("Settings shell", () => {
     mount("general");
     expect(screen.getByRole("heading", { name: "How should it behave?" })).toBeTruthy();
     const nav = screen.getByRole("navigation", { name: "Settings groups" });
-    expect(nav.querySelectorAll("button")).toHaveLength(9);
+    expect(nav.querySelectorAll("button")).toHaveLength(10);
     expect(SETTINGS_GROUPS.map((g) => g.label)).toEqual([
       "General",
       "Sign-ins",
@@ -208,6 +208,7 @@ describe("Settings shell", () => {
       "Notifications",
       "Desktop pet",
       "Providers",
+      "Claude Code",
       "Updates",
       "Advanced",
     ]);

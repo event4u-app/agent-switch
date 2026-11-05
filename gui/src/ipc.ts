@@ -32,6 +32,7 @@ import {
 } from "./v3/adapter/feeds.js";
 type ChangedFileRow = ReturnType<typeof parseChanges>[number];
 import { parseAgentConfigVersion } from "./agent-config.js";
+import { parseClaudeSettings, type ClaudeSettingsStatus } from "./claude-settings.js";
 import type { BubbleAction } from "./pet/model.js";
 import { getPetPresence, getPetWelcomed, setPetWelcomedFlag } from "./settings-store.js";
 import {
@@ -163,6 +164,26 @@ export async function setOpenDefault(target: string, repo?: string): Promise<voi
 /** `open-terminal <id>`: the terminal app "Terminal" opens. */
 export async function setOpenTerminal(id: string): Promise<void> {
   await runCli(["open-terminal", id]);
+}
+
+/** `claude-settings status --json`: ~/.claude/settings.json and each Claude account's state. */
+export async function claudeSettings(): Promise<ClaudeSettingsStatus> {
+  return parseClaudeSettings(JSON.parse(await runCli(["claude-settings", "status", "--json"])));
+}
+
+/** `claude-settings set <path> <json>`, or `unset` for undefined; applies to every Claude account. */
+export async function setClaudeSetting(path: string, value: unknown): Promise<void> {
+  await runCli(value === undefined ? ["claude-settings", "unset", path] : ["claude-settings", "set", path, JSON.stringify(value)]);
+}
+
+/** `claude-settings rule allow|deny|ask <rule> on|off`. */
+export async function setClaudeRule(list: "allow" | "deny" | "ask", rule: string, on: boolean): Promise<void> {
+  await runCli(["claude-settings", "rule", list, rule, on ? "on" : "off"]);
+}
+
+/** `claude-settings sync`: apply the file to every Claude account now. */
+export async function syncClaudeSettings(): Promise<void> {
+  await runCli(["claude-settings", "sync"]);
 }
 
 /** `open <session> [--with T]`: open the session's worktree with its default or `target`. */

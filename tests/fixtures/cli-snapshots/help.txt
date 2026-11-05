@@ -26,6 +26,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch unmap [--provider P] [dir]      remove a directory mapping
   agent-switch mappings                        list directory mappings
   agent-switch share on|sync|off|status [--history] [--source <profile|default>] [--json]   (Claude)
+  agent-switch claude-settings [status|sync|set <path> <json>|unset <path>|rule allow|deny|ask <rule> on|off] [--json]   manage ~/.claude/settings.json once; every Claude profile gets it (global wins, lists are united)
   agent-switch config export|import <profile>   config-only cross-machine bundle to stdout / from stdin (settings, keybindings, CLAUDE.md, skills/, commands/, agents/ — NEVER credentials; pipe export | gpg -c)
   agent-switch sessions [profile] [--recent N] [--json]   recent + live Claude sessions per profile (with context %)
   agent-switch sessions preview <session-id> [--provider claude|codex] [--from <profile>]   the first turns of one session (Claude; JSON)
