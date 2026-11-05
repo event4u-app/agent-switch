@@ -21,8 +21,11 @@ export function V3Tray({
   sessions,
   accounts,
   nowMs,
+  loading,
   on,
 }: {
+  /** The first read has not settled: no "No sessions running" yet. */
+  loading?: boolean;
   needs: NeedItem[];
   away: AwayDigest | null;
   sessions: RowSession[];
@@ -63,6 +66,7 @@ export function V3Tray({
           onCleanUp={() => {}}
           onDoneToday={() => {}}
           onStart={on.start}
+          loading={loading}
           batch={noBatch}
         />
         {live.length > TRAY_SESSIONS && (
