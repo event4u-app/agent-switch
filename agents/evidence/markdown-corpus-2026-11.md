@@ -64,7 +64,7 @@ ours is what the tokens become:
 | fenced/indented code | a code block, text byte-exact, language shown as a label |
 | ```` ```diff ```` (also `patch`) | the chat's diff view when the body holds at least one `+`/`-` line; line numbers only from `@@ -a,b +c,d @@` headers, never invented; else plain code |
 | inline code, bold, italic, strikethrough | the matching inline element |
-| link / autolink | a link only when the destination is an absolute `http:` or `https:` URL (parsed with `URL`, no control characters); otherwise its text as plain text |
+| link / autolink | a link only when the destination is an absolute `http:` or `https:` URL (parsed with `URL`, no control characters); otherwise its text as plain text. A click copies the address; ⌘/Ctrl-click opens it in the browser (owner, 2026-11-05). The shell plugin's native scope allows any http(s) URL without whitespace or control characters; should it still refuse one, the address is copied and the note says so |
 | image | inert text: the alt text, never a fetch |
 | `<br>`, `<br/>`, `<br />` | a line break |
 | `<details>` … `</details>` | a native disclosure — see below |

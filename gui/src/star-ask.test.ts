@@ -100,7 +100,12 @@ describe("shell open scope", () => {
     for (const url of offered) {
       expect(scope.test(url), url).toBe(true);
     }
-    expect(scope.test("https://evil.example/x.com/intent/")).toBe(false);
-    expect(scope.test("https://github.com/event4u-app/agent-switch-fake")).toBe(false);
+  });
+
+  it("opens any http(s) address and nothing else (owner, 2026-11-05: ⌘-click on a chat link)", () => {
+    const conf = JSON.parse(tauriConf) as { plugins: { shell: { open: string } } };
+    const scope = new RegExp(`^${conf.plugins.shell.open}$`);
+    for (const ok of ["https://example.com/a_b?x=1#y", "http://localhost:3000/", "https://github.com/event4u-app/agent-switch/pull/153"]) expect(scope.test(ok), ok).toBe(true);
+    for (const bad of ["javascript:alert(1)", "file:///etc/passwd", "mailto:a@b.c", "data:text/html,<script>", "agent-switch://open", "ftp://x.y/", "https://a.b/x y", "https://a.b/\nx", " https://a.b", "HTTPS://A.B"]) expect(scope.test(bad), bad).toBe(false);
   });
 });
