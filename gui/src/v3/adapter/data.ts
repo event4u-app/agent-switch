@@ -18,6 +18,7 @@ import type { Appearance } from "../themes/resolve.js";
 import { SESSION_MENU, type SessionMenuItem, type V3Data } from "../window.js";
 import type { BarSession, ModelChoices } from "../workbench.js";
 import { modelLabel } from "../model-label.js";
+import { answeredElsewhere, cliAccount } from "../../vm/switch-requests.js";
 import { parsePr, type HistoryRow, type PrFacts } from "./feeds.js";
 import type { V3Feeds } from "./useFeeds.js";
 
@@ -370,6 +371,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     agents: { rows: feeds.agents?.agents ?? [], suggestions: feeds.agents?.suggestions ?? [] },
     remote: { remoteControl: feeds.remote?.remoteControlAccounts ?? [], ssh: feeds.remote?.ssh ?? false },
     newSession: { initial: env.plan, facts },
+    link: linkFor(vm, now),
     decision: (subject) => decisionFor(subject, vm, rows, now),
     bar: (key): BarSession | null => {
       const r = byKey.get(key);
@@ -447,6 +449,15 @@ export function startCommand(p: NewSessionPlan, account: string | null): string 
   return ["agent-switch", "run", ...(account ? [q(account)] : []), ...(p.tool !== "claude" ? ["--provider", p.tool] : []), "--cwd", q(p.folder)].join(" ");
 }
 
+/** The switch requests the window acts on. Pure. */
+export function linkFor(vm: ViewModel, now: number): NonNullable<V3Data["link"]> {
+  const rows = vm.switchRequests ?? [];
+  const asked = rows.filter((r) => r.state === "open" && r.raisedBy === "ac" && Date.parse(r.expiresAt) > now).map((r) => ({ id: r.id, account: r.account }));
+  const accounts = [...new Set(rows.map((r) => r.account))];
+  const answered = accounts.filter((a) => answeredElsewhere(rows, a.replace("/", ":"), now) !== null);
+  return { asked, answered };
+}
+
 /** The limit decision sheet for an account subject (`claude/work` or `claude:work`). */
 export function decisionFor(subject: string, vm: ViewModel, rows: readonly SessionRow[], now: number) {
   // An account (`claude/work`, `claude:work`) or one session (`claude/work/<id>`): then only that session moves.
@@ -485,6 +496,7 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
     sessions,
     suggestion,
     suggestionWhy: suggestion ? (spread ? "spread by expected use — the busiest session gets the most room" : "most room left") : undefined,
+    askedByAgentConfig: (vm.switchRequests ?? []).some((r) => r.state === "open" && r.raisedBy === "ac" && r.account === cliAccount(a.id) && Date.parse(r.expiresAt) > now),
   };
 }
 

@@ -2,14 +2,14 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change. A repository that does not commit this file has no git history for it — regenerate to see the current state.
 >
-> 1 open roadmap · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 2 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**16 / 17 steps done · 94%**
+**16 / 25 steps done · 64%**
 
 ```text
-██████████████████████████████████████░░   94%
+██████████████████████████░░░░░░░░░░░░░░   64%
 ```
 
 ## Open roadmaps
@@ -17,6 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 1 | 16 | 0 | 0 | 0 | █████████░ 94% |
+| 2 | [road-to-service-executed-moves.md](roadmaps/road-to-service-executed-moves.md) | 4 | 8 | 8 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
 
 ---
 
@@ -57,6 +58,17 @@
 | 5 | A browser agent-switch controls | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
 | 6 | Hints that save the account | ✅ done | 0 | 2 | 0 | 0 | 100% |
 
+### [road-to-service-executed-moves.md](roadmaps/road-to-service-executed-moves.md)
+
+**service-executed moves — an opt-in for answers given in the app** — 0 / 8 done (0%)
+
+| # | Phase | State | Open | Done | Deferred | Cancelled | % |
+|---|---|---|---:|---:|---:|---:|---:|
+| 1 | The setting | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
+| 2 | Executor parity with the app | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 3 | The app hands the answer over | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
+| 4 | Docs | ⬜ not started | 1 | 0 | 0 | 0 | 0% |
+
 ## Age
 
 Days since each active roadmap landed at its path and since its last ticked step, read from `git log` (`—` = unknown, or never ticked).
@@ -64,4 +76,5 @@ Days since each active roadmap landed at its path and since its last ticked step
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 0 | 0 |
+| [road-to-service-executed-moves.md](roadmaps/road-to-service-executed-moves.md) | — | — |
 

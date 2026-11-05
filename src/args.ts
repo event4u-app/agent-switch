@@ -59,6 +59,8 @@ const VALUE_FLAGS = new Set([
   "name",
   "binary",
   "agent",
+  "account",
+  "executed",
 ]);
 
 export interface ParsedArgs {

@@ -20,4 +20,17 @@ describe("2.11 limit auto-open", () => {
     const next = acct({ state: "limited", windows: [{ key: "five_hour", label: "5h", utilization: 100, resetsAt: "2026-11-04T18:00:00Z" }] });
     expect(nearLimitToOpen([item], [next], new Set(["limit:claude:side@five_hour:2026-11-04T13:00:00Z"]))).not.toBeNull();
   });
+
+  it("stays closed when agent-config already answered this account's limit", () => {
+    const limited = acct({ state: "limited", windows: [{ key: "five_hour", label: "5h", utilization: 100, resetsAt: "2026-11-04T13:00:00Z" }] });
+    expect(nearLimitToOpen([item], [limited], new Set(), { answered: () => true })).toBeNull();
+    expect(nearLimitToOpen([item], [limited], new Set(), { answered: () => false })).not.toBeNull();
+  });
+
+  it("opens before the limit when agent-config asked, once per request", () => {
+    const near = acct({});
+    const hit = nearLimitToOpen([item], [near], new Set(), { requested: () => "req1" });
+    expect(hit?.mark).toEqual({ id: "limit:claude:side", version: "request:req1" });
+    expect(nearLimitToOpen([item], [near], new Set(["limit:claude:side@request:req1"]), { requested: () => "req1" })).toBeNull();
+  });
 });

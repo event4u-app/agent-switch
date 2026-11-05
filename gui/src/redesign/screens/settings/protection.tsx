@@ -212,6 +212,7 @@ export function ProtectionSettings() {
       </SettingGroup>
       <StartStrategyGroup />
       <LimitAutoOpenGroup />
+      <AgentConfigLinkGroup />
       <CodexAutoResetGroup />
     </>
   );
@@ -279,6 +280,33 @@ function StartStrategyGroup() {
           </SettingRow>
         );
       })}
+    </SettingGroup>
+  );
+}
+
+/** "Let agent-config connect" — `agent-switch link` (default on). Off is the
+ *  safety switch: `mcp serve` offers no tools and agent-config unwires itself. */
+function AgentConfigLinkGroup() {
+  const run = useRun();
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    ipc
+      .getLinkAutoConnect()
+      .then(setOn)
+      .catch(() => setOn(null));
+  }, []);
+
+  async function toggle(next: boolean) {
+    setOn(next);
+    const ok = await run(async () => (await ipc.setLinkAutoConnect(next), true));
+    if (!ok) setOn(!next);
+  }
+
+  return (
+    <SettingGroup title={t("settings.protection.agentConfig")}>
+      <SettingRow title={t("settings.protection.agentConfigLink")} detail={t("settings.protection.agentConfigLinkDetail")}>
+        <Switch label={t("settings.protection.agentConfigLink")} checked={on ?? false} disabled={on === null} onChange={(v) => void toggle(v)} />
+      </SettingRow>
     </SettingGroup>
   );
 }

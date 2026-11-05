@@ -6,7 +6,8 @@
 import type { SessionRow } from "../../transforms.js";
 import { accountId, accountIdFromMember } from "../../vm/build.js";
 import { splitAccountId, type Actions } from "../../vm/actions.js";
-import { sessionArgs } from "../../ipc.js";
+import { sessionArgs, type SwitchRequestRow } from "../../ipc.js";
+import { requestsForMoves } from "../../vm/switch-requests.js";
 import type { Overlay, TerminalRun, Toast } from "../../vm/store.js";
 import type { ProviderId } from "../../transforms.js";
 import type { NeedItem } from "../needs.js";
@@ -37,6 +38,8 @@ export interface DispatchIpc {
   openApp(appId: string, name: string): Promise<void>;
   continueSession(key: string): Promise<void>;
   takeoverHosted(key: string, target: string): Promise<void>;
+  /** Records the answer to a switch request the app has carried out. */
+  decideSwitchRequest?(id: string, verdict: "approve", opts: { to: string; how: "after-turn" | "now"; executed: string }): Promise<void>;
 }
 
 export interface DispatchDeps {
@@ -51,6 +54,8 @@ export interface DispatchDeps {
   reveal?: () => void;
   rows: () => ReadonlyMap<string, SessionRow>;
   needs: () => readonly NeedItem[];
+  /** The switch requests shared with agent-config; a move answers them. */
+  requests?: () => readonly SwitchRequestRow[];
   hosted: (key: string) => boolean;
   setAppearance: (a: Appearance) => void;
   setFocusTerminal: (on: boolean) => void;
@@ -146,6 +151,17 @@ async function moveOne(key: string, target: string, how: MoveHow, deps: Dispatch
   deps.toast({ tone: "info", text: `Now on ${target} — type one message in its terminal to continue` });
 }
 
+/** The app carried the moves out itself (D2 for hosted sessions): it records
+ *  each answer so agent-config stops asking. A brief moves nothing yet. A lost
+ *  record only means agent-config may ask once more; the move stands. */
+function recordMoves(how: MoveHow, moves: readonly { key: string; target: string }[], deps: DispatchDeps): void {
+  if (how === "brief" || !deps.ipc.decideSwitchRequest || !deps.requests) return;
+  const executed = how === "after-turn" ? "armed in the app; moves after this turn" : "moved in the app";
+  for (const r of requestsForMoves(deps.requests(), moves, Date.now())) {
+    void deps.ipc.decideSwitchRequest(r.id, "approve", { to: r.to, how, executed }).catch(() => {});
+  }
+}
+
 function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
   // A chat's approval or question is answered in the chat (spec §13.5: one decision).
   if (n.verb === "Open chat" && deps.openTab) return deps.openTab(n.subject);
@@ -216,6 +232,7 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
           // The app has one overlay slot: every takeover rides in one terminal sheet.
           const [first, ...more] = runs.filter((r): r is TerminalRun => !!r);
           if (first) deps.open(more.length ? { kind: "terminal", run: first, more } : { kind: "terminal", run: first });
+          recordMoves(a.how, a.moves, deps);
         }),
       );
     case "keep-account": {

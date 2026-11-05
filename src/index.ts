@@ -93,6 +93,7 @@ import {
 } from "./commands/system.js";
 import { cmdHandoff, cmdTakeover } from "./commands/takeover.js";
 import { cmdContinue } from "./commands/continue.js";
+import { cmdLimits, cmdLink, cmdMcpServe, cmdSwitch } from "./commands/link.js";
 import { cmdAuthStatus, cmdAutoswitch, cmdProtection, cmdReset, cmdStatus, cmdUsageHistory } from "./commands/usage.js";
 
 async function main(): Promise<void> {
@@ -210,7 +211,7 @@ async function main(): Promise<void> {
     case "files": return cmdFiles(positional[0], flags);
     case "diff": return cmdDiff(positional[0], positional[1], flags);
     case "view": return cmdView(positional[0], positional[1], flags);
-    case "mcp": return cmdMcp(positional[0], positional[1], flags);
+    case "mcp": return positional[0] === "serve" ? cmdMcpServe() : cmdMcp(positional[0], positional[1], flags);
     case "engine": return cmdEngine(positional[0], flags);
     case "needs":
       if (positional[0] === "allow" || positional[0] === "deny") return cmdNeedsAnswer(positional[0], positional[1], positional[2], flags);
@@ -243,6 +244,9 @@ async function main(): Promise<void> {
     case "auth-status": return cmdAuthStatus(providerExplicit ? providerId : undefined, !!flags.json);
     case "activity": return cmdActivity(flags);
     case "picks": return cmdPicks(flags);
+    case "limits": return cmdLimits(providerExplicit ? providerId : undefined, flags);
+    case "switch": return cmdSwitch(positional[0], positional.slice(1), flags);
+    case "link": return cmdLink(positional[0], !!flags.json);
     case "protection": return cmdProtection(positional[0], positional.slice(1), flags);
     case "pool": case "pools": return cmdPool(positional[0], positional.slice(1), flags);
     case "gui-settings": return cmdGuiSettings(positional[0], positional.slice(1), flags);

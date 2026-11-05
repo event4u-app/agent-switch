@@ -214,6 +214,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     reveal: () => void ipc.showWindow().catch(() => {}),
     rows: () => byKey,
     needs: () => feeds.needs?.items ?? [],
+    requests: () => s.switchRequests,
     hosted: (k) => hostedKeys.has(k),
     setAppearance: (a) => (saveAppearance(a), setAppearanceState(a)),
     setFocusTerminal: (on) => (setFocusTerminalFlag(on), setFocusTerminalState(on)),

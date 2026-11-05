@@ -1,0 +1,80 @@
+---
+title: Working with agent-config
+description: agent-config reads every account's limits from Agent Switch and asks you, in your session, whether to move work before a limit. You decide; Agent Switch moves it.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+[agent-config](https://github.com/event4u-app/agent-config) is a separate tool
+that gives coding agents rules, skills and a review council. When both are
+installed, they share two things:
+
+- **Every account's limits.** agent-config reads them from Agent Switch, so it
+  can tell you a limit is coming and keep its own council seats off accounts
+  that are full.
+- **One question near a limit.** "Move this work to another account?" is asked
+  in your session and in the Agent Switch app at the same time. Whichever you
+  answer first counts for both. Agent Switch makes the move.
+
+Nothing moves without your answer, in either tool.
+
+## How it connects
+
+agent-config starts `agent-switch mcp serve`, a local MCP server, as part of
+your agent session. It runs as you, talks over the session's own input and
+output, and opens no port. There is nothing to sign in to.
+
+Turn it off in the app (**Settings › Protection › Let agent-config connect**) or
+in a terminal:
+
+```bash
+agent-switch link off      # agent-config stops connecting; mcp serve offers no tools
+agent-switch link on       # the default
+agent-switch link status --json
+```
+
+## What happens near a limit
+
+<Steps>
+
+1. **A question is opened.** When a running session's account reaches 90 % of a
+   window (or its protection threshold, if that is lower), the background
+   service opens a switch request. agent-config may open one earlier, when its
+   own quota reading says the window is filling fast. Each request lists the
+   accounts the work could move to: same tool first, the emptiest first, plus
+   one account of the other tool as a handoff.
+
+2. **You are asked, in both places.** agent-config tells you in the session.
+   The app opens its near-limit sheet and marks it "agent-config asked".
+
+3. **You answer once.** Choose an account and how: after this turn, now, or as
+   a handoff (a new session that starts from a written brief). Or keep going,
+   or decline. The first answer is kept; an answer given later in the other
+   tool is not applied, and it shows you the first one.
+
+4. **Agent Switch moves the work.** An answer given in agent-config is carried
+   out by the background service. An answer given in the app is carried out by
+   the app, as before. A move that needs a terminal (a Codex move, a handoff)
+   leaves the command to continue with.
+
+</Steps>
+
+<Aside type="note" title="Across tools">
+A move from Claude to Codex (or back) is a handoff: a new session seeded with a
+brief of what was being done. The conversation itself does not cross tools, and
+the new tool reads its context again.
+</Aside>
+
+## From the command line
+
+```bash
+agent-switch limits --json                          # every account's limits, from cache
+agent-switch switch list                            # open requests
+agent-switch switch request --session claude/work/<id>
+agent-switch switch decide <id> approve --to claude/home --how after-turn
+agent-switch switch decide <id> decline
+```
+
+The MCP server offers the same: `limits_get`, `session_whoami`, `switch_list`,
+`switch_status`, `switch_request`, `switch_decide` and `link_status`.
+`switch_decide` records your answer, so your agent asks you before calling it.

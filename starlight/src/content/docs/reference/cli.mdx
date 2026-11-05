@@ -212,6 +212,10 @@ The integration defines `claude`, `codex` and `agy` wrappers plus `asw`
 | Command | What it does |
 | --- | --- |
 | `status [name]` | Usage per account: 5-hour and weekly meters (Claude, Codex). |
+| `limits [--json]` | Every account's limits from cache, with whether it can take work now, why not, and how fresh the numbers are. Reads no network. |
+| `switch list\|show\|request\|decide …` | Switch requests near a limit: list or show them, raise one for an account or session, or record your decision (`approve [--to A] [--how after-turn\|now\|handoff]`, `decline`, `snooze`). The first decision counts, in the app, here or in agent-config; the background service carries out an approval. Never moves anything by itself. |
+| `link [on\|off\|status] [--json]` | Let agent-config connect to this Agent Switch (default on). Off, `mcp serve` offers no tools and agent-config removes its wiring. |
+| `mcp serve` | The local MCP server agent-config starts over stdio: limits, this session, and switch requests. No port, nothing listening. |
 | `usage history [--profile <name>]` | Usage samples the background service recorded. |
 | `protection` | Limit protection per account (default on at 98%). |
 | `protection set <provider/name> [--on\|--off] [--threshold N]` | Change one account's limit protection. |
@@ -324,6 +328,10 @@ the new account from its next message.
 | `rebind --restore [--profile <p>]` | Give the session its own account back. |
 | `rebind --reset` | Re-enable `rebind` after it turned itself off following 3 failed attempts. |
 | `continue <provider/account/session> [--text "…"]` | Type one message (default “Continue where you left off.”) into a session Agent Switch hosts. |
+
+`rebind` moves the target account's login into the running session, so the
+target's own account is signed out while it is lent. It therefore refuses a
+target that has a running session of its own: that session would lose its login.
 
 `rebind` moves the target account's login into the running session, so the
 target's own account is signed out while it is lent. It therefore refuses a

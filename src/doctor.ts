@@ -12,7 +12,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { ROOT, activeFor, configDir, identity, listProfiles, profileExists, readGuard, sharesDefaultLogin } from "./profiles.js";
+import { ROOT, activeFor, configDir, identity, listProfiles, profileExists, readGuard, readLinkAutoConnect, sharesDefaultLogin } from "./profiles.js";
 import { Provider, ProviderId, allProviders } from "./providers.js";
 import { credentialStore } from "./credentials.js";
 import { sharedLinkHealth } from "./share.js";
@@ -107,6 +107,15 @@ export function shellIntegrationCheck(home: string = os.homedir(), read: (p: str
         detail: "Without it, `claude`/`codex`/`agy` in a terminal ignore the active profile and folder rules. (Checked the usual zsh, bash, fish and PowerShell profile files.)",
         fix: 'Run `agent-switch shellenv install` — it adds `eval "$(agent-switch shellenv)"` (or your shell\'s equivalent) to your shell profile.',
       };
+}
+
+/** The agent-config link (road-to-the-agent-config-link): informational only —
+ *  both tools are optional and either setting is a valid choice. */
+export function agentConfigLinkCheck(enabled: boolean, agentConfigPresent: boolean): DoctorCheck {
+  const id = "agent-config-link";
+  if (!enabled) return { id, status: "info", title: "agent-config link off", detail: "agent-config does not connect; `mcp serve` offers no tools.", fix: "agent-switch link on" };
+  if (!agentConfigPresent) return { id, status: "info", title: "agent-config link on, agent-config not installed", detail: "Nothing connects until agent-config is installed." };
+  return { id, status: "ok", title: "agent-config link on", detail: "agent-config can read limits and ask to switch through `agent-switch mcp serve`; you decide every move." };
 }
 
 export function autostartCheck(s: GuiSettings): DoctorCheck {
@@ -349,9 +358,11 @@ export async function collectDoctorReport(): Promise<DoctorReport> {
   }
 
   // Ecosystem tooling (agent-config + rtk) — both optional, so never an error.
-  for (const t of checkTooling({ ids: ["agent-config", "rtk"] })) {
+  const tooling = checkTooling({ ids: ["agent-config", "rtk"] });
+  for (const t of tooling) {
     checks.push({ id: `tooling-${t.id}`, status: t.healthy ? "ok" : "warn", title: doctorToolingLine(t), detail: "" });
   }
+  checks.push(agentConfigLinkCheck(readLinkAutoConnect(), tooling.some((t) => t.id === "agent-config" && t.present)));
 
   const readiness = checks.some((c) => c.status === "error") ? "blocked" : checks.some((c) => c.status === "warn") ? "attention" : "ready";
   return { readiness, platform: process.platform, checks };

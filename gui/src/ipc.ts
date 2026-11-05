@@ -67,6 +67,7 @@ const TRAY_READ_SCOPES: readonly [string, RegExp][] = [
   ["as-read-launchers", /^launcher list --json$/],
   ["as-read-needs", /^needs --json$/],
   ["as-read-host", /^host list --json$/],
+  ["as-read-switch-requests", /^switch list --all --json$/],
 ];
 
 /** The tray scope name for `args`, or null when the tray may not run it. */
@@ -1177,6 +1178,54 @@ export async function getKeepSignedIn(): Promise<boolean> {
 
 export async function setKeepSignedIn(on: boolean): Promise<void> {
   await runCli(["keep-signed-in", on ? "on" : "off"]);
+}
+
+/** A switch request as `switch list --json` reports it (road-to-the-agent-config-link). */
+export interface SwitchRequestRow {
+  id: string;
+  rev: number;
+  /** `provider/account/sessionId`, or null for whatever runs on the account. */
+  session: string | null;
+  /** `provider/name`. */
+  account: string;
+  reason: { window: string; fill: number | null; resetsAt: string | null };
+  raisedBy: string;
+  raisedAt: string;
+  expiresAt: string;
+  state: string;
+  candidates: { target: string; provider: string; fill: number | null; resetsAt: string | null; how: string[] }[];
+  decision?: { kind: string; target?: string; how?: string; by: string; at: string };
+  outcome?: { at: string; ok: boolean; detail: string; newSession?: string; resume?: string };
+}
+
+/** Every switch request still on disk (open, decided and finished). */
+export async function listSwitchRequests(): Promise<SwitchRequestRow[]> {
+  const rows = JSON.parse(await runCli(["switch", "list", "--all", "--json"]));
+  return Array.isArray(rows) ? rows : [];
+}
+
+/** Record the user's answer from the app. `executed`: the app already made the
+ *  move itself, so the service must not run it again. */
+export async function decideSwitchRequest(
+  id: string,
+  decision: "approve" | "decline" | "snooze",
+  opts: { to?: string; how?: "after-turn" | "now" | "handoff"; executed?: string } = {},
+): Promise<void> {
+  const args = ["switch", "decide", id, decision, "--by", "as-gui"];
+  if (opts.to) args.push("--to", opts.to);
+  if (opts.how) args.push("--how", opts.how);
+  if (opts.executed !== undefined) args.push("--executed", opts.executed || "moved in the app");
+  await runCli(args);
+}
+
+/** "Let agent-config connect" — `agent-switch link` (default on). */
+export async function getLinkAutoConnect(): Promise<boolean> {
+  const { enabled } = JSON.parse(await runCli(["link", "status", "--json"]));
+  return !!enabled;
+}
+
+export async function setLinkAutoConnect(on: boolean): Promise<void> {
+  await runCli(["link", on ? "on" : "off"]);
 }
 
 /** How a start with no folder rule picks its account (`strategy`):
