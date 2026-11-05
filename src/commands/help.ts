@@ -60,6 +60,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch auth-status [--provider P] [--json]   per-profile login state from the provider's store (no tokens)
   agent-switch activity [--limit N] [--json]   what agent-switch itself did, and why
   agent-switch picks [--limit N] [--json]      which account each wrapped start chose, and why
+  agent-switch limits [--provider P] [--json]  every account's limits from cache: usable or why not, and how fresh
   agent-switch rename <old> <new> [--provider P]                               rename a profile (name & keep its tag)
   agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)
   agent-switch providers link|unlink --provider P [--path <binary>]   use a provider binary that is not on PATH

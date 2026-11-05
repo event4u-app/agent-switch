@@ -102,7 +102,7 @@ CLI front door stays (it is the user's own tool).
 
 ## Phase 1 — Core on `main` (2.x)
 
-- [ ] **1.1 Limits observation.** `src/link/limits.ts` + `agent-switch limits
+- [x] **1.1 Limits observation.** `src/link/limits.ts` + `agent-switch limits
       --json`: per account the newest cached snapshot, `stale` per the daemon's
       freshness rule, `usable` per `balance.ts weigh()`. No network unless
       `--refresh`.
