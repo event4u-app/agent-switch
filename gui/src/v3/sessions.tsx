@@ -300,7 +300,7 @@ export function SessionsZone({
   return (
     <section aria-label="Sessions">
       {divider ? <div className="mx-3.5 my-1.5 h-px bg-ac-line" /> : <div className="h-2" />}
-      <div className={cn("flex items-center gap-2 bg-ac-panel px-3.5", tray ? "mt-0.5 h-6" : "sticky top-0 z-[1] h-8")}>
+      <div className={cn("flex items-center gap-2 px-3.5", tray ? "mt-0.5 h-6" : "sticky top-0 z-[1] h-8 bg-ac-panel")}>
         <span className="text-[11px] font-semibold text-ac-soft">Sessions</span>
         <span className="text-[11px] text-ac-muted">{live.length}</span>
       </div>
