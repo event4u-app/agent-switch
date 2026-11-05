@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -685,9 +685,7 @@ test("`takeover` only cares about THIS session: other live sessions on the sourc
 
 test("`takeover` of a running session refuses; `--stop-source` ends it between turns, never mid-turn", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
-  // Orphaned on purpose: a direct child would linger as a zombie (still "alive"
-  // to kill -0) because this test blocks in spawnSync and never reaps it.
-  const pid = Number(execFileSync("sh", ["-c", "sleep 30 >/dev/null 2>&1 & echo $!"], { encoding: "utf8" }).trim());
+  const pid = sleeperPid();
   try {
     seed(home, "claude", "privat");
     seed(home, "claude", "work");
@@ -709,6 +707,17 @@ test("`takeover` of a running session refuses; `--stop-source` ends it between t
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+/** A process that lives 30 s. On POSIX it is orphaned on purpose: a direct child
+ *  would linger as a zombie (still "alive" to kill -0) because this test blocks
+ *  in spawnSync and never reaps it. Windows has no zombies, and `sh` there would
+ *  report an MSYS pid rather than a Windows one. */
+function sleeperPid(): number {
+  if (process.platform !== "win32") return Number(execFileSync("sh", ["-c", "sleep 30 >/dev/null 2>&1 & echo $!"], { encoding: "utf8" }).trim());
+  const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { detached: true, stdio: "ignore" });
+  child.unref();
+  return child.pid!;
+}
 
 function isAlive(pid: number): boolean {
   try {
