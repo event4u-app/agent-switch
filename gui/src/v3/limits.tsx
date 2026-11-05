@@ -6,6 +6,7 @@
  * reference boards; nothing here ever switches an account.
  */
 
+import type { ReactNode } from "react";
 import { cn } from "../lib/utils.js";
 import type { IdentityColor } from "../vm/types.js";
 import { AccountMark, Chip, duration, pct } from "./kit.js";
@@ -160,7 +161,7 @@ export function PaceLine({ a }: { a: LimitAccount }) {
 }
 
 /** From a Limits-strip row: every window, pace in words, actions. Never switches on its own. */
-export function LimitsPopover({ a, nowMs, onMove, onAccounts }: { a: LimitAccount; nowMs: number; onMove: () => void; onAccounts: () => void }) {
+export function LimitsPopover({ a, nowMs, onMove, onAccounts, running }: { a: LimitAccount; nowMs: number; onMove: () => void; onAccounts: () => void; /** What runs on this account ("Running on …"). */ running?: ReactNode }) {
   const near = tone(tightest(a)?.used ?? null, a.protect);
   return (
     <div role="dialog" aria-label={`${a.name} limits`} className="w-[320px] rounded-xl border border-ac-line2 bg-ac-panel p-3" style={{ boxShadow: "var(--ac-shadow)" }}>
@@ -182,6 +183,7 @@ export function LimitsPopover({ a, nowMs, onMove, onAccounts }: { a: LimitAccoun
         ))}
       </div>
       <PaceLine a={a} />
+      {running}
       <div className="mt-2.5 flex gap-1.5">
         <button type="button" onClick={onMove} className="h-7 rounded-md border border-ac-line2 px-2.5 text-xs text-ac-soft hover:text-ac-text">
           Move its session…
