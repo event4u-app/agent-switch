@@ -60,6 +60,7 @@ test("activeFor / setActive are per-provider", () => {
     osNotifications: false,
     keepSignedIn: true,
     codexAutoReset: false,
+    linkAutoConnect: true,
     strategy: {},
     rebind: { disabled: false, consecutiveFailures: 0 },
     guard: "block",
@@ -146,6 +147,7 @@ test("legacy global auto-switch migrates onto every provider", () => {
     osNotifications: false,
     keepSignedIn: true,
     codexAutoReset: false,
+    linkAutoConnect: true,
     strategy: {},
     rebind: { disabled: false, consecutiveFailures: 0 },
     guard: "block",
@@ -221,6 +223,19 @@ test("codexAutoReset defaults OFF — redeeming a scarce credit is opt-in — an
   assert.equal(P.readCodexAutoReset(), true);
   P.setCodexAutoReset(false);
   assert.equal(P.readCodexAutoReset(), false);
+});
+
+test("linkAutoConnect defaults ON — also for a state file written before the key — and persists off", () => {
+  fs.rmSync(P.STATE_FILE, { force: true });
+  assert.equal(P.readLinkAutoConnect(), true);
+  fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: {}, keepSignedIn: true }));
+  assert.equal(P.readLinkAutoConnect(), true); // upgraded install without the key → on
+  P.setLinkAutoConnect(false);
+  assert.equal(P.readLinkAutoConnect(), false);
+  P.setActive("codex", null); // survives an unrelated state write
+  assert.equal(P.readLinkAutoConnect(), false);
+  P.setLinkAutoConnect(true);
+  assert.equal(P.readLinkAutoConnect(), true);
 });
 
 test("start strategy defaults to balance per provider, ignores junk, and persists a change", () => {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { handoffSeedArgs } from "../../ipc.js";
+import { decideSwitchRequest, handoffSeedArgs } from "../../ipc.js";
 import type { ProviderId } from "../../transforms.js";
 import { t } from "../../i18n/index.js";
 import { cn } from "../../lib/utils.js";
@@ -14,6 +14,7 @@ import { SessionStateIcon } from "../../ui/SessionStateIcon.js";
 import { Caps } from "../../ui/Typography.js";
 import { TOOL_LABEL } from "../../vm/rules.js";
 import { useAS } from "../../vm/store.js";
+import { askedByAgentConfig, cliAccount, openRequestFor } from "../../vm/switch-requests.js";
 import { limitOptions, limitSession, limitTargets, switchTargets, type LimitChoice } from "./logic.js";
 
 const PRIMARY: Record<LimitChoice, (name: string) => string> = {
@@ -36,6 +37,12 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
   const [target, setTarget] = useState(targets[0]?.account.id ?? "");
   const [busy, setBusy] = useState(false);
   if (!item || !account) return null;
+  // The same question agent-config may have asked in the session: answering
+  // here answers it there too (road-to-the-agent-config-link).
+  const request = openRequestFor(s.switchRequests, account.id, session?.id ?? null, s.now);
+  const record = (to: string, how: "now" | "handoff", executed: string) => {
+    if (request) void decideSwitchRequest(request.id, "approve", { to: cliAccount(to), how, executed }).catch(() => {});
+  };
 
   const selected = options.find((o) => o.id === choice);
   // A live switch may only land on an account nobody is using; fall back to the
@@ -55,6 +62,7 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
       // Move + resume with "continue" in the app's terminal; takeover refuses
       // while codex still runs in the user's own terminal and says so there.
       done();
+      record(targetAccount.id, "now", "moving in the app's terminal");
       s.open({
         kind: "terminal",
         run: {
@@ -67,6 +75,7 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
       setBusy(true);
       try {
         await s.act.rebind!(session.id, targetAccount.id);
+        record(targetAccount.id, "now", "rebound in the app");
         // Same conversation, new login: one message from the user makes it carry on.
         done();
         s.close();
@@ -84,6 +93,7 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
       try {
         const b = await s.act.handoffBrief!(session.id, targetAccount.id);
         if (!b.briefPath) throw new Error(t("sessions.sheet.briefNotWritten"));
+        record(targetAccount.id, "handoff", "brief written; continuing in the app's terminal");
         done();
         s.open({
           kind: "terminal",
@@ -143,6 +153,11 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
               <AccountDot color={account.color} size={8} /> {TOOL_LABEL[account.tool]} · {account.name}
             </span>
           </div>
+          {askedByAgentConfig(request) && (
+            <div>
+              <Badge tone="info">{t("sessions.near.askedByAgentConfig")}</Badge>
+            </div>
+          )}
           {account.windows.map((w) => (
             <UsageWindowRow key={w.key} window={w} threshold={account.threshold} now={s.now} />
           ))}
