@@ -318,6 +318,8 @@ export const settings: { readonly [K in keyof typeof en]: string } = {
   "settings.advanced.windowDetail": "Das neue Fenster oder für diese Version noch das aus 2.11. Beim Wechsel lädt das Fenster neu.",
   "settings.advanced.windowV3": "Neu",
   "settings.advanced.windowPrevious": "Vorheriges",
+  "settings.advanced.chatMarkdown": "Chat-Antworten formatieren",
+  "settings.advanced.chatMarkdownDetail": "Tabellen, Code, Diffs und aufklappbare Abschnitte in Agent-Antworten. Aus zeigt jede Antwort als reinen Text.",
   "settings.advanced.sameAccount": "Gleiches Konto an zwei Orten",
   "settings.advanced.sameAccountDetail":
     "Warnen passt für die meisten Setups; Blockieren nur für Anmeldungen, die beim Teilen kaputtgehen.",

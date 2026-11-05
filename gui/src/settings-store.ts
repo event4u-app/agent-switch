@@ -923,6 +923,26 @@ export function setLimitAutoOpen(on: boolean): void {
   }
 }
 
+const CHAT_MARKDOWN_KEY = "agent-switch-chat-markdown";
+
+/** Render agent replies in the v3 chat as formatted markdown. Default on; off
+ *  shows every reply as plain text (roadmap road-to-a-chat-that-reads-well 2.6). */
+export function getChatMarkdown(): boolean {
+  try {
+    return localStorage.getItem(CHAT_MARKDOWN_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setChatMarkdown(on: boolean): void {
+  try {
+    localStorage.setItem(CHAT_MARKDOWN_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const APPEARANCE_KEY = "agent-switch-appearance";
 
 /** The stored v3 appearance as JSON, or null; the caller validates and migrates. */

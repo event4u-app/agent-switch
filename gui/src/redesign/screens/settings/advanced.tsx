@@ -7,7 +7,9 @@ import { Segmented } from "../../../ui/Segmented.js";
 import { SettingGroup, SettingRow } from "../../../ui/Setting.js";
 import { TextInput } from "../../../ui/TextInput.js";
 import { useAS } from "../../../vm/store.js";
-import { getUiWindow, setUiWindow, type UiWindow } from "../../../settings-store.js";
+import { getChatMarkdown, getUiWindow, setChatMarkdown, setUiWindow, type UiWindow } from "../../../settings-store.js";
+import { Switch } from "../../../ui/Switch.js";
+import { setMarkdownEnabled } from "../../../v3/markdown/Markdown.js";
 import type { GuardPolicy } from "../../../vm/types.js";
 import { uninstallArmed, useFoundation, useRun } from "./prefs.js";
 import { WithReason } from "./shared.js";
@@ -24,6 +26,7 @@ export function AdvancedSettings() {
   const fa = useFoundation();
   const run = useRun();
   const [confirm, setConfirm] = useState("");
+  const [markdown, setMarkdown] = useState(getChatMarkdown);
   const [busy, setBusy] = useState(false);
   const armed = uninstallArmed(confirm);
 
@@ -51,6 +54,17 @@ export function AdvancedSettings() {
               { value: "v3", label: t("settings.advanced.windowV3") },
               { value: "2.11", label: t("settings.advanced.windowPrevious") },
             ]}
+          />
+        </SettingRow>
+        <SettingRow title={t("settings.advanced.chatMarkdown")} detail={t("settings.advanced.chatMarkdownDetail")}>
+          <Switch
+            label={t("settings.advanced.chatMarkdown")}
+            checked={markdown}
+            onChange={(v) => {
+              setChatMarkdown(v);
+              setMarkdownEnabled(v);
+              setMarkdown(v);
+            }}
           />
         </SettingRow>
         <SettingRow
