@@ -55,6 +55,8 @@ export interface ClaudeBridgeOptions {
   cwd: string;
   /** Resume this session; null starts a new one. */
   sessionId: string | null;
+  /** The session id is reserved but has no conversation yet (a hosted session before its first turn): start it under that id instead of resuming. */
+  fresh?: boolean;
   mode: PermissionMode;
   model?: string;
   /** Where dropped files outside the session's folder are copied. */
@@ -69,7 +71,7 @@ export interface ClaudeBridgeOptions {
 
 type Json = Record<string, unknown>;
 
-export function claudeArgs(o: Pick<ClaudeBridgeOptions, "sessionId" | "mode" | "model">): string[] {
+export function claudeArgs(o: Pick<ClaudeBridgeOptions, "sessionId" | "fresh" | "mode" | "model">): string[] {
   if (!PERMISSION_MODES.includes(o.mode)) throw new Error(`permission mode ${String(o.mode)} is not offered in the client`);
   return [
     "-p",
@@ -79,7 +81,7 @@ export function claudeArgs(o: Pick<ClaudeBridgeOptions, "sessionId" | "mode" | "
     "--include-partial-messages",
     "--permission-prompt-tool", "stdio",
     "--permission-mode", o.mode,
-    ...(o.sessionId ? ["--resume", o.sessionId] : []),
+    ...(o.sessionId ? [o.fresh ? "--session-id" : "--resume", o.sessionId] : []),
     ...(o.model ? ["--model", o.model] : []),
   ];
 }
@@ -101,7 +103,7 @@ export class ClaudeBridge {
 
   start(): void {
     const spawn = this.o.spawn ?? nodeSpawn;
-    const child = spawn(this.o.bin, claudeArgs({ sessionId: this.o.sessionId, mode: this.mode, model: this.o.model }), {
+    const child = spawn(this.o.bin, claudeArgs({ sessionId: this.o.sessionId, fresh: this.o.fresh, mode: this.mode, model: this.o.model }), {
       cwd: this.o.cwd,
       env: { ...process.env, CLAUDE_CONFIG_DIR: this.o.configDir },
       stdio: ["pipe", "pipe", "pipe"],

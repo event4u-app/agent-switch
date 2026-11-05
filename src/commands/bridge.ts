@@ -24,6 +24,7 @@ import { clearPending, writePending, type PendingItem } from "../bridge/pending.
 import { liveSessions } from "../api.js";
 import { eventFile, lastHookCwd, readEvents } from "../hooks.js";
 import { InputLeases, LeaseHeld, type Holder } from "../host/lease.js";
+import { TmuxHost, type HostedSession } from "../host/tmux-host.js";
 import { restoreAfterChat } from "./view.js";
 import { configDir, die, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
 import { provider as providerOf, type ProviderId } from "../providers.js";
@@ -56,6 +57,20 @@ export function target(arg: string): Target {
   const cwd = lastHookCwd(events, sessionId) ?? readSessionHeader(s.files.transcript).cwd;
   if (!cwd) die(`${s.key} names no folder`);
   return { key: s.key, provider, account, sessionId, cwd, transcript: s.files.transcript };
+}
+
+/** A hosted Claude session before its first turn has no transcript yet; the host registry knows its account and folder. Pure. */
+export function hostedTarget(key: string, hosted: readonly Pick<HostedSession, "key" | "provider" | "account" | "sessionId" | "cwd">[]): Target | null {
+  const h = hosted.find((s) => s.key === key);
+  if (!h || h.provider !== "claude") return null;
+  return { key: h.key, provider: "claude", account: h.account, sessionId: h.sessionId, cwd: h.cwd, transcript: null };
+}
+
+/** The bridge cannot start on `key`: say why on stdout (the app reads only stdout) and give a parked window its program back. */
+function refuse(key: string, message: string): void {
+  process.stdout.write(JSON.stringify({ bridge: "error", message }) + "\n");
+  restoreAfterChat(key);
+  process.exitCode = 1;
 }
 
 /** Events of one page, newest last: `limit` events ending before index `before`. Pure. */
@@ -226,8 +241,10 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
     t = { key: `${providerId}/${routed}/new`, provider: providerId, account: routed, sessionId: null, cwd, transcript: null };
   } else {
     if (!arg) die("usage: agent-switch bridge <session> [--mode default|acceptEdits|plan] [--model M] · bridge --new [profile] --cwd DIR");
-    t = target(arg);
-    if (runsElsewhere(t)) die(`${t.key} is running in a terminal; open it there, or take it over first`);
+    const found = resolveSession(arg) ? target(arg) : hostedTarget(arg, TmuxHost.available() ? new TmuxHost(ROOT).list() : []);
+    if (!found) return refuse(arg, `no Claude or Codex session ${arg}`);
+    t = found;
+    if (runsElsewhere(t)) return refuse(t.key, `${t.key} is running in a terminal; open it there, or take it over first`);
   }
 
   const out = (o: BridgeOutput) => process.stdout.write(JSON.stringify(o) + "\n");
@@ -294,6 +311,7 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
         configDir: configDir("claude", t.account),
         cwd: t.cwd,
         sessionId: t.sessionId,
+        fresh: !!t.sessionId && !t.transcript,
         mode,
         model,
         staging: stagingDir(ROOT, t.key),

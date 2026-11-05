@@ -8,6 +8,9 @@
  * Agent Switch, only for Claude and Codex.
  */
 
+import * as fs from "node:fs";
+import * as path from "node:path";
+
 import { configDir, die, readBinaryPath, ROOT } from "../profiles.js";
 import { provider as providerOf } from "../providers.js";
 import { InputLeases } from "../host/lease.js";
@@ -17,12 +20,24 @@ import { listSessions } from "../sessions.js";
 
 export class ViewRefused extends Error {}
 
+/** Does `<configDir>/projects/<any>/<id>.jsonl` exist? No projects folder means no; any other read error counts as yes, so a resume is never dropped by mistake. */
+export function hasClaudeTranscript(dir: string, id: string): boolean {
+  const projects = path.join(dir, "projects");
+  try {
+    return fs.readdirSync(projects).some((p) => fs.existsSync(path.join(projects, p, `${id}.jsonl`)));
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== "ENOENT";
+  }
+}
+
 /** Providers whose terminal and chat share one conversation the bridge can resume. */
 export const SHARED_CONVERSATION = new Set(["claude", "codex"]);
 
-/** How the program comes back after the chat: resume the same conversation. Pure. */
-export function resumeArgs(provider: string, sessionId: string): string[] {
-  return provider === "codex" ? ["resume", sessionId] : ["--resume", sessionId];
+/** How the program comes back after the chat: resume the same conversation.
+ *  A Claude session without one yet (no turn) starts again under its id instead. Pure. */
+export function resumeArgs(provider: string, sessionId: string, hasConversation = true): string[] {
+  if (provider === "codex") return ["resume", sessionId];
+  return hasConversation ? ["--resume", sessionId] : [];
 }
 
 /** The parked window's program: this CLI, printing a notice and waiting. */
@@ -39,6 +54,8 @@ export interface ViewDeps {
   bin: (provider: string) => string;
   configDir: (provider: string, account: string) => string;
   parked: (key: string) => string[];
+  /** Has the session a conversation to resume (a transcript)? */
+  hasConversation: (key: string) => boolean;
 }
 
 function hosted(d: ViewDeps, key: string): HostedSession {
@@ -64,7 +81,7 @@ export function toTerminal(d: ViewDeps, key: string): HostedSession {
   if (!s.parked) return s;
   const w = d.writer(key);
   if (w) throw new ViewRefused(`the chat still holds ${key} (${w}); close the chat first`);
-  const back = d.host.respawn(key, { provider: s.provider, account: s.account, configDir: d.configDir(s.provider, s.account), cwd: s.cwd, bin: d.bin(s.provider), args: resumeArgs(s.provider, s.sessionId) });
+  const back = d.host.respawn(key, { provider: s.provider, account: s.account, configDir: d.configDir(s.provider, s.account), cwd: s.cwd, bin: d.bin(s.provider), args: resumeArgs(s.provider, s.sessionId, d.hasConversation(key)) });
   d.host.unparked(back.key);
   return { ...back, parked: undefined };
 }
@@ -88,6 +105,11 @@ export function realViewDeps(): ViewDeps {
     bin: (p) => readBinaryPath(p as "claude" | "codex") ?? providerOf(p as "claude" | "codex").binary,
     configDir: (p, a) => configDir(p as "claude" | "codex", a),
     parked: (key) => parkedArgv(key),
+    hasConversation: (key) => {
+      const [provider, account, id] = key.split("/");
+      if (provider !== "claude" || !account || !id) return true;
+      return hasClaudeTranscript(configDir("claude", account), id);
+    },
   };
 }
 

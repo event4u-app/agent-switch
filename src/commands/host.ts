@@ -17,6 +17,7 @@ import { listSessions } from "../sessions.js";
 import { turnInFlight } from "../telemetry.js";
 import { resolveDir } from "./routing.js";
 import { syncClaudeProfile } from "./shared.js";
+import { hasClaudeTranscript, resumeArgs } from "./view.js";
 
 export async function cmdHost(providerId: ProviderId, sub: string | undefined, arg: string | undefined, flags: Record<string, string | boolean>): Promise<void> {
   const action = sub ?? "list";
@@ -73,7 +74,8 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
       const rows = listSessions(cfg, 50);
       const row = rows.find((r) => r.sessionId === cur.sessionId);
       if (row?.file && !flags.force && turnInFlight(row.file, Date.now(), 15_000)) die(`a turn is running in ${cur.key}; the change applies from the next turn — try again when it ends, or pass --force`);
-      const args = ["--resume", cur.sessionId, ...(cur.remoteControl ? ["--remote-control", cur.remoteControl] : [])];
+      // Before its first turn there is nothing to resume: the program starts again under its id.
+      const args = [...resumeArgs("claude", cur.sessionId, hasClaudeTranscript(cfg, cur.sessionId)), ...(cur.remoteControl ? ["--remote-control", cur.remoteControl] : [])];
       if (typeof flags.model === "string") args.push("--model", flags.model);
       if (typeof flags.effort === "string") args.push("--effort", flags.effort);
       const moved = host.respawn(cur.key, { provider: "claude", account: cur.account, configDir: cfg, cwd: cur.cwd, bin: readBinaryPath("claude") ?? provider("claude").binary, args }, hookCommandPrefix());
