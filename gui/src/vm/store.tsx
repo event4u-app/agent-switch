@@ -18,6 +18,7 @@ export type SettingsTab =
   | "notifications"
   | "pet"
   | "providers"
+  | "claude"
   | "updates"
   | "advanced";
 export type AccountsTab = "accounts" | "history" | "projects";

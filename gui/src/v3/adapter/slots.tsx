@@ -7,6 +7,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { tauriBackend } from "../../terminal.js";
 import type { SessionRow } from "../../transforms.js";
 import { AdvancedSettings } from "../../redesign/screens/settings/advanced.js";
+import { ClaudeSettings } from "../../redesign/screens/settings/claude.js";
 import { DistributionSettings } from "../../redesign/screens/settings/distribution.js";
 import { GeneralSettings } from "../../redesign/screens/settings/general.js";
 import { NotificationSettings } from "../../redesign/screens/settings/notifications.js";
@@ -51,6 +52,8 @@ function legacyScreen(section: SettingsSection): ReactNode {
       return <PetSettings />;
     case "Providers":
       return <ProvidersSettings />;
+    case "Claude Code":
+      return <ClaudeSettings />;
     case "Updates":
       return <UpdatesSettings />;
     case "Advanced":

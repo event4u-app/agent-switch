@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
-import { Bell, Box, Cat, Download, KeyRound, Power, Shield, Shuffle, Wrench } from "lucide-react";
+import { Bell, Box, Cat, Download, FileCog, KeyRound, Power, Shield, Shuffle, Wrench } from "lucide-react";
 import { t, type TKey } from "../../../i18n/index.js";
 import { cn } from "../../../lib/utils.js";
 import { Caps, PageHeader } from "../../../ui/Typography.js";
 import { useAS, type SettingsTab } from "../../../vm/store.js";
 import { AdvancedSettings } from "./advanced.js";
+import { ClaudeSettings } from "./claude.js";
 import { DistributionSettings } from "./distribution.js";
 import { GeneralSettings } from "./general.js";
 import { NotificationSettings } from "./notifications.js";
@@ -36,6 +37,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   group("notifications", "settings.group.notifications", Bell),
   group("pet", "settings.group.pet", Cat),
   group("providers", "settings.group.providers", Box),
+  group("claude", "settings.group.claude", FileCog),
   group("updates", "settings.group.updates", Download),
   group("advanced", "settings.group.advanced", Wrench),
 ];
@@ -48,6 +50,7 @@ const PAGES: Record<SettingsTab, () => ReactNode> = {
   notifications: () => <NotificationSettings />,
   pet: () => <PetSettings />,
   providers: () => <ProvidersSettings />,
+  claude: () => <ClaudeSettings />,
   updates: () => <UpdatesSettings />,
   advanced: () => <AdvancedSettings />,
 };
