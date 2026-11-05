@@ -666,6 +666,59 @@ test("`takeover` refuses when the source profile has live sessions; `--force` ov
   }
 });
 
+test("`takeover` only cares about THIS session: other live sessions on the source profile never block it", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "privat");
+    seed(home, "claude", "work");
+    seedTranscript(home, "privat", "-tmp-proj", "0000-mine-id");
+    const sess = path.join(home, "claude", "privat", "config", "sessions");
+    fs.mkdirSync(sess, { recursive: true });
+    fs.writeFileSync(path.join(sess, `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: "1111-other-id", status: "busy" }));
+
+    run(home, ["takeover", "0000-mine-id", "--to", "work", "--print-only"]);
+    assert.equal(fs.existsSync(path.join(home, "claude", "work", "config", "projects", "-tmp-proj", "0000-mine-id.jsonl")), true);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("`takeover` of a running session refuses; `--stop-source` ends it between turns, never mid-turn", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  // Orphaned on purpose: a direct child would linger as a zombie (still "alive"
+  // to kill -0) because this test blocks in spawnSync and never reaps it.
+  const pid = Number(execFileSync("sh", ["-c", "sleep 30 >/dev/null 2>&1 & echo $!"], { encoding: "utf8" }).trim());
+  try {
+    seed(home, "claude", "privat");
+    seed(home, "claude", "work");
+    seedTranscript(home, "privat", "-tmp-proj", "0000-run-id");
+    const sess = path.join(home, "claude", "privat", "config", "sessions");
+    fs.mkdirSync(sess, { recursive: true });
+    const pidFile = path.join(sess, `${pid}.json`);
+    fs.writeFileSync(pidFile, JSON.stringify({ pid: pid, sessionId: "0000-run-id", status: "busy" }));
+
+    assert.throws(() => run(home, ["takeover", "0000-run-id", "--to", "work", "--print-only"]), new RegExp(`session 0000-run-id is still running \\(PID ${pid}\\)`));
+    assert.throws(() => run(home, ["takeover", "0000-run-id", "--to", "work", "--print-only", "--stop-source"]), /mid-turn/);
+
+    fs.writeFileSync(pidFile, JSON.stringify({ pid: pid, sessionId: "0000-run-id", status: "idle" }));
+    run(home, ["takeover", "0000-run-id", "--to", "work", "--print-only", "--stop-source"]);
+    assert.equal(isAlive(pid), false, "the running session was ended");
+    assert.equal(fs.existsSync(path.join(home, "claude", "work", "config", "projects", "-tmp-proj", "0000-run-id.jsonl")), true);
+  } finally {
+    if (isAlive(pid)) process.kill(pid);
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 test("`takeover --keep-source` refuses non-interactive runs (fork cleanup needs the TTY step)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
