@@ -223,8 +223,9 @@ export function targetWhere(t: OpenTarget): string {
   return t.app ?? t.launcher ?? (t.kind === "files" || t.kind === "terminal" ? "built in" : "");
 }
 
-export function OpenInSettings({ targets, agentApps = [], defaultTarget, perRepo, focusTerminal, on }: { targets: OpenTarget[]; agentApps?: { id: string; label: string; tool: string }[]; defaultTarget: string | null; perRepo: Record<string, string>; focusTerminal: boolean; on: { setDefault: (target: string, repo?: string) => void; focusTerminal: (v: boolean) => void } }) {
+export function OpenInSettings({ targets, agentApps = [], defaultTarget, perRepo, focusTerminal, terminal = null, terminals = [], on }: { targets: OpenTarget[]; agentApps?: { id: string; label: string; tool: string }[]; defaultTarget: string | null; perRepo: Record<string, string>; focusTerminal: boolean; terminal?: string | null; terminals?: { id: string; name: string; installed: boolean }[]; on: { setDefault: (target: string, repo?: string) => void; setTerminal?: (id: string) => void; focusTerminal: (v: boolean) => void } }) {
   const usable = targets.filter((t) => t.installed);
+  const installedTerminals = terminals.filter((t) => t.installed);
   const options = usable.map((t) => ({ value: t.target, label: t.label }));
   return (
     <>
@@ -253,7 +254,12 @@ export function OpenInSettings({ targets, agentApps = [], defaultTarget, perRepo
               <Select ariaLabel={`Default for ${repo}`} value={target} onChange={(v) => on.setDefault(v, repo)} options={options} />
             </Row>
           ))}
-          <Row title="Focus terminal" detail="For sessions in your own terminal. macOS asks once for Automation access (error −1743 is explained, not hidden).">
+          {installedTerminals.length > 0 && on.setTerminal && (
+            <Row title="Terminal" detail="What “Open in → Terminal” opens, and where a takeover starts its new window. Only installed terminals are listed.">
+              <Select ariaLabel="Terminal app" value={terminal ?? installedTerminals[0]!.id} onChange={(v) => on.setTerminal!(v)} options={installedTerminals.map((t) => ({ value: t.id, label: t.name }))} />
+            </Row>
+          )}
+          <Row title="Focus terminal" detail="For sessions in your own terminal. Works with Terminal and iTerm2. macOS asks once for Automation access (error −1743 is explained, not hidden).">
             <Switch checked={focusTerminal} onChange={on.focusTerminal} label="Focus terminal" />
           </Row>
         </Card>

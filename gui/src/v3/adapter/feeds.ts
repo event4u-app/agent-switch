@@ -46,6 +46,10 @@ export interface OpenTargetsGlobal {
   perRepo: Record<string, string>;
   lastUsed: string | null;
   targets: { target: string; label: string; kind: "editor" | "files" | "terminal"; installed: boolean; app?: string | null; launcher?: string | null }[];
+  /** The terminal app "Terminal" opens; null when none is installed. */
+  terminal: string | null;
+  /** Every terminal this platform knows. */
+  terminals: { id: string; name: string; installed: boolean }[];
 }
 
 export type KeptState = { state: "kept"; bytes: number } | { state: "at-risk"; daysLeft: number } | { state: "lost" };
@@ -141,6 +145,11 @@ export function parseOpenTargets(v: unknown): OpenTargetsGlobal {
       .map(obj)
       .filter((t) => typeof t.target === "string" && kinds.has(t.kind as string))
       .map((t) => ({ target: t.target as string, label: str(t.label) ?? (t.target as string), kind: t.kind as "editor" | "files" | "terminal", installed: t.installed === true, app: str(t.app), launcher: str(t.launcher) })),
+    terminal: str(o.terminal),
+    terminals: arr(o.terminals)
+      .map(obj)
+      .filter((t) => typeof t.id === "string" && /^[a-z0-9-]+$/.test(t.id as string))
+      .map((t) => ({ id: t.id as string, name: str(t.name) ?? (t.id as string), installed: t.installed === true })),
   };
 }
 

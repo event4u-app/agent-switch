@@ -160,6 +160,11 @@ export async function setOpenDefault(target: string, repo?: string): Promise<voi
   await runCli(["open-default", target, ...(repo ? ["--repo", repo] : [])]);
 }
 
+/** `open-terminal <id>`: the terminal app "Terminal" opens. */
+export async function setOpenTerminal(id: string): Promise<void> {
+  await runCli(["open-terminal", id]);
+}
+
 /** `open <session> [--with T]`: open the session's worktree with its default or `target`. */
 export async function openSessionIn(key: string, target?: string): Promise<void> {
   await runCli(["open", key, ...(target ? ["--with", target] : [])]);

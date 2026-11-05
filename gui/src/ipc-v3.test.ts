@@ -24,6 +24,7 @@ describe("v3 IPC calls", () => {
     [() => ipc.openTargetsGlobal(), ["open-targets", "--json"]],
     [() => ipc.setOpenDefault("finder", "/r"), ["open-default", "finder", "--repo", "/r"]],
     [() => ipc.setOpenDefault("vscode"), ["open-default", "vscode"]],
+    [() => ipc.setOpenTerminal("iterm"), ["open-terminal", "iterm"]],
     [() => ipc.openSessionIn("claude/w/1"), ["open", "claude/w/1"]],
     [() => ipc.openSessionIn("claude/w/1", "cursor"), ["open", "claude/w/1", "--with", "cursor"]],
     [() => ipc.focusSessionTerminal("claude/w/1"), ["focus", "claude/w/1"]],

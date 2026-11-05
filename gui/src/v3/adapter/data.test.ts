@@ -172,9 +172,9 @@ describe("toV3Data", () => {
   });
 
   it("Open-in: agent apps never reach the settings list", () => {
-    const feeds = { ...emptyFeeds(), openTargets: { default: "vscode", perRepo: { "/r": "finder" }, lastUsed: "finder", targets: [{ target: "vscode", label: "VS Code", kind: "editor" as const, installed: true }] } };
+    const feeds = { ...emptyFeeds(), openTargets: { default: "vscode", perRepo: { "/r": "finder" }, lastUsed: "finder", targets: [{ target: "vscode", label: "VS Code", kind: "editor" as const, installed: true }], terminal: "iterm", terminals: [{ id: "iterm", name: "iTerm2", installed: true }] } };
     const d = toV3Data(emptyViewModel(NOW), feeds, env({ focusTerminal: false }));
-    expect(d.openIn).toEqual({ targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true }], defaultTarget: "vscode", lastUsed: "finder", perRepo: { "/r": "finder" }, focusTerminal: false, agentApps: [] });
+    expect(d.openIn).toEqual({ targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true }], defaultTarget: "vscode", lastUsed: "finder", perRepo: { "/r": "finder" }, focusTerminal: false, agentApps: [], terminal: "iterm", terminals: [{ id: "iterm", name: "iTerm2", installed: true }] });
     expect(d.openIn.targets.some((t) => t.kind === "agent-app")).toBe(false);
   });
 });

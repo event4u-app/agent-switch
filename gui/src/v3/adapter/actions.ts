@@ -26,6 +26,7 @@ export interface DispatchIpc {
   setLibraryFlag(key: string, flag: "pin" | "archive", on: boolean): Promise<void>;
   setAutoKeep(on: boolean): Promise<void>;
   setOpenDefault(target: string, repo?: string): Promise<void>;
+  setOpenTerminal(id: string): Promise<void>;
   setAgentEnabled(id: string, on: boolean): Promise<void>;
   setRemoteControl(account: string, on: boolean): Promise<void>;
   setRemoteSsh(on: boolean): Promise<void>;
@@ -292,6 +293,8 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       return deps.setAppearance(a.value);
     case "open-default":
       return run(deps, "Default editor", deps.ipc.setOpenDefault(a.target, a.repo));
+    case "open-terminal":
+      return run(deps, "Terminal", deps.ipc.setOpenTerminal(a.id));
     case "focus-terminal-setting":
       return deps.setFocusTerminal(a.value);
     case "agent-enabled":

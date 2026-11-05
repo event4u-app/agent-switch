@@ -8,7 +8,7 @@ describe("feed parsers", () => {
     expect(parseEngine(v)).toEqual({ running: false, reason: null, hostedRunning: 0 });
     expect(parseHostList(v)).toEqual({ mode: "ephemeral", hosted: [] });
     expect(parsePrStatus(v)).toEqual({ problem: null, byKey: {} });
-    expect(parseOpenTargets(v)).toEqual({ default: null, perRepo: {}, lastUsed: null, targets: [] });
+    expect(parseOpenTargets(v)).toEqual({ default: null, perRepo: {}, lastUsed: null, targets: [], terminal: null, terminals: [] });
     expect(parseLibrary(v)).toEqual({ autoKeep: true, vaultBytes: 0, entries: [] });
     expect(parseChanges(v)).toEqual([]);
     expect(parseHistory(v)).toEqual([]);
@@ -35,7 +35,13 @@ describe("feed parsers", () => {
 
   it("open targets: an unknown kind is dropped", () => {
     const o = parseOpenTargets({ default: "vscode", lastUsed: "cursor", perRepo: { "/r": "finder", bad: 1 }, targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true }, { target: "x", kind: "agent-app" }] });
-    expect(o).toEqual({ default: "vscode", perRepo: { "/r": "finder" }, lastUsed: "cursor", targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true, app: null, launcher: null }] });
+    expect(o).toEqual({ default: "vscode", perRepo: { "/r": "finder" }, lastUsed: "cursor", targets: [{ target: "vscode", label: "VS Code", kind: "editor", installed: true, app: null, launcher: null }], terminal: null, terminals: [] });
+  });
+
+  it("open targets: the chosen terminal and the known ones; an id that is not a plain slug is dropped", () => {
+    const o = parseOpenTargets({ terminal: "iterm", terminals: [{ id: "terminal", name: "Terminal", installed: true }, { id: "iterm", name: "iTerm2", installed: true }, { id: "warp", name: "Warp", installed: false }, { id: "x; rm", name: "bad", installed: true }, { name: "no id" }] });
+    expect(o.terminal).toBe("iterm");
+    expect(o.terminals.map((t) => [t.id, t.installed])).toEqual([["terminal", true], ["iterm", true], ["warp", false]]);
   });
 
   it("open targets: where each one was found", () => {

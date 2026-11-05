@@ -49,7 +49,7 @@ export interface V3Data {
   palette: PaletteEntry[];
   appearance: Appearance;
   prefersDark: boolean;
-  openIn: { targets: OpenTarget[]; defaultTarget: string | null; lastUsed: string | null; perRepo: Record<string, string>; focusTerminal: boolean; agentApps: { id: string; label: string; tool: string }[] };
+  openIn: { targets: OpenTarget[]; defaultTarget: string | null; lastUsed: string | null; perRepo: Record<string, string>; focusTerminal: boolean; agentApps: { id: string; label: string; tool: string }[]; terminal?: string | null; terminals?: { id: string; name: string; installed: boolean }[] };
   /** Settings › Agents (v3.2). */
   agents: { rows: AgentRowView[]; suggestions: AgentSuggestionView[] };
   /** Settings › Remote (v3.2): R1 accounts and the SSH stage. */
@@ -111,6 +111,7 @@ export type V3Action =
   | { type: "palette"; entry: PaletteEntry; newTab: boolean }
   | { type: "appearance"; value: Appearance }
   | { type: "open-default"; target: string; repo?: string }
+  | { type: "open-terminal"; id: string }
   | { type: "focus-terminal-setting"; value: boolean }
   | { type: "agent-enabled"; id: string; value: boolean }
   | { type: "agent-install"; id: string }
@@ -302,7 +303,7 @@ export function V3Window({
         {section === "Appearance" ? (
           <AppearanceSettings a={data.appearance} prefersDark={data.prefersDark} onChange={(value) => act({ type: "appearance", value })} />
         ) : section === "Open in" ? (
-          <OpenInSettings {...data.openIn} on={{ setDefault: (target, repo) => act({ type: "open-default", target, repo }), focusTerminal: (value) => act({ type: "focus-terminal-setting", value }) }} />
+          <OpenInSettings {...data.openIn} on={{ setDefault: (target, repo) => act({ type: "open-default", target, repo }), setTerminal: (id) => act({ type: "open-terminal", id }), focusTerminal: (value) => act({ type: "focus-terminal-setting", value }) }} />
         ) : section === "Agents" ? (
           <AgentsSettings agents={data.agents.rows} suggestions={data.agents.suggestions} on={{ toggle: (id, value) => act({ type: "agent-enabled", id, value }), install: (id) => act({ type: "agent-install", id }) }} />
         ) : section === "Remote" ? (
