@@ -20,6 +20,12 @@ pub const TRAY_WINDOW_LABEL: &str = "tray";
 const TRAY_W: f64 = 340.0;
 const TRAY_H: f64 = 480.0;
 const TRAY_MAX_H: f64 = 720.0;
+const TRAY_MAX_W: f64 = 480.0;
+
+/// The card's own width (v2 340, v3 360), kept within sane bounds; the default without one.
+fn tray_width(width: Option<f64>) -> f64 {
+    width.filter(|w| w.is_finite()).map_or(TRAY_W, |w| w.clamp(TRAY_W, TRAY_MAX_W))
+}
 const GAP: f64 = 6.0;
 // A click on the tray icon blurs the open popover first (it hides), then the
 // click toggles it — which would re-show it at once. A click this soon after a
@@ -150,15 +156,29 @@ pub fn tray_hide(app: AppHandle) {
 // The popover follows its card's height (logical px, capped) and stays
 // anchored to the icon — above a bottom taskbar it grows upwards.
 #[tauri::command]
-pub fn tray_resize(app: AppHandle, state: tauri::State<TrayState>, height: f64) {
+pub fn tray_resize(app: AppHandle, state: tauri::State<TrayState>, width: Option<f64>, height: f64) {
     let Some(win) = app.get_webview_window(TRAY_WINDOW_LABEL) else {
         return;
     };
     let scale = win.scale_factor().unwrap_or(1.0);
     let h = height.clamp(1.0, TRAY_MAX_H);
-    let size = PhysicalSize::new((TRAY_W * scale).round() as u32, (h * scale).round() as u32);
+    let size = PhysicalSize::new((tray_width(width) * scale).round() as u32, (h * scale).round() as u32);
     let _ = win.set_size(size);
     if let Some(anchor) = state.anchor.lock().ok().and_then(|a| *a) {
         place(&win, anchor, (size.width as f64, size.height as f64));
+    }
+}
+
+#[cfg(test)]
+mod width_tests {
+    use super::*;
+
+    #[test]
+    fn follows_the_card_within_bounds() {
+        assert_eq!(tray_width(None), TRAY_W);
+        assert_eq!(tray_width(Some(360.0)), 360.0);
+        assert_eq!(tray_width(Some(100.0)), TRAY_W);
+        assert_eq!(tray_width(Some(5000.0)), TRAY_MAX_W);
+        assert_eq!(tray_width(Some(f64::NAN)), TRAY_W);
     }
 }

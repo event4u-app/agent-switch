@@ -12,6 +12,7 @@ import { themeById } from "../themes/registry.js";
 import { DEFAULT_APPEARANCE, resolveTheme, type Accent } from "../themes/resolve.js";
 import { V3Window, type V3Data, type V3Slots } from "../window.js";
 import { V3Tray } from "../tray.js";
+import { ToolsPage } from "../tools.js";
 import { ExternalBody, HostedTerminal } from "../workbench.js";
 import type { LimitAccount } from "../limits.js";
 import type { RowSession } from "../sessions.js";
@@ -210,7 +211,19 @@ function App() {
     usageHistory: <p className="text-[13px] text-ac-muted">(2.11 usage history)</p>,
     pools: <p className="text-[13px] text-ac-muted">(2.11 projects &amp; pools)</p>,
     poolCount: 4,
-    tools: <p className="text-[13px] text-ac-muted">(2.11 tool list)</p>,
+    tools: (
+      <ToolsPage
+        checking={false}
+        on={{ check: () => {}, update: () => {}, install: () => {} }}
+        rows={[
+          { id: "claude", name: "Claude Code", where: "/usr/local/bin/claude", version: "2.4.1", status: "ok", latest: "2.4.1" },
+          { id: "codex", name: "Codex CLI", where: "/opt/homebrew/bin/codex", version: "0.148.0", status: "update", latest: "0.150.0" },
+          { id: "agent-config", name: "agent-config", where: "npm · global", version: "16.5.0", status: "ok", latest: "16.5.0" },
+          { id: "tmux", name: "tmux", where: "/opt/homebrew/bin/tmux", version: "3.5a", status: "ok", latest: "3.5a" },
+          { id: "gh", name: "gh", where: "/opt/homebrew/bin/gh · signed in", version: "2.62.0", status: "ok", latest: "2.62.0" },
+        ]}
+      />
+    ),
     settings: (s) => <p className="text-[13px] text-ac-muted">{`(2.11 ${s} section)`}</p>,
   };
   if (q.get("view") === "tray") {

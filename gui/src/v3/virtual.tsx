@@ -4,6 +4,28 @@
 
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
+/** One row: measured once when it mounts, then only when the browser reports a
+ *  resize. Measuring on every render never settles when a height flips with the
+ *  layout (scrollbar shows, text rewraps, scrollbar goes), and React then aborts
+ *  the whole window. */
+function MeasuredRow({ k, onHeight, children }: { k: string; onHeight: (key: string, h: number) => void; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    onHeight(k, el.getBoundingClientRect().height);
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => onHeight(k, el.getBoundingClientRect().height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [k, onHeight]);
+  return (
+    <div ref={ref} className="pb-3">
+      {children}
+    </div>
+  );
+}
+
 export const OVERSCAN_PX = 600;
 
 /** The rows to render for a scroll position. Pure.
@@ -34,9 +56,7 @@ export function VirtualList<T>({ items, keyOf, render, estimate = 64, className,
   const [scroll, setScroll] = useState({ top: 0, height: 800 });
   const [, bump] = useState(0);
   const atBottom = useRef(true);
-  const measure = useCallback((key: string, el: HTMLDivElement | null) => {
-    if (!el) return;
-    const h = el.getBoundingClientRect().height;
+  const measure = useCallback((key: string, h: number) => {
     if (h && heights.current.get(key) !== h) {
       heights.current.set(key, h);
       bump((x) => x + 1);
@@ -54,6 +74,7 @@ export function VirtualList<T>({ items, keyOf, render, estimate = 64, className,
       role="log"
       aria-label={label}
       className={className}
+      style={{ scrollbarGutter: "stable" }}
       onScroll={(e) => {
         const el = e.currentTarget;
         atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
@@ -65,9 +86,9 @@ export function VirtualList<T>({ items, keyOf, render, estimate = 64, className,
           {items.slice(r.start, r.end).map((t) => {
             const k = keyOf(t);
             return (
-              <div key={k} ref={(el) => measure(k, el)} className="pb-3">
+              <MeasuredRow key={k} k={k} onHeight={measure}>
                 {render(t)}
-              </div>
+              </MeasuredRow>
             );
           })}
         </div>

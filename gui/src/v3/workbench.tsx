@@ -45,7 +45,13 @@ export function TabStrip({ tabs, activeId, onSelect, onClose }: { tabs: TabItem[
             {t.kind === "session" ? <SessionStateIcon state={t.state} /> : t.icon}
             <span className="truncate">{t.kind === "session" ? t.title : t.label}</span>
             {t.kind === "session" ? (
-              idx <= 9 && <span className="ml-auto shrink-0 font-ac-mono text-[10px] text-ac-muted">⌘{idx}</span>
+              // The shortcut sits in the slot; hover or focus swaps it for the close button (spec §6.1: closing keeps the session).
+              <span className="relative ml-auto inline-flex h-4 min-w-4 shrink-0 items-center justify-end">
+                {idx <= 9 && <span className="font-ac-mono text-[10px] text-ac-muted group-hover:invisible group-focus-within:invisible">⌘{idx}</span>}
+                <button type="button" aria-label={`Close ${t.title}`} onClick={(e) => (e.stopPropagation(), onClose(t.id))} className="absolute inset-y-0 right-0 inline-flex items-center rounded opacity-0 hover:bg-ac-raise focus-visible:opacity-100 group-hover:opacity-100">
+                  <X className="size-3 text-ac-muted hover:text-ac-text" />
+                </button>
+              </span>
             ) : (
               <button type="button" aria-label={`Close ${t.label}`} onClick={(e) => (e.stopPropagation(), onClose(t.id))}>
                 <X className="size-3 text-ac-muted" />

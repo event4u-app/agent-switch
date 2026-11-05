@@ -119,15 +119,20 @@ const CONTINUE = "Continue where you left off.";
  * "after this turn" arms the switch and the service continues it. Codex has no
  * live login switch: the session moves (`takeover`) and resumes on the target
  * with the continuation — in its window when hosted, else in the app's terminal
- * (which refuses while codex still runs in the user's own terminal).
+ * (which refuses while codex still runs in the user's own terminal). A Claude
+ * session bound for an account that runs a session of its own moves the same
+ * way: `rebind` would take that account's login away and sign it out.
  */
-async function moveOne(key: string, target: string, how: MoveHow, deps: DispatchDeps): Promise<void> {
+async function moveOne(key: string, target: string, how: MoveHow, deps: DispatchDeps, via?: "takeover"): Promise<void> {
   const [provider] = key.split("/");
   if (how === "brief") return void deps.open({ kind: "session", id: vmSessionId(key) });
-  if (provider === "codex") {
+  if (provider === "codex" || via === "takeover") {
     if (deps.hosted(key)) return deps.ipc.takeoverHosted(key, target);
     const id = key.split("/")[2];
-    return void deps.open({ kind: "terminal", run: { title: `Continue on ${target}`, args: ["takeover", id, "--to", target, "--provider", "codex", "--prompt", CONTINUE] } });
+    // Claude: the session may still run in the user's own terminal; end it there
+    // between turns so it can move (the CLI refuses mid-turn).
+    const stop = provider === "claude" ? ["--stop-source"] : [];
+    return void deps.open({ kind: "terminal", run: { title: `Continue on ${target}`, args: ["takeover", id, "--to", target, "--provider", provider, ...stop, "--prompt", CONTINUE] } });
   }
   const to = accountId(provider, target);
   if (how === "after-turn") return deps.act.armRebind?.(vmSessionId(key), to);
@@ -204,7 +209,7 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       return run(
         deps,
         "Move",
-        Promise.all(a.moves.map(({ key, target }) => moveOne(key, target, a.how, deps))),
+        Promise.all(a.moves.map(({ key, target, via }) => moveOne(key, target, a.how, deps, via))),
       );
     case "keep-account": {
       const limits = deps.needs().filter((n) => n.kind === "limit" && n.subject.split("/")[1] === a.account);

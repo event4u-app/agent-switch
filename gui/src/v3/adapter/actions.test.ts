@@ -120,6 +120,19 @@ describe("dispatchV3", () => {
     expect(d.toast).toHaveBeenCalledWith({ tone: "info", text: "Now on home — type one message in its terminal to continue" });
   });
 
+  it("move: a Claude session bound for an account with its own session moves there (takeover) instead of rebinding", async () => {
+    const d = { ...deps(), hosted: (k: string) => k === "claude/work/h" };
+    await dispatchV3({ type: "move", how: "now", moves: [{ key: "claude/work/h", target: "home", via: "takeover" }] }, d);
+    expect(d.ipc.takeoverHosted).toHaveBeenCalledWith("claude/work/h", "home");
+    await dispatchV3({ type: "move", how: "after-turn", moves: [{ key: "claude/work/x", target: "home", via: "takeover" }] }, d);
+    expect(d.open).toHaveBeenCalledWith({
+      kind: "terminal",
+      run: { title: "Continue on home", args: ["takeover", "x", "--to", "home", "--provider", "claude", "--stop-source", "--prompt", "Continue where you left off."] },
+    });
+    expect(d.act.rebind).not.toHaveBeenCalled();
+    expect(d.act.armRebind).not.toHaveBeenCalled();
+  });
+
   it("move: Codex moves the session and resumes it with the continuation — in place when hosted, else in the app's terminal", async () => {
     const d = { ...deps(), hosted: (k: string) => k === "codex/work/h" };
     await dispatchV3({ type: "move", how: "now", moves: [{ key: "codex/work/h", target: "home" }] }, d);

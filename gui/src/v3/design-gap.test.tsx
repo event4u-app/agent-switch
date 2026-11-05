@@ -170,6 +170,19 @@ describe("start on a session (gap §4a)", () => {
     expect(screen.getAllByRole("tab").map((t) => t.getAttribute("aria-selected"))).toEqual(["false", "true"]);
   });
 
+  it("a session tab closes without ending its session, and the neighbour takes over (spec §6.1)", () => {
+    const d = data();
+    const two = [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow" }];
+    const act = vi.fn();
+    render(<V3Window data={{ ...d, sessions: two }} slots={slots} act={act} layout={{ load: () => ({ tabs: ["s1", "s2"], active: "s2" }), save: vi.fn() }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Close Checkout flow" }));
+    expect(screen.queryByRole("tab", { name: /Checkout flow/ })).toBeNull();
+    expect(screen.getByRole("tab", { name: /Event store/ }).getAttribute("aria-selected")).toBe("true");
+    expect(act).not.toHaveBeenCalled();
+    // Still in the sidebar.
+    expect(screen.getAllByText("Checkout flow").length).toBeGreaterThan(0);
+  });
+
   it("with no sessions: the workbench empty state and the zone's one action", () => {
     const { act } = mount({ sessions: [], needs: [] });
     expect(screen.getByText("No sessions yet")).toBeTruthy();

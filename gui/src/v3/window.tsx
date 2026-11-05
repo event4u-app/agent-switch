@@ -11,7 +11,7 @@ import { Ellipsis, FileCode, Layers, Library, ListTree, Plus, Settings, Wrench }
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
 import type { IdentityColor, ToolEntry } from "../vm/types.js";
-import { DecisionSheet, NewSessionDialog, type MoveHow, type NewSessionFacts, type NewSessionPlan, type SheetSession } from "./dialogs.js";
+import { DecisionSheet, NewSessionDialog, type MoveHow, type NewSessionFacts, type NewSessionPlan, type SheetMove, type SheetSession } from "./dialogs.js";
 import { Shell, useFrame, type PageId } from "./frame.js";
 import { LimitsPopover, LimitsStrip, RoomLeft, type LimitAccount } from "./limits.js";
 import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
@@ -22,7 +22,7 @@ import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type Su
 import { SessionsZone, childNoun, type RowSession } from "./sessions.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
-import { ToolsPage, updateNeeds } from "./tools.js";
+import { updateNeeds } from "./tools.js";
 import { BlockerStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
 import { Act, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type OpenFacts, type OpenPick } from "./menus.js";
@@ -93,7 +93,7 @@ export type V3Action =
   | { type: "needs-later-all" }
   | { type: "start"; plan: NewSessionPlan }
   | { type: "choose-account" }
-  | { type: "move"; how: MoveHow; moves: { key: string; target: string }[] }
+  | { type: "move"; how: MoveHow; moves: SheetMove[] }
   | { type: "keep-account"; account: string }
   | { type: "session-menu"; key: string; item: SessionMenuItem }
   | { type: "batch"; op: keyof BatchActions; keys: string[] }
@@ -296,7 +296,7 @@ export function V3Window({
         />
       );
     if (p === "sessions-table") return <AllSessionsPage sessions={data.table} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
-    if (p === "tools") return <ToolsPage>{slots.tools}</ToolsPage>;
+    if (p === "tools") return slots.tools;
     return (
       <SettingsPage current={section} onSection={setSection}>
         {section === "Appearance" ? (
@@ -423,8 +423,13 @@ export function V3Window({
         activeId={active ?? ""}
         onSelect={setActive}
         onClose={(id) => {
+          // A session tab only leaves the strip; the session keeps running in the sidebar (spec §6.1).
+          const order = tabs.map((t) => t.id);
+          const at = order.indexOf(id);
+          const rest = order.filter((x) => x !== id);
           setPages((cur) => cur.filter((p) => `page:${p}` !== id));
-          if (active === id) setActive(sessionTabs[0] ?? null);
+          setSessionTabs((cur) => cur.filter((k) => k !== id));
+          if (active === id) setActive(rest[Math.min(at, rest.length - 1)] ?? null);
         }}
       />
       {!(activeSession && bar) && engineBanner}
