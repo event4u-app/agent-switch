@@ -9,7 +9,7 @@ import type { ClaudeSettingsStatus } from "../../../claude-settings.js";
 const ipcMock = vi.hoisted(() => ({
   claudeSettings: vi.fn(),
   setClaudeSetting: vi.fn(async () => {}),
-  setClaudeRule: vi.fn(async () => {}),
+  setClaudeRules: vi.fn(async () => {}),
   syncClaudeSettings: vi.fn(async () => {}),
 }));
 vi.mock("../../../ipc.js", async (orig) => ({ ...(await orig<typeof import("../../../ipc.js")>()), ...ipcMock }));
@@ -71,10 +71,10 @@ describe("Settings › Claude Code", () => {
     expect(sw.getAttribute("aria-checked")).toBe("false");
     expect(screen.getByRole("switch", { name: "No automatic updates" }).getAttribute("aria-checked")).toBe("true");
     fireEvent.click(sw);
-    await waitFor(() => expect(ipcMock.setClaudeSetting).toHaveBeenCalledWith("env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY", "1"));
+    await waitFor(() => expect(ipcMock.setClaudeSetting).toHaveBeenCalledWith(["env", "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY"], "1"));
     await waitFor(() => expect(ipcMock.claudeSettings).toHaveBeenCalledTimes(2));
     fireEvent.click(screen.getByRole("switch", { name: "No automatic updates" }));
-    await waitFor(() => expect(ipcMock.setClaudeSetting).toHaveBeenCalledWith("env.DISABLE_AUTOUPDATER", undefined));
+    await waitFor(() => expect(ipcMock.setClaudeSetting).toHaveBeenCalledWith(["env", "DISABLE_AUTOUPDATER"], undefined));
   });
 
   it("commands: catalog groups with checkboxes, the file's own rules in their own group, a group toggle sends each missing rule", async () => {
@@ -85,11 +85,32 @@ describe("Settings › Claude Code", () => {
     expect((screen.getByRole("checkbox", { name: "Bash(make *)" }) as HTMLInputElement).checked).toBe(true);
     expect(screen.getByText("Your other rules")).toBeTruthy();
     fireEvent.click(git);
-    await waitFor(() => expect(ipcMock.setClaudeRule).toHaveBeenCalledWith("allow", "Bash(git *)", false));
+    await waitFor(() => expect(ipcMock.setClaudeRules).toHaveBeenCalledWith("allow", ["Bash(git *)"], false));
     const php = screen.getByText("PHP").closest("div")!.parentElement!;
     fireEvent.click(within(php).getByRole("button", { name: "All" }));
-    await waitFor(() => expect(ipcMock.setClaudeRule).toHaveBeenCalledTimes(6));
-    expect(ipcMock.setClaudeRule).toHaveBeenCalledWith("allow", "Bash(composer *)", true);
+    await waitFor(() => expect(ipcMock.setClaudeRules).toHaveBeenCalledWith("allow", ["Bash(composer *)", "Bash(php artisan *)", "Bash(phpstan *)", "Bash(rector *)", "Bash(ecs *)"], true));
+    expect(ipcMock.setClaudeRules).toHaveBeenCalledTimes(2);
+  });
+
+  it("a plugin id with dots is sent as one key", async () => {
+    ipcMock.claudeSettings.mockResolvedValue(status({ settings: { enabledPlugins: { "lsp@acme.tools": true } } }));
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: /Plugins/ }));
+    fireEvent.click(screen.getByRole("switch", { name: "lsp@acme.tools" }));
+    await waitFor(() => expect(ipcMock.setClaudeSetting).toHaveBeenCalledWith(["enabledPlugins", "lsp@acme.tools"], false));
+  });
+
+  it("while a change is saved, rule checkboxes are locked, so two quick clicks cannot race", async () => {
+    let release!: () => void;
+    ipcMock.setClaudeRules.mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: /Allowed commands/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Bash(git *)" }));
+    await waitFor(() => expect((screen.getByRole("checkbox", { name: "Bash(ls *)" }) as HTMLInputElement).disabled).toBe(true));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Bash(ls *)" }));
+    expect(ipcMock.setClaudeRules).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect((screen.getByRole("checkbox", { name: "Bash(ls *)" }) as HTMLInputElement).disabled).toBe(false));
   });
 
   it("adds a typed rule only when it has the rule shape", async () => {
@@ -101,7 +122,7 @@ describe("Settings › Claude Code", () => {
     expect((add as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(field, { target: { value: "Bash(cargo *)" } });
     fireEvent.click(add);
-    await waitFor(() => expect(ipcMock.setClaudeRule).toHaveBeenCalledWith("allow", "Bash(cargo *)", true));
+    await waitFor(() => expect(ipcMock.setClaudeRules).toHaveBeenCalledWith("allow", ["Bash(cargo *)"], true));
   });
 
   it("the filter opens every matching section and hides the rest", async () => {
