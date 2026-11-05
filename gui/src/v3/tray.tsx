@@ -1,7 +1,7 @@
 /**
  * The tray (spec §10.7): the same components as the window. The head opens the
  * window. Needs you stays across tools, so nothing urgent hides in another tab;
- * below it one tab per tool — Claude first and the default, the others only
+ * below it a segmented switch per tool — Claude first and the default, the others only
  * while they have live sessions — each with that tool's sessions (5 rows, same
  * order) and its accounts in full (every window, reset, age, app — as in v2). "Open Agent Switch" on the left, "Start session" on
  * the right.
@@ -12,11 +12,11 @@ import { ArrowUpRight } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { AppLogo } from "../ui/AppLogo.js";
 import { Button } from "../ui/Button.js";
+import { Segmented } from "../ui/Segmented.js";
 import type { BatchActions } from "./kit.js";
 import { TrayAccount, type LimitAccount } from "./limits.js";
 import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
 import { SessionsZone, sortLive, type RowSession } from "./sessions.js";
-import { TAB, TAB_ON } from "./workbench.js";
 
 export const TRAY_SESSIONS = 5;
 
@@ -93,26 +93,27 @@ export function V3Tray({
         )}
       </button>
       <NeedsZone tray items={needs} away={away} onVerb={on.verb} onMore={on.moreNeeds} onAway={on.away} />
-      <div role="tablist" aria-label="Tools" className="mt-1.5 flex items-end gap-0.5 border-b border-ac-line px-2 pt-1">
-        {tools.map((t) => {
-          const isOn = t === tab;
-          return (
-            <button
-              key={t}
-              type="button"
-              role="tab"
-              aria-selected={isOn}
-              onClick={() => setPicked(t)}
-              className={cn(TAB, "min-w-[96px]", isOn ? TAB_ON : "border-transparent text-ac-muted hover:bg-ac-raise hover:text-ac-text")}
-            >
-              <span>{TOOL_NAME[t]}</span>
-              <span className="ml-auto font-ac-mono text-[10.5px] text-ac-muted">{all.filter((s) => toolOf(s.key) === t).length}</span>
-            </button>
-          );
-        })}
+      {/* Tools as a segmented control, the same one the start dialog uses for its tool. */}
+      <div className="border-b border-ac-line px-3 pb-2 pt-1.5">
+        <Segmented
+          label="Tool"
+          size="sm"
+          fill
+          value={tab}
+          onChange={setPicked}
+          options={tools.map((t) => ({
+            value: t,
+            label: (
+              <>
+                {TOOL_NAME[t]}
+                <span className="ml-1.5 font-ac-mono text-[10.5px] font-normal text-ac-muted">{all.filter((s) => toolOf(s.key) === t).length}</span>
+              </>
+            ),
+          }))}
+        />
       </div>
       {/* The tray window stops at 720 px (TRAY_MAX_HEIGHT): the tab scrolls, head and footer stay. */}
-      <div role="tabpanel" aria-label={TOOL_NAME[tab]} className="max-h-[400px] overflow-y-auto bg-ac-bg">
+      <div role="region" aria-label={TOOL_NAME[tab]} className="max-h-[400px] overflow-y-auto">
         <div className="pb-1">
           <SessionsZone
             tray
