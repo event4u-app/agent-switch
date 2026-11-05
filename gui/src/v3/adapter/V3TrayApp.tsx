@@ -6,7 +6,9 @@ import type { CSSProperties } from "react";
 
 import { LangKeyed } from "../../i18n/LangKeyed.js";
 import * as ipc from "../../ipc.js";
-import { forwardToMain, openMainWindow } from "../../redesign/tray/bridge.js";
+import { forwardToMain, openAppFromTray, openMainWindow } from "../../redesign/tray/bridge.js";
+import { appFor } from "../../redesign/screens/logic.js";
+import type { LimitAccount } from "../limits.js";
 import { TrayBridge, TrayLifecycle, trayActions, useFitWindow } from "../../redesign/tray/TrayApp.js";
 import { AcRoot } from "../../ui/AcRoot.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
@@ -47,6 +49,12 @@ function V3TrayFrame() {
     wantChanges: () => {},
   });
   const main = () => void openMainWindow();
+  // Same rule as the v2 tray: a detected desktop app, for a usable account.
+  const app = (a: LimitAccount) => {
+    const id = appFor(s, a.tool);
+    if (!id || a.signIn) return undefined;
+    return { name: s.surfaces.find((x) => x.id === id)?.name ?? "app", onOpen: () => void openAppFromTray(id, a.key) };
+  };
   return (
     <div ref={ref} className="w-[360px]">
       <TrayBridge />
@@ -60,6 +68,7 @@ function V3TrayFrame() {
         loading={!s.loaded}
         ready={s.loaded ? s.readiness === "ready" : undefined}
         lastActiveOf={(k) => d.table.find((t) => t.key === k)?.lastActiveMs ?? null}
+        appFor={app}
         on={{ verb: main, moreNeeds: main, away: main, session: main, moreSessions: main, account: main, signIn: main, start: () => void forwardToMain({ kind: "start" }), open: main }}
       />
     </div>

@@ -31,15 +31,15 @@ describe("tray (spec §10.7)", () => {
   it("one tab per tool with live sessions, Claude first and default; each tab has that tool's sessions and limits", () => {
     const sessions = [s("claude/work/1"), s("codex/work/2")];
     render(<V3Tray nowMs={0} needs={[]} away={null} sessions={sessions} accounts={[acc("claude", "work"), acc("codex", "side")]} on={on()} />);
-    const tabs = screen.getAllByRole("tab");
+    const tabs = screen.getAllByRole("radio");
     expect(tabs.map((t) => t.textContent)).toEqual(["Claude1", "Codex1"]);
-    expect(tabs[0].getAttribute("aria-selected")).toBe("true");
-    let panel = screen.getByRole("tabpanel");
+    expect(tabs[0].getAttribute("aria-checked")).toBe("true");
+    let panel = screen.getByRole("region", { name: /^(Claude|Codex)$/ });
     expect(within(panel).getByText("session claude/work/1")).toBeTruthy();
     expect(within(panel).queryByText("session codex/work/2")).toBeNull();
     expect(within(panel).queryByText("side")).toBeNull();
     fireEvent.click(tabs[1]);
-    panel = screen.getByRole("tabpanel");
+    panel = screen.getByRole("region", { name: /^(Claude|Codex)$/ });
     expect(within(panel).getByText("session codex/work/2")).toBeTruthy();
     expect(within(panel).getByText("side"), "no “· Codex” suffix inside the Codex tab").toBeTruthy();
   });
@@ -68,5 +68,35 @@ describe("tray (spec §10.7)", () => {
     expect(open.className).not.toMatch(/\bborder\b/);
     fireEvent.click(open);
     expect(handlers.open).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("tray accounts (like the v2 tray)", () => {
+  it("each account shows identity and plan, the 5h window with used and reset, the reading's age, and the app button", () => {
+    const handlers = on();
+    const openApp = vi.fn();
+    const H = 3_600_000;
+    const a: LimitAccount = { ...acc("claude", "work"), identity: "work@example.com", plan: "Max", checkedMs: 0, windows: [{ label: "5h", used: 39, resetsAtMs: 2 * H, pace: 45 }, { label: "week", used: 62, resetsAtMs: 118 * H, pace: 30 }] };
+    render(<V3Tray nowMs={2 * 60_000} needs={[]} away={null} sessions={[]} accounts={[a]} appFor={() => ({ name: "Claude Desktop", onOpen: openApp })} on={handlers} />);
+    const limits = screen.getByRole("region", { name: "Limits" });
+    expect(within(limits).getByText("work@example.com · Max")).toBeTruthy();
+    for (const t of ["5h", "39%", "↻ 1h 58m", "2m ago"]) expect(within(limits).getByText(t), t).toBeTruthy();
+    expect(within(limits).queryByText("62%"), "only the current window as a bar").toBeNull();
+    expect(within(limits).getAllByTestId("pace-tick")).toHaveLength(1);
+    expect(within(limits).getByText("39%").closest("[title]")!.getAttribute("title")).toContain("week 62%");
+    fireEvent.click(within(limits).getByRole("button", { name: "Open Claude Desktop as work" }));
+    expect(openApp).toHaveBeenCalledOnce();
+    fireEvent.click(within(limits).getByText("work"));
+    expect(handlers.account).toHaveBeenCalledWith("claude/work");
+  });
+
+  it("old readings say how old in amber; signed-out accounts offer Sign in instead of bars", () => {
+    const handlers = on();
+    const old: LimitAccount = { ...acc("claude", "work"), checkedMs: 0 };
+    const out: LimitAccount = { ...acc("claude", "side"), signIn: true, checkedMs: null, windows: [] };
+    render(<V3Tray nowMs={2 * 3_600_000} needs={[]} away={null} sessions={[]} accounts={[old, out]} on={handlers} />);
+    expect(screen.getByText("2h old").className).toContain("text-ac-warn-text");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(handlers.signIn).toHaveBeenCalledWith("claude/side");
   });
 });
