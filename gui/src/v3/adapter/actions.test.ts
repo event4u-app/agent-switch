@@ -329,8 +329,10 @@ describe("githubSlug", () => {
 
 import tauriConf from "../../../src-tauri/tauri.conf.json?raw";
 
-describe("the shell open scope admits exactly the PR pages the adapter opens", () => {
+// The scope was the GitHub-only list until the owner opened it to any http(s)
+// URL (2026-11-05, ⌘-click on chat links); what it still refuses is checked here.
+describe("the shell open scope admits the PR pages the adapter opens, and no other scheme", () => {
   const scope = new RegExp(`^(?:${JSON.parse(tauriConf).plugins.shell.open})$`);
   it.each(["https://github.com/o/r/pull/9", "https://github.com/o/r/pull/9/checks", `https://github.com/o/r/compare/${encodeURIComponent("feat/x")}?expand=1`])("allows %s", (u) => expect(scope.test(u)).toBe(true));
-  it.each(["https://github.com/o/r/settings", "http://github.com/o/r/pull/9", "https://github.com.evil.io/o/r/pull/9", "https://github.com/o/r/compare/x?expand=1&y=2", "https://github.com/o/r/pull/9/../../x"])("refuses %s", (u) => expect(scope.test(u)).toBe(false));
+  it.each(["javascript:alert(1)", "file:///etc/passwd", "github.com/o/r/pull/9", "agent-switch://pull/9", "https://github.com/o/r/pull/9 x", "https://github.com/o/r/pull/9\n"])("refuses %s", (u) => expect(scope.test(u)).toBe(false));
 });
