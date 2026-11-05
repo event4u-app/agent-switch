@@ -12,8 +12,12 @@ export interface WindowLayout {
   pinned?: string[];
   active: string | null;
   comfortable: boolean;
-  groupByProject: boolean;
+  /** Replaced by `group` ("project"); still read so an older layout keeps its grouping. */
+  groupByProject?: boolean;
   pinnedOnly: boolean;
+  /** How the Sessions list is ordered; activity (most recent first) by default. */
+  sort?: "activity" | "name" | "status";
+  group?: "none" | "project" | "account" | "tool";
 }
 
 export interface LayoutStore {
@@ -39,6 +43,8 @@ export function parseLayout(raw: string | null): Partial<WindowLayout> | null {
   if (Array.isArray(v.pinned)) out.pinned = v.pinned.filter((t): t is string => typeof t === "string").slice(0, 20);
   if (typeof v.active === "string" || v.active === null) out.active = v.active as string | null;
   for (const k of ["comfortable", "groupByProject", "pinnedOnly"] as const) if (typeof v[k] === "boolean") out[k] = v[k] as boolean;
+  if (v.sort === "activity" || v.sort === "name" || v.sort === "status") out.sort = v.sort;
+  if (v.group === "none" || v.group === "project" || v.group === "account" || v.group === "tool") out.group = v.group;
   return out;
 }
 

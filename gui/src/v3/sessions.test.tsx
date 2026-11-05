@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { SessionRow, SessionsZone, childNoun, childrenFromCli, liveOrder, type RowSession } from "./sessions.js";
+import { SessionRow, SessionsZone, childNoun, childrenFromCli, liveOrder, sortLive, type RowSession } from "./sessions.js";
 
 afterEach(cleanup);
 const s = (key: string, over: Partial<RowSession> = {}): RowSession => ({ key, title: `title ${key}`, state: "idle", account: { name: "work", nearLimit: false }, branch: "main", pr: null, children: [], needsYou: false, ...over });
@@ -92,5 +92,31 @@ describe("SessionRow title", () => {
     const after = screen.getByTitle(s.title);
     expect(after).not.toBe(before);
     expect(after.className).toContain("font-medium");
+  });
+});
+
+describe("sort and group the list", () => {
+  const rows = [s("a", { title: "Bravo", state: "working" }), s("b", { title: "Alpha", state: "needs-you" }), s("c", { title: "Charlie" }), s("d", { title: "Delta", state: "done" })];
+  const at: Record<string, number> = { a: 10, b: 30, c: 20 };
+  it("activity puts the most recent first, unknown times last; name and status as named; done stays out", () => {
+    expect(sortLive(rows, "activity", (k) => at[k] ?? null).map((x) => x.key)).toEqual(["b", "c", "a"]);
+    expect(sortLive(rows, "activity", (k) => (k === "a" ? 5 : null)).map((x) => x.key)).toEqual(["a", "b", "c"]);
+    expect(sortLive(rows, "name", () => null).map((x) => x.title)).toEqual(["Alpha", "Bravo", "Charlie"]);
+    expect(sortLive(rows, "status", () => null).map((x) => x.key)).toEqual(liveOrder(rows).map((x) => x.key));
+  });
+
+  it("groups get a header with their count, fold away, and keep the sort inside", () => {
+    const onView = vi.fn();
+    render(zone(rows, { sort: "activity", group: "account", lastActiveOf: (k) => at[k] ?? null, groupOf: (k) => (k === "c" ? "side" : "work"), onView }));
+    const head = screen.getByTitle("Sort and group");
+    expect(head.textContent).toBe("Account · Activity");
+    fireEvent.click(head);
+    expect(onView).toHaveBeenCalledOnce();
+    const work = screen.getByRole("button", { name: /^work\s*2$/ });
+    expect(screen.getAllByText(/^(Alpha|Bravo|Charlie)$/).map((e) => e.textContent)).toEqual(["Alpha", "Bravo", "Charlie"]);
+    fireEvent.click(work);
+    expect(work.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Alpha")).toBeNull();
+    expect(screen.getByText("Charlie")).toBeTruthy();
   });
 });

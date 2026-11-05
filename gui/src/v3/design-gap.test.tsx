@@ -125,7 +125,7 @@ describe("Sessions window header (spec §5)", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("⋯ offers select, group by project, density and pinned only", () => {
+  it("⋯ offers select, density and pinned only; the zone head sorts and groups", () => {
     const store = { load: vi.fn(() => null), save: vi.fn() };
     const d = data();
     render(
@@ -141,17 +141,20 @@ describe("Sessions window header (spec §5)", () => {
         layout={store}
       />,
     );
-    const view = () => (fireEvent.click(screen.getByLabelText("Select · group by project · density · show pinned")), screen.getByRole("menu", { name: "Sessions view" }));
-    expect(within(view()).getAllByRole("menuitem").map((b) => b.textContent)).toEqual(["Select", "Group by project", "DensityCompact", "Show pinned only"]);
-    fireEvent.click(within(screen.getByRole("menu", { name: "Sessions view" })).getByText("Group by project"));
+    const view = () => (fireEvent.click(screen.getByLabelText("Select · density · show pinned")), screen.getByRole("menu", { name: "Sessions view" }));
+    expect(within(view()).getAllByRole("menuitem").map((b) => b.textContent)).toEqual(["Select", "DensityCompact", "Show pinned only"]);
+    fireEvent.click(screen.getByLabelText("Select · density · show pinned"));
     const win = screen.getByLabelText("Sessions window");
+    fireEvent.click(within(win).getByTitle("Sort and group"));
+    fireEvent.click(within(screen.getByRole("menu", { name: "Sort and group" })).getByText("Project / folder"));
+    expect(within(win).getByTitle("Sort and group").textContent).toBe("Project · Activity");
     expect(within(win).getByText("agent-switch")).toBeTruthy();
     expect(within(win).getByText("shop")).toBeTruthy();
     fireEvent.click(within(view()).getByText("Show pinned only"));
     expect(within(win).queryByText("Event store")).toBeNull();
     expect(within(win).getByText("Checkout flow")).toBeTruthy();
     fireEvent.click(within(view()).getByText("Density"));
-    expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ comfortable: true, groupByProject: true, pinnedOnly: true }));
+    expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ comfortable: true, group: "project", sort: "activity", pinnedOnly: true }));
     fireEvent.click(within(view()).getByText("Select"));
     expect(within(win).getAllByRole("checkbox").length).toBeGreaterThan(0);
   });

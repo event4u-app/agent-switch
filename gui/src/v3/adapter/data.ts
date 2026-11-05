@@ -37,6 +37,8 @@ export interface AdapterEnv {
   wantChanges: (key: string) => void;
   /** Sessions this window shows in the chat view (their bridges run here). */
   chats?: ReadonlySet<string>;
+  /** The view picked for a session in the user's own terminal (read-only; chat by default). */
+  ownViews?: ReadonlyMap<string, "terminal" | "chat">;
   /** Chats with no session row yet (a new chat before the poll sees it): drawn from these. */
   chatRows?: readonly SessionRow[];
   /** Where a plain start in the plan's folder would go and why (`dir --json`); null until read. */
@@ -382,7 +384,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
         hosted: hosted.has(key) || !!env.chats?.has(key),
         // v3.1: chat and terminal share one conversation for Claude and Codex.
         chatAvailable: r.provider === "claude" || r.provider === "codex",
-        view: env.chats?.has(key) ? "chat" : "terminal",
+        view: env.chats?.has(key) ? "chat" : hosted.has(key) ? "terminal" : (env.ownViews?.get(key) ?? "chat"),
         account: { name: r.profile, color: colorOf(r), fiveH: fiveH(a), protect: a?.threshold ?? 98 },
         model: modelLabel(r.context?.model),
         modelId: r.context?.model ?? null,
