@@ -65,13 +65,14 @@ export function newSessionArgs(name: string, envVar: string, dir: string, cmd: s
   return ["new-session", "-A", "-s", name, "-e", `${envVar}=${dir}`, "--", ...cmd];
 }
 
-/** `tmux respawn-pane -k -t <target> -e VAR=dir -- <cmd...>` — replace the
+/** `tmux respawn-pane -k -t <target> -c <cwd> -e VAR=dir -- <cmd...>` — replace the
  *  pane's process with the target profile's env + the resume command. `-k`
  *  reliably kills-and-replaces (the pane persists), which is why the in-place
  *  handoff uses this rather than a send-keys/close dance that would tear the
- *  pane down when the CLI is the pane's own command. */
-export function respawnPaneArgs(target: string, envVar: string, dir: string, cmd: string[]): string[] {
-  return ["respawn-pane", "-k", "-t", target, "-e", `${envVar}=${dir}`, "--", ...cmd];
+ *  pane down when the CLI is the pane's own command. Without `-c` tmux starts
+ *  in the pane's original folder, not the one the folder trust was carried for. */
+export function respawnPaneArgs(target: string, cwd: string, envVar: string, dir: string, cmd: string[]): string[] {
+  return ["respawn-pane", "-k", "-t", target, "-c", cwd, "-e", `${envVar}=${dir}`, "--", ...cmd];
 }
 
 /** `tmux send-keys -t <target> <literal> Enter` — type a command into a pane.

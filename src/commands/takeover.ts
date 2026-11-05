@@ -89,7 +89,7 @@ function resumeInPlace(providerId: ProviderId, target: string, resumeArgs: strin
   }
   const sess = tmuxSessionName(mgmt.provider, mgmt.profile);
   const p = provider(providerId);
-  const argv = respawnPaneArgs(sess, p.envVar, configDir(providerId, target), [p.binary, ...resumeArgs]);
+  const argv = respawnPaneArgs(sess, process.cwd(), p.envVar, configDir(providerId, target), [p.binary, ...resumeArgs]);
   const res = spawnSync("tmux", argv, { stdio: "inherit" });
   recordManagedSession(sess, { provider: providerId, profile: target }); // pane now runs the target
   console.log(`Handed the session over to "${target}" in the managed tmux pane "${sess}".`);
