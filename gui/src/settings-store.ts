@@ -354,6 +354,26 @@ export function setShareSourceFlag(source: string): void {
   }
 }
 
+const LOGIN_ISOLATED_KEY = "agent-switch-login-isolated";
+
+/** Sign-ins in a Chromium-family browser use the account's own browser profile.
+ *  Default on: each account keeps its own Google login (road-to-a-chat-that-reads-well 5.2). */
+export function getLoginIsolated(): boolean {
+  try {
+    return localStorage.getItem(LOGIN_ISOLATED_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setLoginIsolated(on: boolean): void {
+  try {
+    localStorage.setItem(LOGIN_ISOLATED_KEY, on ? "on" : "off");
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const LOGIN_BROWSER_KEY = "agent-switch-login-browser";
 
 /** The browser id (`agent-switch browsers`) the last sign-in opened in; "" =

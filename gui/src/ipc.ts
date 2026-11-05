@@ -627,21 +627,26 @@ export function assertValidName(name: string): void {
  */
 const BROWSER_ID_RE = /^[a-z0-9-]+$/;
 
-export function loginArgs(provider: ProviderId, name: string, browser?: string): string[] {
+/** `isolated`: the sign-in opens in this account's own browser profile (only with a chosen browser). */
+export function loginArgs(provider: ProviderId, name: string, browser?: string, isolated = false): string[] {
   assertValidName(name);
   const args = ["add", name, "--provider", provider];
-  return browser && BROWSER_ID_RE.test(browser) ? [...args, "--browser", browser] : args;
+  if (!browser || !BROWSER_ID_RE.test(browser)) return args;
+  return [...args, "--browser", browser, ...(isolated ? ["--isolated"] : [])];
 }
 
-export function reloginArgs(provider: ProviderId, name: string, browser?: string): string[] {
+export function reloginArgs(provider: ProviderId, name: string, browser?: string, isolated = false): string[] {
   assertValidName(name);
   const args = ["login", name, "--provider", provider];
-  return browser && BROWSER_ID_RE.test(browser) ? [...args, "--browser", browser] : args;
+  if (!browser || !BROWSER_ID_RE.test(browser)) return args;
+  return [...args, "--browser", browser, ...(isolated ? ["--isolated"] : [])];
 }
 
 export interface BrowserInfo {
   id: string;
   name: string;
+  /** Can keep one profile per account (`--isolated`). */
+  isolatable?: boolean;
 }
 
 /** Browsers `login --browser` can open (macOS / Linux; empty elsewhere). */
@@ -650,7 +655,9 @@ export async function listBrowsers(): Promise<BrowserInfo[]> {
   if (out.code !== 0) return [];
   try {
     const list = JSON.parse(out.stdout) as BrowserInfo[];
-    return Array.isArray(list) ? list.filter((b) => typeof b?.id === "string" && BROWSER_ID_RE.test(b.id) && typeof b.name === "string") : [];
+    return Array.isArray(list)
+      ? list.filter((b) => typeof b?.id === "string" && BROWSER_ID_RE.test(b.id) && typeof b.name === "string").map((b) => ({ id: b.id, name: b.name, isolatable: b.isolatable === true }))
+      : [];
   } catch {
     return [];
   }

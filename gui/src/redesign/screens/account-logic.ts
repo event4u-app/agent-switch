@@ -150,8 +150,8 @@ export function addBlocked(tool: Tool): string | null {
 
 /** `add` creates a profile and signs it in; a profile that exists signs in again
  *  with `login`, which exits non-zero unless the stored login is back. */
-export function signInArgs(provider: ProviderId, name: string, exists: boolean, browser?: string): string[] {
-  return exists ? reloginArgs(provider, name, browser) : loginArgs(provider, name, browser);
+export function signInArgs(provider: ProviderId, name: string, exists: boolean, browser?: string, isolated = false): string[] {
+  return exists ? reloginArgs(provider, name, browser, isolated) : loginArgs(provider, name, browser, isolated);
 }
 
 export type SignInOutcome = "verified" | "mismatch" | "unfinished";

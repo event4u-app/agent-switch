@@ -215,6 +215,8 @@ export const accounts = {
   "accounts.reauth.withGoogle": "Sign in with Google",
   "accounts.reauth.openIn": "Open the sign-in in",
   "accounts.reauth.defaultBrowser": "Default browser",
+  "accounts.reauth.ownProfile": "Own browser profile for this account",
+  "accounts.reauth.ownProfileDetail": "Signs in with a separate profile of this browser, so the account keeps its own Google login. Sign in to Google there once.",
   "accounts.reauth.codexBrowser": "Codex opens your default browser itself. If that's the wrong one, copy the link it shows below into the browser you want — the sign-in works from any browser.",
   "accounts.reauth.unfinished": "The sign-in didn't finish — nothing changed. Try again.",
   "accounts.reauth.readFailed": "Couldn't read the sign-in: {error}",

@@ -39,7 +39,7 @@ vi.mock("../../terminal.js", async (orig) => ({
 const ipcMock = vi.hoisted(() => ({
   profiles: [] as { provider: string; name: string; identity: string | null; label: null; active: boolean; liveSessions: number }[],
   history: [] as { profile: string; samples: { at: string; windows: { key: string; utilization: number }[] }[] }[],
-  browsers: [] as { id: string; name: string }[],
+  browsers: [] as { id: string; name: string; isolatable?: boolean }[],
   plain: null as null | { profile: string | null; configDir: string | null; why: string[] },
 }));
 vi.mock("../../ipc.js", async (orig) => ({
@@ -706,6 +706,31 @@ describe("Sign in again", () => {
     fireEvent.click(screen.getByRole("button", { name: /Sign in with Claude/ }));
     await screen.findByText("Connected");
     expect(term.ran).toEqual([["login", "work", "--provider", "claude", "--browser", "arc"]]);
+  });
+
+  it("a Chromium-family browser signs in with the account's own browser profile by default; the switch turns it off", async () => {
+    ipcMock.profiles = [{ provider: "claude", name: "work", identity: "work@example.test", label: null, active: true, liveSessions: 1 }];
+    ipcMock.browsers = [{ id: "safari", name: "Safari", isolatable: false }, { id: "chrome", name: "Google Chrome", isolatable: true }];
+    setLoginBrowser("chrome");
+    localStorage.removeItem("agent-switch-login-isolated");
+    mount(fixture(), { overlay: { kind: "reauth", accountId: "claude:work" } });
+    const sw = await screen.findByRole("switch", { name: "Own browser profile for this account" });
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: /Sign in with Claude/ }));
+    await screen.findByText("Connected");
+    expect(term.ran).toEqual([["login", "work", "--provider", "claude", "--browser", "chrome", "--isolated"]]);
+  });
+
+  it("no profile switch for a browser that cannot keep one, and no --isolated", async () => {
+    ipcMock.profiles = [{ provider: "claude", name: "work", identity: "work@example.test", label: null, active: true, liveSessions: 1 }];
+    ipcMock.browsers = [{ id: "safari", name: "Safari", isolatable: false }];
+    setLoginBrowser("safari");
+    mount(fixture(), { overlay: { kind: "reauth", accountId: "claude:work" } });
+    await screen.findByText("Open the sign-in in");
+    expect(screen.queryByRole("switch", { name: "Own browser profile for this account" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Sign in with Claude/ }));
+    await screen.findByText("Connected");
+    expect(term.ran).toEqual([["login", "work", "--provider", "claude", "--browser", "safari"]]);
   });
 
   it("falls back to the default browser when the remembered one is gone", async () => {
