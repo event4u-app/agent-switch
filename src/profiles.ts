@@ -132,8 +132,8 @@ export interface State {
    * Single-load guard: how to react when a profile that already carries a live
    * session is about to be loaded again. No state file yet (fresh install) →
    * {@link FRESH_INSTALL_GUARD_POLICY} (`warn`), persisted on the first write.
-   * A state file without the key predates the setting → {@link DEFAULT_GUARD_POLICY}
-   * (`block`, what it meant then); an unknown value degrades the same way.
+   * A state file without the key, or with an unknown value → {@link DEFAULT_GUARD_POLICY}
+   * (`warn`): several sessions on one profile are legitimate.
    */
   guard: GuardPolicy;
 }

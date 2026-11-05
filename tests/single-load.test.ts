@@ -81,8 +81,8 @@ const LOADED: LoadInspection = { sessions: [{ pid: 1, cwd: null, startedMs: null
 const FREE: LoadInspection = { sessions: [], loaded: false, nested: false };
 const NESTED: LoadInspection = { ...LOADED, nested: true };
 
-test("guardVerdict: default policy is block", () => {
-  assert.equal(DEFAULT_GUARD_POLICY, "block");
+test("guardVerdict: default policy is warn — one profile may carry several sessions", () => {
+  assert.equal(DEFAULT_GUARD_POLICY, "warn");
 });
 
 test("guardVerdict: an unloaded profile always passes", () => {

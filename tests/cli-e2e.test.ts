@@ -1284,12 +1284,12 @@ test("a fresh install starts with the guard on warn", gate, () => {
   }
 });
 
-test("a 2.1.0 install with profiles but no state.json keeps the guard on block", gate, () => {
+test("a 2.1.0 install with profiles but no state.json starts on warn, never refusing a second session", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
     seed(home, "claude", "work"); // `add` without `use` never wrote state.json
     assert.equal(fs.existsSync(path.join(home, "state.json")), false);
-    assert.equal(JSON.parse(run(home, ["guard", "--json"])).policy, "block");
+    assert.equal(JSON.parse(run(home, ["guard", "--json"])).policy, "warn");
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
