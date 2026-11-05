@@ -139,14 +139,14 @@ CLI front door stays (it is the user's own tool).
 
 ## Phase 2 — MCP server and the setting (`main`)
 
-- [ ] **2.1 `link.autoConnect` setting**, default on, CLI `link on|off|status
+- [x] **2.1 `link.autoConnect` setting**, default on, CLI `link on|off|status
       --json`, read by `mcp serve` on every `tools/list`.
       verify: state tests: absent → on; `off` persisted; status JSON.
-- [ ] **2.2 `agent-switch mcp serve`.** Pure-Node stdio JSON-RPC: `initialize`,
+- [x] **2.2 `agent-switch mcp serve`.** Pure-Node stdio JSON-RPC: `initialize`,
       `tools/list`, `tools/call`, `ping`; logs to stderr only; unknown method →
       `-32601`. Tools per the table above, backed by `src/link/`.
       verify: spawn test driving a full handshake + each tool over stdio.
-- [ ] **2.3 Disabled behaviour.** `autoConnect: off` → empty tool list and
+- [x] **2.3 Disabled behaviour.** `autoConnect: off` → empty tool list and
       `link_status.enabled=false`.
       verify: spawn test with the setting off.
 - [ ] **2.4 Doctor row** for the link (enabled, AC detected, AC entry present).

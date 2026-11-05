@@ -4,11 +4,16 @@
  * requests. Nothing here moves a session — the service carries out approvals.
  */
 
+import { liveSessions } from "../api.js";
+import { profileFromConfigDir } from "../hooks.js";
+import { createMcpHandler, serveStdio } from "../link/mcp.js";
 import { decideSwitch, describeRequest, readLimits, requestSwitch } from "../link/ops.js";
 import type { MoveHow, Raiser } from "../link/requests.js";
 import { requestStore } from "../link/store.js";
-import { die } from "../profiles.js";
-import type { ProviderId } from "../providers.js";
+import { ROOT, die, readLinkAutoConnect, setLinkAutoConnect } from "../profiles.js";
+import { currentVersion } from "../updates.js";
+import { logActivity } from "./shared.js";
+import { isProviderId, type ProviderId } from "../providers.js";
 
 export { readLimits } from "../link/ops.js";
 
@@ -78,4 +83,60 @@ export function cmdSwitch(sub: string | undefined, positional: string[], flags: 
     die((e as Error).message);
   }
   die(USAGE);
+}
+
+/** The contract agent-config reads; bump only with a breaking change to a tool or JSON shape. */
+export const LINK_CONTRACT = 1;
+
+export function linkStatus(): { enabled: boolean; version: string; contract: number; mcp: { command: string; args: string[] } } {
+  return { enabled: readLinkAutoConnect(), version: currentVersion(), contract: LINK_CONTRACT, mcp: { command: "agent-switch", args: ["mcp", "serve"] } };
+}
+
+/** `agent-switch link [on|off|status] [--json]` — whether agent-config may connect
+ *  to this agent-switch (MCP server + its own wiring). Default on. */
+export function cmdLink(sub: string | undefined, json = false): void {
+  if (sub === "on" || sub === "off") {
+    const on = sub === "on";
+    if (readLinkAutoConnect() !== on) {
+      setLinkAutoConnect(on);
+      logActivity("settings", null, `agent-config link ${on ? "on" : "off"}`, "user changed it");
+    }
+  } else if (sub && sub !== "status") die("usage: agent-switch link [on|off|status] [--json]");
+  const s = linkStatus();
+  if (json) console.log(JSON.stringify(s));
+  else console.log(`agent-config link ${s.enabled ? "ON" : "OFF"} — ${s.enabled ? "agent-config connects to `agent-switch mcp serve` and may raise and decide switch requests" : "agent-config does not connect; `mcp serve` offers no tools"}.`);
+}
+
+/** Which account and session started this process: the provider's own config
+ *  env (set by the agent-switch wrapper), and for Claude the host's registry
+ *  entry of the parent process — an MCP server is the agent's direct child. */
+export function whoami(env: NodeJS.ProcessEnv = process.env, parentPid: number = process.ppid): { account: string | null; session: string | null; source: string } {
+  const hosted = env.AGENT_SWITCH_HOST_PANE;
+  if (hosted && hosted.split("/").length === 3) return { account: hosted.split("/").slice(0, 2).join("/"), session: hosted, source: "hosted" };
+  for (const [provider, key] of [["claude", "CLAUDE_CONFIG_DIR"], ["codex", "CODEX_HOME"]] as const) {
+    const dir = env[key];
+    if (!dir) continue;
+    const p = profileFromConfigDir(dir, ROOT);
+    if (!p || p.provider !== provider) continue;
+    const account = `${p.provider}/${p.profile}`;
+    const sid = provider === "claude" ? (liveSessions(dir).find((l) => l.pid === parentPid)?.sessionId ?? null) : null;
+    return { account, session: sid ? `${account}/${sid}` : null, source: key };
+  }
+  return { account: null, session: null, source: "none" };
+}
+
+/** `agent-switch mcp serve` — the stdio MCP server agent-config connects to. */
+export async function cmdMcpServe(): Promise<void> {
+  await serveStdio(
+    createMcpHandler({
+      version: currentVersion(),
+      enabled: readLinkAutoConnect,
+      status: linkStatus,
+      limits: (provider) => readLimits(provider && isProviderId(provider) ? provider : undefined),
+      whoami: () => whoami(),
+      store: requestStore,
+      request: requestSwitch,
+      decide: decideSwitch,
+    }),
+  );
 }
