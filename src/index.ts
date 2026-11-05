@@ -74,7 +74,7 @@ import {
   cmdUpdate,
 } from "./commands/system.js";
 import { cmdHandoff, cmdTakeover } from "./commands/takeover.js";
-import { cmdLimits } from "./commands/link.js";
+import { cmdLimits, cmdSwitch } from "./commands/link.js";
 import { cmdAuthStatus, cmdAutoswitch, cmdProtection, cmdReset, cmdStatus, cmdUsageHistory } from "./commands/usage.js";
 
 async function main(): Promise<void> {
@@ -195,6 +195,7 @@ async function main(): Promise<void> {
     case "activity": return cmdActivity(flags);
     case "picks": return cmdPicks(flags);
     case "limits": return cmdLimits(providerExplicit ? providerId : undefined, flags);
+    case "switch": return cmdSwitch(positional[0], positional.slice(1), flags);
     case "protection": return cmdProtection(positional[0], positional.slice(1), flags);
     case "pool": case "pools": return cmdPool(positional[0], positional.slice(1), flags);
     case "gui-settings": return cmdGuiSettings(positional[0], positional.slice(1), flags);

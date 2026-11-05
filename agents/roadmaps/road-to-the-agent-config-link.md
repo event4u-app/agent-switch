@@ -129,7 +129,7 @@ CLI front door stays (it is the user's own tool).
       accounts with live sessions, instead of only a notice. Still never moves.
       verify: test: crossing at 90 % with a live session → one open request;
       second tick → same id.
-- [ ] **1.6 CLI.** `agent-switch switch list|show|request|decide|status --json`.
+- [x] **1.6 CLI.** `agent-switch switch list|show|request|decide|status --json`.
       verify: CLI tests for each verb's JSON shape and exit codes.
 - [-] **1.7 ~~Fix `--print-only` transferring files~~ — cancelled, not a defect.**
       Moving and only skipping the launch is the documented contract

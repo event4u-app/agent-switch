@@ -66,7 +66,7 @@ function json(stdout: string): Record<string, unknown> {
 }
 
 function lastLine(s: string): string {
-  return s.trim().split("\n").pop()?.replace(/^agent-switch:\s*/, "") ?? "";
+  return s.trim().split("\n").pop()?.replace(/^(error|agent-switch):\s*/, "") ?? "";
 }
 
 export function executeApproved(store: RequestStore, run: Runner): SwitchRequest[] {
