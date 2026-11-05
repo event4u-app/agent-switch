@@ -622,11 +622,15 @@ Updates also arrive as Needs-you items.
 
 ### 10.5 Settings (page tab)
 
-- **Left nav:** General, Appearance, Sign-ins, Protection, Distribution, Notifications, Desktop pet, Providers, Open in, Agents, Remote, Updates, Advanced. The current item has the Marker.
+- **Left nav:** General, Appearance, Sign-ins, Protection, Distribution, Notifications, Desktop pet, Providers, Claude Code, Open in, Agents, Remote, Updates, Advanced. The current item has the Marker.
 - **Appearance:**
   - Mode segmented (Dark / Light / Sync with OS), with the pairing shown next to it.
   - Theme cards grouped by JetBrains, Agent Switch, Popular and Accessibility. Each card is a mini preview of the real window. The selected card has an accent border plus a 2 px accent-line ring.
   - Details: Accent (Theme / Agent Switch), "Terminal uses the theme's colours" switch, Contrast note, "About <theme>" with the source.
+- **Claude Code:** one `~/.claude/settings.json` for every Claude account (`claude-settings`; a global value wins, lists are combined, an account's own values stay).
+  - Header card: the file path, how many accounts are up to date, "Apply now".
+  - A filter over settings and commands; while it holds text, every matching section is open and the rest are hidden.
+  - Collapsible sections, only Behaviour open at first: Behaviour (environment switches, model, permission mode), Allowed commands (catalog groups as checkbox pills with All/None, "Your other rules", add a rule), Plugins, Hooks (read-only), More in the file (read-only), Accounts (state and own values).
 - **Open in:**
   - Targets list. Agent apps are offered only for their own tool; editors open the worktree root.
   - Default for the Open button, globally and per repository.

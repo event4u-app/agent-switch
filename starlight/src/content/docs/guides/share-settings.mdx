@@ -45,6 +45,32 @@ affected.
 If an account already has its own copy of a file or folder, `share on` leaves
 it alone and says so. Remove that copy if you want the shared one instead.
 
+## One settings.json for every account
+
+`~/.claude/settings.json` reaches every Claude account, whether sharing is on or
+not, and whether an account has its own `settings.json` or not. agent-switch
+applies it on every change and before every start:
+
+- A value set in `~/.claude/settings.json` wins over the account's own value.
+- Lists, such as the allowed commands, are combined. A rule Claude saved in one
+  account ("always allow") stays there.
+- What only an account has stays with it.
+- A value you remove from `~/.claude/settings.json` is removed from the accounts
+  too, unless an account changed it itself.
+- MCP servers and token-, secret- or key-shaped values never leave the file:
+  they belong to one login.
+
+```bash
+agent-switch claude-settings status          # each account: up to date, applied at next start, own values
+agent-switch claude-settings sync            # apply now
+agent-switch claude-settings set env.CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY '"1"'
+agent-switch claude-settings rule allow "Bash(git *)" on
+```
+
+The desktop app has the same in **Settings › Claude Code**: switches for the
+common environment flags, the model and permission mode, allowed commands
+grouped with checkboxes, plugins, and a read-only view of hooks and other values.
+
 ## What is shared
 
 <FileTree>
