@@ -6,17 +6,17 @@
 
 ## Overall
 
-**12 / 17 steps done · 71%**
+**14 / 17 steps done · 82%**
 
 ```text
-████████████████████████████░░░░░░░░░░░░   71%
+█████████████████████████████████░░░░░░░   82%
 ```
 
 ## Open roadmaps
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 5 | 12 | 0 | 0 | 0 | ███████░░░ 71% |
+| 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 3 | 14 | 0 | 0 | 0 | ████████░░ 82% |
 
 ---
 
@@ -46,7 +46,7 @@
 
 ### [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md)
 
-**a chat that reads well** — 12 / 17 done (71%)
+**a chat that reads well** — 14 / 17 done (82%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
@@ -54,7 +54,7 @@
 | 2 | Markdown in the chat | ✅ done | 0 | 7 | 0 | 0 | 100% |
 | 3 | Copy a whole session | ✅ done | 0 | 2 | 0 | 0 | 100% |
 | 4 | Choose the terminal | ✅ done | 0 | 2 | 0 | 0 | 100% |
-| 5 | A browser agent-switch controls | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 5 | A browser agent-switch controls | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
 | 6 | Hints that save the account | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
 
 ## Age

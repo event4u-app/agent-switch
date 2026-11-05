@@ -133,15 +133,27 @@ cache warm, switch before the limit) is shown in the chat, from our own numbers.
       localhost callback completes, a second account gets its own profile.
       verify: `agents/evidence/controlled-browser-probe-2026-11.md` with CC and
       Codex versions.
-- [ ] **5.2 Wrapper.** The `$BROWSER` wrapper starts the chosen Chromium-family
+      Progress 2026-11-05: `$BROWSER` hand-over (CC 2.1.316), the local
+      callback, the isolated Chrome launch and Codex's fixed port are verified
+      there. Open: one real sign-in with Google SSO in the isolated profile —
+      it needs the owner's own Google account.
+- [x] **5.2 Wrapper.** The `$BROWSER` wrapper starts the chosen Chromium-family
       browser with the account's `browserDir`; Firefox/Safari stay available as
       "system browser, no isolation".
-      verify: `browsers.ts` tests for the generated script per browser.
-- [ ] **5.3 Fallback.** No Chromium-family browser installed → Playwright with
+      verify: `tests/browsers.test.ts` (script per platform, quoting, the URL
+      arrives as one argument through a real shell); GUI: a switch "Own
+      browser profile for this account", on by default for Chromium-family
+      browsers (`accounts.test.tsx`).
+- [x] **5.3 Fallback.** No Chromium-family browser installed → Playwright with
       `channel: "chrome"`, else bundled Chromium with a note that Google SSO may
       fail. Parallel Codex sign-ins (fixed port 1455) → `codex login
       --device-auth`.
-      verify: tests for the choice order; manual parallel Codex sign-in.
+      verify: `--isolated` without `--browser` takes the first installed
+      Chromium-family browser, else the Playwright wrapper (`browsers.test.ts`);
+      `portInUse` against a real listener; Codex's port 1455 and
+      `--device-auth` checked live (evidence file). The fallback channel is
+      bundled Chromium only — `channel: "chrome"` would need Chrome, which the
+      first choice already uses without automation.
 
 ## Phase 6 — Hints that save the account
 
