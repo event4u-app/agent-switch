@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
 
 import { plan, menu, type Env } from "../src/open-in.js";
 import { openDirPlan, pickTerminal, runPlan, terminals } from "../src/terminals.js";
@@ -67,7 +68,10 @@ test("open-in: the terminal target opens the chosen terminal and carries its nam
 });
 
 test("the AppleScript the run plans produce compiles (macOS only)", { skip: process.platform !== "darwin" }, () => {
-  for (const id of ["terminal", "iterm"] as const) {
+  // iTerm's AppleScript terms come from its own dictionary: they compile only where
+  // iTerm is installed — which is also the only place this plan is ever used.
+  const ids = ["terminal", ...(fs.existsSync("/Applications/iTerm.app") ? (["iterm"] as const) : [])] as const;
+  for (const id of ids) {
     const p = runPlan(id, `/tmp/it's "x"`, `echo "a" 'b'`, { platform: "darwin", onPath: () => null, macApp: () => "/Applications/iTerm.app" })!;
     // osacompile parses without running; the output goes to /dev/null.
     const r = spawnSync("osacompile", ["-o", "/dev/null", "-e", p.args[1]!], { encoding: "utf8" });
