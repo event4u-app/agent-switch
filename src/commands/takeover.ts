@@ -16,6 +16,7 @@ import {
   cleanupForkVehicle,
   locateSession,
   locateCodexSession,
+  readSessionHeader,
   sharedHistory,
   transferSession,
   transferCodexSession,
@@ -265,6 +266,8 @@ export function cmdTakeover(
   const cacheLine = moveCacheLine(cache, target, sameOrganization(source, target), now);
   if (cacheLine && !json) console.log(cacheLine);
 
+  carryFolderTrust(srcCfg, tgtCfg, readSessionHeader(loc.jsonl).cwd);
+
   // Shared-history mode (`share on --history`): both profiles already see one
   // projects/ tree — file ops would be self-moves. Degrade to the resume step.
   if (sharedHistory(srcCfg, tgtCfg)) {
@@ -304,6 +307,28 @@ export function cmdTakeover(
   console.log(`Resume it with:\n  ${resumeCommand}`);
   if (inPlace) resumeInPlace("claude", target, resumeArgs, resumeCommand, continued, hosted); // exits: respawn managed pane, else M5
   if (!printOnly && process.stdin.isTTY) process.exit(launch(provider("claude"), target, resumeArgs, continued));
+}
+
+/**
+ * Each profile keeps its own folder-trust answers. Without one, the resumed
+ * session opens on the trust dialog with "No, exit" preselected, and a stray
+ * Enter leaves the moved session not running. The user already trusted this
+ * folder on the source, so only that answer moves — never the source's tool
+ * permissions, and never trust the source did not grant.
+ */
+function carryFolderTrust(srcCfg: string, tgtCfg: string, cwd: string | null): void {
+  if (!cwd) return;
+  if (readJson(path.join(srcCfg, ".claude.json"))?.projects?.[cwd]?.hasTrustDialogAccepted !== true) return;
+  const file = path.join(tgtCfg, ".claude.json");
+  const config = readJson(file);
+  if (!config || typeof config !== "object") return;
+  const projects = config.projects && typeof config.projects === "object" ? config.projects : (config.projects = {});
+  const entry = projects[cwd] && typeof projects[cwd] === "object" ? projects[cwd] : (projects[cwd] = {});
+  if (entry.hasTrustDialogAccepted === true) return;
+  entry.hasTrustDialogAccepted = true;
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
+  fs.renameSync(tmp, file);
 }
 
 /**
