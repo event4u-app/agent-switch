@@ -18,6 +18,8 @@ export interface HostedRow {
   cwd: string;
   startedAt: string;
   alive: boolean;
+  /** Its window waits for a chat (the program is stopped until the terminal view is back). */
+  parked: boolean;
 }
 
 export interface HostList {
@@ -103,6 +105,7 @@ export function parseHostList(v: unknown): HostList {
       cwd: str(h.cwd) ?? "",
       startedAt: str(h.startedAt) ?? "",
       alive: h.alive === true,
+      parked: h.parked === true,
     }));
   return { mode: o.mode === "persistent" ? "persistent" : "ephemeral", hosted };
 }
