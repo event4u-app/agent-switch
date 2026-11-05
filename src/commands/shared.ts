@@ -46,7 +46,7 @@ import {
 } from "../single-load.js";
 import { fetchUsage, liveSessionPids } from "../api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "../token-freshen.js";
-import { UsageSnapshot, parseUsage } from "../usage.js";
+import { UsageSnapshot, parseUsage, windowLabel } from "../usage.js";
 import { SessionRow, listSessions, listCodexSessions, markLive } from "../sessions.js";
 import { cacheMaxAgeMs, snapshotFresh, readDaemonState } from "../daemon.js";
 import { serviceTarget } from "../service.js";
@@ -189,7 +189,8 @@ function cachedUsageFromDaemonOrHistory(providerId: ProviderId, name: string): C
       const r = daemonSnap?.windows.find((d) => d.key === key)?.resetsAt ?? null;
       return r && Date.parse(r) > histMs ? r : null;
     };
-    const windows = last.windows.map((w) => ({ key: w.key, label: w.key, utilization: w.utilization, resetsAt: resetOf(w.key) }));
+    const labelOf = (key: string) => daemonSnap?.windows.find((d) => d.key === key)?.label ?? windowLabel(key);
+    const windows = last.windows.map((w) => ({ key: w.key, label: labelOf(w.key), utilization: w.utilization, resetsAt: resetOf(w.key) }));
     return { snapshot: { windows, routines: null, capturedAt: last.at }, capturedMs: histMs };
   }
   return { snapshot: daemonSnap, capturedMs: isNaN(daemonMs) ? null : daemonMs };

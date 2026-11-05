@@ -347,6 +347,21 @@ test("`needs` lists what waits, says where to answer, hides on later and keeps h
   }
 });
 
+test("`needs` names a near-limit window by its label when the usage history is the newest source", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    seed(home, "claude", "work");
+    fs.writeFileSync(path.join(home, "claude", "work", "config", ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "a@example.com", accountUuid: "u" } }));
+    // History samples keep only the key; the window still reads "5h", never "five_hour".
+    const at = new Date(Date.now() - 60_000).toISOString();
+    fs.writeFileSync(path.join(home, "claude", "work", "usage-history.json"), JSON.stringify({ samples: [{ at, windows: [{ key: "five_hour", utilization: 100 }, { key: "seven_day_opus", utilization: 99 }] }] }));
+    const limits = JSON.parse(run(home, ["needs", "--json"])).items.filter((i: any) => i.kind === "limit");
+    assert.deepEqual(limits.map((i: any) => i.what), ["100% of 5h"]);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("`sessions --json` git facts follow the folder of the newest turn (a worktree switch shows after the next turn)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {

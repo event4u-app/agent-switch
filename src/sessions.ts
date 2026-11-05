@@ -48,6 +48,10 @@ export interface SessionHeader {
   summary: string | null;
 }
 
+function aiTitle(parsed: any): string | null {
+  return parsed?.type === "ai-title" && typeof parsed.aiTitle === "string" && parsed.aiTitle.trim() ? parsed.aiTitle.trim() : null;
+}
+
 export function readSessionHeader(file: string): SessionHeader {
   const none: SessionHeader = { cwd: null, summary: null };
   let fd: number;
@@ -67,8 +71,8 @@ export function readSessionHeader(file: string): SessionHeader {
     if (n === HEADER_CAP) lines.pop();
     let cwd: string | null = null;
     let summary: string | null = null;
+    let title: string | null = null;
     for (const line of lines) {
-      if (cwd !== null && summary !== null) break;
       let parsed: any;
       try {
         parsed = JSON.parse(line);
@@ -77,8 +81,24 @@ export function readSessionHeader(file: string): SessionHeader {
       }
       if (cwd === null && typeof parsed?.cwd === "string") cwd = parsed.cwd;
       if (summary === null && typeof parsed?.summary === "string") summary = parsed.summary;
+      title = aiTitle(parsed) ?? title;
     }
-    return { cwd, summary };
+    // Current Claude Code writes no summary line but repeats an `ai-title`
+    // record, the first one far past the head; the newest sits in the tail.
+    const size = fs.fstatSync(fd).size;
+    if (size > HEADER_CAP) {
+      const len = Math.min(size - HEADER_CAP, TAIL_CAP);
+      const tail = Buffer.alloc(len);
+      fs.readSync(fd, tail, 0, len, size - len);
+      for (const line of tail.toString("utf8").split("\n")) {
+        try {
+          title = aiTitle(JSON.parse(line)) ?? title;
+        } catch {
+          continue;
+        }
+      }
+    }
+    return { cwd, summary: title ?? summary };
   } catch {
     return none;
   } finally {
