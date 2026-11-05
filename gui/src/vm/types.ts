@@ -304,4 +304,6 @@ export interface ViewModel {
   trayShowDisabled: boolean;
   /** Epoch ms of the next usage refresh; null = no schedule known. */
   usageNextAt: number | null;
+  /** Switch requests shared with agent-config (road-to-the-agent-config-link). */
+  switchRequests: import("../ipc.js").SwitchRequestRow[];
 }

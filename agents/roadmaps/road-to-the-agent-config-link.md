@@ -154,13 +154,17 @@ CLI front door stays (it is the user's own tool).
 
 ## Phase 3 — GUI on `main` (2.x redesign)
 
-- [ ] **3.1 Near-limit sheet reads requests.** `screens/near-limit.tsx` opens
+- [x] **3.1 Near-limit sheet reads requests.** `screens/near-limit.tsx` opens
       for an open request (any `raisedBy`), labels "requested by agent-config"
       when `raisedBy:"ac"`, and writes its choice through `switch decide`.
       "Ask once" moves from localStorage to the request state.
       verify: GUI unit tests: AC-raised request opens the sheet once; a request
       decided in AC closes it without asking.
-- [ ] **3.2 Settings toggle** "Let agent-config connect" in the protection pane.
+      Done as: the sheet still executes its own moves (design unchanged) and
+      records them with `switch decide --executed`, so the service never runs
+      them twice; the once-marks stay per webview but key on the request id when
+      agent-config asked, which also opens the sheet before the 98 % mark.
+- [x] **3.2 Settings toggle** "Let agent-config connect" in the protection pane.
       verify: settings test round-trips via CLI.
 
 ## Phase 4 — v3 (`feat/v3-design-fidelity`)

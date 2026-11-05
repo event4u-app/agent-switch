@@ -218,6 +218,7 @@ export const sessions = {
   "sessions.near.howAria": "How to go on",
   "sessions.near.how": "How do you want to go on?",
   "sessions.near.default": "Default",
+  "sessions.near.askedByAgentConfig": "agent-config asked",
   "sessions.near.switchToLabel": "Switch to",
   "sessions.near.continueOnLabel": "Continue on",
   "sessions.near.mostLeft": "Most left",

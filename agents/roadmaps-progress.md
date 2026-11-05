@@ -6,17 +6,17 @@
 
 ## Overall
 
-**10 / 16 steps done · 62%**
+**12 / 16 steps done · 75%**
 
 ```text
-█████████████████████████░░░░░░░░░░░░░░░   62%
+██████████████████████████████░░░░░░░░░░   75%
 ```
 
 ## Open roadmaps
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md) | 5 | 17 | 6 | 10 | 0 | 1 | 0 | ██████░░░░ 62% |
+| 1 | [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md) | 5 | 17 | 4 | 12 | 0 | 1 | 0 | ████████░░ 75% |
 
 ---
 
@@ -44,13 +44,13 @@
 
 ### [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md)
 
-**the agent-config link — one switch decision, two tools** — 10 / 16 done (62%)
+**the agent-config link — one switch decision, two tools** — 12 / 16 done (75%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 1 | Core on `main` (2.x) | ✅ done | 0 | 6 | 0 | 1 | 100% |
 | 2 | MCP server and the setting (`main`) | ✅ done | 0 | 4 | 0 | 0 | 100% |
-| 3 | GUI on `main` (2.x redesign) | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
+| 3 | GUI on `main` (2.x redesign) | ✅ done | 0 | 2 | 0 | 0 | 100% |
 | 4 | v3 (`feat/v3-design-fidelity`) | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
 | 5 | Docs | ⬜ not started | 1 | 0 | 0 | 0 | 0% |
 

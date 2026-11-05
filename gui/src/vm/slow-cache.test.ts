@@ -18,6 +18,7 @@ const ipc = vi.hoisted(() => ({
   getGuard: vi.fn(async () => null),
   desktopInstances: vi.fn(async () => []),
   listLaunchers: vi.fn(async () => []),
+  listSwitchRequests: vi.fn(async () => []),
 }));
 const latest = vi.hoisted(() => vi.fn(async () => "0.2.0"));
 

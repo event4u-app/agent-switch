@@ -219,6 +219,7 @@ export const sessions: { readonly [K in keyof typeof en]: string } = {
   "sessions.near.howAria": "Wie weitermachen",
   "sessions.near.how": "Wie möchtest du weitermachen?",
   "sessions.near.default": "Standard",
+  "sessions.near.askedByAgentConfig": "von agent-config angefragt",
   "sessions.near.switchToLabel": "Wechseln zu",
   "sessions.near.continueOnLabel": "Weitermachen auf",
   "sessions.near.mostLeft": "Meiste übrig",

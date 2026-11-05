@@ -28,6 +28,8 @@ vi.mock("../../terminal.js", async (orig) => ({
   ...(await orig<typeof import("../../terminal.js")>()),
   tauriBackend: { open: () => new Promise(() => {}), write: async () => {}, resize: async () => {}, close: async () => {} },
 }));
+const ipcLink = vi.hoisted(() => ({ decideSwitchRequest: vi.fn(async () => {}) }));
+vi.mock("../../ipc.js", async (orig) => ({ ...(await orig<typeof import("../../ipc.js")>()), decideSwitchRequest: ipcLink.decideSwitchRequest }));
 vi.stubGlobal(
   "ResizeObserver",
   class {
@@ -365,6 +367,27 @@ describe("Near-limit sheet", () => {
     mount(freeWork(), { overlay: { kind: "limit", attentionId: "limit:claude:side" }, act: { rebind, handoffBrief: vi.fn() } });
     fireEvent.click(screen.getByRole("button", { name: "Switch to work" }));
     await waitFor(() => expect(rebind).toHaveBeenCalledWith("claude:budmigo", "claude:work"));
+  });
+
+  it("an agent-config question shows, and a confirmed switch answers it as already carried out", async () => {
+    const rebind = vi.fn(async () => {});
+    const vm = freeWork();
+    const request = {
+      id: "req-1",
+      rev: 1,
+      session: "claude/side/budmigo",
+      account: "claude/side",
+      reason: { window: "five_hour", fill: 94, resetsAt: null },
+      raisedBy: "ac",
+      raisedAt: new Date(NOW).toISOString(),
+      expiresAt: new Date(NOW + 3_600_000).toISOString(),
+      state: "open",
+      candidates: [],
+    };
+    mount({ ...vm, switchRequests: [request] }, { overlay: { kind: "limit", attentionId: "limit:claude:side" }, act: { rebind, handoffBrief: vi.fn() } });
+    expect(screen.getByText("agent-config asked")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Switch to work" }));
+    await waitFor(() => expect(ipcLink.decideSwitchRequest).toHaveBeenCalledWith("req-1", "approve", { to: "claude/work", how: "now", executed: "rebound in the app" }));
   });
 
   it("offers only what the backend can do", () => {

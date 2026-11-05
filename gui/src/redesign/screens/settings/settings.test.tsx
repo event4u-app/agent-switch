@@ -32,6 +32,8 @@ const ipcMock = vi.hoisted(() => ({
   getKeepSignedIn: vi.fn(),
   setKeepSignedIn: vi.fn(),
   getCodexAutoReset: vi.fn(),
+  getLinkAutoConnect: vi.fn(),
+  setLinkAutoConnect: vi.fn(),
   getStrategy: vi.fn(),
   setStrategy: vi.fn(),
   setCodexAutoReset: vi.fn(),
@@ -133,6 +135,8 @@ beforeEach(() => {
   ipcMock.getKeepSignedIn.mockResolvedValue(true);
   ipcMock.setKeepSignedIn.mockResolvedValue(undefined);
   ipcMock.getCodexAutoReset.mockResolvedValue(false);
+  ipcMock.getLinkAutoConnect.mockResolvedValue(true);
+  ipcMock.setLinkAutoConnect.mockResolvedValue(undefined);
   ipcMock.getStrategy.mockImplementation(async (p: string) => (p === "codex" ? "fill" : "balance"));
   ipcMock.setStrategy.mockResolvedValue(undefined);
   ipcMock.setCodexAutoReset.mockResolvedValue(undefined);
@@ -326,6 +330,16 @@ describe("Sign-ins", () => {
 });
 
 describe("Protection", () => {
+  it("reads Let agent-config connect from the CLI (on by default) and writes a change back", async () => {
+    mount("protection");
+    const sw = () => screen.getByRole("switch", { name: "Let agent-config connect" }) as HTMLButtonElement;
+    await waitFor(() => expect(sw().disabled).toBe(false));
+    expect(sw().getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(sw());
+    await waitFor(() => expect(ipcMock.setLinkAutoConnect).toHaveBeenCalledWith(false));
+    expect(sw().getAttribute("aria-checked")).toBe("false");
+  });
+
   it("reads Redeem Codex resets automatically from the CLI (off by default) and writes a change back", async () => {
     mount("protection");
     const sw = () => screen.getByRole("switch", { name: "Redeem Codex resets automatically" }) as HTMLButtonElement;
