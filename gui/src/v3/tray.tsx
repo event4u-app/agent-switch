@@ -3,7 +3,7 @@
  * window. Needs you stays across tools, so nothing urgent hides in another tab;
  * below it one tab per tool — Claude first and the default, the others only
  * while they have live sessions — each with that tool's sessions (5 rows, same
- * order) and its limits. "Open Agent Switch" on the left, "Start session" on
+ * order) and its accounts in full (every window, reset, age, app — as in v2). "Open Agent Switch" on the left, "Start session" on
  * the right.
  */
 
@@ -13,7 +13,7 @@ import { cn } from "../lib/utils.js";
 import { AppLogo } from "../ui/AppLogo.js";
 import { Button } from "../ui/Button.js";
 import type { BatchActions } from "./kit.js";
-import { LimitRow, type LimitAccount } from "./limits.js";
+import { TrayAccount, type LimitAccount } from "./limits.js";
 import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
 import { SessionsZone, sortLive, type RowSession } from "./sessions.js";
 import { TAB, TAB_ON } from "./workbench.js";
@@ -42,10 +42,13 @@ export function V3Tray({
   loading,
   ready,
   lastActiveOf,
+  appFor,
   on,
 }: {
   /** Last activity per session key, for the window's default order. */
   lastActiveOf?: (key: string) => number | null;
+  /** The account's desktop app, when one is detected and the account is usable. */
+  appFor?: (a: LimitAccount) => { name: string; onOpen: () => void } | undefined;
   /** The first read has not settled: no "No sessions running" yet. */
   loading?: boolean;
   /** Health as the tray reads it; omitted = not shown. */
@@ -108,7 +111,8 @@ export function V3Tray({
           );
         })}
       </div>
-      <div role="tabpanel" aria-label={TOOL_NAME[tab]} className="bg-ac-bg">
+      {/* The tray window stops at 720 px (TRAY_MAX_HEIGHT): the tab scrolls, head and footer stay. */}
+      <div role="tabpanel" aria-label={TOOL_NAME[tab]} className="max-h-[400px] overflow-y-auto bg-ac-bg">
         <div className="pb-1">
           <SessionsZone
             tray
@@ -138,7 +142,7 @@ export function V3Tray({
           <section aria-label="Limits" className="border-t border-ac-line px-1.5 pb-1.5 pt-1">
             <div className="flex h-7 items-center px-2 text-[11px] font-semibold text-ac-soft">Limits</div>
             {limits.map((a) => (
-              <LimitRow key={a.key} a={a} nowMs={nowMs} noTool onOpen={on.account} onSignIn={on.signIn} />
+              <TrayAccount key={a.key} a={a} nowMs={nowMs} onOpen={on.account} onSignIn={on.signIn} app={appFor?.(a)} />
             ))}
           </section>
         )}

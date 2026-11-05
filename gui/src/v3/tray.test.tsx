@@ -70,3 +70,31 @@ describe("tray (spec §10.7)", () => {
     expect(handlers.open).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("tray accounts (like the v2 tray)", () => {
+  it("each account shows identity and plan, every window with used and reset, the reading's age, and the app button", () => {
+    const handlers = on();
+    const openApp = vi.fn();
+    const H = 3_600_000;
+    const a: LimitAccount = { ...acc("claude", "work"), identity: "work@example.com", plan: "Max", checkedMs: 0, windows: [{ label: "5h", used: 39, resetsAtMs: 2 * H, pace: 45 }, { label: "week", used: 62, resetsAtMs: 118 * H, pace: 30 }] };
+    render(<V3Tray nowMs={2 * 60_000} needs={[]} away={null} sessions={[]} accounts={[a]} appFor={() => ({ name: "Claude Desktop", onOpen: openApp })} on={handlers} />);
+    const limits = screen.getByRole("region", { name: "Limits" });
+    expect(within(limits).getByText("work@example.com · Max")).toBeTruthy();
+    for (const t of ["5h", "week", "39%", "62%", "↻ 1h 58m", "↻ 4d 21h", "2m ago"]) expect(within(limits).getByText(t), t).toBeTruthy();
+    expect(within(limits).getAllByTestId("pace-tick")).toHaveLength(2);
+    fireEvent.click(within(limits).getByRole("button", { name: "Open Claude Desktop as work" }));
+    expect(openApp).toHaveBeenCalledOnce();
+    fireEvent.click(within(limits).getByText("work"));
+    expect(handlers.account).toHaveBeenCalledWith("claude/work");
+  });
+
+  it("old readings say how old in amber; signed-out accounts offer Sign in instead of bars", () => {
+    const handlers = on();
+    const old: LimitAccount = { ...acc("claude", "work"), checkedMs: 0 };
+    const out: LimitAccount = { ...acc("claude", "side"), signIn: true, checkedMs: null, windows: [] };
+    render(<V3Tray nowMs={2 * 3_600_000} needs={[]} away={null} sessions={[]} accounts={[old, out]} on={handlers} />);
+    expect(screen.getByText("2h old").className).toContain("text-ac-warn-text");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(handlers.signIn).toHaveBeenCalledWith("claude/side");
+  });
+});

@@ -9,7 +9,8 @@
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils.js";
 import type { IdentityColor } from "../vm/types.js";
-import { AccountMark, Chip, duration, pct } from "./kit.js";
+import { AppWindow, Copy } from "lucide-react";
+import { AccountMark, Chip, checkedAgo, duration, pct } from "./kit.js";
 
 export interface LimitWindow {
   /** "5h", "week", "week · Opus" */
@@ -33,6 +34,9 @@ export interface LimitAccount {
   /** Last reading; null = never read. */
   checkedMs: number | null;
   windows: LimitWindow[];
+  /** Signed-in identity (email) and plan, as the CLI reports them; null = not read. */
+  identity?: string | null;
+  plan?: string | null;
 }
 
 /** Data older than this is drawn greyed with its age (spec §13.9). */
@@ -81,7 +85,7 @@ export function LimitBar({ w, protect, stale, nowMs }: { w: LimitWindow; protect
 }
 
 /** One row of the Limits strip: name · numbers when not OK · a 64×4 bar (no pace tick on small bars). */
-export function LimitRow({ a, nowMs, open, noTool, onOpen, onSignIn }: { a: LimitAccount; nowMs: number; open?: boolean; /** The tool is already named around the row (tray tab). */ noTool?: boolean; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
+export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount; nowMs: number; open?: boolean; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
   const top = tightest(a);
   const stale = isStale(a, nowMs);
   const t = stale ? "none" : tone(top?.used ?? null, a.protect);
@@ -90,7 +94,7 @@ export function LimitRow({ a, nowMs, open, noTool, onOpen, onSignIn }: { a: Limi
     <div role="button" tabIndex={0} data-popover-trigger="" onClick={() => onOpen(a.key)} title={tip} className={cn("flex h-6 items-center gap-2 rounded-md px-2", open ? "bg-ac-raise" : "hover:bg-ac-raise")}>
       <span className="min-w-0 flex-1 truncate text-xs text-ac-soft">
         {a.name}
-        {a.tool === "codex" && !noTool && <span className="text-ac-muted"> · Codex</span>}
+        {a.tool === "codex" && <span className="text-ac-muted"> · Codex</span>}
         {a.next && (
           <span className="ml-1 text-ac-muted" title="Next for new sessions">
             →
@@ -225,6 +229,71 @@ export function RoomLeft({ accounts, nowMs }: { accounts: LimitAccount[]; nowMs:
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Tray account (proposal, like the v2 tray): name, next / near-limit word, how
+ * old the reading is and the app button on the first line; identity and plan
+ * on the second; then every window full size — bar with pace tick, used, reset.
+ */
+export function TrayAccount({ a, nowMs, onOpen, onSignIn, app }: { a: LimitAccount; nowMs: number; onOpen: (key: string) => void; onSignIn: (key: string) => void; app?: { name: string; onOpen: () => void } }) {
+  const stale = isStale(a, nowMs);
+  const t = stale ? "none" : tone(tightest(a)?.used ?? null, a.protect);
+  const id = [a.identity, a.plan].filter(Boolean).join(" · ");
+  return (
+    <div className="rounded-md px-2 py-1.5 hover:bg-ac-raise">
+      <div className="flex h-6 items-center gap-2">
+        <button type="button" data-popover-trigger="" onClick={() => onOpen(a.key)} title="Every window, pace and actions" className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <AccountMark color={a.color} />
+          <span className="truncate text-[12.5px] font-medium text-ac-text">{a.name}</span>
+          {a.next && <span className="shrink-0 text-[10.5px] text-ac-info-text">→ next</span>}
+          {(t === "warn" || t === "alert") && (
+            <Chip kind="status" tone={t}>
+              Near limit
+            </Chip>
+          )}
+        </button>
+        {a.checkedMs !== null && (
+          <span className={cn("shrink-0 font-ac-mono text-[10.5px]", stale ? "text-ac-warn-text" : "text-ac-muted")} title={stale ? "Usage data is old — refreshing" : undefined}>
+            {stale ? `${duration(nowMs - a.checkedMs)} old` : checkedAgo(nowMs - a.checkedMs).replace("checked ", "")}
+          </span>
+        )}
+        {app && (
+          <button type="button" onClick={app.onOpen} aria-label={`Open ${app.name} as ${a.name}`} title={`Open ${app.name} as ${a.name}`} className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-ac-muted hover:bg-ac-line hover:text-ac-text">
+            <AppWindow className="size-3.5" />
+          </button>
+        )}
+      </div>
+      {id && (
+        <div className="flex h-5 min-w-0 items-center gap-1 pl-[18px] text-[11px] text-ac-muted">
+          <span className="truncate" title={id}>
+            {id}
+          </span>
+          {a.identity && (
+            <button type="button" onClick={() => void navigator.clipboard?.writeText(a.identity!)} aria-label="Copy email" title="Copy email" className="inline-flex size-5 shrink-0 items-center justify-center rounded text-ac-faint hover:text-ac-text">
+              <Copy className="size-3" />
+            </button>
+          )}
+        </div>
+      )}
+      {a.signIn ? (
+        <div className="mt-0.5 flex h-6 items-center gap-2 pl-[18px] text-[11px] text-ac-muted">
+          Sign-in needed
+          <button type="button" onClick={() => onSignIn(a.key)} className="-mr-1.5 ml-auto h-5 rounded px-1.5 text-[11px] font-medium text-ac-brand-text hover:bg-ac-brand-tint">
+            Sign in
+          </button>
+        </div>
+      ) : a.windows.length ? (
+        <div className="mt-1 space-y-1 pl-[18px]">
+          {a.windows.map((w) => (
+            <LimitBar key={w.label} w={w} protect={a.protect} stale={stale} nowMs={nowMs} />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-0.5 pl-[18px] text-[11px] text-ac-muted">No usage read yet</div>
+      )}
     </div>
   );
 }

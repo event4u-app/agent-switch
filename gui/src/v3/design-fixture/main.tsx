@@ -37,11 +37,11 @@ const H = 60 * MIN;
 const L = (label: string, used: number | null, resetsIn: number | null, pace: number | null) => ({ label, used, resetsAtMs: resetsIn == null ? null : NOW + resetsIn, pace });
 
 const LIMITS: LimitAccount[] = [
-  { key: "claude/work", tool: "claude", name: "work", color: "teal", protect: 95, next: true, signIn: false, checkedMs: NOW - MIN, windows: [L("5h", 39, 2 * H + 10 * MIN, 45), L("week", 62, 118 * H, 30), L("week · Opus", 71, 118 * H, 30)] },
-  { key: "claude/personal", tool: "claude", name: "personal", color: "pink", protect: 98, next: false, signIn: false, checkedMs: NOW - 2 * MIN, windows: [L("5h", 12, 4 * H, 20), L("week", 23, 53 * H, 70)] },
-  { key: "claude/side", tool: "claude", name: "side", color: "purple", protect: 98, next: false, signIn: false, checkedMs: NOW, windows: [L("5h", 94, H + 18 * MIN, 74), L("week", 29, 53 * H, 70)] },
-  { key: "codex/work", tool: "codex", name: "work", color: "teal", protect: 90, next: false, signIn: false, checkedMs: NOW - 14 * MIN, windows: [L("5h", 30, 3 * H + 12 * MIN, 35), L("week", 22, 97 * H, 40)] },
-  { key: "codex/personal", tool: "codex", name: "personal", color: "pink", protect: 90, next: false, signIn: true, checkedMs: null, windows: [] },
+  { identity: "work@example.com", plan: "Max", key: "claude/work", tool: "claude", name: "work", color: "teal", protect: 95, next: true, signIn: false, checkedMs: NOW - MIN, windows: [L("5h", 39, 2 * H + 10 * MIN, 45), L("week", 62, 118 * H, 30), L("week · Opus", 71, 118 * H, 30)] },
+  { identity: "me@example.com", plan: "Pro", key: "claude/personal", tool: "claude", name: "personal", color: "pink", protect: 98, next: false, signIn: false, checkedMs: NOW - 2 * MIN, windows: [L("5h", 12, 4 * H, 20), L("week", 23, 53 * H, 70)] },
+  { identity: "side@example.com", plan: "Pro", key: "claude/side", tool: "claude", name: "side", color: "purple", protect: 98, next: false, signIn: false, checkedMs: NOW, windows: [L("5h", 94, H + 18 * MIN, 74), L("week", 29, 53 * H, 70)] },
+  { identity: "work@example.com", plan: "Plus", key: "codex/work", tool: "codex", name: "work", color: "teal", protect: 90, next: false, signIn: false, checkedMs: NOW - 14 * MIN, windows: [L("5h", 30, 3 * H + 12 * MIN, 35), L("week", 22, 97 * H, 40)] },
+  { identity: "me@example.com", plan: null, key: "codex/personal", tool: "codex", name: "personal", color: "pink", protect: 90, next: false, signIn: true, checkedMs: null, windows: [] },
 ];
 
 const S = (s: Partial<RowSession> & Pick<RowSession, "key" | "title" | "state">): RowSession => ({ account: { name: "work", nearLimit: false }, branch: null, pr: null, children: [], needsYou: false, ...s });
@@ -310,7 +310,7 @@ function App() {
     return (
       <AcRoot className="h-full" mode={def.mode} style={vars as CSSProperties}>
         <div className="flex h-full items-start justify-center bg-ac-bg p-5">
-          <V3Tray needs={data.needs} away={data.away} sessions={data.sessions} accounts={data.limits} nowMs={data.nowMs} ready on={{ verb: noop, moreNeeds: noop, away: noop, session: noop, moreSessions: noop, account: noop, signIn: noop, start: noop, open: noop }} />
+          <V3Tray needs={data.needs} away={data.away} sessions={data.sessions} accounts={data.limits} nowMs={data.nowMs} ready appFor={(a) => (a.signIn ? undefined : { name: a.tool === "claude" ? "Claude Desktop" : "Codex Desktop", onOpen: noop })} on={{ verb: noop, moreNeeds: noop, away: noop, session: noop, moreSessions: noop, account: noop, signIn: noop, start: noop, open: noop }} />
         </div>
       </AcRoot>
     );
