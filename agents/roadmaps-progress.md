@@ -6,10 +6,10 @@
 
 ## Overall
 
-**29 / 33 steps done · 88%**
+**16 / 25 steps done · 64%**
 
 ```text
-███████████████████████████████████░░░░░   88%
+██████████████████████████░░░░░░░░░░░░░░   64%
 ```
 
 ## Open roadmaps
@@ -17,7 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 1 | 16 | 0 | 0 | 0 | █████████░ 94% |
-| 2 | [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md) | 5 | 17 | 3 | 13 | 0 | 1 | 0 | ████████░░ 81% |
+| 2 | [road-to-service-executed-moves.md](roadmaps/road-to-service-executed-moves.md) | 4 | 8 | 8 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
 
 ---
 
@@ -58,17 +58,16 @@
 | 5 | A browser agent-switch controls | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
 | 6 | Hints that save the account | ✅ done | 0 | 2 | 0 | 0 | 100% |
 
-### [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md)
+### [road-to-service-executed-moves.md](roadmaps/road-to-service-executed-moves.md)
 
-**the agent-config link — one switch decision, two tools** — 13 / 16 done (81%)
+**service-executed moves — an opt-in for answers given in the app** — 0 / 8 done (0%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
-| 1 | Core on `main` (2.x) | ✅ done | 0 | 6 | 0 | 1 | 100% |
-| 2 | MCP server and the setting (`main`) | ✅ done | 0 | 4 | 0 | 0 | 100% |
-| 3 | GUI on `main` (2.x redesign) | ✅ done | 0 | 2 | 0 | 0 | 100% |
-| 4 | v3 (`feat/v3-design-fidelity`) | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
-| 5 | Docs | ✅ done | 0 | 1 | 0 | 0 | 100% |
+| 1 | The setting | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
+| 2 | Executor parity with the app | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 3 | The app hands the answer over | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
+| 4 | Docs | ⬜ not started | 1 | 0 | 0 | 0 | 0% |
 
 ## Age
 
@@ -77,5 +76,5 @@ Days since each active roadmap landed at its path and since its last ticked step
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 0 | 0 |
-| [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md) | — | — |
+| [road-to-service-executed-moves.md](roadmaps/road-to-service-executed-moves.md) | — | — |
 

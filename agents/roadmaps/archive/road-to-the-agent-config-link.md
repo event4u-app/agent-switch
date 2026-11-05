@@ -167,19 +167,22 @@ CLI front door stays (it is the user's own tool).
 - [x] **3.2 Settings toggle** "Let agent-config connect" in the protection pane.
       verify: settings test round-trips via CLI.
 
-## Phase 4 — v3 (`feat/v3-design-fidelity`)
+## Phase 4 — v3 (`dev/v3`)
 
-- [ ] **4.1 Bring phases 1–2 into v3** by merging `main`; resolve against
+- [x] **4.1 Bring phases 1–2 into v3** by merging `main`; resolve against
       `--stop-source`, hosted takeover and `continue`.
       verify: full test suite on the v3 branch.
-- [ ] **4.2 DecisionSheet backed by requests.** `limit-auto.ts` keys on request
-      id + rev; `moveOne` stops executing in the GUI and calls `switch decide`;
-      the executor runs the move. Multi-session spread (`spreadSessions`) becomes
-      one decision per session request.
-      verify: v3 adapter tests: decision in AC closes the sheet; checked sessions
-      produce one decision each; no GUI-side takeover remains.
-- [ ] **4.3 Toggle in v3 settings** via the shared redesign pane.
-      verify: v3 settings test.
+- [x] **4.2 DecisionSheet backed by requests.** The app keeps carrying moves
+      out (D6) and records each answer with `switch decide … --executed`, one
+      per moved session's request (`requestsForMoves`). agent-config's open
+      question opens the sheet once per request id; a limit already answered
+      in agent-config does not open it, and such an answer closes an open sheet.
+      Moves through the background service:
+      `../road-to-service-executed-moves.md` (D7).
+      verify: `gui/src/v3/adapter/link-requests.test.tsx` — decision in AC
+      closes the sheet; checked sessions produce one decision each.
+- [x] **4.3 Toggle in v3 settings** via the shared redesign pane.
+      verify: v3 settings test (`gui/src/v3/adapter/settings-link.test.tsx`).
 
 ## Phase 5 — Docs
 
@@ -196,6 +199,8 @@ CLI front door stays (it is the user's own tool).
 | D3 | Pure-Node MCP, no SDK | AS ships zero runtime dependencies |
 | D4 | stdio only, no port | Same-user child process; no token, nothing listening |
 | D5 | Core on `main` first, merged into v3 | One implementation, two GUIs |
+| D6 | In v3 the app executes moves answered in the app and records them `--executed` | Owner, 2026-11-05: only the app can move a session it hosts; matches `main` and the guide |
+| D7 | Service-executed moves from the app: follow-up roadmap, behind a setting, default off | Owner, 2026-11-05: wanted as an option, with its risk stated in the setting |
 
 ## Out of scope
 
