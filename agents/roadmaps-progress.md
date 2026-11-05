@@ -6,17 +6,17 @@
 
 ## Overall
 
-**8 / 17 steps done · 47%**
+**10 / 17 steps done · 59%**
 
 ```text
-███████████████████░░░░░░░░░░░░░░░░░░░░░   47%
+████████████████████████░░░░░░░░░░░░░░░░   59%
 ```
 
 ## Open roadmaps
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 9 | 8 | 0 | 0 | 0 | █████░░░░░ 47% |
+| 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 7 | 10 | 0 | 0 | 0 | ██████░░░░ 59% |
 
 ---
 
@@ -46,13 +46,13 @@
 
 ### [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md)
 
-**a chat that reads well** — 8 / 17 done (47%)
+**a chat that reads well** — 10 / 17 done (59%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 1 | Window drag (v3) | ✅ done | 0 | 1 | 0 | 0 | 100% |
 | 2 | Markdown in the chat | ✅ done | 0 | 7 | 0 | 0 | 100% |
-| 3 | Copy a whole session | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
+| 3 | Copy a whole session | ✅ done | 0 | 2 | 0 | 0 | 100% |
 | 4 | Choose the terminal | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
 | 5 | A browser agent-switch controls | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
 | 6 | Hints that save the account | ⬜ not started | 2 | 0 | 0 | 0 | 0% |

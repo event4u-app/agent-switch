@@ -101,13 +101,14 @@ cache warm, switch before the limit) is shown in the chat, from our own numbers.
 
 ## Phase 3 — Copy a whole session
 
-- [ ] **3.1 Chat.** A copy button in the chat header copies the session as
+- [x] **3.1 Chat.** A copy button in the chat header copies the session as
       Markdown (user/assistant turns, tool calls as one-line summaries, diffs as
       ```` ```diff ````), from the stored source text, never from rendered HTML.
       verify: unit test of the export over a recorded timeline fixture.
-- [ ] **3.2 Terminal.** Copy the embedded terminal's full scrollback (xterm
+- [x] **3.2 Terminal.** Copy the embedded terminal's full scrollback (xterm
       buffer), ANSI stripped.
-      verify: test against a fake xterm buffer in `terminal.test.ts`.
+      verify: `bufferText` against a fake xterm buffer in `terminal.test.ts`;
+      `CopyScrollback` in `redesign/screens/copy-scrollback.test.tsx`.
 
 ## Phase 4 — Choose the terminal
 
