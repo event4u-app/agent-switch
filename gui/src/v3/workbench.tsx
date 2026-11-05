@@ -21,8 +21,8 @@ import { sessionHints, type Hint } from "./hints.js";
 // ---------- tab strip ----------
 
 /** Tab: rounded top corners; the active one is framed with a 2 px accent top edge and joins the content below (spec §3.2). */
-const TAB = "relative -mb-px flex h-[33px] items-center gap-2 rounded-t-md border-x border-t-2 px-3 text-xs";
-const TAB_ON = "border-ac-line border-t-ac-brand bg-ac-bg text-ac-text";
+export const TAB = "relative -mb-px flex h-[33px] items-center gap-2 rounded-t-md border-x border-t-2 px-3 text-xs";
+export const TAB_ON = "border-ac-line border-t-ac-brand bg-ac-bg text-ac-text";
 
 export type TabItem = { kind: "page"; id: string; label: string; icon: ReactNode } | { kind: "session"; id: string; title: string; state: SessionState };
 

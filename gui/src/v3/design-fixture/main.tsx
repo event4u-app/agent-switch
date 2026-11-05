@@ -310,7 +310,7 @@ function App() {
     return (
       <AcRoot className="h-full" mode={def.mode} style={vars as CSSProperties}>
         <div className="flex h-full items-start justify-center bg-ac-bg p-5">
-          <V3Tray needs={data.needs} away={data.away} sessions={data.sessions} accounts={data.limits} nowMs={data.nowMs} on={{ verb: noop, moreNeeds: noop, away: noop, session: noop, moreSessions: noop, account: noop, signIn: noop, start: noop, open: noop }} />
+          <V3Tray needs={data.needs} away={data.away} sessions={data.sessions} accounts={data.limits} nowMs={data.nowMs} ready on={{ verb: noop, moreNeeds: noop, away: noop, session: noop, moreSessions: noop, account: noop, signIn: noop, start: noop, open: noop }} />
         </div>
       </AcRoot>
     );

@@ -81,7 +81,7 @@ export function LimitBar({ w, protect, stale, nowMs }: { w: LimitWindow; protect
 }
 
 /** One row of the Limits strip: name · numbers when not OK · a 64×4 bar (no pace tick on small bars). */
-export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount; nowMs: number; open?: boolean; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
+export function LimitRow({ a, nowMs, open, noTool, onOpen, onSignIn }: { a: LimitAccount; nowMs: number; open?: boolean; /** The tool is already named around the row (tray tab). */ noTool?: boolean; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
   const top = tightest(a);
   const stale = isStale(a, nowMs);
   const t = stale ? "none" : tone(top?.used ?? null, a.protect);
@@ -90,7 +90,7 @@ export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount
     <div role="button" tabIndex={0} data-popover-trigger="" onClick={() => onOpen(a.key)} title={tip} className={cn("flex h-6 items-center gap-2 rounded-md px-2", open ? "bg-ac-raise" : "hover:bg-ac-raise")}>
       <span className="min-w-0 flex-1 truncate text-xs text-ac-soft">
         {a.name}
-        {a.tool === "codex" && <span className="text-ac-muted"> · Codex</span>}
+        {a.tool === "codex" && !noTool && <span className="text-ac-muted"> · Codex</span>}
         {a.next && (
           <span className="ml-1 text-ac-muted" title="Next for new sessions">
             →
