@@ -124,7 +124,7 @@ CLI front door stays (it is the user's own tool).
       blind.
       verify: tests with an injected runner: one execution per id across two
       ticks; failure records `outcome.detail`.
-- [ ] **1.5 Daemon raises requests.** The protection/near-limit branch
+- [x] **1.5 Daemon raises requests.** The protection/near-limit branch
       (`daemon.ts:694-775`) raises a request (`raisedBy:"as-daemon"`) for
       accounts with live sessions, instead of only a notice. Still never moves.
       verify: test: crossing at 90 % with a live session → one open request;

@@ -33,7 +33,7 @@ import * as path from "node:path";
 
 import { ROOT, activeFor, configDir, isDisabled, labelFor, listProfiles, readAutoSwitch, readBinaryPath, readCodexAutoReset } from "./profiles.js";
 import { ProviderId } from "./providers.js";
-import { profileDir } from "./profiles.js";
+import { listAllProfiles, profileDir } from "./profiles.js";
 import { fetchUsage, liveSessionPids, liveSessions, readProfileCredential } from "./api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { codexProfilesWithSession, keepAliveSweep } from "./login-keepalive.js";
@@ -61,6 +61,10 @@ import { rebind } from "./rebind.js";
 import { armsFile, watchArmsOnce, type ArmWatchDeps } from "./rebind-arm.js";
 import { executeApproved } from "./link/execute.js";
 import { REQUESTS_DIR, requestStore, selfRunner } from "./link/store.js";
+import { buildLimits } from "./link/limits.js";
+import { candidatesFor } from "./link/candidates.js";
+import { raiseForAccount } from "./link/raise.js";
+import { FRESH_USAGE_MS } from "./dir-resolve.js";
 
 /** Append an event to the shared log and, when the operator opted into
  *  daemon-side OS notifications, fire a desktop notification too — marking the
@@ -639,6 +643,39 @@ interface CycleResult {
   attempted: number;
 }
 
+/** Ask before the limit: open a switch request for each live session of an
+ *  account past the ask mark (road-to-the-agent-config-link). Never moves. */
+function raiseSwitchRequests(provider: ProviderId, name: string, snapshot: UsageSnapshot, state: DaemonState, log: (l: string) => void): void {
+  try {
+    const now = Date.now();
+    const sessions = provider === "claude" ? liveSessions(configDir("claude", name)).map((l) => l.sessionId).filter((x): x is string => !!x) : null;
+    const candidates = () => {
+      const report = buildLimits({
+        now,
+        accounts: listAllProfiles().map((p) => ({ provider: p.provider, name: p.name, disabled: isDisabled(p.provider, p.name) })),
+        usage: (p, n) => {
+          const s = state.profiles[`${p}/${n}`] ?? null;
+          const t = s ? Date.parse(s.capturedAt) : NaN;
+          return { snapshot: s, capturedMs: isNaN(t) ? null : t };
+        },
+        threshold: (p, n) => readProtection(p, n).thresholdPct,
+        freshMs: FRESH_USAGE_MS,
+      });
+      return candidatesFor(`${provider}/${name}`, report, (id) => {
+        const [p, n] = id.split("/");
+        return p === "claude" ? liveSessionPids(configDir("claude", n)).length > 0 : codexProfilesWithSession([n]).has(n);
+      });
+    };
+    const created = raiseForAccount(requestStore(), { account: `${provider}/${name}`, sessions, snapshot, thresholdPct: readProtection(provider, name).thresholdPct, now, candidates });
+    for (const r of created) {
+      log(`switch request ${r.id}: ${r.account} at ${r.reason.fill}% of ${r.reason.window}`);
+      notify({ kind: "info", title: "Limit near — move?", message: `${r.account} is at ${r.reason.fill}% of its ${r.reason.window} window. Open Agent Switch to choose where to continue.`, key: `switch-ask:${r.account}` });
+    }
+  } catch (err: any) {
+    log(`switch request error: ${String(err?.message ?? err)}`);
+  }
+}
+
 async function pollProvider(
   provider: ProviderId,
   state: DaemonState,
@@ -715,6 +752,7 @@ async function pollProvider(
       // noise), and a default-on protection notice must actually be seen.
       notify({ kind: "info", title: pNotice.title, message: pNotice.message, key: `protection:${key}` });
     }
+    if (isLive(name)) raiseSwitchRequests(provider, name, snapshot, state, log);
     recordHistorySample(path.join(profileDir(provider, name), "usage-history.json"), snapshot);
     writeLatestSnapshot(path.join(profileDir(provider, name), LATEST_FILE), snapshot);
     if (name === active) {
