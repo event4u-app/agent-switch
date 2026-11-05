@@ -89,4 +89,35 @@ Copy and storage always use the source text, never the rendered form.
 
 ## Budgets (2.6)
 
-Filled in by 2.6.
+Measured 2026-11-05 in `gui/src/v3/markdown/budget.test.ts` (vitest, jsdom,
+Apple Silicon laptop, median of 7):
+
+| Shape | Chars | Parse |
+|---|---:|---:|
+| open fence, 1 000 lines (beyond the corpus max of 347) | 54 804 | 0.1 ms |
+| table, 1 000 rows with code, bold, links | 54 595 | 9 ms |
+| list nested 60 levels | 4 189 | 1.4 ms |
+| prose, 400 paragraphs | 26 578 | 3.3 ms |
+
+Streaming the open fence in 200-char frames: 274 full re-parses, 9 ms total
+(0.03 ms per frame) — the quadratic case the council warned about does not bite,
+because `marked` captures an open fence's body without inline work. Keeping
+unchanged blocks (`reuseBlocks`): 0.5 ms for the prose case.
+
+Decision for D2: no stable-prefix cache and no worker. A full parse per
+coalesced frame stays far below a frame for every shape the corpus produced.
+
+Limits: above 200 000 characters or 20 000 tree nodes a message is plain text;
+a parser or render error shows that message as plain text; Settings › Advanced ›
+"Format chat replies" turns it off everywhere.
+
+Not measured: DOM commit time in the real Tauri webview. The render check below
+ran in headless Chromium.
+
+## Render check (2.4)
+
+`design.html?view=markdown` (design fixture, not shipped) renders every fixture
+as an assistant reply. Headless Chromium 1100 px wide, darcula and github-light:
+no console or page errors, no horizontal page overflow; table, nested and task
+lists, labelled code with copy, numbered diff, nested disclosures (chevrons turn
+when open), links only on http(s), raw HTML as text — all as specified.

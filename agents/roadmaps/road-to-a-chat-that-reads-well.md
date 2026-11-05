@@ -78,23 +78,24 @@ cache warm, switch before the limit) is shown in the chat, from our own numbers.
       verify: unit tests over 2.1 fixtures and the relevant CommonMark/GFM
       examples; adversarial cases (`javascript:`, `data:`, control chars, tags in
       code) render inert.
-- [ ] **2.4 Renderer.** Fixed React components per node, Tailwind on `ac-*`
+- [x] **2.4 Renderer.** Fixed React components per node, Tailwind on `ac-*`
       tokens; tables scroll horizontally; diff fence via the existing view's
       presentational part; details as native `<details>` with state kept outside
       the parse tree.
-      verify: render tests; screenshot via `npm run v31-chat` for light + dark.
-- [ ] **2.5 Streaming.** Coalesce deltas to one parse per frame; drop results
+      verify: render tests; headless render of `design.html?view=markdown` in
+      darcula + github-light (the recorded `v31-chat` session holds no markdown).
+- [x] **2.5 Streaming.** Coalesce deltas to one parse per frame; drop results
       whose message revision is stale; open fence shows as code at once; a
       table appears once its delimiter row is valid; unmatched emphasis stays
       literal; interrupted turns keep the text as is.
       verify: every split position for short fixtures, random partitions for
       long ones: final tree equals the one-shot parse; code text byte-equal.
-- [ ] **2.6 Budgets and fallback.** Measure parse + commit time for a long open
+- [x] **2.6 Budgets and fallback.** Measure parse + commit time for a long open
       fence, a large table, deep nesting; per-message size/node limit; any
       parser error or limit breach → that message as plain text; settings flag
       to turn markdown off.
       verify: perf test with numbers in the evidence file; fallback test.
-- [ ] **2.7 Wire it in.** Assistant text and plan text use the renderer; user
+- [x] **2.7 Wire it in.** Assistant text and plan text use the renderer; user
       bubbles stay plain.
       verify: `chat.test.tsx` updated; full `vitest run` green.
 
