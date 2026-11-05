@@ -72,7 +72,7 @@ describe("tray (spec §10.7)", () => {
 });
 
 describe("tray accounts (like the v2 tray)", () => {
-  it("each account shows identity and plan, every window with used and reset, the reading's age, and the app button", () => {
+  it("each account shows identity and plan, the 5h window with used and reset, the reading's age, and the app button", () => {
     const handlers = on();
     const openApp = vi.fn();
     const H = 3_600_000;
@@ -80,8 +80,10 @@ describe("tray accounts (like the v2 tray)", () => {
     render(<V3Tray nowMs={2 * 60_000} needs={[]} away={null} sessions={[]} accounts={[a]} appFor={() => ({ name: "Claude Desktop", onOpen: openApp })} on={handlers} />);
     const limits = screen.getByRole("region", { name: "Limits" });
     expect(within(limits).getByText("work@example.com · Max")).toBeTruthy();
-    for (const t of ["5h", "week", "39%", "62%", "↻ 1h 58m", "↻ 4d 21h", "2m ago"]) expect(within(limits).getByText(t), t).toBeTruthy();
-    expect(within(limits).getAllByTestId("pace-tick")).toHaveLength(2);
+    for (const t of ["5h", "39%", "↻ 1h 58m", "2m ago"]) expect(within(limits).getByText(t), t).toBeTruthy();
+    expect(within(limits).queryByText("62%"), "only the current window as a bar").toBeNull();
+    expect(within(limits).getAllByTestId("pace-tick")).toHaveLength(1);
+    expect(within(limits).getByText("39%").closest("[title]")!.getAttribute("title")).toContain("week 62%");
     fireEvent.click(within(limits).getByRole("button", { name: "Open Claude Desktop as work" }));
     expect(openApp).toHaveBeenCalledOnce();
     fireEvent.click(within(limits).getByText("work"));

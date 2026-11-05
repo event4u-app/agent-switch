@@ -236,12 +236,17 @@ export function RoomLeft({ accounts, nowMs }: { accounts: LimitAccount[]; nowMs:
 /**
  * Tray account (proposal, like the v2 tray): name, next / near-limit word, how
  * old the reading is and the app button on the first line; identity and plan
- * on the second; then every window full size — bar with pace tick, used, reset.
+ * on the second; then the current (5h) window full size — bar with pace tick,
+ * used, reset. The other windows are in its tooltip and in the popover.
  */
+/** The window the tray shows: the 5h one, else the first the CLI reports. Pure. */
+export const currentWindow = (a: LimitAccount): LimitWindow | undefined => a.windows.find((w) => w.label === "5h") ?? a.windows[0];
+
 export function TrayAccount({ a, nowMs, onOpen, onSignIn, app }: { a: LimitAccount; nowMs: number; onOpen: (key: string) => void; onSignIn: (key: string) => void; app?: { name: string; onOpen: () => void } }) {
   const stale = isStale(a, nowMs);
   const t = stale ? "none" : tone(tightest(a)?.used ?? null, a.protect);
   const id = [a.identity, a.plan].filter(Boolean).join(" · ");
+  const now = currentWindow(a);
   return (
     <div className="rounded-md px-2 py-1.5 hover:bg-ac-raise">
       <div className="flex h-6 items-center gap-2">
@@ -285,11 +290,10 @@ export function TrayAccount({ a, nowMs, onOpen, onSignIn, app }: { a: LimitAccou
             Sign in
           </button>
         </div>
-      ) : a.windows.length ? (
-        <div className="mt-1 space-y-1 pl-[18px]">
-          {a.windows.map((w) => (
-            <LimitBar key={w.label} w={w} protect={a.protect} stale={stale} nowMs={nowMs} />
-          ))}
+      ) : now ? (
+        // Only the current (5h) window; the others are in the tooltip and the popover.
+        <div className="mt-1 pl-[18px]" title={a.windows.map((w) => `${w.label} ${pct(w.used)}${w.resetsAtMs ? ` · resets in ${duration(w.resetsAtMs - nowMs)}` : ""}`).join("\n")}>
+          <LimitBar w={now} protect={a.protect} stale={stale} nowMs={nowMs} />
         </div>
       ) : (
         <div className="mt-0.5 pl-[18px] text-[11px] text-ac-muted">No usage read yet</div>
