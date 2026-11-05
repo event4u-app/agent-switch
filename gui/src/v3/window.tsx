@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Ellipsis, FileCode, Layers, Library, ListTree, Plus, Settings, Wrench } from "lucide-react";
+import { ArrowRightToLine, Copy, Ellipsis, FileCode, Layers, Library, ListTree, Pin, PinOff, Plus, RotateCcw, Settings, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
 import type { IdentityColor, ToolEntry } from "../vm/types.js";
@@ -25,9 +25,10 @@ import type { Appearance } from "./themes/resolve.js";
 import { updateNeeds } from "./tools.js";
 import { BlockerStrip, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
 import { Act, type BatchActions } from "./kit.js";
-import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type OpenFacts, type OpenPick } from "./menus.js";
+import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
-import { actionFor, DEFAULT_KEYS, type Action, type Binding } from "./keys.js";
+import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
+import { EMPTY_TABS, canReopen, closable, closeOthers, closeTab, closeToRight, closeUnpinned, isPageTab, moveTab, nextActive, openTab, pinTab, reopenTab, seedTabs, unpinTab, type TabState } from "./tabs.js";
 import { nextFocus } from "./needs.js";
 import { Switcher } from "./overlays.js";
 import { liveOrder } from "./sessions.js";
@@ -131,6 +132,22 @@ const PAGE_TAB: Record<PageId | "sessions-table", { label: string; icon: ReactNo
   "sessions-table": { label: "All sessions", icon: <ListTree className="size-3.5" /> },
 };
 
+/** A page id the window can (re)open: a known page, or the review of a session that still exists. */
+function isKnownPage(p: string, sessions: ReadonlySet<string>): boolean {
+  return p in PAGE_TAB || (p.startsWith("review:") && sessions.has(p.slice(7)));
+}
+
+/** A window point in the shell's coordinates, kept so a menu `width` wide stays inside. */
+function shellPoint(at: { x: number; y: number }, width = 260): { x: number; y: number } {
+  const r = typeof document !== "undefined" ? document.querySelector("[data-v3-shell]")?.getBoundingClientRect() : undefined;
+  const x = at.x - (r?.left ?? 0);
+  const y = at.y - (r?.top ?? 0);
+  return { x: r && r.width ? Math.max(4, Math.min(x, r.width - width - 4)) : x, y };
+}
+
+/** The session actions a tab's menu repeats; "Pin" stays in the session's own menu (it pins in the list, not the tab). */
+const TAB_SESSION_ITEMS: readonly SessionMenuItem[] = ["Rename…", "Move to another account…", "Hand off…", "Detach", "End…"];
+
 /** The palette's own commands: pages the window can open (spec §7.1). */
 export const PAGE_COMMANDS: PaletteEntry[] = [
   { id: "page:sessions-table", group: "commands", title: "All sessions", meta: "every session, filter and batch" },
@@ -165,10 +182,12 @@ export function V3Window({
   autoOpenLimits?: boolean;
 }) {
   const saved = useMemo(() => layout?.load() ?? null, [layout]);
-  const [pages, setPages] = useState<Page[]>([]);
-  const [sessionTabs, setSessionTabs] = useState<string[]>([]);
+  // Tab order, pins and the recently closed tabs (tabs.ts); page tabs are `page:<id>`.
+  const [strip, setStrip] = useState<TabState>(EMPTY_TABS);
+  const pages = strip.order.filter(isPageTab).map((id) => id.slice(5) as Page);
+  const sessionTabs = strip.order.filter((id) => !isPageTab(id));
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking" } | { decide: string } | { menu: string } | { openin: string }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking" } | { decide: string } | { menu: string } | { openin: string } | { tabMenu: string; x: number; y: number }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -194,12 +213,12 @@ export function V3Window({
   useEffect(() => () => void (peekTimer.current && clearTimeout(peekTimer.current)), []);
 
   const openPage = useCallback((p: Page) => {
-    setPages((cur) => (cur.includes(p) ? cur : [...cur, p]));
+    setStrip((cur) => openTab(cur, `page:${p}`));
     setActive(`page:${p}`);
   }, []);
   const frame = useFrame(openPage);
   const openSession = (key: string) => {
-    setSessionTabs((cur) => (cur.includes(key) ? cur : [...cur, key]));
+    setStrip((cur) => openTab(cur, key));
     setActive(key);
   };
   // The window opens where the user left off, else on the first live session;
@@ -210,13 +229,66 @@ export function V3Window({
     started.current = true;
     if (active) return;
     const s = startTabs(saved, data.sessions);
-    setSessionTabs((cur) => [...new Set([...s.tabs, ...cur])]);
+    // Pinned tabs come back too, pages included; a pinned session that ended does not.
+    const known = new Set(data.sessions.map((x) => x.key));
+    const pins = (saved?.pinned ?? []).filter((id) => (isPageTab(id) ? isKnownPage(id.slice(5), known) : s.tabs.includes(id)));
+    setStrip((cur) => seedTabs(cur, [...pins.filter(isPageTab), ...s.tabs], pins));
     setActive(s.active);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.sessions]);
   useEffect(() => {
-    if (started.current) layout?.save({ tabs: sessionTabs, active: active?.startsWith("page:") ? null : active, comfortable, groupByProject, pinnedOnly });
-  }, [layout, sessionTabs, active, comfortable, groupByProject, pinnedOnly]);
+    if (started.current) layout?.save({ tabs: sessionTabs, pinned: strip.pinned, active: active?.startsWith("page:") ? null : active, comfortable, groupByProject, pinnedOnly });
+    // sessionTabs is derived from strip.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout, strip, active, comfortable, groupByProject, pinnedOnly]);
+
+  /** Apply a change to the strip; when the active tab leaves, its neighbour takes over. */
+  const changeStrip = (f: (s: TabState) => TabState) => {
+    const next = f(strip);
+    if (next === strip) return;
+    setStrip(next);
+    setActive(nextActive(strip.order, next.order, active ?? "", active));
+  };
+  const reopenClosed = (): boolean => {
+    const known = new Set(data.sessions.map((x) => x.key));
+    const r = reopenTab(strip, (id) => (isPageTab(id) ? isKnownPage(id.slice(5), known) : known.has(id)));
+    setStrip(r.state);
+    if (r.id) setActive(r.id);
+    return !!r.id;
+  };
+  /** Right click on a tab (owner request 2026-11-05): pin, the close family, reopen, and the session's own actions. */
+  const tabMenuItems = (id: string): MenuItem[] => {
+    const pinnedTab = strip.pinned.includes(id);
+    const after = strip.order.slice(strip.order.indexOf(id) + 1);
+    const run = (f: () => void) => () => (setOverlay(null), f());
+    const items: MenuItem[] = [
+      pinnedTab
+        ? { id: "unpin", label: "Unpin tab", icon: <PinOff />, onClick: run(() => setStrip((s) => unpinTab(s, id))) }
+        : { id: "pin", label: "Pin tab", icon: <Pin />, onClick: run(() => setStrip((s) => pinTab(s, id))) },
+      { divider: true, label: "" },
+      { id: "close", label: pinnedTab ? "Close pinned tab" : "Close tab", icon: <X />, onClick: run(() => changeStrip((s) => closeTab(s, id, true))) },
+      { id: "close-others", label: "Close other tabs", disabled: !closable(strip, strip.order.filter((x) => x !== id)).length, onClick: run(() => changeStrip((s) => closeOthers(s, id))) },
+      { id: "close-right", label: "Close tabs to the right", icon: <ArrowRightToLine />, disabled: !closable(strip, after).length, onClick: run(() => changeStrip((s) => closeToRight(s, id))) },
+      { id: "close-unpinned", label: "Close all unpinned tabs", disabled: !closable(strip, strip.order).length, onClick: run(() => changeStrip(closeUnpinned)) },
+      { divider: true, label: "" },
+      { id: "reopen", label: "Reopen closed tab", icon: <RotateCcw />, kbd: keyLabel(keys.reopenTab, platform), disabled: !canReopen(strip), onClick: run(() => void reopenClosed()) },
+    ];
+    if (isPageTab(id)) return items;
+    const offered = new Set<string>(data.menu ? data.menu(id) : SESSION_MENU);
+    return [
+      ...items,
+      { divider: true, label: "" },
+      { id: "copy-key", label: "Copy session key", icon: <Copy />, onClick: run(() => void navigator.clipboard?.writeText(id).catch(() => undefined)) },
+      ...TAB_SESSION_ITEMS.filter((item) => offered.has(item)).map(
+        (item): MenuItem => ({
+          id: `session:${item}`,
+          label: item,
+          danger: item === "End…",
+          onClick: run(() => (item === "Move to another account…" ? setOverlay({ decide: id }) : act({ type: "session-menu", key: id, item }))),
+        }),
+      ),
+    ];
+  };
 
   // The app opens a tab itself: a new chat, a Needs-you item that lives in a chat.
   useEffect(() => {
@@ -249,19 +321,20 @@ export function V3Window({
   const activeSession = active && !active.startsWith("page:") ? active : null;
   const bar = activeSession ? data.bar(activeSession) : null;
   const next = activeSession && !dismissed.has(activeSession) ? data.next(activeSession) : null;
-  const tabs: TabItem[] = [
-    ...pages.map((p) => ({
-      kind: "page" as const,
-      id: `page:${p}`,
-      ...(p.startsWith("review:")
-        ? { label: `Review · ${data.sessions.find((x) => x.key === p.slice(7))?.title ?? p.slice(7)}`, icon: <FileCode className="size-3.5" /> }
-        : PAGE_TAB[p as PageId | "sessions-table"]),
-    })),
-    ...sessionTabs.map((k) => {
-      const s = data.sessions.find((x) => x.key === k);
-      return { kind: "session" as const, id: k, title: s?.title ?? k, state: s?.state ?? "idle" };
-    }),
-  ];
+  const tabs: TabItem[] = strip.order.map((id): TabItem => {
+    if (isPageTab(id)) {
+      const p = id.slice(5) as Page;
+      return {
+        kind: "page" as const,
+        id,
+        ...(p.startsWith("review:")
+          ? { label: `Review · ${data.sessions.find((x) => x.key === p.slice(7))?.title ?? p.slice(7)}`, icon: <FileCode className="size-3.5" /> }
+          : PAGE_TAB[p as PageId | "sessions-table"]),
+      };
+    }
+    const s = data.sessions.find((x) => x.key === id);
+    return { kind: "session" as const, id, title: s?.title ?? id, state: s?.state ?? "idle" };
+  });
   const batch = (keys: string[]): BatchActions => ({
     onClear: () => setSelection(null),
     onPin: () => act({ type: "batch", op: "onPin", keys }),
@@ -375,6 +448,8 @@ export function V3Window({
           return (setOverlay(null), setSelection(null), setFocusedNeed(null), true);
         case "stopTurn":
           return false;
+        case "reopenTab":
+          return reopenClosed();
         default: {
           const key = sessionTabs[Number(a.slice(3)) - 1];
           return key ? (setActive(key), true) : false;
@@ -424,15 +499,11 @@ export function V3Window({
         tabs={tabs}
         activeId={active ?? ""}
         onSelect={setActive}
-        onClose={(id) => {
-          // A session tab only leaves the strip; the session keeps running in the sidebar (spec §6.1).
-          const order = tabs.map((t) => t.id);
-          const at = order.indexOf(id);
-          const rest = order.filter((x) => x !== id);
-          setPages((cur) => cur.filter((p) => `page:${p}` !== id));
-          setSessionTabs((cur) => cur.filter((k) => k !== id));
-          if (active === id) setActive(rest[Math.min(at, rest.length - 1)] ?? null);
-        }}
+        // A session tab only leaves the strip; the session keeps running in the sidebar (spec §6.1).
+        onClose={(id) => changeStrip((s) => closeTab(s, id))}
+        pinned={new Set(strip.pinned)}
+        onMenu={(id, at) => setOverlay({ tabMenu: id, ...shellPoint(at) })}
+        onMove={(id, target, side) => setStrip((s) => moveTab(s, id, target, side))}
       />
       {!(activeSession && bar) && engineBanner}
       {active?.startsWith("page:") ? (
@@ -612,6 +683,10 @@ export function V3Window({
             act({ type: "open-in", key: openMenuOf, pick: p });
           }}
         />
+      </Anchored>
+    ) : overlay && typeof overlay === "object" && "tabMenu" in overlay ? (
+      <Anchored onClose={close} className="absolute z-20" style={{ left: overlay.x, top: overlay.y }}>
+        <Menu label="Tab" width={260} items={tabMenuItems(overlay.tabMenu)} />
       </Anchored>
     ) : overlay && typeof overlay === "object" && "menu" in overlay ? (
       <Anchored onClose={close} className="absolute right-[54px] top-[122px] z-10">

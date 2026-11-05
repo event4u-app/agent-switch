@@ -8,6 +8,8 @@ import { liveOrder, type RowSession } from "./sessions.js";
 
 export interface WindowLayout {
   tabs: string[];
+  /** Pinned tabs, page tabs (`page:<id>`) included; they come back after a restart. */
+  pinned?: string[];
   active: string | null;
   comfortable: boolean;
   groupByProject: boolean;
@@ -34,6 +36,7 @@ export function parseLayout(raw: string | null): Partial<WindowLayout> | null {
   const v = o as Record<string, unknown>;
   const out: Partial<WindowLayout> = {};
   if (Array.isArray(v.tabs)) out.tabs = v.tabs.filter((t): t is string => typeof t === "string").slice(0, 20);
+  if (Array.isArray(v.pinned)) out.pinned = v.pinned.filter((t): t is string => typeof t === "string").slice(0, 20);
   if (typeof v.active === "string" || v.active === null) out.active = v.active as string | null;
   for (const k of ["comfortable", "groupByProject", "pinnedOnly"] as const) if (typeof v[k] === "boolean") out[k] = v[k] as boolean;
   return out;
