@@ -15,6 +15,7 @@ import {
   digest,
   itemId,
   readAttention,
+  seen,
   snooze,
   writeAttention,
   type Candidate,
@@ -149,11 +150,18 @@ export function cmdNeeds(sub: string | undefined, arg: string | undefined, flags
     return;
   }
   if (sub === "fix") return fixCi(arg, candidates);
-  if (sub !== undefined) die("usage: agent-switch needs [--json] | needs later <id> | needs fix <id> | needs allow|deny <session> <approval>");
+  if (sub === "seen") {
+    writeAttention(file, seen(state, new Date().toISOString()));
+    if (flags.json) console.log(JSON.stringify({ ok: true }));
+    else console.log("The away summary is cleared.");
+    return;
+  }
+  if (sub !== undefined) die("usage: agent-switch needs [--json] | needs later <id> | needs fix <id> | needs seen | needs allow|deny <session> <approval>");
   const now = new Date().toISOString();
   const items = buildQueue(candidates, state);
   const away = digest(state, now, listProfiles("claude").flatMap((p) => readEvents(eventFile(ROOT, "claude", p))), Object.values(readPrCache(prCacheFile(ROOT))).flatMap((r) => r.prs));
-  const next = afterRead(state, items, new Set(candidates.map((c) => itemId(c.kind, c.subject))), now);
+  // The digest stays until `needs seen`: a read alone (a hidden window's poll) is not a look.
+  const next = { ...afterRead(state, items, new Set(candidates.map((c) => itemId(c.kind, c.subject))), now), awaySince: away?.since ?? null };
   writeAttention(file, next);
   if (flags.json) {
     console.log(JSON.stringify({ items, away, history: next.history.slice(-20).reverse() }, null, 2));

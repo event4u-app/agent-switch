@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { buildQueue, afterRead, snooze, digest, itemId, emptyState, readAttention, writeAttention, attentionFile, AWAY_MS, HISTORY_CAP, type Candidate } from "../src/attention.js";
+import { buildQueue, afterRead, snooze, seen, digest, itemId, emptyState, readAttention, writeAttention, attentionFile, AWAY_MS, HISTORY_CAP, type Candidate } from "../src/attention.js";
 
 const c = (kind: Candidate["kind"], subject: string, since: string, version = "v1"): Candidate => ({ kind, subject, who: subject, what: kind, since, version });
 
@@ -91,4 +91,39 @@ test("ciCandidates: failing CI and conflicts on open PRs; Fix only where AS host
   const items = ciCandidates([row("claude/w/hosted"), row("claude/w/hosted")], cache as any, new Set(["claude/w/hosted"]));
   assert.deepEqual(items.map((c) => [c.subject, c.what, c.detail, c.verb]), [["o/r#1", "CI failing on #1", "test", undefined], ["o/r#2", "#2 has a merge conflict", undefined, undefined]], "merged PRs ignored, each PR once");
   assert.deepEqual(ciCandidates([row("claude/w/own")], cache as any, new Set()).map((c) => c.verb), ["Focus terminal", "Focus terminal"]);
+});
+
+test("the away digest stays on later reads until it is seen; a read alone is not a look", () => {
+  const away = "2026-11-02T08:00:00.000Z";
+  const history = [{ id: "x", kind: "question" as const, who: "s", what: "q", doneAt: "2026-11-02T09:00:00.000Z" }];
+  // A later read already moved lastSeenAt on, but the absence is still unacknowledged.
+  const state = { ...emptyState(), lastSeenAt: "2026-11-02T10:30:00.000Z", awaySince: away, history };
+  const d = digest(state, "2026-11-02T10:30:10.000Z", []);
+  assert.deepEqual(d, { since: away, finishedTurns: 0, stoppedOnError: 0, resolved: 1, mergedPrs: 0, ciBreaks: 0 });
+  const cleared = seen(state, "2026-11-02T10:31:00.000Z");
+  assert.equal(cleared.awaySince, null);
+  assert.equal(cleared.lastSeenAt, "2026-11-02T10:31:00.000Z");
+  assert.equal(digest(cleared, "2026-11-02T10:31:10.000Z", []), null);
+  // A file written before awaySince existed reads as none.
+  assert.equal(digest({ ...emptyState(), lastSeenAt: "2026-11-02T10:30:00.000Z", history }, "2026-11-02T10:30:10.000Z", []), null);
+});
+
+test("CLI: the away summary survives a background read and goes with `needs seen`", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const CLI = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../dist/index.js");
+  if (!fs.existsSync(CLI)) return;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-away-"));
+  const hour = 3600_000;
+  writeAttention(attentionFile(home), {
+    ...emptyState(),
+    lastSeenAt: new Date(Date.now() - 3 * hour).toISOString(),
+    history: [{ id: "x", kind: "question", who: "s", what: "q", doneAt: new Date(Date.now() - hour).toISOString() }],
+  });
+  const needs = (...args: string[]) => execFileSync("node", [CLI, "needs", ...args], { env: { ...process.env, AGENT_SWITCH_HOME: home, HOME: home }, encoding: "utf8" });
+  const first = JSON.parse(needs("--json"));
+  assert.equal(first.away?.resolved, 1, "after three hours away: one summary");
+  const second = JSON.parse(needs("--json"));
+  assert.deepEqual(second.away, first.away, "a second read (another window's poll) keeps it");
+  needs("seen");
+  assert.equal(JSON.parse(needs("--json")).away, null, "seen: gone");
 });

@@ -364,6 +364,11 @@ export async function needsLater(id: string): Promise<void> {
   await runCli(["needs", "later", id]);
 }
 
+/** `needs seen`: the "while you were away" summary was looked at; it stays until then. */
+export async function needsSeen(): Promise<void> {
+  await runCli(["needs", "seen"]);
+}
+
 /** Tell the background service whether the window is shown, so it can pause
  *  work only the window displays (the PR refresh). Best-effort. */
 export async function reportVisibility(visible: boolean): Promise<void> {
