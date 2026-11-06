@@ -128,6 +128,10 @@ export interface State {
    *  wires itself to it (road-to-the-agent-config-link). Default true — also for
    *  a state file written before the key existed. Off is the safety switch. */
   linkAutoConnect: boolean;
+  /** Who carries out a move answered in the app's near-limit sheet.
+   *  `app` (default): the app moves what it hosts and records the answer as executed. `service`: the app only records
+   *  the answer and the background service carries it out. */
+  linkExecutor: LinkExecutor;
   /** How a plain start picks per provider (`dir-resolve.ts`); absent = `balance`. */
   strategy: Partial<Record<ProviderId, StartStrategy>>;
   /** Rollback / circuit-breaker for the `rebind` write path (ADR-003). */
@@ -345,17 +349,18 @@ export function readState(): State {
     const keepSignedIn = raw?.keepSignedIn !== false;
     const codexAutoReset = raw?.codexAutoReset === true;
     const linkAutoConnect = raw?.linkAutoConnect !== false;
+    const linkExecutor: LinkExecutor = raw?.linkExecutor === "service" ? "service" : "app";
     const strategy = normalizeStrategy(raw?.strategy);
     const rebind = normalizeRebindState(raw?.rebind);
     const guard = normalizeGuard(raw?.guard);
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, strategy, rebind, guard };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, strategy, rebind, guard };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, strategy, rebind, guard };
+      return { active: { ...emptyActive(), ...raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, strategy, rebind, guard };
     }
-    return { active: emptyActive(), labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, strategy, rebind, guard };
+    return { active: emptyActive(), labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, strategy, rebind, guard };
   } catch {
     /* absent / unparsable → default */
   }
@@ -363,7 +368,7 @@ export function readState(): State {
   // 2.1.0 install can have profiles and no state file — that user must keep the
   // pre-2.2 default (block), not be treated as new.
   const fresh = !fs.existsSync(STATE_FILE) && listAllProfiles().length === 0;
-  return { active: emptyActive(), labels: {}, colors: {}, disabled: [], autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, keepSignedIn: true, codexAutoReset: false, linkAutoConnect: true, strategy: {}, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
+  return { active: emptyActive(), labels: {}, colors: {}, disabled: [], autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, keepSignedIn: true, codexAutoReset: false, linkAutoConnect: true, linkExecutor: "app", strategy: {}, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
 }
 
 export function readOsNotifications(): boolean {
@@ -398,6 +403,20 @@ export function setLinkAutoConnect(on: boolean): void {
   return withFileLockSync(STATE_FILE, () => {
     const state = readState();
     state.linkAutoConnect = on;
+    writeState(state);
+  });
+}
+
+export type LinkExecutor = "app" | "service";
+
+export function readLinkExecutor(): LinkExecutor {
+  return readState().linkExecutor;
+}
+
+export function setLinkExecutor(executor: LinkExecutor): void {
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    state.linkExecutor = executor;
     writeState(state);
   });
 }

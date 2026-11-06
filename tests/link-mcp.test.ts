@@ -132,3 +132,18 @@ test("`mcp serve` answers a full handshake over stdio and honours `link off`", g
   const off = await session(home, msgs.slice(0, 3));
   assert.deepEqual(off[1].result.tools, []);
 });
+
+test("`link executor`: default app, round trip, reported by `link status --json`, bad value refused", gate, async () => {
+  const { execFileSync, spawnSync } = await import("node:child_process");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-executor-"));
+  const run = (...args: string[]) => execFileSync("node", [CLI, ...args], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
+  assert.equal(JSON.parse(run("link", "status", "--json")).executor, "app");
+  assert.equal(JSON.parse(run("link", "executor", "--json")).executor, "app");
+  assert.equal(JSON.parse(run("link", "executor", "service", "--json")).executor, "service");
+  assert.equal(JSON.parse(run("link", "status", "--json")).executor, "service");
+  assert.equal(JSON.parse(run("link", "status", "--json")).enabled, true); // the connect switch is untouched
+  const bad = spawnSync("node", [CLI, "link", "executor", "daemon"], { env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
+  assert.notEqual(bad.status, 0);
+  assert.equal(JSON.parse(run("link", "status", "--json")).executor, "service");
+  assert.equal(JSON.parse(run("link", "executor", "app", "--json")).executor, "app");
+});
