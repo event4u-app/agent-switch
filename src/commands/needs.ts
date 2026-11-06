@@ -44,7 +44,8 @@ export function gatherCandidates(): Candidate[] {
     markLive(cfg, rows);
     const events = readEvents(eventFile(ROOT, "claude", profile));
     const last = new Map<string, HookEventRecord>();
-    for (const e of events) if (e.sessionId) last.set(e.sessionId, e);
+    // A subagent's start and stop say nothing about whether the session itself waits.
+    for (const e of events) if (e.sessionId && e.event !== "SubagentStart" && e.event !== "SubagentStop") last.set(e.sessionId, e);
     for (const r of rows) {
       const key = `claude/${profile}/${r.sessionId}`;
       const who = r.summary ?? (r.cwd ? path.basename(r.cwd) : r.sessionId.slice(0, 8));
@@ -59,6 +60,10 @@ export function gatherCandidates(): Candidate[] {
       if (e.event === "Notification" && !(e.notificationType && HOST_WAIT.test(e.notificationType))) {
         const approval = e.notificationType === "permission_prompt";
         out.push({ kind: approval ? "approval" : "question", subject: key, who, what: approval ? "wants your approval" : "waits for you", since: e.at, version: e.at, verb: "Focus terminal" });
+      } else if (e.event === "Stop" && r.live) {
+        // The turn ended and nothing moved since: the session waits for the next message,
+        // and stays here until it gets one (the transcript moves) or it ends.
+        out.push({ kind: "question", subject: key, who, what: "waits for your next message", since: e.at, version: e.at, verb: "Focus terminal" });
       } else if (e.event === "StopFailure" && (e.error === "authentication_failed" || e.error === "oauth_org_not_allowed")) {
         out.push({ kind: "signin", subject: `claude/${profile}`, who: profile, what: "is signed out", since: e.at, version: e.at });
       } else if (e.event === "StopFailure" && e.error === "rate_limit") {
