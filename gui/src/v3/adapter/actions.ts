@@ -2,7 +2,6 @@
  *  switch is exhaustive: a new action variant does not compile until it is
  *  mapped here. Controls with nothing behind them are hidden by the adapter
  *  (`menuFor`, `commitAvailable`), so they never reach this function. */
-
 import type { SessionRow } from "../../transforms.js";
 import { accountId, accountIdFromMember } from "../../vm/build.js";
 import { splitAccountId, type Actions } from "../../vm/actions.js";
@@ -13,10 +12,9 @@ import type { ProviderId } from "../../transforms.js";
 import type { NeedItem } from "../needs.js";
 import type { Appearance } from "../themes/resolve.js";
 import type { SessionMenuItem, V3Action } from "../window.js";
-import type { MoveHow } from "../dialogs.js";
+import type { MoveHow, SheetMove } from "../dialogs.js";
 import { menuFor, NEW_CHAT, nextStep, sessionKey } from "./data.js";
 import { parsePr } from "./feeds.js";
-
 /** The CLI calls the dispatcher makes (a subset of `ipc.ts`, injectable for tests). */
 export interface DispatchIpc {
   focusSessionTerminal(key: string): Promise<void>;
@@ -39,10 +37,10 @@ export interface DispatchIpc {
   openApp(appId: string, name: string): Promise<void>;
   continueSession(key: string): Promise<void>;
   takeoverHosted(key: string, target: string): Promise<void>;
-  /** Records the answer to a switch request the app has carried out. */
-  decideSwitchRequest?(id: string, verdict: "approve", opts: { to: string; how: "after-turn" | "now"; executed: string }): Promise<void>;
+  /** Records the answer to a switch request: carried out by the app (`executed`),
+   *  or left to the background service (no `executed`). */
+  decideSwitchRequest?(id: string, verdict: "approve", opts: { to: string; how: "after-turn" | "now"; executed?: string }): Promise<void>;
 }
-
 export interface DispatchDeps {
   ipc: DispatchIpc;
   act: Actions;
@@ -57,6 +55,9 @@ export interface DispatchDeps {
   needs: () => readonly NeedItem[];
   /** The switch requests shared with agent-config; a move answers them. */
   requests?: () => readonly SwitchRequestRow[];
+  /** Who carries out a move answered here (`agent-switch link executor`); read
+   *  when the user answers. Absent or unreadable → the app. */
+  executor?: () => Promise<"app" | "service">;
   hosted: (key: string) => boolean;
   setAppearance: (a: Appearance) => void;
   setFocusTerminal: (on: boolean) => void;
@@ -71,25 +72,20 @@ export interface DispatchDeps {
   /** The session bar's [Terminal | Chat] switch. */
   switchView?: (key: string, to: "terminal" | "chat") => void;
 }
-
 /** Claude's `--model` aliases. */
-
 const vmSessionId = (key: string) => {
   const [provider, , id] = key.split("/");
   return `${provider}:${id}`;
 };
-
 /** `git@github.com:o/r.git` / `https://github.com/o/r` → `o/r`. */
 export function githubSlug(remote: string | null | undefined): string | null {
   const m = remote ? /github\.com[:/]([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/.exec(remote) : null;
   return m ? `${m[1]}/${m[2]}` : null;
 }
-
 function prUrl(row: SessionRow | undefined): string | null {
   const pr = row ? (row.prs ?? []).map(parsePr).find((p) => p !== null) : null;
   return pr?.url || null;
 }
-
 async function run(deps: DispatchDeps, what: string, p: Promise<unknown>): Promise<void> {
   try {
     await p;
@@ -98,7 +94,6 @@ async function run(deps: DispatchDeps, what: string, p: Promise<unknown>): Promi
     deps.toast({ tone: "alert", text: `${what} failed: ${e instanceof Error ? e.message : String(e)}` });
   }
 }
-
 function blocker(key: string, deps: DispatchDeps): Promise<void> | void {
   const row = deps.rows().get(key);
   if (!row) return;
@@ -109,17 +104,14 @@ function blocker(key: string, deps: DispatchDeps): Promise<void> | void {
   const url = prUrl(row);
   if (url) deps.openUrl(n.does === "open-checks" ? `${url}/checks` : url);
 }
-
 function createPr(row: SessionRow | undefined, deps: DispatchDeps): void {
   const slug = githubSlug(row?.git?.remote);
   const branch = row?.git?.branch;
   if (!slug || !branch) return void deps.toast({ tone: "warn", text: "This session's branch is not on GitHub" });
   deps.openUrl(`https://github.com/${slug}/compare/${encodeURIComponent(branch)}?expand=1`);
 }
-
 /** The message a switched session is sent so it carries on. */
 const CONTINUE = "Continue where you left off.";
-
 /**
  * One confirmed move. Claude keeps its conversation through `rebind` and is
  * then told to continue where Agent Switch can type (a hosted window, a chat);
@@ -151,7 +143,6 @@ async function moveOne(key: string, target: string, how: MoveHow, deps: Dispatch
   if (deps.hosted(key)) return deps.ipc.continueSession(key);
   deps.toast({ tone: "info", text: `Now on ${target} — type one message in its terminal to continue` });
 }
-
 /** The app carried the moves out itself (D2 for hosted sessions): it records
  *  each answer so agent-config stops asking. A brief moves nothing yet. A lost
  *  record only means agent-config may ask once more; the move stands. */
@@ -162,7 +153,39 @@ function recordMoves(how: MoveHow, moves: readonly { key: string; target: string
     void deps.ipc.decideSwitchRequest(r.id, "approve", { to: r.to, how, executed }).catch(() => {});
   }
 }
-
+/**
+ * With the background service as executor, the
+ * app records the answer without carrying it out, and the service moves the
+ * session. Only a move whose own request offers that target and mode can be
+ * handed over; every other move — and one whose hand-over fails — the app makes
+ * itself, as before, so no answer is left undone. Returns the moves left to the app.
+ */
+async function handOver(how: "after-turn" | "now", moves: readonly SheetMove[], deps: DispatchDeps): Promise<SheetMove[]> {
+  if (!deps.executor || !deps.ipc.decideSwitchRequest || !deps.requests) return [...moves];
+  const executor = await deps.executor().catch(() => "app" as const);
+  if (executor !== "service") return [...moves];
+  const rows = deps.requests();
+  const handed = new Set<string>();
+  // A Claude switch for a whole account rebinds its login, which carries every
+  // session on it — those must not be rebound a second time by the app.
+  const wholeAccounts = new Set<string>();
+  for (const r of requestsForMoves(rows, moves, Date.now())) {
+    // Codex has no live switch: "after this turn" moves the session, which is the service's `now`.
+    const mode = r.key.startsWith("codex/") ? "now" : how;
+    const row = rows.find((x) => x.id === r.id);
+    if (!row?.candidates.some((c) => c.target === r.to && c.how.includes(mode))) continue;
+    try {
+      await deps.ipc.decideSwitchRequest(r.id, "approve", { to: r.to, how: mode });
+      handed.add(r.key);
+      if (row.session === null && r.key.startsWith("claude/")) wholeAccounts.add(`${r.key.split("/").slice(0, 2).join("/")}>${r.to}`);
+    } catch {
+      /* the app makes this move itself */
+    }
+  }
+  if (handed.size) deps.toast({ tone: "info", text: `The background service moves ${handed.size === 1 ? "this session" : `${handed.size} sessions`}; you get a notice when it is done` });
+  const account = (m: SheetMove) => m.key.split("/").slice(0, 2).join("/");
+  return moves.filter((m) => !handed.has(m.key) && !(m.via !== "takeover" && wholeAccounts.has(`${account(m)}>claude/${m.target}`)));
+}
 function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
   // A chat's approval or question is answered in the chat (spec §13.5: one decision).
   if (n.verb === "Open chat" && deps.openTab) return deps.openTab(n.subject);
@@ -177,7 +200,6 @@ function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
     if (id) deps.open({ kind: "reauth", accountId: id });
   }
 }
-
 function sessionMenu(key: string, item: SessionMenuItem, deps: DispatchDeps): Promise<void> | void {
   const row = deps.rows().get(key);
   switch (item) {
@@ -204,7 +226,6 @@ function sessionMenu(key: string, item: SessionMenuItem, deps: DispatchDeps): Pr
       });
   }
 }
-
 export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | void {
   switch (a.type) {
     case "need":
@@ -227,17 +248,22 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
     }
     case "choose-account":
       return deps.open({ kind: "start" });
-    case "move":
+    case "move": {
+      const how = a.how;
+      const left = how === "brief" ? Promise.resolve([...a.moves]) : handOver(how, a.moves, deps);
       return run(
         deps,
         "Move",
-        Promise.all(a.moves.map(({ key, target, via }) => moveOne(key, target, a.how, deps, via))).then((runs) => {
-          // The app has one overlay slot: every takeover rides in one terminal sheet.
-          const [first, ...more] = runs.filter((r): r is TerminalRun => !!r);
-          if (first) deps.open(more.length ? { kind: "terminal", run: first, more } : { kind: "terminal", run: first });
-          recordMoves(a.how, a.moves, deps);
-        }),
+        left.then((mine) =>
+          Promise.all(mine.map(({ key, target, via }) => moveOne(key, target, how, deps, via))).then((runs) => {
+            // The app has one overlay slot: every takeover rides in one terminal sheet.
+            const [first, ...more] = runs.filter((r): r is TerminalRun => !!r);
+            if (first) deps.open(more.length ? { kind: "terminal", run: first, more } : { kind: "terminal", run: first });
+            recordMoves(how, mine, deps);
+          }),
+        ),
       );
+    }
     case "keep-account": {
       const limits = deps.needs().filter((n) => n.kind === "limit" && n.subject.split("/")[1] === a.account);
       return run(deps, "Keep", Promise.all(limits.map((n) => deps.ipc.needsLater(n.id))));
@@ -333,5 +359,4 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
     }
   }
 }
-
 export { menuFor, sessionKey };

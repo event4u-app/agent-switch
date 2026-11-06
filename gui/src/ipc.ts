@@ -1249,6 +1249,18 @@ export async function setLinkAutoConnect(on: boolean): Promise<void> {
   await runCli(["link", on ? "on" : "off"]);
 }
 
+/** Who carries out a move answered in the app — `agent-switch link executor` (default `app`). */
+export type LinkExecutor = "app" | "service";
+
+export async function getLinkExecutor(): Promise<LinkExecutor> {
+  const { executor } = JSON.parse(await runCli(["link", "status", "--json"]));
+  return executor === "service" ? "service" : "app";
+}
+
+export async function setLinkExecutor(executor: LinkExecutor): Promise<void> {
+  await runCli(["link", "executor", executor]);
+}
+
 /** How a start with no folder rule picks its account (`strategy`):
  *  `balance` spreads starts, `fill` uses the preferred account up first. */
 export type StartStrategy = "balance" | "fill";

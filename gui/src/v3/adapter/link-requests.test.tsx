@@ -124,6 +124,94 @@ describe("a move from the sheet records its answer", () => {
   });
 });
 
+describe("with the background service as executor (road-to-service-executed-moves 3.1)", () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const live = (over: Partial<SwitchRequestRow>) => req({ expiresAt: new Date(Date.now() + 600_000).toISOString(), ...over });
+  const cand = (target: string, how: string[]) => ({ target, provider: target.split("/")[0], fill: 10, resetsAt: null, how });
+  function deps(rows: SwitchRequestRow[], executor: "app" | "service" = "service") {
+    const decide = vi.fn(async () => {});
+    const d = {
+      ipc: { takeoverHosted: vi.fn(async () => {}), continueSession: vi.fn(async () => {}), decideSwitchRequest: decide } as unknown as DispatchDeps["ipc"],
+      act: { rebind: vi.fn(async () => {}), armRebind: vi.fn(async () => {}) },
+      open: vi.fn(),
+      toast: vi.fn(),
+      openUrl: vi.fn(),
+      refresh: vi.fn(),
+      rows: () => new Map(),
+      needs: () => [],
+      requests: () => rows,
+      hosted: () => true,
+      executor: vi.fn(async () => executor),
+      setAppearance: vi.fn(),
+      setFocusTerminal: vi.fn(),
+      prompt: vi.fn(),
+    } satisfies DispatchDeps;
+    return { d, decide };
+  }
+
+  it("on: one decision per session, without --executed, and the app moves nothing", async () => {
+    const { d, decide } = deps([live({ id: "ra", session: "claude/work/a", candidates: [cand("claude/home", ["after-turn", "now"])] }), live({ id: "rb", session: "claude/work/b", candidates: [cand("claude/lab", ["now"])] })]);
+    await dispatchV3({ type: "move", how: "now", moves: [{ key: "claude/work/a", target: "home" }, { key: "claude/work/b", target: "lab", via: "takeover" }] }, d);
+    await flush();
+    expect(decide).toHaveBeenCalledTimes(2);
+    expect(decide).toHaveBeenCalledWith("ra", "approve", { to: "claude/home", how: "now" });
+    expect(decide).toHaveBeenCalledWith("rb", "approve", { to: "claude/lab", how: "now" });
+    expect(d.act.rebind).not.toHaveBeenCalled();
+    expect(d.ipc.takeoverHosted).not.toHaveBeenCalled();
+    expect(d.ipc.continueSession).not.toHaveBeenCalled();
+    expect(d.open).not.toHaveBeenCalled();
+  });
+
+  it("on: a Codex move after the turn is handed over as now (Codex has no live switch)", async () => {
+    const { d, decide } = deps([live({ id: "rc", account: "codex/one", session: "codex/one/s", candidates: [cand("codex/two", ["now", "handoff"])] })]);
+    await dispatchV3({ type: "move", how: "after-turn", moves: [{ key: "codex/one/s", target: "two" }] }, d);
+    await flush();
+    expect(decide).toHaveBeenCalledWith("rc", "approve", { to: "codex/two", how: "now" });
+    expect(d.ipc.takeoverHosted).not.toHaveBeenCalled();
+  });
+
+  it("on: a session with no open request, or a target the request does not offer, is moved by the app as before", async () => {
+    const { d, decide } = deps([live({ id: "ra", session: "claude/work/a", candidates: [cand("claude/home", ["now"])] })]);
+    await dispatchV3({ type: "move", how: "now", moves: [{ key: "claude/work/a", target: "lab" }, { key: "claude/work/b", target: "home" }] }, d);
+    await flush();
+    expect(d.act.rebind).toHaveBeenCalledTimes(2);
+    expect(decide).toHaveBeenCalledWith("ra", "approve", { to: "claude/lab", how: "now", executed: "moved in the app" });
+  });
+
+  it("on: when handing over fails, the app moves the session itself", async () => {
+    const { d, decide } = deps([live({ id: "ra", session: "claude/work/a", candidates: [cand("claude/home", ["now"])] })]);
+    decide.mockRejectedValueOnce(new Error("already decided"));
+    await dispatchV3({ type: "move", how: "now", moves: [{ key: "claude/work/a", target: "home" }] }, d);
+    await flush();
+    expect(d.act.rebind).toHaveBeenCalledWith("claude:a", "claude:home");
+  });
+
+  it("on: a whole-account Claude request carries every session on that account; the app does not rebind them again", async () => {
+    const { d, decide } = deps([live({ id: "acct", candidates: [cand("claude/home", ["now"])] })]);
+    await dispatchV3({ type: "move", how: "now", moves: [{ key: "claude/work/a", target: "home" }, { key: "claude/work/b", target: "home" }, { key: "claude/work/c", target: "lab" }] }, d);
+    await flush();
+    expect(decide).toHaveBeenCalledWith("acct", "approve", { to: "claude/home", how: "now" });
+    expect(d.act.rebind).toHaveBeenCalledTimes(1);
+    expect(d.act.rebind).toHaveBeenCalledWith("claude:c", "claude:lab");
+  });
+
+  it("on: a brief stays in the app", async () => {
+    const { d, decide } = deps([live({ id: "ra", session: "claude/work/a", candidates: [cand("codex/x", ["handoff"])] })]);
+    await dispatchV3({ type: "move", how: "brief", moves: [{ key: "claude/work/a", target: "x" }] }, d);
+    await flush();
+    expect(decide).not.toHaveBeenCalled();
+    expect(d.open).toHaveBeenCalled();
+  });
+
+  it("off: today's behaviour — the app moves and records --executed", async () => {
+    const { d, decide } = deps([live({ id: "ra", session: "claude/work/a", candidates: [cand("claude/home", ["now"])] })], "app");
+    await dispatchV3({ type: "move", how: "now", moves: [{ key: "claude/work/a", target: "home" }] }, d);
+    await flush();
+    expect(d.act.rebind).toHaveBeenCalledTimes(1);
+    expect(decide).toHaveBeenCalledWith("ra", "approve", { to: "claude/home", how: "now", executed: "moved in the app" });
+  });
+});
+
 describe("the sheet follows agent-config", () => {
   const sheet = () => screen.queryByText(/Nothing changes until you choose/);
 

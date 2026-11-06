@@ -5,6 +5,7 @@ import { AppLogo } from "../ui/AppLogo.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { updateCount } from "../vm/rules.js";
 import { useAS, type Screen } from "../vm/store.js";
+import { useServiceOutcomes } from "../vm/service-outcomes.js";
 import { CommandSearch } from "./CommandSearch.js";
 import { isAppShortcut } from "./shortcuts.js";
 import { checksToLook } from "./screens/health.js";
@@ -242,6 +243,8 @@ export function useGlobalShortcuts(isMac: boolean) {
 /** Top bar + scrolling content column (bundle `NP`). */
 export function Shell({ isMac, children }: { isMac: boolean; children: ReactNode }) {
   useGlobalShortcuts(isMac);
+  const s = useAS();
+  useServiceOutcomes(s.switchRequests, s);
   return (
     <div className="flex h-full min-h-0 flex-col bg-ac-bg">
       <TopBar isMac={isMac} />

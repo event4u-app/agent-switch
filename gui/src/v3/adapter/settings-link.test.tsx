@@ -12,6 +12,8 @@ const ipcMock = vi.hoisted(() => ({
   setStrategy: vi.fn(),
   getLinkAutoConnect: vi.fn(),
   setLinkAutoConnect: vi.fn(),
+  getLinkExecutor: vi.fn(),
+  setLinkExecutor: vi.fn(),
   getCodexAutoReset: vi.fn(),
   setCodexAutoReset: vi.fn(),
 }));
@@ -22,6 +24,8 @@ beforeEach(() => {
   ipcMock.getStrategy.mockResolvedValue("balance");
   ipcMock.getCodexAutoReset.mockResolvedValue(false);
   ipcMock.setLinkAutoConnect.mockResolvedValue(undefined);
+  ipcMock.getLinkExecutor.mockResolvedValue("app");
+  ipcMock.setLinkExecutor.mockResolvedValue(undefined);
 });
 afterEach(() => {
   cleanup();
@@ -62,5 +66,37 @@ describe("v3 settings › Protection: Let agent-config connect", () => {
     const sw = mount();
     await waitFor(() => expect(ipcMock.getLinkAutoConnect).toHaveBeenCalled());
     expect(sw().disabled).toBe(true);
+  });
+});
+
+describe("v3 settings › Protection: Let the background service carry out moves", () => {
+  const executor = () => screen.getByRole("switch", { name: "Let the background service carry out moves" }) as HTMLButtonElement;
+
+  it("is off by default, names what can go wrong, and writes `service` on", async () => {
+    ipcMock.getLinkAutoConnect.mockResolvedValue(true);
+    mount();
+    await waitFor(() => expect(executor().disabled).toBe(false));
+    expect(executor().getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByText(/can stop/i)).toBeTruthy();
+    fireEvent.click(executor());
+    await waitFor(() => expect(ipcMock.setLinkExecutor).toHaveBeenCalledWith("service"));
+    expect(executor().getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("shows on when the service was chosen in a terminal, and writes `app` back", async () => {
+    ipcMock.getLinkAutoConnect.mockResolvedValue(true);
+    ipcMock.getLinkExecutor.mockResolvedValue("service");
+    mount();
+    await waitFor(() => expect(executor().getAttribute("aria-checked")).toBe("true"));
+    fireEvent.click(executor());
+    await waitFor(() => expect(ipcMock.setLinkExecutor).toHaveBeenCalledWith("app"));
+  });
+
+  it("stays disabled rather than guessing when the CLI cannot be read", async () => {
+    ipcMock.getLinkAutoConnect.mockResolvedValue(true);
+    ipcMock.getLinkExecutor.mockRejectedValue(new Error("no cli"));
+    mount();
+    await waitFor(() => expect(ipcMock.getLinkExecutor).toHaveBeenCalled());
+    expect(executor().disabled).toBe(true);
   });
 });

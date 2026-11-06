@@ -117,6 +117,8 @@ export const settings = {
   "settings.protection.agentConfig": "agent-config",
   "settings.protection.agentConfigLink": "Let agent-config connect",
   "settings.protection.agentConfigLinkDetail": "agent-config can read every account's limits and ask, in your session, whether to move work before a limit. You decide every move, here or there; Agent Switch makes it. Off: agent-config does not connect.",
+  "settings.protection.linkExecutor": "Let the background service carry out moves",
+  "settings.protection.linkExecutorDetail": "Off: a move you answer in the app is made by the app, which can carry on a session that runs in its own terminal or chat. On: the background service makes every move, wherever it was answered. Then a session that Agent Switch does not host can stop — a Codex move, or a move onto an account that runs a session of its own, ends it where it runs; the service offers the command to resume with. A chat in the app waits for one typed message after the switch.",
   "settings.protection.limitAutoOpen": "Ask me when a session reaches its limit",
   "settings.protection.limitAutoOpenDetail": "Brings the window forward with the choice to continue on another account. Nothing moves until you confirm.",
   "settings.protection.newSessions": "New sessions",
