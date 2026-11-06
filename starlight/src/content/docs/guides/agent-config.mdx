@@ -54,10 +54,42 @@ agent-switch link status --json
 
 4. **Agent Switch moves the work.** An answer given in agent-config is carried
    out by the background service. An answer given in the app is carried out by
-   the app, as before. A move that needs a terminal (a Codex move, a handoff)
-   leaves the command to continue with.
+   the app, unless you hand those to the service too (below). A move that needs
+   a terminal (a Codex move, a handoff) leaves the command to continue with.
 
 </Steps>
+
+The service moves a session the way the app does. A Claude session bound for an
+account that runs a session of its own moves to it as a conversation instead of
+borrowing its login, which would sign that account out. A session Agent Switch
+hosts moves in its own window and is told to carry on.
+
+## Who carries out an answer given in the app
+
+By default the app carries out what you answer in its near-limit sheet: it is
+the only one that can keep a session going that runs in its own terminal or
+chat. You can let the background service carry out those answers too, so one
+executor runs every move, wherever it was answered:
+
+```bash
+agent-switch link executor service   # the service carries out answers given in the app
+agent-switch link executor app       # the default
+```
+
+In the app: **Settings › Protection › Let the background service carry out
+moves**. The app then records your answer and the service moves the session; a
+notice tells you when it is done, with a **Resume** button when the session has
+to be resumed by hand. A brief for a handoff is still written by the app, and a
+session with no open request is still moved by the app.
+
+<Aside type="caution" title="What the service cannot do">
+- **A session that is not hosted stops.** A Codex move, or a Claude move onto
+  an account that runs a session of its own, ends the session where it runs.
+  The service cannot resume it in the app's terminal; the notice offers the
+  command to resume with.
+- **A chat in the app is not continued.** The session switches, then waits for
+  one message typed in the chat.
+</Aside>
 
 <Aside type="note" title="Across tools">
 A move from Claude to Codex (or back) is a handoff: a new session seeded with a
