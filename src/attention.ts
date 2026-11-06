@@ -57,6 +57,10 @@ export interface AttentionState {
   last: Record<string, { kind: Kind; who: string; what: string }>;
   history: HistoryEntry[];
   lastSeenAt: string | null;
+  /** Start of an absence whose digest nobody has acknowledged yet: the digest
+   *  stays on every read until `needs seen`, so a background poll never
+   *  consumes it. Absent in files written before it existed. */
+  awaySince?: string | null;
 }
 
 export const HISTORY_CAP = 200;
@@ -93,6 +97,11 @@ export function afterRead(state: AttentionState, items: readonly Item[], allIds:
   };
 }
 
+/** The digest was looked at: it goes, and the next one starts from now. Pure. */
+export function seen(state: AttentionState, now: string): AttentionState {
+  return { ...state, awaySince: null, lastSeenAt: now };
+}
+
 /** "Later": hide an item until it changes. */
 export function snooze(state: AttentionState, item: Pick<Item, "id" | "version">): AttentionState {
   return { ...state, snoozed: { ...state.snoozed, [item.id]: item.version } };
@@ -109,8 +118,9 @@ export interface Digest {
 
 /** One digest row after a long absence, never several. Pure. */
 export function digest(state: AttentionState, now: string, events: readonly { event: string; at: string }[], prs: readonly { lifecycle: string; ci: string; updatedAt: string }[] = []): Digest | null {
-  if (!state.lastSeenAt || Date.parse(now) - Date.parse(state.lastSeenAt) < AWAY_MS) return null;
-  const since = state.lastSeenAt;
+  const longGap = !!state.lastSeenAt && Date.parse(now) - Date.parse(state.lastSeenAt) >= AWAY_MS;
+  const since = state.awaySince ?? (longGap ? state.lastSeenAt : null);
+  if (!since) return null;
   const after = (at: string) => at > since;
   const d: Digest = {
     since,
@@ -123,7 +133,7 @@ export function digest(state: AttentionState, now: string, events: readonly { ev
   return d.finishedTurns + d.stoppedOnError + d.resolved + d.mergedPrs + d.ciBreaks > 0 ? d : null;
 }
 
-export const emptyState = (): AttentionState => ({ snoozed: {}, last: {}, history: [], lastSeenAt: null });
+export const emptyState = (): AttentionState => ({ snoozed: {}, last: {}, history: [], lastSeenAt: null, awaySince: null });
 
 export function attentionFile(root: string): string {
   return path.join(root, "attention.json");
