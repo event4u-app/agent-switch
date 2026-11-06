@@ -68,6 +68,7 @@ const TRAY_READ_SCOPES: readonly [string, RegExp][] = [
   ["as-read-needs", /^needs --json$/],
   ["as-read-host", /^host list --json$/],
   ["as-read-switch-requests", /^switch list --all --json$/],
+  ["as-read-limits", /^limits --json$/],
 ];
 
 /** The tray scope name for `args`, or null when the tray may not run it. */
@@ -701,6 +702,18 @@ export async function openWeb(name: string): Promise<void> {
 
 /** A single profile's own usage snapshot (Claude only; null for others or when
  *  no credential/usage is available). Per-profile — the GUI composes the view. */
+/** `limits --json`: every account's stored usage readout (the daemon's poll, the
+ *  app's last read or the history, whichever is newest). Local files only — no
+ *  fetch — so it answers at once. Keyed `provider/name`. */
+export async function storedUsage(): Promise<Map<string, UsageSnapshot>> {
+  const o = JSON.parse(await runCli(["limits", "--json"]));
+  const out = new Map<string, UsageSnapshot>();
+  for (const a of Array.isArray(o?.accounts) ? o.accounts : []) {
+    if (a && typeof a.id === "string" && a.snapshot && typeof a.snapshot.capturedAt === "string" && Array.isArray(a.snapshot.windows)) out.set(a.id, a.snapshot as UsageSnapshot);
+  }
+  return out;
+}
+
 export async function profileUsage(provider: ProviderId, name: string): Promise<UsageSnapshot | null> {
   const out = await cli(["status", "--provider", provider, name, "--json"]).execute();
   if (out.code !== 0) return null;

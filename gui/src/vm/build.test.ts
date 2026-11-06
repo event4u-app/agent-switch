@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   accountFromProfile,
+  withStoredUsage,
   accountIdFromMember,
   activityFromEntries,
   agentConfigFromStatus,
@@ -44,6 +45,32 @@ const usage = (utils: (number | null)[], capturedAt = NOW - 2 * MIN): UsageSnaps
   windows: utils.map((u, i) => ({ key: `w${i}`, label: i ? "Week" : "5h", utilization: u, resetsAt: iso(NOW + 78 * MIN) })),
   routines: null,
   capturedAt: iso(capturedAt),
+});
+
+describe("withStoredUsage", () => {
+  it("a newer stored readout moves windows, state and age; everything else stays", () => {
+    const a = accountFromProfile(row(), usage([20], NOW - 30 * MIN), { auth: null });
+    const [b] = withStoredUsage([a], new Map([["claude/work", usage([100], NOW - MIN)]]));
+    expect(b.windows[0].utilization).toBe(100);
+    expect(b.state).toBe("limited");
+    expect(b.checkedAt).toBe(NOW - MIN);
+    expect({ ...b, windows: a.windows, state: a.state, checkedAt: a.checkedAt }).toEqual(a);
+  });
+
+  it("an older or equal readout never rolls the bars back, and an unchanged list is the same list", () => {
+    const a = accountFromProfile(row(), usage([60], NOW - 5 * MIN));
+    const list = [a];
+    expect(withStoredUsage(list, new Map([["claude/work", usage([10], NOW - 9 * MIN)]]))).toBe(list);
+    expect(withStoredUsage(list, new Map([["claude/work", usage([10], NOW - 5 * MIN)]]))).toBe(list);
+    expect(withStoredUsage(list, new Map())).toBe(list);
+  });
+
+  it("an account without a readout yet takes the first one", () => {
+    const a = accountFromProfile(row({ provider: "codex", name: "c" }), null);
+    const [b] = withStoredUsage([a], new Map([["codex/c", usage([30])]]));
+    expect(b.windows[0].utilization).toBe(30);
+    expect(b.checkedAt).toBe(NOW - 2 * MIN);
+  });
 });
 
 describe("accountFromProfile", () => {

@@ -186,6 +186,14 @@
             "--all",
             "--json"
           ]
+        },
+        {
+          "name": "as-read-limits",
+          "cmd": "agent-switch",
+          "args": [
+            "limits",
+            "--json"
+          ]
         }
       ]
     }
