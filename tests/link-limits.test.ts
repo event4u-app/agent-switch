@@ -44,6 +44,8 @@ test("a fresh account under its threshold is usable and reports every window", (
   assert.equal(a.why, null);
   assert.deepEqual(a.windows.map((w) => [w.key, w.fill]), [["five_hour", 40], ["seven_day", 20]]);
   assert.equal(a.observedAt, iso(-2));
+  // The stored readout rides along unchanged, for displays (the tray) that show it.
+  assert.deepEqual(a.snapshot, snap(2, [["five_hour", 40, 120], ["seven_day", 20, 3000]]));
 });
 
 test("an account at its threshold in any window is not usable and says which", () => {
@@ -82,6 +84,7 @@ test("an account with no readout is reported, not dropped", () => {
   assert.equal(r.accounts.length, 1);
   assert.equal(r.accounts[0].usable, false);
   assert.equal(r.accounts[0].observedAt, null);
+  assert.equal(r.accounts[0].snapshot, null);
   assert.match(r.accounts[0].why ?? "", /no usage/);
 });
 
