@@ -96,9 +96,18 @@ export function useV3Feeds(deps: FeedDeps = realDeps): { feeds: V3Feeds; refresh
       if (document.visibilityState === "hidden" && tick % 2 === 1) return;
       void round(tick % SLOW_EVERY === 0);
     }, FEEDS_POLL_MS);
+    // A hidden webview's timers are throttled (the tray is hidden most of the
+    // time): whatever is shown must be read when it is shown, not on the next tick.
+    const onShow = () => {
+      if (document.visibilityState !== "hidden") void round(false);
+    };
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", onShow);
     return () => {
       alive = false;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onShow);
+      window.removeEventListener("focus", onShow);
     };
   }, [deps]);
   return { feeds, refresh: () => kick.current() };

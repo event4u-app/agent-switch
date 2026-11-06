@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { emptyFeeds, pollFeeds, type FeedDeps } from "./useFeeds.js";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { emptyFeeds, pollFeeds, useV3Feeds, type FeedDeps } from "./useFeeds.js";
 
 const ok = <T,>(v: T) => vi.fn(async () => v);
 const fail = () => vi.fn(async () => { throw new Error("cli down"); });
@@ -48,5 +49,26 @@ describe("pollFeeds", () => {
     const all = fail();
     const f = await pollFeeds(emptyFeeds(), { needs: all, engine: all, host: all, library: all, openTargets: all, agents: all, remote: all, codexRows: all }, true, 1);
     expect(f).toEqual(emptyFeeds());
+  });
+});
+
+describe("useV3Feeds", () => {
+  it("reads at once when the window is shown or focused, not on the next tick", async () => {
+    const d = deps();
+    const { result, unmount } = renderHook(() => useV3Feeds(d));
+    await waitFor(() => expect(result.current.feeds.readAt.needs).toBeDefined());
+    expect(d.needs).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => expect(d.needs).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await waitFor(() => expect(d.needs).toHaveBeenCalledTimes(3));
+    unmount();
+    window.dispatchEvent(new Event("focus"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(d.needs).toHaveBeenCalledTimes(3);
   });
 });
