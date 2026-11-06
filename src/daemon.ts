@@ -64,7 +64,8 @@ import { InputLeases } from "./host/lease.js";
 import { TmuxHost } from "./host/tmux-host.js";
 import { rebind } from "./rebind.js";
 import { armsFile, watchArmsOnce, type ArmWatchDeps } from "./rebind-arm.js";
-import { executeApproved } from "./link/execute.js";
+import { executeApproved, type Continuer, type MoveContext, type Runner } from "./link/execute.js";
+import type { RequestStore, SwitchRequest } from "./link/requests.js";
 import { REQUESTS_DIR, requestStore, selfRunner } from "./link/store.js";
 import { buildLimits } from "./link/limits.js";
 import { candidatesFor } from "./link/candidates.js";
@@ -492,6 +493,42 @@ export function monitorContext(provider: ProviderId, name: string, state: Daemon
  *  reads only; a tick with no arm file returns at once. */
 export const ARM_WATCH_MS = 2_000;
 
+/** Type the continuation into a session Agent Switch hosts, through the input
+ *  lease: true, or why it could not (it is then left for the user to type). */
+export function continueHosted(key: string): true | string {
+  if (!TmuxHost.available()) return "no hosted sessions here";
+  try {
+    typeIntoHosted(new TmuxHost(ROOT), new InputLeases(ROOT), key, { id: `daemon-${process.pid}`, pid: process.pid, kind: "daemon" }, CONTINUE_TEXT);
+    return true;
+  } catch (err) {
+    return (err as Error).message;
+  }
+}
+
+/** The live sessions as the executor sees them, the way the app does: a Claude
+ *  account is busy while its host registry lists a running session. */
+export function liveMoveContext(): MoveContext {
+  const host = TmuxHost.available() ? new TmuxHost(ROOT) : null;
+  return {
+    busy: (account) => {
+      const [provider, name] = account.split("/");
+      if (provider !== "claude" || !name) return false;
+      try {
+        return liveSessions(configDir("claude", name)).length > 0;
+      } catch {
+        return false;
+      }
+    },
+    hosted: (key) => {
+      try {
+        return !!host?.windowOf(key);
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
 /** The live wiring for {@link watchArmsOnce}: the host registry per claude
  *  profile, the ordinary `rebind` with every guard, and the shared notifier. */
 export function armWatchDeps(log: (l: string) => void): ArmWatchDeps {
@@ -503,15 +540,7 @@ export function armWatchDeps(log: (l: string) => void): ArmWatchDeps {
     activity: (target, action, reason, ok) => {
       appendActivity({ kind: "rebind", target, action, reason, ok });
     },
-    continueSession: (key) => {
-      if (!TmuxHost.available()) return "no hosted sessions here";
-      try {
-        typeIntoHosted(new TmuxHost(ROOT), new InputLeases(ROOT), key, { id: `daemon-${process.pid}`, pid: process.pid, kind: "daemon" }, CONTINUE_TEXT);
-        return true;
-      } catch (err) {
-        return (err as Error).message;
-      }
-    },
+    continueSession: continueHosted,
     log,
   };
 }
@@ -532,6 +561,26 @@ export function startArmWatcher(deps: ArmWatchDeps, everyMs = ARM_WATCH_MS): () 
   return () => clearInterval(timer);
 }
 
+export interface RequestRunDeps {
+  store: RequestStore;
+  run: Runner;
+  ctx: MoveContext;
+  carryOn: Continuer;
+  notify: (n: { kind: "success" | "error"; title: string; message: string; key: string }) => void;
+  log: (l: string) => void;
+}
+
+/** One executor pass: carry out every approved request and tell the user. */
+export function runRequestsOnce(d: RequestRunDeps): SwitchRequest[] {
+  const finished = executeApproved(d.store, d.run, d.ctx, d.carryOn);
+  for (const r of finished) {
+    const ok = r.state === "done";
+    d.log(`switch request ${r.id}: ${r.state} — ${r.outcome?.detail ?? ""}`);
+    d.notify({ kind: ok ? "success" : "error", title: ok ? "Moved" : "Move failed", message: `${r.account} → ${r.decision?.target}: ${r.outcome?.detail ?? ""}`, key: `switch:${r.id}` });
+  }
+  return finished;
+}
+
 /** How often the daemon looks for switch requests the user approved. A tick
  *  with no request directory returns at once. */
 export const REQUEST_WATCH_MS = 2_000;
@@ -546,11 +595,7 @@ export function startRequestExecutor(log: (l: string) => void, everyMs = REQUEST
     busy = true;
     try {
       const store = requestStore();
-      for (const r of executeApproved(store, selfRunner)) {
-        const ok = r.state === "done";
-        log(`switch request ${r.id}: ${r.state} — ${r.outcome?.detail ?? ""}`);
-        notify({ kind: ok ? "success" : "error", title: ok ? "Moved" : "Move failed", message: `${r.account} → ${r.decision?.target}: ${r.outcome?.detail ?? ""}`, key: `switch:${r.id}` });
-      }
+      runRequestsOnce({ store, run: selfRunner, ctx: liveMoveContext(), carryOn: continueHosted, notify, log });
       if (++ticks % 1800 === 0) store.prune();
     } catch (err: any) {
       log(`switch request error: ${String(err?.message ?? err)}`);
