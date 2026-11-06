@@ -203,7 +203,39 @@ export function serviceRun(): void {
   void runDaemon();
 }
 
+/** With a LaunchAgent installed launchd owns the daemon (KeepAlive): a daemon
+ *  started or stopped beside it makes launchd start another one every 10 s.
+ *  So start, stop and restart go through launchctl. `stop` unloads, because
+ *  launchd restarts a killed daemon; the next start or login loads it again.
+ *  A `load` of a loaded agent fails harmlessly. Pure. */
+export function launchctlSteps(action: "start" | "stop" | "restart", plist: string, uid: number, label = LABEL): string[][] {
+  const target = `gui/${uid}/${label}`;
+  if (action === "stop") return [["unload", plist]];
+  return [["load", plist], action === "restart" ? ["kickstart", "-k", target] : ["kickstart", target]];
+}
+
+/** The installed LaunchAgent, when this machine's service is one. */
+function installedPlist(): string | null {
+  if (process.platform !== "darwin") return null;
+  return readManifest().find((f) => f.endsWith(".plist") && fs.existsSync(f)) ?? null;
+}
+
+function viaLaunchd(action: "start" | "stop" | "restart", plist: string): void {
+  for (const step of launchctlSteps(action, plist, process.getuid?.() ?? 0)) spawnSync("launchctl", step, { stdio: "ignore" });
+  console.log(action === "stop" ? "Stopped the daemon (launchd keeps it stopped until the next start or login)." : `${action === "restart" ? "Restarted" : "Started"} the daemon through launchd. Logs: ${LOG}`);
+}
+
+/** Stop and start, through the service manager when one owns the daemon. */
+export function serviceRestart(): void {
+  const plist = installedPlist();
+  if (plist) return viaLaunchd("restart", plist);
+  serviceStop();
+  serviceStart();
+}
+
 export function serviceStart(): void {
+  const plist = installedPlist();
+  if (plist) return viaLaunchd("start", plist);
   const pid = readPid();
   if (pid && processAlive(pid)) {
     console.log(`Daemon already running (pid ${pid}).`);
@@ -218,6 +250,8 @@ export function serviceStart(): void {
 }
 
 export function serviceStop(): void {
+  const plist = installedPlist();
+  if (plist) return viaLaunchd("stop", plist);
   const pid = readPid();
   if (!pid || !processAlive(pid)) {
     console.log("Daemon is not running.");

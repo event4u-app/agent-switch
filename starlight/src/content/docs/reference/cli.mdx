@@ -383,7 +383,7 @@ App ids: `claude-desktop`, `codex-ide` (VS Code), `codex-desktop`,
 | `gui [--after-pid <pid>]` | Start the desktop app. Downloads it on first use; never runs an installer. |
 | `activate [--auto]` | Make this copy of the CLI the one terminals and the background service use. The desktop app runs it with `--auto` on every start; `--auto` does nothing when this copy is a source checkout (a build outside `node_modules`), so running a dev build leaves your installed version in charge. |
 | `service install\|uninstall` | Start the background service at login, or remove it. |
-| `service start\|stop\|status\|run` | Start it now, stop it, show its state, or run it in the foreground. |
+| `service start\|stop\|status\|run` | Start it now, stop it, show its state, or run it in the foreground. On macOS with the LaunchAgent installed, start and stop go through launchd; a stopped service stays stopped until the next start or login. |
 | `notifications [clear]` | Recent notifications (limit suggestions, protection warnings, failed usage reads). |
 | `os-notify [on\|off\|status]` | Let the background service show desktop notifications itself on Linux and Windows (default off). |
 | `providers status` | Which tools are on, installed or linked. |
