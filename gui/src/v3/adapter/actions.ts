@@ -21,6 +21,7 @@ import { parsePr } from "./feeds.js";
 export interface DispatchIpc {
   focusSessionTerminal(key: string): Promise<void>;
   needsLater(id: string): Promise<void>;
+  needsSeen(): Promise<void>;
   hostStart(provider: ProviderId, cwd: string, profile?: string): Promise<void>;
   hostEnd(key: string): Promise<void>;
   hostRespawn(key: string, change: { model?: string; effort?: string }): Promise<void>;
@@ -211,8 +212,10 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
     case "reveal":
       return deps.reveal?.();
     case "need-more":
-    case "away":
       return deps.refresh();
+    // The summary stays on every read until it is clicked here: a poll is not a look.
+    case "away":
+      return run(deps, "Away summary", deps.ipc.needsSeen());
     case "need-later":
       return run(deps, "Later", deps.ipc.needsLater(a.id));
     case "needs-later-all":

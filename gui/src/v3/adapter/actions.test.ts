@@ -16,6 +16,7 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
   const ipc = {
     focusSessionTerminal: vi.fn(async () => {}),
     needsLater: vi.fn(async () => {}),
+    needsSeen: vi.fn(async () => {}),
     hostStart: vi.fn(async () => {}),
     hostEnd: vi.fn(async () => {}),
     hostRespawn: vi.fn(async () => {}),
@@ -280,6 +281,13 @@ describe("dispatchV3", () => {
     expect(d.ipc.hostRespawn).not.toHaveBeenCalled();
     dispatchV3({ type: "set-thinking", key: "claude/work/a", level: "high" }, { ...d, chatOf });
     expect(d.toast).toHaveBeenCalledWith({ tone: "info", text: expect.stringMatching(/terminal view/) });
+  });
+
+  it("clicking the away summary marks it seen, then reads again", async () => {
+    const d = deps();
+    await dispatchV3({ type: "away" }, d);
+    expect(d.ipc.needsSeen).toHaveBeenCalledTimes(1);
+    expect(d.refresh).toHaveBeenCalled();
   });
 
   it("a failing CLI call becomes an alert toast, never a throw", async () => {
