@@ -1226,17 +1226,24 @@ export async function listSwitchRequests(): Promise<SwitchRequestRow[]> {
 }
 
 /** Record the user's answer from the app. `executed`: the app already made the
- *  move itself, so the service must not run it again. */
+ *  move itself, so the service must not run it again. Resolves true when the
+ *  answer was applied — false when the request was no longer open (answered
+ *  elsewhere first, expired), which the CLI reports without failing. */
 export async function decideSwitchRequest(
   id: string,
   decision: "approve" | "decline" | "snooze",
   opts: { to?: string; how?: "after-turn" | "now" | "handoff"; executed?: string } = {},
-): Promise<void> {
-  const args = ["switch", "decide", id, decision, "--by", "as-gui"];
+): Promise<boolean> {
+  const args = ["switch", "decide", id, decision, "--by", "as-gui", "--json"];
   if (opts.to) args.push("--to", opts.to);
   if (opts.how) args.push("--how", opts.how);
   if (opts.executed !== undefined) args.push("--executed", opts.executed || "moved in the app");
-  await runCli(args);
+  const out = await runCli(args);
+  try {
+    return JSON.parse(out)?.applied === true;
+  } catch {
+    return false;
+  }
 }
 
 /** "Let agent-config connect" — `agent-switch link` (default on). */

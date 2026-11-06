@@ -129,7 +129,7 @@ describe("with the background service as executor (road-to-service-executed-move
   const live = (over: Partial<SwitchRequestRow>) => req({ expiresAt: new Date(Date.now() + 600_000).toISOString(), ...over });
   const cand = (target: string, how: string[]) => ({ target, provider: target.split("/")[0], fill: 10, resetsAt: null, how });
   function deps(rows: SwitchRequestRow[], executor: "app" | "service" = "service") {
-    const decide = vi.fn(async () => {});
+    const decide = vi.fn(async (): Promise<boolean> => true);
     const d = {
       ipc: { takeoverHosted: vi.fn(async () => {}), continueSession: vi.fn(async () => {}), decideSwitchRequest: decide } as unknown as DispatchDeps["ipc"],
       act: { rebind: vi.fn(async () => {}), armRebind: vi.fn(async () => {}) },
@@ -186,13 +186,22 @@ describe("with the background service as executor (road-to-service-executed-move
     expect(d.act.rebind).toHaveBeenCalledWith("claude:a", "claude:home");
   });
 
-  it("on: a whole-account Claude request carries every session on that account; the app does not rebind them again", async () => {
+  it("on: a request for a whole account is not handed over; the app moves its sessions as before", async () => {
     const { d, decide } = deps([live({ id: "acct", candidates: [cand("claude/home", ["now"])] })]);
-    await dispatchV3({ type: "move", how: "now", moves: [{ key: "claude/work/a", target: "home" }, { key: "claude/work/b", target: "home" }, { key: "claude/work/c", target: "lab" }] }, d);
+    await dispatchV3({ type: "move", how: "now", moves: [{ key: "claude/work/a", target: "home" }, { key: "claude/work/b", target: "home" }] }, d);
     await flush();
-    expect(decide).toHaveBeenCalledWith("acct", "approve", { to: "claude/home", how: "now" });
-    expect(d.act.rebind).toHaveBeenCalledTimes(1);
-    expect(d.act.rebind).toHaveBeenCalledWith("claude:c", "claude:lab");
+    expect(d.act.rebind).toHaveBeenCalledTimes(2);
+    expect(decide).toHaveBeenCalledWith("acct", "approve", { to: "claude/home", how: "now", executed: "moved in the app" });
+    expect(decide).not.toHaveBeenCalledWith("acct", "approve", { to: "claude/home", how: "now" });
+  });
+
+  it("on: an answer the store did not apply (answered elsewhere, expired) is not a hand-over; the app moves", async () => {
+    const { d, decide } = deps([live({ id: "ra", session: "claude/work/a", candidates: [cand("claude/home", ["now"])] })]);
+    decide.mockResolvedValueOnce(false);
+    await dispatchV3({ type: "move", how: "now", moves: [{ key: "claude/work/a", target: "home" }] }, d);
+    await flush();
+    expect(d.act.rebind).toHaveBeenCalledWith("claude:a", "claude:home");
+    expect(d.toast).not.toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringMatching(/background service moves/) }));
   });
 
   it("on: a brief stays in the app", async () => {

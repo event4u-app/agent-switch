@@ -178,3 +178,10 @@ test("a Codex move after the turn, should one be approved, is the same takeover 
   const a = setup("codex/one", "codex/one/sid-2", { ...codexX, target: "codex/two", how: ["now", "after-turn"] });
   assert.deepEqual(planMove(approve(a.s, a.id, "codex/two", "after-turn")).argv, ["takeover", "sid-2", "--to", "two", "--provider", "codex", "--from", "one", "--json"]);
 });
+
+test("a session id that reads as a flag is refused, never passed to takeover", () => {
+  const a = setup("codex/one", "codex/one/--force", { ...codexX, target: "codex/two" });
+  const p = planMove(approve(a.s, a.id, "codex/two", "now"));
+  assert.equal(p.argv, null);
+  assert.match(p.error ?? "", /session id/);
+});

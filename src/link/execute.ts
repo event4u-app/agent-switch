@@ -61,6 +61,8 @@ export function planMove(r: SwitchRequest, ctx: MoveContext = NO_SESSIONS): Plan
   const src = split(r.account);
   const tgt = split(d.target);
   const sid = r.session ? r.session.split("/")[2] : undefined;
+  // The id becomes one argv element: one that reads as a flag would change the command.
+  if (sid?.startsWith("-")) return { argv: null, error: `not a session id: "${sid}"` };
   const needSession = (): Plan => ({ argv: null, error: `"${d.how}" needs the session id, and the request names none` });
 
   if (d.how === "handoff") {

@@ -39,7 +39,7 @@ export interface DispatchIpc {
   takeoverHosted(key: string, target: string): Promise<void>;
   /** Records the answer to a switch request: carried out by the app (`executed`),
    *  or left to the background service (no `executed`). */
-  decideSwitchRequest?(id: string, verdict: "approve", opts: { to: string; how: "after-turn" | "now"; executed?: string }): Promise<void>;
+  decideSwitchRequest?(id: string, verdict: "approve", opts: { to: string; how: "after-turn" | "now"; executed?: string }): Promise<boolean | void>;
 }
 export interface DispatchDeps {
   ipc: DispatchIpc;
@@ -154,11 +154,13 @@ function recordMoves(how: MoveHow, moves: readonly { key: string; target: string
   }
 }
 /**
- * With the background service as executor, the
- * app records the answer without carrying it out, and the service moves the
- * session. Only a move whose own request offers that target and mode can be
- * handed over; every other move — and one whose hand-over fails — the app makes
- * itself, as before, so no answer is left undone. Returns the moves left to the app.
+ * With the background service as executor, the app records the answer without
+ * carrying it out, and the service moves the session. Only a move whose own
+ * session request offers that target and mode is handed over: a request for a
+ * whole account stays with the app, which moves and continues each of its
+ * sessions. Every other move — and one whose answer the store did not apply
+ * (answered elsewhere first, expired) — the app makes itself, as before, so no
+ * answer is left undone. Returns the moves left to the app.
  */
 async function handOver(how: "after-turn" | "now", moves: readonly SheetMove[], deps: DispatchDeps): Promise<SheetMove[]> {
   if (!deps.executor || !deps.ipc.decideSwitchRequest || !deps.requests) return [...moves];
@@ -166,26 +168,19 @@ async function handOver(how: "after-turn" | "now", moves: readonly SheetMove[], 
   if (executor !== "service") return [...moves];
   const rows = deps.requests();
   const handed = new Set<string>();
-  // A Claude switch for a whole account rebinds its login, which carries every
-  // session on it — those must not be rebound a second time by the app.
-  const wholeAccounts = new Set<string>();
   for (const r of requestsForMoves(rows, moves, Date.now())) {
+    const row = rows.find((x) => x.id === r.id);
+    if (!row || row.session !== r.key) continue;
     // Codex has no live switch: "after this turn" moves the session, which is the service's `now`.
     const mode = r.key.startsWith("codex/") ? "now" : how;
-    const row = rows.find((x) => x.id === r.id);
-    if (!row?.candidates.some((c) => c.target === r.to && c.how.includes(mode))) continue;
-    try {
-      await deps.ipc.decideSwitchRequest(r.id, "approve", { to: r.to, how: mode });
-      handed.add(r.key);
-      if (row.session === null && r.key.startsWith("claude/")) wholeAccounts.add(`${r.key.split("/").slice(0, 2).join("/")}>${r.to}`);
-    } catch {
-      /* the app makes this move itself */
-    }
+    if (!row.candidates.some((c) => c.target === r.to && c.how.includes(mode))) continue;
+    const applied = await deps.ipc.decideSwitchRequest(r.id, "approve", { to: r.to, how: mode }).catch(() => false);
+    if (applied === true) handed.add(r.key);
   }
   if (handed.size) deps.toast({ tone: "info", text: `The background service moves ${handed.size === 1 ? "this session" : `${handed.size} sessions`}; you get a notice when it is done` });
-  const account = (m: SheetMove) => m.key.split("/").slice(0, 2).join("/");
-  return moves.filter((m) => !handed.has(m.key) && !(m.via !== "takeover" && wholeAccounts.has(`${account(m)}>claude/${m.target}`)));
+  return moves.filter((m) => !handed.has(m.key));
 }
+
 function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
   // A chat's approval or question is answered in the chat (spec §13.5: one decision).
   if (n.verb === "Open chat" && deps.openTab) return deps.openTab(n.subject);

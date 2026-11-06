@@ -52,19 +52,17 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
   const done = () => {
     s.update((vm) => ({ attention: vm.attention.filter((a) => a.id !== item.id) }));
   };
-  /** With the background service as executor,
-   *  answer the request without carrying it out. Only when the request offers
-   *  this target; otherwise — or when the answer cannot be recorded — the app
-   *  switches itself, so the answer is never left undone. */
+  /** With the background service as executor, answer this session's request
+   *  without carrying it out. Only when the request offers this target;
+   *  otherwise — or when the store did not apply the answer — the app switches
+   *  itself, so the answer is never left undone. */
   const handOver = async (to: string): Promise<boolean> => {
-    if (!request) return false;
+    // A request for the whole account stays with the app: it continues each session.
+    if (!request || !session || request.session === null) return false;
     const executor = await getLinkExecutor().catch(() => "app" as const);
     if (executor !== "service" || !request.candidates.some((c) => c.target === cliAccount(to) && c.how.includes("now"))) return false;
-    try {
-      await decideSwitchRequest(request.id, "approve", { to: cliAccount(to), how: "now" });
-    } catch {
-      return false;
-    }
+    const applied = await decideSwitchRequest(request.id, "approve", { to: cliAccount(to), how: "now" }).catch(() => false);
+    if (!applied) return false;
     done();
     s.close();
     s.toast({ text: t("sessions.sheet.handedToService", { project: session?.project ?? "", name: s.accountById(to)?.name ?? to }), tone: "ok" });
