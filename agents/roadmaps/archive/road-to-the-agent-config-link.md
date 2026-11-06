@@ -178,7 +178,7 @@ CLI front door stays (it is the user's own tool).
       question opens the sheet once per request id; a limit already answered
       in agent-config does not open it, and such an answer closes an open sheet.
       Moves through the background service:
-      `../road-to-service-executed-moves.md` (D7).
+      `road-to-service-executed-moves.md` (D7).
       verify: `gui/src/v3/adapter/link-requests.test.tsx` — decision in AC
       closes the sheet; checked sessions produce one decision each.
 - [x] **4.3 Toggle in v3 settings** via the shared redesign pane.
