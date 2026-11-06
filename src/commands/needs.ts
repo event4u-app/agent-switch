@@ -59,6 +59,10 @@ export function gatherCandidates(): Candidate[] {
       if (e.event === "Notification" && !(e.notificationType && HOST_WAIT.test(e.notificationType))) {
         const approval = e.notificationType === "permission_prompt";
         out.push({ kind: approval ? "approval" : "question", subject: key, who, what: approval ? "wants your approval" : "waits for you", since: e.at, version: e.at, verb: "Focus terminal" });
+      } else if (e.event === "Stop" && r.live) {
+        // The turn ended and nothing moved since: the session waits for the next message,
+        // and stays here until it gets one (the transcript moves) or it ends.
+        out.push({ kind: "question", subject: key, who, what: "waits for your next message", since: e.at, version: e.at, verb: "Focus terminal" });
       } else if (e.event === "StopFailure" && (e.error === "authentication_failed" || e.error === "oauth_org_not_allowed")) {
         out.push({ kind: "signin", subject: `claude/${profile}`, who: profile, what: "is signed out", since: e.at, version: e.at });
       } else if (e.event === "StopFailure" && e.error === "rate_limit") {
