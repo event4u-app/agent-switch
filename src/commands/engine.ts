@@ -8,7 +8,7 @@
 import { callEngine } from "../engine/client.js";
 import { engineAddress } from "../protocol/messages.js";
 import { die, ROOT } from "../profiles.js";
-import { cmdService, serviceCli, serviceInstall, serviceTarget } from "../service.js";
+import { serviceCli, serviceInstall, serviceRestart, serviceTarget } from "../service.js";
 import { TmuxHost } from "../host/tmux-host.js";
 
 export interface EngineStatus {
@@ -58,10 +58,7 @@ export async function cmdEngine(sub: string | undefined, flags: Record<string, s
     // it is moved onto this one (a deliberate act, like `activate`).
     const moved = serviceTarget() === "other-cli";
     if (moved) serviceInstall(() => {});
-    else {
-      cmdService("stop");
-      cmdService("start");
-    }
+    else serviceRestart();
     const s = await waitForEngine(5000);
     if (flags.json) console.log(JSON.stringify({ ...s, moved }));
     else {

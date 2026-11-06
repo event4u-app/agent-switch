@@ -57,3 +57,11 @@ test("after an update: re-install our own service, ask (terminal) or hint (no te
   assert.equal(S.serviceAfterUpdate("other-cli", true), "leave");
   assert.equal(S.serviceAfterUpdate("other-cli", false), "leave");
 });
+
+test("launchctlSteps: launchd owns the daemon, so start, stop and restart go through it", () => {
+  const p = "/u/Library/LaunchAgents/com.example.test.plist";
+  assert.deepEqual(S.launchctlSteps("start", p, 501, "com.example.test"), [["load", p], ["kickstart", "gui/501/com.example.test"]]);
+  assert.deepEqual(S.launchctlSteps("restart", p, 501, "com.example.test"), [["load", p], ["kickstart", "-k", "gui/501/com.example.test"]]);
+  // KeepAlive restarts a killed daemon: stopping means unloading.
+  assert.deepEqual(S.launchctlSteps("stop", p, 501, "com.example.test"), [["unload", p]]);
+});
