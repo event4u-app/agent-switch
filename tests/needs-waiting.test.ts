@@ -8,7 +8,7 @@ import * as path from "node:path";
 const CLI = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../dist/index.js");
 
 /** One Claude account with one session whose last hook event is `event`, live or not. */
-function home(event: "Stop" | "SessionEnd", live: boolean, movedAfter = false) {
+function home(event: "Stop" | "SessionEnd", live: boolean, movedAfter = false, after: string[] = []) {
   const h = fs.mkdtempSync(path.join(os.tmpdir(), "asw-wait-"));
   const cfg = path.join(h, "claude", "work", "config");
   const proj = path.join(cfg, "projects", "-tmp-proj");
@@ -21,7 +21,8 @@ function home(event: "Stop" | "SessionEnd", live: boolean, movedAfter = false) {
   fs.utimesSync(file, t, t);
   if (movedAfter) fs.utimesSync(file, new Date(), new Date());
   fs.mkdirSync(path.join(h, "events"));
-  fs.writeFileSync(path.join(h, "events", "claude-work.jsonl"), JSON.stringify({ event, sessionId: id, at: new Date(t.getTime() + 500).toISOString() }) + "\n");
+  const lines = [event, ...after].map((ev, k) => JSON.stringify({ event: ev, sessionId: id, at: new Date(t.getTime() + 500 + k * 300).toISOString() }));
+  fs.writeFileSync(path.join(h, "events", "claude-work.jsonl"), lines.join("\n") + "\n");
   if (live) {
     fs.mkdirSync(path.join(cfg, "sessions"));
     fs.writeFileSync(path.join(cfg, "sessions", `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: id, cwd: "/tmp/proj" }));
@@ -39,4 +40,6 @@ test("a live session whose turn ended waits for the next message, until it moves
   assert.deepEqual(needs(home("Stop", true, true)).items, [], "the transcript moved after the turn: answered");
   assert.deepEqual(needs(home("Stop", false)).items, [], "not running any more: nothing waits");
   assert.deepEqual(needs(home("SessionEnd", true)).items, [], "the session ended");
+  const sub = needs(home("Stop", true, false, ["SubagentStop"]));
+  assert.equal(sub.items.length, 1, "a subagent stopping after the turn does not hide the wait");
 });

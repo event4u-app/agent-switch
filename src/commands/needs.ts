@@ -44,7 +44,8 @@ export function gatherCandidates(): Candidate[] {
     markLive(cfg, rows);
     const events = readEvents(eventFile(ROOT, "claude", profile));
     const last = new Map<string, HookEventRecord>();
-    for (const e of events) if (e.sessionId) last.set(e.sessionId, e);
+    // A subagent's start and stop say nothing about whether the session itself waits.
+    for (const e of events) if (e.sessionId && e.event !== "SubagentStart" && e.event !== "SubagentStop") last.set(e.sessionId, e);
     for (const r of rows) {
       const key = `claude/${profile}/${r.sessionId}`;
       const who = r.summary ?? (r.cwd ? path.basename(r.cwd) : r.sessionId.slice(0, 8));
