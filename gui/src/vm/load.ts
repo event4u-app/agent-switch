@@ -89,7 +89,7 @@ async function toolWithLatest(e: ToolingEntry): Promise<ToolEntry> {
 
 export async function loadViewModel(): Promise<ViewModel> {
   const now = Date.now();
-  const [profilesR, sessionsR, toolingR, notifsR, providersR, acR, autostartR, appsR] = await Promise.allSettled([
+  const [profilesR, sessionsR, toolingR, notifsR, providersR, acR, autostartR, appsR, storedR] = await Promise.allSettled([
     ipc.listProfiles(),
     ipc.listSessions(undefined, 50),
     // Slow + cached between reloads (slow-cache.ts); see the cadence there.
@@ -99,6 +99,8 @@ export async function loadViewModel(): Promise<ViewModel> {
     ipc.acDiscover(),
     ipc.getAutostart(),
     ipc.listApps(),
+    // What the CLI already holds (local files): the bars show it before any fetch.
+    ipc.storedUsage(),
   ]);
   // The foundation readouts. Each degrades on its own: an older CLI without
   // the command leaves that area unknown, never fakes it.
@@ -119,7 +121,7 @@ export async function loadViewModel(): Promise<ViewModel> {
   const profiles: ProfileRow[] = value(profilesR) ?? [];
   // Cached + cooldown-gated (usage-loader.ts): a reload after every action must
   // not re-hit the rate-limited usage endpoint.
-  const usageSnaps = await loadUsage(profiles).catch(() => profiles.map(() => null));
+  const usageSnaps = await loadUsage(profiles, { stored: value(storedR) ?? undefined }).catch(() => profiles.map(() => null));
   const usage = (i: number): UsageSnapshot | null => (hasUsageReadout(profiles[i].provider) ? (usageSnaps[i] ?? null) : null);
   const protection = new Map((value(protectionR) ?? []).map((r) => [accountIdFromMember(r.profile), protectionFromRow(r)]));
   const auth = new Map((value(authR) ?? []).map((r) => [`${r.provider}:${r.name}`, authFromStatus(r, readAt)]));

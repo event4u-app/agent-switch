@@ -45,6 +45,8 @@ const TRAY_CALLS: string[][] = [
   // The v3 tray card (V3TrayApp): the queue and the hosted sessions.
   ["needs", "--json"],
   ["host", "list", "--json"],
+  // TrayLifecycle: the stored readouts, every minute and when the tray opens.
+  ["limits", "--json"],
 ];
 
 describe("tray capability: read-only agent-switch calls only", () => {

@@ -12,6 +12,7 @@
 import { weigh } from "../balance.js";
 import type { CachedUsage } from "../dir-resolve.js";
 import type { ProviderId } from "../providers.js";
+import type { UsageSnapshot } from "../usage.js";
 
 export const LIMITS_SCHEMA = 1;
 
@@ -36,6 +37,9 @@ export interface AccountLimits {
   observedAt: string | null;
   thresholdPct: number;
   windows: LimitWindow[];
+  /** The cached readout as stored (labels, exact utilization, credits), for
+   *  displays that show it rather than weigh it; null without a readout. */
+  snapshot: UsageSnapshot | null;
 }
 
 export interface LimitsReport {
@@ -57,7 +61,7 @@ function account(i: LimitsInputs, a: LimitsInputs["accounts"][number]): AccountL
   const base = { id: `${a.provider}/${a.name}`, provider: a.provider, name: a.name, disabled: a.disabled, thresholdPct };
   const u = i.usage(a.provider, a.name);
   if (!u.snapshot || u.capturedMs === null) {
-    return { ...base, usable: false, why: a.disabled ? "disabled" : "no usage readout", stale: false, observedAt: null, windows: [] };
+    return { ...base, usable: false, why: a.disabled ? "disabled" : "no usage readout", stale: false, observedAt: null, windows: [], snapshot: null };
   }
   const windows: LimitWindow[] = u.snapshot.windows.map((w) => {
     const resetPassed = w.resetsAt !== null && !isNaN(Date.parse(w.resetsAt)) && Date.parse(w.resetsAt) <= i.now;
@@ -74,7 +78,7 @@ function account(i: LimitsInputs, a: LimitsInputs["accounts"][number]): AccountL
       : w.usable
         ? null
         : w.why;
-  return { ...base, usable: why === null, why, stale, observedAt: new Date(u.capturedMs).toISOString(), windows };
+  return { ...base, usable: why === null, why, stale, observedAt: new Date(u.capturedMs).toISOString(), windows, snapshot: u.snapshot };
 }
 
 export function buildLimits(i: LimitsInputs): LimitsReport {

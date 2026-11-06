@@ -128,6 +128,28 @@ export function accountFromProfile(row: ProfileRow, usage: UsageSnapshot | null 
   };
 }
 
+/** Accounts with a newer stored readout take it: windows, state and age move,
+ *  everything else stays. A readout no newer than the account's is ignored, so
+ *  a slow read never rolls the bars back. Pure. */
+export function withStoredUsage(accounts: Account[], stored: ReadonlyMap<string, UsageSnapshot>): Account[] {
+  let changed = false;
+  const next = accounts.map((a) => {
+    const snap = stored.get(`${a.tool}/${a.name}`);
+    const at = snap ? parseTime(snap.capturedAt) : null;
+    if (!snap || at === null || (a.checkedAt !== null && at <= a.checkedAt)) return a;
+    changed = true;
+    return {
+      ...a,
+      state: accountState(snap, a.threshold, a.auth),
+      windows: snap.windows.map((w) => ({ ...w })),
+      checkedAt: at,
+      resetCredits: snap.resetCredits ?? null,
+    };
+  });
+  // Nothing newer: the same list, so the tray does not redraw every minute.
+  return changed ? next : accounts;
+}
+
 export function protectionFromRow(r: ProtectionRow): Protection {
   return { enabled: r.enabled, thresholdPct: r.thresholdPct };
 }

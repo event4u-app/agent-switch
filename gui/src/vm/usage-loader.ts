@@ -65,11 +65,21 @@ const defaultDeps: UsageDeps = {
   now: () => Date.now(),
 };
 
+/** The later of two readouts by `capturedAt`; an unparsable time loses. Pure. */
+export function newerSnapshot(a: UsageSnapshot | null | undefined, b: UsageSnapshot | null | undefined): UsageSnapshot | null {
+  const t = (s: UsageSnapshot | null | undefined) => (s ? Date.parse(s.capturedAt) : NaN);
+  if (!a || isNaN(t(a))) return b && !isNaN(t(b)) ? b : (a ?? null);
+  if (!b || isNaN(t(b))) return a;
+  return t(b) > t(a) ? b : a;
+}
+
 /** Usage per profile (same order). On cooldown or failure the cached snapshot
- *  stands in — its own capturedAt carries its age. */
+ *  stands in — its own capturedAt carries its age. `stored` is what the CLI
+ *  already holds (the daemon polls every minute): a newer one replaces the
+ *  app's cache, and while it is younger than the cooldown nothing is fetched. */
 export async function loadUsage(
   profiles: readonly { provider: ProviderId; name: string; disabled?: boolean }[],
-  opts: { force?: boolean; cooldownMs?: number; staggerMs?: number } = {},
+  opts: { force?: boolean; cooldownMs?: number; staggerMs?: number; stored?: ReadonlyMap<string, UsageSnapshot> } = {},
   deps: UsageDeps = defaultDeps,
 ): Promise<(UsageSnapshot | null)[]> {
   const force = opts.force ?? takeForce();
@@ -79,7 +89,17 @@ export async function loadUsage(
   const stagger = opts.staggerMs ?? USAGE_FETCH_STAGGER_MS;
   const cache = loadUsageCache();
   const attempts = getUsageAttempts();
-  const out: (UsageSnapshot | null)[] = profiles.map((p) => cache[`${p.provider}/${p.name}`]?.snap ?? null);
+  const stored = opts.stored ?? new Map<string, UsageSnapshot>();
+  const out: (UsageSnapshot | null)[] = profiles.map((p) => {
+    const key = `${p.provider}/${p.name}`;
+    const best = newerSnapshot(cache[key]?.snap, stored.get(key));
+    if (best && best !== cache[key]?.snap) saveUsageSnapshot(key, best);
+    return best;
+  });
+  const storedFresh = (key: string) => {
+    const at = Date.parse(stored.get(key)?.capturedAt ?? "");
+    return !isNaN(at) && deps.now() - at < cooldown;
+  };
 
   const fetchOne = async (i: number) => {
     const { provider, name } = profiles[i];
@@ -103,7 +123,9 @@ export async function loadUsage(
       if (!hasUsageReadout(p.provider)) return false;
       const key = `${p.provider}/${p.name}`;
       if (forcedOne.has(key)) return true;
-      return !p.disabled && (force || !fetchOnCooldown(attempts[key], cooldown, deps.now()));
+      if (p.disabled) return false;
+      if (force) return true;
+      return !fetchOnCooldown(attempts[key], cooldown, deps.now()) && !storedFresh(key);
     });
   const claude = due.filter(({ p }) => p.provider === "claude");
   const rest = due.filter(({ p }) => p.provider !== "claude");

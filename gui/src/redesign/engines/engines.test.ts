@@ -5,7 +5,7 @@ import type { ReleaseInfo, UpdateCheck } from "../../updates.js";
 import type { Actions } from "../../vm/actions.js";
 import { emptyViewModel } from "../../vm/load.js";
 import type { Account, ViewModel } from "../../vm/types.js";
-import { forceUsageFor, loadUsage, type UsageDeps } from "../../vm/usage-loader.js";
+import { forceUsageFor, loadUsage, newerSnapshot, type UsageDeps } from "../../vm/usage-loader.js";
 import { getUsageAttempts, loadUsageCache, markUsageAttempt, saveUsageSnapshot } from "../../usage-cache.js";
 import { nearLimitMessage } from "./near-limit.js";
 import { deliver, freshSince, noticeText, toastFor, type FireContext, type FireSinks } from "./notifications.js";
@@ -214,6 +214,57 @@ describe("usage loading (cache + cooldown)", () => {
     );
     expect(order.filter((x) => x.startsWith("claude") || x.startsWith("sleep"))).toEqual(["claude/a", "sleep7", "claude/b"]);
     expect(order).toContain("codex/c");
+  });
+});
+
+describe("usage loading: what the CLI already holds", () => {
+  beforeEach(() => localStorage.clear());
+  const at = (ms: number) => new Date(ms).toISOString();
+  function deps() {
+    const calls: string[] = [];
+    const d: UsageDeps = {
+      fetch: async (p, name) => (calls.push(`${p}/${name}`), snap(99, at(1_000_000))),
+      onFailure: async () => {},
+      sleep: async () => {},
+      now: () => 1_000_000,
+    };
+    return { d, calls };
+  }
+
+  it("a stored readout newer than the app's cache shows at once and replaces the cache; while it is fresh nothing is fetched", async () => {
+    saveUsageSnapshot("claude/a", snap(10, at(100_000)));
+    const { d, calls } = deps();
+    const stored = new Map([["claude/a", snap(55, at(990_000))]]);
+    const out = await loadUsage([{ provider: "claude", name: "a" }], { force: false, cooldownMs: 600_000, stored }, d);
+    expect(out[0]?.windows[0].utilization).toBe(55);
+    expect(calls).toEqual([]);
+    expect(loadUsageCache()["claude/a"].snap.windows[0].utilization).toBe(55);
+  });
+
+  it("an older stored readout loses to the cache, and a stale one still lets the fetch run", async () => {
+    saveUsageSnapshot("claude/a", snap(40, at(200_000)));
+    const { d, calls } = deps();
+    const stored = new Map([["claude/a", snap(5, at(100_000))]]);
+    const out = await loadUsage([{ provider: "claude", name: "a" }], { force: false, cooldownMs: 600_000, stored }, d);
+    expect(calls).toEqual(["claude/a"]);
+    expect(out[0]?.windows[0].utilization).toBe(99);
+  });
+
+  it("a manual refresh fetches even with a fresh stored readout", async () => {
+    const { d, calls } = deps();
+    const stored = new Map([["claude/a", snap(55, at(990_000))]]);
+    await loadUsage([{ provider: "claude", name: "a" }], { force: true, cooldownMs: 600_000, stored }, d);
+    expect(calls).toEqual(["claude/a"]);
+  });
+
+  it("newerSnapshot: the later capture wins; an unparsable time loses", () => {
+    const a = snap(1, at(100));
+    const b = snap(2, at(200));
+    expect(newerSnapshot(a, b)).toBe(b);
+    expect(newerSnapshot(b, a)).toBe(b);
+    expect(newerSnapshot(null, a)).toBe(a);
+    expect(newerSnapshot(a, snap(3, "not a time"))).toBe(a);
+    expect(newerSnapshot(undefined, undefined)).toBeNull();
   });
 });
 

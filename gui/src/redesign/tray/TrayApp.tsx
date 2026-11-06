@@ -3,7 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LangKeyed } from "../../i18n/LangKeyed.js";
 import { AcRoot } from "../../ui/AcRoot.js";
+import { storedUsage } from "../../ipc.js";
 import { createActions } from "../../vm/actions.js";
+import { withStoredUsage } from "../../vm/build.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
 import { resweepToolsIfStale } from "../../vm/slow-cache.js";
 import { ASProvider, useAS } from "../../vm/store.js";
@@ -30,9 +32,23 @@ export function TrayBridge() {
 /** Re-read on every show — the slow parts (tooling sweep, latest versions,
  *  doctor) come from the cache, the sweep re-runs only when a minute old;
  *  Escape hides the popover. */
+/** How often the hidden tray takes the CLI's stored readouts (the daemon polls every minute). */
+export const STORED_USAGE_MS = 60_000;
+
 export function TrayLifecycle() {
-  const { reload } = useAS();
+  const { reload, update } = useAS();
+  // `update` is rebuilt with every view model; the effect must not restart on it.
+  const updateRef = useRef(update);
+  updateRef.current = update;
   useEffect(() => {
+    // The readouts the CLI already holds, at once and without a fetch: the bars
+    // are current when the tray opens, while the full reload runs behind them.
+    const freshen = () =>
+      void storedUsage()
+        .then((stored) => updateRef.current((vm) => ({ accounts: withStoredUsage(vm.accounts, stored) })))
+        .catch(() => {});
+    freshen();
+    const tick = window.setInterval(freshen, STORED_USAGE_MS);
     let unlisten: (() => void) | null = null;
     let gone = false;
     try {
@@ -40,6 +56,7 @@ export function TrayLifecycle() {
         .onFocusChanged(({ payload: focused }) => {
           if (!focused) return;
           resweepToolsIfStale();
+          freshen();
           void reload();
         })
         .then((u) => (gone ? u() : (unlisten = u)))
@@ -54,6 +71,7 @@ export function TrayLifecycle() {
     return () => {
       gone = true;
       unlisten?.();
+      window.clearInterval(tick);
       window.removeEventListener("keydown", onKey);
     };
   }, [reload]);
