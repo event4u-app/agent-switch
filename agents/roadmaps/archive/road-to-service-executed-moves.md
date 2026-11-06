@@ -46,11 +46,11 @@ Read at `feat/agent-config-link-v3` (merge of `main` 2.12.0 into `dev/v3`).
 
 ## Phase 1 — The setting
 
-- [ ] **1.1 CLI.** `agent-switch link executor app|service` and
+- [x] **1.1 CLI.** `agent-switch link executor app|service` and
       `link status --json` reports `executor` (default `app`). Stored next to the
       link's auto-connect flag.
       verify: CLI tests: default `app`, round trip, `status --json`.
-- [ ] **1.2 GUI switch** in Settings › Protection under "agent-config":
+- [x] **1.2 GUI switch** in Settings › Protection under "agent-config":
       "Let the background service carry out moves", off by default, with the
       three risks above as its detail text (en + de). Tray scope not needed
       (main window only).
@@ -58,32 +58,34 @@ Read at `feat/agent-config-link-v3` (merge of `main` 2.12.0 into `dev/v3`).
 
 ## Phase 2 — Executor parity with the app
 
-- [ ] **2.1 No sign-out by rebind.** When the target account runs a session of
+- [x] **2.1 No sign-out by rebind.** When the target account runs a session of
       its own, `planMove` uses a takeover, as the app does.
       verify: `execute` unit test with a busy target.
-- [ ] **2.2 Carry on after the switch.** After a Claude rebind of a hosted
+- [x] **2.2 Carry on after the switch.** After a Claude rebind of a hosted
       session, the service types `continue` through the same path as the arm
       watcher.
       verify: daemon test with a fake host.
-- [ ] **2.3 Hosted Codex takeover.** A session hosted by the app moves with the
+- [x] **2.3 Hosted Codex takeover.** A session hosted by the app moves with the
       hosted takeover, so its window keeps running.
-      verify: execute test against a fake host; manual check in the app.
+      verify: execute test against a fake host (`tests/link-execute.test.ts`
+      "2.3"); daemon wiring in `tests/daemon-requests.test.ts`. Manual check in
+      the running app still owed.
 
 ## Phase 3 — The app hands the answer over
 
-- [ ] **3.1 Decide without executing.** With the setting on, the sheet (v3 and
+- [x] **3.1 Decide without executing.** With the setting on, the sheet (v3 and
       2.x) calls `switch decide` without `--executed` and makes no move itself.
       Brief/handoff stays in the app.
       verify: adapter tests for both settings: on → no rebind/takeover call,
       one decision per session; off → today's behaviour.
-- [ ] **3.2 Show the outcome.** The request's `outcome` (done, failed,
+- [x] **3.2 Show the outcome.** The request's `outcome` (done, failed,
       `resume`) reaches the user as a notice; a `resume` opens in the app's
       terminal on one click.
       verify: window test with a finished and a failed request.
 
 ## Phase 4 — Docs
 
-- [ ] **4.1 Guide** "Working with agent-config": the setting, its default and
+- [x] **4.1 Guide** "Working with agent-config": the setting, its default and
       the risks.
       verify: starlight build.
 

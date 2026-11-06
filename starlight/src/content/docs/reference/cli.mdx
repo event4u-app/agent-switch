@@ -215,6 +215,7 @@ The integration defines `claude`, `codex` and `agy` wrappers plus `asw`
 | `limits [--json]` | Every account's limits from cache, with whether it can take work now, why not, and how fresh the numbers are. Reads no network. With `--json` each account also carries `snapshot`, the stored readout as it was read, which the app's tray shows. |
 | `switch list\|show\|request\|decide …` | Switch requests near a limit: list or show them, raise one for an account or session, or record your decision (`approve [--to A] [--how after-turn\|now\|handoff]`, `decline`, `snooze`). The first decision counts, in the app, here or in agent-config; the background service carries out an approval. Never moves anything by itself. |
 | `link [on\|off\|status] [--json]` | Let agent-config connect to this Agent Switch (default on). Off, `mcp serve` offers no tools and agent-config removes its wiring. |
+| `link executor [app\|service] [--json]` | Who carries out a move you answer in the app's near-limit sheet: the app (default), or the background service. See [Working with agent-config](/agent-switch/guides/agent-config/#who-carries-out-an-answer-given-in-the-app). |
 | `mcp serve` | The local MCP server agent-config starts over stdio: limits, this session, and switch requests. No port, nothing listening. |
 | `usage history [--profile <name>]` | Usage samples the background service recorded. |
 | `protection` | Limit protection per account (default on at 98%). |

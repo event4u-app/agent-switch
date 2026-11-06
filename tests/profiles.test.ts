@@ -61,6 +61,7 @@ test("activeFor / setActive are per-provider", () => {
     keepSignedIn: true,
     codexAutoReset: false,
     linkAutoConnect: true,
+    linkExecutor: "app",
     strategy: {},
     rebind: { disabled: false, consecutiveFailures: 0 },
     guard: "block",
@@ -148,6 +149,7 @@ test("legacy global auto-switch migrates onto every provider", () => {
     keepSignedIn: true,
     codexAutoReset: false,
     linkAutoConnect: true,
+    linkExecutor: "app",
     strategy: {},
     rebind: { disabled: false, consecutiveFailures: 0 },
     guard: "block",
@@ -223,6 +225,19 @@ test("codexAutoReset defaults OFF — redeeming a scarce credit is opt-in — an
   assert.equal(P.readCodexAutoReset(), true);
   P.setCodexAutoReset(false);
   assert.equal(P.readCodexAutoReset(), false);
+});
+
+test("linkExecutor defaults to the app — also for an unknown value — and persists service", () => {
+  fs.rmSync(P.STATE_FILE, { force: true });
+  assert.equal(P.readLinkExecutor(), "app");
+  fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: {}, linkExecutor: "daemon" }));
+  assert.equal(P.readLinkExecutor(), "app"); // unknown value → the safe default
+  P.setLinkExecutor("service");
+  assert.equal(P.readLinkExecutor(), "service");
+  P.setActive("codex", null); // survives an unrelated state write
+  assert.equal(P.readLinkExecutor(), "service");
+  P.setLinkExecutor("app");
+  assert.equal(P.readLinkExecutor(), "app");
 });
 
 test("linkAutoConnect defaults ON — also for a state file written before the key — and persists off", () => {

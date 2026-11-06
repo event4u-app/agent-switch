@@ -10,7 +10,7 @@ import { createMcpHandler, serveStdio } from "../link/mcp.js";
 import { decideSwitch, describeRequest, readLimits, requestSwitch } from "../link/ops.js";
 import type { MoveHow, Raiser } from "../link/requests.js";
 import { requestStore } from "../link/store.js";
-import { ROOT, die, readLinkAutoConnect, setLinkAutoConnect } from "../profiles.js";
+import { ROOT, die, readLinkAutoConnect, readLinkExecutor, setLinkAutoConnect, setLinkExecutor, type LinkExecutor } from "../profiles.js";
 import { currentVersion } from "../updates.js";
 import { logActivity } from "./shared.js";
 import { isProviderId, type ProviderId } from "../providers.js";
@@ -90,20 +90,36 @@ export function cmdSwitch(sub: string | undefined, positional: string[], flags: 
 /** The contract agent-config reads; bump only with a breaking change to a tool or JSON shape. */
 export const LINK_CONTRACT = 1;
 
-export function linkStatus(): { enabled: boolean; version: string; contract: number; mcp: { command: string; args: string[] } } {
-  return { enabled: readLinkAutoConnect(), version: currentVersion(), contract: LINK_CONTRACT, mcp: { command: "agent-switch", args: ["mcp", "serve"] } };
+export function linkStatus(): { enabled: boolean; executor: LinkExecutor; version: string; contract: number; mcp: { command: string; args: string[] } } {
+  return { enabled: readLinkAutoConnect(), executor: readLinkExecutor(), version: currentVersion(), contract: LINK_CONTRACT, mcp: { command: "agent-switch", args: ["mcp", "serve"] } };
 }
 
+const LINK_USAGE = "usage: agent-switch link [on|off|status] [--json]\n       agent-switch link executor [app|service] [--json]";
+
 /** `agent-switch link [on|off|status] [--json]` — whether agent-config may connect
- *  to this agent-switch (MCP server + its own wiring). Default on. */
-export function cmdLink(sub: string | undefined, json = false): void {
+ *  to this agent-switch (MCP server + its own wiring). Default on.
+ *  `link executor app|service` — who carries out a move answered in the app. */
+export function cmdLink(sub: string | undefined, json = false, arg?: string): void {
+  if (sub === "executor") {
+    if (arg !== undefined) {
+      if (arg !== "app" && arg !== "service") die(LINK_USAGE);
+      if (readLinkExecutor() !== arg) {
+        setLinkExecutor(arg);
+        logActivity("settings", null, `agent-config moves carried out by the ${arg}`, "user changed it");
+      }
+    }
+    const executor = readLinkExecutor();
+    if (json) console.log(JSON.stringify({ executor }));
+    else console.log(executor === "service" ? "Moves answered in the app are carried out by the background service." : "Moves answered in the app are carried out by the app (default).");
+    return;
+  }
   if (sub === "on" || sub === "off") {
     const on = sub === "on";
     if (readLinkAutoConnect() !== on) {
       setLinkAutoConnect(on);
       logActivity("settings", null, `agent-config link ${on ? "on" : "off"}`, "user changed it");
     }
-  } else if (sub && sub !== "status") die("usage: agent-switch link [on|off|status] [--json]");
+  } else if (sub && sub !== "status") die(LINK_USAGE);
   const s = linkStatus();
   if (json) console.log(JSON.stringify(s));
   else console.log(`agent-config link ${s.enabled ? "ON" : "OFF"} — ${s.enabled ? "agent-config connects to `agent-switch mcp serve` and may raise and decide switch requests" : "agent-config does not connect; `mcp serve` offers no tools"}.`);

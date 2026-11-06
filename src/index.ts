@@ -246,7 +246,7 @@ async function main(): Promise<void> {
     case "picks": return cmdPicks(flags);
     case "limits": return cmdLimits(providerExplicit ? providerId : undefined, flags);
     case "switch": return cmdSwitch(positional[0], positional.slice(1), flags);
-    case "link": return cmdLink(positional[0], !!flags.json);
+    case "link": return cmdLink(positional[0], !!flags.json, positional[1]);
     case "protection": return cmdProtection(positional[0], positional.slice(1), flags);
     case "pool": case "pools": return cmdPool(positional[0], positional.slice(1), flags);
     case "gui-settings": return cmdGuiSettings(positional[0], positional.slice(1), flags);

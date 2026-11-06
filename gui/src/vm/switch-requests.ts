@@ -62,3 +62,50 @@ export function requestsForMoves(
   }
   return out;
 }
+
+/**
+ * Requests answered in the app and then carried out by the background service,
+ * finished at or after `since`. A move the app made itself is recorded in one write, so its outcome carries the decision's
+ * own timestamp; one answered in agent-config is agent-config's to report.
+ */
+export function serviceOutcomes(rows: readonly SwitchRequestRow[], since: number): SwitchRequestRow[] {
+  return rows.filter(
+    (r) =>
+      (r.state === "done" || r.state === "failed") &&
+      !!r.decision?.by.startsWith("as-gui") &&
+      !!r.outcome &&
+      r.outcome.at !== r.decision.at &&
+      Date.parse(r.outcome.at) >= since,
+  );
+}
+
+/** The service's `outcome.resume` (`agent-switch …`, POSIX single-quoted) as the
+ *  args the app's terminal runs; null for anything else. */
+export function resumeArgs(cmd: string): string[] | null {
+  const out: string[] = [];
+  let cur = "";
+  let has = false;
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i];
+    if (c === "'") {
+      const end = cmd.indexOf("'", i + 1);
+      if (end < 0) return null;
+      cur += cmd.slice(i + 1, end);
+      has = true;
+      i = end;
+    } else if (c === "\\" && i + 1 < cmd.length) {
+      cur += cmd[++i];
+      has = true;
+    } else if (c === " ") {
+      if (has) out.push(cur);
+      cur = "";
+      has = false;
+    } else {
+      cur += c;
+      has = true;
+    }
+  }
+  if (has) out.push(cur);
+  if (out[0] !== "agent-switch" || out.length < 2) return null;
+  return out.slice(1);
+}

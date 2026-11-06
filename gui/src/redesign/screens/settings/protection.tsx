@@ -307,7 +307,34 @@ function AgentConfigLinkGroup() {
       <SettingRow title={t("settings.protection.agentConfigLink")} detail={t("settings.protection.agentConfigLinkDetail")}>
         <Switch label={t("settings.protection.agentConfigLink")} checked={on ?? false} disabled={on === null} onChange={(v) => void toggle(v)} />
       </SettingRow>
+      <LinkExecutorRow />
     </SettingGroup>
+  );
+}
+
+/** "Let the background service carry out moves" — `agent-switch link executor`.
+ *  Off (the app carries out what it hosts) by default; the detail names what
+ *  the service cannot do for a session that runs in the app. */
+function LinkExecutorRow() {
+  const run = useRun();
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    ipc
+      .getLinkExecutor()
+      .then((e) => setOn(e === "service"))
+      .catch(() => setOn(null));
+  }, []);
+
+  async function toggle(next: boolean) {
+    setOn(next);
+    const ok = await run(async () => (await ipc.setLinkExecutor(next ? "service" : "app"), true));
+    if (!ok) setOn(!next);
+  }
+
+  return (
+    <SettingRow title={t("settings.protection.linkExecutor")} detail={t("settings.protection.linkExecutorDetail")}>
+      <Switch label={t("settings.protection.linkExecutor")} checked={on ?? false} disabled={on === null} onChange={(v) => void toggle(v)} />
+    </SettingRow>
   );
 }
 

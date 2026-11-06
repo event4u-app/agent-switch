@@ -18,6 +18,7 @@ import { AcRoot } from "../../ui/AcRoot.js";
 import { Toaster } from "../../ui/Toaster.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
 import { ASProvider, useAS } from "../../vm/store.js";
+import { useServiceOutcomes } from "../../vm/service-outcomes.js";
 import { Modal, type NewSessionPlan } from "../dialogs.js";
 import { Act } from "../kit.js";
 import type { ChangedFile } from "../panels.js";
@@ -208,6 +209,8 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
 
   const byKey = useMemo(() => new Map(rows.map((r) => [sessionKey(r), r])), [rows]);
   byKeyRef.current = byKey;
+  // A move handed to the background service reports back here when it is done.
+  useServiceOutcomes(s.switchRequests, s);
   const hostedKeys = new Set((feeds.host?.hosted ?? []).filter((h) => h.alive).map((h) => h.key));
   const parkedKeys = new Set((feeds.host?.hosted ?? []).filter((h) => h.alive && h.parked).map((h) => h.key));
   const deps: DispatchDeps = {
@@ -221,6 +224,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     rows: () => byKey,
     needs: () => feeds.needs?.items ?? [],
     requests: () => s.switchRequests,
+    executor: () => ipc.getLinkExecutor(),
     hosted: (k) => hostedKeys.has(k),
     setAppearance: (a) => (saveAppearance(a), setAppearanceState(a)),
     setFocusTerminal: (on) => (setFocusTerminalFlag(on), setFocusTerminalState(on)),

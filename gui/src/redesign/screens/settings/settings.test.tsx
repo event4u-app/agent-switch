@@ -34,6 +34,8 @@ const ipcMock = vi.hoisted(() => ({
   getCodexAutoReset: vi.fn(),
   getLinkAutoConnect: vi.fn(),
   setLinkAutoConnect: vi.fn(),
+  getLinkExecutor: vi.fn(),
+  setLinkExecutor: vi.fn(),
   getStrategy: vi.fn(),
   setStrategy: vi.fn(),
   setCodexAutoReset: vi.fn(),
@@ -137,6 +139,8 @@ beforeEach(() => {
   ipcMock.getCodexAutoReset.mockResolvedValue(false);
   ipcMock.getLinkAutoConnect.mockResolvedValue(true);
   ipcMock.setLinkAutoConnect.mockResolvedValue(undefined);
+  ipcMock.getLinkExecutor.mockResolvedValue("app");
+  ipcMock.setLinkExecutor.mockResolvedValue(undefined);
   ipcMock.getStrategy.mockImplementation(async (p: string) => (p === "codex" ? "fill" : "balance"));
   ipcMock.setStrategy.mockResolvedValue(undefined);
   ipcMock.setCodexAutoReset.mockResolvedValue(undefined);
@@ -339,6 +343,16 @@ describe("Protection", () => {
     fireEvent.click(sw());
     await waitFor(() => expect(ipcMock.setLinkAutoConnect).toHaveBeenCalledWith(false));
     expect(sw().getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("reads who carries out moves from the CLI (the app by default) and writes `service` on", async () => {
+    mount("protection");
+    const sw = () => screen.getByRole("switch", { name: "Let the background service carry out moves" }) as HTMLButtonElement;
+    await waitFor(() => expect(sw().disabled).toBe(false));
+    expect(sw().getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(sw());
+    await waitFor(() => expect(ipcMock.setLinkExecutor).toHaveBeenCalledWith("service"));
+    expect(sw().getAttribute("aria-checked")).toBe("true");
   });
 
   it("reads Redeem Codex resets automatically from the CLI (off by default) and writes a change back", async () => {

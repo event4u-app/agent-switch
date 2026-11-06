@@ -123,6 +123,8 @@ export const settings: { readonly [K in keyof typeof en]: string } = {
   "settings.protection.agentConfig": "agent-config",
   "settings.protection.agentConfigLink": "agent-config verbinden lassen",
   "settings.protection.agentConfigLinkDetail": "agent-config kann die Limits aller Accounts lesen und Dich in der Session fragen, ob Arbeit vor einem Limit umziehen soll. Du entscheidest jeden Wechsel, hier oder dort; Agent Switch führt ihn aus. Aus: agent-config verbindet sich nicht.",
+  "settings.protection.linkExecutor": "Wechsel vom Hintergrunddienst ausführen lassen",
+  "settings.protection.linkExecutorDetail": "Aus: Einen Wechsel, den Du in der App beantwortest, führt die App aus; sie kann eine Session in ihrem eigenen Terminal oder Chat weiterführen. An: Der Hintergrunddienst führt jeden Wechsel aus, egal wo er beantwortet wurde. Dann kann eine Session stoppen, die Agent Switch nicht hostet — ein Codex-Wechsel oder ein Wechsel auf einen Account mit eigener Session beendet sie dort, wo sie läuft; der Dienst bietet den Befehl zum Fortsetzen an. Ein Chat in der App wartet nach dem Wechsel auf eine getippte Nachricht.",
   "settings.protection.limitAutoOpen": "Fragen, wenn eine Sitzung ihr Limit erreicht",
   "settings.protection.limitAutoOpenDetail": "Holt das Fenster nach vorn, mit der Wahl, auf einem anderen Konto weiterzumachen. Nichts wechselt, bevor du bestätigst.",
   "settings.protection.newSessions": "Neue Sitzungen",

@@ -28,8 +28,8 @@ vi.mock("../../terminal.js", async (orig) => ({
   ...(await orig<typeof import("../../terminal.js")>()),
   tauriBackend: { open: () => new Promise(() => {}), write: async () => {}, resize: async () => {}, close: async () => {} },
 }));
-const ipcLink = vi.hoisted(() => ({ decideSwitchRequest: vi.fn(async () => {}) }));
-vi.mock("../../ipc.js", async (orig) => ({ ...(await orig<typeof import("../../ipc.js")>()), decideSwitchRequest: ipcLink.decideSwitchRequest }));
+const ipcLink = vi.hoisted(() => ({ decideSwitchRequest: vi.fn(async (): Promise<boolean> => true), getLinkExecutor: vi.fn(async (): Promise<"app" | "service"> => "app") }));
+vi.mock("../../ipc.js", async (orig) => ({ ...(await orig<typeof import("../../ipc.js")>()), decideSwitchRequest: ipcLink.decideSwitchRequest, getLinkExecutor: ipcLink.getLinkExecutor }));
 vi.stubGlobal(
   "ResizeObserver",
   class {
@@ -391,6 +391,59 @@ describe("Near-limit sheet", () => {
     expect(screen.getByText("agent-config asked")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Switch to work" }));
     await waitFor(() => expect(ipcLink.decideSwitchRequest).toHaveBeenCalledWith("req-1", "approve", { to: "claude/work", how: "now", executed: "rebound in the app" }));
+  });
+
+  it("with the service as executor, a confirmed switch is handed over: answered without --executed, nothing moved here", async () => {
+    ipcLink.getLinkExecutor.mockResolvedValueOnce("service");
+    ipcLink.decideSwitchRequest.mockClear();
+    const rebind = vi.fn(async () => {});
+    const continueSession = vi.fn(async () => true);
+    const request = {
+      id: "req-2",
+      rev: 1,
+      session: "claude/side/budmigo",
+      account: "claude/side",
+      reason: { window: "five_hour", fill: 94, resetsAt: null },
+      raisedBy: "as",
+      raisedAt: new Date(NOW).toISOString(),
+      expiresAt: new Date(NOW + 3_600_000).toISOString(),
+      state: "open",
+      candidates: [{ target: "claude/work", provider: "claude", fill: 10, resetsAt: null, how: ["after-turn", "now"] }],
+    };
+    mount({ ...freeWork(), switchRequests: [request] }, { overlay: { kind: "limit", attentionId: "limit:claude:side" }, act: { rebind, continueSession, handoffBrief: vi.fn() } });
+    fireEvent.click(screen.getByRole("button", { name: "Switch to work" }));
+    await waitFor(() => expect(ipcLink.decideSwitchRequest).toHaveBeenCalledWith("req-2", "approve", { to: "claude/work", how: "now" }));
+    expect(rebind).not.toHaveBeenCalled();
+    expect(continueSession).not.toHaveBeenCalled();
+  });
+
+  it("with the service as executor, an answer the store did not apply leaves the switch to the app", async () => {
+    ipcLink.getLinkExecutor.mockResolvedValueOnce("service");
+    ipcLink.decideSwitchRequest.mockResolvedValueOnce(false);
+    const rebind = vi.fn(async () => {});
+    const request = {
+      id: "req-3",
+      rev: 1,
+      session: "claude/side/budmigo",
+      account: "claude/side",
+      reason: { window: "five_hour", fill: 94, resetsAt: null },
+      raisedBy: "as",
+      raisedAt: new Date(NOW).toISOString(),
+      expiresAt: new Date(NOW + 3_600_000).toISOString(),
+      state: "open",
+      candidates: [{ target: "claude/work", provider: "claude", fill: 10, resetsAt: null, how: ["now"] }],
+    };
+    mount({ ...freeWork(), switchRequests: [request] }, { overlay: { kind: "limit", attentionId: "limit:claude:side" }, act: { rebind, continueSession: vi.fn(async () => true), handoffBrief: vi.fn() } });
+    fireEvent.click(screen.getByRole("button", { name: "Switch to work" }));
+    await waitFor(() => expect(rebind).toHaveBeenCalledWith("claude:budmigo", "claude:work"));
+  });
+
+  it("with the service as executor but no open request, the app switches as before", async () => {
+    ipcLink.getLinkExecutor.mockResolvedValueOnce("service");
+    const rebind = vi.fn(async () => {});
+    mount(freeWork(), { overlay: { kind: "limit", attentionId: "limit:claude:side" }, act: { rebind, continueSession: vi.fn(async () => true), handoffBrief: vi.fn() } });
+    fireEvent.click(screen.getByRole("button", { name: "Switch to work" }));
+    await waitFor(() => expect(rebind).toHaveBeenCalledWith("claude:budmigo", "claude:work"));
   });
 
   it("offers only what the backend can do", () => {

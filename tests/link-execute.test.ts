@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { executeApproved, planMove, type Runner } from "../src/link/execute.js";
+import { executeApproved, planMove, type MoveContext, type Runner } from "../src/link/execute.js";
 import { RequestStore, type Candidate, type MoveHow } from "../src/link/requests.js";
 
 const T0 = Date.parse("2026-11-05T12:00:00Z");
@@ -92,4 +92,96 @@ test("open, declined and executing requests are left alone", () => {
   a.s.decide(a.id, { kind: "decline", by: "ac:claude" });
   assert.equal(executeApproved(a.s, () => (n++, { status: 0, stdout: "", stderr: "" })).length, 0);
   assert.equal(n, 0);
+});
+
+const CONT = "Continue where you left off.";
+const ctx = (over: Partial<MoveContext> = {}): MoveContext => ({ busy: () => false, hosted: () => false, ...over });
+
+test("2.1: a Claude move onto an account that runs a session of its own is a takeover, never a rebind", () => {
+  const busyB = ctx({ busy: (a) => a === "claude/b" });
+  for (const how of ["now", "after-turn"] as const) {
+    const a = setup("claude/work", "claude/work/sid-1", claudeB);
+    const p = planMove(approve(a.s, a.id, "claude/b", how), busyB);
+    assert.deepEqual(p.argv, ["takeover", "sid-1", "--to", "b", "--provider", "claude", "--stop-source", "--prompt", CONT, "--json"]);
+  }
+  // Not busy → still the plain rebind.
+  const c = setup("claude/work", "claude/work/sid-1", claudeB);
+  assert.equal(planMove(approve(c.s, c.id, "claude/b", "now"), ctx({ busy: (a) => a === "claude/other" })).argv?.[0], "rebind");
+  // A whole-account request cannot be moved by session: refused, nothing signed out.
+  const d = setup("claude/work", null, claudeB);
+  const refused = planMove(approve(d.s, d.id, "claude/b", "now"), busyB);
+  assert.equal(refused.argv, null);
+  assert.match(refused.error ?? "", /runs a session of its own/);
+});
+
+test("2.1: the busy takeover records its resume command and the session's new key", () => {
+  const a = setup("claude/work", "claude/work/sid-1", claudeB);
+  approve(a.s, a.id, "claude/b", "now");
+  const [t] = executeApproved(a.s, () => ({ status: 0, stdout: JSON.stringify({ resumeCommand: "agent-switch run b -- --resume sid-1" }), stderr: "" }), ctx({ busy: (x) => x === "claude/b" }));
+  assert.equal(t.state, "done");
+  assert.equal(t.outcome?.resume, "agent-switch run b -- --resume sid-1");
+  assert.equal(t.outcome?.newSession, "claude/b/sid-1");
+});
+
+test("2.2: after a rebind now, a hosted session is told to carry on; a session not hosted is not", () => {
+  const a = setup("claude/work", "claude/work/sid-1", claudeB);
+  approve(a.s, a.id, "claude/b", "now");
+  const typed: string[] = [];
+  const hosted = ctx({ hosted: (k) => k === "claude/work/sid-1" });
+  const [r] = executeApproved(a.s, () => ({ status: 0, stdout: "now serves b's account\n", stderr: "" }), hosted, (k) => (typed.push(k), true));
+  assert.deepEqual(typed, ["claude/work/sid-1"]);
+  assert.equal(r.state, "done");
+  assert.match(r.outcome?.detail ?? "", /carries on/);
+
+  // The continuation fails → the move still stands, and the outcome says what to do.
+  const b = setup("claude/work", "claude/work/sid-1", claudeB);
+  approve(b.s, b.id, "claude/b", "now");
+  const [f] = executeApproved(b.s, () => ({ status: 0, stdout: "ok\n", stderr: "" }), hosted, () => "someone is typing there");
+  assert.equal(f.state, "done");
+  assert.match(f.outcome?.detail ?? "", /type one message/i);
+
+  // Not hosted, or after the turn (the arm watcher continues those): no typing here.
+  const c = setup("claude/work", "claude/work/sid-1", claudeB);
+  approve(c.s, c.id, "claude/b", "now");
+  executeApproved(c.s, () => ({ status: 0, stdout: "", stderr: "" }), ctx(), (k) => (typed.push(k), true));
+  const d = setup("claude/work", "claude/work/sid-1", claudeB);
+  approve(d.s, d.id, "claude/b", "after-turn");
+  executeApproved(d.s, () => ({ status: 0, stdout: "", stderr: "" }), hosted, (k) => (typed.push(k), true));
+  assert.deepEqual(typed, ["claude/work/sid-1"]);
+  // A failed rebind is never followed by a continuation.
+  const e = setup("claude/work", "claude/work/sid-1", claudeB);
+  approve(e.s, e.id, "claude/b", "now");
+  executeApproved(e.s, () => ({ status: 1, stdout: "", stderr: "refused" }), hosted, (k) => (typed.push(k), true));
+  assert.equal(typed.length, 1);
+});
+
+test("2.3: a hosted session moves in its own window — Codex, and Claude onto a busy account", () => {
+  const hosted = (key: string) => ctx({ hosted: (k) => k === key, busy: (a) => a === "claude/b" });
+  for (const how of ["now", "after-turn"] as const) {
+    const a = setup("codex/one", "codex/one/sid-2", { ...codexX, target: "codex/two", how: ["now", "after-turn", "handoff"] });
+    const p = planMove(approve(a.s, a.id, "codex/two", how), hosted("codex/one/sid-2"));
+    assert.deepEqual(p.argv, ["takeover", "sid-2", "--to", "two", "--provider", "codex", "--in-place", "--hosted", "codex/one/sid-2", "--prompt", CONT]);
+  }
+  const b = setup("claude/work", "claude/work/sid-1", claudeB);
+  assert.deepEqual(planMove(approve(b.s, b.id, "claude/b", "now"), hosted("claude/work/sid-1")).argv, ["takeover", "sid-1", "--to", "b", "--provider", "claude", "--in-place", "--hosted", "claude/work/sid-1", "--prompt", CONT]);
+
+  const c = setup("codex/one", "codex/one/sid-2", { ...codexX, target: "codex/two" });
+  approve(c.s, c.id, "codex/two", "now");
+  const [r] = executeApproved(c.s, () => ({ status: 0, stdout: 'Handed the session over to "two" in its hosted window (codex/two/sid-2).\n', stderr: "" }), hosted("codex/one/sid-2"));
+  assert.equal(r.state, "done");
+  assert.equal(r.outcome?.resume, undefined); // it runs already; nothing to offer
+  assert.equal(r.outcome?.newSession, "codex/two/sid-2");
+});
+
+test("a Codex move after the turn, should one be approved, is the same takeover as now (Codex has no live switch)", () => {
+  // Raised Codex candidates offer `now` only; the plan does not depend on that.
+  const a = setup("codex/one", "codex/one/sid-2", { ...codexX, target: "codex/two", how: ["now", "after-turn"] });
+  assert.deepEqual(planMove(approve(a.s, a.id, "codex/two", "after-turn")).argv, ["takeover", "sid-2", "--to", "two", "--provider", "codex", "--from", "one", "--json"]);
+});
+
+test("a session id that reads as a flag is refused, never passed to takeover", () => {
+  const a = setup("codex/one", "codex/one/--force", { ...codexX, target: "codex/two" });
+  const p = planMove(approve(a.s, a.id, "codex/two", "now"));
+  assert.equal(p.argv, null);
+  assert.match(p.error ?? "", /session id/);
 });

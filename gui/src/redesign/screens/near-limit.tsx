@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { decideSwitchRequest, handoffSeedArgs } from "../../ipc.js";
+import { decideSwitchRequest, getLinkExecutor, handoffSeedArgs } from "../../ipc.js";
 import type { ProviderId } from "../../transforms.js";
 import { t } from "../../i18n/index.js";
 import { cn } from "../../lib/utils.js";
@@ -16,14 +16,12 @@ import { TOOL_LABEL } from "../../vm/rules.js";
 import { useAS } from "../../vm/store.js";
 import { askedByAgentConfig, cliAccount, openRequestFor } from "../../vm/switch-requests.js";
 import { limitOptions, limitSession, limitTargets, switchTargets, type LimitChoice } from "./logic.js";
-
 const PRIMARY: Record<LimitChoice, (name: string) => string> = {
   pause: () => t("sessions.near.pauseResume"),
   switch: (name) => t("sessions.near.switchTo", { name }),
   "continue-elsewhere": (name) => t("sessions.near.continueOn", { name }),
   keep: () => t("sessions.near.keepGoing"),
 };
-
 /** Bundle `vR`, sheet 460. Offers only what the backend can do; the rest stays
  *  visible, disabled, with its reason. */
 export function NearLimitSheet({ attentionId }: { attentionId: string }) {
@@ -43,7 +41,6 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
   const record = (to: string, how: "now" | "handoff", executed: string) => {
     if (request) void decideSwitchRequest(request.id, "approve", { to: cliAccount(to), how, executed }).catch(() => {});
   };
-
   const selected = options.find((o) => o.id === choice);
   // A live switch may only land on an account nobody is using; fall back to the
   // first such one when the remembered pick is not in this choice's list.
@@ -55,9 +52,29 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
   const done = () => {
     s.update((vm) => ({ attention: vm.attention.filter((a) => a.id !== item.id) }));
   };
-
+  /** With the background service as executor, answer this session's request
+   *  without carrying it out. Only when the request offers this target;
+   *  otherwise — or when the store did not apply the answer — the app switches
+   *  itself, so the answer is never left undone. */
+  const handOver = async (to: string): Promise<boolean> => {
+    // A request for the whole account stays with the app: it continues each session.
+    if (!request || !session || request.session === null) return false;
+    const executor = await getLinkExecutor().catch(() => "app" as const);
+    if (executor !== "service" || !request.candidates.some((c) => c.target === cliAccount(to) && c.how.includes("now"))) return false;
+    const applied = await decideSwitchRequest(request.id, "approve", { to: cliAccount(to), how: "now" }).catch(() => false);
+    if (!applied) return false;
+    done();
+    s.close();
+    s.toast({ text: t("sessions.sheet.handedToService", { project: session?.project ?? "", name: s.accountById(to)?.name ?? to }), tone: "ok" });
+    return true;
+  };
   const go = async () => {
     if (!session || !targetAccount) return;
+    if (choice === "switch") {
+      setBusy(true);
+      const handed = await handOver(targetAccount.id).finally(() => setBusy(false));
+      if (handed) return;
+    }
     if (choice === "switch" && account.tool === "codex") {
       // Move + resume with "continue" in the app's terminal; takeover refuses
       // while codex still runs in the user's own terminal and says so there.
@@ -111,9 +128,7 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
       }
     }
   };
-
   const actionMissing = (choice === "switch" && (account.tool === "codex" ? !s.act.moveAndContinueArgs : !s.act.rebind)) || (choice === "continue-elsewhere" && !s.act.handoffBrief);
-
   return (
     <Sheet
       open

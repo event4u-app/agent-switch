@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SwitchRequestRow } from "../ipc.js";
-import { answeredElsewhere, askedByAgentConfig, cliAccount, cliSession, openRequestFor } from "./switch-requests.js";
+import { answeredElsewhere, askedByAgentConfig, cliAccount, cliSession, openRequestFor, resumeArgs, serviceOutcomes } from "./switch-requests.js";
 
 const NOW = Date.parse("2026-11-05T12:00:00Z");
 const later = new Date(NOW + 3_600_000).toISOString();
@@ -53,5 +53,37 @@ describe("switch requests in the app", () => {
     expect(askedByAgentConfig(row({ raisedBy: "ac" }))).toBe(true);
     expect(askedByAgentConfig(row({}))).toBe(false);
     expect(askedByAgentConfig(null)).toBe(false);
+  });
+});
+
+describe("serviceOutcomes (road-to-service-executed-moves 3.2)", () => {
+  const at = (ms: number) => new Date(NOW + ms).toISOString();
+  const gui = (decidedAt: string) => ({ kind: "approve", target: "claude/home", how: "now", by: "as-gui", at: decidedAt });
+  it("lists requests answered in the app and finished by the service, since a moment", () => {
+    const rows = [
+      row({ id: "done", state: "done", decision: gui(at(0)), outcome: { at: at(4_000), ok: true, detail: "moved" } }),
+      row({ id: "failed", state: "failed", decision: gui(at(0)), outcome: { at: at(4_000), ok: false, detail: "refused" } }),
+      // Carried out by the app itself (--executed): one write, one timestamp.
+      row({ id: "app", state: "done", decision: gui(at(0)), outcome: { at: at(0), ok: true, detail: "moved in the app" } }),
+      // Answered in agent-config: agent-config tells the user.
+      row({ id: "ac", state: "done", decision: { ...gui(at(0)), by: "ac:claude" }, outcome: { at: at(4_000), ok: true, detail: "moved" } }),
+      // Still running, or finished before the window started.
+      row({ id: "running", state: "executing", decision: gui(at(0)) }),
+      row({ id: "old", state: "done", decision: gui(at(-90_000)), outcome: { at: at(-60_000), ok: true, detail: "moved" } }),
+    ];
+    expect(serviceOutcomes(rows, NOW).map((r) => r.id)).toEqual(["done", "failed"]);
+  });
+});
+
+describe("resumeArgs", () => {
+  it("turns the service's resume command into agent-switch args, quotes included", () => {
+    expect(resumeArgs("agent-switch run b -- --resume sid-1")).toEqual(["run", "b", "--", "--resume", "sid-1"]);
+    expect(resumeArgs("agent-switch run two --provider codex -- resume sid-2 'Continue where you left off.'")).toEqual(["run", "two", "--provider", "codex", "--", "resume", "sid-2", "Continue where you left off."]);
+    expect(resumeArgs("agent-switch run b -- 'it'\\''s'")).toEqual(["run", "b", "--", "it's"]);
+  });
+  it("refuses anything that is not an agent-switch command", () => {
+    expect(resumeArgs("rm -rf ~")).toBeNull();
+    expect(resumeArgs("agent-switch run 'unclosed")).toBeNull();
+    expect(resumeArgs("agent-switch")).toBeNull();
   });
 });
