@@ -2,7 +2,8 @@
  *  scopes (capabilities/tray.json), so it reads the queue and the hosted
  *  sessions and nothing else; every action opens or drives the main window. */
 
-import type { CSSProperties } from "react";
+import { useEffect, type CSSProperties } from "react";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 import { LangKeyed } from "../../i18n/LangKeyed.js";
 import * as ipc from "../../ipc.js";
@@ -36,7 +37,26 @@ export const TRAY_DEPS: FeedDeps = {
 function V3TrayFrame() {
   const s = useAS();
   const ref = useFitWindow();
-  const { feeds } = useV3Feeds(TRAY_DEPS);
+  const { feeds, refresh } = useV3Feeds(TRAY_DEPS);
+  // Opening the tray reads the queue at once: an open question is on top when it shows.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let gone = false;
+    try {
+      getCurrentWebviewWindow()
+        .onFocusChanged(({ payload: focused }) => focused && refresh())
+        .then((u) => (gone ? u() : (unlisten = u)))
+        .catch(() => {});
+    } catch {
+      /* non-Tauri env */
+    }
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+    // `refresh` only kicks the poll; it is stable in effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const d = toV3Data(s, feeds, {
     now: s.now,
     appearance: DEFAULT_APPEARANCE,
