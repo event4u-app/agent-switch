@@ -44,10 +44,11 @@ describe("tray (spec §10.7)", () => {
     expect(within(panel).getByText("side"), "no “· Codex” suffix inside the Codex tab").toBeTruthy();
   });
 
-  it("a tool without live sessions gets no tab; Claude always has one", () => {
+  it("a tool shows with a live session or with an account; Claude always", () => {
     expect(trayTools([s("codex/work/1")])).toEqual(["claude", "codex"]);
     expect(trayTools([s("claude/work/1")])).toEqual(["claude"]);
     expect(trayTools([])).toEqual(["claude"]);
+    expect(trayTools([], [{ tool: "codex" }]), "Codex accounts without sessions still get the switch").toEqual(["claude", "codex"]);
   });
 
   it("the head opens the window and shows health; Open plain on the left, Start filled on the right", () => {
@@ -72,14 +73,17 @@ describe("tray (spec §10.7)", () => {
 });
 
 describe("tray accounts (like the v2 tray)", () => {
-  it("each account shows identity and plan, the 5h window with used and reset, the reading's age, and the app button", () => {
+  it("two lines per account: name with the email after it (email and plan on hover), the 5h window with used and reset, the reading's age, and the app button", () => {
     const handlers = on();
     const openApp = vi.fn();
     const H = 3_600_000;
     const a: LimitAccount = { ...acc("claude", "work"), identity: "work@example.com", plan: "Max", checkedMs: 0, windows: [{ label: "5h", used: 39, resetsAtMs: 2 * H, pace: 45 }, { label: "week", used: 62, resetsAtMs: 118 * H, pace: 30 }] };
     render(<V3Tray nowMs={2 * 60_000} needs={[]} away={null} sessions={[]} accounts={[a]} appFor={() => ({ name: "Claude Desktop", onOpen: openApp })} on={handlers} />);
     const limits = screen.getByRole("region", { name: "Limits" });
-    expect(within(limits).getByText("work@example.com · Max")).toBeTruthy();
+    const email = within(limits).getByText("work@example.com");
+    expect(email.getAttribute("title")).toBe("work@example.com · Max");
+    expect(email.className).toContain("truncate");
+    expect(email.previousElementSibling!.textContent, "right after the name").toBe("work");
     for (const t of ["5h", "39%", "↻ 1h 58m", "2m ago"]) expect(within(limits).getByText(t), t).toBeTruthy();
     expect(within(limits).queryByText("62%"), "only the current window as a bar").toBeNull();
     expect(within(limits).getAllByTestId("pace-tick")).toHaveLength(1);

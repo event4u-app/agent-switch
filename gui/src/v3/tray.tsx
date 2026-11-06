@@ -1,10 +1,10 @@
 /**
  * The tray (spec §10.7): the same components as the window. The head opens the
- * window. Needs you stays across tools, so nothing urgent hides in another tab;
- * below it a segmented switch per tool — Claude first and the default, the others only
- * while they have live sessions — each with that tool's sessions (5 rows, same
- * order) and its accounts in full (every window, reset, age, app — as in v2). "Open Agent Switch" on the left, "Start session" on
- * the right.
+ * window. Needs you stays across tools, so nothing urgent hides behind the
+ * switch; below it a segmented switch per tool — Claude first and the default,
+ * the others when they have a live session or an account — and one box with
+ * that tool's sessions (5 rows, same order) and its accounts (two lines each,
+ * as in v2). "Open Agent Switch" on the left, "Start session" on the right.
  */
 
 import { useState } from "react";
@@ -30,9 +30,10 @@ const TOOL_NAME: Record<TrayTool, string> = {
 export const toolOf = (key: string): string => key.split("/")[0];
 
 /** Claude always (the default), then every other tool with a live session. Pure. */
-export function trayTools(live: readonly RowSession[]): TrayTool[] {
+export function trayTools(live: readonly RowSession[], accounts: readonly Pick<LimitAccount, "tool">[] = []): TrayTool[] {
+  // A tool with an account shows even without a live session, so its limits stay in reach.
   return (["claude", "codex"] as const).filter(
-    (t) => t === "claude" || live.some((s) => toolOf(s.key) === t),
+    (t) => t === "claude" || live.some((s) => toolOf(s.key) === t) || accounts.some((a) => a.tool === t),
   );
 }
 
@@ -86,7 +87,7 @@ export function V3Tray({
   const [picked, setPicked] = useState<TrayTool>("claude");
   // The window's default order (activity); without times it stays the status order.
   const all = sortLive(sessions, "activity", lastActiveOf ?? (() => null));
-  const tools = trayTools(all);
+  const tools = trayTools(all, accounts);
   // A tool whose last session ended drops its tab; fall back to the default.
   const tab = tools.includes(picked) ? picked : "claude";
   const live = all.filter((s) => toolOf(s.key) === tab);
