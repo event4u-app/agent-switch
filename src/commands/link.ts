@@ -10,7 +10,8 @@ import { createMcpHandler, serveStdio } from "../link/mcp.js";
 import { decideSwitch, describeRequest, readLimits, requestSwitch } from "../link/ops.js";
 import type { MoveHow, Raiser } from "../link/requests.js";
 import { requestStore } from "../link/store.js";
-import { ROOT, die, readLinkAutoConnect, readLinkExecutor, setLinkAutoConnect, setLinkExecutor, type LinkExecutor } from "../profiles.js";
+import { forSession, requestSummary, requestView } from "../link/summary.js";
+import { ROOT, die, readLinkAutoConnect, readLinkExecutor, readPaceSuggest, setLinkAutoConnect, setLinkExecutor, setPaceSuggest, type LinkExecutor } from "../profiles.js";
 import { currentVersion } from "../updates.js";
 import { logActivity } from "./shared.js";
 import { isProviderId, type ProviderId } from "../providers.js";
@@ -34,7 +35,7 @@ export function cmdLimits(provider: ProviderId | undefined, flags: Record<string
 }
 
 const USAGE =
-  "usage: agent-switch switch list [--all] [--json]\n" +
+  "usage: agent-switch switch list [--all] [--session provider/account/id] [--json]\n" +
   "       agent-switch switch show <id> [--json]\n" +
   "       agent-switch switch request (--account provider/name | --session provider/account/id) [--by ac] [--json]\n" +
   "       agent-switch switch decide <id> approve [--to provider/name] [--how after-turn|now|handoff] [--by <who>] [--executed <what>] [--json]\n" +
@@ -54,13 +55,15 @@ export function cmdSwitch(sub: string | undefined, positional: string[], flags: 
   try {
     if (sub === "list" || sub === undefined) {
       const all = store.list();
-      const rows = flags.all ? all : all.filter((r) => ACTIVE.has(r.state));
-      return out(flags, rows, rows.length ? rows.map(describeRequest).join("\n") : "No open switch requests.");
+      const session = str("session");
+      const rows = (flags.all ? all : all.filter((r) => ACTIVE.has(r.state))).filter(session ? forSession(session) : () => true);
+      const now = Date.now();
+      return out(flags, rows.map((r) => requestView(r, now)), rows.length ? rows.map(describeRequest).join("\n") : "No open switch requests.");
     }
     if (sub === "show" || sub === "status") {
       const id = positional[0] ?? die(USAGE);
       const r = store.get(id) ?? die(`no switch request ${id}`);
-      return out(flags, r, describeRequest(r));
+      return out(flags, requestView(r, Date.now()), `${describeRequest(r)}\n${requestSummary(r, Date.now())}`);
     }
     if (sub === "request") {
       const by = str("by") ?? "as-cli";
@@ -87,8 +90,10 @@ export function cmdSwitch(sub: string | undefined, positional: string[], flags: 
   die(USAGE);
 }
 
-/** The contract agent-config reads; bump only with a breaking change to a tool or JSON shape. */
-export const LINK_CONTRACT = 1;
+/** The contract agent-config reads; bump with a breaking change to a tool or JSON
+ *  shape, or a new field a caller may rely on. 2: request `kind` and `summary`,
+ *  `switch_list` session filter, per-window `burnPerHour`/`etaFull`. */
+export const LINK_CONTRACT = 2;
 
 export function linkStatus(): { enabled: boolean; executor: LinkExecutor; version: string; contract: number; mcp: { command: string; args: string[] } } {
   return { enabled: readLinkAutoConnect(), executor: readLinkExecutor(), version: currentVersion(), contract: LINK_CONTRACT, mcp: { command: "agent-switch", args: ["mcp", "serve"] } };
@@ -123,6 +128,21 @@ export function cmdLink(sub: string | undefined, json = false, arg?: string): vo
   const s = linkStatus();
   if (json) console.log(JSON.stringify(s));
   else console.log(`agent-config link ${s.enabled ? "ON" : "OFF"} — ${s.enabled ? "agent-config connects to `agent-switch mcp serve` and may raise and decide switch requests" : "agent-config does not connect; `mcp serve` offers no tools"}.`);
+}
+
+/** `agent-switch pace [on|off|status] [--json]` — whether the service suggests a
+ *  switch when accounts run at different paces. Default on; only ever asks. */
+export function cmdPace(sub: string | undefined, json = false): void {
+  if (sub === "on" || sub === "off") {
+    const on = sub === "on";
+    if (readPaceSuggest() !== on) {
+      setPaceSuggest(on);
+      logActivity("settings", null, `pace suggestions ${on ? "on" : "off"}`, "user changed it");
+    }
+  } else if (sub && sub !== "status") die("usage: agent-switch pace [on|off|status] [--json]");
+  const enabled = readPaceSuggest();
+  if (json) console.log(JSON.stringify({ enabled }));
+  else console.log(`Pace suggestions ${enabled ? "ON — the service asks to move a session when its account runs out well before its reset while another account would let room expire" : "OFF — only the limit ask (at 90 %) remains"}.`);
 }
 
 /** Which account and session started this process: the provider's own config

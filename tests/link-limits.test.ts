@@ -102,3 +102,19 @@ test("accounts come out in provider then name order, independent of input order"
   const r = buildLimits(i);
   assert.deepEqual(r.accounts.map((a) => a.id), ["claude/a", "claude/z", "codex/b"]);
 });
+
+test("each window carries its burn per hour and hours until full, from the account's own captures", () => {
+  const history = [{ at: iso(-120), windows: [{ key: "seven_day", utilization: 48 }] }];
+  const r = buildLimits(inputs({ snaps: { "claude/work": snap(0, [["five_hour", 10, 120], ["seven_day", 60, 3000]]) }, history: () => history }));
+  const w = Object.fromEntries(r.accounts[0].windows.map((x) => [x.key, x]));
+  assert.equal(w.seven_day.burnPerHour, 6);
+  assert.equal(w.seven_day.etaFull, Math.round(((95 - 60) / 6) * 10) / 10);
+  assert.equal(w.five_hour.burnPerHour, null, "no captures for this window → unknown");
+  assert.equal(w.five_hour.etaFull, null);
+});
+
+test("without history every window still has the two fields, as null", () => {
+  const r = buildLimits(inputs({ snaps: { "claude/work": snap(0, [["seven_day", 60, 3000]]) } }));
+  assert.equal(r.accounts[0].windows[0].burnPerHour, null);
+  assert.equal(r.accounts[0].windows[0].etaFull, null);
+});

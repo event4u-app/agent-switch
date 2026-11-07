@@ -40,6 +40,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch sessions rm <session-id> --yes [--from <profile>] [--purge] [--json]   move one session to the trash (--purge deletes it for good)
   agent-switch sessions restore <trash-id|session-id> [--from <profile>]   bring a removed session back
   agent-switch hooks install|uninstall|status [profile] [--provider codex]   manage lifecycle push hooks (Claude settings.json, Codex hooks.json)
+  agent-switch hooks chat on|off|status [profile]   tell the conversation about a switch request for it (opt-in; silent when agent-config is wired)
   agent-switch alerts on|off|status [--threshold 80,95]   record context/usage crossings to the notification log (off by default)
   agent-switch compact <profile> [--clear] [--dry-run] [--force]   type /compact (or /clear) into the profile's managed tmux pane
   agent-switch takeover <id> --to <profile> [--from <profile>] [--keep-source] [--in-place [--hosted <key>]] [--prompt "…"] [--print-only] [--force]   move a session to another profile and resume it (--prompt: its first message there)
@@ -66,6 +67,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch switch list|show|request|decide … [--json]   switch requests near a limit: raise one, or record your decision (first decision counts)
   agent-switch link [on|off|status] [--json]    let agent-config connect (default on)
   agent-switch link executor [app|service]      who carries out a move answered in the app (default app)
+  agent-switch pace [on|off|status] [--json]    suggest a switch when accounts run at different paces (default on)
   agent-switch mcp serve                        the local MCP server agent-config starts over stdio
   agent-switch rename <old> <new> [--provider P]                               rename a profile (name & keep its tag)
   agent-switch providers enable|disable|status [--provider P] [--surface cli|ui]   enable/disable a provider (default: Claude + Codex)

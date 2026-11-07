@@ -132,6 +132,11 @@ export interface State {
    *  `app` (default): the app moves what it hosts and records the answer as executed. `service`: the app only records
    *  the answer and the background service carries it out. */
   linkExecutor: LinkExecutor;
+  /** "Suggest a switch when accounts run at different paces": the service asks
+   *  when one account runs out well before its reset while another would let
+   *  room expire (road-to-limits-that-last-the-whole-run). Default true; it only
+   *  asks, never moves. */
+  paceSuggest: boolean;
   /** How a plain start picks per provider (`dir-resolve.ts`); absent = `balance`. */
   strategy: Partial<Record<ProviderId, StartStrategy>>;
   /** Rollback / circuit-breaker for the `rebind` write path (ADR-003). */
@@ -350,17 +355,18 @@ export function readState(): State {
     const codexAutoReset = raw?.codexAutoReset === true;
     const linkAutoConnect = raw?.linkAutoConnect !== false;
     const linkExecutor: LinkExecutor = raw?.linkExecutor === "service" ? "service" : "app";
+    const paceSuggest = raw?.paceSuggest !== false;
     const strategy = normalizeStrategy(raw?.strategy);
     const rebind = normalizeRebindState(raw?.rebind);
     const guard = normalizeGuard(raw?.guard);
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, strategy, rebind, guard };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, strategy, rebind, guard };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, strategy, rebind, guard };
+      return { active: { ...emptyActive(), ...raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, strategy, rebind, guard };
     }
-    return { active: emptyActive(), labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, strategy, rebind, guard };
+    return { active: emptyActive(), labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, strategy, rebind, guard };
   } catch {
     /* absent / unparsable → default */
   }
@@ -368,7 +374,7 @@ export function readState(): State {
   // 2.1.0 install can have profiles and no state file — that user must keep the
   // pre-2.2 default (block), not be treated as new.
   const fresh = !fs.existsSync(STATE_FILE) && listAllProfiles().length === 0;
-  return { active: emptyActive(), labels: {}, colors: {}, disabled: [], autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, keepSignedIn: true, codexAutoReset: false, linkAutoConnect: true, linkExecutor: "app", strategy: {}, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
+  return { active: emptyActive(), labels: {}, colors: {}, disabled: [], autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, keepSignedIn: true, codexAutoReset: false, linkAutoConnect: true, linkExecutor: "app", paceSuggest: true, strategy: {}, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
 }
 
 export function readOsNotifications(): boolean {
@@ -417,6 +423,18 @@ export function setLinkExecutor(executor: LinkExecutor): void {
   return withFileLockSync(STATE_FILE, () => {
     const state = readState();
     state.linkExecutor = executor;
+    writeState(state);
+  });
+}
+
+export function readPaceSuggest(): boolean {
+  return readState().paceSuggest;
+}
+
+export function setPaceSuggest(on: boolean): void {
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    state.paceSuggest = on;
     writeState(state);
   });
 }

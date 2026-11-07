@@ -8,7 +8,10 @@ import { liveSessionPids } from "../api.js";
 import { cachedUsage } from "../commands/shared.js";
 import { FRESH_USAGE_MS } from "../dir-resolve.js";
 import { codexProfilesWithSession } from "../login-keepalive.js";
-import { configDir, isDisabled, listAllProfiles, profileExists } from "../profiles.js";
+import * as path from "node:path";
+
+import { readHistory } from "../history.js";
+import { configDir, isDisabled, listAllProfiles, profileDir, profileExists } from "../profiles.js";
 import { readProtection } from "../protection.js";
 import { PROVIDER_IDS, type ProviderId } from "../providers.js";
 import { candidatesFor } from "./candidates.js";
@@ -25,6 +28,7 @@ export function readLimits(provider?: ProviderId, now: number = Date.now()): Lim
     usage: (p, n) => cachedUsage(p, n),
     threshold: (p, n) => readProtection(p, n).thresholdPct,
     freshMs: FRESH_USAGE_MS,
+    history: (p, n) => readHistory(path.join(profileDir(p, n), "usage-history.json")),
   });
 }
 
@@ -104,7 +108,12 @@ export function decideSwitch(store: RequestStore, a: DecideArgs): { request: Swi
 /** What a person reads about a request, one line. */
 export function describeRequest(r: SwitchRequest): string {
   const where = r.session ?? r.account;
-  const reason = r.reason.fill === null ? "" : ` at ${r.reason.fill}% of ${r.reason.window}`;
+  const reason =
+    r.reason.kind === "pace"
+      ? ` pace: full in ~${r.reason.etaFull ?? "?"} h on ${r.reason.window}${r.candidates[0]?.spareAtReset !== undefined ? `, ${r.candidates[0].target} would lose ${r.candidates[0].spareAtReset}%` : ""}`
+      : r.reason.fill === null
+        ? ""
+        : ` at ${r.reason.fill}% of ${r.reason.window}`;
   const decided = r.decision
     ? r.decision.kind === "approve"
       ? ` → ${r.decision.target} (${r.decision.how}, by ${r.decision.by})`

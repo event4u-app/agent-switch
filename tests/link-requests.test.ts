@@ -145,3 +145,30 @@ test("a decision the deciding tool already carried out lands as done in one writ
   assert.equal(r.request.outcome?.detail, "rebound in the app");
   assert.equal(new RequestStore(dir, () => now.t).claim(request.id), null);
 });
+
+test("a limit request keeps the id it had before kinds existed; old files without a kind read as limit", async () => {
+  const { createHash } = await import("node:crypto");
+  const { requestId, requestKind } = await import("../src/link/requests.js");
+  const legacy = createHash("sha256").update(["claude/work", "claude/work/sess-1", "five_hour", "x"].join("\0")).digest("hex").slice(0, 16);
+  assert.equal(requestId("claude/work", "claude/work/sess-1", "five_hour", "x"), legacy);
+  assert.equal(requestId("claude/work", "claude/work/sess-1", "five_hour", "x", "limit"), legacy);
+  const now = { t: T0 };
+  const { dir, s } = store(now);
+  const { request } = s.raise(raise());
+  const old = JSON.parse(fs.readFileSync(path.join(dir, `${request.id}.json`), "utf8"));
+  delete old.reason.kind;
+  fs.writeFileSync(path.join(dir, `${request.id}.json`), JSON.stringify(old));
+  const read = s.get(request.id);
+  assert.ok(read);
+  assert.equal(requestKind(read), "limit");
+});
+
+test("a pace request and a limit request on the same window are two requests", () => {
+  const now = { t: T0 };
+  const { s } = store(now);
+  const resetsAt = new Date(T0 + 90 * MIN).toISOString();
+  const pace = s.raise(raise({ reason: { kind: "pace", window: "seven_day", fill: 60, resetsAt, etaFull: 6, burnPerHour: 6 } }));
+  const limit = s.raise(raise({ reason: { window: "seven_day", fill: 91, resetsAt } }));
+  assert.equal(pace.created && limit.created, true);
+  assert.notEqual(pace.request.id, limit.request.id);
+});
