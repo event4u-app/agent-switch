@@ -7,6 +7,7 @@
 import { t } from "../i18n/index.js";
 import * as ipc from "../ipc.js";
 import type { ToolingEntry } from "../ipc.js";
+import { paceAttention } from "./switch-requests.js";
 import { getHideSummaries, getTrayShowDisabled, getMutedKinds, getNextUsageRefreshAt, getNotifLastRead } from "../settings-store.js";
 import { latestToolVersion, toolUpdateAvailable, UPDATE_CHECK_TOOLS, versionToken } from "../tool-updates.js";
 import { hasUsageReadout, type ProfileRow, type UsageSnapshot } from "../transforms.js";
@@ -157,7 +158,7 @@ export async function loadViewModel(): Promise<ViewModel> {
     sessions: (value(sessionsR) ?? []).map((s) => sessionFromRow(s, now)),
     rules: bindingsFromMappings(value(mappingsR) ?? []),
     pools,
-    attention: deriveAttention(accounts, tools, toolsCheckedAt, now),
+    attention: [...deriveAttention(accounts, tools, toolsCheckedAt, now), ...paceAttention(value(requestsR) ?? [], accounts, now)].sort((x, y) => y.at - x.at),
     checks: doctor ? checksFromDoctor(doctor) : [],
     tools,
     toolsCheckedAt,

@@ -212,6 +212,7 @@ export function ProtectionSettings() {
       </SettingGroup>
       <StartStrategyGroup />
       <LimitAutoOpenGroup />
+      <PaceSuggestGroup />
       <AgentConfigLinkGroup />
       <CodexAutoResetGroup />
     </>
@@ -308,6 +309,33 @@ function AgentConfigLinkGroup() {
     <SettingGroup title={t("settings.protection.agentConfig")}>
       <SettingRow title={t("settings.protection.agentConfigLink")} detail={t("settings.protection.agentConfigLinkDetail")}>
         <Switch label={t("settings.protection.agentConfigLink")} checked={on ?? false} disabled={on === null} onChange={(v) => void toggle(v)} />
+      </SettingRow>
+    </SettingGroup>
+  );
+}
+
+/** "Suggest a switch when accounts run at different paces" — `agent-switch pace`
+ *  (default on). It only asks; the limit ask at 90 % stays either way. */
+function PaceSuggestGroup() {
+  const run = useRun();
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    ipc
+      .getPaceSuggest()
+      .then(setOn)
+      .catch(() => setOn(null));
+  }, []);
+
+  async function toggle(next: boolean) {
+    setOn(next);
+    const ok = await run(async () => (await ipc.setPaceSuggest(next), true));
+    if (!ok) setOn(!next);
+  }
+
+  return (
+    <SettingGroup title={t("settings.protection.pace")}>
+      <SettingRow title={t("settings.protection.paceSuggest")} detail={t("settings.protection.paceSuggestDetail")}>
+        <Switch label={t("settings.protection.paceSuggest")} checked={on ?? false} disabled={on === null} onChange={(v) => void toggle(v)} />
       </SettingRow>
     </SettingGroup>
   );

@@ -120,7 +120,7 @@ export interface Session {
   armedSwitch?: { target: string; expiresAt: number } | null;
 }
 
-export type AttentionKind = "near-limit" | "signed-out" | "reauth" | "health" | "update";
+export type AttentionKind = "near-limit" | "pace" | "signed-out" | "reauth" | "health" | "update";
 
 export interface Attention {
   id: string;

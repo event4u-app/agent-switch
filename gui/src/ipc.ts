@@ -862,12 +862,14 @@ export interface SwitchRequestRow {
   session: string | null;
   /** `provider/name`. */
   account: string;
-  reason: { window: string; fill: number | null; resetsAt: string | null };
+  /** `pace` carries `etaFull` (hours until full) and `burnPerHour`. Absent kind = limit. */
+  reason: { kind?: "limit" | "pace"; window: string; fill: number | null; resetsAt: string | null; etaFull?: number; burnPerHour?: number };
   raisedBy: string;
   raisedAt: string;
   expiresAt: string;
   state: string;
-  candidates: { target: string; provider: string; fill: number | null; resetsAt: string | null; how: string[] }[];
+  /** Pace: `spareAtReset` = the % of that account's room that would expire unused. */
+  candidates: { target: string; provider: string; fill: number | null; resetsAt: string | null; how: string[]; spareAtReset?: number }[];
   decision?: { kind: string; target?: string; how?: string; by: string; at: string };
   outcome?: { at: string; ok: boolean; detail: string; newSession?: string; resume?: string };
 }
@@ -900,6 +902,16 @@ export async function getLinkAutoConnect(): Promise<boolean> {
 
 export async function setLinkAutoConnect(on: boolean): Promise<void> {
   await runCli(["link", on ? "on" : "off"]);
+}
+
+/** "Suggest a switch when accounts run at different paces" — `agent-switch pace` (default on). */
+export async function getPaceSuggest(): Promise<boolean> {
+  const { enabled } = JSON.parse(await runCli(["pace", "status", "--json"]));
+  return !!enabled;
+}
+
+export async function setPaceSuggest(on: boolean): Promise<void> {
+  await runCli(["pace", on ? "on" : "off"]);
 }
 
 /** How a start with no folder rule picks its account (`strategy`):
