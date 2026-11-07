@@ -1,15 +1,16 @@
 {
   "schema": 1,
-  "generation": "5ea6dbc79263bb43",
-  "commit": "257525886df0",
-  "built_at_commit": "257525886df0",
+  "generation": "b2f7688d533c1687",
+  "commit": "2a735db337bb",
+  "built": "2026-11-07",
+  "built_at_commit": "2a735db337bb",
   "state": "fresh",
   "areas": {
     "code": {
       "path": "code/map.json",
       "source": "code-graph",
       "freshness": "fresh",
-      "facts": 442
+      "facts": 721
     },
     "data": {
       "path": "data/data.json",
@@ -25,7 +26,7 @@
       "source": "systems lane (lockfiles, manifests, version files, images, CI)",
       "freshness": "fresh",
       "completeness": "complete",
-      "facts": 1136,
+      "facts": 1157,
       "findings": 3
     },
     "interfaces": {
@@ -50,16 +51,17 @@
       "source": "delivery lane (GitHub Actions, GitLab CI)",
       "freshness": "fresh",
       "completeness": "complete",
-      "facts": 76,
-      "findings": 30
+      "facts": 83,
+      "findings": 33
     },
     "impact": {
       "path": "code/map.json",
       "source": "review-risk over the working diff",
-      "freshness": "fresh",
+      "freshness": "empty",
       "completeness": "complete",
       "facts": 0,
-      "findings": 0
+      "findings": 0,
+      "reason": "no change against HEAD"
     },
     "agent": {
       "path": "code/map.json",
