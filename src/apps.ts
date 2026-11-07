@@ -17,6 +17,8 @@
  * registered by the per-client roadmaps (claude-desktop, codex-ui), not here.
  */
 
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { ProviderId } from "./providers.js";
@@ -128,9 +130,43 @@ export function buildLaunch(app: AppDescriptor, name: string): LaunchSpec {
   return { program: "open", args };
 }
 
-/** Best-effort: is the app installed? (macOS bundle-id lookup; false elsewhere.) */
-export function isInstalled(app: AppDescriptor): boolean {
-  if (process.platform !== "darwin") return false;
+/** The folders macOS installs apps into, checked when Spotlight has no answer. */
+export function defaultAppDirs(): string[] {
+  return ["/Applications", path.join(os.homedir(), "Applications")];
+}
+
+function bundleIdOf(bundle: string): string | null {
+  const r = spawnSync("plutil", ["-extract", "CFBundleIdentifier", "raw", path.join(bundle, "Contents", "Info.plist")], { encoding: "utf8" });
+  return r.status === 0 ? r.stdout.trim() : null;
+}
+
+/**
+ * Where the app is installed, or null (macOS only). Spotlight first; with
+ * indexing off or still running after an app update it finds nothing, so the
+ * app folders are then read directly by Info.plist bundle id.
+ */
+export function appBundlePath(app: AppDescriptor, searchDirs: readonly string[] = defaultAppDirs()): string | null {
+  if (process.platform !== "darwin") return null;
   const r = spawnSync("mdfind", [`kMDItemCFBundleIdentifier == '${app.bundleId}'`], { encoding: "utf8" });
-  return r.status === 0 && r.stdout.trim().length > 0;
+  const hit = r.status === 0 ? r.stdout.split("\n").find((l) => l.endsWith(".app")) : undefined;
+  if (hit) return hit;
+  for (const dir of searchDirs) {
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.endsWith(".app")) continue;
+      const bundle = path.join(dir, entry);
+      if (bundleIdOf(bundle) === app.bundleId) return bundle;
+    }
+  }
+  return null;
+}
+
+/** Best-effort: is the app installed? (macOS bundle-id lookup; false elsewhere.) */
+export function isInstalled(app: AppDescriptor, searchDirs?: readonly string[]): boolean {
+  return appBundlePath(app, searchDirs) !== null;
 }

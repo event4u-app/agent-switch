@@ -110,3 +110,39 @@ test("claude-desktop is registered (user-data-dir) and builds an isolated launch
   assert.deepEqual(spec.args, ["-n", "-b", "com.anthropic.claudefordesktop", "--args", `--user-data-dir=${dataDir}`]);
   assert.ok(!spec.args.some((a) => a.includes("Application Support/Claude")), "must not target the default install dir");
 });
+
+// Spotlight-only detection reported a present app as missing when indexing was
+// off or still running. The fallback reads Info.plist in the app folders.
+function fakeBundle(dir: string, name: string, bundleId: string): string {
+  const bundle = path.join(dir, `${name}.app`);
+  fs.mkdirSync(path.join(bundle, "Contents"), { recursive: true });
+  fs.writeFileSync(
+    path.join(bundle, "Contents", "Info.plist"),
+    `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>${bundleId}</string></dict></plist>\n`,
+  );
+  return bundle;
+}
+
+const onMac = { skip: process.platform !== "darwin" };
+
+test("appBundlePath finds a bundle Spotlight does not know, by its Info.plist bundle id", onMac, () => {
+  const bundleId = `com.example.asw-${process.pid}-${Date.now()}`;
+  const appsDir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-appdir-"));
+  const userDir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-userdir-"));
+  fakeBundle(appsDir, "Other", `${bundleId}.other`);
+  fs.mkdirSync(path.join(appsDir, "NotAnApp"));
+  const wanted = fakeBundle(userDir, "Wanted", bundleId);
+  const app: AppDescriptor = { ...uddApp, bundleId };
+  assert.equal(A.appBundlePath(app, [appsDir, userDir]), wanted);
+  assert.equal(A.isInstalled(app, [appsDir, userDir]), true);
+});
+
+test("appBundlePath returns null when no folder holds the bundle id, and tolerates missing folders", onMac, () => {
+  const bundleId = `com.example.asw-missing-${process.pid}-${Date.now()}`;
+  const appsDir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-appdir-"));
+  fakeBundle(appsDir, "Near", `${bundleId}x`);
+  const gone = path.join(appsDir, "does-not-exist");
+  const app: AppDescriptor = { ...uddApp, bundleId };
+  assert.equal(A.appBundlePath(app, [appsDir, gone]), null);
+  assert.equal(A.isInstalled(app, [appsDir, gone]), false);
+});
