@@ -33,6 +33,8 @@ const ipcMock = vi.hoisted(() => ({
   setKeepSignedIn: vi.fn(),
   getCodexAutoReset: vi.fn(),
   getLinkAutoConnect: vi.fn(),
+  getPaceSuggest: vi.fn(),
+  setPaceSuggest: vi.fn(),
   setLinkAutoConnect: vi.fn(),
   getLinkExecutor: vi.fn(),
   setLinkExecutor: vi.fn(),
@@ -138,6 +140,8 @@ beforeEach(() => {
   ipcMock.setKeepSignedIn.mockResolvedValue(undefined);
   ipcMock.getCodexAutoReset.mockResolvedValue(false);
   ipcMock.getLinkAutoConnect.mockResolvedValue(true);
+  ipcMock.getPaceSuggest.mockResolvedValue(true);
+  ipcMock.setPaceSuggest.mockResolvedValue(undefined);
   ipcMock.setLinkAutoConnect.mockResolvedValue(undefined);
   ipcMock.getLinkExecutor.mockResolvedValue("app");
   ipcMock.setLinkExecutor.mockResolvedValue(undefined);
@@ -335,6 +339,16 @@ describe("Sign-ins", () => {
 });
 
 describe("Protection", () => {
+  it("reads the pace suggestion from the CLI (on by default) and writes a change back", async () => {
+    mount("protection");
+    const sw = () => screen.getByRole("switch", { name: "Suggest a switch when accounts run at different paces" }) as HTMLButtonElement;
+    await waitFor(() => expect(sw().disabled).toBe(false));
+    expect(sw().getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(sw());
+    await waitFor(() => expect(ipcMock.setPaceSuggest).toHaveBeenCalledWith(false));
+    expect(sw().getAttribute("aria-checked")).toBe("false");
+  });
+
   it("reads Let agent-config connect from the CLI (on by default) and writes a change back", async () => {
     mount("protection");
     const sw = () => screen.getByRole("switch", { name: "Let agent-config connect" }) as HTMLButtonElement;

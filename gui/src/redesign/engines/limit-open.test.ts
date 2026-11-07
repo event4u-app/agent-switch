@@ -33,4 +33,10 @@ describe("2.11 limit auto-open", () => {
     expect(hit?.mark).toEqual({ id: "limit:claude:side", version: "request:req1" });
     expect(nearLimitToOpen([item], [near], new Set(["limit:claude:side@request:req1"]), { requested: () => "req1" })).toBeNull();
   });
+
+  it("never opens a pace suggestion by itself — it waits in the list, even at the limit", () => {
+    const pace: Attention = { ...item, id: "pace:p1", kind: "pace" };
+    const limited = acct({ state: "limited", windows: [{ key: "five_hour", label: "5h", utilization: 100, resetsAt: "2026-11-04T13:00:00Z" }] });
+    expect(nearLimitToOpen([pace], [limited], new Set(), { requested: () => "p1" })).toBeNull();
+  });
 });
