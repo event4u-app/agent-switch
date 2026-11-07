@@ -17,6 +17,28 @@ test("one queue, ordered approvals → questions → limits → CI → sign-ins 
   assert.deepEqual(q.map((i) => i.verb), ["Allow", "Reply", "Reply", "Decide", "Fix", "Sign in", "Update"]);
 });
 
+test("a pace suggestion waits behind sign-ins and before updates, with Decide", () => {
+  const q = buildQueue([c("update", "tool", "2026-11-02T09:00:00Z"), c("pace", "claude/work", "2026-11-02T08:00:00Z"), c("signin", "acct", "2026-11-02T09:00:00Z"), c("limit", "side", "2026-11-02T10:00:00Z")], emptyState());
+  assert.deepEqual(q.map((i) => i.kind), ["limit", "signin", "pace", "update"]);
+  assert.equal(q.find((i) => i.kind === "pace")?.verb, "Decide");
+});
+
+test("paceCandidates: one per open, unexpired pace request, keyed by account, versioned by request", async () => {
+  const { paceCandidates } = await import("../src/commands/needs.js");
+  const NOW = Date.parse("2026-11-07T12:00:00Z");
+  const r = (over: object) => ({
+    v: 1, id: "p1", rev: 1, session: "claude/work/s1", account: "claude/work",
+    reason: { kind: "pace", window: "seven_day", fill: 60, resetsAt: "2026-11-09T12:00:00Z", etaFull: 6, burnPerHour: 6 },
+    raisedBy: "as-daemon", raisedAt: "2026-11-07T11:00:00Z", expiresAt: "2026-11-09T12:00:00Z", state: "open",
+    candidates: [{ target: "claude/home", provider: "claude", fill: 10, resetsAt: null, how: ["after-turn", "now"], spareAtReset: 80 }],
+    ...over,
+  });
+  const items = paceCandidates([r({}), r({ id: "lim", reason: { window: "five_hour", fill: 93, resetsAt: null } }), r({ id: "old", account: "claude/x", expiresAt: "2026-11-07T11:00:00Z" }), r({ id: "no", account: "claude/y", state: "declined" })] as any, NOW);
+  assert.deepEqual(items.map((c) => [c.kind, c.subject, c.version]), [["pace", "claude/work", "p1"]]);
+  assert.match(items[0].what, /runs out in about 6 h/);
+  assert.match(items[0].detail ?? "", /home would let 80% expire/);
+});
+
 test("a candidate may say where to go instead (D-approve: Focus terminal)", () => {
   const [i] = buildQueue([{ ...c("approval", "s1", "2026-11-02T10:00:00Z"), verb: "Focus terminal" }], emptyState());
   assert.equal(i.verb, "Focus terminal");

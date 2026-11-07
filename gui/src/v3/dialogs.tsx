@@ -255,6 +255,7 @@ export function DecisionSheet({
   targets = [],
   tool = "claude",
   askedByAgentConfig = false,
+  pace,
   onDecide,
   onKeep,
   onClose,
@@ -274,6 +275,8 @@ export function DecisionSheet({
   tool?: string;
   /** agent-config asked this in the session; one answer counts for both. */
   askedByAgentConfig?: boolean;
+  /** A pace suggestion, not a limit: its own header words. */
+  pace?: { title: string; sub: string };
   onDecide: (how: MoveHow, moves: SheetMove[]) => void;
   onKeep: () => void;
   onClose: () => void;
@@ -304,7 +307,7 @@ export function DecisionSheet({
       });
   return (
     <Modal
-      kicker="Near limit"
+      kicker={pace ? "Accounts at different paces" : "Near limit"}
       badge={
         askedByAgentConfig ? (
           <Chip kind="status" tone="info" title="agent-config asked the same in your session. Answer here or there; the first answer counts for both.">
@@ -312,8 +315,8 @@ export function DecisionSheet({
           </Chip>
         ) : undefined
       }
-      title={`${account} is at ${pctUsed}% of its ${window} window`}
-      sub={`Resets in ${resetsIn}. ${sessions.length} session${sessions.length === 1 ? " runs" : "s run"} on it. Nothing changes until you choose.`}
+      title={pace ? pace.title : `${account} is at ${pctUsed}% of its ${window} window`}
+      sub={pace ? pace.sub : `Resets in ${resetsIn}. ${sessions.length} session${sessions.length === 1 ? " runs" : "s run"} on it. Nothing changes until you choose.`}
       width={580}
       onClose={onClose}
       footer={

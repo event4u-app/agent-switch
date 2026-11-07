@@ -142,13 +142,15 @@ lose 45 % at its reset").
 
 ## Phase 4 — v3 (`dev/v3`)
 
-- [ ] **4.1 Merge phases 1–3 into v3**, resolve against the v3 DecisionSheet and
+- [x] **4.1 Merge phases 1–3 into v3**, resolve against the v3 DecisionSheet and
       service-executed moves.
       verify: full test suite on v3.
-- [ ] **4.2 v3 attention item and wording** in the DecisionSheet; `needs` lists
+      v3 takes 2.x changes as their own commits, not a merge of `main`: the
+      three feature commits were cherry-picked onto `dev/v3`.
+- [x] **4.2 v3 attention item and wording** in the DecisionSheet; `needs` lists
       a pace request as its own kind.
       verify: `gui/src/v3/adapter` test for a pace request.
-- [ ] **4.3 Toggle in v3 settings.**
+- [x] **4.3 Toggle in v3 settings.**
       verify: v3 settings test.
 
 ## Phase 5 — Docs

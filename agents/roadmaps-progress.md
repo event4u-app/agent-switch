@@ -6,10 +6,10 @@
 
 ## Overall
 
-**26 / 31 steps done · 84%**
+**29 / 31 steps done · 94%**
 
 ```text
-██████████████████████████████████░░░░░░   84%
+██████████████████████████████████████░░   94%
 ```
 
 ## Open roadmaps
@@ -17,7 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 1 | 16 | 0 | 0 | 0 | █████████░ 94% |
-| 2 | [road-to-limits-that-last-the-whole-run.md](roadmaps/road-to-limits-that-last-the-whole-run.md) | 5 | 14 | 4 | 10 | 0 | 0 | 0 | ███████░░░ 71% |
+| 2 | [road-to-limits-that-last-the-whole-run.md](roadmaps/road-to-limits-that-last-the-whole-run.md) | 5 | 14 | 1 | 13 | 0 | 0 | 0 | █████████░ 93% |
 
 ---
 
@@ -60,14 +60,14 @@
 
 ### [road-to-limits-that-last-the-whole-run.md](roadmaps/road-to-limits-that-last-the-whole-run.md)
 
-**limits that last the whole run** — 10 / 14 done (71%)
+**limits that last the whole run** — 13 / 14 done (93%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 1 | Core on `main` (2.x) | ✅ done | 0 | 5 | 0 | 0 | 100% |
 | 2 | The conversation (`main`) | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
 | 3 | App on `main` (v2 redesign) | ✅ done | 0 | 2 | 0 | 0 | 100% |
-| 4 | v3 (`dev/v3`) | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 4 | v3 (`dev/v3`) | ✅ done | 0 | 3 | 0 | 0 | 100% |
 | 5 | Docs | ✅ done | 0 | 1 | 0 | 0 | 100% |
 
 ## Age
@@ -77,5 +77,5 @@ Days since each active roadmap landed at its path and since its last ticked step
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 2 | 2 |
-| [road-to-limits-that-last-the-whole-run.md](roadmaps/road-to-limits-that-last-the-whole-run.md) | — | — |
+| [road-to-limits-that-last-the-whole-run.md](roadmaps/road-to-limits-that-last-the-whole-run.md) | 0 | 0 |
 
