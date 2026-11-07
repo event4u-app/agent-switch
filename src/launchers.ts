@@ -19,7 +19,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { findApp, type AppDescriptor } from "./apps.js";
+import { appBundlePath, findApp, type AppDescriptor } from "./apps.js";
 import { ROOT } from "./profiles.js";
 import { ProviderId } from "./providers.js";
 
@@ -148,13 +148,6 @@ export function readLaunchers(): LauncherEntry[] {
 function writeLaunchers(entries: readonly LauncherEntry[]): void {
   fs.mkdirSync(ROOT, { recursive: true });
   fs.writeFileSync(MANIFEST, JSON.stringify(entries, null, 2) + "\n", { mode: 0o600 });
-}
-
-/** Where the app is installed (first Spotlight hit), or null. */
-export function appBundlePath(app: AppDescriptor): string | null {
-  const r = spawnSync("mdfind", [`kMDItemCFBundleIdentifier == '${app.bundleId}'`], { encoding: "utf8" });
-  const hit = r.status === 0 ? r.stdout.split("\n").find((l) => l.endsWith(".app")) : undefined;
-  return hit ?? null;
 }
 
 function appIcon(bundle: string): string | null {
