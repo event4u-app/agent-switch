@@ -2,21 +2,23 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change. A repository that does not commit this file has no git history for it — regenerate to see the current state.
 >
-> 1 open roadmap · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 3 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**13 / 16 steps done · 81%**
+**23 / 44 steps done · 52%**
 
 ```text
-████████████████████████████████░░░░░░░░   81%
+█████████████████████░░░░░░░░░░░░░░░░░░░   52%
 ```
 
 ## Open roadmaps
 
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| 1 | [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md) | 5 | 17 | 3 | 13 | 0 | 1 | 0 | ████████░░ 81% |
+| 1 | [road-to-limits-that-last-the-whole-run.md](roadmaps/road-to-limits-that-last-the-whole-run.md) | 5 | 14 | 4 | 10 | 0 | 0 | 0 | ███████░░░ 71% |
+| 2 | [road-to-long-lived-tokens-and-mcp-switching.md](roadmaps/road-to-long-lived-tokens-and-mcp-switching.md) | 4 | 14 | 14 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
+| 3 | [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md) | 5 | 17 | 3 | 13 | 0 | 1 | 0 | ████████░░ 81% |
 
 ---
 
@@ -42,6 +44,29 @@
 
 ## Per-roadmap phase breakdown
 
+### [road-to-limits-that-last-the-whole-run.md](roadmaps/road-to-limits-that-last-the-whole-run.md)
+
+**limits that last the whole run** — 10 / 14 done (71%)
+
+| # | Phase | State | Open | Done | Deferred | Cancelled | % |
+|---|---|---|---:|---:|---:|---:|---:|
+| 1 | Core on `main` (2.x) | ✅ done | 0 | 5 | 0 | 0 | 100% |
+| 2 | The conversation (`main`) | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
+| 3 | App on `main` (v2 redesign) | ✅ done | 0 | 2 | 0 | 0 | 100% |
+| 4 | v3 (`dev/v3`) | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 5 | Docs | ✅ done | 0 | 1 | 0 | 0 | 100% |
+
+### [road-to-long-lived-tokens-and-mcp-switching.md](roadmaps/road-to-long-lived-tokens-and-mcp-switching.md)
+
+**long-lived tokens per profile, then switching over MCP** — 0 / 14 done (0%)
+
+| # | Phase | State | Open | Done | Deferred | Cancelled | % |
+|---|---|---|---:|---:|---:|---:|---:|
+| 0 | Gates (decisions, no code) | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 1 | Tokens per profile (2.x) | ⬜ not started | 5 | 0 | 0 | 0 | 0% |
+| 2 | Scripts and the agent-config bench (2.x) | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 3 | MCP switching (v3, only after 0.3) | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+
 ### [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md)
 
 **the agent-config link — one switch decision, two tools** — 13 / 16 done (81%)
@@ -60,5 +85,7 @@ Days since each active roadmap landed at its path and since its last ticked step
 
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
-| [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md) | 0 | 0 |
+| [road-to-limits-that-last-the-whole-run.md](roadmaps/road-to-limits-that-last-the-whole-run.md) | — | — |
+| [road-to-long-lived-tokens-and-mcp-switching.md](roadmaps/road-to-long-lived-tokens-and-mcp-switching.md) | 2 | — |
+| [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md) | 2 | 2 |
 
