@@ -45,11 +45,13 @@ per poll (`src/link/raise.ts:42`), so the duplicates grow with uptime.
       boundary (`17:59:59.892` / `18:00:00.373`), return one request with
       `created: false` on the second; two resets an hour apart stay two
       requests.
-- [ ] **2. Settle the duplicates already on disk.** Requests that now map to
+- [x] **2. Settle the duplicates already on disk.** Requests that now map to
       the same normalised id: keep the oldest open one, mark the rest
       `expired` (written back, like `settle`), so the app stops asking the
       same question many times.
       verify: test over a store holding the two requests above.
+      Done in `RequestStore`: `list()` settles them, and `raise()` finds a
+      cycle stored under its old id, so a declined cycle stays declined.
 - [ ] **3. Contract note.** The link contract lives in agent-config
       (`docs/contracts/agent-switch-link.md` § Identity and deduplication);
       a one-line amendment there names the normalisation, so both sides read
