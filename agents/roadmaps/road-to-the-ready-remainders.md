@@ -180,6 +180,15 @@ saved.
       current version without loss. verify: fixture tests.
       <!-- from: road-to-session-orchestration P6.6 -->
       <!-- adapted: the per-OS smoke and the final threat review stay in the source file -->
+- [ ] **6.4 Fix the flaky "one click on the stripe" test.**
+      `gui/src/v3/adapter/reach-app.test.tsx` › "Library: one click on the stripe"
+      timed out at 5000 ms on `gui macos-latest` (PR #187, run 42475900320, job
+      128717091666) and passed on rerun; the log shows jsdom's "Not implemented:
+      HTMLCanvasElement.prototype.getContext" around it. Find what the test waits
+      on, make the wait deterministic (no raised timeout as the fix).
+      verify: the test filtered and run 20 times in a row locally without a
+      failure, and the next CI runs green on `gui macos-latest` without a rerun.
+      <!-- from: CI flake seen 2026-11-08, owner chose to track it here -->
 
 ## Phase 7 — Updates that can be stopped and undone
 
