@@ -90,10 +90,10 @@ export function cmdSwitch(sub: string | undefined, positional: string[], flags: 
   die(USAGE);
 }
 
-/** The contract agent-config reads; bump with a breaking change to a tool or JSON
- *  shape, or a new field a caller may rely on. 2: request `kind` and `summary`,
- *  `switch_list` session filter, per-window `burnPerHour`/`etaFull`. */
-export const LINK_CONTRACT = 2;
+/** The contract agent-config reads; bump only with a breaking change to a tool or
+ *  JSON shape. agent-config treats any other number as no link at all, so added
+ *  fields and optional arguments stay on 1. */
+export const LINK_CONTRACT = 1;
 
 export function linkStatus(): { enabled: boolean; executor: LinkExecutor; version: string; contract: number; mcp: { command: string; args: string[] } } {
   return { enabled: readLinkAutoConnect(), executor: readLinkExecutor(), version: currentVersion(), contract: LINK_CONTRACT, mcp: { command: "agent-switch", args: ["mcp", "serve"] } };

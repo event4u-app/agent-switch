@@ -147,7 +147,7 @@ test("`mcp serve` answers a full handshake over stdio and honours `link off`", g
   const on = await session(home, msgs);
   assert.deepEqual(on.map((m) => m.id), [1, 2, 3, 4, null]);
   assert.equal(on[1].result.tools.length, 7);
-  assert.equal(on[2].result.structuredContent.contract, 2);
+  assert.equal(on[2].result.structuredContent.contract, 1, "additive fields keep contract 1; agent-config treats any other number as absent");
   assert.ok(Array.isArray(on[3].result.structuredContent.accounts));
   assert.equal(on[3].result.structuredContent.v, 1);
   assert.equal(on[4].error.code, -32700);

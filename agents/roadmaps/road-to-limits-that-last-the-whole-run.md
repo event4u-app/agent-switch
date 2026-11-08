@@ -114,7 +114,9 @@ lose 45 % at its reset").
 
 - [x] **2.1 Link fields.** `switch_list` filters by `session`; each request
       carries `summary` (one plain sentence) and `kind`; `limits_get` adds
-      `burnPerHour`/`etaFull` per window. Contract version bumped, old fields kept.
+      `burnPerHour`/`etaFull` per window. Old fields kept; the contract stays
+      `1`, because the additions are not breaking and agent-config treats any
+      other number as no link.
       verify: MCP spawn test over stdio for the filter and new fields.
 - [x] **2.2 Own chat hook (Claude, opt-in).** `UserPromptSubmit` relay prints
       the context line for an open request on this session; silent when the AC
