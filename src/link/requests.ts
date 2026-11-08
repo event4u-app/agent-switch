@@ -101,6 +101,11 @@ export function requestKind(r: Pick<SwitchRequest, "reason">): RequestKind {
   return r.reason.kind === "pace" ? "pace" : "limit";
 }
 
+/** The id this request's cycle gets today, whatever id it was stored under. */
+function cycleKey(r: SwitchRequest): string {
+  return requestId(r.account, r.session, r.reason.window, r.reason.resetsAt, requestKind(r));
+}
+
 export class RequestStore {
   constructor(
     private readonly dir: string,
@@ -141,11 +146,41 @@ export class RequestStore {
     return r;
   }
 
+  /** Every stored request, duplicates of one cycle settled (see {@link settleDuplicates}). Call under the lock. */
+  private readAll(): SwitchRequest[] {
+    if (!fs.existsSync(this.dir)) return [];
+    const all = fs
+      .readdirSync(this.dir)
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => this.read(f.slice(0, -5)))
+      .filter((r): r is SwitchRequest => r !== null)
+      .map((r) => this.settle(r));
+    return this.settleDuplicates(all);
+  }
+
+  /** Older builds hashed the raw reset into the id, so one cycle could be stored
+   *  under several ids. The oldest open one stays; the other open ones expire. */
+  private settleDuplicates(all: SwitchRequest[]): SwitchRequest[] {
+    const keptOpen = new Map<string, SwitchRequest>();
+    for (const r of [...all].sort((a, b) => a.raisedAt.localeCompare(b.raisedAt) || a.id.localeCompare(b.id))) {
+      if (r.state === "open" && !keptOpen.has(cycleKey(r))) keptOpen.set(cycleKey(r), r);
+    }
+    return all.map((r) => {
+      if (r.state !== "open" || keptOpen.get(cycleKey(r)) === r) return r;
+      const e: SwitchRequest = { ...r, state: "expired", rev: r.rev + 1 };
+      this.write(e);
+      return e;
+    });
+  }
+
   raise(input: RaiseInput): { request: SwitchRequest; created: boolean } {
     return this.locked(() => {
       const id = requestId(input.account, input.session, input.reason.window, input.reason.resetsAt, input.reason.kind);
       const existing = this.read(id);
       if (existing) return { request: this.settle(existing), created: false };
+      const sameCycle = this.readAll().filter((r) => cycleKey(r) === id);
+      const stored = sameCycle.find((r) => r.state === "open") ?? sameCycle[0];
+      if (stored) return { request: stored, created: false };
       const now = this.now();
       const reset = input.reason.resetsAt ? Date.parse(input.reason.resetsAt) : NaN;
       const request: SwitchRequest = {
@@ -170,16 +205,7 @@ export class RequestStore {
   }
 
   list(): SwitchRequest[] {
-    return this.locked(() => {
-      if (!fs.existsSync(this.dir)) return [];
-      return fs
-        .readdirSync(this.dir)
-        .filter((f) => f.endsWith(".json"))
-        .map((f) => this.read(f.slice(0, -5)))
-        .filter((r): r is SwitchRequest => r !== null)
-        .map((r) => this.settle(r))
-        .sort((a, b) => a.raisedAt.localeCompare(b.raisedAt) || a.id.localeCompare(b.id));
-    });
+    return this.locked(() => this.readAll().sort((a, b) => a.raisedAt.localeCompare(b.raisedAt) || a.id.localeCompare(b.id)));
   }
 
   /**

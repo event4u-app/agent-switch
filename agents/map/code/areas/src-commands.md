@@ -33,7 +33,7 @@
 | `src/commands/agents.ts` | code | 1 | 3 |
 | `src/commands/claude-settings.ts` | code | 1 | 3 |
 | `src/commands/host.ts` | code | 1 | 11 |
-| `src/commands/link.ts` | code | 1 | 11 |
+| `src/commands/link.ts` | code | 1 | 12 |
 | `src/commands/open-in.ts` | code | 1 | 11 |
 | `src/commands/remote.ts` | code | 1 | 6 |
 | `src/commands/settings.ts` | code | 1 | 5 |

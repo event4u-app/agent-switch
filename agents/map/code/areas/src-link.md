@@ -2,13 +2,13 @@
 
 > Part of [Map of agent-switch](../MAP.md). Generated; never edit by hand.
 
-17 files · cohesion 54.3 % · tests 41.2 % · outside hub folder 0 %
+17 files · cohesion 54.2 % · tests 41.2 % · outside hub folder 0 %
 
 ## Files, most used first
 
 | File | Role | Used by | Uses |
 |---|---|---|---|
-| `src/link/requests.ts` | code | 21 | 2 |
+| `src/link/requests.ts` | code | 21 | 3 |
 | `src/link/limits.ts` | code | 7 | 6 |
 | `src/link/pace.ts` | code | 5 | 4 |
 | `src/link/raise.ts` | code | 5 | 4 |
@@ -19,12 +19,12 @@
 | `src/link/mcp.ts` | code | 3 | 4 |
 | `src/link/ops.ts` | code | 2 | 11 |
 | `tests/link-execute.test.ts` | test | 1 | 2 |
+| `tests/link-mcp.test.ts` | test | 1 | 2 |
+| `tests/link-requests.test.ts` | test | 1 | 1 |
 | `tests/link-candidates.test.ts` | test | 0 | 2 |
 | `tests/link-limits.test.ts` | test | 0 | 2 |
-| `tests/link-mcp.test.ts` | test | 0 | 2 |
 | `tests/link-pace.test.ts` | test | 0 | 5 |
 | `tests/link-raise.test.ts` | test | 0 | 3 |
-| `tests/link-requests.test.ts` | test | 0 | 1 |
 
 ## What this area depends on outside itself
 
