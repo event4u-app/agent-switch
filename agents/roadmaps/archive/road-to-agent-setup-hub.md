@@ -39,7 +39,7 @@ list of things AS must never adopt. These become `NON-GOALS.md` (Phase 4):
 - **No bundled dashboard server, no gamification.**
 - **No change to rotation semantics.** Auto-switch stays opt-in,
   default-OFF, own-profiles-only (`src/daemon.ts:8-10`); the policy lock in
-  `agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md`
+  `agents/roadmaps/archive/road-to-agent-switch-autoswitch-rejected.md`
   stands. This roadmap moves UI, it does not touch switching policy.
 - **The CLI stays zero-runtime-dependency** (`package.json` has no
   `dependencies` key; one `optionalDependencies: playwright`). The GUI is a

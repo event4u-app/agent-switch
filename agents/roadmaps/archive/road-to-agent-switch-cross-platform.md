@@ -30,9 +30,9 @@ zsh/bash/fish/PowerShell, a `doctor` self-check, and a green
 - Foundation of the `road-to-agent-switch-*` family. Two siblings build on it:
   [`road-to-agent-switch-multi-provider.md`](road-to-agent-switch-multi-provider.md)
   (Codex + Gemini) and
-  [`road-to-agent-switch-gui-service.md`](../road-to-agent-switch-gui-service.md)
+  [`road-to-agent-switch-gui-service.md`](road-to-agent-switch-gui-service.md)
   (usage engine + daemon + GUI). Rejected ideas:
-  [`skipped/road-to-agent-switch-autoswitch-rejected.md`](../skipped/road-to-agent-switch-autoswitch-rejected.md).
+  [`archive/road-to-agent-switch-autoswitch-rejected.md`](road-to-agent-switch-autoswitch-rejected.md).
 - Three verification items were deferred from the parent (copied verbatim into
   Phase 1).
 - Verified platform facts (Claude Code docs + issue tracker, 2026-07-13):

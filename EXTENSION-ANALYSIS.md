@@ -83,4 +83,4 @@ confused it with another extension, or an older/newer build differs.)
 - **Cookie snapshot/restore switching** — staleness-prone; agent-switch's persistent
   per-profile browser context is strictly better. Not adopted.
 - Anything that would rank accounts by headroom or drive switching from usage
-  → see `skipped/road-to-agent-switch-autoswitch-rejected.md` (policy lock).
+  → see `archive/road-to-agent-switch-autoswitch-rejected.md` (policy lock).

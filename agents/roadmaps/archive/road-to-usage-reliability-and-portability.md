@@ -17,7 +17,7 @@ threshold tuning, cooldown, hysteresis, unhealthyTicks, best/next-available
 strategies, and per-model quota folding (`--model` to switch off an account
 whose model quota is spent). That is the pooling-subscriptions-to-route-around-
 rate-limits mechanism a unanimous review found crosses the providers' usage
-policies (see `skipped/road-to-agent-switch-autoswitch-rejected.md` and the
+policies (see `archive/road-to-agent-switch-autoswitch-rejected.md` and the
 1.0.1 disclosure work). It is deliberately not built here.
 
 Reconciliation (2026-07-25): the **fully-automatic** rotation engine stays out

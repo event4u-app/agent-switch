@@ -1,10 +1,18 @@
 ---
 complexity: structural
+status: parked
 execution:
   mode: manual
+review_by: 2026-12-07
+entry_condition:
+  what: "scripts/spikes/t8-statusline-stdin-capture.sh run in a signed-in Pro/Max Claude Code session after at least one API response; `jq '.rate_limits.five_hour, .rate_limits.seven_day' capture.json` is non-null; the scrubbed capture is committed as tests/fixtures/statusline-stdin.json (re-opens P0.2/P0.4). GO -> promote; still absent -> re-park with the CC version recorded."
+  when: "Now: the installed Claude Code is 2.1.316 and its binary carries rate_limits strings; the NO-GO was measured on 2.1.215."
+  who: "owner (needs a live signed-in interactive session)"
 ---
 
 # Roadmap: agent-switch usage — source rate_limits from the statusline, stop polling
+
+> Last triaged: 2026-11-07 — gate unmet but probably passable now (CC 2.1.316 vs NO-GO on 2.1.215). Usage still polls the OAuth token (`src/api.ts:80`, callers `src/daemon.ts:638`, `src/commands/shared.ts:178`, `src/commands/usage.ts:108`). P4 Step 4 shipped and flipped; 36 steps still needed, none obsolete. Line refs in P6.2 have drifted (`daemon.ts:533` -> `:638`, `shared.ts:166` -> `:178`, `rebind.ts:147` -> `:151`).
 
 > Add a local, zero-network statusline bridge: a managed `agent-switch __statusline`
 > command that Claude Code runs each render reads `rate_limits` from the statusLine
@@ -265,7 +273,7 @@ never mask the COMPLETE poll, nor blind the daemon's switch/threshold path.
       _Files:_ `src/daemon.ts`, `src/usage.ts`. _Verify:_ a per-model window at 95%
       present only in poll data still triggers a crossing + `pickSwitchTarget` even
       when a fresh statusline snapshot omits it.
-- [ ] **Step 4:** Fix `claudeSnapshot` freshness — gate serving a cached snapshot on
+- [x] **Step 4:** Fix `claudeSnapshot` freshness — gate serving a cached snapshot on <!-- shipped: src/daemon.ts:346-350 snapshotFresh reads snap.capturedAt; src/commands/shared.ts:170-174 (triage 2026-11-07) -->
       the snapshot's OWN `capturedAt` (`STATUSLINE_TTL`), not solely on
       `state.lastPoll`, so `--json` consumers never get stale-stamped-fresh data.
       _Files:_ `src/index.ts`, `src/daemon.ts`. _Verify:_ a within-TTL-but-old

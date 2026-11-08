@@ -12,7 +12,7 @@ of the CLI** — it never re-implements profile or credential logic. It calls th
 - Actions call `agent-switch use|run|web`.
 
 No cross-account usage ranking or switch-on-limit exists here (the anti-rotation
-lock — see `agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md`).
+lock — see `agents/roadmaps/archive/road-to-agent-switch-autoswitch-rejected.md`).
 
 ## Develop
 

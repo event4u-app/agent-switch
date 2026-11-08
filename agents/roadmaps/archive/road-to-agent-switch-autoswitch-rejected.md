@@ -1,19 +1,22 @@
 ---
 complexity: lightweight
-status: draft
+status: archived
 ---
 
 # Roadmap: Rejected capabilities — automated rotation & cookie-snapshot switching
+
+> Archived from skipped/ on 2026-11-08 by /roadmap:triage-parked: nothing here is to resume. Original skip reason, carried forward verbatim: "Deliberately-not-built ideas from the claude-swap analysis and the Chrome \"Claude Account Switcher\" extension, captured so the reasoning survives and the questions are not relitigated from scratch."
+> **Decided by the owner 2026-11-08 — the rejection stands, narrowed:** forbidden is only a switch without user interaction; ranking for starts/pools and confirmed suggestions are allowed; cookie snapshots and external token refresh stay rejected. Evidence at decision time: start ranking `src/balance.ts:1-12` (0327c18), pools by freshest headroom `NON-GOALS.md:50-58`, confirmation-gated suggestions in the active `road-to-limits-that-last-the-whole-run.md`, the daemon only notifies (`src/daemon.ts:14,366-381`), ADR-004 for cookie snapshots and token refresh. The lock was not lifted, so this went to the owner, not the council.
 
 > Deliberately-not-built ideas from the claude-swap analysis and the Chrome
 > "Claude Account Switcher" extension, captured so the reasoning survives and
 > the questions are not relitigated from scratch.
 
-**This roadmap is SKIPPED, not planned.** It lives in `skipped/` to preserve
+**This roadmap is a rejection record, not a plan.** It was kept in `skipped/` and now lives in `archive/` to preserve
 the ideas and the rejection rationale. Every item is `[-] cancelled` — no
 execution is intended. Reopening requires the `revisit-if:` condition on the
 matching lock in
-[`../road-to-agent-switch-gui-service.md`](../road-to-agent-switch-gui-service.md)
+[`../archive/road-to-agent-switch-gui-service.md`](road-to-agent-switch-gui-service.md)
 `## Rejected scope`.
 
 ## Goal (of the rejection)
@@ -50,7 +53,7 @@ user-interaction-gated limit dialog — is allowed and now shipped. Accordingly:
 - `pickSwitchTarget` (headroom ranking) survives ONLY as the *suggestion* a
   user-clicked dialog pre-selects — never as a silent-rotation driver.
 
-Everything below stays rejected for the **fully-automatic** case.
+Everything below stays rejected for the **fully-automatic** case. Since 2026-11-08 (owner): the "Cross-account headroom ranking" and "Switch to X" items below are cancelled only as inputs to an automatic switch — ranking for starts and pools and a suggestion the user confirms are allowed.
 
 ## Phase 1: Automated / assisted account rotation — REJECTED
 
@@ -82,7 +85,7 @@ to Codex (OpenAI) and Gemini (Google) accounts.
 (`status`), **active-profile** threshold notifications (the same info Claude
 Code's native `/usage` shows), and **own-profile** 30-day history for a
 sparkline. These are in
-[`../road-to-agent-switch-gui-service.md`](../road-to-agent-switch-gui-service.md) — they
+[`../archive/road-to-agent-switch-gui-service.md`](road-to-agent-switch-gui-service.md) — they
 are not rotation infrastructure because they never compare accounts to choose
 one.
 
