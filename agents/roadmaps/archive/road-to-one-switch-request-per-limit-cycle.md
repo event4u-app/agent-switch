@@ -52,10 +52,11 @@ per poll (`src/link/raise.ts:42`), so the duplicates grow with uptime.
       verify: test over a store holding the two requests above.
       Done in `RequestStore`: `list()` settles them, and `raise()` finds a
       cycle stored under its old id, so a declined cycle stays declined.
-- [ ] **3. Contract note.** The link contract lives in agent-config
+- [x] **3. Contract note.** The link contract lives in agent-config
       (`docs/contracts/agent-switch-link.md` § Identity and deduplication);
       a one-line amendment there names the normalisation, so both sides read
       "one request per cycle" the same way.
+      Done: event4u-app/agent-config#2918.
 
 ## Out of scope
 
