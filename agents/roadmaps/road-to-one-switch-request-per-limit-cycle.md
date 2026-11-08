@@ -35,7 +35,7 @@ per poll (`src/link/raise.ts:42`), so the duplicates grow with uptime.
 
 ## Phase 1 — One request per cycle
 
-- [ ] **1. Normalise the reset before it names a request.** In `requestId`,
+- [x] **1. Normalise the reset before it names a request.** In `requestId`,
       hash `resetsAt` rounded to the nearest minute (an unparseable or `null`
       value stays as it is). Rounding to whole seconds is not enough: the
       evidence above straddles a second boundary. The stored

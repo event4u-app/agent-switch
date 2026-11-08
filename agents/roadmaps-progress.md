@@ -6,10 +6,10 @@
 
 ## Overall
 
-**23 / 47 steps done · 49%**
+**24 / 47 steps done · 51%**
 
 ```text
-████████████████████░░░░░░░░░░░░░░░░░░░░   49%
+████████████████████░░░░░░░░░░░░░░░░░░░░   51%
 ```
 
 ## Open roadmaps
@@ -18,7 +18,7 @@
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-limits-that-last-the-whole-run.md](roadmaps/road-to-limits-that-last-the-whole-run.md) | 5 | 14 | 4 | 10 | 0 | 0 | 0 | ███████░░░ 71% |
 | 2 | [road-to-long-lived-tokens-and-mcp-switching.md](roadmaps/road-to-long-lived-tokens-and-mcp-switching.md) | 4 | 14 | 14 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
-| 3 | [road-to-one-switch-request-per-limit-cycle.md](roadmaps/road-to-one-switch-request-per-limit-cycle.md) | 1 | 3 | 3 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
+| 3 | [road-to-one-switch-request-per-limit-cycle.md](roadmaps/road-to-one-switch-request-per-limit-cycle.md) | 1 | 3 | 2 | 1 | 0 | 0 | 0 | ███░░░░░░░ 33% |
 | 4 | [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md) | 5 | 17 | 3 | 13 | 0 | 1 | 0 | ████████░░ 81% |
 
 ---
@@ -70,11 +70,11 @@
 
 ### [road-to-one-switch-request-per-limit-cycle.md](roadmaps/road-to-one-switch-request-per-limit-cycle.md)
 
-**one switch request per limit cycle** — 0 / 3 done (0%)
+**one switch request per limit cycle** — 1 / 3 done (33%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
-| 1 | One request per cycle | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 1 | One request per cycle | 🟡 in progress | 2 | 1 | 0 | 0 | 33% |
 
 ### [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md)
 
@@ -96,6 +96,6 @@ Days since each active roadmap landed at its path and since its last ticked step
 |---|---:|---:|
 | [road-to-limits-that-last-the-whole-run.md](roadmaps/road-to-limits-that-last-the-whole-run.md) | 1 | 1 |
 | [road-to-long-lived-tokens-and-mcp-switching.md](roadmaps/road-to-long-lived-tokens-and-mcp-switching.md) | 3 | — |
-| [road-to-one-switch-request-per-limit-cycle.md](roadmaps/road-to-one-switch-request-per-limit-cycle.md) | — | — |
+| [road-to-one-switch-request-per-limit-cycle.md](roadmaps/road-to-one-switch-request-per-limit-cycle.md) | 1 | — |
 | [road-to-the-agent-config-link.md](roadmaps/road-to-the-agent-config-link.md) | 3 | 3 |
 

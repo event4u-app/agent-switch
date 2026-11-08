@@ -82,10 +82,17 @@ export type Decision =
 
 const TERMINAL: ReadonlySet<RequestState> = new Set(["declined", "snoozed", "done", "failed", "expired"]);
 
+/** The host reports one reset with sub-second jitter across polls, sometimes
+ *  across a second boundary; the nearest minute names the cycle. Unparsable stays as is. */
+function cycleOf(resetsAt: string | null): string {
+  const t = resetsAt ? Date.parse(resetsAt) : NaN;
+  return Number.isNaN(t) ? (resetsAt ?? "") : new Date(Math.round(t / 60_000) * 60_000).toISOString();
+}
+
 /** A limit request keeps the id it had before kinds existed; a pace request on
  *  the same window is a different request, so a later limit ask still opens. */
 export function requestId(account: string, session: string | null, window: string, resetsAt: string | null, kind: RequestKind = "limit"): string {
-  const parts = [account, session ?? "", window, resetsAt ?? ""];
+  const parts = [account, session ?? "", window, cycleOf(resetsAt)];
   if (kind !== "limit") parts.push(kind);
   return createHash("sha256").update(parts.join("\0")).digest("hex").slice(0, 16);
 }

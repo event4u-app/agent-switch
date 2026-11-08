@@ -172,3 +172,29 @@ test("a pace request and a limit request on the same window are two requests", (
   assert.equal(pace.created && limit.created, true);
   assert.notEqual(pace.request.id, limit.request.id);
 });
+
+test("a reset that jitters across a second or minute boundary names the same request; an hour apart stays two", () => {
+  for (const kind of [undefined, "pace"] as const) {
+    const now = { t: Date.parse("2026-11-07T12:00:00Z") };
+    const { s } = store(now);
+    const at = (resetsAt: string) => raise({ reason: { ...(kind ? { kind, etaFull: 6, burnPerHour: 6 } : {}), window: "seven_day", fill: 91, resetsAt } });
+    const a = s.raise(at("2026-11-07T17:59:59.892533+00:00"));
+    const b = s.raise(at("2026-11-07T18:00:00.373531+00:00"));
+    const c = s.raise(at("2026-11-07T18:00:00.901Z"));
+    assert.equal(a.created, true);
+    assert.deepEqual([b.created, c.created], [false, false], `${kind ?? "limit"}: jitter is one cycle`);
+    assert.equal(b.request.reason.resetsAt, "2026-11-07T17:59:59.892533+00:00", "the stored reset stays as observed");
+    assert.equal(s.raise(at("2026-11-07T19:00:00Z")).created, true, `${kind ?? "limit"}: an hour later is a new cycle`);
+  }
+});
+
+test("a declined pace request stays closed when the next poll sees the reset a second later", () => {
+  const now = { t: Date.parse("2026-11-07T12:00:00Z") };
+  const { s } = store(now);
+  const pace = (resetsAt: string) => raise({ reason: { kind: "pace", window: "seven_day", fill: 60, resetsAt, etaFull: 6, burnPerHour: 6 } });
+  const first = s.raise(pace("2026-11-07T17:59:59.892Z"));
+  s.decide(first.request.id, { kind: "decline", by: "as-gui" });
+  const again = s.raise(pace("2026-11-07T18:00:00.373Z"));
+  assert.equal(again.created, false);
+  assert.equal(again.request.state, "declined");
+});
