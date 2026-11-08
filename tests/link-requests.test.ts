@@ -198,3 +198,45 @@ test("a declined pace request stays closed when the next poll sees the reset a s
   assert.equal(again.created, false);
   assert.equal(again.request.state, "declined");
 });
+
+/** A request as an older build stored it: the same cycle under an id hashed from the raw reset. */
+function legacy(dir: string, id: string, resetsAt: string, raisedAt: string, state: "open" | "declined" = "open") {
+  const r = {
+    v: 1, id, rev: 1, ...raise({ reason: { window: "seven_day", fill: 91, resetsAt } }),
+    raisedAt, expiresAt: "2026-11-07T18:00:00.000Z", state,
+    ...(state === "declined" ? { decision: { kind: "decline", by: "as-gui", at: raisedAt } } : {}),
+  };
+  fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify(r));
+}
+
+test("duplicates already on disk: the oldest open one stays, the rest expire and are written back", () => {
+  const now = { t: Date.parse("2026-11-07T12:00:00Z") };
+  const { dir, s } = store(now);
+  legacy(dir, "cd65cd4f4dd9ad14", "2026-11-07T18:00:00.373531+00:00", "2026-11-07T10:05:00.000Z");
+  legacy(dir, "2f85b9b821e796c4", "2026-11-07T17:59:59.892533+00:00", "2026-11-07T10:00:00.000Z");
+  const open = s.list().filter((r) => r.state === "open");
+  assert.deepEqual(open.map((r) => r.id), ["2f85b9b821e796c4"]);
+  const other = JSON.parse(fs.readFileSync(path.join(dir, "cd65cd4f4dd9ad14.json"), "utf8"));
+  assert.equal(other.state, "expired");
+  assert.equal(other.rev, 2);
+});
+
+test("a raise finds the cycle's request under its old id instead of opening another", () => {
+  const now = { t: Date.parse("2026-11-07T12:00:00Z") };
+  const { dir, s } = store(now);
+  legacy(dir, "2f85b9b821e796c4", "2026-11-07T17:59:59.892533+00:00", "2026-11-07T10:00:00.000Z");
+  const r = s.raise(raise({ reason: { window: "seven_day", fill: 92, resetsAt: "2026-11-07T18:00:00.373531+00:00" } }));
+  assert.equal(r.created, false);
+  assert.equal(r.request.id, "2f85b9b821e796c4");
+  assert.equal(fs.readdirSync(dir).filter((f) => f.endsWith(".json")).length, 1);
+});
+
+test("a cycle declined under its old id stays declined; the next poll opens nothing", () => {
+  const now = { t: Date.parse("2026-11-07T12:00:00Z") };
+  const { dir, s } = store(now);
+  legacy(dir, "2f85b9b821e796c4", "2026-11-07T17:59:59.892533+00:00", "2026-11-07T10:00:00.000Z", "declined");
+  const r = s.raise(raise({ reason: { window: "seven_day", fill: 92, resetsAt: "2026-11-07T18:00:00.1Z" } }));
+  assert.equal(r.created, false);
+  assert.equal(r.request.state, "declined");
+  assert.equal(s.list().filter((x) => x.state === "open").length, 0);
+});

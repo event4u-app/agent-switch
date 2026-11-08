@@ -55,7 +55,7 @@ test joins the area of the file it links to most, so an area changes only when i
 | [gui-src-ui](code/areas/gui-src-ui.md) | gui/src/ui | 22 | 14.8 % | 9.1 % | 0 % | `Button.tsx`, `Card.tsx`, `Typography.tsx` |
 | [gui-src-vm](code/areas/gui-src-vm.md) | gui/src/vm | 22 | 33.9 % | 54.5 % | 0 % | `store.tsx`, `rules.ts`, `load.ts` |
 | [gui-src-redesign-engines](code/areas/gui-src-redesign-engines.md) | gui/src/redesign/engines | 17 | 27.5 % | 23.5 % | 0 % | `bus.ts`, `notice-text.ts`, `notifications.ts` |
-| [src-link](code/areas/src-link.md) | src/link | 17 | 57.3 % | 41.2 % | 0 % | `requests.ts`, `limits.ts`, `raise.ts` |
+| [src-link](code/areas/src-link.md) | src/link | 17 | 57.1 % | 41.2 % | 0 % | `requests.ts`, `limits.ts`, `raise.ts` |
 | [src-commands](code/areas/src-commands.md) | src/commands | 14 | 8 % | 7.1 % | 0 % | `shared.ts`, `profiles.ts`, `rebind.ts` |
 | [gui-src-redesign](code/areas/gui-src-redesign.md) | gui/src/redesign | 5 | 6.3 % | 0 % | 0 % | `Hosts.tsx`, `Shell.tsx`, `shortcuts.ts` |
 | [tests](code/areas/tests.md) | tests | 5 | 0 % | 100 % | 0 % | `cli-snapshot.test.ts`, `release-workflow.test.ts`, `shellenv-install-shell.test.ts` |
