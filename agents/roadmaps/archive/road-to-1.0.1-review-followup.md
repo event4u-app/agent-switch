@@ -26,7 +26,7 @@ comparison. Credential-bearing work is threat-modelled, not auto-shipped.
 - [x] Correct the README "later reversed" line to the recorded fact: a
   unanimous review recommended removal and the decision **overrode** it (not a
   resolved relitigation); point to the verbatim rejection rationale in
-  `agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md`.
+  `agents/roadmaps/archive/road-to-agent-switch-autoswitch-rejected.md`.
 - [x] Adversarial honesty/legal review of the disclosure wording (team pass):
   "can violate" (not "violates") kept; weasel "flagged" replaced with the
   unanimous-recommend-removal statement; provider → providers' (plural).

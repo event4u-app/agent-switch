@@ -1,11 +1,18 @@
 ---
+status: archived
 complexity: structural
-parent_roadmap: road-to-agent-switch-gui-service
+parent_roadmap: road-to-agent-switch-gui-service  # archived 2026-11-07
 execution:
   mode: manual
 ---
 
 # Roadmap: native in-app auto-update (Tauri updater)
+
+> **Owner question (/roadmap:triage-parked, 2026-11-07):** the premise has drifted. The CLI is now the GUI's channel (`src/gui-launch.ts:1-8,173` fetches the GUI release matching the CLI version), the GUI already self-updates through npm (`gui/src/redesign/engines/updates.ts:64-77` -> `agent-switch update`), and a Linux target now exists. P2.1 (bundle-vs-handshake ADR) and P3.2 (replace the browser-download button) are obsolete as framed. Still needed: signing (= `road-to-a-trusted-install.md` 1.1/1.2), signed `latest.json`, kill-switch, rollback docs, restart-when-idle.
+> Candidates: (1) keep a native Tauri updater for direct .dmg/.msi installs and re-park on signing; (2) archive this file — cancel P2.1/P3.2, carry the kill-switch and rollback items into a follow-up, signing stays in trusted-install; (3) leave as is.
+> **Decided 2026-11-08 (owner, the archive option — asked as option 1):** no native Tauri updater. The native-updater mechanics (keypair, `latest.json`, plugin, browser-button replacement, bundle-vs-handshake) are cancelled; the hardening of the npm path (kill-switch, restart when idle, version-skew notice, update/release/rollback docs) is carried to [`road-to-the-ready-remainders.md`](../road-to-the-ready-remainders.md) Phase 7; the notify default is step 3.7 there; signing stays in [`road-to-a-trusted-install.md`](../later/road-to-a-trusted-install.md).
+
+> Archived from later/ on 2026-11-08 by /roadmap:triage-parked: every step is shipped (with evidence), carried to or merged into `road-to-the-ready-remainders.md`, merged into `later/road-to-a-trusted-install.md`, or cancelled by the owner; both blockers resolved.
 
 > Parked follow-up to the shipped check-and-notify update flow. Turns the GUI's
 > "a new version exists → open the download page" experience into a real
@@ -71,16 +78,20 @@ reviewed the update-experience design. Both members converged, host-accepted:
 
 ## Phase 1: Release + signing infrastructure
 
-- [ ] **Step 1:** Generate an updater signing keypair (`tauri signer generate`);
+- [-] **Step 1:** Generate an updater signing keypair (`tauri signer generate`);
       store the private key + password as CI secrets (user-provided), embed the
       public key in `tauri.conf.json` (`plugins.updater.pubkey`).
-- [ ] **Step 2:** Release workflow (tag-triggered) that builds signed installers
+      <!-- cancelled by the owner, 2026-11-08 (/roadmap:triage-parked follow-up, option 1: no native Tauri updater; updates run through `agent-switch update`) -->
+- [x] **Step 2:** Release workflow (tag-triggered) that builds signed installers
       per platform (macOS `.dmg`/`.app`, Windows `.msi`/`.nsis`) and uploads them
       to a GitHub Release.
-- [ ] **Step 3:** Publish a signed `latest.json` update manifest (the updater
+      <!-- shipped: .github/workflows/release.yml (tag push, bundles macOS/Windows/Linux to the GitHub Release); installer signing is tracked in later/road-to-a-trusted-install.md 1.1/1.2 (triage 2026-11-08) -->
+- [-] **Step 3:** Publish a signed `latest.json` update manifest (the updater
       endpoint) as part of the release — platform → { version, url, signature }.
-- [ ] **Step 4:** Document the release process (how to cut a version, where the
+      <!-- cancelled by the owner, 2026-11-08 (/roadmap:triage-parked follow-up, option 1: no native Tauri updater; updates run through `agent-switch update`) -->
+- [~] **Step 4:** Document the release process (how to cut a version, where the
       secrets live, how a release maps to `latest.json`).
+      <!-- deferred-resolution: carried-to=road-to-the-ready-remainders (step 7.4, 2026-11-08) -->
 
 **Exit criteria:** a tagged release produces signed, downloadable installers plus
 a `latest.json` the updater can read.
@@ -89,13 +100,15 @@ still work.
 
 ## Phase 2: Resolve the CLI↔GUI versioning decision
 
-- [ ] **Step 1:** Decide: bundle the CLI inside the GUI (one artifact, atomic
+- [-] **Step 1:** Decide: bundle the CLI inside the GUI (one artifact, atomic
       update) **or** keep them separate with an explicit `--json`-contract version
       negotiation (GUI checks CLI version at startup, degrades/blocks on
       incompatibility). Record as an ADR.
-- [ ] **Step 2:** Implement the chosen path. If bundling: ship the CLI binary
+      <!-- cancelled by the owner, 2026-11-08 (option 1): obsolete as framed — the GUI is fetched from the release tagged with the CLI version (src/gui-launch.ts:1-8,174), so the CLI is the GUI's channel -->
+- [-] **Step 2:** Implement the chosen path. If bundling: ship the CLI binary
       inside the app bundle and point the GUI at it. If separate: add the version
       handshake + a clear "CLI update needed" path in the UI.
+      <!-- cancelled by the owner, 2026-11-08 (option 1): follows Step 1; the remaining skew case (gui-launch falling back to another release, src/gui-launch.ts:174-177) is carried to road-to-the-ready-remainders 7.3 -->
 
 **Exit criteria:** a GUI update can never leave the app talking to an
 incompatible CLI without the user being told exactly what to do.
@@ -103,17 +116,21 @@ incompatible CLI without the user being told exactly what to do.
 
 ## Phase 3: Tauri updater integration
 
-- [ ] **Step 1:** Add `tauri-plugin-updater` (Rust) + `@tauri-apps/plugin-updater`
+- [-] **Step 1:** Add `tauri-plugin-updater` (Rust) + `@tauri-apps/plugin-updater`
       (JS) + the `updater:default` capability.
-- [ ] **Step 2:** Replace the browser-download button in Settings → Updates with
+      <!-- cancelled by the owner, 2026-11-08 (/roadmap:triage-parked follow-up, option 1: no native Tauri updater; updates run through `agent-switch update`) -->
+- [-] **Step 2:** Replace the browser-download button in Settings → Updates with
       the native flow (download → verify → install), keeping the existing
       check-and-notify status display.
-- [ ] **Step 3:** Implement the three-way update mode (Automatic / Notify /
+      <!-- cancelled by the owner, 2026-11-08 (option 1): obsolete — the GUI already installs through `agent-switch update` (gui/src/redesign/engines/updates.ts:69-79) -->
+- [~] **Step 3:** Implement the three-way update mode (Automatic / Notify /
       Manual), default **Notify**; persist the choice. The existing
       `agent-switch-auto-update-check` flag becomes the Manual↔auto toggle;
       Automatic is a separate opt-in.
-- [ ] **Step 4:** Restart UX — defer the relaunch until the user is idle / closes
+      <!-- deferred-resolution: merged-into=road-to-the-ready-remainders (step 3.7, D5: notify by default, install opt-in per release kind, 2026-11-08) -->
+- [~] **Step 4:** Restart UX — defer the relaunch until the user is idle / closes
       the window; never interrupt mid-session for a tray app that runs for weeks.
+      <!-- deferred-resolution: carried-to=road-to-the-ready-remainders (step 7.2, 2026-11-08) -->
 
 **Exit criteria:** from a real signed release, the app updates itself end-to-end
 on macOS + Windows with a Notify-mode prompt.
@@ -121,44 +138,56 @@ on macOS + Windows with a Notify-mode prompt.
 
 ## Phase 4: Rollback / kill-switch + failure handling
 
-- [ ] **Step 1:** Kill-switch — a way to halt auto-update rollout for a bad
+- [~] **Step 1:** Kill-switch — a way to halt auto-update rollout for a bad
       release (e.g. a `yanked` flag in `latest.json` the client honours).
-- [ ] **Step 2:** Download/verify failure handling — never install an
+      <!-- deferred-resolution: carried-to=road-to-the-ready-remainders (step 7.1, 2026-11-08) -->
+- [x] **Step 2:** Download/verify failure handling — never install an
       unverified artifact; surface failures without blanking the app; retry with
       backoff.
-- [ ] **Step 3:** Document the rollback story (how to pull a bad release, how
+      <!-- shipped: gui/src/ipc.ts:1154-1162 returns ok=false with the output instead of throwing; gui/src/redesign/engines/updates.ts:69-79 does not mark a failed install handled, so the next daily check retries; npm verifies the package integrity before installing (triage 2026-11-08) -->
+- [~] **Step 3:** Document the rollback story (how to pull a bad release, how
       clients recover).
+      <!-- deferred-resolution: carried-to=road-to-the-ready-remainders (step 7.4, 2026-11-08) -->
 
 **Exit criteria:** a bad release can be stopped centrally, and a failed update
 never leaves the app broken.
 
 ## Phase 5: Packaging, Linux, docs
 
-- [ ] **Step 1:** Code-signing / notarization for macOS (Developer ID) and
+- [~] **Step 1:** Code-signing / notarization for macOS (Developer ID) and
       Windows (Authenticode) so installers pass Gatekeeper/SmartScreen.
-- [ ] **Step 2:** Linux strategy — if a Linux target is added, use AppImage
+      <!-- deferred-resolution: merged-into=road-to-a-trusted-install (1.1/1.2; owner decision 2026-11-08: signing is tracked there only) -->
+- [x] **Step 2:** Linux strategy — if a Linux target is added, use AppImage
       self-update or defer to package-manager channels (Flatpak/Snap/apt);
       document the degraded path. Skip while there is no Linux build target.
-- [ ] **Step 3:** README + `gui/README`: update channels, mode choices, how to
+      <!-- shipped: .github/workflows/release.yml builds deb/rpm/AppImage; Linux updates through the same npm path as macOS and Windows, the GUI follows the CLI version (src/gui-launch.ts:1-8); the docs part is in road-to-the-ready-remainders 7.4 (triage 2026-11-08) -->
+- [~] **Step 3:** README + `gui/README`: update channels, mode choices, how to
       verify a release.
+      <!-- deferred-resolution: carried-to=road-to-the-ready-remainders (step 7.4, 2026-11-08) -->
 
 **Exit criteria:** signed installers pass OS gatekeepers; the update story is
 documented per platform.
 
 ## Acceptance Criteria
 
-- [ ] A tagged release ships signed installers + a signed `latest.json`.
-- [ ] The GUI updates itself (download → verify → install → relaunch) on macOS +
+- [~] A tagged release ships signed installers + a signed `latest.json`.
+      <!-- deferred-resolution: merged-into=road-to-a-trusted-install (signed installers; `latest.json` cancelled with the native updater, owner 2026-11-08) -->
+- [-] The GUI updates itself (download → verify → install → relaunch) on macOS +
       Windows from a real release.
-- [ ] The update mode defaults to Notify; Automatic is a deliberate opt-in.
-- [ ] CLI↔GUI version skew is impossible or clearly surfaced to the user.
-- [ ] A bad release can be halted centrally (kill-switch); a failed update never
+      <!-- cancelled by the owner, 2026-11-08 (/roadmap:triage-parked follow-up, option 1: no native Tauri updater; updates run through `agent-switch update`) -->
+- [~] The update mode defaults to Notify; Automatic is a deliberate opt-in.
+      <!-- deferred-resolution: merged-into=road-to-the-ready-remainders (step 3.7, 2026-11-08) -->
+- [~] CLI↔GUI version skew is impossible or clearly surfaced to the user.
+      <!-- deferred-resolution: carried-to=road-to-the-ready-remainders (step 7.3, 2026-11-08) -->
+- [~] A bad release can be halted centrally (kill-switch); a failed update never
       breaks the app.
+      <!-- deferred-resolution: carried-to=road-to-the-ready-remainders (step 7.1; the failure half shipped, see Phase 4 Step 2, 2026-11-08) -->
 
 ## Blockers
 
 ### blocker: updater-signing-key
-- **Status:** open
+- **Status:** resolved
+- **Resolution:** moot — owner decision 2026-11-08 drops the native updater, so no updater keypair is needed; installer signing stays in `road-to-a-trusted-install.md`.
 - **Owner:** user
 - **Blocks:** Phase 1 — the private key + password must be created and stored as
   CI secrets by the maintainer; the agent never generates or holds signing keys.
@@ -166,7 +195,8 @@ documented per platform.
   and the private key + password are set as CI secrets.
 
 ### blocker: distribution-channel
-- **Status:** open
+- **Status:** resolved
+- **Resolution:** GitHub Releases on `event4u-app/agent-switch` is the channel in use (`.github/workflows/release.yml`, `src/gui-launch.ts`); no `latest.json` endpoint is needed any more.
 - **Owner:** user
 - **Blocks:** Phase 1 — confirm GitHub Releases (public repo `event4u-app/
   agent-switch`) is the distribution + updater endpoint, or name another.

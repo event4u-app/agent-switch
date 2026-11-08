@@ -120,7 +120,7 @@ detectable, not introspectable.
 
 ### Rejected scope (standing lock — respected, not relitigated)
 
-`agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md`:
+`agents/roadmaps/archive/road-to-agent-switch-autoswitch-rejected.md`:
 cross-account headroom ranking, switch-to-X notifications, rotation
 decision-support stay rejected. This roadmap is **own-session telemetry**: it
 shows a session its *own* context/token state (exactly what `/context`,

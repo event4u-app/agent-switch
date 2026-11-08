@@ -1,4 +1,5 @@
 ---
+status: archived
 complexity: structural
 parent_roadmap: road-to-agent-switch-core
 execution:
@@ -6,6 +7,12 @@ execution:
 ---
 
 # Roadmap: agent-switch usage engine + background service + tray GUI
+
+> **Owner question (/roadmap:triage-parked, 2026-11-07):** 9 of 12 deferred items are shipped (4 flipped to `[x]` with evidence on 2026-11-07; P3 S4 launch-at-login and P3 S5 Linux tray shipped by a different mechanism or untested live; P5 S1 signing belongs to `road-to-a-trusted-install.md` 1.1/1.2). Three remain: (a) the routines display — `routines` is parsed (`src/usage.ts:92-97`) but no view renders it, still needed; (b) GUI JSON profile import/export — the CLI has `config export`, the credential-bearing variant was cancelled by the council; (c) poll-interval setting — likely superseded by the statusline source. Also: the Rejected-scope lock below calls cross-account ranking and prompt-to-switch "permanently out of scope", which contradicts `NON-GOALS.md:41-60`, `src/balance.ts` and the active `road-to-limits-that-last-the-whole-run.md`.
+> Candidates: (1) carry (a) into a follow-up, cancel (b) and (c), correct the lock wording, archive; (2) carry all three; (3) leave parked.
+> **Decided 2026-11-07 (owner, option 1, two questions):** remainder (a), the routines display, carried to [`road-to-the-ready-remainders.md`](../road-to-the-ready-remainders.md) 3.6; (b) and (c) cancelled (Phase 4 Steps 4b/5b); the rejected-scope section corrected to match `NON-GOALS.md`.
+
+> Archived from later/ on 2026-11-07 by /roadmap:triage-parked: every step is shipped (with evidence), carried to `road-to-the-ready-remainders.md`, merged into `later/road-to-deferred-followups.md` Phase 2, or cancelled by the owner; both blockers resolved.
 
 > A background service surfaces per-profile usage across all three providers,
 > and a menubar/tray app with a React UI lets you see usage and switch accounts
@@ -123,13 +130,13 @@ reachable from `daemon.ts`.
       `daemon-state.json` — it never re-implements profile logic. Define a
       typed command surface (`agent-switch <cmd> --json`) as the contract.
       <!-- verify: node dist/index.js list --json -->
-- [~] **Step 3:** Tray/menubar presence: icon in the macOS menubar and Windows
+- [x] **Step 3:** Tray/menubar presence: icon in the macOS menubar and Windows <!-- shipped: gui/src-tauri/src/main.rs:120 set_tray_tooltip, src/tray.rs; release.yml bundles mac/win/linux (triage 2026-11-07) -->
       system tray; left-click opens the panel, the icon/tooltip reflects the
       active profile + nearest-limit headroom (own profile).
       <!-- deferred (GUI-completion cluster): the Tauri Rust tray/window shell is written + a CI `cargo check` job exists, but the VISUAL tray/window + packaging + richer React views need a desktop session + the Rust bundle toolchain + a tray icon asset — not verifiable in this headless env. Foundation is done + verified: the CLI --json contract, the gui/ package, tested view-model transforms, and the core React panel (list/usage/actions) typecheck. Remaining [~] items are best finished on a desktop in a focused follow-up. -->
-- [~] **Step 4:** Launch-at-login wiring shares the Phase 2 service installer
+- [x] **Step 4:** Launch-at-login wiring shares <!-- shipped: gui/src-tauri/src/main.rs:185-186 tauri_plugin_autostart (LaunchAgent) (triage 2026-11-07) --> the Phase 2 service installer
       (the tray app is the service's user-facing face; one install path).
-- [~] **Step 5:** Linux tray = best-effort (AppIndicator where available),
+- [x] **Step 5:** Linux tray = best-effort <!-- shipped: .github/workflows/release.yml:33,52 Linux deb/rpm/AppImage built with libayatana-appindicator; not tried live on Linux (triage 2026-11-07) --> (AppIndicator where available),
       documented as degraded; CLI + `status` remain the Linux baseline.
 
 **Exit criteria:** the tray app launches, shows the active profile, and opens a
@@ -144,15 +151,19 @@ window on click on macOS + Windows; `gui/` builds in CI.
 - [~] **Step 2:** Usage view: session (5h) + weekly bars, per-model breakdown,
       Claude Code routines, 30-day sparkline (extension-inspired) — **per
       profile, no cross-account ranking**.
+      <!-- deferred-resolution: carried-to=road-to-the-ready-remainders (step 3.6, the routines row; bars, per-model and history already render — triage 2026-11-07) -->
 - [x] **Step 3:** Actions: switch active profile (calls `agent-switch use`), open a
       new session (`agent-switch run`), open claude.ai in the persistent browser
       (`agent-switch web`) — all through the CLI contract.
-- [~] **Step 4:** Profile management: add (launches CLI login flow), rename,
-      remove, import/export profiles as JSON (extension-inspired), color
-      picker.
-- [~] **Step 5:** Settings: theme (auto/light/dark), notifications toggle,
-      thresholds, poll interval; persisted via the CLI settings surface.
-- [~] **Step 6:** Accessibility + theme parity pass (light/dark), and a
+- [x] **Step 4:** Profile management: add (launches CLI login flow), rename,
+      remove, color. <!-- shipped: gui/src/v3/pages.tsx:166 Add account; gui/src/ipc.ts:634,640 remove/rename; identity colours via AccountMark (triage 2026-11-07) -->
+- [-] **Step 4b:** Import/export profiles as JSON in the GUI (extension-inspired).
+      <!-- cancelled by the owner, /roadmap:triage-parked 2026-11-07: the CLI has `config export`/`import` (src/config-transfer.ts); the credential-bearing variant was refused by the council (archive/road-to-deferred-followups Phase 1) -->
+- [x] **Step 5:** Settings: theme (auto/light/dark), notifications toggle,
+      thresholds; persisted via the CLI settings surface. <!-- shipped: gui/src/v3/settings.tsx:21 Appearance, Notifications and Protection sections (triage 2026-11-07) -->
+- [-] **Step 5b:** A poll-interval setting.
+      <!-- cancelled by the owner, /roadmap:triage-parked 2026-11-07: superseded — usage now comes from the statusline source and the service's fixed 5-minute refresh (NON-GOALS.md § No request-level routing) -->
+- [x] **Step 6:** Accessibility + theme parity pass (light/dark), and a <!-- shipped: gui/src/v3/themes/themes.test.ts:18-24 contrast floors; gui vitest 1161/1161 green on 2ddd0db (triage 2026-11-07) -->
       component/unit test pass for the UI logic. <!-- verify: npm --prefix gui test -->
 
 **Exit criteria:** from the tray panel a user can see per-profile usage and
@@ -161,7 +172,7 @@ switch/open a session for any of the three providers; UI tests green.
 
 ## Phase 5: Packaging, docs, CI
 
-- [~] **Step 1:** Package the tray app per OS (`.app`/`.dmg` macOS, `.msi`/
+- [x] **Step 1:** Package the tray app per OS <!-- shipped: .github/workflows/release.yml bundles .dmg/.app macOS, .msi/.exe Windows, deb/rpm/AppImage Linux; signing is tracked in later/road-to-a-trusted-install.md 1.1/1.2 (triage 2026-11-07) --> (`.app`/`.dmg` macOS, `.msi`/
       `.exe` Windows via the chosen stack's bundler); code-signing is a
       documented follow-up, not required for local install.
       <!-- deferred: signing/notarization needs developer accounts -->
@@ -170,7 +181,7 @@ switch/open a session for any of the three providers; UI tests green.
       <!-- blocked-by: repo-hosting -->
 - [x] **Step 3:** README + `gui/README`: install (CLI-only vs CLI+GUI), the
       tray/service story, screenshots, and the FAQ "Why no autoswitch?"
-      pointing at `skipped/road-to-agent-switch-autoswitch-rejected.md`.
+      pointing at `archive/road-to-agent-switch-autoswitch-rejected.md`.
 
 **Exit criteria:** a packaged tray app installs and runs from a build artifact
 on macOS + Windows; CI builds the GUI.
@@ -180,35 +191,42 @@ on macOS + Windows; CI builds the GUI.
 
 - [~] Background service installs/runs on macOS, Windows, and Linux (Linux
       headless; tray best-effort).
-- [~] Tray/menubar app on macOS + Windows shows per-profile usage for all three
+      <!-- deferred-resolution: merged-into=road-to-deferred-followups (Phase 2, live service install/run on Linux and Windows; macOS runs live as the launchd engine, the other units are golden-tested only — triage 2026-11-07) -->
+- [x] Tray/menubar app on macOS + Windows shows per-profile usage <!-- shipped: gui/src/v3/tray.tsx + tray.test.tsx; release 2.13.2 on macOS and Windows (triage 2026-11-07) --> for all three
       providers and switches accounts via the CLI.
-- [~] The tool is fully usable from **either** the CLI **or** the GUI.
+- [x] The tool is fully usable from **either** the CLI **or** the GUI. <!-- shipped: GUI drives the CLI contract (gui/src/ipc.ts runCli); release 2.13.2 (triage 2026-11-07) -->
 - [x] CLI core keeps zero runtime dependencies; all GUI/tray deps live in
       `gui/`.
 - [x] Read-only + anti-rotation invariants hold: no code path ranks accounts by
       headroom, recommends a switch target, or switches from the daemon —
       verified by test + a code-review note in the PR description.
-- [~] `npm test` + `gui` tests green; CI green.
+      <!-- superseded 2026-11-07 (owner, /roadmap:triage-parked): NON-GOALS.md § No request-level routing now places new sessions on the own account with the most headroom and suggests a switch; what this criterion still guards is that nothing switches without the user's confirmation. -->
+- [x] `npm test` + `gui` tests green; CI green. <!-- shipped: gui vitest 1161/1161 and CI success on 2ddd0db (triage 2026-11-07) -->
 
-## Rejected scope — locked (do not relitigate casually)
+## Rejected scope — corrected 2026-11-07
 
-Quota-based **automated account rotation** and its decision support
-(cross-account headroom ranking, "switch to X" prompts, switch-on-limit,
-failover strategies, hysteresis/cooldown) are **permanently out of scope** for
-all three providers. Pooling subscriptions to route around rate limits violates
-the vendors' usage policies; the decision engine minus the final `switch()` is
-the same violation.
+> Corrected by the owner in `/roadmap:triage-parked` (2026-11-07). The earlier
+> wording called cross-account headroom ranking and "switch to X" prompts
+> "permanently out of scope"; that contradicted `NON-GOALS.md` (§ No pooling,
+> § No request-level routing) and `src/balance.ts`, which the owner had since
+> decided. The text below is aligned with `NON-GOALS.md`.
 
-- Settled-by-decision, twice: v1 adoption analysis (`ADOPTED.md`) and council
-  re-evaluation (claude-sonnet-4-5 + gpt-4o, 2 rounds, 2026-07-13 — unanimous).
-  Full idea capture: `skipped/road-to-agent-switch-autoswitch-rejected.md`.
-- `scope:` automated/semi-automated cross-account failover on usage/quota
-  signals, incl. ranking and prompt-to-switch UX. **Not** covered: own-usage
-  display, active-profile threshold notifications (vendor-native info),
-  directory-based auto-selection (`map` — context-driven, not quota-driven).
-- `revisit-if:` a vendor publishes an official multi-account/usage-pooling
-  policy or API that permits it, or ships native profile switching that moots
-  the question.
+Still rejected: **switching an account without the user's confirmation** —
+quota-based automated rotation of a running session, switch-on-limit and
+failover with no user step, for all three providers, and any pooling of
+accounts that are not the user's own.
+
+Allowed, because `NON-GOALS.md` now says so: placing a **new** session on the
+user's own account with the most fresh headroom (folder rule, a pool the user
+created, or the default balance), saying why, and **suggesting** a switch for a
+running session that happens only when the user confirms it.
+
+- History: settled twice as a full ban — v1 adoption analysis (`ADOPTED.md`) and
+  a council re-evaluation on 2026-07-13 — then narrowed by the owner's later
+  decisions recorded in `NON-GOALS.md`. Idea capture:
+  `archive/road-to-agent-switch-autoswitch-rejected.md`.
+- `revisit-if:` a vendor publishes a policy or API that permits switching
+  without confirmation, or forbids own-account placement.
 
 ## Blockers
 

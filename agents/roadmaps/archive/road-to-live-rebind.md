@@ -275,7 +275,7 @@ user-clicked modal, per § Out of scope).
       "auto-switch" to "**notify + suggest; never switches automatically**". The
       failover `SwitchStrategy` is marked **deprecated (no switching effect)** in
       help; plumbing kept — full type removal deferred (below).
-- [x] Updated `skipped/road-to-agent-switch-autoswitch-rejected.md` +
+- [x] Updated `archive/road-to-agent-switch-autoswitch-rejected.md` +
       `road-to-usage-reliability-and-portability.md` "Out of scope" notes to the
       owner's user-interaction line (additive reconciliation — the locks stand for
       the fully-automatic case; user-interaction switching noted as shipped).
@@ -377,4 +377,4 @@ scope). No Anthropic-guidance gate (owner resolved finding 6).
 - Comparison context: `cc-switch` (settings.json env hot-reload, API-keys, not
   subscription OAuth); `OmniRoute` (local-proxy route — the superseded, highest-
   risk option). Full deep-dive lives in the session record, not tracked here.
-- Lock: `skipped/road-to-agent-switch-autoswitch-rejected.md`; council 2026-07-13.
+- Lock: `archive/road-to-agent-switch-autoswitch-rejected.md`; council 2026-07-13.

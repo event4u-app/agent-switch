@@ -8,7 +8,7 @@
   cross-version skew (R0.6) are NOT yet proven and gate shipping `rebind` there.
 - **Context roadmap:** `agents/roadmaps/archive/road-to-live-rebind.md` (the feature that
   requires the write path) and
-  `agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md` (Phase 4,
+  `agents/roadmaps/archive/road-to-agent-switch-autoswitch-rejected.md` (Phase 4,
   where the read-only invariant was locked)
 
 ## Context
@@ -111,7 +111,7 @@ unchanged and `rebind` is not built.**
 
 - `agents/roadmaps/archive/road-to-live-rebind.md` — the feature that requires the write
   path and defines the Phase-0 falsification spikes.
-- `agents/roadmaps/skipped/road-to-agent-switch-autoswitch-rejected.md` (Phase 4)
+- `agents/roadmaps/archive/road-to-agent-switch-autoswitch-rejected.md` (Phase 4)
   — the read-only invariant this ADR narrows.
 - `src/credentials.ts` — the module the read-only invariant lives in; gains the
   single sanctioned `rebind` writer.
