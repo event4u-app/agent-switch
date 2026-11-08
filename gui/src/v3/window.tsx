@@ -337,7 +337,7 @@ export function V3Window({
   }, [data.link, overlay]);
 
   const onVerb = (n: NeedItem) => {
-    if (n.kind === "limit") setOverlay({ decide: n.subject });
+    if (n.kind === "limit" || n.kind === "pace") setOverlay({ decide: n.subject });
     else if (n.kind === "update") openPage("tools");
     else if ((n.kind === "approval" || n.kind === "question") && data.bar(n.subject)?.hosted) openSession(n.subject);
     else act({ type: "need", item: n });

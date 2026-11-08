@@ -57,7 +57,10 @@ service refreshes every enabled account every 5 minutes); usage older than
 it still takes a usable member, and it refuses the start when it has none. A
 plain start with no fresh numbers uses your preferred account. Own profiles
 only, no traffic touched, and a running session changes its account only when
-you confirm it.
+you confirm it. The same holds for the pace suggestion (`agent-switch pace`,
+default on): when one account would run out well before its reset while
+another would let room expire, the service opens a switch request and asks —
+it never moves the session itself.
 
 ## No holding, brokering or forwarding of logins
 

@@ -17,6 +17,7 @@ import type { LimitsReport } from "./limits.js";
 import type { RequestStore, SwitchRequest } from "./requests.js";
 import type { DecideArgs, RequestArgs } from "./ops.js";
 import type { MoveHow } from "./requests.js";
+import { forSession, requestView } from "./summary.js";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
 
@@ -29,6 +30,7 @@ export interface McpDeps {
   store: () => RequestStore;
   request: (store: RequestStore, a: RequestArgs) => { request: SwitchRequest; created: boolean };
   decide: (store: RequestStore, a: DecideArgs) => { request: SwitchRequest; applied: boolean };
+  now?: () => number;
 }
 
 type Json = Record<string, unknown>;
@@ -52,6 +54,7 @@ function tools(d: McpDeps): Tool[] {
     return v;
   };
   const opt = (args: Json, k: string): string | undefined => (typeof args[k] === "string" && args[k] ? (args[k] as string) : undefined);
+  const now = d.now ?? Date.now;
   return [
     {
       name: "link_status",
@@ -65,7 +68,7 @@ function tools(d: McpDeps): Tool[] {
       name: "limits_get",
       title: "Account limits",
       description:
-        "Every account's 5-hour and weekly limits from agent-switch's cache: fill per window, reset time, whether the account can take work now (usable) and why not, and whether the numbers are stale. Observations, not reservations. No network.",
+        "Every account's 5-hour and weekly limits from agent-switch's cache: fill per window, reset time, burn per hour and hours until full (etaFull), whether the account can take work now (usable) and why not, and whether the numbers are stale. Observations, not reservations. No network.",
       inputSchema: obj({ provider: str("Only this provider: claude, codex or antigravity.", { enum: ["claude", "codex", "antigravity"] }) }),
       annotations: READ,
       call: (a) => d.limits(opt(a, "provider")),
@@ -81,10 +84,22 @@ function tools(d: McpDeps): Tool[] {
     {
       name: "switch_list",
       title: "Switch requests",
-      description: "Open switch requests (or all with all=true): which session or account is near its limit, the accounts it could move to, and any decision or outcome.",
-      inputSchema: obj({ all: { type: "boolean", description: "Include decided, finished and expired requests." } }),
+      description:
+        "Open switch requests (or all with all=true): which session or account should move — near its limit (kind limit) or running out well before its reset while another account would let room expire (kind pace) — the accounts it could move to, a one-sentence summary to show the user, and any decision or outcome. Pass session to get only the requests for that session.",
+      inputSchema: obj({
+        all: { type: "boolean", description: "Include decided, finished and expired requests." },
+        session: str("provider/account/sessionId: only requests for this session (and account-level ones on its account)."),
+      }),
       annotations: READ,
-      call: (a) => d.store().list().filter((r) => a.all === true || ["open", "approved", "executing"].includes(r.state)),
+      call: (a) => {
+        const session = opt(a, "session");
+        return d
+          .store()
+          .list()
+          .filter((r) => a.all === true || ["open", "approved", "executing"].includes(r.state))
+          .filter(session ? forSession(session) : () => true)
+          .map((r) => requestView(r, now()));
+      },
     },
     {
       name: "switch_status",
@@ -92,7 +107,11 @@ function tools(d: McpDeps): Tool[] {
       description: "One switch request with its decision and outcome. An outcome's `resume` is the command that opens the moved work when it could not open by itself.",
       inputSchema: obj({ id: str("The request id.") }, ["id"]),
       annotations: READ,
-      call: (a) => d.store().get(need(a, "id")) ?? (() => { throw new Error(`no switch request ${String(a.id)}`); })(),
+      call: (a) => {
+        const r = d.store().get(need(a, "id"));
+        if (!r) throw new Error(`no switch request ${String(a.id)}`);
+        return requestView(r, now());
+      },
     },
     {
       name: "switch_request",
@@ -169,7 +188,7 @@ export function createMcpHandler(d: McpDeps): (msg: Rpc) => Json | null {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "agent-switch", version: d.version },
           instructions:
-            "Agent Switch holds the user's AI accounts and their limits. Read limits with limits_get. When a session nears its limit, open a switch request (switch_request), tell the user the candidates, and record their answer with switch_decide — never decide for them. Agent Switch moves the work; nothing here moves it.",
+            "Agent Switch holds the user's AI accounts and their limits. Read limits with limits_get. When a session nears its limit, open a switch request (switch_request), tell the user the candidates, and record their answer with switch_decide — never decide for them. Agent Switch also opens requests itself, near the limit (kind limit) or when accounts run at different paces (kind pace): switch_list with this session shows them with a summary to tell the user. Agent Switch moves the work; nothing here moves it.",
         });
       }
       case "ping":

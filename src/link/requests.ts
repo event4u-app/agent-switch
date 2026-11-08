@@ -36,6 +36,24 @@ export interface Candidate {
   fill: number | null;
   resetsAt: string | null;
   how: MoveHow[];
+  /** Pace requests: the % of this account's room that would expire unused at its reset. */
+  spareAtReset?: number;
+}
+
+/** `limit`: near the limit now (the default, and every request written before
+ *  kinds existed). `pace`: used faster than its reset allows while another
+ *  account would let room expire. */
+export type RequestKind = "limit" | "pace";
+
+export interface RequestReason {
+  kind?: RequestKind;
+  window: string;
+  fill: number | null;
+  resetsAt: string | null;
+  /** Pace: hours until the protection threshold at the current burn. */
+  etaFull?: number;
+  /** Pace: fill change per hour over the recent captures. */
+  burnPerHour?: number;
 }
 
 export interface SwitchRequest {
@@ -45,7 +63,7 @@ export interface SwitchRequest {
   /** `provider/account/sessionId`, or null for "whatever runs on this account". */
   session: string | null;
   account: string;
-  reason: { window: string; fill: number | null; resetsAt: string | null };
+  reason: RequestReason;
   raisedBy: Raiser;
   raisedAt: string;
   expiresAt: string;
@@ -64,8 +82,23 @@ export type Decision =
 
 const TERMINAL: ReadonlySet<RequestState> = new Set(["declined", "snoozed", "done", "failed", "expired"]);
 
-export function requestId(account: string, session: string | null, window: string, resetsAt: string | null): string {
-  return createHash("sha256").update([account, session ?? "", window, resetsAt ?? ""].join("\0")).digest("hex").slice(0, 16);
+/** The host reports one reset with sub-second jitter across polls, sometimes
+ *  across a second boundary; the nearest minute names the cycle. Unparsable stays as is. */
+function cycleOf(resetsAt: string | null): string {
+  const t = resetsAt ? Date.parse(resetsAt) : NaN;
+  return Number.isNaN(t) ? (resetsAt ?? "") : new Date(Math.round(t / 60_000) * 60_000).toISOString();
+}
+
+/** A limit request keeps the id it had before kinds existed; a pace request on
+ *  the same window is a different request, so a later limit ask still opens. */
+export function requestId(account: string, session: string | null, window: string, resetsAt: string | null, kind: RequestKind = "limit"): string {
+  const parts = [account, session ?? "", window, cycleOf(resetsAt)];
+  if (kind !== "limit") parts.push(kind);
+  return createHash("sha256").update(parts.join("\0")).digest("hex").slice(0, 16);
+}
+
+export function requestKind(r: Pick<SwitchRequest, "reason">): RequestKind {
+  return r.reason.kind === "pace" ? "pace" : "limit";
 }
 
 export class RequestStore {
@@ -110,7 +143,7 @@ export class RequestStore {
 
   raise(input: RaiseInput): { request: SwitchRequest; created: boolean } {
     return this.locked(() => {
-      const id = requestId(input.account, input.session, input.reason.window, input.reason.resetsAt);
+      const id = requestId(input.account, input.session, input.reason.window, input.reason.resetsAt, input.reason.kind);
       const existing = this.read(id);
       if (existing) return { request: this.settle(existing), created: false };
       const now = this.now();

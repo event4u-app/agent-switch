@@ -93,6 +93,15 @@ describe("dispatchV3", () => {
     expect(d.refresh).toHaveBeenCalled();
   });
 
+  it("keep an account also puts off its pace suggestion, in the queue and as an answer", async () => {
+    const d = { ...deps([need({ id: "n2", kind: "limit", subject: "claude/work" }), need({ id: "p", kind: "pace", subject: "claude/work" })]), requests: () => [{ id: "r-pace", account: "claude/work", state: "open", expiresAt: new Date(Date.now() + 3_600_000).toISOString(), reason: { kind: "pace", window: "seven_day", fill: 60, resetsAt: null }, session: null, rev: 1, raisedBy: "as-daemon", raisedAt: "", candidates: [] }] as never };
+    const decide = vi.fn(async () => {});
+    (d.ipc as Record<string, unknown>).decideSwitchRequest = decide;
+    await dispatchV3({ type: "keep-account", account: "work" }, d);
+    expect(d.ipc.needsLater.mock.calls).toEqual([["n2"], ["p"]]);
+    expect(decide).toHaveBeenCalledWith("r-pace", "snooze");
+  });
+
   it("start: hosted runs host start, terminal opens the 2.11 start flow", async () => {
     const d = deps();
     const plan = { folder: "/r", gitState: null, worktree: false, tool: "claude" as const, model: "", thinking: "", where: "hosted" as const };

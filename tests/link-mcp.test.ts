@@ -16,6 +16,7 @@ function deps(over: Partial<McpDeps> = {}): McpDeps {
   const store = new RequestStore(dir, () => T0);
   return {
     version: "9.9.9",
+    now: () => T0,
     enabled: () => true,
     status: () => ({ enabled: true, contract: 1 }),
     limits: () => ({ v: 1, at: new Date(T0).toISOString(), accounts: [] }),
@@ -87,6 +88,29 @@ test("switch_request without arguments asks for this session; switch_decide reco
   assert.equal(list.result.structuredContent.items[0].state, "approved");
 });
 
+test("switch_list filters by session and hands out kind and a plain summary", () => {
+  const d = deps();
+  const store = d.store();
+  const resetsAt = new Date(T0 + 48 * 3_600_000).toISOString();
+  const cand = [{ target: "claude/home", provider: "claude" as const, fill: 5, resetsAt: null, how: ["after-turn" as const, "now" as const], spareAtReset: 80 }];
+  store.raise({ account: "claude/work", session: "claude/work/sid-1", reason: { kind: "pace", window: "seven_day", fill: 60, resetsAt, etaFull: 6, burnPerHour: 6 }, raisedBy: "as-daemon", candidates: cand });
+  store.raise({ account: "claude/work", session: "claude/work/sid-2", reason: { window: "five_hour", fill: 93, resetsAt }, raisedBy: "as-daemon", candidates: cand });
+  store.raise({ account: "codex/cx", session: null, reason: { window: "five_hour", fill: 93, resetsAt }, raisedBy: "as-daemon", candidates: cand });
+  const h = createMcpHandler(d);
+  const mine = call(h, 1, "switch_list", { session: "claude/work/sid-1" }).result.structuredContent.items;
+  assert.equal(mine.length, 1);
+  assert.equal(mine[0].kind, "pace");
+  assert.match(mine[0].summary, /claude\/work runs out in about 6 h, but its weekly limit resets only in 2 d\. claude\/home would let 80% expire/);
+  const all = call(h, 2, "switch_list").result.structuredContent.items;
+  assert.deepEqual(all.map((r: { kind: string }) => r.kind).sort(), ["limit", "limit", "pace"]);
+  assert.match(all.find((r: { session: string | null }) => r.session === "claude/work/sid-2").summary, /is at 93% of its 5-hour limit/);
+  const codex = call(h, 3, "switch_list", { session: "codex/cx/abc" }).result.structuredContent.items;
+  assert.equal(codex.length, 1, "an account-level request concerns every session on that account");
+  const one = call(h, 4, "switch_status", { id: mine[0].id }).result.structuredContent;
+  assert.equal(one.kind, "pace");
+  assert.ok(one.summary);
+});
+
 test("a tool error is a result with isError, not a protocol error", () => {
   const h = createMcpHandler(deps());
   const r = call(h, 1, "switch_status", { id: "nope" });
@@ -123,7 +147,8 @@ test("`mcp serve` answers a full handshake over stdio and honours `link off`", g
   const on = await session(home, msgs);
   assert.deepEqual(on.map((m) => m.id), [1, 2, 3, 4, null]);
   assert.equal(on[1].result.tools.length, 7);
-  assert.equal(on[2].result.structuredContent.contract, 1);
+  assert.equal(on[2].result.structuredContent.contract, 1, "additive fields keep contract 1; agent-config treats any other number as absent");
+  assert.ok(Array.isArray(on[3].result.structuredContent.accounts));
   assert.equal(on[3].result.structuredContent.v, 1);
   assert.equal(on[4].error.code, -32700);
 

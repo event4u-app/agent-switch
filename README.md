@@ -102,7 +102,10 @@ now or when its current turn ends.
 
 With [agent-config](https://github.com/event4u-app/agent-config) installed, your
 agent asks you in the session before a limit, and the app asks the same
-question. Answer once, in either place; Agent Switch moves the work. See
+question. Answer once, in either place; Agent Switch moves the work. It also
+asks earlier when your accounts run at different paces — one would run out well
+before its reset while another would let room expire — so the limits last the
+whole run. See
 [Working with agent-config](https://event4u-app.github.io/agent-switch/guides/agent-config/).
 
 ## How it fits together

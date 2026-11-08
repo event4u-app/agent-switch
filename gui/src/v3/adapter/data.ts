@@ -18,7 +18,7 @@ import type { Appearance } from "../themes/resolve.js";
 import { SESSION_MENU, type SessionMenuItem, type V3Data } from "../window.js";
 import type { BarSession, ModelChoices } from "../workbench.js";
 import { modelLabel } from "../model-label.js";
-import { answeredElsewhere, cliAccount } from "../../vm/switch-requests.js";
+import { answeredElsewhere, cliAccount, requestKind } from "../../vm/switch-requests.js";
 import { parsePr, type HistoryRow, type PrFacts } from "./feeds.js";
 import type { V3Feeds } from "./useFeeds.js";
 
@@ -501,7 +501,23 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
     suggestion,
     suggestionWhy: suggestion ? (spread ? "spread by expected use — the busiest session gets the most room" : "most room left") : undefined,
     askedByAgentConfig: (vm.switchRequests ?? []).some((r) => r.state === "open" && r.raisedBy === "ac" && r.account === cliAccount(a.id) && Date.parse(r.expiresAt) > now),
+    ...paceWording(vm, a, now),
   };
+}
+
+const hoursText = (h: number) => (h < 48 ? `${Math.max(1, Math.round(h))} h` : `${Math.round(h / 24)} days`);
+
+/** An open pace request words the sheet (road-to-limits-that-last-the-whole-run
+ *  4.2) — unless the account is at its limit, where the limit wording is the true one. */
+function paceWording(vm: ViewModel, a: Account, now: number): { pace?: { title: string; sub: string } } {
+  if (a.state === "near-limit" || a.state === "limited") return {};
+  const r = (vm.switchRequests ?? []).find((x) => requestKind(x) === "pace" && x.state === "open" && x.account === cliAccount(a.id) && Date.parse(x.expiresAt) > now);
+  if (!r) return {};
+  const to = r.candidates[0];
+  const resetMs = r.reason.resetsAt ? Date.parse(r.reason.resetsAt) - now : NaN;
+  const reset = Number.isFinite(resetMs) && resetMs > 0 ? `Its limit resets only in ${hoursText(resetMs / 3_600_000)}. ` : "";
+  const spare = to ? `${to.target.split("/")[1] ?? to.target} would let ${to.spareAtReset ?? 0}% expire unused at its reset. ` : "";
+  return { pace: { title: `${a.name} runs out in about ${hoursText(r.reason.etaFull ?? 0)}`, sub: `${reset}${spare}Moving spreads your limits; nothing changes until you choose.` } };
 }
 
 /** Percent left on an account: its fullest 5h or week window decides. Pure. */

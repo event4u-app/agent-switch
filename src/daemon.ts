@@ -42,9 +42,9 @@ import { codexProfilesWithSession, keepAliveSweep } from "./login-keepalive.js";
 import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, freedAfterReset, resetPassed, SwitchCandidate, ThresholdState, UsageSnapshot, type Crossing } from "./usage.js";
 import { readCodexUsage, rolloutUsage } from "./codex-usage.js";
 import { autoRedeemDue, redeemResetCredit, resetReflected, usageAfterRedeem } from "./codex-reset.js";
-import { LATEST_FILE, recordHistorySample, writeLatestSnapshot } from "./history.js";
+import { LATEST_FILE, readHistory, recordHistorySample, writeLatestSnapshot } from "./history.js";
 import { appendNotification, markOsNotified, Notification } from "./notifications.js";
-import { readOsNotifications } from "./profiles.js";
+import { readOsNotifications, readPaceSuggest } from "./profiles.js";
 import { osNotify } from "./os-notify.js";
 import { SessionRow, listSessions, listCodexSessions, markLive } from "./sessions.js";
 import { readContext } from "./telemetry.js";
@@ -69,7 +69,8 @@ import type { RequestStore, SwitchRequest } from "./link/requests.js";
 import { REQUESTS_DIR, requestStore, selfRunner } from "./link/store.js";
 import { buildLimits } from "./link/limits.js";
 import { candidatesFor } from "./link/candidates.js";
-import { raiseForAccount } from "./link/raise.js";
+import { projectedAtReset } from "./link/pace.js";
+import { raiseAsks } from "./link/raise.js";
 import { FRESH_USAGE_MS } from "./dir-resolve.js";
 
 /** Append an event to the shared log and, when the operator opted into
@@ -707,11 +708,18 @@ interface CycleResult {
 }
 
 /** Ask before the limit: open a switch request for each live session of an
- *  account past the ask mark (road-to-the-agent-config-link). Never moves. */
+ *  account past the ask mark (road-to-the-agent-config-link) — or, earlier,
+ *  when it runs out well before its reset while another account would let
+ *  room expire (road-to-limits-that-last-the-whole-run). Never moves. */
 function raiseSwitchRequests(provider: ProviderId, name: string, snapshot: UsageSnapshot, state: DaemonState, log: (l: string) => void): void {
   try {
     const now = Date.now();
     const sessions = provider === "claude" ? liveSessions(configDir("claude", name)).map((l) => l.sessionId).filter((x): x is string => !!x) : null;
+    const busy = (id: string) => {
+      const [p, n] = id.split("/");
+      return p === "claude" ? liveSessionPids(configDir("claude", n)).length > 0 : codexProfilesWithSession([n]).has(n);
+    };
+    const historyOf = (id: string) => readHistory(path.join(profileDir(id.split("/")[0] as ProviderId, id.split("/")[1]), "usage-history.json"));
     const candidates = () => {
       const report = buildLimits({
         now,
@@ -724,13 +732,31 @@ function raiseSwitchRequests(provider: ProviderId, name: string, snapshot: Usage
         threshold: (p, n) => readProtection(p, n).thresholdPct,
         freshMs: FRESH_USAGE_MS,
       });
-      return candidatesFor(`${provider}/${name}`, report, (id) => {
-        const [p, n] = id.split("/");
-        return p === "claude" ? liveSessionPids(configDir("claude", n)).length > 0 : codexProfilesWithSession([n]).has(n);
-      });
+      return candidatesFor(`${provider}/${name}`, report, busy);
     };
-    const created = raiseForAccount(requestStore(), { account: `${provider}/${name}`, sessions, snapshot, thresholdPct: readProtection(provider, name).thresholdPct, now, candidates });
+    const account = `${provider}/${name}`;
+    const created = raiseAsks(requestStore(), {
+      account,
+      sessions,
+      snapshot,
+      thresholdPct: readProtection(provider, name).thresholdPct,
+      now,
+      candidates,
+      paceOn: readPaceSuggest(),
+      history: historyOf(account),
+      busy,
+      projected: (id) => {
+        const s = state.profiles[id];
+        return s ? projectedAtReset(s, historyOf(id), now) : null;
+      },
+    });
     for (const r of created) {
+      if (r.reason.kind === "pace") {
+        const spare = r.candidates[0];
+        log(`switch request ${r.id}: ${r.account} runs out in ~${r.reason.etaFull} h (${r.reason.window}); ${spare?.target} would lose ${spare?.spareAtReset}% at its reset`);
+        notify({ kind: "info", title: "Accounts at different paces", message: `${r.account} runs out in about ${Math.round(r.reason.etaFull ?? 0)} h, before its ${r.reason.window} reset; ${spare?.target} would let ${spare?.spareAtReset}% expire. Open Agent Switch to move the session.`, key: `switch-pace:${r.account}` });
+        continue;
+      }
       log(`switch request ${r.id}: ${r.account} at ${r.reason.fill}% of ${r.reason.window}`);
       notify({ kind: "info", title: "Limit near — move?", message: `${r.account} is at ${r.reason.fill}% of its ${r.reason.window} window. Open Agent Switch to choose where to continue.`, key: `switch-ask:${r.account}` });
     }

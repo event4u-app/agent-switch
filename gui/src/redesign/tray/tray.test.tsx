@@ -216,6 +216,7 @@ describe("tray bridge", () => {
   it("an attention item leads to its overlay or screen", () => {
     const base = { title: "t", detail: "", primary: "p", at: NOW };
     expect(attentionTarget({ ...base, id: "l", kind: "near-limit", accountId: "claude:side" })).toEqual({ overlay: { kind: "limit", attentionId: "l" } });
+    expect(attentionTarget({ ...base, id: "pace:p1", kind: "pace", accountId: "claude:side" })).toEqual({ overlay: { kind: "limit", attentionId: "pace:p1" } });
     expect(attentionTarget({ ...base, id: "s", kind: "signed-out", accountId: "claude:side" })).toEqual({ overlay: { kind: "account", id: "claude:side" } });
     expect(attentionTarget({ ...base, id: "r", kind: "reauth", accountId: "claude:side" })).toEqual({ overlay: { kind: "account", id: "claude:side" } });
     expect(attentionTarget({ ...base, id: "u", kind: "update" })).toEqual({ screen: "tools" });

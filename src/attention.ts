@@ -14,10 +14,10 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-export const KINDS = ["approval", "question", "limit", "ci", "signin", "update"] as const;
+export const KINDS = ["approval", "question", "limit", "ci", "signin", "pace", "update"] as const;
 export type Kind = (typeof KINDS)[number];
 
-const VERB: Record<Kind, string> = { approval: "Allow", question: "Reply", limit: "Decide", ci: "Fix", signin: "Sign in", update: "Update" };
+const VERB: Record<Kind, string> = { approval: "Allow", question: "Reply", limit: "Decide", ci: "Fix", signin: "Sign in", pace: "Decide", update: "Update" };
 
 export interface Candidate {
   kind: Kind;

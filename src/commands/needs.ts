@@ -32,6 +32,9 @@ import { TmuxHost } from "../host/tmux-host.js";
 import { InputLeases } from "../host/lease.js";
 import { typeIntoHosted } from "./continue.js";
 import { readPending } from "../bridge/pending.js";
+import { requestKind, type SwitchRequest } from "../link/requests.js";
+import { requestStore } from "../link/store.js";
+import { hoursText } from "../link/summary.js";
 
 const HOST_WAIT = /^quota_auto_resume_(armed|fired|cancelled|setting)$/;
 
@@ -89,7 +92,39 @@ export function gatherCandidates(): Candidate[] {
   }
   out.push(...ciCandidates());
   out.push(...bridgeCandidates());
+  out.push(...paceCandidates());
   return out;
+}
+
+/** Open pace suggestions (road-to-limits-that-last-the-whole-run 4.2): one per
+ *  account, behind sign-ins — not urgent. Versioned by the request, so "Later"
+ *  holds until a new one is raised. */
+export function paceCandidates(rows: readonly SwitchRequest[] = safeRequests(), now: number = Date.now()): Candidate[] {
+  const out: Candidate[] = [];
+  for (const r of rows) {
+    if (requestKind(r) !== "pace" || r.state !== "open" || Date.parse(r.expiresAt) <= now) continue;
+    if (out.some((c) => c.subject === r.account)) continue;
+    const to = r.candidates[0];
+    const resetMs = r.reason.resetsAt ? Date.parse(r.reason.resetsAt) - now : NaN;
+    out.push({
+      kind: "pace",
+      subject: r.account,
+      who: r.account.split("/")[1] ?? r.account,
+      what: `runs out in about ${hoursText(r.reason.etaFull ?? 0)}${Number.isFinite(resetMs) && resetMs > 0 ? `, resets in ${hoursText(resetMs / 3_600_000)}` : ""}`,
+      ...(to ? { detail: `${to.target.split("/")[1] ?? to.target} would let ${to.spareAtReset ?? 0}% expire unused at its reset` } : {}),
+      since: r.raisedAt,
+      version: r.id,
+    });
+  }
+  return out;
+}
+
+function safeRequests(): SwitchRequest[] {
+  try {
+    return requestStore().list();
+  } catch {
+    return [];
+  }
 }
 
 /** Approvals and questions waiting in a chat the app runs (spec §13.5): one decision, wherever it is made. */

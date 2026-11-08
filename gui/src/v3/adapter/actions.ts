@@ -6,7 +6,7 @@ import type { SessionRow } from "../../transforms.js";
 import { accountId, accountIdFromMember } from "../../vm/build.js";
 import { splitAccountId, type Actions } from "../../vm/actions.js";
 import { sessionArgs, type SwitchRequestRow } from "../../ipc.js";
-import { requestsForMoves } from "../../vm/switch-requests.js";
+import { requestKind, requestsForMoves } from "../../vm/switch-requests.js";
 import type { Overlay, TerminalRun, Toast } from "../../vm/store.js";
 import type { ProviderId } from "../../transforms.js";
 import type { NeedItem } from "../needs.js";
@@ -39,7 +39,7 @@ export interface DispatchIpc {
   takeoverHosted(key: string, target: string): Promise<void>;
   /** Records the answer to a switch request: carried out by the app (`executed`),
    *  or left to the background service (no `executed`). */
-  decideSwitchRequest?(id: string, verdict: "approve", opts: { to: string; how: "after-turn" | "now"; executed?: string }): Promise<boolean | void>;
+  decideSwitchRequest?(id: string, verdict: "approve" | "snooze", opts?: { to: string; how: "after-turn" | "now"; executed?: string }): Promise<boolean | void>;
 }
 export interface DispatchDeps {
   ipc: DispatchIpc;
@@ -260,7 +260,10 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       );
     }
     case "keep-account": {
-      const limits = deps.needs().filter((n) => n.kind === "limit" && n.subject.split("/")[1] === a.account);
+      const limits = deps.needs().filter((n) => (n.kind === "limit" || n.kind === "pace") && n.subject.split("/")[1] === a.account);
+      // A pace suggestion put off is answered too, so agent-config stops asking and it is not raised again before its reset.
+      const paced = (deps.requests?.() ?? []).filter((r) => requestKind(r) === "pace" && r.state === "open" && r.account.split("/")[1] === a.account && Date.parse(r.expiresAt) > Date.now());
+      for (const r of paced) void deps.ipc.decideSwitchRequest?.(r.id, "snooze")?.catch(() => {});
       return run(deps, "Keep", Promise.all(limits.map((n) => deps.ipc.needsLater(n.id))));
     }
     case "session-menu":

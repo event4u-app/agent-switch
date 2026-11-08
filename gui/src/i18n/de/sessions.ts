@@ -221,6 +221,8 @@ export const sessions: { readonly [K in keyof typeof en]: string } = {
   "sessions.near.keepGoing": "Weitermachen",
   "sessions.near.briefFailed": "Zusammenfassung konnte nicht vorbereitet werden: {error}",
   "sessions.near.kicker": "Kurz vor dem Limit · du entscheidest",
+  "sessions.near.paceKicker": "Konten in unterschiedlichem Tempo · du entscheidest",
+  "sessions.near.paceBody": "{detail} Es wird nur gewechselt, wenn du es auswählst.",
   "sessions.near.later": "Später",
   "sessions.near.noSession": "Keine laufende Sitzung auf diesem Konto",
   "sessions.near.howAria": "Wie weitermachen",

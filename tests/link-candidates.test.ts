@@ -9,7 +9,7 @@ function acct(id: string, fills: number[], over: Partial<AccountLimits> = {}): A
   return {
     id, provider, name, disabled: false, usable: true, why: null, stale: false,
     observedAt: "2026-11-05T12:00:00.000Z", thresholdPct: 95,
-    windows: fills.map((fill, k) => ({ key: k === 0 ? "five_hour" : "seven_day", fill, resetsAt: null, resetPassed: false })),
+    windows: fills.map((fill, k) => ({ key: k === 0 ? "five_hour" : "seven_day", fill, resetsAt: null, resetPassed: false, burnPerHour: null, etaFull: null })),
     snapshot: null,
     ...over,
   };

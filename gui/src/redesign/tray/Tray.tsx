@@ -22,6 +22,7 @@ export type AttentionTarget = { overlay: Overlay } | { screen: ForwardedScreen }
 export function attentionTarget(a: Attention): AttentionTarget | null {
   switch (a.kind) {
     case "near-limit":
+    case "pace":
       return { overlay: { kind: "limit", attentionId: a.id } };
     case "signed-out":
     case "reauth":

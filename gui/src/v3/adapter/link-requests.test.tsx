@@ -274,3 +274,33 @@ describe("the sheet says agent-config asked", () => {
     expect(screen.queryByText("agent-config asked")).toBeNull();
   });
 });
+
+describe("a pace suggestion in the v3 sheet (road-to-limits-that-last-the-whole-run 4.2)", () => {
+  const accounts = [
+    { id: "claude:work", tool: "claude", name: "work", windows: [{ key: "seven_day", label: "Week", utilization: 60, resetsAt: null }], state: "ready" },
+    { id: "claude:home", tool: "claude", name: "home", windows: [], state: "ready" },
+  ] as never;
+  const vmWith = (rows: SwitchRequestRow[]) => ({ ...emptyViewModel(NOW), accounts, switchRequests: rows });
+  const pace = req({
+    id: "p1",
+    reason: { kind: "pace", window: "seven_day", fill: 60, resetsAt: new Date(NOW + 48 * 3_600_000).toISOString(), etaFull: 6, burnPerHour: 6 },
+    candidates: [{ target: "claude/home", provider: "claude", fill: 10, resetsAt: null, how: ["after-turn", "now"], spareAtReset: 80 }],
+    expiresAt: new Date(NOW + 48 * 3_600_000).toISOString(),
+  });
+
+  it("decisionFor words an open pace request, and only a pace request", () => {
+    const d = decisionFor("claude/work", vmWith([pace]), [], NOW)!;
+    expect(d.pace?.title).toBe("work runs out in about 6 h");
+    expect(d.pace?.sub).toContain("home would let 80% expire");
+    expect(d.suggestion === "" || d.suggestion === "home").toBe(true);
+    expect(decisionFor("claude/work", vmWith([req({})]), [], NOW)!.pace).toBeUndefined();
+  });
+
+  it("the sheet shows the pace wording in its header", () => {
+    const base = data();
+    const paced = { ...base, decision: (s: string) => ({ ...base.decision(s)!, pace: { title: "work runs out in about 6 h", sub: "home would let 80% expire unused at its reset." } }) };
+    render(<V3Window data={paced} slots={slots} act={vi.fn()} autoOpenLimits />);
+    expect(screen.getByText("work runs out in about 6 h")).toBeTruthy();
+    expect(screen.getByText("Accounts at different paces")).toBeTruthy();
+  });
+});

@@ -1,6 +1,7 @@
 import type { MouseEvent, ReactNode } from "react";
-import { AppWindow, Download, KeyRound, LogIn, Stethoscope, TriangleAlert } from "lucide-react";
+import { AppWindow, Download, Gauge, KeyRound, LogIn, Stethoscope, TriangleAlert } from "lucide-react";
 import { t } from "../../i18n/index.js";
+import { decideSwitchRequest } from "../../ipc.js";
 import { cn } from "../../lib/utils.js";
 import { AccountDot } from "../../ui/AccountDot.js";
 import { Badge } from "../../ui/Badge.js";
@@ -231,6 +232,7 @@ export function SessionRow({ session: e, compact }: { session: Session; compact?
 
 const ATTENTION_ICON: Record<AttentionKind, ReactNode> = {
   "near-limit": <TriangleAlert className="size-4 text-ac-warn" />,
+  pace: <Gauge className="size-4 text-ac-info" />,
   "signed-out": <LogIn className="size-4 text-ac-info" />,
   reauth: <KeyRound className="size-4 text-ac-warn" />,
   health: <Stethoscope className="size-4 text-ac-warn" />,
@@ -239,7 +241,7 @@ const ATTENTION_ICON: Record<AttentionKind, ReactNode> = {
 
 /** What the primary button of an attention item does. */
 export function runAttention(s: Store, item: Attention) {
-  if (item.kind === "near-limit") s.open({ kind: "limit", attentionId: item.id });
+  if (item.kind === "near-limit" || item.kind === "pace") s.open({ kind: "limit", attentionId: item.id });
   else if ((item.kind === "signed-out" || item.kind === "reauth") && item.accountId) s.open({ kind: "reauth", accountId: item.accountId });
   else if (item.kind === "update") {
     s.go("tools");
@@ -269,7 +271,11 @@ export function AttentionRow({ item }: { item: Attention }) {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => s.update((vm) => ({ attention: vm.attention.filter((a) => a.id !== item.id) }))}
+            onClick={() => {
+              // A pace suggestion put off is recorded, so it is not raised again before its reset.
+              if (item.kind === "pace") void decideSwitchRequest(item.id.slice("pace:".length), "snooze").catch(() => {});
+              s.update((vm) => ({ attention: vm.attention.filter((a) => a.id !== item.id) }));
+            }}
             title={t("accounts.rows.laterTitle")}
           >
             {t("accounts.action.later")}

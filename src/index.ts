@@ -64,6 +64,7 @@ import {
   cmdAlerts,
   cmdCompact,
   cmdHookEvent,
+  cmdChatHint,
   cmdHooks,
   cmdSessions,
   cmdSessionsPreview,
@@ -93,7 +94,7 @@ import {
 } from "./commands/system.js";
 import { cmdHandoff, cmdTakeover } from "./commands/takeover.js";
 import { cmdContinue } from "./commands/continue.js";
-import { cmdLimits, cmdLink, cmdMcpServe, cmdSwitch } from "./commands/link.js";
+import { cmdLimits, cmdLink, cmdMcpServe, cmdPace, cmdSwitch } from "./commands/link.js";
 import { cmdAuthStatus, cmdAutoswitch, cmdProtection, cmdReset, cmdStatus, cmdUsageHistory } from "./commands/usage.js";
 
 async function main(): Promise<void> {
@@ -109,6 +110,7 @@ async function main(): Promise<void> {
   // default config dir. Only pure help / shellenv (which emit text, touch no
   // profiles) skip it.
   if (cmd === "__hook-event") return cmdHookEvent(); // internal, silent, no migration
+  if (cmd === "__chat-hint") return cmdChatHint(); // internal: Claude's prompt hook, never blocks
 
   // A bare `agent-switch` (no command) launches the GUI, which reads profiles —
   // so it runs the migration too. Only pure help / shellenv skip it.
@@ -197,7 +199,7 @@ async function main(): Promise<void> {
       if (positional[0] === "cleanup") return cmdCleanup(flags);
       if (positional[0] === "resume") return cmdResume(positional[1], flags);
       return cmdSessions(providerId, providerExplicit, positional[0], flags);
-    case "hooks": return cmdHooks(positional[0], positional[1], providerExplicit ? providerId : "claude");
+    case "hooks": return cmdHooks(positional[0], positional[1], providerExplicit ? providerId : "claude", positional[2]);
     case "store": return cmdStore(positional[0], flags);
     case "app-visibility":
       if (positional[0] !== "visible" && positional[0] !== "hidden") die("usage: agent-switch app-visibility visible|hidden");
@@ -247,6 +249,7 @@ async function main(): Promise<void> {
     case "limits": return cmdLimits(providerExplicit ? providerId : undefined, flags);
     case "switch": return cmdSwitch(positional[0], positional.slice(1), flags);
     case "link": return cmdLink(positional[0], !!flags.json, positional[1]);
+    case "pace": return cmdPace(positional[0], !!flags.json);
     case "protection": return cmdProtection(positional[0], positional.slice(1), flags);
     case "pool": case "pools": return cmdPool(positional[0], positional.slice(1), flags);
     case "gui-settings": return cmdGuiSettings(positional[0], positional.slice(1), flags);

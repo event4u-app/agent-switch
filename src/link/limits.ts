@@ -11,6 +11,8 @@
 
 import { weigh } from "../balance.js";
 import type { CachedUsage } from "../dir-resolve.js";
+import type { HistorySample } from "../history.js";
+import { burnRate, etaFull, pacePoints } from "./pace.js";
 import type { ProviderId } from "../providers.js";
 import type { UsageSnapshot } from "../usage.js";
 
@@ -22,6 +24,10 @@ export interface LimitWindow {
   fill: number | null;
   resetsAt: string | null;
   resetPassed: boolean;
+  /** Fill change per hour over the account's recent captures; null when unknown. */
+  burnPerHour: number | null;
+  /** Hours until the protection threshold at that burn; null when unknown or idle. */
+  etaFull: number | null;
 }
 
 export interface AccountLimits {
@@ -54,7 +60,11 @@ export interface LimitsInputs {
   usage: (provider: ProviderId, name: string) => CachedUsage;
   threshold: (provider: ProviderId, name: string) => number;
   freshMs: number;
+  /** The account's own usage history, for burn and ETA; absent → both null. */
+  history?: (provider: ProviderId, name: string) => HistorySample[];
 }
+
+const round1 = (n: number | null): number | null => (n === null ? null : Math.round(n * 10) / 10);
 
 function account(i: LimitsInputs, a: LimitsInputs["accounts"][number]): AccountLimits {
   const thresholdPct = i.threshold(a.provider, a.name);
@@ -63,9 +73,12 @@ function account(i: LimitsInputs, a: LimitsInputs["accounts"][number]): AccountL
   if (!u.snapshot || u.capturedMs === null) {
     return { ...base, usable: false, why: a.disabled ? "disabled" : "no usage readout", stale: false, observedAt: null, windows: [], snapshot: null };
   }
+  const history = i.history?.(a.provider, a.name) ?? null;
   const windows: LimitWindow[] = u.snapshot.windows.map((w) => {
     const resetPassed = w.resetsAt !== null && !isNaN(Date.parse(w.resetsAt)) && Date.parse(w.resetsAt) <= i.now;
-    return { key: w.key, fill: resetPassed ? null : w.utilization, resetsAt: w.resetsAt, resetPassed };
+    const fill = resetPassed ? null : w.utilization;
+    const burn = history && fill !== null ? burnRate(pacePoints(history, u.snapshot!, w.key), i.now) : null;
+    return { key: w.key, fill, resetsAt: w.resetsAt, resetPassed, burnPerHour: round1(burn), etaFull: fill === null ? null : round1(etaFull(fill, burn, thresholdPct)) };
   });
   const stale = i.now - u.capturedMs > i.freshMs;
   // Weigh only what still holds: a window past its reset is no longer full.

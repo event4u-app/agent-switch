@@ -6,14 +6,14 @@
  */
 
 import type { ReactNode } from "react";
-import { CircleX, Download, Hand, LogIn, MessageCircleQuestion, TriangleAlert } from "lucide-react";
+import { CircleX, Download, Gauge, Hand, LogIn, MessageCircleQuestion, TriangleAlert } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { Act, Marker } from "./kit.js";
 
 /** One item as `needs --json` gives it (src/attention.ts). */
 export interface NeedItem {
   id: string;
-  kind: "approval" | "question" | "limit" | "ci" | "signin" | "update";
+  kind: "approval" | "question" | "limit" | "ci" | "signin" | "pace" | "update";
   subject: string;
   who: string;
   what: string;
@@ -37,6 +37,7 @@ const ICON: Record<NeedItem["kind"], ReactNode> = {
   limit: <TriangleAlert />,
   ci: <CircleX />,
   signin: <LogIn />,
+  pace: <Gauge />,
   update: <Download />,
 };
 

@@ -16,6 +16,8 @@ const ipcMock = vi.hoisted(() => ({
   setLinkExecutor: vi.fn(),
   getCodexAutoReset: vi.fn(),
   setCodexAutoReset: vi.fn(),
+  getPaceSuggest: vi.fn(),
+  setPaceSuggest: vi.fn(),
 }));
 vi.mock("../../ipc.js", async (orig) => ({ ...(await orig<typeof import("../../ipc.js")>()), ...ipcMock }));
 
@@ -26,6 +28,8 @@ beforeEach(() => {
   ipcMock.setLinkAutoConnect.mockResolvedValue(undefined);
   ipcMock.getLinkExecutor.mockResolvedValue("app");
   ipcMock.setLinkExecutor.mockResolvedValue(undefined);
+  ipcMock.getPaceSuggest.mockResolvedValue(true);
+  ipcMock.setPaceSuggest.mockResolvedValue(undefined);
 });
 afterEach(() => {
   cleanup();
@@ -98,5 +102,18 @@ describe("v3 settings › Protection: Let the background service carry out moves
     mount();
     await waitFor(() => expect(ipcMock.getLinkExecutor).toHaveBeenCalled());
     expect(executor().disabled).toBe(true);
+  });
+});
+
+describe("v3 settings › Protection: pace suggestions", () => {
+  it("shows the CLI's value (on by default) and writes a change back", async () => {
+    ipcMock.getLinkAutoConnect.mockResolvedValue(true);
+    mount();
+    const sw = () => screen.getByRole("switch", { name: "Suggest a switch when accounts run at different paces" }) as HTMLButtonElement;
+    await waitFor(() => expect(sw().disabled).toBe(false));
+    expect(sw().getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(sw());
+    await waitFor(() => expect(ipcMock.setPaceSuggest).toHaveBeenCalledWith(false));
+    expect(sw().getAttribute("aria-checked")).toBe("false");
   });
 });

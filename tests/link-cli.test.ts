@@ -69,3 +69,12 @@ test("bad input fails with one sentence and a non-zero exit", gate, () => {
   const r3 = fail(h, ["switch", "decide", "nope", "maybe"]);
   assert.match(r3.stderr, /usage: agent-switch switch/);
 });
+
+test("pace on|off|status --json: default on, persists off", gate, () => {
+  const h = home();
+  assert.deepEqual(run(h, ["pace", "status"]), { enabled: true });
+  assert.deepEqual(run(h, ["pace", "off"]), { enabled: false });
+  assert.deepEqual(run(h, ["pace"]), { enabled: false });
+  assert.deepEqual(run(h, ["pace", "on"]), { enabled: true });
+  assert.notEqual(fail(h, ["pace", "sideways"]).status, 0);
+});
