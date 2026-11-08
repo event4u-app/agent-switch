@@ -2,23 +2,23 @@
 
 > Part of [Map of agent-switch](../MAP.md). Generated; never edit by hand.
 
-17 files · cohesion 58 % · tests 41.2 % · outside hub folder 0 %
+17 files · cohesion 57.3 % · tests 41.2 % · outside hub folder 0 %
 
 ## Files, most used first
 
 | File | Role | Used by | Uses |
 |---|---|---|---|
-| `src/link/requests.ts` | code | 18 | 3 |
+| `src/link/requests.ts` | code | 19 | 3 |
 | `src/link/limits.ts` | code | 7 | 5 |
+| `src/link/raise.ts` | code | 6 | 4 |
 | `src/link/pace.ts` | code | 5 | 4 |
-| `src/link/raise.ts` | code | 5 | 4 |
 | `src/link/candidates.ts` | code | 3 | 2 |
 | `src/link/execute.ts` | code | 3 | 1 |
 | `src/link/mcp.ts` | code | 3 | 4 |
 | `src/link/store.ts` | code | 3 | 3 |
 | `src/link/summary.ts` | code | 3 | 1 |
 | `src/link/ops.ts` | code | 2 | 11 |
-| `tests/link-requests.test.ts` | test | 1 | 1 |
+| `tests/link-requests.test.ts` | test | 2 | 1 |
 | `tests/link-candidates.test.ts` | test | 0 | 2 |
 | `tests/link-execute.test.ts` | test | 0 | 2 |
 | `tests/link-limits.test.ts` | test | 0 | 2 |

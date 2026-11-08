@@ -1,16 +1,16 @@
 {
   "schema": 1,
-  "generation": "f4b29af8e5924e21",
-  "commit": "b44c81dbea6e",
-  "built": "2026-11-07",
-  "built_at_commit": "b44c81dbea6e",
+  "generation": "6e6245ffcd42ddf1",
+  "commit": "5918a2eb0deb",
+  "built": "2026-11-08",
+  "built_at_commit": "5918a2eb0deb",
   "state": "fresh",
   "areas": {
     "code": {
       "path": "code/map.json",
       "source": "code-graph",
       "freshness": "fresh",
-      "facts": 469
+      "facts": 470
     },
     "data": {
       "path": "data/data.json",
