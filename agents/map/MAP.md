@@ -3,7 +3,7 @@
 > Built by `agent-config code-graph map`; the commit it describes and its freshness are in `manifest.json` — compare that commit with HEAD yourself.
 > Deterministic, no model call. Rebuild with `agent-config code-graph map`; never edit by hand.
 
-**721 files · 31 areas · 10606 trusted links · guess share 3.5 %**
+**721 files · 31 areas · 10607 trusted links · guess share 3.5 %**
 
 Thresholds: seed 42 · infrastructure above in-degree 66 · areas under 3 files fold into "small parts" · an area above 25 % is split once · lists capped at 15.
 
@@ -58,7 +58,7 @@ test joins the area of the file it links to most, so an area changes only when i
 | [gui-src-v3-adapter](code/areas/gui-src-v3-adapter.md) | gui/src/v3/adapter | 27 | 35.6 % | 44.4 % | 0 % | `data.ts`, `slots.tsx`, `feeds.ts` |
 | [gui-src-ui](code/areas/gui-src-ui.md) | gui/src/ui | 22 | 12.8 % | 9.1 % | 0 % | `Button.tsx`, `Typography.tsx`, `Card.tsx` |
 | [gui-src-redesign-engines](code/areas/gui-src-redesign-engines.md) | gui/src/redesign/engines | 18 | 26.6 % | 27.8 % | 0 % | `bus.ts`, `notice-text.ts`, `test-storage.ts` |
-| [src-link](code/areas/src-link.md) | src/link | 17 | 54.3 % | 41.2 % | 0 % | `requests.ts`, `limits.ts`, `pace.ts` |
+| [src-link](code/areas/src-link.md) | src/link | 17 | 54.2 % | 41.2 % | 0 % | `requests.ts`, `limits.ts`, `pace.ts` |
 | [src-bridge](code/areas/src-bridge.md) | src/bridge | 12 | 50.8 % | 50 % | 0 % | `pending.ts`, `inbox.ts`, `claude-bridge.ts` |
 | [gui-src-v3-markdown](code/areas/gui-src-v3-markdown.md) | gui/src/v3/markdown | 9 | 74.7 % | 33.3 % | 0 % | `Markdown.tsx`, `fixtures.ts`, `parse.ts` |
 | [tests](code/areas/tests.md) | tests | 9 | 0 % | 100 % | 0 % | `cli-snapshot.test.ts`, `cli-e2e-acp.test.ts`, `release-workflow.test.ts` |
@@ -125,6 +125,6 @@ a string path or a framework convention the engine does not read is isolated too
 
 ## Guessed links
 
-347 links were resolved by name only (no import, no type) and are not drawn by default; they are 3.5 % of all file-to-file links.
+348 links were resolved by name only (no import, no type) and are not drawn by default; they are 3.5 % of all file-to-file links.
 
 > Budget of 2000 tokens reached — cut: Cycles, External dependencies. Read one with `agent-config code-graph map --section <name>`; never open `code/map.json` for it.
