@@ -1,9 +1,17 @@
 ---
 complexity: standard
-status: planned
+status: parked
+review_by: 2027-01-07
+entry_condition:
+  what: "Scheduler: PICKS_MAX_LINES (src/picks.ts:20, 500 = about 21 days at the current ~24 starts/day) is raised to at least 700 AND `head -1 ~/.agent-switch/picks.jsonl` is 28 or more days old. Protection: a user asks for bulk `wait` setting. Codex: a Codex CLI release documents the originator (remaining scope: titles from ~/.codex/session_index.jsonl plus start->rollout mapping). Antigravity: `agy --help` lists a quota or usage command. Masking: see the owner question in this file's triage line."
+  when: "Checked at every /roadmap:triage-parked; review_by 2027-01-07."
+  who: "owner / upstream releases"
 ---
 
 # Roadmap: host-signal follow-ups (need data, a live app or a permission)
+
+> Last triaged: 2026-11-07 — the ledger condition as written could never fire: `PICKS_MAX_LINES = 500` (`src/picks.ts:20`) holds about 21 days, not 4 weeks — rewritten above. Terminal jump shipped (74206e3) and flipped. Codex parity partly shipped (subagent threads, rollout rate_limits). "Mask secrets in previews and notices" has no real gate (`redactSecrets` is used only in `src/activity.ts:53`, `src/picks.ts:37`) and is agent-executable now — put to the owner in the triage run of 2026-11-07.
+> **Decided 2026-11-07 (owner, option 1):** "Mask secrets in previews and notices" moved to [`road-to-the-ready-remainders.md`](../road-to-the-ready-remainders.md) 3.4.
 
 > **Source:** `agents/tmp.old/inbox-2026-10-d/` — the parts of the switchboard
 > comparison that `archive/road-to-signals-the-host-already-sends.md` could not
@@ -53,12 +61,12 @@ status: planned
 
 ## Desktop
 
-- [ ] **Jump to a session's terminal.** Focus iTerm / Terminal.app by the session's
+- [x] **Jump to a session's terminal.** Focus iTerm / Terminal.app by the session's <!-- shipped: src/focus-terminal.ts:1-8,77-79; gui/src/v3/settings.tsx:262; commit 74206e3 (triage 2026-11-07) -->
       tty through AppleScript; report error -1743 as "Automation permission denied";
       no double trigger. The Claude Desktop deep link stays out (undocumented, can
       hit the wrong instance). _Resume when:_ the owner asks for it (needs the
       Automation permission).
-- [ ] **Mask secrets in previews and notices.** Run session previews and
+- [ ] **Mask secrets in previews and notices.** Run session previews and <!-- moved-to: road-to-the-ready-remainders.md 3.4 (2026-11-07) -->
       notification text through `redactSecrets` (`src/activity.ts`) before they are
       shown. _Resume when:_ a preview or notice is seen carrying a token-shaped
       string.

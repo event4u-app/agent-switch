@@ -1,9 +1,16 @@
 ---
 complexity: standard
-status: active
+status: parked
+review_by: 2027-01-07
+entry_condition:
+  what: "The owner confirms Copilot, Cursor and Windsurf are still wanted (the council recommended dropping Copilot); a second GitHub account and a second Cursor account exist on the dev Mac; the COPILOT_GITHUB_TOKEN threat model is done. Tool presence is already true (`which copilot` -> 1.0.95, /Applications/Cursor.app)."
+  when: "Checked at every /roadmap:triage-parked; review_by 2027-01-07."
+  who: "owner"
 ---
 
 # Roadmap: Multi-provider expansion + Providers settings tab + auto-switch default-off
+
+> Last triaged: 2026-11-07 — tool presence no longer blocks (Copilot CLI 1.0.95 and Cursor.app installed; Windsurf not). What blocks: a second account, the credential threat model, and owner demand. Gemini premises are stale: providers are now claude/codex/antigravity (`src/providers.ts:24`). All 9 deferred steps still needed; P6 Step 1 partly shipped (`starlight/.../reference/platform-matrix.mdx`). Status corrected from `active` to `parked`.
 
 > Widen agent-switch beyond Claude/Codex/Gemini to the coding assistants worth
 > supporting, put provider enable/disable behind a dedicated Settings tab, and

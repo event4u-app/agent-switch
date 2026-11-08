@@ -5,6 +5,10 @@ status: planned
 
 # Roadmap: consolidated deferred follow-ups
 
+> **Owner question (/roadmap:triage-parked, 2026-11-07):** Phase 3 is unblocked — the agent-config contracts it waited for have shipped (`--config-root`/`EVENT4U_CONFIG_HOME`, `docs/contracts/rtk-detection.md`, `tokens/build-as.mjs`). P3.1 (`src/tooling.ts:139-143` still probes), P3.2 (`gui/src-tauri/src/ac.rs` passes no config root) and P3b.1 (`ac.rs:709` sends no accent) are agent-executable now. P3.3 (share-collision guard on the AS side) looks obsolete: agent-config guards it itself (`src/server/io/sharedWriteCheck.ts` + SharedWriteModal). Phase 2 still needs a non-macOS machine; P3b.2 (vitest/vite bump) waits for a tooling change or an advisory.
+> Candidates: (1) move P3.1/P3.2/P3b.1 into an active roadmap, cancel P3.3 as covered by agent-config, re-park the rest; (2) keep P3.3 as an AS-side test only; (3) leave parked.
+> **Decided 2026-11-07 (owner, option 1):** P3.1, P3.2, P3b.1 moved to [`road-to-the-ready-remainders.md`](../road-to-the-ready-remainders.md) phase 4. P3.3 cancelled by the owner on 2026-11-08 (covered by agent-config, see the step).
+
 > One home for the still-wanted `[~]` deferrals carried out of six roadmaps that
 > completed and were archived on 2026-07-29 (desktop-pet, live-rebind,
 > ac-embedded-settings, agent-setup-hub, 1.0.1-review-followup,
@@ -81,27 +85,34 @@ stays visible and tracked instead of being buried in an archive.
       `WebviewWindow`); what remains is thin per-platform verification —
       parent-close propagates with no orphan, and positioning lands on the
       parent's monitor (Tauri `center()` targets the primary monitor).
+- [ ] **Background service live on Linux and Windows** (from
+      `road-to-agent-switch-gui-service` acceptance criterion, merged here on
+      2026-11-07). The systemd user unit and the schtasks logon task are
+      golden-tested; install, run and uninstall them once on a real Linux and a
+      real Windows machine (macOS already runs it as the launchd engine).
+      <!-- from: road-to-agent-switch-gui-service AC "Background service installs/runs" -->
 
 ## Phase 3 — blocked on agent-config (AC) ecosystem contracts
 
-- [ ] **rtk detection real delegation** (from `road-to-agent-setup-hub`). The
+- [ ] **rtk detection real delegation** (from `road-to-agent-setup-hub`). The <!-- moved-to: road-to-the-ready-remainders.md 4.1 (2026-11-07) -->
       fallback output-signature probe ships (`src/tooling.ts probeRtkIdentity`);
       the real delegation activates only when agent-config exposes its rtk
       detection contract (AC-side rtk roadmap Phase 3). One implementation, not
       two — wire the seam when that contract lands.
-- [ ] **Per-profile AC settings via config-root flag** (from
+- [ ] **Per-profile AC settings via config-root flag** (from <!-- moved-to: road-to-the-ready-remainders.md 4.2 (2026-11-07) -->
       `road-to-ac-embedded-settings`). Pass the active profile's config dir to
       the spawned AC server (documented AC-side flag/env) so per-profile AC
       settings become possible ("work profile has the strict ruleset, private
       doesn't"). Blocked on the AC-side host-supplied config-root flag
       (reciprocal-ecosystem Phase 2).
-- [ ] **Share-collision guard + tests** (from `road-to-ac-embedded-settings`,
+- [-] **Share-collision guard + tests** (from `road-to-ac-embedded-settings`,
       lands with the config-root flag above). When `share on` is active for a
       path AC writes to (`settings.json`, `keybindings.json`, `CLAUDE.md`,
       `skills/`, `commands/`, `agents/` — `share.ts:37-43`), warn before a
       per-profile write that would land through the symlink and affect every
       profile; add the share-collision guard unit test (symlinked target →
       warning surfaced).
+      <!-- cancelled by the owner, 2026-11-08 (/roadmap:triage-parked follow-up, option 1): covered by agent-config, which owns the write and guards it itself — `src/server/io/sharedWriteCheck.ts` plus the SharedWriteModal in the agent-config repo. An AS-side copy or test would test another program's code. -->
 
 ## Notes
 
@@ -115,7 +126,7 @@ stays visible and tracked instead of being buried in an archive.
 
 ## Phase 3b — carried from the July inbox (`inbox-2026-11-a`)
 
-- [ ] **AS side of shared design tokens.** The owner asked that the embedded
+- [ ] **AS side of shared design tokens.** The owner asked that the embedded <!-- moved-to: road-to-the-ready-remainders.md 4.3 (2026-11-07) -->
       agent-config GUI match agent-switch's look (`omni-route` transcript, July).
       AS side: a generated token file from a shared source, a CI drift check, and
       a bounded `accent` parameter on the embed URL (`gui/src-tauri/src/ac.rs`

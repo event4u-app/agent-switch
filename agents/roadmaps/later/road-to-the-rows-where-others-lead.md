@@ -14,13 +14,19 @@ relates:
     note: "Pulls two items forward from it (D34 keychain, DE/EN); real pause/resume and leases stay there."
   - slug: road-to-agent-switch-native-updater
     relation: unblocks
-    note: "Its first prerequisite is a signing pipeline; Phase 1 here builds it."
+    note: "Its first prerequisite was a signing pipeline; archived 2026-11-08 (owner: no native updater)."
   - slug: road-to-agent-switch-statusline-usage
     relation: disjoint
     note: "Official rate_limits source for live sessions stays there."
+entry_condition:
+  what: "mtime of ~/.agent-switch/antigravity/*/config/.gemini/antigravity-cli/last_check.timestamp is later than 2026-11-01, and `agent-switch doctor` reports agy-keychain-password ok with a login.keychain-db present in that profile."
+  when: "The next owner `agy` run; review_by 2026-12-31."
+  who: "owner (the run writes to the login keychain)"
 ---
 
 # Road to the rows where others lead
+
+> Last triaged: 2026-11-07 — AC-2 unverifiable: the only agy profile (MatneX) last ran on 2026-07-16, before the fix, and has no `login.keychain-db`, so `doctor` passes without testing anything (`src/agy-keychain.ts:143-149`, `src/doctor.ts:152-156`). 25 of 26 items closed.
 
 > **Source:** `agents/tmp.old/inbox-2026-11-a/as-review-1/` — the leading review of
 > 2026-11-01 (deep analysis plus its own roadmap draft, pinned to `ce9e019` / npm
