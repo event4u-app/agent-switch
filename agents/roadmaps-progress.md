@@ -76,6 +76,6 @@ Days since each active roadmap landed at its path and since its last ticked step
 
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
-| [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 2 | 2 |
-| [road-to-limits-that-last-the-whole-run.md](roadmaps/road-to-limits-that-last-the-whole-run.md) | 0 | 0 |
+| [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 3 | 3 |
+| [road-to-limits-that-last-the-whole-run.md](roadmaps/road-to-limits-that-last-the-whole-run.md) | 1 | 1 |
 
