@@ -2,7 +2,7 @@
 
 > Part of [Map of agent-switch](../MAP.md). Generated; never edit by hand.
 
-17 files · cohesion 57.3 % · tests 41.2 % · outside hub folder 0 %
+17 files · cohesion 57.1 % · tests 41.2 % · outside hub folder 0 %
 
 ## Files, most used first
 
@@ -19,10 +19,10 @@
 | `src/link/summary.ts` | code | 3 | 1 |
 | `src/link/ops.ts` | code | 2 | 11 |
 | `tests/link-requests.test.ts` | test | 2 | 1 |
+| `tests/link-mcp.test.ts` | test | 1 | 2 |
 | `tests/link-candidates.test.ts` | test | 0 | 2 |
 | `tests/link-execute.test.ts` | test | 0 | 2 |
 | `tests/link-limits.test.ts` | test | 0 | 2 |
-| `tests/link-mcp.test.ts` | test | 0 | 2 |
 | `tests/link-pace.test.ts` | test | 0 | 5 |
 | `tests/link-raise.test.ts` | test | 0 | 3 |
 

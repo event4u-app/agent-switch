@@ -15,7 +15,7 @@
 | `src/commands/sessions.ts` | code | 3 | 15 |
 | `src/commands/takeover.ts` | code | 3 | 15 |
 | `src/commands/help.ts` | code | 2 | 2 |
-| `src/commands/link.ts` | code | 2 | 12 |
+| `src/commands/link.ts` | code | 2 | 13 |
 | `src/commands/sharing.ts` | code | 2 | 4 |
 | `src/commands/system.ts` | code | 2 | 12 |
 | `src/commands/usage.ts` | code | 2 | 10 |
