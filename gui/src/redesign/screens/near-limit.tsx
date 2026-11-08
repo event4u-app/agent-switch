@@ -39,7 +39,8 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
   if (!item || !account) return null;
   // The same question agent-config may have asked in the session: answering
   // here answers it there too (road-to-the-agent-config-link).
-  const request = openRequestFor(s.switchRequests, account.id, session?.id ?? null, s.now);
+  const pace = item.kind === "pace";
+  const request = openRequestFor(s.switchRequests, account.id, session?.id ?? null, s.now, pace ? "pace" : "limit");
   const record = (to: string, how: "now" | "handoff", executed: string) => {
     if (request) void decideSwitchRequest(request.id, "approve", { to: cliAccount(to), how, executed }).catch(() => {});
   };
@@ -117,12 +118,23 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
     <Sheet
       open
       onOpenChange={(o) => !o && s.close()}
-      kicker={t("sessions.near.kicker")}
+      kicker={pace ? t("sessions.near.paceKicker") : t("sessions.near.kicker")}
       title={item.title}
       width={460}
       footer={
         <>
-          <Button size="sm" variant="ghost" onClick={() => s.close()}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              // A pace suggestion put off stays closed until its reset; the limit ask is unaffected.
+              if (pace && request) {
+                void decideSwitchRequest(request.id, "snooze").catch(() => {});
+                done();
+              }
+              s.close();
+            }}
+          >
             {t("sessions.near.later")}
           </Button>
           <Button
@@ -153,6 +165,7 @@ export function NearLimitSheet({ attentionId }: { attentionId: string }) {
               <AccountDot color={account.color} size={8} /> {TOOL_LABEL[account.tool]} · {account.name}
             </span>
           </div>
+          {pace && <p className="text-xs text-ac-soft">{t("sessions.near.paceBody", { detail: item.detail })}</p>}
           {askedByAgentConfig(request) && (
             <div>
               <Badge tone="info">{t("sessions.near.askedByAgentConfig")}</Badge>

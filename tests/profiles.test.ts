@@ -61,6 +61,7 @@ test("activeFor / setActive are per-provider", () => {
     keepSignedIn: true,
     codexAutoReset: false,
     linkAutoConnect: true,
+    paceSuggest: true,
     strategy: {},
     rebind: { disabled: false, consecutiveFailures: 0 },
     guard: "block",
@@ -148,6 +149,7 @@ test("legacy global auto-switch migrates onto every provider", () => {
     keepSignedIn: true,
     codexAutoReset: false,
     linkAutoConnect: true,
+    paceSuggest: true,
     strategy: {},
     rebind: { disabled: false, consecutiveFailures: 0 },
     guard: "block",
@@ -236,6 +238,19 @@ test("linkAutoConnect defaults ON — also for a state file written before the k
   assert.equal(P.readLinkAutoConnect(), false);
   P.setLinkAutoConnect(true);
   assert.equal(P.readLinkAutoConnect(), true);
+});
+
+test("paceSuggest defaults ON — also for a state file written before the key — and persists off", () => {
+  fs.rmSync(P.STATE_FILE, { force: true });
+  assert.equal(P.readPaceSuggest(), true);
+  fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: {}, linkAutoConnect: true }));
+  assert.equal(P.readPaceSuggest(), true);
+  P.setPaceSuggest(false);
+  assert.equal(P.readPaceSuggest(), false);
+  P.setActive("codex", null);
+  assert.equal(P.readPaceSuggest(), false);
+  P.setPaceSuggest(true);
+  assert.equal(P.readPaceSuggest(), true);
 });
 
 test("start strategy defaults to balance per provider, ignores junk, and persists a change", () => {

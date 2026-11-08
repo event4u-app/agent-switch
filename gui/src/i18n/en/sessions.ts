@@ -213,6 +213,8 @@ export const sessions = {
   "sessions.near.keepGoing": "Keep going",
   "sessions.near.briefFailed": "Couldn't prepare the brief: {error}",
   "sessions.near.kicker": "Near limit · you decide",
+  "sessions.near.paceKicker": "Accounts at different paces · you decide",
+  "sessions.near.paceBody": "{detail} Nothing moves unless you choose it.",
   "sessions.near.later": "Later",
   "sessions.near.noSession": "No running session on this account",
   "sessions.near.howAria": "How to go on",

@@ -59,6 +59,54 @@ agent-switch link status --json
 
 </Steps>
 
+## When accounts run at different paces
+
+Waiting for 90 % can be too late to spread the work well: one account is spent
+by Tuesday while another resets on Friday with half its week unused. So the
+background service also asks earlier, when both are true:
+
+- **This account runs too fast.** At the rate its own usage rose over the last
+  hours, it would reach its protection threshold before 80 % of the time to its
+  reset has passed. Windows that reset within six hours are left to the limit
+  question; the 5-hour window fills during any real session.
+- **Another account would waste room.** An account of the same tool with no
+  session of its own would still be below 60 % when it resets.
+
+The request is a pace request (`kind: "pace"`) and carries how many hours are
+left (`etaFull`) and, per account offered, how much would expire unused
+(`spareAtReset`). You answer it like any other: in the session, in the app
+(it waits in the list and never opens a sheet by itself), or here. Putting it
+off (snooze or decline) keeps it closed until that window resets; the question
+near the limit still comes.
+
+```bash
+agent-switch pace status --json   # {"enabled":true}
+agent-switch pace off             # only the question near the limit remains
+```
+
+In the app: **Settings › Protection › Suggest a switch when accounts run at
+different paces**.
+
+## In the chat
+
+With agent-config, its prompt-time hook reads `switch_list` for your session and
+shows the request's `summary` — one plain sentence — then records your answer
+through `switch_decide`. This works for Claude Code and Codex.
+
+Without agent-config, Claude Code can still hear about a request. The prompt
+hook is opt-in:
+
+```bash
+agent-switch hooks chat on        # every Claude account; or name one
+agent-switch hooks chat status
+agent-switch hooks chat off
+```
+
+When a request is open for the session, Claude gets one line of context with
+the summary and the `agent-switch switch decide …` commands, and asks you. It
+stays silent while agent-config is wired to this Agent Switch, so you never hear
+the same question twice, and it never holds up a prompt.
+
 <Aside type="note" title="Across tools">
 A move from Claude to Codex (or back) is a handoff: a new session seeded with a
 brief of what was being done. The conversation itself does not cross tools, and
@@ -70,11 +118,14 @@ the new tool reads its context again.
 ```bash
 agent-switch limits --json                          # every account's limits, from cache
 agent-switch switch list                            # open requests
+agent-switch switch list --session claude/work/<id> --json   # with kind and summary
 agent-switch switch request --session claude/work/<id>
 agent-switch switch decide <id> approve --to claude/home --how after-turn
 agent-switch switch decide <id> decline
 ```
 
-The MCP server offers the same: `limits_get`, `session_whoami`, `switch_list`,
-`switch_status`, `switch_request`, `switch_decide` and `link_status`.
+The MCP server offers the same: `limits_get` (with `burnPerHour` and `etaFull`
+per window), `session_whoami`, `switch_list` (filter with `session`; each
+request has `kind` and `summary`), `switch_status`, `switch_request`,
+`switch_decide` and `link_status` (contract 1).
 `switch_decide` records your answer, so your agent asks you before calling it.

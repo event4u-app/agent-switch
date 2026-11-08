@@ -214,6 +214,7 @@ The integration defines `claude`, `codex` and `agy` wrappers plus `asw`
 | `status [name]` | Usage per account: 5-hour and weekly meters (Claude, Codex). |
 | `limits [--json]` | Every account's limits from cache, with whether it can take work now, why not, and how fresh the numbers are. Reads no network. |
 | `switch list\|show\|request\|decide …` | Switch requests near a limit: list or show them, raise one for an account or session, or record your decision (`approve [--to A] [--how after-turn\|now\|handoff]`, `decline`, `snooze`). The first decision counts, in the app, here or in agent-config; the background service carries out an approval. Never moves anything by itself. |
+| `pace [on\|off\|status] [--json]` | Suggest moving a session when its account runs out well before its reset while another account of the same provider would let room expire (default on). Only asks — the suggestion is a switch request you answer like one near the limit. |
 | `link [on\|off\|status] [--json]` | Let agent-config connect to this Agent Switch (default on). Off, `mcp serve` offers no tools and agent-config removes its wiring. |
 | `mcp serve` | The local MCP server agent-config starts over stdio: limits, this session, and switch requests. No port, nothing listening. |
 | `usage history [--profile <name>]` | Usage samples the background service recorded. |
@@ -265,6 +266,7 @@ suggested. The background service must be running.
 | `handoff seed --to <profile> --brief <path>` | Start the target tool on that brief. |
 | `compact <profile> [--clear] [--dry-run] [--force]` | Type `/compact` (or `/clear`) into a session started with `run --tmux`. Claude and Codex. |
 | `hooks install\|uninstall\|status [profile]` <Badge text="Claude only" variant="note" /> | Add the hooks that tell the app when Claude needs you or finished. |
+| `hooks chat on\|off\|status [profile]` <Badge text="Claude only" variant="note" /> | Opt-in prompt hook: when a switch request is open for the session (near the limit, or accounts at different paces), Claude gets one line of context so it can ask you in the chat. Silent when agent-config is wired to this Agent Switch — it shows the request itself. |
 | `alerts on\|off\|status [--threshold 80,95]` | Log a notification when a session's context passes these marks (default off). |
 | `desktop` <Badge text="Claude only" variant="note" /> | Which accounts ran sessions in each Claude Desktop window. |
 
@@ -394,6 +396,7 @@ Used by the desktop app and by hooks; not for direct use.
 | Command | Used by |
 | --- | --- |
 | `__hook-event` | Claude Code hooks installed by `hooks install`. |
+| `__chat-hint` | The prompt hook installed by `hooks chat on`. Prints nothing and exits 0 on any error. |
 | `notify --kind K --title T --message M` | The desktop app, to log a notification. |
 | `gui-settings` | The desktop app, for its start-at-login and pet-intro settings. |
 

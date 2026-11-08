@@ -5,7 +5,9 @@
 
 import * as fs from "node:fs";
 import { spawnSync } from "node:child_process";
-import { configDir, die, listProfiles, requireProfile, readBinaryPath, ROOT } from "../profiles.js";
+import { configDir, die, listProfiles, readLinkAutoConnect, readPaceSuggest, requireProfile, readBinaryPath, ROOT } from "../profiles.js";
+import { acLinkWired, chatHint, chatHookInstalled, setChatHook } from "../chat-hint.js";
+import { requestStore } from "../link/store.js";
 import { ProviderId, provider, resolveBinary } from "../providers.js";
 import { armForSession, armsFile, readArms } from "../rebind-arm.js";
 import { liveSessionPids } from "../api.js";
@@ -63,10 +65,55 @@ function ageOf(mtimeMs: number): string {
  * fork-prone link — after an edit the user should run `share sync`). Claude
  * only (the hook contract is Claude Code's).
  */
-export function cmdHooks(sub?: string, name?: string): void {
+/** `agent-switch hooks chat on|off|status [profile]` — the opt-in prompt hook
+ *  that tells the conversation about an open switch request (chat-hint.ts). */
+function cmdChatHook(action: string | undefined, name?: string): void {
+  const a = action ?? "status";
+  if (!["on", "off", "status"].includes(a)) die("usage: agent-switch hooks chat on|off|status [profile]");
+  const profiles = name ? [requireProfile("claude", name, "hooks")] : listProfiles("claude");
+  if (profiles.length === 0) die("no claude profiles");
+  let changed = false;
+  for (const p of profiles) {
+    const cfg = configDir("claude", p);
+    if (a === "status") {
+      console.log(`claude/${p}: chat hint ${chatHookInstalled(readSettings(cfg)) ? "on" : "off"}`);
+      continue;
+    }
+    const res = setChatHook(cfg, a === "on");
+    console.log(`claude/${p}: chat hint ${a} ${res.changed ? "done" : "(no change)"}`);
+    changed ||= res.changed;
+  }
+  if (changed) console.log("\nsettings.json changed. If you use `share on`, run `agent-switch share sync` so the edit propagates and the link is restored.");
+}
+
+/** Claude Code's `UserPromptSubmit` hook: one line of context when an open
+ *  switch request names this session. Prints nothing and exits 0 on any error. */
+export function cmdChatHint(): void {
+  try {
+    const o = JSON.parse(fs.readFileSync(0, "utf8"));
+    const cfg = process.env.CLAUDE_CONFIG_DIR;
+    if (!cfg || typeof o?.session_id !== "string") return;
+    const who = profileFromConfigDir(cfg, ROOT);
+    if (!who || who.provider !== "claude") return;
+    const cwd = typeof o.cwd === "string" ? o.cwd : null;
+    const line = chatHint({
+      session: `claude/${who.profile}/${o.session_id}`,
+      requests: requestStore().list(),
+      linkConnected: readLinkAutoConnect() && acLinkWired(cfg, cwd),
+      paceOn: readPaceSuggest(),
+      now: Date.now(),
+    });
+    if (line) process.stdout.write(line + "\n");
+  } catch {
+    // never block a prompt
+  }
+}
+
+export function cmdHooks(sub?: string, name?: string, extra?: string): void {
+  if (sub === "chat") return cmdChatHook(name, extra);
   const action = sub ?? "status";
   if (!["install", "uninstall", "status"].includes(action)) {
-    die("usage: agent-switch hooks install|uninstall|status [profile]");
+    die("usage: agent-switch hooks install|uninstall|status [profile]  ·  agent-switch hooks chat on|off|status [profile]");
   }
   const profiles = name ? [requireProfile("claude", name, "hooks")] : listProfiles("claude");
   if (profiles.length === 0) die("no claude profiles");
