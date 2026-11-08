@@ -126,11 +126,12 @@ lose 45 % at its reset").
       no request → nothing; never blocks the prompt (exit 0 on any error).
       Done as `agent-switch hooks chat on|off|status`. With `pace.suggest` off
       only pace requests go quiet; a limit request still gets its line.
-- [ ] **2.3 Counterpart in agent-config.** Note in AC's
+- [x] **2.3 Counterpart in agent-config.** Note in AC's
       `road-to-a-link-with-agent-switch` that the prompt-time hook renders pace
       requests from `switch_list` (session filter, `summary`) and routes the
       answer through `switch_decide`.
       verify: the note exists in the AC repo (separate PR there).
+      Done: Phase 6 of the AC roadmap, event4u-app/agent-config#2916.
 
 ## Phase 3 — App on `main` (v2 redesign)
 
