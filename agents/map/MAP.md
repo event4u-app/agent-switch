@@ -3,7 +3,7 @@
 > Built by `agent-config code-graph map`; the commit it describes and its freshness are in `manifest.json` — compare that commit with HEAD yourself.
 > Deterministic, no model call. Rebuild with `agent-config code-graph map`; never edit by hand.
 
-**470 files · 19 areas · 7035 trusted links · guess share 2.4 %**
+**470 files · 19 areas · 7034 trusted links · guess share 2.4 %**
 
 Thresholds: seed 42 · infrastructure above in-degree 57 · areas under 3 files fold into "small parts" · an area above 25 % is split once · lists capped at 15.
 

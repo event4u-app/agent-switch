@@ -1,9 +1,9 @@
 {
   "schema": 1,
-  "generation": "9820023e05131076",
-  "commit": "62d16daa0273",
+  "generation": "64df256d81f15a18",
+  "commit": "105c83adeb89",
   "built": "2026-11-08",
-  "built_at_commit": "62d16daa0273",
+  "built_at_commit": "105c83adeb89",
   "state": "fresh",
   "areas": {
     "code": {
@@ -57,11 +57,10 @@
     "impact": {
       "path": "code/map.json",
       "source": "review-risk over the working diff",
-      "freshness": "empty",
+      "freshness": "fresh",
       "completeness": "complete",
-      "facts": 0,
-      "findings": 0,
-      "reason": "no change against HEAD"
+      "facts": 2,
+      "findings": 0
     },
     "agent": {
       "path": "code/map.json",
