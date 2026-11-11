@@ -17,6 +17,7 @@ import {
   repairLaunchers,
 } from "../launchers.js";
 import { desktopScan, logActivity, tildePath } from "./shared.js";
+import { setRelation, syncDesktopBeforeLaunch } from "../follow.js";
 
 /** Which accounts ran sessions in each Claude Desktop instance; `mismatch` =
  *  a profile's own instance signed in with another account. */
@@ -133,6 +134,14 @@ export function cmdOpen(appId?: string, name?: string): void {
     firstLaunch = !fs.existsSync(dir);
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); // lazy per-profile data dir
   }
+  if (app.id === "claude-desktop") {
+    try {
+      const r = syncDesktopBeforeLaunch(n);
+      if (r && r.state !== "applied" && r.state !== "off") console.error(`agent-switch: ${app.displayName} on ${n} not fully in step — ${r.detail}`);
+    } catch {
+      /* the app opens with what it has */
+    }
+  }
   const spec = buildLaunch(app, n);
   spawn(spec.program, spec.args, { detached: true, stdio: "ignore" }).unref();
   console.log(`Opening ${app.displayName} on ${app.provider}/${n}...`);
@@ -206,6 +215,7 @@ export function cmdAppSettings(sub: string | undefined, args: string[], flags: R
   // The running app rewrites its own files on quit and would undo the copy.
   if (findRunning(toDir)) die(`${app.displayName} is open on ${app.provider}/${toProfile} — quit it first, then copy.`);
   const r = copyDesktopSettings(app.id, fromDir, toDir);
+  if (app.id === "claude-desktop") setRelation("claude-desktop", toProfile, { source: from, enabled: true });
   logActivity("settings", `${app.provider}/${toProfile}`, `copied ${app.displayName} settings from ${from}`, "user ran `agent-switch app-settings copy`");
   if (flags.json) return void console.log(JSON.stringify({ app: app.id, from, to: toProfile, ...r }, null, 2));
   if (!r.copied.length) return void console.log(`Nothing to copy — ${from} has no ${app.displayName} settings yet.`);

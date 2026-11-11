@@ -1647,9 +1647,11 @@ function fakeProvider(dir: string, binary: "claude" | "codex", succeed: boolean)
   return log;
 }
 
+/** HOME is the temp dir too: a start brings a profile up to date with
+ *  ~/.claude (src/follow.ts), and the developer's own plugins must not leak in. */
 function runLogin(home: string, bin: string, args: string[]) {
   return spawnSync("node", [CLI, ...args], {
-    env: { ...process.env, AGENT_SWITCH_HOME: home, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
+    env: { ...process.env, HOME: home, AGENT_SWITCH_HOME: home, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
     encoding: "utf8",
   });
 }

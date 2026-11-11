@@ -23,6 +23,7 @@ import {
 import { Provider, ProviderId, provider, resolveBinary } from "../providers.js";
 import { credentialStore } from "../credentials.js";
 import { syncProfileSettings } from "../claude-settings.js";
+import { syncAll } from "../follow.js";
 import { appendActivity, type ActivityKind } from "../activity.js";
 import { parseMember } from "../pools.js";
 import { type CachedUsage } from "../dir-resolve.js";
@@ -132,13 +133,21 @@ export function checkSingleLoad(
 }
 
 
-/** Bring a Claude profile's settings.json up to date with ~/.claude/settings.json
- *  (src/claude-settings.ts). A failure never blocks the launch. */
+/** Bring a Claude profile up to date with its source before it starts
+ *  (src/follow.ts): settings, links, rules, and plugins when the source's
+ *  changed. A failure never blocks the launch. */
 export function syncClaudeProfile(dir: string): void {
   try {
-    syncProfileSettings(path.join(CLAUDE_HOME, "settings.json"), dir);
+    const profile = path.basename(path.dirname(dir));
+    if (dir !== configDir("claude", profile)) {
+      syncProfileSettings(path.join(CLAUDE_HOME, "settings.json"), dir);
+      return;
+    }
+    const r = syncAll(undefined, { profile, kinds: ["claude"] });
+    const t = r.targets.find((x) => x.key === `claude/${profile}`);
+    if (t && (t.state === "failed" || t.state === "pending-approval")) process.stderr.write(`agent-switch: ${t.key} not fully in step with ${t.source} — ${t.detail} (agent-switch sync status)\n`);
   } catch {
-    /* the launch goes ahead with the profile's current file */
+    /* the launch goes ahead with the profile's current files */
   }
 }
 

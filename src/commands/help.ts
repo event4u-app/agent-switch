@@ -78,6 +78,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch apps                            list launchable GUI apps (macOS)
   agent-switch open <app> [profile]            launch a GUI app on a profile, isolated; focuses it if already open (macOS)
   agent-switch launcher add|remove <app> <profile> | list [--json] | repair   Dock/Spotlight launcher per account in ~/Applications/Agent Switch (macOS)
+  agent-switch sync [run|status|confirm on|off|approve [<profile>]|follow <profile> [--from <profile|default>]|unfollow <profile>] [--app claude-desktop] [--force] [--quiet] [--json]   bring every profile up to date with its source (settings, plugins, rules, skills, Desktop extensions); agent-config runs it after install/upgrade
   agent-switch app-settings copy <app> --from <profile|default> --to <profile> [--json]   copy desktop settings (MCP, preferences, extensions) — never logins
   agent-switch shellenv [--shell zsh|bash|fish|powershell]   shell integration
   agent-switch shellenv install [--shell S] [--json]   add it to your shell's startup file
