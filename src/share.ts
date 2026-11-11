@@ -321,6 +321,51 @@ export function syncSharing(sourceDir: string, targetDir: string): string[] {
   return actions;
 }
 
+/**
+ * Link the shared items a profile has none of (follow.ts): directories and
+ * files except settings.json, which the settings sync merges instead. What the
+ * profile has of its own, or a link it already has, is left alone.
+ */
+export function linkMissing(sourceDir: string, targetDir: string): string[] {
+  const actions: string[] = [];
+  const managed = new Set(readManifest(targetDir));
+  let added = false;
+  for (const item of BASE_ITEMS) {
+    if (item.name === "settings.json") continue;
+    const src = path.join(sourceDir, item.name);
+    const dst = path.join(targetDir, item.name);
+    if (!fs.existsSync(src)) continue;
+    try {
+      fs.lstatSync(dst);
+      continue;
+    } catch {
+      /* absent: link it */
+    }
+    try {
+      link(src, dst, item.kind);
+    } catch {
+      continue; // win32 without file symlinks: the item stays the profile's own
+    }
+    managed.add(item.name);
+    added = true;
+    actions.push(`linked ${item.name}`);
+  }
+  if (added) writeManifest(targetDir, [...managed]);
+  return actions;
+}
+
+/** The directory a profile's managed links point into, or null without any. */
+export function sharedSourceOf(targetDir: string): string | null {
+  for (const name of readManifest(targetDir)) {
+    try {
+      return path.dirname(path.resolve(targetDir, fs.readlinkSync(path.join(targetDir, name))));
+    } catch {
+      /* forked or gone: try the next */
+    }
+  }
+  return null;
+}
+
 export type LinkState = "linked" | "forked" | "missing";
 
 /** Health of each manifest-managed link in a profile, for `doctor`.
