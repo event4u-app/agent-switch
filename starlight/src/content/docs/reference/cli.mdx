@@ -312,6 +312,8 @@ See [Move a session](/agent-switch/guides/move-a-session/).
 | --- | --- |
 | `share on\|sync\|off\|status [--source <profile\|default>]` <Badge text="Claude only" variant="note" /> | Use one set of settings, `CLAUDE.md`, skills, commands and agents in every Claude account. |
 | `share on --history` | Also share conversations and plans (macOS and Linux). |
+| `sync confirm on\|off` / `sync approve [<profile>]` | Off (the default): new plugins and Desktop extensions reach every account automatically. On: they wait for `sync approve`; updates of what an account already has always go through. |
+| `sync follow <profile> [--from <profile\|default>]` / `sync unfollow <profile>` [`--app claude-desktop`] | Choose what an account follows, or stop it following. An account that stops keeps what it has. |
 | `config export <profile>` <Badge text="Claude only" variant="note" /> | Write a settings-only bundle to stdout. Never contains logins. |
 | `config import <profile>` <Badge text="Claude only" variant="note" /> | Read such a bundle from stdin. |
 

@@ -21,6 +21,7 @@ import { printCswapList } from "./cswap-list.js";
 import { cmdService } from "./service.js";
 import { cmdAppSettings, cmdApps, cmdDesktop, cmdLauncher, cmdOpen, cmdWeb } from "./commands/desktop.js";
 import { usage } from "./commands/help.js";
+import { cmdSync } from "./commands/sync.js";
 import {
   cmdActivate,
   cmdAdd,
@@ -164,6 +165,7 @@ async function main(): Promise<void> {
     case "unmap": return cmdUnmap(providerExplicit ? providerId : undefined, positional[0]);
     case "mappings": return cmdMappings(rest.includes("--json"));
     case "share": return cmdShare(positional[0], rest.slice(1));
+    case "sync": return cmdSync(positional[0], positional.slice(1), flags);
     case "config": return cmdConfig(positional[0], positional[1], flags);
     case "sessions":
       if (positional[0] === "rm") return cmdSessionsRm(providerId, providerExplicit, positional[1], flags);
