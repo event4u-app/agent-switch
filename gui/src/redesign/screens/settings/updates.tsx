@@ -10,6 +10,7 @@ import { SettingGroup, SettingRow } from "../../../ui/Setting.js";
 import { Switch } from "../../../ui/Switch.js";
 import type { UpdateCheck, UpdateKind } from "../../../updates.js";
 import { useAS } from "../../../vm/store.js";
+import { FollowCard } from "./follow.js";
 import { describeError, usePref } from "./prefs.js";
 
 const UPDATE_KINDS: [UpdateKind, TKey][] = [
@@ -93,6 +94,7 @@ export function UpdatesSettings() {
 
   return (
     <>
+      <FollowCard />
       <SettingGroup>
         <SettingRow
           title={t("settings.updates.version")}

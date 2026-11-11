@@ -904,6 +904,38 @@ export async function setLinkAutoConnect(on: boolean): Promise<void> {
   await runCli(["link", on ? "on" : "off"]);
 }
 
+/** One profile as `agent-switch sync status --json` reports it (src/follow.ts). */
+export interface FollowTarget {
+  key: string;
+  source: string;
+  state: "applied" | "pending-app-running" | "pending-approval" | "differs" | "failed" | "off" | "unsynced";
+  detail: string;
+}
+
+export interface FollowStatus {
+  ran: boolean;
+  confirmNew: boolean;
+  targets: FollowTarget[];
+}
+
+/** Every profile follows its source: settings, plugins, rules, Desktop extensions. */
+export async function followStatus(): Promise<FollowStatus> {
+  return JSON.parse(await runCli(["sync", "status", "--json"]));
+}
+
+export async function followSyncNow(): Promise<FollowStatus> {
+  return JSON.parse(await runCli(["sync", "run", "--json"]));
+}
+
+/** On: new plugins and Desktop extensions wait for approval. Off (default): applied automatically. */
+export async function setFollowConfirm(on: boolean): Promise<void> {
+  await runCli(["sync", "confirm", on ? "on" : "off"]);
+}
+
+export async function followApprove(): Promise<void> {
+  await runCli(["sync", "approve", "--json"]);
+}
+
 /** "Suggest a switch when accounts run at different paces" — `agent-switch pace` (default on). */
 export async function getPaceSuggest(): Promise<boolean> {
   const { enabled } = JSON.parse(await runCli(["pace", "status", "--json"]));
