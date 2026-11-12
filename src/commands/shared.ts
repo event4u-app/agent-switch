@@ -22,6 +22,8 @@ import {
 } from "../profiles.js";
 import { Provider, ProviderId, provider, resolveBinary } from "../providers.js";
 import { credentialStore } from "../credentials.js";
+import { syncProfileSettings } from "../claude-settings.js";
+import { syncAll } from "../follow.js";
 import { appendActivity, type ActivityKind } from "../activity.js";
 import { parseMember } from "../pools.js";
 import { type CachedUsage } from "../dir-resolve.js";
@@ -131,9 +133,28 @@ export function checkSingleLoad(
 }
 
 
+/** Bring a Claude profile up to date with its source before it starts
+ *  (src/follow.ts): settings, links, rules, and plugins when the source's
+ *  changed. A failure never blocks the launch. */
+export function syncClaudeProfile(dir: string): void {
+  try {
+    const profile = path.basename(path.dirname(dir));
+    if (dir !== configDir("claude", profile)) {
+      syncProfileSettings(path.join(CLAUDE_HOME, "settings.json"), dir);
+      return;
+    }
+    const r = syncAll(undefined, { profile, kinds: ["claude"] });
+    const t = r.targets.find((x) => x.key === `claude/${profile}`);
+    if (t && (t.state === "failed" || t.state === "pending-approval")) process.stderr.write(`agent-switch: ${t.key} not fully in step with ${t.source} — ${t.detail} (agent-switch sync status)\n`);
+  } catch {
+    /* the launch goes ahead with the profile's current files */
+  }
+}
+
 export function launch(p: Provider, name: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}): number {
   const home = configDir(p.id, name);
   const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv, [p.envVar]: home };
+  if (p.id === "claude") syncClaudeProfile(home);
   // Antigravity's agy CLI stores its token in the macOS keychain (fixed key) —
   // seed a per-profile keychain under this HOME so the token is isolated per
   // account (and macOS doesn't pop its "no keychain found" dialog). No-op off mac.

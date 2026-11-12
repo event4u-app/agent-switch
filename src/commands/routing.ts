@@ -40,7 +40,7 @@ import { appendPick, readPicks, PICKS_MAX_LINES } from "../picks.js";
 import { GUARD_POLICIES, GUARD_REFUSED_EXIT, GuardPolicy, OVERRIDE_ENV, isGuardPolicy } from "../single-load.js";
 import { mappingRows, removeMapping, resolveMapping, setMapping, setPaused, normalizePath } from "../mappings.js";
 import { liveSessionPids } from "../api.js";
-import { cachedUsage, checkSingleLoad, launch, logActivity, parseMemberArg, tildePath } from "./shared.js";
+import { cachedUsage, checkSingleLoad, launch, logActivity, parseMemberArg, syncClaudeProfile, tildePath } from "./shared.js";
 
 /** Profile names are validated by `profileDir`, which exits on a bad name —
  *  a pool ref or a stale mapping must never kill the shell wrapper's hot path. */
@@ -126,6 +126,8 @@ export function cmdDir(providerId: ProviderId, guarded = false, json = false, pl
   }
   const name = r.name;
   if (!name) return;
+  // The shell wrapper starts the binary itself right after this, so this is the last stop before a start.
+  if (providerId === "claude" && guarded) syncClaudeProfile(configDir(providerId, name));
   console.log(configDir(providerId, name));
   if (!guarded) return;
   // The resolver already moved off a busy account where a free one exists, so
