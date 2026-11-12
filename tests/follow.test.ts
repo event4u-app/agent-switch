@@ -224,6 +224,16 @@ test("a cycle is refused instead of looping", () => {
   assert.throws(() => F.setRelation("claude", "A", { source: "A" }, env.root), /cannot follow itself/);
 });
 
+test("no ~/.claude and no regular Desktop yet: nothing to pass on, and nothing reported as failed", () => {
+  const { env, calls } = makeEnv(["A"]);
+  fs.mkdirSync(env.desktopDir("A"), { recursive: true });
+  const r = F.syncAll(env);
+  assert.deepEqual(r.targets.map((x) => [x.key, x.state]), [["claude/A", "applied"], ["claude-desktop/A", "applied"]]);
+  assert.deepEqual(calls, []);
+  F.setRelation("claude", "A", { source: "gone" }, env.root);
+  assert.equal(F.syncAll(env).targets.find((x) => x.key === "claude/A")!.state, "failed", "a source profile that is gone is a fault");
+});
+
 test("an unfollowed profile is left alone", () => {
   const { env } = makeEnv(["A"]);
   write(path.join(env.claudeHome, "rules", "r.md"), "x");
