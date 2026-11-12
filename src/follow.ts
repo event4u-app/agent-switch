@@ -595,7 +595,12 @@ export function syncClaudeTarget(f: FollowFile, env: FollowEnv, profile: string,
   if (!rel.enabled) return record(env, prev, { state: "off", detail: "does not follow" });
   const src = sourceDir(env, "claude", rel.source);
   const dst = env.claudeDir(profile);
-  if (!src || !fs.existsSync(src)) return record(env, prev, { state: "failed", detail: `source ${rel.source} has no config dir` });
+  if (!src || !fs.existsSync(src)) {
+    // No ~/.claude yet (a fresh machine, a CI runner): nothing to pass on. A
+    // source profile that is gone is a real fault.
+    if (rel.source === DEFAULT_SOURCE) return record(env, prev, { state: "applied", detail: "the source has nothing yet" });
+    return record(env, prev, { state: "failed", detail: `source ${rel.source} has no config dir` });
+  }
   const notes: string[] = [];
   try {
     const settings = path.join(src, "settings.json");
@@ -645,7 +650,10 @@ export function syncDesktopTarget(f: FollowFile, env: FollowEnv, profile: string
   const dst = env.desktopDir(profile);
   if (!dst || (!opts.create && !fs.existsSync(dst))) return null; // never opened on this profile: nothing to update
   const src = sourceDir(env, appId, rel.source);
-  if (!src || !fs.existsSync(src)) return record(env, prev, { state: "failed", detail: `source ${rel.source} has no Claude Desktop data` });
+  if (!src || !fs.existsSync(src)) {
+    if (rel.source === DEFAULT_SOURCE) return record(env, prev, { state: "applied", detail: "the source has nothing yet" });
+    return record(env, prev, { state: "failed", detail: `source ${rel.source} has no Claude Desktop data` });
+  }
   const approved = f.approved[key] ?? [];
   const fp = desktopFingerprint(appId, src);
   const approvalWaiting = (prev?.awaiting ?? []).some((a) => approved.includes(a));
