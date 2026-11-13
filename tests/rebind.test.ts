@@ -317,18 +317,53 @@ test("the global registry acquires its lock OUTER to CC's per-profile lock", asy
   assert.ok(globalIdx < profileIdx, "global lock precedes (is outer to) the per-profile lock");
 });
 
-test("rebind refuses binding an account already bound into a different profile (global lock)", async () => {
+test("rebind hands an account over from the profile borrowing it: the borrower gets its own login back", async () => {
   const f = makeFake();
-  // A is already registered as bound INTO profile "P".
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  f.kc.set(qSvc, cred("tokQ"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+
+  const r = await rebind({ account: "A", profile: "Q" }, f.deps);
+  assert.equal(JSON.parse(f.kc.get(pSvc)!).claudeAiOauth.accessToken, "tokP", "P is back on its own login, not signed out");
+  assert.equal(readBinding(pConfig, f.deps), null, "P's binding is released");
+  assert.equal(JSON.parse(f.kc.get(qSvc)!).claudeAiOauth.accessToken, "tokA", "Q now serves A's account");
+  assert.equal(readBinding(qConfig, f.deps)?.boundToProfile, "A");
+  assert.equal(readBindingRegistry(f.deps)["A"].runningProfile, "Q", "one account → one profile still holds");
+  assert.match(r.uxNote, /"P" is back on its own account/);
+
+  await restoreRebind({ profile: "Q" }, f.deps);
+  assert.equal(JSON.parse(f.kc.get(qSvc)!).claudeAiOauth.accessToken, "tokQ", "Q restores to its own login");
+  assert.equal(JSON.parse(f.kc.get(aSvc)!).claudeAiOauth.accessToken, "tokA", "A gets its login back");
+});
+
+test("rebind drops a registry entry no binding marker backs, and binds", async () => {
+  const f = makeFake();
+  // A is registered as bound INTO "P", but P carries no marker — a leftover.
   f.files.set(registryFile, JSON.stringify({ A: { runningProfile: "P", boundAt: "2026-07-24T00:00:00.000Z" } }) + "\n");
-  // Attempt to bind A into a SECOND profile "Q" (both stores readable, A never emptied).
   f.kc.set(qSvc, cred("tokQ"));
   f.kc.set(aSvc, cred("tokA"));
 
-  await assert.rejects(() => rebind({ account: "A", profile: "Q" }, f.deps), /already bound into running profile "P"/);
+  await rebind({ account: "A", profile: "Q" }, f.deps);
+  assert.equal(JSON.parse(f.kc.get(qSvc)!).claudeAiOauth.accessToken, "tokA", "Q now serves A's account");
+  assert.equal(readBindingRegistry(f.deps)["A"].runningProfile, "Q", "the stale entry was replaced");
+});
+
+test("a borrower whose restore is refused keeps the account, and nothing is bound", async () => {
+  const f = makeFake();
+  f.kc.set(pSvc, cred("tokP"));
+  f.kc.set(aSvc, cred("tokA"));
+  f.kc.set(qSvc, cred("tokQ"));
+  await rebind({ account: "A", profile: "P" }, f.deps);
+  // Someone re-logged P to a different account: restore must not clobber it.
+  f.kc.set(pSvc, cred("tokX"));
+  f.accounts.set("tokA", "acct-A");
+  f.accounts.set("tokX", "acct-X");
+
+  await assert.rejects(() => rebind({ account: "A", profile: "Q" }, f.deps), /DIFFERENT account/);
   assert.equal(JSON.parse(f.kc.get(qSvc)!).claudeAiOauth.accessToken, "tokQ", "Q store untouched");
   assert.equal(readBinding(qConfig, f.deps), null, "no marker on Q");
-  assert.equal(readBindingRegistry(f.deps)["A"].runningProfile, "P", "registry still shows only the P binding");
+  assert.equal(readBindingRegistry(f.deps)["A"].runningProfile, "P", "the P binding stays recorded");
 });
 
 // ---------- Feature 2: provenance-fingerprint mismatch states ----------
