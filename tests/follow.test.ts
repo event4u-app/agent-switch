@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -85,16 +86,62 @@ test("rules follow the source file by file: new ones arrive, removed ones go, a 
   assert.equal(read(path.join(dst, "a.md")), "a2");
   assert.equal(read(path.join(dst, "c.md")), "c1");
 
+  // An editor that saves by rename replaces the link with a file of the target's own.
+  fs.rmSync(path.join(dst, "c.md"));
   write(path.join(dst, "c.md"), "edited in target");
   write(path.join(src, "c.md"), "c2");
   const third = F.syncTree(src, dst, second.owned);
-  assert.equal(read(path.join(dst, "c.md")), "c2", "a copied file follows the source");
+  assert.equal(read(path.join(dst, "c.md")), "c2", "a followed file follows the source");
   assert.equal(read(path.join(dst, "c.md.pre-follow")), "edited in target", "the target's edit is kept once");
 
   fs.rmSync(path.join(src, "a.md"));
-  F.syncTree(src, dst, third.owned);
+  const fourth = F.syncTree(src, dst, third.owned);
+  assert.deepEqual(fourth.changed, ["-a.md"]);
   assert.equal(fs.existsSync(path.join(dst, "a.md")), false, "a file the source removed goes");
+  assert.throws(() => fs.lstatSync(path.join(dst, "a.md")), "no dangling link is left behind");
   assert.equal(read(path.join(dst, "own.md")), "mine");
+});
+
+test("a followed rule is one file on disk: the target holds a link, so the host never loads it twice", { skip: process.platform === "win32" }, () => {
+  const src = fs.mkdtempSync(path.join(os.tmpdir(), "asw-link-src-"));
+  const dst = fs.mkdtempSync(path.join(os.tmpdir(), "asw-link-dst-"));
+  write(path.join(src, "a.md"), "a1");
+  write(path.join(src, "sub", "b.md"), "b1");
+
+  const first = F.syncTree(src, dst, {});
+  for (const rel of ["a.md", path.join("sub", "b.md")]) {
+    assert.equal(fs.lstatSync(path.join(dst, rel)).isSymbolicLink(), true, `${rel} is a link`);
+    assert.equal(fs.realpathSync(path.join(dst, rel)), fs.realpathSync(path.join(src, rel)));
+  }
+  assert.deepEqual(F.syncTree(src, dst, first.owned).changed, [], "a tree in step is left alone");
+
+  write(path.join(src, "a.md"), "a2");
+  const afterEdit = F.syncTree(src, dst, first.owned);
+  assert.equal(read(path.join(dst, "a.md")), "a2", "the link shows the source's new content at once");
+  assert.deepEqual(afterEdit.changed, []);
+});
+
+test("copies an earlier version left behind become links, an edited one is kept once", { skip: process.platform === "win32" }, () => {
+  const src = fs.mkdtempSync(path.join(os.tmpdir(), "asw-mig-src-"));
+  const dst = fs.mkdtempSync(path.join(os.tmpdir(), "asw-mig-dst-"));
+  const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
+  write(path.join(src, "same.md"), "s1");
+  write(path.join(src, "stale.md"), "new");
+  write(path.join(src, "edited.md"), "e1");
+  write(path.join(dst, "same.md"), "s1");
+  write(path.join(dst, "stale.md"), "old");
+  write(path.join(dst, "edited.md"), "by hand");
+  write(path.join(dst, "own.md"), "mine");
+
+  const r = F.syncTree(src, dst, { "same.md": sha("s1"), "stale.md": sha("old"), "edited.md": sha("e0") });
+
+  for (const rel of ["same.md", "stale.md", "edited.md"]) assert.equal(fs.lstatSync(path.join(dst, rel)).isSymbolicLink(), true, `${rel} is a link`);
+  assert.equal(read(path.join(dst, "stale.md")), "new");
+  assert.equal(read(path.join(dst, "edited.md.pre-follow")), "by hand");
+  assert.equal(fs.existsSync(path.join(dst, "stale.md.pre-follow")), false, "an untouched copy needs no backup");
+  assert.equal(fs.lstatSync(path.join(dst, "own.md")).isSymbolicLink(), false);
+  assert.deepEqual(r.changed.sort(), ["edited.md", "same.md", "stale.md"]);
+  assert.equal(read(path.join(src, "edited.md")), "e1", "the source is never written through a link");
 });
 
 test("a Claude profile gets the source's settings, rules, links and plugins; its own plugin stays", () => {
