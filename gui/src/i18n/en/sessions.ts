@@ -159,6 +159,7 @@ export const sessions = {
   "sessions.sheet.switchLive": "Switch live",
   "sessions.sheet.handoffDesktop": "Needs a terminal session's transcript — a Claude Desktop session's isn't reachable here.",
   "sessions.sheet.switchTo": "Switch to",
+  "sessions.sheet.busyTarget": "busy — its own session is running, a switch would sign it out",
   "sessions.sheet.noSwitchTarget": "No other {tool} account to switch to — add one on Accounts.",
   "sessions.sheet.armedTo": "Switches to {name} when this turn ends.",
   "sessions.sheet.anotherAccount": "another account",

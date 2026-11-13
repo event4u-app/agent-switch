@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Store } from "../../vm/store.js";
 import type { Session, ViewModel } from "../../vm/types.js";
-import { restoreSessionFrom } from "./session-sheet.js";
+import type { RankedAccount } from "../../vm/rules.js";
+import { restoreSessionFrom, targetOptions } from "./session-sheet.js";
 
 const session = { id: "claude:a", tool: "claude", accountId: "claude:work", project: "a", trashed: true } as Session;
 
@@ -39,5 +40,24 @@ describe("restore from the trash", () => {
     await flush();
     expect(f.trashed()).toBe(true);
     expect(f.toast).toHaveBeenCalledWith({ text: "Restore failed: gone", tone: "alert" });
+  });
+});
+
+describe("live-switch targets", () => {
+  const ranked = (name: string, liveSessions: number, rank: number | null) =>
+    ({ account: { id: `claude:${name}`, tool: "claude", name, color: "#000", windows: [], liveSessions }, headroom: null, rank, reason: "" }) as unknown as RankedAccount;
+
+  it("an account running a session of its own is listed but cannot be picked for a live switch", () => {
+    const opts = targetOptions([ranked("ArturB", 1, 1), ranked("Matze", 0, 2)], { liveSwitch: true });
+    expect(opts.map((o) => [o.value, !!o.disabled])).toEqual([
+      ["claude:ArturB", true],
+      ["claude:Matze", false],
+    ]);
+    expect(opts[0].hint).toMatch(/own session is running/);
+  });
+
+  it("takeover and hand-off may still use a busy account", () => {
+    const opts = targetOptions([ranked("ArturB", 2, 1)]);
+    expect(opts[0].disabled).toBeUndefined();
   });
 });
