@@ -686,6 +686,29 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
     );
   }
 
+  // The account is lent to ANOTHER profile → hand it over: that borrower goes
+  // back on its own login (restore never signs it out), then the bind proceeds.
+  // Refusing here only told the user to run that very restore by hand. The
+  // target's own store is empty while it is lent, so its guards can only run
+  // after the release; the running profile's are checked before it.
+  if (!readCred(configDir("claude", profile), d)) {
+    throw new RebindRefused(`running profile "${profile}" has no readable credential — is it logged in?`);
+  }
+  const releasedFrom = await releaseFromOtherBorrower(account, profile, d);
+  try {
+    return await bindAccount(opts, releasedFrom, d);
+  } catch (e) {
+    if (releasedFrom && e instanceof Error) e.message += ` ("${releasedFrom}" was put back on its own account first.)`;
+    throw e;
+  }
+}
+
+async function bindAccount(
+  opts: { account: string; profile: string },
+  releasedFrom: string | null,
+  d: RebindDeps,
+): Promise<RebindResult> {
+  const { account, profile } = opts;
   const pConfig = configDir("claude", profile);
   const aConfig = configDir("claude", account);
 
@@ -826,8 +849,47 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
     uxNote:
       `Rebound "${profile}" → "${account}". A running Claude session adopts it on its next message ` +
       `(fresh process: instant; long-lived session: within ~30s, the Keychain read-cache). ` +
+      (releasedFrom ? `"${releasedFrom}" is back on its own account. ` : "") +
       `Restore with: agent-switch rebind --restore --profile ${profile}`,
   };
+}
+
+/** Free `account` from a profile other than `profile` that borrows it; returns
+ *  that profile when it was restored, null otherwise. */
+async function releaseFromOtherBorrower(account: string, profile: string, d: RebindDeps): Promise<string | null> {
+  const holder = readRegistry(d)[account]?.runningProfile;
+  if (!holder || holder === profile) return null;
+  const hConfig = configDir("claude", holder);
+  if (readBinding(hConfig, d)?.boundToProfile === account) {
+    try {
+      await restoreRebind({ profile: holder }, d);
+    } catch (e) {
+      // A concurrent rebind restored it first: released either way.
+      if (readBinding(hConfig, d) !== null) throw e;
+    }
+    return holder;
+  }
+  // Drop the entry only when the binding left NO trace: a corrupt marker, a
+  // stash or a lent file is a binding (or a swap that died mid-way) the user
+  // must see — the in-lock check below refuses on it.
+  await d.withLock(registryLockTarget(), async () => {
+    const reg = readRegistry(d);
+    if (reg[account]?.runningProfile !== holder || !isLeftover(holder, account, d)) return;
+    delete reg[account];
+    writeRegistry(reg, d);
+  });
+  return null;
+}
+
+function isLeftover(holder: string, account: string, d: RebindDeps): boolean {
+  const hConfig = configDir("claude", holder);
+  const stash = stashServices(hConfig, d);
+  return (
+    !d.exists(markerFile(hConfig)) &&
+    d.kcGet(stash.own) === null &&
+    d.kcGet(stash.target) === null &&
+    !d.exists(credFile(configDir("claude", account)) + LENT_SUFFIX)
+  );
 }
 
 /**
