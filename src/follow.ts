@@ -15,8 +15,8 @@
  *   - settings.json: the global-wins merge of claude-settings.ts, unchanged;
  *   - skills/, commands/, agents/, CLAUDE.md, keybindings.json: linked to the
  *     source when the target has none of its own (share.ts);
- *   - rules/: managed copies. A file agent-switch copied follows the source,
- *     including its removal; a file the target has on its own stays;
+ *   - rules/: managed links, file by file. A file agent-switch linked follows
+ *     the source, including its removal; a file the target has on its own stays;
  *   - plugins: replayed with `claude plugin` under the target's config dir, never
  *     copied. Plugins only the target has stay; agent-switch uninstalls only a
  *     plugin it installed itself. A version `claude plugin update` cannot match
@@ -47,7 +47,7 @@ import { linkMissing, sharedSourceOf } from "./share.js";
 
 export const FOLLOW_FILE = "follow.json";
 export const DEFAULT_SOURCE = "default";
-/** Rules are copied, not linked: a target keeps rules of its own beside them. */
+/** Rules are linked file by file, not as a directory: a target keeps rules of its own beside them. */
 export const FOLLOWED_TREES = ["rules"] as const;
 
 export type FollowKind = "claude" | "claude-desktop";
@@ -77,7 +77,7 @@ export interface TargetRecord {
   pluginsApplied?: string;
   /** Plugins agent-switch installed in this target (uninstalled with the source's). */
   ownedPlugins?: string[];
-  /** Copied tree files → the hash agent-switch wrote. */
+  /** Followed tree files → the source hash when agent-switch placed them. */
   ownedFiles?: Record<string, string>;
   /** Desktop folder entries agent-switch put there, per folder. */
   ownedEntries?: Record<string, string[]>;
@@ -292,12 +292,39 @@ function hashTree(dir: string): string {
 }
 
 
+function linksTo(link: string, target: string): boolean {
+  try {
+    return path.resolve(path.dirname(link), fs.readlinkSync(link)) === path.resolve(target);
+  } catch {
+    return false;
+  }
+}
+
+/** Put a link to `from` at `to`, replacing what is there in one rename. False where links are not allowed. */
+function linkFile(from: string, to: string): boolean {
+  const tmp = `${to}.follow-tmp`;
+  try {
+    fs.rmSync(tmp, { force: true });
+    fs.symlinkSync(from, tmp, process.platform === "win32" ? "file" : undefined);
+    fs.renameSync(tmp, to);
+    return true;
+  } catch {
+    fs.rmSync(tmp, { force: true });
+    return false;
+  }
+}
+
 /**
- * Bring `dst` up to date with `src`, file by file. A file agent-switch copied
- * before (in `owned`) follows the source — an edit made in the target is kept
- * once as `<file>.pre-follow`, then replaced; one the source removed is removed.
- * A file the target has on its own stays. A `dst` that is a link is shared
- * already and left alone.
+ * Bring `dst` up to date with `src`, file by file. Each followed file is a link
+ * to the source's file: Claude Code reads `~/.claude/rules` a second time for
+ * every project below the home directory, and loads a copy twice but a link
+ * once. Where links are not allowed (Windows without Developer Mode) the file
+ * is copied instead.
+ *
+ * A file agent-switch placed before (in `owned`) follows the source — one the
+ * target replaced with its own content is kept once as `<file>.pre-follow`,
+ * then linked again; one the source removed is removed. A file the target has
+ * on its own stays. A `dst` that is a link is shared already and left alone.
  */
 export function syncTree(src: string, dst: string, owned: Record<string, string>): { owned: Record<string, string>; changed: string[]; kept: string[] } {
   const next: Record<string, string> = {};
@@ -314,26 +341,27 @@ export function syncTree(src: string, dst: string, owned: Record<string, string>
     const to = path.join(dst, rel);
     const want = hashFile(from);
     if (want === null) continue;
-    const have = hashFile(to);
-    if (have === want) {
+    if (linksTo(to, from)) {
       next[rel] = want;
       continue;
     }
-    if (have !== null && !(rel in owned)) {
+    const have = hashFile(to);
+    if (have !== null && have !== want && !(rel in owned)) {
       kept.push(rel);
       continue;
     }
-    if (have !== null && have !== owned[rel]) fs.copyFileSync(to, `${to}.pre-follow`);
+    if (have !== null && have !== want && have !== owned[rel]) fs.copyFileSync(to, `${to}.pre-follow`);
     fs.mkdirSync(path.dirname(to), { recursive: true });
-    fs.copyFileSync(from, to);
+    const linked = linkFile(from, to);
+    if (!linked && have !== want) fs.copyFileSync(from, to);
     next[rel] = want;
-    changed.push(rel);
+    if (linked || have !== want) changed.push(rel);
   }
   const present = new Set(files);
   for (const [rel, hash] of Object.entries(owned)) {
     if (present.has(rel)) continue;
     const to = path.join(dst, rel);
-    if (hashFile(to) === hash) {
+    if (linksTo(to, path.join(src, rel)) || hashFile(to) === hash) {
       fs.rmSync(to, { force: true });
       changed.push(`-${rel}`);
     }
