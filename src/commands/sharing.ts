@@ -7,6 +7,7 @@ import { configDir, die, listProfiles, requireProfile } from "../profiles.js";
 import { applySharing, removeSharing, syncSharing, sharedLinkHealth, PROMPT_HISTORY } from "../share.js";
 import { assertNotFull, exportConfig, importConfig } from "../config-transfer.js";
 import { CLAUDE_HOME } from "./shared.js";
+import { setRelation } from "../follow.js";
 
 // share + web are Claude-config concepts and stay Claude-scoped.
 export function cmdShare(mode?: string, flags: string[] = []): void {
@@ -30,6 +31,7 @@ export function cmdShare(mode?: string, flags: string[] = []): void {
     for (const p of profiles) {
       if (configDir("claude", p) === source) continue;
       const actions = applySharing(source, configDir("claude", p), withHistory);
+      if (sourceName !== p) setRelation("claude", p, { source: sourceName ?? "default", enabled: true });
       console.log(`  ${p}: ${actions.length > 0 ? actions.join(", ") : "up to date"}`);
     }
     console.log(

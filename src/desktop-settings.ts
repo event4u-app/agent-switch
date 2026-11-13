@@ -38,6 +38,11 @@ export function hasSettingsLayout(appId: string): boolean {
   return appId in LAYOUTS;
 }
 
+/** The files and directories a settings copy covers, or null for an app without a layout. */
+export function desktopLayout(appId: string): Readonly<SettingsLayout> | null {
+  return LAYOUTS[appId] ?? null;
+}
+
 function isObject(v: unknown): v is Json {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
@@ -53,7 +58,7 @@ export function mergeDesktopConfig(src: Json, dst: Json): Json {
   return out;
 }
 
-function readJson(file: string): Json | null {
+export function readJson(file: string): Json | null {
   try {
     const v = JSON.parse(fs.readFileSync(file, "utf8"));
     return isObject(v) ? v : null;

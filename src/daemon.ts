@@ -57,7 +57,7 @@ import {
 } from "./notify.js";
 import { readEvents, eventFile } from "./hooks.js";
 import { autoContinueState, protectionNotice, readProtection } from "./protection.js";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { appendActivity } from "./activity.js";
 import { CONTINUE_TEXT, typeIntoHosted } from "./commands/continue.js";
 import { InputLeases } from "./host/lease.js";
@@ -582,6 +582,41 @@ export function runRequestsOnce(d: RequestRunDeps): SwitchRequest[] {
   return finished;
 }
 
+/** How often the engine brings every profile up to date with its source
+ *  (src/follow.ts). Plugins are only replayed when a source's changed, and a
+ *  Desktop update that waited for its app to close is delivered here. */
+export const FOLLOW_SYNC_MS = 10 * 60_000;
+
+/** Run `agent-switch sync --quiet` as a child, one at a time: a plugin install
+ *  can take minutes and must not hold up the engine's own loop. */
+export function startFollowSync(log: (l: string) => void, everyMs = FOLLOW_SYNC_MS, firstMs = 60_000): () => void {
+  let child: ChildProcess | null = null;
+  const tick = () => {
+    if (child) return;
+    child = spawn(process.execPath, [process.argv[1], "sync", "--quiet"], { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    child.stdout?.on("data", (d) => (out += d));
+    child.stderr?.on("data", (d) => (out += d));
+    child.on("close", (code) => {
+      child = null;
+      if (out.trim()) log(`follow sync: ${out.trim()}`);
+      if (code !== 0 && code !== null) log(`follow sync exited ${code}`);
+    });
+    child.on("error", (err) => {
+      child = null;
+      log(`follow sync error: ${err.message}`);
+    });
+  };
+  const first = setTimeout(tick, firstMs);
+  const timer = setInterval(tick, everyMs);
+  first.unref?.();
+  timer.unref?.();
+  return () => {
+    clearTimeout(first);
+    clearInterval(timer);
+  };
+}
+
 /** How often the daemon looks for switch requests the user approved. A tick
  *  with no request directory returns at once. */
 export const REQUEST_WATCH_MS = 2_000;
@@ -1012,6 +1047,7 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
   log(`started (pid ${process.pid}, base interval ${baseInterval}ms).`);
   const stopArmWatcher = startArmWatcher(armWatchDeps(log));
   const stopRequestExecutor = startRequestExecutor(log);
+  const stopFollowSync = startFollowSync(log);
   while (running) {
     try {
       const { failures, attempted } = await pollOnce(state, thresholds, notifiedReset, backoff, baseInterval, log);
@@ -1036,5 +1072,6 @@ export async function runDaemon(opts: RunOptions = {}): Promise<void> {
   stopArmWatcher();
   await engine?.stop();
   stopRequestExecutor();
+  stopFollowSync();
   releaseSingleInstance(process.pid);
 }

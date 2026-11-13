@@ -115,6 +115,18 @@ export function findRunning(userDataDir: string | null): number | null {
   return userDataDir === null ? findRegularMainPid(ps.stdout) : findMainPid(ps.stdout, userDataDir);
 }
 
+export type RunState = "running" | "closed" | "unknown";
+
+/** Whether the app runs on this data dir. `unknown` when the process list cannot
+ *  be read (or off macOS), so a caller that must not write under a running app
+ *  can wait instead of guessing. */
+export function runState(userDataDir: string): RunState {
+  if (process.platform !== "darwin") return "unknown";
+  const ps = spawnSync("ps", ["-axo", "pid=,args="], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  if (ps.status !== 0 || typeof ps.stdout !== "string") return "unknown";
+  return findMainPid(ps.stdout, userDataDir) === null ? "closed" : "running";
+}
+
 export function focusRunning(userDataDir: string): boolean {
   const pid = findRunning(userDataDir);
   if (pid === null) return false;

@@ -188,9 +188,9 @@ test("a malformed line is skipped, the rest of the ring is kept", () => {
 test("rotation keeps a session's last Notification/StopFailure until something newer arrives", () => {
   const f = eventFile(tmp(), "claude", "work");
   const rotateBytes = 1_500;
-  // Relative to now: kept lines expire after PIN_MAX_AGE_MS, so a fixed date rots.
-  const base = Date.now() - 60_000;
-  const t = (n: number) => new Date(base + n * 1000).toISOString();
+  // Dated from now: a kept line older than the pin age (hooks.ts) is let go.
+  const start = Date.now() - 60_000;
+  const t = (n: number) => new Date(start + n * 1000).toISOString();
   appendEvent(f, { event: "Notification", sessionId: "waits", at: t(0) }, { rotateBytes });
   appendEvent(f, { event: "StopFailure", sessionId: "failed", error: "rate_limit", at: t(1) }, { rotateBytes });
   appendEvent(f, { event: "Notification", sessionId: "answered", at: t(2) }, { rotateBytes });
