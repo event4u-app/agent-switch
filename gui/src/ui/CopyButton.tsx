@@ -9,11 +9,13 @@ export interface CopyButtonProps {
    *  HTML, so it renders as a focusable span with the button role. */
   nested?: boolean;
   className?: string;
+  /** Accessible name when `text` is too long to read out (a message). */
+  label?: string;
 }
 
 /** Small icon that copies `text`; shows a check for a moment after. The click
  *  never reaches the row or button around it. */
-export function CopyButton({ text, nested, className }: CopyButtonProps) {
+export function CopyButton({ text, nested, className, label: name }: CopyButtonProps) {
   const [done, setDone] = useState(false);
   useEffect(() => {
     if (!done) return;
@@ -29,7 +31,7 @@ export function CopyButton({ text, nested, className }: CopyButtonProps) {
       .then(() => setDone(true))
       .catch(() => {});
   };
-  const label = done ? t("common.copied") : t("ui.copy.copyText", { text });
+  const label = done ? t("common.copied") : (name ?? t("ui.copy.copyText", { text }));
   const props = {
     "aria-label": label,
     title: label,

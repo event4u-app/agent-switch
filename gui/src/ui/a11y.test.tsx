@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Segmented } from "./Segmented.js";
 import { Toaster } from "./Toaster.js";
 
@@ -51,5 +51,25 @@ describe("Toaster", () => {
     expect(status.textContent).not.toContain("Broke");
     expect(screen.getByRole("alert")).toBe(alert);
     expect(alert.textContent).toContain("Broke");
+  });
+
+  it("every toast copies its full message to the clipboard", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const message = 'Switch failed – agent-config stays on MathiasB. error: "ArturB" has a live session of its own';
+    render(
+      <Toaster
+        toasts={[
+          { id: 1, text: "Saved", tone: "ok" },
+          { id: 2, text: message, tone: "alert" },
+        ]}
+        onDismiss={() => {}}
+      />,
+    );
+    const buttons = screen.getAllByRole("button", { name: "Copy message" });
+    expect(buttons).toHaveLength(2);
+    fireEvent.click(buttons[1]);
+    expect(writeText).toHaveBeenCalledWith(message);
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
   });
 });
