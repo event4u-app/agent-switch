@@ -189,6 +189,17 @@ saved.
       verify: the test filtered and run 20 times in a row locally without a
       failure, and the next CI runs green on `gui macos-latest` without a rerun.
       <!-- from: CI flake seen 2026-11-08, owner chose to track it here -->
+- [ ] **6.5 Fix the flaky "a finished program … last screen stays readable" test.**
+      `tests/tmux-host.test.ts` › "a finished program is reported as not alive
+      and its last screen stays readable" failed on `ubuntu-latest · node 20`
+      (PR #195, run 43421470798, job 131872269586) with `host.capture()`
+      returning `''`, and passed on rerun. The program exits at once, so the
+      pane is already dead when its output is read. Find whether the capture
+      races the pane's `remain-on-exit`, and make it deterministic (no added
+      sleep as the fix).
+      verify: the test filtered and run 20 times in a row on Linux without a
+      failure, and the next CI runs green on `ubuntu-latest · node 20` without a rerun.
+      <!-- from: CI flake seen 2026-11-13, tracked like 6.4 -->
 
 ## Phase 7 — Updates that can be stopped and undone
 

@@ -20,7 +20,7 @@ import { splitAccountId } from "../../vm/actions.js";
 import { maxUtilization, rankAccounts, TOOL_LABEL, type RankedAccount } from "../../vm/rules.js";
 import { useAS, type Store } from "../../vm/store.js";
 import type { Session } from "../../vm/types.js";
-import { armSwitch, isRunning, liveSwitch, sessionHandle } from "./logic.js";
+import { armSwitch, isRunning, liveSwitch, sessionHandle, switchTargets } from "./logic.js";
 
 /** The arm dialog's copy (D3). Both sentences are load-bearing: the cache does
  *  not travel, and nothing switches unless the user confirms here. */
@@ -69,15 +69,23 @@ function trash(s: Store, session: Session) {
     .catch((e) => s.toast({ text: t("sessions.sheet.trashFailed", { project: session.project, error: errorText(e) }), tone: "alert" }));
 }
 
-/** Options for a same-tool target account. */
-export function targetOptions(ranked: readonly RankedAccount[]): SelectOption[] {
+/** Options for a same-tool target account. For a live switch an account with
+ *  a session of its own stays listed but disabled: the switch would move its
+ *  login away and sign that session out, so the CLI refuses it. */
+export function targetOptions(ranked: readonly RankedAccount[], opts: { liveSwitch?: boolean } = {}): SelectOption[] {
   return ranked.map((r) => {
     const max = maxUtilization(r.account.windows);
+    const busy = !!opts.liveSwitch && r.account.liveSessions > 0;
     return {
       value: r.account.id,
       label: `${TOOL_LABEL[r.account.tool]} · ${r.account.name}`,
-      hint: max != null ? t(r.rank === 1 ? "sessions.sheet.usedMost" : "sessions.sheet.used", { pct: max }) : t("sessions.sheet.usageNa"),
+      hint: busy
+        ? t("sessions.sheet.busyTarget")
+        : max != null
+          ? t(r.rank === 1 ? "sessions.sheet.usedMost" : "sessions.sheet.used", { pct: max })
+          : t("sessions.sheet.usageNa"),
       dot: <AccountDot color={r.account.color} size={8} />,
+      disabled: busy || undefined,
     };
   });
 }
@@ -154,6 +162,14 @@ export function SessionSheet({ id }: { id: string }) {
   const profile = splitAccountId(n.accountId)[1];
   const options = targetOptions(sameTool);
   const targetAccount = s.accountById(target);
+  // A live switch never lands on a busy account: the remembered pick when it is
+  // free, else the best-ranked free one.
+  const switchOptions = targetOptions(sameTool, { liveSwitch: true });
+  const freeTargets = switchTargets(sameTool);
+  const switchTo = freeTargets.some((r) => r.account.id === target)
+    ? target
+    : (freeTargets.find((r) => r.rank != null)?.account.id ?? freeTargets[0]?.account.id ?? "");
+  const switchAccount = s.accountById(switchTo);
   const handAccount = s.accountById(handTo);
 
   const loadBrief = async (to: string) => {
@@ -167,13 +183,13 @@ export function SessionSheet({ id }: { id: string }) {
   const switchLive = () =>
     s.open({
       kind: "confirm",
-      title: t("sessions.sheet.switchTitle", { project: n.project, name: targetAccount?.name ?? "" }),
+      title: t("sessions.sheet.switchTitle", { project: n.project, name: switchAccount?.name ?? "" }),
       body: t("sessions.sheet.switchBody"),
       confirm: t("sessions.sheet.switchAccount"),
       onConfirm: () => {
         s.act
-          .rebind?.(n.id, target)
-          .then(() => s.toast({ text: t("sessions.sheet.nowRunsOn", { project: n.project, name: targetAccount?.name ?? "" }), tone: "ok" }))
+          .rebind?.(n.id, switchTo)
+          .then(() => s.toast({ text: t("sessions.sheet.nowRunsOn", { project: n.project, name: switchAccount?.name ?? "" }), tone: "ok" }))
           .catch((e) =>
             s.toast({ text: t("sessions.sheet.switchFailed", { project: n.project, name: account?.name ?? "", error: errorText(e) }), tone: "alert" }),
           );
@@ -186,13 +202,13 @@ export function SessionSheet({ id }: { id: string }) {
   const armLive = () =>
     s.open({
       kind: "confirm",
-      title: t("sessions.sheet.armTitle", { project: n.project, name: targetAccount?.name ?? "" }),
+      title: t("sessions.sheet.armTitle", { project: n.project, name: switchAccount?.name ?? "" }),
       body: `${t("sessions.sheet.armCache")} ${t("sessions.sheet.armClick")} ${t("sessions.sheet.armRest")}`,
       confirm: t("sessions.sheet.armConfirm"),
       onConfirm: () => {
         s.act
-          .armRebind?.(n.id, target)
-          .then(() => s.toast({ text: t("sessions.sheet.armed", { project: n.project, name: targetAccount?.name ?? "" }), tone: "ok" }))
+          .armRebind?.(n.id, switchTo)
+          .then(() => s.toast({ text: t("sessions.sheet.armed", { project: n.project, name: switchAccount?.name ?? "" }), tone: "ok" }))
           .catch((e) =>
             s.toast({ text: t("sessions.sheet.armFailed", { project: n.project, name: account?.name ?? "", error: errorText(e) }), tone: "alert" }),
           );
@@ -411,7 +427,7 @@ export function SessionSheet({ id }: { id: string }) {
               <>
                 <p className="text-xs text-ac-muted">{live.reason}</p>
                 {options.length ? (
-                  <Select label={t("sessions.sheet.switchTo")} value={target} onChange={setTarget} options={options} />
+                  <Select label={t("sessions.sheet.switchTo")} value={switchTo} onChange={setTarget} options={switchOptions} />
                 ) : (
                   <p className="text-xs text-ac-faint">{t("sessions.sheet.noSwitchTarget", { tool: TOOL_LABEL[n.tool] })}</p>
                 )}
@@ -426,13 +442,13 @@ export function SessionSheet({ id }: { id: string }) {
                 <div className="flex justify-end gap-2">
                   <Button
                     size="sm"
-                    disabled={!target || !arm.ok || !s.act.armRebind}
+                    disabled={!switchTo || !arm.ok || !s.act.armRebind}
                     title={arm.reason}
                     onClick={armLive}
                   >
                     {t("sessions.sheet.whenTurnEnds")}
                   </Button>
-                  <Button variant="primary" size="sm" disabled={!target || !live.ok || !s.act.rebind} onClick={switchLive}>
+                  <Button variant="primary" size="sm" disabled={!switchTo || !live.ok || !s.act.rebind} onClick={switchLive}>
                     {t("sessions.sheet.switchAccount")}
                   </Button>
                 </div>

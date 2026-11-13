@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { IconButton } from "./Button.js";
+import { CopyButton } from "./CopyButton.js";
 import { t } from "../i18n/index.js";
 
 export interface ToastItem {
@@ -29,6 +30,7 @@ function ToastRow({ item, onDismiss }: { item: ToastItem; onDismiss: (id: number
           {item.action.label}
         </button>
       )}
+      <CopyButton text={item.text} label={t("ui.toast.copy")} className="size-7 [&_svg]:size-3.5" />
       <IconButton label={t("common.dismiss")} className="size-7" onClick={() => onDismiss(item.id)}>
         <X />
       </IconButton>

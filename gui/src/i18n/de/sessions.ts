@@ -160,6 +160,7 @@ export const sessions: { readonly [K in keyof typeof en]: string } = {
   "sessions.sheet.switchLive": "Live wechseln",
   "sessions.sheet.handoffDesktop": "Braucht das Transkript einer Terminal-Sitzung – das einer Claude-Desktop-Sitzung ist hier nicht erreichbar.",
   "sessions.sheet.switchTo": "Wechseln zu",
+  "sessions.sheet.busyTarget": "belegt – eigene Session läuft, ein Wechsel würde sie abmelden",
   "sessions.sheet.noSwitchTarget": "Kein anderes {tool}-Konto zum Wechseln – füge eins unter Konten hinzu.",
   "sessions.sheet.armedTo": "Wechselt zu {name}, wenn die Antwort fertig ist.",
   "sessions.sheet.anotherAccount": "einem anderen Konto",
