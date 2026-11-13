@@ -689,6 +689,13 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
   const pConfig = configDir("claude", profile);
   const aConfig = configDir("claude", account);
 
+  // The account is lent to ANOTHER profile → hand it over: that borrower goes
+  // back on its own login (restore never signs it out), then the bind below
+  // proceeds. Refusing here only told the user to run that very restore by
+  // hand. A registry entry no marker backs is a leftover and is dropped —
+  // checked under the registry lock, where record + marker are written together.
+  const releasedFrom = await releaseFromOtherBorrower(account, profile, d);
+
   // Already rebound → RE-SWITCH: put both profiles back on their own accounts
   // first, then bind to the new target. Dead-ending in "already rebound" made
   // every second switch from the GUI fail (and, before the RebindRefused split,
@@ -826,8 +833,29 @@ async function performRebind(opts: { account: string; profile: string }, d: Rebi
     uxNote:
       `Rebound "${profile}" → "${account}". A running Claude session adopts it on its next message ` +
       `(fresh process: instant; long-lived session: within ~30s, the Keychain read-cache). ` +
+      (releasedFrom ? `"${releasedFrom}" is back on its own account. ` : "") +
       `Restore with: agent-switch rebind --restore --profile ${profile}`,
   };
+}
+
+/** Free `account` from a profile other than `profile` that borrows it; returns
+ *  that profile when it was restored, null otherwise. */
+async function releaseFromOtherBorrower(account: string, profile: string, d: RebindDeps): Promise<string | null> {
+  const holder = readRegistry(d)[account]?.runningProfile;
+  if (!holder || holder === profile) return null;
+  if (readBinding(configDir("claude", holder), d)?.boundToProfile === account) {
+    await restoreRebind({ profile: holder }, d);
+    return holder;
+  }
+  await d.withLock(registryLockTarget(), async () => {
+    const reg = readRegistry(d);
+    const stillHolder = reg[account]?.runningProfile;
+    if (stillHolder && stillHolder !== profile && readBinding(configDir("claude", stillHolder), d)?.boundToProfile !== account) {
+      delete reg[account];
+      writeRegistry(reg, d);
+    }
+  });
+  return null;
 }
 
 /**
