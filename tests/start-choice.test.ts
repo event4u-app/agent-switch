@@ -77,6 +77,17 @@ test("newWorktree: started from inside a worktree, the new one sits beside the m
   assert.equal(second.cwd, path.join(second.dir, "sub"));
 });
 
+test("newWorktree: started from an untracked subfolder, the session starts in the nearest folder the new checkout has", () => {
+  const { root, repo } = repoFixture();
+  fs.mkdirSync(path.join(repo, "sub", "scratch", "deep"), { recursive: true });
+  const made = newWorktree(path.join(repo, "sub", "scratch", "deep"), "claude", new Date(2026, 10, 23, 9, 5, 7));
+  assert.equal(made.cwd, path.join(root, "app.worktrees", "claude-20261123-090507", "sub"));
+  assert.ok(fs.existsSync(made.cwd));
+  fs.mkdirSync(path.join(repo, "loose"));
+  const top = newWorktree(path.join(repo, "loose"), "claude", new Date(2026, 10, 23, 9, 6, 0));
+  assert.equal(top.cwd, top.dir, "nothing of the path is checked out: the checkout's root");
+});
+
 test("removeWorktree: takes back the checkout and its branch", () => {
   const { repo, g } = repoFixture();
   const made = newWorktree(repo, "claude", new Date(2026, 10, 23, 9, 5, 7));

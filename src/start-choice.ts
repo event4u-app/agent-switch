@@ -57,7 +57,8 @@ export interface MadeWorktree {
  * same second get `<name>-2`, `-3`, …: git refuses a branch or folder that
  * exists, so a name is taken by whoever creates it first. Returns the folder the
  * session starts in — the same subfolder of the new checkout as `cwd` was of
- * the old one. Throws with git's reason when it cannot be made.
+ * the old one, or the nearest folder above it the checkout has (an untracked
+ * folder is not checked out). Throws with git's reason when it cannot be made.
  */
 export function newWorktree(cwd: string, providerId: ProviderId, at: Date = new Date()): MadeWorktree {
   const git = (...a: string[]) => spawnSync("git", ["-C", cwd, ...a], { encoding: "utf8", timeout: 30_000 });
@@ -72,12 +73,22 @@ export function newWorktree(cwd: string, providerId: ProviderId, at: Date = new 
     const branch = `agent-switch/${name}`;
     if (fs.existsSync(dir) || git("show-ref", "--verify", "--quiet", `refs/heads/${branch}`).status === 0) continue;
     const add = git("worktree", "add", "-q", "-b", branch, dir, "HEAD");
-    if (add.status === 0) return { cwd: prefix ? path.join(dir, prefix.replace(/\/$/, "")) : dir, dir, branch };
+    if (add.status === 0) return { cwd: nearestIn(dir, prefix), dir, branch };
     // Another start took this name between the check and the add: try the next one.
     if (fs.existsSync(dir) || git("show-ref", "--verify", "--quiet", `refs/heads/${branch}`).status === 0) continue;
     throw new Error(`could not make a worktree: ${(add.stderr || add.stdout).trim()}`);
   }
   throw new Error(`could not make a worktree: every name from ${base} to ${base}-50 is taken`);
+}
+
+/** `prefix` inside the checkout `dir`, or the nearest folder above it that exists there. */
+function nearestIn(dir: string, prefix: string): string {
+  const parts = prefix.split("/").filter(Boolean);
+  for (let n = parts.length; n > 0; n--) {
+    const p = path.join(dir, ...parts.slice(0, n));
+    if (fs.existsSync(p) && fs.statSync(p).isDirectory()) return p;
+  }
+  return dir;
 }
 
 /** The main checkout of the repository `cwd` is in (also from inside a linked
