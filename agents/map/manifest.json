@@ -1,16 +1,16 @@
 {
   "schema": 1,
-  "generation": "e9b294536934053f",
-  "commit": "68e57a5b99f6",
-  "built": "2026-11-08",
-  "built_at_commit": "68e57a5b99f6",
+  "generation": "02aae06c27dd1484",
+  "commit": "ff3c69f1ec2f",
+  "built": "2026-11-23",
+  "built_at_commit": "ff3c69f1ec2f",
   "state": "fresh",
   "areas": {
     "code": {
       "path": "code/map.json",
       "source": "code-graph",
       "freshness": "fresh",
-      "facts": 721
+      "facts": 772
     },
     "data": {
       "path": "data/data.json",
@@ -26,7 +26,7 @@
       "source": "systems lane (lockfiles, manifests, version files, images, CI)",
       "freshness": "fresh",
       "completeness": "complete",
-      "facts": 1157,
+      "facts": 1159,
       "findings": 3
     },
     "interfaces": {
@@ -34,7 +34,7 @@
       "source": "interfaces lane (call sites, contracts, configuration names)",
       "freshness": "fresh",
       "completeness": "complete",
-      "facts": 37,
+      "facts": 38,
       "findings": 7
     },
     "runtime": {
@@ -57,10 +57,11 @@
     "impact": {
       "path": "code/map.json",
       "source": "review-risk over the working diff",
-      "freshness": "fresh",
+      "freshness": "empty",
       "completeness": "complete",
       "facts": 0,
-      "findings": 0
+      "findings": 0,
+      "reason": "no change against HEAD"
     },
     "agent": {
       "path": "code/map.json",

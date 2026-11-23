@@ -2,7 +2,7 @@
 
 > Part of [Map of agent-switch](../MAP.md). Generated; never edit by hand.
 
-5 files · cohesion 31 % · tests 40 % · outside hub folder 0 %
+5 files · cohesion 31.2 % · tests 40 % · outside hub folder 0 %
 
 ## Files, most used first
 
@@ -10,14 +10,14 @@
 |---|---|---|---|
 | `gui/src/redesign/tray/TrayApp.tsx` | code | 7 | 14 |
 | `gui/src/redesign/tray/bridge.ts` | code | 7 | 5 |
-| `gui/src/redesign/tray/tray.test.tsx` | test | 6 | 7 |
 | `gui/src/redesign/tray/Tray.tsx` | code | 5 | 16 |
+| `gui/src/redesign/tray/tray.test.tsx` | test | 5 | 7 |
 | `gui/src/redesign/tray/fit-window.test.tsx` | test | 0 | 2 |
 
 ## What this area depends on outside itself
 
 - `gui/src/vm/store.tsx` (gui-src-vm) — 13 link(s)
-- `gui/src/vm/types.ts` (infra) — 11 link(s)
+- `gui/src/vm/types.ts` (infra) — 10 link(s)
 - `gui/package-lock.json` (infra) — 9 link(s)
 - `gui/src/vm/load.ts` (gui-src-vm) — 7 link(s)
 - `gui/src/redesign/screens/logic.ts` (gui-src-redesign-screens) — 6 link(s)
