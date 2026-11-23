@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import * as path from "node:path";
 import * as readline from "node:readline";
 
+import { openSettingsFile, readOpenSettings, realEnv } from "../open-in.js";
 import { appendPick } from "../picks.js";
 import { configDir, die, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
 import { provider, type ProviderId } from "../providers.js";
@@ -16,6 +17,7 @@ import { readRemote, remoteControlArgs } from "../remote.js";
 import { HostUnavailable, TmuxHost, hostingMode } from "../host/tmux-host.js";
 import { listSessions } from "../sessions.js";
 import { turnInFlight } from "../telemetry.js";
+import { commandPlan, terminalName } from "../terminals.js";
 import { resolveDir } from "./routing.js";
 import { syncClaudeProfile } from "./shared.js";
 import { hasClaudeTranscript, resumeArgs } from "./view.js";
@@ -28,7 +30,7 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
     setInterval(() => {}, 1 << 30);
     return;
   }
-  if (!["start", "list", "end", "attach", "respawn"].includes(action)) die("usage: agent-switch host start [profile] [--provider P] [--cwd DIR] [--remote-control] [--title T] | list | attach <session> | respawn <session> [--model M] [--effort E] | end <session> [--yes]");
+  if (!["start", "list", "end", "attach", "respawn"].includes(action)) die("usage: agent-switch host start [profile] [--provider P] [--cwd DIR] [--remote-control] [--title T] | list | attach <session> [--new-window] | respawn <session> [--model M] [--effort E] | end <session> [--yes]");
   const mode = hostingMode(process.platform, TmuxHost.available());
   if (action === "list" && flags.json && mode === "ephemeral") {
     console.log(JSON.stringify({ mode, hosted: [], legacy: [] }));
@@ -57,7 +59,18 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
       return;
     }
     if (action === "attach") {
-      if (!arg) die("usage: agent-switch host attach <session>");
+      if (!arg) die("usage: agent-switch host attach <session> [--new-window]");
+      if (flags["new-window"]) {
+        // From the app: the user's own terminal joins the same tmux session, so
+        // typing there and in Agent Switch reaches the same agent.
+        const cur = host.list().find((x) => x.key === arg);
+        if (!cur) die(`no hosted session ${arg}`);
+        const line = attachLine(hookCommandPrefix(), arg);
+        const c = commandPlan(readOpenSettings(openSettingsFile(ROOT)).terminal, cur.cwd, line, realEnv);
+        if (!c || spawnSync(c.plan.program, c.plan.args, { stdio: "ignore" }).status !== 0) die(`no terminal could be opened; run this in yours:\n  ${line}`);
+        console.log(`Attached ${arg} in a new ${terminalName(c.id)} window. Closing that window leaves the session running.`);
+        return;
+      }
       // Detaching (or closing the terminal) removes only this view.
       const argv = host.view(arg, `cli${process.pid}`);
       const r = spawnSync(argv[0], argv.slice(1), { stdio: "inherit" });
@@ -107,6 +120,11 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
     if (err instanceof HostUnavailable) die(err.message);
     throw err;
   }
+}
+
+/** The line a terminal runs to join hosted session `key` through `prefix` (this CLI). */
+export function attachLine(prefix: string, key: string): string {
+  return `${prefix} host attach '${key.replace(/'/g, "'\\''")}'`;
 }
 
 /** The hook command must reach this very CLI, wherever it is installed; the

@@ -4,7 +4,8 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 
 import { plan, menu, type Env } from "../src/open-in.js";
-import { openDirPlan, pickTerminal, runPlan, terminals } from "../src/terminals.js";
+import { commandPlan, openDirPlan, pickTerminal, runPlan, terminals } from "../src/terminals.js";
+import { attachLine } from "../src/commands/host.js";
 
 const env = (platform: NodeJS.Platform, onPath: string[] = [], apps: string[] = []): Env => ({
   platform,
@@ -77,4 +78,20 @@ test("the AppleScript the run plans produce compiles (macOS only)", { skip: proc
     const r = spawnSync("osacompile", ["-o", "/dev/null", "-e", p.args[1]!], { encoding: "utf8" });
     assert.equal(r.status, 0, `${id}: ${r.stderr}`);
   }
+});
+
+test("commandPlan: the chosen terminal runs the line; one that cannot (Warp) hands over to Terminal.app; none elsewhere", () => {
+  const mac = env("darwin", [], ["iTerm", "Warp"]);
+  assert.equal(commandPlan("iterm", "/w", "echo hi", mac)?.id, "iterm");
+  const warp = commandPlan("warp", "/w", "echo hi", mac)!;
+  assert.equal(warp.id, "terminal", "Warp cannot run a command, Terminal.app can");
+  assert.deepEqual(warp.plan, runPlan("terminal", "/w", "echo hi", mac));
+  assert.equal(commandPlan(null, "/w", "echo hi", mac)?.id, "terminal");
+  assert.equal(commandPlan("kitty", "/w", "echo hi", env("linux", ["kitty"]))?.id, "kitty");
+  assert.equal(commandPlan(null, "/w", "echo hi", env("linux")), null, "no terminal: the caller prints the line");
+});
+
+test("attachLine: this very CLI joins the hosted session; the key cannot break out of its quotes", () => {
+  assert.equal(attachLine("'/n/node' '/x/index.js'", "claude/work/abc"), "'/n/node' '/x/index.js' host attach 'claude/work/abc'");
+  assert.equal(attachLine("agent-switch", "a'b"), `agent-switch host attach 'a'\\''b'`);
 });
