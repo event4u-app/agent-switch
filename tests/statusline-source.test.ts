@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), "asw-slsrc-"));
 process.env.AGENT_SWITCH_HOME = HOME;
@@ -161,7 +162,7 @@ test("resolveClaudeUsage: with polling held back (backoff) a fresh sample is sti
 });
 
 test("daemon: a profile held back by its poll backoff still reads its fresh local sample", () => {
-  const here = path.dirname(new URL(import.meta.url).pathname);
+  const here = path.dirname(fileURLToPath(import.meta.url));
   const src = fs.readFileSync([path.resolve(here, "../src/daemon.ts"), path.resolve(here, "../../src/daemon.ts")].find((p) => fs.existsSync(p))!, "utf8");
   const body = src.slice(src.indexOf("async function pollProvider("), src.indexOf("async function pollOnce("));
   assert.match(body, /const localOnly = .*statuslineFresh\(servedStatuslineSnapshot\(/);
