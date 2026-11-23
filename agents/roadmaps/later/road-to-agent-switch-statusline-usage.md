@@ -3,11 +3,11 @@ complexity: structural
 status: parked
 execution:
   mode: manual
-review_by: 2026-12-07
+review_by: 2026-12-23
 entry_condition:
-  what: "scripts/spikes/t8-statusline-stdin-capture.sh run in a signed-in Pro/Max Claude Code session after at least one API response; `jq '.rate_limits.five_hour, .rate_limits.seven_day' capture.json` is non-null; the scrubbed capture is committed as tests/fixtures/statusline-stdin.json (re-opens P0.2/P0.4). GO -> promote; still absent -> re-park with the CC version recorded."
-  when: "Now: the installed Claude Code is 2.1.316 and its binary carries rate_limits strings; the NO-GO was measured on 2.1.215."
-  who: "owner (needs a live signed-in interactive session)"
+  what: "Owner decides Phase 6: the control query (`get_usage`) is labelled EXPERIMENTAL in the binary's own SDK. Option 1: statusline -> control query -> last real snapshot, delete fetchUsage (the 2026-11-02 E-token decision as written). Option 2: keep the token poll as a last fallback until the control query has held for stated Claude Code versions. Option 3: do not adopt the control query until the label goes. The council split 1 vs 2 on 2026-11-23 and both seats sent it back to the owner."
+  when: "On the owner's answer; review_by 2026-12-23."
+  who: "owner"
 ---
 
 # Roadmap: agent-switch usage — source rate_limits from the statusline, stop polling
@@ -21,7 +21,18 @@ entry_condition:
 > pre-existing statusline so their bar is untouched. The polled `/api/oauth/usage`
 > path is demoted to a fallback. Gated on a blocking live spike.
 >
-> **Arrivals:** 4 — latest `inbox-2026-11-b` (2026-11-02, AS v3 proposal step V0.2):
+> **Arrivals:** 5 — latest `inbox-2026-11-22` (2026-11-22): an MIT-licensed agent
+> IDE read at `923b19d` runs exactly this bridge in production — a managed
+> statusline script that prints nothing, skips payloads without `rate_limits`,
+> throttles to one post per 15 s and attributes by `CLAUDE_CONFIG_DIR`
+> (`src/main/claude/hooks/statusline-script.ts:25-160`); its own comment says the
+> polled usage endpoint 429s for it and that Claude Code ≥ 2.1.80 sends
+> `rate_limits` in the statusline stdin
+> (`src/shared/agent-usage/rate-limits/claude-statusline-rate-limits.ts:1`). That
+> version claim is the reference's, unverified here, and contradicts this file's
+> 2.1.215 NO-GO — the entry-condition spike settles it. Third-or-later arrival:
+> put to the owner in that round's reply.
+> Before that: `inbox-2026-11-b` (2026-11-02, AS v3 proposal step V0.2):
 > move usage off the OAuth token entirely — statusline first, then an undocumented
 > control query over the unmodified binary (`initialize` → `get_usage`, needs a
 > spike), then remove `readProfileCredential`/`fetchUsage`/`fetchProfile`. The
@@ -98,7 +109,7 @@ byte-identically. **Needs a real authed Claude session — user-gated.**
       run a real Claude session (Pro/Max tier).
       _Files:_ `scripts/spikes/t8-statusline-stdin-capture.sh`. _Verify:_ non-empty
       JSON capture produced; `jq '.rate_limits' capture.json` non-null.
-- [-] **Step 2:** Enumerate the EXACT `rate_limits` shape — field names
+- [x] **Step 2:** Enumerate the EXACT `rate_limits` shape — field names
       (`used_percentage` vs `utilization`), reset type (epoch vs ISO), nesting
       (`five_hour`/`seven_day` keys vs `limits[]`), which windows present, tier, CC
       version. Commit a scrubbed fixture (+ a free-tier/absent fixture).
@@ -109,7 +120,7 @@ byte-identically. **Needs a real authed Claude session — user-gated.**
       command's env (from the env dump). Absent → profile mapping impossible → STOP.
       _Files:_ `scripts/spikes/t8-statusline-stdin-capture.sh`. _Verify:_ grep the
       env dump; the var equals the per-profile config dir.
-- [-] **Step 4:** Prototype the wrap-chain round-trip under share-off AND share-on:
+- [x] **Step 4:** Prototype the wrap-chain round-trip under share-off AND share-on:
       a wrapper that buffers stdin, spawns a real user statusline (e.g. ccstatusline)
       with full inherited env+cwd, re-feeds stdin, relays stdout+exit verbatim;
       capture before/after renders; measure cadence + per-render wall-clock.
@@ -120,7 +131,30 @@ byte-identically. **Needs a real authed Claude session — user-gated.**
       _Files:_ `agents/roadmaps/road-to-agent-switch-statusline-usage.md`. _Verify:_
       roadmap records an explicit GO/NO-GO with spike evidence cited.
 
-### Phase-0 GO/NO-GO — **NO-GO** (2026-07-19)
+### Phase-0 GO/NO-GO — **GO** (2026-11-23)
+
+Re-run on **Claude Code 2.1.316**, profile config dir of a signed-in Team account, model
+Haiku, after one API response. The capture statusLine was injected for that one session
+with `claude --settings <file>`, so no profile's `settings.json` was edited.
+
+- **G1 (rate_limits presence) — PASS.** 18 top-level keys, among them
+  `rate_limits: { five_hour: { used_percentage: 7, resets_at: <epoch s> }, seven_day: { … } }`.
+  Field names: `used_percentage` (integer percent), `resets_at` (epoch **seconds**),
+  nested by window key; only `five_hour` and `seven_day` appear (no per-model window).
+  Also new since 2.1.215: `prompt_cache`, `prompt_id`, `session_name`, `scratchpad_dir`.
+  Scrubbed: `tests/fixtures/statusline-stdin.json`; the same payload without
+  `rate_limits`, standing in for a free-tier or pre-response render:
+  `tests/fixtures/statusline-stdin-freetier.json` (derived, not captured).
+- **G6 (`CLAUDE_CONFIG_DIR` in the statusLine env) — PASS** again.
+- **G-wrap — PASS.** A wrapper that buffers stdin and re-feeds it to a statusline
+  printing ANSI colour, the model id and `$PWD` and exiting 3 gave byte-identical stdout
+  and the same exit code; about 50 ms per render for the shell prototype. No profile on
+  the owner's machine has a statusLine of its own today, so the chain path is for other
+  users.
+
+**Decision:** GO. Phases 1–5 are unblocked; the polled path stays as the fallback.
+
+### Phase-0 GO/NO-GO — **NO-GO** (2026-07-19, superseded by the GO above)
 
 The blocking Phase-0 spike ran against a logged-in Pro/Max profile
 (`~/.agent-switch/claude/Matze4u/config`) on **Claude Code 2.1.215**. Result:
@@ -160,7 +194,7 @@ re-open the gate.
 Safe, testable foundation: a defensive normalizer that degrades to null (never
 empty windows) and an atomic per-profile cache. Pure/unit-testable, no slot risk.
 
-- [ ] **Step 1:** `parseStatuslineUsage(raw, capturedAt): UsageSnapshot | null` as
+- [x] **Step 1:** `parseStatuslineUsage(raw, capturedAt): UsageSnapshot | null` as
       the THIRD input mapper in `src/usage.ts`. Emit `UsageWindow[]` keyed
       `five_hour`/`seven_day`; coerce `resets_at` (epoch|ISO)→ISO; accept
       `used_percentage|utilization`; NEVER throw; return **null** on zero usable
@@ -168,13 +202,13 @@ empty windows) and an atomic per-profile cache. Pure/unit-testable, no slot risk
       _Files:_ `src/usage.ts`, `tests/fixtures/statusline-stdin*.json`. _Verify:_
       unit test asserts `five_hour`/`seven_day` windows with correct
       utilization+resetsAt; free-tier fixture → null (not empty snapshot).
-- [ ] **Step 2:** Additive optional `source?: 'statusline'|'poll'|'merged'` on
+- [x] **Step 2:** Additive optional `source?: 'statusline'|'poll'|'merged'` on
       `UsageSnapshot` + per-window provenance (per-window `capturedAt` or a
       `staleWindows[]`) to support independent hatching in the merge. GUI ignores
       fields it does not read.
       _Files:_ `src/usage.ts`, `gui/src/transforms.ts`. _Verify:_ `tsc --noEmit`
       on `src/` + `gui/`; existing parse/transforms tests stay green.
-- [ ] **Step 3:** `src/statusline.ts` cache helpers — `readStatuslineSnapshot` /
+- [x] **Step 3:** `src/statusline.ts` cache helpers — `readStatuslineSnapshot` /
       `writeStatuslineSnapshot`: single-object per-profile file under
       `profileDir(provider,name)`, atomic (temp+rename, mode 0o600),
       malformed-tolerant, SKIP write on null.
@@ -187,29 +221,41 @@ The central safety problem + the reopened decision. The stashed original MUST
 live out-of-band (CC's atomic write may strip unknown keys ON the object);
 "ours" is detected by command-string match.
 
-- [ ] **Step 1:** Record the reopened decision via `adr-create`: prior council
+> **v1 scope, decided 2026-11-23 (council, both seats; ADR-011):** opt-in
+> `agent-switch statusline on|off|status`; a profile that already has a statusLine is
+> left untouched; the managed command prints nothing. Stashing and chaining a user's
+> bar are carried to [`road-to-statusline-chaining.md`](road-to-statusline-chaining.md)
+> with their acceptance criteria. Steps below are restated to that scope.
+
+- [x] **Step 1:** Record the reopened decision via `adr-create`: prior council
       PARKED/REJECTED chaining; changed condition = 429 storms w/o Retry-After;
       mechanism = a REVERSIBLE, refuse-to-wrap-bounded wrap. **Surface to the user as
       a numbered decision (auto-install-with-hooks vs opt-in) BEFORE the installer.**
       _Files:_ `docs/adr/`. _Verify:_ ADR created + index regenerated; the user's
       install-posture decision recorded in the roadmap.
-- [ ] **Step 2:** Pure `withStatuslineInstalled`/`withStatuslineRemoved` in
-      `src/statusline.ts`. INVARIANT: `settings.statusLine` stays byte-clean
-      `{type,command,padding}` — NO `asw_*` keys on it. Stash the user's ORIGINAL
-      VERBATIM to an out-of-band sidecar keyed to the shared SOURCE dir, excluded
-      from sharing. Detect "ours" by command-string match. Refuse non-command
-      types. Guard self-wrap + double-install.
-      _Files:_ `src/statusline.ts`, `src/share.ts`. _Verify:_ byte-exact round-trip
-      suite: install→uninstall === original across five cases (no-prior,
-      command+padding, command+unknown-extra-keys, user-replaced-post-install,
-      shared-collapse).
-- [ ] **Step 3:** Resolve + embed an ABSOLUTE binary path at install
+      _Done 2026-11-23:_ `docs/adr/ADR-011-statusline-quota-is-opt-in-and-never-wraps-a-users-bar.md`.
+      The owner delegated open questions in this run to the AI council; its record is
+      `agents/runtime/council/responses/2026-11-23-statusline-install.md` (gitignored).
+- [x] **Step 2:** Pure `withStatuslineInstalled`/`withStatuslineRemoved` in
+      `src/statusline.ts` (v1, ADR-011). INVARIANT: `settings.statusLine` is
+      byte-clean `{type,command,padding}` — NO `asw_*` keys on it. Any existing
+      statusLine (ours excepted) → refuse, `changed:false`, reason `"has-own"`.
+      "Ours" = command-string match. Remove only when the slot is still ours; a
+      user's replacement is reported and kept. Double install is a no-op.
+      _Files:_ `src/statusline.ts`. _Verify:_ round-trip suite: no-prior →
+      install → remove leaves every other key byte-equal; existing user statusLine →
+      refused, file unchanged; user replaced ours after install → remove keeps it.
+- [x] **Step 3:** Resolve + embed an ABSOLUTE binary path at install
       (`process.execPath` + entry script, or which-resolved), NOT bare
       `agent-switch`. Unresolvable → REFUSE install, stay on poll. Handle the
       per-machine-path-in-a-shared-file tension (re-resolve on `share sync`).
       _Files:_ `src/statusline.ts`, `src/share.ts`. _Verify:_ installed command is
       an absolute path; unresolvable binary → `changed:false` + warning, no edit.
-- [ ] **Step 4:** `installStatusline`/`uninstallStatusline` disk ops write through
+      _Done 2026-11-23, with a different answer to the shared-file tension:_ not a
+      re-resolve on `share sync`; `on` re-points any managed command whose path moved
+      ("ours" = an absolute path running `__statusline`), and `status` flags a path
+      that no longer exists.
+- [x] **Step 4:** `installStatusline`/`uninstallStatusline` disk ops write through
       the shared symlink via `writeSettings` (preserving the link) + emit the
       `share sync` reminder on change; exclude the sidecar + statusline cache from
       sharing (like `sessions/`).
@@ -223,7 +269,7 @@ Per-render command: capture `rate_limits` to cache with zero network + zero
 transcript reads, then faithfully re-emit the user's original bar. Runs in the
 render path → never throw, block, or corrupt.
 
-- [ ] **Step 1:** `cmdStatusline()` in `src/index.ts`, registered internal like
+- [x] **Step 1:** `cmdStatusline()` in `src/index.ts`, registered internal like
       `__hook-event`: read fd0 stdin ONCE, `JSON.parse`, read `CLAUDE_CONFIG_DIR`,
       `profileFromConfigDir`, extract ONLY `rate_limits` (NEVER dereference
       `transcript_path`), `parseStatuslineUsage`, write cache (skip on null). Whole
@@ -231,7 +277,8 @@ render path → never throw, block, or corrupt.
       _Files:_ `src/index.ts`, `src/usage.ts`, `src/statusline.ts`, `src/hooks.ts`.
       _Verify:_ pipe the fixture as stdin w/ `CLAUDE_CONFIG_DIR` set → cache written;
       free-tier fixture → no write; malformed stdin → exit 0, no throw, no write.
-- [ ] **Step 2:** Chain delegate — after the cache write, if the sidecar holds an
+- [-] **Step 2:** _Carried to `later/road-to-statusline-chaining.md` (ADR-011 rule 2);
+      v1 prints nothing — see Step 4._ Chain delegate — after the cache write, if the sidecar holds an
       original command, spawn it with FULL inherited env+cwd, re-feed buffered
       stdin, relay stdout BYTE-FOR-BYTE + exit code, time-boxed (~1-2s); on
       timeout/failure emit empty, never block/crash. Capture cache BEFORE spawning.
@@ -239,7 +286,10 @@ render path → never throw, block, or corrupt.
       _Files:_ `src/index.ts`, `src/statusline.ts`. _Verify:_ wrap a dummy statusline
       printing known ANSI → `__statusline` stdout byte-identical; hung child → empty
       within timeout + cache still written; child exit code relayed.
-- [ ] **Step 3:** Privacy gate — `cmdStatusline` references ONLY `rate_limits`,
+- [x] **Step 4:** Print nothing (ADR-011 rule 3): `cmdStatusline` writes no byte
+      to stdout and exits 0 on every path. _Verify:_ the CLI test pipes the fixture
+      and asserts empty stdout, exit 0; malformed stdin likewise.
+- [x] **Step 3:** Privacy gate — `cmdStatusline` references ONLY `rate_limits`,
       makes no network call, forbids any `transcript_path` dereference.
       _Files:_ `src/index.ts`. _Verify:_ grep body for `transcript_path` → zero;
       review confirms no fetch/http reachable from `cmdStatusline`.
@@ -249,7 +299,7 @@ render path → never throw, block, or corrupt.
 Source-selection is the point of the feature, but a PARTIAL statusline source must
 never mask the COMPLETE poll, nor blind the daemon's switch/threshold path.
 
-- [ ] **Step 1:** Prepend a statusline-if-fresh branch to `claudeSnapshot`
+- [x] **Step 1:** Prepend a statusline-if-fresh branch to `claudeSnapshot`
       (`src/commands/shared.ts`) and `snapshotFor` (`src/daemon.ts:276-283`): read the
       statusline cache; if present AND version-supported AND `capturedAt` age <
       `STATUSLINE_TTL` → use it (zero network); else existing daemon-cache-if-fresh;
@@ -259,7 +309,7 @@ never mask the COMPLETE poll, nor blind the daemon's switch/threshold path.
       _Files:_ `src/index.ts`, `src/daemon.ts`, `src/api.ts`. _Verify:_ integration
       test with `oauthGet` spied: fresh statusline cache → ZERO `oauthGet`; stale →
       exactly one poll; 429 → stalest real snapshot, not null.
-- [ ] **Step 2:** Hybrid merge (v1 mandatory) — overlay fresh statusline windows
+- [x] **Step 2:** Hybrid merge (v1 mandatory) — overlay fresh statusline windows
       onto the last polled/daemon snapshot by `window.key`; windows absent from
       statusline (per-model opus/sonnet, weekly_scoped/Fable, routines) are FILLED
       from poll, never dropped; per-window provenance drives independent hatching;
@@ -267,7 +317,7 @@ never mask the COMPLETE poll, nor blind the daemon's switch/threshold path.
       _Files:_ `src/usage.ts`, `src/index.ts`, `src/daemon.ts`. _Verify:_ statusline
       `{five_hour,seven_day}` + polled `{opus,sonnet}` → merged carries all four with
       correct per-window `capturedAt`; a window missing from both → N.A., not dropped.
-- [ ] **Step 3:** Switch-path coverage guard — `detectCrossings` / `maxUtilization`
+- [x] **Step 3:** Switch-path coverage guard — `detectCrossings` / `maxUtilization`
       / `pickSwitchTarget` operate on the poll-complete merged window set, never a
       fewer-window statusline-only snapshot.
       _Files:_ `src/daemon.ts`, `src/usage.ts`. _Verify:_ a per-model window at 95%
@@ -279,7 +329,7 @@ never mask the COMPLETE poll, nor blind the daemon's switch/threshold path.
       _Files:_ `src/index.ts`, `src/daemon.ts`. _Verify:_ a within-TTL-but-old
       snapshot re-served by a daemon cycle is not reported fresh to a `--json`
       consumer whose `capturedAt` age exceeds the threshold.
-- [ ] **Step 5:** Confirm the GUI needs zero changes — `profileUsage` → `status
+- [x] **Step 5:** Confirm the GUI needs zero changes — `profileUsage` → `status
       --json` returns the unchanged `UsageSnapshot`; `isUsageStale`/`withStickyResets`
       operate on `capturedAt` regardless of source.
       _Files:_ `gui/src/ipc.ts`, `gui/src/App.tsx`, `gui/src/usage-cache.ts`,
@@ -288,22 +338,22 @@ never mask the COMPLETE poll, nor blind the daemon's switch/threshold path.
 
 ## Phase 5 — Install wiring, version canary, doctor visibility, docs
 
-- [ ] **Step 1:** Wire `installStatusline`/`uninstallStatusline` into the existing
+- [x] **Step 1:** Wire `installStatusline`/`uninstallStatusline` into the existing
       hooks install/uninstall path (respecting the Phase-2 auto-vs-opt-in decision)
       so both managed edits install + reverse together.
       _Files:_ `src/index.ts`. _Verify:_ install installs both; uninstall reverses
       both, leaving `settings.json` byte-exact to pre-install.
-- [ ] **Step 2:** statusLine-contract version canary distinct from telemetry
+- [x] **Step 2:** statusLine-contract version canary distinct from telemetry
       `SUPPORTED_CLAUDE`: missing `rate_limits` / out-of-range CC → `parseStatuslineUsage`
       null → transparent poll fallback; log the drift.
       _Files:_ `src/statusline.ts`, `src/usage.ts`, `src/telemetry.ts`. _Verify:_
       capture without `rate_limits` → null → poll; drift log emitted; no crash.
-- [ ] **Step 3:** Surface statusline-wrap health in `doctor` (present / displaced /
+- [x] **Step 3:** Surface statusline-wrap health in `doctor` (present / displaced /
       missing), mirroring `share.ts` `sharedLinkHealth`, so a user re-running
       ccstatusline's installer (which silently displaces our wrap) is visible.
       _Files:_ `src/index.ts`, `src/share.ts`. _Verify:_ after manually replacing
       `settings.statusLine` with a foreign command, `doctor` reports "displaced".
-- [ ] **Step 4:** Exclude the sidecar + per-profile usage cache from sharing (like
+- [x] **Step 4:** Exclude the sidecar + per-profile usage cache from sharing (like
       `sessions/`); update docs/README/roadmap; record the honest expectation that
       for multi-profile users the 429 relief is ~1/N (statusline fires only for the
       profile with a live session) and the burst-stagger + per-profile cooldown
@@ -317,9 +367,22 @@ Scope is the usage query only. ADR-003 (rebind, `src/rebind.ts:147`) and ADR-004
 (token-freshen, `src/token-freshen.ts:161`) keep their narrow credential reads;
 the login stamp (`src/daemon.ts:541`) is not a usage read and stays.
 
-- [ ] **Step 1:** Spike the control query over the unmodified binary
+- [x] **Step 1:** Spike the control query over the unmodified binary
       (`initialize` → `get_usage`): per-profile via `CLAUDE_CONFIG_DIR`, no token
       handled by AS, output shape and CC version recorded as a fixture.
+      _Done 2026-11-23:_ works on 2.1.316 without `initialize` and without a prompt;
+      6.6 s per query; richer than the statusline (per-model weekly, `limits[]`). The
+      binary's own SDK names it `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET`,
+      so it is a fallback that must degrade to "absent". Evidence:
+      `agents/evidence/codex-osc-7501-and-claude-get-usage-2026-11.md`; fixture
+      `tests/fixtures/claude-get-usage-2.1.316.json`.
+> **Parked 2026-11-23 on an owner decision.** Phases 1–5 shipped (opt-in statusline,
+> ADR-011). Step 1's spike found the control query declared experimental, which is new
+> since the E-token decision; the council split (one seat for removing the token poll
+> now, one for keeping it as a last fallback) and both seats returned the choice to the
+> owner. Record: `agents/runtime/council/responses/2026-11-23-control-query.md`
+> (gitignored). The options are in the frontmatter.
+
 - [ ] **Step 2:** Usage source order statusline (Phases 1–5) → control query →
       serve-stale; the three `fetchUsage` callers (`src/daemon.ts:533`,
       `src/commands/shared.ts:166`, `src/commands/usage.ts:108`) move to it.
@@ -331,38 +394,38 @@ the login stamp (`src/daemon.ts:541`) is not a usage read and stays.
 
 ## Acceptance Criteria
 
-- [ ] Phase-0 gate PASSED before any downstream build: a committed fixture proves
+- [x] Phase-0 gate PASSED before any downstream build: a committed fixture proves
       `rate_limits` present on the installed CC's statusLine stdin with exact shape
       documented; `CLAUDE_CONFIG_DIR` confirmed in the env; wrap round-trip
       byte-identical under share-off + share-on. Any failure → not built, poll intact.
-- [ ] `settings.statusLine` stays byte-clean `{type,command,padding}`; NO `asw_*`
-      keys on the object; original stashed VERBATIM out-of-band; "ours" = command
-      string match on the resolved absolute path.
-- [ ] install → uninstall byte-exact across all five cases (round-trip suite).
-- [ ] Shared `settings.json`: a single stash keyed to the shared SOURCE dir;
-      uninstalling any profile restores the one original and never deletes the slot
-      on a missing per-profile stash; sidecar excluded from sharing.
-- [ ] The installed command is an absolute resolved binary path; unresolvable →
+- [x] `settings.statusLine` stays byte-clean `{type,command,padding}`; NO `asw_*`
+      keys on the object; "ours" = command string match on the resolved absolute path;
+      an existing user statusLine is never touched (ADR-011).
+- [x] install → uninstall leaves every other key of `settings.json` byte-equal, and
+      a shared `settings.json` names every profile it serves before `on`/`off` write.
+- [-] _Carried to `later/road-to-statusline-chaining.md`:_ single stash keyed to the
+      shared SOURCE dir; restore of the one original; sidecar excluded from sharing.
+- [x] The installed command is an absolute resolved binary path; unresolvable →
       REFUSE install, retain the polled path.
-- [ ] The chain delegate preserves the bar byte-for-byte (stdout, ANSI, exit,
-      padding), is time-boxed, emits empty on failure, never blocks; cache written
-      BEFORE the delegate spawn.
-- [ ] `parseStatuslineUsage` returns null on zero usable windows; cache never
+- [-] _Carried to `later/road-to-statusline-chaining.md`:_ the chain delegate preserves
+      the bar byte-for-byte, is time-boxed, emits empty on failure, never blocks.
+- [x] The managed command prints nothing and exits 0 on every path (ADR-011).
+- [x] `parseStatuslineUsage` returns null on zero usable windows; cache never
       written empty; a null cache = source-absent → poll (existing N.A. path for
       API-key/free-tier preserved).
-- [ ] Hybrid merge present in v1: absent windows filled from poll, never dropped;
+- [x] Hybrid merge present in v1: absent windows filled from poll, never dropped;
       per-window provenance drives hatching; snapshot `capturedAt` = older source.
-- [ ] The daemon switch/threshold path always operates on the poll-complete merged
+- [x] The daemon switch/threshold path always operates on the poll-complete merged
       window set, never a fewer-window statusline-only snapshot.
-- [ ] `STATUSLINE_TTL` ≤ GUI `staleAfterMs`; an elapsed-`resetsAt` snapshot is stale.
-- [ ] Source selection = prefer-fresh-statusline → poll → serve-stalest-real: fresh
+- [x] `STATUSLINE_TTL` ≤ GUI `staleAfterMs`; an elapsed-`resetsAt` snapshot is stale.
+- [x] Source selection = prefer-fresh-statusline → poll → serve-stalest-real: fresh
       cache = zero `oauthGet`; poll only when stale/absent; 429/null serves the
       stalest real snapshot, never N.A. when any snapshot exists.
-- [ ] Zero new network egress: `cmdStatusline` makes no network call, never
+- [x] Zero new network egress: `cmdStatusline` makes no network call, never
       dereferences `transcript_path` (review + grep).
-- [ ] GUI unchanged: `status --json` returns the same `UsageSnapshot`; bars render +
+- [x] GUI unchanged: `status --json` returns the same `UsageSnapshot`; bars render +
       hatch from a statusline-sourced snapshot with no GUI code change.
-- [ ] The reopened "chaining rejected / no statusline-slot takeover" decision is
+- [x] The reopened "chaining rejected / no statusline-slot takeover" decision is
       recorded via ADR + surfaced to the user as a numbered decision before the wrap
       installer is built.
 
