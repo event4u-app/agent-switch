@@ -48,11 +48,11 @@ export const BOARDS: Record<string, Board> = {
   firstrun: { scene: { view: "firstrun" } },
   new: { steps: [{ click: "New session" }] },
   decide: { steps: [{ click: "Decide" }] },
-  end: { steps: [{ click: "Session actions" }] },
+  end: { steps: [{ click: "Session actions" }, { click: "End…" }] },
   accounts: { steps: [{ click: "Accounts" }] },
   table: { steps: [{ key: "k", mod: true }, { click: "All sessions" }] },
   library: { steps: [{ click: "Library" }] },
-  // The resume preflight and the end dialog live outside V3Window (act → app); these boards show where they start.
+  // The resume preflight lives outside V3Window (act → app); this board shows where it starts.
   resume: { steps: [{ click: "Library" }] },
   tools: { steps: [{ click: "Tools" }] },
   tray: { scene: { view: "tray" } },
@@ -63,7 +63,7 @@ export const BOARDS: Record<string, Board> = {
   agents: { steps: [...SETTINGS, { click: "Agents" }] },
   remote: { steps: [...SETTINGS, { click: "Remote" }] },
   chat: { scene: { chat: true } },
-  review: { steps: [{ click: "Changes" }] },
+  review: { steps: [{ click: "v3 engine" }, { click: "Changes" }, { click: "Review src/engine/ingest.ts" }] },
   markdown: { scene: { view: "markdown" } },
   hints: { scene: { view: "hints" } },
 };

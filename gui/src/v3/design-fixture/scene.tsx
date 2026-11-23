@@ -19,7 +19,9 @@ import { ToolsPage, allNeeds } from "../tools.js";
 import { ExternalBody, HostedTerminal } from "../workbench.js";
 import type { LimitAccount } from "../limits.js";
 import type { RowSession } from "../sessions.js";
-import type { ChangedFile } from "../panels.js";
+import type { ChangedFile, SummaryFacts } from "../panels.js";
+import { Review } from "../review.js";
+import type { ReviewFileJson } from "../../ipc.js";
 import type { TermBackend } from "../../terminal.js";
 import { TERMINALS } from "./terminal.js";
 import { Bubble } from "../chat.js";
@@ -86,6 +88,42 @@ const CHANGES: ChangedFile[] = [
   { status: "M", path: "src/engine/projection.ts", added: 21, removed: 4 },
   { status: "A", path: "tests/engine/ingest.test.ts", added: 77, removed: 0 },
 ];
+
+/** Each session's own changed files, so Summary, Changes and Review follow the selected session. */
+const CHANGES_OF: Record<string, ChangedFile[]> = {
+  "claude/work/s-store": CHANGES,
+  "claude/personal/s-themes": [
+    { status: "M", path: "gui/src/v3/themes/registry.ts", added: 3, removed: 3 },
+    { status: "M", path: "gui/src/v3/themes/resolve.ts", added: 8, removed: 2 },
+    { status: "A", path: "gui/src/v3/themes/darcula.test.ts", added: 41, removed: 0 },
+  ],
+  "claude/personal/s-checkout": [
+    { status: "M", path: "src/checkout/PaymentStep.vue", added: 24, removed: 9 },
+    { status: "M", path: "tests/e2e/checkout.spec.ts", added: 6, removed: 2 },
+  ],
+  "claude/side/s-wedge": [{ status: "M", path: "src/daemon/lease.ts", added: 12, removed: 4 }],
+  "claude/personal/s-notes": [{ status: "A", path: "docs/release-2.11.md", added: 86, removed: 0 }],
+};
+const changesOf = (key: string) => CHANGES_OF[key] ?? [];
+
+/** Review files for the fixture: one small hunk per changed file. */
+const reviewFiles = (key: string): ReviewFileJson[] =>
+  changesOf(key).map((f, i) => ({
+    path: f.path,
+    status: f.status as ReviewFileJson["status"],
+    added: f.added,
+    removed: f.removed,
+    hunks: [
+      {
+        oldStart: 12,
+        newStart: 12,
+        layer: i === 0 ? "turn" : "unstaged",
+        hash: `h${i}`,
+        header: "@@ -12,4 +12,5 @@",
+        lines: f.status === "A" ? ["+// new file", `+export const added = ${f.added};`] : [" const before = true;", "-const old = load();", `+const next = load({ dedupe: true }); // +${f.added} −${f.removed}`, " export { next };"],
+      },
+    ],
+  }));
 
 const iso = (ago: number) => new Date(NOW - ago).toISOString();
 
@@ -195,10 +233,12 @@ export function makeData(o: { theme: string; accent: Accent; health?: string; aw
     return b ? { key, hosted: b.hosted, chatAvailable: b.hosted, view: o.chat?.(key) && b.hosted ? "chat" : "terminal", account: { name: b.acct, color: b.color, fiveH: b.five, protect: b.protect }, model: b.model, thinking: b.thinking, contextPct: b.ctx } : null;
   },
   summary: (key) =>
-    key.endsWith("s-checkout")
-      ? { next: { text: "CI fails on e2e and the branch conflicts with main. One prompt: rebase, then fix e2e (log attached).", action: "Send to agent" }, pr: { number: 311, url: "#", ci: "FAILURE", lifecycle: "OPEN", mergeable: "CONFLICTING", review: "CHANGES_REQUESTED", failingChecks: ["e2e (chromium)"] }, git: { branch: "a11y/checkout", worktree: false, changed: CHANGES.length, ahead: 5, behind: 9 }, limit: null, more: { id: "claude:personal/7a1c…e02", host: "tmux · as-personal-2", library: "not pinned", children: "1 related session" } }
-      : { next: { text: "#142 needs a review; you'll hear when CI is done.", action: "Request review" }, pr: { number: 142, url: "#", ci: "PENDING", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "REVIEW_REQUIRED", failingChecks: [] }, git: { branch: "feat/event-store", worktree: true, changed: CHANGES.length, ahead: 3, behind: 0 }, limit: null, more: { id: "claude:work/9f2c…e41a", host: "tmux · as-work-3", library: "pinned · in vault", children: "3 subagents" } },
-  changes: () => CHANGES,
+    !key.endsWith("s-checkout") && !key.endsWith("s-store")
+      ? otherSummary(key)
+      : key.endsWith("s-checkout")
+      ? { next: { text: "CI fails on e2e and the branch conflicts with main. One prompt: rebase, then fix e2e (log attached).", action: "Send to agent" }, pr: { number: 311, url: "#", ci: "FAILURE", lifecycle: "OPEN", mergeable: "CONFLICTING", review: "CHANGES_REQUESTED", failingChecks: ["e2e (chromium)"] }, git: { branch: "a11y/checkout", worktree: false, changed: changesOf("claude/personal/s-checkout").length, ahead: 5, behind: 9 }, limit: null, more: { id: "claude:personal/7a1c…e02", host: "tmux · as-personal-2", library: "not pinned", children: "1 related session" } }
+      : { next: { text: "#142 needs a review; you'll hear when CI is done.", action: "Request review" }, pr: { number: 142, url: "#", ci: "PENDING", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "REVIEW_REQUIRED", failingChecks: [] }, git: { branch: "feat/event-store", worktree: true, changed: changesOf("claude/work/s-store").length, ahead: 3, behind: 0 }, limit: null, more: { id: "claude:work/9f2c…e41a", host: "tmux · as-work-3", library: "pinned · in vault", children: "3 subagents" } },
+  changes: (key) => changesOf(key),
   next: (key) => (key.endsWith("s-checkout") ? { text: "CI fails on e2e and the branch conflicts with main. One prompt: rebase, then fix e2e (log attached).", action: "Send to agent" } : null),
   };
 }
@@ -213,6 +253,15 @@ const fakeBackend = (key: string): TermBackend => ({
   async resize() {},
   async close() {},
 });
+
+/** Summary for a session without a hand-written one, from its row. */
+function otherSummary(key: string): SummaryFacts | null {
+  const s = SESSIONS.find((x) => x.key === key);
+  if (!s) return null;
+  const pr = s.pr && { number: s.pr.number, url: "#", ci: s.pr.ci, lifecycle: "OPEN", mergeable: s.pr.mergeable ?? "MERGEABLE", review: "NONE", failingChecks: [] };
+  const next = s.needsYou ? { text: "It waits for your answer in Needs you.", action: "Focus terminal" } : s.state === "done" ? { text: `#${s.pr?.number} is green; merge when you're ready.`, action: "Open PR" } : null;
+  return { next, pr, git: s.branch ? { branch: s.branch, worktree: false, changed: changesOf(key).length, ahead: 1, behind: 0 } : null, limit: null, more: { id: key, host: BAR[key]?.hosted ? "tmux · as-" + BAR[key].acct : "Terminal.app · tab 3", library: "not pinned", children: s.children.length ? `${s.children.length} related` : "none" } };
+}
 
 export interface SceneOptions {
   /** A board name (embed.tsx) or one of the fixture's own: markdown, claude-settings, hints, tray, tray-codex, firstrun. */
@@ -235,7 +284,22 @@ export function Scene({ view = "main", theme = "darcula", accent = "theme", heal
   const data = makeData({ theme, accent, health, away, chat: inChat });
   const def = themeById(theme);
   const { vars } = resolveTheme(def, accent);
+  const noop = () => {};
   const slots: V3Slots = {
+    review: (key, focus) => (
+      <Review
+        title={SESSIONS.find((x) => x.key === key)?.title ?? key}
+        scope="worktree"
+        files={reviewFiles(key)}
+        shared={[]}
+        running={SESSIONS.find((x) => x.key === key)?.state === "working"}
+        loading={false}
+        error={null}
+        undoable={false}
+        focus={focus}
+        on={{ setScope: noop, stage: noop, unstage: noop, discard: noop, undo: noop, comment: noop, commit: noop, createPr: noop }}
+      />
+    ),
     body: (key) =>
       BAR[key]?.hosted === false ? (
         <ExternalBody where="Terminal.app · tab 3" facts={<p>as-hook p95 benchmark · ~/code/agent-switch · perf/as-hook</p>} lastLine="as-hook is 6.7× faster at p95 (6.2 ms vs 41.8 ms)." onFocus={() => {}} onTakeOver={() => {}} />
