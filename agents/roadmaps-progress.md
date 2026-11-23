@@ -6,10 +6,10 @@
 
 ## Overall
 
-**39 / 48 steps done · 81%**
+**40 / 49 steps done · 82%**
 
 ```text
-████████████████████████████████░░░░░░░░   81%
+█████████████████████████████████░░░░░░░   82%
 ```
 
 ## Open roadmaps
@@ -17,16 +17,17 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 1 | 16 | 0 | 0 | 0 | █████████░ 94% |
-| 2 | [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md) | 8 | 31 | 8 | 23 | 0 | 0 | 0 | ███████░░░ 74% |
+| 2 | [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md) | 8 | 32 | 8 | 24 | 0 | 0 | 0 | ████████░░ 75% |
 
 ---
 
-## Parked — `later/` (13 roadmaps, not active backlog)
+## Parked — `later/` (16 roadmaps, not active backlog)
 
 > Excluded from the table above and from `/roadmap:process-*` by design. Listed here so a resume condition is visible without opening the file.
 
 | Roadmap | Open blockers | Resume when |
 |---|---:|---|
+| [road-to-a-reading-every-pick-can-trust.md](roadmaps/later/road-to-a-reading-every-pick-can-trust.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-a-trusted-install.md](roadmaps/later/road-to-a-trusted-install.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-a-v3-window-in-two-languages.md](roadmaps/later/road-to-a-v3-window-in-two-languages.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-agent-switch-statusline-usage.md](roadmaps/later/road-to-agent-switch-statusline-usage.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
@@ -36,6 +37,8 @@
 | [road-to-multi-provider-and-provider-settings.md](roadmaps/later/road-to-multi-provider-and-provider-settings.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-open-in-with-the-right-account.md](roadmaps/later/road-to-open-in-with-the-right-account.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-session-orchestration.md](roadmaps/later/road-to-session-orchestration.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
+| [road-to-sessions-that-hold-wherever-they-run.md](roadmaps/later/road-to-sessions-that-hold-wherever-they-run.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
+| [road-to-skins-that-change-the-look-not-the-meaning.md](roadmaps/later/road-to-skins-that-change-the-look-not-the-meaning.md) | 0 | \| Skins loaded from a folder on disk \| A second trust boundary. It needs 1.7, an asset scope limited to one folder, a schema check and size caps first. \| a later roadmap; resume when the owner want... | <!-- ref-ignore -->
 | [road-to-statusline-chaining.md](roadmaps/later/road-to-statusline-chaining.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-the-rows-where-others-lead.md](roadmaps/later/road-to-the-rows-where-others-lead.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-the-workbench-second-pass.md](roadmaps/later/road-to-the-workbench-second-pass.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
@@ -60,7 +63,7 @@
 
 ### [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md)
 
-**a workbench that tells the truth** — 23 / 31 done (74%)
+**a workbench that tells the truth** — 24 / 32 done (75%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
@@ -71,7 +74,7 @@
 | 5 | The list at a glance | ✅ done | 0 | 3 | 0 | 0 | 100% |
 | 6 | The canvas shows it | 🟡 in progress | 1 | 1 | 0 | 0 | 50% |
 | 7 | Arena round 1 (10 reviewers, all NOT DONE; reports in the session scratchpad `arena/r1/`) | ✅ done | 0 | 7 | 0 | 0 | 100% |
-| 8 | Arena round 2 (4 DONE, 6 NOT DONE; reports in the session scratchpad `arena/r2/`) | ⬜ not started | 7 | 0 | 0 | 0 | 0% |
+| 8 | Arena round 2 (4 DONE, 6 NOT DONE; reports in the session scratchpad `arena/r2/`) | 🟡 in progress | 7 | 1 | 0 | 0 | 12% |
 
 ## Age
 

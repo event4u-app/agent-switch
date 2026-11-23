@@ -92,7 +92,8 @@ canvas shows the result, because it renders the real app.
 - [ ] 8.4 Subagents: `timeline --subagent` works end to end; subagents are listed and open from Claude Code's own meta files without our hook; reads stay confined to the session folder; truncation is said.
 - [ ] 8.5 Actions: Open in and Resume work for Codex or say why; the engine-stopped lock covers only what needs the engine; a hosted send never submits the user's draft and reports a failed send; CI items send no check names; label and target of a CI item agree; `host adopt --force` never starts a second writer; Move from any entry opens the v3 decision sheet; the tray starts the v3 New-session dialog; the real dialog shows the folder's git state.
 - [ ] 8.6 Flyouts and list: ⌘J moves focus to the item so its keys never reach the terminal; session-bar chips move into ⋯ instead of being cut when a panel is open; Limits rows work by keyboard; ⌘K/Esc returns focus; an existing install gets the new sort and density defaults once; the sort menu labels its default.
-- [ ] 8.7 Owner inbox of 2026-11-23 triaged into a roadmap with its open owner questions; the inbox files moved to the archive.
+- [x] 8.7 Owner inbox of 2026-11-23 triaged: three proposal roadmaps under `later/` (`road-to-a-reading-every-pick-can-trust`, `road-to-sessions-that-hold-wherever-they-run`, `road-to-skins-that-change-the-look-not-the-meaning`), each with its resume condition (the owner's answers); the inbox round archived as `agents/tmp.old/inbox-2026-11-d`.
+- [ ] 8.8 The near-limit sheet (owner screenshot in that round): the suggested account is a real account and is the one preselected; the footer names what happens when sessions go to different accounts; the sheet does not call 60 % "near limit" below the account's protect threshold.
 
 ## Follow-ups (not in this roadmap)
 
