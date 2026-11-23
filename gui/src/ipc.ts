@@ -1327,12 +1327,14 @@ export async function setPaceSuggest(on: boolean): Promise<void> {
 }
 
 /** How a start with no folder rule picks its account (`strategy`):
- *  `balance` spreads starts, `fill` uses the preferred account up first. */
-export type StartStrategy = "balance" | "fill";
+ *  `balance` spreads starts, `fill` uses the preferred account up first,
+ *  `default` always takes it, `ask` lets the person choose. */
+export type StartStrategy = "balance" | "fill" | "default" | "ask";
+const START_STRATEGIES: readonly StartStrategy[] = ["balance", "fill", "default", "ask"];
 
 export async function getStrategy(provider: ProviderId): Promise<StartStrategy> {
   const { strategy } = JSON.parse(await runCli(["strategy", "status", "--provider", provider, "--json"]));
-  return strategy === "fill" ? "fill" : "balance";
+  return START_STRATEGIES.includes(strategy) ? strategy : "balance";
 }
 
 export async function setStrategy(provider: ProviderId, strategy: StartStrategy): Promise<void> {
@@ -1650,6 +1652,8 @@ export interface DirResolution {
   why: string[];
   /** A folder rule refused every start it could make (the CLI exits 86). */
   blocked?: string;
+  /** Strategy `ask`: the accounts to choose from; nothing starts automatically. */
+  ask?: string[];
 }
 
 /** One Claude Desktop instance from `desktop --json`: the accounts that ran

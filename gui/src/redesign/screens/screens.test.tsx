@@ -310,6 +310,22 @@ describe("Start session", () => {
     expect(document.querySelector('[title^="agent-switch run side --provider claude --cwd /Users/x/dev/app/sub"]')).toBeTruthy();
   });
 
+  it("under strategy ask, Automatic picks nothing: Start waits until an account is chosen", async () => {
+    const explainFolder = vi.fn(async () => ({ profile: "claude/work", configDir: "/c", why: ["Strategy ask — a start from a terminal asks which of 2 accounts to use"], ask: ["work", "side"] }));
+    mount(fixture({ accounts: [acc("work", { isDefault: true }), acc("side")] }), {
+      overlay: { kind: "start", cwd: "/Users/x/dev/app" },
+      act: { explainFolder },
+    });
+    expect(await screen.findByText("Ask me — choose an account")).toBeTruthy();
+    const start = () => screen.getByRole("button", { name: /Start Claude/ }) as HTMLButtonElement;
+    expect(start().disabled).toBe(true);
+    expect(screen.getByRole("alert").textContent).toMatch(/New Claude sessions ask first: choose an account/);
+    fireEvent.click(screen.getByRole("combobox", { name: "Account" }));
+    fireEvent.click(screen.getByRole("option", { name: /^side/ }));
+    expect(start().disabled).toBe(false);
+    expect(document.querySelector('[title^="agent-switch run side --provider claude --cwd /Users/x/dev/app"]')).toBeTruthy();
+  });
+
   it("falls back to the local match when the CLI doesn't answer", async () => {
     const explainFolder = vi.fn(async () => {
       throw new Error("offline");

@@ -38,6 +38,8 @@ import {
 import { START_STRATEGIES, resolveForDir, type StartStrategy } from "../dir-resolve.js";
 import { appendPick, readPicks, PICKS_MAX_LINES } from "../picks.js";
 import { admissionRefusal } from "../start-admission.js";
+import { askLines, canAsk, parseChoice } from "../unbound-ask.js";
+import * as readline from "node:readline";
 import { GUARD_POLICIES, GUARD_REFUSED_EXIT, GuardPolicy, OVERRIDE_ENV, isGuardPolicy } from "../single-load.js";
 import { mappingRows, normalizeRemoteKey, remoteRows, removeMapping, removeRemoteMapping, resolveMapping, setMapping, setPaused, setRemoteMapping, normalizePath } from "../mappings.js";
 import { liveSessionPids } from "../api.js";
@@ -54,7 +56,7 @@ export function resolveDir(
   plain = false,
   cwd = process.cwd(),
   exclude: readonly string[] = [],
-): { name: string | null; why: string[]; blocked?: string; note?: string; identity?: string | null } {
+): { name: string | null; why: string[]; blocked?: string; note?: string; ask?: string[]; identity?: string | null } {
   // The account each candidate was judged on, so the start can be held to it.
   const seen = new Map<string, string | null>();
   const signedInAs = (n: string) => {
@@ -105,8 +107,9 @@ export function resolveDir(
  * a free one or shares the best. The distinct exit code lets the wrapper block
  * on that refusal without ever blocking on a missing or older `agent-switch`.
  */
-export function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = false, exclude: readonly string[] = []): void {
-  const r = resolveDir(providerId, plain, process.cwd(), exclude);
+export async function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = false, exclude: readonly string[] = []): Promise<void> {
+  const resolved = resolveDir(providerId, plain, process.cwd(), exclude);
+  const r = guarded && !json && resolved.ask && canAsk({ stdin: !!process.stdin.isTTY, stderr: !!process.stderr.isTTY }) ? await askForAccount(providerId, resolved) : resolved;
   if (json) {
     console.log(
       JSON.stringify(
@@ -116,6 +119,7 @@ export function cmdDir(providerId: ProviderId, guarded = false, json = false, pl
           why: r.why,
           ...(r.blocked ? { blocked: r.blocked } : {}),
           ...(r.note ? { note: r.note } : {}),
+          ...(r.ask ? { ask: r.ask } : {}),
         },
         null,
         2,
@@ -156,6 +160,21 @@ export function cmdDir(providerId: ProviderId, guarded = false, json = false, pl
   if (guard.verdict === "allow") return;
   const n = guard.inspection.sessions.length;
   console.error(`agent-switch: ${providerId}/${name} already has ${n} live session${n === 1 ? "" : "s"} — starting another one on it.`);
+}
+
+/** Strategy `ask` at a terminal: the person picks; no answer starts nothing. */
+async function askForAccount(providerId: ProviderId, r: ReturnType<typeof resolveDir>): Promise<ReturnType<typeof resolveDir>> {
+  const choices = r.ask ?? [];
+  for (const line of askLines(providerId, choices, r.name)) process.stderr.write(`${line}\n`);
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  const answer: string = await new Promise((resolve) => {
+    rl.question("> ", resolve);
+    rl.on("close", () => resolve("\u0000"));
+  });
+  rl.close();
+  const chosen = parseChoice(answer, choices, r.name);
+  if (!chosen) return { ...r, name: null, blocked: "no account was chosen" };
+  return { ...r, name: chosen, identity: identity(providerId, chosen), why: [...r.why, `Chosen at the prompt: ${providerId}/${chosen}`] };
 }
 
 export function cmdMap(providerId: ProviderId, name?: string, dir?: string, flags: Record<string, string | boolean> = {}): void {
@@ -433,7 +452,7 @@ export function admittedLaunch(providerId: ProviderId, pick: { name: string; ide
  *  account until it reaches its limit. */
 export function cmdStrategy(providerId: ProviderId, sub: string | undefined, json = false): void {
   if (sub !== undefined && sub !== "status") {
-    if (!(START_STRATEGIES as readonly string[]).includes(sub)) die("usage: agent-switch strategy [balance|fill|status] [--provider P] [--json]");
+    if (!(START_STRATEGIES as readonly string[]).includes(sub)) die("usage: agent-switch strategy [balance|fill|default|ask|status] [--provider P] [--json]");
     const next = sub as StartStrategy;
     if (readStrategy(providerId) !== next) {
       setStrategy(providerId, next);
@@ -445,9 +464,11 @@ export function cmdStrategy(providerId: ProviderId, sub: string | undefined, jso
     console.log(JSON.stringify({ provider: providerId, strategy }));
     return;
   }
-  console.log(
-    strategy === "fill"
-      ? `${providerId}: fill — new starts stay on the preferred account until it reaches its limit, then go to the one with the most headroom.`
-      : `${providerId}: balance — new starts go to the account that would lose the most at its next reset.`,
-  );
+  const explain: Record<StartStrategy, string> = {
+    balance: "new starts go to the account that would lose the most at its next reset.",
+    fill: "new starts stay on the preferred account until it reaches its limit, then go to the one with the most headroom.",
+    default: "new starts always take the preferred account; the balanced pick only steps in when it cannot take work.",
+    ask: "a start from a terminal asks which account to use; scripts and the desktop app take the preferred account.",
+  };
+  console.log(`${providerId}: ${strategy} — ${explain[strategy]}`);
 }

@@ -131,6 +131,10 @@ export const settings = {
   "settings.protection.strategyBalanceHint": "Uses what would expire first",
   "settings.protection.strategyFill": "Preferred account first",
   "settings.protection.strategyFillHint": "Next account only at the limit",
+  "settings.protection.strategyDefault": "Always the preferred account",
+  "settings.protection.strategyDefaultHint": "Another one only when it can't take work",
+  "settings.protection.strategyAsk": "Ask me",
+  "settings.protection.strategyAskHint": "In the terminal and in Start session",
   "settings.protection.codexResets": "Codex resets",
   "settings.protection.autoReset": "Redeem Codex resets automatically",
   "settings.protection.autoResetDetail":

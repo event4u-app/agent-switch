@@ -83,6 +83,9 @@ export interface Resolution {
   blocked?: string;
   /** Set when the start moved off a busy account — one line for the human. */
   note?: string;
+  /** Strategy `ask`: the accounts a person may choose from, the fallback
+   *  `name` first. Only set when there is a real choice (two or more). */
+  ask?: string[];
 }
 
 export function ago(ms: number): string {
@@ -190,16 +193,57 @@ export function resolveForDir(i: ResolveInputs): Resolution {
  *  caller gave no profile list. */
 function balancePlain(i: ResolveInputs, why: string[]): Resolution {
   if (!i.names) return fallbackToActive(i, why);
+  if (i.strategy === "ask") {
+    const choices = i.names.filter((n) => takesWork(i, n));
+    if (choices.length > 1) {
+      why.push(`Strategy ask — a start from a terminal asks which of ${choices.length} accounts to use; anywhere else it takes the preferred account`);
+      const r = preferredStart(i, why, "ask") ?? balanceAll(i, i.names, why);
+      return { ...r, ask: r.name && choices.includes(r.name) ? [r.name, ...choices.filter((c) => c !== r.name)] : choices };
+    }
+  }
+  if (i.strategy === "default") {
+    const kept = preferredStart(i, why, "default");
+    if (kept) return kept;
+  }
   if (i.strategy === "fill") {
     const kept = fillPreferred(i, why);
     if (kept) return kept;
   }
-  const n = i.names.length;
+  return balanceAll(i, i.names, why);
+}
+
+function balanceAll(i: ResolveInputs, names: string[], why: string[]): Resolution {
+  const n = names.length;
   why.push(`No folder rule — balancing across ${n} ${i.providerId} account${n === 1 ? "" : "s"} by what each would lose at its reset`);
-  const best = pickBalanced(i, i.names, why, i.active);
+  const best = pickBalanced(i, names, why, i.active);
   if (best) return { name: best, why };
   why.push("No account has fresh usage to weigh — using the plain-start account");
   return fallbackToActive(i, why);
+}
+
+/**
+ * Strategy `default` (and `ask` when nobody can be asked): the preferred
+ * account takes every start it can take, whatever its usage. Without one, or
+ * when it is signed out, disabled or busy under guard `block`, null: the caller
+ * balances.
+ */
+function preferredStart(i: ResolveInputs, why: string[], label: "default" | "ask"): Resolution | null {
+  const a = i.active;
+  if (!a || !i.exists(a)) {
+    why.push(`Strategy ${label} — no preferred account (agent-switch use <name>), balancing instead`);
+    return null;
+  }
+  const key = `${i.providerId}/${a}`;
+  if (!takesWork(i, a)) {
+    why.push(`Strategy ${label} — ${key} cannot take work right now, balancing across the rest`);
+    return null;
+  }
+  if (busy(i, a)) {
+    why.push(`Strategy ${label} — ${key} already has a live session, balancing across the rest`);
+    return null;
+  }
+  why.push(`Strategy ${label} — taking the preferred account ${key}`);
+  return { name: a, why };
 }
 
 /**

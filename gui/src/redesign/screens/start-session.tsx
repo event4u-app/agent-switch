@@ -136,14 +136,16 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
           ? { account: null, rule: null, why: [t("sessions.start.asking")] }
           : local;
   const ranked = rankAccounts(s.accounts, tool, s.now);
-  const account = pick === AUTO ? resolution.account : (s.accountById(pick) ?? null);
+  // Strategy ask: the CLI names a fallback for scripts, but here a person is asked.
+  const asks = pick === AUTO && cli?.state === "done" && (cli.res.ask?.length ?? 0) > 1;
+  const account = asks ? null : pick === AUTO ? resolution.account : (s.accountById(pick) ?? null);
   const appWhy = appUnavailableReason(s, tool);
   const effectiveOpenIn: OpenIn = appWhy ? "terminal" : openIn;
   const plan = startPlan(account, tool, effectiveOpenIn, appFor(s, tool), expandHome(folder.trim(), home));
   const folders = Array.from(new Set([...(cwd ? [cwd] : []), ...recent]));
   const preview = startPreview(tool, effectiveOpenIn, folder, appFor(s, tool), account?.name ?? null);
   const why = pick === AUTO ? resolution.why : [t("sessions.start.pickedByYou", { name: account?.name ?? "?" })];
-  const problem = resolving ? null : startProblem(account, tool, effectiveOpenIn, expandHome(folder.trim(), home));
+  const problem = resolving ? null : asks ? t("sessions.start.askFirst", { tool: TOOL_LABEL[tool] }) : startProblem(account, tool, effectiveOpenIn, expandHome(folder.trim(), home));
 
   const start = () => {
     if (!plan || !account) return;
@@ -253,9 +255,9 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
           options={[
             {
               value: AUTO,
-              label: t("sessions.start.automatic", { name: resolving ? "…" : resolution.account ? resolution.account.name : t("sessions.resolve.none") }),
+              label: asks ? t("sessions.start.askMe") : t("sessions.start.automatic", { name: resolving ? "…" : resolution.account ? resolution.account.name : t("sessions.resolve.none") }),
               hint: resolution.why[resolution.why.length - 1],
-              dot: resolution.account ? <AccountDot color={resolution.account.color} size={8} /> : undefined,
+              dot: !asks && resolution.account ? <AccountDot color={resolution.account.color} size={8} /> : undefined,
             },
             ...ranked.map((r) => ({
               value: r.account.id,

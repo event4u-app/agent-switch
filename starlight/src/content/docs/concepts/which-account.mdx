@@ -33,6 +33,9 @@ flowchart TD
 3. **Your preferred account.** When the accounts are level, or no usage numbers
    are fresh, the start uses your preferred account: the one you set with
    `asw <name>` (or `agent-switch use <name>`), marked with `*` in `asw`.
+   If you would rather not have starts balanced, `agent-switch strategy default`
+   always takes the preferred account, and `agent-switch strategy ask` asks at
+   the terminal which account to use (Settings › Protection in the app).
 
 <Aside type="note" title="`use` is a preference, not a lock">
   `agent-switch use work` does not force every session onto `work`. It marks

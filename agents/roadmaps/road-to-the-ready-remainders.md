@@ -49,6 +49,7 @@ saved.
 | D7 | Y on a focused approval allows once; ↵ keeps the item's verb (Open chat); Y on a question is not wired | a question's answer is free text or a choice the queue does not show, so "yes" would guess | questions carry a yes/no shape in `needs --json` |
 | D8 | A release is withdrawn by `npm deprecate` on that version or a `Withdrawn: <reason>` line in its GitHub release notes; when that status cannot be read, an opted-in kind is announced, not installed | the GUI learns the latest version from the GitHub release, and npm is what `agent-switch update` installs from, so both are read; an outage must not read as "not withdrawn" | releases carry a signed manifest with a withdraw field (road-to-a-trusted-install) |
 | D9 | After an update the GUI never restarts by itself: it offers the restart (notice + a Restart button in Settings › Updates while the installed version is newer than the running one), and while a session it hosts runs (alive hosted sessions plus chats in this window; unknown counts as running) the notice says to wait | the step allows a restart when idle, but an unasked restart under the user's cursor is the conservative reading's opposite, and the offer covers "restart when the user agrees" | the owner wants a restart without asking when nothing runs |
+| D10 | `strategy ask` asks only with a terminal on stdin and stderr; anywhere else (pipe, script, `exec`, the GUI's own calls) the start takes the preferred account, else the balanced pick; an answer that names no account starts nothing (exit 86) | the step forbids a prompt in a non-interactive run but names no fallback; the preferred account is the one the user set themselves, and starting nothing on a bad answer is the conservative reading | the owner wants `ask` to refuse non-interactive starts instead |
 
 ## Phase 1 — A wrong account is never saved
 
@@ -84,10 +85,12 @@ saved.
       done: `map --remote` / `unmap --remote` (`src/mappings.ts` `remotes`); `tests/remote-bindings.test.ts`
       (remote, repo-before-owner, folder vs remote at/above/below the root; seen red first), cli-e2e "remote binding".
       <!-- from: road-to-session-orchestration P2.3 -->
-- [ ] **2.3 "Ask me" and "default account" for unbound starts.** An unbound start
+- [x] **2.3 "Ask me" and "default account" for unbound starts.** An unbound start
       either asks (GUI dialog / CLI prompt, never in a non-interactive run) or
       takes the default account; plain `claude` profile resolution is documented
       end to end in the CLI reference.
+      done: `strategy default|ask` (`src/dir-resolve.ts`, `src/unbound-ask.ts`, D10); `tests/unbound-start.test.ts`
+      (seen red first), GUI `screens.test.tsx` "strategy ask" + `settings.test.tsx`; cli.mdx "Which account a start uses".
       <!-- from: road-to-session-orchestration P2.4 -->
       <!-- adapted: pool placement (P2.5) left out; decided by the owner 2026-11-08 in the source file (pool variant confirmed, narrowed) -->
 - [ ] **2.4 The reason for a pick on every surface.** The tray and project

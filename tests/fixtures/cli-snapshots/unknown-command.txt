@@ -18,7 +18,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch whoami [--provider P] [name]    show a profile's account identity
   agent-switch dir [--provider P] [--guard] [--json] [--plain] [--exclude a,b]   resolve profile for CWD (rule > balanced pick > active); --json adds why
   agent-switch continue <provider/account/session> [--text "…"]   type one message into a session Agent Switch hosts (default: "Continue where you left off.")
-  agent-switch strategy [balance|fill] [--provider P] [--json]   how a start without a folder rule picks: spread (default) or fill the preferred account first
+  agent-switch strategy [balance|fill|default|ask] [--provider P] [--json]   how a start without a folder rule picks: spread (default), fill the preferred account first, always the preferred account, or ask at the terminal
   agent-switch exec [--provider P] [--exclude a,b] [--plain] -- <args…>   run the provider's CLI on the account `dir` picks — for scripts and tools that spawn it as a subprocess
   agent-switch guard [block|warn|off]          one profile, one live session (default warn on new installs)
   agent-switch map [--provider P] <name|pool:<id>> [dir]   map a directory to a profile or a pool

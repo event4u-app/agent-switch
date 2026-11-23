@@ -137,6 +137,10 @@ export const settings: { readonly [K in keyof typeof en]: string } = {
   "settings.protection.strategyBalanceHint": "Nutzt zuerst, was sonst verfällt",
   "settings.protection.strategyFill": "Bevorzugtes Konto zuerst",
   "settings.protection.strategyFillHint": "Nächstes Konto erst am Limit",
+  "settings.protection.strategyDefault": "Immer das bevorzugte Konto",
+  "settings.protection.strategyDefaultHint": "Ein anderes nur, wenn es keine Arbeit annehmen kann",
+  "settings.protection.strategyAsk": "Frag mich",
+  "settings.protection.strategyAskHint": "Im Terminal und unter „Sitzung starten“",
   "settings.protection.codexResets": "Codex-Resets",
   "settings.protection.autoReset": "Codex-Resets automatisch einlösen",
   "settings.protection.autoResetDetail":

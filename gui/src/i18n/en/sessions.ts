@@ -202,6 +202,8 @@ export const sessions = {
   "sessions.start.tool": "Tool",
   "sessions.start.account": "Account",
   "sessions.start.automatic": "Automatic → {name}",
+  "sessions.start.askMe": "Ask me — choose an account",
+  "sessions.start.askFirst": "New {tool} sessions ask first: choose an account.",
   "sessions.start.openIn": "Open in",
   "sessions.start.terminal": "Terminal",
   "sessions.start.app": "{tool} app",

@@ -203,6 +203,8 @@ export const sessions: { readonly [K in keyof typeof en]: string } = {
   "sessions.start.tool": "Tool",
   "sessions.start.account": "Konto",
   "sessions.start.automatic": "Automatisch → {name}",
+  "sessions.start.askMe": "Frag mich — wähle ein Konto",
+  "sessions.start.askFirst": "Neue {tool}-Sitzungen fragen zuerst: wähle ein Konto.",
   "sessions.start.openIn": "Öffnen in",
   "sessions.start.terminal": "Terminal",
   "sessions.start.app": "{tool}-App",

@@ -385,6 +385,12 @@ describe("Protection", () => {
     expect(ipcMock.getStrategy).toHaveBeenCalledWith("claude");
     expect(screen.getByText("Claude starts")).toBeTruthy();
     expect(screen.getByText("Codex starts")).toBeTruthy();
+    const claude = () => screen.getByRole("combobox", { name: "Claude starts" }) as HTMLButtonElement;
+    await waitFor(() => expect(claude().disabled).toBe(false));
+    fireEvent.click(claude());
+    expect(screen.getByRole("option", { name: /Always the preferred account/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("option", { name: /Ask me/ }));
+    await waitFor(() => expect(ipcMock.setStrategy).toHaveBeenCalledWith("claude", "ask"));
   });
 
   it("turns the auto-reset switch back when the write fails", async () => {
