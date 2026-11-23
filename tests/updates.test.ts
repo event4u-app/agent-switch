@@ -10,6 +10,8 @@ import {
   parseReleases,
   releasesNewerThan,
   npmSearchPath,
+  parseUpdateVersion,
+  selfUpdateArgs,
 } from "../src/updates.js";
 
 test("parseVersion strips v-prefix and pre-release/build, pads missing with 0", () => {
@@ -115,4 +117,18 @@ test("releasesNewerThan keeps only strictly newer releases, newest first", () =>
   );
   assert.deepEqual(releasesNewerThan(list, "14.2.0"), []); // up to date → nothing to read
   assert.deepEqual(releasesNewerThan(list, "99.0.0"), []); // ahead of the registry → still nothing
+});
+
+test("parseUpdateVersion: a semver (an optional leading v dropped), anything else is refused", () => {
+  assert.equal(parseUpdateVersion("2.12.1"), "2.12.1");
+  assert.equal(parseUpdateVersion("v2.12.1"), "2.12.1");
+  assert.equal(parseUpdateVersion("3.0.0-beta.2"), "3.0.0-beta.2");
+  for (const bad of ["", "latest", "2.12", "2.12.1.4", "02.1.0", "2.12.1 ", "2.12.1;rm -rf /", "2.12.1 && x", "@latest", "2.12.1/../x", "--version", "vv2.1.0", "2.1.0-", "2.1.0+build"]) {
+    assert.equal(parseUpdateVersion(bad), null, JSON.stringify(bad));
+  }
+});
+
+test("selfUpdateArgs: @latest without a version, exactly that version with one", () => {
+  assert.deepEqual(selfUpdateArgs(), ["install", "-g", "@event4u/agent-switch@latest"]);
+  assert.deepEqual(selfUpdateArgs("2.11.0"), ["install", "-g", "@event4u/agent-switch@2.11.0"]);
 });

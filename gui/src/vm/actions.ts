@@ -64,7 +64,8 @@ export interface Actions {
   clearNotifications?(): Promise<void>;
   requestNotifyPermission?(): Promise<DesktopPermission>;
   checkForUpdate?(): Promise<UpdateCheck>;
-  selfUpdate?(): Promise<ipc.SelfUpdateResult>;
+  /** Installs exactly `version` (the release that was checked). */
+  selfUpdate?(version: string): Promise<ipc.SelfUpdateResult>;
   /** Why a release must not be installed, null when nothing withdraws it; throws when unknown. */
   withdrawnReason?(release: ReleaseInfo): Promise<string | null>;
   uninstall?(): Promise<void>;
@@ -205,7 +206,7 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
     }),
     requestNotifyPermission: () => requestDesktopPermission(),
     checkForUpdate: () => checkForUpdate(),
-    selfUpdate: () => ipc.selfUpdate(),
+    selfUpdate: (version: string) => ipc.selfUpdate(version),
     withdrawnReason: (release) => withdrawnReason(release),
     uninstall: () => ipc.uninstall(),
     quit: () => ipc.quitApp(),

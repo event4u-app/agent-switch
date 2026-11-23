@@ -67,6 +67,7 @@ import {
   acApi,
   acForceRestart,
   acRelease,
+  selfUpdate,
 } from "./ipc.js";
 import {
   listProtection,
@@ -598,5 +599,29 @@ describe("foundations (protection, pools, folder rules, auth, doctor, activity, 
     expect(create).toHaveBeenLastCalledWith("agent-switch", ["guard", "--json"]);
     await setGuard("block");
     expect(create).toHaveBeenLastCalledWith("agent-switch", ["guard", "block", "--json"]);
+  });
+});
+
+describe("selfUpdate", () => {
+  beforeEach(() => {
+    create.mockClear();
+    execute.mockReset();
+    execute.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+  });
+
+  it("installs exactly the version it was given (its tag's v dropped)", async () => {
+    expect((await selfUpdate("v2.12.1")).ok).toBe(true);
+    expect(create).toHaveBeenCalledWith("agent-switch", ["update", "2.12.1"]);
+    await selfUpdate("3.0.0-beta.2");
+    expect(create).toHaveBeenLastCalledWith("agent-switch", ["update", "3.0.0-beta.2"]);
+  });
+
+  it("refuses anything that is not a semver without running the CLI", async () => {
+    for (const bad of ["latest", "2.12", "2.12.1; rm -rf /", "--help", ""]) {
+      const r = await selfUpdate(bad);
+      expect(r.ok).toBe(false);
+      expect(r.output).toMatch(/not a version/);
+    }
+    expect(create).not.toHaveBeenCalled();
   });
 });

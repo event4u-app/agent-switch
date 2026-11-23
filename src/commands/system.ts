@@ -33,7 +33,7 @@ import {
 } from "../tooling.js";
 import { releaseNoteBlocks } from "../release-notes.js";
 import { launchGui, waitForExit } from "../gui-launch.js";
-import { checkForUpdate, fetchReleases, releasesNewerThan, selfUpdate, type ReleaseInfo } from "../updates.js";
+import { checkForUpdate, fetchReleases, parseUpdateVersion, releasesNewerThan, selfUpdate, type ReleaseInfo } from "../updates.js";
 import { readPid, PIDFILE, processAlive } from "../daemon.js";
 import { serviceAfterUpdate, serviceInstallFromDisk, serviceTarget, serviceUninstall } from "../service.js";
 import { removeAllLaunchers } from "../launchers.js";
@@ -198,8 +198,19 @@ export async function cmdCheckUpdate(json = false): Promise<void> {
   }
 }
 
-/** `agent-switch update` — self-update to the latest published version via npm. */
-export async function cmdUpdate(): Promise<void> {
+/** `agent-switch update [<version>]` — self-update via npm to the latest
+ *  published version, or to exactly `version` (what the GUI checked, or an
+ *  older one to go back to). */
+export async function cmdUpdate(versionArg?: string): Promise<void> {
+  if (versionArg !== undefined) {
+    const version = parseUpdateVersion(versionArg);
+    if (!version) die(`usage: agent-switch update [<version>] — a version like 2.12.1, not "${versionArg}"`);
+    console.log(`Installing agent-switch ${version} via npm…`);
+    const code = selfUpdate(version);
+    logActivity("update", null, code === 0 ? `self-update installed ${version}` : `self-update to ${version} failed (exit ${code})`, `user ran \`agent-switch update ${version}\``, code === 0);
+    if (code === 0) await serviceAfterSelfUpdate();
+    process.exit(code);
+  }
   const c = await checkForUpdate();
   if (c.kind === "uptodate") return void console.log(`Already on the latest version (${c.current}).`);
   if (c.kind === "no-releases") return void console.log("No releases published yet — nothing to update to.");

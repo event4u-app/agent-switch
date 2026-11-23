@@ -582,6 +582,7 @@ describe("Updates", () => {
       mount("updates", { checkForUpdate: available(), selfUpdate, withdrawnReason });
       fireEvent.click(await screen.findByRole("button", { name: /Update to v1.0.1/ }));
       await waitFor(() => expect(selfUpdate).toHaveBeenCalledTimes(1));
+      expect(selfUpdate).toHaveBeenCalledWith("v1.0.1");
       expect(withdrawnReason).toHaveBeenCalledWith(release);
     });
 

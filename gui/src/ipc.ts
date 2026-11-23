@@ -1205,13 +1205,19 @@ export interface SelfUpdateResult {
   output: string;
 }
 
-/** Update the installed CLI in place by running `agent-switch update`
- *  (`npm install -g @event4u/agent-switch@latest`). The GUI itself is fetched
- *  per-version from the release, so applying the update needs a restart; the
- *  caller surfaces that. Returns ok=false with the captured output on failure
- *  (e.g. no write access to the global npm prefix) rather than throwing. */
-export async function selfUpdate(): Promise<SelfUpdateResult> {
-  const out = await Command.create("agent-switch", ["update"]).execute();
+const SEMVER = /^v?((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$/;
+
+/** Update the installed CLI in place to exactly `version` (the release the GUI
+ *  checked, never whatever npm calls latest by then) by running
+ *  `agent-switch update <version>`. The GUI itself is fetched per-version from
+ *  the release, so applying the update needs a restart; the caller surfaces
+ *  that. Returns ok=false with the captured output on failure (e.g. no write
+ *  access to the global npm prefix) rather than throwing; a version that is not
+ *  a semver never reaches the CLI. */
+export async function selfUpdate(version: string): Promise<SelfUpdateResult> {
+  const v = SEMVER.exec(version)?.[1];
+  if (!v) return { ok: false, output: `not a version: "${version}"` };
+  const out = await Command.create("agent-switch", ["update", v]).execute();
   return { ok: out.code === 0, output: `${out.stdout}\n${out.stderr}`.trim() };
 }
 

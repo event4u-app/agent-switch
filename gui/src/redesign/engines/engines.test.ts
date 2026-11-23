@@ -324,11 +324,12 @@ const release = (tag: string, notes = ""): ReleaseInfo => ({ tag, name: tag, url
 
 describe("agent-switch auto-update loop", () => {
   function deps(check: UpdateCheck, ok = true, kinds: AutoUpdateDeps["kinds"] = () => ["patch", "minor"], over: Partial<AutoUpdateDeps> = {}) {
-    const calls = { install: 0, notified: "" as string, notes: [] as string[], bodies: [] as string[], installed: [] as string[] };
+    const calls = { install: 0, installedTags: [] as string[], notified: "" as string, notes: [] as string[], bodies: [] as string[], installed: [] as string[] };
     const d: AutoUpdateDeps = {
       check: async () => check,
-      install: async () => {
+      install: async (tag: string) => {
         calls.install++;
+        calls.installedTags.push(tag);
         return { ok, output: "" };
       },
       kinds,
@@ -385,6 +386,7 @@ describe("agent-switch auto-update loop", () => {
     const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") }, true, () => getAutoUpdateKinds());
     await runAutoUpdateCheck(d);
     expect(calls.install).toBe(1);
+    expect(calls.installedTags).toEqual(["v1.0.1"]);
     setAutoUpdateKinds(["major", "minor", "patch"]);
     expect(getAutoUpdateKinds()).toEqual(["major", "minor", "patch"]);
     setAutoUpdateKinds([]);

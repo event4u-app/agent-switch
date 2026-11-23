@@ -267,6 +267,7 @@ saved.
       `install` never called, notice says why; normal version → unchanged.
       done: `gui/src/redesign/engines/engines.test.ts` › "never installs a withdrawn version and says why…", "a withdrawn version is not announced as available…", "when the withdraw status cannot be read…"; `gui/src/updates.test.ts` › `withdrawnInNotes`, `fetchNpmDeprecation` (D8).
       follow-up: the manual "Update to" in Settings › Updates refuses a withdrawn version with the same reason (an unreadable status still installs on that click, as the automatic notice promises) — `settings.test.tsx` › "Updates › the manual update"; `hostedSessionsRunning` has its own test (`engines/hosted-running.test.ts`).
+      follow-up: the GUI installs the version it checked, not npm's `@latest` at install time — `agent-switch update [<version>]` (strict semver, `parseUpdateVersion`), `selfUpdate(tag)` from the engine and from Settings › Updates; `tests/updates.test.ts` › "parseUpdateVersion …", "selfUpdateArgs …", cli-e2e › "update: a version that is not a semver is refused before npm runs", GUI `ipc.test.ts` › "selfUpdate", `engines.test.ts` (installs `v1.0.1`), `settings.test.tsx` › "installs a version nothing withdraws" (seen red first).
       <!-- from: road-to-agent-switch-native-updater P4.1 -->
       <!-- adapted: the parked step was a `yanked` flag in a Tauri `latest.json`; the update path is now npm, which has a native withdraw marker -->
 - [x] **7.2 Restart when idle, never mid-session.** After a successful install

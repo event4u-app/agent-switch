@@ -79,7 +79,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch providers link|unlink --provider P [--path <binary>]   use a provider binary that is not on PATH
   agent-switch [gui] [--after-pid <pid>]       launch the tray/menubar GUI (the default with no command; won't start a second if one is running; --after-pid waits for that process to quit first — the GUI's restart)
   agent-switch check-update [--json]           check GitHub Releases for a newer version
-  agent-switch update                          self-update to the latest version (via npm); restarts the service on it, or offers to install one
+  agent-switch update [<version>]              self-update to the latest version, or exactly <version> (via npm); restarts the service on it, or offers to install one
   agent-switch apps                            list launchable GUI apps (macOS)
   agent-switch open <app> [profile]            launch a GUI app on a profile, isolated; focuses it if already open (macOS)
   agent-switch launcher add|remove <app> <profile> | list [--json] | repair   Dock/Spotlight launcher per account in ~/Applications/Agent Switch (macOS)

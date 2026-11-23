@@ -51,7 +51,8 @@ type Notify = (kind: NotificationKind, title: string, message: string) => Promis
 
 export interface AutoUpdateDeps {
   check(): Promise<UpdateCheck>;
-  install(): Promise<SelfUpdateResult>;
+  /** Installs exactly `tag`, the release that was checked. */
+  install(tag: string): Promise<SelfUpdateResult>;
   kinds(): UpdateKind[];
   /** Why the release must not be installed, null when nothing withdraws it; throws when unknown. */
   withdrawn(release: ReleaseInfo): Promise<string | null>;
@@ -73,7 +74,7 @@ export async function hostedSessionsRunning(chatsHere: () => number = () => 0): 
 
 const autoUpdateDeps: AutoUpdateDeps = {
   check: () => checkForUpdate(),
-  install: () => selfUpdate(),
+  install: (tag) => selfUpdate(tag),
   kinds: () => getAutoUpdateKinds() as UpdateKind[],
   withdrawn: withdrawnReason,
   running: () => hostedSessionsRunning(),
@@ -106,7 +107,7 @@ export async function runAutoUpdateCheck(d: AutoUpdateDeps = autoUpdateDeps): Pr
     return;
   }
   if (kind && d.kinds().includes(kind) && !unchecked) {
-    const r = await d.install();
+    const r = await d.install(tag);
     if (!r.ok) {
       await d.notify("warning", noticeEn("engines.notice.updateFailedTitle", { tag }), noticeEn("engines.notice.updateFailedBody"));
       return;

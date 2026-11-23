@@ -80,7 +80,7 @@ export function UpdatesSettings() {
         setPhase("idle");
         return;
       }
-      const r = await s.act.selfUpdate();
+      const r = await s.act.selfUpdate(release.tag);
       if (r.ok) setPhase("done");
       else {
         setFailure(t("settings.updates.updateFailed", { error: r.output.slice(-300) || t("settings.updates.unknownError") }));

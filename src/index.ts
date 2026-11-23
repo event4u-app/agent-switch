@@ -153,7 +153,7 @@ async function main(): Promise<void> {
     case "rename": return cmdRename(providerId, positional[0], positional[1]);
     case "providers": return cmdProviders(providerId, providerExplicit, positional[0], flags);
     case "gui": return cmdGui(flags["after-pid"]);
-    case "update": case "upgrade": return cmdUpdate();
+    case "update": case "upgrade": return cmdUpdate(positional[0]);
     case "check-update": case "check-updates": return cmdCheckUpdate(!!flags.json);
     // `open <app> [profile]` opens a desktop app on an account; `open <session> [--with …]` opens a session's folder.
     case "open": return flags.with !== undefined || flags.file !== undefined || (positional[0] && !findApp(positional[0])) ? cmdOpenSession(positional[0], flags) : cmdOpen(positional[0], positional[1]);

@@ -2568,3 +2568,17 @@ test("`rebind --when-idle` arms, `sessions --json` shows it, `rebind --cancel` d
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("update: a version that is not a semver is refused before npm runs", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    for (const bad of ["latest", "2.12", "2.12.1;echo x", "@event4u/other"]) {
+      const r = runRaw(home, ["update", bad]);
+      assert.equal(r.status, 1, bad);
+      assert.match(r.stderr, /usage: agent-switch update \[<version>\]/);
+      assert.doesNotMatch(r.stdout, /npm/);
+    }
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
