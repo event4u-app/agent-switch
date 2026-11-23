@@ -68,10 +68,12 @@ saved.
 
 ## Phase 2 — A start the user can predict
 
-- [ ] **2.1 Start admission.** Between the `dir --guard` decision and the spawn,
+- [x] **2.1 Start admission.** Between the `dir --guard` decision and the spawn,
       re-read the profile identity; on a change, refuse the start with the reason
       (or state in the result that routing was advisory). verify: a test that
       changes the identity between decision and spawn.
+      done: `src/start-admission.ts`, `exec` and `dir --guard` refuse with 86;
+      `tests/start-admission.test.ts` (changed / signed out seen red first; unchanged starts once).
       <!-- from: road-to-session-orchestration P2.2 -->
 - [ ] **2.2 Repo / org bindings.** A binding may match the `git remote` (host +
       owner, optionally repo) next to the existing folder bindings; first match

@@ -39,6 +39,7 @@ import {
 } from "../auth-status.js";
 import { LATEST_FILE, readHistory, readLatestSnapshot } from "../history.js";
 import {
+  GUARD_REFUSED_EXIT,
   GuardVerdict,
   LoadInspection,
   guardVerdict,
@@ -152,12 +153,14 @@ export function syncClaudeProfile(dir: string): void {
   }
 }
 
-export function launch(p: Provider, name: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}): number {
-  return launchIn(p, configDir(p.id, name), args, extraEnv);
+/** `admit` runs after the profile is prepared and right before the spawn; a
+ *  reason it returns refuses the start with {@link GUARD_REFUSED_EXIT}. */
+export function launch(p: Provider, name: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}, admit?: () => string | null): number {
+  return launchIn(p, configDir(p.id, name), args, extraEnv, admit);
 }
 
 /** `launch` with an explicit config dir — a staged sign-in runs outside the profile. */
-export function launchIn(p: Provider, home: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}): number {
+export function launchIn(p: Provider, home: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}, admit?: () => string | null): number {
   const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv, [p.envVar]: home };
   if (p.id === "claude") syncClaudeProfile(home);
   // Antigravity's agy CLI stores its token in the macOS keychain (fixed key) —
@@ -169,6 +172,11 @@ export function launchIn(p: Provider, home: string, args: string[], extraEnv: No
   if (p.id === "antigravity") {
     ensureAgyKeychain(home);
     env.CFFIXED_USER_HOME = home;
+  }
+  const refused = admit?.() ?? null;
+  if (refused) {
+    process.stderr.write(`agent-switch: not starting — ${refused}.\n`);
+    return GUARD_REFUSED_EXIT;
   }
   const res = spawnSync(resolveBinary(p.binary, readBinaryPath(p.id)), args, { env, stdio: "inherit" });
   if (res.error && (res.error as NodeJS.ErrnoException).code === "ENOENT") {

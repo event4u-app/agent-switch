@@ -144,6 +144,14 @@ exit code `86`. Details:
 `--exclude a,b` leaves those accounts out of this one pick, for a caller that
 just saw one of them fail (a limit, an outage) and wants another.
 
+Between the pick and the start, `dir --guard` and `exec` read the picked
+account's sign-in again, after its settings are synced. If it changed (a
+sign-in or a rebind landed in between), the start is refused with exit code
+`86` and both sign-ins are named. The shell integration runs the tool itself
+once `dir --guard` has exited, and that last step is not checked again: from
+there on the pick is advisory. `dir --json` only reports a pick and starts
+nothing.
+
 ### `exec`
 
 The shell integration only works in a shell. A tool that starts `codex` or

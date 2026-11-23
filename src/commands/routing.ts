@@ -37,6 +37,7 @@ import {
 } from "../pools.js";
 import { START_STRATEGIES, resolveForDir, type StartStrategy } from "../dir-resolve.js";
 import { appendPick, readPicks, PICKS_MAX_LINES } from "../picks.js";
+import { admissionRefusal } from "../start-admission.js";
 import { GUARD_POLICIES, GUARD_REFUSED_EXIT, GuardPolicy, OVERRIDE_ENV, isGuardPolicy } from "../single-load.js";
 import { mappingRows, removeMapping, resolveMapping, setMapping, setPaused, normalizePath } from "../mappings.js";
 import { liveSessionPids } from "../api.js";
@@ -53,15 +54,21 @@ export function resolveDir(
   plain = false,
   cwd = process.cwd(),
   exclude: readonly string[] = [],
-): { name: string | null; why: string[]; blocked?: string; note?: string } {
-  const r = resolveForDir({
+): { name: string | null; why: string[]; blocked?: string; note?: string; identity?: string | null } {
+  // The account each candidate was judged on, so the start can be held to it.
+  const seen = new Map<string, string | null>();
+  const signedInAs = (n: string) => {
+    if (!seen.has(n)) seen.set(n, identity(providerId, n));
+    return seen.get(n) ?? null;
+  };
+  const picked = resolveForDir({
     providerId,
     mapping: plain ? null : resolveMapping(cwd, providerId),
     names: listProfiles(providerId),
     threshold: (n) => readProtection(providerId, n).thresholdPct,
     active: activeFor(providerId),
     exists: (n) => profileExistsSafe(providerId, n),
-    signedIn: (n) => identity(providerId, n) !== null,
+    signedIn: (n) => signedInAs(n) !== null,
     // An excluded account is out for THIS start only — the caller just saw it
     // fail (a limit, an outage) and asks for another one.
     disabled: (n) => isDisabled(providerId, n) || exclude.includes(n),
@@ -81,6 +88,7 @@ export function resolveDir(
     now: Date.now(),
     displayPath: tildePath,
   });
+  const r = picked.name ? { ...picked, identity: signedInAs(picked.name) } : picked;
   // The resolver says "disabled" for any account it may not use; name the
   // caller's exclusion as such so `picks` does not read like a setting changed.
   return exclude.length === 0 ? r : { ...r, why: r.why.map((w) => w.replace(/^Skipped (\S+?\/(\S+)): disabled$/, (m, key, n) => (exclude.includes(n) && !isDisabled(providerId, n) ? `Skipped ${key}: excluded by the caller` : m))) };
@@ -127,7 +135,14 @@ export function cmdDir(providerId: ProviderId, guarded = false, json = false, pl
   const name = r.name;
   if (!name) return;
   // The shell wrapper starts the binary itself right after this, so this is the last stop before a start.
-  if (providerId === "claude" && guarded) syncClaudeProfile(configDir(providerId, name));
+  if (guarded) {
+    if (providerId === "claude") syncClaudeProfile(configDir(providerId, name));
+    const refused = admissionRefusal(`${providerId}/${name}`, r.identity ?? null, identity(providerId, name));
+    if (refused) {
+      console.error(`agent-switch: not starting here — ${refused}.`);
+      process.exit(GUARD_REFUSED_EXIT);
+    }
+  }
   console.log(configDir(providerId, name));
   if (!guarded) return;
   // The resolver already moved off a busy account where a free one exists, so
@@ -369,7 +384,12 @@ export function cmdExec(a: { providerId: ProviderId; exclude: string[]; plain: b
     process.exit(res.status ?? 1);
   }
   if (r.note) console.error(`agent-switch: ${r.note}.`);
-  process.exit(launch(p, r.name, a.args));
+  process.exit(admittedLaunch(a.providerId, { name: r.name, identity: r.identity ?? null }, a.args));
+}
+
+/** Start a routed pick, held to the account it was picked on. */
+export function admittedLaunch(providerId: ProviderId, pick: { name: string; identity: string | null }, args: string[]): number {
+  return launch(provider(providerId), pick.name, args, {}, () => admissionRefusal(`${providerId}/${pick.name}`, pick.identity, identity(providerId, pick.name)));
 }
 
 /** `agent-switch strategy [balance|fill] [--provider P] [--json]` — how a start
