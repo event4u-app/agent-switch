@@ -46,6 +46,7 @@ it. Journeys that need the OS or a native window are listed under
 | `acDiscover` | `vm/load.ts` | |
 | `acOpenInBrowser` | `vm/actions.ts` → `screens/tools.tsx` | |
 | `acForceRestart` | `vm/actions.ts` → `screens/tools.tsx` | |
+| `setAgentConfigRoot` | `vm/actions.ts` → `screens/account-sheet.tsx` (the account's own agent-config settings switch) | New since the classic window (`agent-config-root <name> own\|global`). |
 | `acEnsure`, `acApi` | `ac-keepalive.ts` only | Keepalive not started (see above). |
 | `acRelease` | Rust on app exit | No UI control by design. |
 | `acOpenSettingsWindow` | — | Embedded view deliberately not UI-wired (owner decision 2026-07-24), same as the classic window. |
@@ -99,7 +100,7 @@ it. Journeys that need the OS or a native window are listed under
 | `restartApp` | `vm/actions.ts` → `screens/settings/updates.tsx`, `screens/terminal-sheet.tsx` (after an update) | |
 | `showWindow` | `engines/limit-open.ts` (a limit notice opens its sheet); `v3/adapter/V3App.tsx` | Elsewhere the window is shown through `notifications.ts` `showAppWindow` / tray `bridge.ts` (same `show_window` command). |
 | `setMinimizeToDock` | `screens/settings/general.tsx`, `engines/startup.ts` | |
-| `selfUpdate` | `vm/actions.ts` → `screens/settings/updates.tsx`; `engines/updates.ts` | |
+| `selfUpdate` | `vm/actions.ts` → `screens/settings/updates.tsx`; `engines/updates.ts` | Now `selfUpdate(version)`: installs exactly the version the GUI checked (`update <version>`), the release tag on both paths. |
 | `listNotifications` | `vm/load.ts`, `engines/notifications.ts` | |
 | `recordNotification` | `engines/bus.ts` (every notice the window records) | |
 | `clearNotifications` | `vm/actions.ts` → `screens/notifications-sheet.tsx` | Followed by `notifications.ts` `clearDesktopNotifications`. |
