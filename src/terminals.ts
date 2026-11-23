@@ -131,4 +131,18 @@ export function runPlan(id: TerminalId, dir: string, command: string, env: Env):
   return { program: bin, args: [`--working-directory=${dir}`, "-e", ...sh] };
 }
 
+/**
+ * Where a line agent-switch built runs: the chosen terminal (or the first
+ * installed) when it can be asked to run a command, else Terminal.app on
+ * macOS. Null when nothing can run it — the caller then prints the line.
+ * Pure given `env`.
+ */
+export function commandPlan(chosen: TerminalId | null | undefined, dir: string, command: string, env: Env): { id: TerminalId; plan: TermPlan } | null {
+  const first = pickTerminal(chosen, env);
+  const own = first ? runPlan(first, dir, command, env) : null;
+  if (first && own) return { id: first, plan: own };
+  const fallback = env.platform === "darwin" ? runPlan("terminal", dir, command, env) : null;
+  return fallback ? { id: "terminal", plan: fallback } : null;
+}
+
 export const terminalName = (id: TerminalId) => def(id).name;

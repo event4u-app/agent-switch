@@ -129,6 +129,16 @@ describe("toV3Data", () => {
     expect(toV3Data(vm, feeds, env({ ownViews: new Map([["claude/work/h1", "chat"]]) })).bar("claude/work/h1")?.view).toBe("terminal");
   });
 
+  it("the bar knows where a session runs: a hosted window can be attached; elsewhere it names the app watched", () => {
+    const vm = vmWith([account("work")], [row("own"), row("h1"), row("desk", { surface: "desktop-app" }), row("chat1")]);
+    const feeds: V3Feeds = { ...emptyFeeds(), host: { mode: "persistent", hosted: [{ key: "claude/work/h1", provider: "claude", account: "work", sessionId: "h1", cwd: "/r", startedAt: "", alive: true, parked: false }] } };
+    const d = toV3Data(vm, feeds, env({ chats: new Set(["claude/work/chat1"]) }));
+    expect(d.bar("claude/work/h1")).toMatchObject({ hosted: true, attachable: true });
+    expect(d.bar("claude/work/chat1")).toMatchObject({ hosted: true, attachable: false });
+    expect(d.bar("claude/work/own")).toMatchObject({ hosted: false, attachable: false, where: "Terminal.app" });
+    expect(d.bar("claude/work/desk")?.where).toBe("Claude Desktop");
+  });
+
   it("joins needs, hosting, PR and account into a row", () => {
     const r = row("a1", { prs: [{ number: 12, url: "https://github.com/o/r/pull/12", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "NONE", ci: "FAILURE", failingChecks: ["lint"] }], context: { pct: 41, model: "opus", contextTokens: 1, windowTokens: 2, confidence: "high", source: "transcript", effort: "high" } as never });
     const feeds: V3Feeds = {

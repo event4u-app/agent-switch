@@ -5,12 +5,12 @@
  */
 
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { Brain, Check, ChevronDown, CircleX, Ellipsis, Lightbulb, Lock, MessageSquareText, Pin, SquareTerminal, TriangleAlert, X } from "lucide-react";
+import { Brain, Check, ChevronDown, CircleX, Ellipsis, Eye, Lightbulb, Lock, MessageSquareText, Pin, Server, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
-import { Act, AccountMark } from "./kit.js";
+import { Act, AccountMark, Chip } from "./kit.js";
 import { Segmented } from "../ui/Segmented.js";
 import { tone } from "./limits.js";
 import { XtermBox } from "../redesign/screens/terminal-sheet.js";
@@ -204,6 +204,10 @@ export function TabStrip({
 export interface BarSession {
   key: string;
   hosted: boolean;
+  /** A hosted tmux window the user's own terminal can join (`host attach`). */
+  attachable?: boolean;
+  /** Not hosted: the app the session runs in ("Terminal.app", "Claude Desktop"). */
+  where?: string;
   /** Chat exists from v3.1 on; until then the switch shows it, disabled. */
   chatAvailable: boolean;
   view: "terminal" | "chat";
@@ -246,6 +250,8 @@ const shellX = (e: MouseEvent<HTMLElement>): number => {
   const shell = e.currentTarget.closest("[data-v3-shell]");
   return Math.round(e.currentTarget.getBoundingClientRect().left - (shell?.getBoundingClientRect().left ?? 0));
 };
+
+const HOSTED_HINT = "type here, or attach from your terminal";
 
 export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; thinking: (x: number) => void; menu: () => void } }) {
   const t = tone(s.account.fiveH, s.account.protect);
@@ -304,7 +310,26 @@ export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn:
           ctx {Math.round(s.contextPct)}%
         </span>
       )}
-      <span className="flex-1" />
+      {/* Where it runs, always visible; the hint gives way first when the bar is narrow. */}
+      {s.hosted ? (
+        <>
+          <span className="ml-2 inline-flex shrink-0">
+            <Chip kind="status" tone="info" icon={<Server />} title={`Hosted by Agent Switch: ${HOSTED_HINT}`}>
+              Hosted
+            </Chip>
+          </span>
+          <span className="ml-1.5 min-w-0 flex-1 truncate text-[11px] text-ac-muted">{HOSTED_HINT}</span>
+        </>
+      ) : (
+        <>
+          <span className="ml-2 inline-flex shrink-0">
+            <Chip kind="meta" icon={<Eye />} title="Runs in your terminal; Agent Switch reads along. Take over to type here.">
+              {s.where ?? "Your terminal"} · watching
+            </Chip>
+          </span>
+          <span className="flex-1" />
+        </>
+      )}
       {openIn}
       <IconButton label="Session actions: rename, pin, move, detach, end" className="size-7" onClick={on.menu}>
         <Ellipsis />
@@ -417,7 +442,10 @@ export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver, time
       <div className="flex shrink-0 items-center gap-3 border-b border-ac-line bg-ac-panel px-4 py-2">
         <SquareTerminal className="size-4 shrink-0 text-ac-muted" />
         <span className="min-w-0 flex-1 text-xs text-ac-soft">
-          Runs in <span className="text-ac-text">{where}</span> · <span title={readOnlyTitle ?? undefined}>read-only here</span>
+          <span className="block truncate">
+            Runs in <span className="text-ac-text">{where}</span> · <span title={readOnlyTitle ?? undefined}>read-only here</span>
+          </span>
+          <span className="block truncate text-[11px] text-ac-muted">To type here, take it over: the session moves into Agent Switch and stops running in {where}.</span>
         </span>
         <Act kind="accent" kbd="⌘↵" onClick={onFocus}>
           Focus terminal

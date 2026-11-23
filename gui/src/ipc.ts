@@ -229,6 +229,11 @@ export async function openSessionIn(key: string, target?: string): Promise<void>
   await runCli(["open", key, ...(target ? ["--with", target] : [])]);
 }
 
+/** `host attach <session> --new-window`: the user's terminal app joins the hosted session; both can type. */
+export async function hostAttachInTerminal(key: string): Promise<void> {
+  await runCli(["host", "attach", key, "--new-window"]);
+}
+
 /** `focus <session>`: bring the session's terminal tab to the front (macOS). */
 export async function focusSessionTerminal(key: string): Promise<void> {
   await runCli(["focus", key]);

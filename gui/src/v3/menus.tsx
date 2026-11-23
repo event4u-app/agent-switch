@@ -128,10 +128,12 @@ export interface OpenFacts {
   pr: { number: number; url: string } | null;
   /** The session runs in the user's own terminal and can be brought to the front. */
   focusable: boolean;
+  /** A hosted session the user's terminal can join (`host attach`). */
+  attachable?: boolean;
 }
 
 /** The pick a menu row makes: a target id, the agent app, the PR, focus, or the settings. */
-export type OpenPick = { kind: "target"; target: string } | { kind: "app"; app: string } | { kind: "pr"; url: string } | { kind: "focus" } | { kind: "configure" };
+export type OpenPick = { kind: "target"; target: string } | { kind: "app"; app: string } | { kind: "pr"; url: string } | { kind: "focus" } | { kind: "attach" } | { kind: "configure" };
 
 type Sub = "editor" | "app" | "terminal" | "files" | "web";
 
@@ -170,7 +172,17 @@ export function OpenInMenu({ f, onPick }: { f: OpenFacts; onPick: (p: OpenPick) 
           { label: "", note: "Only the app for this session's tool is offered. Continuing the same conversation there appears only where that app supports it." },
         ]
       : [],
-    terminal: [...(f.focusable ? [{ id: "focus", label: "Bring its terminal to the front", icon: <SquareTerminal />, onClick: () => onPick({ kind: "focus" }) }] : []), ...kind("terminal")],
+    terminal: [
+      ...(f.attachable
+        ? [
+            { id: "attach", label: "Attach in Terminal", icon: <SquareTerminal />, hint: "tmux", onClick: () => onPick({ kind: "attach" }) },
+            { label: "", note: "One shared session: typing on either side goes to the same agent." },
+            { divider: true, label: "" },
+          ]
+        : []),
+      ...(f.focusable ? [{ id: "focus", label: "Bring its terminal to the front", icon: <SquareTerminal />, onClick: () => onPick({ kind: "focus" }) }] : []),
+      ...kind("terminal"),
+    ],
     files: kind("files"),
     web: f.pr ? [{ id: "pr", label: `PR #${f.pr.number} on GitHub`, icon: <GitPullRequest />, onClick: () => onPick({ kind: "pr", url: f.pr!.url }) }, { id: "checks", label: "Checks", icon: <GitPullRequest />, onClick: () => onPick({ kind: "pr", url: `${f.pr!.url}/checks` }) }] : [],
   };
