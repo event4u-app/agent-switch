@@ -26,7 +26,7 @@ import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } fro
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
 import type { ReviewFocus } from "./review.js";
-import { DEFAULT_SORT, SessionsZone, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
+import { DEFAULT_SORT, SessionsZone, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
 import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
@@ -251,6 +251,7 @@ export function V3Window({
   const [groupBy, setGroupBy] = useState<GroupBy>(saved?.group ?? (saved?.groupByProject ? "project" : "none"));
   const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
   const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
+  const lastActiveOf = (k: string) => data.table.find((t) => t.key === k)?.lastActiveMs ?? null;
   const [focusChild, setFocusChild] = useState<string | null>(null);
   // Hover peek (spec §5.2): after 400 ms on a row, one card at a time, never while a layer is open.
   const [peek, setPeek] = useState<{ key: string; y: number } | null>(null);
@@ -508,7 +509,8 @@ export function V3Window({
           on={{ autoKeep: (value) => act({ type: "library", op: "auto-keep", value }), pin: (key, value) => act({ type: "library", op: "pin", key, value }), resume: (key) => act({ type: "library", op: "resume", key }), archive: (key, value) => act({ type: "library", op: "archive", key, value }) }}
         />
       );
-    if (p === "sessions-table") return <AllSessionsPage sessions={data.table} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
+    // 8.6: the table in the sidebar's order (its sort), ended sessions after it.
+    if (p === "sessions-table") return <AllSessionsPage sessions={data.table} order={sortLive(data.sessions, sortBy, lastActiveOf).map((row) => row.key)} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
     if (p === "tools") return slots.tools;
     return (
       <SettingsPage current={section} onSection={setSection}>
@@ -794,7 +796,7 @@ export function V3Window({
           comfortable={comfortable}
           sort={sortBy}
           group={groupBy}
-          lastActiveOf={(k) => data.table.find((t) => t.key === k)?.lastActiveMs ?? null}
+          lastActiveOf={lastActiveOf}
           nowMs={data.nowMs}
           onSubagent={openSubagent}
           groupOf={(k) => {

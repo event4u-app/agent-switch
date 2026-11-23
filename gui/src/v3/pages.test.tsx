@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { AccountsPage, AllSessionsPage, LibraryPage, byProject, filterSessions, nextDeadline, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
+import { AccountsPage, AllSessionsPage, LibraryPage, byProject, filterSessions, inListOrder, nextDeadline, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
 
 afterEach(cleanup);
 const NOW = Date.UTC(2026, 10, 2, 12);
@@ -66,6 +66,20 @@ describe("All sessions page (spec §10.2)", () => {
     expect(onOpen).toHaveBeenCalledWith("a");
     fireEvent.change(screen.getByLabelText("Filter"), { target: { value: "zzz" } });
     expect(screen.getByText("No session matches.")).toBeTruthy();
+  });
+});
+
+describe("All sessions follows the sidebar's order (8.6)", () => {
+  it("rows in the sidebar's order first, then the rest newest first", () => {
+    const rows = [sess("a", { lastActiveMs: NOW - 1_000 }), sess("b"), sess("done-old", { live: false, lastActiveMs: NOW - 9_000_000 }), sess("done-new", { live: false, lastActiveMs: NOW - 5_000 }), sess("c")];
+    expect(inListOrder(rows, ["c", "b", "a"]).map((r) => r.key)).toEqual(["c", "b", "a", "done-new", "done-old"]);
+  });
+
+  it("the page lists the rows in the order it is given", () => {
+    const rows = [sess("a", { title: "Newest" }), sess("b", { title: "Needs you" })];
+    render(<AllSessionsPage sessions={rows} order={["b", "a"]} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    const titles = screen.getAllByText(/Newest|Needs you/).map((e) => e.textContent);
+    expect(titles).toEqual(["Needs you", "Newest"]);
   });
 });
 

@@ -107,6 +107,31 @@ describe("the sort menu names its real default (8.6)", () => {
   });
 });
 
+describe("the All-sessions table follows the sidebar (8.6)", () => {
+  it("lists the session that needs you first, as the sidebar does, though another was active later", () => {
+    const d = data();
+    const row = d.sessions[0];
+    const t = (key: string, title: string, lastActiveMs: number) => ({ key, title, state: "idle" as const, live: true, tool: "claude" as const, account: { name: "work", color: "teal" as const }, branch: null, pr: null, model: null, thinking: null, contextPct: null, lastActiveMs });
+    render(
+      <V3Window
+        data={{
+          ...d,
+          sessions: [{ ...row, key: "new", title: "Recent one", state: "idle" }, { ...row, key: "ask", title: "Asking one", state: "needs-you", needsYou: true }],
+          table: [t("new", "Recent one", d.nowMs - 1_000), t("ask", "Asking one", d.nowMs - 3_600_000)],
+        }}
+        slots={slots}
+        act={vi.fn()}
+        platform="mac"
+        layout={{ load: () => ({ tabs: [], active: null, pinned: ["page:sessions-table"] }), save: vi.fn() }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /All sessions/ }));
+    // The row checkboxes exist only in the table.
+    const titles = screen.getAllByLabelText(/^Select (Recent|Asking) one/).map((e) => e.getAttribute("aria-label") ?? e.textContent);
+    expect(titles).toEqual(["Select Asking one", "Select Recent one"]);
+  });
+});
+
 describe("⌘K then Esc (8.6)", () => {
   it("gives focus back to the element that had it, not to the page", () => {
     mount();

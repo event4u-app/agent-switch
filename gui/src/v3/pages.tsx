@@ -256,17 +256,31 @@ export function byProject(rows: readonly TableSession[]): { project: string | nu
   return [...m].map(([project, l]) => ({ project, rows: l })).sort((a, b) => (a.project === null ? 1 : b.project === null ? -1 : last(b.rows) - last(a.rows)));
 }
 
+/** The rows in the sidebar's order (`order`, its keys); the rest (ended sessions) after it, newest first. Pure. */
+export function inListOrder(rows: readonly TableSession[], order: readonly string[]): TableSession[] {
+  const at = new Map(order.map((k, i) => [k, i]));
+  return [...rows].sort((a, b) => {
+    const x = at.get(a.key);
+    const y = at.get(b.key);
+    if (x != null || y != null) return x == null ? 1 : y == null ? -1 : x - y;
+    return b.lastActiveMs - a.lastActiveMs;
+  });
+}
+
 export function filterSessions(rows: readonly TableSession[], q: string, state: "all" | "live" | "done", tool: "any" | TableSession["tool"]): TableSession[] {
   return rows.filter((s) => (state === "all" || (state === "live") === s.live) && (tool === "any" || s.tool === tool) && matches(q, s.title, s.account.name, s.branch, s.pr ? `#${s.pr.number}` : null));
 }
 
-export function AllSessionsPage({ sessions, nowMs, onOpen, batch }: { sessions: TableSession[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions }) {
+export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch }: { sessions: TableSession[]; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions }) {
   const [q, setQ] = useState("");
   const [state, setState] = useState<"all" | "live" | "done">("all");
   const [tool, setTool] = useState<"any" | TableSession["tool"]>("any");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [group, setGroup] = useState<"none" | "project">("none");
-  const rows = useMemo(() => filterSessions(sessions, q, state, tool), [sessions, q, state, tool]);
+  const rows = useMemo(() => {
+    const hits = filterSessions(sessions, q, state, tool);
+    return order ? inListOrder(hits, order) : hits;
+  }, [sessions, order, q, state, tool]);
   const sections = useMemo(() => (group === "project" ? byProject(rows) : [{ project: null as string | null, rows }]), [rows, group]);
   const live = sessions.filter((s) => s.live).length;
   const cols = "grid-cols-[24px_minmax(0,1.6fr)_120px_minmax(0,1.2fr)_120px_70px_80px]";
