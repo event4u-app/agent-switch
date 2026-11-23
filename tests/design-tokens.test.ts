@@ -31,6 +31,13 @@ test("design tokens: an unchanged copy of the source passes from any path", () =
   assert.equal(r.status, 0, r.stderr);
 });
 
+test("design tokens: a generated file checked out with CRLF line endings is not drift", () => {
+  const crlf = path.join(tmp(), "as-tokens.css");
+  fs.writeFileSync(crlf, fs.readFileSync(GENERATED, "utf8").replace(/\r?\n/g, "\r\n"));
+  const r = check("--out", crlf);
+  assert.equal(r.status, 0, r.stderr);
+});
+
 test("design tokens: a changed token fails the check and names the file", () => {
   const doc = JSON.parse(fs.readFileSync(SOURCE, "utf8"));
   for (const [theme, name] of [["dark", "accent"], ["light", "warning"], ["dark", "border"]] as const) {

@@ -169,7 +169,7 @@ test("the two release-notes mirrors are byte-identical below their header", () =
 
 test("the GUI's redactSecrets is the CLI's, byte for byte", () => {
   const body = (src: string) => {
-    const m = /export function redactSecrets[\s\S]*?\n}\n/.exec(src);
+    const m = /export function redactSecrets[\s\S]*?\n}\n/.exec(src.replace(/\r\n/g, "\n"));
     assert.ok(m, "redactSecrets not found");
     return m[0];
   };

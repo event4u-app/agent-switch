@@ -150,7 +150,8 @@ function main() {
     console.error(`DRIFT: ${label} is missing — run \`node scripts/design-tokens.mjs\`.`);
     return 1;
   }
-  if (fs.readFileSync(out, "utf8") !== generated) {
+  // A Windows checkout may turn the committed file's LF into CRLF; line endings are not drift.
+  if (fs.readFileSync(out, "utf8").replace(/\r\n/g, "\n") !== generated) {
     console.error(`DRIFT: ${label} differs from ${path.relative(REPO, source) || source} — regenerate it, never hand-edit.`);
     return 1;
   }
