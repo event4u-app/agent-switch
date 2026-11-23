@@ -145,7 +145,10 @@ the suggestion, `q` cancels. Without a terminal, it only prints the suggested
 command.
 
 Before it switches, it prints the same cache-cost line as `takeover`, and the
-list marks accounts of the same organization.
+list marks accounts of the same organization. A switch changes the account's
+login, so every session running on that account follows; when there is more
+than one, `rebind` names them before it switches, and the app lists them in its
+confirmation.
 
 ### Switch when the turn ends
 

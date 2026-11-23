@@ -67,7 +67,7 @@ export interface V3Data {
    *  already answered outside the app this cycle. */
   link?: { asked: { id: string; account: string }[]; answered: string[] };
   /** The near-limit decision, by account key ("claude/work") or by session key — a limit item's subject is either. */
-  decision: (subject: string) => { account: string; tool?: string; targets?: { name: string; color: IdentityColor }[]; pctUsed: number; window: string; resetsIn: string; sessions: SheetSession[]; suggestion: string; suggestionWhy?: string; askedByAgentConfig?: boolean } | null;
+  decision: (subject: string) => { account: string; tool?: string; targets?: { name: string; color: IdentityColor }[]; pctUsed: number; window: string; resetsIn: string; sessions: SheetSession[]; alsoOn?: { key: string; title: string }[]; suggestion: string; suggestionWhy?: string; askedByAgentConfig?: boolean } | null;
   bar: (key: string) => BarSession | null;
   /** The session's chat runs in this window, so its approvals may be answered "always" here. */
   chatHere?: (key: string) => boolean;

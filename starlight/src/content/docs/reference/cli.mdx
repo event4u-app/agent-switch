@@ -378,6 +378,10 @@ the new account from its next message.
 `rebind` moves the target account's login into the running session, so the
 target's own account is signed out while it is lent. It therefore refuses a
 target that has a running session of its own: that session would lose its login.
+It switches the account, not one session: when two or more sessions run on the
+account, it names each of them (`Rebinding "work" moves every live session on it
+to side's account — 2 follow: …`) before it switches, and the app says the same
+in its confirmation.
 
 `rebind` moves the target account's login into the running session, so the
 target's own account is signed out while it is lent. It therefore refuses a

@@ -181,6 +181,32 @@ describe("Session sheet", () => {
     expect(rebind).toHaveBeenCalledWith("claude:agent-config", "claude:side");
   });
 
+  it("names the other live sessions on the account before a live switch moves them too", () => {
+    const vm = fixture();
+    const me = vm.sessions.find((x) => x.id === "claude:agent-config")!;
+    vm.sessions = [
+      ...vm.sessions.filter((x) => x.accountId !== me.accountId || x.id === me.id),
+      { ...me, id: "claude:docs", title: "Docs rewrite", state: "idle" as const },
+      { ...me, id: "claude:old", title: "Old run", state: "done" as const },
+      { ...me, id: "claude:desk", title: "Desktop chat", surface: "desktop-app" as const, state: "working" as const },
+    ];
+    mount(vm, { overlay: { kind: "session", id: "claude:agent-config" }, act: { rebind: vi.fn(), armRebind: vi.fn() } });
+    fireEvent.click(screen.getByRole("button", { name: "Switch account" }));
+    const body = screen.getByText(/switch too/).textContent ?? "";
+    expect(body).toContain("so these sessions switch too: Docs rewrite.");
+    expect(body).not.toContain("Old run");
+    expect(body).not.toContain("Desktop chat");
+  });
+
+  it("says nothing about other sessions when the switched one is alone on its account", () => {
+    const vm = fixture();
+    const me = vm.sessions.find((x) => x.id === "claude:agent-config")!;
+    vm.sessions = vm.sessions.filter((x) => x.accountId !== me.accountId || x.id === me.id);
+    mount(vm, { overlay: { kind: "session", id: "claude:agent-config" }, act: { rebind: vi.fn() } });
+    fireEvent.click(screen.getByRole("button", { name: "Switch account" }));
+    expect(screen.queryByText(/switch too/)).toBeNull();
+  });
+
   it("arms a switch for the end of the turn behind a dialog that says the cache moves only within one organization and nothing switches without the click", () => {
     const armRebind = vi.fn(() => Promise.resolve());
     const vm = fixture();

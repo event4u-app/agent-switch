@@ -121,9 +121,10 @@ saved.
       proves it. verify: `desktop-sessions` tests.
       done: `tests/desktop-sessions.test.ts` › "live only when a running process names the session, whatever the transcript's age" + the Code-tab case (seen red first); `gui/src/vm/build.test.ts` › "a Desktop session written lately … is 'recently active'" (en "Recently active", de "Kürzlich aktiv"); CLI `sessions` prints `[recently active]`.
       <!-- from: road-to-session-orchestration P6.3 -->
-- [ ] **3.3 Warn before a live rebind moves other sessions.** A rebind of a
+- [x] **3.3 Warn before a live rebind moves other sessions.** A rebind of a
       profile with more than one live session says which sessions follow, before
       it runs (CLI and GUI). verify: a test with two live sessions on one profile.
+      done: `tests/rebind-dialog.test.ts` › "followersNote: …", `tests/cli-e2e.test.ts` › "rebind: with two live sessions on the profile it names both before it runs"; GUI `src/v3/dialogs.test.tsx` › "a live switch names the sessions on the account that switch along…", `data.test.ts` › decisionFor alsoOn, `redesign/screens/screens.test.tsx` › "names the other live sessions…" (all seen red first).
       <!-- from: road-to-session-orchestration P4.8 -->
       <!-- adapted: warn part only; isolate-or-refuse stays parked (D3) -->
 - [ ] **3.4 Mask secrets in previews and notices.** Session previews and

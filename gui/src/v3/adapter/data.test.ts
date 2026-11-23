@@ -291,6 +291,14 @@ describe("pieces", () => {
     expect(decisionFor("claude/none", vm, [], NOW)).toBeNull();
   });
 
+  it("decisionFor: one session's sheet still knows every live session on the account a live switch would move", () => {
+    const vm = vmWith([account("work", { windows: [{ key: "five_hour", label: "5h", utilization: 93, resetsAt: null }] }), account("home")], []);
+    const rows = [row("a", { summary: "Fix wedge" }), row("b", { summary: "Docs" }), row("old", { live: false }), row("desk", { surface: "desktop-app" }), row("c", { profile: "home" })];
+    const d = decisionFor("claude/work/a", vm, rows, NOW)!;
+    expect(d.sessions.map((s) => s.key)).toEqual(["claude/work/a"]);
+    expect(d.alsoOn).toEqual([{ key: "claude/work/a", title: "Fix wedge" }, { key: "claude/work/b", title: "Docs" }]);
+  });
+
   it("decisionFor spreads the sessions: the heaviest one gets the account with the most room", () => {
     const w = (five: number, week: number) => [
       { key: "five_hour", label: "5h", utilization: five, resetsAt: null },

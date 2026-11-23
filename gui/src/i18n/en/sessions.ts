@@ -103,6 +103,7 @@ export const sessions = {
   "sessions.sheet.previewNote": "First turns only, read on demand. Hidden when “Hide session summaries” is on.",
   "sessions.sheet.desktopKeeps": "A Claude Desktop session keeps its window's sign-in — take it over instead.",
   "sessions.sheet.switchTitle": "Switch {project} to {name}?",
+  "sessions.sheet.followers": "A live switch changes {account}'s sign-in, so these sessions switch too: {list}.",
   "sessions.sheet.switchBody": "The running session adopts the new sign-in with its next message. Its transcript stays where it is. If the switch fails, the session keeps its current account and nothing is lost.",
   "sessions.sheet.switchAccount": "Switch account",
   "sessions.sheet.nowRunsOn": "{project} now runs on {name}.",

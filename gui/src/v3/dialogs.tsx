@@ -327,6 +327,7 @@ export function DecisionSheet({
   tool = "claude",
   askedByAgentConfig = false,
   pace,
+  alsoOn = [],
   onDecide,
   onKeep,
   onClose,
@@ -348,6 +349,9 @@ export function DecisionSheet({
   askedByAgentConfig?: boolean;
   /** A pace suggestion, not a limit: its own header words. */
   pace?: { title: string; sub: string };
+  /** Every live session on the account. A live switch changes the account's
+   *  login, so each one that is not itself moving switches along. */
+  alsoOn?: { key: string; title: string }[];
   onDecide: (how: MoveHow, moves: SheetMove[]) => void;
   onKeep: () => void;
   onClose: () => void;
@@ -376,6 +380,8 @@ export function DecisionSheet({
         const to = chosen[s.key] ?? s.target;
         return moving.includes(to) ? { key: s.key, target: to, via: "takeover" as const } : { key: s.key, target: to };
       });
+  const switching = tool !== "codex" && how !== "brief" ? moves().filter((m) => !m.via) : [];
+  const followers = switching.length ? alsoOn.filter((x) => !switching.some((m) => m.key === x.key)) : [];
   return (
     <Modal
       kicker={pace ? "Accounts at different paces" : "Near limit"}
@@ -454,6 +460,11 @@ export function DecisionSheet({
       {moving.length > 0 && (
         <p role="status" className="mt-2 text-xs text-ac-muted">
           {moving.join(", ")} {moving.length === 1 ? "runs a session of its" : "run sessions of their"} own, so this conversation moves to {moving.join(", ")} and resumes there — its own session keeps running. A session in your own terminal is ended there between turns; one Agent Switch hosts moves in its window.
+        </p>
+      )}
+      {followers.length > 0 && (
+        <p role="status" className="mt-2 text-xs text-ac-warn">
+          A live switch changes {account}'s sign-in, so these sessions switch too: {followers.map((f) => f.title).join(", ")}.
         </p>
       )}
       <Label className="mt-4" aside={suggestion ? `suggested: ${suggestion}${suggestionWhy ? ` — ${suggestionWhy}` : ""}` : undefined}>

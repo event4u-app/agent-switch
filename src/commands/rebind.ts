@@ -16,10 +16,10 @@ import {
 } from "../profiles.js";
 import { ProviderId } from "../providers.js";
 import { rebind, restoreRebind } from "../rebind.js";
-import { buildRebindDialog, resolveRebindChoice, selectableRows, type RebindDialogCandidate } from "../rebind-dialog.js";
+import { buildRebindDialog, followersNote, resolveRebindChoice, selectableRows, type RebindDialogCandidate } from "../rebind-dialog.js";
 import { ArmRefused, armRebind, armsFile, cancelArms } from "../rebind-arm.js";
 import { liveSessions } from "../api.js";
-import { detectRunningClaudeProfile } from "../sessions.js";
+import { detectRunningClaudeProfile, pidCwd, readSessionHeader } from "../sessions.js";
 import { readPid, PIDFILE, processAlive } from "../daemon.js";
 import { cacheForRow, claudeSnapshot, logActivity, sameOrganization } from "./shared.js";
 import { locateSession } from "../sessions.js";
@@ -37,6 +37,17 @@ function rebindCacheLine(running: string, target: string): string | null {
   const now = Date.now();
   const cache = cacheForRow("claude", { sessionId: live.sessionId, file: loc.jsonl }, readEvents(eventFile(ROOT, "claude", running)), now);
   return moveCacheLine(cache, target, sameOrganization(running, target), now);
+}
+
+/** Before a live rebind: the sessions on `running` that switch along, when more than one. */
+function warnFollowers(running: string, target: string): void {
+  const cfg = configDir("claude", running);
+  const live = liveSessions(cfg).map((s) => {
+    const loc = s.sessionId ? locateSession(cfg, s.sessionId) : null;
+    return { sessionId: s.sessionId, pid: s.pid, cwd: (loc ? readSessionHeader(loc.jsonl).cwd : null) ?? pidCwd(s.pid) };
+  });
+  const note = followersNote(running, target, live);
+  if (note) console.log(note);
 }
 
 /**
@@ -126,6 +137,7 @@ async function rebindDialog(running: string): Promise<void> {
   }
   const cacheLine = rebindCacheLine(running, choice.profile);
   if (cacheLine) console.log(cacheLine);
+  warnFollowers(running, choice.profile);
   try {
     const r = await rebind({ account: choice.profile, profile: running });
     logActivity("rebind", `claude/${running}`, `now serves ${choice.profile}'s account`, "user picked it in the rebind dialog");
@@ -212,6 +224,7 @@ export async function cmdRebind(
   requireProfile("claude", profile, "rebind --profile");
   const cacheLine = rebindCacheLine(profile, account);
   if (cacheLine) console.log(cacheLine);
+  warnFollowers(profile, account);
   if (flags["when-idle"]) {
     // D3: arm, do not run. The daemon runs the ordinary rebind at the turn's end.
     try {

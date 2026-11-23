@@ -1216,6 +1216,32 @@ test("guard: with every account busy, `dir --guard` shares the profile instead o
   }
 });
 
+test("rebind: with two live sessions on the profile it names both before it runs", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-rebind-follow-"));
+  try {
+    seed(home, "claude", "work");
+    seed(home, "claude", "side");
+    const reg = path.join(home, "claude", "work", "config", "sessions");
+    fs.mkdirSync(reg, { recursive: true });
+    fs.writeFileSync(path.join(reg, `${process.pid}.json`), JSON.stringify({ sessionId: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }));
+    fs.writeFileSync(path.join(reg, `${process.ppid}.json`), JSON.stringify({ sessionId: "22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }));
+    // Neither profile holds a credential, so the switch itself refuses — the warning comes first.
+    const r = runRaw(home, ["rebind", "side", "--profile", "work"]);
+    assert.match(r.stdout, /Rebinding "work" moves every live session on it to side's account — 2 follow: (11111111|22222222)\b.*, (11111111|22222222)\b/);
+    const one = fs.mkdtempSync(path.join(os.tmpdir(), "asw-rebind-one-"));
+    try {
+      seed(one, "claude", "work");
+      seed(one, "claude", "side");
+      seedLiveSession(one, "work", process.pid);
+      assert.doesNotMatch(runRaw(one, ["rebind", "side", "--profile", "work"]).stdout, /follow:/);
+    } finally {
+      fs.rmSync(one, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("guard: a busy active profile moves `dir --guard` onto a free signed-in one instead of refusing", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
   try {

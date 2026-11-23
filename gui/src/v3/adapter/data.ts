@@ -586,7 +586,10 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
     moving.map(({ r, state }) => ({ key: sessionKey(r), demand: sessionDemand(r, state) })),
     others,
   );
-  const sessions: SheetSession[] = moving.map(({ r, state }) => ({ key: sessionKey(r), title: r.library?.name || r.summary || r.sessionId.slice(0, 8), model: modelLabel(r.context?.model), target: assigned.get(sessionKey(r)) ?? "", state }));
+  const titleOf = (r: SessionRow) => r.library?.name || r.summary || r.sessionId.slice(0, 8);
+  const sessions: SheetSession[] = moving.map(({ r, state }) => ({ key: sessionKey(r), title: titleOf(r), model: modelLabel(r.context?.model), target: assigned.get(sessionKey(r)) ?? "", state }));
+  // A Desktop session runs on Desktop's own login: a rebind of the profile does not move it.
+  const alsoOn = rows.filter((r) => r.live && r.surface !== "desktop-app" && accountId(r.provider, r.profile) === a.id).map((r) => ({ key: sessionKey(r), title: titleOf(r) }));
   // The heaviest session's account: the one the sheet names when it names one.
   const heaviest = [...moving].sort((x, y) => sessionDemand(y.r, y.state) - sessionDemand(x.r, x.state))[0];
   const suggestion = (heaviest && assigned.get(sessionKey(heaviest.r))) ?? others[0]?.name ?? "";
@@ -600,6 +603,7 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
     window: windowLabel(w.key, w.label),
     resetsIn: mins === null ? "unknown" : mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`,
     sessions,
+    alsoOn,
     suggestion,
     suggestionWhy: suggestion ? (spread ? "spread by expected use — the busiest session gets the most room" : "most room left") : undefined,
     askedByAgentConfig: (vm.switchRequests ?? []).some((r) => r.state === "open" && r.raisedBy === "ac" && r.account === cliAccount(a.id) && Date.parse(r.expiresAt) > now),

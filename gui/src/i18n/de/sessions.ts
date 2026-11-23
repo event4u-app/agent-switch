@@ -104,6 +104,7 @@ export const sessions: { readonly [K in keyof typeof en]: string } = {
   "sessions.sheet.previewNote": "Nur die ersten Beiträge, bei Bedarf gelesen. Ausgeblendet, wenn „Sitzungszusammenfassungen ausblenden“ an ist.",
   "sessions.sheet.desktopKeeps": "Eine Claude-Desktop-Sitzung behält die Anmeldung ihres Fensters – übernimm sie stattdessen.",
   "sessions.sheet.switchTitle": "{project} zu {name} wechseln?",
+  "sessions.sheet.followers": "Ein Live-Wechsel ändert die Anmeldung von {account}, deshalb wechseln auch diese Sitzungen: {list}.",
   "sessions.sheet.switchBody": "Die laufende Sitzung übernimmt die neue Anmeldung mit der nächsten Nachricht. Ihr Transkript bleibt, wo es ist. Schlägt der Wechsel fehl, behält die Sitzung ihr Konto und nichts geht verloren.",
   "sessions.sheet.switchAccount": "Konto wechseln",
   "sessions.sheet.nowRunsOn": "{project} läuft jetzt auf {name}.",
