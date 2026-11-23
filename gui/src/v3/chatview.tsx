@@ -11,7 +11,11 @@ import { modelLabel } from "./model-label.js";
 
 const secs = (ms: number | null) => (ms === null ? null : ms < 60_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`);
 
-export function ChatView({ b, findFiles, worktreeOf, blocked }: { b: BridgeState & BridgeActions; findFiles?: (query: string) => Promise<string[]>; worktreeOf?: (agentId: string) => string | null; blocked?: string | null }) {
+/** What the agent is told when the user skips its question. */
+export const SKIPPED = "The user skipped this question in Agent Switch; go on without an answer or ask in the chat.";
+
+export function ChatView({ b, sessionKey, findFiles, worktreeOf, blocked }: { b: BridgeState & BridgeActions; /** The chat's key before the agent names its own; says which agent asks. */ sessionKey?: string; findFiles?: (query: string) => Promise<string[]>; worktreeOf?: (agentId: string) => string | null; blocked?: string | null }) {
+  const agent = (b.session?.key ?? sessionKey ?? "").startsWith("codex/") ? "Codex" : "Claude";
   const f = useMemo(() => fold(b.events), [b.events]);
   const cost = useMemo(() => b.events.reduce((n, e) => (e.t === "turn.end" && e.costUsd ? n + e.costUsd : n), 0), [b.events]);
   const running = b.status === "ready" && f.running;
@@ -48,14 +52,14 @@ export function ChatView({ b, findFiles, worktreeOf, blocked }: { b: BridgeState
           {f.rows.length > 0 && <CopyConversation rows={f.rows} />}
         </span>
       </div>
-      <ChatTimeline copyBar={false} events={b.events} notice={notice} on={b.status === "ready" ? { approve: b.approve, deny: b.deny, answer: b.answer, worktreeOf } : { worktreeOf }} />
+      <ChatTimeline copyBar={false} events={b.events} notice={notice} agent={agent} on={b.status === "ready" ? { approve: b.approve, deny: b.deny, answer: b.answer, skip: (id) => b.deny(id, SKIPPED), worktreeOf } : { worktreeOf, unanswerable: b.status === "starting" ? "Connecting…" : "This chat is not connected; open it again to answer." }} />
       <Composer
         running={running}
         queued={b.queued}
         mode={b.mode}
         onMode={b.setMode}
         onSend={(text, attachments) => b.send(text, attachments)}
-        onSteer={b.session?.key.startsWith("codex/") ? b.steer : undefined}
+        onSteer={agent === "Codex" ? b.steer : undefined}
         onStop={b.interrupt}
         commands={b.session?.commands}
         findFiles={findFiles}

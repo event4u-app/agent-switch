@@ -342,7 +342,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     body: (key) => {
       const tab = chats.tabOf(key);
       const chat = tab ? chats.states.get(tab) : undefined;
-      if (tab) return chat ? <ChatView b={chat} findFiles={(q) => ipc.sessionFiles(chat.session?.key ?? key, q)} worktreeOf={worktreeOf(byKey.get(chat.session?.key ?? key))} blocked={data.health.state === "down" ? ENGINE_DOWN_WHY : null} /> : <p className="m-auto text-[13px] text-ac-muted">Starting the chat…</p>;
+      if (tab) return chat ? <ChatView b={chat} sessionKey={key} findFiles={(q) => ipc.sessionFiles(chat.session?.key ?? key, q)} worktreeOf={worktreeOf(byKey.get(chat.session?.key ?? key))} blocked={data.health.state === "down" ? ENGINE_DOWN_WHY : null} /> : <p className="m-auto text-[13px] text-ac-muted">Starting the chat…</p>;
       return (
       <SessionBody
         sessionKey={key}
