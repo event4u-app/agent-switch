@@ -277,11 +277,12 @@ saved.
       done: `gui/src/redesign/engines/engines.test.ts` › "after an install with a hosted session running…", "…with no hosted session it offers the restart", "…cannot be read it counts them as running", "a failed or skipped install leaves nothing waiting…"; `settings.test.tsx` › "Updates" (D9).
       <!-- from: road-to-agent-switch-native-updater P3.4 -->
       <!-- adapted: "relaunch after the Tauri updater" became "restart after `agent-switch update`" -->
-- [ ] **7.3 Say when the GUI is not the CLI's version.** When `gui-launch` finds
+- [x] **7.3 Say when the GUI is not the CLI's version.** When `gui-launch` finds
       no artifact in the release tagged with the CLI version and falls back to
       another release (`src/gui-launch.ts:174-177`), it says which version it
       launched. verify: a `gui-launch` test for the fallback case asserts the
       message.
+      done: `guiSkewNotice` in `src/gui-launch.ts`, used by both fallbacks (no build in this release; nothing downloadable → newest cached); `tests/gui-launch.test.ts` › "guiSkewNotice names the CLI's version and the GUI version that is launched instead" (seen red first).
       <!-- from: road-to-agent-switch-native-updater AC "CLI↔GUI version skew is impossible or clearly surfaced" -->
 - [ ] **7.4 Document updates, releases and rollback.** README / docs: how
       updates arrive (notify by default, D5), how to cut a release, how to

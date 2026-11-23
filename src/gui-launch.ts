@@ -146,6 +146,18 @@ export function pickReleaseAsset(releases: readonly Release[], match: RegExp): (
   return null;
 }
 
+/** What to say when the GUI launched is not this CLI's version, or null when
+ *  it is. `no-build`: this version's release has no GUI build (yet);
+ *  `unreachable`: no build could be downloaded, so a cached one starts. Pure. */
+export function guiSkewNotice(cliVersion: string, guiVersion: string, why: "no-build" | "unreachable"): string | null {
+  const cli = guiCacheVersion(cliVersion);
+  const gui = guiCacheVersion(guiVersion);
+  if (cli === gui) return null;
+  return why === "no-build"
+    ? `The GUI for agent-switch ${cli} is not built yet — launching the GUI ${gui}, which may not match this CLI.`
+    : `No GUI build for agent-switch ${cli} could be downloaded — launching the cached GUI ${gui}, which may not match this CLI.`;
+}
+
 /** The highest `x.y.z` among cache folder names, or null. Pure. */
 export function newestCachedVersion(names: readonly string[]): string | null {
   const parse = (v: string) => (/^\d+\.\d+\.\d+$/.test(v) ? v.split(".").map(Number) : null);
@@ -208,7 +220,8 @@ async function ensureGuiArtifact(spec: { match: RegExp; kind: GuiKind }): Promis
     const names = fs.existsSync(CACHE_ROOT) ? fs.readdirSync(CACHE_ROOT) : [];
     const newest = newestCachedVersion(names.filter((v) => fs.existsSync(path.join(CACHE_ROOT, v, launchName))));
     if (!newest) return null;
-    console.log(`No GUI build reachable for ${version} — starting the cached ${newest}.`);
+    const notice = guiSkewNotice(version, newest, "unreachable");
+    if (notice) console.log(notice);
     return path.join(CACHE_ROOT, newest, launchName);
   };
 
@@ -226,7 +239,7 @@ async function ensureGuiArtifact(spec: { match: RegExp; kind: GuiKind }): Promis
   // itself as outdated.
   const assetVersion = guiCacheVersion(asset.tag);
   if (assetVersion !== guiCacheVersion(version)) {
-    console.log(`Release ${version} has no GUI build yet — using ${assetVersion}.`);
+    console.log(guiSkewNotice(version, assetVersion, "no-build"));
     const older = cached(assetVersion);
     if (older) return older;
   }
