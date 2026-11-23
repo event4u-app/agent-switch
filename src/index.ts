@@ -160,7 +160,7 @@ async function main(): Promise<void> {
     case "open-targets": return cmdOpenTargets(positional[0], flags);
     case "open-default": return cmdOpenDefault(positional[0], flags);
     case "open-terminal": return cmdOpenTerminal(positional[0]);
-    case "focus": return cmdFocus(positional[0]);
+    case "focus": return cmdFocus(positional[0], flags);
     case "launcher": case "launchers": return cmdLauncher(positional[0], positional.slice(1), flags);
     case "app-settings": return cmdAppSettings(positional[0], positional.slice(1), flags);
     case "apps": return cmdApps(!!flags.json);
