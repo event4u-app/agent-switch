@@ -19,7 +19,7 @@ import { RunningOn, runningOn } from "./running-on.js";
 
 /** The model popover opened from the limits popover sits to its right (352 + 320 + 12 + 11). */
 const LIMITS_MODEL_X = 695;
-import { answeredThere, NeedsZone, needsEngine, type AwayDigest, type NeedItem } from "./needs.js";
+import { answeredThere, NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
 import { limitToOpen, markLimitOpened, openedLimits, wasOpened } from "./adapter/limit-auto.js";
 import { accountOfKey } from "../vm/switch-requests.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
@@ -31,7 +31,7 @@ import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
 import { allNeeds } from "./tools.js";
-import { AFTER_TURN_DOWN_WHY, BlockerStrip, ENGINE_DOWN_WHY, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, HOSTED_HINT, type BarChipId, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
+import { AFTER_TURN_DOWN_WHY, BlockerStrip, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, HOSTED_HINT, type BarChipId, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
 import { AccountMark, Act, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
@@ -466,8 +466,6 @@ export function V3Window({
   }, [data.link, overlay]);
 
   const down = data.health.state === "down";
-  /** Why a Needs-you verb cannot act now: the engine it answers through is stopped. */
-  const blockedNeed = (n: NeedItem) => (down && needsEngine(n) ? ENGINE_DOWN_WHY : null);
   /** Why a move of `key` cannot open its decision sheet now: there is no usage to decide on. A
    *  stopped engine does not stop a move — a switch now, a take-over and a send are CLI calls;
    *  only "After this turn" waits for the background service, and the sheet says so there. */
@@ -486,7 +484,6 @@ export function V3Window({
     act({ type: "session-menu", key, item });
   };
   const onVerb = (n: NeedItem) => {
-    if (blockedNeed(n)) return;
     if (n.kind === "limit" || n.kind === "pace") setOverlay({ decide: n.subject });
     else if (n.kind === "update") openPage("tools");
     else if ((n.kind === "approval" || n.kind === "question") && data.bar(n.subject)?.hosted) openSession(n.subject);
@@ -593,8 +590,8 @@ export function V3Window({
       // A focused Needs-you item answers to its own keys (spec §5.1).
       if (e.key === "Enter" && !e.shiftKey) return void (e.preventDefault(), setFocusedNeed(null), onVerb(focused));
       if (e.key.toLowerCase() === "l") return void (e.preventDefault(), setFocusedNeed(nextFocus(needs.filter((n) => n.id !== focused.id), focused.id)), act({ type: "need-later", id: focused.id }));
-      // Answers go through the engine: while it is stopped they wait (the row says why).
-      if (focused.kind === "approval" && !answeredThere(focused) && !down) {
+      // An answer goes through the chat's inbox (`needs allow`), not the engine: it works while the engine is stopped.
+      if (focused.kind === "approval" && !answeredThere(focused)) {
         const always = e.key === "Enter" && e.shiftKey;
         const decision = always ? "always" : e.key === "Backspace" || e.key === "Delete" ? "deny" : e.key.toLowerCase() === "y" && !e.shiftKey ? "allow" : null;
         // "Always" widens a rule, so it is answered only where the chat runs, never from outside it.
@@ -826,7 +823,7 @@ export function V3Window({
         </span>
       </div>
       <div className="relative min-h-0 flex-1 overflow-y-auto pb-2">
-        <NeedsZone items={needs} away={data.away} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} blocked={blockedNeed} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
+        <NeedsZone items={needs} away={data.away} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
         <SessionsZone
           sessions={pinnedOnly ? data.sessions.filter((x) => pinned.has(x.key)) : data.sessions}
           activeKey={activeSession}
@@ -890,7 +887,7 @@ export function V3Window({
       />
     ) : overlay === "inbox" ? (
       <Anchored onClose={close} className="absolute right-3 top-11 z-10">
-        <InboxPopover items={needs} history={data.history} focusedId={null} nowMs={data.nowMs} always={(n) => !!data.chatHere?.(n.subject)} blocked={blockedNeed} onVerb={(n) => (close(), onVerb(n))} onAllLater={() => (close(), act({ type: "needs-later-all" }))} />
+        <InboxPopover items={needs} history={data.history} focusedId={null} nowMs={data.nowMs} always={(n) => !!data.chatHere?.(n.subject)} onVerb={(n) => (close(), onVerb(n))} onAllLater={() => (close(), act({ type: "needs-later-all" }))} />
       </Anchored>
     ) : overlay === "new" ? (
       <NewSessionDialog key={data.newSession.initial.folder} initial={data.newSession.initial} facts={data.newSession.facts} onClose={() => (close(), act({ type: "start-draft", plan: null }))} onChange={(plan) => act({ type: "start-draft", plan })} onStart={(plan) => (close(), act({ type: "start", plan }))} />

@@ -544,8 +544,6 @@ export function SystemBanner({ children, action }: { children: ReactNode; action
   );
 }
 
-/** Why a control that needs the engine is off while it is stopped (tooltip and accessible description). */
-export const ENGINE_DOWN_WHY = "The engine is stopped — restart it to do this";
 
 /** Why "After this turn" waits: the background service is what switches when the turn
  *  ends. A switch now, a take-over and a send go through the CLI and do not wait. */

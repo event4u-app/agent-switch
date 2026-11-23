@@ -63,7 +63,6 @@ export function Composer({
   commands = [],
   findFiles,
   disabled,
-  blocked,
 }: {
   running: boolean;
   queued: number;
@@ -76,8 +75,6 @@ export function Composer({
   commands?: string[];
   findFiles?: (query: string) => Promise<string[]>;
   disabled?: boolean;
-  /** Why nothing can be sent now (the engine is stopped): the draft stays, the send button says why. */
-  blocked?: string | null;
 }) {
   const [text, setText] = useState("");
   const [chips, setChips] = useState<Chip[]>([]);
@@ -121,7 +118,7 @@ export function Composer({
   };
   const submit = () => {
     const t = text.trim();
-    if ((!t && !chips.length) || disabled || blocked) return;
+    if ((!t && !chips.length) || disabled) return;
     onSend(t, chips.map((c) => c.attachment));
     setText("");
     setChips([]);
@@ -233,7 +230,7 @@ export function Composer({
             <Act onClick={onStop} disabled={!running}>
               <Square /> Stop <span className="font-ac-mono text-[10px] opacity-70">⌘.</span>
             </Act>
-            <Act kind="accent" kbd="↵" onClick={submit} blocked={blocked} disabled={disabled || (!blocked && !text.trim() && !chips.length)}>
+            <Act kind="accent" kbd="↵" onClick={submit} disabled={disabled || (!text.trim() && !chips.length)}>
               <Send /> {running ? "Queue" : "Send"}
             </Act>
           </span>
