@@ -123,7 +123,7 @@ saved.
       (used/limit), the account's usage view shows it; absent means no row, never
       a zero. verify: a view test with and without `routines`.
       <!-- from: road-to-agent-switch-gui-service, remainder (a) -->
-- [ ] **3.7 Updates notify by default; self-install only when switched on.**
+- [x] **3.7 Updates notify by default; self-install only when switched on.**
       A fresh install checks and notifies for every release kind but installs
       nothing; installing in place is an explicit opt-in per kind in Settings ›
       Updates (D5). Existing users who never touched the kinds setting move to
@@ -132,6 +132,7 @@ saved.
       new default. verify: an engine test seen red first — no stored setting →
       a newer patch is announced and `install` is never called; kinds opted in
       → it installs.
+      done: `gui/src/redesign/engines/engines.test.ts` › "with no stored kinds setting it only announces, for every kind", "installs a kind the user opted into, and keeps a kinds value they set themselves".
       <!-- from: owner decision 2026-11-08 (triage follow-up): `gui/src/redesign/engines/updates.ts:69-72` installs all kinds by default, against `settings-store.ts:140` "NOT silent self-install" and the native-updater council's "Notify is the ceiling"; also covers native-updater P3.3 and its AC "defaults to Notify" (merged 2026-11-08) -->
 
 - [ ] **3.8 Only personal plans are balanced.** An account takes part in balancing

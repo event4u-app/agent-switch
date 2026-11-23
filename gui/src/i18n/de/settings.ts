@@ -312,10 +312,10 @@ export const settings: { readonly [K in keyof typeof en]: string } = {
   "settings.updates.automatic": "Automatisch",
   "settings.updates.automaticUpdates": "Automatische Updates",
   "settings.updates.automaticUpdatesDetail":
-    "Prüft beim Öffnen und alle 24 Stunden und installiert eine neue Version automatisch (für die unten gewählten Release-Arten). Du wirst informiert, wenn ein Neustart nötig ist.",
+    "Prüft beim Öffnen und alle 24 Stunden und sagt dir, wenn eine neue Version da ist. Von selbst installiert wird nur für die Release-Arten, die du unten einschaltest.",
   "settings.updates.installFor": "Automatisch installieren für",
   "settings.updates.installForDetail":
-    "Entferne den Haken bei einer Art, um nur benachrichtigt zu werden (z. B. Major aus lassen, um große Releases erst zu prüfen).",
+    "Standardmäßig aus: Du wirst über jedes Release informiert und installierst es hier. Schalte eine Art ein, damit sie ohne Nachfrage installiert wird.",
   "settings.updates.autoUpdateKind": "Auto-Update {kind}",
   "settings.updates.toolsNote": "agent-config, rtk und die Agent-CLIs werden unter Tools aktualisiert.",
 

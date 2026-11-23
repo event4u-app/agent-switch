@@ -298,9 +298,9 @@ export const settings = {
   "settings.updates.automatic": "Automatic",
   "settings.updates.automaticUpdates": "Automatic updates",
   "settings.updates.automaticUpdatesDetail":
-    "Check on open and every 24 hours, and install a new version automatically (for the release types selected below). You'll be told to restart once it's applied.",
+    "Check on open and every 24 hours and tell you when a new version is out. It installs by itself only for the release types you switch on below.",
   "settings.updates.installFor": "Install automatically for",
-  "settings.updates.installForDetail": "Uncheck a type to only be notified about it (e.g. leave Major off to review big releases first).",
+  "settings.updates.installForDetail": "Off by default: you're told about every release and install it here. Switch a type on to have it installed without asking.",
   "settings.updates.autoUpdateKind": "Auto-update {kind}",
   "settings.updates.toolsNote": "agent-config, rtk and the agent CLIs update from Tools.",
 

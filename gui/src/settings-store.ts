@@ -137,7 +137,8 @@ const AUTO_UPDATE_CHECK_KEY = "agent-switch-auto-update-check";
 /** Whether the app checks for a newer release automatically (on open + every
  *  24h while running) and notifies when one is found. Default ON — only the
  *  literal "off" disables it, so a fresh install gets update checks. This is a
- *  check-and-notify toggle, NOT silent self-install. */
+ *  check-and-notify toggle, NOT silent self-install: installing in place needs
+ *  a release kind opted into via {@link getAutoUpdateKinds}. */
 export function getAutoUpdateCheck(): boolean {
   try {
     return localStorage.getItem(AUTO_UPDATE_CHECK_KEY) !== "off";
@@ -158,18 +159,18 @@ const AUTO_UPDATE_KINDS_KEY = "agent-switch-auto-update-kinds";
 const ALL_UPDATE_KINDS = ["major", "minor", "patch"] as const;
 type StoredUpdateKind = (typeof ALL_UPDATE_KINDS)[number];
 
-/** Which release types auto-update installs when it is on. Default: all three
- *  (major, minor, patch) — auto-update was turned on, so everything applies
- *  until the user narrows it. Persisted as a comma list; an unknown/missing
- *  value falls back to all. */
+/** Which release types the update check installs in place; every other kind
+ *  is only announced. Default: none — installing without the user's consent is
+ *  what the check toggle rules out, so a missing value (a fresh install, or a
+ *  user who never touched the setting) means notify-only. A value the user
+ *  stored is kept as is. Persisted as a comma list; unknown entries are dropped. */
 export function getAutoUpdateKinds(): StoredUpdateKind[] {
   try {
     const raw = localStorage.getItem(AUTO_UPDATE_KINDS_KEY);
-    if (raw == null) return [...ALL_UPDATE_KINDS];
-    const kinds = raw.split(",").filter((k): k is StoredUpdateKind => (ALL_UPDATE_KINDS as readonly string[]).includes(k));
-    return kinds;
+    if (raw == null) return [];
+    return raw.split(",").filter((k): k is StoredUpdateKind => (ALL_UPDATE_KINDS as readonly string[]).includes(k));
   } catch {
-    return [...ALL_UPDATE_KINDS];
+    return [];
   }
 }
 

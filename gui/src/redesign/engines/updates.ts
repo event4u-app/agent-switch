@@ -3,8 +3,8 @@
  * failure (the Updates page / Tools card show live status):
  *
  * - agent-switch itself: once on open and every 24 h while the toggle is on. An
- *   enabled bump kind installs in place (`agent-switch update`); any other kind
- *   only notifies. A handled version is not re-announced; a FAILED install is
+ *   bump kind the user opted into installs in place (`agent-switch update`);
+ *   any other kind — every kind by default — only notifies. A handled version is not re-announced; a FAILED install is
  *   not marked handled, so the next check retries.
  * - the agent-config companion: on open and hourly; notifies once per version,
  *   and only when it is installed and a newer release exists.

@@ -6,6 +6,7 @@ import type { Actions } from "../../vm/actions.js";
 import { emptyViewModel } from "../../vm/load.js";
 import type { Account, ViewModel } from "../../vm/types.js";
 import { forceUsageFor, loadUsage, newerSnapshot, type UsageDeps } from "../../vm/usage-loader.js";
+import { getAutoUpdateKinds, setAutoUpdateKinds } from "../../settings-store.js";
 import { getUsageAttempts, loadUsageCache, markUsageAttempt, saveUsageSnapshot } from "../../usage-cache.js";
 import { nearLimitMessage } from "./near-limit.js";
 import { deliver, freshSince, noticeText, toastFor, type FireContext, type FireSinks } from "./notifications.js";
@@ -326,6 +327,26 @@ describe("agent-switch auto-update loop", () => {
     await runAutoUpdateCheck(d);
     expect(calls.install).toBe(0);
     expect(calls.notes).toEqual(["info:Update available — v2.0.0"]);
+  });
+
+  it("with no stored kinds setting it only announces, for every kind", async () => {
+    for (const tag of ["v1.0.1", "v1.1.0", "v2.0.0"]) {
+      const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release(tag) }, true, () => getAutoUpdateKinds());
+      await runAutoUpdateCheck(d);
+      expect(calls.install).toBe(0);
+      expect(calls.notes).toEqual([`info:Update available — ${tag}`]);
+    }
+  });
+
+  it("installs a kind the user opted into, and keeps a kinds value they set themselves", async () => {
+    setAutoUpdateKinds(["patch"]);
+    const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") }, true, () => getAutoUpdateKinds());
+    await runAutoUpdateCheck(d);
+    expect(calls.install).toBe(1);
+    setAutoUpdateKinds(["major", "minor", "patch"]);
+    expect(getAutoUpdateKinds()).toEqual(["major", "minor", "patch"]);
+    setAutoUpdateKinds([]);
+    expect(getAutoUpdateKinds()).toEqual([]);
   });
 
   it("runs on open, when the toggle comes on, and then once a day", () => {
