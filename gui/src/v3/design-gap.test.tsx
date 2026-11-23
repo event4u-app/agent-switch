@@ -201,7 +201,7 @@ describe("start on a session (gap §4a)", () => {
     const two = [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow" }];
     const act = vi.fn();
     render(<V3Window data={{ ...d, sessions: two }} slots={slots} act={act} layout={{ load: () => ({ tabs: ["s1", "s2"], active: "s2" }), save: vi.fn() }} />);
-    fireEvent.click(screen.getByRole("button", { name: "Close Checkout flow" }));
+    fireEvent.click(screen.getByRole("tab", { name: /Checkout flow/ }).querySelector("[data-tab-close]")!);
     expect(screen.queryByRole("tab", { name: /Checkout flow/ })).toBeNull();
     expect(screen.getByRole("tab", { name: /Event store/ }).getAttribute("aria-selected")).toBe("true");
     expect(act).not.toHaveBeenCalled();

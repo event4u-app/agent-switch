@@ -72,9 +72,33 @@ export function TabStrip({
     // Bound for the length of one drag; onMove is read when it ends.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragging]);
+  // Roving tab stop (WAI-ARIA tabs): the strip is one stop; arrows move inside it.
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const refocus = useRef<string | null>(null);
+  const has = (id: string | null) => !!id && ordered.some((t) => t.id === id);
+  const stop = has(focusId) ? focusId : has(activeId) ? activeId : (ordered[0]?.id ?? null);
+  const focusTab = (strip: Element | null, id: string | undefined) => {
+    if (!id) return;
+    setFocusId(id);
+    Array.from(strip?.querySelectorAll<HTMLElement>("[data-tab-id]") ?? []).find((el) => el.dataset.tabId === id)?.focus();
+  };
+  const stripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // After a keyboard close the closed tab is gone; its neighbour keeps the focus.
+    const id = refocus.current;
+    if (!id || !has(id)) return;
+    refocus.current = null;
+    focusTab(stripRef.current, id);
+  });
   let n = 0;
   return (
-    <div role="tablist" className={cn("flex h-9 shrink-0 items-end gap-px border-b border-ac-line bg-ac-rail px-1", drag?.moving && "cursor-grabbing select-none")}>
+    <div
+      ref={stripRef}
+      role="tablist"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusId(null);
+      }}
+      className={cn("flex h-9 shrink-0 items-end gap-px border-b border-ac-line bg-ac-rail px-1", drag?.moving && "cursor-grabbing select-none")}>
       {ordered.map((t) => {
         const on = t.id === activeId;
         const pin = isPin(t.id);
@@ -86,6 +110,26 @@ export function TabStrip({
             key={t.id}
             role="tab"
             aria-selected={on}
+            tabIndex={t.id === stop ? 0 : -1}
+            aria-keyshortcuts={pin ? undefined : "Delete"}
+            onFocus={() => setFocusId(t.id)}
+            onKeyDown={(e) => {
+              if (e.metaKey || e.ctrlKey || e.altKey) return;
+              const i = ordered.findIndex((x) => x.id === t.id);
+              const at = (k: number) => ordered[(k + ordered.length) % ordered.length]?.id;
+              const strip = e.currentTarget.parentElement;
+              const go =
+                e.key === "ArrowRight" ? at(i + 1) : e.key === "ArrowLeft" ? at(i - 1) : e.key === "Home" ? at(0) : e.key === "End" ? at(ordered.length - 1) : null;
+              if (go) focusTab(strip, go);
+              else if (e.key === "Enter" || e.key === " ") onSelect(t.id);
+              else if ((e.key === "Delete" || e.key === "Backspace") && !pin) {
+                refocus.current = ordered.length > 1 ? (i + 1 < ordered.length ? at(i + 1) : at(i - 1)) ?? null : null;
+                onClose(t.id);
+              } else return;
+              // Handled here: the window-wide keys (a focused Needs-you item answers to ⌫) must not see it too.
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             data-tab-id={t.id}
             data-pinned={pin || undefined}
             onClick={() => {
@@ -103,7 +147,7 @@ export function TabStrip({
               onMenu(t.id, { x: e.clientX, y: e.clientY });
             }}
             onPointerDown={(e) => {
-              if (e.button !== 0 || !onMove || (e.target as HTMLElement).closest("button")) return;
+              if (e.button !== 0 || !onMove || (e.target as HTMLElement).closest("[data-tab-close]")) return;
               moved.current = false;
               setDrag({ id: t.id, x0: e.clientX, moving: false, over: null });
             }}
@@ -135,17 +179,18 @@ export function TabStrip({
                 <Pin aria-label="Pinned" className="size-3 text-ac-brand-text" />
               </span>
             ) : t.kind === "session" ? (
-              // The shortcut sits in the slot; hover or focus swaps it for the close button (spec §6.1: closing keeps the session).
+              // The shortcut sits in the slot; hover or keyboard focus swaps it for the × (spec §6.1: closing keeps the session).
+              // The × is pointer-only and hidden from the a11y tree: a tab may hold no control, and Delete closes it.
               <span className="relative ml-auto inline-flex h-4 min-w-4 shrink-0 items-center justify-end">
-                {idx <= 9 && <span className="font-ac-mono text-[10px] text-ac-muted group-hover:invisible group-focus-within:invisible">⌘{idx}</span>}
-                <button type="button" aria-label={`Close ${t.title}`} onClick={(e) => (e.stopPropagation(), onClose(t.id))} className="absolute inset-y-0 right-0 inline-flex items-center rounded opacity-0 hover:bg-ac-raise focus-visible:opacity-100 group-hover:opacity-100">
+                {idx <= 9 && <span className="font-ac-mono text-[10px] text-ac-muted group-hover:invisible group-focus-visible:invisible">⌘{idx}</span>}
+                <span aria-hidden data-tab-close onClick={(e) => (e.stopPropagation(), onClose(t.id))} className="absolute inset-y-0 right-0 inline-flex cursor-pointer items-center rounded opacity-0 hover:bg-ac-raise group-hover:opacity-100 group-focus-visible:opacity-100">
                   <X className="size-3 text-ac-muted hover:text-ac-text" />
-                </button>
+                </span>
               </span>
             ) : (
-              <button type="button" aria-label={`Close ${t.label}`} onClick={(e) => (e.stopPropagation(), onClose(t.id))}>
+              <span aria-hidden data-tab-close onClick={(e) => (e.stopPropagation(), onClose(t.id))} className="inline-flex cursor-pointer">
                 <X className="size-3 text-ac-muted" />
-              </button>
+              </span>
             )}
           </div>
         );

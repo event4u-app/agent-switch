@@ -9,7 +9,7 @@ const bar = (over: Partial<BarSession> = {}): BarSession => ({ key: "k", hosted:
 const handlers = () => ({ view: vi.fn(), account: vi.fn(), model: vi.fn(), thinking: vi.fn(), menu: vi.fn() });
 
 describe("workbench (spec §6)", () => {
-  it("tabs: pages first, sessions numbered ⌘1…, the active one framed; closing a page tab is its own button", () => {
+  it("tabs: pages first, sessions numbered ⌘1…, the active one framed; a page tab closes on its ×", () => {
     const onClose = vi.fn();
     render(
       <TabStrip
@@ -27,8 +27,95 @@ describe("workbench (spec §6)", () => {
     // The state icon carries its state as words for screen readers.
     expect(tabs.map((t) => t.textContent)).toEqual(["Accounts", "WorkingEvent store⌘1", "IdleThemes⌘2"]);
     expect(tabs[1].className).toContain("border-t-ac-brand");
-    fireEvent.click(screen.getByLabelText("Close Accounts"));
+    fireEvent.click(tabs[0].querySelector("[data-tab-close]")!);
     expect(onClose).toHaveBeenCalledWith("accounts");
+  });
+
+  it("tabs are real ARIA tabs: one tab stop, arrows move, Enter opens, Delete closes; the × still closes on click", () => {
+    const onClose = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <TabStrip
+        activeId="s1"
+        onSelect={onSelect}
+        onClose={onClose}
+        pinned={new Set(["s3"])}
+        tabs={[
+          { kind: "session", id: "s1", title: "Event store", state: "working" },
+          { kind: "page", id: "accounts", label: "Accounts", icon: null },
+          { kind: "session", id: "s2", title: "Themes", state: "idle" },
+          { kind: "session", id: "s3", title: "Pinned one", state: "idle" },
+        ]}
+      />,
+    );
+    const tab = (name: RegExp) => screen.getByRole("tab", { name });
+    // Order: pinned, pages, sessions. Only the active tab is in the Tab order.
+    expect(screen.getAllByRole("tab").map((t) => t.tabIndex)).toEqual([-1, -1, 0, -1]);
+    const strip = screen.getByRole("tablist");
+    expect(strip.querySelectorAll("button, [tabindex='0']").length).toBe(1);
+
+    tab(/Event store/).focus();
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(tab(/Themes/));
+    expect(tab(/Themes/).tabIndex).toBe(0);
+    expect(tab(/Event store/).tabIndex).toBe(-1);
+    // Moving focus does not open the tab; Enter and Space do.
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(tab(/Pinned one/));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(tab(/Accounts/));
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(tab(/Pinned one/));
+    fireEvent.keyDown(document.activeElement!, { key: "End" });
+    expect(document.activeElement).toBe(tab(/Themes/));
+    fireEvent.keyDown(document.activeElement!, { key: "Home" });
+    expect(document.activeElement).toBe(tab(/Pinned one/));
+    fireEvent.keyDown(document.activeElement!, { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith("s3");
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
+    fireEvent.keyDown(document.activeElement!, { key: " " });
+    expect(onSelect).toHaveBeenLastCalledWith("accounts");
+
+    // A pinned tab does not close from the keyboard either.
+    tab(/Pinned one/).focus();
+    fireEvent.keyDown(document.activeElement!, { key: "Delete" });
+    expect(onClose).not.toHaveBeenCalled();
+    tab(/Themes/).focus();
+    fireEvent.keyDown(document.activeElement!, { key: "Delete" });
+    expect(onClose).toHaveBeenLastCalledWith("s2");
+    tab(/Accounts/).focus();
+    fireEvent.keyDown(document.activeElement!, { key: "Backspace" });
+    expect(onClose).toHaveBeenLastCalledWith("accounts");
+    expect(onClose).toHaveBeenCalledTimes(2);
+
+    // The pointer path is unchanged: the × closes without selecting.
+    onSelect.mockClear();
+    fireEvent.click(tab(/Event store/).querySelector("[data-tab-close]")!);
+    expect(onClose).toHaveBeenLastCalledWith("s1");
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(tab(/Pinned one/).querySelector("[data-tab-close]")).toBeNull();
+  });
+
+  it("focus comes back into the strip on the active tab, and a keyboard close hands focus to the neighbour", () => {
+    const tabs = [
+      { kind: "session" as const, id: "s1", title: "Event store", state: "working" as const },
+      { kind: "session" as const, id: "s2", title: "Themes", state: "idle" as const },
+    ];
+    const { rerender } = render(<><TabStrip activeId="s2" onSelect={vi.fn()} onClose={vi.fn()} tabs={tabs} /><button type="button">outside</button></>);
+    screen.getByRole("tab", { name: /Themes/ }).focus();
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowLeft" });
+    expect(screen.getByRole("tab", { name: /Event store/ }).tabIndex).toBe(0);
+    // Leaving the strip resets the tab stop to the active tab.
+    const out = screen.getByRole("button", { name: "outside" });
+    fireEvent.blur(document.activeElement!, { relatedTarget: out });
+    out.focus();
+    expect(screen.getByRole("tab", { name: /Themes/ }).tabIndex).toBe(0);
+
+    screen.getByRole("tab", { name: /Themes/ }).focus();
+    fireEvent.keyDown(document.activeElement!, { key: "Delete" });
+    rerender(<><TabStrip activeId="s1" onSelect={vi.fn()} onClose={vi.fn()} tabs={tabs.slice(0, 1)} /><button type="button">outside</button></>);
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: /Event store/ }));
   });
 
   it("session bar: in the user's own terminal both views switch (read-only) and the chips lock; the account chip only opens the sheet", () => {

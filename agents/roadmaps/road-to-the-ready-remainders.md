@@ -243,12 +243,13 @@ saved.
       verify: the test filtered and run 20 times in a row on Linux without a
       failure, and the next CI runs green on `ubuntu-latest · node 20` without a rerun.
       <!-- from: CI flake seen 2026-11-13, tracked like 6.4 -->
-- [ ] **6.6 Real ARIA tabs in the v3 tab strip.** axe reports `nested-interactive`
+- [x] **6.6 Real ARIA tabs in the v3 tab strip.** axe reports `nested-interactive`
       on `gui/src/v3/workbench.tsx`: each `role="tab"` holds its close button, and
       a close button cannot simply move beside the tab either (a tablist may own
       only tabs). Make the tabs focusable with arrow-key movement and a key that
       closes the focused tab, so the close buttons can leave the tablist.
       verify: `gui/src/a11y.test.tsx` › "v3 window" with `V3_TAB_CLOSE` removed.
+      done: one tab stop with arrow/Home/End movement, ↵/Space opens, ⌦/⌫ closes (not pinned) and hands focus to the neighbour; the × stays where it was, pointer-only and out of the a11y tree. Red first: `a11y.test.tsx` › "v3 window" (known-finding list removed), `v3/workbench.test.tsx` › "tabs are real ARIA tabs…" and "focus comes back into the strip…".
       <!-- from: 6.1 axe run, 2026-11-23 -->
 
 ## Phase 7 — Updates that can be stopped and undone

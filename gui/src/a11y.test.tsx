@@ -43,28 +43,9 @@ const LAYOUT_RULES = { "color-contrast": { enabled: false } };
 // axe probes canvas for icon fonts; jsdom has none and logs on every call.
 HTMLCanvasElement.prototype.getContext = () => null;
 
-/** A known finding, kept out of the result until the change that fixes it. */
-interface Known {
-  rule: string;
-  html: RegExp;
-}
-
-/** The v3 tab strip puts each tab's close button inside the tablist; giving it
- *  real ARIA tabs (focusable tabs, a key to close) is its own change. */
-const V3_TAB_CLOSE: Known[] = [{ rule: "nested-interactive", html: /^<div role="tab"/ }];
-
-async function violations(root: Element, known: Known[] = []): Promise<string[]> {
+async function violations(root: Element): Promise<string[]> {
   const r = await axe.run(root, { rules: LAYOUT_RULES, resultTypes: ["violations"] });
-  return r.violations.flatMap((v) => {
-    const nodes = v.nodes.filter((n) => !known.some((k) => k.rule === v.id && k.html.test(n.html)));
-    return nodes.length ? [`${v.id}: ${nodes.map((n) => n.html.slice(0, 160)).join(" | ")}`] : [];
-  });
-}
-
-/** Each known finding still occurs; when one no longer does, it is fixed and goes. */
-async function stillKnown(root: Element, known: Known[]): Promise<string[]> {
-  const r = await axe.run(root, { rules: LAYOUT_RULES, resultTypes: ["violations"] });
-  return known.filter((k) => !r.violations.some((v) => v.id === k.rule && v.nodes.some((n) => k.html.test(n.html)))).map((k) => k.rule);
+  return r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html.slice(0, 160)).join(" | ")}`);
 }
 
 function vm(): ViewModel {
@@ -114,8 +95,7 @@ describe("axe finds no violations in the main views", () => {
 
   it("v3 window", async () => {
     const { container } = render(<V3Window data={data()} slots={slots} act={() => {}} />);
-    expect(await violations(container, V3_TAB_CLOSE)).toEqual([]);
-    expect(await stillKnown(container, V3_TAB_CLOSE)).toEqual([]);
+    expect(await violations(container)).toEqual([]);
   });
 
   it("v3 tray", async () => {

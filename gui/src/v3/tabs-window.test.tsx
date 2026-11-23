@@ -16,6 +16,8 @@ function mount(saved: Partial<WindowLayout> = { tabs: ["s1", "s2", "s3"], active
   return { act, save };
 }
 const tab = (name: string) => screen.getByRole("tab", { name: new RegExp(name) });
+/** The tab's × — pointer-only, so it is found inside the tab, not by role. */
+const closeX = (name: string) => tab(name).querySelector("[data-tab-close]");
 const titles = () => screen.getAllByRole("tab").map((t) => t.getAttribute("title")!.split(" · ")[0]);
 const menu = (name: string) => fireEvent.contextMenu(tab(name), { clientX: 40, clientY: 20 });
 const pick = (item: string | RegExp) => fireEvent.click(screen.getByRole("menuitem", { name: item }));
@@ -29,7 +31,7 @@ describe("tabs: pin, close, reopen, sort (owner request 2026-11-05)", () => {
     expect(titles()).toEqual(["Themes", "Event store", "Checkout flow"]);
     expect(tab("Themes").getAttribute("data-pinned")).toBe("true");
     expect(tab("Themes").getAttribute("title")).toContain("pinned");
-    expect(screen.queryByRole("button", { name: "Close Themes" })).toBeNull();
+    expect(closeX("Themes")).toBeNull();
     expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ tabs: ["s3", "s1", "s2"], pinned: ["s3"] }));
   });
 
@@ -51,8 +53,8 @@ describe("tabs: pin, close, reopen, sort (owner request 2026-11-05)", () => {
 
   it("⇧⌘T and the menu reopen closed tabs where they stood, last closed first", () => {
     mount();
-    fireEvent.click(screen.getByRole("button", { name: "Close Checkout flow" }));
-    fireEvent.click(screen.getByRole("button", { name: "Close Event store" }));
+    fireEvent.click(closeX("Checkout flow")!);
+    fireEvent.click(closeX("Event store")!);
     expect(titles()).toEqual(["Themes"]);
     fireEvent.keyDown(window, { key: "t", metaKey: true, shiftKey: true });
     expect(titles()).toEqual(["Event store", "Themes"]);
