@@ -136,6 +136,13 @@ Rules:
 | Radio card choice | accent outline plus accent tint, filled radio dot | "Where it runs", decision sheet "How" |
 | Checkbox | 4 px square; checked = accent fill | multi-select, "In a new worktree" |
 
+**The open active row is one block.** When the active session row has its
+children open, the raise fill and the Marker cover the row and its children
+together, as one item; with the children closed, they cover the row alone.
+
+> Owner, Q1 of `road-to-a-tree-that-reads-at-a-glance` (2026-11-22): "1" — yes,
+> one block, the Marker frames the row and its children.
+
 The Marker never uses inset shadows or a detached bar. One component
 (`Marker` in `kit.tsx`) draws it everywhere. The tab draws the same frame
 with its own borders (`TAB` / `TAB_ON` in `frame.tsx`).
@@ -156,6 +163,17 @@ with its own borders (`TAB` / `TAB_ON` in `frame.tsx`).
   | pause-requested | amber ring |
 
   A dot never means anything else.
+- **Where a state comes from.** A live session's state is computed once, in the engine
+  (`runtimeState`, `src/runtime-state.ts`), and sent as `runtime: { state, source,
+  observedAt }`. Sources, highest first: a wait a hook or the transcript reported
+  (`hook`); the host's own word — Claude Code's registry `busy` / `waiting` / `idle` /
+  `shell` (`host`); a hosted Codex window's OSC 7501 report (`program`); the transcript's
+  write time, working within 60 s (`transcript`). The dot's tooltip names the source:
+  "from the last hook", "from Claude Code", "from Codex", "from the transcript time".
+  Evidence: `agents/evidence/registry-status-across-a-turn-2026-11.md`.
+- **Quiet work.** When the host still says busy but neither it nor the transcript changed
+  for ten minutes, the dot stays the working dot **without its pulse**, and the row's
+  trailing slot says "no update in 34m" (§5.2). No new mark.
 - **Account identity** (`AccountMark`) is a 3×12 px tick in the account colour: teal, pink, purple and so on from `identityColor`. It is never a dot. It appears before an account name everywhere: session bar, limits popover, tables, dialogs, switcher, library rows.
 - **The amber dot at a stripe button's corner** means "something in there needs you" (only shown while that window is hidden).
 
@@ -317,13 +335,22 @@ soft title and a muted count). It has three zones, top to bottom.
     1. account name in amber when that account is near its limit;
     2. CI failing → red `CircleX`;
     3. merge conflict → red `TriangleAlert`;
-    4. a small amber dot when a Needs-you item points at the session but its state is not already "needs-you";
-    5. running subagents → `Bot` icon plus count (muted). The tooltip says e.g. "1 subagent · 1 running".
-- The **active row** has the Marker and adds a second line: `account · branch · #PR` (11 px muted). Comfortable density adds the second line to every row.
+    4. a small amber dot when a Needs-you item points at the session **or any session below it** but its state is not already "needs-you"; the tooltip names the child that asks;
+    5. "no update in 34m" (muted) for quiet work (§3.3);
+    6. running children → `Bot` icon plus count (muted), summed over every depth. The tooltip says e.g. "1 subagent · 1 running".
+  - The amber dot and the running count also open the row's children.
+- The **active row** has the Marker and adds a second line: `account · branch · #PR` (11 px muted). Comfortable density adds the second line to every row. When its children are open, the row and its children are one block: one raise fill and one Marker around both (§3.2; owner, Q1 2026-11-22: "1").
 - **Hover** (≈400 ms) shows the **peek card** (§7.3): the details that left the row.
-- **Children** unfold under the row, indented with a 1 px guide line (`ChildLine`, h 24): state dot plus label.
+- **Children** unfold under the row (`ChildLine`, h 24), in the parent's row grammar: state dot, tool monogram (`AppMono`; a `Bot` glyph for a subagent), `AccountMark`, label, and the same trailing slot. Words only when something is not OK; model, thinking and age are in the peek card, which a child shows on hover like a root.
+  - A child that is a session takes its state from its own runtime, the same function as a root; a subagent is running or done.
+  - **Tree.** Children nest to any depth along the parents the engine reported, never an inferred one. One `Guides` component draws the connectors, 16 px per level: a rail for an ancestor that continues, a tee for a middle child, a rounded elbow for the last, a stem under the parent; lines meet the dots. An edge back to a session already above is dropped.
+  - Clicking a session child opens it; a subagent or counted row is not a button and its tooltip says it runs inside its session.
+  - **Idle fold.** Under an open parent, children that are working or need you stay listed; the others fold into one "N idle" line that opens in place and keeps its state per parent for the session. A single idle child is listed, not folded.
+  - ⌘J to a Needs-you item whose subject is a child opens its parents and focuses the child row.
   - Provenance is in the tooltip ("via hook", "via lineage", "via git", "via GitHub", "via host").
   - It is shown inline only when it matters: "relation unknown ⓘ" in warn, or "counted" in muted for children known only by count.
+- **Group by project** groups by the repository: the main checkout's root from git's common dir (`git.repoRoot`), so every worktree joins its repository; outside git, the folder. When a project has live sessions in more than one worktree, each worktree gets a sub-header: branch, a "worktree" chip for a linked one, session count. One worktree, no sub-header.
+- **The list holds still.** While the pointer is inside the list or a row has keyboard focus, rows keep their place: rows that left disappear, arrivals go where the new order puts them; the live order applies once the pointer and focus leave. The tray's session list does the same. The Needs-you zone is never held.
 - **Done today N ›** is one collapsed row at the end with "Clean up" on the right. Merged sessions archive themselves after 24 h into the Library. "Clean up" removes merged worktrees (dirty ones are skipped).
 - **Multi-select** (⋯ › Select; proposal: also ⇧/⌘-click) shows the compact batch bar on top of the window: × clear (Esc) · "N selected" · Pin · Archive · Clean worktrees · **End…** (danger). It is the same component as on the All sessions page, there with labels.
 

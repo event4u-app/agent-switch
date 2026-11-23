@@ -90,8 +90,8 @@ export function Swatch({ def, accent, selected }: { def: ThemeDef; accent: Accen
           <span className="size-1.5 rounded-full bg-ac-alert" />
           <span className="size-1.5 rounded-full bg-ac-warn" />
           <span className="size-1.5 rounded-full bg-ac-ok" />
-          <span className="ml-2 h-2.5 w-10 rounded-sm bg-ac-brand-tint shadow-[inset_0_0_0_1px_var(--ac-brand-line)]" />
-          <span className="ml-auto h-3 w-9 rounded-sm bg-ac-brand" />
+          <span className="ml-2 h-2.5 w-10 rounded bg-ac-brand-tint shadow-[inset_0_0_0_1px_var(--ac-brand-line)]" />
+          <span className="ml-auto h-3 w-9 rounded bg-ac-brand" />
         </div>
         <div className="flex h-[92px]">
           <div className="w-[30%] shrink-0 space-y-1 border-r border-ac-line bg-ac-rail p-1.5">

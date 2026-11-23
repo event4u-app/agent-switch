@@ -95,6 +95,8 @@ export interface SessionRow {
   waitingFor?: string;
   /** How `live` was decided: the host registry named it, or only the cwd guess. */
   liveSource?: "registry" | "cwd";
+  /** What a live session is doing, and who said so (engine `runtimeState`); absent from an older engine. */
+  runtime?: SessionRuntime;
   /** A switch armed for the end of this session's turn (`rebind --when-idle`). */
   armed?: { target: string; createdAt: string; expiresAt: string } | null;
   /** The session's prompt-cache state (Claude only; null when unknown). */
@@ -114,6 +116,15 @@ export interface SessionRow {
   canResume?: boolean;
 }
 
+/** `sessions --json` → `runtime`: a hook or transcript wait, then the host registry word, then the program's own OSC 7501 report (hosted Codex), then the transcript time. */
+export interface SessionRuntime {
+  state: "needs-you" | "working" | "idle";
+  source: "hook" | "host" | "program" | "transcript";
+  observedAt: number;
+  /** The host still says busy, but nothing changed for ten minutes. */
+  unconfirmed?: true;
+}
+
 /** `sessions --json` → `git`; `cwdSource` says where the folder came from. */
 export interface SessionGit {
   toplevel: string;
@@ -126,6 +137,8 @@ export interface SessionGit {
   upstream: string | null;
   remote: string | null;
   worktree: boolean;
+  /** The main checkout's root, shared by every worktree; absent from an older CLI. */
+  repoRoot?: string;
   cwd: string;
   cwdSource: "hook" | "process" | "transcript";
 }
@@ -251,6 +264,9 @@ export interface UsageWindow {
   label: string;
   utilization: number | null;
   resetsAt: string | null;
+  /** Set on a snapshot merged from the CLI's statusline sample and a poll; not read here. */
+  capturedAt?: string;
+  source?: "statusline" | "poll";
 }
 
 export interface UsageSnapshot {
@@ -259,6 +275,7 @@ export interface UsageSnapshot {
   capturedAt: string;
   /** Codex only: banked rate-limit reset credits still available. */
   resetCredits?: number | null;
+  source?: "statusline" | "poll" | "merged";
 }
 
 export interface StatusJson {

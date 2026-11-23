@@ -82,6 +82,26 @@ describe("Sessions zone (spec §5.2)", () => {
   });
 });
 
+describe("state dot source and quiet work (D1, D3)", () => {
+  const on = { onSelect: () => {}, onToggleChildren: () => {}, onCheck: () => {} };
+  it("names who reported the state in the dot's tooltip", () => {
+    render(<SessionRow s={s("a", { state: "working", stateSource: "host" })} {...on} />);
+    expect(screen.getByTitle("Working · from Claude Code")).toBeTruthy();
+    cleanup();
+    render(<SessionRow s={s("b", { state: "idle", stateSource: "transcript" })} {...on} />);
+    expect(screen.getByTitle(/from the transcript time$/)).toBeTruthy();
+  });
+  it("draws quiet work as the working dot without its pulse, plus the words", () => {
+    const { container } = render(<SessionRow s={s("q", { state: "working", stateSource: "host", quiet: "no update in 34m" })} {...on} />);
+    expect(screen.getByText("no update in 34m")).toBeTruthy();
+    expect(container.querySelector(".ac-pulse")).toBeNull();
+    cleanup();
+    const busy = render(<SessionRow s={s("w", { state: "working", stateSource: "host" })} {...on} />);
+    expect(busy.container.querySelector(".ac-pulse")).not.toBeNull();
+    expect(screen.queryByText(/no update/)).toBeNull();
+  });
+});
+
 describe("SessionRow title", () => {
   it("is a new node when selection changes its weight, so the browser decides the ellipsis again", () => {
     const s: RowSession = { key: "k", title: "Knowledge map: edge filter for stale links", state: "idle", account: { name: "work", nearLimit: false }, branch: null, pr: null, children: [], needsYou: false };
@@ -118,5 +138,67 @@ describe("sort and group the list", () => {
     expect(work.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Alpha")).toBeNull();
     expect(screen.getByText("Charlie")).toBeTruthy();
+  });
+  it("worktree sub-headers (D8): none for one worktree; branch, a worktree chip for a linked one and the count for two", () => {
+    const wt: Record<string, { id: string; branch: string | null; linked: boolean }> = {
+      a: { id: "/code/shop-wt/feature", branch: "feature", linked: true },
+      b: { id: "/code/shop", branch: "trunk", linked: false },
+      c: { id: "/code/shop", branch: "trunk", linked: false },
+    };
+    const one = render(zone(rows, { sort: "name", group: "project", groupOf: () => "/code/shop", worktreeOf: () => wt.b }));
+    expect(screen.queryByRole("heading", { level: 4 })).toBeNull();
+    expect(screen.queryByText("worktree")).toBeNull();
+    one.unmount();
+
+    render(zone(rows, { sort: "name", group: "project", groupOf: () => "/code/shop", worktreeOf: (k) => wt[k] ?? null }));
+    const heads = screen.getAllByRole("heading", { level: 4 });
+    expect(heads.map((h) => h.textContent)).toEqual(["trunk2", "featureworktree1"]);
+    // Rows sit under their worktree, the sort kept inside each.
+    expect(screen.getAllByText(/^(Alpha|Bravo|Charlie|trunk|feature)$/).map((e) => e.textContent)).toEqual(["trunk", "Alpha", "Charlie", "feature", "Bravo"]);
+
+    cleanup();
+    render(zone(rows, { sort: "name", group: "account", groupOf: () => "work", worktreeOf: (k) => wt[k] ?? null }));
+    expect(screen.queryByRole("heading", { level: 4 })).toBeNull();
+  });
+});
+
+describe("order hold (D9)", () => {
+  const rows = [s("a"), s("b"), s("c")];
+  const times = (t: Record<string, number>) => (k: string) => t[k] ?? null;
+  const order = (c: HTMLElement) => ["a", "b", "c", "x"].map((k) => [k, c.textContent!.indexOf(`title ${k}`)] as const).filter(([, i]) => i >= 0).sort((p, q) => p[1] - q[1]).map(([k]) => k);
+
+  it("holds the rows in place while the pointer is on the list, and applies the new order after it leaves", () => {
+    const { container, rerender } = render(zone(rows, { lastActiveOf: times({ a: 3, b: 2, c: 1 }) }));
+    expect(order(container)).toEqual(["a", "b", "c"]);
+    const list = container.querySelector("[data-session-list]")!;
+    fireEvent.mouseEnter(list);
+    rerender(zone(rows, { lastActiveOf: times({ a: 3, b: 2, c: 4 }) }));
+    expect(order(container), "row 3 stays in place").toEqual(["a", "b", "c"]);
+    rerender(zone([...rows, s("x")], { lastActiveOf: times({ a: 3, b: 2, c: 4, x: 5 }) }));
+    expect(order(container), "an arrival goes where the new order puts it").toEqual(["x", "a", "b", "c"]);
+    rerender(zone([s("a"), s("c"), s("x")], { lastActiveOf: times({ a: 3, c: 4, x: 5 }) }));
+    expect(order(container), "a row that left disappears").toEqual(["x", "a", "c"]);
+    fireEvent.mouseLeave(list);
+    expect(order(container)).toEqual(["x", "c", "a"]);
+  });
+
+  it("holds while a row has keyboard focus, and releases when focus leaves the list", () => {
+    const { container, rerender } = render(zone(rows, { lastActiveOf: times({ a: 3, b: 2, c: 1 }) }));
+    const row = container.querySelector("[data-session-list] [role=button]") as HTMLElement;
+    const visible = vi.spyOn(row, "matches").mockImplementation((q) => q === ":focus-visible");
+    fireEvent.focus(row);
+    rerender(zone(rows, { lastActiveOf: times({ a: 3, b: 2, c: 4 }) }));
+    expect(order(container), "held under keyboard focus").toEqual(["a", "b", "c"]);
+    fireEvent.blur(row, { relatedTarget: document.body });
+    expect(order(container)).toEqual(["c", "a", "b"]);
+    visible.mockRestore();
+  });
+
+  it("holds the flat order, then groups", () => {
+    const groupOf = (k: string) => (k === "b" ? "two" : "one");
+    const { container, rerender } = render(zone(rows, { group: "project", groupOf, lastActiveOf: times({ a: 3, b: 2, c: 1 }) }));
+    fireEvent.mouseEnter(container.querySelector("[data-session-list]")!);
+    rerender(zone(rows, { group: "project", groupOf, lastActiveOf: times({ a: 1, b: 2, c: 3 }) }));
+    expect(order(container)).toEqual(["a", "c", "b"]);
   });
 });

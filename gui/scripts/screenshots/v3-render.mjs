@@ -19,11 +19,13 @@
  * Other switches: V3_REAL=1 renders the user's own data through a read-only
  * allowlist (nothing that writes ever runs; PNGs then hold real names — local
  * only). V3_TRAY=1 renders tray.html (V3_TRAY_W, default 360). V3_SIZE=WxH,
- * V3_THEMES=a,b, V3_WAIT=ms (real data loads slower), V3_STACK=1 (stacks for
+ * V3_THEMES=a,b, V3_CASES=worktrees (two live sessions in two worktrees of one repository,
+ * grouped by project), V3_CASES=tree / tree-comfortable (a council tree three levels deep on two accounts,
+ * open under the active row, a collapsed parent with a waiting seat, a quiet busy session), V3_WAIT=ms (real data loads slower), V3_STACK=1 (stacks for
  * page errors), V3_CALLS=1 (log every CLI call).
  */
 
-import { execFile, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as os from "node:os";
@@ -104,7 +106,44 @@ function realBridge() {
   };
 }
 
-function bridge(seed) {
+/**
+ * The tree case's rows (road-to-a-tree-that-reads-at-a-glance): appended to the seeded
+ * home's real `sessions --json`, which has no lineage of its own. Shapes as the engine sends them.
+ */
+function treeRows(home) {
+  const now = Date.now();
+  const cwd = path.join(home, "dev", "agent-switch");
+  const rt = (state, over = {}) => ({ state, source: "host", observedAt: now - 5_000, ...over });
+  const r = (profile, id, over) => ({ provider: "claude", profile, sessionId: id, projectDir: "-dev-agent-switch", cwd, mtimeMs: now - 20_000, live: true, summary: null, ...over });
+  const seat = (profile, id, label, runtime, kind = "council") => ({ kind, sessionKey: `claude/${profile}/${id}`, label, state: "running", source: "lineage", runtime });
+  return [
+    r("work", "c0000000-0000-4000-8000-000000000001", {
+      summary: "Council: review the session tree roadmap",
+      mtimeMs: now - 2_000,
+      runtime: rt("working"),
+      children: [
+        seat("work", "c1", "seat 1 · architecture", rt("working")),
+        seat("side", "c2", "seat 2 · risks", rt("needs-you")),
+        seat("work", "c3", "seat 3 · tests", rt("idle")),
+        seat("side", "c4", "seat 4 · naming", rt("idle")),
+        seat("work", "c5", "seat 5 · docs", rt("idle")),
+        { kind: "subagent", agentId: "agent-a1", type: "Explore", state: "running", source: "hook", cwd: path.join(cwd, ".claude", "worktrees", "agent-a1") },
+      ],
+    }),
+    r("work", "c1", { parent: "claude/work/c0000000-0000-4000-8000-000000000001", children: [seat("work", "d1", "helper · spec read", rt("working"), "helper"), { kind: "subagent", agentId: "agent-e1", type: "Explore", state: "done", source: "hook" }] }),
+    r("work", "d1", { parent: "claude/work/c1", children: [{ kind: "subagent", agentId: "agent-p1", type: "Plan", state: "running", source: "hook" }] }),
+    r("side", "c2", { parent: "claude/work/c0000000-0000-4000-8000-000000000001" }),
+    r("work", "c3", { parent: "claude/work/c0000000-0000-4000-8000-000000000001" }),
+    r("side", "c4", { parent: "claude/work/c0000000-0000-4000-8000-000000000001" }),
+    r("work", "c5", { parent: "claude/work/c0000000-0000-4000-8000-000000000001" }),
+    r("personal", "a0000000-0000-4000-8000-000000000002", { summary: "Arena: two builds of the tray", mtimeMs: now - 60_000, runtime: rt("idle"), children: [seat("personal", "a1", "build A", rt("needs-you"), "arena"), seat("work", "a2", "build B", rt("idle"), "arena")] }),
+    r("personal", "a1", { parent: "claude/personal/a0000000-0000-4000-8000-000000000002" }),
+    r("work", "a2", { parent: "claude/personal/a0000000-0000-4000-8000-000000000002" }),
+    r("personal", "b0000000-0000-4000-8000-000000000003", { summary: "Long build of the release bundle", mtimeMs: now - 40 * 60_000, runtime: rt("working", { observedAt: now - 34 * 60_000, unconfirmed: true }) }),
+  ];
+}
+
+function bridge(seed, kind) {
   const ok = (stdout) => ({ code: 0, signal: null, stdout: typeof stdout === "string" ? stdout : JSON.stringify(stdout), stderr: "" });
   return async ({ program, args = [], options }) => {
     if (program === "agent-config-version") return ok("18.2.0\n");
@@ -123,6 +162,11 @@ function bridge(seed) {
     }
     if (NEVER.has(key)) return ok("");
     const r = spawnSync(process.execPath, [CLI, ...args], { env: seed.env, encoding: "utf8", cwd: options?.cwd || seed.home, timeout: 20_000 });
+    const claudeList = cmd === "sessions" && args.includes("--recent") && args.includes("--json") && (!args.includes("--provider") || args[args.indexOf("--provider") + 1] === "claude");
+    if (kind?.startsWith("tree") && claudeList && r.status === 0) {
+      const rows = JSON.parse(r.stdout || "[]");
+      return ok([...treeRows(seed.home), ...(Array.isArray(rows) ? rows : [])]);
+    }
     return { code: r.status ?? 1, signal: null, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
   };
 }
@@ -154,6 +198,18 @@ function shape(seed, kind) {
       const t = new Date(now - i * 10 * 60_000);
       fs.utimesSync(file, t, t);
     }
+  }
+  // Worktrees (D8): the two live sessions' folders become one repository, agent-config the
+  // main checkout and agent-switch a linked worktree of it, so "Group by project" shows sub-headers.
+  if (kind === "worktrees") {
+    const dev = path.join(seed.home, "dev");
+    const g = (cwd, ...args) => execFileSync("git", ["-C", cwd, "-c", "user.name=demo", "-c", "user.email=demo@example.com", ...args], { stdio: "ignore" });
+    const repo = path.join(dev, "agent-config");
+    g(repo, "init", "-q", "-b", "main");
+    fs.writeFileSync(path.join(repo, "README.md"), "demo\n");
+    g(repo, "add", ".");
+    g(repo, "commit", "-qm", "init");
+    g(repo, "worktree", "add", "-q", "-b", "readme-shots", path.join(dev, "agent-switch"));
   }
 }
 
@@ -276,7 +332,7 @@ async function main() {
     for (const kind of CASES) {
       const seed = REAL ? null : seedHome(CLI, Date.now());
       if (seed) shape(seed, kind);
-      const handle = REAL ? realBridge() : bridge(seed);
+      const handle = REAL ? realBridge() : bridge(seed, kind);
       for (const [theme, a] of THEMES.filter(([t]) => !ONLY_THEMES || ONLY_THEMES.includes(t))) {
         const name = `${kind}-${theme}`;
         const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: Number(process.env.V3_DSF || 1), colorScheme: a.mode === "light" ? "light" : "dark", locale: "en-US", timezoneId: "Europe/Berlin" });
@@ -288,7 +344,7 @@ async function main() {
         await page.exposeFunction("__asHost", handle);
         await page.exposeFunction("__asLog", () => {});
         const appearance = JSON.stringify({ ...a, accent: "theme", terminalFollows: true });
-        await page.addInitScript(installTauriShim, { statics, windowLabel: TRAY ? "tray" : "main", storage: { "agent-switch-ui-window": "v3", "agent-switch-appearance": appearance } });
+        await page.addInitScript(installTauriShim, { statics, windowLabel: TRAY ? "tray" : "main", storage: { "agent-switch-ui-window": "v3", "agent-switch-appearance": appearance, ...(kind === "worktrees" ? { "agent-switch-v3-layout": JSON.stringify({ tabs: [], active: null, comfortable: false, pinnedOnly: false, group: "project" }) } : {}), ...(kind === "tree-comfortable" ? { "agent-switch-v3-layout": JSON.stringify({ tabs: [], active: null, comfortable: true, pinnedOnly: false }) } : {}) } });
         await page.goto(`http://127.0.0.1:${port}/${TRAY ? "tray.html" : "index.html"}`);
         // The window marks when its first read settled; wait for that, not a fixed time:
         // a slow first load used to be photographed as an empty home and pass as clean.
@@ -303,7 +359,7 @@ async function main() {
           if (kind !== "empty" && !(await page.locator('[aria-label="Sessions"] [role="button"]').count())) missing.push("no session rows on a home that has sessions");
         }
         const first = page.locator("[aria-label='Sessions'] button, nav button").filter({ hasText: /\w/ }).first();
-        const row = page.getByRole("button").filter({ hasText: kind === "forty" ? /Refactor|Investigate|Write/ : /Knowledge|agent|data|galawork/ }).first();
+        const row = page.getByRole("button").filter({ hasText: kind === "forty" ? /Refactor|Investigate|Write/ : kind === "worktrees" ? /Knowledge/ : kind.startsWith("tree") ? /Council/ : /Knowledge|agent|data|galawork/ }).first();
         // Forty: the long names sit under "Done today"; open it so they are on screen.
         if (kind === "forty") {
           await page.getByRole("button", { name: /^Done today/ }).first().click().catch(() => {});
@@ -312,6 +368,13 @@ async function main() {
         if (kind !== "empty" && (await row.count())) {
           await row.click().catch(() => {});
           await page.waitForTimeout(1200);
+          // The tree: unfold the active council's children, and the arena's, so the block and the connectors show.
+          if (kind.startsWith("tree")) {
+            for (let i = 0; i < 2; i++) {
+              await page.locator('[aria-label="Sessions"] button[aria-label^="Show "][aria-label$="sessions"]').first().click().catch(() => {});
+              await page.waitForTimeout(400);
+            }
+          }
         } else void first;
         // V3_CLICKS="Settings ⌘,|Agents": open a page by the accessible names of its buttons.
         for (const name of (process.env.V3_CLICKS ?? "").split("|").filter(Boolean)) {

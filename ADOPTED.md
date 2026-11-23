@@ -108,6 +108,16 @@ per profile). Defensive parsing; unknown shapes degrade to a one-line note.
 — the same mechanism it uses internally. `agent-switch list` shows live-session
 counts; `remove` refuses (without `--force`) while sessions run.
 
+### 8. Order hold for the session lists → `gui/src/v3/held-order.ts`
+Source: stablyai/orca (https://github.com/stablyai/orca), commit `923b19d`,
+`src/renderer/src/components/sidebar/worktree-list/listing/held-order.ts`.
+MIT License, Copyright (c) 2026 Lovecast Inc.; the notice is carried in the
+file header. `mergeHeldOrder` is ported as is (semicolons, one comment stating
+why the predecessor lookup never misses). Added here: `useHeldOrder` and
+`useEngaged` (pointer inside, or keyboard focus inside), wired into the Sessions
+zone and the tray's session list — the Needs-you zone is never held (D9). The
+tray holds before its cut to five rows, so the shown set stays stable too.
+
 ## Deliberately not adopted
 
 - **`autoswitch.py` (1.2k LOC) + `poll_policy.py` + `usage_store.py`** — the

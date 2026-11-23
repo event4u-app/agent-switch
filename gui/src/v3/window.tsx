@@ -25,7 +25,7 @@ import { accountOfKey } from "../vm/switch-requests.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
-import { SessionsZone, childNoun, type RowSession } from "./sessions.js";
+import { SessionsZone, childNoun, findChild, type RowSession } from "./sessions.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
 import { updateNeeds } from "./tools.js";
@@ -213,6 +213,7 @@ export function V3Window({
   const [groupBy, setGroupBy] = useState<GroupBy>(saved?.group ?? (saved?.groupByProject ? "project" : "none"));
   const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
   const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
+  const [focusChild, setFocusChild] = useState<string | null>(null);
   // Hover peek (spec §5.2): after 400 ms on a row, one card at a time, never while a layer is open.
   const [peek, setPeek] = useState<{ key: string; y: number } | null>(null);
   const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -454,6 +455,10 @@ export function V3Window({
           const id = nextFocus(needs, focusedNeed);
           if (!id) return false;
           frame.setSessionsShown(true);
+          // 3.4: an item about a child opens its root's children and focuses the child row.
+          const hit = findChild(data.sessions, needs.find((n) => n.id === id)?.subject ?? "");
+          if (hit) setOpenKids((c) => new Set([...c, hit.root.key]));
+          setFocusChild(hit ? hit.child.id : null);
           return (setFocusedNeed(id), true);
         }
         case "toggleSessions":
@@ -604,8 +609,19 @@ export function V3Window({
   const peekFacts = (key: string) => {
     const s = data.sessions.find((x) => x.key === key);
     const t = data.table.find((x) => x.key === key);
-    if (!s || !t) return null;
+    if (!s) return childPeek(key, t);
+    if (!t) return null;
     return { title: s.title, state: s.state, lastActiveMs: t.lastActiveMs, tool: t.tool[0].toUpperCase() + t.tool.slice(1), account: t.account.name, color: t.account.color, model: t.model, thinking: t.thinking, branch: t.branch, pr: s.pr ? { number: s.pr.number, state: s.pr.ci === "FAILURE" ? "CI failing" : "open" } : null, children: s.children.reduce((n, c) => n + (c.count ?? 1), 0), lastLine: null };
+  };
+  /** 2.3: a child's peek — its own session's facts where it is one, else what the tree knows (a subagent). */
+  const childPeek = (key: string, t: (typeof data.table)[number] | undefined) => {
+    const hit = findChild(data.sessions, key);
+    if (!hit) return null;
+    const c = hit.child;
+    const tool = t?.tool ?? c.tool ?? "claude";
+    const color = t?.account.color ?? c.account?.color;
+    if (!color) return null;
+    return { title: c.label, state: c.state, lastActiveMs: t?.lastActiveMs ?? null, tool: tool[0].toUpperCase() + tool.slice(1), account: t?.account.name ?? c.account?.name ?? "", color, model: t?.model ?? null, thinking: t?.thinking ?? null, branch: t?.branch ?? (c.worktree ? `worktree ${c.worktree}` : hit.root.branch), pr: t?.pr ? { number: t.pr.number, state: t.pr.ci === "FAILURE" ? "CI failing" : "open" } : null, children: (c.children ?? []).reduce((n, k) => n + (k.count ?? 1), 0), lastLine: null };
   };
   const pinned = new Set(data.library.filter((l) => l.pinned).map((l) => l.key));
   const sessionsWindow = (
@@ -635,11 +651,13 @@ export function V3Window({
             if (!t) return null;
             return groupBy === "project" ? (t.project ?? null) : groupBy === "account" ? t.account.name : groupBy === "tool" ? t.tool[0].toUpperCase() + t.tool.slice(1) : null;
           }}
+          worktreeOf={(k) => data.table.find((x) => x.key === k)?.worktree ?? null}
           onView={(y) => setOverlay((o) => (o && typeof o === "object" && "listView" in o ? null : { listView: y }))}
           viewOpen={!!overlay && typeof overlay === "object" && "listView" in overlay}
           onStart={() => setOverlay("new")}
           loading={data.loading}
           onPeek={onPeek}
+          focusKey={focusChild}
           divider={needs.length > 0 || !!data.away}
           selection={selection}
           openKeys={openKids}

@@ -13,13 +13,27 @@ const LOOK: Record<SessionState, { color: string; shape: "dot" | "ring" | "pause
   done: { color: "text-ac-faint", shape: "dot" },
 };
 
-/** Bundle `Ms` + `q3`. Working pulses (off under reduced motion). */
-export function SessionStateIcon({ state, withLabel }: { state: SessionState; withLabel?: boolean }) {
+export type StateSource = "hook" | "host" | "program" | "transcript";
+
+/** Who reported a state, for the dot's tooltip (spec §3.3). */
+export const STATE_SOURCE_TEXT: Record<StateSource, string> = {
+  hook: "from the last hook",
+  host: "from Claude Code",
+  program: "from Codex",
+  transcript: "from the transcript time",
+};
+
+/**
+ * Bundle `Ms` + `q3`. Working pulses (off under reduced motion), except while
+ * `quiet`: the host still says busy but nothing changed for a while (D3).
+ * With a `source`, the tooltip names who reported the state.
+ */
+export function SessionStateIcon({ state, withLabel, source, quiet }: { state: SessionState; withLabel?: boolean; source?: StateSource | null; quiet?: boolean }) {
   const look = LOOK[state];
   return (
-    <span className={cn("inline-flex shrink-0 items-center gap-1.5", look.color)}>
+    <span className={cn("inline-flex shrink-0 items-center gap-1.5", look.color)} title={source ? `${SESSION_STATE_LABEL[state]} · ${STATE_SOURCE_TEXT[source]}` : undefined}>
       {look.shape === "dot" && (
-        <span className={cn("size-2 rounded-full bg-current", state === "working" && "ac-pulse")} aria-hidden />
+        <span className={cn("size-2 rounded-full bg-current", state === "working" && !quiet && "ac-pulse")} aria-hidden />
       )}
       {look.shape === "ring" && <span className="size-2 rounded-full border-[1.5px] border-current" aria-hidden />}
       {look.shape === "pause" && (

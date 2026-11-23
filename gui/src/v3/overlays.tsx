@@ -181,7 +181,8 @@ export function Switcher({ recent, pick, onClose }: { recent: RecentSession[]; p
 export interface PeekFacts {
   title: string;
   state?: SessionState;
-  lastActiveMs: number;
+  /** Unknown for a subagent: the engine keeps no time of its own for one. */
+  lastActiveMs: number | null;
   tool: string;
   account: string;
   color: IdentityColor;
@@ -199,7 +200,7 @@ export function PeekCard({ f, nowMs }: { f: PeekFacts; nowMs: number }) {
       <div className="flex items-center gap-2">
         {f.state && <SessionStateIcon state={f.state} />}
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ac-text">{f.title}</span>
-        <span className="shrink-0 text-[11px] text-ac-muted">{nowMs - f.lastActiveMs < 60_000 ? "now" : `${duration(nowMs - f.lastActiveMs)} ago`}</span>
+        {f.lastActiveMs != null && <span className="shrink-0 text-[11px] text-ac-muted">{nowMs - f.lastActiveMs < 60_000 ? "now" : `${duration(nowMs - f.lastActiveMs)} ago`}</span>}
       </div>
       <div className="mt-1.5 space-y-1 text-xs text-ac-muted">
         <div className="flex items-center gap-2 text-ac-soft">

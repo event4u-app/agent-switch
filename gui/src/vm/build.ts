@@ -263,12 +263,18 @@ function basename(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
+/** The window's own rule for an engine that sends no `runtime`: live and written within a minute reads working. */
+function legacyState(row: SessionRow, now: number): Session["state"] {
+  const fresh = now - row.mtimeMs;
+  return !row.live ? "done" : row.waiting ? "needs-you" : fresh >= 0 && fresh <= WORKING_FRESH_MS ? "working" : "idle";
+}
+
 export function sessionFromRow(row: SessionRow, now: number): Session {
   // Never the encoded projectDir: its `-` stands for every non-alphanumeric, so
   // it is not a path and cannot be decoded into one.
   const cwd = row.cwd ?? null;
-  const fresh = now - row.mtimeMs;
-  const state = !row.live ? "done" : row.waiting ? "needs-you" : fresh >= 0 && fresh <= WORKING_FRESH_MS ? "working" : "idle";
+  const rt = row.live ? row.runtime : undefined;
+  const state = rt ? rt.state : legacyState(row, now);
   const summary = row.summary ?? null;
   return {
     id: `${row.provider}:${row.sessionId}`,
@@ -290,6 +296,8 @@ export function sessionFromRow(row: SessionRow, now: number): Session {
     surface: row.surface === "desktop-app" ? "desktop-app" : null,
     waitingFor: row.waiting ? (row.waitingFor ?? null) : null,
     liveSource: row.liveSource ?? null,
+    stateSource: rt ? rt.source : row.live ? (row.waiting ? "hook" : "transcript") : null,
+    quietSince: rt?.unconfirmed ? rt.observedAt : null,
     armedSwitch: row.armed ? { target: accountId(row.provider, row.armed.target), expiresAt: Date.parse(row.armed.expiresAt) } : null,
   };
 }

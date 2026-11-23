@@ -241,6 +241,8 @@ export interface TableSession {
   lastActiveMs: number;
   /** The repository (or folder) the session works in, for the Projects grouping. */
   project?: string | null;
+  /** The checkout the session works in (its toplevel), for the worktree sub-header (D8). */
+  worktree?: { id: string; branch: string | null; linked: boolean } | null;
 }
 
 /** Sessions grouped by project, the most recently active project first; no project last. Pure. */

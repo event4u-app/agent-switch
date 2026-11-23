@@ -116,6 +116,10 @@ export interface Session {
   trashed?: boolean;
   /** "cwd" = live only by its folder: the host reports no state, so no turn end to wait for. */
   liveSource?: "registry" | "cwd" | null;
+  /** Who reported `state`: a hook or transcript wait, the host's own word, or the transcript time. */
+  stateSource?: "hook" | "host" | "program" | "transcript" | null;
+  /** D3: working by the host's word, but nothing changed since this time (epoch ms). */
+  quietSince?: number | null;
   /** Switches to `target` (an account id) when this turn ends, until `expiresAt`. */
   armedSwitch?: { target: string; expiresAt: number } | null;
 }
