@@ -62,6 +62,11 @@ const VALUE_FLAGS = new Set([
   "agent",
   "account",
   "executed",
+  "base",
+  "expect-branch",
+  "expect-head",
+  "expect-remote",
+  "expect-ref",
 ]);
 
 export interface ParsedArgs {

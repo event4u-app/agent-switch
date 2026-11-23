@@ -53,7 +53,7 @@ export function refreshForSessions(rows: readonly SessionGitRow[], force: boolea
 }
 
 export function cmdPr(sub: string | undefined, flags: Record<string, string | boolean>): void {
-  if ((sub ?? "status") !== "status") die("usage: agent-switch pr status [--json] [--refresh] · pr create <session> [--base B] [--title T] [--yes] [--json]");
+  if ((sub ?? "status") !== "status") die("usage: agent-switch pr status [--json] [--refresh] · pr create <session> [--base B] [--title T] [--yes] [--json] [--expect-branch B --expect-head SHA --expect-remote R --expect-ref REF]");
   const rows = sessionsWithGit();
   const { cache, problem, errors, calls, repos } = refreshForSessions(rows, !!flags.refresh);
   const withPr = rows

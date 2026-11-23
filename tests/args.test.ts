@@ -20,6 +20,15 @@ test("parseArgs gives `host start --cwd DIR` its folder, not a stray positional"
   assert.equal(p.flags.cwd, "/tmp/repo");
 });
 
+test("parseArgs gives `pr create` its base and the confirmed plan's values, not stray positionals", () => {
+  const p = parseArgs(["pr", "create", "claude/w/s", "--base", "dev/v3", "--title", "T", "--expect-branch", "feat", "--expect-head", "abc", "--expect-remote", "origin", "--expect-ref", "refs/heads/feat", "--yes"]);
+  assert.deepEqual(p.positional, ["create", "claude/w/s"]);
+  assert.deepEqual(
+    { base: p.flags.base, b: p.flags["expect-branch"], h: p.flags["expect-head"], r: p.flags["expect-remote"], ref: p.flags["expect-ref"], yes: p.flags.yes },
+    { base: "dev/v3", b: "feat", h: "abc", r: "origin", ref: "refs/heads/feat", yes: true },
+  );
+});
+
 test("parseArgs handles the flag AFTER the positional too", () => {
   const p = parseArgs(["remove", "opfer", "--provider", "codex"]);
   assert.equal(p.providerId, "codex");
