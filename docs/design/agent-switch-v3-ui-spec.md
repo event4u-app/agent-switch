@@ -26,6 +26,14 @@ npx vitest run src/v3           # theme registry + contrast tests
 `view` is any id from §12, `theme` is any theme id from §2, and `accent` is
 `theme` or `agent-switch`.
 
+The commands above are for the reference patch (`agent-switch-v3-reference.patch`).
+The design canvas now renders the real app instead: `npm --prefix gui run v3-embed`
+builds `gui/dist-v3embed/as-v3.js` + `as-v3.css` from
+`gui/src/v3/design-fixture/embed.tsx`, which mounts the real `V3Window` on the
+fixture data in `scene.tsx` and reaches each board's state (popover, page,
+dialog) through clicks and keys. `gui/embed.html?view=…&theme=…` runs the same
+entry in the dev server; `gui/design.html` stays the plain fixture.
+
 | File | Holds |
 |---|---|
 | `v3/kit.tsx` | Shared primitives: `Chip`, `Marker`, `AccountMark`, `Act`, `PageHeader`, `BatchBar`, `Later`, `Disclosure`, `Label`, `pct`. It also holds the corner and state rules in a comment. |

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>agent-switch v3 · design embed</title>
+    <style>html, body, #board { margin: 0; height: 100%; }</style>
+  </head>
+  <body>
+    <div id="board"></div>
+    <script type="module">
+      import { mount } from "/src/v3/design-fixture/embed.tsx";
+      const q = new URLSearchParams(location.search);
+      mount(document.getElementById("board"), { view: q.get("view") || "main", theme: q.get("theme") || "darcula", accent: q.get("accent") || "theme" });
+    </script>
+  </body>
+</html>
