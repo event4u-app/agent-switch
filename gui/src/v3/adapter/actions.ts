@@ -18,6 +18,8 @@ import { parsePr } from "./feeds.js";
 /** The CLI calls the dispatcher makes (a subset of `ipc.ts`, injectable for tests). */
 export interface DispatchIpc {
   focusSessionTerminal(key: string): Promise<void>;
+  /** Joins a hosted session from a new window of the user's terminal app. */
+  hostAttachInTerminal(key: string): Promise<void>;
   needsLater(id: string): Promise<void>;
   needsSeen(): Promise<void>;
   /** Allow once or deny an approval through the inbox of the chat that holds it. */
@@ -301,6 +303,7 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       const p = a.pick;
       if (p.kind === "pr") return deps.openUrl(p.url);
       if (p.kind === "focus") return run(deps, "Focus", deps.ipc.focusSessionTerminal(a.key));
+      if (p.kind === "attach") return run(deps, "Attach", deps.ipc.hostAttachInTerminal(a.key));
       // The app opens on the session's own account; it never resumes the conversation (spike S9).
       if (p.kind === "app") return run(deps, "Open", deps.ipc.openApp(p.app, a.key.split("/")[1] ?? ""));
       if (p.kind === "target") return run(deps, "Open", deps.ipc.openSessionIn(a.key, p.target));

@@ -430,6 +430,7 @@ export function V3Window({
       agentApp: app ? { id: app.id, label: app.label } : null,
       pr: pr ? { number: pr.number, url: pr.url } : null,
       focusable: !data.bar(key)?.hosted,
+      attachable: !!data.bar(key)?.attachable,
     };
   };
   const openDefault = (key: string) => act({ type: "open-in", key, pick: { kind: "default" } });

@@ -83,6 +83,25 @@ describe("Open in (spec §7.7)", () => {
     expect(screen.queryByRole("menu", { name: "Session actions" })).toBeNull();
   });
 
+  it("a hosted session attaches in the user's terminal: one shared session, typing on either side reaches the same agent", () => {
+    const { act } = mount({ ...withTargets(), bar: () => ({ ...data().bar("s1")!, key: "claude/work/s1", attachable: true }) });
+    openSession();
+    fireEvent.click(screen.getByRole("button", { name: "Open in…" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Terminal/ }));
+    const sub = screen.getByRole("menu", { name: "Terminal" });
+    expect(sub.textContent).toContain("One shared session: typing on either side goes to the same agent.");
+    fireEvent.click(within(sub).getByRole("menuitem", { name: /Attach in Terminal/ }));
+    expect(act).toHaveBeenCalledWith({ type: "open-in", key: "claude/work/s1", pick: { kind: "attach" } });
+  });
+
+  it("a session without a hosted window offers no attach", () => {
+    mount(withTargets());
+    openSession();
+    fireEvent.click(screen.getByRole("button", { name: "Open in…" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Terminal/ }));
+    expect(within(screen.getByRole("menu", { name: "Terminal" })).queryByRole("menuitem", { name: /Attach/ })).toBeNull();
+  });
+
   it("offers only the agent app of the session's own tool, as opening the project", () => {
     const { act } = mount(withTargets());
     openSession();

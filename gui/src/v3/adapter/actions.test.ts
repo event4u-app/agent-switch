@@ -16,6 +16,7 @@ const need = (over: Partial<NeedItem>): NeedItem => ({ id: "n", kind: "approval"
 function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "limit", subject: "claude/work" })]) {
   const ipc = {
     focusSessionTerminal: vi.fn(async () => {}),
+    hostAttachInTerminal: vi.fn(async () => {}),
     needsLater: vi.fn(async () => {}),
     needsSeen: vi.fn(async () => {}),
     needsAnswer: vi.fn(async () => {}),
@@ -73,6 +74,13 @@ describe("dispatchV3", () => {
     expect(d.openUrl).toHaveBeenCalledWith("https://github.com/o/r/pull/9");
     await dispatchV3({ type: "open-in", key: "claude/work/a", pick: { kind: "focus" } }, d);
     expect(d.ipc.focusSessionTerminal).toHaveBeenCalledWith("claude/work/a");
+  });
+
+  it("open-in attach: the hosted session joins in the user's terminal app", async () => {
+    const d = deps();
+    await dispatchV3({ type: "open-in", key: "claude/work/a", pick: { kind: "attach" } }, d);
+    expect(d.ipc.hostAttachInTerminal).toHaveBeenCalledWith("claude/work/a");
+    expect(d.ipc.openSessionIn).not.toHaveBeenCalled();
   });
 
   it("needs: approval focuses the terminal, CI opens the checks, sign-in opens re-auth", async () => {
