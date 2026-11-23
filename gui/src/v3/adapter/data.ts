@@ -44,6 +44,10 @@ export interface AdapterEnv {
   ownViews?: ReadonlyMap<string, "terminal" | "chat">;
   /** Chats with no session row yet (a new chat before the poll sees it): drawn from these. */
   chatRows?: readonly SessionRow[];
+  /** Where a session in the user's own terminal runs, as last read (`focus <s> --where --json`). */
+  terminals?: ReadonlyMap<string, SessionTerminal>;
+  /** Ask for a session's terminal; the caller dedupes and reads. */
+  wantTerminal?: (key: string) => void;
   /** Where a plain start in the plan's folder would go and why (`dir --json`); null until read. */
   route?: { profile: string | null; why: string[]; blocked?: string; ask?: string[] } | null;
 }
@@ -208,14 +212,41 @@ export function worktreeOf(r: SessionRow | undefined): (agentId: string) => stri
 
 /** Menu entries that do something for this session. Detach has no meaning
  *  outside the attached terminal view, which closing its tab already does;
- *  End and Compact reach only sessions Agent Switch hosts. Pure. */
+ *  End and Compact reach only sessions Agent Switch hosts; Take over only a
+ *  session in the user's own terminal (`host adopt`). Pure. */
 export function menuFor(row: SessionRow | undefined, hosted: boolean): SessionMenuItem[] {
   return SESSION_MENU.filter((item) => {
     if (item === "Detach") return false;
     if (item === "End…" || item === "Compact") return hosted;
-    if (item === "Take over here…" || item === "Hand off…" || item === "Move to another account…") return !!row && row.provider !== "antigravity";
+    if (item === "Take over here…") return canTakeOver(row, hosted);
+    if (item === "Hand off…" || item === "Move to another account…") return !!row && row.provider !== "antigravity";
     return true;
   });
+}
+
+/** A Claude or Codex session in the user's own terminal can be taken over into a hosted window. Pure. */
+export function canTakeOver(row: SessionRow | undefined, hosted: boolean): boolean {
+  return !!row && !hosted && row.surface !== "desktop-app" && (row.provider === "claude" || row.provider === "codex");
+}
+
+/** What `focus <s> --where --json` says about a session in the user's own terminal. */
+export interface SessionTerminal {
+  running: boolean | null;
+  terminal: string | null;
+  focusable: boolean;
+  why?: string;
+}
+
+/** Where a session not hosted here runs, named only as far as it is known, and
+ *  whether "Focus terminal" reaches it. Codex names no program per session, so
+ *  it is never asked about. Asks for a Claude session's terminal once. */
+function externalWhere(r: SessionRow, key: string, here: boolean, env: AdapterEnv): { where: string; focusable: boolean } {
+  if (r.surface === "desktop-app") return { where: "Claude Desktop", focusable: false };
+  if (here) return { where: "Agent Switch", focusable: false };
+  if (r.provider !== "claude") return { where: "your terminal", focusable: false };
+  const t = env.terminals?.get(key);
+  if (!t) env.wantTerminal?.(key);
+  return { where: t?.terminal ?? "your terminal", focusable: !!t?.focusable };
 }
 
 const prsOf = (r: SessionRow): PrFacts[] => (r.prs ?? []).map(parsePr).filter((p): p is PrFacts => p !== null);
@@ -503,7 +534,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
         hosted: hosted.has(key) || !!env.chats?.has(key),
         // Only a tmux window can be joined from the user's terminal; a chat has none.
         attachable: hosted.has(key),
-        where: r.surface === "desktop-app" ? "Claude Desktop" : env.terminalApp,
+        ...externalWhere(r, key, hosted.has(key) || !!env.chats?.has(key), env),
         // v3.1: chat and terminal share one conversation for Claude and Codex.
         chatAvailable: r.provider === "claude" || r.provider === "codex",
         view: env.chats?.has(key) ? "chat" : hosted.has(key) ? "terminal" : (env.ownViews?.get(key) ?? "chat"),

@@ -69,7 +69,7 @@ function legacyScreen(section: SettingsSection): ReactNode {
 
 /** The session body: Agent Switch's own terminal for a hosted session, the
  *  facts and a focus button for one in the user's terminal (D-mirror). */
-export function SessionBody({ sessionKey, row, hosted, ownView = "chat", vars, followTheme, where, onFocus, onTakeOver, onExit }: { sessionKey: string; row: SessionRow | undefined; hosted: boolean; ownView?: "terminal" | "chat"; vars: Record<string, string>; followTheme: boolean; where: string; onFocus: () => void; onTakeOver: () => void; onExit: () => void }) {
+export function SessionBody({ sessionKey, row, hosted, ownView = "chat", vars, followTheme, where, onFocus, onTakeOver, onExit }: { sessionKey: string; row: SessionRow | undefined; hosted: boolean; ownView?: "terminal" | "chat"; vars: Record<string, string>; followTheme: boolean; where: string; onFocus: (() => void) | null; onTakeOver: (() => void) | null; onExit: () => void }) {
   if (hosted) return <HostedTerminal sessionKey={sessionKey} vars={vars} followTheme={followTheme} backend={tauriBackend} onExit={onExit} />;
   const facts = row ? (
     <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1">
@@ -88,7 +88,7 @@ export function SessionBody({ sessionKey, row, hosted, ownView = "chat", vars, f
 
 /** One read of the transcript feeds the timeline and the "read-only here"
  *  tooltip, which carries the count of lines not drawn (gap §5e). */
-function ExternalSession({ sessionKey, row, view, where, facts, onFocus, onTakeOver }: { sessionKey: string; row: SessionRow | undefined; view: "terminal" | "chat"; where: string; facts: ReactNode; onFocus: () => void; onTakeOver: () => void }) {
+function ExternalSession({ sessionKey, row, view, where, facts, onFocus, onTakeOver }: { sessionKey: string; row: SessionRow | undefined; view: "terminal" | "chat"; where: string; facts: ReactNode; onFocus: (() => void) | null; onTakeOver: (() => void) | null }) {
   const t = useTimeline(sessionKey);
   const hidden = useMemo(() => hiddenText(fold(t.events).hidden), [t.events]);
   return <ExternalBody where={where} facts={facts} lastLine={null} onFocus={onFocus} onTakeOver={onTakeOver} readOnlyTitle={hidden} timeline={<ReadOnlyTimeline t={t} row={row} terminal={view === "terminal"} />} />;

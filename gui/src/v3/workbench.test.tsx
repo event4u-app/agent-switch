@@ -151,10 +151,17 @@ describe("workbench (spec §6)", () => {
 
   it("a session in the user's own terminal says in place how to type from the app and what taking over changes", () => {
     const onTakeOver = vi.fn();
-    render(<ExternalBody where="Terminal.app" facts={null} lastLine={null} onFocus={vi.fn()} onTakeOver={onTakeOver} />);
-    expect(screen.getByText(/To type here, take it over: the session moves into Agent Switch and stops running in Terminal\.app\./)).toBeTruthy();
+    render(<ExternalBody where="iTerm2" facts={null} lastLine={null} onFocus={vi.fn()} onTakeOver={onTakeOver} />);
+    expect(screen.getByText(/To type here, take it over: the same conversation continues in Agent Switch on this account, and stops running in iTerm2\./)).toBeTruthy();
     fireEvent.click(screen.getByText("Take over here…"));
     expect(onTakeOver).toHaveBeenCalledOnce();
+  });
+
+  it("Focus terminal and Take over show only where they work", () => {
+    render(<ExternalBody where="Ghostty" facts={null} lastLine={null} onFocus={null} onTakeOver={null} />);
+    expect(screen.queryByText("Focus terminal")).toBeNull();
+    expect(screen.queryByText("Take over here…")).toBeNull();
+    expect(screen.queryByText(/To type here, take it over/)).toBeNull();
   });
 
   it("the blocker shows only while Summary is closed, with one action", () => {

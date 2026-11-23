@@ -483,6 +483,74 @@ export function DecisionSheet({
 
 // ---------- End session (spec §8.3, D-vault) ----------
 
+/** What the take-over dialog says about the session. `running` null: cannot be told (Codex). */
+export interface TakeoverFacts {
+  title: string;
+  tool: "claude" | "codex";
+  account: string;
+  /** The terminal it runs in ("iTerm2"), or "your terminal". */
+  where: string;
+  running: boolean | null;
+}
+
+/**
+ * "Take over here": the session in the user's own terminal continues as a
+ * hosted session on the same account. The source program has to end first,
+ * so the dialog says how: Claude can be ended between turns by Agent Switch or
+ * by the user; Codex names no program per session, so only the user can.
+ */
+export function TakeoverDialog({ facts, busy, error, onTakeOver, onClose }: { facts: TakeoverFacts; busy: boolean; error: { text: string; forceable: boolean } | null; onTakeOver: (o: { stopSource: boolean; force: boolean }) => void; onClose: () => void }) {
+  const [stopSource, setStopSource] = useState(true);
+  const choose = facts.tool === "claude" && facts.running === true;
+  const stop = choose && stopSource;
+  return (
+    <Modal
+      title={`Take over “${facts.title}”?`}
+      kicker="Take over here"
+      sub={`The same conversation continues here, hosted by Agent Switch on ${facts.account}: you type in this window, and it keeps running when the window closes.`}
+      width={520}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          {error?.forceable && (
+            <Button variant="secondary" disabled={busy} onClick={() => onTakeOver({ stopSource: stop, force: true })}>
+              Take over anyway
+            </Button>
+          )}
+          <Button variant="primary" disabled={busy} onClick={() => onTakeOver({ stopSource: stop, force: false })}>
+            {busy ? "Taking over…" : "Take over"}
+          </Button>
+        </>
+      }
+    >
+      {choose ? (
+        <>
+          <Label>It still runs in {facts.where}</Label>
+          <div role="radiogroup" aria-label="How it ends there" className="flex flex-col gap-2">
+            <Choice on={stopSource} onPick={() => setStopSource(true)} title={`End it in ${facts.where} for me`} detail={`Agent Switch ends the program there when its current turn is over, then resumes the conversation here. Mid-turn it waits for you to try again.`} />
+            <Choice on={!stopSource} onPick={() => setStopSource(false)} title="I end it myself" detail={`In ${facts.where}, type /exit (or press Ctrl+C twice), then take over.`} />
+          </div>
+        </>
+      ) : facts.tool === "codex" ? (
+        <p className="text-[12.5px] text-ac-soft">
+          Quit Codex in {facts.where} first: type /quit, or press Ctrl+C twice. Agent Switch cannot tell which Codex program holds this conversation, so it cannot end it for you; two programs writing one conversation would corrupt it.
+        </p>
+      ) : (
+        <p className="text-[12.5px] text-ac-soft">It no longer runs in {facts.where}, so nothing has to end there first.</p>
+      )}
+      {error && (
+        <p role="alert" className="mt-3 rounded-[10px] border border-ac-alert bg-ac-alert-tint px-3 py-2 text-[12px] text-ac-alert-text">
+          {error.text}
+          {error.forceable && <span className="mt-1 block text-ac-muted">Take over anyway only if you are sure the running program is another session.</span>}
+        </p>
+      )}
+    </Modal>
+  );
+}
+
 export function EndDialog({ title, stops, kept, onEnd, onCloseTab, onClose }: { title: string; stops: string[]; kept: boolean; onEnd: () => void; onCloseTab: () => void; onClose: () => void }) {
   return (
     <Modal

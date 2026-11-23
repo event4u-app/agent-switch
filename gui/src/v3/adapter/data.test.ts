@@ -135,8 +135,24 @@ describe("toV3Data", () => {
     const d = toV3Data(vm, feeds, env({ chats: new Set(["claude/work/chat1"]) }));
     expect(d.bar("claude/work/h1")).toMatchObject({ hosted: true, attachable: true });
     expect(d.bar("claude/work/chat1")).toMatchObject({ hosted: true, attachable: false });
-    expect(d.bar("claude/work/own")).toMatchObject({ hosted: false, attachable: false, where: "Terminal.app" });
+    expect(d.bar("claude/work/own")).toMatchObject({ hosted: false, attachable: false, where: "your terminal" });
     expect(d.bar("claude/work/desk")?.where).toBe("Claude Desktop");
+  });
+
+  it("the bar names the terminal the session really runs in, and offers focus only where it works", () => {
+    const vm = vmWith([account("work")], [row("own"), row("ghost"), row("unread"), row("c", { provider: "codex", profile: "work" })]);
+    const wanted: string[] = [];
+    const terminals = new Map([
+      ["claude/work/own", { running: true, terminal: "iTerm2", focusable: true }],
+      ["claude/work/ghost", { running: true, terminal: "Ghostty", focusable: false, why: "Ghostty cannot be focused" }],
+    ]);
+    const d = toV3Data(vm, emptyFeeds(), env({ terminals, wantTerminal: (k) => void wanted.push(k) }));
+    expect(d.bar("claude/work/own")).toMatchObject({ where: "iTerm2", focusable: true });
+    expect(d.bar("claude/work/ghost")).toMatchObject({ where: "Ghostty", focusable: false });
+    expect(d.bar("claude/work/unread")).toMatchObject({ where: "your terminal", focusable: false });
+    expect(wanted).toContain("claude/work/unread");
+    // Codex names no program per session: never a guessed app, never Focus.
+    expect(d.bar("codex/work/c")).toMatchObject({ where: "your terminal", focusable: false });
   });
 
   it("joins needs, hosting, PR and account into a row", () => {

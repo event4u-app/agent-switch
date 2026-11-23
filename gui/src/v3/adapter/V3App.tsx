@@ -20,7 +20,7 @@ import { emptyViewModel, loadViewModel } from "../../vm/load.js";
 import { ASProvider, useAS } from "../../vm/store.js";
 import type { IdentityColor } from "../../vm/types.js";
 import { useServiceOutcomes } from "../../vm/service-outcomes.js";
-import { ChatAccountDialog, Modal, type NewSessionPlan } from "../dialogs.js";
+import { ChatAccountDialog, Modal, TakeoverDialog, type NewSessionPlan } from "../dialogs.js";
 import { Act } from "../kit.js";
 import type { ChangedFile } from "../panels.js";
 import type { Appearance } from "../themes/resolve.js";
@@ -29,7 +29,7 @@ import { localLayout } from "../layout.js";
 import { KEYS_STORAGE, withRebinds } from "../keys.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
-import { chatStart, initialPlan, sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
+import { canTakeOver, chatStart, initialPlan, sessionKey, toV3Data, worktreeOf, type AdapterEnv, type SessionTerminal } from "./data.js";
 import { SessionBody, ToolsSlot, settingsSection } from "./slots.js";
 import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
@@ -43,6 +43,8 @@ import { ChatView } from "../chatview.js";
 import { ENGINE_DOWN_WHY } from "../workbench.js";
 
 const CHANGES_FRESH_MS = 10_000;
+/** How long a read of where a session runs stands before it is read again. */
+const TERMINAL_FRESH_MS = 15_000;
 
 function usePrefersDark(): boolean {
   const q = typeof matchMedia === "undefined" ? null : matchMedia("(prefers-color-scheme: dark)");
@@ -136,6 +138,9 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const [focusTerminal, setFocusTerminalState] = useState(getFocusTerminal);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [changes, setChanges] = useState<Map<string, ChangedFile[]>>(new Map());
+  const [terminals, setTerminals] = useState<ReadonlyMap<string, SessionTerminal>>(new Map());
+  const terminalsAt = useRef(new Map<string, number>());
+  const [takeover, setTakeover] = useState<TakeoverState | null>(null);
   const changesAt = useRef(new Map<string, number>());
   const downSince = useRef<number | null>(null);
   if (feeds.engine && !feeds.engine.running) downSince.current ??= feeds.readAt.engine ?? Date.now();
@@ -154,6 +159,19 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       ipc
         .sessionChanges(key)
         .then((files) => setChanges((m) => new Map(m).set(key, files)))
+        .catch(() => {});
+    }, 0);
+  }, []);
+
+  // Where a session in the user's own terminal runs (`focus --where`): read when shown, again after a while.
+  const wantTerminal = useCallback((key: string) => {
+    const at = terminalsAt.current.get(key) ?? 0;
+    if (Date.now() - at < TERMINAL_FRESH_MS) return;
+    terminalsAt.current.set(key, Date.now());
+    setTimeout(() => {
+      ipc
+        .sessionTerminal(key)
+        .then((t) => setTerminals((m) => new Map(m).set(key, t)))
         .catch(() => {});
     }, 0);
   }, []);
@@ -208,6 +226,8 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     terminalApp,
     changes,
     wantChanges,
+    terminals,
+    wantTerminal,
     route,
     chats: chats.keys,
     ownViews,
@@ -252,6 +272,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       const tab = chats.tabOf(key);
       return tab ? (chats.states.get(tab) ?? null) : null;
     },
+    takeOver: (key) => setTakeover({ key, busy: false, error: null }),
   };
   const act = (a: V3Action) => void dispatchV3(a, deps);
 
@@ -351,9 +372,9 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
         ownView={ownViews.get(key) ?? "chat"}
         vars={vars}
         followTheme={appearance.terminalFollows}
-        where={terminalApp}
-        onFocus={() => void ipc.focusSessionTerminal(key).catch((e: unknown) => s.toast({ tone: "alert", text: `Focus failed: ${e instanceof Error ? e.message : String(e)}` }))}
-        onTakeOver={() => s.open({ kind: "session", id: `${key.split("/")[0]}:${key.split("/")[2]}` })}
+        where={data.bar(key)?.where ?? "your terminal"}
+        onFocus={data.bar(key)?.focusable ? () => void ipc.focusSessionTerminal(key).catch((e: unknown) => s.toast({ tone: "alert", text: `Focus failed: ${e instanceof Error ? e.message : String(e)}` })) : null}
+        onTakeOver={canTakeOver(byKey.get(key), hostedKeys.has(key)) ? () => deps.takeOver?.(key) : null}
         onExit={refresh}
       />
       );
@@ -392,9 +413,44 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       <OverlayHost />
       <Toaster toasts={s.toasts} onDismiss={s.dismissToast} />
       {prompt && <PromptSheet req={prompt} onClose={() => setPrompt(null)} />}
+      {takeover && (
+        <TakeoverHost
+          t={takeover}
+          set={setTakeover}
+          title={data.sessions.find((x) => x.key === takeover.key)?.title ?? byKey.get(takeover.key)?.summary ?? "this session"}
+          where={data.bar(takeover.key)?.where ?? "your terminal"}
+          running={takeover.key.startsWith("claude/") ? (terminals.get(takeover.key)?.running ?? byKey.get(takeover.key)?.live ?? null) : null}
+          done={(key) => (refresh(), openTab(key))}
+          toast={s.toast}
+        />
+      )}
       {chatAsk && <ChatAccountDialog folder={lastFolder} ask={chatAsk} onClose={() => setChatAsk(null)} onStart={(name) => (setChatAsk(null), startChat(name))} />}
     </>
   );
+}
+
+type TakeoverState = { key: string; busy: boolean; error: { text: string; forceable: boolean } | null };
+
+/** The take-over dialog on the CLI (`host adopt`): busy while it runs, the
+ *  refusal in place when it refuses, the hosted tab once it is done. */
+function TakeoverHost({ t, set, title, where, running, done, toast }: { t: TakeoverState; set: (t: TakeoverState | null) => void; title: string; where: string; running: boolean | null; done: (key: string) => void; toast: DispatchDeps["toast"] }) {
+  const [provider, account] = t.key.split("/");
+  const go = (o: { stopSource: boolean; force: boolean }) => {
+    set({ ...t, busy: true, error: null });
+    ipc
+      .hostAdopt(t.key, o)
+      .then(() => {
+        set(null);
+        toast({ tone: "ok", text: `“${title}” runs in Agent Switch now` });
+        done(t.key);
+      })
+      .catch((e: unknown) => {
+        const text = (e instanceof Error ? e.message : String(e)).replace(/^agent-switch:\s*/, "").trim();
+        // The CLI names --force only where the running program may be another session.
+        set({ ...t, busy: false, error: { text, forceable: /--force/.test(text) } });
+      });
+  };
+  return <TakeoverDialog facts={{ title, tool: provider === "codex" ? "codex" : "claude", account, where, running }} busy={t.busy} error={t.error} onTakeOver={go} onClose={() => set(null)} />;
 }
 
 /** The main window, v3. */
