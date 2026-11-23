@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "samples": [
+    {
+      "at": "2026-05-01T08:00:00.000Z",
+      "windows": [
+        {
+          "key": "five_hour",
+          "utilization": 12
+        },
+        {
+          "key": "seven_day",
+          "utilization": 40
+        },
+        {
+          "key": "seven_day_opus",
+          "utilization": null
+        }
+      ]
+    },
+    {
+      "at": "2026-05-01T09:00:00.000Z",
+      "windows": [
+        {
+          "key": "five_hour",
+          "utilization": 35
+        },
+        {
+          "key": "seven_day",
+          "utilization": 41
+        },
+        {
+          "key": "seven_day_opus",
+          "utilization": null
+        }
+      ]
+    }
+  ]
+}

@@ -219,9 +219,10 @@ saved.
       done: `tests/cli-e2e.test.ts` › "auth-status --json, doctor --json and activity --json carry a shape version and never contain a token" (red first on the missing `schema`, and on an unredacted older activity line; fake tokens in both credential stores, the env and the log); GUI `ipc.test.ts` › authStatus/doctor/listActivity read the new and the old shape (D19).
       <!-- from: road-to-session-orchestration P6.5 -->
       <!-- adapted: the autostart-per-OS half needs other machines and stays in the source file -->
-- [ ] **6.3 Upgrade fixtures from 2.1.0.** Fixture state from 2.1.0 (labels,
+- [x] **6.3 Upgrade fixtures from 2.1.0.** Fixture state from 2.1.0 (labels,
       alerts, protection, guard, history, bindings, pet flag) loads into the
       current version without loss. verify: fixture tests.
+      done: `tests/fixtures/upgrade-2.1.0/` (shapes from the `2.1.0` tag's writers: state, mappings, telemetry-config, usage-history, the GUI's pet keys); `tests/upgrade-2.1.0.test.ts` (read, then written by this version, plus the built CLI) and `gui/src/upgrade-2.1.0.test.ts`. No field is lost, so there was nothing to fix; the tests were seen red with the label or OS-notification reader neutralised.
       <!-- from: road-to-session-orchestration P6.6 -->
       <!-- adapted: the per-OS smoke and the final threat review stay in the source file -->
 - [x] **6.4 Fix the flaky "one click on the stripe" test.**
