@@ -2,14 +2,14 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change. A repository that does not commit this file has no git history for it — regenerate to see the current state.
 >
-> 2 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 1 open roadmap · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**16 / 44 steps done · 36%**
+**16 / 17 steps done · 94%**
 
 ```text
-██████████████░░░░░░░░░░░░░░░░░░░░░░░░░░   36%
+██████████████████████████████████████░░   94%
 ```
 
 ## Open roadmaps
@@ -17,7 +17,6 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 1 | 16 | 0 | 0 | 0 | █████████░ 94% |
-| 2 | [road-to-the-ready-remainders.md](roadmaps/road-to-the-ready-remainders.md) | 7 | 27 | 27 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
 
 ---
 
@@ -56,20 +55,6 @@
 | 5 | A browser agent-switch controls | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
 | 6 | Hints that save the account | ✅ done | 0 | 2 | 0 | 0 | 100% |
 
-### [road-to-the-ready-remainders.md](roadmaps/road-to-the-ready-remainders.md)
-
-**the ready remainders** — 0 / 27 done (0%)
-
-| # | Phase | State | Open | Done | Deferred | Cancelled | % |
-|---|---|---|---:|---:|---:|---:|---:|
-| 1 | A wrong account is never saved | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
-| 2 | A start the user can predict | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
-| 3 | Readouts and notices that tell the truth | ⬜ not started | 8 | 0 | 0 | 0 | 0% |
-| 4 | The embedded agent-config, per profile | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
-| 5 | Approve from the keyboard | ⬜ not started | 1 | 0 | 0 | 0 | 0% |
-| 6 | Release hardening that runs on one machine | ⬜ not started | 5 | 0 | 0 | 0 | 0% |
-| 7 | Updates that can be stopped and undone | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
-
 ## Age
 
 Days since each active roadmap landed at its path and since its last ticked step, read from `git log` (`—` = unknown, or never ticked).
@@ -77,5 +62,4 @@ Days since each active roadmap landed at its path and since its last ticked step
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 18 | 18 |
-| [road-to-the-ready-remainders.md](roadmaps/road-to-the-ready-remainders.md) | 15 | — |
 

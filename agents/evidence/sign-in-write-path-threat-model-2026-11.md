@@ -1,6 +1,6 @@
 # Sign-in write path — threat model (2026-11)
 
-Step 1.1 of `agents/roadmaps/road-to-the-ready-remainders.md`. Read at `6046bc2`.
+Step 1.1 of `agents/roadmaps/archive/road-to-the-ready-remainders.md`. Read at `6046bc2`.
 
 ## Where a sign-in writes today
 

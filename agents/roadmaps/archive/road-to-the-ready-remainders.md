@@ -1,6 +1,6 @@
 ---
 complexity: standard
-status: open
+status: done
 tree_pin: 2ddd0db
 parent_roadmaps: [road-to-session-orchestration, road-to-deferred-followups, road-to-host-signals-followups, road-to-agent-switch-gui-service, road-to-v3-design-gap-carried, road-to-agent-switch-native-updater]
 ---
