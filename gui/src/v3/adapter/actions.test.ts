@@ -188,7 +188,7 @@ describe("dispatchV3", () => {
     expect(d.act.armRebind).not.toHaveBeenCalled();
   });
 
-  it("session menu: rename asks, pin pins, End asks first and only then ends", async () => {
+  it("session menu: rename asks, pin pins, compact runs", async () => {
     const d = deps();
     dispatchV3({ type: "session-menu", key: "claude/work/h", item: "Rename…" }, d);
     d.prompt.mock.calls[0][0].onSubmit("new name");
@@ -196,11 +196,6 @@ describe("dispatchV3", () => {
     expect(d.ipc.renameSession).toHaveBeenCalledWith("claude/work/h", "new name");
     await dispatchV3({ type: "session-menu", key: "claude/work/h", item: "Pin" }, d);
     expect(d.ipc.setLibraryFlag).toHaveBeenCalledWith("claude/work/h", "pin", true);
-    dispatchV3({ type: "session-menu", key: "claude/work/h", item: "End…" }, d);
-    expect(d.ipc.hostEnd).not.toHaveBeenCalled();
-    d.open.mock.calls.at(-1)![0].onConfirm();
-    await flush();
-    expect(d.ipc.hostEnd).toHaveBeenCalledWith("claude/work/h");
     dispatchV3({ type: "session-menu", key: "claude/work/h", item: "Compact" }, d);
     expect(d.open).toHaveBeenLastCalledWith({ kind: "terminal", run: { args: ["compact", "claude/work/h"], title: "Compact" } });
   });
@@ -241,10 +236,8 @@ describe("dispatchV3", () => {
     expect(d.openUrl).not.toHaveBeenCalled();
   });
 
-  it("blocker and PR actions open the right page", () => {
+  it("PR actions open the right page", () => {
     const d = deps([]);
-    dispatchV3({ type: "blocker", key: "claude/work/a" }, d);
-    expect(d.openUrl).toHaveBeenLastCalledWith("https://github.com/o/r/pull/9/checks");
     dispatchV3({ type: "open-pr", key: "claude/work/a" }, d);
     expect(d.openUrl).toHaveBeenLastCalledWith("https://github.com/o/r/pull/9");
     dispatchV3({ type: "create-pr", key: "claude/work/a" }, d);
@@ -404,4 +397,61 @@ describe("the shell open scope admits the PR pages the adapter opens, and no oth
   const scope = new RegExp(`^(?:${JSON.parse(tauriConf).plugins.shell.open})$`);
   it.each(["https://github.com/o/r/pull/9", "https://github.com/o/r/pull/9/checks", `https://github.com/o/r/compare/${encodeURIComponent("feat/x")}?expand=1`])("allows %s", (u) => expect(scope.test(u)).toBe(true));
   it.each(["javascript:alert(1)", "file:///etc/passwd", "github.com/o/r/pull/9", "agent-switch://pull/9", "https://github.com/o/r/pull/9 x", "https://github.com/o/r/pull/9\n"])("refuses %s", (u) => expect(scope.test(u)).toBe(false));
+});
+
+describe("Needs-you CI and the blocker strip type where the app can type", () => {
+  // The CLI names a CI item by its PR ("o/r#9"), not by the session.
+  const ci = need({ id: "ci", kind: "ci", subject: "o/r#9", who: "w", what: "CI failing on #9", detail: "lint", verb: "Fix" });
+
+  it("a hosted session: the fix prompt naming the failing checks is typed into it", async () => {
+    const d = { ...deps(), hosted: (k: string) => k === "claude/work/a" };
+    await dispatchV3({ type: "need", item: ci }, d);
+    expect(d.ipc.continueSession).toHaveBeenCalledWith("claude/work/a", expect.stringContaining("lint"));
+    expect(d.ipc.continueSession.mock.calls[0]).toEqual(["claude/work/a", expect.stringContaining("https://github.com/o/r/pull/9/checks")]);
+    expect(d.openUrl).not.toHaveBeenCalled();
+  });
+
+  it("a chat in this window: the fix prompt is sent through the chat", async () => {
+    const send = vi.fn();
+    const d = { ...deps(), chatOf: (k: string) => (k === "claude/work/a" ? { setModel: vi.fn(), send } : null) };
+    await dispatchV3({ type: "need", item: ci }, d);
+    expect(send).toHaveBeenCalledWith(expect.stringContaining("lint"));
+    expect(d.ipc.continueSession).not.toHaveBeenCalled();
+    expect(d.openUrl).not.toHaveBeenCalled();
+  });
+
+  it("a session the app cannot type into: the checks page opens, found by the PR the item names", async () => {
+    const d = deps();
+    await dispatchV3({ type: "need", item: { ...ci, verb: "Open checks" } }, d);
+    expect(d.openUrl).toHaveBeenCalledWith("https://github.com/o/r/pull/9/checks");
+    expect(d.ipc.continueSession).not.toHaveBeenCalled();
+  });
+
+  it("blocker: sends the prompt to a hosted session", async () => {
+    const d = { ...deps([]), hosted: (k: string) => k === "claude/work/a" };
+    await dispatchV3({ type: "blocker", key: "claude/work/a" }, d);
+    expect(d.ipc.continueSession).toHaveBeenCalledWith("claude/work/a", expect.stringContaining("lint"));
+    expect(d.openUrl).not.toHaveBeenCalled();
+  });
+
+  it("blocker: where the app cannot type, the prompt is copied with a toast", async () => {
+    const copyText = vi.fn(async () => {});
+    const d = { ...deps([]), copyText };
+    await dispatchV3({ type: "blocker", key: "claude/work/a" }, d);
+    expect(copyText).toHaveBeenCalledWith(expect.stringContaining("lint"));
+    expect(d.toast).toHaveBeenCalledWith(expect.objectContaining({ tone: "info", text: expect.stringMatching(/copied/i) }));
+    expect(d.ipc.continueSession).not.toHaveBeenCalled();
+    expect(d.openUrl).not.toHaveBeenCalled();
+  });
+});
+
+describe("End…", () => {
+  it("the menu item ends nothing by itself and opens no generic confirm; the End dialog's answer ends the session", async () => {
+    const d = deps();
+    await dispatchV3({ type: "session-menu", key: "claude/work/h", item: "End…" }, d);
+    expect(d.open).not.toHaveBeenCalled();
+    expect(d.ipc.hostEnd).not.toHaveBeenCalled();
+    await dispatchV3({ type: "end", key: "claude/work/h" }, d);
+    expect(d.ipc.hostEnd).toHaveBeenCalledWith("claude/work/h");
+  });
 });

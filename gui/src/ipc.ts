@@ -864,9 +864,9 @@ export async function setAutoSwitch(
  *  (mirrors the CLI's `CONTINUE_TEXT`). */
 export const CONTINUE_TEXT = "Continue where you left off.";
 
-/** Type the continuation into a session Agent Switch hosts (`continue`). */
-export async function continueSession(key: string): Promise<void> {
-  await runCli(["continue", key]);
+/** Type the continuation, or `text`, into a session Agent Switch hosts (`continue [--text]`). */
+export async function continueSession(key: string, text?: string): Promise<void> {
+  await runCli(["continue", key, ...(text ? ["--text", text] : [])]);
 }
 
 /** Move a hosted session (`provider/account/id`) to `target` in its own window

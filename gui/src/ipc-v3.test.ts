@@ -37,6 +37,8 @@ describe("v3 IPC calls", () => {
     [() => ipc.hostEnd("k"), ["host", "end", "k", "--yes"]],
     [() => ipc.hostRespawn("k", { effort: "high" }), ["host", "respawn", "k", "--effort", "high"]],
     [() => ipc.cleanupMerged(), ["sessions", "cleanup", "--yes"]],
+    [() => ipc.continueSession("k"), ["continue", "k"]],
+    [() => ipc.continueSession("k", "fix lint"), ["continue", "k", "--text", "fix lint"]],
   ] as const)("%# runs the exact CLI line", async (call, args) => {
     await call();
     expect(create).toHaveBeenCalledWith("agent-switch", [...args]);

@@ -112,6 +112,8 @@ export type V3Action =
   | { type: "move"; how: MoveHow; moves: SheetMove[] }
   | { type: "keep-account"; account: string }
   | { type: "session-menu"; key: string; item: SessionMenuItem }
+  /** Confirmed in the End dialog: the program stops, the transcript stays. */
+  | { type: "end"; key: string }
   | { type: "batch"; op: keyof BatchActions; keys: string[] }
   | { type: "clean-up" }
   | { type: "view"; key: string; view: "terminal" | "chat" }

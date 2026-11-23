@@ -222,6 +222,29 @@ export interface NextStep {
   text: string;
   action: string;
   does: "open-checks" | "open-pr" | "create-pr" | "focus";
+  /** What the agent is asked to do about it: sent where the app can type, copied elsewhere. */
+  prompt?: string;
+}
+
+/** The request a failing PR's agent is sent: the checks by name and where their logs are. Pure. */
+export function ciPrompt(pr: Pick<PrFacts, "number" | "url" | "failingChecks">): string {
+  const checks = pr.failingChecks.length ? pr.failingChecks.join(", ") : "its checks";
+  return `CI is failing on PR #${pr.number}: ${checks}.${pr.url ? ` Logs: ${pr.url}/checks —` : ""} please find the cause and fix it.`;
+}
+
+/** The label of a step the agent can be asked to do: sent, or copied for the user to paste. Pure. */
+export const promptAction = (canType: boolean) => (canType ? "Send to agent" : "Copy prompt");
+
+/** The session a CI item is about. The CLI names it by its PR (`o/r#9`); a session key is taken as is. Pure. */
+export function ciSession(subject: string, rows: Iterable<SessionRow>): SessionRow | undefined {
+  const list = [...rows];
+  const direct = list.find((r) => sessionKey(r) === subject);
+  if (direct) return direct;
+  const m = /^([^#\s]+\/[^#\s]+)#(\d+)$/.exec(subject);
+  if (!m) return undefined;
+  const [, repo, num] = m;
+  const slug = (remote: string | null | undefined) => (remote ? /github\.com[:/]([A-Za-z0-9._-]+\/[A-Za-z0-9._-]+?)(?:\.git)?\/?$/.exec(remote)?.[1] : undefined);
+  return list.find((r) => slug(r.git?.remote) === repo && prsOf(r).some((p) => String(p.number) === num));
 }
 
 /** The one next step for a session, by its PR and git state (spec §6.4). Pure. */
@@ -229,9 +252,11 @@ export function nextStep(r: SessionRow, needsYou: boolean): NextStep | null {
   const pr = prsOf(r)[0];
   if (needsYou) return { text: "Waits for you in its terminal", action: "Focus terminal", does: "focus" };
   if (pr && pr.lifecycle === "OPEN") {
-    if (pr.ci === "FAILURE") return { text: `CI failing: ${pr.failingChecks.join(", ") || "checks"}`, action: "Open checks", does: "open-checks" };
-    if (pr.mergeable === "CONFLICTING") return { text: `PR #${pr.number} has a merge conflict`, action: "Open PR", does: "open-pr" };
-    if (pr.review === "CHANGES_REQUESTED") return { text: `Changes requested on PR #${pr.number}`, action: "Open PR", does: "open-pr" };
+    if (pr.ci === "FAILURE") return { text: `CI failing: ${pr.failingChecks.join(", ") || "checks"}`, action: "Open checks", does: "open-checks", prompt: ciPrompt(pr) };
+    if (pr.mergeable === "CONFLICTING")
+      return { text: `PR #${pr.number} has a merge conflict`, action: "Open PR", does: "open-pr", prompt: `PR #${pr.number} has a merge conflict with its base branch. Please bring the branch up to date and resolve the conflict.` };
+    if (pr.review === "CHANGES_REQUESTED")
+      return { text: `Changes requested on PR #${pr.number}`, action: "Open PR", does: "open-pr", prompt: `Changes were requested on PR #${pr.number}${pr.url ? ` (${pr.url})` : ""}. Please read the review comments and address them.` };
     return null;
   }
   const g = r.git;
@@ -296,9 +321,16 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
   const accounts = new Map(vm.accounts.map((a) => [a.id, a]));
   const accountOf = (r: SessionRow) => accounts.get(accountId(r.provider, r.profile));
   const colorOf = (r: SessionRow): IdentityColor => accountOf(r)?.color ?? "blue";
-  const needs = feeds.needs?.items ?? [];
-  const needing = new Set(needs.map((n) => n.subject));
   const hosted = new Map((feeds.host?.hosted ?? []).filter((h) => h.alive).map((h) => [h.key, h]));
+  /** The app types into a session it hosts or whose chat runs in this window. */
+  const canType = (key: string) => hosted.has(key) || !!env.chats?.has(key);
+  // A CI item's verb says what it does here: the fix is sent where the app can type; elsewhere the checks open.
+  const needs = (feeds.needs?.items ?? []).map((n) => {
+    if (n.kind !== "ci") return n;
+    const r = ciSession(n.subject, rows);
+    return { ...n, verb: r && canType(sessionKey(r)) ? "Fix" : "Open checks" };
+  });
+  const needing = new Set(needs.map((n) => n.subject));
   const today = startOfDay(now);
   const stateOf = (r: SessionRow) => sessionFromRow(r, now).state;
   const titleOf = (r: SessionRow) => r.library?.name || r.summary || basename(r.cwd) || r.sessionId.slice(0, 8);
@@ -502,7 +534,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       const a = accountOf(r);
       const n = nextStep(r, needing.has(key));
       return {
-        next: n && { text: n.text, action: n.action },
+        next: n && { text: n.text, action: n.prompt ? promptAction(canType(key)) : n.action },
         pr: pr ? { number: pr.number, url: pr.url, ci: pr.ci, lifecycle: pr.lifecycle, mergeable: pr.mergeable, review: pr.review, failingChecks: pr.failingChecks } : null,
         git: r.git ? { branch: r.git.branch, worktree: r.git.worktree, changed: r.git.changed, ahead: r.git.ahead, behind: r.git.behind } : null,
         limit: nearLimit(a) ? `${a!.name} is at ${fiveH(a) ?? "?"}% of its 5-hour window` : null,
@@ -521,7 +553,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     next: (key) => {
       const r = byKey.get(key);
       const n = r ? nextStep(r, needing.has(key)) : null;
-      return n && { text: n.text, action: n.action };
+      return n && { text: n.text, action: n.prompt ? promptAction(canType(key)) : n.action };
     },
     menu: (key) => menuFor(byKey.get(key), hosted.has(key)),
     // v3.1: "Commit…" opens the Review page, where staged changes are committed.
