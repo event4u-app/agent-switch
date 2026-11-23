@@ -5,7 +5,7 @@
  */
 
 import { useMemo, useState, type ReactNode } from "react";
-import { Archive, ArchiveRestore, CircleAlert, CircleCheck, CircleX, Clock, Copy, LoaderCircle, Ellipsis, GitBranch, LogIn, Pin, Play, Plus, RefreshCw, Search, Shield, SquareTerminal, Tag, Vault } from "lucide-react";
+import { Archive, ArchiveRestore, CircleAlert, Clock, Copy, Ellipsis, GitBranch, LogIn, Pin, Play, Plus, RefreshCw, Search, Shield, SquareTerminal, Tag, Vault } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
@@ -13,7 +13,7 @@ import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { Switch } from "../ui/Switch.js";
 import { TextInput } from "../ui/TextInput.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
-import { Act, AccountMark, BatchBar, CheckBox, Chip, PageHeader, checkedAgo, duration, type BatchActions } from "./kit.js";
+import { Act, AccountMark, BatchBar, CheckBox, Chip, PageHeader, ago, checkedAgo, duration, type BatchActions } from "./kit.js";
 import { LimitBar, isStale, tightest, tone, type LimitAccount } from "./limits.js";
 
 export function PageBody({ eyebrow, title, sub, actions, children }: { eyebrow?: string; title?: string; sub?: ReactNode; actions?: ReactNode; children: ReactNode }) {
@@ -306,7 +306,7 @@ export function AllSessionsPage({ sessions, nowMs, onOpen, batch }: { sessions: 
                   <GitBranch className="size-3 shrink-0" />
                   <span className="truncate">{s.branch ?? "no repo"}</span>
                   {s.pr && <span className="shrink-0">#{s.pr.number}</span>}
-                  {s.pr && <CiGlyph ci={s.pr.ci} />}
+                  {(s.pr?.ci === "FAILURE" || s.pr?.ci === "ERROR") && <span className="shrink-0 font-sans text-ac-alert-text">CI failing</span>}
                 </span>
                 <span className="truncate text-xs text-ac-soft">{[s.model, s.thinking].filter(Boolean).join(" · ")}</span>
                 <span className="font-ac-mono text-[11px] text-ac-muted">{s.contextPct == null ? "" : `${Math.round(s.contextPct)}%`}</span>
@@ -321,22 +321,12 @@ export function AllSessionsPage({ sessions, nowMs, onOpen, batch }: { sessions: 
   );
 }
 
-/** A PR's checks as one glyph (board "table"): running, passed, failed. */
-function CiGlyph({ ci }: { ci: string }) {
-  if (ci === "FAILURE" || ci === "ERROR") return <CircleX className="size-3 shrink-0 text-ac-alert" aria-label="CI failing" />;
-  if (ci === "SUCCESS") return <CircleCheck className="size-3 shrink-0 text-ac-ok" aria-label="CI passed" />;
-  if (ci === "PENDING" || ci === "EXPECTED") return <LoaderCircle className="size-3 shrink-0 text-ac-warn" aria-label="CI running" />;
-  return null;
-}
-
 // ---------- Library (spec §10.3) ----------
 
-/** Library "Last": "now", "3 h", then a short date ("Oct 28"). Pure for a given locale. */
+/** "Active" and the Library's "Last": the one relative time ("now", "21m ago") within a day, then a short date ("Oct 28"). Pure for a given locale. */
 export function lastSeen(ms: number, nowMs: number, locale?: string): string {
   const d = nowMs - ms;
-  if (d < 60_000) return "now";
-  if (d < 3_600_000) return `${Math.floor(d / 60_000)} min`;
-  if (d < 86_400_000) return `${Math.floor(d / 3_600_000)} h`;
+  if (d < 86_400_000) return ago(d);
   return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(ms));
 }
 

@@ -186,14 +186,14 @@ describe("Sessions window header (spec §5)", () => {
     const win = screen.getByLabelText("Sessions window");
     fireEvent.click(within(win).getByTitle("Sort and group"));
     fireEvent.click(within(screen.getByRole("menu", { name: "Sort and group" })).getByText("Project / folder"));
-    expect(within(win).getByTitle("Sort and group").textContent).toBe("Project · Activity");
+    expect(within(win).getByTitle("Sort and group").textContent).toBe("Project · Status");
     expect(within(win).getByText("agent-switch")).toBeTruthy();
     expect(within(win).getByText("shop")).toBeTruthy();
     fireEvent.click(within(view()).getByText("Show pinned only"));
     expect(within(win).queryByText("Event store")).toBeNull();
     expect(within(win).getByText("Checkout flow")).toBeTruthy();
     fireEvent.click(within(view()).getByText("Density"));
-    expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ comfortable: false, group: "project", sort: "activity", pinnedOnly: true }));
+    expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ comfortable: false, group: "project", sort: "status", pinnedOnly: true }));
     fireEvent.click(within(view()).getByText("Select"));
     expect(within(win).getAllByRole("checkbox").length).toBeGreaterThan(0);
   });

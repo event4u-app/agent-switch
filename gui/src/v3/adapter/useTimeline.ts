@@ -16,7 +16,7 @@ export interface TimelineState {
   loaded: boolean;
 }
 
-export function useTimeline(key: string | null, read: typeof ipc.sessionTimeline = ipc.sessionTimeline): TimelineState {
+export function useTimeline(key: string | null, read: (key: string) => Promise<Pick<Awaited<ReturnType<typeof ipc.sessionTimeline>>, "events" | "version" | "newerThanFixtures">> = ipc.sessionTimeline): TimelineState {
   const [s, set] = useState<TimelineState>({ events: [], version: null, newerThanFixtures: false, error: null, loaded: false });
   useEffect(() => {
     if (!key) return;

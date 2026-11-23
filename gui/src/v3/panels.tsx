@@ -223,12 +223,13 @@ export function changedFiles(numstat: string, porcelain: string): ChangedFile[] 
 
 // ---------- Children (spec §9.3) ----------
 
-export function ChildrenWindow({ noun, children, onHide }: { noun: string; children: ChildModel[]; onHide: () => void }) {
+/** `onOpen`: a row opens what its tree row opens — a child session, or a subagent's transcript. */
+export function ChildrenWindow({ noun, children, onHide, onOpen, subagents = true }: { noun: string; children: ChildModel[]; onHide: () => void; onOpen?: (c: ChildModel) => void; subagents?: boolean }) {
   return (
     <Window title="Children" aside={noun} onHide={onHide}>
       <div className="px-3.5 py-2">
         {children.map((c) => (
-          <ChildLine key={c.id} c={c} />
+          <ChildLine key={c.id} c={c} onOpen={onOpen} subagents={subagents} />
         ))}
       </div>
       <p className="px-3.5 pb-3 text-[11px] leading-relaxed text-ac-muted">

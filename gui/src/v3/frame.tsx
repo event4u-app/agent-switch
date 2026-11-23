@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useState, type ReactNode } from "react";
-import { FileDiff, GitBranch, Inbox, Layers, Library, ListTree, PanelLeft, Plus, Search, Settings, TriangleAlert, Wrench } from "lucide-react";
+import { FileDiff, Inbox, Layers, Library, ListTree, Network, PanelLeft, Plus, Search, Settings, TriangleAlert, Wrench } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { AppLogo } from "../ui/AppLogo.js";
 import { Button, IconButton } from "../ui/Button.js";
@@ -132,7 +132,7 @@ export function rightItems(blocker: boolean): StripeItem[] {
   return [
     { id: "summary", label: "Summary  ⌘I", icon: <PanelLeft className="rotate-180" />, dot: blocker },
     { id: "changes", label: "Changes", icon: <FileDiff /> },
-    { id: "children", label: "Children", icon: <GitBranch /> },
+    { id: "children", label: "Children", icon: <Network /> },
   ];
 }
 

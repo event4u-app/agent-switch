@@ -2,7 +2,8 @@
  *  (hosted terminal or the user's own terminal) and the
  *  2.11 settings sections v3 keeps. */
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
+import * as ipc from "../../ipc.js";
 
 import { tauriBackend } from "../../terminal.js";
 import type { SessionRow } from "../../transforms.js";
@@ -92,6 +93,13 @@ function ExternalSession({ sessionKey, row, view, where, facts, onFocus, onTakeO
   const t = useTimeline(sessionKey);
   const hidden = useMemo(() => hiddenText(fold(t.events).hidden), [t.events]);
   return <ExternalBody where={where} facts={facts} lastLine={null} onFocus={onFocus} onTakeOver={onTakeOver} readOnlyTitle={hidden} timeline={<ReadOnlyTimeline t={t} row={row} terminal={view === "terminal"} />} />;
+}
+
+/** 7.7: one subagent's transcript, polled while it is on screen like a session's. */
+export function SubagentTranscript({ parent, agentId, read = ipc.subagentTimeline }: { parent: string; agentId: string; read?: typeof ipc.subagentTimeline }) {
+  const readOne = useCallback((key: string) => read(key, agentId), [read, agentId]);
+  const t = useTimeline(parent, readOne);
+  return <ReadOnlyTimeline t={t} />;
 }
 
 /** The read-only timeline of a session running elsewhere (ADR-010). Falls back

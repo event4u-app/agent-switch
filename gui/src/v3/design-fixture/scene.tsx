@@ -10,6 +10,7 @@ import { AcRoot } from "../../ui/AcRoot.js";
 import { themeById } from "../themes/registry.js";
 import { DEFAULT_APPEARANCE, resolveTheme, type Accent } from "../themes/resolve.js";
 import { V3Window, type V3Data, type V3Slots } from "../window.js";
+import type { WindowLayout } from "../layout.js";
 import { V3Tray } from "../tray.js";
 import { FirstRun } from "../firstrun.js";
 import { ChatTimeline } from "../chat.js";
@@ -47,14 +48,19 @@ const LIMITS: LimitAccount[] = [
   { identity: "me@example.com", plan: null, key: "codex/personal", tool: "codex", name: "personal", color: "pink", protect: 90, next: false, signIn: true, checkedMs: null, windows: [] },
 ];
 
-const S = (s: Partial<RowSession> & Pick<RowSession, "key" | "title" | "state">): RowSession => ({ account: { name: "work", nearLimit: false }, branch: null, pr: null, children: [], needsYou: false, ...s });
+/** A row as the adapter builds it: the tool from the key, the account's colour from its limits entry. */
+const S = (s: Partial<RowSession> & Pick<RowSession, "key" | "title" | "state">): RowSession => {
+  const tool = s.key.split("/")[0] as "claude" | "codex";
+  const account = s.account ?? { name: "work", nearLimit: false };
+  return { branch: null, pr: null, children: [], needsYou: false, ...s, tool, account: { ...account, color: LIMITS.find((l) => l.key === `${tool}/${account.name}`)?.color } };
+};
 
 const SESSIONS: RowSession[] = [
   S({ key: "claude/work/s-store", title: "v3 engine: event store + ingest", state: "working", branch: "feat/event-store", pr: { number: 142, ci: "PENDING", mergeable: "MERGEABLE" },
     children: [
       { id: "c1", label: "Explore · schema of sessions.json", kind: "subagent", state: "done", source: "hook" },
-      { id: "c2", label: "general-purpose · migrate JSON stores", kind: "subagent", state: "working", source: "hook" },
-      { id: "c3", label: "code-reviewer · ingest dedupe", kind: "subagent", state: "waiting", source: "hook" },
+      { id: "c2", label: "general-purpose · migrate JSON stores", kind: "subagent", state: "working", source: "hook", doing: "Bash · npm test -- store", startedMs: NOW - 6 * MIN },
+      { id: "c3", label: "code-reviewer · ingest dedupe", kind: "subagent", state: "working", source: "hook", doing: "Read · src/engine/ingest.ts", startedMs: NOW - 2 * MIN },
     ] }),
   S({ key: "claude/personal/s-themes", title: "Theme system, Darcula default", state: "needs-you", account: { name: "personal", nearLimit: false }, branch: "feat/themes", pr: { number: 145, ci: "SUCCESS", mergeable: "MERGEABLE" }, needsYou: true }),
   S({ key: "codex/work/s-hook", title: "as-hook p95 benchmark", state: "idle", branch: "perf/as-hook", children: [{ id: "c9", label: "subagent rollouts, content not read", kind: "subagent", state: "done", source: "counted", count: 2 }] }),
@@ -274,10 +280,12 @@ export interface SceneOptions {
   chat?: boolean;
   /** Key glyphs and shortcuts; the embed pins mac so every board reads alike. */
   platform?: "mac" | "other";
+  /** The window's remembered view (density, order, grouping), so a board names its state instead of toggling the default. */
+  layout?: Partial<WindowLayout>;
 }
 
 /** One board: the real v3 window, or one of the screens that live outside it, on fixture data. */
-export function Scene({ view = "main", theme = "darcula", accent = "theme", health, away, chat, platform }: SceneOptions) {
+export function Scene({ view = "main", theme = "darcula", accent = "theme", health, away, chat, platform, layout }: SceneOptions) {
   // The Terminal / Chat switch is live: the window asks for a view, the fixture keeps it per session.
   const [views, setViews] = useState<Record<string, "terminal" | "chat">>({});
   const inChat = (key: string) => (views[key] ?? (chat ? "chat" : "terminal")) === "chat";
@@ -286,6 +294,8 @@ export function Scene({ view = "main", theme = "darcula", accent = "theme", heal
   const { vars } = resolveTheme(def, accent);
   const noop = () => {};
   const slots: V3Slots = {
+    // A subagent's own transcript: the recorded Claude transcript stands in for it.
+    subagent: () => <ChatTimeline events={CHAT.transcript as AsEvent[]} />,
     review: (key, focus) => (
       <Review
         title={SESSIONS.find((x) => x.key === key)?.title ?? key}
@@ -427,7 +437,7 @@ export function Scene({ view = "main", theme = "darcula", accent = "theme", heal
   }
   return (
     <AcRoot className="h-full" mode={def.mode} style={vars as CSSProperties}>
-      <V3Window data={data} slots={slots} platform={platform} act={(a) => (a.type === "view" ? setViews((v) => ({ ...v, [a.key]: a.view })) : console.log("[act]", JSON.stringify(a).slice(0, 200)))} />
+      <V3Window data={data} slots={slots} platform={platform} layout={layout && { load: () => layout, save: () => {} }} act={(a) => (a.type === "view" ? setViews((v) => ({ ...v, [a.key]: a.view })) : console.log("[act]", JSON.stringify(a).slice(0, 200)))} />
     </AcRoot>
   );
 }

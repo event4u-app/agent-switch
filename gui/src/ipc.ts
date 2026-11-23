@@ -255,6 +255,12 @@ export async function sessionTimeline(key: string, limit = 200, before?: number)
   return { events: Array.isArray(o.events) ? o.events : [], from: Number(o.from) || 0, total: Number(o.total) || 0, version: typeof o.version === "string" ? o.version : null, newerThanFixtures: o.newerThanFixtures === true };
 }
 
+/** `timeline <session> --subagent <id> --json`: one subagent's own transcript, read-only; the CLI reads only its newest part. */
+export async function subagentTimeline(parent: string, agentId: string, limit = 400): Promise<{ events: import("./v3/timeline.js").AsEvent[]; from: number; total: number; version: string | null; newerThanFixtures: boolean; truncated: boolean }> {
+  const o = JSON.parse(await runCli(["timeline", parent, "--subagent", agentId, "--json", "--limit", String(limit)]));
+  return { events: Array.isArray(o.events) ? o.events : [], from: Number(o.from) || 0, total: Number(o.total) || 0, version: typeof o.version === "string" ? o.version : null, newerThanFixtures: o.newerThanFixtures === true, truncated: o.truncated === true };
+}
+
 export type BridgeSpec =
   | { key: string; mode: "default" | "acceptEdits" | "plan"; model?: string }
   | { new: { profile: string; provider: "claude" | "codex"; cwd: string }; mode: "default" | "acceptEdits" | "plan"; model?: string };

@@ -12,7 +12,7 @@ import { paceFor, type LimitAccount, type LimitWindow } from "../limits.js";
 import type { DoneItem, PaletteEntry } from "../overlays.js";
 import type { LibraryRow, PageAccount, TableSession } from "../pages.js";
 import type { ChangedFile, SummaryFacts } from "../panels.js";
-import type { ChildModel, ChildSource, ChildTool, RowSession } from "../sessions.js";
+import { childNoun, subagentLabel, type ChildModel, type ChildSource, type ChildTool, type RowSession } from "../sessions.js";
 import type { OpenTarget } from "../settings.js";
 import type { Appearance } from "../themes/resolve.js";
 import { SESSION_MENU, type SessionMenuItem, type V3Data } from "../window.js";
@@ -169,7 +169,7 @@ export function childrenOf(r: SessionRow, rowOf?: (key: string) => SessionRow | 
     const sessionKeyOf = typeof o.sessionKey === "string" ? o.sessionKey : null;
     if (sessionKeyOf && above.has(sessionKeyOf)) continue;
     const id = typeof o.agentId === "string" ? o.agentId : (sessionKeyOf ?? `${kind}-${out.length}`);
-    const label = typeof o.label === "string" ? o.label : typeof o.type === "string" ? o.type : kind;
+    const label = typeof o.label === "string" ? o.label : typeof o.agentId === "string" ? subagentLabel(o) : typeof o.type === "string" ? o.type : kind;
     const source = CHILD_SOURCES.has(o.source as ChildSource) ? (o.source as ChildSource) : "unknown";
     const identity: Partial<ChildModel> = {};
     let children: ChildModel[] = [];
@@ -184,7 +184,14 @@ export function childrenOf(r: SessionRow, rowOf?: (key: string) => SessionRow | 
     } else {
       identity.tool = toolOf(r.provider);
       identity.account = parentAccount;
-      if (typeof o.agentId === "string") identity.worktree = worktree(o.agentId);
+      if (typeof o.agentId === "string") {
+        identity.worktree = worktree(o.agentId);
+        // 7.7: what it runs now and its hook times, for its read-only view.
+        if (typeof o.doing === "string" && o.state === "running") identity.doing = o.doing;
+        const ms = (v: unknown) => (typeof v === "string" && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null);
+        if (ms(o.startedAt) != null) identity.startedMs = ms(o.startedAt);
+        if (ms(o.endedAt) != null) identity.endedMs = ms(o.endedAt);
+      }
     }
     const needsYou = !!ctx.needing?.has(id) || children.some((k) => k.needsYou);
     out.push({ id, label, kind, ...childState(o, rowOf, ctx.now), source, ...identity, ...(children.length ? { children } : {}), ...(needsYou ? { needsYou } : {}) });
@@ -193,6 +200,9 @@ export function childrenOf(r: SessionRow, rowOf?: (key: string) => SessionRow | 
   if (counted > 0) out.push({ id: `${sessionKey(r)}#counted`, label: "subagents", kind: "subagent", state: "done", source: "counted", count: counted, tool: toolOf(r.provider), account: parentAccount });
   return out;
 }
+
+/** Summary's "Children" fact: the Children window's noun and count, or "none". Pure. */
+const childSummary = (children: ChildModel[]) => (children.length ? childNoun({ children }) : "none");
 
 /** A subagent's worktree name, from the session's hook record of its children. Pure. */
 export function worktreeOf(r: SessionRow | undefined): (agentId: string) => string | null {
@@ -350,7 +360,9 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       state: view.state,
       stateSource: view.stateSource ?? null,
       quiet: view.quietSince != null ? `no update in ${shortAge(view.quietSince, now)}` : null,
-      account: { name: r.profile, nearLimit: nearLimit(accountOf(r)) },
+      account: { name: r.profile, nearLimit: nearLimit(accountOf(r)), color: colorOf(r) },
+      tool: toolOf(r.provider),
+      lastActiveMs: r.mtimeMs,
       branch: r.git?.branch ?? null,
       pr: pr ? { number: pr.number, ci: pr.ci, mergeable: pr.mergeable } : null,
       children,
@@ -551,7 +563,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
           id: r.sessionId,
           host: hosted.has(key) ? "Hosted by Agent Switch" : r.surface === "desktop-app" ? "Claude Desktop" : "Your terminal",
           library: keptText(r),
-          children: `${r.childCount ?? 0} child session${r.childCount === 1 ? "" : "s"}`,
+          // The Children window's count and words, so the two never disagree.
+          children: childSummary(sessions.find((x) => x.key === key)?.children ?? childrenOf(r, (k) => byKey.get(k), childCtx)),
         },
       };
     },
