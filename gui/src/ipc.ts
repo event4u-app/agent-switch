@@ -1716,8 +1716,10 @@ export interface AuthStatusRow {
   detail: string;
 }
 
+/** `{schema: 1, profiles}`; a CLI older than the shape version printed the bare list. */
 export async function authStatus(provider?: ProviderId): Promise<AuthStatusRow[]> {
-  return JSON.parse(await runCli(["auth-status", ...(provider ? ["--provider", provider] : []), "--json"]));
+  const out = JSON.parse(await runCli(["auth-status", ...(provider ? ["--provider", provider] : []), "--json"])) as AuthStatusRow[] | { profiles?: AuthStatusRow[] };
+  return Array.isArray(out) ? out : (out.profiles ?? []);
 }
 
 export interface DoctorCheckRow {
@@ -1729,6 +1731,8 @@ export interface DoctorCheckRow {
 }
 
 export interface DoctorReport {
+  /** Absent from a CLI older than the shape version. */
+  schema?: number;
   readiness: "ready" | "attention" | "blocked";
   platform: string;
   checks: DoctorCheckRow[];

@@ -45,7 +45,7 @@ Running `agent-switch` with no command starts the desktop app (same as
 | `status [name]` | Who each account is signed in as, plus its usage. `--json` covers the preferred account only. |
 | `current` | The preferred account per tool. |
 | `whoami [name]` | Which account identity an account is signed in as. |
-| `auth-status` | Login state per account: `connected`, `expiring`, `sign-in-needed` or `unknown`. Never prints a token. |
+| `auth-status [--json]` | Login state per account: `connected`, `expiring`, `sign-in-needed` or `unknown`. Never prints a token. `--json` prints `{schema, profiles[]}`. |
 | `rename <old> <new>` | Rename an account; its tag, colour and folder rules follow. |
 | `label <name> [Work\|Personal\|Other\|none]` | Tag an account. |
 | `color <name> [orange\|red\|yellow\|green\|teal\|blue\|purple\|pink\|none]` | Pick the account's colour in the app (`colour` works too). |
@@ -455,7 +455,7 @@ of your enabled Claude and Codex accounts about every 5 minutes.
 | Command | What it does |
 | --- | --- |
 | `doctor` | Self-check for this OS and each tool. Exits `1` on a hard error. |
-| `activity [--limit N]` | What agent-switch itself did, and why (newest 2000 kept). |
+| `activity [--limit N] [--json]` | What agent-switch itself did, and why (newest 2000 kept). Anything shaped like a token is printed as `[redacted]`, also in entries an older version wrote. `--json` prints `{schema, entries[], capacity}`. |
 | `check-update` / `check-updates` | Compare your version with the latest GitHub release. |
 | `update [<version>]` / `upgrade` | Update through npm to the latest version, or to exactly `<version>` (a semver such as `2.12.1`; also how you go back to an older one), then restart the background service on the new version. |
 | `tooling` | Readout of related tools (`agent-config`, `rtk`, `claude`, `codex`, `agy`). No network. Whether the `rtk` found is Token Killer comes from agent-config (`agent-config rtk:detect --json`) when it is installed, else from the output of `rtk gain`. |
@@ -481,7 +481,12 @@ of your enabled Claude and Codex accounts about every 5 minutes.
   Switch's, was replaced by another one, or is gone;
 - the guard policy, and whether an account runs twice right now.
 
-`--json` prints `{readiness, platform, checks[]}`.
+`--json` prints `{schema, readiness, platform, checks[]}`. It names an API-key
+variable, never its value.
+
+`schema` in the JSON of `doctor`, `auth-status` and `activity` is the shape's
+version, today `1`. A new field keeps the number; it goes up when a field is
+removed or changes meaning.
 
 ## Internal commands
 

@@ -569,23 +569,32 @@ describe("foundations (protection, pools, folder rules, auth, doctor, activity, 
   });
 
   it("authStatus reads `auth-status --json`, optionally per provider", async () => {
-    ok('[{"provider":"claude","name":"w","state":"expiring","expiresAt":null,"lastRefreshAt":null,"keptFreshBy":"claude","detail":""}]');
+    const row = '{"provider":"claude","name":"w","state":"expiring","expiresAt":null,"lastRefreshAt":null,"keptFreshBy":"claude","detail":""}';
+    ok(`{"schema":1,"profiles":[${row}]}`);
     expect((await authStatus())[0].state).toBe("expiring");
     expect(create).toHaveBeenLastCalledWith("agent-switch", ["auth-status", "--json"]);
-    await authStatus("codex");
+    ok('{"schema":1,"profiles":[]}');
+    expect(await authStatus("codex")).toEqual([]);
     expect(create).toHaveBeenLastCalledWith("agent-switch", ["auth-status", "--provider", "codex", "--json"]);
+    // A CLI from before the shape version printed the bare list.
+    ok(`[${row}]`);
+    expect((await authStatus())[0].name).toBe("w");
+    ok("{}");
+    expect(await authStatus()).toEqual([]);
   });
 
   it("doctor keeps the report on exit 1 (blocked) and throws only when stdout is not a report", async () => {
-    execute.mockResolvedValue({ code: 1, stdout: '{"readiness":"blocked","platform":"darwin","checks":[]}', stderr: "" });
+    execute.mockResolvedValue({ code: 1, stdout: '{"schema":1,"readiness":"blocked","platform":"darwin","checks":[]}', stderr: "" });
     expect((await doctor()).readiness).toBe("blocked");
+    execute.mockResolvedValue({ code: 0, stdout: '{"readiness":"ready","platform":"darwin","checks":[]}', stderr: "" });
+    expect((await doctor()).readiness).toBe("ready");
     expect(create).toHaveBeenLastCalledWith("agent-switch", ["doctor", "--json"]);
     execute.mockResolvedValue({ code: 1, stdout: "", stderr: "unknown command" });
     await expect(doctor()).rejects.toThrow(/unknown command/);
   });
 
   it("listActivity unwraps `entries` and passes --limit", async () => {
-    ok('{"entries":[{"at":"2026-10-28T10:00:00Z","kind":"switch","target":"claude/w","action":"activated","reason":"r","ok":true}],"capacity":2000}');
+    ok('{"schema":1,"entries":[{"at":"2026-10-28T10:00:00Z","kind":"switch","target":"claude/w","action":"activated","reason":"r","ok":true}],"capacity":2000}');
     expect((await listActivity(5))[0].kind).toBe("switch");
     expect(create).toHaveBeenLastCalledWith("agent-switch", ["activity", "--limit", "5", "--json"]);
     ok("{}");

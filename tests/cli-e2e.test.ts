@@ -1447,6 +1447,8 @@ function runFull(home: string, args: string[], cwd?: string) {
 
 const TOKEN = "sk-ant-oat01-" + "Z".repeat(64);
 const REFRESH = "sk-ant-ort01-" + "Y".repeat(64);
+const API_KEY = "sk-proj-" + "X".repeat(48);
+const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJ" + "W".repeat(40) + ".sig" + "W".repeat(20);
 
 test("upgrade from a 2.1.0 config: labels, mappings, alerts, autoswitch, guard untouched; zero pools", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
@@ -1516,7 +1518,7 @@ test("a fresh install keeps warn after its first profile appears", gate, () => {
   }
 });
 
-test("auth-status --json, doctor --json and activity --json never contain a token", gate, () => {
+test("auth-status --json, doctor --json and activity --json carry a shape version and never contain a token", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
     const ccfg = path.join(home, "claude", "work", "config");
@@ -1525,26 +1527,35 @@ test("auth-status --json, doctor --json and activity --json never contain a toke
     fs.writeFileSync(path.join(ccfg, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: TOKEN, refreshToken: REFRESH, expiresAt: Date.now() + 3600e3 } }));
     const xcfg = path.join(home, "codex", "w", "config");
     fs.mkdirSync(xcfg, { recursive: true });
-    fs.writeFileSync(path.join(xcfg, "auth.json"), JSON.stringify({ tokens: { access_token: TOKEN, refresh_token: REFRESH }, last_refresh: "2026-10-27T10:00:00Z" }));
+    fs.writeFileSync(path.join(xcfg, "auth.json"), JSON.stringify({ tokens: { access_token: TOKEN, refresh_token: REFRESH, id_token: JWT }, OPENAI_API_KEY: API_KEY, last_refresh: "2026-10-27T10:00:00Z" }));
+    // A line an older build (or a hand edit) wrote without redaction: reading it must not hand the token on.
+    fs.writeFileSync(path.join(home, "activity.jsonl"), JSON.stringify({ at: "2026-10-01T10:00:00Z", kind: "login", target: "claude/work", action: `stored ${TOKEN}`, reason: `refresh ${REFRESH} failed, key ${API_KEY}, id ${JWT}`, ok: false }) + "\n");
+    const env = { ANTHROPIC_API_KEY: API_KEY, CLAUDE_CODE_OAUTH_TOKEN: TOKEN, OPENAI_API_KEY: API_KEY };
+    const runEnv = (args: string[]) => spawnSync("node", [CLI, ...args], { env: { ...process.env, ...env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
 
-    const auth = run(home, ["auth-status", "--json"]);
-    const rows = JSON.parse(auth);
-    assert.equal(rows.find((r: any) => r.provider === "codex").state, "connected");
-    assert.ok(["connected", "unknown"].includes(rows.find((r: any) => r.provider === "claude").state));
+    const auth = runEnv(["auth-status", "--json"]).stdout;
+    const authOut = JSON.parse(auth);
+    assert.equal(authOut.schema, 1);
+    assert.equal(authOut.profiles.find((r: any) => r.provider === "codex").state, "connected");
+    assert.ok(["connected", "unknown"].includes(authOut.profiles.find((r: any) => r.provider === "claude").state));
 
     run(home, ["use", "work"]);
     run(home, ["protection", "set", "claude/work", "--threshold", "95"]);
-    const activity = run(home, ["activity", "--json"]);
-    const entries = JSON.parse(activity).entries;
-    assert.deepEqual(entries.map((e: any) => e.kind), ["switch", "protection"]);
+    const activity = runEnv(["activity", "--json"]).stdout;
+    const activityOut = JSON.parse(activity);
+    assert.equal(activityOut.schema, 1);
+    assert.deepEqual(activityOut.entries.map((e: any) => e.kind), ["login", "switch", "protection"]);
+    assert.match(activityOut.entries[0].reason, /\[redacted\]/);
 
-    const doctor = runFull(home, ["doctor", "--json"], undefined);
+    const doctor = runEnv(["doctor", "--json"]);
     const report = JSON.parse(doctor.stdout);
+    assert.equal(report.schema, 1);
     assert.ok(["ready", "attention", "blocked"].includes(report.readiness));
     for (const c of report.checks) assert.ok(c.id && c.status && typeof c.title === "string");
+    assert.match(report.checks.find((c: any) => c.id === "api-key-overrides").detail, /ANTHROPIC_API_KEY/, "the override is named");
 
-    for (const out of [auth, activity, doctor.stdout, fs.readFileSync(path.join(home, "activity.jsonl"), "utf8")]) {
-      assert.doesNotMatch(out, /ZZZZZZZZ|YYYYYYYY/, "no token value in any output or log");
+    for (const out of [auth, activity, doctor.stdout, doctor.stderr]) {
+      assert.doesNotMatch(out, /ZZZZZZZZ|YYYYYYYY|XXXXXXXX|WWWWWWWW/, "no token value in any output");
     }
   } finally {
     fs.rmSync(home, { recursive: true, force: true });

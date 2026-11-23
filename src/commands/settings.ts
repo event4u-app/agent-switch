@@ -161,7 +161,7 @@ export function cmdActivity(flags: Record<string, string | boolean>): void {
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) die("--limit must be a whole number of at least 1");
   const entries = readActivity(limit ?? (flags.json ? undefined : 50));
   if (flags.json) {
-    console.log(JSON.stringify({ entries, capacity: ACTIVITY_MAX_LINES }, null, 2));
+    console.log(JSON.stringify({ schema: 1, entries, capacity: ACTIVITY_MAX_LINES }, null, 2));
     return;
   }
   if (entries.length === 0) {
