@@ -137,7 +137,7 @@ describe("idle children fold (3.5, D11)", () => {
 describe("one block for the open row (5.2, D12)", () => {
   it("the active open row and its children share one raise surface and one Marker", () => {
     const { container } = rowOf(s("p", { children: [seat("a"), seat("b"), seat("c")] }), { active: true });
-    const markers = container.querySelectorAll(".border-l-ac-brand");
+    const markers = container.querySelectorAll(".border-l-ac-text");
     expect(markers).toHaveLength(1);
     const block = markers[0].parentElement!;
     expect(block.className).toMatch(/bg-ac-raise/);
@@ -147,7 +147,7 @@ describe("one block for the open row (5.2, D12)", () => {
 
   it("closed, the active row alone carries fill and Marker", () => {
     const { container } = render(<SessionRow s={s("p", { children: [seat("a")] })} active {...on} />);
-    const marker = container.querySelector(".border-l-ac-brand")!;
+    const marker = container.querySelector(".border-l-ac-text")!;
     expect(marker.parentElement!.getAttribute("role")).toBe("button");
   });
 });

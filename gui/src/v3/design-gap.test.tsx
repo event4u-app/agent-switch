@@ -17,6 +17,25 @@ function mount(over: Partial<V3Data> = {}) {
 }
 const openSession = () => fireEvent.click(screen.getAllByText("Event store")[0]);
 
+describe("two-line rows by default (5.2)", () => {
+  const two = (): Partial<V3Data> => ({ sessions: [data().sessions[0], { ...data().sessions[0], key: "s2", title: "Checkout flow", branch: "feat/checkout", account: { name: "side", nearLimit: false } }] });
+  const win = () => within(screen.getByLabelText("Sessions window"));
+
+  it("a fresh layout shows every row's second line (account · branch), not only the selected one", () => {
+    render(<V3Window data={{ ...data(), ...two() }} slots={slots} act={vi.fn()} layout={{ load: () => null, save: vi.fn() }} />);
+    expect(win().getByText("feat/checkout")).toBeTruthy();
+  });
+
+  it("a saved compact choice stays compact, and Density switches it back", () => {
+    const store = { load: vi.fn(() => ({ tabs: [], active: "s1", comfortable: false })), save: vi.fn() };
+    render(<V3Window data={{ ...data(), ...two() }} slots={slots} act={vi.fn()} layout={store} />);
+    expect(win().queryByText("feat/checkout")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Select · density · show pinned"));
+    fireEvent.click(within(screen.getByRole("menu", { name: "Sessions view" })).getByText("Density"));
+    expect(win().getByText("feat/checkout")).toBeTruthy();
+  });
+});
+
 describe("Open in (spec §7.7)", () => {
   const targets = [
     { target: "phpstorm", label: "PhpStorm", kind: "editor" as const, installed: true },
@@ -143,7 +162,7 @@ describe("Sessions window header (spec §5)", () => {
       />,
     );
     const view = () => (fireEvent.click(screen.getByLabelText("Select · density · show pinned")), screen.getByRole("menu", { name: "Sessions view" }));
-    expect(within(view()).getAllByRole("menuitem").map((b) => b.textContent)).toEqual(["Select", "DensityCompact", "Show pinned only"]);
+    expect(within(view()).getAllByRole("menuitem").map((b) => b.textContent)).toEqual(["Select", "DensityComfortable", "Show pinned only"]);
     fireEvent.click(screen.getByLabelText("Select · density · show pinned"));
     const win = screen.getByLabelText("Sessions window");
     fireEvent.click(within(win).getByTitle("Sort and group"));
@@ -155,7 +174,7 @@ describe("Sessions window header (spec §5)", () => {
     expect(within(win).queryByText("Event store")).toBeNull();
     expect(within(win).getByText("Checkout flow")).toBeTruthy();
     fireEvent.click(within(view()).getByText("Density"));
-    expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ comfortable: true, group: "project", sort: "activity", pinnedOnly: true }));
+    expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ comfortable: false, group: "project", sort: "activity", pinnedOnly: true }));
     fireEvent.click(within(view()).getByText("Select"));
     expect(within(win).getAllByRole("checkbox").length).toBeGreaterThan(0);
   });

@@ -15,6 +15,7 @@ import { AcRoot } from "../../ui/AcRoot.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
 import { ASProvider, useAS } from "../../vm/store.js";
 import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
+import { allNeeds } from "../tools.js";
 import { V3Tray, type TrayTool } from "../tray.js";
 import { toV3Data } from "./data.js";
 import { useV3Feeds, type FeedDeps } from "./useFeeds.js";
@@ -103,7 +104,7 @@ function V3TrayFrame() {
       <TrayBridge />
       <TrayLifecycle />
       <V3Tray
-        needs={d.needs}
+        needs={allNeeds(d)}
         away={d.away}
         sessions={d.sessions}
         accounts={d.limits}
