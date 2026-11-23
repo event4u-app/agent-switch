@@ -21,6 +21,20 @@ const acct = (over: Partial<LimitAccount> = {}): LimitAccount => ({
   ...over,
 });
 
+describe("limits rows by keyboard (8.6)", () => {
+  it("Enter and Space on a focused row open its popover; a key on its sign-in link does not", () => {
+    const onOpen = vi.fn();
+    render(<LimitsStrip accounts={[acct(), acct({ key: "claude/home", name: "home", signIn: true, windows: [] })]} nowMs={NOW} openKey={null} onOpen={onOpen} onSignIn={vi.fn()} />);
+    const row = screen.getByText("side").closest("[role=button]") as HTMLElement;
+    row.focus();
+    fireEvent.keyDown(row, { key: "Enter" });
+    fireEvent.keyDown(row, { key: " " });
+    expect(onOpen.mock.calls).toEqual([["claude/side"], ["claude/side"]]);
+    fireEvent.keyDown(screen.getByText("sign in ›"), { key: "Enter" });
+    expect(onOpen).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("limits (spec §5.3, §7.5)", () => {
   it("pace is the share even use would have spent by now", () => {
     expect(paceFor("5h", NOW + H + 18 * 60_000, NOW)).toBe(74);

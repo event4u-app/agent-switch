@@ -93,7 +93,18 @@ export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount
   const t = stale ? "none" : tone(top?.used ?? null, a.protect);
   const tip = a.windows.map((w) => `${w.label} ${pct(w.used)}${w.resetsAtMs ? ` · resets in ${duration(w.resetsAtMs - nowMs)}` : ""}`).join("\n");
   return (
-    <div role="button" tabIndex={0} data-popover-trigger="" onClick={() => onOpen(a.key)} title={tip} className={cn("flex h-6 items-center gap-2 rounded-md px-2", open ? "bg-ac-raise" : "hover:bg-ac-raise")}>
+    <div
+      role="button"
+      tabIndex={0}
+      data-popover-trigger=""
+      onClick={() => onOpen(a.key)}
+      // A div, not a button (it holds the sign-in button): Enter and Space open it as a button would.
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+        e.preventDefault();
+        onOpen(a.key);
+      }}
+      title={tip} className={cn("flex h-6 items-center gap-2 rounded-md px-2", open ? "bg-ac-raise" : "hover:bg-ac-raise")}>
       <span className="min-w-0 flex-1 truncate text-xs text-ac-soft">
         {a.name}
         {a.tool === "codex" && <span className="text-ac-muted"> · Codex</span>}
