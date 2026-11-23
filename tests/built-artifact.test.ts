@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { spawnSync } from "node:child_process";
 import { Readable } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -254,4 +253,103 @@ test("built sessions: the host's word becomes runtime, and the listing shows it"
     console.log = log;
   }
   assert.match(text.join("\n"), /root-rt.*\[live: busy\]/);
+});
+
+const RN = await load("release-notes.js");
+const CC = await load("cc-contract.js");
+const CT = await load("config-transfer.js");
+const AV = await load("app-visibility.js");
+
+test("dist/release-notes.js turns the captured 14.2.0 body into blocks, a highlight and clamped text", gate, () => {
+  const md = fixture("agent-config-release-14.2.0.md").toString("utf8");
+  assert.equal(RN.stripHtmlComments("a <!-- x\ny\n--> b"), "a  b");
+  assert.equal(RN.normalizeInline("see [the docs](https://example.com/x) **b** _i_"), "see the docs b i");
+  const blocks = RN.releaseNoteBlocks(md);
+  assert.ok(blocks.length > 3);
+  assert.ok(blocks.every((b: { text: string }) => !b.text.includes("<!--")));
+  const hi = RN.firstHighlight(blocks);
+  assert.equal(typeof hi, "string");
+  assert.ok(hi.length > 0 && !/\]\(https?:/.test(hi));
+  const all = RN.releaseNotesText(blocks);
+  assert.equal(all.omitted, 0);
+  assert.ok(all.lines.length >= blocks.length);
+  const capped = RN.releaseNotesText(blocks, { maxLines: 3, bullet: "-", indent: "  " });
+  assert.equal(capped.lines.length, 3);
+  assert.equal(capped.omitted, all.lines.length - 3);
+  assert.ok(capped.lines.every((l: string) => l === "" || l.startsWith("  ")));
+  assert.equal(RN.clampText("abc", 10), "abc");
+  assert.equal(RN.clampText("one two three four five", 12), "one two…");
+  assert.equal(RN.clampText("x".repeat(50), 10), `${"x".repeat(10)}…`);
+  assert.equal(RN.firstHighlight([]), null);
+});
+
+function ccBundle(drop: string | null = null): string {
+  const parts: Record<string, string> = {
+    version: "// Version: 9.9.9\n",
+    naming:
+      `var Qx="-credentials";function Kk(e=""){let n=process.env.CLAUDE_CONFIG_DIR,r=(n??"").normalize("NFC"),` +
+      `a=n?"-"+h("sha256").update(r).digest("hex").substring(0,8):"";return\`Claude Code\${Z().S}\${e}\${a}\`}\n`,
+    legacy:
+      `async function Ll(e){return\`\${await Rp(e).catch(()=>e)}.lock\`}` +
+      `if(P.code==="ELOCKED")throw q("tengu_oauth_refresh_legacy_lock_contended",{}),P;\n`,
+    timing: `function Op(e,n){return{lockfilePath:J(e,".oauth_refresh.lock"),realpath:!1,stale:60000,update:5000}}\n`,
+    cache:
+      `var w9=30000;class C{cache={data:null,cachedAt:0}}` +
+      `read(){let r=g().cache;if(Date.now()-r.cachedAt<w9)return r.data;` +
+      `let s=x(\`security find-generic-password -a "\${n}" -w -s "\${o}"\`)}\n`,
+  };
+  if (drop) parts[drop] = "";
+  return Object.values(parts).join("");
+}
+const ccFailed = (v: { findings: { ok: boolean; fact: string }[] }) => v.findings.filter((f) => !f.ok).map((f) => f.fact);
+
+test("dist/cc-contract.js passes the pinned facts, fails each drift, and caches the binary verdict", gate, () => {
+  assert.deepEqual(ccFailed(CC.analyzeCCContract(ccBundle(), "9.9.9")), []);
+  assert.deepEqual(ccFailed(CC.analyzeCCContract(ccBundle(), "9.9.10")), ["version"]);
+  for (const part of ["naming", "legacy", "timing", "cache"]) {
+    assert.ok(ccFailed(CC.analyzeCCContract(ccBundle(part), "9.9.9")).length > 0, part);
+  }
+  const dir = tmp();
+  const bin = path.join(dir, "claude");
+  const cacheFile = path.join(dir, "cache.json");
+  fs.writeFileSync(bin, ccBundle());
+  let reads = 0;
+  const readBinary = (p: string) => (reads++, fs.readFileSync(p));
+  assert.equal(CC.verifyCCBinary("9.9.9", { binaryPath: bin, cacheFile, readBinary }).ok, true);
+  assert.equal(CC.verifyCCBinary("9.9.9", { binaryPath: bin, cacheFile, readBinary }).ok, true);
+  assert.equal(reads, 1);
+  fs.writeFileSync(bin, ccBundle("legacy"));
+  assert.equal(CC.verifyCCBinary("9.9.9", { binaryPath: bin, cacheFile, readBinary }).ok, false);
+  assert.deepEqual(ccFailed(CC.verifyCCBinary("9.9.9", { binaryPath: null, cacheFile })), ["binary"]);
+  assert.equal(CC.verifyCCBinary("9.9.9", { binaryPath: path.join(dir, "missing"), cacheFile: path.join(dir, "c2.json") }).ok, false);
+});
+
+test("dist/config-transfer.js round-trips the allowlist and never carries the account deny-set", gate, () => {
+  const src = path.join(tmp(), "config");
+  const allow: Record<string, string> = { "settings.json": '{"theme":"dark"}', "CLAUDE.md": "# hi\n", "skills/foo.md": "s\n" };
+  for (const [rel, body] of Object.entries(allow)) {
+    fs.mkdirSync(path.dirname(path.join(src, rel)), { recursive: true });
+    fs.writeFileSync(path.join(src, rel), body);
+  }
+  fs.writeFileSync(path.join(src, ".credentials.json"), '{"claudeAiOauth":{"accessToken":"secret-token"}}');
+  fs.mkdirSync(path.join(src, "sessions"));
+  fs.writeFileSync(path.join(src, "sessions", "s1.jsonl"), "{}");
+  const bundle = CT.exportConfig(src);
+  assert.ok(!bundle.includes("secret-token") && !bundle.includes("s1.jsonl"));
+  const dest = path.join(tmp(), "config");
+  const written = CT.importConfig(dest, bundle);
+  assert.deepEqual([...written].sort(), Object.keys(allow).sort());
+  for (const [rel, body] of Object.entries(allow)) assert.equal(fs.readFileSync(path.join(dest, rel), "utf8"), body);
+  assert.throws(() => CT.assertNotFull(true));
+  assert.doesNotThrow(() => CT.assertNotFull(false));
+  assert.throws(() => CT.importConfig(dest, "not json"));
+});
+
+test("dist/app-visibility.js: only a recent 'hidden' report pauses", gate, () => {
+  const f = AV.visibilityFile(tmp());
+  const t = new Date("2026-11-02T10:00:00Z");
+  assert.equal(AV.appHidden(f, t.getTime()), false);
+  AV.writeVisibility(f, false, t);
+  assert.equal(AV.appHidden(f, t.getTime() + 60_000), true);
+  assert.equal(AV.appHidden(f, t.getTime() + AV.VISIBILITY_TTL_MS + 1), false);
 });
