@@ -60,6 +60,8 @@ export interface ProfileRow {
   disabled?: boolean;
   active: boolean;
   liveSessions: number;
+  /** Claude only: the profile's own agent-config root, null = the shared one; absent from older CLIs. */
+  agentConfigRoot?: string | null;
 }
 
 /** Context-window readout for a session/status (Claude). `pct` is that ONE

@@ -538,6 +538,31 @@ describe("Account sheet", () => {
     expect(screen.getByTestId("where").textContent).toBe("accounts/none");
   });
 
+  it("agent-config settings: shows the root in effect and switches it at once, for Claude accounts only", async () => {
+    const setAgentConfigRoot = vi.fn(() => Promise.resolve());
+    mount(fixture({ accounts: [acc("work", { agentConfigRoot: null }), { ...acc("cx", { agentConfigRoot: null }), id: "codex:cx", tool: "codex" }] }), {
+      overlay: { kind: "account", id: "claude:work" },
+      act: { setAgentConfigRoot },
+    });
+    const sw = screen.getByRole("switch", { name: "Own agent-config settings" });
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByText(/In effect: the shared agent-config settings/)).toBeTruthy();
+    fireEvent.click(sw);
+    await waitFor(() => expect(setAgentConfigRoot).toHaveBeenCalledWith("claude:work", true));
+    expect(screen.getByRole("switch", { name: "Own agent-config settings" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/In effect: this account's own agent-config settings/)).toBeTruthy();
+    expect(screen.getByText(/Own settings start empty/)).toBeTruthy();
+  });
+
+  it("agent-config settings: an own root names its folder; an older CLI shows no switch", () => {
+    mount(fixture({ accounts: [acc("work", { agentConfigRoot: "/Users/x/.agent-switch/claude/work/agent-config" })] }), { overlay: { kind: "account", id: "claude:work" }, act: {} });
+    expect(screen.getByRole("switch", { name: "Own agent-config settings" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/\/Users\/x\/\.agent-switch\/claude\/work\/agent-config/)).toBeTruthy();
+    cleanup();
+    mount(fixture({ accounts: [acc("work")] }), { overlay: { kind: "account", id: "claude:work" }, act: {} });
+    expect(screen.queryByRole("switch", { name: "Own agent-config settings" })).toBeNull();
+  });
+
   it("refreshes the account's usage from the flyout, also when no usage is known yet", async () => {
     const refreshAccountUsage = vi.fn(() => Promise.resolve());
     mount(fixture({ accounts: [acc("work", { windows: [], checkedAt: null })] }), {

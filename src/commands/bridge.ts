@@ -8,6 +8,7 @@
  * session's history, read-only (ADR-010).
  */
 
+import { sessionAgentConfigEnv } from "../agent-config-root.js";
 import { spawnSync } from "node:child_process";
 import * as path from "node:path";
 import * as readline from "node:readline";
@@ -309,6 +310,7 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
         key: t.key,
         bin: readBinaryPath("claude") ?? providerOf("claude").binary,
         configDir: configDir("claude", t.account),
+        env: sessionAgentConfigEnv("claude", t.account),
         cwd: t.cwd,
         sessionId: t.sessionId,
         fresh: !!t.sessionId && !t.transcript,

@@ -1,0 +1,5 @@
+{
+  "marker": "own-agent-config",
+  "dir": "agent-config",
+  "env": "EVENT4U_CONFIG_HOME"
+}

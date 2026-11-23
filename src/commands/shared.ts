@@ -4,6 +4,7 @@
  * context readings, the Claude Desktop scan, and the auth-status read.
  */
 
+import { sessionAgentConfigEnv } from "../agent-config-root.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline";
@@ -156,7 +157,7 @@ export function syncClaudeProfile(dir: string): void {
 /** `admit` runs after the profile is prepared and right before the spawn; a
  *  reason it returns refuses the start with {@link GUARD_REFUSED_EXIT}. */
 export function launch(p: Provider, name: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}, admit?: () => string | null): number {
-  return launchIn(p, configDir(p.id, name), args, extraEnv, admit);
+  return launchIn(p, configDir(p.id, name), args, { ...sessionAgentConfigEnv(p.id, name), ...extraEnv }, admit);
 }
 
 /** `launch` with an explicit config dir — a staged sign-in runs outside the profile. */

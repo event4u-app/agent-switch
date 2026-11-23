@@ -172,15 +172,29 @@ fn valid_profile_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-/// agent-config's config root for the active Claude profile: a dedicated dir
-/// inside the profile, never the profile's Claude `config` dir. None (no
-/// active profile, unreadable state, a name the CLI would not write) means
-/// agent-config's own default root.
+/// Present in a Claude profile dir when the user switched that profile to its
+/// own agent-config root (`agent-switch agent-config-root <name> own`). The
+/// CLI writes it and sets the same root for the profile's sessions.
+const OWN_ROOT_MARKER: &str = "own-agent-config";
+/// The profile's own root, inside the profile but apart from Claude's `config` dir.
+const OWN_ROOT_DIR: &str = "agent-config";
+
+/// agent-config's config root for the active Claude profile. Some only when
+/// that profile opted in by its marker — a leftover root dir is not an opt-in.
+/// None (no opt-in, no active profile, unreadable state, a name the CLI would
+/// not write) means agent-config's own default root.
 fn active_root_at(as_home: &Path) -> Option<PathBuf> {
     let raw = fs::read_to_string(as_home.join("state.json")).ok()?;
     let state: serde_json::Value = serde_json::from_str(&raw).ok()?;
     let name = state.get("active")?.get("claude")?.as_str()?;
-    valid_profile_name(name).then(|| as_home.join("claude").join(name).join("agent-config"))
+    if !valid_profile_name(name) {
+        return None;
+    }
+    let profile = as_home.join("claude").join(name);
+    profile
+        .join(OWN_ROOT_MARKER)
+        .is_file()
+        .then(|| profile.join(OWN_ROOT_DIR))
 }
 
 /// The directory agent-config writes its discovery and token files to for `root`.
@@ -1236,19 +1250,49 @@ mod tests {
             .collect()
     }
 
+    /// The contract the CLI reads too (tests/agent-config-root.test.ts).
+    const CONTRACT: &str = include_str!("../../../tests/fixtures/agent-config-root.json");
+
+    fn contract(key: &str) -> String {
+        let v: serde_json::Value = serde_json::from_str(CONTRACT).unwrap();
+        v[key].as_str().unwrap().to_string()
+    }
+
+    fn opt_in(home: &Path, name: &str) {
+        let dir = home.join("claude").join(name);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(contract("marker")), "on").unwrap();
+    }
+
     #[test]
-    fn active_root_is_a_dedicated_dir_inside_the_active_claude_profile() {
+    fn the_marker_and_the_dir_are_the_contract_the_cli_uses() {
+        assert_eq!(OWN_ROOT_MARKER, contract("marker"));
+        assert_eq!(OWN_ROOT_DIR, contract("dir"));
+    }
+
+    #[test]
+    fn active_root_is_the_profiles_own_dir_only_when_it_opted_in() {
         let home = fixture_dir();
         write_state(&home, r#""work""#);
+        // Off: global, even with a leftover <profile>/agent-config.
+        fs::create_dir_all(home.join("claude").join("work").join(contract("dir"))).unwrap();
+        assert_eq!(active_root_at(&home), None);
+        opt_in(&home, "work");
         assert_eq!(
             active_root_at(&home),
-            Some(home.join("claude").join("work").join("agent-config"))
+            Some(home.join("claude").join("work").join(contract("dir")))
         );
+        // Another active profile without the marker: global again.
         write_state(&home, r#""home-2""#);
+        assert_eq!(active_root_at(&home), None);
+        opt_in(&home, "home-2");
         assert_eq!(
             active_root_at(&home),
-            Some(home.join("claude").join("home-2").join("agent-config"))
+            Some(home.join("claude").join("home-2").join(contract("dir")))
         );
+        // Turned off: the marker is gone, the profile's dir stays and is not used.
+        fs::remove_file(home.join("claude").join("home-2").join(contract("marker"))).unwrap();
+        assert_eq!(active_root_at(&home), None);
     }
 
     #[test]
@@ -1259,7 +1303,7 @@ mod tests {
         // No active Claude profile.
         write_state(&home, "null");
         assert_eq!(active_root_at(&home), None);
-        // A name the CLI would never write must not reach a path.
+        // A name the CLI would never write must not reach a path, marker or not.
         for bad in [r#""../escape""#, r#""a/b""#, r#""""#, r#""x y""#, "42"] {
             write_state(&home, bad);
             assert_eq!(active_root_at(&home), None, "{bad}");
@@ -1283,8 +1327,10 @@ mod tests {
     #[test]
     fn switching_profiles_restarts_the_owned_server_with_the_new_root() {
         let home = fixture_dir();
+        opt_in(&home, "work");
         write_state(&home, r#""work""#);
         let work = active_root_at(&home);
+        assert!(work.is_some());
         let owned = Owned {
             spawned: true,
             pid: Some(1234),
@@ -1292,14 +1338,25 @@ mod tests {
         };
         // Same profile: keep the server.
         assert!(!needs_restart(&owned, work.as_deref()));
-        // The active profile changes: the old server goes, the new one gets the new root.
+        // Another profile with its own root: the old server goes, the new one gets the new root.
+        opt_in(&home, "home");
         write_state(&home, r#""home""#);
         let next = active_root_at(&home);
         assert!(needs_restart(&owned, next.as_deref()));
         let args = args_of(&server_command(next.as_deref()));
         assert!(args.contains(&next.unwrap().to_string_lossy().into_owned()));
-        // Back to agent-config's default root is a change too.
+        // A profile on the shared root: restart into agent-config's default.
+        write_state(&home, r#""plain""#);
+        assert_eq!(active_root_at(&home), None);
         assert!(needs_restart(&owned, None));
+        // Two profiles on the shared root: one server serves both, nothing restarts.
+        let shared = Owned {
+            spawned: true,
+            pid: Some(1),
+            root: None,
+        };
+        write_state(&home, r#""other-plain""#);
+        assert!(!needs_restart(&shared, active_root_at(&home).as_deref()));
         // A server AS only found is never stopped for a switch.
         let found = Owned {
             spawned: false,

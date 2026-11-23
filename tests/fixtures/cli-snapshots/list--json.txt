@@ -7,7 +7,8 @@
     "color": "teal",
     "disabled": false,
     "active": false,
-    "liveSessions": 0
+    "liveSessions": 0,
+    "agentConfigRoot": null
   },
   {
     "provider": "claude",
@@ -17,7 +18,8 @@
     "color": null,
     "disabled": false,
     "active": true,
-    "liveSessions": 0
+    "liveSessions": 0,
+    "agentConfigRoot": null
   },
   {
     "provider": "codex",

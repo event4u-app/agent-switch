@@ -15,6 +15,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch browsers [--json]               browsers --browser can open (macOS / Linux)
   agent-switch import [--provider P] <name>    migrate the default install (no re-login)
   agent-switch mark-shared [--provider P] <name> [--off]   mark a profile as sharing the default install's login (never refreshed or balanced)
+  agent-switch agent-config-root <name> [own|global|status] [--json]   a Claude profile's own agent-config settings, or the shared ones (default); applies to new sessions and the GUI
   agent-switch use [--provider P] <name>       set the active profile for a provider
   agent-switch deactivate [--provider P]       clear the active profile for a provider
   agent-switch run [--provider P] <name> [--tmux] [..]  launch the provider's CLI (--tmux = managed tmux session, POSIX)

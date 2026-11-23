@@ -824,6 +824,12 @@ export async function setProfileDisabled(provider: ProviderId, name: string, dis
   await runCli([disabled ? "disable" : "enable", name, "--provider", provider]);
 }
 
+/** `agent-config-root <name> own|global`: a Claude account's own agent-config
+ *  root or the shared one; the settings server follows on its next call. */
+export async function setAgentConfigRoot(name: string, own: boolean): Promise<void> {
+  await runCli(["agent-config-root", name, own ? "own" : "global"]);
+}
+
 export async function setProfileColor(provider: ProviderId, name: string, color: string | null): Promise<void> {
   await runCli(["color", name, color ?? "none", "--provider", provider]);
 }

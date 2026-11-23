@@ -4,6 +4,7 @@
  * `claude` keeps starting in the user's own terminal as before.
  */
 
+import { sessionAgentConfigEnv } from "../agent-config-root.js";
 import { spawnSync } from "node:child_process";
 import * as path from "node:path";
 import * as readline from "node:readline";
@@ -50,7 +51,7 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
       // R1: Claude Remote Control when asked for this session or on for the account (off by default).
       const args = remoteControlArgs(providerId, profile, flags["remote-control"] === true, typeof flags.title === "string" ? flags.title : path.basename(cwd), readRemote());
       if (providerId === "claude") syncClaudeProfile(configDir(providerId, profile));
-      const s = host.start({ provider: providerId, account: profile, configDir: configDir(providerId, profile), cwd, bin, ...(args.length ? { args } : {}) }, hookCommandPrefix());
+      const s = host.start({ provider: providerId, account: profile, configDir: configDir(providerId, profile), cwd, bin, env: sessionAgentConfigEnv(providerId, profile), ...(args.length ? { args } : {}) }, hookCommandPrefix());
       if (flags.json) console.log(JSON.stringify(s));
       else console.log(`Started ${s.key} in ${cwd}. It keeps running when you close the window; end it with: agent-switch host end ${s.key}`);
       return;

@@ -78,6 +78,9 @@ export interface Account {
   liveSessions: number;
   /** Ids of the pools this account is a member of. */
   pools: string[];
+  /** Claude: the account's own agent-config root ("" while just switched on),
+   *  null = the shared one; undefined = not reported. */
+  agentConfigRoot?: string | null;
 }
 
 export type SessionState =

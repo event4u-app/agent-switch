@@ -55,6 +55,8 @@ export interface Actions {
   setSharedSetup?(enabled: boolean, source?: string): Promise<void>;
   setAutostart?(on: boolean): Promise<void>;
   setAccountDisabled?(accountId: string, disabled: boolean): Promise<void>;
+  /** A Claude account's own agent-config root (true) or the shared one. */
+  setAgentConfigRoot?(accountId: string, own: boolean): Promise<void>;
   installShellIntegration?(): Promise<void>;
   setProvider?(tool: ProviderId, surface: ProviderSurface, on: boolean): Promise<void>;
   linkProviderBinary?(tool: ProviderId, path: string): Promise<void>;
@@ -119,6 +121,7 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
       }
     }),
     setAccountDisabled: thenReload((id: string, disabled: boolean) => ipc.setProfileDisabled(...splitAccountId(id), disabled)),
+    setAgentConfigRoot: thenReload((id: string, own: boolean) => ipc.setAgentConfigRoot(splitAccountId(id)[1], own)),
     redeemReset: thenReload((id: string) => ipc.redeemReset(...splitAccountId(id))),
     // Manual refresh: past the per-account cooldown, and the countdown restarts.
     refreshUsage: async () => {

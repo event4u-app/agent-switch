@@ -126,6 +126,7 @@ export function accountFromProfile(row: ProfileRow, usage: UsageSnapshot | null 
     surfaces: [],
     liveSessions: row.liveSessions,
     pools: extras.pools ?? [],
+    ...(row.agentConfigRoot !== undefined ? { agentConfigRoot: row.agentConfigRoot } : {}),
   };
 }
 

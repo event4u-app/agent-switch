@@ -36,6 +36,7 @@ import {
   cmdList,
   cmdLogin,
   cmdMarkShared,
+  cmdAgentConfigRoot,
   cmdRemove,
   cmdRename,
   cmdRun,
@@ -146,6 +147,7 @@ async function main(): Promise<void> {
     case "disable": return cmdDisable(providerId, positional[0], true);
     case "enable": return cmdDisable(providerId, positional[0], false);
     case "mark-shared": return cmdMarkShared(providerId, positional[0], !!flags.off);
+    case "agent-config-root": return cmdAgentConfigRoot(providerId, positional[0], positional[1], !!flags.json);
     case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags);
     case "reset": return cmdReset(providerId, positional[0], !!flags.yes);
     case "rename": return cmdRename(providerId, positional[0], positional[1]);

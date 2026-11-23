@@ -7,6 +7,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import { agentConfigRootFor, sessionAgentConfigEnv, setOwnAgentConfigRoot } from "../agent-config-root.js";
 import {
   HOME,
   browserDir,
@@ -419,7 +420,7 @@ export function cmdRun(
       // `takeover --in-place` knows this pane is ours to respawn).
       const sess = tmuxSessionName(providerId, n);
       recordManagedSession(sess, { provider: providerId, profile: n });
-      const argv = newSessionArgs(sess, p.envVar, configDir(providerId, n), [p.binary, ...passthrough]);
+      const argv = newSessionArgs(sess, p.envVar, configDir(providerId, n), [p.binary, ...passthrough], sessionAgentConfigEnv(providerId, n));
       const res = spawnSync("tmux", argv, { stdio: "inherit" });
       process.exit(res.status ?? 1);
     }
@@ -464,6 +465,8 @@ export function cmdList(providerId?: ProviderId, json = false): void {
         disabled: isDisabled(pid, n),
         active: activeFor(pid) === n,
         liveSessions: pid === "claude" ? liveSessionPids(configDir("claude", n)).length : pid === "codex" ? (codexLive.get(n) ?? 0) : 0,
+        // Claude only: the profile's own agent-config root, null = the shared one.
+        ...(pid === "claude" ? { agentConfigRoot: agentConfigRootFor(n) } : {}),
       })),
     );
     console.log(JSON.stringify(rows, null, 2));
@@ -600,6 +603,23 @@ export function cmdMarkShared(providerId: ProviderId, name: string | undefined, 
     off
       ? `${providerId}/${n} no longer counts as sharing the default install's login.`
       : `${providerId}/${n} now counts as sharing the default install's login: agent-switch never refreshes it and never starts it by balancing. \`agent-switch login ${n}\` gives it its own login.`,
+  );
+}
+
+/** `agent-config-root <name> [own|global|status] [--json]`: which agent-config
+ *  root a Claude profile's sessions and the GUI's settings server use. Only the
+ *  marker changes; config and keys are never copied or deleted. */
+export function cmdAgentConfigRoot(providerId: ProviderId, name: string | undefined, mode: string | undefined, json: boolean): void {
+  if (providerId !== "claude") die("agent-config-root applies to Claude profiles only");
+  if (mode !== undefined && mode !== "own" && mode !== "global" && mode !== "status") die("usage: agent-switch agent-config-root <name> [own|global|status] [--json]");
+  const n = requireProfile(providerId, name, "agent-config-root");
+  if (mode === "own" || mode === "global") setOwnAgentConfigRoot(n, mode === "own");
+  const own = agentConfigRootFor(n);
+  if (json) return void console.log(JSON.stringify({ provider: providerId, name: n, root: own ? "own" : "global", path: own }, null, 2));
+  console.log(
+    own
+      ? `claude/${n} uses its own agent-config settings: ${own}. New sessions of it and the GUI's settings window read them; running sessions keep the settings they started with.`
+      : `claude/${n} uses the shared agent-config settings. New sessions of it and the GUI's settings window read them; running sessions keep the settings they started with.`,
   );
 }
 

@@ -2,6 +2,7 @@
  * Moving a session to another profile: handoff and takeover (CLI, Codex, Desktop).
  */
 
+import { sessionAgentConfigEnv } from "../agent-config-root.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -77,7 +78,7 @@ function resumeInPlace(providerId: ProviderId, target: string, resumeArgs: strin
     const host = new TmuxHost(ROOT);
     if (host.windowOf(hostedKey)) {
       const p = provider(providerId);
-      const moved = host.respawn(hostedKey, { provider: providerId, account: target, configDir: configDir(providerId, target), cwd: process.cwd(), bin: readBinaryPath(providerId) ?? p.binary, args: resumeArgs, env });
+      const moved = host.respawn(hostedKey, { provider: providerId, account: target, configDir: configDir(providerId, target), cwd: process.cwd(), bin: readBinaryPath(providerId) ?? p.binary, args: resumeArgs, env: { ...sessionAgentConfigEnv(providerId, target), ...env } });
       console.log(`Handed the session over to "${target}" in its hosted window (${moved.key}).`);
       process.exit(0);
     }
@@ -89,7 +90,7 @@ function resumeInPlace(providerId: ProviderId, target: string, resumeArgs: strin
   }
   const sess = tmuxSessionName(mgmt.provider, mgmt.profile);
   const p = provider(providerId);
-  const argv = respawnPaneArgs(sess, process.cwd(), p.envVar, configDir(providerId, target), [p.binary, ...resumeArgs]);
+  const argv = respawnPaneArgs(sess, process.cwd(), p.envVar, configDir(providerId, target), [p.binary, ...resumeArgs], { ...sessionAgentConfigEnv(providerId, target), ...env });
   const res = spawnSync("tmux", argv, { stdio: "inherit" });
   recordManagedSession(sess, { provider: providerId, profile: target }); // pane now runs the target
   console.log(`Handed the session over to "${target}" in the managed tmux pane "${sess}".`);

@@ -52,6 +52,8 @@ export interface ClaudeBridgeOptions {
   key: string;
   bin: string;
   configDir: string;
+  /** Extra env for the agent (the profile's agent-config root when it has its own). */
+  env?: Record<string, string>;
   cwd: string;
   /** Resume this session; null starts a new one. */
   sessionId: string | null;
@@ -105,7 +107,7 @@ export class ClaudeBridge {
     const spawn = this.o.spawn ?? nodeSpawn;
     const child = spawn(this.o.bin, claudeArgs({ sessionId: this.o.sessionId, fresh: this.o.fresh, mode: this.mode, model: this.o.model }), {
       cwd: this.o.cwd,
-      env: { ...process.env, CLAUDE_CONFIG_DIR: this.o.configDir },
+      env: { ...process.env, ...this.o.env, CLAUDE_CONFIG_DIR: this.o.configDir },
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.child = child;

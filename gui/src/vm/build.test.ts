@@ -47,6 +47,14 @@ const usage = (utils: (number | null)[], capturedAt = NOW - 2 * MIN): UsageSnaps
   capturedAt: iso(capturedAt),
 });
 
+describe("agent-config root", () => {
+  it("carries the root the CLI names, null for the shared one, and nothing from an older CLI", () => {
+    expect(accountFromProfile(row({ agentConfigRoot: "/h/claude/work/agent-config" }), null).agentConfigRoot).toBe("/h/claude/work/agent-config");
+    expect(accountFromProfile(row({ agentConfigRoot: null }), null).agentConfigRoot).toBeNull();
+    expect("agentConfigRoot" in accountFromProfile(row(), null)).toBe(false);
+  });
+});
+
 describe("routines", () => {
   it("an account carries the readout's routines, and none when the readout has none", () => {
     expect(accountFromProfile(row(), { ...usage([20]), routines: { used: 2, limit: 15 } }).routines).toEqual({ used: 2, limit: 15 });

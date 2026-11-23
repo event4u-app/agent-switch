@@ -308,6 +308,28 @@ export function AccountSheet({ id, section }: { id: string; section?: AccountSec
           </SheetSection>
         )}
 
+        {a.tool === "claude" && a.agentConfigRoot !== undefined && (
+          <SheetSection
+            title={t("accounts.agentConfig.title")}
+            aside={
+              <Switch
+                label={t("accounts.agentConfig.switch")}
+                checked={a.agentConfigRoot !== null}
+                disabled={!s.act.setAgentConfigRoot}
+                onChange={(own) => {
+                  attempt(s, s.act.setAgentConfigRoot?.(a.id, own), t("accounts.agentConfig.failed", { name: a.name }));
+                  s.update((vm) => ({ accounts: vm.accounts.map((o) => (o.id === a.id ? { ...o, agentConfigRoot: own ? "" : null } : o)) }));
+                }}
+              />
+            }
+          >
+            <p className="text-xs text-ac-muted">
+              {a.agentConfigRoot === null ? t("accounts.agentConfig.shared") : t("accounts.agentConfig.own", { path: a.agentConfigRoot || t("accounts.agentConfig.ownFolder") })}
+            </p>
+            <p className="text-[11px] text-ac-faint">{t("accounts.agentConfig.lifecycle")}</p>
+          </SheetSection>
+        )}
+
         <SheetSection title={t("accounts.protection.title")} aside={<Switch label={t("accounts.protection.title")} checked={protOn} onChange={setProtOn} disabled={!s.act.setProtection} />}>
           <p className="text-xs text-ac-muted">
             {protOn
