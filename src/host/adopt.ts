@@ -13,6 +13,7 @@
  *   another session.
  */
 
+import { execFileSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -110,46 +111,134 @@ export function adopt(d: AdoptDeps, key: string, o: AdoptOptions): HostedSession
   return d.start({ provider, account, sessionId, cwd: loc.cwd, args: ["resume", sessionId] });
 }
 
-/** The lock file that holds one session's take-over. */
-export function adoptLockFile(dir: string, key: string): string {
-  return path.join(dir, crypto.createHash("sha256").update(key).digest("hex").slice(0, 32) + ".lock");
+/** Who holds a take-over: the process, and when it started (a PID alone can be reused). */
+export interface LockHolder {
+  pid: number;
+  /** The process's start time as the system reports it; null where it cannot be read. */
+  start: string | null;
 }
 
-function processAlive(pid: number): boolean {
+/** When `pid` started, as `ps` reports it; null where that cannot be read. */
+export function processStart(pid: number): string | null {
+  if (process.platform === "win32") return null;
   try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === "EPERM";
+    const out = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 2000 }).trim();
+    return out || null;
+  } catch {
+    return null;
   }
 }
+
+/** The holder's process still runs: its PID is taken, and by the process that wrote the lock. */
+export function holderAlive(h: LockHolder): boolean {
+  try {
+    process.kill(h.pid, 0);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EPERM") return false;
+  }
+  if (h.start === null) return true;
+  const now = processStart(h.pid);
+  return now === null || now === h.start;
+}
+
+const lockBase = (key: string) => crypto.createHash("sha256").update(key).digest("hex").slice(0, 32);
+
+/** One generation of the lock that holds one session's take-over. */
+export function adoptLockFile(dir: string, key: string, generation = 0): string {
+  return path.join(dir, `${lockBase(key)}.${String(generation).padStart(10, "0")}.lock`);
+}
+
+/** The generations of one session's lock on disk, lowest first. */
+function generations(dir: string, base: string): number[] {
+  const re = new RegExp(`^${base}\\.(\\d{10})\\.lock$`);
+  return fs
+    .readdirSync(dir)
+    .map((f) => re.exec(f)?.[1])
+    .filter((g): g is string => g !== undefined)
+    .map(Number)
+    .sort((a, b) => a - b);
+}
+
+/** A lock file's holder; null when it names none (a lock from an older version: a bare PID); "gone" when released meanwhile. */
+function readHolder(file: string): LockHolder | null | "gone" {
+  let text: string;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return "gone";
+    throw err;
+  }
+  try {
+    const o = JSON.parse(text) as { pid?: unknown; start?: unknown };
+    if (typeof o.pid === "number" && Number.isInteger(o.pid) && o.pid > 0) return { pid: o.pid, start: typeof o.start === "string" ? o.start : null };
+  } catch {
+    /* a bare PID, below */
+  }
+  const pid = Number.parseInt(text, 10);
+  return Number.isInteger(pid) && pid > 0 ? { pid, start: null } : null;
+}
+
+export interface AdoptLockOptions {
+  /** Whether a holder still runs (tests stand in for the process table). */
+  alive?: (h: LockHolder) => boolean;
+  /** This process as the lock names it. */
+  self?: LockHolder;
+}
+
+const ATTEMPTS = 50;
 
 /**
  * One take-over per session at a time: two `host adopt` runs of one session
- * would start two programs writing one conversation. The lock file names its
- * process; a second run is refused while that process lives, and a lock left by
- * a process that died is taken over.
+ * would start two programs writing one conversation. Held through `fn`, which
+ * registers the hosted window, so the next run sees the session as hosted.
+ *
+ * The lock is a chain of generations (`<session>.<n>.lock`), each naming its
+ * process and that process's start time. Taking it is publishing generation
+ * top+1 — a hard link of a finished file, so it appears whole and only one run
+ * can make it — after finding the top one held by no running process, then
+ * checking no higher one appeared. Nothing ever removes a lock another live run
+ * holds: a dead holder's generation is not deleted to be retaken (two runs that
+ * both read the same dead holder would then each delete the other's fresh lock),
+ * it is outranked, and only the run holding the top tidies the dead ones below.
  */
-export function withAdoptLock<T>(dir: string, key: string, fn: () => T, alive: (pid: number) => boolean = processAlive, pid = process.pid): T {
+export function withAdoptLock<T>(dir: string, key: string, fn: () => T, o: AdoptLockOptions = {}): T {
+  const alive = o.alive ?? holderAlive;
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const file = adoptLockFile(dir, key);
-  for (let attempt = 0; ; attempt++) {
-    try {
-      fs.writeFileSync(file, String(pid), { flag: "wx", mode: 0o600 });
-      break;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-      const holder = Number.parseInt(fs.readFileSync(file, "utf8"), 10);
-      if (attempt === 0 && !(Number.isInteger(holder) && holder > 0 && alive(holder))) {
-        fs.rmSync(file, { force: true });
-        continue;
-      }
-      throw new AdoptRefused(`${key} is already being taken over${Number.isInteger(holder) ? ` (PID ${holder})` : ""}; wait for that to finish`, "running");
+  const base = lockBase(key);
+  const self = o.self ?? { pid: process.pid, start: processStart(process.pid) };
+  const refused = (h: LockHolder | null) => new AdoptRefused(`${key} is already being taken over${h ? ` (PID ${h.pid})` : ""}; wait for that to finish`, "running");
+  let mine: string | null = null;
+  for (let attempt = 0; attempt < ATTEMPTS && mine === null; attempt++) {
+    const top = generations(dir, base).at(-1);
+    if (top !== undefined) {
+      const h = readHolder(adoptLockFile(dir, key, top));
+      if (h === "gone") continue;
+      if (h && alive(h)) throw refused(h);
     }
+    const next = (top ?? -1) + 1;
+    const file = adoptLockFile(dir, key, next);
+    const tmp = path.join(dir, `.${base}.${self.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`);
+    fs.writeFileSync(tmp, JSON.stringify(self), { flag: "wx", mode: 0o600 });
+    try {
+      fs.linkSync(tmp, file);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EEXIST") continue;
+      throw err;
+    } finally {
+      fs.rmSync(tmp, { force: true });
+    }
+    // A run that read an older top can publish a lower generation after us, never a higher one.
+    if (generations(dir, base).at(-1) !== next) {
+      fs.rmSync(file, { force: true });
+      continue;
+    }
+    mine = file;
+    for (const g of generations(dir, base)) if (g < next) fs.rmSync(adoptLockFile(dir, key, g), { force: true });
   }
+  if (mine === null) throw refused(null);
   try {
     return fn();
   } finally {
-    fs.rmSync(file, { force: true });
+    fs.rmSync(mine, { force: true });
   }
 }
