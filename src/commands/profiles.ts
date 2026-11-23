@@ -53,6 +53,7 @@ import { serviceInstall, serviceTarget } from "../service.js";
 import { fileURLToPath } from "node:url";
 import { removeLaunchersFor, renameLaunchersFor } from "../launchers.js";
 import { newSessionArgs, recordManagedSession, tmuxAvailable, tmuxSessionName } from "../tmux.js";
+import { choiceArgs, newWorktree, type StartChoice } from "../start-choice.js";
 import {
   CLAUDE_HOME,
   CLAUDE_JSON,
@@ -395,12 +396,19 @@ export function cmdRun(
   name: string | undefined,
   passthrough: string[],
   cwd?: string,
-  own: { tmux?: boolean; force?: boolean } = {},
+  own: { tmux?: boolean; force?: boolean; worktree?: boolean } & StartChoice = {},
 ): void {
   const n = requireProfile(providerId, name, "run");
   if (cwd !== undefined) {
     if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) die(`no such folder: ${cwd}`);
     process.chdir(cwd);
+  }
+  try {
+    // The tool's own flags come first: whatever follows `--` can still override them.
+    passthrough = [...choiceArgs(providerId, { ...(own.model !== undefined ? { model: own.model } : {}), ...(own.effort !== undefined ? { effort: own.effort } : {}) }), ...passthrough];
+    if (own.worktree) process.chdir(newWorktree(process.cwd(), providerId));
+  } catch (e) {
+    die((e as Error).message);
   }
   const p = provider(providerId);
   const wantTmux = !!own.tmux;

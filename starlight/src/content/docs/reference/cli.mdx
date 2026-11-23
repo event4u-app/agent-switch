@@ -110,7 +110,7 @@ background service stops checking its usage.
 | --- | --- |
 | `use <name>` | Set the preferred account for a tool. A preference, not a pin — see below. |
 | `deactivate` | Clear the preferred account. |
-| `run <name> [--cwd DIR] [--tmux] [--force] [-- args…]` | Start the tool on one named account. |
+| `run <name> [--cwd DIR] [--model M] [--effort E] [--worktree] [--tmux] [--force] [-- args…]` | Start the tool on one named account. |
 | `dir [--guard] [--json] [--plain] [--exclude a,b]` | Which account a start in this folder would use, and why. |
 | `exec [--exclude a,b] [--plain] -- <args…>` | Start the tool on the account `dir` picks, from a script or another tool. |
 | `strategy [balance\|fill\|default\|ask]` | How a start with no folder rule picks: `balance` (default) spreads starts, `fill` stays on the preferred account until it reaches its limit, `default` always takes the preferred account, `ask` asks at the terminal. See [below](#which-account-a-start-uses). |
@@ -206,8 +206,15 @@ conversation on `work`.
 - `--cwd DIR` starts it in that folder.
 - `--tmux` starts it in a tmux session agent-switch manages (macOS and Linux).
 - `--force` starts it even if that account already has a running session.
+- `--model M` starts it on that model (Claude and Codex).
+- `--effort E` sets the thinking level: Claude's `--effort` (`low` to `max`),
+  Codex's `model_reasoning_effort` (`minimal` to `high`). Antigravity takes
+  neither and refuses them.
+- `--worktree` starts it in a new git worktree of the folder: branch
+  `agent-switch/<tool>-<time>` at the folder's `HEAD`, checked out in
+  `<repo>.worktrees/<tool>-<time>` beside the repository.
 
-These three only count as agent-switch flags before a bare `--`.
+These only count as agent-switch flags before a bare `--`.
 
 ### `guard`
 
@@ -341,7 +348,7 @@ suggested. The background service must be running.
 | `view <session> chat\|terminal [--json]` | Switch a session hosted in Agent Switch between its terminal and the chat view, between turns only. To chat, the window waits with a notice while the chat writes; when the chat closes, the program comes back in the window and resumes the same conversation. Claude and Codex only. |
 | `mcp [--json]` · `mcp open <provider/account>` | The MCP servers (name, transport, where they apply) and plugins each Claude and Codex account has configured, read from the tool's own config; `open` reveals that file. Nothing is installed or changed, and no command line, environment or header of a server is shown. |
 | `store status\|import\|rebuild [--json]` | The local event store behind the v3 views: show it, bring in the hook events, or rebuild its views from the stored events. Needs Node 22.13 or later. |
-| `host start [profile] [--cwd DIR] [--remote-control] [--title T]\|list\|attach <session>\|respawn <session>\|end <session> [--yes]` <Badge text="macOS & Linux" variant="caution" /> | Run a Claude, Codex or Antigravity session in Agent Switch's own tmux server, so it keeps running when the window closes. Without a profile it starts where a plain `claude` would. `attach` opens it in this terminal; detaching leaves it running. `end` stops it, after asking. `respawn <session> [--model M] [--effort E]` restarts it in place on another model or thinking level, between turns. `--remote-control` starts a Claude session with Claude Remote Control under the title (also on for every session of an account with `remote rc on`); a respawn keeps it. Needs tmux. |
+| `host start [profile] [--cwd DIR] [--model M] [--effort E] [--worktree] [--remote-control] [--title T]\|list\|attach <session>\|respawn <session>\|end <session> [--yes]` <Badge text="macOS & Linux" variant="caution" /> | Run a Claude, Codex or Antigravity session in Agent Switch's own tmux server, so it keeps running when the window closes. Without a profile it starts where a plain `claude` would. `--model`, `--effort` and `--worktree` start it as they do for `run`. `attach` opens it in this terminal; detaching leaves it running. `end` stops it, after asking. `respawn <session> [--model M] [--effort E]` restarts it in place on another model or thinking level, between turns. `--remote-control` starts a Claude session with Claude Remote Control under the title (also on for every session of an account with `remote rc on`); a respawn keeps it. Needs tmux. |
 | `alerts on\|off\|status [--threshold 80,95]` | Log a notification when a session's context passes these marks (default off). |
 | `desktop` <Badge text="Claude only" variant="note" /> | Which accounts ran sessions in each Claude Desktop window. |
 

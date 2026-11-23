@@ -18,7 +18,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch agent-config-root <name> [own|global|status] [--json]   a Claude profile's own agent-config settings, or the shared ones (default); applies to new sessions and the GUI
   agent-switch use [--provider P] <name>       set the active profile for a provider
   agent-switch deactivate [--provider P]       clear the active profile for a provider
-  agent-switch run [--provider P] <name> [--tmux] [..]  launch the provider's CLI (--tmux = managed tmux session, POSIX)
+  agent-switch run [--provider P] <name> [--model M] [--effort E] [--worktree] [--tmux] [..]  launch the provider's CLI (--worktree = in a new worktree; --tmux = managed tmux session, POSIX)
   agent-switch list [--provider P] [--json]    list profiles, grouped by provider
   agent-switch --list --json                   Claude accounts in claude-swap list schema v1 (read-only, cache only; same as list --json --format cswap-v1)
   agent-switch status [--provider P] [name] [--json]   identity (+ Claude usage); --json = active only

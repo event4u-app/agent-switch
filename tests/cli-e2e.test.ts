@@ -1641,6 +1641,32 @@ test("run --cwd refuses a folder that does not exist, before launching anything"
   }
 });
 
+test("run --model --effort --worktree: the tool gets the choice, in a new worktree of the folder", { skip: gate.skip || (process.platform === "win32" ? "fake binaries are POSIX shell scripts" : false) }, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
+  const repo = path.join(root, "app");
+  try {
+    seed(home, "claude", "work");
+    fs.mkdirSync(repo);
+    const g = (...a: string[]) => execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { stdio: "ignore" });
+    g("init", "-q");
+    g("commit", "-q", "--allow-empty", "-m", "init");
+    fs.writeFileSync(path.join(bin, "claude"), `#!/bin/sh\n[ "$1" = "--version" ] && { echo "1.0.0"; exit 0; }\necho "$*|$(pwd -P)" >> "${path.join(bin, "claude.log")}"\nexit 0\n`, { mode: 0o755 });
+    const r = runLogin(home, bin, ["run", "work", "--cwd", repo, "--model", "opus", "--effort", "high", "--worktree", "--", "--resume"]);
+    assert.equal(r.status, 0, r.stderr);
+    const [args, cwd] = fs.readFileSync(path.join(bin, "claude.log"), "utf8").trim().split("|");
+    assert.equal(args, "--model opus --effort high --resume");
+    assert.match(cwd!, new RegExp(`^${path.join(root, "app.worktrees", "claude-")}\\d{8}-\\d{6}$`.replace(/\//g, "\\/")));
+    const bad = runLogin(home, bin, ["run", "work", "--provider", "antigravity", "--model", "x"]);
+    assert.notEqual(bad.status, 0);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(bin, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("remove refuses a profile with an active rebind; --force drops it (stash cleaned)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {

@@ -163,6 +163,10 @@ export interface RunArgs {
   cwd?: string;
   tmux?: true;
   force?: true;
+  model?: string;
+  effort?: string;
+  /** Start in a new worktree of the folder (src/start-choice.ts). */
+  worktree?: true;
 }
 
 export function parseRun(rest: string[]): RunArgs {
@@ -187,11 +191,20 @@ export function parseRun(rest: string[]): RunArgs {
     if (!cwd) throw new Error("--cwd needs a folder");
     args.splice(ci, 2);
   }
-  const switches: Pick<RunArgs, "tmux" | "force"> = {};
-  for (const flag of ["--tmux", "--force"] as const) {
+  const choice: Pick<RunArgs, "model" | "effort"> = {};
+  for (const flag of ["--model", "--effort"] as const) {
+    const i = own(flag);
+    if (i < 0) continue;
+    const v = args[i + 1];
+    if (!v || v === "--") throw new Error(`${flag} needs a value`);
+    choice[flag === "--model" ? "model" : "effort"] = v;
+    args.splice(i, 2);
+  }
+  const switches: Pick<RunArgs, "tmux" | "force" | "worktree"> = {};
+  for (const flag of ["--tmux", "--force", "--worktree"] as const) {
     const i = own(flag);
     if (i >= 0) {
-      switches[flag === "--tmux" ? "tmux" : "force"] = true;
+      switches[flag.slice(2) as "tmux" | "force" | "worktree"] = true;
       args.splice(i, 1);
     }
   }
@@ -201,5 +214,5 @@ export function parseRun(rest: string[]): RunArgs {
   if (end >= 0) args.splice(end, 1);
   const name = args.shift();
   const parsed: RunArgs = cwd === undefined ? { providerId, name, args } : { providerId, name, args, cwd };
-  return { ...parsed, ...switches };
+  return { ...parsed, ...choice, ...switches };
 }
