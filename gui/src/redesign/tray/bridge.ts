@@ -19,6 +19,8 @@ import { appFor } from "../screens/logic.js";
 export const TRAY_OPEN_EVENT = "tray:open";
 export const TRAY_GO_EVENT = "tray:go";
 export const TRAY_APP_EVENT = "tray:app";
+/** A Needs-you item the tray points at: the main window focuses it, where its verb acts. */
+export const TRAY_NEED_EVENT = "tray:need";
 export const MAIN_WINDOW = "main";
 
 export type ForwardedOverlay = Extract<Overlay, { kind: "start" | "account" | "session" | "limit" | "notifications" | "quit" }>;
@@ -73,6 +75,24 @@ export function appRequest(vm: Pick<ViewModel, "accounts" | "surfaces">, x: unkn
   const a = vm.accounts.find((acc) => acc.id === accountId);
   if (!a || a.disabled || a.state === "signed-out" || a.state === "wrong-account") return null;
   return appFor(vm, a.tool) === appId ? { appId, accountId } : null;
+}
+
+/** Main side: the Needs-you item id the tray sent, or null. Only an id-shaped string
+ *  passes; the main window then looks it up in its own queue and acts on nothing else. */
+export function forwardedNeed(x: unknown): string | null {
+  if (!x || typeof x !== "object") return null;
+  const id = (x as Record<string, unknown>).id;
+  return typeof id === "string" && /^[A-Za-z0-9:._-]{1,80}$/.test(id) ? id : null;
+}
+
+/** Tray side: show the main window on Needs-you item `id`, and hide the popover. */
+export async function forwardNeedToMain(id: string): Promise<void> {
+  try {
+    await emitTo(MAIN_WINDOW, TRAY_NEED_EVENT, { id });
+    await showMainAndHide();
+  } catch {
+    /* non-Tauri env */
+  }
 }
 
 export function forwardedScreen(x: unknown): ForwardedScreen | null {
@@ -142,7 +162,7 @@ function useListen<T>(event: string, handle: (payload: T) => void): void {
 
 /** Main side: open what the tray forwarded (validated), and tell Rust the
  *  popover exists (left click on the tray icon opens it instead of the window). */
-export function useTrayRequests(open: (o: Overlay) => void, go?: (screen: Screen) => void, openApp?: (payload: unknown) => void): void {
+export function useTrayRequests(open: (o: Overlay) => void, go?: (screen: Screen) => void, openApp?: (payload: unknown) => void, openNeed?: (id: string) => void): void {
   useEffect(() => {
     void invoke("set_tray_popover", { enabled: true }).catch(() => {});
   }, []);
@@ -155,6 +175,11 @@ export function useTrayRequests(open: (o: Overlay) => void, go?: (screen: Screen
     if (screen && go) go(screen);
   });
   const onApp = useCallbackRef((payload: unknown) => openApp?.(payload));
+  const onNeed = useCallbackRef((payload: unknown) => {
+    const id = forwardedNeed(payload);
+    if (id && openNeed) openNeed(id);
+  });
+  useListen(TRAY_NEED_EVENT, onNeed);
   useListen(TRAY_OPEN_EVENT, onOpen);
   useListen(TRAY_APP_EVENT, onApp);
   useListen(TRAY_GO_EVENT, onGo);

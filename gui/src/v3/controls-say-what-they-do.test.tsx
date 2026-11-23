@@ -206,6 +206,19 @@ describe("Open in › Bring its terminal to the front is offered only where focu
   });
 });
 
+describe("a tray verb goes to its item in the main window (7.6)", () => {
+  it("the item is focused, with its keys; ↵ then acts as in the window", () => {
+    const props = { data: { ...data(), health: READY }, slots, platform: "mac" as const, layout: { load: () => ({ tabs: ["s1"], active: "s1" }), save: vi.fn() } };
+    const act = vi.fn();
+    const { rerender } = render(<V3Window {...props} act={act} />);
+    expect(screen.queryByText("↵ decide · L later")).toBeNull();
+    rerender(<V3Window {...props} act={act} needFocus={{ id: "l", n: 1 }} />);
+    expect(screen.getByText("↵ decide · L later")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+});
+
 describe("the Compact hint is offered only where Compact works (7.6)", () => {
   const full = (hosted: boolean) => () => ({ key: "s1", hosted, chatAvailable: true, view: "terminal" as const, account: { name: "work", color: "teal" as const, fiveH: 10, protect: 98 }, model: "Opus", thinking: "high", contextPct: 70, contextTokens: 120_000, tool: "claude" });
 

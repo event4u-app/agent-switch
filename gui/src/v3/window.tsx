@@ -187,6 +187,7 @@ export function V3Window({
   slots,
   act,
   focus,
+  needFocus,
   layout,
   keys = DEFAULT_KEYS,
   platform = PLATFORM,
@@ -196,6 +197,8 @@ export function V3Window({
   slots: V3Slots;
   act: (a: V3Action) => void;
   focus?: { key: string; n: number };
+  /** Focus one Needs-you item (a tray verb); `n` is the request, so the same item can be asked for again. */
+  needFocus?: { id: string; n: number };
   layout?: LayoutStore;
   keys?: Record<Action, Binding>;
   platform?: "mac" | "other";
@@ -333,6 +336,16 @@ export function V3Window({
 
   // Tool updates join the queue (spec §10.4); limit items open the decision sheet.
   const needs = useMemo(() => allNeeds({ needs: data.needs, tools: data.tools, nowMs: data.nowMs }), [data.needs, data.tools, data.nowMs]);
+  // A tray verb points at one Needs-you item: the window shows it focused, with its keys (as ⌘J does).
+  // The window's own read may lag the tray's by a poll: the request waits until the item is here.
+  const needFocusDone = useRef<number | null>(null);
+  useEffect(() => {
+    if (!needFocus || needFocusDone.current === needFocus.n || !needs.some((n) => n.id === needFocus.id)) return;
+    needFocusDone.current = needFocus.n;
+    frame.setSessionsShown(true);
+    setFocusedNeed(needFocus.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needFocus?.n, needs]);
   // A session at its limit opens its decision sheet by itself (once per item
   // version) and brings the window forward — the user still confirms the move.
   // agent-config's question opens it too (once per request), and a limit it
