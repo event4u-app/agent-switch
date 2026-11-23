@@ -39,7 +39,9 @@ import {
   LATEST_TTL_MS,
   resetSlowCache,
   resweepToolsIfStale,
+  SHARED_KEY,
 } from "./slow-cache.js";
+import { installMemoryStorage } from "../redesign/engines/test-storage.js";
 
 describe("slow parts of a load are cached", () => {
   beforeEach(() => {
@@ -106,5 +108,66 @@ describe("slow parts of a load are cached", () => {
     now += 2;
     await cachedLatest("rtk", lookup, () => now);
     expect(lookup).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("the tray and the main window read one timestamped cache", () => {
+  type Mod = typeof import("./slow-cache.js");
+  /** One webview: its own module state, the app's one localStorage. */
+  async function window(): Promise<Mod> {
+    vi.resetModules();
+    return import("./slow-cache.js");
+  }
+
+  beforeEach(() => installMemoryStorage());
+
+  it("a sweep, a doctor run and a latest lookup made in one window are reused by the other, with their time", async () => {
+    const main = await window();
+    const tray = await window();
+    const sweep = vi.fn(async () => ["rtk"]);
+    const check = vi.fn(async () => ({ readiness: "ready" }));
+    const lookup = vi.fn(async () => "0.2.0");
+    const a = await main.cachedTooling(sweep, () => 1_000);
+    const d = await main.cachedDoctor(check, () => 1_000);
+    await main.cachedLatest("rtk", lookup, () => 1_000);
+    expect(await tray.cachedTooling(sweep, () => 5_000)).toEqual(a);
+    expect(await tray.cachedDoctor(check, () => 5_000)).toEqual(d);
+    expect(await tray.cachedLatest("rtk", lookup, () => 5_000)).toBe("0.2.0");
+    expect([sweep, check, lookup].map((f) => f.mock.calls.length)).toEqual([1, 1, 1]);
+    expect(a.at).toBe(1_000);
+  });
+
+  it("the newer entry wins: a forced run in one window replaces what the other held", async () => {
+    const main = await window();
+    const tray = await window();
+    await tray.cachedDoctor(async () => ({ readiness: "attention" }), () => 1_000);
+    main.forceDoctorOnNextLoad();
+    await main.cachedDoctor(async () => ({ readiness: "ready" }), () => 2_000);
+    expect(await tray.cachedDoctor(vi.fn(), () => 3_000)).toEqual({ at: 2_000, value: { readiness: "ready" } });
+  });
+
+  it("a focus in one window re-sweeps by the age of the other window's sweep", async () => {
+    const main = await window();
+    const tray = await window();
+    const sweep = vi.fn(async () => []);
+    await main.cachedTooling(sweep, () => 1_000);
+    tray.resweepToolsIfStale(1_000 + main.FOCUS_RESWEEP_MS - 1);
+    await tray.cachedTooling(sweep, () => 2_000);
+    expect(sweep).toHaveBeenCalledTimes(1);
+    tray.resweepToolsIfStale(1_000 + main.FOCUS_RESWEEP_MS);
+    await tray.cachedTooling(sweep, () => 70_000);
+    expect(sweep).toHaveBeenCalledTimes(2);
+  });
+
+  it("an unreadable shared entry is a miss, never an error", async () => {
+    localStorage.setItem(SHARED_KEY, "{not json");
+    const tray = await window();
+    const sweep = vi.fn(async () => ["rtk"]);
+    expect((await tray.cachedTooling(sweep, () => 1_000)).value).toEqual(["rtk"]);
+    localStorage.setItem(SHARED_KEY, JSON.stringify({ tooling: { at: "soon", value: 1 }, latest: { rtk: null } }));
+    const main = await window();
+    expect((await main.cachedTooling(sweep, () => 2_000)).value).toEqual(["rtk"]);
+    expect(await main.cachedLatest("rtk", async () => "0.3.0", () => 2_000)).toBe("0.3.0");
+    expect(sweep).toHaveBeenCalledTimes(2);
   });
 });

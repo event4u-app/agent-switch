@@ -184,6 +184,26 @@ describe("usage loading (cache + cooldown)", () => {
     expect(forced[0]?.windows[0].utilization).toBe(70);
   });
 
+  it("the tray reads what the main window fetched, by its capture time, and a newer CLI readout wins in both", async () => {
+    vi.resetModules();
+    const main = await import("../../vm/usage-loader.js");
+    vi.resetModules();
+    const tray = await import("../../vm/usage-loader.js");
+    expect(tray.loadUsage).not.toBe(main.loadUsage);
+    const rows = [{ provider: "claude" as const, name: "a" }];
+    const fetched = deps(() => snap(40, "2026-10-01T10:00:00Z"));
+    await main.loadUsage(rows, { force: false, cooldownMs: 600_000 }, fetched.d);
+    const inTray = deps(() => snap(99));
+    const seen = await tray.loadUsage(rows, { force: false, cooldownMs: 600_000 }, inTray.d);
+    expect(inTray.calls).toEqual([]);
+    expect(seen[0]).toEqual(snap(40, "2026-10-01T10:00:00Z"));
+    const stored = new Map([["claude/a", snap(55, "2026-10-01T10:05:00Z")]]);
+    const fromTray = await tray.loadUsage(rows, { force: false, cooldownMs: 600_000, stored }, inTray.d);
+    const fromMain = await main.loadUsage(rows, { force: false, cooldownMs: 600_000 }, fetched.d);
+    expect([fromTray[0]?.capturedAt, fromMain[0]?.capturedAt]).toEqual(["2026-10-01T10:05:00Z", "2026-10-01T10:05:00Z"]);
+    expect(fetched.calls).toEqual(["claude/a"]);
+  });
+
   it("a single-account refresh fetches only that account past its cooldown, once", async () => {
     saveUsageSnapshot("claude/a", snap(10));
     saveUsageSnapshot("claude/b", snap(20));
