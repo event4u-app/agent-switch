@@ -35,6 +35,10 @@ export interface Candidate {
   version: string;
   /** Overrides the kind's verb, e.g. "Focus terminal" where AS cannot answer (D-approve). */
   verb?: string;
+  /** The session an item about something else (a PR) acts on: a fix is sent there, never elsewhere. */
+  session?: string;
+  /** A "ci" item's own kind: failing checks (by name) or a merge conflict — they ask for different fixes. */
+  ci?: { state: "failing" | "conflict"; checks: string[] };
 }
 
 export interface Item extends Candidate {
