@@ -18,7 +18,7 @@ import { ProvidersSettings } from "../../redesign/screens/settings/providers.js"
 import { SignInSettings } from "../../redesign/screens/settings/sign-ins.js";
 import { UpdatesSettings } from "../../redesign/screens/settings/updates.js";
 import type { SettingsSection } from "../settings.js";
-import { ChatTimeline, hiddenText } from "../chat.js";
+import { ChatTimeline, EarlierTurns, hiddenText } from "../chat.js";
 import { TranscriptTerminal } from "../transcript-terminal.js";
 import { fold } from "../timeline.js";
 import { ExternalBody, HostedTerminal } from "../workbench.js";
@@ -91,8 +91,13 @@ export function SessionBody({ sessionKey, row, hosted, ownView = "chat", vars, f
  *  tooltip, which carries the count of lines not drawn (gap §5e). */
 function ExternalSession({ sessionKey, row, view, where, facts, onFocus, onTakeOver }: { sessionKey: string; row: SessionRow | undefined; view: "terminal" | "chat"; where: string; facts: ReactNode; onFocus: (() => void) | null; onTakeOver: (() => void) | null }) {
   const t = useTimeline(sessionKey);
-  const hidden = useMemo(() => hiddenText(fold(t.events).hidden), [t.events]);
-  return <ExternalBody where={where} facts={facts} lastLine={null} onFocus={onFocus} onTakeOver={onTakeOver} readOnlyTitle={hidden} timeline={<ReadOnlyTimeline t={t} row={row} where={where} terminal={view === "terminal"} />} />;
+  // The CLI leaves bookkeeping out and counts it; what it sent and the view does not draw adds to that.
+  const hidden = useMemo(() => {
+    const all = { ...t.hidden };
+    for (const [k, n] of Object.entries(fold(t.events).hidden)) all[k] = (all[k] ?? 0) + n;
+    return hiddenText(all);
+  }, [t.events, t.hidden]);
+  return <ExternalBody where={where} facts={facts} lastLine={null} onFocus={onFocus} onTakeOver={onTakeOver} readOnlyTitle={hidden} timeline={<ReadOnlyTimeline t={t} row={row} where={where} focusable={!!onFocus} terminal={view === "terminal"} />} />;
 }
 
 /** 7.7: one subagent's transcript, polled while it is on screen like a session's. */
@@ -104,7 +109,7 @@ export function SubagentTranscript({ parent, agentId, read = ipc.subagentTimelin
 
 /** The read-only timeline of a session running elsewhere (ADR-010). Falls back
  *  to the facts while it loads or when it cannot be read. */
-export function ReadOnlyTimeline({ t, row, where, terminal }: { t: TimelineState; row?: SessionRow; /** Where the session runs, for "answer it there". */ where?: string; terminal?: boolean }) {
+export function ReadOnlyTimeline({ t, row, where, focusable = false, terminal }: { t: TimelineState; row?: SessionRow; /** Where the session runs, for "answer it there". */ where?: string; /** A Focus terminal button is offered next to it. */ focusable?: boolean; terminal?: boolean }) {
   if (!t.loaded) return <p className="m-auto text-[13px] text-ac-muted">Reading the conversation…</p>;
   const notice = t.error ? (
     <p role="status" className="shrink-0 border-b border-ac-line bg-ac-warn-tint px-4 py-1.5 text-xs text-ac-warn-text">
@@ -119,10 +124,11 @@ export function ReadOnlyTimeline({ t, row, where, terminal }: { t: TimelineState
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         {notice}
+        {t.earlier && <EarlierTurns prompts={t.earlier.prompts} load={t.earlier.load} />}
         <TranscriptTerminal events={t.events} />
       </div>
     );
-  return <ChatTimeline events={t.events} notice={notice} agent={row?.provider === "codex" ? "Codex" : "Claude"} on={{ worktreeOf: worktreeOf(row), ...(where ? { unanswerable: `Answer it in ${where} — Focus terminal brings it up.` } : {}) }} />;
+  return <ChatTimeline events={t.events} notice={notice} earlier={t.earlier} agent={row?.provider === "codex" ? "Codex" : "Claude"} on={{ worktreeOf: worktreeOf(row), ...(where ? { unanswerable: focusable ? `Answer it in ${where} — Focus terminal brings it up.` : `Answer it in ${where}.` } : {}) }} />;
 }
 
 /** Tools on the store: the board's rows, then the 2.11 agent-config card

@@ -3,7 +3,7 @@
  *  caller passes the approval and question handlers (a bridged session). */
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Check, ChevronDown, ChevronRight, ClipboardCopy, FolderGit2, Hand, ListChecks, MessageCircleQuestion, TriangleAlert } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, ChevronUp, ClipboardCopy, FolderGit2, Hand, ListChecks, MessageCircleQuestion, TriangleAlert } from "lucide-react";
 
 import { cn } from "../lib/utils.js";
 import { Button } from "../ui/Button.js";
@@ -243,8 +243,10 @@ function ChatRowView({ row, on, agent }: { row: ChatRow; on: ChatHandlers; agent
     case "subagent":
       return <SubagentRow row={row} worktree={row.agentId ? on.worktreeOf?.(row.agentId) : null} />;
     case "approval":
+      if (on.stale?.has(row.id)) return <ApprovalCard row={row} agent={agent} unanswerable={STALE_CARD} />;
       return <ApprovalCard row={row} agent={agent} unanswerable={on.unanswerable} onAllow={on.approve && (() => on.approve!(row.id, false))} onAlways={on.approve && (() => on.approve!(row.id, true))} onDeny={on.deny && (() => on.deny!(row.id))} />;
     case "question":
+      if (on.stale?.has(row.id)) return <QuestionCard row={row} unanswerable={STALE_CARD} />;
       return <QuestionCard row={row} unanswerable={on.unanswerable} onAnswer={on.answer && ((a) => on.answer!(row.id, a))} onSkip={on.skip && (() => on.skip!(row.id))} />;
     case "plan":
       return (
@@ -274,6 +276,37 @@ export interface ChatHandlers {
   unanswerable?: string;
   /** A subagent's worktree name from its hook record, when it has one. */
   worktreeOf?: (agentId: string) => string | null;
+  /** Cards asked before this chat opened: the agent no longer waits for them, so they say so instead of offering buttons. */
+  stale?: ReadonlySet<string>;
+}
+
+/** What a card from before the chat opened says: the new connection cannot answer it, a message can. */
+export const STALE_CARD = "Asked before this chat opened; the agent no longer waits for this answer. Reply in a message below.";
+
+/** "12 earlier prompts — load more". Pure. */
+export function earlierLabel(prompts: number): string {
+  return prompts > 0 ? `${prompts} earlier ${prompts === 1 ? "prompt" : "prompts"} — load more` : "Earlier steps — load more";
+}
+
+/** The strip over a conversation that does not start at its beginning: says so and loads the turns before. */
+export function EarlierTurns({ prompts, load }: { prompts: number; load: () => Promise<void> }) {
+  const [state, setState] = useState<"idle" | "loading" | "failed">("idle");
+  const go = () => {
+    setState("loading");
+    load().then(
+      () => setState("idle"),
+      () => setState("failed"),
+    );
+  };
+  return (
+    <div className="flex h-7 shrink-0 items-center gap-2 border-b border-ac-line px-3 text-[11px] text-ac-muted">
+      <span>{state === "failed" ? "The earlier turns could not be read." : "The conversation starts earlier."}</span>
+      <button type="button" disabled={state === "loading"} onClick={go} className="inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-ac-text hover:bg-ac-raise disabled:opacity-50 [&_svg]:size-3.5">
+        <ChevronUp />
+        {state === "loading" ? "Reading…" : earlierLabel(prompts)}
+      </button>
+    </div>
+  );
 }
 
 /** "3 internal lines not shown" with the kinds, for a tooltip; null when nothing was dropped. Pure. */
@@ -283,8 +316,18 @@ export function hiddenText(hidden: Record<string, number>): string | null {
   return [`${n} internal ${n === 1 ? "line" : "lines"} not shown`, ...Object.entries(hidden).map(([k, c]) => `${k}: ${c}`)].join("\n");
 }
 
-/** Copies the whole conversation as Markdown, from the source text of every row. */
-export function CopyConversation({ rows }: { rows: readonly ChatRow[] }) {
+/** Put text on the clipboard that is still being read. The clipboard item is created inside the
+ *  click, so the browser keeps the user's gesture while the text arrives. */
+function copyLater(text: Promise<string>): Promise<void> {
+  const c = navigator.clipboard;
+  if (!c) return Promise.reject(new Error("no clipboard"));
+  if (c.write && typeof ClipboardItem !== "undefined") return c.write([new ClipboardItem({ "text/plain": text.then((t) => new Blob([t], { type: "text/plain" })) })]);
+  return text.then((t) => c.writeText(t));
+}
+
+/** Copies the whole conversation as Markdown, from the source text of every row. `full`: the
+ *  conversation goes back further than `rows`; it is read first, so the copy is never a cut. */
+export function CopyConversation({ rows, full }: { rows: readonly ChatRow[]; full?: () => Promise<readonly ChatRow[]> }) {
   const [done, setDone] = useState(false);
   useEffect(() => {
     if (!done) return;
@@ -296,9 +339,9 @@ export function CopyConversation({ rows }: { rows: readonly ChatRow[] }) {
     <button
       type="button"
       aria-label={label}
-      title={done ? "Copied as Markdown" : "Copy the whole conversation as Markdown"}
+      title={done ? "Copied as Markdown" : full ? "Copy the whole conversation as Markdown — the earlier turns are read first" : "Copy the whole conversation as Markdown"}
       disabled={!rows.length}
-      onClick={() => void navigator.clipboard?.writeText(sessionMarkdown(rows)).then(() => setDone(true), () => {})}
+      onClick={() => void (full ? copyLater(full().then((r) => sessionMarkdown(r))) : (navigator.clipboard?.writeText(sessionMarkdown(rows)) ?? Promise.reject())).then(() => setDone(true), () => {})}
       className="inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] text-ac-muted hover:bg-ac-raise hover:text-ac-text disabled:opacity-50 [&_svg]:size-3.5"
     >
       {done ? <Check /> : <ClipboardCopy />}
@@ -307,18 +350,27 @@ export function CopyConversation({ rows }: { rows: readonly ChatRow[] }) {
   );
 }
 
+/** The conversation before the loaded part: how many prompts, how to load them, how to read all of it. */
+export interface Earlier {
+  prompts: number;
+  load: () => Promise<void>;
+  all: () => Promise<readonly AsEvent[]>;
+}
+
 /** The timeline of one session. `notice` sits above it (version or read-only banner).
- *  `copyBar={false}`: the caller puts "Copy conversation" into its own header. */
-export function ChatTimeline({ events, on = {}, notice, copyBar = true, agent }: { events: readonly AsEvent[]; on?: ChatHandlers; notice?: ReactNode; copyBar?: boolean; /** Who asks, on approval cards: Claude unless said. */ agent?: string }) {
+ *  `copyBar={false}`: the caller puts "Copy conversation" into its own header.
+ *  `earlier`: the events start after the beginning; a strip says so and loads the turns before. */
+export function ChatTimeline({ events, on = {}, notice, copyBar = true, agent, earlier }: { events: readonly AsEvent[]; on?: ChatHandlers; notice?: ReactNode; copyBar?: boolean; /** Who asks, on approval cards: Claude unless said. */ agent?: string; earlier?: Earlier | null }) {
   const f = useMemo(() => fold(events), [events]);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {notice}
       {copyBar && f.rows.length > 0 && (
         <div className="flex h-7 shrink-0 items-center justify-end border-b border-ac-line px-3">
-          <CopyConversation rows={f.rows} />
+          <CopyConversation rows={f.rows} full={earlier ? () => earlier.all().then((all) => fold(all).rows) : undefined} />
         </div>
       )}
+      {earlier && <EarlierTurns prompts={earlier.prompts} load={earlier.load} />}
       {f.rows.length === 0 ? (
         <p className="m-auto text-[13px] text-ac-muted">Nothing in this session yet.</p>
       ) : (
