@@ -258,6 +258,12 @@ async function handOver(how: "after-turn" | "now", moves: readonly SheetMove[], 
   return moves.filter((m) => !handed.has(m.key));
 }
 
+/** "owner/repo" of a GitHub PR page, lower-cased; null for any other URL. Pure. */
+function prRepo(url: string): string | null {
+  const m = /^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/\d+\/?$/i.exec(url);
+  return m ? m[1].toLowerCase() : null;
+}
+
 function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
   // A chat's approval or question is answered in the chat (spec §13.5: one decision).
   if (n.verb === "Open chat" && deps.openTab) return deps.openTab(n.subject);
@@ -269,18 +275,21 @@ function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
   if (n.kind === "ci") {
     // Only the session the item names (several can share a PR); without it, the PR's page opens.
     const row = ciSession(n, deps.rows());
-    const prs = (row?.prs ?? []).map(parsePr).filter((p) => p !== null);
-    // The PR the item names; an item named by its session is about that session's PR.
-    const pr = prs.find((p) => n.subject.endsWith(`#${p.number}`)) ?? prs[0];
+    // Only the PR the item names, by repository and number: a session's other PR never gets its fix.
+    const m = /^([^#\s]+\/[^#\s]+)#(\d+)$/.exec(n.subject);
+    const pr = m ? ((row?.prs ?? []).map(parsePr).find((p) => p !== null && p.number === Number(m[2]) && prRepo(p.url) === m[1].toLowerCase()) ?? null) : null;
     const conflict = n.ci ? n.ci.state === "conflict" : !!pr && pr.ci !== "FAILURE" && pr.mergeable === "CONFLICTING";
     if (row && pr) {
       const sent = sendPrompt(sessionKey(row), conflict ? conflictPrompt(pr) : ciPrompt(pr), deps);
       if (sent) return sent;
     }
-    const m = /^([^#\s]+\/[^#\s]+)#(\d+)$/.exec(n.subject);
-    const url = pr?.url || (m ? `https://github.com/${m[1]}/pull/${m[2]}` : null);
-    if (url) return deps.openUrl(conflict ? url : `${url}/checks`);
-    return;
+    const typeable = !!row && (!!deps.chatOf?.(sessionKey(row))?.send || deps.hosted(sessionKey(row)));
+    if (!m || (typeable && !pr)) {
+      deps.toast({ tone: "alert", text: "This item no longer matches the session's pull request — refresh Needs you and try again" });
+      return;
+    }
+    const url = pr?.url || `https://github.com/${m[1]}/pull/${m[2]}`;
+    return deps.openUrl(conflict ? url : `${url}/checks`);
   }
   if (n.kind === "signin") {
     const id = accountIdFromMember(n.subject);

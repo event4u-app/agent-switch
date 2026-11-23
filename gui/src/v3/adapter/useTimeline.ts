@@ -52,37 +52,64 @@ export function useTimeline(key: string | null, read: TimelineRead = realRead): 
   const [s, set] = useState<{ owner: string | null; data: Loaded | null; error: string | null; loaded: boolean }>({ owner: key, data: null, error: null, loaded: false });
   /** The earliest index loaded on demand; null: only the newest page. */
   const start = useRef<{ owner: string | null; at: number | null }>({ owner: key, at: null });
+  /** Reads are numbered as they go out; an answer older than the one shown is dropped, so the view never rolls back. */
+  const seq = useRef({ issued: 0, shown: 0 });
+  /** The snapshot shown, for the load-earlier merge (state updaters cannot report back). */
+  const shown = useRef<{ owner: string | null; data: Loaded | null }>({ owner: key, data: null });
+  /** The current poll, so a load that finds a gap can read it at once. */
+  const poll = useRef<() => Promise<void>>(async () => {});
+  const show = useCallback((owner: string, data: Loaded) => {
+    shown.current = { owner, data };
+    set({ owner, data, error: null, loaded: true });
+  }, []);
   useEffect(() => {
     if (!key) return;
     let alive = true;
     start.current = { owner: key, at: null };
+    shown.current = { owner: key, data: null };
     const tick = () => {
       const at = start.current.at;
+      const n = ++seq.current.issued;
       return (at === null ? read(key) : read(key, { from: at }))
         .then((r) => {
-          // A page read before earlier turns arrived would drop them again.
-          if (!alive || start.current.owner !== key || start.current.at !== at) return;
-          set({ owner: key, data: { events: r.events, version: r.version, newerThanFixtures: r.newerThanFixtures, from: r.from ?? 0, prompts: r.earlierPrompts ?? null, hidden: r.hidden ?? {}, truncated: r.truncated === true }, error: null, loaded: true });
+          // A page read before earlier turns arrived would drop them again; an older answer would roll back.
+          if (!alive || start.current.owner !== key || start.current.at !== at || n < seq.current.shown) return;
+          seq.current.shown = n;
+          show(key, { events: r.events, version: r.version, newerThanFixtures: r.newerThanFixtures, from: r.from ?? 0, prompts: r.earlierPrompts ?? null, hidden: r.hidden ?? {}, truncated: r.truncated === true });
         })
         .catch((e: unknown) => alive && set((p) => ({ ...(p.owner === key ? p : { data: null }), owner: key, error: e instanceof Error ? e.message : String(e), loaded: true })));
     };
+    poll.current = async () => void (await tick());
     void tick();
     const id = setInterval(() => document.visibilityState === "visible" && void tick(), TIMELINE_POLL_MS);
     return () => {
       alive = false;
       clearInterval(id);
+      poll.current = async () => {};
     };
-  }, [key, read]);
+  }, [key, read, show]);
 
   const data = s.owner === key ? s.data : null;
   const load = useCallback(async () => {
     if (!key || !data || data.from === 0) return;
-    const r = await read(key, { before: data.from });
+    const end = data.from;
+    const r = await read(key, { before: end });
     if (start.current.owner !== key) return;
     const from = r.from ?? 0;
     start.current = { owner: key, at: from };
-    set((p) => (p.owner === key && p.data ? { ...p, data: { ...p.data, events: [...r.events, ...p.data.events], from, prompts: r.earlierPrompts ?? 0 } } : p));
-  }, [key, read, data]);
+    // Joined by event index with what is shown now, which a poll may have moved on meanwhile.
+    const cur = shown.current.owner === key ? shown.current.data : null;
+    if (!cur) return;
+    if (cur.from > end) {
+      // The newest page moved past the loaded one: the events between are read, never skipped.
+      await poll.current();
+      return;
+    }
+    seq.current.shown = ++seq.current.issued;
+    if (cur.from <= from) return;
+    const before = r.events.slice(0, cur.from - from);
+    show(key, { ...cur, events: [...before, ...cur.events], from, prompts: r.earlierPrompts ?? 0 });
+  }, [key, read, data, show]);
   const all = useCallback(async () => {
     if (!key || !data || data.from === 0) return data?.events ?? [];
     const r = await read(key, { from: 0, before: data.from });

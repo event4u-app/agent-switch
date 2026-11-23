@@ -144,6 +144,23 @@ export interface ConfinedRead {
 const O_READ = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0);
 
 /**
+ * The opened file is the one `real` names now, with no link on the way from
+ * `folder`: O_NOFOLLOW guards only the last component, so a directory swapped
+ * for a link between the check and the open is caught here, after the open.
+ */
+function samePath(folder: string, real: string, opened: fs.Stats): boolean {
+  let at = folder;
+  let st = fs.lstatSync(at);
+  if (!st.isDirectory()) return false;
+  for (const part of path.relative(folder, real).split(path.sep)) {
+    at = path.join(at, part);
+    st = fs.lstatSync(at);
+    if (st.isSymbolicLink()) return false;
+  }
+  return st.isFile() && st.dev === opened.dev && st.ino === opened.ino;
+}
+
+/**
  * The last `maxBytes` of `file` (0: its facts only), and only when it is a
  * regular file inside `folder` once every link is followed; null otherwise. A
  * link out of the session folder, a FIFO, a device or a folder reads nothing —
@@ -162,7 +179,7 @@ export function readConfined(folder: string, file: string, maxBytes: number): Co
     if (!fs.statSync(real).isFile()) return null;
     fd = fs.openSync(real, O_READ);
     const st = fs.fstatSync(fd);
-    if (!st.isFile()) return null;
+    if (!st.isFile() || !samePath(folder, real, st)) return null;
     return { text: maxBytes > 0 ? tailOf(fd, st.size, maxBytes) : "", size: st.size, mtimeMs: st.mtimeMs, birthtimeMs: st.birthtimeMs };
   } catch {
     return null;

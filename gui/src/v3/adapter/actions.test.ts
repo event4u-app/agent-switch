@@ -99,7 +99,7 @@ describe("dispatchV3", () => {
     const d = deps();
     await dispatchV3({ type: "need", item: need({}) }, d);
     expect(d.ipc.focusSessionTerminal).toHaveBeenCalledWith("claude/work/a");
-    dispatchV3({ type: "need", item: need({ kind: "ci" }) }, d);
+    dispatchV3({ type: "need", item: need({ kind: "ci", subject: "o/r#9", session: "claude/work/a" }) }, d);
     expect(d.openUrl).toHaveBeenCalledWith("https://github.com/o/r/pull/9/checks");
     dispatchV3({ type: "need", item: need({ kind: "signin", subject: "claude/home" }) }, d);
     expect(d.open).toHaveBeenCalledWith({ kind: "reauth", accountId: "claude:home" });
@@ -637,6 +637,22 @@ describe("Needs-you CI and the blocker strip type where the app can type", () =>
     await dispatchV3({ type: "need", item: unnamed }, d);
     expect(d.ipc.continueSession).not.toHaveBeenCalled();
     expect(d.openUrl.mock.calls).toEqual([["https://github.com/o/r/pull/9/checks"], ["https://github.com/o/r/pull/9/checks"]]);
+  });
+
+  it("the item's PR no longer on the session's row: nothing is sent to another PR, a refresh is asked for", async () => {
+    const d = { ...deps(), hosted: (k: string) => k === "claude/work/a" };
+    // The session moved on to PR #10 since the item was read.
+    d.rows().set("claude/work/a", { ...d.rows().get("claude/work/a")!, prs: [{ ...PR, number: 10, url: "https://github.com/o/r/pull/10" }] });
+    await dispatchV3({ type: "need", item: ci }, d);
+    // Same number in another repository is another PR too.
+    d.rows().set("claude/work/a", { ...d.rows().get("claude/work/a")!, prs: [{ ...PR, url: "https://github.com/fork/r/pull/9" }] });
+    await dispatchV3({ type: "need", item: ci }, d);
+    // An item from an older CLI names no PR at all.
+    await dispatchV3({ type: "need", item: { ...ci, subject: "claude/work/a", session: undefined } }, d);
+    expect(d.ipc.continueSession).not.toHaveBeenCalled();
+    expect(d.openUrl).not.toHaveBeenCalled();
+    expect(d.toast).toHaveBeenCalledTimes(3);
+    expect(d.toast).toHaveBeenCalledWith({ tone: "alert", text: expect.stringMatching(/refresh/i) });
   });
 
   it("a hostile check name never reaches the agent", async () => {
