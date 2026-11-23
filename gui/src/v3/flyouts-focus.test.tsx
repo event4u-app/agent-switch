@@ -91,6 +91,22 @@ describe("⌘J from a focused terminal (8.6)", () => {
     expect(typed).toEqual([]);
   });
 
+  it("an item about a child focuses the child row; its keys still answer the item, Esc returns to the terminal", () => {
+    const row = data().sessions[0];
+    const child = { id: "claude/work/w", label: "seat w", kind: "council" as const, state: "idle" as const, source: "lineage" as const, tool: "claude" as const, account: { name: "work", color: "teal" as const }, needsYou: true };
+    const { act, typed } = mount({ sessions: [{ ...row, children: [child] }], needs: [{ ...approval, subject: "claude/work/w" }] });
+    const term = screen.getByLabelText("Terminal input");
+    term.focus();
+    key("j", { metaKey: true });
+    expect(active()?.closest("[data-child-row]")).not.toBeNull();
+    key("Backspace");
+    expect(act).toHaveBeenCalledWith(expect.objectContaining({ type: "need-answer", decision: "deny" }));
+    expect(typed).toEqual([]);
+    key("j", { metaKey: true });
+    key("Escape");
+    expect(active()).toBe(term);
+  });
+
   it("the tray's focus verb moves focus to the item as well", () => {
     mount({ needs: [approval, signin] }, { id: "b", n: 1 });
     expect(inNeeds()).not.toBeNull();
@@ -144,6 +160,29 @@ describe("the model popover names the session's own tool (8.6)", () => {
   it("a Codex session reads about its own reasoning levels", () => {
     render(<ModelPopover c={c} tool="codex" onModel={vi.fn()} onThinking={vi.fn()} />);
     expect(screen.getByRole("dialog").textContent).toMatch(/Codex's own reasoning levels/);
+  });
+});
+
+describe("the right rail on a page tab (8.6)", () => {
+  it("is disabled and says why, and never shows a panel as open", () => {
+    mount();
+    // A session tab first, with Summary open; then a page tab.
+    const rail = () => within(screen.getByRole("navigation", { name: "Session panels" }));
+    fireEvent.click(rail().getByLabelText(/^Summary/));
+    expect(rail().getByLabelText(/^Summary/).getAttribute("aria-pressed")).toBe("true");
+    key(",", { metaKey: true });
+    for (const name of [/^Summary/, /^Changes/, /^Children/]) {
+      const b = rail().getByLabelText(name);
+      expect(b.getAttribute("aria-disabled")).toBe("true");
+      expect(b.getAttribute("aria-pressed")).toBe("false");
+      expect(b.getAttribute("title")).toMatch(/no session in this tab/i);
+      fireEvent.click(b);
+      expect(b.getAttribute("aria-pressed")).toBe("false");
+    }
+    // Back on the session, its panel is still the one it had.
+    fireEvent.click(screen.getByRole("tab", { name: /Event store/ }));
+    expect(rail().getByLabelText(/^Summary/).getAttribute("aria-pressed")).toBe("true");
+    expect(rail().getByLabelText(/^Summary/).getAttribute("aria-disabled")).toBeNull();
   });
 });
 

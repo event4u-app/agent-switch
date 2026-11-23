@@ -392,19 +392,26 @@ export function V3Window({
   }, [needFocus?.n, needs]);
   // 8.6: a focused item takes DOM focus, so ↵, ⌫, L and Y answer it and never reach a
   // focused terminal; when no item is focused any more, focus goes back where it was.
+  // An item about a child focuses the child row instead (3.4); the window's keys answer the item there too.
   const needOpener = useRef<HTMLElement | null>(null);
+  const zoneHolds = (el: Element) => !!el.closest('[aria-label="Needs you"], [data-child-row]');
+  /** Where focus goes back to: what had it before the first item took it. */
+  const holdNeedOpener = () => {
+    const now = document.activeElement as HTMLElement | null;
+    if (!needOpener.current && now && now !== document.body && !zoneHolds(now)) needOpener.current = now;
+  };
   useEffect(() => {
-    const zone = () => document.querySelector('[aria-label="Needs you"]');
     const now = document.activeElement as HTMLElement | null;
     if (focusedNeed) {
-      if (!needOpener.current && now && !zone()?.contains(now)) needOpener.current = now;
-      [...document.querySelectorAll<HTMLElement>("[data-need]")].find((el) => el.dataset.need === focusedNeed)?.focus();
+      holdNeedOpener();
+      if (!focusChild) [...document.querySelectorAll<HTMLElement>("[data-need]")].find((el) => el.dataset.need === focusedNeed)?.focus();
       return;
     }
     const opener = needOpener.current;
     needOpener.current = null;
-    const lost = !now || now === document.body || !now.isConnected || !!zone()?.contains(now);
+    const lost = !now || now === document.body || !now.isConnected || zoneHolds(now);
     if (opener?.isConnected && lost) opener.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusedNeed]);
   // A session at its limit opens its decision sheet by itself (once per item
   // version) and brings the window forward — the user still confirms the move.
@@ -578,6 +585,7 @@ export function V3Window({
         case "nextNeed": {
           const id = nextFocus(needs, focusedNeed);
           if (!id) return false;
+          holdNeedOpener();
           frame.setSessionsShown(true);
           // 3.4: an item about a child opens its root's children and focuses the child row.
           const hit = findChild(data.sessions, needs.find((n) => n.id === id)?.subject ?? "");
@@ -588,7 +596,7 @@ export function V3Window({
         case "toggleSessions":
           return (frame.selectLeft("sessions"), true);
         case "toggleSummary":
-          return (frame.selectRight("summary"), true);
+          return activeSession ? (frame.selectRight("summary"), true) : false;
         case "openDefault":
           return activeSession ? (openDefault(activeSession), true) : false;
         case "moveSession":
@@ -967,6 +975,7 @@ export function V3Window({
       inboxOpen={overlay === "inbox"}
       needsYou={needs.length > 0}
       blocker={!!next}
+      rightWhy={activeSession ? null : "no session in this tab"}
       sessionsWindow={sessionsWindow}
       centre={centre}
       rightWindow={rightWindow}
