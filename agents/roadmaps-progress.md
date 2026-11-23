@@ -2,14 +2,14 @@
 
 > Auto-generated — do not edit. Regenerate with `task roadmap-progress` or by running the `update_roadmap_progress` script for your install; rewritten on every roadmap create / execute / completion change. A repository that does not commit this file has no git history for it — regenerate to see the current state.
 >
-> 2 open roadmaps · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
+> 1 open roadmap · [roadmaps/](roadmaps/) · [archive/](roadmaps/archive/) · [skipped/](roadmaps/skipped/) · [later/](roadmaps/later/)
 
 ## Overall
 
-**51 / 53 steps done · 96%**
+**16 / 17 steps done · 94%**
 
 ```text
-██████████████████████████████████████░░   96%
+██████████████████████████████████████░░   94%
 ```
 
 ## Open roadmaps
@@ -17,7 +17,6 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 1 | 16 | 0 | 0 | 0 | █████████░ 94% |
-| 2 | [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md) | 9 | 36 | 1 | 35 | 0 | 0 | 0 | ██████████ 97% |
 
 ---
 
@@ -61,22 +60,6 @@
 | 5 | A browser agent-switch controls | 🟡 in progress | 1 | 2 | 0 | 0 | 67% |
 | 6 | Hints that save the account | ✅ done | 0 | 2 | 0 | 0 | 100% |
 
-### [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md)
-
-**a workbench that tells the truth** — 35 / 36 done (97%)
-
-| # | Phase | State | Open | Done | Deferred | Cancelled | % |
-|---|---|---|---:|---:|---:|---:|---:|
-| 1 | Actions that do what they say | ✅ done | 0 | 4 | 0 | 0 | 100% |
-| 2 | A session starts the way the dialog shows it | ✅ done | 0 | 3 | 0 | 0 | 100% |
-| 3 | Your terminal and Agent Switch at the same time | ✅ done | 0 | 3 | 0 | 0 | 100% |
-| 4 | From a session to its diff | ✅ done | 0 | 2 | 0 | 0 | 100% |
-| 5 | The list at a glance | ✅ done | 0 | 3 | 0 | 0 | 100% |
-| 6 | The canvas shows it | 🟡 in progress | 1 | 1 | 0 | 0 | 50% |
-| 7 | Arena round 1 (10 reviewers, all NOT DONE; reports in the session scratchpad `arena/r1/`) | ✅ done | 0 | 7 | 0 | 0 | 100% |
-| 8 | Arena round 2 (4 DONE, 6 NOT DONE; reports in the session scratchpad `arena/r2/`) | ✅ done | 0 | 8 | 0 | 0 | 100% |
-| 9 | Arena round 3 (6 DONE, 4 NOT DONE; reports in the session scratchpad `arena/r3/`) — the last round the owner asked for | ✅ done | 0 | 4 | 0 | 0 | 100% |
-
 ## Age
 
 Days since each active roadmap landed at its path and since its last ticked step, read from `git log` (`—` = unknown, or never ticked).
@@ -84,5 +67,4 @@ Days since each active roadmap landed at its path and since its last ticked step
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 18 | 18 |
-| [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md) | 0 | 0 |
 

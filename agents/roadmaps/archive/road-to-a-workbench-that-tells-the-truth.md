@@ -71,7 +71,7 @@ canvas shows the result, because it renders the real app.
 ## Phase 6 — The canvas shows it
 
 - [x] 6.1 Fixture panels (terminal, Summary, Changes) follow the selected session; the end and review boards show their real state.
-- [ ] 6.2 Rebuild the embed, publish it to the design canvas, and mark the proposals that are now built.
+- [x] 6.2 Rebuild the embed, publish it to the design canvas, and mark the proposals that are now built.
 
 ## Phase 7 — Arena round 1 (10 reviewers, all NOT DONE; reports in the session scratchpad `arena/r1/`)
 
