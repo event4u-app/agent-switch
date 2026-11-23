@@ -347,6 +347,12 @@ export interface ReviewFileJson {
   hunks: ReviewHunkJson[];
   /** Past the review's size budget: counted, its hunks left out. */
   omitted?: boolean;
+  /** The layers the file has changes in, also those without lines (a binary file, a pure rename). */
+  layers?: ReviewHunkJson["layer"][];
+  /** The file's state when read; a whole-file action carries it and is refused when the file moved. */
+  hash?: string;
+  /** Why the file has no lines to show. */
+  preview?: "binary" | "too large" | "link";
 }
 export type ReviewJson =
   | { unchanged: true; fingerprint: string }
@@ -390,7 +396,9 @@ async function cliCall(args: string[]): Promise<string> {
   return o.done ?? o.commit ?? "";
 }
 
-export const reviewAct = (key: string, action: "stage" | "unstage" | "discard", file: string, hunk?: string) => cliCall(["diff", key, action, "--file", file, ...(hunk ? ["--hunk", hunk] : []), "--json"]);
+/** One hunk (`hunk`) or the whole file; a whole-file action with `fileHash` is refused when the file changed since it was read. */
+export const reviewAct = (key: string, action: "stage" | "unstage" | "discard", file: string, hunk?: string, fileHash?: string) =>
+  cliCall(["diff", key, action, "--file", file, ...(hunk ? ["--hunk", hunk] : fileHash ? ["--file-hash", fileHash] : []), "--json"]);
 export const reviewUndo = (key: string) => cliCall(["diff", key, "undo", "--json"]);
 export interface McpAccountJson {
   key: string;

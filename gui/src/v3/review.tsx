@@ -176,9 +176,19 @@ function HunkView({ file, h, layout, locked, on }: { file: string; h: ReviewHunk
   );
 }
 
+/** Whether the file has changes in `layer`: its layers as read, else (an older CLI) its hunks. */
+const hasLayer = (f: ReviewFileJson, layer: ReviewHunkJson["layer"]) => (f.layers ? f.layers.includes(layer) : f.hunks.some((h) => h.layer === layer));
+
+const NO_PREVIEW: Record<NonNullable<ReviewFileJson["preview"]>, string> = {
+  binary: "Binary file — no preview",
+  "too large": "Too large to show here — no preview",
+  link: "A link — no preview",
+};
+
 function FileCard({ f, open, onToggle, layout, locked, on }: { f: ReviewFileJson; open: boolean; onToggle: () => void; layout: "unified" | "split"; locked: string | null; on: ReviewActions }) {
-  // A file too large to show has no hunks here; the CLI still acts on it, and says when there is nothing to stage.
-  const unstaged = !!f.omitted || f.hunks.some((h) => h.layer === "unstaged");
+  // A file without lines here (too large, binary, a link, a pure rename) still has its layers; the CLI acts on the whole file.
+  const unstaged = !!f.omitted || hasLayer(f, "unstaged");
+  const staged = hasLayer(f, "staged");
   return (
     <div data-review-file={f.path} className="overflow-hidden rounded-[10px] border border-ac-line bg-ac-panel">
       <div className="flex items-center gap-2 border-b border-ac-line px-3 py-2">
@@ -192,11 +202,17 @@ function FileCard({ f, open, onToggle, layout, locked, on }: { f: ReviewFileJson
           <Button size="sm" disabled={!!locked || !unstaged} title={locked ?? undefined} onClick={() => on.stage(f.path)}>
             Stage file
           </Button>
+          {staged && (
+            <Button size="sm" disabled={!!locked} title={locked ?? undefined} onClick={() => on.unstage(f.path)}>
+              Unstage file
+            </Button>
+          )}
           <Button size="sm" variant="danger" disabled={!!locked || !unstaged} title={locked ?? undefined} onClick={() => on.discard(f.path)}>
             Discard
           </Button>
         </span>
       </div>
+      {open && f.preview && <p className="px-3 py-2 text-xs text-ac-muted">{NO_PREVIEW[f.preview]}</p>}
       {open && f.omitted && (
         <p className="px-3 py-2 text-xs text-ac-muted">
           Too large to show here — +{f.added} −{f.removed} lines. Open the file in your editor to read it.
@@ -251,7 +267,7 @@ export function Review({
     if (large) setExpanded(flip);
     else setCollapsed(flip);
   };
-  const staged = useMemo(() => files.filter((f) => f.hunks.some((h) => h.layer === "staged")).length, [files]);
+  const staged = useMemo(() => files.filter((f) => hasLayer(f, "staged")).length, [files]);
   const dirs = [...new Set(files.map((f) => dirOf(f.path)))];
   const shown = current ?? files[0]?.path ?? null;
   const cards = useRef<HTMLDivElement>(null);

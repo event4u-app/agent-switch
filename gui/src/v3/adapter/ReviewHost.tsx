@@ -1,6 +1,6 @@
 /** The Review page of one session on real data: `diff --json` per scope,
- *  re-read after every action and every few seconds while a turn may change
- *  files; actions go to the CLI, comments to the session's chat. It opens on
+ *  re-read after every action and, while a turn may change files, a few
+ *  seconds after the last read settled; actions go to the CLI, comments to the session's chat. It opens on
  *  Uncommitted, the files the Summary and Changes counts count. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -34,6 +34,8 @@ export function ReviewHost({ sessionKey, title, running, comment, agentReview, t
   const [error, setError] = useState<string | null>(null);
   const [undoable, setUndoable] = useState(false);
   const [n, setN] = useState(0);
+  /** Counts reads that settled: the next poll is timed from the last one, so a slow read is never cut off by the next. */
+  const [settled, setSettled] = useState(0);
   const reload = useCallback(() => setN((x) => x + 1), []);
   /** What the shown review was read at, per scope: a poll that finds it unchanged reads nothing more. */
   const seen = useRef<{ key: string; scope: ipc.ReviewScope; fingerprint: string } | null>(null);
@@ -70,7 +72,11 @@ export function ReviewHost({ sessionKey, title, running, comment, agentReview, t
         setData(null);
         setError(e instanceof Error ? e.message : String(e));
       })
-      .finally(() => alive && setLoading(false));
+      .finally(() => {
+        if (!alive) return;
+        setLoading(false);
+        setSettled((x) => x + 1);
+      });
     return () => {
       alive = false;
     };
@@ -78,12 +84,12 @@ export function ReviewHost({ sessionKey, title, running, comment, agentReview, t
 
   useEffect(() => {
     if (!running) return;
-    const id = setInterval(() => {
+    const id = setTimeout(() => {
       polled.current = true;
       reload();
     }, REVIEW_POLL_MS);
-    return () => clearInterval(id);
-  }, [running, reload]);
+    return () => clearTimeout(id);
+  }, [running, reload, settled]);
 
   const run = (p: Promise<string>, after?: () => void) =>
     p
@@ -99,6 +105,8 @@ export function ReviewHost({ sessionKey, title, running, comment, agentReview, t
 
   // A read of another session or scope (a tab or scope switch still loading) is neither shown nor acted on.
   const shown = data && data.key === sessionKey && data.scope === scope ? data : null;
+  /** A whole-file action carries the file's hash as shown; a hunk action its hunk. */
+  const fileHash = (file: string, hunk?: string) => (hunk ? undefined : shown?.files.find((f) => f.path === file)?.hash);
   const ready = !!shown && !loading;
   const guard =
     <A extends unknown[]>(f: (...a: A) => void) =>
@@ -121,9 +129,9 @@ export function ReviewHost({ sessionKey, title, running, comment, agentReview, t
       focus={focus}
       on={{
         setScope,
-        stage: guard((file: string, hunk?: string) => void run(io.reviewAct(sessionKey, "stage", file, hunk))),
-        unstage: guard((file: string, hunk?: string) => void run(io.reviewAct(sessionKey, "unstage", file, hunk))),
-        discard: guard((file: string, hunk?: string) => void run(io.reviewAct(sessionKey, "discard", file, hunk), () => setUndoable(true))),
+        stage: guard((file: string, hunk?: string) => void run(io.reviewAct(sessionKey, "stage", file, hunk, fileHash(file, hunk)))),
+        unstage: guard((file: string, hunk?: string) => void run(io.reviewAct(sessionKey, "unstage", file, hunk, fileHash(file, hunk)))),
+        discard: guard((file: string, hunk?: string) => void run(io.reviewAct(sessionKey, "discard", file, hunk, fileHash(file, hunk)), () => setUndoable(true))),
         undo: guard(() => void run(io.reviewUndo(sessionKey), () => setUndoable(false))),
         comment: comment && guard(comment),
         commit: guard(() => askMessage((message) => void run(io.reviewCommit(sessionKey, message).then((sha) => `committed ${sha}`)))),
