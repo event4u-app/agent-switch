@@ -24,6 +24,9 @@ Start when `road-to-a-workbench-that-tells-the-truth` is archived.
 - [ ] 3.1 Line comments collect into one prompt sent with "Send to agent", also from the terminal view.
 - [ ] 3.2 j/k between files; compare base selectable.
 
+- [ ] 3.3 An idle review re-reads on window focus (today a stale page refuses an action by its file hash, but still shows the old state until the next action).
+- [ ] 3.4 Clean up offers to delete the merged worktree's `agent-switch/<name>` branch too — as its own confirmed choice, never by default.
+
 ## Phase 4 — Palette that acts
 
 - [ ] 4.1 Commands: move, resume, end, start, and ⌘↵ for the secondary action.

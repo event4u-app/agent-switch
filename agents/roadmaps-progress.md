@@ -6,10 +6,10 @@
 
 ## Overall
 
-**49 / 53 steps done · 92%**
+**51 / 53 steps done · 96%**
 
 ```text
-█████████████████████████████████████░░░   92%
+██████████████████████████████████████░░   96%
 ```
 
 ## Open roadmaps
@@ -17,7 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 1 | 16 | 0 | 0 | 0 | █████████░ 94% |
-| 2 | [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md) | 9 | 36 | 3 | 33 | 0 | 0 | 0 | █████████░ 92% |
+| 2 | [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md) | 9 | 36 | 1 | 35 | 0 | 0 | 0 | ██████████ 97% |
 
 ---
 
@@ -63,7 +63,7 @@
 
 ### [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md)
 
-**a workbench that tells the truth** — 33 / 36 done (92%)
+**a workbench that tells the truth** — 35 / 36 done (97%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
@@ -75,7 +75,7 @@
 | 6 | The canvas shows it | 🟡 in progress | 1 | 1 | 0 | 0 | 50% |
 | 7 | Arena round 1 (10 reviewers, all NOT DONE; reports in the session scratchpad `arena/r1/`) | ✅ done | 0 | 7 | 0 | 0 | 100% |
 | 8 | Arena round 2 (4 DONE, 6 NOT DONE; reports in the session scratchpad `arena/r2/`) | ✅ done | 0 | 8 | 0 | 0 | 100% |
-| 9 | Arena round 3 (6 DONE, 4 NOT DONE; reports in the session scratchpad `arena/r3/`) — the last round the owner asked for | 🟡 in progress | 2 | 2 | 0 | 0 | 50% |
+| 9 | Arena round 3 (6 DONE, 4 NOT DONE; reports in the session scratchpad `arena/r3/`) — the last round the owner asked for | ✅ done | 0 | 4 | 0 | 0 | 100% |
 
 ## Age
 
