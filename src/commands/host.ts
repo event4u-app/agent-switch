@@ -19,6 +19,7 @@ import { listSessions } from "../sessions.js";
 import { turnInFlight } from "../telemetry.js";
 import { commandPlan, terminalName } from "../terminals.js";
 import { resolveDir } from "./routing.js";
+import { choiceArgs, newWorktree } from "../start-choice.js";
 import { syncClaudeProfile } from "./shared.js";
 import { hasClaudeTranscript, resumeArgs } from "./view.js";
 
@@ -30,7 +31,7 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
     setInterval(() => {}, 1 << 30);
     return;
   }
-  if (!["start", "list", "end", "attach", "respawn"].includes(action)) die("usage: agent-switch host start [profile] [--provider P] [--cwd DIR] [--remote-control] [--title T] | list | attach <session> [--new-window] | respawn <session> [--model M] [--effort E] | end <session> [--yes]");
+  if (!["start", "list", "end", "attach", "respawn"].includes(action)) die("usage: agent-switch host start [profile] [--provider P] [--cwd DIR] [--model M] [--effort E] [--worktree] [--remote-control] [--title T] | list | attach <session> [--new-window] | respawn <session> [--model M] [--effort E] | end <session> [--yes]");
   const mode = hostingMode(process.platform, TmuxHost.available());
   if (action === "list" && flags.json && mode === "ephemeral") {
     console.log(JSON.stringify({ mode, hosted: [], legacy: [] }));
@@ -46,12 +47,21 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
     if (action === "start") {
       // Antigravity is terminal-only: it runs hosted, but AS cannot read its sessions yet.
       if (providerId !== "claude" && providerId !== "codex" && providerId !== "antigravity") die(`hosting supports claude, codex and antigravity`);
-      const cwd = path.resolve(typeof flags.cwd === "string" ? flags.cwd : process.cwd());
+      const asked = path.resolve(typeof flags.cwd === "string" ? flags.cwd : process.cwd());
       // No account named: the same routing, folder rules and guard as a plain start.
-      const profile = arg ? requireProfile(providerId, arg, "host start") : routed(providerId, cwd);
+      const profile = arg ? requireProfile(providerId, arg, "host start") : routed(providerId, asked);
       const bin = readBinaryPath(providerId) ?? provider(providerId).binary;
+      let choice: string[] = [];
+      let cwd = asked;
+      try {
+        choice = choiceArgs(providerId, { ...(typeof flags.model === "string" ? { model: flags.model } : {}), ...(typeof flags.effort === "string" ? { effort: flags.effort } : {}) });
+        // The account is routed by the folder asked for; the worktree is made only once the start is allowed.
+        if (flags.worktree === true) cwd = newWorktree(asked, providerId);
+      } catch (e) {
+        die((e as Error).message);
+      }
       // R1: Claude Remote Control when asked for this session or on for the account (off by default).
-      const args = remoteControlArgs(providerId, profile, flags["remote-control"] === true, typeof flags.title === "string" ? flags.title : path.basename(cwd), readRemote());
+      const args = [...remoteControlArgs(providerId, profile, flags["remote-control"] === true, typeof flags.title === "string" ? flags.title : path.basename(asked), readRemote()), ...choice];
       if (providerId === "claude") syncClaudeProfile(configDir(providerId, profile));
       const s = host.start({ provider: providerId, account: profile, configDir: configDir(providerId, profile), cwd, bin, env: sessionAgentConfigEnv(providerId, profile), ...(args.length ? { args } : {}) }, hookCommandPrefix());
       if (flags.json) console.log(JSON.stringify(s));

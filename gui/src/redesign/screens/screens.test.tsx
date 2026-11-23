@@ -306,6 +306,21 @@ describe("Start session", () => {
     expect(startPlan(ready, "claude", "terminal", null, "\\\\srv\\share")?.kind).toBe("terminal");
   });
 
+  it("a start handed over from the New session dialog keeps its model, thinking and worktree", () => {
+    const ready = { ...acc("work"), isDefault: true };
+    const choice = { model: "opus", effort: "high", worktree: true };
+    expect(startPlan(ready, "claude", "terminal", null, "/r", choice)).toEqual({ kind: "terminal", args: ["run", "work", "--provider", "claude", "--cwd", "/r", "--model", "opus", "--effort", "high", "--worktree"] });
+  });
+
+  it("the handed-over choice belongs to its tool: switching the tool here drops it", () => {
+    const vm = fixture();
+    vm.accounts = [...vm.accounts, acc("cw", { id: "codex:cw", tool: "codex", isDefault: true })];
+    mount(vm, { overlay: { kind: "start", cwd: "/r", tool: "claude", choice: { model: "opus", effort: "max", worktree: true } } });
+    expect(document.querySelector('[title="agent-switch run work --provider claude --cwd /r --model opus --effort max --worktree"]')).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+    expect(document.querySelector('[title="agent-switch run cw --provider codex --cwd /r"]')).toBeTruthy();
+  });
+
   it("won't start on a disabled account, and says how to get it back", () => {
     const off = { ...acc("work"), disabled: true };
     expect(startPlan(off, "claude", "terminal", null, "")).toBeNull();
