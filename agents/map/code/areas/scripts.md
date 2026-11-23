@@ -2,7 +2,7 @@
 
 > Part of [Map of agent-switch](../MAP.md). Generated; never edit by hand.
 
-7 files · cohesion 27.3 % · tests 0 % · outside hub folder 57.1 %
+8 files · cohesion 25 % · tests 0 % · outside hub folder 62.5 %
 
 ## Files, most used first
 
@@ -10,6 +10,7 @@
 |---|---|---|---|
 | `scripts/pets/validate.py` | code | 2 | 1 |
 | `scripts/release.mjs` | code | 2 | 0 |
+| `scripts/design-tokens.mjs` | code | 1 | 0 |
 | `scripts/pets/petgen.py` | code | 1 | 0 |
 | `scripts/spikes/m2-hook-relay.mjs` | code | 1 | 0 |
 | `scripts/spikes/t10-hook-event-cost.mjs` | code | 1 | 0 |

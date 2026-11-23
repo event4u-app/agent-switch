@@ -2,15 +2,15 @@
 
 > Part of [Map of agent-switch](../MAP.md). Generated; never edit by hand.
 
-12 files · cohesion 50.8 % · tests 50 % · outside hub folder 0 %
+12 files · cohesion 50 % · tests 50 % · outside hub folder 0 %
 
 ## Files, most used first
 
 | File | Role | Used by | Uses |
 |---|---|---|---|
+| `src/bridge/inbox.ts` | code | 7 | 0 |
 | `src/bridge/pending.ts` | code | 7 | 0 |
-| `src/bridge/inbox.ts` | code | 6 | 0 |
-| `src/bridge/claude-bridge.ts` | code | 5 | 6 |
+| `src/bridge/claude-bridge.ts` | code | 6 | 6 |
 | `src/bridge/codex-bridge.ts` | code | 5 | 6 |
 | `src/bridge/attachments.ts` | code | 4 | 0 |
 | `tests/bridge.test.ts` | test | 4 | 3 |

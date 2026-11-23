@@ -2,14 +2,14 @@
 
 > Part of [Map of agent-switch](../MAP.md). Generated; never edit by hand.
 
-5 files · cohesion 6 % · tests 0 % · outside hub folder 0 %
+5 files · cohesion 5.8 % · tests 0 % · outside hub folder 0 %
 
 ## Files, most used first
 
 | File | Role | Used by | Uses |
 |---|---|---|---|
-| `gui/src/redesign/Hosts.tsx` | code | 5 | 21 |
-| `gui/src/redesign/Shell.tsx` | code | 4 | 11 |
+| `gui/src/redesign/Hosts.tsx` | code | 6 | 21 |
+| `gui/src/redesign/Shell.tsx` | code | 5 | 11 |
 | `gui/src/redesign/shortcuts.ts` | code | 3 | 0 |
 | `gui/src/redesign/CommandSearch.tsx` | code | 2 | 8 |
 | `gui/src/redesign/RedesignApp.tsx` | code | 2 | 16 |
@@ -19,7 +19,7 @@
 - `gui/src/vm/store.tsx` (gui-src-vm) — 13 link(s)
 - `gui/src/i18n/index.ts` (gui-src-i18n) — 10 link(s)
 - `gui/src/vm/search.ts` (gui-src-vm) — 7 link(s)
-- `gui/src/vm/actions.ts` (gui-src-vm) — 6 link(s)
+- `gui/src/vm/actions.ts` (gui-src-vm) — 5 link(s)
 - `gui/package-lock.json` (infra) — 4 link(s)
 - `gui/src/redesign/tray/bridge.ts` (gui-src-redesign-tray) — 4 link(s)
 - `gui/src/redesign/screens/health.tsx` (gui-src-redesign-screens) — 3 link(s)
