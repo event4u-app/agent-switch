@@ -84,6 +84,16 @@ canvas shows the result, because it renders the real app.
 - [x] 7.6 Needs and actions: a conflict is not called a CI failure; a fix goes to the session the item names; check names are delimited as data in prompts; every move, send and blocker action respects a stopped engine; Compact, Thinking and Focus terminal are offered only where they work; tray verbs act or go to their item.
 - [x] 7.7 List and subagents: rows show age, tool and account mark; status-first order by default; CI in the table as words; subagent rows carry their task description; Children rows open; a subagent opens read-only with its current tool and elapsed time.
 
+## Phase 8 — Arena round 2 (4 DONE, 6 NOT DONE; reports in the session scratchpad `arena/r2/`)
+
+- [ ] 8.1 Create PR: what was confirmed is what runs (branch, head, remote, refspec, base, title bound; refused when changed); preflight before any push (no commits ahead, PR exists, not GitHub); base selectable, defaulting to the branch's real target; Create PR hidden when a PR exists.
+- [ ] 8.2 Review: a tab never acts on another session's data; file names with spaces and non-ASCII work; one file inventory for Changes and Review with omissions said; the shared-worktree warning stays current while polling.
+- [ ] 8.3 Chat: the whole conversation is reachable (earlier turns load on demand, the budget counts visible rows); Copy says what it copies; a chat-started session's Terminal toggle and stale question cards are honest.
+- [ ] 8.4 Subagents: `timeline --subagent` works end to end; subagents are listed and open from Claude Code's own meta files without our hook; reads stay confined to the session folder; truncation is said.
+- [ ] 8.5 Actions: Open in and Resume work for Codex or say why; the engine-stopped lock covers only what needs the engine; a hosted send never submits the user's draft and reports a failed send; CI items send no check names; label and target of a CI item agree; `host adopt --force` never starts a second writer; Move from any entry opens the v3 decision sheet; the tray starts the v3 New-session dialog; the real dialog shows the folder's git state.
+- [ ] 8.6 Flyouts and list: ⌘J moves focus to the item so its keys never reach the terminal; session-bar chips move into ⋯ instead of being cut when a panel is open; Limits rows work by keyboard; ⌘K/Esc returns focus; an existing install gets the new sort and density defaults once; the sort menu labels its default.
+- [ ] 8.7 Owner inbox of 2026-11-23 triaged into a roadmap with its open owner questions; the inbox files moved to the archive.
+
 ## Follow-ups (not in this roadmap)
 
 `road-to-a-v3-window-in-two-languages` (D2) and `road-to-the-workbench-second-pass`
