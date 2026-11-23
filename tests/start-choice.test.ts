@@ -35,7 +35,8 @@ test("worktreeName: the tool and the start time, sortable", () => {
 
 /** A repository `app` with one commit and a `sub` folder, in a fresh temp root. */
 function repoFixture(): { root: string; repo: string; g: (...a: string[]) => string } {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-wt-")));
+  // native: Windows' temp dir is an 8.3 short name; git reports the long one.
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-wt-")));
   const repo = path.join(root, "app");
   fs.mkdirSync(path.join(repo, "sub"), { recursive: true });
   const g = (...a: string[]) => execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { encoding: "utf8" }).trim();

@@ -218,11 +218,14 @@ test("fingerprint: the same while nothing changes, different after an edit or fo
 });
 
 /** A repo whose file names git quotes: a space, a tab, a double quote, a backslash and an umlaut. */
-const ODD = ["with space.txt", "tab\there.txt", 'qu"ote.txt', "back\\slash.txt", "ä-umlaut.txt", "dir with space/ö.txt"];
+// Windows forbids a tab and a double quote in a file name and reads a backslash as a separator.
+const ODD = ["with space.txt", ...(process.platform === "win32" ? [] : ["tab\there.txt", 'qu"ote.txt', "back\\slash.txt"]), "ä-umlaut.txt", "dir with space/ö.txt"];
 function oddRepo() {
   const r = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-rev-odd-")));
   const g = (...a: string[]) => execFileSync("git", ["-C", r, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.autocrlf=false", ...a], { encoding: "utf8" });
   g("init", "-q", "-b", "main");
+  // The code under test runs git without -c flags; a CI runner's global autocrlf must not reach it.
+  g("config", "core.autocrlf", "false");
   for (const f of ODD) {
     fs.mkdirSync(path.dirname(path.join(r, f)), { recursive: true });
     fs.writeFileSync(path.join(r, f), "one\ntwo\n");
@@ -288,6 +291,7 @@ function wholeRepo() {
   // The code under test commits without -c flags; the repo carries its own identity (CI has no global one).
   g("config", "user.name", "t");
   g("config", "user.email", "t@example.com");
+  g("config", "core.autocrlf", "false");
   for (const f of ["keep.txt", "del.txt", "other.txt"]) fs.writeFileSync(path.join(r, f), `${f}\n`);
   fs.writeFileSync(path.join(r, "img.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3, 0, 255]));
   g("add", ".");

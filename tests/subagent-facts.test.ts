@@ -87,8 +87,8 @@ test("subagentFacts: a tool call only in the head of a long transcript is outsid
 });
 
 test("subagentDir / subagentTranscript: next to the session's transcript; only a plain agent id", () => {
-  assert.equal(subagentDir(`/c/projects/-repo/${SID}.jsonl`), `/c/projects/-repo/${SID}/subagents`);
-  assert.equal(subagentTranscript(`/c/projects/-repo/${SID}.jsonl`, "a1b2"), `/c/projects/-repo/${SID}/subagents/agent-a1b2.jsonl`);
+  assert.equal(subagentDir(`/c/projects/-repo/${SID}.jsonl`), path.join("/c/projects/-repo", SID, "subagents"));
+  assert.equal(subagentTranscript(`/c/projects/-repo/${SID}.jsonl`, "a1b2"), path.join("/c/projects/-repo", SID, "subagents", "agent-a1b2.jsonl"));
   for (const bad of ["../x", "a/b", "", "a".repeat(200), "a b"]) assert.equal(subagentTranscript(`/c/projects/-repo/${SID}.jsonl`, bad), null, bad);
 });
 
