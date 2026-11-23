@@ -47,6 +47,11 @@ describe("Review", () => {
     expect(screen.queryByText("Ask Codex to review")).toBeNull();
   });
 
+  it("no Create PR for a session whose PR is already open", () => {
+    render(<Review title="t" scope="worktree" files={FILES} shared={[]} running={false} loading={false} error={null} undoable={false} on={on({ createPr: undefined })} />);
+    expect(screen.queryByText("Create PR")).toBeNull();
+  });
+
   it("opened at a file: that file is selected and expanded; a new target moves the selection", () => {
     const props = { title: "t", scope: "worktree" as const, files: FILES, shared: [], running: false, loading: false, error: null, undoable: false, on: on() };
     const { rerender } = render(<Review {...props} focus={{ file: "notes.md", seq: 1 }} />);

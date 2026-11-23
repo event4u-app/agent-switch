@@ -4,7 +4,7 @@ import type { SessionRow } from "../../transforms.js";
 import { emptyViewModel } from "../../vm/load.js";
 import type { Account, ViewModel } from "../../vm/types.js";
 import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
-import { chatStart, childrenOf, decisionFor, doneToday, initialPlan, nextStep, sessionKey, startCommand, startKey, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
+import { chatStart, childrenOf, decisionFor, doneToday, hasOpenPr, initialPlan, nextStep, sessionKey, startCommand, startKey, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
 import { emptyFeeds, type V3Feeds } from "./useFeeds.js";
 
 const NOW = Date.parse("2026-11-03T15:00:00");
@@ -331,6 +331,13 @@ describe("pieces", () => {
     expect(nextStep(row("y", { git }), false)).toEqual({ text: "2 commits on feat without a PR", action: "Create PR", does: "create-pr" });
     expect(nextStep(row("y", { git: { ...git, ahead: 0 } }), false)).toBeNull();
     expect(nextStep(row("y"), true)?.does).toBe("focus");
+  });
+
+  it("hasOpenPr: only an open PR keeps Create PR away", () => {
+    const pr = (lifecycle: string) => row("x", { prs: [{ number: 4, url: "u", lifecycle, mergeable: "MERGEABLE", review: "NONE", ci: "SUCCESS", failingChecks: [] }] });
+    expect(hasOpenPr(pr("OPEN"))).toBe(true);
+    expect(hasOpenPr(pr("MERGED"))).toBe(false);
+    expect(hasOpenPr(row("y"))).toBe(false);
   });
 
   it("decisionFor: the account's live sessions, moved to the least-used other account", () => {

@@ -265,6 +265,8 @@ function externalWhere(r: SessionRow, key: string, here: boolean, env: AdapterEn
 }
 
 const prsOf = (r: SessionRow): PrFacts[] => (r.prs ?? []).map(parsePr).filter((p): p is PrFacts => p !== null);
+/** True when the session has an open PR: Create PR is then not offered. */
+export const hasOpenPr = (r: SessionRow): boolean => prsOf(r).some((p) => p.lifecycle === "OPEN");
 
 export interface NextStep {
   text: string;
