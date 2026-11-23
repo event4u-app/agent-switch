@@ -249,7 +249,7 @@ function recordingTmux(dir: string): { bin: string; calls: () => string[][] } {
   return { bin, calls: () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []) };
 }
 
-test("a hosted Codex window gets a read-only pipe to the program-status reader; Claude does not", () => {
+test("a hosted Codex window gets a read-only pipe to the program-status reader; Claude does not", { skip: process.platform === "win32" ? "the recording tmux stand-in is a shell script" : false }, () => {
   const root = tmp();
   const t = recordingTmux(root);
   const host = new TmuxHost(root, { socket: "rec", tmux: t.bin });

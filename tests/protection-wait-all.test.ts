@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 
 import { applyWait, autoContinueState, waitTargets } from "../src/protection.js";
 
+const WIN = process.platform === "win32";
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const cli = path.resolve(here, "../src/index.js");
 
@@ -26,7 +28,7 @@ function seedRoot(): { root: string; cfg: (n: string) => string } {
   return { root, cfg };
 }
 
-test("waitTargets: one target per real settings file, listing every profile it serves", () => {
+test("waitTargets: one target per real settings file, listing every profile it serves", { skip: WIN ? "file symlinks and read-only modes differ on win32" : false }, () => {
   const { root, cfg } = seedRoot();
   const t = waitTargets(["a", "b", "c", "d"].map((name) => ({ name, configDir: cfg(name) })));
   assert.deepEqual(
@@ -39,7 +41,7 @@ test("waitTargets: one target per real settings file, listing every profile it s
   );
 });
 
-test("applyWait: writes each target once, keeps the link, and reports a failed one", () => {
+test("applyWait: writes each target once, keeps the link, and reports a failed one", { skip: WIN ? "file symlinks and read-only modes differ on win32" : false }, () => {
   const { root, cfg } = seedRoot();
   const t = waitTargets(["a", "b", "c", "d"].map((name) => ({ name, configDir: cfg(name) })));
   fs.chmodSync(path.join(cfg("c"), "settings.json"), 0o444);
