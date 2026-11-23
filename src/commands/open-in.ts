@@ -12,7 +12,7 @@ import * as path from "node:path";
 import { die, ROOT } from "../profiles.js";
 import { eventFile, lastHookCwd, readEvents } from "../hooks.js";
 import { canonical, gitFacts } from "../git-facts.js";
-import { readSessionHeader } from "../sessions.js";
+import { codexSessionMeta, readSessionHeader } from "../sessions.js";
 import { liveSessions } from "../api.js";
 import { configDir } from "../profiles.js";
 import { confine, defaultTarget, menu, OpenRefused, openSettingsFile, plan, readOpenSettings, realEnv, TARGET_IDS, writeOpenSettings, type TargetId } from "../open-in.js";
@@ -35,13 +35,20 @@ interface Where {
   headSha: string | null;
 }
 
+/** The folder a session ran in, read from its own transcript: a Codex rollout
+ *  keeps it in its first line's `session_meta` payload (as `host adopt` reads it). */
+export function sessionFolder(provider: string, transcript: string): string | null {
+  if (provider === "codex") return codexSessionMeta(transcript)?.cwd ?? null;
+  return readSessionHeader(transcript).cwd ?? null;
+}
+
 function where(arg: string | undefined): Where {
   if (!arg) die("name a session (an id or provider/account/id; see agent-switch sessions)");
   const s = resolveSession(arg);
   if (!s) die(`unknown app "${arg}" and no session of that id (see agent-switch apps, agent-switch sessions)`);
   const [provider, account, sessionId] = s.key.split("/");
   const events = provider === "claude" ? readEvents(eventFile(ROOT, provider, account)) : [];
-  const cwd = lastHookCwd(events, sessionId) ?? readSessionHeader(s.files.transcript).cwd;
+  const cwd = lastHookCwd(events, sessionId) ?? sessionFolder(provider, s.files.transcript);
   if (!cwd) die(`${s.key} names no folder`);
   const git = gitFacts(cwd);
   const root = git?.toplevel ?? cwd;
