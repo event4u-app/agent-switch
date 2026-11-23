@@ -195,6 +195,7 @@ export function V3Tray({
               loading={loading}
               sort={DEFAULT_SORT}
               lastActiveOf={lastActiveOf}
+              nowMs={nowMs}
               holdOrder={engaged}
               batch={noBatch}
             />
