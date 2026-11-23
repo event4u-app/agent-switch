@@ -501,10 +501,14 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       const pr = prsOf(r)[0];
       const a = accountOf(r);
       const n = nextStep(r, needing.has(key));
+      // The Changes list is the authority: once read, the count is its length, so Summary and
+      // Changes agree. Before the first read the hooks' count stands in.
+      if (r.git) env.wantChanges(key);
+      const files = env.changes.get(key);
       return {
         next: n && { text: n.text, action: n.action },
         pr: pr ? { number: pr.number, url: pr.url, ci: pr.ci, lifecycle: pr.lifecycle, mergeable: pr.mergeable, review: pr.review, failingChecks: pr.failingChecks } : null,
-        git: r.git ? { branch: r.git.branch, worktree: r.git.worktree, changed: r.git.changed, ahead: r.git.ahead, behind: r.git.behind } : null,
+        git: r.git ? { branch: r.git.branch, worktree: r.git.worktree, changed: files?.length ?? r.git.changed, ahead: r.git.ahead, behind: r.git.behind } : null,
         limit: nearLimit(a) ? `${a!.name} is at ${fiveH(a) ?? "?"}% of its 5-hour window` : null,
         more: {
           id: r.sessionId,
