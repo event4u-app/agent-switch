@@ -101,6 +101,36 @@ test("timeline and files: the session as AS events; repository files by query", 
   assert.ok(JSON.parse(f.stdout).files.includes("a.txt"));
 });
 
+test("timeline --subagent: a subagent's own transcript, not the parent's; an id that leaves the folder is refused", gate, () => {
+  const { home, run } = setup();
+  const session = path.join(home, "claude", "work", "config", "projects", "-repo", ID);
+  const sub = path.join(session, "subagents");
+  fs.mkdirSync(sub, { recursive: true });
+  const ts = new Date().toISOString();
+  fs.writeFileSync(
+    path.join(sub, "agent-a39139b91dc5ad63f.jsonl"),
+    [
+      { type: "user", isSidechain: true, agentId: "a39139b91dc5ad63f", timestamp: ts, uuid: "s1", message: { role: "user", content: "map the schema" } },
+      { type: "assistant", isSidechain: true, agentId: "a39139b91dc5ad63f", timestamp: ts, uuid: "s2", message: { role: "assistant", model: "claude-sonnet-5-5", stop_reason: "end_turn", content: [{ type: "text", text: "Subagent answer." }] } },
+    ]
+      .map((o) => JSON.stringify(o))
+      .join("\n") + "\n",
+  );
+  const t = run("timeline", ID, "--subagent", "a39139b91dc5ad63f", "--json", "--limit", "400");
+  assert.equal(t.status, 0, t.stderr);
+  const o = JSON.parse(t.stdout);
+  assert.equal(o.subagent, "a39139b91dc5ad63f");
+  assert.equal(o.truncated, false);
+  assert.ok(o.events.some((e: { t: string; text?: string }) => e.t === "message" && e.text === "Subagent answer."));
+  assert.ok(!o.events.some((e: { t: string; text?: string }) => e.t === "message" && e.text === "Done."), "never the parent's conversation");
+  // A file one level up, where `../x` would point if the id were not checked.
+  fs.writeFileSync(path.join(session, "agent-x.jsonl"), "");
+  const bad = run("timeline", ID, "--subagent", "../x", "--json");
+  assert.notEqual(bad.status, 0);
+  assert.match(bad.stderr, /not a subagent id/);
+  assert.notEqual(run("timeline", ID, "--subagent", "nobody", "--json").status, 0);
+});
+
 // The stand-in agent is a script with a shebang, which Windows cannot spawn directly.
 const unixGate = { skip: gate.skip || (process.platform === "win32" ? "a shebang stand-in agent does not spawn on Windows" : false) };
 

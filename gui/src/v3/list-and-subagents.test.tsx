@@ -16,7 +16,7 @@ import { rightItems } from "./frame.js";
 import { BOARDS } from "./design-fixture/embed.js";
 import { V3Window, type V3Data } from "./window.js";
 import { NOW, data, slots } from "./window-fixture.js";
-import { childrenOf, toV3Data } from "./adapter/data.js";
+import { childrenOf, toV3Data, worktreeOf } from "./adapter/data.js";
 import { emptyViewModel } from "../vm/load.js";
 import { emptyFeeds } from "./adapter/useFeeds.js";
 import { DEFAULT_APPEARANCE } from "./themes/resolve.js";
@@ -126,6 +126,38 @@ describe("subagents carry their task (04 F2)", () => {
   });
 });
 
+describe("subagents from Claude Code's own files, without our hooks (arena r2 04 F2)", () => {
+  const cli = (over: Partial<CliRow> = {}): CliRow => ({ provider: "claude", profile: "work", sessionId: "p", projectDir: "-r", cwd: "/r", mtimeMs: NOW, live: true, summary: "p", ...over });
+  const files = { kind: "subagent", agentId: "a7", type: "general-purpose", description: "Phase 1: honest actions", state: "running", source: "files", cwd: "/r/.claude/worktrees/agent-a7", toolUseId: "toolu_1", startedAt: new Date(NOW - 5 * MIN).toISOString() };
+
+  it("a files subagent keeps its source, task, worktree and start, and opens its transcript like a hook one", () => {
+    const [k] = childrenOf(cli({ children: [files], childCount: 1, childSource: "files" } as never));
+    expect(k).toMatchObject({ id: "a7", source: "files", label: "general-purpose · Phase 1: honest actions", worktree: "agent-a7", startedMs: NOW - 5 * MIN, state: "working" });
+    const onSubagent = vi.fn();
+    const { container } = render(<SessionRow s={s("claude/work/p", { children: [k] })} open onSelect={vi.fn()} onToggleChildren={vi.fn()} onCheck={vi.fn()} onSubagent={onSubagent} />);
+    const row = container.querySelector<HTMLElement>("[data-child-row]")!;
+    expect(row.getAttribute("role")).toBe("button");
+    expect(row.getAttribute("title")).toMatch(/from Claude Code's files/);
+    expect(row.getAttribute("title")).not.toMatch(/nothing to open|via hook/);
+    fireEvent.click(row);
+    expect(onSubagent).toHaveBeenCalledWith("claude/work/p", "a7");
+  });
+
+  it("only what cannot be read stays a count with nothing to open", () => {
+    const kids = childrenOf(cli({ children: [files], childCount: 3, childSource: "files+counted" } as never));
+    expect(kids.map((k) => [k.source, k.count ?? null])).toEqual([["files", null], ["counted", 2]]);
+    render(<ChildrenWindow noun="3 subagents" children={kids} onHide={vi.fn()} onOpen={vi.fn()} subagents />);
+    expect(screen.getByRole("button", { name: /Phase 1: honest actions/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /2 subagents/ })).toBeNull();
+  });
+
+  it("the chat's Task row knows its worktree while the subagent runs, by the Task call's id", () => {
+    const wt = worktreeOf(cli({ children: [files] } as never));
+    expect(wt("toolu_1")).toBe("agent-a7");
+    expect(wt("a7")).toBe("agent-a7");
+  });
+});
+
 describe("Children rows open (04 F3) and a subagent opens read-only (04 F1)", () => {
   it("a session child in the Children window opens like in the tree; a hook subagent opens its view; a counted row does not", () => {
     const onOpen = vi.fn();
@@ -168,6 +200,23 @@ describe("Children rows open (04 F3) and a subagent opens read-only (04 F1)", ()
     render(<SubagentTranscript parent="claude/work/p" agentId="a1" read={read} />);
     expect(await screen.findByText("Migrated 3 stores.")).toBeTruthy();
     expect(read).toHaveBeenCalledWith("claude/work/p", "a1");
+  });
+
+  it("the app's subagent slot says when only the end of a long run is shown (arena r2 04 F3)", async () => {
+    const ev = [{ t: "message", id: "m1", role: "assistant", text: "Late step.", images: 0 }] as never;
+    const cut = vi.fn(async () => ({ events: ev, from: 0, total: 1, version: null, newerThanFixtures: false, truncated: true }));
+    render(<SubagentTranscript parent="claude/work/p" agentId="a1" read={cut} />);
+    expect(await screen.findByText("Late step.")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toMatch(/Earlier steps not shown/);
+    cleanup();
+    const paged = vi.fn(async () => ({ events: ev, from: 12, total: 13, version: null, newerThanFixtures: false, truncated: false }));
+    render(<SubagentTranscript parent="claude/work/p" agentId="a1" read={paged} />);
+    expect(await screen.findByText(/Earlier steps not shown/)).toBeTruthy();
+    cleanup();
+    const whole = vi.fn(async () => ({ events: ev, from: 0, total: 1, version: null, newerThanFixtures: false, truncated: false }));
+    render(<SubagentTranscript parent="claude/work/p" agentId="a1" read={whole} />);
+    expect(await screen.findByText("Late step.")).toBeTruthy();
+    expect(screen.queryByText(/Earlier steps not shown/)).toBeNull();
   });
 
   it("the Children stripe button has its own icon, not the Git branch", () => {

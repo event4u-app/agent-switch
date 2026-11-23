@@ -15,7 +15,7 @@ export const TIMELINE_POLL_MS = 4000;
 export type TimelineRead = (
   key: string,
   at?: { before?: number; from?: number },
-) => Promise<{ events: AsEvent[]; version: string | null; newerThanFixtures: boolean; from?: number; earlierPrompts?: number; hidden?: Record<string, number> }>;
+) => Promise<{ events: AsEvent[]; version: string | null; newerThanFixtures: boolean; from?: number; earlierPrompts?: number; hidden?: Record<string, number>; truncated?: boolean }>;
 
 export interface TimelineState {
   events: AsEvent[];
@@ -27,9 +27,12 @@ export interface TimelineState {
   earlier: { prompts: number; load: () => Promise<void>; all: () => Promise<AsEvent[]> } | null;
   /** Bookkeeping lines the CLI left out, by kind. */
   hidden: Record<string, number>;
+  /** Only the end is shown and nothing more can be loaded: the read left out the head of the
+   *  file (a subagent's, bounded), or older events a reader that cannot page did not return. */
+  cut: boolean;
 }
 
-const EMPTY: TimelineState = { events: [], version: null, newerThanFixtures: false, error: null, loaded: false, earlier: null, hidden: {} };
+const EMPTY: TimelineState = { events: [], version: null, newerThanFixtures: false, error: null, loaded: false, earlier: null, hidden: {}, cut: false };
 
 const realRead: TimelineRead = (key, at) => ipc.sessionTimeline(key, at ?? {});
 
@@ -41,6 +44,7 @@ interface Loaded {
   from: number;
   prompts: number | null;
   hidden: Record<string, number>;
+  truncated: boolean;
 }
 
 export function useTimeline(key: string | null, read: TimelineRead = realRead): TimelineState {
@@ -58,7 +62,7 @@ export function useTimeline(key: string | null, read: TimelineRead = realRead): 
         .then((r) => {
           // A page read before earlier turns arrived would drop them again.
           if (!alive || start.current.owner !== key || start.current.at !== at) return;
-          set({ owner: key, data: { events: r.events, version: r.version, newerThanFixtures: r.newerThanFixtures, from: r.from ?? 0, prompts: r.earlierPrompts ?? null, hidden: r.hidden ?? {} }, error: null, loaded: true });
+          set({ owner: key, data: { events: r.events, version: r.version, newerThanFixtures: r.newerThanFixtures, from: r.from ?? 0, prompts: r.earlierPrompts ?? null, hidden: r.hidden ?? {}, truncated: r.truncated === true }, error: null, loaded: true });
         })
         .catch((e: unknown) => alive && set((p) => ({ ...(p.owner === key ? p : { data: null }), owner: key, error: e instanceof Error ? e.message : String(e), loaded: true })));
     };
@@ -94,5 +98,6 @@ export function useTimeline(key: string | null, read: TimelineRead = realRead): 
     loaded: s.loaded,
     earlier: data && data.from > 0 && data.prompts !== null ? { prompts: data.prompts, load, all } : null,
     hidden: data?.hidden ?? {},
+    cut: !!data && (data.truncated || (data.from > 0 && data.prompts === null)),
   };
 }

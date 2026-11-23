@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { lineageFromEnv, clearedFrom, pidFrom } from "../src/hooks.js";
-import { helperIndex, childrenWithHooks, countSubagentFiles, childSource, buildTree, relationUnknown } from "../src/lineage.js";
+import { helperIndex, childrenWithHooks, childSource, buildTree, relationUnknown } from "../src/lineage.js";
 
 const SID = "3c87a281-1424-4ebf-965d-7ee64ed28e82";
 const PARENT = "claude/work/0ba6a24b-ebfa-4619-924e-30006a77f6dc";
@@ -53,16 +53,6 @@ test("helpers across accounts: a bare parent id and a full key both find the par
   ]);
   assert.equal(childSource(kids), "hook+lineage");
   assert.equal(idx.parentOf.get("claude/side/11111111-aaaa"), PARENT);
-});
-
-test("countSubagentFiles counts names only, never opens them", () => {
-  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), "asw-lin-"));
-  const dir = path.join(cfg, "projects", "-repo", SID, "subagents");
-  fs.mkdirSync(dir, { recursive: true });
-  for (const n of ["agent-a1.jsonl", "agent-a2.jsonl", "notes.txt"]) fs.writeFileSync(path.join(dir, n), "");
-  fs.chmodSync(path.join(dir, "agent-a1.jsonl"), 0o000); // unreadable is fine: it is only counted
-  assert.equal(countSubagentFiles(cfg, "-repo", SID), 2);
-  assert.equal(countSubagentFiles(cfg, "-repo", "other"), 0);
 });
 
 test("buildTree: every row appears once, children under their listed parent, no cycles (seeded)", () => {

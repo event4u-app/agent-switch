@@ -14,6 +14,7 @@ import type { WindowLayout } from "../layout.js";
 import { V3Tray } from "../tray.js";
 import { FirstRun } from "../firstrun.js";
 import { ChatTimeline } from "../chat.js";
+import { EarlierNotShown } from "../subagent-view.js";
 import type { AsEvent } from "../timeline.js";
 import CHAT from "../fixtures/timeline-claude-2.1.316.json";
 import { ToolsPage, allNeeds } from "../tools.js";
@@ -55,11 +56,21 @@ const S = (s: Partial<RowSession> & Pick<RowSession, "key" | "title" | "state">)
   return { branch: null, pr: null, children: [], needsYou: false, ...s, tool, account: { ...account, color: LIMITS.find((l) => l.key === `${tool}/${account.name}`)?.color } };
 };
 
+/** The subagents' own transcripts, by agent id: what the subagent board opens. */
+const SUBAGENT_RUNS: Record<string, AsEvent[]> = {
+  c2: [
+    { t: "tool.started", id: "t1", name: "Edit", summary: "src/engine/stores.ts", input: { file_path: "src/engine/stores.ts" }, parentToolId: null },
+    { t: "tool.finished", id: "t1", ok: true, summary: "" },
+    { t: "message", id: "m1", role: "assistant", text: "Moved sessions.json and arms.json into the event store; the JSON files stay as a read-only fallback. Running the store tests.", images: 0 },
+    { t: "tool.started", id: "t2", name: "Bash", summary: "npm test -- store", input: { command: "npm test -- store" }, parentToolId: null },
+  ],
+};
+
 const SESSIONS: RowSession[] = [
   S({ key: "claude/work/s-store", title: "v3 engine: event store + ingest", state: "working", branch: "feat/event-store", pr: { number: 142, ci: "PENDING", mergeable: "MERGEABLE" },
     children: [
       { id: "c1", label: "Explore · schema of sessions.json", kind: "subagent", state: "done", source: "hook" },
-      { id: "c2", label: "general-purpose · migrate JSON stores", kind: "subagent", state: "working", source: "hook", doing: "Bash · npm test -- store", startedMs: NOW - 6 * MIN },
+      { id: "c2", label: "general-purpose · migrate JSON stores", kind: "subagent", state: "working", source: "files", doing: "Bash · npm test -- store", startedMs: NOW - 6 * MIN },
       { id: "c3", label: "code-reviewer · ingest dedupe", kind: "subagent", state: "working", source: "hook", doing: "Read · src/engine/ingest.ts", startedMs: NOW - 2 * MIN },
     ] }),
   S({ key: "claude/personal/s-themes", title: "Theme system, Darcula default", state: "needs-you", account: { name: "personal", nearLimit: false }, branch: "feat/themes", pr: { number: 145, ci: "SUCCESS", mergeable: "MERGEABLE" }, needsYou: true }),
@@ -294,8 +305,8 @@ export function Scene({ view = "main", theme = "darcula", accent = "theme", heal
   const { vars } = resolveTheme(def, accent);
   const noop = () => {};
   const slots: V3Slots = {
-    // A subagent's own transcript: the recorded Claude transcript stands in for it.
-    subagent: () => <ChatTimeline events={CHAT.transcript as AsEvent[]} />,
+    // A subagent's own transcript, never its parent's; the end of a long run, as the real view reads it.
+    subagent: (_parent, agentId) => <ChatTimeline events={SUBAGENT_RUNS[agentId] ?? []} notice={<EarlierNotShown />} />,
     review: (key, focus) => (
       <Review
         title={SESSIONS.find((x) => x.key === key)?.title ?? key}

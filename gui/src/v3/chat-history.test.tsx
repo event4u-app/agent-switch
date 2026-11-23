@@ -81,7 +81,7 @@ describe("the read-only chat reaches the whole conversation", () => {
   });
 
   it("the hint names Focus terminal only where that button exists", () => {
-    const t = { events: [{ t: "approval.requested", id: "a", tool: "Bash", summary: "ls", input: {} }] as AsEvent[], version: null, newerThanFixtures: false, error: null, loaded: true, earlier: null, hidden: {} };
+    const t = { events: [{ t: "approval.requested", id: "a", tool: "Bash", summary: "ls", input: {} }] as AsEvent[], version: null, newerThanFixtures: false, error: null, loaded: true, earlier: null, hidden: {}, cut: false };
     const { rerender } = render(<ReadOnlyTimeline t={t} where="iTerm2" focusable />);
     expect(screen.getByText("Answer it in iTerm2 — Focus terminal brings it up.")).toBeTruthy();
     rerender(<ReadOnlyTimeline t={t} where="Claude Desktop" focusable={false} />);

@@ -11,8 +11,10 @@ describe("ChatTimeline", () => {
     render(<ChatTimeline events={fx.transcript as AsEvent[]} />);
     expect(screen.getByText(/Create a file notes\.md/)).toBeTruthy();
     expect(screen.getAllByText("Update").length).toBeGreaterThan(0);
-    const subagentRow = screen.getByText("subagent · via hook").parentElement!;
+    // The row comes from the transcript's Task call, never from a hook (arena r2 04 F4).
+    const subagentRow = screen.getByText("subagent · from transcript").parentElement!;
     expect(subagentRow.textContent).toContain("Task");
+    expect(screen.queryByText(/via hook/)).toBeNull();
     // The reply's `Task` is markdown inline code now, not literal backticks.
     expect(screen.getAllByText("Task").some((el) => el.tagName === "CODE")).toBe(true);
     // The count moved into the "read-only here" tooltip (gap §5e).
@@ -22,6 +24,13 @@ describe("ChatTimeline", () => {
     fireEvent.click(edit);
     // The diff line (a span in the diff view), not the reply's inline code.
     expect(screen.getAllByText("beta").filter((el) => el.tagName === "SPAN")).toHaveLength(1);
+  });
+
+  it("a running Task row asks for its worktree by the Task call's id, before the subagent's id is known (arena r2 04 F4)", () => {
+    const events = [{ t: "subagent.started", id: "toolu_1", type: "general-purpose", description: "Phase 1" }] as AsEvent[];
+    const worktreeOf = vi.fn((id: string) => (id === "toolu_1" ? "agent-a7" : null));
+    render(<ChatTimeline events={events} on={{ worktreeOf }} />);
+    expect(screen.getByText("agent-a7")).toBeTruthy();
   });
 
   it("an open approval offers allow once, always and deny only when the session is bridged", () => {

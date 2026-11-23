@@ -31,7 +31,7 @@ import { configDir, die, readBinaryPath, requireProfile, ROOT } from "../profile
 import { provider as providerOf, type ProviderId } from "../providers.js";
 import { readSessionHeader } from "../sessions.js";
 import { fromClaudeText, readClaudeTranscript } from "../timeline/claude.js";
-import { readTail, subagentTranscript } from "../lineage.js";
+import { readConfined, sessionFolder, subagentTranscript } from "../lineage.js";
 import * as fs from "node:fs";
 import { fromCodexThread } from "../timeline/codex.js";
 import type { AsEvent } from "../timeline/events.js";
@@ -154,18 +154,16 @@ export const SUBAGENT_TIMELINE_BYTES = 4 * 1024 * 1024;
 /**
  * One subagent's own transcript (`<session>/subagents/agent-<id>.jsonl`) as
  * events, read-only. Only its last `maxBytes` are read; `truncated` says the
- * head was left out. Throws for an id that is not a plain agent id.
+ * head was left out. Throws for an id that is not a plain agent id, and for a
+ * file that is not a regular file inside the session's folder.
  */
 export function readSubagentTimeline(transcript: string, agentId: string, maxBytes = SUBAGENT_TIMELINE_BYTES): { events: AsEvent[]; version: string | null; newerThanFixtures: boolean; truncated: boolean } {
   const file = subagentTranscript(transcript, agentId);
   if (!file) throw new Error(`${agentId} is not a subagent id`);
-  let size: number;
-  try {
-    size = fs.statSync(file).size;
-  } catch {
-    throw new Error(`subagent ${agentId} has no transcript next to this session`);
-  }
-  return { ...fromClaudeText(readTail(file, maxBytes)), truncated: size > maxBytes };
+  const folder = sessionFolder(transcript);
+  const read = folder && fs.existsSync(file) ? readConfined(folder, file, maxBytes) : null;
+  if (!read) throw new Error(fs.existsSync(file) ? `subagent ${agentId}'s transcript is not a regular file inside this session's folder` : `subagent ${agentId} has no transcript next to this session`);
+  return { ...fromClaudeText(read.text, { sidechain: true }), truncated: read.size > maxBytes };
 }
 
 export async function cmdTimeline(arg: string | undefined, flags: Record<string, string | boolean>): Promise<void> {

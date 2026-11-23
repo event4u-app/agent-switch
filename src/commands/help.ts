@@ -23,7 +23,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch view <session> chat|terminal [--json]   switch a hosted session between its terminal and the chat view, between turns
   agent-switch bridge <session> [--mode default|acceptEdits|plan] [--model M] | bridge --new [profile] --cwd DIR   the chat view's JSON connection to one session (stdin commands, stdout events)
   agent-switch needs [--json] | needs later <id> | needs seen | needs allow|deny <session> <approval>   everything waiting for you, most urgent first
-  agent-switch timeline <session> [--json] [--limit N] [--before N] [--from N]   a session's history as events (prompts, answers, tool calls, edits); a page is N drawn rows, bookkeeping lines only counted
+  agent-switch timeline <session> [--subagent ID] [--json] [--limit N] [--before N] [--from N]   a session's history as events (prompts, answers, tool calls, edits); a page is N drawn rows, bookkeeping lines only counted
   agent-switch changes <session> [--json]       the files a session changed in its worktree against the last commit
   agent-switch diff <session> [--scope uncommitted|turn|session|worktree|staged] [--json] | diff <session> stage|unstage|discard --file F [--hunk HASH] | diff <session> undo | diff <session> commit --message M   review and act on a session's changes
   agent-switch files <session> [--query WORDS] [--json]   files of the session's repository whose path contains every word

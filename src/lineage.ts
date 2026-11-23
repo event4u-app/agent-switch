@@ -3,14 +3,17 @@
  * (road-to-agent-switch-v3-central Phase 2; ADR-007; docs/lineage-contract.md).
  *
  * Three kinds of child, each saying where it came from:
- *   - subagents, from SubagentStart/Stop hooks (`source: "hook"`);
+ *   - subagents, from SubagentStart/Stop hooks (`source: "hook"`), else from
+ *     Claude Code's own files under the session's `<sessionId>/subagents/`
+ *     folder (`source: "files"`: `agent-<id>.meta.json` and `agent-<id>.jsonl`);
  *   - helper sessions that named their parent through the lineage env vars
  *     (`source: "lineage"`) or were started inside an AS-hosted window
  *     (`source: "host"`);
- *   - for a profile without subagent hooks, only a count of the subagent
- *     transcript files next to the session (`source: "counted"`; counted by
- *     name only).
- * No parent is ever inferred from timing, folders or names.
+ *   - a subagent file that cannot be read safely (a link out of the session
+ *     folder, not a regular file, a name that is not a plain agent id) is only
+ *     counted (`source: "counted"`).
+ * No parent is ever inferred from timing, order or names: a file under a
+ * session's own folder belongs to that session.
  *
  * A hook-reported subagent also says what it was asked to do and which tool it
  * runs now (`subagentFacts`). That reads subagent files, which this module
@@ -28,8 +31,11 @@ import { toolSummary } from "./timeline/events.js";
 import type { RuntimeState } from "./runtime-state.js";
 
 export type Child =
-  | { kind: "subagent"; agentId: string; type?: string; state: "running" | "done"; cwd?: string; source: "hook"; startedAt?: string; endedAt?: string } & SubagentFacts
+  | SubagentChild
   | { kind: Lineage["kind"]; sessionKey: string; label?: string; state: "running" | "done"; source: Lineage["source"]; runtime?: RuntimeState };
+
+/** A subagent, from its hooks or from Claude Code's files next to its session. `toolUseId`: the parent's Task call that started it. */
+export type SubagentChild = { kind: "subagent"; agentId: string; type?: string; state: "running" | "done"; cwd?: string; source: "hook" | "files"; startedAt?: string; endedAt?: string; toolUseId?: string } & SubagentFacts;
 
 export interface HelperIndex {
   /** parent key or bare parent id → the helper sessions that named it. */
@@ -90,22 +96,76 @@ export function subagentTranscript(transcript: string, agentId: string): string 
   return AGENT_ID.test(agentId) ? path.join(subagentDir(transcript), `agent-${agentId}.jsonl`) : null;
 }
 
+/** The last `maxBytes` of an open file of `size` bytes, from the first whole line on. */
+function tailOf(fd: number, size: number, maxBytes: number): string {
+  // One byte more than asked, so a cut that falls on a line start keeps that line.
+  const start = Math.max(0, size - maxBytes - 1);
+  const buf = Buffer.alloc(size - start);
+  fs.readSync(fd, buf, 0, buf.length, start);
+  const text = buf.toString("utf8");
+  if (start === 0) return text;
+  const nl = text.indexOf("\n");
+  return nl < 0 ? "" : text.slice(nl + 1);
+}
+
 /** The last `maxBytes` of a file from the first whole line on; "" when it cannot be read. */
 export function readTail(file: string, maxBytes: number): string {
   let fd: number | undefined;
   try {
     fd = fs.openSync(file, "r");
-    const size = fs.fstatSync(fd).size;
-    // One byte more than asked, so a cut that falls on a line start keeps that line.
-    const start = Math.max(0, size - maxBytes - 1);
-    const buf = Buffer.alloc(size - start);
-    fs.readSync(fd, buf, 0, buf.length, start);
-    const text = buf.toString("utf8");
-    if (start === 0) return text;
-    const nl = text.indexOf("\n");
-    return nl < 0 ? "" : text.slice(nl + 1);
+    return tailOf(fd, fs.fstatSync(fd).size, maxBytes);
   } catch {
     return "";
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+/**
+ * The folder every subagent read stays in: `<projects>/<dir>/<sessionId>` with
+ * the project folder's links resolved. Null when that folder cannot be resolved.
+ */
+export function sessionFolder(transcript: string): string | null {
+  try {
+    return path.join(fs.realpathSync(path.dirname(transcript)), path.basename(transcript, ".jsonl"));
+  } catch {
+    return null;
+  }
+}
+
+/** What a confined read returns: the tail asked for and the file's facts. */
+export interface ConfinedRead {
+  text: string;
+  size: number;
+  mtimeMs: number;
+  birthtimeMs: number;
+}
+
+const O_READ = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0);
+
+/**
+ * The last `maxBytes` of `file` (0: its facts only), and only when it is a
+ * regular file inside `folder` once every link is followed; null otherwise. A
+ * link out of the session folder, a FIFO, a device or a folder reads nothing —
+ * a FIFO is never even opened, so a read cannot hang on one.
+ */
+export function readConfined(folder: string, file: string, maxBytes: number): ConfinedRead | null {
+  let real: string;
+  try {
+    real = fs.realpathSync(file);
+  } catch {
+    return null;
+  }
+  if (!real.startsWith(folder + path.sep)) return null;
+  let fd: number | undefined;
+  try {
+    if (!fs.statSync(real).isFile()) return null;
+    fd = fs.openSync(real, O_READ);
+    const st = fs.fstatSync(fd);
+    if (!st.isFile()) return null;
+    return { text: maxBytes > 0 ? tailOf(fd, st.size, maxBytes) : "", size: st.size, mtimeMs: st.mtimeMs, birthtimeMs: st.birthtimeMs };
+  } catch {
+    return null;
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
   }
@@ -172,20 +232,24 @@ export function openTool(text: string): string | undefined {
  * from Claude Code's `agent-<id>.meta.json`; when that file does not carry it,
  * from the parent transcript's Task call — joined by the meta file's
  * `toolUseId`, or by the agent id the call's result names. Never by order or
- * time. The current tool is read for `running` ids only. Every read is bounded.
+ * time. The current tool is read for `running` ids only. Every read is bounded
+ * and confined to the session's folder (`readConfined`).
  */
-export function subagentFacts(dir: string, parentTranscript: string, agentIds: readonly string[], running: ReadonlySet<string> = new Set(agentIds)): Map<string, SubagentFacts> {
+export function subagentFacts(parentTranscript: string, agentIds: readonly string[], running: ReadonlySet<string> = new Set(agentIds)): Map<string, SubagentFacts> {
   const out = new Map<string, SubagentFacts>();
+  const folder = sessionFolder(parentTranscript);
+  if (!folder) return out;
+  const dir = subagentDir(parentTranscript);
   const pending: { id: string; toolUseId: string }[] = [];
   for (const id of agentIds) {
     if (!AGENT_ID.test(id)) continue;
-    const meta = obj(jsonLines(readTail(path.join(dir, `agent-${id}.meta.json`), META_BYTES).replace(/\n/g, " "))[0]);
+    const meta = readMeta(folder, dir, id);
     const facts: SubagentFacts = {};
     const description = firstLine(str(meta.description));
     if (description) facts.description = description;
     else pending.push({ id, toolUseId: str(meta.toolUseId) });
     if (running.has(id)) {
-      const doing = openTool(readTail(path.join(dir, `agent-${id}.jsonl`), SUBAGENT_TAIL_BYTES));
+      const doing = openTool(readConfined(folder, path.join(dir, `agent-${id}.jsonl`), SUBAGENT_TAIL_BYTES)?.text ?? "");
       if (doing) facts.doing = doing;
     }
     if (Object.keys(facts).length) out.set(id, facts);
@@ -200,13 +264,58 @@ export function subagentFacts(dir: string, parentTranscript: string, agentIds: r
   return out;
 }
 
-/** Subagent transcripts next to a session, counted by name only. */
-export function countSubagentFiles(configDir: string, projectDir: string, sessionId: string): number {
+/** A subagent's `agent-<id>.meta.json`, as Claude Code wrote it; {} when it is missing or cannot be read safely. */
+function readMeta(folder: string, dir: string, id: string): Json {
+  return obj(jsonLines((readConfined(folder, path.join(dir, `agent-${id}.meta.json`), META_BYTES)?.text ?? "").replace(/\n/g, " "))[0]);
+}
+
+const iso = (ms: number): string | undefined => (Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : undefined);
+
+/**
+ * A session's subagents from Claude Code's own files, for a profile whose
+ * hooks did not report them (`skip`: the ids they did report). One child per
+ * `agent-<id>.jsonl` under the session's folder, with what its meta file says:
+ * type, task, its worktree, the Task call that started it, and `finished`.
+ * A subagent runs inside its session, so one whose meta file does not say
+ * `finished` runs while the session is live, and not otherwise. Times are the
+ * transcript file's: created when the subagent started, last written when it
+ * ended. A file that cannot be read safely is only counted (`unreadable`).
+ * Never by order or time.
+ */
+export function subagentsFromFiles(transcript: string, parentLive: boolean, skip: ReadonlySet<string> = new Set()): { children: SubagentChild[]; unreadable: number } {
+  const folder = sessionFolder(transcript);
+  const dir = subagentDir(transcript);
+  let names: string[];
   try {
-    return fs.readdirSync(path.join(configDir, "projects", projectDir, sessionId, "subagents")).filter((n) => /^agent-.+\.jsonl$/.test(n)).length;
+    names = fs.readdirSync(dir).sort();
   } catch {
-    return 0;
+    return { children: [], unreadable: 0 };
   }
+  const children: SubagentChild[] = [];
+  let unreadable = 0;
+  for (const name of names) {
+    const id = /^agent-(.+)\.jsonl$/.exec(name)?.[1];
+    if (id === undefined || skip.has(id)) continue;
+    const file = folder && AGENT_ID.test(id) ? readConfined(folder, path.join(dir, name), 0) : null;
+    if (!file || !folder) {
+      unreadable++;
+      continue;
+    }
+    const meta = readMeta(folder, dir, id);
+    const state = meta.finished === true || !parentLive ? "done" : "running";
+    const child: SubagentChild = { kind: "subagent", agentId: id, state, source: "files" };
+    if (str(meta.agentType)) child.type = str(meta.agentType);
+    if (str(meta.worktreePath)) child.cwd = str(meta.worktreePath);
+    if (str(meta.toolUseId)) child.toolUseId = str(meta.toolUseId);
+    const started = iso(file.birthtimeMs);
+    if (started) child.startedAt = started;
+    const ended = state === "done" ? iso(file.mtimeMs) : undefined;
+    if (ended) child.endedAt = ended;
+    children.push(child);
+  }
+  const running = new Set(children.filter((c) => c.state === "running").map((c) => c.agentId));
+  const facts = subagentFacts(transcript, children.map((c) => c.agentId), running);
+  return { children: children.map((c) => ({ ...c, ...facts.get(c.agentId) })), unreadable };
 }
 
 /** `childSource`: where the children came from, in one word or a `+` list. */

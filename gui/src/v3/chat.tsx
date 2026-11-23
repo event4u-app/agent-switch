@@ -86,12 +86,12 @@ export function SubagentRow({ row, worktree }: { row: Extract<ChatRow, { k: "sub
       </span>
       {row.state === "failed" && <span className="shrink-0 text-[11px] text-ac-alert-text">failed</span>}
       {worktree && (
-        <span className="inline-flex shrink-0 items-center gap-1 font-ac-mono text-[11px] text-ac-violet-text" title="The subagent's own worktree, from its hook">
+        <span className="inline-flex shrink-0 items-center gap-1 font-ac-mono text-[11px] text-ac-violet-text" title="The subagent's own worktree">
           <FolderGit2 className="size-3" />
           {worktree}
         </span>
       )}
-      <span className="ml-auto shrink-0 text-[10.5px] text-ac-faint">subagent · via hook</span>
+      <span className="ml-auto shrink-0 text-[10.5px] text-ac-faint">subagent · from transcript</span>
     </div>
   );
 }
@@ -241,7 +241,7 @@ function ChatRowView({ row, on, agent }: { row: ChatRow; on: ChatHandlers; agent
     case "tool":
       return <ToolCard row={row} />;
     case "subagent":
-      return <SubagentRow row={row} worktree={row.agentId ? on.worktreeOf?.(row.agentId) : null} />;
+      return <SubagentRow row={row} worktree={on.worktreeOf?.(row.agentId ?? row.id) ?? null} />;
     case "approval":
       if (on.stale?.has(row.id)) return <ApprovalCard row={row} agent={agent} unanswerable={STALE_CARD} />;
       return <ApprovalCard row={row} agent={agent} unanswerable={on.unanswerable} onAllow={on.approve && (() => on.approve!(row.id, false))} onAlways={on.approve && (() => on.approve!(row.id, true))} onDeny={on.deny && (() => on.deny!(row.id))} />;
