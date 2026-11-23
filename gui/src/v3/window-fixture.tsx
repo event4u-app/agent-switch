@@ -29,7 +29,7 @@ export function data(): V3Data {
     agents: { rows: [{ id: "opencode", name: "OpenCode", binary: "opencode", cls: "acp", enabled: true, version: "2.2.5", local: { runner: "ollama", model: "qwen3-coder:30b" } }], suggestions: [{ id: "goose", name: "Goose", install: ["brew", "install", "block-goose-cli"] }] },
     newSession: {
       initial: { folder: "~/code/x", gitState: null, worktree: false, tool: "claude", model: "Opus", thinking: "High", where: "terminal" },
-      facts: { terminalApp: "Terminal.app", hosting: "persistent", thinkingLevels: { claude: ["High"], codex: ["high"], antigravity: ["default"] }, account: { name: "work", color: "teal", reason: "most room", limits: limit, why: ["work has the most room"], paceText: null }, command: "claude", nowMs: NOW },
+      facts: { terminalApp: "Terminal.app", hosting: "persistent", thinkingLevels: { claude: ["High"], codex: ["high"], antigravity: ["default"] }, account: { name: "work", color: "teal", reason: "most room", limits: limit, why: ["work has the most room"], paceText: null }, command: "claude", nowMs: NOW, models: { claude: [], codex: [], antigravity: [] }, folders: ["~/code/x"], home: null, accounts: { claude: [{ name: "work", color: "teal" }], codex: [], antigravity: [] } },
     },
     decision: () => ({ account: "work", pctUsed: 94, window: "5h", resetsIn: "1h", sessions: [{ key: "s1", title: "Event store", model: "Opus", target: "side" }], suggestion: "side" }),
     bar: () => ({ key: "s1", hosted: true, chatAvailable: false, view: "terminal", account: { name: "work", color: "teal", fiveH: 94, protect: 98 }, model: "Opus", thinking: "high", contextPct: 40 }),

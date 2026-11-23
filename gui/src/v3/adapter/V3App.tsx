@@ -15,6 +15,7 @@ import { openExternal } from "../../redesign/screens/tools.js";
 import { appRequest, useTrayRequests } from "../../redesign/tray/bridge.js";
 import { getFocusTerminal, getLimitAutoOpen, getStartChoice, setFocusTerminalFlag, setNotifLastRead, setStartChoice } from "../../settings-store.js";
 import { AcRoot } from "../../ui/AcRoot.js";
+import { useHomeDir } from "../../lib/paths.js";
 import { Toaster } from "../../ui/Toaster.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
 import { ASProvider, useAS } from "../../vm/store.js";
@@ -29,7 +30,7 @@ import { localLayout } from "../layout.js";
 import { KEYS_STORAGE, withRebinds } from "../keys.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
-import { chatStart, initialPlan, sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
+import { chatStart, initialPlan, sessionKey, startKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
 import { SessionBody, ToolsSlot, settingsSection } from "./slots.js";
 import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
@@ -54,6 +55,24 @@ function usePrefersDark(): boolean {
     return () => q.removeEventListener("change", on);
   }, [q]);
   return dark;
+}
+
+/** Where a plain start of `tool` in `folder` would go and why (`dir --json`), tagged
+ *  with what it was read for; null until read or for no folder. */
+function useRoute(tool: NewSessionPlan["tool"], folder: string): AdapterEnv["route"] {
+  const [route, setRoute] = useState<AdapterEnv["route"]>(null);
+  useEffect(() => {
+    if (folder === "~") return;
+    let alive = true;
+    ipc
+      .resolveDir(tool, folder)
+      .then((r) => alive && setRoute({ profile: r.profile, why: r.why ?? [], ...(r.blocked ? { blocked: r.blocked } : {}), ...(r.ask ? { ask: r.ask } : {}), for: { tool, folder } }))
+      .catch(() => alive && setRoute(null));
+    return () => {
+      alive = false;
+    };
+  }, [tool, folder]);
+  return route;
 }
 
 const terminalAppFor = (platform: string) => (platform === "mac" ? "Terminal.app" : platform === "windows" ? "Windows Terminal" : "your terminal");
@@ -164,20 +183,22 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const [startsMade, setStartsMade] = useState(0);
   // Until `host list` has answered, a remembered hosted start stays as remembered.
   const hostMode = feeds.host?.mode ?? "persistent";
-  const plan: NewSessionPlan = useMemo(() => initialPlan(lastFolder, getStartChoice(lastFolder), hostMode), [lastFolder, startsMade, hostMode]);
+  // The New-session dialog: a folder picked in it (its prefill is that project's
+  // last start) and the plan as the dialog has it now (its facts follow it).
+  const [startFolder, setStartFolder] = useState<string | null>(null);
+  const [draft, setDraft] = useState<NewSessionPlan | null>(null);
+  const folder = startFolder ?? lastFolder;
+  const rememberedKey = startKey(folder, rows);
+  const plan: NewSessionPlan = useMemo(
+    () => initialPlan(folder, getStartChoice(rememberedKey) ?? getStartChoice(folder), hostMode),
+    [folder, rememberedKey, startsMade, hostMode],
+  );
+  const live = draft ?? plan;
   const terminalApp = terminalAppFor(s.platform);
-  const [route, setRoute] = useState<AdapterEnv["route"]>(null);
-  useEffect(() => {
-    if (lastFolder === "~") return;
-    let alive = true;
-    ipc
-      .resolveDir(plan.tool, lastFolder)
-      .then((r) => alive && setRoute({ profile: r.profile, why: r.why ?? [], ...(r.blocked ? { blocked: r.blocked } : {}), ...(r.ask ? { ask: r.ask } : {}) }))
-      .catch(() => alive && setRoute(null));
-    return () => {
-      alive = false;
-    };
-  }, [lastFolder, plan.tool]);
+  const home = useHomeDir();
+  const route = useRoute(live.tool, live.folder);
+  // A new chat is Claude's: its route is read for Claude, whatever the dialog last showed.
+  const chatRoute = useRoute("claude", lastFolder);
 
   const byKeyRef = useRef(new Map<string, SessionRow>());
   const titleOf = (key: string) => byKeyRef.current.get(key)?.summary ?? key.split("/")[1] ?? "A session";
@@ -192,7 +213,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     openTab(tab);
   };
   const newChat = () => {
-    const how = chatStart(route, s.accounts);
+    const how = chatStart(chatRoute, s.accounts);
     if (!how || lastFolder === "~") return s.toast({ tone: "warn", text: "No Claude account or folder to start a chat in yet" });
     if ("ask" in how) return setChatAsk(how.ask);
     startChat(how.profile);
@@ -205,6 +226,8 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     focusTerminal,
     engineDownSince: downSince.current,
     plan,
+    draft,
+    home,
     terminalApp,
     changes,
     wantChanges,
@@ -244,9 +267,16 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     prompt: setPrompt,
     newChat,
     openTab,
+    // Keyed by the repository, so a start from a worktree or a subfolder prefills the next one in the project.
     rememberStart: (p) => {
-      setStartChoice(p.folder, { tool: p.tool, model: p.model, thinking: p.thinking, where: p.where });
+      setStartChoice(startKey(p.folder, rows), { tool: p.tool, model: p.model, thinking: p.thinking, where: p.where });
       setStartsMade((n) => n + 1);
+    },
+    draftStart: (p) => {
+      if (!p) return (setDraft(null), setStartFolder(null));
+      // Another folder: the dialog opens again on that project's prefill.
+      if (p.folder !== plan.folder) return (setDraft(null), setStartFolder(p.folder));
+      setDraft(p);
     },
     chatOf: (key) => {
       const tab = chats.tabOf(key);

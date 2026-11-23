@@ -393,6 +393,13 @@ export async function hostStart(provider: ProviderId, cwd: string, profile?: str
   await runCli(["host", "start", ...(profile ? [profile] : []), "--provider", provider, "--cwd", cwd, ...choiceFlags(choice), "--json"]);
 }
 
+/** `run [profile] --provider P --cwd DIR [--model M] [--effort E] [--worktree] --new-window`:
+ *  the user's terminal opens a new window and starts the session there. Without
+ *  a profile the CLI routes as for a plain start. */
+export async function startInTerminal(provider: ProviderId, cwd: string, profile?: string, choice?: StartChoice): Promise<void> {
+  await runCli(["run", ...(profile ? [profile] : []), "--provider", provider, "--cwd", cwd, ...choiceFlags(choice), "--new-window"]);
+}
+
 /** `host end <session> --yes`. */
 export async function hostEnd(key: string): Promise<void> {
   await runCli(["host", "end", key, "--yes"]);
