@@ -265,12 +265,24 @@ test("`sessions --json` lists a session's subagents from its hooks, and leaves `
     seedTranscript(home, "work", "-tmp-proj", "0000-parent");
     const before = JSON.parse(run(home, ["sessions", "--json"]));
     assert.ok(!("children" in before[0]), "no hooks: no children field, not an empty list");
-    // Without hooks only a count of subagent transcripts, by file name.
+    // Without hooks: Claude Code's own files next to the session list the subagent (arena r2 04 F2).
     const sub = path.join(home, "claude", "work", "config", "projects", "-tmp-proj", "0000-parent", "subagents");
     fs.mkdirSync(sub, { recursive: true });
     fs.writeFileSync(path.join(sub, "agent-x.jsonl"), "");
-    const counted = JSON.parse(run(home, ["sessions", "--json"]))[0];
-    assert.deepEqual([counted.childCount, counted.childSource, "children" in counted], [1, "counted", false]);
+    fs.writeFileSync(path.join(sub, "agent-x.meta.json"), JSON.stringify({ agentType: "Explore", description: "Map the schema", toolUseId: "tu1", finished: true }));
+    const listed = JSON.parse(run(home, ["sessions", "--json"]))[0];
+    assert.deepEqual([listed.childCount, listed.childSource], [1, "files"]);
+    const { startedAt: _s, endedAt: _e, ...x } = listed.children[0];
+    assert.deepEqual(x, { kind: "subagent", agentId: "x", state: "done", source: "files", type: "Explore", toolUseId: "tu1", description: "Map the schema" });
+    // A file that links out of the session's folder is only counted, never read (symlinks need privileges on Windows).
+    if (process.platform !== "win32") {
+      const far = fs.mkdtempSync(path.join(os.tmpdir(), "asw-far-"));
+      fs.writeFileSync(path.join(far, "t.jsonl"), "");
+      fs.unlinkSync(path.join(sub, "agent-x.jsonl"));
+      fs.symlinkSync(path.join(far, "t.jsonl"), path.join(sub, "agent-x.jsonl"));
+      const counted = JSON.parse(run(home, ["sessions", "--json"]))[0];
+      assert.deepEqual([counted.childCount, counted.childSource, "children" in counted], [1, "counted", false]);
+    }
     fs.rmSync(sub, { recursive: true });
 
     run(home, ["hooks", "install", "work"]);

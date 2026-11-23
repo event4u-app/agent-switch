@@ -62,6 +62,7 @@ const VALUE_FLAGS = new Set([
   "agent",
   "account",
   "executed",
+  "subagent",
 ]);
 
 export interface ParsedArgs {

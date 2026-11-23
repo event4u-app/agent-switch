@@ -20,6 +20,13 @@ test("parseArgs gives `host start --cwd DIR` its folder, not a stray positional"
   assert.equal(p.flags.cwd, "/tmp/repo");
 });
 
+test("parseArgs gives `timeline <session> --subagent ID` its id, not a stray positional (arena r2 04 F1)", () => {
+  const p = parseArgs(["timeline", "claude/work/s1", "--subagent", "a39139b91dc5ad63f", "--json"]);
+  assert.deepEqual(p.positional, ["claude/work/s1"]);
+  assert.equal(p.flags.subagent, "a39139b91dc5ad63f");
+  assert.equal(p.flags.json, true);
+});
+
 test("parseArgs handles the flag AFTER the positional too", () => {
   const p = parseArgs(["remove", "opfer", "--provider", "codex"]);
   assert.equal(p.providerId, "codex");

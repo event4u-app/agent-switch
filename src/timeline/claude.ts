@@ -20,6 +20,8 @@ export interface ClaudeState {
   /** Live: the message id `message_start` announced, for its deltas. */
   liveMessage: string | null;
   version: string | null;
+  /** A subagent's own transcript: every line is its sidechain, and that is its conversation. */
+  sidechain?: boolean;
 }
 
 export const claudeState = (): ClaudeState => ({ tools: new Map(), liveMessage: null, version: null });
@@ -166,8 +168,9 @@ export function fromClaudeLine(line: unknown, st: ClaudeState): AsEvent[] {
   const e = obj(line);
   const type = str(e.type);
   if (typeof e.version === "string") st.version ??= e.version;
-  if (type === "user") return e.isSidechain === true || e.isMeta === true ? [] : userLine(e, st);
-  if (type === "assistant") return e.isSidechain === true ? [] : assistantLine(e, st);
+  const aside = e.isSidechain === true && !st.sidechain;
+  if (type === "user") return aside || e.isMeta === true ? [] : userLine(e, st);
+  if (type === "assistant") return aside ? [] : assistantLine(e, st);
   // Live stream only.
   if (type === "stream_event") {
     const ev = obj(e.event);
@@ -211,9 +214,9 @@ export function readClaudeTranscript(file: string): { events: AsEvent[]; version
   return fromClaudeText(fs.readFileSync(file, "utf8"));
 }
 
-/** Transcript text (whole lines) → events, plus the Claude Code version it was written by. Pure. */
-export function fromClaudeText(text: string): { events: AsEvent[]; version: string | null; newerThanFixtures: boolean } {
-  const st = claudeState();
+/** Transcript text (whole lines) → events, plus the Claude Code version it was written by. `sidechain`: the text is a subagent's own transcript. Pure. */
+export function fromClaudeText(text: string, opts: { sidechain?: boolean } = {}): { events: AsEvent[]; version: string | null; newerThanFixtures: boolean } {
+  const st: ClaudeState = { ...claudeState(), sidechain: opts.sidechain === true };
   const events: AsEvent[] = [];
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;

@@ -36,7 +36,8 @@ a root, never under a guessed parent. A session never becomes its own parent.
 | `takeover` resuming a session on another account (same id or a fork) | `continued_from` the original | "via host" |
 | A subagent (`SubagentStart` hook) | `subagent` of its session | "via hook" |
 | `/clear` in the same Claude process (`CLAUDE_PID`) | `cleared` from the session before | "via hook" |
-| Subagent transcripts next to a session, without hooks | a count only | "counted" |
+| A subagent the hooks did not report: Claude Code's own `agent-<id>.jsonl` (and `agent-<id>.meta.json`) under the session's `<sessionId>/subagents/` folder | `subagent` of that session | "files" |
+| A subagent file that cannot be read safely: a link out of the session's folder, not a regular file (a FIFO, a device), or a name that is not a plain agent id | a count only | "counted" |
 
 `continued_from` is drawn apart from `started_by`. A compaction keeps the
 session id and is shown as an event on that session, not as an edge. A `/clear`
@@ -54,9 +55,15 @@ A hook subagent also carries `startedAt` / `endedAt` (its hook times),
 `agent-<id>.meta.json` or, failing that, from the session transcript's Task call
 joined by its tool-use id or the agent id its result names — never by order) and,
 while it runs, `doing` (its last tool call without a result, from the newest
-256 KB of its transcript). Prompts and answers are never read into this output.
+256 KB of its transcript). A subagent from files (`"source": "files"`) carries
+the same fields from its meta file: `type`, `description`, its worktree as
+`cwd`, the Task call that started it as `toolUseId`, and `done` when the meta
+file says `finished` — otherwise `running` while its session is live and `done`
+when it is not. Its `startedAt` / `endedAt` are its transcript file's creation
+and last-write times. Prompts and answers are never read into this output.
 `agent-switch timeline <session> --subagent <id>` shows that subagent's own
-transcript, read-only.
+transcript, read-only. Every subagent read stays inside the session's own
+folder once links are followed, and reads regular files only.
 A session in a temp folder that no one claims carries `"relation": "unknown"`.
 `agent-switch sessions --tree --json` nests children under their parent; counts
 of sessions count roots only.
