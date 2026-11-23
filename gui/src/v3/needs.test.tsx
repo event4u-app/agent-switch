@@ -44,6 +44,20 @@ describe("Needs-you zone (spec §5.1)", () => {
     expect(keysFor(item("a", "approval", { verb: "Focus terminal" }))).toBe("↵ focus terminal · L later");
   });
 
+  it("a chat's approval lists Y once; 'always' only where it can be answered", () => {
+    const chat = item("a", "approval", { verb: "Open chat" });
+    expect(keysFor(chat)).toBe("↵ open chat · Y once · ⇧↵ always · ⌫ deny · L later");
+    expect(keysFor(chat, false)).toBe("↵ open chat · Y once · ⌫ deny · L later");
+    expect(keysFor(item("a", "approval"), false)).toBe("↵ once · ⌫ deny · L later");
+    expect(keysFor(item("a", "approval", { verb: "Focus terminal" }), false)).toBe("↵ focus terminal · L later");
+  });
+
+  it("a focused row shows the keys its 'always' predicate allows", () => {
+    const items = [item("a", "approval", { verb: "Open chat" })];
+    render(<NeedsZone items={items} away={null} focusedId="a" always={() => false} onVerb={vi.fn()} onMore={vi.fn()} onAway={vi.fn()} />);
+    expect(screen.getByText("↵ open chat · Y once · ⌫ deny · L later")).toBeTruthy();
+  });
+
   it("⌘J walks the queue and wraps", () => {
     const items = [item("a", "approval"), item("b", "ci")];
     expect(nextFocus(items, null)).toBe("a");

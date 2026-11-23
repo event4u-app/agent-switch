@@ -456,6 +456,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     newSession: { initial: env.plan, facts },
     link: linkFor(vm, now),
     decision: (subject) => decisionFor(subject, vm, rows, now),
+    chatHere: (key) => !!env.chats?.has(key),
     bar: (key): BarSession | null => {
       const r = byKey.get(key);
       if (!r) return null;

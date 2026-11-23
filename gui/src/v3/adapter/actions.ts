@@ -20,6 +20,8 @@ export interface DispatchIpc {
   focusSessionTerminal(key: string): Promise<void>;
   needsLater(id: string): Promise<void>;
   needsSeen(): Promise<void>;
+  /** Allow once or deny an approval through the inbox of the chat that holds it. */
+  needsAnswer(key: string, approvalId: string, decision: "allow" | "deny"): Promise<void>;
   hostStart(provider: ProviderId, cwd: string, profile?: string): Promise<void>;
   hostEnd(key: string): Promise<void>;
   hostRespawn(key: string, change: { model?: string; effort?: string }): Promise<void>;
@@ -68,7 +70,7 @@ export interface DispatchDeps {
   /** Open a session's tab (its chat, where an approval waits). */
   openTab?: (key: string) => void;
   /** The session runs in this window's chat: model changes go through its bridge. */
-  chatOf?: (key: string) => { setModel: (m: string) => void; send?: (text: string) => void } | null;
+  chatOf?: (key: string) => { setModel: (m: string) => void; send?: (text: string) => void; approve?: (id: string, always: boolean) => void; deny?: (id: string) => void } | null;
   /** The session bar's [Terminal | Chat] switch. */
   switchView?: (key: string, to: "terminal" | "chat") => void;
 }
@@ -195,6 +197,16 @@ function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
     if (id) deps.open({ kind: "reauth", accountId: id });
   }
 }
+/** An approval answered from the Needs-you queue, by the approval id the item carries. */
+function onAnswer(n: NeedItem, decision: "allow" | "always" | "deny", deps: DispatchDeps): Promise<void> | void {
+  // AS answers only approvals of chats; a terminal it does not host is answered there.
+  if (n.kind !== "approval" || n.verb === "Focus terminal" || !n.version) return;
+  const chat = deps.chatOf?.(n.subject);
+  if (chat?.approve && chat.deny) return decision === "deny" ? chat.deny(n.version) : chat.approve(n.version, decision === "always");
+  // From outside the chat only allow-once and deny exist: "always" widens a rule and stays in the chat.
+  if (decision === "always") return;
+  return run(deps, decision === "deny" ? "Deny" : "Allow", deps.ipc.needsAnswer(n.subject, n.version, decision));
+}
 function sessionMenu(key: string, item: SessionMenuItem, deps: DispatchDeps): Promise<void> | void {
   const row = deps.rows().get(key);
   switch (item) {
@@ -234,6 +246,8 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       return run(deps, "Away summary", deps.ipc.needsSeen());
     case "need-later":
       return run(deps, "Later", deps.ipc.needsLater(a.id));
+    case "need-answer":
+      return onAnswer(a.item, a.decision, deps);
     case "needs-later-all":
       return run(deps, "Later", Promise.all(deps.needs().map((n) => deps.ipc.needsLater(n.id))));
     case "start": {

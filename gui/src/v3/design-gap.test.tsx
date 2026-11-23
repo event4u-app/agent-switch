@@ -272,6 +272,57 @@ describe("the v3 keyboard (spec §12)", () => {
     expect(act).toHaveBeenCalledWith(expect.objectContaining({ type: "need", item: expect.objectContaining({ id: "b" }) }));
   });
 
+  const chatApproval = { id: "a", kind: "approval" as const, subject: "claude/work/s1", who: "Bash · npm test", what: "wants your approval in the chat", verb: "Open chat", since: new Date().toISOString(), version: "toolu_1" };
+  const answers = (act: ReturnType<typeof vi.fn>) => act.mock.calls.map(([a]) => a).filter((a) => a.type === "need-answer").map((a) => a.decision);
+
+  it("a focused approval in this window's chat: Y once, ⇧↵ always, ⌫ deny, each with the item", () => {
+    const act = mountMac({ needs: [chatApproval], chatHere: (k) => k === "claude/work/s1" });
+    press("j");
+    expect(screen.getByText("↵ open chat · Y once · ⇧↵ always · ⌫ deny · L later")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "y" });
+    press("j");
+    fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
+    press("j");
+    fireEvent.keyDown(window, { key: "Backspace" });
+    expect(answers(act)).toEqual(["allow", "always", "deny"]);
+    expect(act).toHaveBeenCalledWith({ type: "need-answer", item: chatApproval, decision: "always" });
+    expect(act).not.toHaveBeenCalledWith(expect.objectContaining({ type: "need" }));
+  });
+
+  it("a chat this window does not run: ⇧↵ does nothing and is not offered; Y and ⌫ still answer", () => {
+    const act = mountMac({ needs: [chatApproval], chatHere: () => false });
+    press("j");
+    expect(screen.getByText("↵ open chat · Y once · ⌫ deny · L later")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
+    expect(answers(act)).toEqual([]);
+    expect(act).not.toHaveBeenCalledWith(expect.objectContaining({ type: "need" }));
+    fireEvent.keyDown(window, { key: "y" });
+    press("j");
+    fireEvent.keyDown(window, { key: "Backspace" });
+    expect(answers(act)).toEqual(["allow", "deny"]);
+  });
+
+  it("approval keys stay out of text fields, and other items and terminal approvals ignore them", () => {
+    const ci = { id: "c", kind: "ci" as const, subject: "s1", who: "Event store", what: "CI failing", verb: "Fix", since: new Date().toISOString(), version: "1" };
+    const own = { ...chatApproval, id: "t", verb: "Focus terminal" };
+    const act = mountMac({ needs: [chatApproval, ci, own], chatHere: () => true });
+    press("j");
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+    fireEvent.keyDown(input, { key: "y" });
+    fireEvent.keyDown(input, { key: "Backspace" });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    input.remove();
+    press("j");
+    fireEvent.keyDown(window, { key: "y" });
+    fireEvent.keyDown(window, { key: "Backspace" });
+    press("j");
+    fireEvent.keyDown(window, { key: "y" });
+    fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
+    expect(answers(act)).toEqual([]);
+  });
+
   it("⌘B hides the Sessions window, ⌘⇧M opens the decision sheet, ⌘O opens the default target", () => {
     const act = mountMac();
     press("b");

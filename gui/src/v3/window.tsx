@@ -69,6 +69,8 @@ export interface V3Data {
   /** The near-limit decision, by account key ("claude/work") or by session key — a limit item's subject is either. */
   decision: (subject: string) => { account: string; tool?: string; targets?: { name: string; color: IdentityColor }[]; pctUsed: number; window: string; resetsIn: string; sessions: SheetSession[]; suggestion: string; suggestionWhy?: string; askedByAgentConfig?: boolean } | null;
   bar: (key: string) => BarSession | null;
+  /** The session's chat runs in this window, so its approvals may be answered "always" here. */
+  chatHere?: (key: string) => boolean;
   /** What the model popover offers for a session; absent: the chips stay closed. */
   models?: (key: string) => ModelChoices | null;
   summary: (key: string) => SummaryFacts | null;
@@ -102,6 +104,7 @@ export type V3Action =
   | { type: "reveal" }
   | { type: "need-more" }
   | { type: "need-later"; id: string }
+  | { type: "need-answer"; item: NeedItem; decision: "allow" | "always" | "deny" }
   | { type: "away" }
   | { type: "needs-later-all" }
   | { type: "start"; plan: NewSessionPlan }
@@ -441,6 +444,13 @@ export function V3Window({
       // A focused Needs-you item answers to its own keys (spec §5.1).
       if (e.key === "Enter" && !e.shiftKey) return void (e.preventDefault(), setFocusedNeed(null), onVerb(focused));
       if (e.key.toLowerCase() === "l") return void (e.preventDefault(), setFocusedNeed(nextFocus(needs.filter((n) => n.id !== focused.id), focused.id)), act({ type: "need-later", id: focused.id }));
+      if (focused.kind === "approval" && focused.verb !== "Focus terminal") {
+        const always = e.key === "Enter" && e.shiftKey;
+        const decision = always ? "always" : e.key === "Backspace" || e.key === "Delete" ? "deny" : e.key.toLowerCase() === "y" && !e.shiftKey ? "allow" : null;
+        // "Always" widens a rule, so it is answered only where the chat runs, never from outside it.
+        if (always && !data.chatHere?.(focused.subject)) return;
+        if (decision) return void (e.preventDefault(), setFocusedNeed(nextFocus(needs.filter((n) => n.id !== focused.id), focused.id)), act({ type: "need-answer", item: focused, decision }));
+      }
     }
     const a = actionFor(e, keys, platform, inTerminal);
     if (!a || (typing && a !== "close" && a !== "palette")) return;
@@ -638,7 +648,7 @@ export function V3Window({
         </span>
       </div>
       <div className="relative min-h-0 flex-1 overflow-y-auto pb-2">
-        <NeedsZone items={needs} away={data.away} focusedId={focusedNeed} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
+        <NeedsZone items={needs} away={data.away} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
         <SessionsZone
           sessions={pinnedOnly ? data.sessions.filter((x) => pinned.has(x.key)) : data.sessions}
           activeKey={activeSession}

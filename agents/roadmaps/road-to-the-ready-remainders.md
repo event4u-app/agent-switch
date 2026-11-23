@@ -45,6 +45,8 @@ saved.
 | D3 | Live-rebind isolation stays parked; this roadmap only warns | isolation needs per-session credential stores that are not designed yet | — |
 | D4 | The embed accent is one bounded value from our token set, never free text | it reaches a URL and a stylesheet in another program | — |
 | D5 | Updates: notify is the default, self-install is opt-in per release kind (owner, 2026-11-08) | code, the settings comment and the native-updater council's "Notify is the ceiling" must say the same thing; a silent install without consent is what the comment rules out | signed, verified updates with a rollback path exist (road-to-a-trusted-install) |
+| D6 | "Local" for ⇧↵ means the session's chat runs in this window (answered through its bridge); any other chat approval goes through `needs allow\|deny` (the bridge inbox), which has no "always" | the inbox refuses "always" by design (`src/bridge/inbox.ts`), so the queue can only offer it where the chat view itself answers | the inbox accepts "always" |
+| D7 | Y on a focused approval allows once; ↵ keeps the item's verb (Open chat); Y on a question is not wired | a question's answer is free text or a choice the queue does not show, so "yes" would guess | questions carry a yes/no shape in `needs --json` |
 
 ## Phase 1 — A wrong account is never saved
 
@@ -161,12 +163,13 @@ saved.
 
 ## Phase 5 — Approve from the keyboard
 
-- [ ] **5.1 Approval keys on a focused Needs-you item.** ⇧↵ always, ⌫ deny, Y yes,
+- [x] **5.1 Approval keys on a focused Needs-you item.** ⇧↵ always, ⌫ deny, Y yes,
       using the approval id the item already carries. Remotely "always" is never
       offered (v3.2 rule), so ⇧↵ acts only on local sessions. verify: window key
       tests for the three keys and for the remote case.
       <!-- from: road-to-v3-design-gap-carried "Approval keys" -->
       <!-- adapted: the trigger (approval id on the item) has fired; the id rides in `version` -->
+      done: `gui/src/v3/design-gap.test.tsx` › "a focused approval in this window's chat…", "a chat this window does not run…", "approval keys stay out of text fields…"; `adapter/actions.test.ts` › the three "approval keys" cases; `needs.test.tsx` key lines (D6, D7).
 
 ## Phase 6 — Release hardening that runs on one machine
 

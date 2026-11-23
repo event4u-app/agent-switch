@@ -396,6 +396,20 @@ export async function needsLater(id: string): Promise<void> {
   await runCli(["needs", "later", id]);
 }
 
+/** `needs allow|deny <session> <approval> --json`: answer an approval through
+ *  its chat's inbox. Not applied (already answered, no chat holds it) throws
+ *  with the CLI's reason. */
+export async function needsAnswer(key: string, approvalId: string, decision: "allow" | "deny"): Promise<void> {
+  const out = await cli(["needs", decision, key, approvalId, "--json"]).execute();
+  let r: { status?: string; reason?: string } = {};
+  try {
+    r = JSON.parse(out.stdout) as typeof r;
+  } catch {
+    /* no JSON: the error is in stderr */
+  }
+  if (r.status !== "applied") throw new Error(r.reason || out.stderr || `agent-switch needs ${decision} failed`);
+}
+
 /** `needs seen`: the "while you were away" summary was looked at; it stays until then. */
 export async function needsSeen(): Promise<void> {
   await runCli(["needs", "seen"]);

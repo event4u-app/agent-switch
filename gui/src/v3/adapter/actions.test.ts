@@ -17,6 +17,7 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
     focusSessionTerminal: vi.fn(async () => {}),
     needsLater: vi.fn(async () => {}),
     needsSeen: vi.fn(async () => {}),
+    needsAnswer: vi.fn(async () => {}),
     hostStart: vi.fn(async () => {}),
     hostEnd: vi.fn(async () => {}),
     hostRespawn: vi.fn(async () => {}),
@@ -279,6 +280,47 @@ describe("dispatchV3", () => {
     expect(d.ipc.focusSessionTerminal).not.toHaveBeenCalled();
     dispatchV3({ type: "palette", entry: { id: "chat:new", group: "commands", title: "New session in chat view" }, newTab: false }, { ...d, openTab, newChat });
     expect(newChat).toHaveBeenCalled();
+  });
+
+  it("approval keys in this window's chat: once, always and deny go through its bridge with the item's approval id", () => {
+    const d = deps();
+    const approve = vi.fn();
+    const deny = vi.fn();
+    const chatOf = (k: string) => (k === "claude/work/h" ? { setModel: vi.fn(), approve, deny } : null);
+    const item = need({ verb: "Open chat", subject: "claude/work/h", version: "toolu_7" });
+    dispatchV3({ type: "need-answer", item, decision: "allow" }, { ...d, chatOf });
+    dispatchV3({ type: "need-answer", item, decision: "always" }, { ...d, chatOf });
+    dispatchV3({ type: "need-answer", item, decision: "deny" }, { ...d, chatOf });
+    expect(approve.mock.calls).toEqual([["toolu_7", false], ["toolu_7", true]]);
+    expect(deny).toHaveBeenCalledWith("toolu_7");
+    expect(d.ipc.needsAnswer).not.toHaveBeenCalled();
+  });
+
+  it("approval keys for a chat this window does not run: once and deny through its inbox, never always", async () => {
+    const d = deps();
+    const chatOf = () => null;
+    const item = need({ verb: "Open chat", subject: "claude/work/x", version: "toolu_9" });
+    await dispatchV3({ type: "need-answer", item, decision: "allow" }, { ...d, chatOf });
+    await dispatchV3({ type: "need-answer", item, decision: "deny" }, { ...d, chatOf });
+    expect(d.ipc.needsAnswer.mock.calls).toEqual([["claude/work/x", "toolu_9", "allow"], ["claude/work/x", "toolu_9", "deny"]]);
+    d.ipc.needsAnswer.mockClear();
+    await dispatchV3({ type: "need-answer", item, decision: "always" }, { ...d, chatOf });
+    expect(d.ipc.needsAnswer).not.toHaveBeenCalled();
+    d.ipc.needsAnswer.mockRejectedValueOnce(new Error("already answered in the chat"));
+    await dispatchV3({ type: "need-answer", item, decision: "allow" }, { ...d, chatOf });
+    expect(d.toast).toHaveBeenCalledWith({ tone: "alert", text: "Allow failed: already answered in the chat" });
+  });
+
+  it("approval keys answer nothing AS cannot answer: a terminal's approval, a question, another kind", async () => {
+    const d = deps();
+    const approve = vi.fn();
+    const chatOf = () => ({ setModel: vi.fn(), approve, deny: vi.fn() });
+    for (const item of [need({ verb: "Focus terminal", version: "2026-11-23T10:00:00Z" }), need({ kind: "question", verb: "Open chat", version: "q1" }), need({ kind: "ci", verb: "Fix", version: "h:ci" })]) {
+      await dispatchV3({ type: "need-answer", item, decision: "allow" }, { ...d, chatOf });
+      await dispatchV3({ type: "need-answer", item, decision: "always" }, { ...d, chatOf });
+    }
+    expect(approve).not.toHaveBeenCalled();
+    expect(d.ipc.needsAnswer).not.toHaveBeenCalled();
   });
 
   it("in a chat, the model changes through its bridge; thinking says where to change it", () => {
