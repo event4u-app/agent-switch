@@ -13,6 +13,14 @@ const on = () => ({ verb: vi.fn(), moreNeeds: vi.fn(), away: vi.fn(), session: v
 const acc = (tool: "claude" | "codex", name: string): LimitAccount => ({ key: `${tool}/${name}`, tool, name, color: "teal", protect: 98, next: false, signIn: false, checkedMs: 0, windows: [{ label: "5h", used: 20, resetsAtMs: null, pace: null }] });
 const need = [{ id: "n", kind: "approval" as const, subject: "x", who: "Theme system", what: "wants to run", verb: "Allow", since: "", version: "1" }];
 
+describe("tray rows show their age (8.6)", () => {
+  it("a row with a known last activity shows how long ago, as in the window", () => {
+    const NOW = Date.UTC(2026, 10, 23, 12);
+    render(<V3Tray nowMs={NOW} needs={[]} away={null} sessions={[s("claude/work/1", { lastActiveMs: NOW - 14 * 60_000 })]} accounts={[]} on={on()} />);
+    expect(screen.getByText("14m ago")).toBeTruthy();
+  });
+});
+
 describe("tray (spec §10.7)", () => {
   it("Needs you, tool tabs, Sessions (5 rows in the shared order, then N more), Limits, Open and Start — in that order", () => {
     const handlers = on();

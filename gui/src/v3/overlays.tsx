@@ -77,7 +77,7 @@ export function Palette({ entries, onOpen, onClose }: { entries: PaletteEntry[];
         <div className="flex h-12 items-center gap-2.5 border-b border-ac-line px-4">
           <Search className="size-4 text-ac-muted" />
           <input
-            autoFocus
+            data-autofocus
             data-palette
             aria-label="Search"
             value={query}

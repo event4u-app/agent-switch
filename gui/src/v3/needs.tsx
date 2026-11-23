@@ -64,7 +64,8 @@ const warn = (n: NeedItem) => n.kind === "approval" || n.kind === "question" || 
 export function NeedRow({ n, top, focused, always = true, blocked, onVerb }: { n: NeedItem; top?: boolean; focused?: boolean; always?: boolean; blocked?: string | null; onVerb: (n: NeedItem) => void }) {
   const open = top || focused;
   return (
-    <div className={cn("relative rounded-md px-2", open ? "py-1.5" : "py-1", focused ? "bg-ac-raise" : "hover:bg-ac-raise")} title={open ? undefined : n.detail}>
+    // A focused item holds DOM focus (tabIndex -1), so its keys never reach a focused terminal.
+    <div data-need={n.id} tabIndex={focused ? -1 : undefined} className={cn("relative rounded-md px-2 outline-none", open ? "py-1.5" : "py-1", focused ? "bg-ac-raise" : "hover:bg-ac-raise")} title={open ? undefined : n.detail}>
       {focused && <Marker tone="warn" />}
       <div className="flex h-6 items-center gap-2">
         <span className={cn("shrink-0 [&_svg]:size-3.5", warn(n) ? "text-ac-warn-text" : "text-ac-muted")}>{ICON[n.kind]}</span>
