@@ -875,7 +875,7 @@ export function V3Window({
         className={cn("absolute z-10", overlay && typeof overlay === "object" && "at" in overlay ? "bottom-[40px]" : "top-[124px]")}
         style={{ left: overlay && typeof overlay === "object" && "x" in overlay ? overlay.x - 11 : 0 }}
       >
-        <ModelPopover c={modelChoices} onModel={(model) => (close(), act({ type: "set-model", key: modelOf, model }))} onThinking={(level) => (close(), act({ type: "set-thinking", key: modelOf, level }))} />
+        <ModelPopover c={modelChoices} tool={modelOf.split("/")[0]} onModel={(model) => (close(), act({ type: "set-model", key: modelOf, model }))} onThinking={(level) => (close(), act({ type: "set-thinking", key: modelOf, level }))} />
       </Anchored>
     ) : limitsAccount ? (
       // Anchored beside the Limits strip; it never switches anything by itself (spec §7.5).

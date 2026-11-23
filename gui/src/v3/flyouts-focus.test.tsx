@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { V3Window, type V3Data } from "./window.js";
 import { data, slots } from "./window-fixture.js";
+import { ModelPopover } from "./workbench.js";
 
 afterEach(cleanup);
 
@@ -129,6 +130,20 @@ describe("the All-sessions table follows the sidebar (8.6)", () => {
     // The row checkboxes exist only in the table.
     const titles = screen.getAllByLabelText(/^Select (Recent|Asking) one/).map((e) => e.getAttribute("aria-label") ?? e.textContent);
     expect(titles).toEqual(["Select Asking one", "Select Recent one"]);
+  });
+});
+
+describe("the model popover names the session's own tool (8.6)", () => {
+  const c = { models: [{ id: "opus", label: "Opus", hint: "" }], current: "opus", thinking: ["low", "high"], currentThinking: "high" };
+  it("a Claude session never reads about Codex", () => {
+    render(<ModelPopover c={c} tool="claude" onModel={vi.fn()} onThinking={vi.fn()} />);
+    const dialog = screen.getByRole("dialog", { name: "Model and thinking" });
+    expect(dialog.textContent).not.toMatch(/Codex/);
+    expect(dialog.textContent).toMatch(/come from Claude Code itself/);
+  });
+  it("a Codex session reads about its own reasoning levels", () => {
+    render(<ModelPopover c={c} tool="codex" onModel={vi.fn()} onThinking={vi.fn()} />);
+    expect(screen.getByRole("dialog").textContent).toMatch(/Codex's own reasoning levels/);
   });
 });
 

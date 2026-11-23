@@ -360,7 +360,7 @@ export interface ModelChoices {
 }
 
 /** Under the model chip (spec §7.6): the models with only the chosen one checked, thinking as a segmented control. */
-export function ModelPopover({ c, onModel, onThinking }: { c: ModelChoices; onModel: (id: string) => void; onThinking: (level: string) => void }) {
+export function ModelPopover({ c, tool, onModel, onThinking }: { c: ModelChoices; /** The session's tool (its key's first part); the closing line names it. */ tool?: string; onModel: (id: string) => void; onThinking: (level: string) => void }) {
   return (
     <div role="dialog" aria-label="Model and thinking" className="w-[320px] rounded-xl border border-ac-line2 bg-ac-panel p-3" style={{ boxShadow: "var(--ac-shadow)" }}>
       <MenuSection title="Model · next turn" className="px-0 pt-0">
@@ -381,7 +381,9 @@ export function ModelPopover({ c, onModel, onThinking }: { c: ModelChoices; onMo
           )}
         </MenuSection>
       )}
-      <p className="mt-2.5 text-[11px] leading-snug text-ac-muted">Applies from the next turn. The levels come from the tool itself — Codex shows its reasoning levels here.</p>
+      <p className="mt-2.5 text-[11px] leading-snug text-ac-muted">
+        Applies from the next turn. {tool === "codex" ? "The levels are Codex's own reasoning levels." : tool === "claude" ? "The levels come from Claude Code itself." : "The levels come from the tool itself."}
+      </p>
     </div>
   );
 }
