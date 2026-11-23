@@ -104,6 +104,17 @@ describe("toV3Data", () => {
     })).toBe(true);
   });
 
+  it("a session only written lately (recently active, no live process) is not filed as done today", () => {
+    const rows = [
+      row("recent", { live: false, recentlyActive: true, surface: "desktop-app", mtimeMs: NOW - 60_000 }),
+      row("done", { live: false, mtimeMs: NOW - 60_000 }),
+      row("live", { live: true, mtimeMs: NOW - 60_000 }),
+    ];
+    const d = toV3Data(vmWith([account("work")], rows), emptyFeeds(), env());
+    const done = (id: string) => d.sessions.find((s) => s.key === `claude/work/${id}`)?.doneToday ?? false;
+    expect([done("recent"), done("done"), done("live")]).toEqual([false, true, false]);
+  });
+
   it("an account's routines reach its Accounts-page row; absent stays absent", () => {
     const d = toV3Data(vmWith([account("a", { routines: { used: 3, limit: 15 } }), account("b")], []), emptyFeeds(), env());
     expect(d.accounts.find((a) => a.name === "a")?.routines).toEqual({ used: 3, limit: 15 });
