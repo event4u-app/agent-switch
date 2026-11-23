@@ -19,7 +19,8 @@ export interface ChangedFile {
 }
 
 const GIT_MS = 2000;
-const MAX_FILES = 500;
+/** Files the Changes list and the Review page list; past it both say how many more there are. */
+export const MAX_CHANGED_FILES = 500;
 const MAX_UNTRACKED_BYTES = 1_000_000;
 
 /** `git status --porcelain=v1 -z --untracked-files=all`. Pure. */
@@ -76,23 +77,32 @@ function lineCount(file: string): number {
   }
 }
 
-/** The changed files in one worktree. null when it is not a git worktree. */
-export function changesIn(toplevel: string): ChangedFile[] | null {
+/** The one order both lists use, so the same cap keeps the same files. */
+export const byPath = (a: { path: string }, b: { path: string }) => a.path.localeCompare(b.path);
+
+/** The changed files in one worktree, by path, at most `MAX_CHANGED_FILES`; `more` counts the rest. null when it is not a git worktree. */
+export function changeInventory(toplevel: string): { files: ChangedFile[]; more: number } | null {
   const st = git(toplevel, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
   if (st === null) return null;
   const counts = parseNumstatZ(git(toplevel, ["diff", "HEAD", "--numstat", "-z"]) ?? "");
   const root = path.resolve(toplevel);
-  return parsePorcelainZ(st)
-    .slice(0, MAX_FILES)
+  const all = parsePorcelainZ(st)
     .filter((f) => {
       const abs = path.resolve(root, f.path);
       return abs === root || abs.startsWith(root + path.sep);
     })
-    .map((f) => {
-      const c = counts.get(f.path);
-      if (c) return { ...f, ...c };
-      return { ...f, added: f.status === "?" ? lineCount(path.join(root, f.path)) : 0, removed: 0 };
-    });
+    .sort(byPath);
+  const files = all.slice(0, MAX_CHANGED_FILES).map((f) => {
+    const c = counts.get(f.path);
+    if (c) return { ...f, ...c };
+    return { ...f, added: f.status === "?" ? lineCount(path.join(root, f.path)) : 0, removed: 0 };
+  });
+  return { files, more: all.length - files.length };
+}
+
+/** The listed changed files in one worktree (see `changeInventory`). null when it is not a git worktree. */
+export function changesIn(toplevel: string): ChangedFile[] | null {
+  return changeInventory(toplevel)?.files ?? null;
 }
 
 export function cmdChanges(session: string | undefined, flags: Record<string, string | boolean>): void {
@@ -101,8 +111,9 @@ export function cmdChanges(session: string | undefined, flags: Record<string, st
   const row = sessionsWithGit(50).find((r) => r.key === session || r.row.sessionId === id);
   if (!row) die(`no recent Claude or Codex session ${session}`);
   if (!row.git) die(`${row.key} does not work in a git repository`);
-  const files = changesIn(row.git.toplevel) ?? [];
-  if (flags.json) return void console.log(JSON.stringify({ key: row.key, worktree: row.git.toplevel, files }, null, 2));
+  const { files, more } = changeInventory(row.git.toplevel) ?? { files: [], more: 0 };
+  if (flags.json) return void console.log(JSON.stringify({ key: row.key, worktree: row.git.toplevel, files, more }, null, 2));
   if (files.length === 0) return void console.log(`No changes in ${row.git.toplevel}.`);
   for (const f of files) console.log(`${f.status} ${f.path}  +${f.added} -${f.removed}`);
+  if (more) console.log(`${more} more ${more === 1 ? "file" : "files"} not listed.`);
 }

@@ -133,6 +133,9 @@ test("splitDiff and hunkPatch", () => {
   assert.equal(sd.get("x.ts")!.hunks[0].header, "@@ -1,2 +1,2 @@ fn");
   assert.equal(d.hunkPatch("x.ts", { oldStart: 1, newStart: 1, lines: [" a", "-b", "+c"] }), "diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -1,2 +1,2 @@\n a\n-b\n+c\n");
   assert.match(d.hunkPatch("n.ts", { oldStart: 0, newStart: 1, lines: ["+n"] }, true), /new file mode 100644\n--- \/dev\/null/);
+  for (const name of ["plain.ts", "a b.ts", "tab\tq\"b\\.ts", "ä/😀.md"]) assert.equal(d.unquotePath(d.quotePath(name)), name, name);
+  assert.equal(d.unquotePath('"b/\\303\\244.txt"'), "b/ä.txt");
+  assert.equal(d.unquotePath("b/with space.txt\t"), "b/with space.txt");
 });
 
 test("sharedWorktree: other live sessions in the same worktree, however git spells the folder", () => {
@@ -212,4 +215,67 @@ test("fingerprint: the same while nothing changes, different after an edit or fo
   assert.notEqual(d.fingerprint(t, "staged"), a);
   fs.writeFileSync(path.join(r, "new.txt"), "fresh\nand more\n");
   assert.notEqual(d.fingerprint(t, "uncommitted"), a);
+});
+
+/** A repo whose file names git quotes: a space, a tab, a double quote, a backslash and an umlaut. */
+const ODD = ["with space.txt", "tab\there.txt", 'qu"ote.txt', "back\\slash.txt", "ä-umlaut.txt", "dir with space/ö.txt"];
+function oddRepo() {
+  const r = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-rev-odd-")));
+  const g = (...a: string[]) => execFileSync("git", ["-C", r, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.autocrlf=false", ...a], { encoding: "utf8" });
+  g("init", "-q", "-b", "main");
+  for (const f of ODD) {
+    fs.mkdirSync(path.dirname(path.join(r, f)), { recursive: true });
+    fs.writeFileSync(path.join(r, f), "one\ntwo\n");
+  }
+  g("add", ".");
+  g("commit", "-qm", "base");
+  for (const f of ODD) fs.writeFileSync(path.join(r, f), "one\nTWO\n");
+  fs.writeFileSync(path.join(r, "neu ü.txt"), "fresh\n");
+  return { r, g };
+}
+
+test("file names with spaces, tabs, quotes, backslashes and non-ASCII: listed as written, the same as `changes`", async () => {
+  const { r } = oddRepo();
+  const { changesIn } = await import("../src/commands/changes.js");
+  const listed = d.review(target(r), "uncommitted").files.map((f) => f.path);
+  assert.deepEqual(listed, [...ODD, "neu ü.txt"].sort((a, b) => a.localeCompare(b)));
+  assert.deepEqual(listed, changesIn(r)!.map((f) => f.path));
+});
+
+test("file names git quotes: stage, unstage and discard act on them; the staged copy is listed under the same name", () => {
+  const { r, g } = oddRepo();
+  const t = target(r);
+  for (const f of ODD) {
+    d.act(t, "stage", f, null);
+    assert.ok(d.review(t, "staged").files.some((x) => x.path === f), `${JSON.stringify(f)} staged`);
+    d.act(t, "unstage", f, null);
+    d.act(t, "discard", f, null);
+    assert.equal(fs.readFileSync(path.join(r, f), "utf8"), "one\ntwo\n", `${JSON.stringify(f)} discarded`);
+  }
+  assert.equal(g("diff", "--name-only").trim(), "");
+});
+
+test("one inventory with `changes`: the same files and the same cap, the rest counted on both", async () => {
+  const { r } = repo();
+  const { changeInventory, MAX_CHANGED_FILES } = await import("../src/commands/changes.js");
+  for (let i = 0; i < MAX_CHANGED_FILES + 7; i++) fs.writeFileSync(path.join(r, `n${String(i).padStart(4, "0")}.txt`), "x\n");
+  const inv = changeInventory(r)!;
+  const rev = d.review(target(r), "uncommitted", { maxFiles: MAX_CHANGED_FILES });
+  assert.equal(inv.files.length, MAX_CHANGED_FILES);
+  assert.deepEqual(rev.files.map((f) => f.path), inv.files.map((f) => f.path));
+  // repo() leaves 3 changed files; with the new ones that is 10 past the cap.
+  assert.equal(inv.more, 10);
+  assert.equal(rev.more, 10);
+  assert.equal(d.review(target(r), "uncommitted").more, 0, "no cap asked, none applied");
+});
+
+test("the --since token covers who else works here: a new shared session is never hidden by an unchanged review", () => {
+  const { r } = repo();
+  const t = target(r);
+  const first = d.reviewJson(t, "uncommitted", { shared: [] });
+  assert.equal(first.unchanged, undefined);
+  assert.deepEqual(d.reviewJson(t, "uncommitted", { since: first.fingerprint as string, shared: [] }), { key: t.key, scope: "uncommitted", unchanged: true, fingerprint: first.fingerprint });
+  const now = d.reviewJson(t, "uncommitted", { since: first.fingerprint as string, shared: ["claude/w/other"] });
+  assert.equal(now.unchanged, undefined);
+  assert.deepEqual(now.shared, ["claude/w/other"]);
 });
