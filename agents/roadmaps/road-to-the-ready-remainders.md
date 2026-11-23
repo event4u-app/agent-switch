@@ -50,6 +50,8 @@ saved.
 | D8 | A release is withdrawn by `npm deprecate` on that version or a `Withdrawn: <reason>` line in its GitHub release notes; when that status cannot be read, an opted-in kind is announced, not installed | the GUI learns the latest version from the GitHub release, and npm is what `agent-switch update` installs from, so both are read; an outage must not read as "not withdrawn" | releases carry a signed manifest with a withdraw field (road-to-a-trusted-install) |
 | D9 | After an update the GUI never restarts by itself: it offers the restart (notice + a Restart button in Settings › Updates while the installed version is newer than the running one), and while a session it hosts runs (alive hosted sessions plus chats in this window; unknown counts as running) the notice says to wait | the step allows a restart when idle, but an unasked restart under the user's cursor is the conservative reading's opposite, and the offer covers "restart when the user agrees" | the owner wants a restart without asking when nothing runs |
 | D10 | `strategy ask` asks only with a terminal on stdin and stderr; anywhere else (pipe, script, `exec`, the GUI's own calls) the start takes the preferred account, else the balanced pick; an answer that names no account starts nothing (exit 86) | the step forbids a prompt in a non-interactive run but names no fallback; the preferred account is the one the user set themselves, and starting nothing on a bad answer is the conservative reading | the owner wants `ask` to refuse non-interactive starts instead |
+| D11 | Without a reset time a window is weighed over its own length (5 h, 7 d, 30 d; 30 d when the length is unknown), and the reason says "at least … %/h" | a window resets at the latest one length from now, so that is the only bound the data gives; a week for a 5 h window was a guess, not a bound | the usage read always carries a reset time |
+| D12 | "Counted once per org": Claude profiles whose `.claude.json` names the same email AND the same `organizationUuid` are weighed once (the preferred one, else the first); a missing org never folds two profiles together; other providers are not folded | two profiles of one account share one set of limits; folding on email alone would merge two orgs, which the step forbids | providers expose an org id for Codex / agy |
 
 ## Phase 1 — A wrong account is never saved
 
@@ -103,10 +105,11 @@ saved.
 
 ## Phase 3 — Readouts and notices that tell the truth
 
-- [ ] **3.1 Eligibility before scoring.** Accounts are filtered for eligibility
+- [x] **3.1 Eligibility before scoring.** Accounts are filtered for eligibility
       (same email in two orgs counted once per org, not merged) before they are
       scored; an unknown reset time scores conservatively instead of assuming
       7 days. verify: `balance` tests for both cases.
+      done: `tests/balance.test.ts` — unknown reset weighed over the window's length (D11), same email + same org weighed once, two orgs kept apart, unknown org never folded (D12); seen red first.
       <!-- from: road-to-session-orchestration P6.2 -->
 - [ ] **3.2 Desktop "recently active".** A Desktop session found only by a fresh
       transcript is labelled "recently active", and "live" only when a process

@@ -15,8 +15,11 @@
 import type { UsageSnapshot, UsageWindow } from "./usage.js";
 
 const HOUR_MS = 3_600_000;
-/** A window without a reset time is assumed to reset a full week out. */
-const UNKNOWN_RESET_H = 7 * 24;
+/** A window resets at the latest one full length from now, so without a reset
+ *  time its own length bounds the hours left: the need is never overstated. */
+const WINDOW_H: Record<string, number> = { five_hour: 5, seven_day: 7 * 24, monthly: 30 * 24 };
+/** A window of unknown length: the longest any provider reports. */
+const UNKNOWN_WINDOW_H = 30 * 24;
 /** Needs closer than this (relative) count as level. */
 export const LEVEL_TOLERANCE = 0.05;
 
@@ -42,7 +45,7 @@ export function weigh(snapshot: UsageSnapshot, now: number, thresholdPct: number
   // The fullest window breaks a level tie: equal room this week, but one is about
   // to hit its 5h limit.
   const peak = Math.max(...snapshot.windows.map((x) => (typeof x.utilization === "number" ? x.utilization : 0)));
-  return { usable: true, need: rest / (resetH ?? UNKNOWN_RESET_H), rest, resetH, window: windowName(w), key: w.key, peak };
+  return { usable: true, need: rest / (resetH ?? WINDOW_H[w.key] ?? UNKNOWN_WINDOW_H), rest, resetH, window: windowName(w), key: w.key, peak };
 }
 
 const WINDOW_NAME: Record<string, string> = { five_hour: "5h", seven_day: "7d", monthly: "30d" };
@@ -60,5 +63,5 @@ export function level(a: number, b: number): boolean {
 export function describe(name: string, w: Extract<Weighed, { usable: true }>): string {
   const reset = w.resetH == null ? "reset time unknown" : w.resetH >= 48 ? `resets in ${Math.round(w.resetH / 24)} d` : `resets in ${Math.round(w.resetH)} h`;
   const of = w.key === "seven_day" ? "the week" : `its ${w.window} window`;
-  return `${name}: ${Math.round(w.rest)}% of ${of} left, ${reset} (${w.need.toFixed(1)} %/h to use it up)`;
+  return `${name}: ${Math.round(w.rest)}% of ${of} left, ${reset} (${w.resetH == null ? "at least " : ""}${w.need.toFixed(1)} %/h to use it up)`;
 }

@@ -14,11 +14,13 @@ import {
   sharesDefaultLogin,
   readBinaryPath,
   readGuard,
+  readJson,
   readStrategy,
   setStrategy,
   setGuard,
 } from "../profiles.js";
 import { spawnSync } from "node:child_process";
+import * as path from "node:path";
 
 import { ProviderId, PROVIDER_IDS, provider, resolveBinary } from "../providers.js";
 import { readProtection } from "../protection.js";
@@ -51,6 +53,16 @@ function profileExistsSafe(providerId: ProviderId, name: string): boolean {
   return /^[A-Za-z0-9_-]+$/.test(name) && profileExists(providerId, name);
 }
 
+/** Claude's account per organization (email + org uuid); null where either is
+ *  unknown — an unknown org must not fold two accounts into one. */
+function accountKey(providerId: ProviderId, name: string): string | null {
+  if (providerId !== "claude") return null;
+  const a = readJson(path.join(configDir(providerId, name), ".claude.json"))?.oauthAccount;
+  const email = typeof a?.emailAddress === "string" ? a.emailAddress.toLowerCase() : null;
+  const org = typeof a?.organizationUuid === "string" && a.organizationUuid ? a.organizationUuid : null;
+  return email && org ? `${email}\u0000${org}` : null;
+}
+
 export function resolveDir(
   providerId: ProviderId,
   plain = false,
@@ -75,6 +87,7 @@ export function resolveDir(
     // fail (a limit, an outage) and asks for another one.
     disabled: (n) => isDisabled(providerId, n) || exclude.includes(n),
     sharesDefaultLogin: (n) => profileExistsSafe(providerId, n) && sharesDefaultLogin(providerId, n),
+    account: (n) => (profileExistsSafe(providerId, n) ? accountKey(providerId, n) : null),
     pool: (id) => findPool(id),
     usage: (n) => cachedUsage(providerId, n),
     // Only providers that write a live-session signal can report one. A start

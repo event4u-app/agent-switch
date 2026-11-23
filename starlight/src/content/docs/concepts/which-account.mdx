@@ -58,6 +58,15 @@ the most at risk of being wasted.
 Here `personal` wins. Using it now spends quota that would otherwise be gone in
 14 hours, while `work` still has days to be used.
 
+When the reset time is unknown, the window's own length stands in for it (5
+hours, a week, 30 days): a window never resets later than that, so the pace is
+a lower bound, never a guess that flatters the account. `dir --json` then says
+"reset time unknown (at least … %/h)".
+
+Two profiles signed into the same email in the same organization share one set
+of limits, so only one of them is weighed (your preferred account when it is one
+of them). The same email in two organizations is two accounts, weighed apart.
+
 An account is never picked when:
 
 - it is at or over its [limit protection](/agent-switch/concepts/limits-and-protection/)

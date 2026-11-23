@@ -54,6 +54,10 @@ export interface ResolveInputs {
   disabled?: (name: string) => boolean;
   /** True when the profile shares its login with the default install (default: none does). */
   sharesDefaultLogin?: (name: string) => boolean;
+  /** The account a profile is signed into, per organization (email + org), or
+   *  null when the organization is unknown. Two profiles with one key share one
+   *  set of limits and are weighed once (default: every profile is its own). */
+  account?: (name: string) => string | null;
   /** All of this provider's profiles. Given → a start without a folder rule is
    *  balanced across them; absent → it uses the active profile. */
   names?: string[];
@@ -280,6 +284,29 @@ function fillPreferred(i: ResolveInputs, why: string[]): Resolution | null {
 }
 
 /**
+ * Profiles signed into one account of one organization share one set of
+ * limits: only one of them is weighed — `prefer` when it is among them, else
+ * the first listed. The same email in another organization is another account.
+ */
+function dropSameAccount(i: ResolveInputs, picks: { name: string }[], why: string[], prefer: string | null): void {
+  if (!i.account) return;
+  const keep = new Map<string, string>();
+  const ordered = [...picks.filter((p) => p.name === prefer), ...picks.filter((p) => p.name !== prefer)];
+  for (const p of ordered) {
+    const k = i.account(p.name);
+    if (k && !keep.has(k)) keep.set(k, p.name);
+  }
+  for (let n = picks.length - 1; n >= 0; n--) {
+    const k = i.account(picks[n].name);
+    const owner = k ? keep.get(k) : undefined;
+    if (owner && owner !== picks[n].name) {
+      why.push(`Skipped ${i.providerId}/${picks[n].name}: same account as ${i.providerId}/${owner} (one set of limits)`);
+      picks.splice(n, 1);
+    }
+  }
+}
+
+/**
  * The candidate that would lose the most at its reset (see balance.ts), after
  * dropping every profile that can't take work. A level tie goes to `prefer`
  * (the plain-start account), then to one without a live session. Under guard
@@ -330,6 +357,7 @@ function pickBalanced(i: ResolveInputs, names: string[], why: string[], prefer: 
     }
     picks.push({ name, w, live, ageMs });
   }
+  dropSameAccount(i, picks, why, prefer);
   if (!picks.length) return null;
   const top = picks.reduce((a, b) => (b.w.need > a.w.need ? b : a));
   const tied = picks.filter((p) => level(p.w.need, top.w.need));
