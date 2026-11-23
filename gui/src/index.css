@@ -338,6 +338,12 @@ body {
 .ac-dialog[data-state="open"] {
   animation: ac-pop-in 0.14s ease-out;
 }
+/* A session pane drawn while the engine is stopped shows the last known state:
+   no spinner, no pulsing live cursor, no blinking terminal cursor. */
+.as-ac [data-stale] *,
+.as-ac [data-stale] *::after {
+  animation: none !important;
+}
 @media (prefers-reduced-motion: reduce) {
   .as-ac .ac-pulse,
   .ac-sheet[data-state="open"],

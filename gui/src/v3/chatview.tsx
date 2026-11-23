@@ -11,7 +11,7 @@ import { modelLabel } from "./model-label.js";
 
 const secs = (ms: number | null) => (ms === null ? null : ms < 60_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`);
 
-export function ChatView({ b, findFiles, worktreeOf }: { b: BridgeState & BridgeActions; findFiles?: (query: string) => Promise<string[]>; worktreeOf?: (agentId: string) => string | null }) {
+export function ChatView({ b, findFiles, worktreeOf, blocked }: { b: BridgeState & BridgeActions; findFiles?: (query: string) => Promise<string[]>; worktreeOf?: (agentId: string) => string | null; blocked?: string | null }) {
   const f = useMemo(() => fold(b.events), [b.events]);
   const cost = useMemo(() => b.events.reduce((n, e) => (e.t === "turn.end" && e.costUsd ? n + e.costUsd : n), 0), [b.events]);
   const running = b.status === "ready" && f.running;
@@ -60,6 +60,7 @@ export function ChatView({ b, findFiles, worktreeOf }: { b: BridgeState & Bridge
         commands={b.session?.commands}
         findFiles={findFiles}
         disabled={b.status !== "ready"}
+        blocked={blocked}
       />
     </div>
   );

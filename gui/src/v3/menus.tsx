@@ -24,6 +24,8 @@ export interface MenuItem {
   divider?: boolean;
   /** A wrapped explanatory line instead of an item. */
   note?: string;
+  /** Why a disabled item is off: its tooltip and accessible description. */
+  why?: string;
   onClick?: () => void;
   onHover?: () => void;
 }
@@ -73,6 +75,8 @@ export function Menu({ items, width = 260, label, className }: { items: MenuItem
             aria-haspopup={it.sub || undefined}
             aria-expanded={it.sub ? !!it.active : undefined}
             aria-disabled={it.disabled || undefined}
+            title={it.why}
+            aria-description={it.why}
             onClick={it.disabled ? undefined : it.onClick}
             onMouseEnter={it.onHover}
             className={cn(

@@ -71,6 +71,7 @@ export function Act({
   kbd,
   onClick,
   disabled,
+  blocked,
 }: {
   kind?: "primary" | "accent" | "secondary" | "ghost" | "danger";
   children: ReactNode;
@@ -79,7 +80,14 @@ export function Act({
   kbd?: string;
   onClick?: () => void;
   disabled?: boolean;
+  /** Why the control cannot act now: it stays focusable and says so (tooltip, accessible description). */
+  blocked?: string | null;
 }) {
+  const off = blocked ? { "aria-disabled": true, "aria-description": blocked } : {};
+  if (blocked) {
+    title = blocked;
+    onClick = undefined;
+  }
   if (kind === "accent")
     return (
       <button
@@ -87,8 +95,10 @@ export function Act({
         title={title}
         onClick={onClick}
         disabled={disabled}
+        {...off}
         className={cn(
           "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-ac-brand-line px-2.5 text-xs font-medium text-ac-brand-text hover:bg-ac-brand-tint [&_svg]:size-3.5",
+          blocked && "cursor-default opacity-50 hover:bg-transparent",
           className,
         )}
       >
@@ -97,7 +107,7 @@ export function Act({
       </button>
     );
   return (
-    <Button size="sm" variant={kind} className={cn("[&_svg]:size-3.5", className)} title={title} onClick={onClick} disabled={disabled}>
+    <Button size="sm" variant={kind} className={cn("[&_svg]:size-3.5", blocked && "cursor-default opacity-50", className)} title={title} onClick={onClick} disabled={disabled} {...off}>
       {children}
       {kbd && <span className="font-ac-mono text-[10px] opacity-70">{kbd}</span>}
     </Button>
