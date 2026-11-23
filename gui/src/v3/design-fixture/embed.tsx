@@ -43,6 +43,7 @@ export const BOARDS: Record<string, Board> = {
   external: { steps: [{ click: "as-hook p95" }] },
   externalchat: { steps: [{ click: "as-hook p95" }, { click: "Chat" }] },
   tree: { steps: [{ click: "Show 3 subagents" }] },
+  subagent: { steps: [{ click: "Show 3 subagents" }, { click: "general-purpose · migrate JSON stores" }] },
   batch: { steps: [{ click: "Select · density" }, { click: "Select", exact: true }, { click: "v3 engine" }, { click: "Release plan" }] },
   focus: { steps: [{ key: "b", mod: true }] },
   offline: { scene: { health: "down" } },
