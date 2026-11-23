@@ -111,6 +111,29 @@ test("another owner, no remote, or no repo falls through to the folder rules", g
   }
 });
 
+// git prints the repo root in its own spelling (on Windows the long form of an
+// 8.3 temp dir). A case-insensitive file system shows the same mismatch here.
+const caseInsensitive = (() => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "asw-case-"));
+  try {
+    return fs.existsSync(d.toUpperCase());
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+})();
+
+test("a folder asked for in another spelling of its path still finds its repo's binding", { skip: !hasGit ? "git not installed" : !caseInsensitive ? "needs a case-insensitive file system" : false }, () => {
+  const t = tree("git@github.com:acme/widgets.git");
+  try {
+    M.setRemoteMapping("github.com/acme", "claude", "work");
+    const otherSpelling = t.deep.replace(`${path.sep}widgets${path.sep}`, `${path.sep}WIDGETS${path.sep}`);
+    assert.notEqual(otherSpelling, t.deep);
+    assert.equal(M.resolveMapping(otherSpelling, "claude")?.name, "work");
+  } finally {
+    fs.rmSync(t.root, { recursive: true, force: true });
+  }
+});
+
 test("remote bindings are listed, pruned with their profile, and removable", () => {
   M.setRemoteMapping("github.com/acme", "claude", "gone");
   M.setRemoteMapping("github.com/acme", "codex", "stays");

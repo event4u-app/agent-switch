@@ -149,8 +149,12 @@ function git(cwd: string, args: string[]): string | null {
 
 /** The repository root of `dir` and its `origin` (else first) remote, parsed. */
 function repoRemote(dir: string): { root: string; segs: string[] } | null {
-  const top = git(dir, ["rev-parse", "--show-toplevel"]);
-  if (!top) return null;
+  // The root is resolved from `dir` itself: git prints its own spelling of the
+  // path, which on Windows can be the long form of an 8.3 temp dir and would
+  // then never match the path it was asked about.
+  const up = git(dir, ["rev-parse", "--show-cdup"]);
+  if (up === null) return null;
+  const top = path.join(dir, up);
   const name = git(dir, ["config", "--get", "remote.origin.url"]) !== null ? "origin" : git(dir, ["remote"])?.split("\n")[0];
   const url = name ? git(dir, ["config", "--get", `remote.${name}.url`]) : null;
   const segs = url ? parseRemote(url) : null;
