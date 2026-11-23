@@ -12,6 +12,7 @@
     "tauri": "tauri",
     "coverage": "vitest run --coverage",
     "v3-render": "node scripts/screenshots/v3-render.mjs",
+    "v3-embed": "vite build --config vite.v3embed.config.ts",
     "v31-chat": "node scripts/screenshots/v31-chat.mjs"
   },
   "dependencies": {
