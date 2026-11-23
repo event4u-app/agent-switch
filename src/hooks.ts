@@ -78,7 +78,7 @@ export function readSettings(configDir: string): Settings {
   }
 }
 
-function writeSettings(configDir: string, settings: Settings): void {
+export function writeSettings(configDir: string, settings: Settings): void {
   fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(path.join(configDir, "settings.json"), JSON.stringify(settings, null, 2) + "\n", { mode: 0o600 });
 }

@@ -55,6 +55,8 @@ and lets you change it per account <Badge text="Claude only" variant="note" />:
 agent-switch protection wait on claude/work    # wait for the reset and continue
 agent-switch protection wait off claude/work   # stop at the limit
 agent-switch protection wait default claude/work   # remove the setting, Claude Code's own default applies
+agent-switch protection wait on --all          # every Claude account: shows each settings file first
+agent-switch protection wait on --all --yes    # …and writes them
 ```
 
 `off` pins a value; `default` removes it, so the account follows whatever
@@ -78,6 +80,43 @@ session there, or switch a running session with
   organization the conversation runs under. That is your decision, every time.
   An earlier version rotated accounts automatically; it was removed on purpose.
 </Aside>
+
+## Usage from Claude Code's status line <Badge text="Claude" variant="note" />
+
+Agent Switch reads Claude usage from the provider's usage endpoint, with each
+account's own login. With many accounts that endpoint answers "too many
+requests" (429), and the numbers stop moving.
+
+```bash
+agent-switch statusline on        # every Claude profile
+agent-switch statusline on work   # one profile
+agent-switch statusline status
+agent-switch statusline off
+```
+
+Claude Code 2.1.316 and later pass the 5-hour and weekly usage to the command
+set as `statusLine` in a profile's `settings.json`. `statusline on` sets that
+command to `agent-switch __statusline`, which records the numbers for that
+account and prints nothing, so your terminal looks the same. No network call,
+no login read.
+
+- **Opt-in.** Nothing turns it on by itself.
+- **Your status line stays yours.** A profile that already has a `statusLine`
+  is left alone and keeps being polled. `off` removes only Agent Switch's entry.
+- **The poll stays as the fallback.** A sample older than five minutes, or an
+  account with no running session, is polled as before. Per-model weekly
+  limits are not in the status line; they still come from the poll, at most
+  every few minutes.
+- **The relief is partial.** Only an account with a live session draws a
+  status line. With N accounts and one session, roughly 1/N of the requests go
+  away; the per-account backoff stays the main guard against 429s.
+- **Shared settings.** When profiles share one `settings.json` (`share on`),
+  `on` and `off` name every profile it serves before writing; run
+  `agent-switch share sync` afterwards.
+
+`agent-switch doctor` reports a status line that another tool replaced (for
+example by re-running its installer). `statusline status` notes when the
+samples come from a Claude Code newer than the newest version checked.
 
 ## Codex: banked resets <Badge text="Codex" variant="note" />
 

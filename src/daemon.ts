@@ -39,7 +39,8 @@ import { appHidden, visibilityFile } from "./app-visibility.js";
 import { fetchUsage, liveSessionPids, liveSessions, readProfileCredential } from "./api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { codexProfilesWithSession, keepAliveSweep } from "./login-keepalive.js";
-import { parseUsage, detectCrossings, pickSwitchTarget, maxUtilization, freedAfterReset, resetPassed, SwitchCandidate, ThresholdState, UsageSnapshot, type Crossing } from "./usage.js";
+import { readStatuslineSnapshot, statuslineFresh } from "./statusline.js";
+import { parseUsage, resolveClaudeUsage, detectCrossings, pickSwitchTarget, maxUtilization, freedAfterReset, resetPassed, SwitchCandidate, ThresholdState, UsageSnapshot, type Crossing } from "./usage.js";
 import { readCodexUsage, rolloutUsage } from "./codex-usage.js";
 import { autoRedeemDue, redeemResetCredit, resetReflected, usageAfterRedeem } from "./codex-reset.js";
 import { LATEST_FILE, readHistory, recordHistorySample, writeLatestSnapshot } from "./history.js";
@@ -658,21 +659,34 @@ interface RunOptions {
 
 /** One poll cycle: refresh the state cache for the selected profiles. Returns
  *  the number of failures this cycle (for backoff). */
-/** One profile's own usage snapshot: Claude via its OAuth endpoint, Codex via
- *  the live `wham/usage` read. null when unreadable (counts as a poll failure). */
-async function snapshotFor(provider: ProviderId, name: string, log: (l: string) => void): Promise<UsageSnapshot | null> {
+/** One profile's own usage snapshot: Claude from a fresh statusline sample
+ *  merged onto `last` (no request) or via its OAuth endpoint, Codex via the live
+ *  `wham/usage` read. null when unreadable (counts as a poll failure). The
+ *  merge keeps every window `last` had, so the switch and threshold logic never
+ *  sees fewer windows than a poll would give it. */
+async function snapshotFor(provider: ProviderId, name: string, log: (l: string) => void, last?: UsageSnapshot): Promise<UsageSnapshot | null> {
   if (provider === "codex") return readCodexUsage(configDir("codex", name));
-  // An expired access token is the daemon's most common "usage stopped moving"
-  // cause — a profile nobody is running never refreshes itself. Let Claude Code
-  // refresh it first (cooldown-guarded, no-op while the token is still good) —
-  // only while "Keep accounts signed in" allows it (token-freshen.ts).
-  const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), claudeLoginRefreshAllowed(name), (outcome, reason) => {
-    if (outcome === "unavailable") log(`freshen: claude/${name} — could not start \`claude doctor\` (${reason}; if Claude Code is installed elsewhere, link it in the app)`);
-    else if (outcome === "still-expired") log(`freshen: claude/${name} — Claude Code could not refresh the login (sign in again)`);
+  const r = await resolveClaudeUsage({
+    statusline: readStatuslineSnapshot(profileDir("claude", name)),
+    base: last ?? null,
+    now: Date.now(),
+    fresh: (s) => statuslineFresh(s),
+    pollOnlyMaxAgeMs: POOL_POLL_INTERVAL_MS,
+    poll: async () => {
+      // An expired access token is the daemon's most common "usage stopped
+      // moving" cause — a profile nobody is running never refreshes itself. Let
+      // Claude Code refresh it first (cooldown-guarded, no-op while the token is
+      // still good) — only while "Keep accounts signed in" allows it.
+      const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), claudeLoginRefreshAllowed(name), (outcome, reason) => {
+        if (outcome === "unavailable") log(`freshen: claude/${name} — could not start \`claude doctor\` (${reason}; if Claude Code is installed elsewhere, link it in the app)`);
+        else if (outcome === "still-expired") log(`freshen: claude/${name} — Claude Code could not refresh the login (sign in again)`);
+      });
+      if (!token) return null;
+      const raw = await fetchUsage(token);
+      return raw ? parseUsage(raw) : null;
+    },
   });
-  if (!token) return null;
-  const raw = await fetchUsage(token);
-  return raw ? parseUsage(raw) : null;
+  return r.snapshot;
 }
 
 /** The stored login behind a profile, fingerprinted: Claude's credential
@@ -838,7 +852,7 @@ async function pollProvider(
   state.fetchFailingSince = state.fetchFailingSince ?? {};
   for (const name of targets) {
     const key = `${provider}/${name}`;
-    let snapshot = await snapshotFor(provider, name, log);
+    let snapshot = await snapshotFor(provider, name, log, state.profiles[key]);
     const nextBackoff = snapshot ? undefined : nextProfileBackoff(backoff.get(key), false, baseMs, Date.now(), loginStampFor(provider, name));
     if (nextBackoff) backoff.set(key, nextBackoff);
     else backoff.delete(key);

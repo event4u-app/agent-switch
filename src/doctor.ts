@@ -12,10 +12,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { ROOT, activeFor, configDir, identity, listProfiles, profileExists, readGuard, readLinkAutoConnect, sharesDefaultLogin } from "./profiles.js";
+import { ROOT, activeFor, configDir, profileDir, identity, listProfiles, profileExists, readGuard, readLinkAutoConnect, sharesDefaultLogin } from "./profiles.js";
 import { Provider, ProviderId, allProviders } from "./providers.js";
 import { credentialStore } from "./credentials.js";
 import { sharedLinkHealth } from "./share.js";
+import { NEWEST_KNOWN_VERSION, readStatuslineCache, statuslineHealth, versionNewer, type StatuslineHealth } from "./statusline.js";
 import { checkAuth, liveSessionPids, type AuthState } from "./api.js";
 import { checkTooling, doctorToolingLine } from "./tooling.js";
 import { readGuiSettings, type GuiSettings } from "./gui-settings.js";
@@ -304,6 +305,22 @@ export function sharedLoginCheck(
   };
 }
 
+/** The statusline quota check for one profile, or null when it was never turned on. Pure. */
+export function statuslineCheck(name: string, health: StatuslineHealth, version: string | null): DoctorCheck | null {
+  const id = `statusline-${name}`;
+  if (health === "off") return null;
+  if (health === "displaced") {
+    return { id, status: "warn", title: `claude/${name}: statusline displaced`, detail: "another statusLine replaced Agent Switch's after it was turned on; it is kept, and this account's usage is polled again.", fix: `agent-switch statusline off ${name}` };
+  }
+  if (health === "missing") {
+    return { id, status: "warn", title: `claude/${name}: statusline missing`, detail: "the statusLine entry Agent Switch added is gone; this account's usage is polled again.", fix: `agent-switch statusline on ${name}` };
+  }
+  if (version && versionNewer(version, NEWEST_KNOWN_VERSION)) {
+    return { id, status: "info", title: `claude/${name}: statusline present`, detail: `Claude Code ${version} is newer than ${NEWEST_KNOWN_VERSION}, the newest version whose statusLine payload was checked; the poll still covers any gap.` };
+  }
+  return { id, status: "ok", title: `claude/${name}: statusline present`, detail: "" };
+}
+
 export async function collectDoctorReport(): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
   checks.push(cliOnPathCheck());
@@ -340,6 +357,12 @@ export async function collectDoctorReport(): Promise<DoctorReport> {
       const parts = [forked.length ? `forked: ${forked.join(", ")}` : "", missing.length ? `missing: ${missing.join(", ")}` : ""].filter(Boolean);
       checks.push({ id: `share-${n}`, status: "warn", title: `claude/${n}: shared links drifted`, detail: parts.join("; "), fix: "agent-switch share sync" });
     }
+  }
+
+  // Statusline quota (ADR-011): only where it was turned on.
+  for (const n of listProfiles("claude")) {
+    const check = statuslineCheck(n, statuslineHealth(configDir("claude", n), profileDir("claude", n)), readStatuslineCache(profileDir("claude", n))?.version ?? null);
+    if (check) checks.push(check);
   }
 
   // Single-load guard: the policy, and whether any profile is doubled RIGHT NOW.

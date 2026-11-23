@@ -119,7 +119,9 @@ whole run. See
 agent-switch is not a proxy and has no server, no account and no telemetry.
 Logins stay where the provider put them. Over the internet it only talks to:
 
-- the provider's own usage endpoint, with your own login;
+- the provider's own usage endpoint, with your own login (for Claude,
+  `agent-switch statusline on` lets running sessions report usage locally
+  instead; the endpoint stays the fallback);
 - GitHub, for releases and the desktop app download;
 - npm, for update checks of agent-switch's tools (the desktop app checks the
   `claude` and `codex` CLIs).

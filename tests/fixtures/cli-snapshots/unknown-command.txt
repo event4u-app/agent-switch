@@ -33,6 +33,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch sessions rm <session-id> --yes [--from <profile>] [--purge] [--json]   move one session to the trash (--purge deletes it for good)
   agent-switch sessions restore <trash-id|session-id> [--from <profile>]   bring a removed session back
   agent-switch hooks install|uninstall|status [profile] [--provider codex]   manage lifecycle push hooks (Claude settings.json, Codex hooks.json)
+  agent-switch statusline on|off|status [profile]   usage from Claude Code's status line instead of polling (opt-in; leaves your own status line alone)
   agent-switch hooks chat on|off|status [profile]   tell the conversation about a switch request for it (opt-in; silent when agent-config is wired)
   agent-switch alerts on|off|status [--threshold 80,95]   record context/usage crossings to the notification log (off by default)
   agent-switch compact <profile> [--clear] [--dry-run] [--force]   type /compact (or /clear) into the profile's managed tmux pane
@@ -52,6 +53,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch reset <profile> --provider codex [--yes]                        redeem one banked Codex rate-limit reset (asks on a terminal)
   agent-switch protection [--json] | protection set <provider/name> [--on|--off] [--threshold N]   per-profile limit warning (default on, 98%)
   agent-switch protection wait on|off|default <claude/name>   Claude Code's own auto-continue at the limit (wait, stop, or Claude's default)
+  agent-switch protection wait on|off|default --all [--yes]  The same for every Claude profile: previews each settings file (shared links once), writes only with --yes
   agent-switch pool [list|create|rename|delete|add|remove|suggest] [--json]    optional groups a folder rule can point at
   agent-switch auth-status [--provider P] [--json]   per-profile login state from the provider's store (no tokens)
   agent-switch activity [--limit N] [--json]   what agent-switch itself did, and why
