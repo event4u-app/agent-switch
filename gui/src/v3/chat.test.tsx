@@ -34,7 +34,7 @@ describe("ChatTimeline", () => {
     const deny = vi.fn();
     render(<ChatTimeline events={events} on={{ approve, deny }} />);
     fireEvent.click(screen.getByText("Allow once"));
-    fireEvent.click(screen.getByText(/Always allow/));
+    fireEvent.click(screen.getByText("Always: accept edits for this session"));
     fireEvent.click(screen.getByText("Deny"));
     expect(approve.mock.calls.map((c) => c[1])).toEqual([false, true]);
     expect(deny).toHaveBeenCalledTimes(1);

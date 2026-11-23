@@ -34,13 +34,14 @@ describe("sessionMarkdown (3.1)", () => {
     const rows: ChatRow[] = [
       { k: "user", id: "1", text: "hi", images: 2 },
       { k: "subagent", id: "2", type: "general-purpose", description: "list files", state: "failed", agentId: null },
-      { k: "approval", id: "3", tool: "Bash", summary: "rm `x`", resolved: "deny" },
-      { k: "question", id: "4", questions: [{ question: "Which?", options: ["a", "b"] }] },
+      { k: "approval", id: "3", tool: "Bash", summary: "rm `x`", rule: null, resolved: "deny" },
+      { k: "question", id: "4", questions: [{ question: "Which?", options: ["a", "b"] }], resolved: null },
+      { k: "question", id: "4b", questions: [{ question: "Size?", options: ["s", "l"] }], resolved: { answers: { "Size?": "l" } } },
       { k: "plan", id: "5", text: "1. do it" },
       { k: "error", id: "6", message: "boom" },
     ];
     const md = sessionMarkdown(rows);
-    for (const s of ["_(2 images)_", "**Task** (general-purpose) list files (failed)", "**Approval** Bash: `rm 'x'` — denied", "**Question:** Which? (a / b)", "**Plan**\n\n1. do it", "> **Error:** boom"]) expect(md).toContain(s);
+    for (const s of ["_(2 images)_", "**Task** (general-purpose) list files (failed)", "**Approval** Bash: `rm 'x'` — denied", "**Question:** Which? (a / b)", "**Question:** Size? (s / l) → l", "**Plan**\n\n1. do it", "> **Error:** boom"]) expect(md).toContain(s);
   });
 });
 

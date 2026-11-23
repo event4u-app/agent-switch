@@ -24,7 +24,8 @@ export interface BridgeActions {
   /** Add to the running turn (Codex steering); the bridge queues it where the agent cannot. */
   steer: (text: string) => void;
   approve: (id: string, always: boolean) => void;
-  deny: (id: string) => void;
+  /** `message` tells the agent why (a skipped question says it was skipped). */
+  deny: (id: string, message?: string) => void;
   answer: (id: string, answers: Record<string, string>) => void;
   interrupt: () => void;
   /** Codex: ask the agent to review the uncommitted changes. */
@@ -59,6 +60,13 @@ export function bridgeLine(line: string): { event?: AsEvent; bridge?: { kind: st
   return {};
 }
 
+/** A bridge error: before the chat is up it is why it could not start; after, it goes into the
+ *  conversation where it happened (an answer the agent did not take), so it is never silent. Pure. */
+export function failed(p: BridgeState, message: string): BridgeState {
+  if (p.status === "starting") return { ...p, error: message, status: "error" };
+  return { ...p, error: message, events: p.status === "ready" ? [...p.events, { t: "error", message }] : p.events };
+}
+
 export function useBridge(spec: ipc.BridgeSpec | null, deps: BridgeDeps = realDeps): BridgeState & BridgeActions {
   const [s, set] = useState<BridgeState>({ events: [], status: "starting", error: null, queued: 0, mode: spec?.mode ?? "default", session: null });
   const proc = useRef<ipc.BridgeProcess | null>(null);
@@ -75,7 +83,7 @@ export function useBridge(spec: ipc.BridgeSpec | null, deps: BridgeDeps = realDe
       else if (r.bridge?.kind === "ready") set((p) => ({ ...p, status: "ready" }));
       else if (r.bridge?.kind === "queued") set((p) => ({ ...p, queued: r.bridge!.count ?? 0 }));
       else if (r.bridge?.kind === "session" && r.bridge.key) set((p) => ({ ...p, session: { key: r.bridge!.key!, model: r.bridge!.model ?? null, commands: r.bridge!.commands ?? [] } }));
-      else if (r.bridge?.kind === "error") set((p) => ({ ...p, error: r.bridge!.message ?? "bridge error", status: p.status === "starting" ? "error" : p.status }));
+      else if (r.bridge?.kind === "error") set((p) => failed(p, r.bridge!.message ?? "bridge error"));
       else if (r.bridge?.kind === "exit") set((p) => ({ ...p, status: p.status === "error" ? "error" : "closed" }));
     };
     (async () => {
@@ -94,13 +102,13 @@ export function useBridge(spec: ipc.BridgeSpec | null, deps: BridgeDeps = realDe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [specKey, deps]);
 
-  const send = useCallback((c: object) => void proc.current?.send(c).catch((e: unknown) => set((p) => ({ ...p, error: e instanceof Error ? e.message : String(e) }))), []);
+  const send = useCallback((c: object) => void proc.current?.send(c).catch((e: unknown) => set((p) => failed(p, e instanceof Error ? e.message : String(e)))), []);
   return {
     ...s,
     send: (text, attachments) => send({ cmd: "send", text, ...(attachments?.length ? { attachments } : {}) }),
     steer: (text) => send({ cmd: "steer", text }),
     approve: (id, always) => send({ cmd: "approve", id, always }),
-    deny: (id) => send({ cmd: "deny", id }),
+    deny: (id, message) => send({ cmd: "deny", id, ...(message ? { message } : {}) }),
     answer: (id, answers) => send({ cmd: "answer", id, answers }),
     interrupt: () => send({ cmd: "interrupt" }),
     review: () => send({ cmd: "review", target: "uncommitted" }),

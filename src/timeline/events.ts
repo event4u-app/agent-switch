@@ -15,6 +15,13 @@ export interface DiffHunk {
   lines: string[];
 }
 
+/** One question of an AskUserQuestion call; `multiSelect`: several options may be picked. */
+export interface Question {
+  question: string;
+  options: string[];
+  multiSelect?: boolean;
+}
+
 export type AsEvent =
   /** A user prompt starts a turn. */
   | { t: "turn"; id: string; at: string | null }
@@ -26,9 +33,13 @@ export type AsEvent =
   | { t: "tool.finished"; id: string; ok: boolean; summary: string }
   | { t: "diff"; toolId: string; path: string; added: number; removed: number; hunks: DiffHunk[] }
   | { t: "plan"; id: string; text: string }
-  | { t: "approval.requested"; id: string; tool: string; summary: string; input: Record<string, unknown> }
+  /** `rule`: what "Always allow" adds, in words, from the agent's own suggestion; absent when it offers none. */
+  | { t: "approval.requested"; id: string; tool: string; summary: string; input: Record<string, unknown>; rule?: string }
   | { t: "approval.resolved"; id: string; decision: "allow" | "deny" }
-  | { t: "question.requested"; id: string; questions: { question: string; options: string[] }[] }
+  /** `toolId`: the tool call a live request answers, so the question shows once. */
+  | { t: "question.requested"; id: string; toolId?: string; questions: Question[] }
+  /** `answers: null`: skipped rather than answered. */
+  | { t: "question.resolved"; id: string; answers: Record<string, string> | null }
   | { t: "subagent.started"; id: string; type: string; description: string }
   /** `agentId` links the row to the subagent's hook record (its worktree). */
   | { t: "subagent.finished"; id: string; ok: boolean; agentId?: string }

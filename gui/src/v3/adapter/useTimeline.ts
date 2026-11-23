@@ -16,15 +16,18 @@ export interface TimelineState {
   loaded: boolean;
 }
 
+const EMPTY: TimelineState = { events: [], version: null, newerThanFixtures: false, error: null, loaded: false };
+
 export function useTimeline(key: string | null, read: typeof ipc.sessionTimeline = ipc.sessionTimeline): TimelineState {
-  const [s, set] = useState<TimelineState>({ events: [], version: null, newerThanFixtures: false, error: null, loaded: false });
+  // The state remembers which session it belongs to: another session's conversation is never shown under this one.
+  const [s, set] = useState<{ owner: string | null; t: TimelineState }>({ owner: key, t: EMPTY });
   useEffect(() => {
     if (!key) return;
     let alive = true;
     const tick = () =>
       read(key)
-        .then((r) => alive && set({ events: r.events, version: r.version, newerThanFixtures: r.newerThanFixtures, error: null, loaded: true }))
-        .catch((e: unknown) => alive && set((p) => ({ ...p, error: e instanceof Error ? e.message : String(e), loaded: true })));
+        .then((r) => alive && set({ owner: key, t: { events: r.events, version: r.version, newerThanFixtures: r.newerThanFixtures, error: null, loaded: true } }))
+        .catch((e: unknown) => alive && set((p) => ({ owner: key, t: { ...(p.owner === key ? p.t : EMPTY), error: e instanceof Error ? e.message : String(e), loaded: true } })));
     void tick();
     const id = setInterval(() => document.visibilityState === "visible" && void tick(), TIMELINE_POLL_MS);
     return () => {
@@ -32,5 +35,5 @@ export function useTimeline(key: string | null, read: typeof ipc.sessionTimeline
       clearInterval(id);
     };
   }, [key, read]);
-  return s;
+  return s.owner === key ? s.t : EMPTY;
 }
