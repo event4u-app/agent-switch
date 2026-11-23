@@ -132,7 +132,8 @@ function Preview({ s, session }: { s: Store; session: Session }) {
 }
 
 /** Bundle `$P`, sheet 500. */
-export function SessionSheet({ id, given }: { id: string; given?: Session }) {
+/** `start`: the mode it opens on — "Hand off…" opens on the hand-off its label names. */
+export function SessionSheet({ id, given, start }: { id: string; given?: Session; start?: "handoff" }) {
   const s = useAS();
   // The list holds Claude sessions only; a Codex session from the v3 window comes with the overlay.
   const n = s.sessions.find((x) => x.id === id) ?? (given?.id === id ? given : undefined);
@@ -145,7 +146,7 @@ export function SessionSheet({ id, given }: { id: string; given?: Session }) {
     : n.surface === "desktop-app"
       ? { ok: false, reason: t("sessions.sheet.desktopKeeps") }
       : liveSwitch(n, s.platform);
-  const [how, setHow] = useState<MoveHow>(live.ok ? "switch" : "takeover");
+  const [how, setHow] = useState<MoveHow>(start ?? (live.ok ? "switch" : "takeover"));
   const [target, setTarget] = useState(sameTool.find((r) => r.rank != null)?.account.id ?? "");
   const [handTo, setHandTo] = useState(otherTool[0]?.id ?? "");
   const [keepCopy, setKeepCopy] = useState(false);

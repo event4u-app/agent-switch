@@ -45,7 +45,7 @@ export type AccountSection = "usage" | "edit";
 export type Overlay =
   | { kind: "none" }
   /** `session`: the session itself, when the list does not hold it (a Codex session from the v3 window). */
-  | { kind: "session"; id: string; session?: Session }
+  | { kind: "session"; id: string; session?: Session; how?: "handoff" }
   | { kind: "account"; id: string; section?: AccountSection }
   /** `choice`: the model, thinking and worktree a New session dialog chose for `tool`. */
   | { kind: "start"; cwd?: string; tool?: string; accountId?: string; choice?: StartChoice }
