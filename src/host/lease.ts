@@ -163,6 +163,7 @@ export class InputLeases {
     if (opts.enter) {
       // -e keeps the styling, which tells a dimmed placeholder from typed text.
       const input = promptDraft(tmux(["capture-pane", "-p", "-e", "-J", "-t", window]));
+      if (input.menu) throw new TypeFailed(`nothing was sent: ${key} is waiting for an answer (a permission or a question); answer it in its window first`);
       if (!input.found) throw new TypeFailed(`nothing was sent: ${key} shows no input line to type into right now; type it in its window`);
       if (input.draft) throw new TypeFailed(`nothing was sent: your draft is in the way in ${key} ("${input.draft.length > 40 ? `${input.draft.slice(0, 39)}…` : input.draft}"); send or clear it there first`);
     }

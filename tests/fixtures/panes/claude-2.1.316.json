@@ -1,0 +1,46 @@
+{
+  "source": "The bottom of a hosted Claude Code 2.1.316 window as `tmux capture-pane -p -e -J` prints it. `empty-unfocused` is captured from a hosted window (the rules shortened to 40 cells, the conversation above cut); the others follow its layout: a rule above and below the input, the mark `❯` with a no-break space, continuation lines indented two cells, the cursor in reverse video and the placeholder dimmed.",
+  "screens": {
+    "empty-unfocused": [
+      "\u001b[39m",
+      "\u001b[38;5;244m────────────────────────────────────────",
+      "\u001b[39m❯ \u001b[2mTry \"how do I log an error?\"",
+      "\u001b[0m\u001b[38;5;244m────────────────────────────────────────",
+      "\u001b[39m  \u001b[38;5;220m⏵⏵ auto mode on (shift+tab to cycle)\u001b[39m"
+    ],
+    "empty-focused": [
+      "\u001b[38;5;244m────────────────────────────────────────",
+      "\u001b[39m❯ \u001b[7mT\u001b[27m\u001b[2mry \"how do I log an error?\"",
+      "\u001b[0m\u001b[38;5;244m────────────────────────────────────────",
+      "\u001b[39m  ? for shortcuts"
+    ],
+    "one-char-under-cursor": [
+      "\u001b[38;5;244m────────────────────────────────────────",
+      "\u001b[39m❯ \u001b[7mx\u001b[27m",
+      "\u001b[0m\u001b[38;5;244m────────────────────────────────────────",
+      "\u001b[39m  ? for shortcuts"
+    ],
+    "multi-line-first-empty": [
+      "\u001b[38;5;244m────────────────────────────────────────",
+      "\u001b[39m❯ ",
+      "  please also rename the helper",
+      "  and keep the tests green\u001b[7m \u001b[27m",
+      "\u001b[0m\u001b[38;5;244m────────────────────────────────────────",
+      "\u001b[39m  ? for shortcuts"
+    ],
+    "permission-menu": [
+      "\u001b[38;5;244m────────────────────────────────────────",
+      "\u001b[39m \u001b[1mBash command\u001b[22m",
+      "",
+      "   npm test",
+      "   \u001b[2mRun the tests\u001b[22m",
+      "",
+      " Do you want to proceed?",
+      " \u001b[38;5;153m❯ 1. Yes\u001b[39m",
+      "   2. Yes, and don't ask again for npm test commands in /work/fx",
+      "   3. No, and tell Claude what to do differently (esc)",
+      "",
+      " \u001b[2mEsc to cancel\u001b[22m"
+    ]
+  }
+}
