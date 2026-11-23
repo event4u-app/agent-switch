@@ -389,6 +389,22 @@ export function V3Window({
     setFocusedNeed(needFocus.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needFocus?.n, needs]);
+  // 8.6: a focused item takes DOM focus, so ↵, ⌫, L and Y answer it and never reach a
+  // focused terminal; when no item is focused any more, focus goes back where it was.
+  const needOpener = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const zone = () => document.querySelector('[aria-label="Needs you"]');
+    const now = document.activeElement as HTMLElement | null;
+    if (focusedNeed) {
+      if (!needOpener.current && now && !zone()?.contains(now)) needOpener.current = now;
+      [...document.querySelectorAll<HTMLElement>("[data-need]")].find((el) => el.dataset.need === focusedNeed)?.focus();
+      return;
+    }
+    const opener = needOpener.current;
+    needOpener.current = null;
+    const lost = !now || now === document.body || !now.isConnected || !!zone()?.contains(now);
+    if (opener?.isConnected && lost) opener.focus();
+  }, [focusedNeed]);
   // A session at its limit opens its decision sheet by itself (once per item
   // version) and brings the window forward — the user still confirms the move.
   // agent-config's question opens it too (once per request), and a limit it
