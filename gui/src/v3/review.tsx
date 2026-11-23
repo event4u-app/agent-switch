@@ -1,5 +1,6 @@
 /** v3.1 Review page (spec §10.9), adapted from the reference board `v31.tsx`:
- *  scope This turn / Session / Worktree vs main / Staged, Unified / Split, the
+ *  scope Uncommitted / This turn / Session / Branch vs main / Staged, with the
+ *  base each compares with named, Unified / Split, the
  *  file tree with the Marker, per-file and per-hunk stage / discard (locked
  *  while a turn runs), line comments sent as the next prompt, Commit and PR. */
 
@@ -30,11 +31,25 @@ export interface ReviewActions {
   agentReview?: () => void;
 }
 
-/** The file the review was opened at. `seq` changes on every open, so opening the same file again re-applies it. */
+/** One open of the review, at `file` when one was picked. `seq` changes on every open, so opening the same file again re-applies it. */
 export interface ReviewFocus {
-  file: string;
+  file?: string;
   seq: number;
 }
+
+/** What the scope compared with, as the CLI answered it. */
+export interface ReviewCompare {
+  /** `HEAD`, `origin/main`, `session start`; null for This turn or when nothing was found. */
+  ref: string | null;
+  sha: string | null;
+  /** Why the scope shows nothing or less than its name says. */
+  note: string | null;
+  /** Files too large to show: counted, their hunks left out. */
+  omitted: number;
+}
+
+/** Past this many files every card starts closed, so a large review stays usable. */
+export const REVIEW_COLLAPSE_OVER = 20;
 
 const LOCKED = "Unlocks when the turn ends";
 const dirOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : ".");
@@ -156,7 +171,8 @@ function HunkView({ file, h, layout, running, on }: { file: string; h: ReviewHun
 }
 
 function FileCard({ f, open, onToggle, layout, running, on }: { f: ReviewFileJson; open: boolean; onToggle: () => void; layout: "unified" | "split"; running: boolean; on: ReviewActions }) {
-  const unstaged = f.hunks.some((h) => h.layer === "unstaged");
+  // A file too large to show has no hunks here; the CLI still acts on it, and says when there is nothing to stage.
+  const unstaged = !!f.omitted || f.hunks.some((h) => h.layer === "unstaged");
   return (
     <div data-review-file={f.path} className="overflow-hidden rounded-[10px] border border-ac-line bg-ac-panel">
       <div className="flex items-center gap-2 border-b border-ac-line px-3 py-2">
@@ -175,6 +191,11 @@ function FileCard({ f, open, onToggle, layout, running, on }: { f: ReviewFileJso
           </Button>
         </span>
       </div>
+      {open && f.omitted && (
+        <p className="px-3 py-2 text-xs text-ac-muted">
+          Too large to show here — +{f.added} −{f.removed} lines. Open the file in your editor to read it.
+        </p>
+      )}
       {open &&
         f.hunks.map((h) => (
           <HunkView key={`${h.layer}-${h.hash}`} file={f.path} h={h} layout={layout} running={running} on={on} />
@@ -194,6 +215,7 @@ export function Review({
   undoable,
   on,
   focus,
+  compare,
 }: {
   title: string;
   scope: ReviewScope;
@@ -205,10 +227,20 @@ export function Review({
   undoable: boolean;
   on: ReviewActions;
   focus?: ReviewFocus;
+  compare?: ReviewCompare;
 }) {
   const [layout, setLayout] = useState<"unified" | "split">("unified");
   const [current, setCurrent] = useState<string | null>(null);
+  // Small reviews start open and remember what was closed; large ones start closed and remember what was opened.
+  const large = files.length > REVIEW_COLLAPSE_OVER;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const isOpen = (p: string) => (large ? expanded.has(p) : !collapsed.has(p));
+  const toggle = (p: string) => {
+    const flip = (c: Set<string>) => (c.has(p) ? new Set([...c].filter((x) => x !== p)) : new Set([...c, p]));
+    if (large) setExpanded(flip);
+    else setCollapsed(flip);
+  };
   const staged = useMemo(() => files.filter((f) => f.hunks.some((h) => h.layer === "staged")).length, [files]);
   const dirs = [...new Set(files.map((f) => dirOf(f.path)))];
   const shown = current ?? files[0]?.path ?? null;
@@ -216,11 +248,13 @@ export function Review({
   const applied = useRef<number | null>(null);
   // Applied once per open, as soon as the target is among the files read.
   useEffect(() => {
-    if (!focus || applied.current === focus.seq || !files.some((f) => f.path === focus.file)) return;
+    const file = focus?.file;
+    if (!focus || !file || applied.current === focus.seq || !files.some((f) => f.path === file)) return;
     applied.current = focus.seq;
-    setCurrent(focus.file);
-    setCollapsed((c) => (c.has(focus.file) ? new Set([...c].filter((x) => x !== focus.file)) : c));
-    const card = [...(cards.current?.children ?? [])].find((el) => (el as HTMLElement).dataset.reviewFile === focus.file);
+    setCurrent(file);
+    setCollapsed((c) => (c.has(file) ? new Set([...c].filter((x) => x !== file)) : c));
+    setExpanded((c) => (c.has(file) ? c : new Set([...c, file])));
+    const card = [...(cards.current?.children ?? [])].find((el) => (el as HTMLElement).dataset.reviewFile === file);
     card?.scrollIntoView?.({ block: "start" });
   }, [focus, files]);
   return (
@@ -236,9 +270,10 @@ export function Review({
               value={scope}
               onChange={on.setScope}
               options={[
+                { value: "uncommitted", label: "Uncommitted" },
                 { value: "turn", label: "This turn" },
                 { value: "session", label: "Session" },
-                { value: "worktree", label: "Worktree vs main" },
+                { value: "worktree", label: "Branch vs main" },
                 { value: "staged", label: "Staged" },
               ]}
             />
@@ -254,8 +289,20 @@ export function Review({
         ) : (
           <span>{loading ? "Reading the changes…" : `${files.length} ${files.length === 1 ? "file" : "files"} changed`}</span>
         )}
+        {compare?.ref && (
+          <span className="font-ac-mono text-[11px] text-ac-soft">
+            Compared with {compare.ref}
+            {compare.sha ? ` (${compare.sha.slice(0, 7)})` : ""}
+          </span>
+        )}
+        {!!compare?.omitted && <span>{compare.omitted === 1 ? "1 file too large to show" : `${compare.omitted} files too large to show`} — counted, not shown</span>}
         <span className="ml-auto">Includes changes made through Bash (git diff), not only Edit events</span>
       </div>
+      {compare?.note && (
+        <div role="status" className="mb-3 rounded-[10px] border border-ac-line bg-ac-panel px-3 py-2 text-xs text-ac-soft">
+          {compare.note}
+        </div>
+      )}
       {shared.length > 0 && (
         <div role="status" className="mb-3 flex items-center gap-2 rounded-[10px] border border-ac-warn bg-ac-warn-tint px-3 py-2 text-xs text-ac-warn-text">
           <TriangleAlert className="size-3.5" /> {shared.length === 1 ? "Another session works" : `${shared.length} other sessions work`} in this worktree — staging and discarding change their files too.
@@ -267,7 +314,7 @@ export function Review({
         </div>
       )}
       {files.length === 0 && !loading ? (
-        <p className="py-10 text-center text-[13px] text-ac-muted">No changes in this scope.</p>
+        !error && !compare?.note && <p className="py-10 text-center text-[13px] text-ac-muted">No changes in this scope.</p>
       ) : (
         <div className="grid grid-cols-[260px_1fr] gap-3">
           <div className="self-start overflow-hidden rounded-[10px] border border-ac-line bg-ac-panel py-1" aria-label="Files" role="tree">
@@ -302,8 +349,8 @@ export function Review({
               <FileCard
                 key={f.path}
                 f={f}
-                open={!collapsed.has(f.path)}
-                onToggle={() => setCollapsed((c) => (c.has(f.path) ? new Set([...c].filter((x) => x !== f.path)) : new Set([...c, f.path])))}
+                open={isOpen(f.path)}
+                onToggle={() => toggle(f.path)}
                 layout={layout}
                 running={running}
                 on={on}

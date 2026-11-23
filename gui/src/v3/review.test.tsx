@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReviewFileJson } from "../ipc.js";
-import { Review, type ReviewActions } from "./review.js";
-import { ReviewHost } from "./adapter/ReviewHost.js";
+import type { ReviewFileJson, ReviewJson } from "../ipc.js";
+import { Review, REVIEW_COLLAPSE_OVER, type ReviewActions } from "./review.js";
+import { REVIEW_POLL_MS, ReviewHost } from "./adapter/ReviewHost.js";
 
 afterEach(cleanup);
 
@@ -106,10 +106,86 @@ describe("Review", () => {
   });
 });
 
+describe("Review: what it compares with, and large reviews", () => {
+  const base = { title: "t", shared: [], running: false, loading: false, error: null, undoable: false, on: on() };
+
+  it("offers Uncommitted first and names the base it compared with", () => {
+    render(<Review {...base} scope="worktree" files={FILES} compare={{ ref: "origin/dev/v3", sha: "abc1234def567", note: null, omitted: 0 }} />);
+    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["Uncommitted", "This turn", "Session", "Branch vs main", "Staged", "Unified", "Split"]);
+    expect(screen.getByText("Compared with origin/dev/v3 (abc1234)")).toBeTruthy();
+  });
+
+  it("a scope that cannot compare says why instead of showing no changes", () => {
+    render(<Review {...base} scope="session" files={[]} compare={{ ref: null, sha: null, note: "The commit this session started on was not found.", omitted: 0 }} />);
+    expect(screen.getByRole("status").textContent).toContain("The commit this session started on was not found.");
+    expect(screen.queryByText("No changes in this scope.")).toBeNull();
+  });
+
+  it("past the collapse threshold every card starts closed but the one opened at; omitted files say so", () => {
+    const many: ReviewFileJson[] = Array.from({ length: REVIEW_COLLAPSE_OVER + 1 }, (_, i) => ({ path: `f${String(i).padStart(2, "0")}.ts`, status: "M", added: 1, removed: 0, hunks: [{ oldStart: 1, newStart: 1, lines: [`+x${i}`], layer: "unstaged", hash: `h${i}`, header: "@@" }] }));
+    many.push({ path: "zz-huge.ts", status: "M", added: 90000, removed: 0, hunks: [], omitted: true });
+    render(<Review {...base} scope="worktree" files={many} focus={{ file: "f03.ts", seq: 1 }} compare={{ ref: "main", sha: null, note: null, omitted: 1 }} />);
+    expect(screen.getByLabelText("Collapse f03.ts")).toBeTruthy();
+    expect(screen.getByLabelText("Expand f00.ts")).toBeTruthy();
+    expect(screen.queryByText("+x0")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Expand zz-huge.ts"));
+    expect(screen.getByText(/Too large to show here/)).toBeTruthy();
+    expect(screen.getByText(/1 file too large to show/)).toBeTruthy();
+  });
+
+  it("a small review stays open", () => {
+    render(<Review {...base} scope="worktree" files={FILES} />);
+    expect(screen.getAllByLabelText(/^Collapse /)).toHaveLength(FILES.length);
+  });
+});
+
 describe("ReviewHost", () => {
+  const io = () => ({
+    sessionReview: vi.fn(async (_k: string, _s: string, _since?: string): Promise<ReviewJson> => ({ files: FILES, shared: [], base: null, baseRef: "HEAD", note: null, omitted: 0, fingerprint: "fp1" })),
+    reviewAct: vi.fn(async () => ""),
+    reviewUndo: vi.fn(async () => ""),
+    reviewCommit: vi.fn(async () => ""),
+  });
+
+  it("opens on Uncommitted — the files the count it was opened from counts — and goes back to it on every open", async () => {
+    const x = io();
+    const props = { sessionKey: "claude/w/s", title: "t", running: false, toast: vi.fn(), askMessage: vi.fn(), createPr: vi.fn(), io: x };
+    const { rerender } = render(<ReviewHost {...props} focus={{ seq: 1 }} />);
+    await waitFor(() => expect(x.sessionReview).toHaveBeenCalledWith("claude/w/s", "uncommitted"));
+    fireEvent.click(screen.getByRole("radio", { name: "Branch vs main" }));
+    await waitFor(() => expect(x.sessionReview).toHaveBeenLastCalledWith("claude/w/s", "worktree"));
+    rerender(<ReviewHost {...props} focus={{ file: "notes.md", seq: 2 }} />);
+    await waitFor(() => expect(x.sessionReview).toHaveBeenLastCalledWith("claude/w/s", "uncommitted"));
+  });
+
+  it("while a turn runs it polls with the last fingerprint and keeps what it shows when nothing changed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const x = io();
+      render(<ReviewHost sessionKey="claude/w/s" title="t" running toast={vi.fn()} askMessage={vi.fn()} createPr={vi.fn()} io={x} />);
+      await waitFor(() => expect(x.sessionReview).toHaveBeenCalledTimes(1));
+      x.sessionReview.mockResolvedValue({ unchanged: true, fingerprint: "fp1" });
+      await act(async () => void vi.advanceTimersByTime(REVIEW_POLL_MS));
+      await waitFor(() => expect(x.sessionReview).toHaveBeenCalledTimes(2));
+      expect(x.sessionReview).toHaveBeenLastCalledWith("claude/w/s", "uncommitted", "fp1");
+      expect(screen.getAllByRole("treeitem")).toHaveLength(FILES.length);
+      expect(screen.queryByText("Reading the changes…")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a review the CLI refuses (git failed or timed out) is shown as an error, not as no changes", async () => {
+    const x = io();
+    x.sessionReview.mockRejectedValueOnce(new Error("git diff failed: timed out after 5 s"));
+    render(<ReviewHost sessionKey="claude/w/s" title="t" running={false} toast={vi.fn()} askMessage={vi.fn()} createPr={vi.fn()} io={x} />);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("timed out after 5 s"));
+    expect(screen.queryByText("No changes in this scope.")).toBeNull();
+  });
+
   it("reads the scope, acts, re-reads, offers undo after a discard, commits with a message, shows refusals", async () => {
     const io = {
-      sessionReview: vi.fn(async () => ({ files: FILES, shared: [], base: "abc" })),
+      sessionReview: vi.fn(async (): Promise<ReviewJson> => ({ files: FILES, shared: [], base: "abc", baseRef: "main", note: null, omitted: 0, fingerprint: "f" })),
       reviewAct: vi.fn(async (_k: string, a: string) => (a === "discard" ? "discarded a change in notes.md" : "staged a change in notes.md")),
       reviewUndo: vi.fn(async () => "restored the last discard in notes.md"),
       reviewCommit: vi.fn(async () => "1a2b3c4"),
