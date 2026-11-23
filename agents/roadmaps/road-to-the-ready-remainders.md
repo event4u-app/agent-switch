@@ -203,7 +203,7 @@ saved.
       current version without loss. verify: fixture tests.
       <!-- from: road-to-session-orchestration P6.6 -->
       <!-- adapted: the per-OS smoke and the final threat review stay in the source file -->
-- [ ] **6.4 Fix the flaky "one click on the stripe" test.**
+- [x] **6.4 Fix the flaky "one click on the stripe" test.**
       `gui/src/v3/adapter/reach-app.test.tsx` › "Library: one click on the stripe"
       timed out at 5000 ms on `gui macos-latest` (PR #187, run 42475900320, job
       128717091666) and passed on rerun; the log shows jsdom's "Not implemented:
@@ -211,6 +211,7 @@ saved.
       on, make the wait deterministic (no raised timeout as the fix).
       verify: the test filtered and run 20 times in a row locally without a
       failure, and the next CI runs green on `gui macos-latest` without a rerun.
+      done: cause — the window's "open the first live session" effect set the tab outright; when a click landed between the commit that brought the sessions and that effect, the effect overrode the Library tab (the page never came back, hence "Unable to find" / timeout, not slowness). It now keeps a pick already made. Red-then-green: `v3/design-gap.test.tsx` › "a page picked in the commit that brings the first sessions stays picked"; the reach test asserts synchronously, its 5 s wait and 15 s budget removed; 20/20 filtered runs locally. The CI half is seen on the next push.
       <!-- from: CI flake seen 2026-11-08, owner chose to track it here -->
 - [ ] **6.5 Fix the flaky "a finished program … last screen stays readable" test.**
       `tests/tmux-host.test.ts` › "a finished program is reported as not alive

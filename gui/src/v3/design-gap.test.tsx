@@ -3,6 +3,7 @@
  * or wired differently from the boards, each checked through the real window.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useLayoutEffect } from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { V3Window, type V3Data } from "./window.js";
 import { data, slots } from "./window-fixture.js";
@@ -164,6 +165,28 @@ describe("start on a session (gap §4a)", () => {
   it("opens the first live session when nothing was saved", () => {
     mount();
     expect(screen.getByRole("tab", { name: /Event store/ }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("a page picked in the commit that brings the first sessions stays picked", () => {
+    // The pick lands between that commit and its passive effects: a click on a
+    // loaded machine can, and the startup tab must not override it.
+    function ClickWhenSessions({ on }: { on: boolean }) {
+      useLayoutEffect(() => {
+        if (on) screen.getByLabelText("Library").click();
+      }, [on]);
+      return null;
+    }
+    const d = data();
+    const ui = (sessions: V3Data["sessions"]) => (
+      <>
+        <V3Window data={{ ...d, sessions }} slots={slots} act={vi.fn()} />
+        <ClickWhenSessions on={sessions.length > 0} />
+      </>
+    );
+    const { rerender } = render(ui([]));
+    rerender(ui(d.sessions));
+    expect(screen.getByRole("tab", { name: /Library/ }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText(/Pinned sessions are kept in the vault/)).toBeTruthy();
   });
 
   it("restores the saved tabs and the active one", () => {

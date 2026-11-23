@@ -251,7 +251,8 @@ export function V3Window({
     const known = new Set(data.sessions.map((x) => x.key));
     const pins = (saved?.pinned ?? []).filter((id) => (isPageTab(id) ? isKnownPage(id.slice(5), known) : s.tabs.includes(id)));
     setStrip((cur) => seedTabs(cur, [...pins.filter(isPageTab), ...s.tabs], pins));
-    setActive(s.active);
+    // A pick made before this effect ran (its commit and a click can interleave) wins.
+    setActive((cur) => cur ?? s.active);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.sessions]);
   useEffect(() => {
