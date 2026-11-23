@@ -56,6 +56,7 @@ const VALUE_FLAGS = new Set([
   "before",
   "query",
   "hunk",
+  "file-hash",
   "scope",
   "name",
   "binary",

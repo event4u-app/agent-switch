@@ -279,3 +279,94 @@ test("the --since token covers who else works here: a new shared session is neve
   assert.equal(now.unchanged, undefined);
   assert.deepEqual(now.shared, ["claude/w/other"]);
 });
+
+/** A repo with keep.txt, del.txt, other.txt and a binary img.png committed on main. */
+function wholeRepo() {
+  const r = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-rev-whole-")));
+  const g = (...a: string[]) => execFileSync("git", ["-C", r, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.autocrlf=false", ...a], { encoding: "utf8" });
+  g("init", "-q", "-b", "main");
+  for (const f of ["keep.txt", "del.txt", "other.txt"]) fs.writeFileSync(path.join(r, f), `${f}\n`);
+  fs.writeFileSync(path.join(r, "img.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3, 0, 255]));
+  g("add", ".");
+  g("commit", "-qm", "base");
+  return { r, g, status: (f: string) => g("status", "--porcelain=v1", "--", f).slice(0, 2) };
+}
+
+test("a whole-file stage of a deletion stages the deletion; unstage puts it back in the index; nothing is emptied", () => {
+  const { r, status } = wholeRepo();
+  const t = target(r);
+  fs.rmSync(path.join(r, "keep.txt"));
+  d.act(t, "stage", "keep.txt", null);
+  assert.equal(status("keep.txt"), "D ", "the deletion is staged, not an empty file");
+  d.act(t, "unstage", "keep.txt", null);
+  assert.equal(status("keep.txt"), " D", "unstaged: deleted in the worktree only");
+});
+
+test("unstage of a staged deletion (git rm) restores the index entry", () => {
+  const { r, g, status } = wholeRepo();
+  g("rm", "-q", "del.txt");
+  d.act(target(r), "unstage", "del.txt", null);
+  assert.equal(status("del.txt"), " D");
+});
+
+test("discard of a worktree deletion brings the file back; undo deletes it again", () => {
+  const { r, status } = wholeRepo();
+  const t = target(r);
+  fs.rmSync(path.join(r, "keep.txt"));
+  assert.equal(d.act(t, "discard", "keep.txt", null).undo, true);
+  assert.equal(fs.readFileSync(path.join(r, "keep.txt"), "utf8"), "keep.txt\n");
+  assert.equal(status("keep.txt"), "");
+  d.undo(t);
+  assert.equal(fs.existsSync(path.join(r, "keep.txt")), false);
+});
+
+test("stage then unstage a new file leaves it untracked; a later commit of another file leaves it out", () => {
+  const { r, g, status } = wholeRepo();
+  const t = target(r);
+  fs.writeFileSync(path.join(r, "new.txt"), "fresh\n");
+  d.act(t, "stage", "new.txt", null);
+  assert.equal(status("new.txt"), "A ");
+  d.act(t, "unstage", "new.txt", null);
+  assert.equal(status("new.txt"), "??", "untracked again, not an empty staged file");
+  assert.equal(fs.readFileSync(path.join(r, "new.txt"), "utf8"), "fresh\n");
+  fs.writeFileSync(path.join(r, "other.txt"), "changed\n");
+  d.act(t, "stage", "other.txt", null);
+  d.commitStaged(t, "other only");
+  assert.equal(g("show", "--name-only", "--format=", "HEAD").trim(), "other.txt");
+});
+
+test("binary, large new and symlinked files: listed without a preview, staged, unstaged and discarded as whole files", () => {
+  const { r, status } = wholeRepo();
+  const t = target(r);
+  fs.writeFileSync(path.join(r, "img.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 9, 9, 9, 0, 255]));
+  fs.writeFileSync(path.join(r, "big.txt"), "x".repeat(2_000_000));
+  fs.symlinkSync("other.txt", path.join(r, "link"));
+  const files = new Map(d.review(t, "uncommitted").files.map((f) => [f.path, f]));
+  assert.equal(files.get("img.png")!.preview, "binary");
+  assert.equal(files.get("big.txt")!.preview, "too large");
+  assert.equal(files.get("link")!.preview, "link");
+  for (const f of ["img.png", "big.txt", "link"]) assert.deepEqual(files.get(f)!.layers, ["unstaged"], f);
+  for (const f of ["img.png", "big.txt", "link"]) d.act(t, "stage", f, null);
+  assert.deepEqual([status("img.png"), status("big.txt"), status("link")], ["M ", "A ", "A "]);
+  const staged = new Map(d.review(t, "uncommitted").files.map((f) => [f.path, f]));
+  for (const f of ["img.png", "big.txt", "link"]) assert.deepEqual(staged.get(f)!.layers, ["staged"], `${f} counts as staged`);
+  for (const f of ["img.png", "big.txt", "link"]) d.act(t, "unstage", f, null);
+  assert.deepEqual([status("img.png"), status("big.txt"), status("link")], [" M", "??", "??"]);
+  for (const f of ["img.png", "big.txt", "link"]) d.act(t, "discard", f, null);
+  assert.deepEqual([status("img.png"), status("big.txt"), status("link")], ["", "", ""]);
+  d.undo(t);
+  assert.equal(fs.readlinkSync(path.join(r, "link")), "other.txt", "the link comes back as a link");
+});
+
+test("a whole-file action carries the hash of what was shown and is refused when the file changed since", () => {
+  const { r } = wholeRepo();
+  const t = target(r);
+  fs.writeFileSync(path.join(r, "keep.txt"), "keep.txt\nmine\n");
+  const shown = d.review(t, "uncommitted").files.find((f) => f.path === "keep.txt")!;
+  assert.match(shown.hash, /^[0-9a-f]{16}$/);
+  fs.writeFileSync(path.join(r, "keep.txt"), "keep.txt\nmine\nand typed after the page was read\n");
+  for (const action of ["stage", "discard"] as const) assert.equal(refusal(() => d.act(t, action, "keep.txt", null, shown.hash)), "the file changed since you looked — read it again");
+  assert.equal(fs.readFileSync(path.join(r, "keep.txt"), "utf8"), "keep.txt\nmine\nand typed after the page was read\n", "nothing was discarded");
+  const now = d.review(t, "uncommitted").files.find((f) => f.path === "keep.txt")!;
+  assert.match(d.act(t, "discard", "keep.txt", null, now.hash).done, /discarded keep\.txt/);
+});
