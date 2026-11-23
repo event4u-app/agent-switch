@@ -6,7 +6,7 @@ import type { SessionRow } from "../../transforms.js";
 import { accountId, accountIdFromMember, sessionFromRow } from "../../vm/build.js";
 import { splitAccountId, type Actions } from "../../vm/actions.js";
 import { createElement } from "react";
-import { sessionArgs, type PrConfirmJson, type PrPlanJson, type StartChoice, type SwitchRequestRow } from "../../ipc.js";
+import { sessionArgs, type CleanupJson, type PrConfirmJson, type PrPlanJson, type StartChoice, type SwitchRequestRow } from "../../ipc.js";
 import { requestKind, requestsForMoves } from "../../vm/switch-requests.js";
 import type { Overlay, TerminalRun, Toast } from "../../vm/store.js";
 import type { ProviderId } from "../../transforms.js";
@@ -38,8 +38,8 @@ export interface DispatchIpc {
   setAgentEnabled(id: string, on: boolean): Promise<void>;
   setRemoteControl(account: string, on: boolean): Promise<void>;
   setRemoteSsh(on: boolean): Promise<void>;
-  /** Removes merged worktrees: only those of `keys` when given. */
-  cleanupMerged(keys?: string[]): Promise<void>;
+  /** Removes merged worktrees: only those of `keys` when given; says what it removed and skipped. */
+  cleanupMerged(keys?: string[]): Promise<CleanupJson>;
   /** What Create PR would do (commit, destination ref, base, title), or why it cannot; for `base` when given. */
   prCreatePlan(key: string, base?: string): Promise<PrPlanJson>;
   /** Pushes what was confirmed and creates the PR (refused when it changed since); the PR's URL. */
@@ -113,6 +113,16 @@ function prUrl(row: SessionRow | undefined): string | null {
   const pr = row ? (row.prs ?? []).map(parsePr).find((p) => p !== null) : null;
   return pr?.url || null;
 }
+/** Clean up's answer in one toast: how many went, and each one kept with its reason. Pure. */
+export function cleanupToast(r: CleanupJson): { tone: "ok" | "info"; text: string } {
+  const n = r.removed.length;
+  const removed = n ? `Removed ${n} worktree${n === 1 ? "" : "s"}.` : r.skipped.length ? "Removed no worktree." : "No merged worktree to remove.";
+  const skipped = r.skipped.map((s) => `Skipped ${s.path}: ${s.reason}.`);
+  return { tone: r.skipped.length || !n ? "info" : "ok", text: [removed, ...skipped].join(" ") };
+}
+/** Runs Clean up and says what it did. */
+const cleanUp = (deps: DispatchDeps, keys?: string[]) => run(deps, "Clean up", deps.ipc.cleanupMerged(keys).then((r) => deps.toast(cleanupToast(r))));
+
 async function run(deps: DispatchDeps, what: string, p: Promise<unknown>): Promise<void> {
   try {
     await p;
@@ -386,7 +396,7 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
         if (!a.keys.length) return;
         const n = a.keys.length;
         const keys = [...a.keys];
-        return deps.open({ kind: "confirm", title: `Clean up the worktrees of ${n} selected session${n === 1 ? "" : "s"}?`, body: "Removes the worktrees of the selected sessions whose PR is merged. A worktree with changes is skipped; other worktrees stay.", confirm: "Clean up", onConfirm: () => void run(deps, "Clean up", deps.ipc.cleanupMerged(keys)) });
+        return deps.open({ kind: "confirm", title: `Clean up the worktrees of ${n} selected session${n === 1 ? "" : "s"}?`, body: "Removes the worktrees of the selected sessions whose PR is merged. A worktree with changes is skipped; other worktrees stay.", confirm: "Clean up", onConfirm: () => void cleanUp(deps, keys) });
       }
       if (a.op === "onEnd") {
         const keys = a.keys.filter(deps.hosted);
@@ -396,7 +406,7 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       return;
     }
     case "clean-up":
-      return deps.open({ kind: "confirm", title: "Clean up merged worktrees?", body: "Removes the worktrees of sessions whose PR is merged. A worktree with changes is skipped.", confirm: "Clean up", onConfirm: () => void run(deps, "Clean up", deps.ipc.cleanupMerged()) });
+      return deps.open({ kind: "confirm", title: "Clean up merged worktrees?", body: "Removes the worktrees of sessions whose PR is merged. A worktree with changes is skipped.", confirm: "Clean up", onConfirm: () => void cleanUp(deps) });
     case "view":
       return deps.switchView?.(a.key, a.view);
     case "open-in": {

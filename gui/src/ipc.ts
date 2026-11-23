@@ -475,8 +475,14 @@ export async function hostRespawn(key: string, change: { model?: string; effort?
 }
 
 /** `sessions cleanup [<session>…] --yes`: remove the worktrees of merged sessions (dirty ones skipped); only those of `keys` when given. */
-export async function cleanupMerged(keys: string[] = []): Promise<void> {
-  await runCli(["sessions", "cleanup", ...keys, "--yes"]);
+/** What Clean up removed, and what it left with the reason. */
+export interface CleanupJson {
+  removed: string[];
+  skipped: { path: string; reason: string }[];
+}
+export async function cleanupMerged(keys: string[] = []): Promise<CleanupJson> {
+  const o = JSON.parse(await runCli(["sessions", "cleanup", ...keys, "--yes", "--json"])) as Partial<CleanupJson>;
+  return { removed: Array.isArray(o.removed) ? o.removed : [], skipped: Array.isArray(o.skipped) ? o.skipped : [] };
 }
 
 /** `pr create <session> --json` without `--yes`: what Create PR would do, or why it cannot. */

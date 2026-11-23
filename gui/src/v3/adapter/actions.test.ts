@@ -33,7 +33,7 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
     setAgentEnabled: vi.fn(async () => {}),
     setRemoteControl: vi.fn(async () => {}),
     setRemoteSsh: vi.fn(async () => {}),
-    cleanupMerged: vi.fn(async (_keys?: string[]) => {}),
+    cleanupMerged: vi.fn(async (_keys?: string[]) => ({ removed: [] as string[], skipped: [] as { path: string; reason: string }[] })),
     prCreatePlan: vi.fn(async (_key: string, base?: string): Promise<PrPlanJson> => plan(base && base !== "main" ? { base, head: "bbbbbbb2", title: `first on ${base}` } : {})),
     prCreate: vi.fn(async (_key: string, _c: PrConfirmJson) => "https://github.com/o/r/pull/12"),
     engineRestart: vi.fn(async () => {}),
@@ -394,6 +394,25 @@ describe("dispatchV3", () => {
     ask.onConfirm();
     await flush();
     expect(d.ipc.cleanupMerged).toHaveBeenCalledWith(["claude/work/a", "claude/work/h"]);
+  });
+
+  it("Clean up says what it removed and what it skipped, and why", async () => {
+    const d = deps([]);
+    d.ipc.cleanupMerged.mockResolvedValueOnce({ removed: ["/r.worktrees/a", "/r.worktrees/b"], skipped: [{ path: "/r.worktrees/c", reason: "a live session works in it (claude/work/c)" }] });
+    await dispatchV3({ type: "clean-up" }, d);
+    d.open.mock.calls.at(-1)![0].onConfirm();
+    await flush();
+    expect(d.toast).toHaveBeenLastCalledWith({ tone: "info", text: "Removed 2 worktrees. Skipped /r.worktrees/c: a live session works in it (claude/work/c)." });
+    d.ipc.cleanupMerged.mockResolvedValueOnce({ removed: [], skipped: [] });
+    await dispatchV3({ type: "clean-up" }, d);
+    d.open.mock.calls.at(-1)![0].onConfirm();
+    await flush();
+    expect(d.toast).toHaveBeenLastCalledWith({ tone: "info", text: "No merged worktree to remove." });
+    d.ipc.cleanupMerged.mockResolvedValueOnce({ removed: ["/r.worktrees/a"], skipped: [] });
+    await dispatchV3({ type: "clean-up" }, d);
+    d.open.mock.calls.at(-1)![0].onConfirm();
+    await flush();
+    expect(d.toast).toHaveBeenLastCalledWith({ tone: "ok", text: "Removed 1 worktree." });
   });
 
   it("accounts, library, settings, engine", async () => {
