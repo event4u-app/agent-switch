@@ -18,7 +18,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch needs [--json] | needs later <id> | needs seen | needs allow|deny <session> <approval>   everything waiting for you, most urgent first
   agent-switch timeline <session> [--json] [--limit N] [--before N] [--from N]   a session's history as events (prompts, answers, tool calls, edits); a page is N drawn rows, bookkeeping lines only counted
   agent-switch changes <session> [--json]       the files a session changed in its worktree against the last commit
-  agent-switch diff <session> [--scope turn|session|worktree|staged] [--json] | diff <session> stage|unstage|discard --file F [--hunk HASH] | diff <session> undo | diff <session> commit --message M   review and act on a session's changes
+  agent-switch diff <session> [--scope uncommitted|turn|session|worktree|staged] [--json] | diff <session> stage|unstage|discard --file F [--hunk HASH] | diff <session> undo | diff <session> commit --message M   review and act on a session's changes
   agent-switch files <session> [--query WORDS] [--json]   files of the session's repository whose path contains every word
   agent-switch pr status [--json] [--refresh]   each session's PR: lifecycle, conflicts, review and CI (uses gh)
   agent-switch pr create <session> [--base B] [--title T] [--yes] [--json] [--expect-branch B --expect-head SHA --expect-remote R --expect-ref REF]   push the session's branch and open its PR with gh (without --yes: what it would push where; --expect-* refuses when that changed)

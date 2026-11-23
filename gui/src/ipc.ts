@@ -350,7 +350,7 @@ export interface ReviewFileJson {
 }
 export type ReviewJson =
   | { unchanged: true; fingerprint: string }
-  | { unchanged?: false; files: ReviewFileJson[]; shared: string[]; base: string | null; baseRef: string | null; note: string | null; omitted: number; fingerprint: string | null };
+  | { unchanged?: false; files: ReviewFileJson[]; shared: string[]; base: string | null; baseRef: string | null; note: string | null; omitted: number; more?: number; fingerprint: string | null };
 
 /** `diff <session> --scope S --json [--since FP]`: the Review page's files, or `unchanged` when `since` still holds. */
 export async function sessionReview(key: string, scope: ReviewScope, since?: string): Promise<ReviewJson> {
@@ -372,6 +372,7 @@ export async function sessionReview(key: string, scope: ReviewScope, since?: str
     baseRef: str(o.baseRef),
     note: str(o.note),
     omitted: typeof o.omitted === "number" ? o.omitted : 0,
+    more: typeof o.more === "number" ? o.more : 0,
     fingerprint: str(o.fingerprint),
   };
 }
@@ -425,9 +426,11 @@ export async function setAutoKeep(on: boolean): Promise<void> {
   await runCli(["sessions", "keep", "auto", on ? "on" : "off"]);
 }
 
-/** `changes <session> --json`: the session's changed files against HEAD. */
-export async function sessionChanges(key: string): Promise<ChangedFileRow[]> {
-  return parseChanges(JSON.parse(await runCli(["changes", key, "--json"])));
+/** `changes <session> --json`: the session's changed files against HEAD, and how many more there are past the list's cap. */
+export async function sessionChanges(key: string): Promise<{ files: ChangedFileRow[]; more: number }> {
+  const o: unknown = JSON.parse(await runCli(["changes", key, "--json"]));
+  const more = (o as { more?: unknown } | null)?.more;
+  return { files: parseChanges(o), more: typeof more === "number" && more > 0 ? more : 0 };
 }
 
 /** What a new session starts with beyond its account (CLI `--model`, `--effort`, `--worktree`). */

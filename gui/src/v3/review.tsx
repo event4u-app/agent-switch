@@ -47,12 +47,17 @@ export interface ReviewCompare {
   note: string | null;
   /** Files too large to show: counted, their hunks left out. */
   omitted: number;
+  /** Changed files past the file cap, not listed (the Changes list counts the same ones). */
+  more?: number;
 }
 
 /** Past this many files every card starts closed, so a large review stays usable. */
 export const REVIEW_COLLAPSE_OVER = 20;
 
 const LOCKED = "Unlocks when the turn ends";
+const READING = "Unlocks once this session's changes are read";
+/** The words the Review page and the Changes list both use for files past the file cap. */
+export const moreFiles = (n: number) => `${n} more ${n === 1 ? "file" : "files"} not listed`;
 const dirOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : ".");
 const nameOf = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 const STATUS_TONE: Record<ReviewFileJson["status"], string> = { A: "text-ac-ok-text", "?": "text-ac-ok-text", D: "text-ac-alert-text", M: "text-ac-info-text", R: "text-ac-info-text" };
@@ -99,23 +104,23 @@ function SplitLines({ hunks }: { hunks: { oldStart: number; newStart: number; li
   );
 }
 
-function HunkView({ file, h, layout, running, on }: { file: string; h: ReviewHunkJson; layout: "unified" | "split"; running: boolean; on: ReviewActions }) {
+function HunkView({ file, h, layout, locked, on }: { file: string; h: ReviewHunkJson; layout: "unified" | "split"; locked: string | null; on: ReviewActions }) {
   const [writing, setWriting] = useState(false);
   const [text, setText] = useState("");
   const [sent, setSent] = useState<string | null>(null);
   const acts: ReactNode[] = [];
   if (h.layer === "unstaged")
     acts.push(
-      <Button key="s" size="sm" variant="ghost" disabled={running} title={running ? LOCKED : undefined} onClick={() => on.stage(file, h.hash)}>
+      <Button key="s" size="sm" variant="ghost" disabled={!!locked} title={locked ?? undefined} onClick={() => on.stage(file, h.hash)}>
         Stage hunk
       </Button>,
-      <Button key="d" size="sm" variant="ghost" disabled={running} title={running ? LOCKED : undefined} onClick={() => on.discard(file, h.hash)}>
+      <Button key="d" size="sm" variant="ghost" disabled={!!locked} title={locked ?? undefined} onClick={() => on.discard(file, h.hash)}>
         Discard hunk
       </Button>,
     );
   if (h.layer === "staged")
     acts.push(
-      <Button key="u" size="sm" variant="ghost" disabled={running} title={running ? LOCKED : undefined} onClick={() => on.unstage(file, h.hash)}>
+      <Button key="u" size="sm" variant="ghost" disabled={!!locked} title={locked ?? undefined} onClick={() => on.unstage(file, h.hash)}>
         Unstage hunk
       </Button>,
     );
@@ -171,7 +176,7 @@ function HunkView({ file, h, layout, running, on }: { file: string; h: ReviewHun
   );
 }
 
-function FileCard({ f, open, onToggle, layout, running, on }: { f: ReviewFileJson; open: boolean; onToggle: () => void; layout: "unified" | "split"; running: boolean; on: ReviewActions }) {
+function FileCard({ f, open, onToggle, layout, locked, on }: { f: ReviewFileJson; open: boolean; onToggle: () => void; layout: "unified" | "split"; locked: string | null; on: ReviewActions }) {
   // A file too large to show has no hunks here; the CLI still acts on it, and says when there is nothing to stage.
   const unstaged = !!f.omitted || f.hunks.some((h) => h.layer === "unstaged");
   return (
@@ -184,10 +189,10 @@ function FileCard({ f, open, onToggle, layout, running, on }: { f: ReviewFileJso
         <span className="shrink-0 font-ac-mono text-[11px] text-ac-ok-text">+{f.added}</span>
         <span className="shrink-0 font-ac-mono text-[11px] text-ac-alert-text">−{f.removed}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          <Button size="sm" disabled={running || !unstaged} title={running ? LOCKED : undefined} onClick={() => on.stage(f.path)}>
+          <Button size="sm" disabled={!!locked || !unstaged} title={locked ?? undefined} onClick={() => on.stage(f.path)}>
             Stage file
           </Button>
-          <Button size="sm" variant="danger" disabled={running || !unstaged} title={running ? LOCKED : undefined} onClick={() => on.discard(f.path)}>
+          <Button size="sm" variant="danger" disabled={!!locked || !unstaged} title={locked ?? undefined} onClick={() => on.discard(f.path)}>
             Discard
           </Button>
         </span>
@@ -199,7 +204,7 @@ function FileCard({ f, open, onToggle, layout, running, on }: { f: ReviewFileJso
       )}
       {open &&
         f.hunks.map((h) => (
-          <HunkView key={`${h.layer}-${h.hash}`} file={f.path} h={h} layout={layout} running={running} on={on} />
+          <HunkView key={`${h.layer}-${h.hash}`} file={f.path} h={h} layout={layout} locked={locked} on={on} />
         ))}
     </div>
   );
@@ -211,6 +216,7 @@ export function Review({
   files,
   shared,
   running,
+  ready = true,
   loading,
   error,
   undoable,
@@ -223,6 +229,8 @@ export function Review({
   files: ReviewFileJson[];
   shared: string[];
   running: boolean;
+  /** False while the files shown are not yet this session's and scope's own read: every action waits. */
+  ready?: boolean;
   loading: boolean;
   error: string | null;
   undoable: boolean;
@@ -232,6 +240,7 @@ export function Review({
 }) {
   const [layout, setLayout] = useState<"unified" | "split">("unified");
   const [current, setCurrent] = useState<string | null>(null);
+  const locked = running ? LOCKED : ready ? null : READING;
   // Small reviews start open and remember what was closed; large ones start closed and remember what was opened.
   const large = files.length > REVIEW_COLLAPSE_OVER;
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -247,6 +256,7 @@ export function Review({
   const shown = current ?? files[0]?.path ?? null;
   const cards = useRef<HTMLDivElement>(null);
   const applied = useRef<number | null>(null);
+  const scrollTo = useRef<string | null>(null);
   // Applied once per open, as soon as the target is among the files read.
   useEffect(() => {
     const file = focus?.file;
@@ -255,9 +265,15 @@ export function Review({
     setCurrent(file);
     setCollapsed((c) => (c.has(file) ? new Set([...c].filter((x) => x !== file)) : c));
     setExpanded((c) => (c.has(file) ? c : new Set([...c, file])));
-    const card = [...(cards.current?.children ?? [])].find((el) => (el as HTMLElement).dataset.reviewFile === file);
-    card?.scrollIntoView?.({ block: "start" });
+    scrollTo.current = file;
   }, [focus, files]);
+  // Once the card is first in its column: only as far as it must, so Scope and Layout above stay in view.
+  useEffect(() => {
+    if (!scrollTo.current || scrollTo.current !== shown) return;
+    scrollTo.current = null;
+    const card = [...(cards.current?.children ?? [])].find((el) => (el as HTMLElement).dataset.reviewFile === shown);
+    card?.scrollIntoView?.({ block: "nearest" });
+  }, [shown, focus]);
   return (
     <PageBody>
       <PageHeader
@@ -297,6 +313,7 @@ export function Review({
           </span>
         )}
         {!!compare?.omitted && <span>{compare.omitted === 1 ? "1 file too large to show" : `${compare.omitted} files too large to show`} — counted, not shown</span>}
+        {!!compare?.more && <span>{moreFiles(compare.more)}</span>}
         <span className="ml-auto">Includes changes made through Bash (git diff), not only Edit events</span>
       </div>
       {compare?.note && (
@@ -353,24 +370,32 @@ export function Review({
                 open={isOpen(f.path)}
                 onToggle={() => toggle(f.path)}
                 layout={layout}
-                running={running}
+                locked={locked}
                 on={on}
               />
             ))}
             {undoable && (
               <div className="flex items-center gap-2 rounded-[10px] border border-ac-line bg-ac-panel px-3 py-2 text-[11px] text-ac-muted">
                 <Undo2 className="size-3.5" /> The last discard can be undone
-                <Button size="sm" variant="ghost" className="ml-auto" disabled={running} title={running ? LOCKED : undefined} onClick={on.undo}>
+                <Button size="sm" variant="ghost" className="ml-auto" disabled={!!locked} title={locked ?? undefined} onClick={on.undo}>
                   Undo
                 </Button>
               </div>
             )}
             <div className="flex items-center gap-2">
-              <Act onClick={on.commit} disabled={running || staged === 0} title={running ? LOCKED : staged === 0 ? "Stage changes first" : undefined}>
+              <Act onClick={on.commit} disabled={!!locked || staged === 0} title={locked ?? (staged === 0 ? "Stage changes first" : undefined)}>
                 Commit {staged} staged…
               </Act>
-              {on.createPr && <Act onClick={on.createPr}>Create PR</Act>}
-              {on.agentReview && <Act onClick={on.agentReview}>Ask Codex to review</Act>}
+              {on.createPr && (
+                <Act onClick={on.createPr} disabled={!ready} title={ready ? undefined : READING}>
+                  Create PR
+                </Act>
+              )}
+              {on.agentReview && (
+                <Act onClick={on.agentReview} disabled={!ready} title={ready ? undefined : READING}>
+                  Ask Codex to review
+                </Act>
+              )}
               <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-ac-muted">
                 <SquareTerminal className="size-3.5" /> Rewind stays in the terminal
               </span>

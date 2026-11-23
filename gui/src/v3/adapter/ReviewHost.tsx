@@ -28,15 +28,19 @@ export interface ReviewHostProps {
 
 export function ReviewHost({ sessionKey, title, running, comment, agentReview, toast, askMessage, createPr, focus, io = ipc }: ReviewHostProps) {
   const [scope, setScope] = useState<ipc.ReviewScope>("uncommitted");
-  const [data, setData] = useState<{ files: ipc.ReviewFileJson[]; shared: string[]; compare: ReviewCompare | undefined }>({ files: [], shared: [], compare: undefined });
+  /** What was read, and for which session and scope: shown, and acted on, only while both still match. */
+  const [data, setData] = useState<{ key: string; scope: ipc.ReviewScope; files: ipc.ReviewFileJson[]; shared: string[]; compare: ReviewCompare | undefined } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [undoable, setUndoable] = useState(false);
   const [n, setN] = useState(0);
   const reload = useCallback(() => setN((x) => x + 1), []);
   /** What the shown review was read at, per scope: a poll that finds it unchanged reads nothing more. */
-  const seen = useRef<{ scope: ipc.ReviewScope; fingerprint: string } | null>(null);
+  const seen = useRef<{ key: string; scope: ipc.ReviewScope; fingerprint: string } | null>(null);
   const polled = useRef(false);
+
+  // Undo puts back this session's last discard; another session's offer is not this one's.
+  useEffect(() => setUndoable(false), [sessionKey]);
 
   // Every later open from a count lands on the files that count counts, read fresh.
   const mounted = useRef(false);
@@ -50,20 +54,20 @@ export function ReviewHost({ sessionKey, title, running, comment, agentReview, t
     let alive = true;
     const poll = polled.current;
     polled.current = false;
-    const since = poll && seen.current?.scope === scope ? seen.current.fingerprint : undefined;
+    const since = poll && seen.current?.key === sessionKey && seen.current.scope === scope ? seen.current.fingerprint : undefined;
     if (!poll) setLoading(true);
     (since ? io.sessionReview(sessionKey, scope, since) : io.sessionReview(sessionKey, scope))
       .then((r) => {
         if (!alive) return;
         setError(null);
         if (r.unchanged) return;
-        seen.current = r.fingerprint ? { scope, fingerprint: r.fingerprint } : null;
-        setData({ files: r.files, shared: r.shared, compare: { ref: r.baseRef, sha: r.base, note: r.note, omitted: r.omitted } });
+        seen.current = r.fingerprint ? { key: sessionKey, scope, fingerprint: r.fingerprint } : null;
+        setData({ key: sessionKey, scope, files: r.files, shared: r.shared, compare: { ref: r.baseRef, sha: r.base, note: r.note, omitted: r.omitted, more: r.more } });
       })
       .catch((e: unknown) => {
         if (!alive) return;
         seen.current = null;
-        setData({ files: [], shared: [], compare: undefined });
+        setData(null);
         setError(e instanceof Error ? e.message : String(e));
       })
       .finally(() => alive && setLoading(false));
@@ -93,28 +97,38 @@ export function ReviewHost({ sessionKey, title, running, comment, agentReview, t
         reload();
       });
 
+  // A read of another session or scope (a tab or scope switch still loading) is neither shown nor acted on.
+  const shown = data && data.key === sessionKey && data.scope === scope ? data : null;
+  const ready = !!shown && !loading;
+  const guard =
+    <A extends unknown[]>(f: (...a: A) => void) =>
+    (...a: A) => {
+      if (ready) f(...a);
+    };
+
   return (
     <Review
       title={title}
       scope={scope}
-      files={data.files}
-      shared={data.shared}
-      compare={data.compare}
+      files={shown?.files ?? []}
+      shared={shown?.shared ?? []}
+      compare={shown?.compare}
       running={running}
-      loading={loading}
+      ready={ready}
+      loading={loading || !shown}
       error={error}
       undoable={undoable}
       focus={focus}
       on={{
         setScope,
-        stage: (file, hunk) => void run(io.reviewAct(sessionKey, "stage", file, hunk)),
-        unstage: (file, hunk) => void run(io.reviewAct(sessionKey, "unstage", file, hunk)),
-        discard: (file, hunk) => void run(io.reviewAct(sessionKey, "discard", file, hunk), () => setUndoable(true)),
-        undo: () => void run(io.reviewUndo(sessionKey), () => setUndoable(false)),
-        comment,
-        commit: () => askMessage((message) => void run(io.reviewCommit(sessionKey, message).then((sha) => `committed ${sha}`))),
-        createPr,
-        agentReview,
+        stage: guard((file: string, hunk?: string) => void run(io.reviewAct(sessionKey, "stage", file, hunk))),
+        unstage: guard((file: string, hunk?: string) => void run(io.reviewAct(sessionKey, "unstage", file, hunk))),
+        discard: guard((file: string, hunk?: string) => void run(io.reviewAct(sessionKey, "discard", file, hunk), () => setUndoable(true))),
+        undo: guard(() => void run(io.reviewUndo(sessionKey), () => setUndoable(false))),
+        comment: comment && guard(comment),
+        commit: guard(() => askMessage((message) => void run(io.reviewCommit(sessionKey, message).then((sha) => `committed ${sha}`)))),
+        createPr: guard(createPr),
+        agentReview: agentReview && guard(agentReview),
       }}
     />
   );

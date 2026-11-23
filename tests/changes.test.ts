@@ -47,3 +47,15 @@ test("changesIn: a real worktree — modified, deleted, untracked with its line 
   assert.equal(files.length, 3);
   assert.equal(changesIn(path.join(os.tmpdir(), "asw-no-such-dir")), null);
 });
+
+test("changeInventory: sorted by path, capped, the rest counted; changesIn is its file list", async () => {
+  const { changeInventory, MAX_CHANGED_FILES } = await import("../src/commands/changes.js");
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-changes-cap-")));
+  execFileSync("git", ["-C", repo, "init", "-q", "-b", "main"]);
+  for (let i = MAX_CHANGED_FILES + 2; i > 0; i--) fs.writeFileSync(path.join(repo, `f${String(i).padStart(4, "0")}.txt`), "x\n");
+  const inv = changeInventory(repo)!;
+  assert.equal(inv.files.length, MAX_CHANGED_FILES);
+  assert.equal(inv.more, 2);
+  assert.equal(inv.files[0].path, "f0001.txt");
+  assert.deepEqual(changesIn(repo), inv.files);
+});

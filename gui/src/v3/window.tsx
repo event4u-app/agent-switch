@@ -77,7 +77,9 @@ export interface V3Data {
   models?: (key: string) => ModelChoices | null;
   summary: (key: string) => SummaryFacts | null;
   changes: (key: string) => ChangedFile[];
-  next: (key: string) => { text: string; action: string } | null;
+  /** Changed files past the Changes list's cap (it names them as a count). */
+  changesMore?: (key: string) => number;
+  next:(key: string) => { text: string; action: string } | null;
   /** The session-menu entries that do something for this session; all when absent. */
   menu?: (key: string) => readonly SessionMenuItem[];
   /** "Commit…" in the Changes window; disabled with its reason when false. */
@@ -730,7 +732,7 @@ export function V3Window({
       const f = data.summary(activeSession);
       return f && <SummaryWindow f={f} nextBlocked={sendWhy(f.next?.action)} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} onReview={slots.review ? () => openReview(activeSession) : undefined} />;
     }
-    if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={(file) => (slots.review ? openReview(activeSession, file) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openReview(activeSession) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} />;
+    if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} more={data.changesMore?.(activeSession) ?? 0} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={(file) => (slots.review ? openReview(activeSession, file) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openReview(activeSession) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} />;
     const s = data.sessions.find((x) => x.key === activeSession);
     return s && <ChildrenWindow noun={childNoun(s)} children={s.children} onHide={() => frame.setRight(null)} subagents={!!openSubagent} onOpen={(c) => (childOpens(c) ? openSession(c.id) : openSubagent?.(activeSession, c.id))} />;
   })();
