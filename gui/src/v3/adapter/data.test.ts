@@ -357,6 +357,12 @@ describe("pieces", () => {
     expect(decisionFor("claude/none", vm, [], NOW)).toBeNull();
   });
 
+  it("decisionFor says whether the account is near its limit, so the sheet does not call 60 % near", () => {
+    const vm = vmWith([account("work", { state: "ready", windows: [{ key: "five_hour", label: "5h", utilization: 60, resetsAt: null }] }), account("near", { state: "near-limit", windows: [{ key: "five_hour", label: "5h", utilization: 97, resetsAt: null }] }), account("home")], []);
+    expect(decisionFor("claude/work", vm, [], NOW)?.nearLimit).toBe(false);
+    expect(decisionFor("claude/near", vm, [], NOW)?.nearLimit).toBe(true);
+  });
+
   it("decisionFor: one session's sheet still knows every live session on the account a live switch would move", () => {
     const vm = vmWith([account("work", { windows: [{ key: "five_hour", label: "5h", utilization: 93, resetsAt: null }] }), account("home")], []);
     const rows = [row("a", { summary: "Fix wedge" }), row("b", { summary: "Docs" }), row("old", { live: false }), row("desk", { surface: "desktop-app" }), row("c", { profile: "home" })];

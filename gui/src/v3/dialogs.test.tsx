@@ -217,6 +217,16 @@ describe("decision sheet and End (spec §8.2, §8.3)", () => {
     cleanup();
   });
 
+  it("the kicker says Near limit only for an account that is near its limit (owner screenshot, 60 %)", () => {
+    const base = { account: "MathiasB", window: "5h", resetsIn: "1 h 48 min", suggestion: "MBerg", room: null, onKeep: vi.fn(), onClose: vi.fn(), onDecide: vi.fn(), sessions: [{ key: "a", title: "Fix wedge", model: "Opus", target: "MBerg" }] };
+    const { unmount } = render(<DecisionSheet {...base} pctUsed={60} nearLimit={false} />);
+    expect(screen.queryByText("Near limit")).toBeNull();
+    expect(screen.getByText("Move sessions")).toBeTruthy();
+    unmount();
+    render(<DecisionSheet {...base} pctUsed={96} nearLimit />);
+    expect(screen.getByText("Near limit")).toBeTruthy();
+  });
+
   it("nothing changes until a choice; the default is after this turn; unchecked sessions are not moved", () => {
     const onDecide = vi.fn();
     render(<DecisionSheet account="side" pctUsed={94} window="5h" resetsIn="1h 18m" suggestion="work" room={null} onKeep={vi.fn()} onClose={vi.fn()} onDecide={onDecide} sessions={[{ key: "a", title: "Fix wedge", model: "Opus", target: "work" }, { key: "b", title: "Docs", model: "Sonnet", target: "work" }]} />);

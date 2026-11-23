@@ -414,6 +414,7 @@ export interface SheetSession {
 export function DecisionSheet({
   account,
   pctUsed,
+  nearLimit,
   window,
   resetsIn,
   sessions,
@@ -432,6 +433,8 @@ export function DecisionSheet({
 }: {
   account: string;
   pctUsed: number;
+  /** The account is near or at its limit; false when the sheet was opened to move sessions earlier. Absent: near. */
+  nearLimit?: boolean;
   window: string;
   resetsIn: string;
   sessions: SheetSession[];
@@ -484,7 +487,7 @@ export function DecisionSheet({
   const followers = switching.length ? alsoOn.filter((x) => !switching.some((m) => m.key === x.key)) : [];
   return (
     <Modal
-      kicker={pace ? "Accounts at different paces" : "Near limit"}
+      kicker={pace ? "Accounts at different paces" : nearLimit === false ? "Move sessions" : "Near limit"}
       badge={
         askedByAgentConfig ? (
           <Chip kind="status" tone="info" title="agent-config asked the same in your session. Answer here or there; the first answer counts for both.">

@@ -805,6 +805,8 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
   return {
     account: a.name,
     tool: a.tool,
+    // The sheet also opens from Move at any level; only a near or limited account is "near limit".
+    nearLimit: nearLimit(a),
     // The accounts a session can move to, most room first; the picker offers these only.
     targets: others.map((x) => ({ name: x.name, color: x.color, busy: x.liveSessions > 0 })),
     pctUsed: w.utilization ?? 0,
