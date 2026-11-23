@@ -103,6 +103,21 @@ describe("the list keeps its place when earlier rows arrive", () => {
     // 20 new rows at the 64 px estimate sit above the row that was at the top.
     expect(log.scrollTop).toBe(20 * 64 + 100);
   });
+
+  it("loading earlier turns while at the bottom shows them: the pin lets go and the loaded rows fill the view (arena r3 03 #3)", () => {
+    const items = Array.from({ length: 40 }, (_, i) => `r${i}`);
+    const { rerender } = render(<VirtualList label="L" items={items.slice(20)} keyOf={(x) => x} render={(x) => <p>{x}</p>} />);
+    const log = screen.getByRole("log");
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 5000 });
+    Object.defineProperty(log, "clientHeight", { configurable: true, value: 600 });
+    fireEvent.scroll(log, { target: { scrollTop: 4400 } });
+    rerender(<VirtualList label="L" items={items} keyOf={(x) => x} render={(x) => <p>{x}</p>} />);
+    // The row that was first sits in the lower third; the loaded turns above it are in view.
+    expect(log.scrollTop).toBe(20 * 64 - 400);
+    // Not pinned to the bottom any more: a later render keeps the place.
+    rerender(<VirtualList label="L" items={[...items]} keyOf={(x) => x} render={(x) => <p>{x}</p>} />);
+    expect(log.scrollTop).toBe(20 * 64 - 400);
+  });
 });
 
 describe("Copy conversation copies all of it", () => {

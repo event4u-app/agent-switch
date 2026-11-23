@@ -41,7 +41,6 @@ import { viewStep } from "./viewSwitch.js";
 import { fold } from "../timeline.js";
 import { sessionFromRow } from "../../vm/build.js";
 import { ChatView } from "../chatview.js";
-import { ENGINE_DOWN_WHY } from "../workbench.js";
 
 const CHANGES_FRESH_MS = 10_000;
 /** How long a read of where a session runs stands before it is read again. */
@@ -409,7 +408,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     body: (key) => {
       const tab = chats.tabOf(key);
       const chat = tab ? chats.states.get(tab) : undefined;
-      if (tab) return chat ? <ChatView b={chat} sessionKey={key} findFiles={(q) => ipc.sessionFiles(chat.session?.key ?? key, q)} worktreeOf={worktreeOf(byKey.get(chat.session?.key ?? key))} blocked={data.health.state === "down" ? ENGINE_DOWN_WHY : null} /> : <p className="m-auto text-[13px] text-ac-muted">Starting the chat…</p>;
+      if (tab) return chat ? <ChatView b={chat} sessionKey={key} findFiles={(q) => ipc.sessionFiles(chat.session?.key ?? key, q)} worktreeOf={worktreeOf(byKey.get(chat.session?.key ?? key))} /> : <p className="m-auto text-[13px] text-ac-muted">Starting the chat…</p>;
       return (
       <SessionBody
         sessionKey={key}

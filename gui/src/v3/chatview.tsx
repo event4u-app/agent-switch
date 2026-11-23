@@ -14,7 +14,7 @@ const secs = (ms: number | null) => (ms === null ? null : ms < 60_000 ? `${Math.
 /** What the agent is told when the user skips its question. */
 export const SKIPPED = "The user skipped this question in Agent Switch; go on without an answer or ask in the chat.";
 
-export function ChatView({ b, sessionKey, findFiles, worktreeOf, blocked }: { b: BridgeState & BridgeActions; /** The chat's key before the agent names its own; says which agent asks. */ sessionKey?: string; findFiles?: (query: string) => Promise<string[]>; worktreeOf?: (agentId: string) => string | null; blocked?: string | null }) {
+export function ChatView({ b, sessionKey, findFiles, worktreeOf }: { b: BridgeState & BridgeActions; /** The chat's key before the agent names its own; says which agent asks. */ sessionKey?: string; findFiles?: (query: string) => Promise<string[]>; worktreeOf?: (agentId: string) => string | null }) {
   const agent = (b.session?.key ?? sessionKey ?? "").startsWith("codex/") ? "Codex" : "Claude";
   const f = useMemo(() => fold(b.events), [b.events]);
   const cost = useMemo(() => b.events.reduce((n, e) => (e.t === "turn.end" && e.costUsd ? n + e.costUsd : n), 0), [b.events]);
@@ -71,7 +71,6 @@ export function ChatView({ b, sessionKey, findFiles, worktreeOf, blocked }: { b:
         commands={b.session?.commands}
         findFiles={findFiles}
         disabled={b.status !== "ready"}
-        blocked={blocked}
       />
     </div>
   );

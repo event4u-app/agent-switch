@@ -6,6 +6,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { claudeState, compareVersions, fromClaudeLine, readClaudeTranscript } from "../src/timeline/claude.js";
+import { drawsRow, page } from "../src/commands/bridge.js";
 import { countHunks, parseUnifiedDiff, toolSummary, type AsEvent } from "../src/timeline/events.js";
 
 const FIX = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../tests/fixtures/timeline");
@@ -80,6 +81,30 @@ test("lines Claude writes in the user role are not prompts", () => {
   assert.deepEqual(fromClaudeLine({ type: "user", message: { content: [{ type: "text", text: "[Request interrupted by user]" }] } }, st), [{ t: "unknown", kind: "interrupted" }]);
   assert.deepEqual(fromClaudeLine({ type: "user", message: { content: "<command-name>/model</command-name>" } }, st), [{ t: "unknown", kind: "local-command" }]);
   assert.equal(fromClaudeLine({ type: "user", message: { content: "please explain <local-command-stdout> tags" } }, st)[0].t, "turn", "only a line that starts with it");
+});
+
+test("lines Claude Code injects (task notifications, the compaction summary) are notices, not prompts", () => {
+  const { events } = readClaudeTranscript(path.join(FIX, "claude-injected-2.1.316.jsonl"));
+  const prompts = events.filter((e) => e.t === "message" && e.role === "user").map((e) => (e as { text: string }).text);
+  assert.deepEqual(prompts, ["Run the audit in the background and tell me when it is done.", "Thanks. Now write the release notes.", "# Council question: is this sent by the bridge?"], "a bridge's sdk prompt stays a prompt");
+  assert.deepEqual(
+    events.filter((e) => e.t === "notice"),
+    [
+      { t: "notice", id: "u2", kind: "task", text: 'Agent "Audit the repo" finished' },
+      { t: "notice", id: "u3", kind: "task", text: "Background task completed" },
+      { t: "notice", id: "u4", kind: "compacted", text: "Conversation compacted here" },
+    ],
+  );
+  // The agent answers a notification in a turn of its own, so its reply is not folded into the previous turn.
+  assert.equal(events[events.findIndex((e) => e.t === "notice" && e.id === "u2") - 1]?.t, "turn");
+  assert.notEqual(events[events.findIndex((e) => e.t === "notice" && e.id === "u4") - 1]?.t, "turn", "a compaction starts no turn");
+});
+
+test("page: injected lines are not earlier prompts", () => {
+  const { events } = readClaudeTranscript(path.join(FIX, "claude-injected-2.1.316.jsonl"));
+  const p = page(events, 1);
+  assert.equal(p.earlierPrompts, 2, "two typed prompts before the last row, never the notifications or the summary");
+  assert.equal(drawsRow({ t: "notice", id: "n", kind: "task", text: "x" }), true, "a notice is a row of its own");
 });
 
 test("a transcript's turn_duration line ends the turn", () => {

@@ -9,7 +9,7 @@ import "../../index.css";
 import { AcRoot } from "../../ui/AcRoot.js";
 import { themeById } from "../themes/registry.js";
 import { DEFAULT_APPEARANCE, resolveTheme, type Accent } from "../themes/resolve.js";
-import { V3Window, type V3Data, type V3Slots } from "../window.js";
+import { SESSION_MENU, V3Window, type V3Data, type V3Slots } from "../window.js";
 import type { WindowLayout } from "../layout.js";
 import { V3Tray } from "../tray.js";
 import { FirstRun } from "../firstrun.js";
@@ -144,6 +144,37 @@ const reviewFiles = (key: string): ReviewFileJson[] =>
 
 const iso = (ago: number) => new Date(NOW - ago).toISOString();
 
+const resetsText = (ms: number | null) => {
+  if (ms === null) return "unknown";
+  const mins = Math.max(0, Math.round((ms - NOW) / MIN));
+  return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+};
+
+/** The decision sheet for the subject it is opened for, as the adapter's decisionFor builds it:
+ *  an account (`claude/side`) moves its live sessions, a session (`claude/work/<id>`) only itself. */
+function decisionFor(subject: string): ReturnType<V3Data["decision"]> {
+  const [tool, name] = subject.split("/");
+  const only = subject.split("/").length === 3 ? subject : null;
+  const acct = LIMITS.find((l) => l.key === `${tool}/${name}`);
+  const w = acct?.windows.find((x) => x.label === "5h") ?? acct?.windows[0];
+  if (!acct || !w) return null;
+  const others = LIMITS.filter((l) => l.tool === acct.tool && l.key !== acct.key && !l.signIn).sort((a, b) => (a.windows[0]?.used ?? 100) - (b.windows[0]?.used ?? 100));
+  const target = others[0]?.name ?? "";
+  const moving = SESSIONS.filter((s) => (only ? s.key === only : s.key.startsWith(`${acct.key}/`) && s.state !== "done"));
+  return {
+    account: acct.name,
+    tool: acct.tool,
+    nearLimit: acct.windows.some((x) => (x.used ?? 0) >= 90),
+    targets: others.map((l) => ({ name: l.name, color: l.color })),
+    pctUsed: w.used ?? 0,
+    window: w.label,
+    resetsIn: resetsText(w.resetsAtMs),
+    sessions: moving.map((s) => ({ key: s.key, title: s.title, model: BAR[s.key]?.model ?? null, target, state: s.state })),
+    suggestion: target,
+    suggestionWhy: "the most room left",
+  };
+}
+
 export function makeData(o: { theme: string; accent: Accent; health?: string; away?: boolean; chat?: (key: string) => boolean }): V3Data {
   const THEME = o.theme;
   const ACCENT = o.accent;
@@ -218,20 +249,10 @@ export function makeData(o: { theme: string; accent: Accent; health?: string; aw
     initial: { folder: "~/code/agent-switch", gitState: "main · clean", worktree: false, tool: "claude", model: "Opus 5.5", thinking: "High", where: "terminal", remembered: true },
     facts: { terminalApp: "Terminal.app", hosting: "persistent", thinkingLevels: { claude: ["Low", "Medium", "High", "Max"], codex: ["low", "medium", "high"], antigravity: ["default"] }, account: { name: "work", color: "teal", reason: "most room in pool “day”", limits: LIMITS[0], why: ["Folder rule: ~/code/agent-switch → pool day", "work has the most room in day"], paceText: "At today's pace: about 3h of Opus · High before the 5h window is full" }, command: "agent-switch run --provider claude --cwd ~/code/agent-switch --model opus --effort high --new-window", nowMs: NOW, models: { claude: [{ id: "opus", label: "Opus" }, { id: "sonnet", label: "Sonnet" }, { id: "haiku", label: "Haiku" }], codex: [], antigravity: [] }, folders: ["~/code/agent-switch"], home: null, accounts: { claude: [{ name: "work", color: "teal" }, { name: "personal", color: "pink" }], codex: [], antigravity: [] } },
   },
-  decision: () => ({
-    account: "side",
-    tool: "claude",
-    targets: [
-      { name: "work", color: "teal" },
-      { name: "personal", color: "pink" },
-    ],
-    pctUsed: 94,
-    window: "5h",
-    resetsIn: "1h 18m",
-    sessions: [{ key: "claude/side/s-wedge", title: "Fix wedge on daemon restart", model: "Sonnet 5.5", target: "work", state: "working" }],
-    suggestion: "work",
-    suggestionWhy: "next in this project's pool",
-  }),
+  decision: decisionFor,
+  // The adapter's menuFor with this fixture's persistent hosting: Detach never; End and Compact
+  // only hosted; Take over only a session in your own terminal.
+  menu: (key) => SESSION_MENU.filter((item) => item !== "Detach" && (item === "End…" || item === "Compact" ? !!BAR[key]?.hosted : item === "Take over here…" ? !BAR[key]?.hosted : true)),
   models: (key) =>
     key.startsWith("codex")
       ? { models: [], current: null, thinking: ["minimal", "low", "medium", "high"], currentThinking: "medium" }

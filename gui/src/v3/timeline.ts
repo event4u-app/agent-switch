@@ -32,6 +32,7 @@ export type AsEvent =
   | { t: "limits"; status: string; resetsAt: string | null }
   | { t: "turn.end"; ok: boolean; durationMs: number | null; costUsd: number | null }
   | { t: "error"; message: string }
+  | { t: "notice"; id: string; kind: "task" | "compacted"; text: string }
   | { t: "unknown"; kind: string };
 
 export interface FileDiff {
@@ -50,7 +51,9 @@ export type ChatRow =
   /** `resolved`: null while open; `answers: null` when it was skipped or declined. */
   | { k: "question"; id: string; questions: Question[]; resolved: { answers: Record<string, string> | null } | null }
   | { k: "plan"; id: string; text: string }
-  | { k: "error"; id: string; message: string };
+  | { k: "error"; id: string; message: string }
+  /** A line the agent's program adds itself (a background task finished, the conversation was compacted). */
+  | { k: "notice"; id: string; kind: "task" | "compacted"; text: string };
 
 export interface Folded {
   rows: ChatRow[];
@@ -162,6 +165,10 @@ export function fold(events: readonly AsEvent[]): Folded {
         break;
       case "error":
         push({ k: "error", id: `e${n++}`, message: e.message });
+        break;
+      case "notice":
+        live = null;
+        push({ k: "notice", id: e.id, kind: e.kind, text: e.text });
         break;
       case "turn.end":
         running = false;

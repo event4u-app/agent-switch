@@ -48,6 +48,8 @@ function row(r: ChatRow): string {
       return `**Plan**\n\n${r.text}`;
     case "error":
       return `> **Error:** ${r.message}`;
+    case "notice":
+      return `_${r.text}_`;
   }
 }
 

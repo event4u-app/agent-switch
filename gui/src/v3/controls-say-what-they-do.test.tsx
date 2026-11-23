@@ -51,14 +51,14 @@ describe("engine stopped: the session pane is stale; only what needs the backgro
     expect(after.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("Allow is disabled, and its keys answer nothing", () => {
+  // An answer goes through the chat's inbox (`needs allow`), never through the engine (arena r3 07 #1).
+  it("Allow acts, and its keys answer", () => {
     const act = mount({ needs: [allow] });
-    expect(screen.getByRole("button", { name: "Allow" }).getAttribute("aria-disabled")).toBe("true");
+    const btn = screen.getByRole("button", { name: "Allow" });
+    expect(btn.getAttribute("aria-disabled")).toBeNull();
     fireEvent.keyDown(window, { key: "j", metaKey: true });
     fireEvent.keyDown(window, { key: "y" });
-    fireEvent.keyDown(window, { key: "Enter" });
-    expect(act).not.toHaveBeenCalledWith(expect.objectContaining({ type: "need-answer" }));
-    expect(act).not.toHaveBeenCalledWith(expect.objectContaining({ type: "need" }));
+    expect(act).toHaveBeenCalledWith(expect.objectContaining({ type: "need-answer", decision: "allow" }));
   });
 
   // Take over is `host adopt` and Hand off a brief plus a start: tmux and the CLI, no service.

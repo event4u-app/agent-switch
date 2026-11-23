@@ -65,7 +65,7 @@ export function VirtualList<T>({ items, keyOf, render, estimate = 64, className,
   const hs = items.map((t) => heights.current.get(keyOf(t)));
   const r = visibleRange(items.length, hs, estimate, scroll.top, scroll.height);
   // Rows put in front (earlier turns loaded) must not move what the user is reading:
-  // the row that was first stays where it was, until the user scrolls themselves.
+  // the row that was first stays where it was (or, from the bottom, comes into view), until the user scrolls themselves.
   const first = useRef<string | null>(null);
   const anchor = useRef<{ key: string; offset: number } | null>(null);
   useLayoutEffect(() => {
@@ -74,7 +74,13 @@ export function VirtualList<T>({ items, keyOf, render, estimate = 64, className,
     const firstKey = items.length ? keyOf(items[0]) : null;
     const prev = first.current;
     first.current = firstKey;
-    if (prev !== null && firstKey !== prev && !atBottom.current && items.some((t) => keyOf(t) === prev)) anchor.current = { key: prev, offset: el.scrollTop };
+    if (prev !== null && firstKey !== prev && items.some((t) => keyOf(t) === prev)) {
+      // Rows arrive in front only when the user loads earlier turns. Read from the bottom, that load
+      // would happen off-screen: let go of the pin and put the old first row in the lower third, so
+      // the loaded turns above it fill the view.
+      anchor.current = { key: prev, offset: atBottom.current ? -Math.round((el.clientHeight * 2) / 3) : el.scrollTop };
+      atBottom.current = false;
+    }
     if (atBottom.current) el.scrollTop = el.scrollHeight;
     else if (anchor.current) {
       const i = items.findIndex((t) => keyOf(t) === anchor.current!.key);

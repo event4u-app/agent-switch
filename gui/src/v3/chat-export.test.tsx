@@ -22,6 +22,18 @@ describe("sessionMarkdown (3.1)", () => {
     expect(parseMarkdown(md).some((b) => b.t === "diff")).toBe(true);
   });
 
+  it("a notice is copied as a note, never as a turn of yours (arena r3 03 #1)", () => {
+    const rows = fold([
+      { t: "message", id: "u1", role: "user", text: "Run the audit", images: 0 },
+      { t: "notice", id: "u2", kind: "task", text: 'Agent "Audit" finished' },
+      { t: "notice", id: "u3", kind: "compacted", text: "Conversation compacted here" },
+    ] as AsEvent[]).rows;
+    const md = sessionMarkdown(rows);
+    expect(md.match(/### You/g)).toHaveLength(1);
+    expect(md).toContain('_Agent "Audit" finished_');
+    expect(md).toContain("_Conversation compacted here_");
+  });
+
   it("a fence inside a diff cannot close the export's fence", () => {
     const rows: ChatRow[] = [{ k: "tool", id: "t", name: "Edit", summary: "README.md", state: "ok", result: null, diffs: [{ path: "README.md", added: 1, removed: 0, hunks: [{ oldStart: 1, newStart: 1, lines: ["+```ts", "+x", "+```"] }] }] }];
     const md = sessionMarkdown(rows);
