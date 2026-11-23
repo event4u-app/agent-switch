@@ -33,6 +33,23 @@ agent-switch link on       # the default
 agent-switch link status --json
 ```
 
+## agent-config settings per account
+
+The app starts agent-config's settings server for the active Claude account,
+with that account's own config root
+(`agent-config ui:serve --config-root ~/.agent-switch/claude/<name>/agent-config`).
+Each account can therefore keep its own agent-config settings. When you make
+another Claude account active, the app stops the server it started and starts
+it again with the new account's root. With no active Claude account, agent-config
+uses its default root (`~/.event4u/agent-config`). A server you started
+yourself is never stopped.
+
+<Aside type="caution" title="Sessions still read the default root">
+Agent sessions do not get the account's root yet: agent-config's hooks in a
+session keep reading `~/.event4u/agent-config`. Settings saved for an account
+take effect in the settings page, not yet in that account's sessions.
+</Aside>
+
 ## What happens near a limit
 
 <Steps>

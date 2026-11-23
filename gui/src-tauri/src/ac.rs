@@ -118,10 +118,12 @@ pub struct ApiResponse {
 /// Ownership bookkeeping: whether AS spawned (or force-restarted into) the
 /// current server, and the discovery pid recorded at that moment. A server AS
 /// merely found is never shut down (the user may have it open in a browser).
-#[derive(Default, Clone, Copy, Debug)]
+#[derive(Default, Clone, Debug)]
 struct Owned {
     spawned: bool,
     pid: Option<u32>,
+    /// The `--config-root` the owned server was started with; None = agent-config's default.
+    root: Option<PathBuf>,
 }
 
 #[derive(Default, Clone)]
@@ -144,6 +146,57 @@ fn config_dir() -> PathBuf {
     }
     .unwrap_or_default();
     Path::new(&home).join(".event4u").join("agent-config")
+}
+
+/// agent-switch's own home, resolved the way the CLI resolves it.
+fn as_home() -> PathBuf {
+    match std::env::var("AGENT_SWITCH_HOME") {
+        Ok(h) if !h.is_empty() => PathBuf::from(h),
+        _ => {
+            let home = if cfg!(windows) {
+                std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME"))
+            } else {
+                std::env::var("HOME")
+            }
+            .unwrap_or_default();
+            Path::new(&home).join(".agent-switch")
+        }
+    }
+}
+
+/// The CLI's profile-name alphabet; anything else could step out of the profile tree.
+fn valid_profile_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// agent-config's config root for the active Claude profile: a dedicated dir
+/// inside the profile, never the profile's Claude `config` dir. None (no
+/// active profile, unreadable state, a name the CLI would not write) means
+/// agent-config's own default root.
+fn active_root_at(as_home: &Path) -> Option<PathBuf> {
+    let raw = fs::read_to_string(as_home.join("state.json")).ok()?;
+    let state: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let name = state.get("active")?.get("claude")?.as_str()?;
+    valid_profile_name(name).then(|| as_home.join("claude").join(name).join("agent-config"))
+}
+
+/// The directory agent-config writes its discovery and token files to for `root`.
+fn dir_for(root: Option<&Path>) -> PathBuf {
+    root.map(Path::to_path_buf).unwrap_or_else(config_dir)
+}
+
+fn current_dir() -> PathBuf {
+    dir_for(active_root_at(&as_home()).as_deref())
+}
+
+/// A server AS started under another root than the active one is stopped so
+/// the next ensure starts it under the active profile's root. A found server
+/// is never stopped.
+fn needs_restart(owned: &Owned, root: Option<&Path>) -> bool {
+    owned.spawned && owned.root.as_deref() != root
 }
 
 fn read_discovery(dir: &Path) -> Option<DiscoveryInfo> {
@@ -412,22 +465,28 @@ struct SpawnHandle {
 }
 
 #[cfg(windows)]
-fn server_command() -> Command {
+fn server_command(root: Option<&Path>) -> Command {
     // npm installs agent-config as a .cmd shim, which CreateProcess cannot
     // launch directly — go through cmd.exe.
     let mut c = Command::new("cmd");
     c.args(["/C", "agent-config", "ui:serve", "--no-open"]);
+    if let Some(root) = root {
+        c.arg("--config-root").arg(root);
+    }
     c
 }
 
 #[cfg(not(windows))]
-fn server_command() -> Command {
+fn server_command(root: Option<&Path>) -> Command {
     let mut c = Command::new("agent-config");
     c.args(["ui:serve", "--no-open"]);
+    if let Some(root) = root {
+        c.arg("--config-root").arg(root);
+    }
     c
 }
 
-fn spawn_server() -> Result<SpawnHandle, AcError> {
+fn spawn_server(root: Option<&Path>) -> Result<SpawnHandle, AcError> {
     // stderr goes to a temp file, not a pipe: the server outlives this call,
     // and holding a pipe read-end would EPIPE its logging once dropped; the
     // file also survives for the early-exit diagnosis below.
@@ -440,7 +499,7 @@ fn spawn_server() -> Result<SpawnHandle, AcError> {
         message: format!("stderr capture file: {e}"),
     })?;
 
-    let mut cmd = server_command();
+    let mut cmd = server_command(root);
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(stderr);
@@ -493,8 +552,12 @@ fn read_stderr_tail(path: &Path) -> String {
     format!("…{}", &s[start..])
 }
 
-fn spawn_and_wait(dir: &Path, state: &AcState) -> Result<AcStatus, AcError> {
-    let mut handle = spawn_server()?;
+fn spawn_and_wait(
+    dir: &Path,
+    root: Option<&Path>,
+    state: &AcState,
+) -> Result<AcStatus, AcError> {
+    let mut handle = spawn_server(root)?;
     let started = Instant::now();
     let outcome = loop {
         if let Ok(Some(status)) = handle.child.try_wait() {
@@ -527,6 +590,7 @@ fn spawn_and_wait(dir: &Path, state: &AcState) -> Result<AcStatus, AcError> {
             let mut owned = state.0.lock().unwrap();
             owned.spawned = true;
             owned.pid = Some(*pid);
+            owned.root = root.map(Path::to_path_buf);
         }
         // Unix zombie hygiene: reap the direct child when it eventually exits
         // (idle watchdog or shutdown beacon); on the failure branches it was
@@ -540,25 +604,38 @@ fn spawn_and_wait(dir: &Path, state: &AcState) -> Result<AcStatus, AcError> {
     outcome
 }
 
+/// The active profile's root, after stopping an owned server that runs under another one.
+fn follow_active_profile(state: &AcState) -> Option<PathBuf> {
+    let root = active_root_at(&as_home());
+    let stale = needs_restart(&state.0.lock().unwrap(), root.as_deref());
+    if stale {
+        release(state);
+        *state.0.lock().unwrap() = Owned::default();
+    }
+    root
+}
+
 fn ensure(state: &AcState) -> Result<AcStatus, AcError> {
-    let dir = config_dir();
+    let root = follow_active_profile(state);
+    let dir = dir_for(root.as_deref());
     match discover_at(&dir, LIVENESS_TIMEOUT, binary_on_path()) {
         live @ AcStatus::Live { .. } => Ok(live),
         // Never silently kill a wedged server — force-restart is a separate,
         // user-consented command.
         AcStatus::Wedged { pid, .. } => Err(AcError::Wedged { pid }),
         AcStatus::NotInstalled => Err(AcError::NotInstalled),
-        AcStatus::NotRunning => spawn_and_wait(&dir, state),
+        AcStatus::NotRunning => spawn_and_wait(&dir, root.as_deref(), state),
     }
 }
 
 fn force_restart(state: &AcState) -> Result<AcStatus, AcError> {
-    let dir = config_dir();
+    let root = follow_active_profile(state);
+    let dir = dir_for(root.as_deref());
     match discover_at(&dir, LIVENESS_TIMEOUT, binary_on_path()) {
         // Recovered on its own — nothing to kill, nothing to spawn.
         live @ AcStatus::Live { .. } => Ok(live),
         AcStatus::NotInstalled => Err(AcError::NotInstalled),
-        AcStatus::NotRunning => spawn_and_wait(&dir, state),
+        AcStatus::NotRunning => spawn_and_wait(&dir, root.as_deref(), state),
         AcStatus::Wedged { pid, .. } => {
             terminate_pid(pid);
             if !wait_pid_death(pid, Duration::from_secs(3)) {
@@ -571,7 +648,7 @@ fn force_restart(state: &AcState) -> Result<AcStatus, AcError> {
             }
             // The killed server can't clean its own discovery file up.
             let _ = fs::remove_file(dir.join(DISCOVERY_FILE));
-            spawn_and_wait(&dir, state)
+            spawn_and_wait(&dir, root.as_deref(), state)
         }
     }
 }
@@ -579,7 +656,7 @@ fn force_restart(state: &AcState) -> Result<AcStatus, AcError> {
 /// Which pid (if any) release may act on: only a server AS spawned, and only
 /// while the discovery file still points at that same pid — an externally
 /// restarted server is not ours to touch.
-fn release_target(owned: Owned, current: Option<&DiscoveryInfo>) -> Option<u32> {
+fn release_target(owned: &Owned, current: Option<&DiscoveryInfo>) -> Option<u32> {
     if !owned.spawned {
         return None;
     }
@@ -591,10 +668,10 @@ fn release_target(owned: Owned, current: Option<&DiscoveryInfo>) -> Option<u32> 
 /// exit path (RunEvent::Exit) and from the `ac_release` command; a found-only
 /// server is left running.
 pub fn release(state: &AcState) {
-    let owned = *state.0.lock().unwrap();
-    let dir = config_dir();
+    let owned = state.0.lock().unwrap().clone();
+    let dir = dir_for(owned.root.as_deref());
     let current = read_discovery(&dir);
-    let Some(pid) = release_target(owned, current.as_ref()) else {
+    let Some(pid) = release_target(&owned, current.as_ref()) else {
         return;
     };
     let port = current.map(|i| i.port).unwrap_or_default();
@@ -643,7 +720,7 @@ async fn run_blocking<T: Send + 'static>(
 pub async fn ac_discover() -> Result<AcStatus, AcError> {
     run_blocking(|| {
         Ok(discover_at(
-            &config_dir(),
+            &current_dir(),
             LIVENESS_TIMEOUT,
             binary_on_path(),
         ))
@@ -676,7 +753,7 @@ pub async fn ac_api(
 ) -> Result<ApiResponse, AcError> {
     run_blocking(move || {
         api_call_at(
-            &config_dir(),
+            &current_dir(),
             &method,
             &path,
             body.as_deref(),
@@ -741,7 +818,7 @@ pub async fn ac_open_settings_window(
         return Ok(status);
     }
 
-    let token = run_blocking(move || read_token(&config_dir())).await?;
+    let token = run_blocking(move || read_token(&current_dir())).await?;
     let url = settings_url(port, &theme, &token)
         .parse::<tauri::Url>()
         .map_err(|e| AcError::Request {
@@ -815,7 +892,7 @@ pub async fn ac_open_in_browser(
             })
         }
     };
-    let token = run_blocking(move || read_token(&config_dir())).await?;
+    let token = run_blocking(move || read_token(&current_dir())).await?;
     // shell.open is deprecated upstream in favour of tauri-plugin-opener; the
     // whole app (webview side included) standardises on plugin-shell, so a
     // second opener dependency is not worth one call site.
@@ -1091,10 +1168,12 @@ mod tests {
         let found = Owned {
             spawned: false,
             pid: None,
+            root: None,
         };
         let spawned = Owned {
             spawned: true,
             pid: Some(1234),
+            root: None,
         };
         let current = DiscoveryInfo {
             pid: 1234,
@@ -1105,13 +1184,100 @@ mod tests {
             port: 41001,
         };
         // Found, not spawned → never kill (ownership rule).
-        assert_eq!(release_target(found, Some(&current)), None);
+        assert_eq!(release_target(&found, Some(&current)), None);
         // Spawned and still the recorded pid → ours to shut down.
-        assert_eq!(release_target(spawned, Some(&current)), Some(1234));
+        assert_eq!(release_target(&spawned, Some(&current)), Some(1234));
         // Replaced externally since our spawn → hands off.
-        assert_eq!(release_target(spawned, Some(&other)), None);
+        assert_eq!(release_target(&spawned, Some(&other)), None);
         // Already gone → nothing to do.
-        assert_eq!(release_target(spawned, None), None);
+        assert_eq!(release_target(&spawned, None), None);
+    }
+
+    fn write_state(home: &Path, active_claude: &str) {
+        fs::write(
+            home.join("state.json"),
+            format!(r#"{{"active":{{"claude":{active_claude},"codex":"other"}}}}"#),
+        )
+        .unwrap();
+    }
+
+    fn args_of(cmd: &Command) -> Vec<String> {
+        cmd.get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn active_root_is_a_dedicated_dir_inside_the_active_claude_profile() {
+        let home = fixture_dir();
+        write_state(&home, r#""work""#);
+        assert_eq!(
+            active_root_at(&home),
+            Some(home.join("claude").join("work").join("agent-config"))
+        );
+        write_state(&home, r#""home-2""#);
+        assert_eq!(
+            active_root_at(&home),
+            Some(home.join("claude").join("home-2").join("agent-config"))
+        );
+    }
+
+    #[test]
+    fn active_root_falls_back_to_agent_configs_default_when_unknown() {
+        let home = fixture_dir();
+        // No state file at all.
+        assert_eq!(active_root_at(&home), None);
+        // No active Claude profile.
+        write_state(&home, "null");
+        assert_eq!(active_root_at(&home), None);
+        // A name the CLI would never write must not reach a path.
+        for bad in [r#""../escape""#, r#""a/b""#, r#""""#, r#""x y""#, "42"] {
+            write_state(&home, bad);
+            assert_eq!(active_root_at(&home), None, "{bad}");
+        }
+        fs::write(home.join("state.json"), "{not json").unwrap();
+        assert_eq!(active_root_at(&home), None);
+    }
+
+    #[test]
+    fn spawned_command_carries_the_profile_root_and_only_then() {
+        let root = PathBuf::from("/tmp/as/claude/work/agent-config");
+        let with = args_of(&server_command(Some(&root)));
+        let at = with.iter().position(|a| a == "--config-root").expect("flag");
+        assert_eq!(with[at + 1], root.to_string_lossy());
+        assert!(with.contains(&"ui:serve".to_string()));
+        // Agent-config's own default: the command is unchanged.
+        let without = args_of(&server_command(None));
+        assert!(!without.iter().any(|a| a == "--config-root"));
+    }
+
+    #[test]
+    fn switching_profiles_restarts_the_owned_server_with_the_new_root() {
+        let home = fixture_dir();
+        write_state(&home, r#""work""#);
+        let work = active_root_at(&home);
+        let owned = Owned {
+            spawned: true,
+            pid: Some(1234),
+            root: work.clone(),
+        };
+        // Same profile: keep the server.
+        assert!(!needs_restart(&owned, work.as_deref()));
+        // The active profile changes: the old server goes, the new one gets the new root.
+        write_state(&home, r#""home""#);
+        let next = active_root_at(&home);
+        assert!(needs_restart(&owned, next.as_deref()));
+        let args = args_of(&server_command(next.as_deref()));
+        assert!(args.contains(&next.unwrap().to_string_lossy().into_owned()));
+        // Back to agent-config's default root is a change too.
+        assert!(needs_restart(&owned, None));
+        // A server AS only found is never stopped for a switch.
+        let found = Owned {
+            spawned: false,
+            pid: None,
+            root: work,
+        };
+        assert!(!needs_restart(&found, None));
     }
 
     #[test]

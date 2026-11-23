@@ -53,6 +53,7 @@ saved.
 | D11 | Without a reset time a window is weighed over its own length (5 h, 7 d, 30 d; 30 d when the length is unknown), and the reason says "at least … %/h" | a window resets at the latest one length from now, so that is the only bound the data gives; a week for a 5 h window was a guess, not a bound | the usage read always carries a reset time |
 | D12 | "Counted once per org": Claude profiles whose `.claude.json` names the same email AND the same `organizationUuid` are weighed once (the preferred one, else the first); a missing org never folds two profiles together; other providers are not folded | two profiles of one account share one set of limits; folding on email alone would merge two orgs, which the step forbids | providers expose an org id for Codex / agy |
 | D13 | The plan allowlist binds balancing only — balanced plain starts, pool picks (fresh or not) and the free account a busy one gives way to; a folder rule to one account, the preferred account (fallback, `strategy default`/`fill`) and the `ask` choices still use a Team seat. It applies to Claude only (Codex and agy credentials carry no `subscriptionType`), and the credential is read only for an account that is about to be weighed | the owner's rule is about balancing, and the user's own explicit choice is not a balance; reading every keychain item on each wrapped start would slow the shell hot path | the owner wants Team seats refused outright |
+| D14 | "The active profile's config root" is `<agent-switch home>/claude/<active claude profile>/agent-config`, read from `state.json` on every agent-config call; no active Claude profile, an unreadable state file or a name the CLI would not write means agent-config's default root; an owned server under another root is stopped and started again, a found one is never stopped | the GUI's agent-config card is about Claude profiles; the profile's `config` dir belongs to Claude Code, so a dedicated subdir keeps the two apart (agent-config creates it 0700); agent sessions do not get the root yet (their hooks still read `~/.event4u/agent-config`) | agent-config settings should follow another provider's profile, or sessions should carry `EVENT4U_CONFIG_HOME` |
 
 ## Phase 1 — A wrong account is never saved
 
@@ -170,11 +171,12 @@ saved.
       detection contract; keep the output-signature probe only as the fallback
       when agent-config is absent. verify: `tooling` tests for both paths.
       <!-- from: road-to-deferred-followups P3.1 -->
-- [ ] **4.2 Per-profile agent-config settings.** Start the embedded agent-config
+- [x] **4.2 Per-profile agent-config settings.** Start the embedded agent-config
       server with the active profile's config root (`--config-root` /
       `EVENT4U_CONFIG_HOME`), so each profile can have its own settings. verify:
       the spawned command carries the profile's root; switching profiles restarts
       with the new root.
+      done: `gui/src-tauri/src/ac.rs` tests › `spawned_command_carries_the_profile_root_and_only_then`, `switching_profiles_restarts_the_owned_server_with_the_new_root`, `active_root_*` (seen red first, D14).
       <!-- from: road-to-deferred-followups P3.2 -->
       <!-- adapted: the blocker (agent-config flag) has shipped; the share-collision guard (P3.3) was cancelled by the owner on 2026-11-08 as covered by agent-config -->
 - [ ] **4.3 Shared design tokens, AS side.** A generated token file from the
