@@ -13,7 +13,7 @@ import type { NeedItem } from "../needs.js";
 import type { Appearance } from "../themes/resolve.js";
 import type { SessionMenuItem, V3Action } from "../window.js";
 import type { MoveHow, NewSessionPlan, SheetMove } from "../dialogs.js";
-import { ciPrompt, ciSession, menuFor, NEW_CHAT, nextStep, sessionKey, startChoice } from "./data.js";
+import { ciPrompt, ciSession, conflictPrompt, menuFor, NEW_CHAT, nextStep, sessionKey, startChoice } from "./data.js";
 import { parsePr } from "./feeds.js";
 /** The CLI calls the dispatcher makes (a subset of `ipc.ts`, injectable for tests). */
 export interface DispatchIpc {
@@ -213,17 +213,19 @@ function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
   if (n.verb === "Open chat" && deps.openTab) return deps.openTab(n.subject);
   if (n.kind === "approval" || n.kind === "question") return run(deps, "Focus", deps.ipc.focusSessionTerminal(n.subject));
   if (n.kind === "ci") {
-    const row = ciSession(n.subject, deps.rows().values());
+    // The item names its session (several can share a PR); older CLIs only named the PR.
+    const row = (n.session ? deps.rows().get(n.session) : undefined) ?? ciSession(n.subject, deps.rows().values());
     const prs = (row?.prs ?? []).map(parsePr).filter((p) => p !== null);
     // The PR the item names; an item named by its session is about that session's PR.
     const pr = prs.find((p) => n.subject.endsWith(`#${p.number}`)) ?? prs[0];
+    const conflict = n.ci ? n.ci.state === "conflict" : !!pr && pr.ci !== "FAILURE" && pr.mergeable === "CONFLICTING";
     if (row && pr) {
-      const sent = sendPrompt(sessionKey(row), ciPrompt(pr), deps);
+      const sent = sendPrompt(sessionKey(row), conflict ? conflictPrompt(pr) : ciPrompt(pr), deps);
       if (sent) return sent;
     }
     const m = /^([^#\s]+\/[^#\s]+)#(\d+)$/.exec(n.subject);
     const url = pr?.url || (m ? `https://github.com/${m[1]}/pull/${m[2]}` : null);
-    if (url) return deps.openUrl(`${url}/checks`);
+    if (url) return deps.openUrl(conflict ? url : `${url}/checks`);
     return;
   }
   if (n.kind === "signin") {
