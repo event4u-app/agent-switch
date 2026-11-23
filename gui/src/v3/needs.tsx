@@ -50,14 +50,21 @@ const ICON: Record<NeedItem["kind"], ReactNode> = {
  *  offered. Pure. */
 export function keysFor(n: NeedItem, always = true): string | null {
   if (n.verb === "Focus terminal") return "↵ focus terminal · L later";
+  if (n.verb === "Open session") return "↵ open session · L later";
   if (n.kind === "approval") return [n.verb === "Allow" ? "↵ once" : `↵ ${n.verb.toLowerCase()} · Y once`, always ? "⇧↵ always" : null, "⌫ deny", "L later"].filter(Boolean).join(" · ");
   if (n.kind === "question") return "↵ reply · Y yes · L later";
   return "↵ " + n.verb.toLowerCase() + " · L later";
 }
 
-/** The verbs that act through the engine: answering, deciding, sending a fix. Opening a chat,
- *  focusing a terminal, opening checks, signing in and updating do not. Pure. */
-export const needsEngine = (n: NeedItem) => ["Allow", "Reply", "Decide", "Fix"].includes(n.verb);
+/** The verbs that wait while the engine is stopped: answering a chat's approval or
+ *  question, which reaches the chat through it. Decide opens the decision sheet (whose
+ *  "After this turn" waits there, with the reason) and Fix types through tmux; opening
+ *  a chat or a session, focusing a terminal, opening checks, signing in and updating
+ *  do not need it either. Pure. */
+export const needsEngine = (n: NeedItem) => ["Allow", "Reply"].includes(n.verb);
+
+/** An approval or question that is answered where its session runs, never from here. Pure. */
+export const answeredThere = (n: NeedItem) => n.verb === "Focus terminal" || n.verb === "Open session";
 
 const warn = (n: NeedItem) => n.kind === "approval" || n.kind === "question" || n.kind === "limit" || n.kind === "ci";
 

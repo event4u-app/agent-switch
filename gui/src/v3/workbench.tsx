@@ -340,7 +340,7 @@ export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { 
       )}
       </div>
       {openIn}
-      <IconButton {...POPOVER_TRIGGER} label="Session actions: rename, pin, move, detach, end" aria-haspopup="menu" aria-expanded={!!menuOpen} className="size-7" onClick={(e) => on.menu(e.currentTarget)}>
+      <IconButton {...POPOVER_TRIGGER} label="Session actions" aria-haspopup="menu" aria-expanded={!!menuOpen} className="size-7" onClick={(e) => on.menu(e.currentTarget)}>
         <Ellipsis />
       </IconButton>
     </div>
@@ -497,6 +497,10 @@ export function SystemBanner({ children, action }: { children: ReactNode; action
 
 /** Why a control that needs the engine is off while it is stopped (tooltip and accessible description). */
 export const ENGINE_DOWN_WHY = "The engine is stopped — restart it to do this";
+
+/** Why "After this turn" waits: the background service is what switches when the turn
+ *  ends. A switch now, a take-over and a send go through the CLI and do not wait. */
+export const AFTER_TURN_DOWN_WHY = "The background service is stopped, and it is what switches when the turn ends — restart it, or switch now";
 
 /** "The engine stopped 2 min ago. Hosted sessions keep running in tmux; Agent Switch reconnects when it is back."
  *  When the background service belongs to another install, waiting cannot help: the text says so. Pure. */

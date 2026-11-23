@@ -89,6 +89,8 @@ export interface NewSessionPlan {
 }
 
 export interface NewSessionFacts {
+  /** The folder's git state for the plan as it is now ("main · clean"); null: none known. Absent: the plan's own. */
+  gitState?: string | null;
   /** "Terminal.app" — where "Your terminal" opens. */
   terminalApp: string;
   /** From `host list --json`: persistent with tmux, ephemeral without. */
@@ -190,7 +192,7 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose }:
     >
       <div className="grid grid-cols-2 gap-x-3 gap-y-4">
         <div>
-          <Label aside={p.gitState ?? undefined}>Folder</Label>
+          <Label aside={(facts.gitState !== undefined ? facts.gitState : p.gitState) ?? undefined}>Folder</Label>
           <Select
             ariaLabel="Folder"
             mono
@@ -423,6 +425,7 @@ export function DecisionSheet({
   askedByAgentConfig = false,
   pace,
   alsoOn = [],
+  afterTurnWhy = null,
   onDecide,
   onKeep,
   onClose,
@@ -447,11 +450,13 @@ export function DecisionSheet({
   /** Every live session on the account. A live switch changes the account's
    *  login, so each one that is not itself moving switches along. */
   alsoOn?: { key: string; title: string }[];
+  /** Why "After this turn" cannot be chosen now: the background service that carries it out is stopped. */
+  afterTurnWhy?: string | null;
   onDecide: (how: MoveHow, moves: SheetMove[]) => void;
   onKeep: () => void;
   onClose: () => void;
 }) {
-  const [how, setHow] = useState<MoveHow>("after-turn");
+  const [how, setHow] = useState<MoveHow>(afterTurnWhy && tool !== "codex" ? "now" : "after-turn");
   const [checked, setChecked] = useState<Set<string>>(new Set(sessions.map((s) => s.key)));
   const [chosen, setChosen] = useState<Record<string, string>>(() => Object.fromEntries(sessions.map((s) => [s.key, s.target])));
   const [picking, setPicking] = useState<string | null>(null);
@@ -546,7 +551,7 @@ export function DecisionSheet({
           <Choice on={how !== "brief"} onPick={() => setHow("now")} title={`Move and continue on ${where}`} detail={`Moves ${spread ? "each conversation to its account" : `the conversation to ${target}`} and resumes it there with “continue”. End codex in your own terminal first; a session Agent Switch hosts moves in its window.`} />
         ) : (
           <>
-            <Choice on={how === "after-turn"} onPick={() => setHow("after-turn")} title={`After this turn, continue on ${where}`} detail={`Switches when the turn ends, then carries on by itself where Agent Switch hosts the session.`} />
+            <Choice on={how === "after-turn"} disabled={!!afterTurnWhy} onPick={() => setHow("after-turn")} title={`After this turn, continue on ${where}`} detail={afterTurnWhy ?? `Switches when the turn ends, then carries on by itself where Agent Switch hosts the session.`} />
             <Choice on={how === "now"} onPick={() => setHow("now")} title="Switch now and continue" detail={spread ? `Checked for this Claude version. Each session adopts its account and is told to continue; a session whose switch fails stays on ${account}.` : `Checked for this Claude version. The session adopts ${target} and is told to continue; if the switch fails, it stays on ${account}.`} />
           </>
         )}

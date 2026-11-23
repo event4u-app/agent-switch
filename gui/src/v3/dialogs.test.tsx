@@ -29,6 +29,13 @@ describe("New session (spec §8.1)", () => {
     expect(onStart).toHaveBeenCalledWith(plan);
   });
 
+  it("the folder's git state comes from the facts as they are now, over the plan's", () => {
+    const { rerender } = render(<NewSessionDialog initial={{ ...plan, gitState: null }} facts={facts({ gitState: "feat/x · 3 changed" })} onStart={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByText("feat/x · 3 changed")).toBeTruthy();
+    rerender(<NewSessionDialog initial={{ ...plan, gitState: null }} facts={facts({ gitState: null })} onStart={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByText(/changed|clean/)).toBeNull();
+  });
+
   it("says 'Remembered for this project' only when something was remembered", () => {
     render(<NewSessionDialog initial={{ ...plan, model: "opus", remembered: false }} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} />);
     expect(screen.queryByText("Remembered for this project")).toBeNull();

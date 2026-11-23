@@ -19,7 +19,7 @@ import { RunningOn, runningOn } from "./running-on.js";
 
 /** The model popover opened from the limits popover sits to its right (352 + 320 + 12 + 11). */
 const LIMITS_MODEL_X = 695;
-import { NeedsZone, needsEngine, type AwayDigest, type NeedItem } from "./needs.js";
+import { answeredThere, NeedsZone, needsEngine, type AwayDigest, type NeedItem } from "./needs.js";
 import { limitToOpen, markLimitOpened, openedLimits, wasOpened } from "./adapter/limit-auto.js";
 import { accountOfKey } from "../vm/switch-requests.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
@@ -31,7 +31,7 @@ import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
 import { allNeeds } from "./tools.js";
-import { BlockerStrip, ENGINE_DOWN_WHY, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
+import { AFTER_TURN_DOWN_WHY, BlockerStrip, ENGINE_DOWN_WHY, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
 import { Act, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
@@ -115,7 +115,7 @@ export type V3Action =
   /** The New-session dialog changed (null: it closed without starting). */
   | { type: "start-draft"; plan: NewSessionPlan | null }
   | { type: "move"; how: MoveHow; moves: SheetMove[] }
-  | { type: "keep-account"; account: string }
+  | { type: "keep-account"; account: string; tool?: string }
   | { type: "session-menu"; key: string; item: SessionMenuItem }
   /** Confirmed in the End dialog: the program stops, the transcript stays. */
   | { type: "end"; key: string }
@@ -188,8 +188,6 @@ const SESSION_ICON: Record<SessionMenuItem, ReactNode> = {
   Detach: <Unplug />,
   "End…": <Power />,
 };
-/** Session actions that move a running session: they answer through the engine, so they wait for it. */
-const MOVES: readonly SessionMenuItem[] = ["Move to another account…", "Take over here…", "Hand off…"];
 /** Why "Move to another account" has nothing to show: the decision sheet is built from the account's usage. */
 export const NO_USAGE_WHY = "This account's usage has not been read yet — refresh it on the Accounts page first";
 
@@ -211,6 +209,7 @@ export function V3Window({
   act,
   focus,
   needFocus,
+  newSession,
   layout,
   keys = DEFAULT_KEYS,
   platform = PLATFORM,
@@ -222,6 +221,8 @@ export function V3Window({
   focus?: { key: string; n: number };
   /** Focus one Needs-you item (a tray verb); `n` is the request, so the same item can be asked for again. */
   needFocus?: { id: string; n: number };
+  /** Open the New-session dialog (the tray's Start session); `n` is the request, so each opens it once. */
+  newSession?: { n: number };
   layout?: LayoutStore;
   keys?: Record<Action, Binding>;
   platform?: "mac" | "other";
@@ -379,6 +380,13 @@ export function V3Window({
 
   // Tool updates join the queue (spec §10.4); limit items open the decision sheet.
   const needs = useMemo(() => allNeeds({ needs: data.needs, tools: data.tools, nowMs: data.nowMs }), [data.needs, data.tools, data.nowMs]);
+  // The tray's Start session opens the same New-session dialog as ⌘N, once per request.
+  const newSessionDone = useRef<number | null>(null);
+  useEffect(() => {
+    if (!newSession || newSessionDone.current === newSession.n) return;
+    newSessionDone.current = newSession.n;
+    setOverlay("new");
+  }, [newSession]);
   // A tray verb points at one Needs-you item: the window shows it focused, with its keys (as ⌘J does).
   // The window's own read may lag the tray's by a poll: the request waits until the item is here.
   const needFocusDone = useRef<number | null>(null);
@@ -415,16 +423,16 @@ export function V3Window({
   const down = data.health.state === "down";
   /** Why a Needs-you verb cannot act now: the engine it answers through is stopped. */
   const blockedNeed = (n: NeedItem) => (down && needsEngine(n) ? ENGINE_DOWN_WHY : null);
-  /** Why a move of `key` cannot open its decision sheet now: the engine is stopped, or there is no usage to decide on. */
-  const moveWhy = (key: string): string | null => (down ? ENGINE_DOWN_WHY : data.decision(key) ? null : NO_USAGE_WHY);
+  /** Why a move of `key` cannot open its decision sheet now: there is no usage to decide on. A
+   *  stopped engine does not stop a move — a switch now, a take-over and a send are CLI calls;
+   *  only "After this turn" waits for the background service, and the sheet says so there. */
+  const moveWhy = (key: string): string | null => (data.decision(key) ? null : NO_USAGE_WHY);
   /** Every entry point to the decision sheet (menu, chip, ⌘⇧M, hint, Limits) goes through here. */
   const openMove = (key: string) => {
     if (!moveWhy(key)) setOverlay({ decide: key });
   };
-  /** Why a session-menu item is off: moves wait for the engine; the account move also needs usage. */
-  const itemWhy = (key: string, item: SessionMenuItem): string | null => (item === "Move to another account…" ? moveWhy(key) : down && MOVES.includes(item) ? ENGINE_DOWN_WHY : null);
-  /** Sending a prompt goes through the engine; copying one does not. */
-  const sendWhy = (action: string | undefined) => (down && action === "Send to agent" ? ENGINE_DOWN_WHY : null);
+  /** Why a session-menu item is off: the account move needs usage. */
+  const itemWhy = (key: string, item: SessionMenuItem): string | null => (item === "Move to another account…" ? moveWhy(key) : null);
   /** A session-menu pick: the moves open the decision sheet, End… its dialog, the rest are actions. */
   const sessionItem = (key: string, item: SessionMenuItem) => {
     if (itemWhy(key, item)) return;
@@ -540,7 +548,7 @@ export function V3Window({
       if (e.key === "Enter" && !e.shiftKey) return void (e.preventDefault(), setFocusedNeed(null), onVerb(focused));
       if (e.key.toLowerCase() === "l") return void (e.preventDefault(), setFocusedNeed(nextFocus(needs.filter((n) => n.id !== focused.id), focused.id)), act({ type: "need-later", id: focused.id }));
       // Answers go through the engine: while it is stopped they wait (the row says why).
-      if (focused.kind === "approval" && focused.verb !== "Focus terminal" && !down) {
+      if (focused.kind === "approval" && !answeredThere(focused) && !down) {
         const always = e.key === "Enter" && e.shiftKey;
         const decision = always ? "always" : e.key === "Backspace" || e.key === "Delete" ? "deny" : e.key.toLowerCase() === "y" && !e.shiftKey ? "allow" : null;
         // "Always" widens a rule, so it is answered only where the chat runs, never from outside it.
@@ -685,7 +693,7 @@ export function V3Window({
             actionWhy={(h) => (h.action?.kind === "switch" ? moveWhy(activeSession) : null)}
             onAction={(h) => (h.action?.kind === "switch" ? openMove(activeSession) : act({ type: "session-menu", key: activeSession, item: "Compact" }))}
           />
-          {next && <BlockerStrip text={next.text} action={next.action} blocked={sendWhy(next.action)} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
+          {next && <BlockerStrip text={next.text} action={next.action} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
           {down ? (
             // The engine is stopped: what the pane shows is the last known state, not a live one.
             <div data-stale="" className="relative flex min-h-0 flex-1 flex-col">
@@ -728,7 +736,7 @@ export function V3Window({
     if (!activeSession) return null;
     if (frame.right === "summary") {
       const f = data.summary(activeSession);
-      return f && <SummaryWindow f={f} nextBlocked={sendWhy(f.next?.action)} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} onReview={slots.review ? () => openReview(activeSession) : undefined} />;
+      return f && <SummaryWindow f={f} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} onReview={slots.review ? () => openReview(activeSession) : undefined} />;
     }
     if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={(file) => (slots.review ? openReview(activeSession, file) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openReview(activeSession) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} />;
     const s = data.sessions.find((x) => x.key === activeSession);
@@ -840,7 +848,7 @@ export function V3Window({
     ) : overlay === "new" ? (
       <NewSessionDialog key={data.newSession.initial.folder} initial={data.newSession.initial} facts={data.newSession.facts} onClose={() => (close(), act({ type: "start-draft", plan: null }))} onChange={(plan) => act({ type: "start-draft", plan })} onStart={(plan) => (close(), act({ type: "start", plan }))} />
     ) : decision ? (
-      <DecisionSheet {...decision} room={<RoomLeft accounts={data.limits.filter((a) => a.tool === (decision.tool ?? data.limits.find((l) => l.name === decision.account)?.tool))} nowMs={data.nowMs} />} onClose={close} onKeep={() => (close(), act({ type: "keep-account", account: decision.account }))} onDecide={(how, moves) => (close(), act({ type: "move", how, moves }))} />
+      <DecisionSheet {...decision} afterTurnWhy={down ? AFTER_TURN_DOWN_WHY : null} room={<RoomLeft accounts={data.limits.filter((a) => a.tool === (decision.tool ?? data.limits.find((l) => l.name === decision.account)?.tool))} nowMs={data.nowMs} />} onClose={close} onKeep={() => (close(), act({ type: "keep-account", account: decision.account, ...(decision.tool ? { tool: decision.tool } : {}) }))} onDecide={(how, moves) => (close(), act({ type: "move", how, moves }))} />
     ) : overlay && typeof overlay === "object" && "switcher" in overlay ? (
       <Switcher
         pick={overlay.switcher}

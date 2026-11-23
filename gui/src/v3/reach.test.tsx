@@ -44,7 +44,7 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
   it("Session sheet: move, take over, hand off, compact — session row, then ⋯", () => {
     const w = open();
     w.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
-    w.click(screen.getByLabelText("Session actions: rename, pin, move, detach, end"));
+    w.click(screen.getByLabelText("Session actions"));
     const menu = screen.getByRole("menu");
     for (const item of ["Move to another account…", "Take over here…", "Hand off…", "Compact"]) expect(within(menu).getByText(item)).toBeTruthy();
     expect(w.clicks()).toBe(2);
