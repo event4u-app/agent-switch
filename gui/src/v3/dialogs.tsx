@@ -242,6 +242,47 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
   );
 }
 
+/** A new chat under strategy ask: the chat view has no New session plan, so
+ *  this asks only for the account. */
+export function ChatAccountDialog({ folder, ask, onStart, onClose }: { folder: string; ask: { name: string; color: IdentityColor }[]; onStart: (account: string) => void; onClose: () => void }) {
+  const [pick, setPick] = useState<string | null>(null);
+  return (
+    <Modal
+      title={`Claude in ${folder}`}
+      kicker="New session in chat view"
+      width={460}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" disabled={!pick} onClick={() => pick && onStart(pick)}>
+            <Play /> Start here
+          </Button>
+        </>
+      }
+    >
+      <Label>Account</Label>
+      <div className="text-[13px] text-ac-muted">Ask me — choose an account</div>
+      <div role="radiogroup" aria-label="Account" className="mt-2 flex flex-wrap gap-2">
+        {ask.map((a) => (
+          <Choice
+            key={a.name}
+            on={pick === a.name}
+            onPick={() => setPick(a.name)}
+            title={
+              <>
+                <AccountMark color={a.color} /> {a.name}
+              </>
+            }
+          />
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
 /** A picker-shaped field (spec §8.1): the value, then a chevron. */
 function Field({ children, mono }: { children: ReactNode; mono?: boolean }) {
   return (

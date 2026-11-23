@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { DecisionSheet, EndDialog, NewSessionDialog, type NewSessionFacts, type NewSessionPlan } from "./dialogs.js";
+import { ChatAccountDialog, DecisionSheet, EndDialog, NewSessionDialog, type NewSessionFacts, type NewSessionPlan } from "./dialogs.js";
 
 afterEach(cleanup);
 const plan: NewSessionPlan = { folder: "~/code/agent-switch", gitState: "main · clean", worktree: false, tool: "claude", model: "Opus 5.5 · last used here", thinking: "High", where: "terminal" };
@@ -68,6 +68,19 @@ describe("New session (spec §8.1)", () => {
     expect(screen.getByText("Automatic →")).toBeTruthy();
     expect(screen.queryByText("Ask me — choose an account")).toBeNull();
     expect((screen.getByRole("button", { name: /Start in Terminal.app/ }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("a chat under strategy ask: nothing starts until an account is picked", () => {
+    const onStart = vi.fn();
+    render(<ChatAccountDialog folder="~/r" ask={[{ name: "work", color: "teal" }, { name: "side", color: "blue" }]} onStart={onStart} onClose={vi.fn()} />);
+    expect(screen.getByText("Ask me — choose an account")).toBeTruthy();
+    const startBtn = screen.getByRole("button", { name: /Start here/ }) as HTMLButtonElement;
+    expect(startBtn.disabled).toBe(true);
+    fireEvent.click(startBtn);
+    expect(onStart).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("radio", { name: /side/ }));
+    fireEvent.click(startBtn);
+    expect(onStart).toHaveBeenCalledWith("side");
   });
 
   it("Esc closes", () => {

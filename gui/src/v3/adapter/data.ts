@@ -404,9 +404,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
   const routed = routedName ? vm.accounts.find((a) => a.tool === env.plan.tool && a.name === routedName) : undefined;
   const defaultClaude = routed ?? vm.accounts.find((a) => a.tool === env.plan.tool && a.isDefault) ?? vm.accounts.find((a) => a.tool === env.plan.tool);
   const planLimits = defaultClaude ? limitAccount(defaultClaude, now) : null;
-  // Strategy ask: the CLI's fallback pick is for scripts; here the person chooses.
-  const askable = (env.route?.ask ?? []).flatMap((name) => vm.accounts.filter((a) => a.tool === env.plan.tool && a.name === name)).map((a) => ({ name: a.name, color: a.color }));
-  const ask = askable.length > 1 ? askable : undefined;
+  const ask = askCandidates(env.route, vm.accounts, env.plan.tool);
   const facts: NewSessionFacts = {
     terminalApp: env.terminalApp,
     hosting: feeds.host?.mode ?? "ephemeral",
@@ -529,6 +527,25 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     // v3.1: "Commit…" opens the Review page, where staged changes are committed.
     commitAvailable: true,
   };
+}
+
+type Route = AdapterEnv["route"];
+
+/** Strategy ask: the accounts of `tool` a person picks from, in the CLI's order;
+ *  undefined when there is no choice to make. The CLI's own pick is the fallback
+ *  for scripts, never for a person. Pure. */
+export function askCandidates(route: Route, accounts: readonly Account[], tool: string): { name: string; color: IdentityColor }[] | undefined {
+  const found = (route?.ask ?? []).flatMap((name) => accounts.filter((a) => a.tool === tool && a.name === name)).map((a) => ({ name: a.name, color: a.color }));
+  return found.length > 1 ? found : undefined;
+}
+
+/** Which Claude account a new chat starts on: the routed one, else the default;
+ *  under strategy ask, the candidates to ask about instead. Pure. */
+export function chatStart(route: Route, accounts: readonly Account[]): { profile: string } | { ask: { name: string; color: IdentityColor }[] } | null {
+  const ask = askCandidates(route, accounts, "claude");
+  if (ask) return { ask };
+  const profile = route?.profile ? route.profile.slice(route.profile.indexOf("/") + 1) : accounts.find((a) => a.tool === "claude" && a.isDefault)?.name;
+  return profile ? { profile } : null;
 }
 
 /** The exact command the New-session dialog previews. Pure. */

@@ -4,7 +4,7 @@ import type { SessionRow } from "../../transforms.js";
 import { emptyViewModel } from "../../vm/load.js";
 import type { Account, ViewModel } from "../../vm/types.js";
 import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
-import { childrenOf, decisionFor, doneToday, nextStep, sessionKey, startCommand, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
+import { chatStart, childrenOf, decisionFor, doneToday, nextStep, sessionKey, startCommand, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
 import { emptyFeeds, type V3Feeds } from "./useFeeds.js";
 
 const NOW = Date.parse("2026-11-03T15:00:00");
@@ -340,6 +340,15 @@ describe("start dialog routing", () => {
     expect(facts.command).not.toMatch(/\bwork\b/);
     expect(toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: [] } })).newSession.facts.ask).toBeUndefined();
     expect(toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: [], ask: ["work"] } })).newSession.facts.ask).toBeUndefined();
+  });
+
+  it("a new chat under strategy ask asks instead of taking the fallback; otherwise the routed, then the default account", () => {
+    const accounts = [account("work", { isDefault: true }), account("side"), account("cx", { tool: "codex" })];
+    expect(chatStart({ profile: "claude/work", why: [], ask: ["side", "work"] }, accounts)).toEqual({ ask: [{ name: "side", color: accounts[1].color }, { name: "work", color: accounts[0].color }] });
+    expect(chatStart({ profile: "claude/side", why: [] }, accounts)).toEqual({ profile: "side" });
+    expect(chatStart({ profile: "claude/side", why: [], ask: ["side", "cx"] }, accounts)).toEqual({ profile: "side" });
+    expect(chatStart(null, accounts)).toEqual({ profile: "work" });
+    expect(chatStart(null, [])).toBeNull();
   });
 });
 
