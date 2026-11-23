@@ -464,21 +464,43 @@ export async function cleanupMerged(keys: string[] = []): Promise<void> {
 /** `pr create <session> --json` without `--yes`: what Create PR would do, or why it cannot. */
 export interface PrPlanJson {
   branch: string | null;
+  /** The commit the push sends. */
+  head: string | null;
   base: string | null;
+  baseRemote: string;
+  /** Branches on the base remote a PR could go into. */
+  bases: string[];
+  /** The remote the push goes to. */
   remote: string;
+  /** The full ref the push writes there (`refs/heads/…`). */
+  ref: string | null;
   upstream: string | null;
+  setsUpstream: boolean;
+  /** Commits ahead of the base: what the PR holds. */
   ahead: number | null;
   title: string;
   uncommitted: number;
+  existing: { number: number; url: string } | null;
   problem: { message: string; fix: string } | null;
 }
-export async function prCreatePlan(key: string): Promise<PrPlanJson> {
-  return JSON.parse(await runCli(["pr", "create", key, "--json"])) as PrPlanJson;
+export async function prCreatePlan(key: string, base?: string): Promise<PrPlanJson> {
+  return JSON.parse(await runCli(["pr", "create", key, ...(base ? ["--base", base] : []), "--json"])) as PrPlanJson;
 }
 
-/** `pr create <session> --yes --json`: push the branch and create its PR; the PR's URL. */
-export async function prCreate(key: string): Promise<string> {
-  const out = await cli(["pr", "create", key, "--yes", "--json"]).execute();
+/** What a Create PR confirm showed: the CLI refuses when the push part changed since. */
+export interface PrConfirmJson {
+  branch: string;
+  head: string;
+  remote: string;
+  ref: string;
+  base: string;
+  title: string;
+}
+
+/** `pr create <session> --yes --json` bound to what was confirmed: push and create the PR; the PR's URL. */
+export async function prCreate(key: string, c: PrConfirmJson): Promise<string> {
+  const args = ["pr", "create", key, "--base", c.base, "--title", c.title, "--expect-branch", c.branch, "--expect-head", c.head, "--expect-remote", c.remote, "--expect-ref", c.ref, "--yes", "--json"];
+  const out = await cli(args).execute();
   let o: { ok?: boolean; error?: string; url?: string } = {};
   try {
     o = JSON.parse(out.stdout.trim().split("\n").pop() ?? "{}");

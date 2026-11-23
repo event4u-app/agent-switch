@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
+import type { PrConfirmJson, PrPlanJson } from "../../ipc.js";
 import type { SessionRow } from "../../transforms.js";
 import { emptyViewModel } from "../../vm/load.js";
 import type { NeedItem } from "../needs.js";
@@ -8,6 +10,7 @@ import type { V3Action } from "../window.js";
 import { dispatchV3, menuFor, type DispatchDeps } from "./actions.js";
 import { decisionFor } from "./data.js";
 
+const plan = (over: Partial<PrPlanJson> = {}): PrPlanJson => ({ branch: "feat/x", head: "aaaaaaa1", base: "main", baseRemote: "origin", bases: ["dev/v3", "main"], remote: "origin", ref: "refs/heads/feat/x", upstream: null, setsUpstream: true, ahead: 2, title: "feat: the change", uncommitted: 1, existing: null, problem: null, ...over });
 const PR = { number: 9, url: "https://github.com/o/r/pull/9", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "NONE", ci: "FAILURE", failingChecks: ["lint"] };
 const row = (id: string, over: Partial<SessionRow> = {}): SessionRow => ({ provider: "claude", profile: "work", sessionId: id, projectDir: "-r", cwd: "/r", mtimeMs: 0, live: true, ...over });
 const need = (over: Partial<NeedItem>): NeedItem => ({ id: "n", kind: "approval", subject: "claude/work/a", who: "w", what: "x", verb: "v", since: "", version: "", ...over });
@@ -31,8 +34,8 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
     setRemoteControl: vi.fn(async () => {}),
     setRemoteSsh: vi.fn(async () => {}),
     cleanupMerged: vi.fn(async (_keys?: string[]) => {}),
-    prCreatePlan: vi.fn(async (_key: string) => ({ branch: "feat/x" as string | null, base: "main" as string | null, remote: "origin", upstream: null as string | null, ahead: 2 as number | null, title: "feat: the change", uncommitted: 1, problem: null as { message: string; fix: string } | null })),
-    prCreate: vi.fn(async (_key: string) => "https://github.com/o/r/pull/12"),
+    prCreatePlan: vi.fn(async (_key: string, base?: string): Promise<PrPlanJson> => plan(base && base !== "main" ? { base, head: "bbbbbbb2", title: `first on ${base}` } : {})),
+    prCreate: vi.fn(async (_key: string, _c: PrConfirmJson) => "https://github.com/o/r/pull/12"),
     engineRestart: vi.fn(async () => {}),
     renameSession: vi.fn(async () => {}),
     openSessionIn: vi.fn(async () => {}),
@@ -61,7 +64,14 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
   return d satisfies DispatchDeps;
 }
 
+afterEach(cleanup);
+
 const flush = () => new Promise((r) => setTimeout(r, 0));
+/** Picks a base in the Create PR confirm (a Radix select). */
+const pickBase = (b: string) => {
+  fireEvent.click(screen.getByRole("combobox", { name: "Base branch" }));
+  fireEvent.click(screen.getByRole("option", { name: b }));
+};
 
 describe("dispatchV3", () => {
   it("open-in: default, a target, the tool's app on the session's account, the PR, focus", async () => {
@@ -293,28 +303,78 @@ describe("dispatchV3", () => {
     expect(d.openUrl).toHaveBeenLastCalledWith("https://github.com/o/r/pull/9");
   });
 
-  it("Create PR asks first with branch, base and title, then pushes and creates it through the CLI and opens it", async () => {
+  it("Create PR asks first with the commit, the destination ref, base and title, then sends back exactly what it showed", async () => {
     const d = deps([]);
     await dispatchV3({ type: "create-pr", key: "claude/work/a" }, d);
     expect(d.ipc.prCreatePlan).toHaveBeenCalledWith("claude/work/a");
     expect(d.ipc.prCreate).not.toHaveBeenCalled();
     const ask = d.open.mock.calls.at(-1)![0];
     expect(ask).toMatchObject({ kind: "confirm", title: "Create a pull request?", confirm: "Push and create PR" });
-    expect(ask.body).toContain("feat/x");
-    expect(ask.body).toContain("into main");
-    expect(ask.body).toContain("“feat: the change”");
-    expect(ask.body).toContain("sets its upstream");
-    expect(ask.body).toContain("1 uncommitted file stays out");
+    const { container } = render(ask.body);
+    expect(container.textContent).toContain("aaaaaaa");
+    expect(container.textContent).toContain("feat/x");
+    expect(container.textContent).toContain("origin as refs/heads/feat/x");
+    expect(container.textContent).toContain("sets its upstream");
+    expect(container.textContent).toContain("1 uncommitted file stays out");
+    const base = screen.getByRole("combobox", { name: "Base branch" });
+    expect(base.textContent).toBe("main");
+    fireEvent.click(base);
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["dev/v3", "main"]);
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    expect((screen.getByLabelText("PR title") as HTMLInputElement).value).toBe("feat: the change");
     ask.onConfirm();
     await flush();
-    expect(d.ipc.prCreate).toHaveBeenCalledWith("claude/work/a");
+    expect(d.ipc.prCreate).toHaveBeenCalledWith("claude/work/a", { branch: "feat/x", head: "aaaaaaa1", remote: "origin", ref: "refs/heads/feat/x", base: "main", title: "feat: the change" });
     expect(d.openUrl).toHaveBeenLastCalledWith("https://github.com/o/r/pull/12");
     expect(d.refresh).toHaveBeenCalled();
   });
 
+  it("Create PR: another base re-reads the plan for it; an edited title is kept; the confirm sends the plan last shown", async () => {
+    const d = deps([]);
+    await dispatchV3({ type: "create-pr", key: "claude/work/a" }, d);
+    const ask = d.open.mock.calls.at(-1)![0];
+    render(ask.body);
+    pickBase("dev/v3");
+    await waitFor(() => expect((screen.getByLabelText("PR title") as HTMLInputElement).value).toBe("first on dev/v3"));
+    expect(d.ipc.prCreatePlan).toHaveBeenLastCalledWith("claude/work/a", "dev/v3");
+    expect(screen.getByText(/bbbbbbb/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("PR title"), { target: { value: "Mine" } });
+    pickBase("main");
+    await waitFor(() => expect(d.ipc.prCreatePlan).toHaveBeenLastCalledWith("claude/work/a", "main"));
+    await waitFor(() => expect(screen.getByText(/aaaaaaa/)).toBeTruthy());
+    expect((screen.getByLabelText("PR title") as HTMLInputElement).value).toBe("Mine");
+    ask.onConfirm();
+    await flush();
+    expect(d.ipc.prCreate).toHaveBeenCalledWith("claude/work/a", { branch: "feat/x", head: "aaaaaaa1", remote: "origin", ref: "refs/heads/feat/x", base: "main", title: "Mine" });
+  });
+
+  it("Create PR: a base the plan refuses says why in the confirm, and confirming pushes nothing", async () => {
+    const d = deps([]);
+    await dispatchV3({ type: "create-pr", key: "claude/work/a" }, d);
+    const ask = d.open.mock.calls.at(-1)![0];
+    render(ask.body);
+    d.ipc.prCreatePlan.mockResolvedValueOnce(plan({ base: "dev/v3", ahead: 0, problem: { message: "there are no commits ahead of dev/v3", fix: "commit the changes first, then create the PR" } }));
+    pickBase("dev/v3");
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("no commits ahead of dev/v3"));
+    ask.onConfirm();
+    await flush();
+    expect(d.ipc.prCreate).not.toHaveBeenCalled();
+    expect(d.toast).toHaveBeenLastCalledWith({ tone: "alert", text: "Create PR: there are no commits ahead of dev/v3 — commit the changes first, then create the PR" });
+  });
+
+  it("Create PR when a PR is already open for the head opens that PR instead of asking", async () => {
+    const d = deps([]);
+    d.ipc.prCreatePlan.mockResolvedValueOnce(plan({ existing: { number: 142, url: "https://github.com/o/r/pull/142" }, problem: { message: "PR #142 is already open for feat/x", fix: "open it: https://github.com/o/r/pull/142" } }));
+    await dispatchV3({ type: "create-pr", key: "claude/work/a" }, d);
+    expect(d.open).not.toHaveBeenCalled();
+    expect(d.ipc.prCreate).not.toHaveBeenCalled();
+    expect(d.openUrl).toHaveBeenCalledWith("https://github.com/o/r/pull/142");
+    expect(d.toast).toHaveBeenLastCalledWith({ tone: "info", text: "PR #142 is already open for feat/x — opened it" });
+  });
+
   it("Create PR without gh, or signed out, says so with the fix and pushes nothing", async () => {
     const d = deps([]);
-    d.ipc.prCreatePlan.mockResolvedValueOnce({ branch: "feat/x", base: "main", remote: "origin", upstream: null, ahead: 2, title: "t", uncommitted: 0, problem: { message: "gh is not signed in", fix: "gh auth login" } });
+    d.ipc.prCreatePlan.mockResolvedValueOnce(plan({ title: "t", uncommitted: 0, problem: { message: "gh is not signed in", fix: "gh auth login" } }));
     await dispatchV3({ type: "create-pr", key: "claude/work/a" }, d);
     expect(d.toast).toHaveBeenCalledWith({ tone: "alert", text: "Create PR: gh is not signed in — gh auth login" });
     expect(d.open).not.toHaveBeenCalled();

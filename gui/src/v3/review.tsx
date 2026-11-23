@@ -26,7 +26,8 @@ export interface ReviewActions {
   /** Queue a line comment as the next prompt; absent when the session has no chat writer here. */
   comment?: (text: string) => void;
   commit: () => void;
-  createPr: () => void;
+  /** Absent when the session already has an open PR. */
+  createPr?: () => void;
   /** Codex only: ask the agent for a review of these changes. */
   agentReview?: () => void;
 }
@@ -368,7 +369,7 @@ export function Review({
               <Act onClick={on.commit} disabled={running || staged === 0} title={running ? LOCKED : staged === 0 ? "Stage changes first" : undefined}>
                 Commit {staged} staged…
               </Act>
-              <Act onClick={on.createPr}>Create PR</Act>
+              {on.createPr && <Act onClick={on.createPr}>Create PR</Act>}
               {on.agentReview && <Act onClick={on.agentReview}>Ask Codex to review</Act>}
               <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-ac-muted">
                 <SquareTerminal className="size-3.5" /> Rewind stays in the terminal

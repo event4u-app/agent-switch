@@ -5,7 +5,8 @@
 import type { SessionRow } from "../../transforms.js";
 import { accountId, accountIdFromMember, sessionFromRow } from "../../vm/build.js";
 import { splitAccountId, type Actions } from "../../vm/actions.js";
-import { sessionArgs, type PrPlanJson, type StartChoice, type SwitchRequestRow } from "../../ipc.js";
+import { createElement } from "react";
+import { sessionArgs, type PrConfirmJson, type PrPlanJson, type StartChoice, type SwitchRequestRow } from "../../ipc.js";
 import { requestKind, requestsForMoves } from "../../vm/switch-requests.js";
 import type { Overlay, TerminalRun, Toast } from "../../vm/store.js";
 import type { ProviderId } from "../../transforms.js";
@@ -15,6 +16,7 @@ import type { SessionMenuItem, V3Action } from "../window.js";
 import type { MoveHow, NewSessionPlan, SheetMove } from "../dialogs.js";
 import { canFocus, ciPrompt, ciSession, CODEX_RESPAWN_WHY, conflictPrompt, menuFor, NEW_CHAT, nextStep, sessionKey, startChoice } from "./data.js";
 import { parsePr } from "./feeds.js";
+import { PrConfirm, type PrConfirmState } from "./PrConfirm.js";
 /** The CLI calls the dispatcher makes (a subset of `ipc.ts`, injectable for tests). */
 export interface DispatchIpc {
   focusSessionTerminal(key: string): Promise<void>;
@@ -38,10 +40,10 @@ export interface DispatchIpc {
   setRemoteSsh(on: boolean): Promise<void>;
   /** Removes merged worktrees: only those of `keys` when given. */
   cleanupMerged(keys?: string[]): Promise<void>;
-  /** What Create PR would do (branch, base, title, push), or why it cannot. */
-  prCreatePlan(key: string): Promise<PrPlanJson>;
-  /** Pushes the branch and creates its PR; the PR's URL. */
-  prCreate(key: string): Promise<string>;
+  /** What Create PR would do (commit, destination ref, base, title), or why it cannot; for `base` when given. */
+  prCreatePlan(key: string, base?: string): Promise<PrPlanJson>;
+  /** Pushes what was confirmed and creates the PR (refused when it changed since); the PR's URL. */
+  prCreate(key: string, confirmed: PrConfirmJson): Promise<string>;
   engineRestart(): Promise<void>;
   renameSession(key: string, name: string): Promise<void>;
   openSessionIn(key: string, target?: string): Promise<void>;
@@ -147,13 +149,8 @@ function blocker(key: string, deps: DispatchDeps): Promise<void> | void {
   const url = prUrl(row);
   if (url) deps.openUrl(n.does === "open-checks" ? `${url}/checks` : url);
 }
-/** What the Create PR confirmation says. Pure. */
-export function prCreateBody(p: PrPlanJson): string {
-  const push = p.upstream ? `Pushes ${p.branch} to ${p.upstream}` : `Pushes ${p.branch} to ${p.remote} (sets its upstream)`;
-  const out = p.uncommitted ? ` ${p.uncommitted} uncommitted ${p.uncommitted === 1 ? "file stays" : "files stay"} out of it.` : "";
-  return `${push} and opens a pull request into ${p.base}, titled “${p.title}”, with gh.${out}`;
-}
-/** Asks with branch, base and title, then pushes and creates the PR through the CLI (`gh pr create`). */
+/** Asks with the commit, where it goes, a base to pick and the title; then pushes and creates
+ *  exactly the plan last shown, which the CLI re-checks before it pushes. */
 async function createPr(key: string, deps: DispatchDeps): Promise<void> {
   let plan: PrPlanJson;
   try {
@@ -161,21 +158,30 @@ async function createPr(key: string, deps: DispatchDeps): Promise<void> {
   } catch (e) {
     return deps.toast({ tone: "alert", text: `Create PR failed: ${e instanceof Error ? e.message : String(e)}` });
   }
+  if (plan.existing) {
+    deps.openUrl(plan.existing.url);
+    return deps.toast({ tone: "info", text: `PR #${plan.existing.number} is already open for ${plan.ref?.replace(/^refs\/heads\//, "") ?? plan.branch} — opened it` });
+  }
   if (plan.problem) return deps.toast({ tone: "alert", text: `Create PR: ${plan.problem.message} — ${plan.problem.fix}` });
+  const shown: PrConfirmState = { plan, title: plan.title };
   deps.open({
     kind: "confirm",
     title: "Create a pull request?",
-    body: prCreateBody(plan),
+    body: createElement(PrConfirm, { initial: plan, state: shown, replan: (base: string) => deps.ipc.prCreatePlan(key, base) }),
     confirm: "Push and create PR",
-    onConfirm: () =>
+    onConfirm: () => {
+      const p = shown.plan;
+      if (p.problem) return deps.toast({ tone: "alert", text: `Create PR: ${p.problem.message} — ${p.problem.fix}` });
+      const confirmed: PrConfirmJson = { branch: p.branch!, head: p.head!, remote: p.remote, ref: p.ref!, base: p.base!, title: shown.title.trim() || p.title };
       void run(
         deps,
         "Create PR",
-        deps.ipc.prCreate(key).then((url) => {
+        deps.ipc.prCreate(key, confirmed).then((url) => {
           deps.toast({ tone: "ok", text: `Pull request created: ${url}` });
           if (/^https:\/\//.test(url)) deps.openUrl(url);
         }),
-      ),
+      );
+    },
   });
 }
 /** The message a switched session is sent so it carries on. */

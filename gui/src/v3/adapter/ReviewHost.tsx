@@ -19,7 +19,8 @@ export interface ReviewHostProps {
   agentReview?: () => void;
   toast: (t: { tone: "ok" | "alert" | "info"; text: string }) => void;
   askMessage: (onSubmit: (message: string) => void) => void;
-  createPr: () => void;
+  /** Absent when the session already has an open PR. */
+  createPr?: () => void;
   /** The latest open of the review (and the file it was opened at); each new one goes back to Uncommitted. */
   focus?: ReviewFocus;
   io?: Pick<typeof ipc, "sessionReview" | "reviewAct" | "reviewUndo" | "reviewCommit">;

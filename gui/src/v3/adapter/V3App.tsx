@@ -30,7 +30,7 @@ import { localLayout } from "../layout.js";
 import { KEYS_STORAGE, withRebinds } from "../keys.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
-import { canTakeOver, chatStart, initialPlan, sessionKey, startKey, toV3Data, worktreeOf, type AdapterEnv, type SessionTerminal } from "./data.js";
+import { canTakeOver, chatStart, hasOpenPr, initialPlan, sessionKey, startKey, toV3Data, worktreeOf, type AdapterEnv, type SessionTerminal } from "./data.js";
 import { SessionBody, SubagentTranscript, ToolsSlot, settingsSection } from "./slots.js";
 import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
@@ -432,7 +432,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
           agentReview={chat && key.startsWith("codex/") ? chat.review : undefined}
           toast={(t) => s.toast({ tone: t.tone, text: t.text })}
           askMessage={(onSubmit) => setPrompt({ title: "Commit message", initial: "", onSubmit })}
-          createPr={() => act({ type: "create-pr", key })}
+          createPr={row && hasOpenPr(row) ? undefined : () => act({ type: "create-pr", key })}
           focus={focus}
         />
       );
