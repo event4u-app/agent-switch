@@ -16,7 +16,7 @@ import { codexProfilesWithSession } from "../login-keepalive.js";
 import { configDir, die, listProfiles, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
 import { provider, type ProviderId } from "../providers.js";
 import { readRemote, remoteControlArgs } from "../remote.js";
-import { adopt, AdoptRefused, type AdoptDeps } from "../host/adopt.js";
+import { adopt, AdoptRefused, withAdoptLock, type AdoptDeps } from "../host/adopt.js";
 import { HostUnavailable, TmuxHost, hostingMode, type HostedSession } from "../host/tmux-host.js";
 import { codexSessionMeta, listSessions, locateCodexSession, locateSession, readSessionHeader } from "../sessions.js";
 import { stopBetweenTurns } from "./takeover.js";
@@ -40,6 +40,9 @@ Sessions hosted in Agent Switch's own tmux server keep running when the window c
   agent-switch host list [--json]              the hosted sessions
   agent-switch host attach <session>           join it in this terminal; detaching leaves it running
   agent-switch host attach <session> --new-window   join it in a new window of the terminal set with open-terminal (Warp cannot run a command, so Terminal opens instead)
+  agent-switch host adopt <session> [--stop-source] [--force]   take over a Claude or Codex session from your own terminal, on the same account; one take-over per session at a time
+      --stop-source           end a Claude source between turns first
+      --force                 go past a running program that may be another session; never one that names this session
   agent-switch host respawn <session> [--model M] [--effort E]   restart it in place on another model or thinking level, between turns (Claude)
   agent-switch host end <session> [--yes]      stop it, after asking; its transcript stays`;
 
@@ -128,7 +131,7 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
       if (!arg) die("usage: agent-switch host adopt <provider/account/session> [--stop-source] [--force] [--json]");
       let s: HostedSession;
       try {
-        s = adopt(adoptDeps(host), arg, { stopSource: flags["stop-source"] === true, force: flags.force === true });
+        s = withAdoptLock(path.join(ROOT, "host", "adopt"), arg, () => adopt(adoptDeps(host), arg, { stopSource: flags["stop-source"] === true, force: flags.force === true }));
       } catch (e) {
         if (e instanceof AdoptRefused) die(e.message);
         throw e;
