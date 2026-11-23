@@ -316,6 +316,9 @@ export interface SubagentChild {
   type?: string;
   state: "running" | "done";
   cwd?: string;
+  /** The hook times of its start and stop (ISO), for how long it ran. */
+  startedAt?: string;
+  endedAt?: string;
 }
 
 /** The subagents one session started, in start order: running until their
@@ -331,9 +334,9 @@ export function childrenOf(events: readonly HookEventRecord[], sessionId: string
     }
     if ((e.event !== "SubagentStart" && e.event !== "SubagentStop") || !e.agentId) continue;
     const prev = kids.get(e.agentId);
-    const child: SubagentChild = { agentId: e.agentId, type: e.agentType ?? prev?.type, state: e.event === "SubagentStart" ? "running" : "done", cwd: e.cwd ?? prev?.cwd };
-    if (child.type === undefined) delete child.type;
-    if (child.cwd === undefined) delete child.cwd;
+    const start = e.event === "SubagentStart";
+    const child: SubagentChild = { agentId: e.agentId, type: e.agentType ?? prev?.type, state: start ? "running" : "done", cwd: e.cwd ?? prev?.cwd, startedAt: start ? e.at : prev?.startedAt, endedAt: start ? undefined : e.at };
+    for (const k of ["type", "cwd", "startedAt", "endedAt"] as const) if (child[k] === undefined) delete child[k];
     kids.set(e.agentId, child);
   }
   return [...kids.values()];

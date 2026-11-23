@@ -48,7 +48,7 @@ import {
   hooksRecordSubagents,
   HookEventRecord,
 } from "../hooks.js";
-import { buildTree, childSource, childrenWithHooks, countSubagentFiles, helperIndex, relationUnknown, type Child, type TreeNode } from "../lineage.js";
+import { buildTree, childSource, childrenWithHooks, countSubagentFiles, helperIndex, relationUnknown, subagentDir, subagentFacts, type Child, type TreeNode } from "../lineage.js";
 import { runtimeState, type RuntimeState } from "../runtime-state.js";
 import { gitFacts, type GitFacts } from "../git-facts.js";
 import { githubRepo, prCacheFile, prsForHead, readPrCache } from "../pr-facts.js";
@@ -440,6 +440,15 @@ export function markHostedCodex(rows: (SessionRow & { profile: string })[], host
   }
 }
 
+/** A session's hook subagents with their task and current tool (7.7), read from the files next to its transcript. */
+export function withSubagentFacts(children: Child[], transcript: string | null | undefined): Child[] {
+  const ids = children.flatMap((c) => ("agentId" in c ? [c.agentId] : []));
+  if (!transcript || !ids.length) return children;
+  const running = new Set(children.flatMap((c) => ("agentId" in c && c.state === "running" ? [c.agentId] : [])));
+  const facts = subagentFacts(subagentDir(transcript), transcript, ids, running);
+  return children.map((c) => ("agentId" in c && facts.has(c.agentId) ? { ...c, ...facts.get(c.agentId) } : c));
+}
+
 export async function cmdSessions(
   providerId: ProviderId,
   providerExplicit: boolean,
@@ -528,7 +537,7 @@ export async function cmdSessions(
       const key = `${providerId}/${r.profile}/${r.sessionId}`;
       let kids: Record<string, unknown> = {};
       if (seesChildren.has(r.profile)) {
-        const children = childrenWithHooks(key, eventsOf.get(r.profile) ?? [], helpers);
+        const children = withSubagentFacts(childrenWithHooks(key, eventsOf.get(r.profile) ?? [], helpers), providerId === "claude" ? r.file : null);
         kids = { children: withRuntime(children), childCount: children.length, childSource: childSource(children) };
       } else {
         const named = childrenWithHooks(key, [], helpers);
