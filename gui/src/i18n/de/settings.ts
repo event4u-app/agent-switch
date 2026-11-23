@@ -304,6 +304,7 @@ export const settings: { readonly [K in keyof typeof en]: string } = {
   "settings.updates.checking": "Prüft …",
   "settings.updates.checkNow": "Jetzt prüfen",
   "settings.updates.available": "{tag} verfügbar",
+  "settings.updates.installedPending": "{tag} ist installiert – starte Agent Switch neu, um es zu nutzen. Warte damit, bis die Sitzungen darin fertig sind, falls welche laufen.",
   "settings.updates.updated":
     "Auf {tag} aktualisiert – starte Agent Switch neu, um es zu übernehmen. Deine Einstellungen bleiben, wie sie sind.",
   "settings.updates.updating": "Aktualisiert …",

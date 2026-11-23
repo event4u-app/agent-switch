@@ -35,6 +35,7 @@ const TEMPLATES: readonly NoticeKey[] = [
   "engines.notice.deactivatedBodyNamed",
   "engines.notice.deactivatedBody",
   "engines.notice.updatedTitle",
+  "engines.notice.updatedBodyBusy",
   "engines.notice.updatedBody",
   "engines.notice.updateFailedTitle",
   "engines.notice.updateFailedBody",

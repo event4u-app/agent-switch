@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { setLangForTests, setLanguagePref } from "../../../i18n/index.js";
 import { PET_WELCOME } from "../../../pet/model.js";
-import { getLanguagePref } from "../../../settings-store.js";
+import { getLanguagePref, setUpdateInstalledVersion } from "../../../settings-store.js";
 import { AcRoot } from "../../../ui/AcRoot.js";
 import type { Actions } from "../../../vm/actions.js";
 import { emptyViewModel } from "../../../vm/load.js";
@@ -515,5 +515,30 @@ describe("Advanced", () => {
     fireEvent.click(go);
     await waitFor(() => expect(quit).toHaveBeenCalled());
     expect(uninstall).toHaveBeenCalled();
+  });
+});
+
+describe("Updates", () => {
+  const upToDate = (current: string) => vi.fn(async () => ({ kind: "uptodate" as const, current, latest: current }));
+
+  it("offers the restart for a version the update check installed while the app still runs the old one", async () => {
+    setUpdateInstalledVersion("v1.0.1");
+    const restart = vi.fn(() => Promise.resolve());
+    mount("updates", { checkForUpdate: upToDate("1.0.0"), restart });
+    const btn = await screen.findByRole("button", { name: /Restart now/ });
+    fireEvent.click(btn);
+    expect(restart).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers no restart once the app runs that version, or when nothing was installed", async () => {
+    setUpdateInstalledVersion("v1.0.1");
+    mount("updates", { checkForUpdate: upToDate("1.0.1"), restart: vi.fn() });
+    await screen.findByText(/on the latest version/);
+    expect(screen.queryByRole("button", { name: /Restart now/ })).toBeNull();
+    cleanup();
+    setUpdateInstalledVersion("");
+    mount("updates", { checkForUpdate: upToDate("1.0.0"), restart: vi.fn() });
+    await screen.findByText(/on the latest version/);
+    expect(screen.queryByRole("button", { name: /Restart now/ })).toBeNull();
   });
 });

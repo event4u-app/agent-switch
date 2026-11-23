@@ -13,6 +13,7 @@ export const engines: { readonly [K in keyof typeof en]: string } = {
   "engines.notice.deactivatedBody": "Das aktive {tool}-Konto ist deaktiviert.",
   "engines.notice.updatedTitle": "Auf {tag} aktualisiert",
   "engines.notice.updatedBody": "Starte agent-switch neu, damit es greift.",
+  "engines.notice.updatedBodyBusy": "Starte agent-switch neu, sobald die Sitzungen darin fertig sind – solange eine läuft, startet es nicht neu.",
   "engines.notice.updateFailedTitle": "Update auf {tag} fehlgeschlagen",
   "engines.notice.updateFailedBody": "Versuch es unter Einstellungen › Updates erneut.",
   "engines.notice.updateAvailableTitle": "Update verfügbar – {tag}",

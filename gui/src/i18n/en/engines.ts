@@ -18,6 +18,7 @@ export const engines = {
   "engines.notice.deactivatedBody": "Deactivated the active {tool} account.",
   "engines.notice.updatedTitle": "Updated to {tag}",
   "engines.notice.updatedBody": "Restart agent-switch to apply.",
+  "engines.notice.updatedBodyBusy": "Restart agent-switch once the sessions it hosts are done — it does not restart while one runs.",
   "engines.notice.updateFailedTitle": "Update to {tag} failed",
   "engines.notice.updateFailedBody": "Open Settings › Updates to retry.",
   "engines.notice.updateAvailableTitle": "Update available — {tag}",

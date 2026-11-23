@@ -226,6 +226,26 @@ export function setUpdateNotifiedVersion(version: string): void {
   }
 }
 
+const UPDATE_INSTALLED_VERSION_KEY = "agent-switch-update-installed-version";
+
+/** The version the update check last installed in place. Settings › Updates
+ *  offers the restart while it is newer than the running app. Empty = none. */
+export function getUpdateInstalledVersion(): string {
+  try {
+    return localStorage.getItem(UPDATE_INSTALLED_VERSION_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setUpdateInstalledVersion(version: string): void {
+  try {
+    localStorage.setItem(UPDATE_INSTALLED_VERSION_KEY, version);
+  } catch {
+    /* no/blocked localStorage → in-memory only for this session */
+  }
+}
+
 const NEXT_USAGE_REFRESH_AT_KEY = "agent-switch-next-usage-refresh-at";
 
 /** Wall-clock (unix ms) of the next scheduled usage refresh, persisted so a dev

@@ -12,11 +12,12 @@ import { useStartupEngines } from "./startup.js";
 import { useUpdateWatchers } from "./updates.js";
 import { useUsageAutoRefresh } from "./usage-refresh.js";
 
-export function useEngines(): void {
+/** `chatsHere`: how many chats this window runs right now. */
+export function useEngines(opts: { chatsHere?: () => number } = {}): void {
   useNotificationEngine();
   useUsageAutoRefresh();
   useSessionsPoll();
-  useUpdateWatchers();
+  useUpdateWatchers(opts.chatsHere);
   usePetAndTray();
   useStartupEngines();
   useLimitAutoOpen();

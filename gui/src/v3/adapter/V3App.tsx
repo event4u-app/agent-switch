@@ -122,7 +122,8 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const [ownViews, setOwnViews] = useState<ReadonlyMap<string, "terminal" | "chat">>(() => new Map());
   const sRef = useRef(s);
   sRef.current = s;
-  useEngines();
+  const chatsRunning = useRef(0);
+  useEngines({ chatsHere: () => chatsRunning.current });
   useTrayRequests(s.open, undefined, (payload) => {
     const req = appRequest(sRef.current, payload);
     if (req && sRef.current.act.openApp) void sRef.current.act.openApp(req.appId, req.accountId);
@@ -175,6 +176,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const byKeyRef = useRef(new Map<string, SessionRow>());
   const titleOf = (key: string) => byKeyRef.current.get(key)?.summary ?? key.split("/")[1] ?? "A session";
   const chats = useChats(titleOf);
+  chatsRunning.current = chats.rows.filter((r) => r.live).length;
   const [focus, setFocus] = useState<{ key: string; n: number } | undefined>(undefined);
   const openTab = (key: string) => setFocus((f) => ({ key: chats.tabOf(key) ?? key, n: (f?.n ?? 0) + 1 }));
   const newChat = () => {

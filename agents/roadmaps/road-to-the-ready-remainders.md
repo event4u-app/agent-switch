@@ -48,6 +48,7 @@ saved.
 | D6 | "Local" for ⇧↵ means the session's chat runs in this window (answered through its bridge); any other chat approval goes through `needs allow\|deny` (the bridge inbox), which has no "always" | the inbox refuses "always" by design (`src/bridge/inbox.ts`), so the queue can only offer it where the chat view itself answers | the inbox accepts "always" |
 | D7 | Y on a focused approval allows once; ↵ keeps the item's verb (Open chat); Y on a question is not wired | a question's answer is free text or a choice the queue does not show, so "yes" would guess | questions carry a yes/no shape in `needs --json` |
 | D8 | A release is withdrawn by `npm deprecate` on that version or a `Withdrawn: <reason>` line in its GitHub release notes; when that status cannot be read, an opted-in kind is announced, not installed | the GUI learns the latest version from the GitHub release, and npm is what `agent-switch update` installs from, so both are read; an outage must not read as "not withdrawn" | releases carry a signed manifest with a withdraw field (road-to-a-trusted-install) |
+| D9 | After an update the GUI never restarts by itself: it offers the restart (notice + a Restart button in Settings › Updates while the installed version is newer than the running one), and while a session it hosts runs (alive hosted sessions plus chats in this window; unknown counts as running) the notice says to wait | the step allows a restart when idle, but an unasked restart under the user's cursor is the conservative reading's opposite, and the offer covers "restart when the user agrees" | the owner wants a restart without asking when nothing runs |
 
 ## Phase 1 — A wrong account is never saved
 
@@ -231,11 +232,12 @@ saved.
       done: `gui/src/redesign/engines/engines.test.ts` › "never installs a withdrawn version and says why…", "a withdrawn version is not announced as available…", "when the withdraw status cannot be read…"; `gui/src/updates.test.ts` › `withdrawnInNotes`, `fetchNpmDeprecation` (D8).
       <!-- from: road-to-agent-switch-native-updater P4.1 -->
       <!-- adapted: the parked step was a `yanked` flag in a Tauri `latest.json`; the update path is now npm, which has a native withdraw marker -->
-- [ ] **7.2 Restart when idle, never mid-session.** After a successful install
+- [x] **7.2 Restart when idle, never mid-session.** After a successful install
       the GUI says a restart is needed and restarts only when the user agrees or
       no session it hosts is running. verify: a test — install succeeds with a
       hosted session running → no restart, notice shown; no session → restart
       offered.
+      done: `gui/src/redesign/engines/engines.test.ts` › "after an install with a hosted session running…", "…with no hosted session it offers the restart", "…cannot be read it counts them as running", "a failed or skipped install leaves nothing waiting…"; `settings.test.tsx` › "Updates" (D9).
       <!-- from: road-to-agent-switch-native-updater P3.4 -->
       <!-- adapted: "relaunch after the Tauri updater" became "restart after `agent-switch update`" -->
 - [ ] **7.3 Say when the GUI is not the CLI's version.** When `gui-launch` finds

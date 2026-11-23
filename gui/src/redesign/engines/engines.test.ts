@@ -289,7 +289,7 @@ const release = (tag: string, notes = ""): ReleaseInfo => ({ tag, name: tag, url
 
 describe("agent-switch auto-update loop", () => {
   function deps(check: UpdateCheck, ok = true, kinds: AutoUpdateDeps["kinds"] = () => ["patch", "minor"], over: Partial<AutoUpdateDeps> = {}) {
-    const calls = { install: 0, notified: "" as string, notes: [] as string[], bodies: [] as string[] };
+    const calls = { install: 0, notified: "" as string, notes: [] as string[], bodies: [] as string[], installed: [] as string[] };
     const d: AutoUpdateDeps = {
       check: async () => check,
       install: async () => {
@@ -298,6 +298,8 @@ describe("agent-switch auto-update loop", () => {
       },
       kinds,
       withdrawn: async () => null,
+      running: async () => 0,
+      markInstalled: (t) => void calls.installed.push(t),
       notified: () => calls.notified,
       markNotified: (t) => void (calls.notified = t),
       notify: async (kind, title, message) => {
@@ -382,6 +384,39 @@ describe("agent-switch auto-update loop", () => {
     expect(calls.install).toBe(0);
     expect(calls.notes).toEqual(["info:Update available — v1.0.1"]);
     expect(calls.bodies[0]).toMatch(/could not be checked/);
+  });
+
+  it("after an install with a hosted session running it does not offer a restart now, and says why", async () => {
+    const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") }, true, undefined, { running: async () => 2 });
+    await runAutoUpdateCheck(d);
+    expect(calls.install).toBe(1);
+    expect(calls.installed).toEqual(["v1.0.1"]);
+    expect(calls.notes).toEqual(["success:Updated to v1.0.1"]);
+    expect(calls.bodies[0]).toMatch(/once the sessions it hosts are done/);
+  });
+
+  it("after an install with no hosted session it offers the restart", async () => {
+    const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") });
+    await runAutoUpdateCheck(d);
+    expect(calls.installed).toEqual(["v1.0.1"]);
+    expect(calls.bodies[0]).toBe("Restart agent-switch to apply.");
+  });
+
+  it("when the hosted sessions cannot be read it counts them as running", async () => {
+    const running = async (): Promise<number> => {
+      throw new Error("host list failed");
+    };
+    const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") }, true, undefined, { running });
+    await runAutoUpdateCheck(d);
+    expect(calls.bodies[0]).toMatch(/once the sessions it hosts are done/);
+  });
+
+  it("a failed or skipped install leaves nothing waiting for a restart", async () => {
+    const failed = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") }, false);
+    await runAutoUpdateCheck(failed.d);
+    const skipped = deps({ kind: "available", current: "1.0.0", release: release("v2.0.0") });
+    await runAutoUpdateCheck(skipped.d);
+    expect([...failed.calls.installed, ...skipped.calls.installed]).toEqual([]);
   });
 
   it("runs on open, when the toggle comes on, and then once a day", () => {

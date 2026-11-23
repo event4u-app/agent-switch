@@ -4,11 +4,11 @@ import { Download, RefreshCw, RotateCw } from "lucide-react";
 import { getLang, locale, t, type TKey } from "../../../i18n/index.js";
 import { tx } from "../../../i18n/react.js";
 import { cn } from "../../../lib/utils.js";
-import { getAutoUpdateCheck, getAutoUpdateKinds, setAutoUpdateCheckFlag, setAutoUpdateKinds } from "../../../settings-store.js";
+import { getAutoUpdateCheck, getAutoUpdateKinds, getUpdateInstalledVersion, setAutoUpdateCheckFlag, setAutoUpdateKinds } from "../../../settings-store.js";
 import { Button } from "../../../ui/Button.js";
 import { SettingGroup, SettingRow } from "../../../ui/Setting.js";
 import { Switch } from "../../../ui/Switch.js";
-import type { UpdateCheck, UpdateKind } from "../../../updates.js";
+import { isNewer, type UpdateCheck, type UpdateKind } from "../../../updates.js";
 import { useAS } from "../../../vm/store.js";
 import { describeError, usePref } from "./prefs.js";
 
@@ -90,6 +90,9 @@ export function UpdatesSettings() {
   }, []);
 
   const available = check?.kind === "available" ? check.release : null;
+  // Installed in place by the update check, not yet running: the restart waits for the user.
+  const installed = getUpdateInstalledVersion();
+  const pendingRestart = phase !== "done" && !!check && !!installed && isNewer(installed, check.current) ? installed : null;
 
   return (
     <>
@@ -111,7 +114,13 @@ export function UpdatesSettings() {
             <RefreshCw className={cn(phase === "checking" && "animate-spin")} /> {phase === "checking" ? t("settings.updates.checking") : t("settings.updates.checkNow")}
           </Button>
         </SettingRow>
-        {available && (
+        {pendingRestart && s.act.restart && (
+          <div className="flex flex-wrap items-center gap-2 bg-ac-brand-tint px-4 py-3.5">
+            <span className="text-xs text-ac-ok-text">{t("settings.updates.installedPending", { tag: pendingRestart })}</span>
+            <RestartButton restart={s.act.restart} />
+          </div>
+        )}
+        {available && !(pendingRestart && !isNewer(available.tag, pendingRestart)) && (
           <div className="flex flex-col gap-3 bg-ac-brand-tint px-4 py-3.5">
             <p className="flex items-center gap-2 text-[13px] text-ac-text">
               <span className="size-2 rounded-full bg-ac-brand" aria-hidden />

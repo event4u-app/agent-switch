@@ -291,6 +291,7 @@ export const settings = {
   "settings.updates.checking": "Checking …",
   "settings.updates.checkNow": "Check now",
   "settings.updates.available": "{tag} available",
+  "settings.updates.installedPending": "{tag} is installed — restart Agent Switch to use it. Wait until the sessions it hosts are done if you have any running.",
   "settings.updates.updated": "Updated to {tag} — restart Agent Switch to apply. Your settings stay as they are.",
   "settings.updates.updating": "Updating …",
   "settings.updates.updateTo": "Update to {tag}",
