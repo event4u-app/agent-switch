@@ -465,7 +465,8 @@ export function V3Window({
       lastUsed: data.openIn.lastUsed,
       agentApp: app ? { id: app.id, label: app.label } : null,
       pr: pr ? { number: pr.number, url: pr.url } : null,
-      focusable: !data.bar(key)?.hosted,
+      // `focus` finds a Claude process in the user's own terminal; the Focus terminal switch can turn it off.
+      focusable: data.openIn.focusTerminal && tool === "claude" && !data.bar(key)?.hosted,
       attachable: !!data.bar(key)?.attachable,
     };
   };

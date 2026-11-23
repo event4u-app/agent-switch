@@ -253,6 +253,17 @@ export function conflictPrompt(pr: Pick<PrFacts, "number" | "url">): string {
   return `PR #${pr.number} has a merge conflict with its base branch${page ? ` (${page})` : ""}. Bring the branch up to date with its base and resolve the conflict.`;
 }
 
+/** Why a hosted Codex session's model and thinking stay as they started: `host respawn` restarts Claude only. */
+export const CODEX_RESPAWN_WHY = "Codex keeps the model and thinking it started with; start a new session to change them";
+
+/**
+ * Whether "Focus terminal" can bring this session's terminal to the front: only a
+ * Claude session in the user's own terminal (`focus` finds it by its process), not
+ * one the app hosts or runs as a chat, and only while the Open in › Focus terminal
+ * switch is on. Pure.
+ */
+export const canFocus = (r: { provider: string }, hereOrHosted: boolean, focusTerminal: boolean): boolean => focusTerminal && r.provider === "claude" && !hereOrHosted;
+
 /** The label of a step the agent can be asked to do: sent, or copied for the user to paste. Pure. */
 export const promptAction = (canType: boolean) => (canType ? "Send to agent" : "Copy prompt");
 
@@ -347,6 +358,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
   const hosted = new Map((feeds.host?.hosted ?? []).filter((h) => h.alive).map((h) => [h.key, h]));
   /** The app types into a session it hosts or whose chat runs in this window. */
   const canType = (key: string) => hosted.has(key) || !!env.chats?.has(key);
+  const focusOk = (r: SessionRow, key: string) => canFocus(r, canType(key), env.focusTerminal);
   // A CI item's verb says what it does here: the fix is sent where the app can type; elsewhere the checks open.
   const needs = (feeds.needs?.items ?? []).map((n) => {
     if (n.kind !== "ci") return n;
@@ -524,6 +536,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
         hosted: hosted.has(key) || !!env.chats?.has(key),
         // Only a tmux window can be joined from the user's terminal; a chat has none.
         attachable: hosted.has(key),
+        ...(r.provider === "codex" && hosted.has(key) && !env.chats?.has(key) ? { respawnWhy: CODEX_RESPAWN_WHY } : {}),
         where: r.surface === "desktop-app" ? "Claude Desktop" : env.terminalApp,
         // v3.1: chat and terminal share one conversation for Claude and Codex.
         chatAvailable: r.provider === "claude" || r.provider === "codex",
@@ -558,7 +571,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       if (!r) return null;
       const pr = prsOf(r)[0];
       const a = accountOf(r);
-      const n = nextStep(r, needing.has(key));
+      const n = nextStep(r, needing.has(key) && focusOk(r, key));
       // The Changes list is the authority: once read, the count is its length, so Summary and
       // Changes agree. Before the first read the hooks' count stands in.
       if (r.git) env.wantChanges(key);
@@ -582,7 +595,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     },
     next: (key) => {
       const r = byKey.get(key);
-      const n = r ? nextStep(r, needing.has(key)) : null;
+      const n = r ? nextStep(r, needing.has(key) && focusOk(r, key)) : null;
       return n && { text: n.text, action: n.prompt ? promptAction(canType(key)) : n.action };
     },
     menu: (key) => menuFor(byKey.get(key), hosted.has(key)),

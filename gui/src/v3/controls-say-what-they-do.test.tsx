@@ -183,6 +183,29 @@ describe("Move to another account needs the account's usage (7.6)", () => {
   const accountChipTitle = () => screen.getAllByRole("button").find((b) => b.tagName === "BUTTON" && b.textContent?.startsWith("work"))!.getAttribute("title");
 });
 
+describe("Open in › Bring its terminal to the front is offered only where focusing works (7.6)", () => {
+  const own = (key: string) => () => ({ key, hosted: false, chatAvailable: true, view: "chat" as const, account: { name: "work", color: "teal" as const, fiveH: 10, protect: 98 }, model: "Opus", thinking: "high", contextPct: 10 });
+  const sessions = (key: string) => [{ ...data().sessions[0], key }];
+  const items = () => {
+    fireEvent.click(screen.getByLabelText("Open in…"));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Terminal/ }));
+    return screen.queryByText("Bring its terminal to the front");
+  };
+
+  it.each([
+    ["the switch is off", "claude/work/a", false],
+    ["a Codex session", "codex/work/c", true],
+  ])("not when %s", (_, key, on) => {
+    render(<V3Window data={{ ...data(), health: READY, sessions: sessions(key), bar: own(key), openIn: { ...data().openIn, focusTerminal: on } }} slots={slots} act={vi.fn()} platform="mac" layout={{ load: () => ({ tabs: [key], active: key }), save: vi.fn() }} />);
+    expect(items()).toBeNull();
+  });
+
+  it("with the switch on, a Claude session in your terminal offers it", () => {
+    render(<V3Window data={{ ...data(), health: READY, sessions: sessions("claude/work/a"), bar: own("claude/work/a") }} slots={slots} act={vi.fn()} platform="mac" layout={{ load: () => ({ tabs: ["claude/work/a"], active: "claude/work/a" }), save: vi.fn() }} />);
+    expect(items()).not.toBeNull();
+  });
+});
+
 describe("the Compact hint is offered only where Compact works (7.6)", () => {
   const full = (hosted: boolean) => () => ({ key: "s1", hosted, chatAvailable: true, view: "terminal" as const, account: { name: "work", color: "teal" as const, fiveH: 10, protect: 98 }, model: "Opus", thinking: "high", contextPct: 70, contextTokens: 120_000, tool: "claude" });
 

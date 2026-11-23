@@ -29,7 +29,7 @@ import { localLayout } from "../layout.js";
 import { KEYS_STORAGE, withRebinds } from "../keys.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
-import { chatStart, initialPlan, sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
+import { canFocus, chatStart, initialPlan, sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
 import { SessionBody, ToolsSlot, settingsSection } from "./slots.js";
 import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
@@ -241,6 +241,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     hosted: (k) => hostedKeys.has(k),
     setAppearance: (a) => (saveAppearance(a), setAppearanceState(a)),
     setFocusTerminal: (on) => (setFocusTerminalFlag(on), setFocusTerminalState(on)),
+    focusTerminal: () => focusTerminal,
     prompt: setPrompt,
     newChat,
     openTab,
@@ -352,7 +353,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
         vars={vars}
         followTheme={appearance.terminalFollows}
         where={terminalApp}
-        onFocus={() => void ipc.focusSessionTerminal(key).catch((e: unknown) => s.toast({ tone: "alert", text: `Focus failed: ${e instanceof Error ? e.message : String(e)}` }))}
+        onFocus={!canFocus({ provider: key.split("/")[0] }, hostedKeys.has(key), focusTerminal) ? undefined : () => void ipc.focusSessionTerminal(key).catch((e: unknown) => s.toast({ tone: "alert", text: `Focus failed: ${e instanceof Error ? e.message : String(e)}` }))}
         onTakeOver={() => s.open({ kind: "session", id: `${key.split("/")[0]}:${key.split("/")[2]}` })}
         onExit={refresh}
       />

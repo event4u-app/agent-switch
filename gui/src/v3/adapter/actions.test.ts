@@ -515,6 +515,34 @@ describe("Needs-you CI and the blocker strip type where the app can type", () =>
   });
 });
 
+describe("controls that would fail are not run (7.6)", () => {
+  const ask = need({ id: "q", kind: "question", subject: "claude/work/h", verb: "Focus terminal" });
+
+  it("the blocker of a hosted session that waits for you focuses no outside terminal", async () => {
+    const d = deps([ask]);
+    d.rows().set("claude/work/h", row("h"));
+    await dispatchV3({ type: "blocker", key: "claude/work/h" }, d);
+    expect(d.ipc.focusSessionTerminal).not.toHaveBeenCalled();
+  });
+
+  it("with Open in › Focus terminal off, the blocker focuses nothing", async () => {
+    const d = { ...deps([need({ id: "q", kind: "question", subject: "claude/work/x", verb: "Focus terminal" })]), focusTerminal: () => false };
+    d.rows().set("claude/work/x", row("x"));
+    await dispatchV3({ type: "blocker", key: "claude/work/x" }, d);
+    expect(d.ipc.focusSessionTerminal).not.toHaveBeenCalled();
+    await dispatchV3({ type: "blocker", key: "claude/work/x" }, { ...d, focusTerminal: () => true });
+    expect(d.ipc.focusSessionTerminal).toHaveBeenCalledWith("claude/work/x");
+  });
+
+  it("model or thinking on a hosted Codex session says why instead of a respawn the CLI refuses", async () => {
+    const d = { ...deps(), hosted: (k: string) => k === "codex/work/c" };
+    await dispatchV3({ type: "set-thinking", key: "codex/work/c", level: "high" }, d);
+    await dispatchV3({ type: "set-model", key: "codex/work/c", model: "gpt-5" }, d);
+    expect(d.ipc.hostRespawn).not.toHaveBeenCalled();
+    expect(d.toast).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringMatching(/Codex keeps/) }));
+  });
+});
+
 describe("End…", () => {
   it("the menu item ends nothing by itself and opens no generic confirm; the End dialog's answer ends the session", async () => {
     const d = deps();

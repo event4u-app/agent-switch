@@ -221,6 +221,8 @@ export interface BarSession {
   tool?: string;
   contextTokens?: number | null;
   cache?: SessionCache | null;
+  /** Hosted, yet model and thinking cannot change here (Codex): the chips stay locked and say why. */
+  respawnWhy?: string;
 }
 
 /** Session-bar chip: opens a popover; a locked chip keeps its shape and says why. */
@@ -298,11 +300,11 @@ export function SessionBar({ s, openIn, chipOpen, accountWhy, on }: { s: BarSess
           {s.account.fiveH != null && <span className={cn("font-ac-mono text-[10.5px]", t === "ok" || t === "none" ? "text-ac-muted" : t === "warn" ? "text-ac-warn-text" : "text-ac-alert-text")}>{s.account.fiveH}%</span>}
         </span>
       </BarChip>
-      <BarChip title={s.hosted ? "Model for the next turn" : "Locked: change it in your terminal (/model)"} locked={!s.hosted} open={chipOpen === "model"} onClick={(e) => on.model(shellX(e))}>
+      <BarChip title={s.respawnWhy ?? (s.hosted ? "Model for the next turn" : "Locked: change it in your terminal (/model)")} locked={!s.hosted || !!s.respawnWhy} open={chipOpen === "model"} onClick={(e) => on.model(shellX(e))}>
         {/* Unknown: the field's name, muted — never a dash (gap §5b). */}
         {s.model ? <span title={s.modelId ?? undefined}>{s.model}</span> : <span className="text-ac-muted">Model</span>}
       </BarChip>
-      <BarChip title={s.hosted ? "Thinking for the next turn" : "Locked: change it in your terminal"} locked={!s.hosted} open={chipOpen === "thinking"} onClick={(e) => on.thinking(shellX(e))}>
+      <BarChip title={s.respawnWhy ?? (s.hosted ? "Thinking for the next turn" : "Locked: change it in your terminal")} locked={!s.hosted || !!s.respawnWhy} open={chipOpen === "thinking"} onClick={(e) => on.thinking(shellX(e))}>
         <Brain className="size-3.5 text-ac-muted" /> {s.thinking ? s.thinking[0].toUpperCase() + s.thinking.slice(1) : <span className="text-ac-muted">Thinking</span>}
       </BarChip>
       {s.contextPct != null && (
@@ -436,7 +438,7 @@ export function HintStrip({ s, dismissed, onDismiss, onAction, canCompact = true
  * session's facts and its last transcript line; a full read-only view comes
  * with the v3.1 timeline reader.
  */
-export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver, timeline, readOnlyTitle }: { where: string; facts: ReactNode; lastLine: string | null; onFocus: () => void; onTakeOver: () => void; timeline?: ReactNode; readOnlyTitle?: string | null }) {
+export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver, timeline, readOnlyTitle }: { where: string; facts: ReactNode; lastLine: string | null; /** Absent: its terminal cannot be brought forward (not Claude, or the Focus terminal switch is off). */ onFocus?: () => void; onTakeOver: () => void; timeline?: ReactNode; readOnlyTitle?: string | null }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-3 border-b border-ac-line bg-ac-panel px-4 py-2">
@@ -447,9 +449,11 @@ export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver, time
           </span>
           <span className="block truncate text-[11px] text-ac-muted">To type here, take it over: the session moves into Agent Switch and stops running in {where}.</span>
         </span>
-        <Act kind="accent" kbd="⌘↵" onClick={onFocus}>
-          Focus terminal
-        </Act>
+        {onFocus && (
+          <Act kind="accent" onClick={onFocus}>
+            Focus terminal
+          </Act>
+        )}
         <Act onClick={onTakeOver} title="Moves the session into a host owned by Agent Switch — explained before it acts">
           Take over here…
         </Act>

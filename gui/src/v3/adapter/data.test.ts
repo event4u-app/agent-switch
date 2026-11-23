@@ -150,7 +150,8 @@ describe("toV3Data", () => {
     expect(d.sessions[0]).toMatchObject({ key: "claude/work/a1", needsYou: true, pr: { number: 12, ci: "FAILURE" }, account: { name: "work", nearLimit: true } });
     expect(d.bar("claude/work/a1")).toMatchObject({ hosted: true, model: "Opus", modelId: "opus", thinking: "high", contextPct: 41, account: { fiveH: 40, protect: 90 } });
     const s = d.summary("claude/work/a1")!;
-    expect(s.next).toEqual({ text: "Waits for you in its terminal", action: "Focus terminal" });
+    // Hosted: it waits in its tab here, so no outside terminal to focus (7.6); the PR's step shows.
+    expect(s.next).toEqual({ text: "CI failing: lint", action: "Send to agent" });
     expect(s.pr?.failingChecks).toEqual(["lint"]);
     expect(s.limit).toContain("40%");
     expect(s.more.host).toBe("Hosted by Agent Switch");
@@ -557,6 +558,29 @@ describe("what the app can type into decides the CI and blocker labels", () => {
     expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), host: hosted }, env()).next("claude/work/a1")?.action).toBe("Send to agent");
     expect(toV3Data(vmWith([], [withPr]), emptyFeeds(), env()).next("claude/work/a1")?.action).toBe("Copy prompt");
     expect(nextStep(withPr, false)?.prompt).toContain("lint");
+  });
+});
+
+describe("Focus terminal, model and thinking are offered only where they work (7.6)", () => {
+  const ask = (subject: string) => ({ items: [{ id: "q", kind: "question" as const, subject, who: "w", what: "asks you", verb: "Focus terminal", since: "", version: "1" }], away: null, history: [] });
+  const host = (key: string, provider = "claude") => ({ mode: "persistent" as const, hosted: [{ key, provider, account: "work", sessionId: key.split("/")[2], cwd: "/r", startedAt: "", alive: true, parked: false }] });
+
+  it("the needs-you step focuses a Claude terminal; never a hosted session, a Codex one, or with the switch off", () => {
+    const claude = row("a1");
+    expect(toV3Data(vmWith([], [claude]), { ...emptyFeeds(), needs: ask("claude/work/a1") }, env()).next("claude/work/a1")?.action).toBe("Focus terminal");
+    expect(toV3Data(vmWith([], [claude]), { ...emptyFeeds(), needs: ask("claude/work/a1"), host: host("claude/work/a1") }, env()).next("claude/work/a1")).toBeNull();
+    expect(toV3Data(vmWith([], [claude]), { ...emptyFeeds(), needs: ask("claude/work/a1") }, env({ focusTerminal: false })).next("claude/work/a1")).toBeNull();
+    const codex = row("c1", { provider: "codex" });
+    expect(toV3Data(vmWith([], [codex]), { ...emptyFeeds(), needs: ask("codex/work/c1") }, env()).next("codex/work/c1")).toBeNull();
+  });
+
+  it("a hosted Codex session locks model and thinking with the reason; a hosted Claude session does not", () => {
+    const codex = row("c1", { provider: "codex" });
+    const bar = toV3Data(vmWith([], [codex]), { ...emptyFeeds(), host: host("codex/work/c1", "codex") }, env()).bar("codex/work/c1");
+    expect(bar?.hosted).toBe(true);
+    expect(bar?.respawnWhy).toMatch(/Codex/);
+    const claude = row("a1");
+    expect(toV3Data(vmWith([], [claude]), { ...emptyFeeds(), host: host("claude/work/a1") }, env()).bar("claude/work/a1")?.respawnWhy).toBeUndefined();
   });
 });
 

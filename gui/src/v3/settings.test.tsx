@@ -50,6 +50,14 @@ describe("Settings (spec §10.5)", () => {
     expect(on.focusTerminal).toHaveBeenCalledWith(false);
   });
 
+  it("Open in: no default reads Not set, never an 'Ask' the CLI cannot do; the switch says what it turns off (7.6)", () => {
+    const on = { setDefault: vi.fn(), focusTerminal: vi.fn() };
+    render(<OpenInSettings defaultTarget={null} perRepo={{}} focusTerminal on={on} targets={[{ target: "vscode", label: "VS Code", kind: "editor", installed: true }]} />);
+    expect(screen.getByRole("combobox", { name: "Default for all repositories" }).textContent).toContain("Not set");
+    expect(screen.queryByText("Ask")).toBeNull();
+    expect(screen.getByText(/Off: Agent Switch never brings a terminal to the front/)).toBeTruthy();
+  });
+
   it("Open in: a Terminal row lists only installed terminals and shows the chosen one; no row without any", () => {
     const on = { setDefault: vi.fn(), setTerminal: vi.fn(), focusTerminal: vi.fn() };
     const terminals = [

@@ -13,7 +13,7 @@ import type { NeedItem } from "../needs.js";
 import type { Appearance } from "../themes/resolve.js";
 import type { SessionMenuItem, V3Action } from "../window.js";
 import type { MoveHow, NewSessionPlan, SheetMove } from "../dialogs.js";
-import { ciPrompt, ciSession, conflictPrompt, menuFor, NEW_CHAT, nextStep, sessionKey, startChoice } from "./data.js";
+import { canFocus, ciPrompt, ciSession, CODEX_RESPAWN_WHY, conflictPrompt, menuFor, NEW_CHAT, nextStep, sessionKey, startChoice } from "./data.js";
 import { parsePr } from "./feeds.js";
 /** The CLI calls the dispatcher makes (a subset of `ipc.ts`, injectable for tests). */
 export interface DispatchIpc {
@@ -66,6 +66,8 @@ export interface DispatchDeps {
   hosted: (key: string) => boolean;
   setAppearance: (a: Appearance) => void;
   setFocusTerminal: (on: boolean) => void;
+  /** The Open in › Focus terminal switch: off, nothing brings a terminal to the front. Absent: on. */
+  focusTerminal?: () => boolean;
   /** One line of text (rename). */
   prompt: (req: { title: string; initial: string; onSubmit: (v: string) => void }) => void;
   /** Start a new session in the chat view and open its tab. */
@@ -123,7 +125,9 @@ async function copyPrompt(text: string, deps: DispatchDeps): Promise<void> {
 function blocker(key: string, deps: DispatchDeps): Promise<void> | void {
   const row = deps.rows().get(key);
   if (!row) return;
-  const n = nextStep(row, deps.needs().some((x) => x.subject === key));
+  // The same rule as the window's next step (data.ts): focus only a terminal that can be focused.
+  const waits = deps.needs().some((x) => x.subject === key) && canFocus(row, deps.hosted(key) || !!deps.chatOf?.(key), deps.focusTerminal?.() ?? true);
+  const n = nextStep(row, waits);
   if (!n) return;
   if (n.prompt) return sendPrompt(key, n.prompt, deps) || copyPrompt(n.prompt, deps);
   if (n.does === "focus") return run(deps, "Focus", deps.ipc.focusSessionTerminal(key));
@@ -346,11 +350,14 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       const chat = deps.chatOf?.(a.key);
       if (chat) return chat.setModel(a.model);
       if (!deps.hosted(a.key)) return;
+      if (!a.key.startsWith("claude/")) return deps.toast({ tone: "info", text: CODEX_RESPAWN_WHY });
       return run(deps, "Model change", deps.ipc.hostRespawn(a.key, { model: a.model }));
     }
     case "set-thinking": {
       if (deps.chatOf?.(a.key)) return deps.toast({ tone: "info", text: "Thinking is set when the chat starts; switch to the terminal view to change it" });
       if (!deps.hosted(a.key)) return;
+      // `host respawn` restarts Claude only; it refuses anything else.
+      if (!a.key.startsWith("claude/")) return deps.toast({ tone: "info", text: CODEX_RESPAWN_WHY });
       return run(deps, "Thinking change", deps.ipc.hostRespawn(a.key, { effort: a.level }));
     }
     case "blocker":

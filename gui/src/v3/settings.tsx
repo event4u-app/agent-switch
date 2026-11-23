@@ -223,6 +223,9 @@ export function targetWhere(t: OpenTarget): string {
   return t.app ?? t.launcher ?? (t.kind === "files" || t.kind === "terminal" ? "built in" : "");
 }
 
+/** The default select's value while no default is set (an option value cannot be empty). */
+const NO_DEFAULT = "none";
+
 export function OpenInSettings({ targets, agentApps = [], defaultTarget, perRepo, focusTerminal, terminal = null, terminals = [], on }: { targets: OpenTarget[]; agentApps?: { id: string; label: string; tool: string }[]; defaultTarget: string | null; perRepo: Record<string, string>; focusTerminal: boolean; terminal?: string | null; terminals?: { id: string; name: string; installed: boolean }[]; on: { setDefault: (target: string, repo?: string) => void; setTerminal?: (id: string) => void; focusTerminal: (v: boolean) => void } }) {
   const usable = targets.filter((t) => t.installed);
   const installedTerminals = terminals.filter((t) => t.installed);
@@ -247,7 +250,8 @@ export function OpenInSettings({ targets, agentApps = [], defaultTarget, perRepo
       <Group title="Default for the Open button (⌘O)">
         <Card>
           <Row title="All repositories" detail="Used by the primary Open button.">
-            <Select ariaLabel="Default for all repositories" value={defaultTarget ?? ""} onChange={(v) => on.setDefault(v)} options={[{ value: "", label: "Ask" }, ...options]} />
+            {/* No default is shown as such, never offered as a choice: the CLI has no "ask" default to set. */}
+            <Select ariaLabel="Default for all repositories" value={defaultTarget ?? NO_DEFAULT} onChange={(v) => v !== NO_DEFAULT && on.setDefault(v)} options={[...(defaultTarget ? [] : [{ value: NO_DEFAULT, label: "Not set", disabled: true }]), ...options]} />
           </Row>
           {Object.entries(perRepo).map(([repo, target]) => (
             <Row key={repo} title={<span className="font-ac-mono text-xs">{repo}</span>} detail="Per-repository override">
@@ -259,7 +263,7 @@ export function OpenInSettings({ targets, agentApps = [], defaultTarget, perRepo
               <Select ariaLabel="Terminal app" value={terminal ?? installedTerminals[0]!.id} onChange={(v) => on.setTerminal!(v)} options={installedTerminals.map((t) => ({ value: t.id, label: t.name }))} />
             </Row>
           )}
-          <Row title="Focus terminal" detail="For sessions in your own terminal. Works with Terminal and iTerm2. macOS asks once for Automation access (error −1743 is explained, not hidden).">
+          <Row title="Focus terminal" detail="Lets Agent Switch bring a Claude session's own terminal to the front (Open in, Focus terminal). Works with Terminal and iTerm2; macOS asks once for Automation access (error −1743 is explained, not hidden). Off: Agent Switch never brings a terminal to the front.">
             <Switch checked={focusTerminal} onChange={on.focusTerminal} label="Focus terminal" />
           </Row>
         </Card>
