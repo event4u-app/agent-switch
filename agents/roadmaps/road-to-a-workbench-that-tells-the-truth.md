@@ -70,12 +70,23 @@ canvas shows the result, because it renders the real app.
 
 ## Phase 6 — The canvas shows it
 
-- [ ] 6.1 Fixture panels (terminal, Summary, Changes) follow the selected session; the end and review boards show their real state.
+- [x] 6.1 Fixture panels (terminal, Summary, Changes) follow the selected session; the end and review boards show their real state.
 - [ ] 6.2 Rebuild the embed, publish it to the design canvas, and mark the proposals that are now built.
+
+## Phase 7 — Arena round 1 (10 reviewers, all NOT DONE; reports in the session scratchpad `arena/r1/`)
+
+- D5 — Pulled forward from the second pass because the owner named them and two reviewers rated them blockers: subagent drill-in, row age / tool / account mark, status-first order.
+- [ ] 7.1 Start: the dialog's account and command preview follow every change; folder and model are pickable; "Start in <terminal>" starts in the user's terminal without a second dialog; "Choose another…" keeps the plan; Hosted is not offered without tmux; prefill keyed by repo; no nested worktree; the worktree is created after the start guard and never collides; a Codex route does not leak into a Claude chat; `--help` lists every command the GUI uses.
+- [ ] 7.2 Take over: from your terminal into Agent Switch on the same account, Claude and Codex, with an honest step when the source still runs; the real terminal app is named; not offered on hosted sessions.
+- [ ] 7.3 Git: the review a count opens shows the same files (an "Uncommitted" scope, the base shown); large diffs stay usable; a failed diff is said; Create PR pushes and creates the PR; Clean worktrees acts on the selection after asking.
+- [ ] 7.4 Chat: one card per question and its answer arrives; Other / skip / multi-select; the read-only chat follows the selected session; "Always allow" names the rule it applies; printed keys work; Codex chats say Codex.
+- [ ] 7.5 Overlays: dialogs take focus and trap it, Esc closes them over a focused terminal; menus work with the keyboard; menus anchored to their trigger stay reachable with a side panel open.
+- [ ] 7.6 Needs and actions: a conflict is not called a CI failure; a fix goes to the session the item names; check names are delimited as data in prompts; every move, send and blocker action respects a stopped engine; Compact, Thinking and Focus terminal are offered only where they work; tray verbs act or go to their item.
+- [ ] 7.7 List and subagents: rows show age, tool and account mark; status-first order by default; CI in the table as words; subagent rows carry their task description; Children rows open; a subagent opens read-only with its current tool and elapsed time.
 
 ## Follow-ups (not in this roadmap)
 
 `road-to-a-v3-window-in-two-languages` (D2) and `road-to-the-workbench-second-pass`
-(subagent drill-in, resume dialog with preflight, palette actions, batched review
+(resume dialog with preflight, palette actions, batched review
 comments, status groups / slimmer header / shared limit row / table — proposals
 B–E —, narrow-window layout, readability floor), both under `later/`.

@@ -6,10 +6,10 @@
 
 ## Overall
 
-**31 / 34 steps done · 91%**
+**32 / 41 steps done · 78%**
 
 ```text
-████████████████████████████████████░░░░   91%
+███████████████████████████████░░░░░░░░░   78%
 ```
 
 ## Open roadmaps
@@ -17,7 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 1 | 16 | 0 | 0 | 0 | █████████░ 94% |
-| 2 | [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md) | 6 | 17 | 2 | 15 | 0 | 0 | 0 | █████████░ 88% |
+| 2 | [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md) | 7 | 24 | 8 | 16 | 0 | 0 | 0 | ███████░░░ 67% |
 
 ---
 
@@ -60,7 +60,7 @@
 
 ### [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md)
 
-**a workbench that tells the truth** — 15 / 17 done (88%)
+**a workbench that tells the truth** — 16 / 24 done (67%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
@@ -69,7 +69,8 @@
 | 3 | Your terminal and Agent Switch at the same time | ✅ done | 0 | 3 | 0 | 0 | 100% |
 | 4 | From a session to its diff | ✅ done | 0 | 2 | 0 | 0 | 100% |
 | 5 | The list at a glance | ✅ done | 0 | 3 | 0 | 0 | 100% |
-| 6 | The canvas shows it | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
+| 6 | The canvas shows it | 🟡 in progress | 1 | 1 | 0 | 0 | 50% |
+| 7 | Arena round 1 (10 reviewers, all NOT DONE; reports in the session scratchpad `arena/r1/`) | ⬜ not started | 7 | 0 | 0 | 0 | 0% |
 
 ## Age
 
