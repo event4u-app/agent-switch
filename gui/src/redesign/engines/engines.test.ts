@@ -288,8 +288,8 @@ describe("usage auto-refresh tick", () => {
 const release = (tag: string, notes = ""): ReleaseInfo => ({ tag, name: tag, url: `https://x/${tag}`, notes, publishedAt: "2026-10-01T00:00:00Z" });
 
 describe("agent-switch auto-update loop", () => {
-  function deps(check: UpdateCheck, ok = true, kinds: AutoUpdateDeps["kinds"] = () => ["patch", "minor"]) {
-    const calls = { install: 0, notified: "" as string, notes: [] as string[] };
+  function deps(check: UpdateCheck, ok = true, kinds: AutoUpdateDeps["kinds"] = () => ["patch", "minor"], over: Partial<AutoUpdateDeps> = {}) {
+    const calls = { install: 0, notified: "" as string, notes: [] as string[], bodies: [] as string[] };
     const d: AutoUpdateDeps = {
       check: async () => check,
       install: async () => {
@@ -297,9 +297,14 @@ describe("agent-switch auto-update loop", () => {
         return { ok, output: "" };
       },
       kinds,
+      withdrawn: async () => null,
       notified: () => calls.notified,
       markNotified: (t) => void (calls.notified = t),
-      notify: async (kind, title) => void calls.notes.push(`${kind}:${title}`),
+      notify: async (kind, title, message) => {
+        calls.notes.push(`${kind}:${title}`);
+        calls.bodies.push(message);
+      },
+      ...over,
     };
     return { d, calls };
   }
@@ -347,6 +352,36 @@ describe("agent-switch auto-update loop", () => {
     expect(getAutoUpdateKinds()).toEqual(["major", "minor", "patch"]);
     setAutoUpdateKinds([]);
     expect(getAutoUpdateKinds()).toEqual([]);
+  });
+
+  it("never installs a withdrawn version and says why, even for an opted-in kind", async () => {
+    const asked: string[] = [];
+    const withdrawn = async (r: ReleaseInfo) => (asked.push(r.tag), "corrupts the profile store");
+    const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") }, true, undefined, { withdrawn });
+    await runAutoUpdateCheck(d);
+    await runAutoUpdateCheck(d);
+    expect(asked).toEqual(["v1.0.1"]);
+    expect(calls.install).toBe(0);
+    expect(calls.notes).toEqual(["warning:Update v1.0.1 withdrawn"]);
+    expect(calls.bodies[0]).toContain("corrupts the profile store");
+  });
+
+  it("a withdrawn version is not announced as available to a notify-only user either", async () => {
+    const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v2.0.0") }, true, () => [], { withdrawn: async () => "bad build" });
+    await runAutoUpdateCheck(d);
+    expect(calls.install).toBe(0);
+    expect(calls.notes).toEqual(["warning:Update v2.0.0 withdrawn"]);
+  });
+
+  it("when the withdraw status cannot be read, an opted-in kind is announced instead of installed", async () => {
+    const withdrawn = async () => {
+      throw new Error("registry 503");
+    };
+    const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") }, true, undefined, { withdrawn });
+    await runAutoUpdateCheck(d);
+    expect(calls.install).toBe(0);
+    expect(calls.notes).toEqual(["info:Update available — v1.0.1"]);
+    expect(calls.bodies[0]).toMatch(/could not be checked/);
   });
 
   it("runs on open, when the toggle comes on, and then once a day", () => {

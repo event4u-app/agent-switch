@@ -47,6 +47,7 @@ saved.
 | D5 | Updates: notify is the default, self-install is opt-in per release kind (owner, 2026-11-08) | code, the settings comment and the native-updater council's "Notify is the ceiling" must say the same thing; a silent install without consent is what the comment rules out | signed, verified updates with a rollback path exist (road-to-a-trusted-install) |
 | D6 | "Local" for ⇧↵ means the session's chat runs in this window (answered through its bridge); any other chat approval goes through `needs allow\|deny` (the bridge inbox), which has no "always" | the inbox refuses "always" by design (`src/bridge/inbox.ts`), so the queue can only offer it where the chat view itself answers | the inbox accepts "always" |
 | D7 | Y on a focused approval allows once; ↵ keeps the item's verb (Open chat); Y on a question is not wired | a question's answer is free text or a choice the queue does not show, so "yes" would guess | questions carry a yes/no shape in `needs --json` |
+| D8 | A release is withdrawn by `npm deprecate` on that version or a `Withdrawn: <reason>` line in its GitHub release notes; when that status cannot be read, an opted-in kind is announced, not installed | the GUI learns the latest version from the GitHub release, and npm is what `agent-switch update` installs from, so both are read; an outage must not read as "not withdrawn" | releases carry a signed manifest with a withdraw field (road-to-a-trusted-install) |
 
 ## Phase 1 — A wrong account is never saved
 
@@ -222,11 +223,12 @@ saved.
 > (`src/gui-launch.ts:1-8,174`). These steps harden that path. Signing stays in
 > `later/road-to-a-trusted-install.md`.
 
-- [ ] **7.1 Kill-switch for a bad release.** Before the GUI installs a version,
+- [x] **7.1 Kill-switch for a bad release.** Before the GUI installs a version,
       it checks whether that version is withdrawn (npm `deprecated` on the
       version, or a marker on its GitHub release) and then only notifies, with
       the reason. verify: an engine test seen red first — withdrawn version →
       `install` never called, notice says why; normal version → unchanged.
+      done: `gui/src/redesign/engines/engines.test.ts` › "never installs a withdrawn version and says why…", "a withdrawn version is not announced as available…", "when the withdraw status cannot be read…"; `gui/src/updates.test.ts` › `withdrawnInNotes`, `fetchNpmDeprecation` (D8).
       <!-- from: road-to-agent-switch-native-updater P4.1 -->
       <!-- adapted: the parked step was a `yanked` flag in a Tauri `latest.json`; the update path is now npm, which has a native withdraw marker -->
 - [ ] **7.2 Restart when idle, never mid-session.** After a successful install

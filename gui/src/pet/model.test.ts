@@ -87,6 +87,7 @@ describe("pet model", () => {
       expect(bubbleAction("Update available — v1.8.0", "Open Settings › Updates to install it.")).toBe("updates");
       expect(bubbleAction("Updated to v1.8.0", "Restart agent-switch to apply.")).toBe("updates");
       expect(bubbleAction("Update to v1.8.0 failed", "Open Settings › Updates to retry.")).toBe("updates");
+      expect(bubbleAction("Update v1.8.0 withdrawn", "This release was withdrawn and is not installed: x")).toBe("updates");
     });
 
     it("routes agent-config events to Ecosystem and tool updates to Tooling", () => {

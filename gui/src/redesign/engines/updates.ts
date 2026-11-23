@@ -4,7 +4,8 @@
  *
  * - agent-switch itself: once on open and every 24 h while the toggle is on. An
  *   bump kind the user opted into installs in place (`agent-switch update`);
- *   any other kind — every kind by default — only notifies. A handled version is not re-announced; a FAILED install is
+ *   any other kind — every kind by default — only notifies. A withdrawn
+ *   version is never installed; the notice says why instead. A handled version is not re-announced; a FAILED install is
  *   not marked handled, so the next check retries.
  * - the agent-config companion: on open and hourly; notifies once per version,
  *   and only when it is installed and a newer release exists.
@@ -29,6 +30,7 @@ import {
   isNewer,
   releaseKind,
   releasesNewerThan,
+  withdrawnReason,
   type ReleaseInfo,
   type UpdateCheck,
   type UpdateKind,
@@ -48,6 +50,8 @@ export interface AutoUpdateDeps {
   check(): Promise<UpdateCheck>;
   install(): Promise<SelfUpdateResult>;
   kinds(): UpdateKind[];
+  /** Why the release must not be installed, null when nothing withdraws it; throws when unknown. */
+  withdrawn(release: ReleaseInfo): Promise<string | null>;
   notified(): string;
   markNotified(tag: string): void;
   notify: Notify;
@@ -57,6 +61,7 @@ const autoUpdateDeps: AutoUpdateDeps = {
   check: () => checkForUpdate(),
   install: () => selfUpdate(),
   kinds: () => getAutoUpdateKinds() as UpdateKind[],
+  withdrawn: withdrawnReason,
   notified: getUpdateNotifiedVersion,
   markNotified: setUpdateNotifiedVersion,
   notify,
@@ -68,7 +73,23 @@ export async function runAutoUpdateCheck(d: AutoUpdateDeps = autoUpdateDeps): Pr
   const tag = res.release.tag;
   if (d.notified() === tag) return;
   const kind = releaseKind(res.current, tag);
-  if (kind && d.kinds().includes(kind)) {
+  let withdrawn: string | null = null;
+  let unchecked = false;
+  try {
+    withdrawn = await d.withdrawn(res.release);
+  } catch {
+    unchecked = true;
+  }
+  if (withdrawn) {
+    d.markNotified(tag);
+    await d.notify(
+      "warning",
+      noticeEn("engines.notice.updateWithdrawnTitle", { tag }),
+      noticeEn("engines.notice.updateWithdrawnBody", { reason: clampText(withdrawn, 160) }),
+    );
+    return;
+  }
+  if (kind && d.kinds().includes(kind) && !unchecked) {
     const r = await d.install();
     if (r.ok) d.markNotified(tag);
     await d.notify(
@@ -81,7 +102,11 @@ export async function runAutoUpdateCheck(d: AutoUpdateDeps = autoUpdateDeps): Pr
     await d.notify(
       "info",
       noticeEn("engines.notice.updateAvailableTitle", { tag }),
-      kind ? noticeEn("engines.notice.updateAvailableBodyKind", { kind }) : noticeEn("engines.notice.updateAvailableBody"),
+      unchecked && kind && d.kinds().includes(kind)
+        ? noticeEn("engines.notice.updateUncheckedBody")
+        : kind
+          ? noticeEn("engines.notice.updateAvailableBodyKind", { kind })
+          : noticeEn("engines.notice.updateAvailableBody"),
     );
   }
 }

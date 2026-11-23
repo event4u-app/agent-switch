@@ -116,7 +116,7 @@ export function bubbleAction(title: string, message: string): BubbleAction | nul
   if (isSwitchSuggestion(message)) return "switch";
   if (/^agent-config (update available|setup failed)/i.test(title)) return "ecosystem";
   if (/^(rtk|claude|codex|agy) update available/i.test(title)) return "tooling";
-  if (/^(update available|updated to|update to .+ failed)/i.test(title)) return "updates";
+  if (/^(update available|updated to|update to .+ failed|update .+ withdrawn$)/i.test(title)) return "updates";
   return null;
 }
 

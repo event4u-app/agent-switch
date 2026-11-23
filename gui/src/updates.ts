@@ -153,6 +153,36 @@ export async function fetchReleases(repo: string = UPDATE_REPO, perPage = 20): P
   return parseReleases(await res.json(), repo);
 }
 
+/** The npm package `agent-switch update` installs. */
+export const NPM_PACKAGE = "@event4u/agent-switch";
+
+/** A maintainer withdraws a release by adding a `Withdrawn: <reason>` line to
+ *  its GitHub release notes (bold markers allowed). Returns the reason, or null
+ *  when no such line starts a line of the notes. Pure. */
+export function withdrawnInNotes(notes: string): string | null {
+  const m = /^[ \t]*[*_]{0,2}withdrawn[*_]{0,2}[ \t]*:[*_]{0,2}[ \t]*(\S[^\n]*?)[ \t]*$/im.exec(notes ?? "");
+  return m ? m[1] : null;
+}
+
+/** The `deprecated` message npm carries for exactly this version (`npm
+ *  deprecate` is npm's own withdraw marker), or null when the version has none
+ *  or npm does not know it. Throws when the registry cannot answer, so a caller
+ *  never reads an outage as "not withdrawn". The registry is CORS-open. */
+export async function fetchNpmDeprecation(tag: string, pkg: string = NPM_PACKAGE): Promise<string | null> {
+  const version = tag.replace(/^[vV]/, "");
+  const res = await fetch(`https://registry.npmjs.org/${pkg.replace("/", "%2F")}/${encodeURIComponent(version)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`npm registry returned ${res.status}`);
+  const body = (await res.json()) as { deprecated?: unknown };
+  return typeof body.deprecated === "string" && body.deprecated.trim() ? body.deprecated.trim() : null;
+}
+
+/** Why `release` must not be installed, or null when nothing withdraws it: the
+ *  GitHub release's own marker first (already fetched), then npm. */
+export async function withdrawnReason(release: ReleaseInfo): Promise<string | null> {
+  return withdrawnInNotes(release.notes) ?? (await fetchNpmDeprecation(release.tag));
+}
+
 /** The result of a single update check, as a discriminated union the UI renders
  *  directly. `current` is always present so the UI can show the running version
  *  even on failure. */
