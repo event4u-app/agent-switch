@@ -568,6 +568,12 @@ describe("the New session prefill", () => {
     expect(p.folder).toBe("/r");
   });
 
+  it("a remembered hosted start without tmux falls back to your terminal (host start refuses there)", () => {
+    const p = initialPlan("/r", { tool: "claude", model: "opus", thinking: "high", where: "hosted" }, "ephemeral");
+    expect(p.where).toBe("terminal");
+    expect(p.model).toBe("opus");
+  });
+
   it("a project started in before: its last tool, model, thinking and place", () => {
     const p = initialPlan("/r", { tool: "codex", model: "gpt-5", thinking: "low", where: "hosted" });
     expect([p.tool, p.model, p.thinking, p.where, p.remembered]).toEqual(["codex", "gpt-5", "low", "hosted", true]);

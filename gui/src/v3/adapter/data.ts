@@ -591,9 +591,11 @@ export function chatStart(route: Route, accounts: readonly Account[]): { profile
 
 /** What the New-session dialog opens with: the project's last start, or — on
  *  the first start there — your terminal (spec Principle 5). Pure. */
-export function initialPlan(folder: string, last: RememberedStart | null): NewSessionPlan {
+export function initialPlan(folder: string, last: RememberedStart | null, hosting: "persistent" | "ephemeral" = "persistent"): NewSessionPlan {
   const base = { folder, gitState: null, worktree: false };
-  return last ? { ...base, ...last, remembered: true } : { ...base, tool: "claude", model: "opus", thinking: "high", where: "terminal" };
+  if (!last) return { ...base, tool: "claude", model: "opus", thinking: "high", where: "terminal" };
+  // `host start` refuses without tmux, so a remembered hosted start opens in the user's terminal there.
+  return { ...base, ...last, ...(last.where === "hosted" && hosting !== "persistent" ? { where: "terminal" as const } : {}), remembered: true };
 }
 
 /** The model, thinking and worktree a plan starts with — only what its tool takes. Pure. */

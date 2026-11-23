@@ -162,7 +162,9 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const lastFolder = rows.find((r) => r.cwd)?.cwd ?? "~";
   // Read again after each start, so the dialog opens on the choice just made.
   const [startsMade, setStartsMade] = useState(0);
-  const plan: NewSessionPlan = useMemo(() => initialPlan(lastFolder, getStartChoice(lastFolder)), [lastFolder, startsMade]);
+  // Until `host list` has answered, a remembered hosted start stays as remembered.
+  const hostMode = feeds.host?.mode ?? "persistent";
+  const plan: NewSessionPlan = useMemo(() => initialPlan(lastFolder, getStartChoice(lastFolder), hostMode), [lastFolder, startsMade, hostMode]);
   const terminalApp = terminalAppFor(s.platform);
   const [route, setRoute] = useState<AdapterEnv["route"]>(null);
   useEffect(() => {
