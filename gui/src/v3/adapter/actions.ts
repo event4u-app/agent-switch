@@ -25,6 +25,8 @@ export interface DispatchIpc {
   /** Allow once or deny an approval through the inbox of the chat that holds it. */
   needsAnswer(key: string, approvalId: string, decision: "allow" | "deny"): Promise<void>;
   hostStart(provider: ProviderId, cwd: string, profile?: string, choice?: StartChoice): Promise<void>;
+  /** Starts a session in a new window of the user's terminal (`run … --new-window`). */
+  startInTerminal(provider: ProviderId, cwd: string, profile?: string, choice?: StartChoice): Promise<void>;
   hostEnd(key: string): Promise<void>;
   hostRespawn(key: string, change: { model?: string; effort?: string }): Promise<void>;
   setLibraryFlag(key: string, flag: "pin" | "archive", on: boolean): Promise<void>;
@@ -73,6 +75,8 @@ export interface DispatchDeps {
   setFocusTerminal: (on: boolean) => void;
   /** One line of text (rename). */
   prompt: (req: { title: string; initial: string; onSubmit: (v: string) => void }) => void;
+  /** The New-session dialog's plan as it is now (null: the dialog closed), so its facts follow it. */
+  draftStart?: (plan: NewSessionPlan | null) => void;
   /** Start a new session in the chat view and open its tab. */
   newChat?: () => void;
   /** Open a session's tab (its chat, where an approval waits). */
@@ -314,14 +318,17 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       return run(deps, "Later", Promise.all(deps.needs().map((n) => deps.ipc.needsLater(n.id))));
     case "start": {
       const p = a.plan;
-      deps.rememberStart?.(p);
+      deps.draftStart?.(null);
       const choice = startChoice(p);
       const chosen = Object.keys(choice).length > 0;
-      if (p.where === "hosted") return run(deps, "Start", chosen ? deps.ipc.hostStart(p.tool, p.folder, p.account, choice) : p.account ? deps.ipc.hostStart(p.tool, p.folder, p.account) : deps.ipc.hostStart(p.tool, p.folder));
-      return deps.open({ kind: "start", cwd: p.folder, tool: p.tool, ...(p.account ? { accountId: accountId(p.tool, p.account) } : {}), ...(chosen ? { choice } : {}) });
+      // The command the dialog previewed: hosted here, or a new window of the user's terminal.
+      const go = p.where === "hosted" ? deps.ipc.hostStart : deps.ipc.startInTerminal;
+      const started = chosen ? go(p.tool, p.folder, p.account, choice) : p.account ? go(p.tool, p.folder, p.account) : go(p.tool, p.folder);
+      // Remembered for the next start only once this one went through.
+      return run(deps, "Start", started.then(() => deps.rememberStart?.(p)));
     }
-    case "choose-account":
-      return deps.open({ kind: "start" });
+    case "start-draft":
+      return deps.draftStart?.(a.plan);
     case "move": {
       const how = a.how;
       const left = how === "brief" ? Promise.resolve([...a.moves]) : handOver(how, a.moves, deps);

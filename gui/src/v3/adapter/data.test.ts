@@ -4,7 +4,7 @@ import type { SessionRow } from "../../transforms.js";
 import { emptyViewModel } from "../../vm/load.js";
 import type { Account, ViewModel } from "../../vm/types.js";
 import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
-import { chatStart, childrenOf, decisionFor, doneToday, initialPlan, nextStep, sessionKey, startCommand, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
+import { chatStart, childrenOf, decisionFor, doneToday, initialPlan, nextStep, sessionKey, startCommand, startKey, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
 import { emptyFeeds, type V3Feeds } from "./useFeeds.js";
 
 const NOW = Date.parse("2026-11-03T15:00:00");
@@ -370,16 +370,27 @@ describe("pieces", () => {
     expect(d.sessions.map((s) => s.target).sort()).toEqual(["a", "b"]);
   });
 
-  it("startCommand shows the model, thinking and worktree the start will use", () => {
+  it("startCommand shows the model, thinking and worktree the start will use; your terminal is a new window of it", () => {
     const p = { folder: "/r", gitState: null, worktree: true, tool: "claude" as const, model: "opus", thinking: "high", where: "hosted" as const };
     expect(startCommand(p, "work")).toBe("agent-switch host start work --provider claude --cwd /r --model opus --effort high --worktree");
-    expect(startCommand({ ...p, where: "terminal", worktree: false }, "work")).toBe("agent-switch run work --cwd /r --model opus --effort high");
+    expect(startCommand({ ...p, where: "terminal", worktree: false }, "work")).toBe("agent-switch run work --provider claude --cwd /r --model opus --effort high --new-window");
   });
 
-  it("startCommand quotes what needs it", () => {
+  it("startCommand quotes what needs it; without an account the CLI routes; under ask the account is still to be chosen", () => {
     const p = { folder: "/r/my app", gitState: null, worktree: false, tool: "claude" as const, model: "", thinking: "", where: "hosted" as const };
     expect(startCommand(p, "work")).toBe("agent-switch host start work --provider claude --cwd '/r/my app'");
-    expect(startCommand({ ...p, where: "terminal", tool: "codex", folder: "/r" }, null)).toBe("agent-switch run --provider codex --cwd /r");
+    expect(startCommand({ ...p, where: "terminal", tool: "codex", folder: "/r" }, null)).toBe("agent-switch run --provider codex --cwd /r --new-window");
+    expect(startCommand({ ...p, where: "terminal", folder: "/r" }, "ask")).toBe("agent-switch run <account> --provider claude --cwd /r --new-window");
+  });
+
+  it("startKey: a folder in a worktree or a subfolder is remembered under its main repository", () => {
+    const git = (toplevel: string, repoRoot: string) => ({ toplevel, branch: "b", headSha: null, dirty: false, changed: 0, ahead: null, behind: null, upstream: null, remote: null, worktree: toplevel !== repoRoot, repoRoot, cwd: toplevel, cwdSource: "hook" as const });
+    const rows = [row("w", { cwd: "/r/app.worktrees/claude-1", git: git("/r/app.worktrees/claude-1", "/r/app") }), row("m", { cwd: "/r/app/sub", git: git("/r/app", "/r/app") })];
+    expect(startKey("/r/app.worktrees/claude-1", rows)).toBe("/r/app");
+    expect(startKey("/r/app.worktrees/claude-1/pkg", rows)).toBe("/r/app");
+    expect(startKey("/r/app", rows)).toBe("/r/app");
+    expect(startKey("/r/app2", rows)).toBe("/r/app2");
+    expect(startKey("/elsewhere", rows)).toBe("/elsewhere");
   });
 });
 
@@ -402,6 +413,51 @@ describe("start dialog routing", () => {
     expect(facts.command).not.toMatch(/\bwork\b/);
     expect(toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: [] } })).newSession.facts.ask).toBeUndefined();
     expect(toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: [], ask: ["work"] } })).newSession.facts.ask).toBeUndefined();
+  });
+
+  it("the dialog follows the live plan: another tool shows that tool's routed account, its limits and its command", () => {
+    const vm = vmWith([account("work", { isDefault: true }), account("cx", { tool: "codex", isDefault: true }), account("cy", { tool: "codex" })], []);
+    const plan = env().plan;
+    const draft = { ...plan, tool: "codex" as const, model: "", thinking: "medium", where: "terminal" as const };
+    const facts = toV3Data(vm, emptyFeeds(), env({ plan, draft, route: { profile: "codex/cy", why: ["folder rule ~/r → cy"], for: { tool: "codex", folder: "/r/app" } } })).newSession.facts;
+    expect(facts.account.name).toBe("cy");
+    expect(facts.account.limits.tool).toBe("codex");
+    expect(facts.command).toBe("agent-switch run --provider codex --cwd /r/app --effort medium --new-window");
+    // A route read for another tool or folder is not this plan's: the tool's default stands in.
+    const stale = toV3Data(vm, emptyFeeds(), env({ plan, draft, route: { profile: "claude/work", why: ["x"], for: { tool: "claude", folder: "/r/app" } } })).newSession.facts;
+    expect([stale.account.name, stale.account.why]).toEqual(["cx", []]);
+  });
+
+  it("an account chosen in the dialog is the one shown and the one in the command", () => {
+    const vm = vmWith([account("work", { isDefault: true }), account("side", { color: "pink" })], []);
+    const draft = { ...env().plan, account: "side" };
+    const facts = toV3Data(vm, emptyFeeds(), env({ draft, route: { profile: "claude/work", why: ["work has room"], for: { tool: "claude", folder: "/r/app" } } })).newSession.facts;
+    expect([facts.account.name, facts.account.color, facts.account.chosen, facts.account.why]).toEqual(["side", "pink", true, []]);
+    expect(facts.command).toMatch(/^agent-switch host start side /);
+    expect(facts.accounts.claude.map((a) => a.name)).toEqual(["work", "side"]);
+  });
+
+  it("the dialog offers recent folders, newest first, and the models of each tool", () => {
+    const vm = vmWith([account("work")], [row("a", { cwd: "/r/one", mtimeMs: NOW - 10 }), row("b", { cwd: "/r/two", mtimeMs: NOW - 5 }), row("c", { cwd: "/r/one", mtimeMs: NOW - 1 })]);
+    const facts = toV3Data(vm, emptyFeeds(), env()).newSession.facts;
+    expect(facts.folders).toEqual(["/r/one", "/r/two"]);
+    expect(facts.models.claude.map((m) => m.id)).toEqual(["opus", "sonnet", "haiku"]);
+    expect(facts.models.antigravity).toEqual([]);
+  });
+
+  it("Start in … names the terminal the start opens: the one set in Settings, Terminal for Warp (it cannot run a command)", () => {
+    const vm = vmWith([account("work")], []);
+    const targets = (terminal: string | null) => ({ ...emptyFeeds(), openTargets: { default: null, perRepo: {}, lastUsed: null, targets: [], terminal, terminals: [{ id: "terminal", name: "Terminal", installed: true }, { id: "iterm", name: "iTerm2", installed: true }, { id: "warp", name: "Warp", installed: true }] } });
+    expect(toV3Data(vm, targets("iterm"), env()).newSession.facts.terminalApp).toBe("iTerm2");
+    expect(toV3Data(vm, targets("warp"), env()).newSession.facts.terminalApp).toBe("Terminal");
+    expect(toV3Data(vm, targets(null), env()).newSession.facts.terminalApp).toBe("Terminal.app");
+    expect(toV3Data(vm, emptyFeeds(), env()).newSession.facts.terminalApp).toBe("Terminal.app");
+  });
+
+  it("a new chat never takes a route read for another tool", () => {
+    const accounts = [account("work", { isDefault: true }), account("cx", { tool: "codex" })];
+    expect(chatStart({ profile: "codex/cx", why: [] }, accounts)).toEqual({ profile: "work" });
+    expect(chatStart({ profile: "codex/cx", why: [], ask: ["cx", "cy"] }, accounts)).toEqual({ profile: "work" });
   });
 
   it("a new chat under strategy ask asks instead of taking the fallback; otherwise the routed, then the default account", () => {

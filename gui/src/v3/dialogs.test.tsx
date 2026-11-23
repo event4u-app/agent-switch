@@ -11,13 +11,17 @@ const facts = (over: Partial<NewSessionFacts> = {}): NewSessionFacts => ({
   account: { name: "work", color: "teal", reason: "most room in pool “day”", limits: { key: "claude/work", tool: "claude", name: "work", color: "teal", protect: 98, next: true, signIn: false, checkedMs: 0, windows: [{ label: "5h", used: 39, resetsAtMs: null, pace: null }] }, why: ["work has the most room", "side is near its limit"], paceText: "At today's pace: about 3h of Opus · High before the 5h window is full" },
   command: "CLAUDE_CONFIG_DIR=… claude",
   nowMs: 0,
+  models: { claude: [{ id: "opus", label: "Opus" }, { id: "sonnet", label: "Sonnet" }], codex: [], antigravity: [] },
+  folders: ["~/code/agent-switch", "~/code/other"],
+  home: "/Users/me",
+  accounts: { claude: [{ name: "work", color: "teal" }, { name: "side", color: "blue" }], codex: [{ name: "cx", color: "green" }], antigravity: [] },
   ...over,
 });
 
 describe("New session (spec §8.1)", () => {
   it("prefilled, one primary naming the outcome, your terminal by default", () => {
     const onStart = vi.fn();
-    render(<NewSessionDialog initial={plan} facts={facts()} onStart={onStart} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    render(<NewSessionDialog initial={plan} facts={facts()} onStart={onStart} onClose={vi.fn()} />);
     expect(screen.getByText("Claude in ~/code/agent-switch")).toBeTruthy();
     expect(screen.getByText("Remembered for this project")).toBeTruthy();
     expect(screen.getByRole("radio", { name: /Your terminal/ }).getAttribute("aria-checked")).toBe("true");
@@ -26,30 +30,99 @@ describe("New session (spec §8.1)", () => {
   });
 
   it("says 'Remembered for this project' only when something was remembered", () => {
-    render(<NewSessionDialog initial={{ ...plan, model: "opus", remembered: false }} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    render(<NewSessionDialog initial={{ ...plan, model: "opus", remembered: false }} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} />);
     expect(screen.queryByText("Remembered for this project")).toBeNull();
     expect(screen.queryByText(/last used here/)).toBeNull();
   });
 
   it("another tool starts on its own default model, not the one remembered for the first", () => {
     const onStart = vi.fn();
-    render(<NewSessionDialog initial={{ ...plan, model: "opus" }} facts={facts()} onStart={onStart} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    render(<NewSessionDialog initial={{ ...plan, model: "opus" }} facts={facts()} onStart={onStart} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
     fireEvent.click(screen.getByText(/Start in Terminal.app/));
     expect(onStart.mock.calls[0][0].model).toBe("");
   });
 
-  it("hosting: the primary says 'Start here', and without tmux the card says it ends with the app", () => {
+  it("hosting: the primary says 'Start here'", () => {
     const onStart = vi.fn();
-    render(<NewSessionDialog initial={plan} facts={facts({ hosting: "ephemeral" })} onStart={onStart} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    render(<NewSessionDialog initial={plan} facts={facts()} onStart={onStart} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("radio", { name: /Host in Agent Switch/ }));
-    expect(screen.getByText(/ends when the app closes/)).toBeTruthy();
     fireEvent.click(screen.getByText(/Start here/));
     expect(onStart.mock.calls[0][0].where).toBe("hosted");
   });
 
+  it("without tmux hosting is off and says why; a remembered hosted start starts in the terminal", () => {
+    const onStart = vi.fn();
+    render(<NewSessionDialog initial={{ ...plan, where: "hosted" }} facts={facts({ hosting: "ephemeral" })} onStart={onStart} onClose={vi.fn()} />);
+    const card = screen.getByRole("radio", { name: /Host in Agent Switch/ });
+    expect(card.getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByText(/needs tmux/)).toBeTruthy();
+    fireEvent.click(card);
+    expect(screen.getByRole("radio", { name: /Your terminal/ }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByText(/Start in Terminal.app/));
+    expect(onStart.mock.calls[0][0].where).toBe("terminal");
+  });
+
+  it("every change is reported, so the account box and the preview can follow it", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<NewSessionDialog initial={plan} facts={facts()} onChange={onChange} onStart={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ tool: "codex" }));
+    rerender(<NewSessionDialog initial={plan} facts={facts({ command: "agent-switch run --provider codex --cwd ~/code/agent-switch --new-window" })} onChange={onChange} onStart={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Command preview" }));
+    expect(screen.getByText(/--provider codex/)).toBeTruthy();
+  });
+
+  it("switching the tool keeps a thinking level the new tool has, else high — never silently the lowest", () => {
+    const onStart = vi.fn();
+    render(<NewSessionDialog initial={{ ...plan, thinking: "max" }} facts={facts({ thinkingLevels: { claude: ["low", "high", "max"], codex: ["minimal", "low", "high"], antigravity: [] } })} onStart={onStart} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+    fireEvent.click(screen.getByText(/Start in Terminal.app/));
+    expect(onStart.mock.calls[0][0].thinking).toBe("high");
+  });
+
+  it("Choose another… picks the account inside the dialog; the rest of the plan stays", () => {
+    const onStart = vi.fn();
+    const onChange = vi.fn();
+    render(<NewSessionDialog initial={{ ...plan, worktree: true, where: "hosted" }} facts={facts()} onChange={onChange} onStart={onStart} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Choose another…" }));
+    fireEvent.click(screen.getByRole("radio", { name: /side/ }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ account: "side", worktree: true, where: "hosted" }));
+    fireEvent.click(screen.getByText(/Start here/));
+    expect(onStart).toHaveBeenCalledWith({ ...plan, worktree: true, where: "hosted", account: "side" });
+    // Back to automatic: the CLI routes again.
+    fireEvent.click(screen.getByRole("radio", { name: /Automatic/ }));
+    expect(onChange.mock.calls.at(-1)![0].account).toBeUndefined();
+  });
+
+  it("the folder is picked from recent folders or typed; a typed ~ path is expanded and a dash refused", () => {
+    const onChange = vi.fn();
+    render(<NewSessionDialog initial={plan} facts={facts()} onChange={onChange} onStart={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Folder" }));
+    fireEvent.click(screen.getByRole("option", { name: "~/code/other" }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ folder: "~/code/other" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Folder" }));
+    fireEvent.click(screen.getByRole("option", { name: /Another folder/ }));
+    const field = screen.getByRole("textbox", { name: "Folder path" });
+    fireEvent.change(field, { target: { value: "-rf" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(screen.getByRole("alert")).toBeTruthy();
+    fireEvent.change(field, { target: { value: "~/x/y" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ folder: "/Users/me/x/y" }));
+  });
+
+  it("the model is picked from the tool's models; that model is the one started", () => {
+    const onStart = vi.fn();
+    render(<NewSessionDialog initial={plan} facts={facts()} onStart={onStart} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Model" }));
+    fireEvent.click(screen.getByRole("option", { name: "Sonnet" }));
+    fireEvent.click(screen.getByText(/Start in Terminal.app/));
+    expect(onStart.mock.calls[0][0].model).toBe("sonnet");
+  });
+
   it("the tool's own thinking levels; Why? and the command preview open on demand", () => {
-    render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} />);
     expect(screen.getByRole("radio", { name: "Max" })).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
     expect(screen.queryByRole("radio", { name: "Max" })).toBeNull();
@@ -63,7 +136,7 @@ describe("New session (spec §8.1)", () => {
   it("strategy ask: no account until one is picked, then the pick is the one started", () => {
     const onStart = vi.fn();
     const ask = [{ name: "work", color: "teal" as const }, { name: "side", color: "blue" as const }];
-    render(<NewSessionDialog initial={plan} facts={facts({ ask })} onStart={onStart} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    render(<NewSessionDialog initial={plan} facts={facts({ ask })} onStart={onStart} onClose={vi.fn()} />);
     expect(screen.getByText("Ask me — choose an account")).toBeTruthy();
     expect(screen.queryByText("Automatic →")).toBeNull();
     const startBtn = screen.getByRole("button", { name: /Start in Terminal.app/ }) as HTMLButtonElement;
@@ -78,7 +151,7 @@ describe("New session (spec §8.1)", () => {
   });
 
   it("without ask the account line stays automatic and Start is ready", () => {
-    render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} />);
     expect(screen.getByText("Automatic →")).toBeTruthy();
     expect(screen.queryByText("Ask me — choose an account")).toBeNull();
     expect((screen.getByRole("button", { name: /Start in Terminal.app/ }) as HTMLButtonElement).disabled).toBe(false);
@@ -99,7 +172,7 @@ describe("New session (spec §8.1)", () => {
 
   it("Esc closes", () => {
     const onClose = vi.fn();
-    render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={onClose} onChooseAccount={vi.fn()} />);
+    render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={onClose} />);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalledOnce();
   });

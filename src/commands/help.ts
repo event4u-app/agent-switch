@@ -18,7 +18,25 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch agent-config-root <name> [own|global|status] [--json]   a Claude profile's own agent-config settings, or the shared ones (default); applies to new sessions and the GUI
   agent-switch use [--provider P] <name>       set the active profile for a provider
   agent-switch deactivate [--provider P]       clear the active profile for a provider
-  agent-switch run [--provider P] <name> [--model M] [--effort E] [--worktree] [--tmux] [..]  launch the provider's CLI (--worktree = in a new worktree; --tmux = managed tmux session, POSIX)
+  agent-switch run [--provider P] [name] [--cwd DIR] [--model M] [--effort E] [--worktree] [--tmux] [--new-window] [..]  launch the provider's CLI (no name = the account a plain start picks for the folder; --worktree = in a new worktree; --tmux = managed tmux session, POSIX; --new-window = in a new window of the terminal set with open-terminal)
+  agent-switch host start [profile] [--provider P] [--cwd DIR] [--model M] [--effort E] [--worktree] [--remote-control] [--title T] | list [--json] | attach <session> [--new-window] | respawn <session> [--model M] [--effort E] | end <session> [--yes]   sessions hosted by Agent Switch that keep running when the window closes (needs tmux; host --help for details)
+  agent-switch view <session> chat|terminal [--json]   switch a hosted session between its terminal and the chat view, between turns
+  agent-switch bridge <session> [--mode default|acceptEdits|plan] [--model M] | bridge --new [profile] --cwd DIR   the chat view's JSON connection to one session (stdin commands, stdout events)
+  agent-switch needs [--json] | needs later <id> | needs seen | needs allow|deny <session> <approval>   everything waiting for you, most urgent first
+  agent-switch timeline <session> [--json] [--limit N] [--before N]   a session's history as events (prompts, answers, tool calls, edits)
+  agent-switch changes <session> [--json]       the files a session changed in its worktree against the last commit
+  agent-switch diff <session> [--scope turn|session|worktree|staged] [--json] | diff <session> stage|unstage|discard --file F [--hunk HASH] | diff <session> undo | diff <session> commit --message M   review and act on a session's changes
+  agent-switch files <session> [--query WORDS] [--json]   files of the session's repository whose path contains every word
+  agent-switch pr status [--json] [--refresh]   each session's PR: lifecycle, conflicts, review and CI (uses gh)
+  agent-switch open-targets [<session>] [--json]   what the Open menu offers: installed targets, defaults, terminals
+  agent-switch open-default <target> [--repo DIR]   the default Open target, for every repository or one
+  agent-switch open-terminal <terminal>        the terminal app new windows open in (terminal, iterm, ghostty, warp, wezterm, kitty, alacritty, …)
+  agent-switch focus <session>                 bring the Terminal.app or iTerm2 tab of a Claude session to the front (macOS)
+  agent-switch engine status|restart [--json]   whether the background engine answers; restart moves it onto this install
+  agent-switch agents [--json] | agents suggest | agents install|remove|on|off <id> | agents add <id> [--name N] [--binary B] [-- <args>…]   the coding agents Agent Switch drives
+  agent-switch remote [--json] | remote rc on|off <account> | remote ssh on|off | remote rpc   remote access, all off until turned on
+  agent-switch app-visibility visible|hidden   the desktop app says when its window is shown or hidden
+  agent-switch gui-settings [--json] | gui-settings set pet-welcomed | set autostart enabled|disabled --by first-run|user | set autostart-degraded --reason <text>|none   the desktop app's own settings
   agent-switch list [--provider P] [--json]    list profiles, grouped by provider
   agent-switch --list --json                   Claude accounts in claude-swap list schema v1 (read-only, cache only; same as list --json --format cswap-v1)
   agent-switch status [--provider P] [name] [--json]   identity (+ Claude usage); --json = active only

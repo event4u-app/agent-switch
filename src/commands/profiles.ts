@@ -54,6 +54,9 @@ import { fileURLToPath } from "node:url";
 import { removeLaunchersFor, renameLaunchersFor } from "../launchers.js";
 import { newSessionArgs, recordManagedSession, tmuxAvailable, tmuxSessionName } from "../tmux.js";
 import { choiceArgs, newWorktree, type StartChoice } from "../start-choice.js";
+import { commandPlan, terminalName } from "../terminals.js";
+import { openSettingsFile, readOpenSettings, realEnv } from "../open-in.js";
+import { routedStart } from "./routing.js";
 import {
   CLAUDE_HOME,
   CLAUDE_JSON,
@@ -64,6 +67,8 @@ import {
   launch,
   launchIn,
   logActivity,
+  selfCommand,
+  shellQuote,
 } from "./shared.js";
 import { Account, Verdict, WRONG_ACCOUNT_EXIT, accountIn, commitStaged, discardStaging, judgeSignIn, makeStaging, signedInAt, sweepStaleStaging } from "../staged-login.js";
 
@@ -396,17 +401,18 @@ export function cmdRun(
   name: string | undefined,
   passthrough: string[],
   cwd?: string,
-  own: { tmux?: boolean; force?: boolean; worktree?: boolean } & StartChoice = {},
+  own: { tmux?: boolean; force?: boolean; worktree?: boolean; newWindow?: boolean } & StartChoice = {},
 ): void {
-  const n = requireProfile(providerId, name, "run");
   if (cwd !== undefined) {
     if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) die(`no such folder: ${cwd}`);
     process.chdir(cwd);
   }
+  // No account named: the same routing, folder rules and pick record as a plain start here.
+  const n = name !== undefined ? requireProfile(providerId, name, "run") : routedStart(providerId, process.cwd());
+  const extra = passthrough;
   try {
     // The tool's own flags come first: whatever follows `--` can still override them.
     passthrough = [...choiceArgs(providerId, { ...(own.model !== undefined ? { model: own.model } : {}), ...(own.effort !== undefined ? { effort: own.effort } : {}) }), ...passthrough];
-    if (own.worktree) process.chdir(newWorktree(process.cwd(), providerId));
   } catch (e) {
     die((e as Error).message);
   }
@@ -415,10 +421,29 @@ export function cmdRun(
   const forced = !!own.force;
 
   // agent-switch spawns the binary itself here, so this is the strongest
-  // enforcement point: refuse before anything is launched.
+  // enforcement point: refuse before anything is launched or made.
   const guard = checkSingleLoad(providerId, n, { forced, offerForceFlag: true });
   if (guard.message) console.error(guard.verdict === "refuse" ? `error: ${guard.message}` : guard.message);
   if (guard.verdict === "refuse") process.exit(GUARD_REFUSED_EXIT);
+
+  if (own.newWindow) {
+    // The user's terminal runs this same start with the account named, so it
+    // lands where it was routed here; the worktree is made by that start.
+    const line = [
+      selfCommand(),
+      ...["run", n, "--provider", providerId, "--cwd", process.cwd(), ...(own.model !== undefined ? ["--model", own.model] : []), ...(own.effort !== undefined ? ["--effort", own.effort] : []), ...(own.worktree ? ["--worktree"] : []), ...(wantTmux ? ["--tmux"] : []), ...(forced ? ["--force"] : []), ...(extra.length ? ["--", ...extra] : [])].map(shellQuote),
+    ].join(" ");
+    const c = commandPlan(readOpenSettings(openSettingsFile(ROOT)).terminal, process.cwd(), line, realEnv);
+    if (!c || spawnSync(c.plan.program, c.plan.args, { stdio: "ignore" }).status !== 0) die(`no terminal could be opened; run this in yours:\n  ${line}`);
+    console.log(`Started ${providerId}/${n} in a new ${terminalName(c.id)} window.`);
+    return;
+  }
+
+  try {
+    if (own.worktree) process.chdir(newWorktree(process.cwd(), providerId).cwd);
+  } catch (e) {
+    die((e as Error).message);
+  }
 
   if (wantTmux) {
     if (!tmuxAvailable()) {

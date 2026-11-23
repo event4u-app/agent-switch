@@ -6,7 +6,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { parseArgs, parseRun } from "../src/args.js";
-import { choiceArgs, newWorktree, worktreeName } from "../src/start-choice.js";
+import { choiceArgs, newWorktree, removeWorktree, worktreeName } from "../src/start-choice.js";
 
 test("choiceArgs: Claude takes --model and --effort as they are", () => {
   assert.deepEqual(choiceArgs("claude", { model: "opus", effort: "high" }), ["--model", "opus", "--effort", "high"]);
@@ -33,7 +33,8 @@ test("worktreeName: the tool and the start time, sortable", () => {
   assert.equal(worktreeName("claude", new Date(2026, 10, 23, 9, 5, 7)), "claude-20261123-090507");
 });
 
-test("newWorktree: a new branch in a sibling <repo>.worktrees folder, at the folder's HEAD", () => {
+/** A repository `app` with one commit and a `sub` folder, in a fresh temp root. */
+function repoFixture(): { root: string; repo: string; g: (...a: string[]) => string } {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-wt-")));
   const repo = path.join(root, "app");
   fs.mkdirSync(path.join(repo, "sub"), { recursive: true });
@@ -42,12 +43,46 @@ test("newWorktree: a new branch in a sibling <repo>.worktrees folder, at the fol
   fs.writeFileSync(path.join(repo, "sub", "f.txt"), "x");
   g("add", ".");
   g("commit", "-qm", "init");
+  return { root, repo, g };
+}
+
+test("newWorktree: a new branch in a sibling <repo>.worktrees folder, at the folder's HEAD", () => {
+  const { root, repo, g } = repoFixture();
   const at = new Date(2026, 10, 23, 9, 5, 7);
-  const dir = newWorktree(path.join(repo, "sub"), "codex", at);
+  const made = newWorktree(path.join(repo, "sub"), "codex", at);
+  const dir = made.cwd;
   assert.equal(dir, path.join(root, "app.worktrees", "codex-20261123-090507", "sub"));
+  assert.equal(made.dir, path.join(root, "app.worktrees", "codex-20261123-090507"));
+  assert.equal(made.branch, "agent-switch/codex-20261123-090507");
   assert.ok(fs.existsSync(path.join(dir, "f.txt")));
   assert.equal(execFileSync("git", ["-C", dir, "branch", "--show-current"], { encoding: "utf8" }).trim(), "agent-switch/codex-20261123-090507");
   assert.equal(execFileSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), g("rev-parse", "HEAD"));
+});
+
+test("newWorktree: two starts in the same second get their own branch and folder", () => {
+  const { repo } = repoFixture();
+  const at = new Date(2026, 10, 23, 9, 5, 7);
+  const a = newWorktree(repo, "claude", at);
+  const b = newWorktree(repo, "claude", at);
+  assert.notEqual(a.dir, b.dir);
+  assert.notEqual(a.branch, b.branch);
+  assert.ok(fs.existsSync(a.dir) && fs.existsSync(b.dir));
+});
+
+test("newWorktree: started from inside a worktree, the new one sits beside the main repository, not inside the worktree's folder", () => {
+  const { root, repo } = repoFixture();
+  const first = newWorktree(path.join(repo, "sub"), "claude", new Date(2026, 10, 23, 9, 5, 7));
+  const second = newWorktree(first.cwd, "claude", new Date(2026, 10, 23, 9, 6, 0));
+  assert.equal(second.dir, path.join(root, "app.worktrees", "claude-20261123-090600"));
+  assert.equal(second.cwd, path.join(second.dir, "sub"));
+});
+
+test("removeWorktree: takes back the checkout and its branch", () => {
+  const { repo, g } = repoFixture();
+  const made = newWorktree(repo, "claude", new Date(2026, 10, 23, 9, 5, 7));
+  removeWorktree(made);
+  assert.equal(fs.existsSync(made.dir), false);
+  assert.equal(g("branch", "--list", made.branch), "");
 });
 
 test("newWorktree: outside a git repository it says so", () => {

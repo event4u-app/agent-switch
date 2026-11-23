@@ -1667,6 +1667,105 @@ test("run --model --effort --worktree: the tool gets the choice, in a new worktr
   }
 });
 
+/** A repository `app` with one commit, in a fresh temp root. */
+function gitRepo(): { root: string; repo: string } {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-repo-")));
+  const repo = path.join(root, "app");
+  fs.mkdirSync(repo);
+  const g = (...a: string[]) => execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { stdio: "ignore" });
+  g("init", "-q");
+  g("commit", "-q", "--allow-empty", "-m", "init");
+  return { root, repo };
+}
+
+/** A fake `name` on PATH that logs its arguments, its folder and the Claude config dir it got. */
+function fakeTool(bin: string, name: string): string {
+  const log = path.join(bin, `${name}.log`);
+  fs.writeFileSync(path.join(bin, name), `#!/bin/sh\n[ "$1" = "--version" ] && { echo "1.0.0"; exit 0; }\nprintf '%s|%s|%s\\n' "$*" "$(pwd -P)" "$CLAUDE_CONFIG_DIR" >> "${log}"\nexit 0\n`, { mode: 0o755 });
+  return log;
+}
+
+test("run --worktree: a start the single-load guard refuses makes no worktree", posixGateEarly(), () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
+  const { root, repo } = gitRepo();
+  try {
+    seed(home, "claude", "work");
+    run(home, ["guard", "block"]);
+    seedLiveSession(home, "work", process.pid);
+    fakeTool(bin, "claude");
+    const r = runLogin(home, bin, ["run", "work", "--cwd", repo, "--worktree"]);
+    assert.equal(r.status, 86, r.stderr);
+    assert.equal(fs.existsSync(path.join(root, "app.worktrees")), false);
+    assert.equal(execFileSync("git", ["-C", repo, "branch", "--list", "agent-switch/*"], { encoding: "utf8" }).trim(), "");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(bin, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("run without an account starts on the one a plain start picks for the folder", posixGateEarly(), () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
+  const { root, repo } = gitRepo();
+  try {
+    seed(home, "claude", "work");
+    run(home, ["use", "work"]);
+    const log = fakeTool(bin, "claude");
+    const r = runLogin(home, bin, ["run", "--cwd", repo, "--model", "opus"]);
+    assert.equal(r.status, 0, r.stderr);
+    const [args, , config] = fs.readFileSync(log, "utf8").trim().split("|");
+    assert.equal(args, "--model opus");
+    assert.match(config!, /claude[/\\]work[/\\]config$/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(bin, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("run --new-window: the user's terminal runs the same start; nothing starts or is made here", { skip: gate.skip || (process.platform === "darwin" ? false : "Terminal.app is the terminal every Mac has") }, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
+  const { root, repo } = gitRepo();
+  try {
+    seed(home, "claude", "work");
+    run(home, ["use", "work"]);
+    const tool = fakeTool(bin, "claude");
+    // Terminal.app is asked through osascript; this one only writes down what it was asked.
+    const osa = path.join(bin, "osascript.log");
+    fs.writeFileSync(path.join(bin, "osascript"), `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a" >> "${osa}"; done\nexit 0\n`, { mode: 0o755 });
+    const r = runLogin(home, bin, ["run", "--cwd", repo, "--model", "opus", "--effort", "high", "--worktree", "--new-window"]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /Terminal/);
+    const script = fs.readFileSync(osa, "utf8");
+    assert.match(script, /tell application "Terminal"/);
+    // The account is named, so the window starts where the dialog said, and the choice travels along.
+    assert.match(script, /'run' 'work' '--provider' 'claude' '--cwd' '[^']*app' '--model' 'opus' '--effort' 'high' '--worktree'/);
+    assert.doesNotMatch(script, /--new-window/);
+    assert.equal(fs.existsSync(tool), false, "the tool itself did not start here");
+    assert.equal(fs.existsSync(path.join(root, "app.worktrees")), false, "the worktree is made by the start in the terminal");
+
+    // Refused by the guard: no window opens.
+    fs.rmSync(osa, { force: true });
+    run(home, ["guard", "block"]);
+    seedLiveSession(home, "work", process.pid);
+    const refused = runLogin(home, bin, ["run", "work", "--cwd", repo, "--new-window"]);
+    assert.equal(refused.status, 86);
+    assert.equal(fs.existsSync(osa), false);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(bin, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** `posixGate` is declared further down; this reads it when a test is declared. */
+function posixGateEarly() {
+  return { skip: gate.skip || (process.platform === "win32" ? "fake binaries are POSIX shell scripts" : false) };
+}
+
 test("remove refuses a profile with an active rebind; --force drops it (stash cleaned)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {

@@ -109,7 +109,8 @@ export type V3Action =
   | { type: "away" }
   | { type: "needs-later-all" }
   | { type: "start"; plan: NewSessionPlan }
-  | { type: "choose-account" }
+  /** The New-session dialog changed (null: it closed without starting). */
+  | { type: "start-draft"; plan: NewSessionPlan | null }
   | { type: "move"; how: MoveHow; moves: SheetMove[] }
   | { type: "keep-account"; account: string }
   | { type: "session-menu"; key: string; item: SessionMenuItem }
@@ -780,7 +781,7 @@ export function V3Window({
         <InboxPopover items={needs} history={data.history} focusedId={null} nowMs={data.nowMs} always={(n) => !!data.chatHere?.(n.subject)} blocked={blockedNeed} onVerb={(n) => (close(), onVerb(n))} onAllLater={() => (close(), act({ type: "needs-later-all" }))} />
       </Anchored>
     ) : overlay === "new" ? (
-      <NewSessionDialog initial={data.newSession.initial} facts={data.newSession.facts} onClose={close} onChooseAccount={() => act({ type: "choose-account" })} onStart={(plan) => (close(), act({ type: "start", plan }))} />
+      <NewSessionDialog key={data.newSession.initial.folder} initial={data.newSession.initial} facts={data.newSession.facts} onClose={() => (close(), act({ type: "start-draft", plan: null }))} onChange={(plan) => act({ type: "start-draft", plan })} onStart={(plan) => (close(), act({ type: "start", plan }))} />
     ) : decision ? (
       <DecisionSheet {...decision} room={<RoomLeft accounts={data.limits.filter((a) => a.tool === (decision.tool ?? data.limits.find((l) => l.name === decision.account)?.tool))} nowMs={data.nowMs} />} onClose={close} onKeep={() => (close(), act({ type: "keep-account", account: decision.account }))} onDecide={(how, moves) => (close(), act({ type: "move", how, moves }))} />
     ) : overlay && typeof overlay === "object" && "switcher" in overlay ? (

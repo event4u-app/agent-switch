@@ -48,8 +48,13 @@ export interface AdapterEnv {
   terminals?: ReadonlyMap<string, SessionTerminal>;
   /** Ask for a session's terminal; the caller dedupes and reads. */
   wantTerminal?: (key: string) => void;
-  /** Where a plain start in the plan's folder would go and why (`dir --json`); null until read. */
-  route?: { profile: string | null; why: string[]; blocked?: string; ask?: string[] } | null;
+  /** Where a plain start in the plan's folder would go and why (`dir --json`); null until read.
+   *  `for` names the tool and folder it was read for: a route read for another one is ignored. */
+  route?: { profile: string | null; why: string[]; blocked?: string; ask?: string[]; for?: { tool: string; folder: string } } | null;
+  /** The New-session plan as the dialog has it now; the facts follow it. Absent: `plan`. */
+  draft?: NewSessionPlan | null;
+  /** The user's home folder, for a typed `~/…` folder; null until read. */
+  home?: string | null;
 }
 
 export const THINKING_LEVELS: NewSessionFacts["thinkingLevels"] = {
@@ -464,27 +469,38 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
 
   const targets: OpenTarget[] = (feeds.openTargets?.targets ?? []).map((t) => ({ target: t.target, label: t.label, kind: t.kind, installed: t.installed, app: t.app, launcher: t.launcher }));
 
-  // The account the CLI's routing picks for this folder; the default account until that is read.
-  const routedName = env.route?.profile ? env.route.profile.slice(env.route.profile.indexOf("/") + 1) : null;
-  const routed = routedName ? vm.accounts.find((a) => a.tool === env.plan.tool && a.name === routedName) : undefined;
-  const defaultClaude = routed ?? vm.accounts.find((a) => a.tool === env.plan.tool && a.isDefault) ?? vm.accounts.find((a) => a.tool === env.plan.tool);
-  const planLimits = defaultClaude ? limitAccount(defaultClaude, now) : null;
-  const ask = askCandidates(env.route, vm.accounts, env.plan.tool);
+  // The dialog's facts follow the plan as it is now: its tool, folder and chosen account.
+  const live = env.draft ?? env.plan;
+  // The account the CLI's routing picks for this folder; the tool's default account until that is read.
+  const route = env.route && (!env.route.for || (env.route.for.tool === live.tool && env.route.for.folder === live.folder)) ? env.route : null;
+  const routedName = route?.profile && route.profile.startsWith(`${live.tool}/`) ? route.profile.slice(live.tool.length + 1) : null;
+  const routed = routedName ? vm.accounts.find((a) => a.tool === live.tool && a.name === routedName) : undefined;
+  const chosen = live.account ? vm.accounts.find((a) => a.tool === live.tool && a.name === live.account) : undefined;
+  const shown = chosen ?? routed ?? vm.accounts.find((a) => a.tool === live.tool && a.isDefault) ?? vm.accounts.find((a) => a.tool === live.tool);
+  const planLimits = shown ? limitAccount(shown, now) : null;
+  const ask = askCandidates(route, vm.accounts, live.tool);
+  const accountsOf = (tool: string) => vm.accounts.filter((a) => a.tool === tool && !a.disabled).map((a) => ({ name: a.name, color: a.color }));
   const facts: NewSessionFacts = {
-    terminalApp: env.terminalApp,
+    terminalApp: startTerminalName(feeds.openTargets, env.terminalApp),
     hosting: feeds.host?.mode ?? "ephemeral",
     thinkingLevels: THINKING_LEVELS,
+    models: { claude: CLAUDE_MODELS.map((m) => ({ id: m.id, label: m.label })), codex: [], antigravity: [] },
+    folders: recentFolders(rows),
+    home: env.home ?? null,
+    accounts: { claude: accountsOf("claude"), codex: accountsOf("codex"), antigravity: accountsOf("antigravity") },
     account: {
-      name: defaultClaude?.name ?? "—",
-      color: defaultClaude?.color ?? "blue",
-      reason: env.route?.blocked ? env.route.blocked : routed ? (env.route?.why[0] ?? "the folder's rule") : defaultClaude?.isDefault ? "the account for plain starts" : "the only account of this tool",
-      limits: planLimits ?? { key: "none", tool: "claude", name: "—", color: "blue", protect: 98, next: false, signIn: false, checkedMs: null, windows: [] },
+      name: shown?.name ?? "—",
+      color: shown?.color ?? "blue",
+      ...(chosen ? { chosen: true as const } : {}),
+      reason: chosen ? "chosen here" : route?.blocked ? route.blocked : routed ? (route?.why[0] ?? "the folder's rule") : shown?.isDefault ? "the account for plain starts" : "the only account of this tool",
+      limits: planLimits ?? { key: "none", tool: live.tool === "codex" ? "codex" : "claude", name: "—", color: "blue", protect: 98, next: false, signIn: false, checkedMs: null, windows: [] },
       // Reasons belong to the routed account; shown beside another one they would mislead.
-      why: routed ? (env.route?.why ?? []) : [],
+      why: routed && !chosen ? (route?.why ?? []) : [],
       paceText: null,
     },
     ...(ask ? { ask } : {}),
-    command: startCommand(env.plan, ask ? null : (defaultClaude?.name ?? null)),
+    // What the start passes: the account chosen here, else none — the CLI routes, as the box shows.
+    command: startCommand(live, live.account ?? (ask ? "ask" : null)),
     nowMs: now,
   };
 
@@ -614,9 +630,11 @@ export function askCandidates(route: Route, accounts: readonly Account[], tool: 
 /** Which Claude account a new chat starts on: the routed one, else the default;
  *  under strategy ask, the candidates to ask about instead. Pure. */
 export function chatStart(route: Route, accounts: readonly Account[]): { profile: string } | { ask: { name: string; color: IdentityColor }[] } | null {
-  const ask = askCandidates(route, accounts, "claude");
+  // A route read for another tool (the New-session dialog's last pick) says nothing about Claude.
+  const own = route?.profile?.startsWith("claude/") ? route : null;
+  const ask = askCandidates(own, accounts, "claude");
   if (ask) return { ask };
-  const profile = route?.profile ? route.profile.slice(route.profile.indexOf("/") + 1) : accounts.find((a) => a.tool === "claude" && a.isDefault)?.name;
+  const profile = own?.profile ? own.profile.slice("claude/".length) : accounts.find((a) => a.tool === "claude" && a.isDefault)?.name;
   return profile ? { profile } : null;
 }
 
@@ -638,12 +656,46 @@ export function startChoice(p: NewSessionPlan): StartChoice {
   };
 }
 
-/** The exact command the New-session dialog previews. Pure. */
-export function startCommand(p: NewSessionPlan, account: string | null): string {
+/** The exact command the New-session dialog previews — the one its start runs.
+ *  `account`: the one named on it; null lets the CLI route; "ask" marks one still to be chosen. Pure. */
+export function startCommand(p: NewSessionPlan, account: string | null | "ask"): string {
   const q = (s: string) => (/^[\w./:@-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`);
   const choice = choiceFlags(startChoice(p)).map(q);
-  if (p.where === "hosted") return ["agent-switch", "host", "start", ...(account ? [q(account)] : []), "--provider", p.tool, "--cwd", q(p.folder), ...choice].join(" ");
-  return ["agent-switch", "run", ...(account ? [q(account)] : []), ...(p.tool !== "claude" ? ["--provider", p.tool] : []), "--cwd", q(p.folder), ...choice].join(" ");
+  const who = account === "ask" ? ["<account>"] : account ? [q(account)] : [];
+  if (p.where === "hosted") return ["agent-switch", "host", "start", ...who, "--provider", p.tool, "--cwd", q(p.folder), ...choice].join(" ");
+  return ["agent-switch", "run", ...who, "--provider", p.tool, "--cwd", q(p.folder), ...choice, "--new-window"].join(" ");
+}
+
+/** The terminal `run --new-window` opens: the one set in Settings (the CLI's
+ *  pick), Terminal for Warp, which cannot be asked to run a command; `fallback`
+ *  until Settings is read. Pure. */
+export function startTerminalName(o: V3Feeds["openTargets"], fallback: string): string {
+  const id = o?.terminal;
+  if (!id) return fallback;
+  if (id === "warp") return "Terminal";
+  return o.terminals.find((t) => t.id === id)?.name ?? fallback;
+}
+
+/** The folders sessions ran in, newest first. Pure. */
+function recentFolders(rows: readonly SessionRow[], limit = 8): string[] {
+  const out: string[] = [];
+  for (const r of [...rows].sort((a, b) => b.mtimeMs - a.mtimeMs)) {
+    if (r.cwd && !out.includes(r.cwd)) out.push(r.cwd);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** Where a start in `folder` is remembered: the main repository it belongs to —
+ *  also from a worktree or a subfolder — as the sessions' git facts know it; the
+ *  folder itself when none does. Pure. */
+export function startKey(folder: string, rows: readonly SessionRow[]): string {
+  const inside = (dir: string) => folder === dir || folder.startsWith(dir.endsWith("/") ? dir : `${dir}/`);
+  for (const r of rows) {
+    const g = r.git;
+    if (g && inside(g.toplevel)) return g.repoRoot ?? g.toplevel;
+  }
+  return folder;
 }
 
 /** The switch requests the window acts on. Pure. */
