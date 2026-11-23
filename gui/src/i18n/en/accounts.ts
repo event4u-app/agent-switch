@@ -233,7 +233,7 @@ export const accounts = {
   "accounts.reauth.sameAccount": "Same account as before.",
   "accounts.reauth.runsUntil": "The sign-in now runs until {when}.",
   "accounts.reauth.pausedContinue": "Paused sessions continue where they stopped — nothing is run twice.",
-  "accounts.reauth.mismatch": "That sign-in belongs to a different account, and this account's folder now holds it. Sign in with {who}, or add the other one as a new account.",
+  "accounts.reauth.mismatch": "That sign-in belongs to a different account. Nothing was saved; this account keeps its login. Sign in with {who}, or add the other one as a new account.",
   "accounts.reauth.wantedAccount": "the account you want here",
   "accounts.fix.statePasses": "Passes",
   "accounts.fix.stateWarn": "Needs a look",

@@ -156,6 +156,16 @@ export function signInArgs(provider: ProviderId, name: string, exists: boolean, 
 
 export type SignInOutcome = "verified" | "mismatch" | "unfinished";
 
+/** `agent-switch login` exits with this when the sign-in belonged to another
+ *  account; it saved nothing, so the identity read afterwards is unchanged. */
+export const WRONG_ACCOUNT_EXIT = 4;
+
+/** The outcome of a sign-in from its exit code and the identities around it. */
+export function reauthOutcome(code: number | null, before: string | null, after: string | null): SignInOutcome {
+  if (code === WRONG_ACCOUNT_EXIT) return "mismatch";
+  return code === 0 || code == null ? signInOutcome(before, after) : "unfinished";
+}
+
 /** After the sign-in ran: unfinished when no identity can be read; mismatch only
  *  when the account had an identity before and the new one differs. */
 export function signInOutcome(before: string | null, after: string | null): SignInOutcome {

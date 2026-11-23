@@ -11,6 +11,7 @@ import {
   protectTitle,
   providerOf,
   signInArgs,
+  reauthOutcome,
   signInOutcome,
   usedIn,
 } from "./account-logic.js";
@@ -95,6 +96,13 @@ describe("sign-in", () => {
     expect(signInOutcome(null, "b@x.test")).toBe("verified");
     expect(signInOutcome("a@x.test", "b@x.test")).toBe("mismatch");
     expect(signInOutcome("a@x.test", null)).toBe("unfinished");
+  });
+
+  it("reads `login`'s wrong-account exit as a mismatch even though the identity did not change", () => {
+    expect(reauthOutcome(4, "a@x.test", "a@x.test")).toBe("mismatch");
+    expect(reauthOutcome(0, "a@x.test", "a@x.test")).toBe("verified");
+    expect(reauthOutcome(null, "a@x.test", "b@x.test")).toBe("mismatch");
+    expect(reauthOutcome(1, "a@x.test", "a@x.test")).toBe("unfinished");
   });
 
   it("blocks providers that can't be added here", () => {

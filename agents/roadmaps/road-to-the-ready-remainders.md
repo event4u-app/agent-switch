@@ -48,16 +48,20 @@ saved.
 
 ## Phase 1 — A wrong account is never saved
 
-- [ ] **1.1 Threat model the sign-in write path.** Map where `login` (CLI) and the
+- [x] **1.1 Threat model the sign-in write path.** Map where `login` (CLI) and the
       GUI sign-in write credentials and profile metadata, and which identity check
       runs when. Output: the abuse cases and the negative tests 1.2 must ship.
+      done: `agents/evidence/sign-in-write-path-threat-model-2026-11.md`.
       <!-- from: road-to-session-orchestration P3.2 -->
       <!-- adapted: the parked step was a "reauth wizard"; the triage found the concrete defect at src/commands/profiles.ts:205-224 -->
-- [ ] **1.2 Sign in into a staging location, check the identity, then commit.**
+- [x] **1.2 Sign in into a staging location, check the identity, then commit.**
       A mismatch (email or org differs from the expected account) leaves the
       profile and its credential store exactly as they were, on the CLI and in the
       GUI. verify: a test seen red first — wrong account → profile file and
       credential store byte-identical; right account → written once.
+      done: `src/staged-login.ts`; `tests/cli-e2e.test.ts` "login: …" N1–N6 (N1–N4
+      seen red first), `tests/staged-login.test.ts`; the GUI reads exit 4 as
+      "nothing was saved" (`reauthOutcome`).
       <!-- from: road-to-session-orchestration P3.2 -->
 
 ## Phase 2 — A start the user can predict

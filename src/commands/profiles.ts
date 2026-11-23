@@ -60,8 +60,10 @@ import {
   confirmAction,
   credentials,
   launch,
+  launchIn,
   logActivity,
 } from "./shared.js";
+import { Account, Verdict, WRONG_ACCOUNT_EXIT, accountIn, commitStaged, discardStaging, judgeSignIn, makeStaging, signedInAt, sweepStaleStaging } from "../staged-login.js";
 
 export function cmdAdd(providerId: ProviderId, name: string | undefined, browserId?: string, isolated = false): void {
   if (!name) die(`usage: agent-switch add [--provider ${providerId}] <profile> [--browser B] [--isolated]`);
@@ -197,21 +199,55 @@ const LOGIN_ARGS: Record<ProviderId, string[]> = {
 /**
  * Sign an existing profile in again — `add` refuses a name that exists, and a
  * login the provider cleared (signed out, refresh window ended) needs exactly
- * this. Runs the provider's own sign-in under the profile's config dir, then
- * reads the stored login back: the identity in the config outlives a sign-out,
- * so only the credential proves the sign-in happened.
+ * this. Claude and Codex sign in into a staging dir first; only a sign-in to the
+ * account the profile already belongs to is copied in, so picking the wrong
+ * Google account in the browser never replaces the profile's login.
  */
-export function cmdLogin(providerId: ProviderId, name: string | undefined, browserId?: string, isolated = false): void {
+export async function cmdLogin(providerId: ProviderId, name: string | undefined, browserId?: string, isolated = false): Promise<void> {
   const n = requireProfile(providerId, name, "login");
   const p = provider(providerId);
   const env = isolated ? isolatedEnv(browserId, providerId, n) : browserId ? browserEnv(browserId, providerId) : {};
   const args = loginArgsFor(providerId);
   console.log(`Signing ${providerId}/${n} in with \`${[p.binary, ...args].join(" ")}\` (finish it in the browser if one opens)...`);
-  const code = launch(p, n, args, env);
-  const after = authStatusFor(providerId, n);
-  const ok = after.state === "connected" || after.state === "expiring";
-  logActivity("login", `${providerId}/${n}`, ok ? "signed in again" : "sign-in not confirmed", "user ran `agent-switch login`", ok);
-  if (!ok) {
+  if (providerId === "antigravity") return loginInPlace(p, n, args, env);
+
+  const profileConfig = configDir(providerId, n);
+  const expected = accountIn(providerId, profileConfig);
+  sweepStaleStaging(credentials);
+  const staging = makeStaging(providerId, n);
+  const cleanup = () => discardStaging(providerId, staging, credentials);
+  process.once("exit", cleanup); // `die` inside the launch exits without unwinding
+  let verdict: Verdict;
+  let staged: Account;
+  let code: number;
+  try {
+    if (providerId === "claude") seedClaudeOnboarding(staging);
+    code = launchIn(p, staging, args, env);
+    staged = accountIn(providerId, staging);
+    verdict = judgeSignIn(expected, staged, signedInAt(providerId, staging, credentials));
+    if (verdict === "commit") await withProperLock(profileConfig, () => commitStaged(providerId, staging, profileConfig, credentials));
+  } finally {
+    cleanup();
+    process.removeListener("exit", cleanup);
+  }
+
+  const who = (a: Account) => `${a.email ?? "an unknown account"}${a.org && providerId === "claude" ? ` (organization ${a.org})` : ""}`;
+  const ok = verdict === "commit";
+  const action = { commit: "signed in again", "wrong-account": "sign-in to a different account refused", unreadable: "sign-in account unreadable, not saved", unfinished: "sign-in not confirmed" }[verdict];
+  logActivity("login", `${providerId}/${n}`, action, "user ran `agent-switch login`", ok);
+  if (verdict === "wrong-account") {
+    console.error(
+      `${providerId}/${n}: that sign-in belongs to a different account — ${who(staged)}, not ${who(expected)}. Nothing was saved; ` +
+        `${providerId}/${n} keeps its login. Sign in with ${expected.email}, or add the other account as its own profile: agent-switch add <name>${providerId === "claude" ? "" : ` --provider ${providerId}`}`,
+    );
+    process.exit(WRONG_ACCOUNT_EXIT);
+  }
+  if (verdict === "unreadable") {
+    console.error(`${providerId}/${n}: the sign-in finished but its account could not be read, so it was not saved over ${who(expected)}. Nothing was changed.`);
+    process.exit(1);
+  }
+  if (verdict === "unfinished") {
+    const after = authStatusFor(providerId, n);
     console.error(`${providerId}/${n} is still not signed in (${after.detail})${code !== 0 ? ` — ${p.binary} exited with ${code}` : ""}.`);
     process.exit(1);
   }
@@ -219,6 +255,27 @@ export function cmdLogin(providerId: ProviderId, name: string | undefined, brows
   if (sharesDefaultLogin(providerId, n)) setSharesDefaultLogin(providerId, n, false);
   const id = identity(providerId, n);
   console.log(`${providerId}/${n} is signed in${id ? ` as ${id}` : ""}.`);
+}
+
+/** Antigravity's `agy` signs in inside a session under the profile HOME and keeps
+ *  its token in that HOME's keychain, so it cannot be staged. A changed account
+ *  is reported; it is not undone. */
+function loginInPlace(p: Provider, n: string, args: string[], env: NodeJS.ProcessEnv): void {
+  const before = identity(p.id, n);
+  const code = launch(p, n, args, env);
+  const after = authStatusFor(p.id, n);
+  const ok = after.state === "connected" || after.state === "expiring";
+  logActivity("login", `${p.id}/${n}`, ok ? "signed in again" : "sign-in not confirmed", "user ran `agent-switch login`", ok);
+  if (!ok) {
+    console.error(`${p.id}/${n} is still not signed in (${after.detail})${code !== 0 ? ` — ${p.binary} exited with ${code}` : ""}.`);
+    process.exit(1);
+  }
+  const id = identity(p.id, n);
+  if (before && id && before.toLowerCase() !== id.toLowerCase()) {
+    console.error(`${p.id}/${n} is now signed in as ${id}, not ${before}. ${p.binary} signs in in place, so this could not be prevented; sign in again with ${before} if that was not intended.`);
+    process.exit(WRONG_ACCOUNT_EXIT);
+  }
+  console.log(`${p.id}/${n} is signed in${id ? ` as ${id}` : ""}.`);
 }
 
 /**

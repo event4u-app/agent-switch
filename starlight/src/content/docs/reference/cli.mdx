@@ -60,6 +60,12 @@ separate sign-in command; `agy` asks you to sign in when it starts.
 If the sign-in does not finish, the account is kept and `add` exits with `1`.
 Finish it with `agent-switch login <name>`.
 
+`login` on a Claude or Codex account that is already signed in to someone signs
+in in a separate folder first. Only a sign-in to the same account (same email,
+and for Claude the same organization) replaces the login. A different account
+saves nothing, keeps the old login and exits with `4`. Antigravity signs in in
+place, so `login` can only report a changed account afterwards (also exit `4`).
+
 `--browser <id>` opens the Claude sign-in in that browser (ids from
 `agent-switch browsers`). It is refused on Windows. Codex opens your default
 browser itself; the link it prints works in any browser.

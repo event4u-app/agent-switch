@@ -234,7 +234,7 @@ export const accounts: { readonly [K in keyof typeof en]: string } = {
   "accounts.reauth.sameAccount": "Gleiches Konto wie vorher.",
   "accounts.reauth.runsUntil": "Die Anmeldung gilt jetzt bis {when}.",
   "accounts.reauth.pausedContinue": "Pausierte Sitzungen machen dort weiter, wo sie aufgehört haben – nichts läuft doppelt.",
-  "accounts.reauth.mismatch": "Diese Anmeldung gehört zu einem anderen Konto, und der Ordner dieses Kontos enthält sie jetzt. Melde dich mit {who} an oder füg das andere als neues Konto hinzu.",
+  "accounts.reauth.mismatch": "Diese Anmeldung gehört zu einem anderen Konto. Gespeichert wurde nichts; dieses Konto behält seine Anmeldung. Melde dich mit {who} an oder füg das andere als neues Konto hinzu.",
   "accounts.reauth.wantedAccount": "dem Konto, das du hier willst",
   "accounts.fix.statePasses": "Besteht",
   "accounts.fix.stateWarn": "Ansehen",

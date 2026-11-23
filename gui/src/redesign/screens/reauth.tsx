@@ -17,7 +17,7 @@ import { Switch } from "../../ui/Switch.js";
 import { TOOL_LABEL } from "../../vm/rules.js";
 import { useAS } from "../../vm/store.js";
 import type { Tool } from "../../vm/types.js";
-import { providerOf, signInArgs, signInOutcome } from "./account-logic.js";
+import { providerOf, reauthOutcome, signInArgs } from "./account-logic.js";
 import { XtermBox } from "./terminal-sheet.js";
 
 const SIGN_IN_WITH: Record<Tool, TKey> = {
@@ -142,7 +142,7 @@ export function ReauthDialog({ accountId }: { accountId: string }) {
     if (!provider || !a) return;
     try {
       const now = await readIdentity(provider, a.name);
-      const outcome = code === 0 || code == null ? signInOutcome(before, now.identity) : "unfinished";
+      const outcome = reauthOutcome(code, before, now.identity);
       setSeen(now.identity);
       if (outcome === "unfinished") {
         setStep("start");

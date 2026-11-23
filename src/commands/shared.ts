@@ -153,7 +153,11 @@ export function syncClaudeProfile(dir: string): void {
 }
 
 export function launch(p: Provider, name: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}): number {
-  const home = configDir(p.id, name);
+  return launchIn(p, configDir(p.id, name), args, extraEnv);
+}
+
+/** `launch` with an explicit config dir — a staged sign-in runs outside the profile. */
+export function launchIn(p: Provider, home: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}): number {
   const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv, [p.envVar]: home };
   if (p.id === "claude") syncClaudeProfile(home);
   // Antigravity's agy CLI stores its token in the macOS keychain (fixed key) —

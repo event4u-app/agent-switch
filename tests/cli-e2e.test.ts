@@ -1658,7 +1658,7 @@ function runLogin(home: string, bin: string, args: string[]) {
 
 const posixGate = { skip: gate.skip || (process.platform === "win32" ? "fake binaries are POSIX shell scripts" : false) };
 
-test("login: runs `claude auth login` in the profile's config dir and confirms the sign-in", posixGate, () => {
+test("login: runs `claude auth login` in a staging dir and confirms the sign-in", posixGate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
   try {
@@ -1666,9 +1666,158 @@ test("login: runs `claude auth login` in the profile's config dir and confirms t
     const log = fakeProvider(bin, "claude", true);
     const r = runLogin(home, bin, ["login", "work"]);
     assert.equal(r.status, 0, r.stderr);
-    const cfg = path.join(home, "claude", "work", "config");
-    assert.deepEqual(fs.readFileSync(log, "utf8").trim().split("\n"), [`auth login|${cfg}`]);
+    const [line, ...rest] = fs.readFileSync(log, "utf8").trim().split("\n");
+    assert.deepEqual(rest, []);
+    assert.match(line!, new RegExp(`^auth login\\|${path.join(home, "staging", "claude-work-")}\\d+$`.replace(/\//g, "\\/")));
+    assert.match(fs.readFileSync(path.join(home, "claude", "work", "config", ".credentials.json"), "utf8"), /refreshToken/);
     assert.match(r.stdout, /signed in/i);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+// ---------- login: a wrong account is never saved (threat model N1-N6) ----------
+
+/** A fake provider that signs in as `who` (null = signs nothing in): Claude writes
+ *  the credential and `oauthAccount`, Codex an `auth.json` whose id_token carries
+ *  the email. Records the config dir it ran in. */
+function fakeSignIn(dir: string, binary: "claude" | "codex", who: { email: string; org?: string } | null): string {
+  const log = path.join(dir, `${binary}.log`);
+  const envVar = binary === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME";
+  let write = "";
+  if (who && binary === "claude") {
+    const account = JSON.stringify({ oauthAccount: { emailAddress: who.email, organizationUuid: who.org ?? "org-1" } });
+    write = `printf '%s' '{"claudeAiOauth":{"accessToken":"new","refreshToken":"r","expiresAt":4102444800000}}' > "$${envVar}/.credentials.json"\nprintf '%s' '${account}' > "$${envVar}/.claude.json"`;
+  } else if (who) {
+    const idToken = `x.${Buffer.from(JSON.stringify({ email: who.email })).toString("base64url")}.y`;
+    write = `printf '%s' '{"tokens":{"access_token":"new","refresh_token":"r","id_token":"${idToken}"}}' > "$${envVar}/auth.json"`;
+  }
+  fs.writeFileSync(path.join(dir, binary), `#!/bin/sh\n[ "$1" = "--version" ] && { echo "1.0.0"; exit 0; }\necho "$*|$${envVar}" >> "${log}"\n${write}\nexit 0\n`, { mode: 0o755 });
+  return log;
+}
+
+/** A Claude profile signed in as `email` in `org`, with a credential file. */
+function seedClaudeAccount(home: string, name: string, email: string, org = "org-1"): string {
+  const cfg = path.join(home, "claude", name, "config");
+  fs.mkdirSync(cfg, { recursive: true });
+  fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ hasCompletedOnboarding: true, oauthAccount: { emailAddress: email, organizationUuid: org } }));
+  fs.writeFileSync(path.join(cfg, ".credentials.json"), '{"claudeAiOauth":{"accessToken":"old","refreshToken":"r","expiresAt":4102444800000}}');
+  return cfg;
+}
+
+function snapshotDir(dir: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of fs.readdirSync(dir)) {
+    const p = path.join(dir, f);
+    if (fs.statSync(p).isFile()) out[f] = fs.readFileSync(p, "utf8");
+  }
+  return out;
+}
+
+function stagingLeft(home: string): string[] {
+  const dir = path.join(home, "staging");
+  return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+}
+
+/** Exit code `login` uses for "signed in to a different account; nothing saved". */
+const WRONG_ACCOUNT_EXIT = 4;
+
+for (const c of [
+  { label: "another email", who: { email: "private@example.com", org: "org-1" } },
+  { label: "the same email in another organization", who: { email: "work@example.com", org: "org-2" } },
+]) {
+  test(`login: a Claude sign-in to ${c.label} leaves the profile byte-identical`, posixGate, () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
+    try {
+      const cfg = seedClaudeAccount(home, "work", "work@example.com", "org-1");
+      const before = snapshotDir(cfg);
+      fakeSignIn(bin, "claude", c.who);
+      const r = runLogin(home, bin, ["login", "work"]);
+      assert.equal(r.status, WRONG_ACCOUNT_EXIT, r.stderr);
+      assert.match(r.stderr, /different account/i);
+      assert.match(r.stderr, /nothing was saved/i);
+      assert.deepEqual(snapshotDir(cfg), before);
+      assert.deepEqual(stagingLeft(home), []);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(bin, { recursive: true, force: true });
+    }
+  });
+}
+
+test("login: a Codex sign-in to another email leaves auth.json byte-identical", posixGate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
+  try {
+    const cfg = path.join(home, "codex", "w", "config");
+    fs.mkdirSync(cfg, { recursive: true });
+    const idToken = `x.${Buffer.from(JSON.stringify({ email: "work@example.com" })).toString("base64url")}.y`;
+    fs.writeFileSync(path.join(cfg, "auth.json"), JSON.stringify({ tokens: { access_token: "old", refresh_token: "r", id_token: idToken } }));
+    const before = snapshotDir(cfg);
+    fakeSignIn(bin, "codex", { email: "private@example.com" });
+    const r = runLogin(home, bin, ["login", "--provider", "codex", "w"]);
+    assert.equal(r.status, WRONG_ACCOUNT_EXIT, r.stderr);
+    assert.deepEqual(snapshotDir(cfg), before);
+    assert.deepEqual(stagingLeft(home), []);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test("login: the right account is written into the profile once, staging removed", posixGate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
+  try {
+    const cfg = seedClaudeAccount(home, "work", "work@example.com", "org-1");
+    const log = fakeSignIn(bin, "claude", { email: "work@example.com", org: "org-1" });
+    const r = runLogin(home, bin, ["login", "work"]);
+    assert.equal(r.status, 0, r.stderr);
+    const runs = fs.readFileSync(log, "utf8").trim().split("\n");
+    assert.equal(runs.length, 1);
+    assert.doesNotMatch(runs[0]!, new RegExp(`\\|${cfg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`), "the provider never runs in the profile itself");
+    assert.match(fs.readFileSync(path.join(cfg, ".credentials.json"), "utf8"), /"accessToken":"new"/);
+    const account = JSON.parse(fs.readFileSync(path.join(cfg, ".claude.json"), "utf8"));
+    assert.equal(account.oauthAccount.emailAddress, "work@example.com");
+    assert.equal(account.hasCompletedOnboarding, true, "the profile's other settings are kept");
+    assert.deepEqual(stagingLeft(home), []);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test("login: an unfinished sign-in leaves the profile untouched and no staging behind", posixGate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
+  try {
+    const cfg = seedClaudeAccount(home, "work", "work@example.com");
+    fs.rmSync(path.join(cfg, ".credentials.json")); // signed out
+    const before = snapshotDir(cfg);
+    fakeSignIn(bin, "claude", null);
+    const r = runLogin(home, bin, ["login", "work"]);
+    assert.equal(r.status, 1);
+    assert.deepEqual(snapshotDir(cfg), before);
+    assert.deepEqual(stagingLeft(home), []);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test("login: a profile with no account yet takes whichever account signs in", posixGate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
+  try {
+    seed(home, "claude", "fresh");
+    fakeSignIn(bin, "claude", { email: "anyone@example.com" });
+    const r = runLogin(home, bin, ["login", "fresh"]);
+    assert.equal(r.status, 0, r.stderr);
+    const cfg = path.join(home, "claude", "fresh", "config");
+    assert.equal(JSON.parse(fs.readFileSync(path.join(cfg, ".claude.json"), "utf8")).oauthAccount.emailAddress, "anyone@example.com");
+    assert.deepEqual(stagingLeft(home), []);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(bin, { recursive: true, force: true });
@@ -1690,7 +1839,7 @@ test("login: an unfinished sign-in exits non-zero and says so", posixGate, () =>
   }
 });
 
-test("login: codex signs in with `codex login` under the profile's CODEX_HOME", posixGate, () => {
+test("login: codex signs in with `codex login` under a staging CODEX_HOME, then into the profile", posixGate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
   try {
@@ -1698,7 +1847,11 @@ test("login: codex signs in with `codex login` under the profile's CODEX_HOME", 
     const log = fakeProvider(bin, "codex", true);
     const r = runLogin(home, bin, ["login", "--provider", "codex", "w"]);
     assert.equal(r.status, 0, r.stderr);
-    assert.deepEqual(fs.readFileSync(log, "utf8").trim().split("\n"), [`login|${path.join(home, "codex", "w", "config")}`]);
+    const lines = fs.readFileSync(log, "utf8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    assert.ok(lines[0]!.startsWith(`login|${path.join(home, "staging", "codex-w-")}`), lines[0]);
+    assert.match(fs.readFileSync(path.join(home, "codex", "w", "config", "auth.json"), "utf8"), /refresh_token/);
+    assert.deepEqual(stagingLeft(home), []);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(bin, { recursive: true, force: true });
