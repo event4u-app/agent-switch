@@ -51,8 +51,10 @@ test("diff: the review as JSON and text, stage a change, a refused undo, a commi
   assert.equal(o.scope, "worktree");
   assert.deepEqual(o.files.map((f: { path: string; hunks: { layer: string }[] }) => [f.path, f.hunks.map((h) => h.layer)]), [["a.txt", ["unstaged"]]]);
   assert.match(run("diff", ID).stdout, /^M a\.txt {2}\+1 -1$/m);
-  const staged = run("diff", ID, "stage", "--file", "a.txt", "--json");
-  assert.deepEqual(JSON.parse(staged.stdout), { ok: true, done: "staged a change in a.txt", undo: false });
+  const stale = run("diff", ID, "stage", "--file", "a.txt", "--file-hash", "0000000000000000", "--json");
+  assert.deepEqual(JSON.parse(stale.stdout), { ok: false, error: "the file changed since you looked — read it again" });
+  const staged = run("diff", ID, "stage", "--file", "a.txt", "--file-hash", o.files[0].hash, "--json");
+  assert.deepEqual(JSON.parse(staged.stdout), { ok: true, done: "staged a.txt", undo: false });
   const undo = run("diff", ID, "undo", "--json");
   assert.equal(undo.status, 2);
   assert.deepEqual(JSON.parse(undo.stdout), { ok: false, error: "nothing to undo" });
