@@ -229,14 +229,21 @@ export const resetIn = (ms: number) => `↻ ${duration(ms)}`;
 export const age = (ms: number) => `${duration(ms)} old`;
 export const checkedAgo = (ms: number) => (ms < 60_000 ? "checked just now" : `checked ${duration(ms)} ago`);
 
+/** The box of a checkbox: neutral fill and a check when on, so on and off never read alike at any size. */
+export function CheckMark({ checked, size = 16, className, role }: { checked: boolean; size?: 14 | 16; className?: string; role?: "checkbox" }) {
+  return (
+    <span role={role} aria-checked={role ? checked : undefined} aria-hidden={role ? undefined : true} className={cn("inline-flex shrink-0 items-center justify-center rounded border text-ac-bg", size === 14 ? "size-3.5" : "size-4", checked ? "border-ac-text bg-ac-text" : "border-ac-line2", className)}>
+      {checked && <Check strokeWidth={3} className={size === 14 ? "size-2.5" : "size-3"} />}
+    </span>
+  );
+}
+
 /** The one checkbox (boards "decide", "table", "new"): a rounded square, filled with the neutral text colour when on — orange means "needs you" (5.1). */
 export function CheckBox({ checked, onChange, label, size = 16, children }: { checked: boolean; onChange: () => void; label?: string; size?: 14 | 16; children?: ReactNode }) {
   return (
     <label className={cn("inline-flex shrink-0 cursor-pointer items-center gap-2", children && "text-xs text-ac-soft")} onClick={(e) => e.stopPropagation()}>
       <input type="checkbox" className="peer sr-only" aria-label={label} checked={checked} onChange={onChange} />
-      <span className={cn("inline-flex items-center justify-center rounded border text-ac-bg peer-focus-visible:ring-2 peer-focus-visible:ring-ac-brand-line", size === 14 ? "size-3.5" : "size-4", checked ? "border-ac-text bg-ac-text" : "border-ac-line2")}>
-        {checked && size === 16 && <Check className="size-3" />}
-      </span>
+      <CheckMark checked={checked} size={size} className="peer-focus-visible:ring-2 peer-focus-visible:ring-ac-brand-line" />
       {children}
     </label>
   );
