@@ -282,9 +282,14 @@ export function mergedWorktrees(): { path: string; dirty: boolean; keys: string[
   return [...out.values()];
 }
 
-export function cmdCleanup(flags: Record<string, string | boolean>): void {
-  const list = mergedWorktrees();
-  if (list.length === 0) return void console.log("No worktree of a merged session to clean up.");
+/** The merged worktrees the named sessions work in; every one when none is named. Pure. */
+export function worktreesFor<W extends { keys: string[] }>(list: readonly W[], sessions: readonly string[]): W[] {
+  return sessions.length ? list.filter((w) => w.keys.some((k) => sessions.includes(k))) : [...list];
+}
+
+export function cmdCleanup(sessions: readonly string[], flags: Record<string, string | boolean>): void {
+  const list = worktreesFor(mergedWorktrees(), sessions);
+  if (list.length === 0) return void console.log(sessions.length ? "None of these sessions works in the worktree of a merged PR." : "No worktree of a merged session to clean up.");
   for (const w of list) {
     if (w.dirty) {
       console.log(`skip ${w.path}: it has changes`);

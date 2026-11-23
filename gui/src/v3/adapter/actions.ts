@@ -5,7 +5,7 @@
 import type { SessionRow } from "../../transforms.js";
 import { accountId, accountIdFromMember } from "../../vm/build.js";
 import { splitAccountId, type Actions } from "../../vm/actions.js";
-import { sessionArgs, type StartChoice, type SwitchRequestRow } from "../../ipc.js";
+import { sessionArgs, type PrPlanJson, type StartChoice, type SwitchRequestRow } from "../../ipc.js";
 import { requestKind, requestsForMoves } from "../../vm/switch-requests.js";
 import type { Overlay, TerminalRun, Toast } from "../../vm/store.js";
 import type { ProviderId } from "../../transforms.js";
@@ -34,7 +34,12 @@ export interface DispatchIpc {
   setAgentEnabled(id: string, on: boolean): Promise<void>;
   setRemoteControl(account: string, on: boolean): Promise<void>;
   setRemoteSsh(on: boolean): Promise<void>;
-  cleanupMerged(): Promise<void>;
+  /** Removes merged worktrees: only those of `keys` when given. */
+  cleanupMerged(keys?: string[]): Promise<void>;
+  /** What Create PR would do (branch, base, title, push), or why it cannot. */
+  prCreatePlan(key: string): Promise<PrPlanJson>;
+  /** Pushes the branch and creates its PR; the PR's URL. */
+  prCreate(key: string): Promise<string>;
   engineRestart(): Promise<void>;
   renameSession(key: string, name: string): Promise<void>;
   openSessionIn(key: string, target?: string): Promise<void>;
@@ -86,11 +91,6 @@ const vmSessionId = (key: string) => {
   const [provider, , id] = key.split("/");
   return `${provider}:${id}`;
 };
-/** `git@github.com:o/r.git` / `https://github.com/o/r` → `o/r`. */
-export function githubSlug(remote: string | null | undefined): string | null {
-  const m = remote ? /github\.com[:/]([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/.exec(remote) : null;
-  return m ? `${m[1]}/${m[2]}` : null;
-}
 function prUrl(row: SessionRow | undefined): string | null {
   const pr = row ? (row.prs ?? []).map(parsePr).find((p) => p !== null) : null;
   return pr?.url || null;
@@ -127,15 +127,40 @@ function blocker(key: string, deps: DispatchDeps): Promise<void> | void {
   if (!n) return;
   if (n.prompt) return sendPrompt(key, n.prompt, deps) || copyPrompt(n.prompt, deps);
   if (n.does === "focus") return run(deps, "Focus", deps.ipc.focusSessionTerminal(key));
-  if (n.does === "create-pr") return createPr(row, deps);
+  if (n.does === "create-pr") return createPr(key, deps);
   const url = prUrl(row);
   if (url) deps.openUrl(n.does === "open-checks" ? `${url}/checks` : url);
 }
-function createPr(row: SessionRow | undefined, deps: DispatchDeps): void {
-  const slug = githubSlug(row?.git?.remote);
-  const branch = row?.git?.branch;
-  if (!slug || !branch) return void deps.toast({ tone: "warn", text: "This session's branch is not on GitHub" });
-  deps.openUrl(`https://github.com/${slug}/compare/${encodeURIComponent(branch)}?expand=1`);
+/** What the Create PR confirmation says. Pure. */
+export function prCreateBody(p: PrPlanJson): string {
+  const push = p.upstream ? `Pushes ${p.branch} to ${p.upstream}` : `Pushes ${p.branch} to ${p.remote} (sets its upstream)`;
+  const out = p.uncommitted ? ` ${p.uncommitted} uncommitted ${p.uncommitted === 1 ? "file stays" : "files stay"} out of it.` : "";
+  return `${push} and opens a pull request into ${p.base}, titled “${p.title}”, with gh.${out}`;
+}
+/** Asks with branch, base and title, then pushes and creates the PR through the CLI (`gh pr create`). */
+async function createPr(key: string, deps: DispatchDeps): Promise<void> {
+  let plan: PrPlanJson;
+  try {
+    plan = await deps.ipc.prCreatePlan(key);
+  } catch (e) {
+    return deps.toast({ tone: "alert", text: `Create PR failed: ${e instanceof Error ? e.message : String(e)}` });
+  }
+  if (plan.problem) return deps.toast({ tone: "alert", text: `Create PR: ${plan.problem.message} — ${plan.problem.fix}` });
+  deps.open({
+    kind: "confirm",
+    title: "Create a pull request?",
+    body: prCreateBody(plan),
+    confirm: "Push and create PR",
+    onConfirm: () =>
+      void run(
+        deps,
+        "Create PR",
+        deps.ipc.prCreate(key).then((url) => {
+          deps.toast({ tone: "ok", text: `Pull request created: ${url}` });
+          if (/^https:\/\//.test(url)) deps.openUrl(url);
+        }),
+      ),
+  });
 }
 /** The message a switched session is sent so it carries on. */
 const CONTINUE = "Continue where you left off.";
@@ -318,7 +343,12 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
     case "batch": {
       if (a.op === "onPin") return run(deps, "Pin", Promise.all(a.keys.map((k) => deps.ipc.setLibraryFlag(k, "pin", true))));
       if (a.op === "onArchive") return run(deps, "Archive", Promise.all(a.keys.map((k) => deps.ipc.setLibraryFlag(k, "archive", true))));
-      if (a.op === "onClean") return run(deps, "Clean up", deps.ipc.cleanupMerged());
+      if (a.op === "onClean") {
+        if (!a.keys.length) return;
+        const n = a.keys.length;
+        const keys = [...a.keys];
+        return deps.open({ kind: "confirm", title: `Clean up the worktrees of ${n} selected session${n === 1 ? "" : "s"}?`, body: "Removes the worktrees of the selected sessions whose PR is merged. A worktree with changes is skipped; other worktrees stay.", confirm: "Clean up", onConfirm: () => void run(deps, "Clean up", deps.ipc.cleanupMerged(keys)) });
+      }
       if (a.op === "onEnd") {
         const keys = a.keys.filter(deps.hosted);
         if (!keys.length) return deps.toast({ tone: "info", text: "Only sessions hosted in Agent Switch can be ended here" });
@@ -354,7 +384,7 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
     case "blocker":
       return blocker(a.key, deps);
     case "create-pr":
-      return createPr(deps.rows().get(a.key), deps);
+      return createPr(a.key, deps);
     case "open-pr": {
       const url = prUrl(deps.rows().get(a.key));
       return url ? deps.openUrl(url) : undefined;

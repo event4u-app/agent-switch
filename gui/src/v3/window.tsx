@@ -261,9 +261,9 @@ export function V3Window({
     setActive(`page:${p}`);
   }, []);
   const frame = useFrame(openPage);
-  /** The session's Review tab, at `file` when one was picked. */
+  /** The session's Review tab, at `file` when one was picked; every open is new, so the review goes back to Uncommitted. */
   const openReview = (key: string, file?: string) => {
-    if (file) setReviewFocus((m) => new Map(m).set(key, { file, seq: (m.get(key)?.seq ?? 0) + 1 }));
+    setReviewFocus((m) => new Map(m).set(key, { ...(file ? { file } : {}), seq: (m.get(key)?.seq ?? 0) + 1 }));
     openPage(`review:${key}`);
   };
   const openSession = (key: string) => {

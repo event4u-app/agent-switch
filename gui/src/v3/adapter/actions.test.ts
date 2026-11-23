@@ -6,7 +6,7 @@ import { accountId } from "../../vm/build.js";
 import type { NeedItem } from "../needs.js";
 import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
 import type { V3Action } from "../window.js";
-import { dispatchV3, githubSlug, menuFor, type DispatchDeps } from "./actions.js";
+import { dispatchV3, menuFor, type DispatchDeps } from "./actions.js";
 import { decisionFor } from "./data.js";
 
 const PR = { number: 9, url: "https://github.com/o/r/pull/9", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "NONE", ci: "FAILURE", failingChecks: ["lint"] };
@@ -30,7 +30,9 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
     setAgentEnabled: vi.fn(async () => {}),
     setRemoteControl: vi.fn(async () => {}),
     setRemoteSsh: vi.fn(async () => {}),
-    cleanupMerged: vi.fn(async () => {}),
+    cleanupMerged: vi.fn(async (_keys?: string[]) => {}),
+    prCreatePlan: vi.fn(async (_key: string) => ({ branch: "feat/x" as string | null, base: "main" as string | null, remote: "origin", upstream: null as string | null, ahead: 2 as number | null, title: "feat: the change", uncommitted: 1, problem: null as { message: string; fix: string } | null })),
+    prCreate: vi.fn(async (_key: string) => "https://github.com/o/r/pull/12"),
     engineRestart: vi.fn(async () => {}),
     renameSession: vi.fn(async () => {}),
     openSessionIn: vi.fn(async () => {}),
@@ -270,14 +272,52 @@ describe("dispatchV3", () => {
     expect(d.openUrl).not.toHaveBeenCalled();
   });
 
-  it("PR actions open the right page", () => {
+  it("Open PR opens the PR's page", () => {
     const d = deps([]);
     dispatchV3({ type: "open-pr", key: "claude/work/a" }, d);
     expect(d.openUrl).toHaveBeenLastCalledWith("https://github.com/o/r/pull/9");
-    dispatchV3({ type: "create-pr", key: "claude/work/a" }, d);
-    expect(d.openUrl).toHaveBeenLastCalledWith("https://github.com/o/r/compare/feat%2Fx?expand=1");
-    dispatchV3({ type: "create-pr", key: "claude/work/h" }, d);
-    expect(d.toast).toHaveBeenCalled();
+  });
+
+  it("Create PR asks first with branch, base and title, then pushes and creates it through the CLI and opens it", async () => {
+    const d = deps([]);
+    await dispatchV3({ type: "create-pr", key: "claude/work/a" }, d);
+    expect(d.ipc.prCreatePlan).toHaveBeenCalledWith("claude/work/a");
+    expect(d.ipc.prCreate).not.toHaveBeenCalled();
+    const ask = d.open.mock.calls.at(-1)![0];
+    expect(ask).toMatchObject({ kind: "confirm", title: "Create a pull request?", confirm: "Push and create PR" });
+    expect(ask.body).toContain("feat/x");
+    expect(ask.body).toContain("into main");
+    expect(ask.body).toContain("“feat: the change”");
+    expect(ask.body).toContain("sets its upstream");
+    expect(ask.body).toContain("1 uncommitted file stays out");
+    ask.onConfirm();
+    await flush();
+    expect(d.ipc.prCreate).toHaveBeenCalledWith("claude/work/a");
+    expect(d.openUrl).toHaveBeenLastCalledWith("https://github.com/o/r/pull/12");
+    expect(d.refresh).toHaveBeenCalled();
+  });
+
+  it("Create PR without gh, or signed out, says so with the fix and pushes nothing", async () => {
+    const d = deps([]);
+    d.ipc.prCreatePlan.mockResolvedValueOnce({ branch: "feat/x", base: "main", remote: "origin", upstream: null, ahead: 2, title: "t", uncommitted: 0, problem: { message: "gh is not signed in", fix: "gh auth login" } });
+    await dispatchV3({ type: "create-pr", key: "claude/work/a" }, d);
+    expect(d.toast).toHaveBeenCalledWith({ tone: "alert", text: "Create PR: gh is not signed in — gh auth login" });
+    expect(d.open).not.toHaveBeenCalled();
+    expect(d.ipc.prCreate).not.toHaveBeenCalled();
+    d.ipc.prCreatePlan.mockRejectedValueOnce(new Error("no Claude or Codex session x"));
+    await dispatchV3({ type: "create-pr", key: "claude/work/a" }, d);
+    expect(d.toast).toHaveBeenLastCalledWith({ tone: "alert", text: "Create PR failed: no Claude or Codex session x" });
+  });
+
+  it("the selection bar's Clean worktrees asks first and cleans only the selected sessions' merged worktrees", async () => {
+    const d = deps([]);
+    await dispatchV3({ type: "batch", op: "onClean", keys: ["claude/work/a", "claude/work/h"] }, d);
+    expect(d.ipc.cleanupMerged).not.toHaveBeenCalled();
+    const ask = d.open.mock.calls.at(-1)![0];
+    expect(ask).toMatchObject({ kind: "confirm", title: "Clean up the worktrees of 2 selected sessions?", confirm: "Clean up" });
+    ask.onConfirm();
+    await flush();
+    expect(d.ipc.cleanupMerged).toHaveBeenCalledWith(["claude/work/a", "claude/work/h"]);
   });
 
   it("accounts, library, settings, engine", async () => {
@@ -413,23 +453,13 @@ describe("decisionFor a single session", () => {
   });
 });
 
-describe("githubSlug", () => {
-  it.each([
-    ["git@github.com:o/r.git", "o/r"],
-    ["https://github.com/o/r", "o/r"],
-    ["https://github.com/o/r.js.git", "o/r.js"],
-    ["https://gitlab.com/o/r", null],
-    [null, null],
-  ])("%s → %s", (r, s) => expect(githubSlug(r)).toBe(s));
-});
-
 import tauriConf from "../../../src-tauri/tauri.conf.json?raw";
 
 // The scope was the GitHub-only list until the owner opened it to any http(s)
 // URL (2026-11-05, ⌘-click on chat links); what it still refuses is checked here.
 describe("the shell open scope admits the PR pages the adapter opens, and no other scheme", () => {
   const scope = new RegExp(`^(?:${JSON.parse(tauriConf).plugins.shell.open})$`);
-  it.each(["https://github.com/o/r/pull/9", "https://github.com/o/r/pull/9/checks", `https://github.com/o/r/compare/${encodeURIComponent("feat/x")}?expand=1`])("allows %s", (u) => expect(scope.test(u)).toBe(true));
+  it.each(["https://github.com/o/r/pull/9", "https://github.com/o/r/pull/9/checks"])("allows %s", (u) => expect(scope.test(u)).toBe(true));
   it.each(["javascript:alert(1)", "file:///etc/passwd", "github.com/o/r/pull/9", "agent-switch://pull/9", "https://github.com/o/r/pull/9 x", "https://github.com/o/r/pull/9\n"])("refuses %s", (u) => expect(scope.test(u)).toBe(false));
 });
 

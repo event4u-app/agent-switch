@@ -300,7 +300,7 @@ export async function sessionFiles(key: string, query: string): Promise<string[]
   return Array.isArray(o.files) ? o.files.filter((f: unknown): f is string => typeof f === "string") : [];
 }
 
-export type ReviewScope = "turn" | "session" | "worktree" | "staged";
+export type ReviewScope = "uncommitted" | "turn" | "session" | "worktree" | "staged";
 export interface ReviewHunkJson {
   oldStart: number;
   newStart: number;
@@ -315,12 +315,35 @@ export interface ReviewFileJson {
   added: number;
   removed: number;
   hunks: ReviewHunkJson[];
+  /** Past the review's size budget: counted, its hunks left out. */
+  omitted?: boolean;
 }
+export type ReviewJson =
+  | { unchanged: true; fingerprint: string }
+  | { unchanged?: false; files: ReviewFileJson[]; shared: string[]; base: string | null; baseRef: string | null; note: string | null; omitted: number; fingerprint: string | null };
 
-/** `diff <session> --scope S --json`: the Review page's files. */
-export async function sessionReview(key: string, scope: ReviewScope): Promise<{ files: ReviewFileJson[]; shared: string[]; base: string | null }> {
-  const o = JSON.parse(await runCli(["diff", key, "--scope", scope, "--json"]));
-  return { files: Array.isArray(o.files) ? o.files : [], shared: Array.isArray(o.shared) ? o.shared : [], base: typeof o.base === "string" ? o.base : null };
+/** `diff <session> --scope S --json [--since FP]`: the Review page's files, or `unchanged` when `since` still holds. */
+export async function sessionReview(key: string, scope: ReviewScope, since?: string): Promise<ReviewJson> {
+  const out = await cli(["diff", key, "--scope", scope, "--json", ...(since ? ["--since", since] : [])]).execute();
+  let o: Record<string, unknown> = {};
+  try {
+    o = JSON.parse(out.stdout.trim().split("\n").pop() ?? "{}");
+  } catch {
+    /* not JSON: the exit code decides */
+  }
+  // A refused review (git failed or timed out) carries its reason; never read as "no changes".
+  if (out.code !== 0 || o.ok === false) throw new Error((typeof o.error === "string" && o.error) || out.stderr || "agent-switch diff failed");
+  if (o.unchanged === true && typeof o.fingerprint === "string") return { unchanged: true, fingerprint: o.fingerprint };
+  const str = (v: unknown) => (typeof v === "string" ? v : null);
+  return {
+    files: Array.isArray(o.files) ? o.files : [],
+    shared: Array.isArray(o.shared) ? o.shared : [],
+    base: str(o.base),
+    baseRef: str(o.baseRef),
+    note: str(o.note),
+    omitted: typeof o.omitted === "number" ? o.omitted : 0,
+    fingerprint: str(o.fingerprint),
+  };
 }
 
 /** A CLI action answering `--json` with ok/error; a refusal comes back as an Error with the CLI's reason. */
@@ -403,9 +426,37 @@ export async function hostRespawn(key: string, change: { model?: string; effort?
   await runCli(["host", "respawn", key, ...(change.model ? ["--model", change.model] : []), ...(change.effort ? ["--effort", change.effort] : [])]);
 }
 
-/** `sessions cleanup --yes`: remove the worktrees of merged sessions (dirty ones skipped). */
-export async function cleanupMerged(): Promise<void> {
-  await runCli(["sessions", "cleanup", "--yes"]);
+/** `sessions cleanup [<session>…] --yes`: remove the worktrees of merged sessions (dirty ones skipped); only those of `keys` when given. */
+export async function cleanupMerged(keys: string[] = []): Promise<void> {
+  await runCli(["sessions", "cleanup", ...keys, "--yes"]);
+}
+
+/** `pr create <session> --json` without `--yes`: what Create PR would do, or why it cannot. */
+export interface PrPlanJson {
+  branch: string | null;
+  base: string | null;
+  remote: string;
+  upstream: string | null;
+  ahead: number | null;
+  title: string;
+  uncommitted: number;
+  problem: { message: string; fix: string } | null;
+}
+export async function prCreatePlan(key: string): Promise<PrPlanJson> {
+  return JSON.parse(await runCli(["pr", "create", key, "--json"])) as PrPlanJson;
+}
+
+/** `pr create <session> --yes --json`: push the branch and create its PR; the PR's URL. */
+export async function prCreate(key: string): Promise<string> {
+  const out = await cli(["pr", "create", key, "--yes", "--json"]).execute();
+  let o: { ok?: boolean; error?: string; url?: string } = {};
+  try {
+    o = JSON.parse(out.stdout.trim().split("\n").pop() ?? "{}");
+  } catch {
+    /* not JSON: fall through to the exit code */
+  }
+  if (out.code !== 0 || o.ok === false || !o.url) throw new Error(o.error || out.stderr || "agent-switch pr create failed");
+  return o.url;
 }
 
 /** "Later": hide one item until it changes. */

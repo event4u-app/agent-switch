@@ -151,3 +151,65 @@ test("sharedWorktree: other live sessions in the same worktree, however git spel
     ["claude/w/other", "claude/w/raw"],
   );
 });
+
+test("uncommitted: exactly what `changes` lists (staged, unstaged and new vs HEAD), nothing committed; base HEAD", async () => {
+  const { r } = repo();
+  const { changesIn } = await import("../src/commands/changes.js");
+  const rev = d.review(target(r), "uncommitted");
+  assert.deepEqual(rev.files.map((f) => f.path), changesIn(r)!.map((f) => f.path).sort());
+  assert.ok(rev.files.every((f) => f.hunks.every((h) => h.layer !== "committed")));
+  assert.equal(rev.baseRef, "HEAD");
+  assert.equal(rev.note, null);
+});
+
+test("the compare base is named: the main line for worktree, HEAD for staged", () => {
+  const { r } = repo();
+  const w = d.review(target(r), "worktree");
+  assert.equal(w.baseRef, "main");
+  assert.match(w.base!, /^[0-9a-f]{40}$/);
+  assert.equal(d.review(target(r), "staged").baseRef, "HEAD");
+});
+
+test("session scope without a findable start says so and does not fall back to the main line", () => {
+  const { r } = repo();
+  const s = d.review(target(r), "session");
+  assert.deepEqual(s.files, []);
+  assert.equal(s.base, null);
+  assert.match(s.note!, /start/i);
+  assert.match(s.note!, /Branch vs main/);
+});
+
+test("a large review keeps every file and its counts, but drops hunks past the line budget", () => {
+  const { r } = repo();
+  const full = d.review(target(r), "worktree");
+  const capped = d.review(target(r), "worktree", { maxLines: 3 });
+  assert.deepEqual(capped.files.map((f) => [f.path, f.added, f.removed]), full.files.map((f) => [f.path, f.added, f.removed]));
+  const omitted = capped.files.filter((f) => f.omitted);
+  assert.ok(omitted.length > 0, "something is past the budget");
+  assert.ok(omitted.every((f) => f.hunks.length === 0));
+  assert.equal(capped.omitted, omitted.length);
+  assert.equal(full.omitted, 0);
+});
+
+test("a failed git diff is refused, not shown as no changes", () => {
+  const { r } = repo();
+  fs.writeFileSync(path.join(r, ".git", "index"), "not an index");
+  assert.match(refusal(() => d.review(target(r), "uncommitted")), /git (diff|ls-files) failed/);
+});
+
+test("gitFailure names a timeout and a too-large output", () => {
+  assert.equal(d.gitFailure({ status: 0, signal: null, stderr: "" }), null);
+  assert.match(d.gitFailure({ status: null, signal: "SIGTERM", error: Object.assign(new Error("x"), { code: "ETIMEDOUT" }), stderr: "" })!, /timed out/);
+  assert.match(d.gitFailure({ status: null, signal: "SIGTERM", error: Object.assign(new Error("x"), { code: "ENOBUFS" }), stderr: "" })!, /too large/);
+  assert.match(d.gitFailure({ status: 128, signal: null, stderr: "fatal: bad\nmore" })!, /fatal: bad$/);
+});
+
+test("fingerprint: the same while nothing changes, different after an edit or for another scope", () => {
+  const { r } = repo();
+  const t = target(r);
+  const a = d.fingerprint(t, "uncommitted");
+  assert.equal(d.fingerprint(t, "uncommitted"), a);
+  assert.notEqual(d.fingerprint(t, "staged"), a);
+  fs.writeFileSync(path.join(r, "new.txt"), "fresh\nand more\n");
+  assert.notEqual(d.fingerprint(t, "uncommitted"), a);
+});
