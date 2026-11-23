@@ -30,11 +30,14 @@ function run(h: string, code: string, input = "") {
 
 test("timeline --json: the fixture transcript's last page, with its version", () => {
   const h = home();
-  const r = run(h, `const { cmdTimeline } = await import(${JSON.stringify(mod)}); await cmdTimeline("9f640d3b-0a51-47b5-944c-934d3148a098", { json: true, limit: "20" });`);
+  const r = run(h, `const { cmdTimeline } = await import(${JSON.stringify(mod)}); await cmdTimeline("9f640d3b-0a51-47b5-944c-934d3148a098", { json: true, limit: "3" });`);
   assert.equal(r.status, 0, r.stderr);
   const o = JSON.parse(r.stdout);
-  assert.deepEqual([o.key, o.provider, o.version, o.newerThanFixtures, o.events.length], ["claude/work/9f640d3b-0a51-47b5-944c-934d3148a098", "claude", "2.1.316", false, 20]);
+  assert.deepEqual([o.key, o.provider, o.version, o.newerThanFixtures], ["claude/work/9f640d3b-0a51-47b5-944c-934d3148a098", "claude", "2.1.316", false]);
   assert.equal(o.from + o.events.length, o.total, "the last page ends at the newest event");
+  assert.ok(o.from > 0 && o.earlierPrompts === 1, "three rows reach back into the second prompt's turn; the first prompt is earlier");
+  assert.ok(!o.events.some((e: { t: string }) => e.t === "unknown"), "bookkeeping lines are not sent");
+  assert.ok(o.hidden.attachment > 0, "but they are counted");
 });
 
 test("bridge: a second writer is refused while the lease is held; the holder's bridge starts and releases it", () => {

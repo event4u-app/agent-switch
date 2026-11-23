@@ -30,7 +30,7 @@ import { localLayout } from "../layout.js";
 import { KEYS_STORAGE, withRebinds } from "../keys.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
-import { canTakeOver, chatStart, initialPlan, sessionKey, startKey, toV3Data, worktreeOf, type AdapterEnv, type SessionTerminal } from "./data.js";
+import { canTakeOver, chatStart, initialPlan, NO_TERMINAL_WHY, sessionKey, startKey, toV3Data, worktreeOf, type AdapterEnv, type SessionTerminal } from "./data.js";
 import { SessionBody, SubagentTranscript, ToolsSlot, settingsSection } from "./slots.js";
 import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
@@ -353,7 +353,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       case "none":
         return;
       case "no-terminal":
-        return s.toast({ tone: "info", text: "This session started in the chat view; it has no terminal here" });
+        return s.toast({ tone: "info", text: NO_TERMINAL_WHY });
       case "arm":
         return armTo(step.to);
       case "close-chat":

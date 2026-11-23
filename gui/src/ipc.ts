@@ -266,10 +266,17 @@ export async function setLibraryFlag(key: string, flag: "pin" | "archive", on: b
   await runCli(["sessions", on ? flag : `un${flag}`, key]);
 }
 
-/** `timeline <session> --json`: one page of the session's history as AS events. */
-export async function sessionTimeline(key: string, limit = 200, before?: number): Promise<{ events: import("./v3/timeline.js").AsEvent[]; from: number; total: number; version: string | null; newerThanFixtures: boolean }> {
-  const o = JSON.parse(await runCli(["timeline", key, "--json", "--limit", String(limit), ...(before !== undefined ? ["--before", String(before)] : [])]));
-  return { events: Array.isArray(o.events) ? o.events : [], from: Number(o.from) || 0, total: Number(o.total) || 0, version: typeof o.version === "string" ? o.version : null, newerThanFixtures: o.newerThanFixtures === true };
+/** `timeline <session> --json`: one page of the session's history as AS events — `limit` drawn
+ *  rows before index `before`, or every event from index `from` on. `earlierPrompts`: prompts
+ *  before the page; `hidden`: the bookkeeping lines left out, by kind. */
+export async function sessionTimeline(
+  key: string,
+  at: { limit?: number; before?: number; from?: number } = {},
+): Promise<{ events: import("./v3/timeline.js").AsEvent[]; from: number; total: number; earlierPrompts: number; hidden: Record<string, number>; version: string | null; newerThanFixtures: boolean }> {
+  const n = (flag: string, v: number | undefined) => (v === undefined ? [] : [flag, String(v)]);
+  const o = JSON.parse(await runCli(["timeline", key, "--json", ...n("--limit", at.limit), ...n("--before", at.before), ...n("--from", at.from)]));
+  const hidden = o.hidden && typeof o.hidden === "object" ? Object.fromEntries(Object.entries(o.hidden as Record<string, unknown>).filter((e): e is [string, number] => typeof e[1] === "number")) : {};
+  return { events: Array.isArray(o.events) ? o.events : [], from: Number(o.from) || 0, total: Number(o.total) || 0, earlierPrompts: Number(o.earlierPrompts) || 0, hidden, version: typeof o.version === "string" ? o.version : null, newerThanFixtures: o.newerThanFixtures === true };
 }
 
 /** `timeline <session> --subagent <id> --json`: one subagent's own transcript, read-only; the CLI reads only its newest part. */

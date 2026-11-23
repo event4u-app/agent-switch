@@ -139,6 +139,16 @@ describe("workbench (spec §6)", () => {
     expect(screen.getByRole("radio", { name: /Chat/ }).getAttribute("title")).toBe("This tool keeps the view it started in");
   });
 
+  it("session bar: a session started in the chat offers no Terminal and says why (8.3)", () => {
+    const on = handlers();
+    render(<SessionBar s={bar({ view: "chat", terminalWhy: "This session started in the chat view; it has no terminal here" })} openIn={null} on={on} />);
+    const terminal = screen.getByRole("radio", { name: /Terminal/ });
+    expect(terminal.getAttribute("aria-disabled")).toBe("true");
+    expect(terminal.getAttribute("title")).toBe("This session started in the chat view; it has no terminal here");
+    fireEvent.click(terminal);
+    expect(on.view).not.toHaveBeenCalled();
+  });
+
   it("session bar: a hosted session whose model and thinking cannot change locks both chips and says why (7.6)", () => {
     const on = handlers();
     render(<SessionBar s={bar({ respawnWhy: "Codex keeps the model and thinking it started with" })} openIn={null} on={on} />);

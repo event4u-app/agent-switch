@@ -49,10 +49,17 @@ export function ChatView({ b, sessionKey, findFiles, worktreeOf, blocked }: { b:
         )}
         <span className="ml-auto flex items-center gap-2">
           {b.status === "starting" && <span>Connecting…</span>}
-          {f.rows.length > 0 && <CopyConversation rows={f.rows} />}
+          {f.rows.length > 0 && <CopyConversation rows={f.rows} full={b.earlier ? () => b.allEvents().then((all) => fold(all).rows) : undefined} />}
         </span>
       </div>
-      <ChatTimeline copyBar={false} events={b.events} notice={notice} agent={agent} on={b.status === "ready" ? { approve: b.approve, deny: b.deny, answer: b.answer, skip: (id) => b.deny(id, SKIPPED), worktreeOf } : { worktreeOf, unanswerable: b.status === "starting" ? "Connecting…" : "This chat is not connected; open it again to answer." }} />
+      <ChatTimeline
+        copyBar={false}
+        events={b.events}
+        notice={notice}
+        agent={agent}
+        earlier={b.earlier ? { prompts: b.earlier.prompts, load: b.loadEarlier, all: b.allEvents } : null}
+        on={b.status === "ready" ? { approve: b.approve, deny: b.deny, answer: b.answer, skip: (id) => b.deny(id, SKIPPED), worktreeOf, stale: b.stale } : { worktreeOf, stale: b.stale, unanswerable: b.status === "starting" ? "Connecting…" : "This chat is not connected; open it again to answer." }}
+      />
       <Composer
         running={running}
         queued={b.queued}

@@ -64,10 +64,25 @@ export function VirtualList<T>({ items, keyOf, render, estimate = 64, className,
   }, []);
   const hs = items.map((t) => heights.current.get(keyOf(t)));
   const r = visibleRange(items.length, hs, estimate, scroll.top, scroll.height);
+  // Rows put in front (earlier turns loaded) must not move what the user is reading:
+  // the row that was first stays where it was, until the user scrolls themselves.
+  const first = useRef<string | null>(null);
+  const anchor = useRef<{ key: string; offset: number } | null>(null);
   useLayoutEffect(() => {
     const el = ref.current;
-    if (el && atBottom.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const firstKey = items.length ? keyOf(items[0]) : null;
+    const prev = first.current;
+    first.current = firstKey;
+    if (prev !== null && firstKey !== prev && !atBottom.current && items.some((t) => keyOf(t) === prev)) anchor.current = { key: prev, offset: el.scrollTop };
+    if (atBottom.current) el.scrollTop = el.scrollHeight;
+    else if (anchor.current) {
+      const i = items.findIndex((t) => keyOf(t) === anchor.current!.key);
+      if (i < 0) anchor.current = null;
+      else el.scrollTop = hs.slice(0, i).reduce<number>((n, h) => n + (h ?? estimate), 0) + anchor.current.offset;
+    }
   });
+  const release = () => (anchor.current = null);
   return (
     <div
       ref={ref}
@@ -75,6 +90,10 @@ export function VirtualList<T>({ items, keyOf, render, estimate = 64, className,
       aria-label={label}
       className={className}
       style={{ scrollbarGutter: "stable" }}
+      onWheel={release}
+      onPointerDown={release}
+      onKeyDown={release}
+      onTouchStart={release}
       onScroll={(e) => {
         const el = e.currentTarget;
         atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;

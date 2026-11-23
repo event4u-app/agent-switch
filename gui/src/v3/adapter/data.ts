@@ -300,7 +300,8 @@ export function conflictPrompt(pr: Pick<PrFacts, "number" | "url">): string {
 }
 
 /** Why a hosted Codex session's model and thinking stay as they started: `host respawn` restarts Claude only. */
-export const CODEX_RESPAWN_WHY = "Codex keeps the model and thinking it started with; start a new session to change them";
+export const NO_TERMINAL_WHY = "This session started in the chat view; it has no terminal here";
+export const CODEX_RESPAWN_WHY ="Codex keeps the model and thinking it started with; start a new session to change them";
 
 /**
  * Whether "Focus terminal" can bring this session's terminal to the front: only a
@@ -595,6 +596,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
         hosted: hosted.has(key) || !!env.chats?.has(key),
         // Only a tmux window can be joined from the user's terminal; a chat has none.
         attachable: hosted.has(key),
+        // Started in the chat: there is no program in a terminal to switch to.
+        ...(env.chats?.has(key) && !hosted.has(key) ? { terminalWhy: NO_TERMINAL_WHY } : {}),
         ...externalWhere(r, key, hosted.has(key) || !!env.chats?.has(key), env),
         ...(r.provider === "codex" && hosted.has(key) && !env.chats?.has(key) ? { respawnWhy: CODEX_RESPAWN_WHY } : {}),
         // v3.1: chat and terminal share one conversation for Claude and Codex.

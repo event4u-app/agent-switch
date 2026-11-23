@@ -35,6 +35,10 @@ function chat(over: Partial<Chat> = {}): Chat {
     queued: 0,
     mode: "default",
     session: { key: "claude/w/s", model: null, commands: [] },
+    earlier: null,
+    stale: new Set(),
+    loadEarlier: vi.fn(async () => {}),
+    allEvents: vi.fn(async () => []),
     send: vi.fn(),
     steer: vi.fn(),
     approve: vi.fn(),
@@ -154,7 +158,7 @@ describe("bridge errors while the chat is ready", () => {
   it("show in the conversation instead of vanishing", async () => {
     let line: (l: string) => void = () => {};
     const deps: BridgeDeps = {
-      history: vi.fn(async () => []),
+      history: vi.fn(async () => ({ events: [], from: 0, earlierPrompts: 0 })),
       open: vi.fn(async (_s: ipc.BridgeSpec, onLine: (l: string) => void) => {
         line = onLine;
         return { send: async () => {}, kill: async () => {} };
