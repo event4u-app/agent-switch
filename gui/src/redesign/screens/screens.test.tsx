@@ -181,6 +181,12 @@ describe("Session sheet", () => {
     expect(rebind).toHaveBeenCalledWith("claude:agent-config", "claude:side");
   });
 
+  it("opened from Hand off…, it starts on the hand-off, not on the switch", () => {
+    mount(fixture(), { overlay: { kind: "session", id: "claude:agent-config", how: "handoff" } });
+    expect(screen.getByText(/Starts a new session on another provider/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Switch account" })).toBeNull();
+  });
+
   it("names the other live sessions on the account before a live switch moves them too", () => {
     const vm = fixture();
     const me = vm.sessions.find((x) => x.id === "claude:agent-config")!;

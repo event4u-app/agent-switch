@@ -212,6 +212,15 @@ describe("with the background service as executor (road-to-service-executed-move
     expect(d.open).toHaveBeenCalled();
   });
 
+  it("on, but the background service is stopped: nothing is handed to it; the app moves and records --executed", async () => {
+    const { d, decide } = deps([live({ id: "ra", session: "claude/work/a", candidates: [cand("claude/home", ["now"])] })]);
+    await dispatchV3({ type: "move", how: "now", moves: [{ key: "claude/work/a", target: "home" }] }, { ...d, serviceDown: () => true });
+    await flush();
+    expect(d.act.rebind).toHaveBeenCalledTimes(1);
+    expect(decide).toHaveBeenCalledWith("ra", "approve", { to: "claude/home", how: "now", executed: "moved in the app" });
+    expect(decide).not.toHaveBeenCalledWith("ra", "approve", { to: "claude/home", how: "now" });
+  });
+
   it("off: today's behaviour — the app moves and records --executed", async () => {
     const { d, decide } = deps([live({ id: "ra", session: "claude/work/a", candidates: [cand("claude/home", ["now"])] })], "app");
     await dispatchV3({ type: "move", how: "now", moves: [{ key: "claude/work/a", target: "home" }] }, d);

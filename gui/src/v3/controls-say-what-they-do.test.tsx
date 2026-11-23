@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { V3Window, type V3Data } from "./window.js";
 import { data, slots } from "./window-fixture.js";
-import { ENGINE_DOWN_WHY } from "./workbench.js";
+import { AFTER_TURN_DOWN_WHY } from "./workbench.js";
 
 afterEach(cleanup);
 
@@ -14,9 +14,9 @@ function mount(over: Partial<V3Data> = {}) {
   render(<V3Window data={{ ...data(), ...over }} slots={slots} act={act} platform="mac" layout={{ load: () => ({ tabs: ["s1"], active: "s1" }), save: vi.fn() }} />);
   return act;
 }
-const sessionMenu = () => fireEvent.click(screen.getByLabelText("Session actions: rename, pin, move, detach, end"));
+const sessionMenu = () => fireEvent.click(screen.getByLabelText("Session actions"));
 
-describe("engine stopped: the session pane is stale and engine actions are off", () => {
+describe("engine stopped: the session pane is stale; only what needs the background service waits", () => {
   it("the pane says it shows the last known state and drops its live look", () => {
     mount();
     expect(screen.getByText("Engine stopped — showing the last known state")).toBeTruthy();
@@ -29,20 +29,26 @@ describe("engine stopped: the session pane is stale and engine actions are off",
     expect(screen.getByText("terminal body").closest("[data-stale]")).toBeNull();
   });
 
-  it("Decide in Needs you is disabled with the reason, and does nothing", () => {
-    const act = mount();
+  // Decide opens the decision sheet; a switch now is a CLI rebind and needs no service.
+  it("Decide in Needs you opens the decision sheet; there, After this turn waits for the service and says so", () => {
+    mount();
     const decide = screen.getByRole("button", { name: "Decide" });
-    expect(decide.getAttribute("aria-disabled")).toBe("true");
-    expect(decide.getAttribute("title")).toBe(ENGINE_DOWN_WHY);
+    expect(decide.getAttribute("aria-disabled")).toBeNull();
     fireEvent.click(decide);
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(act).not.toHaveBeenCalledWith(expect.objectContaining({ type: "need" }));
+    const sheet = screen.getByRole("dialog");
+    const after = within(sheet).getByRole("radio", { name: /After this turn/ });
+    expect(after.getAttribute("aria-disabled")).toBe("true");
+    expect(after.textContent).toContain(AFTER_TURN_DOWN_WHY);
+    // The sheet starts on what works: a switch now.
+    expect(within(sheet).getByRole("radio", { name: /Switch now/ }).getAttribute("aria-checked")).toBe("true");
   });
 
-  it("with the engine up Decide opens the decision sheet", () => {
+  it("with the engine up After this turn is offered and chosen first", () => {
     mount({ health: READY });
     fireEvent.click(screen.getByRole("button", { name: "Decide" }));
-    expect(screen.getByRole("dialog")).toBeTruthy();
+    const after = within(screen.getByRole("dialog")).getByRole("radio", { name: /After this turn/ });
+    expect(after.getAttribute("aria-disabled")).toBeNull();
+    expect(after.getAttribute("aria-checked")).toBe("true");
   });
 
   it("Allow is disabled, and its keys answer nothing", () => {
@@ -55,18 +61,16 @@ describe("engine stopped: the session pane is stale and engine actions are off",
     expect(act).not.toHaveBeenCalledWith(expect.objectContaining({ type: "need" }));
   });
 
-  it("the session menu's moves are disabled with the reason; rename still works", () => {
+  // Take over is `host adopt` and Hand off a brief plus a start: tmux and the CLI, no service.
+  it("the session menu's moves stay usable: Hand off acts, Move opens the decision sheet", () => {
     const act = mount();
     sessionMenu();
-    for (const name of ["Move to another account…", "Take over here…", "Hand off…"]) {
-      const item = screen.getByRole("menuitem", { name });
-      expect(item.getAttribute("aria-disabled")).toBe("true");
-      expect(item.getAttribute("title")).toBe(ENGINE_DOWN_WHY);
-    }
+    for (const name of ["Move to another account…", "Take over here…", "Hand off…"]) expect(screen.getByRole("menuitem", { name }).getAttribute("aria-disabled")).toBeNull();
     fireEvent.click(screen.getByRole("menuitem", { name: "Hand off…" }));
-    expect(act).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Rename…" }));
-    expect(act).toHaveBeenCalledWith({ type: "session-menu", key: "s1", item: "Rename…" });
+    expect(act).toHaveBeenCalledWith({ type: "session-menu", key: "s1", item: "Hand off…" });
+    sessionMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move to another account…" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });
 
@@ -96,74 +100,58 @@ describe("End… opens the End dialog", () => {
   });
 });
 
-describe("engine stopped: every move, send and blocker entry point waits (7.6)", () => {
+describe("engine stopped: moves and sends go through the CLI, so their entry points still act (8.5)", () => {
   const sendNext = () => ({ text: "CI failing: lint", action: "Send to agent" });
   const summaryFacts = () => ({ next: sendNext(), pr: null, git: null, limit: null, more: { id: "s1", host: "Hosted by Agent Switch", library: "Kept in the vault", children: "0 child sessions" } });
   const accountChip = () => screen.getAllByRole("button").find((b) => b.tagName === "BUTTON" && b.textContent?.startsWith("work"))!;
 
-  it("the account chip says why and opens no decision sheet", () => {
+  it("the account chip opens the decision sheet", () => {
     mount();
     const chip = accountChip();
-    expect(chip.getAttribute("aria-disabled")).toBe("true");
-    expect(chip.getAttribute("title")).toBe(ENGINE_DOWN_WHY);
+    expect(chip.getAttribute("aria-disabled")).toBeNull();
     fireEvent.click(chip);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("⌘⇧M opens no decision sheet", () => {
+  it("⌘⇧M opens the decision sheet", () => {
     mount();
     fireEvent.keyDown(window, { key: "m", metaKey: true, shiftKey: true });
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("the limit hint's Move… is disabled with the reason", () => {
+  it("the limit hint's Move… opens the decision sheet", () => {
     mount();
-    const move = screen.getByRole("button", { name: "Move…" });
-    expect(move.getAttribute("aria-disabled")).toBe("true");
-    expect(move.getAttribute("title")).toBe(ENGINE_DOWN_WHY);
-    fireEvent.click(move);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Move…" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("the Limits popover's Move its session… is disabled with the reason", () => {
+  it("the Limits popover's Move its session… opens the decision sheet", () => {
     mount();
     fireEvent.click(within(screen.getByLabelText("Limits")).getByText("work"));
-    const pop = screen.getByRole("dialog", { name: "work limits" });
-    const move = within(pop).getByText("Move its session…");
-    expect(move.getAttribute("aria-disabled")).toBe("true");
-    expect(move.getAttribute("title")).toBe(ENGINE_DOWN_WHY);
+    const move = within(screen.getByRole("dialog", { name: "work limits" })).getByText("Move its session…");
+    expect(move.getAttribute("aria-disabled")).toBeNull();
     fireEvent.click(move);
-    expect(screen.getByRole("dialog", { name: "work limits" })).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "work limits" })).toBeNull();
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("the blocker strip's Send to agent is disabled with the reason; Copy prompt still works", () => {
+  it("the blocker strip's Send to agent sends (continue types through tmux); Copy prompt still works", () => {
     const act = mount({ next: sendNext });
     const send = screen.getByRole("button", { name: "Send to agent" });
-    expect(send.getAttribute("aria-disabled")).toBe("true");
-    expect(send.getAttribute("title")).toBe(ENGINE_DOWN_WHY);
+    expect(send.getAttribute("aria-disabled")).toBeNull();
     fireEvent.click(send);
-    expect(act).not.toHaveBeenCalledWith(expect.objectContaining({ type: "blocker" }));
+    expect(act).toHaveBeenCalledWith({ type: "blocker", key: "s1" });
     cleanup();
     const act2 = mount({ next: () => ({ text: "CI failing: lint", action: "Copy prompt" }) });
     fireEvent.click(screen.getByRole("button", { name: "Copy prompt" }));
     expect(act2).toHaveBeenCalledWith({ type: "blocker", key: "s1" });
   });
 
-  it("Summary's Send to agent is disabled with the reason", () => {
+  it("Summary's Send to agent sends", () => {
     const act = mount({ summary: summaryFacts });
     fireEvent.keyDown(window, { key: "i", metaKey: true });
-    const send = screen.getByRole("button", { name: "Send to agent" });
-    expect(send.getAttribute("aria-disabled")).toBe("true");
-    fireEvent.click(send);
-    expect(act).not.toHaveBeenCalledWith(expect.objectContaining({ type: "blocker" }));
-  });
-
-  it("with the engine up the same entry points act", () => {
-    const act = mount({ health: READY, next: sendNext });
     fireEvent.click(screen.getByRole("button", { name: "Send to agent" }));
     expect(act).toHaveBeenCalledWith({ type: "blocker", key: "s1" });
-    fireEvent.keyDown(window, { key: "m", metaKey: true, shiftKey: true });
-    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });
 
@@ -203,6 +191,19 @@ describe("Open in › Bring its terminal to the front is offered only where focu
   it("with the switch on, a Claude session in your terminal offers it", () => {
     render(<V3Window data={{ ...data(), health: READY, sessions: sessions("claude/work/a"), bar: own("claude/work/a") }} slots={slots} act={vi.fn()} platform="mac" layout={{ load: () => ({ tabs: ["claude/work/a"], active: "claude/work/a" }), save: vi.fn() }} />);
     expect(items()).not.toBeNull();
+  });
+});
+
+describe("the tray's Start session opens the v3 New-session dialog (8.5)", () => {
+  it("each request opens it once, as ⌘N does", () => {
+    const props = { data: { ...data(), health: READY }, slots, act: vi.fn(), platform: "mac" as const, layout: { load: () => ({ tabs: ["s1"], active: "s1" }), save: vi.fn() } };
+    const { rerender } = render(<V3Window {...props} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    rerender(<V3Window {...props} newSession={{ n: 1 }} />);
+    expect(screen.getByRole("dialog", { name: /in ~\/code\/x/ })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    rerender(<V3Window {...props} newSession={{ n: 1 }} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
 

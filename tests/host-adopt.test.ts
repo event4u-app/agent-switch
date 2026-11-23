@@ -1,7 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { adopt, AdoptRefused, type AdoptDeps } from "../src/host/adopt.js";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+
+import { adopt, adoptLockFile, AdoptRefused, withAdoptLock, type AdoptDeps } from "../src/host/adopt.js";
 
 const ID = "0f6a1c2e-1111-4222-8333-944455556666";
 
@@ -67,4 +71,28 @@ test("take over refuses what it cannot do honestly", () => {
   assert.throws(() => adopt(deps(), `antigravity/a/${ID}`, {}), /Claude and Codex/);
   assert.throws(() => adopt(deps(), "claude/work/not;an-id", {}), /session key/);
   assert.throws(() => adopt(deps(), "work", {}), /session key/);
+});
+
+test("take over: --force never starts a second writer for a session its own program still runs", () => {
+  const live = [{ pid: 77, sessionId: ID, status: "idle", statusUpdatedAt: null }];
+  const d = deps({ liveClaude: () => live });
+  assert.throws(() => adopt(d, `claude/work/${ID}`, { force: true }), (e: unknown) => e instanceof AdoptRefused && e.reason === "running" && /PID 77/.test(e.message) && !/--force/.test(e.message));
+  assert.equal(d.started.length, 0, "nothing starts while the source still writes the conversation");
+});
+
+test("take over is one at a time per session: a second adopt of the same session is refused while the first runs", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-adopt-lock-"));
+  const key = `claude/work/${ID}`;
+  const other = `claude/work/1${ID.slice(1)}`;
+  const alive = (pid: number) => pid === 4242;
+  const got = withAdoptLock(dir, key, () => {
+    assert.throws(() => withAdoptLock(dir, key, () => "second", alive, 5151), (e: unknown) => e instanceof AdoptRefused && /already being taken over/.test(e.message));
+    assert.equal(withAdoptLock(dir, other, () => "other", alive, 5151), "other", "another session is not held up");
+    return "first";
+  }, alive, 4242);
+  assert.equal(got, "first");
+  assert.deepEqual(fs.readdirSync(dir), [], "released afterwards");
+  // A lock left by a process that died is taken over, not obeyed forever.
+  fs.writeFileSync(adoptLockFile(dir, key), "999999");
+  assert.equal(withAdoptLock(dir, key, () => "after a crash", alive, 4242), "after a crash");
 });

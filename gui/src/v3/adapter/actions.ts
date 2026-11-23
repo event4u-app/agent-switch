@@ -10,7 +10,7 @@ import { sessionArgs, type PrConfirmJson, type PrPlanJson, type StartChoice, typ
 import { requestKind, requestsForMoves } from "../../vm/switch-requests.js";
 import type { Overlay, TerminalRun, Toast } from "../../vm/store.js";
 import type { ProviderId } from "../../transforms.js";
-import type { NeedItem } from "../needs.js";
+import { answeredThere, type NeedItem } from "../needs.js";
 import type { Appearance } from "../themes/resolve.js";
 import type { SessionMenuItem, V3Action } from "../window.js";
 import type { MoveHow, NewSessionPlan, SheetMove } from "../dialogs.js";
@@ -72,6 +72,8 @@ export interface DispatchDeps {
   /** Who carries out a move answered here (`agent-switch link executor`); read
    *  when the user answers. Absent or unreadable → the app. */
   executor?: () => Promise<"app" | "service">;
+  /** The background service (the engine) is stopped: nothing is handed to it. */
+  serviceDown?: () => boolean;
   hosted: (key: string) => boolean;
   setAppearance: (a: Appearance) => void;
   setFocusTerminal: (on: boolean) => void;
@@ -103,9 +105,9 @@ const vmSessionId = (key: string) => {
 };
 /** The 2.11 session sheet for a session. Its list holds Claude sessions only,
  *  so the row comes along and a Codex session opens too. */
-function sessionSheet(key: string, deps: DispatchDeps): Overlay {
+function sessionSheet(key: string, deps: DispatchDeps, how?: "handoff"): Overlay {
   const row = deps.rows().get(key);
-  return { kind: "session", id: vmSessionId(key), ...(row ? { session: sessionFromRow(row, Date.now()) } : {}) };
+  return { kind: "session", id: vmSessionId(key), ...(row ? { session: sessionFromRow(row, Date.now()) } : {}), ...(how ? { how } : {}) };
 }
 function prUrl(row: SessionRow | undefined): string | null {
   const pr = row ? (row.prs ?? []).map(parsePr).find((p) => p !== null) : null;
@@ -237,7 +239,8 @@ function recordMoves(how: MoveHow, moves: readonly { key: string; target: string
  * answer is left undone. Returns the moves left to the app.
  */
 async function handOver(how: "after-turn" | "now", moves: readonly SheetMove[], deps: DispatchDeps): Promise<SheetMove[]> {
-  if (!deps.executor || !deps.ipc.decideSwitchRequest || !deps.requests) return [...moves];
+  // A stopped service would leave the answer undone: the app moves the sessions itself.
+  if (!deps.executor || !deps.ipc.decideSwitchRequest || !deps.requests || deps.serviceDown?.()) return [...moves];
   const executor = await deps.executor().catch(() => "app" as const);
   if (executor !== "service") return [...moves];
   const rows = deps.requests();
@@ -258,10 +261,14 @@ async function handOver(how: "after-turn" | "now", moves: readonly SheetMove[], 
 function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
   // A chat's approval or question is answered in the chat (spec §13.5: one decision).
   if (n.verb === "Open chat" && deps.openTab) return deps.openTab(n.subject);
-  if (n.kind === "approval" || n.kind === "question") return run(deps, "Focus", deps.ipc.focusSessionTerminal(n.subject));
+  if (n.kind === "approval" || n.kind === "question") {
+    // Open in › Focus terminal off: nothing brings a terminal forward; the session's tab opens instead.
+    if (n.verb === "Open session" || !(deps.focusTerminal?.() ?? true)) return deps.openTab?.(n.subject);
+    return run(deps, "Focus", deps.ipc.focusSessionTerminal(n.subject));
+  }
   if (n.kind === "ci") {
-    // The item names its session (several can share a PR); older CLIs only named the PR.
-    const row = (n.session ? deps.rows().get(n.session) : undefined) ?? ciSession(n.subject, deps.rows().values());
+    // Only the session the item names (several can share a PR); without it, the PR's page opens.
+    const row = ciSession(n, deps.rows());
     const prs = (row?.prs ?? []).map(parsePr).filter((p) => p !== null);
     // The PR the item names; an item named by its session is about that session's PR.
     const pr = prs.find((p) => n.subject.endsWith(`#${p.number}`)) ?? prs[0];
@@ -283,7 +290,7 @@ function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
 /** An approval answered from the Needs-you queue, by the approval id the item carries. */
 function onAnswer(n: NeedItem, decision: "allow" | "always" | "deny", deps: DispatchDeps): Promise<void> | void {
   // AS answers only approvals of chats; a terminal it does not host is answered there.
-  if (n.kind !== "approval" || n.verb === "Focus terminal" || !n.version) return;
+  if (n.kind !== "approval" || answeredThere(n) || !n.version) return;
   const chat = deps.chatOf?.(n.subject);
   if (chat?.approve && chat.deny) return decision === "deny" ? chat.deny(n.version) : chat.approve(n.version, decision === "always");
   // From outside the chat only allow-once and deny exist: "always" widens a rule and stays in the chat.
@@ -300,8 +307,10 @@ function sessionMenu(key: string, item: SessionMenuItem, deps: DispatchDeps): Pr
     case "Take over here…":
       return deps.takeOver?.(key);
     case "Move to another account…":
+      // The window opens the v3 decision sheet for it (every entry point, as the account chip does).
+      return;
     case "Hand off…":
-      return deps.open(sessionSheet(key, deps));
+      return deps.open(sessionSheet(key, deps, "handoff"));
     case "Compact":
       return deps.open({ kind: "terminal", run: { args: ["compact", key], title: "Compact" } });
     case "Detach":
@@ -358,9 +367,11 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       );
     }
     case "keep-account": {
-      const limits = deps.needs().filter((n) => (n.kind === "limit" || n.kind === "pace") && n.subject.split("/")[1] === a.account);
+      // An account is its tool and name: another tool's account of the same name keeps its items.
+      const same = (subject: string) => subject.split("/")[1] === a.account && (!a.tool || subject.split("/")[0] === a.tool);
+      const limits = deps.needs().filter((n) => (n.kind === "limit" || n.kind === "pace") && same(n.subject));
       // A pace suggestion put off is answered too, so agent-config stops asking and it is not raised again before its reset.
-      const paced = (deps.requests?.() ?? []).filter((r) => requestKind(r) === "pace" && r.state === "open" && r.account.split("/")[1] === a.account && Date.parse(r.expiresAt) > Date.now());
+      const paced = (deps.requests?.() ?? []).filter((r) => requestKind(r) === "pace" && r.state === "open" && same(r.account) && Date.parse(r.expiresAt) > Date.now());
       for (const r of paced) void deps.ipc.decideSwitchRequest?.(r.id, "snooze")?.catch(() => {});
       return run(deps, "Keep", Promise.all(limits.map((n) => deps.ipc.needsLater(n.id))));
     }

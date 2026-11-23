@@ -148,8 +148,10 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const chatsRunning = useRef(0);
   useEngines({ chatsHere: () => chatsRunning.current });
   const [needFocus, setNeedFocus] = useState<{ id: string; n: number } | undefined>(undefined);
+  // The tray's Start session opens this window's v3 New-session dialog, not the 2.11 one.
+  const [newSession, setNewSession] = useState<{ n: number } | undefined>(undefined);
   useTrayRequests(
-    s.open,
+    (o) => (o.kind === "start" ? setNewSession((p) => ({ n: (p?.n ?? 0) + 1 })) : s.open(o)),
     undefined,
     (payload) => {
       const req = appRequest(sRef.current, payload);
@@ -293,6 +295,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     needs: () => feeds.needs?.items ?? [],
     requests: () => s.switchRequests,
     executor: () => ipc.getLinkExecutor(),
+    serviceDown: () => data.health.state === "down",
     hosted: (k) => hostedKeys.has(k),
     setAppearance: (a) => (saveAppearance(a), setAppearanceState(a)),
     setFocusTerminal: (on) => (setFocusTerminalFlag(on), setFocusTerminalState(on)),
@@ -417,7 +420,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
         followTheme={appearance.terminalFollows}
         where={data.bar(key)?.where ?? "your terminal"}
         onFocus={data.bar(key)?.focusable && focusTerminal !== false ? () => void ipc.focusSessionTerminal(key).catch((e: unknown) => s.toast({ tone: "alert", text: `Focus failed: ${e instanceof Error ? e.message : String(e)}` })) : null}
-        onTakeOver={canTakeOver(byKey.get(key), hostedKeys.has(key)) ? () => deps.takeOver?.(key) : null}
+        onTakeOver={canTakeOver(byKey.get(key), hostedKeys.has(key), feeds.host?.mode ?? "ephemeral") ? () => deps.takeOver?.(key) : null}
         onExit={refresh}
       />
       );
@@ -454,7 +457,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
 
   return (
     <>
-      <V3Window data={data} slots={slots} act={act} focus={focus} needFocus={needFocus} layout={localLayout} keys={keys} autoOpenLimits={getLimitAutoOpen()} />
+      <V3Window data={data} slots={slots} act={act} focus={focus} needFocus={needFocus} newSession={newSession} layout={localLayout} keys={keys} autoOpenLimits={getLimitAutoOpen()} />
       {chats.runners}
       <OverlayHost />
       <Toaster toasts={s.toasts} onDismiss={s.dismissToast} />

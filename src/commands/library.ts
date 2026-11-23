@@ -33,8 +33,8 @@ import { eventFile, lastHookCwd, readEvents } from "../hooks.js";
 import { gitFacts } from "../git-facts.js";
 import { handoffDir } from "../handoff.js";
 import { identity } from "../profiles.js";
-import { readSessionHeader } from "../sessions.js";
-import { preflight, shellLine, type How } from "../resume.js";
+import { codexSessionMeta, readSessionHeader } from "../sessions.js";
+import { codexResumeCommand, preflight, shellLine, type How } from "../resume.js";
 import { cachedUsage } from "./shared.js";
 
 /** Auto-keep sessions with an open PR (spec §10.3): on unless the user turned it off. */
@@ -308,6 +308,23 @@ export function cmdCleanup(sessions: readonly string[], flags: Record<string, st
   if (!flags.yes) console.log("\nRun again with --yes to remove them.");
 }
 
+/** A Codex session resumes as it is, with `codex resume <id>` on its own account
+ *  in the folder it ran in; the preflight's other ways are Claude's. */
+function resumeCodex(key: string, transcript: string, how: How, flags: Record<string, string | boolean>): void {
+  const [, account, id] = key.split("/");
+  if (how !== "continue") die(`a Codex session resumes as it is (--how continue); to move it to another account: agent-switch takeover ${id} --provider codex --to <profile>`);
+  if (!fs.existsSync(transcript)) die(`no Codex session ${key} with a rollout`);
+  const cwd = codexSessionMeta(transcript)?.cwd ?? null;
+  const folder = cwd && fs.existsSync(cwd) ? cwd : null;
+  const command = codexResumeCommand(account, id, folder);
+  if (flags.json) return void console.log(JSON.stringify({ key, cwd: folder, commands: [command], commandLines: [shellLine(command)] }, null, 2));
+  console.log(folder ? `✓ resumes in ${folder}` : `! its folder ${cwd ?? "(not recorded)"} is gone; it resumes where this runs`);
+  console.log(`\n  ${shellLine(command)}`);
+  if (!flags.yes) return void console.log("\nRun it with --yes.");
+  const r = spawnSync(process.execPath, [process.argv[1], ...command.slice(1)], { stdio: "inherit" });
+  if (r.status !== 0) die(`stopped: ${shellLine(command)} exited ${r.status}`);
+}
+
 /**
  * `agent-switch sessions resume <session> [--how continue|fork|account|brief]
  * [--to <account>] [--json] [--yes]` — the preflight, the suggestion and the
@@ -318,7 +335,7 @@ export function cmdResume(arg: string | undefined, flags: Record<string, string 
   const how = (typeof flags.how === "string" ? flags.how : "continue") as How;
   if (!["continue", "fork", "account", "brief"].includes(how)) die("--how is one of continue, fork, account, brief");
   const s = resolveSession(arg);
-  if (s?.key.startsWith("codex/")) die("resume with a preflight is for Claude sessions; a Codex session resumes with: agent-switch takeover " + s.key.split("/")[2] + " --provider codex --to <profile>");
+  if (s?.key.startsWith("codex/")) return resumeCodex(s.key, s.files.transcript, how, flags);
   if (!s || !fs.existsSync(s.files.transcript)) die(`no Claude session ${arg} with a transcript${s ? "; restore it from the vault first: agent-switch sessions vault " + s.key + " restore" : ""}`);
   const id = s.key.split("/")[2];
   const cfg = configDir("claude", s.account);

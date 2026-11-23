@@ -124,7 +124,7 @@ describe("V3App on fixture CLI output (spec §11)", () => {
   it("Session sheet actions: session row, then ⋯", async () => {
     await mount();
     click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
-    click(await screen.findByLabelText("Session actions: rename, pin, move, detach, end"));
+    click(await screen.findByLabelText("Session actions"));
     expect(screen.getByRole("menu")).toBeTruthy();
     expect(clicks).toBe(2);
   });

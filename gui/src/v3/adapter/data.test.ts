@@ -637,16 +637,25 @@ describe("what the app can type into decides the CI and blocker labels", () => {
   const hosted = { mode: "persistent" as const, hosted: [{ key: "claude/work/a1", provider: "claude", account: "work", sessionId: "a1", cwd: "/r", startedAt: "", alive: true, parked: false }] };
 
   it("a CI item reads Fix for a hosted or chat session, Open checks elsewhere", () => {
-    const needs = { items: [ciItem], away: null, history: [] };
+    const needs = { items: [{ ...ciItem, session: "claude/work/a1" }], away: null, history: [] };
     expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs, host: hosted }, env()).needs[0].verb).toBe("Fix");
     expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs }, env({ chats: new Set(["claude/work/a1"]) })).needs[0].verb).toBe("Fix");
     expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs }, env()).needs[0].verb).toBe("Open checks");
   });
 
-  it("the blocker reads Send to agent where the app can type, Copy prompt elsewhere", () => {
+  it("the CI label reads the session the item names, never another session on the PR; a conflict opens the PR", () => {
+    const other = { ...ciItem, session: "claude/work/b2" };
+    // a1 is hosted and on the PR, but the item names b2, which the app cannot type into.
+    expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs: { items: [other], away: null, history: [] }, host: hosted }, env()).needs[0].verb).toBe("Open checks");
+    expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs: { items: [ciItem], away: null, history: [] }, host: hosted }, env()).needs[0].verb).toBe("Open checks");
+    const conflict = { ...ciItem, what: "#9 has a merge conflict", session: "claude/work/b2", ci: { state: "conflict" as const, checks: [] } };
+    expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs: { items: [conflict], away: null, history: [] } }, env()).needs[0].verb).toBe("Open PR");
+  });
+
+  it("the blocker reads Send to agent where the app can type, Copy prompt elsewhere; its prompt names no check", () => {
     expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), host: hosted }, env()).next("claude/work/a1")?.action).toBe("Send to agent");
     expect(toV3Data(vmWith([], [withPr]), emptyFeeds(), env()).next("claude/work/a1")?.action).toBe("Copy prompt");
-    expect(nextStep(withPr, false)?.prompt).toContain("lint");
+    expect(nextStep(withPr, false)?.prompt).toBe("CI is failing on PR #9 (https://github.com/o/r/pull/9/checks). Find the cause and fix it.");
   });
 });
 
@@ -663,6 +672,13 @@ describe("Focus terminal, model and thinking are offered only where they work (7
     expect(toV3Data(vmWith([], [codex]), { ...emptyFeeds(), needs: ask("codex/work/c1") }, env()).next("codex/work/c1")).toBeNull();
   });
 
+  it("the Needs verb Focus terminal reads Open session where focusing does not work: switch off, or a Codex session", () => {
+    const verb = (rows: SessionRow[], subject: string, e = env()) => toV3Data(vmWith([], rows), { ...emptyFeeds(), needs: ask(subject) }, e).needs[0].verb;
+    expect(verb([row("a1")], "claude/work/a1")).toBe("Focus terminal");
+    expect(verb([row("a1")], "claude/work/a1", env({ focusTerminal: false }))).toBe("Open session");
+    expect(verb([row("c1", { provider: "codex" })], "codex/work/c1")).toBe("Open session");
+  });
+
   it("a hosted Codex session locks model and thinking with the reason; a hosted Claude session does not", () => {
     const codex = row("c1", { provider: "codex" });
     const bar = toV3Data(vmWith([], [codex]), { ...emptyFeeds(), host: host("codex/work/c1", "codex") }, env()).bar("codex/work/c1");
@@ -670,6 +686,22 @@ describe("Focus terminal, model and thinking are offered only where they work (7
     expect(bar?.respawnWhy).toMatch(/Codex/);
     const claude = row("a1");
     expect(toV3Data(vmWith([], [claude]), { ...emptyFeeds(), host: host("claude/work/a1") }, env()).bar("claude/work/a1")?.respawnWhy).toBeUndefined();
+  });
+});
+
+describe("the New-session dialog shows the folder's git state (spec §8.1)", () => {
+  const git = (over: Partial<NonNullable<SessionRow["git"]>> = {}) => ({ toplevel: "/r/app", branch: "main", headSha: "a", dirty: false, changed: 0, ahead: 0, behind: 0, upstream: null, remote: null, worktree: false, cwd: "/r/app", cwdSource: "hook" as const, ...over });
+  const gitState = (rows: SessionRow[], folder = "/r/app") => toV3Data(vmWith([], rows), emptyFeeds(), env({ draft: { ...env().plan, folder } })).newSession.facts.gitState;
+
+  it("branch · clean, or branch · N changed, from the newest session read in that folder", () => {
+    expect(gitState([row("a", { git: git() })])).toBe("main · clean");
+    expect(gitState([row("old", { mtimeMs: NOW - 9e6, git: git({ branch: "old" }) }), row("new", { git: git({ branch: "feat/x", dirty: true, changed: 3 }) })])).toBe("feat/x · 3 changed");
+    expect(gitState([row("d", { git: git({ branch: null }) })])).toBe("detached · clean");
+  });
+
+  it("a folder no session was read in, or one outside git, shows nothing rather than a guess", () => {
+    expect(gitState([row("a", { git: git() })], "/elsewhere")).toBeNull();
+    expect(gitState([row("a", { git: null })])).toBeNull();
   });
 });
 

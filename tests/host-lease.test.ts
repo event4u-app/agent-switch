@@ -81,10 +81,12 @@ setTimeout(() => {}, 300); // stay alive, so the lease is not stale while others
 test("typing reaches the hosted window only for the holder, literally", { skip: TmuxHost.available() ? false : "tmux is not installed here" }, () => {
   const root = tmp();
   const bin = path.join(root, "echoer");
-  fs.writeFileSync(bin, '#!/bin/sh\nwhile IFS= read -r l; do echo "got: $l"; done\n', { mode: 0o755 });
+  fs.writeFileSync(bin, '#!/bin/sh\nwhile printf "> "; IFS= read -r l; do echo "got: $l"; done\n', { mode: 0o755 });
   const host = new TmuxHost(root, { socket: `as-test-lease-${process.pid}` });
   try {
     const s = host.start({ provider: "codex", account: "work", configDir: "/cfg", cwd: root, bin });
+    // The program draws its input line before anything is typed into it.
+    for (let i = 0; i < 40 && !(host.capture(s.key) ?? "").includes(">"); i++) spawnSync("sleep", ["0.05"]);
     const leases = new InputLeases(root);
     leases.acquire(s.key, app);
     assert.throws(() => leases.type(host, s.key, cli, "nope", { enter: true }), NotHolder);

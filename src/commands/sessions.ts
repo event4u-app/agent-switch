@@ -60,7 +60,7 @@ import { readTelemetryConfig, writeTelemetryConfig } from "../notify.js";
 import { readTmuxRegistry, sendKeysArgs, tmuxSessionName } from "../tmux.js";
 import { TmuxHost, type HostedRow } from "../host/tmux-host.js";
 import { matchHostedRows, programStatusFile, readProgramStatus } from "../program-status.js";
-import { InputLeases, LeaseHeld } from "../host/lease.js";
+import { InputLeases, LeaseHeld, TypeFailed } from "../host/lease.js";
 import { cacheForRow, contextForRow, desktopScan, formatContext } from "./shared.js";
 import { compactCacheLine, formatCache } from "../cache-words.js";
 
@@ -329,6 +329,9 @@ function compactHosted(key: string, flags: Record<string, string | boolean>): vo
   }
   try {
     leases.type(host, key, me, literal, { enter: true });
+  } catch (err) {
+    if (err instanceof TypeFailed) die(err.message);
+    throw err;
   } finally {
     leases.release(key, me);
   }

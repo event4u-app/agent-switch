@@ -117,3 +117,14 @@ test("terminal facts: only a live Claude session in Terminal.app or iTerm2 on ma
   assert.equal(codex.focusable, false);
   assert.match(codex.why!, /Codex/);
 });
+
+test("open: a Codex session's folder is read from its rollout's session_meta, as host adopt does", async () => {
+  const { sessionFolder } = await import("../src/commands/open-in.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-open-codex-"));
+  const rollout = path.join(dir, "rollout-2026-11-23T10-00-00-01a1a070.jsonl");
+  fs.writeFileSync(rollout, JSON.stringify({ timestamp: "t", type: "session_meta", payload: { id: "01a1a070", cwd: "/code/app", originator: "codex_cli_rs" } }) + "\n");
+  assert.equal(sessionFolder("codex", rollout), "/code/app");
+  const claude = path.join(dir, "s.jsonl");
+  fs.writeFileSync(claude, JSON.stringify({ type: "user", cwd: "/code/web", sessionId: "s" }) + "\n");
+  assert.equal(sessionFolder("claude", claude), "/code/web");
+});

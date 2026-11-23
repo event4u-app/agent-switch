@@ -13,6 +13,10 @@
  *   another session.
  */
 
+import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
+
 import type { LiveSession } from "../api.js";
 import type { HostedSession } from "./tmux-host.js";
 
@@ -81,7 +85,9 @@ export function adopt(d: AdoptDeps, key: string, o: AdoptOptions): HostedSession
     const mine = live.filter((s) => s.sessionId === sessionId);
     if (mine.length > 0) {
       if (o.stopSource) d.stop(sessionId, mine);
-      else if (!o.force) {
+      else {
+        // Named by its own process: this is the session, so --force (meant for a
+        // program that may be another session) never starts a second writer.
         throw new AdoptRefused(
           `${key} still runs in your terminal (PID ${mine.map((s) => s.pid).join(", ")}). End it there (type /exit), or pass --stop-source to end it between turns.`,
           "running",
@@ -102,4 +108,48 @@ export function adopt(d: AdoptDeps, key: string, o: AdoptOptions): HostedSession
     );
   }
   return d.start({ provider, account, sessionId, cwd: loc.cwd, args: ["resume", sessionId] });
+}
+
+/** The lock file that holds one session's take-over. */
+export function adoptLockFile(dir: string, key: string): string {
+  return path.join(dir, crypto.createHash("sha256").update(key).digest("hex").slice(0, 32) + ".lock");
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * One take-over per session at a time: two `host adopt` runs of one session
+ * would start two programs writing one conversation. The lock file names its
+ * process; a second run is refused while that process lives, and a lock left by
+ * a process that died is taken over.
+ */
+export function withAdoptLock<T>(dir: string, key: string, fn: () => T, alive: (pid: number) => boolean = processAlive, pid = process.pid): T {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const file = adoptLockFile(dir, key);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.writeFileSync(file, String(pid), { flag: "wx", mode: 0o600 });
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      const holder = Number.parseInt(fs.readFileSync(file, "utf8"), 10);
+      if (attempt === 0 && !(Number.isInteger(holder) && holder > 0 && alive(holder))) {
+        fs.rmSync(file, { force: true });
+        continue;
+      }
+      throw new AdoptRefused(`${key} is already being taken over${Number.isInteger(holder) ? ` (PID ${holder})` : ""}; wait for that to finish`, "running");
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
 }
