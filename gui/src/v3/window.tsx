@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../lib/utils.js";
-import { ArrowRightToLine, Copy, Ellipsis, FileCode, Layers, Library, ListTree, Pin, PinOff, Plus, RotateCcw, Settings, Wrench, X } from "lucide-react";
+import { ArrowLeftRight, ArrowRightToLine, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, Unplug, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
 import type { IdentityColor, ToolEntry } from "../vm/types.js";
@@ -163,8 +163,27 @@ function shellPoint(at: { x: number; y: number }, width = 260): { x: number; y: 
   return { x: r && r.width ? Math.max(4, Math.min(x, r.width - width - 4)) : x, y };
 }
 
-/** The session actions a tab's menu repeats; "Pin" stays in the session's own menu (it pins in the list, not the tab). */
-const TAB_SESSION_ITEMS: readonly SessionMenuItem[] = ["Rename…", "Move to another account…", "Hand off…", "Detach", "End…"];
+/** Where a menu opens under its trigger, in shell coordinates: its top and its distance from the right edge. */
+type Anchor = { top: number; right: number };
+/** Under `trigger`, right edges aligned, so the menu follows its button wherever the bar puts it. */
+function anchorUnder(trigger: Element): Anchor | undefined {
+  const shell = trigger.closest("[data-v3-shell]")?.getBoundingClientRect();
+  const r = trigger.getBoundingClientRect();
+  if (!shell || !shell.width) return undefined;
+  return { top: Math.round(r.bottom - shell.top + 4), right: Math.max(4, Math.round(shell.right - r.right)) };
+}
+
+/** One icon per session action, the same in the ⋯ menu and the tab's menu. */
+const SESSION_ICON: Record<SessionMenuItem, ReactNode> = {
+  "Rename…": <Pencil />,
+  Pin: <Pin />,
+  "Move to another account…": <ArrowLeftRight />,
+  "Take over here…": <Hand />,
+  "Hand off…": <Send />,
+  Compact: <Minimize2 />,
+  Detach: <Unplug />,
+  "End…": <Power />,
+};
 /** Session actions that move a running session: they answer through the engine, so they wait for it. */
 const MOVES: readonly SessionMenuItem[] = ["Move to another account…", "Take over here…", "Hand off…"];
 
@@ -207,7 +226,7 @@ export function V3Window({
   const pages = strip.order.filter(isPageTab).map((id) => id.slice(5) as Page);
   const sessionTabs = strip.order.filter((id) => !isPageTab(id));
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string } | { end: string } | { openin: string } | { tabMenu: string; x: number; y: number }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -305,20 +324,28 @@ export function V3Window({
       { id: "reopen", label: "Reopen closed tab", icon: <RotateCcw />, kbd: keyLabel(keys.reopenTab, platform), disabled: !canReopen(strip), onClick: run(() => void reopenClosed()) },
     ];
     if (isPageTab(id)) return items;
-    const offered = new Set<string>(data.menu ? data.menu(id) : SESSION_MENU);
+    return [...items, { divider: true, label: "" }, ...sessionMenuItems(id)];
+  };
+  /** The session's own actions, one list for the ⋯ menu and the tab's menu: Pin reads Unpin when pinned, End… comes last. */
+  const sessionMenuItems = (key: string): MenuItem[] => {
+    const offered = data.menu ? data.menu(key) : SESSION_MENU;
+    const pinned = !!data.library.find((l) => l.key === key)?.pinned;
+    const run = (f: () => void) => () => (setOverlay(null), f());
+    const row = (item: SessionMenuItem): MenuItem =>
+      item === "Pin"
+        ? { id: "session:Pin", label: pinned ? "Unpin session" : "Pin session", icon: pinned ? <PinOff /> : <Pin />, onClick: run(() => (pinned ? act({ type: "library", op: "pin", key, value: false }) : sessionItem(key, "Pin"))) }
+        : {
+            id: `session:${item}`,
+            label: item,
+            icon: SESSION_ICON[item],
+            danger: item === "End…",
+            ...(down && MOVES.includes(item) ? { disabled: true, why: ENGINE_DOWN_WHY } : {}),
+            onClick: run(() => sessionItem(key, item)),
+          };
     return [
-      ...items,
-      { divider: true, label: "" },
-      { id: "copy-key", label: "Copy session key", icon: <Copy />, onClick: run(() => void navigator.clipboard?.writeText(id).catch(() => undefined)) },
-      ...TAB_SESSION_ITEMS.filter((item) => offered.has(item)).map(
-        (item): MenuItem => ({
-          id: `session:${item}`,
-          label: item,
-          danger: item === "End…",
-          ...(down && MOVES.includes(item) ? { disabled: true, why: ENGINE_DOWN_WHY } : {}),
-          onClick: run(() => sessionItem(id, item)),
-        }),
-      ),
+      ...offered.filter((item) => item !== "End…").map(row),
+      { id: "copy-key", label: "Copy session key", icon: <Copy />, onClick: run(() => void navigator.clipboard?.writeText(key).catch(() => undefined)) },
+      ...(offered.includes("End…") ? [{ divider: true, label: "" }, row("End…")] : []),
     ];
   };
 
@@ -546,6 +573,7 @@ export function V3Window({
   };
 
   const openMenuOf = overlay && typeof overlay === "object" && "openin" in overlay ? overlay.openin : null;
+  const openAt = overlay && typeof overlay === "object" && "openin" in overlay ? overlay.at : undefined;
 
   // Under the session bar: it belongs to the body (gap §4e); its one action restarts the engine.
   const engineBanner = data.health.state === "down" && (
@@ -580,17 +608,18 @@ export function V3Window({
           <SessionBar
             s={bar}
             chipOpen={overlay && typeof overlay === "object" && "chip" in overlay ? overlay.chip : null}
+            menuOpen={!!overlay && typeof overlay === "object" && "menu" in overlay}
             openIn={
               data.openIn.targets.length ? (
                 <OpenInButton
                   def={defTarget && { label: defTarget.label, mono: monogram(defTarget.target, defTarget.label) }}
                   open={openMenuOf === activeSession}
                   onDefault={() => openDefault(activeSession)}
-                  onMenu={() => setOverlay((o) => (o && typeof o === "object" && "openin" in o ? null : { openin: activeSession }))}
+                  onMenu={(el) => setOverlay((o) => (o && typeof o === "object" && "openin" in o ? null : { openin: activeSession, at: anchorUnder(el) }))}
                 />
               ) : null
             }
-            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => setOverlay({ decide: activeSession }), model: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "model" ? null : { model: activeSession, x, chip: "model" })), thinking: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "thinking" ? null : { model: activeSession, x, chip: "thinking" })), menu: () => setOverlay({ menu: activeSession }) }}
+            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => setOverlay({ decide: activeSession }), model: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "model" ? null : { model: activeSession, x, chip: "model" })), thinking: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "thinking" ? null : { model: activeSession, x, chip: "thinking" })), menu: (el) => setOverlay((o) => (o && typeof o === "object" && "menu" in o ? null : { menu: activeSession, at: anchorUnder(el) })) }}
           />
           {engineBanner}
           <HintStrip
@@ -800,10 +829,9 @@ export function V3Window({
           label="Sort and group"
           width={232}
           items={[
-            { note: "Sort by", label: "" },
+            { section: "Sort by", label: "" },
             ...(Object.keys(SORT_LABEL) as SortBy[]).map((k) => ({ id: `sort-${k}`, label: SORT_LABEL[k], checked: k === sortBy, hint: k === "activity" ? "default" : k === "status" ? "needs you first" : undefined, onClick: () => (close(), setSortBy(k)) })),
-            { divider: true, label: "" },
-            { note: "Group by", label: "" },
+            { section: "Group by", label: "" },
             ...(Object.keys(GROUP_LABEL) as GroupBy[]).map((k) => ({ id: `group-${k}`, label: GROUP_LABEL[k], checked: k === groupBy, onClick: () => (close(), setGroupBy(k)) })),
           ]}
         />
@@ -822,7 +850,7 @@ export function V3Window({
       </Anchored>
     ) : openMenuOf ? (
       // Outside the session bar, which clips at 40 px (spec §7.7); anchored under the caret.
-      <Anchored onClose={close} className="absolute right-[81px] top-[122px] z-10">
+      <Anchored onClose={close} className={cn("absolute z-10", !openAt && "right-[81px] top-[122px]")} style={openAt && { top: openAt.top, right: openAt.right }}>
         <OpenInMenu
           f={openFacts(openMenuOf)}
           onPick={(p) => {
@@ -837,34 +865,8 @@ export function V3Window({
         <Menu label="Tab" width={260} items={tabMenuItems(overlay.tabMenu)} />
       </Anchored>
     ) : overlay && typeof overlay === "object" && "menu" in overlay ? (
-      <Anchored onClose={close} className="absolute right-[54px] top-[122px] z-10">
-      <div role="menu" aria-label="Session actions" className="w-[240px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
-        {(data.menu ? data.menu(overlay.menu) : SESSION_MENU).map((item) => {
-          const off = down && MOVES.includes(item);
-          return (
-            <button
-              key={item}
-              type="button"
-              role="menuitem"
-              aria-disabled={off || undefined}
-              title={off ? ENGINE_DOWN_WHY : undefined}
-              aria-description={off ? ENGINE_DOWN_WHY : undefined}
-              onClick={
-                off
-                  ? undefined
-                  : () => {
-                      const key = overlay.menu;
-                      close();
-                      sessionItem(key, item);
-                    }
-              }
-              className={cn("flex h-8 w-full items-center rounded-md px-2.5 text-left text-[13px]", off ? "cursor-default text-ac-faint" : "hover:bg-ac-raise", !off && (item === "End…" ? "text-ac-alert-text" : "text-ac-soft"))}
-            >
-              {item}
-            </button>
-          );
-        })}
-      </div>
+      <Anchored onClose={close} className={cn("absolute z-10", !overlay.at && "right-[54px] top-[122px]")} style={overlay.at && { top: overlay.at.top, right: overlay.at.right }}>
+        <Menu label="Session actions" width={240} items={sessionMenuItems(overlay.menu)} />
       </Anchored>
     ) : overlay && typeof overlay === "object" && "end" in overlay ? (
       <EndDialog

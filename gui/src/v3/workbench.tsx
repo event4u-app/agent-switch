@@ -17,6 +17,7 @@ import { XtermBox } from "../redesign/screens/terminal-sheet.js";
 import type { TermBackend } from "../terminal.js";
 import type { SessionCache } from "../transforms.js";
 import { sessionHints, type Hint } from "./hints.js";
+import { MenuSection, POPOVER_TRIGGER } from "./menus.js";
 
 // ---------- tab strip ----------
 
@@ -253,7 +254,7 @@ const shellX = (e: MouseEvent<HTMLElement>): number => {
 
 const HOSTED_HINT = "type here, or attach from your terminal";
 
-export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; thinking: (x: number) => void; menu: () => void } }) {
+export function SessionBar({ s, openIn, chipOpen, menuOpen, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; menuOpen?: boolean; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; thinking: (x: number) => void; menu: (trigger: HTMLElement) => void } }) {
   const t = tone(s.account.fiveH, s.account.protect);
   // A session in the user's own terminal shows both views read-only (the
   // transcript as chat or in terminal style); only a hosted tool without a
@@ -262,6 +263,9 @@ export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn:
   const chatWhy = "This tool keeps the view it started in";
   return (
     <div className="flex h-10 shrink-0 items-center gap-1 overflow-hidden border-b border-ac-line bg-ac-panel px-2">
+      {/* Everything but Open in and ⋯ gives way when the bar is narrow (a side panel open, a small
+          window): those two stay whole and clickable, so the session's menus are always reachable. */}
+      <div data-bar-clip="" className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
       <div role="radiogroup" aria-label="View" className="mr-1 inline-flex h-7 shrink-0 items-center rounded-md border border-ac-line bg-ac-bg p-0.5">
         {(
           [
@@ -330,8 +334,9 @@ export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn:
           <span className="flex-1" />
         </>
       )}
+      </div>
       {openIn}
-      <IconButton label="Session actions: rename, pin, move, detach, end" className="size-7" onClick={on.menu}>
+      <IconButton {...POPOVER_TRIGGER} label="Session actions: rename, pin, move, detach, end" aria-haspopup="menu" aria-expanded={!!menuOpen} className="size-7" onClick={(e) => on.menu(e.currentTarget)}>
         <Ellipsis />
       </IconButton>
     </div>
@@ -354,7 +359,7 @@ export interface ModelChoices {
 export function ModelPopover({ c, onModel, onThinking }: { c: ModelChoices; onModel: (id: string) => void; onThinking: (level: string) => void }) {
   return (
     <div role="dialog" aria-label="Model and thinking" className="w-[320px] rounded-xl border border-ac-line2 bg-ac-panel p-3" style={{ boxShadow: "var(--ac-shadow)" }}>
-      <div className="ac-caps mb-2">Model · next turn</div>
+      <MenuSection title="Model · next turn" className="px-0 pt-0">
       {c.models.map((m) => (
         <button key={m.id} type="button" role="menuitemradio" aria-checked={m.id === c.current} onClick={() => onModel(m.id)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-ac-raise">
           <span className="inline-flex size-4 items-center justify-center">{m.id === c.current && <Check className="size-3.5 text-ac-brand-text" />}</span>
@@ -362,15 +367,15 @@ export function ModelPopover({ c, onModel, onThinking }: { c: ModelChoices; onMo
           <span className="ml-auto text-[11px] text-ac-muted">{m.hint}</span>
         </button>
       ))}
+      </MenuSection>
       {c.thinking.length > 0 && (
-        <>
-          <div className="ac-caps mb-2 mt-3">Thinking</div>
+        <MenuSection title="Thinking" className="px-0 pt-3">
           {c.thinkingWhy ? (
             <p className="text-[11px] leading-snug text-ac-muted">{c.thinkingWhy}</p>
           ) : (
             <Segmented size="sm" fill label="Thinking" value={c.currentThinking ?? ""} onChange={onThinking} options={c.thinking.map((t) => ({ value: t, label: t[0].toUpperCase() + t.slice(1) }))} />
           )}
-        </>
+        </MenuSection>
       )}
       <p className="mt-2.5 text-[11px] leading-snug text-ac-muted">Applies from the next turn. The levels come from the tool itself — Codex shows its reasoning levels here.</p>
     </div>

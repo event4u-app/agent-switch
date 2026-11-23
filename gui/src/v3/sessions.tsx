@@ -11,7 +11,7 @@ import { Bot, ChevronDown, ChevronRight, Folder, SquareTerminal } from "lucide-r
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon, type StateSource } from "../ui/SessionStateIcon.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
-import { AccountMark, BatchBar, Chip, Marker, type BatchActions } from "./kit.js";
+import { AccountMark, BatchBar, CheckMark, Chip, Marker, type BatchActions } from "./kit.js";
 import { AppMono } from "./menus.js";
 import { useEngaged, useHeldOrder } from "./held-order.js";
 
@@ -472,7 +472,7 @@ export function SessionRow({
         {kids && <span aria-hidden data-guide="stem" className={cn("pointer-events-none absolute bottom-0 w-px bg-ac-line", second ? "top-[22px]" : "top-5")} style={{ left: lineX(0) }} />}
         <div className="flex h-5 min-w-0 items-center gap-2">
           {selecting ? (
-            <span role="checkbox" aria-checked={!!checked} className={cn("inline-flex size-3.5 shrink-0 rounded border", checked ? "border-ac-text bg-ac-text" : "border-ac-line2")} />
+            <CheckMark role="checkbox" checked={!!checked} size={14} />
           ) : (
             <SessionStateIcon state={s.state} source={s.stateSource} quiet={!!s.quiet} />
           )}
