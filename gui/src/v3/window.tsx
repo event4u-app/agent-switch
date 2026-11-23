@@ -25,6 +25,7 @@ import { accountOfKey } from "../vm/switch-requests.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
+import type { ReviewFocus } from "./review.js";
 import { SessionsZone, childNoun, findChild, type RowSession } from "./sessions.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
@@ -93,8 +94,8 @@ export interface V3Slots {
   /** Accounts › MCP & plugins (v3.1). */
   mcp?: ReactNode;
   tools: ReactNode;
-  /** v3.1: the Review page of one session (spec §10.9). Absent: Review and Commit stay disabled. */
-  review?: (key: string) => ReactNode;
+  /** v3.1: the Review page of one session (spec §10.9), opened at `focus` when a file was picked. Absent: Review and Commit stay disabled. */
+  review?: (key: string, focus?: ReviewFocus) => ReactNode;
   /** The 2.11 settings screens v3 keeps, by section. */
   settings: (section: SettingsSection) => ReactNode;
 }
@@ -210,6 +211,7 @@ export function V3Window({
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [hintsDismissed, setHintsDismissed] = useState<Set<string>>(new Set());
   const [moreOpen, setMoreOpen] = useState(false);
+  const [reviewFocus, setReviewFocus] = useState<ReadonlyMap<string, ReviewFocus>>(new Map());
   const [comfortable, setComfortable] = useState(saved?.comfortable ?? false);
   const [sortBy, setSortBy] = useState<SortBy>(saved?.sort ?? "activity");
   // An older layout's "group by project" comes back as the project grouping.
@@ -235,6 +237,11 @@ export function V3Window({
     setActive(`page:${p}`);
   }, []);
   const frame = useFrame(openPage);
+  /** The session's Review tab, at `file` when one was picked. */
+  const openReview = (key: string, file?: string) => {
+    if (file) setReviewFocus((m) => new Map(m).set(key, { file, seq: (m.get(key)?.seq ?? 0) + 1 }));
+    openPage(`review:${key}`);
+  };
   const openSession = (key: string) => {
     setStrip((cur) => openTab(cur, key));
     setActive(key);
@@ -374,7 +381,7 @@ export function V3Window({
   });
 
   const page = (p: Page): ReactNode => {
-    if (p.startsWith("review:")) return slots.review ? slots.review(p.slice(7)) : null;
+    if (p.startsWith("review:")) return slots.review ? slots.review(p.slice(7), reviewFocus.get(p.slice(7))) : null;
     if (p === "accounts")
       return (
         <AccountsPage
@@ -606,9 +613,9 @@ export function V3Window({
     if (!activeSession) return null;
     if (frame.right === "summary") {
       const f = data.summary(activeSession);
-      return f && <SummaryWindow f={f} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} />;
+      return f && <SummaryWindow f={f} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} onReview={slots.review ? () => openReview(activeSession) : undefined} />;
     }
-    if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={() => (slots.review ? openPage(`review:${activeSession}`) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openPage(`review:${activeSession}`) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} />;
+    if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={(file) => (slots.review ? openReview(activeSession, file) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openReview(activeSession) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} />;
     const s = data.sessions.find((x) => x.key === activeSession);
     return s && <ChildrenWindow noun={childNoun(s)} children={s.children} onHide={() => frame.setRight(null)} />;
   })();

@@ -60,7 +60,7 @@ export function prLine(pr: { lifecycle: string; mergeable: string; review: strin
   return [pr.lifecycle.toLowerCase(), merge, REVIEW[pr.review] ?? ""].filter(Boolean).join(" · ");
 }
 
-export function SummaryWindow({ f, onNext, onCreatePr, onOpenPr, onHide, moreOpen, onToggleMore }: { f: SummaryFacts; onNext: () => void; onCreatePr: () => void; onOpenPr: () => void; onHide: () => void; moreOpen: boolean; onToggleMore: () => void }) {
+export function SummaryWindow({ f, onNext, onCreatePr, onOpenPr, onHide, moreOpen, onToggleMore, onReview }: { f: SummaryFacts; onNext: () => void; onCreatePr: () => void; onOpenPr: () => void; onHide: () => void; moreOpen: boolean; onToggleMore: () => void; /** Opens the review; absent: the count stays plain text. */ onReview?: () => void }) {
   return (
     <Window title="Summary" onHide={onHide}>
       {f.next && (
@@ -107,7 +107,15 @@ export function SummaryWindow({ f, onNext, onCreatePr, onOpenPr, onHide, moreOpe
             <span className="truncate">{f.git.branch ?? "(detached)"}</span>
             {f.git.worktree && <FolderGit2 className="size-3.5 shrink-0 text-ac-muted" aria-label="worktree" />}
             <span className="ml-auto shrink-0 text-ac-muted">
-              {f.git.changed ? <span className="text-ac-warn-text">{f.git.changed} changed</span> : "clean"}
+              {!f.git.changed ? (
+                "clean"
+              ) : onReview ? (
+                <button type="button" aria-label={`${f.git.changed} changed — open the review`} onClick={onReview} className="rounded-md text-ac-warn-text underline-offset-2 hover:underline">
+                  {f.git.changed} changed
+                </button>
+              ) : (
+                <span className="text-ac-warn-text">{f.git.changed} changed</span>
+              )}
               {f.git.ahead || f.git.behind ? ` · ↑${f.git.ahead ?? 0} ↓${f.git.behind ?? 0}` : ""}
             </span>
           </div>
@@ -149,7 +157,10 @@ export interface ChangedFile {
   removed: number;
 }
 
-export function ChangesWindow({ files, onReview, onCommit, onHide, reviewAvailable, commitAvailable = true }: { files: ChangedFile[]; onReview: () => void; onCommit: () => void; onHide: () => void; reviewAvailable: boolean; commitAvailable?: boolean }) {
+const REVIEW_LATER = "Review arrives with the next version";
+
+/** `onReview(path)` opens the review at that file; without a path, at the first. */
+export function ChangesWindow({ files, onReview, onCommit, onHide, reviewAvailable, commitAvailable = true }: { files: ChangedFile[]; onReview: (file?: string) => void; onCommit: () => void; onHide: () => void; reviewAvailable: boolean; commitAvailable?: boolean }) {
   const added = files.reduce((n, f) => n + f.added, 0);
   const removed = files.reduce((n, f) => n + f.removed, 0);
   return (
@@ -160,7 +171,15 @@ export function ChangesWindow({ files, onReview, onCommit, onHide, reviewAvailab
       {files.map((f) => {
         const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/") + 1) : "";
         return (
-          <div key={f.path} className="flex h-6 items-center gap-2 px-3.5 font-ac-mono text-[11.5px]">
+          <button
+            key={f.path}
+            type="button"
+            aria-label={`Review ${f.path}`}
+            disabled={!reviewAvailable}
+            title={reviewAvailable ? undefined : REVIEW_LATER}
+            onClick={() => onReview(f.path)}
+            className="mx-1 flex h-6 w-[calc(100%-8px)] items-center gap-2 rounded-md px-2.5 text-left font-ac-mono text-[11.5px] enabled:hover:bg-ac-raise"
+          >
             <span className={cn("w-3 shrink-0", f.status === "A" ? "text-ac-ok-text" : f.status === "D" ? "text-ac-alert-text" : "text-ac-info-text")}>{f.status}</span>
             <span className="min-w-0 flex-1 truncate">
               <span className="text-ac-faint">{dir}</span>
@@ -168,11 +187,11 @@ export function ChangesWindow({ files, onReview, onCommit, onHide, reviewAvailab
             </span>
             <span className="text-ac-ok-text">+{f.added}</span>
             <span className="text-ac-alert-text">−{f.removed}</span>
-          </div>
+          </button>
         );
       })}
       <div className="flex gap-2 px-3.5 py-3">
-        <Act kind="accent" onClick={onReview} disabled={!reviewAvailable} title={reviewAvailable ? undefined : "Review arrives with the next version"}>
+        <Act kind="accent" onClick={() => onReview()} disabled={!reviewAvailable} title={reviewAvailable ? undefined : REVIEW_LATER}>
           Review changes
         </Act>
         <Act onClick={onCommit} disabled={!commitAvailable} title={commitAvailable ? undefined : "Commit arrives with the next version"}>
