@@ -92,7 +92,7 @@ export function SessionBody({ sessionKey, row, hosted, ownView = "chat", vars, f
 function ExternalSession({ sessionKey, row, view, where, facts, onFocus, onTakeOver }: { sessionKey: string; row: SessionRow | undefined; view: "terminal" | "chat"; where: string; facts: ReactNode; onFocus: (() => void) | null; onTakeOver: (() => void) | null }) {
   const t = useTimeline(sessionKey);
   const hidden = useMemo(() => hiddenText(fold(t.events).hidden), [t.events]);
-  return <ExternalBody where={where} facts={facts} lastLine={null} onFocus={onFocus} onTakeOver={onTakeOver} readOnlyTitle={hidden} timeline={<ReadOnlyTimeline t={t} row={row} where={where} terminal={view === "terminal"} />} />;
+  return <ExternalBody where={where} facts={facts} lastLine={null} onFocus={onFocus} onTakeOver={onTakeOver} readOnlyTitle={hidden} timeline={<ReadOnlyTimeline t={t} row={row} where={where} canFocus={!!onFocus} terminal={view === "terminal"} />} />;
 }
 
 /** 7.7: one subagent's transcript, polled while it is on screen like a session's. */
@@ -104,7 +104,7 @@ export function SubagentTranscript({ parent, agentId, read = ipc.subagentTimelin
 
 /** The read-only timeline of a session running elsewhere (ADR-010). Falls back
  *  to the facts while it loads or when it cannot be read. */
-export function ReadOnlyTimeline({ t, row, where, terminal }: { t: TimelineState; row?: SessionRow; /** Where the session runs, for "answer it there". */ where?: string; terminal?: boolean }) {
+export function ReadOnlyTimeline({ t, row, where, canFocus = false, terminal }: { t: TimelineState; row?: SessionRow; /** Where the session runs, for "answer it there". */ where?: string; /** Focus terminal is offered for it, so the card may point at it. */ canFocus?: boolean; terminal?: boolean }) {
   if (!t.loaded) return <p className="m-auto text-[13px] text-ac-muted">Reading the conversation…</p>;
   const notice = t.error ? (
     <p role="status" className="shrink-0 border-b border-ac-line bg-ac-warn-tint px-4 py-1.5 text-xs text-ac-warn-text">
@@ -122,7 +122,7 @@ export function ReadOnlyTimeline({ t, row, where, terminal }: { t: TimelineState
         <TranscriptTerminal events={t.events} />
       </div>
     );
-  return <ChatTimeline events={t.events} notice={notice} agent={row?.provider === "codex" ? "Codex" : "Claude"} on={{ worktreeOf: worktreeOf(row), ...(where ? { unanswerable: `Answer it in ${where} — Focus terminal brings it up.` } : {}) }} />;
+  return <ChatTimeline events={t.events} notice={notice} agent={row?.provider === "codex" ? "Codex" : "Claude"} on={{ worktreeOf: worktreeOf(row), ...(where ? { unanswerable: `Answer it in ${where}${canFocus ? " — Focus terminal brings it up" : ""}.` } : {}) }} />;
 }
 
 /** Tools on the store: the board's rows, then the 2.11 agent-config card

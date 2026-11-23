@@ -13,6 +13,7 @@ import { Composer } from "./composer.js";
 import { fold, type AsEvent } from "./timeline.js";
 import { useBridge, type BridgeDeps } from "./adapter/useBridge.js";
 import { useTimeline } from "./adapter/useTimeline.js";
+import { ReadOnlyTimeline } from "./adapter/slots.js";
 import type { Chat } from "./adapter/chats.js";
 import type * as ipc from "../ipc.js";
 
@@ -142,6 +143,16 @@ describe("the approval card", () => {
     render(<ChatTimeline agent="Codex" events={ask()} />);
     expect(screen.getByText(/Codex wants to run a command/)).toBeTruthy();
     expect(screen.getByText(/Answer it in the terminal/)).toBeTruthy();
+  });
+
+  it("a session elsewhere names the Focus terminal button only where it is offered", () => {
+    const t = { loaded: true, events: ask(), error: null, newerThanFixtures: false, version: null } as unknown as Parameters<typeof ReadOnlyTimeline>[0]["t"];
+    const { unmount } = render(<ReadOnlyTimeline t={t} where="iTerm2" canFocus />);
+    expect(screen.getByText("Answer it in iTerm2 — Focus terminal brings it up.")).toBeTruthy();
+    unmount();
+    render(<ReadOnlyTimeline t={t} where="your terminal" canFocus={false} />);
+    expect(screen.getByText("Answer it in your terminal.")).toBeTruthy();
+    expect(screen.queryByText(/Focus terminal brings it up/)).toBeNull();
   });
 
   it("ChatView names the agent from the session key", () => {
