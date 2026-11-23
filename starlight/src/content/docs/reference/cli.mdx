@@ -300,7 +300,7 @@ suggested. The background service must be running.
 | Command | What it does |
 | --- | --- |
 | `sessions [profile] [--recent N]` | Recent and running sessions per account, with context %. Claude and Codex; Antigravity sessions are not readable yet. |
-| `sessions preview <session-id> [--from <profile>]` | The first turns of one session. |
+| `sessions preview <session-id> [--from <profile>]` | The first turns of one session. Anything shaped like a token or key is shown as `[redacted]`. |
 | `sessions rm <session-id> --yes [--from <profile>] [--purge]` | Move a session to the trash; `--purge` deletes it for good. |
 | `sessions restore <trash-id\|session-id> [--from <profile>]` | Bring a removed session back. |
 | `sessions pin\|unpin\|archive\|unarchive <session>` | Keep a session in the library. A pinned session is copied into the vault, so Claude's own cleanup cannot take it; archived is not deleted. Claude and Codex, needs Node 22.13 or later. |
@@ -437,7 +437,7 @@ App ids: `claude-desktop`, `codex-ide` (VS Code), `codex-desktop`,
 | `activate [--auto]` | Make this copy of the CLI the one terminals and the background service use. The desktop app runs it with `--auto` on every start; `--auto` does nothing when this copy is a source checkout (a build outside `node_modules`), so running a dev build leaves your installed version in charge. |
 | `service install\|uninstall` | Start the background service at login, or remove it. |
 | `service start\|stop\|status\|run` | Start it now, stop it, show its state, or run it in the foreground. On macOS with the LaunchAgent installed, start and stop go through launchd; a stopped service stays stopped until the next start or login. |
-| `notifications [clear]` | Recent notifications (limit suggestions, protection warnings, failed usage reads). |
+| `notifications [clear]` | Recent notifications (limit suggestions, protection warnings, failed usage reads). A token-shaped string in a notice is stored and shown as `[redacted]`, and never reaches a desktop notification. |
 | `os-notify [on\|off\|status]` | Let the background service show desktop notifications itself on Linux and Windows (default off). |
 | `providers status` | Which tools are on, installed or linked. |
 | `providers enable\|disable [--surface cli\|ui]` | Turn a tool on or off. Accounts are kept. Claude and Codex are on by default. |

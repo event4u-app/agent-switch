@@ -81,7 +81,8 @@ test("caps at PREVIEW_MAX_MESSAGES and flags truncated when more turns exist", (
 });
 
 test("per-message text is truncated to the cap with an ellipsis and flags truncated", () => {
-  const long = "x".repeat(500);
+  // Words, not one opaque run: a run of 40+ token characters is masked as a secret.
+  const long = "ab ".repeat(200);
   const p = readClaudePreview(writeTranscript([userLine(long)]), { textCap: 20 });
   assert.ok(p);
   assert.equal(p!.messages[0].text.length, 21); // 20 chars + "…"
@@ -128,4 +129,22 @@ test("codex preview is deferred (null by construction) and the dispatcher honors
   assert.equal(readCodexPreview(file), null);
   assert.equal(readPreview("codex", file), null);
   assert.ok(readPreview("claude", file)); // claude path still works through the dispatcher
+});
+
+test("readClaudePreview: a token-shaped string in a turn renders masked, user and assistant alike", () => {
+  const token = "sk-ant-oat01-" + "Q".repeat(60);
+  const file = writeTranscript([userLine(`use ${token} for the call`), asstLine([{ type: "text", text: `Set ANTHROPIC_API_KEY=${token} and retry` }])]);
+  const p = readClaudePreview(file)!;
+  assert.deepEqual(
+    p.messages.map((m) => m.text),
+    ["use [redacted] for the call", "Set ANTHROPIC_API_KEY=[redacted] and retry"],
+  );
+  assert.ok(!JSON.stringify(p).includes("QQQQQQQQ"));
+});
+
+test("readClaudePreview: a token cut by the text cap is still never shown in part", () => {
+  const token = "sk-ant-oat01-" + "Q".repeat(60);
+  const file = writeTranscript([userLine(`${"x ".repeat(5)}${token}`)]);
+  const p = readClaudePreview(file, { textCap: 30 })!;
+  assert.ok(!p.messages[0].text.includes("QQQ"), p.messages[0].text);
 });

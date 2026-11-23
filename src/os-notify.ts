@@ -13,6 +13,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { redactSecrets } from "./activity.js";
 
 export interface OsNotifyCommand {
   program: string;
@@ -28,7 +29,9 @@ function escPowerShellSingle(s: string): string {
  * Build the native notify command for a platform, or null when unsupported.
  * `platform` matches `process.platform` values (`darwin` / `linux` / `win32`).
  */
-export function buildOsNotifyCommand(platform: string, title: string, body: string): OsNotifyCommand | null {
+export function buildOsNotifyCommand(platform: string, rawTitle: string, rawBody: string): OsNotifyCommand | null {
+  const title = redactSecrets(rawTitle);
+  const body = redactSecrets(rawBody);
   if (platform === "linux") {
     // notify-send treats the first arg as summary, the second as body.
     return { program: "notify-send", args: [title, body] };

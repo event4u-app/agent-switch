@@ -32,6 +32,7 @@
  */
 
 import * as fs from "node:fs";
+import { redactSecrets } from "./activity.js";
 
 /** Bytes read from the START of a transcript. The first turns live at the head;
  *  capping keeps a preview read cheap even on a multi-MB transcript. */
@@ -148,7 +149,8 @@ export function readClaudePreview(
     const msg = o.message;
     if (!msg || typeof msg !== "object") continue;
     const role = o.type; // "user" | "assistant"
-    const cleaned = role === "user" ? cleanText(extractText(msg.content)) : extractText(msg.content).trim();
+    // Masked before the cap, so a cut can never leave part of a token readable.
+    const cleaned = redactSecrets(role === "user" ? cleanText(extractText(msg.content)) : extractText(msg.content).trim());
     if (cleaned.length === 0) continue; // tool-only / attachment-only turn
     if (messages.length >= maxMessages) {
       moreAvailable = true;

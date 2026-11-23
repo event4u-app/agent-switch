@@ -10,6 +10,7 @@
 
 import { isPermissionGranted, requestPermission, sendNotification, removeAllActive, onAction } from "@tauri-apps/plugin-notification";
 import { invoke } from "@tauri-apps/api/core";
+import { redactSecrets } from "./redact.js";
 
 export type NotificationKind = "success" | "error" | "warning" | "info";
 
@@ -35,7 +36,7 @@ export async function sendDesktopNotification(title: string, body: string): Prom
     let granted = await isPermissionGranted();
     if (!granted) granted = (await requestPermission()) === "granted";
     if (!granted) return false;
-    sendNotification({ title, body });
+    sendNotification({ title: redactSecrets(title), body: redactSecrets(body) });
     return true;
   } catch {
     return false; // plugin unavailable (non-Tauri env) → in-window fallback
