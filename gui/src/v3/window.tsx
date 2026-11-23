@@ -167,6 +167,8 @@ function shellPoint(at: { x: number; y: number }, width = 260): { x: number; y: 
 const TAB_SESSION_ITEMS: readonly SessionMenuItem[] = ["Rename…", "Move to another account…", "Hand off…", "Detach", "End…"];
 /** Session actions that move a running session: they answer through the engine, so they wait for it. */
 const MOVES: readonly SessionMenuItem[] = ["Move to another account…", "Take over here…", "Hand off…"];
+/** Why "Move to another account" has nothing to show: the decision sheet is built from the account's usage. */
+export const NO_USAGE_WHY = "This account's usage has not been read yet — refresh it on the Accounts page first";
 
 /** The palette's own commands: pages the window can open (spec §7.1). */
 export const PAGE_COMMANDS: PaletteEntry[] = [
@@ -315,7 +317,7 @@ export function V3Window({
           id: `session:${item}`,
           label: item,
           danger: item === "End…",
-          ...(down && MOVES.includes(item) ? { disabled: true, why: ENGINE_DOWN_WHY } : {}),
+          ...(itemWhy(id, item) ? { disabled: true, why: itemWhy(id, item)! } : {}),
           onClick: run(() => sessionItem(id, item)),
         }),
       ),
@@ -357,10 +359,20 @@ export function V3Window({
   const down = data.health.state === "down";
   /** Why a Needs-you verb cannot act now: the engine it answers through is stopped. */
   const blockedNeed = (n: NeedItem) => (down && needsEngine(n) ? ENGINE_DOWN_WHY : null);
+  /** Why a move of `key` cannot open its decision sheet now: the engine is stopped, or there is no usage to decide on. */
+  const moveWhy = (key: string): string | null => (down ? ENGINE_DOWN_WHY : data.decision(key) ? null : NO_USAGE_WHY);
+  /** Every entry point to the decision sheet (menu, chip, ⌘⇧M, hint, Limits) goes through here. */
+  const openMove = (key: string) => {
+    if (!moveWhy(key)) setOverlay({ decide: key });
+  };
+  /** Why a session-menu item is off: moves wait for the engine; the account move also needs usage. */
+  const itemWhy = (key: string, item: SessionMenuItem): string | null => (item === "Move to another account…" ? moveWhy(key) : down && MOVES.includes(item) ? ENGINE_DOWN_WHY : null);
+  /** Sending a prompt goes through the engine; copying one does not. */
+  const sendWhy = (action: string | undefined) => (down && action === "Send to agent" ? ENGINE_DOWN_WHY : null);
   /** A session-menu pick: the moves open the decision sheet, End… its dialog, the rest are actions. */
   const sessionItem = (key: string, item: SessionMenuItem) => {
-    if (down && MOVES.includes(item)) return;
-    if (item === "Move to another account…") return setOverlay({ decide: key });
+    if (itemWhy(key, item)) return;
+    if (item === "Move to another account…") return openMove(key);
     if (item === "End…") return setOverlay({ end: key });
     act({ type: "session-menu", key, item });
   };
@@ -505,7 +517,7 @@ export function V3Window({
         case "openDefault":
           return activeSession ? (openDefault(activeSession), true) : false;
         case "moveSession":
-          return activeSession ? (setOverlay({ decide: activeSession }), true) : false;
+          return activeSession ? (openMove(activeSession), true) : false;
         case "switcher":
           return recent.length ? (setOverlay((o) => ({ switcher: o && typeof o === "object" && "switcher" in o ? (o.switcher + 1) % recent.length : Math.min(1, recent.length - 1) })), true) : false;
         case "settings":
@@ -590,16 +602,19 @@ export function V3Window({
                 />
               ) : null
             }
-            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => setOverlay({ decide: activeSession }), model: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "model" ? null : { model: activeSession, x, chip: "model" })), thinking: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "thinking" ? null : { model: activeSession, x, chip: "thinking" })), menu: () => setOverlay({ menu: activeSession }) }}
+            accountWhy={moveWhy(activeSession)}
+            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => openMove(activeSession), model: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "model" ? null : { model: activeSession, x, chip: "model" })), thinking: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "thinking" ? null : { model: activeSession, x, chip: "thinking" })), menu: () => setOverlay({ menu: activeSession }) }}
           />
           {engineBanner}
           <HintStrip
             s={bar}
             dismissed={hintsDismissed}
             onDismiss={(k) => setHintsDismissed((d) => new Set([...d, k]))}
-            onAction={(h) => (h.action?.kind === "switch" ? setOverlay({ decide: activeSession }) : act({ type: "session-menu", key: activeSession, item: "Compact" }))}
+            canCompact={(data.menu ? data.menu(activeSession) : SESSION_MENU).includes("Compact")}
+            actionWhy={(h) => (h.action?.kind === "switch" ? moveWhy(activeSession) : null)}
+            onAction={(h) => (h.action?.kind === "switch" ? openMove(activeSession) : act({ type: "session-menu", key: activeSession, item: "Compact" }))}
           />
-          {next && <BlockerStrip text={next.text} action={next.action} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
+          {next && <BlockerStrip text={next.text} action={next.action} blocked={sendWhy(next.action)} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
           {down ? (
             // The engine is stopped: what the pane shows is the last known state, not a live one.
             <div data-stale="" className="relative flex min-h-0 flex-1 flex-col">
@@ -642,7 +657,7 @@ export function V3Window({
     if (!activeSession) return null;
     if (frame.right === "summary") {
       const f = data.summary(activeSession);
-      return f && <SummaryWindow f={f} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} onReview={slots.review ? () => openReview(activeSession) : undefined} />;
+      return f && <SummaryWindow f={f} nextBlocked={sendWhy(f.next?.action)} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} onReview={slots.review ? () => openReview(activeSession) : undefined} />;
     }
     if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={(file) => (slots.review ? openReview(activeSession, file) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openReview(activeSession) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} />;
     const s = data.sessions.find((x) => x.key === activeSession);
@@ -777,7 +792,8 @@ export function V3Window({
         <LimitsPopover
           a={limitsAccount}
           nowMs={data.nowMs}
-          onMove={() => setOverlay({ decide: limitsAccount.key })}
+          moveWhy={moveWhy(limitsAccount.key)}
+          onMove={() => openMove(limitsAccount.key)}
           onAccounts={() => (close(), openPage("accounts"))}
           running={
             <RunningOn
@@ -840,15 +856,16 @@ export function V3Window({
       <Anchored onClose={close} className="absolute right-[54px] top-[122px] z-10">
       <div role="menu" aria-label="Session actions" className="w-[240px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
         {(data.menu ? data.menu(overlay.menu) : SESSION_MENU).map((item) => {
-          const off = down && MOVES.includes(item);
+          const why = itemWhy(overlay.menu, item);
+          const off = !!why;
           return (
             <button
               key={item}
               type="button"
               role="menuitem"
               aria-disabled={off || undefined}
-              title={off ? ENGINE_DOWN_WHY : undefined}
-              aria-description={off ? ENGINE_DOWN_WHY : undefined}
+              title={why ?? undefined}
+              aria-description={why ?? undefined}
               onClick={
                 off
                   ? undefined

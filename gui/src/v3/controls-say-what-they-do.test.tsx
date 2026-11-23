@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { V3Window, type V3Data } from "./window.js";
 import { data, slots } from "./window-fixture.js";
 import { ENGINE_DOWN_WHY } from "./workbench.js";
@@ -93,5 +93,108 @@ describe("End… opens the End dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Just close the tab" }));
     expect(screen.queryByRole("tab", { name: /Event store/ })).toBeNull();
     expect(act).not.toHaveBeenCalledWith(expect.objectContaining({ type: "end" }));
+  });
+});
+
+describe("engine stopped: every move, send and blocker entry point waits (7.6)", () => {
+  const sendNext = () => ({ text: "CI failing: lint", action: "Send to agent" });
+  const summaryFacts = () => ({ next: sendNext(), pr: null, git: null, limit: null, more: { id: "s1", host: "Hosted by Agent Switch", library: "Kept in the vault", children: "0 child sessions" } });
+  const accountChip = () => screen.getAllByRole("button").find((b) => b.tagName === "BUTTON" && b.textContent?.startsWith("work"))!;
+
+  it("the account chip says why and opens no decision sheet", () => {
+    mount();
+    const chip = accountChip();
+    expect(chip.getAttribute("aria-disabled")).toBe("true");
+    expect(chip.getAttribute("title")).toBe(ENGINE_DOWN_WHY);
+    fireEvent.click(chip);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("⌘⇧M opens no decision sheet", () => {
+    mount();
+    fireEvent.keyDown(window, { key: "m", metaKey: true, shiftKey: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("the limit hint's Move… is disabled with the reason", () => {
+    mount();
+    const move = screen.getByRole("button", { name: "Move…" });
+    expect(move.getAttribute("aria-disabled")).toBe("true");
+    expect(move.getAttribute("title")).toBe(ENGINE_DOWN_WHY);
+    fireEvent.click(move);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("the Limits popover's Move its session… is disabled with the reason", () => {
+    mount();
+    fireEvent.click(within(screen.getByLabelText("Limits")).getByText("work"));
+    const pop = screen.getByRole("dialog", { name: "work limits" });
+    const move = within(pop).getByText("Move its session…");
+    expect(move.getAttribute("aria-disabled")).toBe("true");
+    expect(move.getAttribute("title")).toBe(ENGINE_DOWN_WHY);
+    fireEvent.click(move);
+    expect(screen.getByRole("dialog", { name: "work limits" })).toBeTruthy();
+  });
+
+  it("the blocker strip's Send to agent is disabled with the reason; Copy prompt still works", () => {
+    const act = mount({ next: sendNext });
+    const send = screen.getByRole("button", { name: "Send to agent" });
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    expect(send.getAttribute("title")).toBe(ENGINE_DOWN_WHY);
+    fireEvent.click(send);
+    expect(act).not.toHaveBeenCalledWith(expect.objectContaining({ type: "blocker" }));
+    cleanup();
+    const act2 = mount({ next: () => ({ text: "CI failing: lint", action: "Copy prompt" }) });
+    fireEvent.click(screen.getByRole("button", { name: "Copy prompt" }));
+    expect(act2).toHaveBeenCalledWith({ type: "blocker", key: "s1" });
+  });
+
+  it("Summary's Send to agent is disabled with the reason", () => {
+    const act = mount({ summary: summaryFacts });
+    fireEvent.keyDown(window, { key: "i", metaKey: true });
+    const send = screen.getByRole("button", { name: "Send to agent" });
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(send);
+    expect(act).not.toHaveBeenCalledWith(expect.objectContaining({ type: "blocker" }));
+  });
+
+  it("with the engine up the same entry points act", () => {
+    const act = mount({ health: READY, next: sendNext });
+    fireEvent.click(screen.getByRole("button", { name: "Send to agent" }));
+    expect(act).toHaveBeenCalledWith({ type: "blocker", key: "s1" });
+    fireEvent.keyDown(window, { key: "m", metaKey: true, shiftKey: true });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+});
+
+describe("Move to another account needs the account's usage (7.6)", () => {
+  it("without it the menu item says why and nothing opens, from the menu or ⌘⇧M", () => {
+    mount({ health: READY, decision: () => null });
+    sessionMenu();
+    const item = screen.getByRole("menuitem", { name: "Move to another account…" });
+    expect(item.getAttribute("aria-disabled")).toBe("true");
+    expect(item.getAttribute("title")).toMatch(/usage/);
+    fireEvent.click(item);
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(window, { key: "m", metaKey: true, shiftKey: true });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(accountChipTitle()).toMatch(/usage/);
+  });
+  const accountChipTitle = () => screen.getAllByRole("button").find((b) => b.tagName === "BUTTON" && b.textContent?.startsWith("work"))!.getAttribute("title");
+});
+
+describe("the Compact hint is offered only where Compact works (7.6)", () => {
+  const full = (hosted: boolean) => () => ({ key: "s1", hosted, chatAvailable: true, view: "terminal" as const, account: { name: "work", color: "teal" as const, fiveH: 10, protect: 98 }, model: "Opus", thinking: "high", contextPct: 70, contextTokens: 120_000, tool: "claude" });
+
+  it("a session Agent Switch does not host keeps the words (/compact) and gets no button", () => {
+    mount({ health: READY, bar: full(false), menu: () => ["Rename…", "Pin"] });
+    expect(screen.getByText(/\/compact keeps the gist/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Compact" })).toBeNull();
+  });
+
+  it("a hosted session gets the button, and it compacts", () => {
+    const act = mount({ health: READY, bar: full(true), menu: () => ["Rename…", "Compact"] });
+    fireEvent.click(screen.getByRole("button", { name: "Compact" }));
+    expect(act).toHaveBeenCalledWith({ type: "session-menu", key: "s1", item: "Compact" });
   });
 });

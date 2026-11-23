@@ -253,7 +253,7 @@ const shellX = (e: MouseEvent<HTMLElement>): number => {
 
 const HOSTED_HINT = "type here, or attach from your terminal";
 
-export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; thinking: (x: number) => void; menu: () => void } }) {
+export function SessionBar({ s, openIn, chipOpen, accountWhy, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; /** Why the account chip cannot open the decision sheet now; absent: it can. */ accountWhy?: string | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; thinking: (x: number) => void; menu: () => void } }) {
   const t = tone(s.account.fiveH, s.account.protect);
   // A session in the user's own terminal shows both views read-only (the
   // transcript as chat or in terminal style); only a hosted tool without a
@@ -288,7 +288,7 @@ export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn:
         })}
       </div>
       <span className="mx-1 h-4 w-px shrink-0 bg-ac-line" />
-      <BarChip title={`${s.account.name} — moving opens the decision sheet, it never switches by itself`} onClick={on.account}>
+      <BarChip title={accountWhy ?? `${s.account.name} — moving opens the decision sheet, it never switches by itself`} locked={!!accountWhy} onClick={on.account}>
         <AccountMark color={s.account.color} />
         {s.account.name}
         <span className="ml-1 inline-flex items-center gap-1">
@@ -380,13 +380,13 @@ export function ModelPopover({ c, onModel, onThinking }: { c: ModelChoices; onMo
 // ---------- blocker strip ----------
 
 /** Only while Summary is closed; with Summary open the same next step shows there, never twice (spec §6.3). */
-export function BlockerStrip({ text, action, summaryOpen, onAction, onDismiss }: { text: string; action: string; summaryOpen: boolean; onAction: () => void; onDismiss: () => void }) {
+export function BlockerStrip({ text, action, blocked, summaryOpen, onAction, onDismiss }: { text: string; action: string; /** Why the action cannot run now (the engine is stopped); absent: it can. */ blocked?: string | null; summaryOpen: boolean; onAction: () => void; onDismiss: () => void }) {
   if (summaryOpen) return null;
   return (
     <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-ac-line bg-ac-panel px-4 py-2">
       <CircleX className="size-4 shrink-0 text-ac-alert" />
       <span className="min-w-0 flex-1 text-xs leading-snug text-ac-soft">{text}</span>
-      <Act kind="accent" onClick={onAction}>
+      <Act kind="accent" blocked={blocked} onClick={onAction}>
         {action}
       </Act>
       <IconButton label="Dismiss" className="size-6" onClick={onDismiss}>
@@ -402,7 +402,7 @@ export function BlockerStrip({ text, action, summaryOpen, onAction, onDismiss }:
  * time, re-read every few seconds (the cache hint counts down); a dismissed hint
  * stays away until its situation changes.
  */
-export function HintStrip({ s, dismissed, onDismiss, onAction }: { s: BarSession; dismissed: ReadonlySet<string>; onDismiss: (stateKey: string) => void; onAction: (h: Hint) => void }) {
+export function HintStrip({ s, dismissed, onDismiss, onAction, canCompact = true, actionWhy }: { s: BarSession; dismissed: ReadonlySet<string>; onDismiss: (stateKey: string) => void; onAction: (h: Hint) => void; /** Compact reaches only sessions Agent Switch hosts: elsewhere the hint keeps its words (/compact) and offers no button. */ canCompact?: boolean; /** Why a hint's action cannot run now; absent: it can. */ actionWhy?: (h: Hint) => string | null }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 5_000);
@@ -416,8 +416,8 @@ export function HintStrip({ s, dismissed, onDismiss, onAction }: { s: BarSession
       <Lightbulb className={cn("size-4 shrink-0", h.tone === "warn" ? "text-ac-warn-text" : "text-ac-info-text")} />
       <span className="min-w-0 flex-1 text-xs leading-snug text-ac-soft">{h.text}</span>
       {hints.length > 1 && <span className="shrink-0 text-[11px] text-ac-faint">+{hints.length - 1}</span>}
-      {h.action && (
-        <Act kind="accent" onClick={() => onAction(h)}>
+      {h.action && (h.action.kind !== "compact" || canCompact) && (
+        <Act kind="accent" blocked={actionWhy?.(h)} onClick={() => onAction(h)}>
           {h.action.label}
         </Act>
       )}

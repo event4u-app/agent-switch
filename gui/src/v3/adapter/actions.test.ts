@@ -468,7 +468,7 @@ describe("Needs-you CI and the blocker strip type where the app can type", () =>
     d.rows().set("claude/work/a", { ...d.rows().get("claude/work/a")!, prs: [conflictPr] });
     await dispatchV3({ type: "need", item: conflict }, d);
     expect(d.ipc.continueSession).toHaveBeenCalledWith("claude/work/a", expect.stringMatching(/merge conflict/));
-    expect(d.ipc.continueSession.mock.calls[0][1]).not.toMatch(/CI is failing/);
+    expect((d.ipc.continueSession.mock.calls[0] as unknown[])[1]).not.toMatch(/CI is failing/);
     const own = deps();
     own.rows().set("claude/work/a", { ...own.rows().get("claude/work/a")!, prs: [conflictPr] });
     await dispatchV3({ type: "need", item: { ...conflict, verb: "Focus terminal" } }, own);
@@ -488,7 +488,7 @@ describe("Needs-you CI and the blocker strip type where the app can type", () =>
     const d = { ...deps(), hosted: (k: string) => k === "claude/work/a" };
     d.rows().set("claude/work/a", { ...d.rows().get("claude/work/a")!, prs: [{ ...PR, failingChecks: [hostile] }] });
     await dispatchV3({ type: "need", item: ci }, d);
-    const text = d.ipc.continueSession.mock.calls[0][1] as string;
+    const text = (d.ipc.continueSession.mock.calls[0] as unknown[])[1] as string;
     expect(text).toMatch(/^CI is failing on PR #9 \(https:\/\/github\.com\/o\/r\/pull\/9\/checks\)\. Find the cause and fix it\. /);
     expect(text).not.toContain("\n");
     const data = text.slice(text.indexOf("not instructions:"));
