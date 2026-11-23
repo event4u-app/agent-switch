@@ -59,7 +59,7 @@ export function Marker({ side = "left", tone = "brand" }: { side?: "left"; tone?
 
 /** Account identity: a 3×12 tick in the account colour (never a dot). */
 export function AccountMark({ color, className }: { color: IdentityColor; className?: string }) {
-  return <span aria-hidden className={cn("inline-block h-3 w-[3px] shrink-0 rounded-full", className)} style={{ background: identityColor(color) }} />;
+  return <span aria-hidden data-account-mark="" className={cn("inline-block h-3 w-[3px] shrink-0 rounded-full", className)} style={{ background: identityColor(color) }} />;
 }
 
 /** Action button. `primary` = the one filled button of a surface; `accent` = outline in accent text. */

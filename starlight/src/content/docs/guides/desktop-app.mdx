@@ -104,6 +104,26 @@ choose. See [Move a session](/agent-switch/guides/move-a-session/).
 
 ![The Sessions list: each session's project, summary and the account it runs on, filterable by state and tool](/agent-switch/media/screenshots/sessions.png)
 
+#### Reading the session tree
+
+- **The dot says what a session is doing, and its tooltip says who reported it.**
+  Claude Code's own word comes first ("from Claude Code"): working for the
+  whole turn, including a long tool call, and idle the moment the turn ends. A
+  hosted Codex window reports its own state ("from Codex"). Without either, the
+  transcript's write time decides. A working dot that stopped pulsing, with "no
+  update in 34m" beside it, means Claude Code still says busy but nothing has
+  changed for ten minutes.
+- **Helper sessions and subagents unfold under their session**, as deep as they
+  were started: council seats, arena builds, their own subagents. Each child
+  shows its tool and account. Children that are idle fold into one "N idle"
+  line. A parent shows a small amber dot when any child below it waits for
+  you; click it to open the children, or press ⌘J.
+- **Group by project** groups by repository, so every worktree of a repository
+  lands in one group, with a line per worktree when more than one has a live
+  session.
+- **The list holds still while your pointer is on it** (or a row has keyboard
+  focus); it re-sorts once you move away.
+
 ### Accounts
 
 Each account with its sign-in, where it is used, its 5-hour and weekly meters,

@@ -1,6 +1,6 @@
 {
   "entries": [],
-  "capacity": 500
+  "capacity": 1000
 }
 --- stderr ---
 --- exit 0 ---

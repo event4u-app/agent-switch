@@ -23,11 +23,12 @@ import {
   readBinaryPath,
 } from "../profiles.js";
 import { ProviderId, PROVIDER_IDS, provider } from "../providers.js";
-import { autoContinueState, clearAutoContinue, readProtection, setAutoContinue, setProtection } from "../protection.js";
+import { applyWait, autoContinueState, clearAutoContinue, readProtection, setAutoContinue, setProtection, waitTargets } from "../protection.js";
 import { HistorySample, LATEST_FILE, readHistory, recordHistorySample, writeLatestSnapshot } from "../history.js";
-import { checkAuth, fetchProfile, fetchUsage } from "../api.js";
+import { checkAuth, fetchProfile } from "../api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "../token-freshen.js";
-import { formatSnapshot, parseUsage } from "../usage.js";
+import { formatSnapshot } from "../usage.js";
+import { statuslineHealth } from "../statusline.js";
 import { readCodexUsage } from "../codex-usage.js";
 import { redeemResetCredit, resetReflected, usageAfterRedeem } from "../codex-reset.js";
 import {
@@ -105,12 +106,19 @@ export async function cmdStatus(providerId?: ProviderId, name?: string, json = f
       );
       continue;
     }
-    const [profileInfo, raw] = await Promise.all([fetchProfile(token), fetchUsage(token)]);
+    // Same source as `--json`: a fresh statusline sample, the daemon's cache, then the endpoint.
+    const [profileInfo, snap] = await Promise.all([fetchProfile(token), claudeSnapshot(n)]);
     const org = profileInfo?.organization?.name ?? profileInfo?.account?.email ?? null;
     if (org) console.log(`  org: ${org}`);
-    const lines = raw ? formatSnapshot(parseUsage(raw)) : [];
+    const lines = snap ? formatSnapshot(snap) : [];
+    const ageMin = snap ? Math.floor((Date.now() - Date.parse(snap.capturedAt)) / 60_000) : 0;
+    if (lines.length > 0 && ageMin >= 10) lines.push(`  (as of ${ageMin} min ago — the usage endpoint did not answer)`);
     if (lines.length > 0) lines.forEach((l) => console.log(l));
-    else if (profileInfo) console.log("  (usage unavailable — API shape changed?)");
+    else if (profileInfo) {
+      // The profile read worked, so the usage read was most likely rate-limited.
+      const hint = statuslineHealth(configDir("claude", n), profileDir("claude", n)) === "off" ? ` — if this keeps happening: agent-switch statusline on ${n}` : "";
+      console.log(`  (usage unavailable — the usage endpoint did not answer${hint})`);
+    }
     else {
       // Both profile and usage came back empty — disambiguate a dead login from
       // a transient/offline failure with one read-only probe (no token write).
@@ -261,9 +269,37 @@ export function cmdAuthStatus(providerId: ProviderId | undefined, json: boolean)
   }
 }
 
+/**
+ * `protection wait on|off|default --all [--yes]`: every Claude profile's settings
+ * file, one target per real file (a shared link serves several), previewed first.
+ * Writes only with --yes; a partial failure is reported per target and exits 1.
+ */
+function waitAll(state: "on" | "off" | "default", named: string | undefined, flags: Record<string, string | boolean>): void {
+  if (named) die("pass either a profile or --all, not both");
+  const targets = waitTargets(listProfiles("claude").map((name) => ({ name, configDir: configDir("claude", name) })));
+  if (targets.length === 0) die("no claude profiles");
+  const label = (t: { profiles: string[] }) => t.profiles.map((n) => `claude/${n}`);
+  if (!flags.yes) {
+    if (flags.json) return void console.log(JSON.stringify({ state, written: false, targets: targets.map((t) => ({ file: t.file, profiles: label(t), before: t.before })) }, null, 2));
+    console.log(`protection wait ${state} --all would write ${targets.length} settings file${targets.length === 1 ? "" : "s"}:`);
+    for (const t of targets) console.log(`  ${t.file}  (now: ${t.before})  ${label(t).join(", ")}${t.profiles.length > 1 ? " (shared)" : ""}`);
+    console.log(`Nothing written. Run again with --yes to write: agent-switch protection wait ${state} --all --yes`);
+    return;
+  }
+  const results = applyWait(targets, state);
+  for (const r of results) if (r.ok) logActivity("protection", label(r).join(","), `auto-continue ${state}`, "user ran `agent-switch protection wait --all`");
+  const failed = results.filter((r) => !r.ok).length;
+  if (flags.json) console.log(JSON.stringify({ state, written: true, targets: results.map((r) => ({ file: r.file, profiles: label(r), before: r.before, ok: r.ok, ...(r.error ? { error: r.error } : {}) })) }, null, 2));
+  else {
+    for (const r of results) console.log(`${r.ok ? "written" : "FAILED "}  ${r.file}  ${label(r).join(", ")}${r.error ? `: ${r.error}` : ""}`);
+    console.log(failed ? `${failed} of ${results.length} settings files were not written.` : `Claude auto-continue ${state} for every Claude profile (${results.length} settings file${results.length === 1 ? "" : "s"}).`);
+  }
+  if (failed) process.exitCode = 1;
+}
+
 export function cmdProtection(sub: string | undefined, args: string[], flags: Record<string, string | boolean>): void {
   const usageLine =
-    "usage: agent-switch protection [--json] | protection set <provider/name> [--on|--off] [--threshold <1-100>] | protection wait <on|off|default> <claude/name>";
+    "usage: agent-switch protection [--json] | protection set <provider/name> [--on|--off] [--threshold <1-100>] | protection wait <on|off|default> <claude/name> | protection wait <on|off|default> --all [--yes]";
   if (sub === undefined || sub === "status" || sub === "list") {
     const rows = listAllProfiles().map((p) => ({
       profile: `${p.provider}/${p.name}`,
@@ -285,6 +321,7 @@ export function cmdProtection(sub: string | undefined, args: string[], flags: Re
   if (sub === "wait") {
     const state = args[0];
     if (state !== "on" && state !== "off" && state !== "default") die(usageLine);
+    if (flags.all) return waitAll(state, args[1], flags);
     const m = parseMemberArg(args[1], usageLine);
     if (m.provider !== "claude") die("protection wait applies to Claude profiles only (it sets Claude Code's autoContinueAtUsageLimit)");
     requireProfile(m.provider, m.name, "protection wait");

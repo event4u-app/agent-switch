@@ -239,8 +239,12 @@ export interface TableSession {
   thinking: string | null;
   contextPct: number | null;
   lastActiveMs: number;
-  /** The repository (or folder) the session works in, for the Projects grouping. */
+  /** The repository (or folder) the session works in, for the Projects grouping: its label, unique per root. */
   project?: string | null;
+  /** That repository's full path (the group's identity and tooltip). */
+  projectRoot?: string | null;
+  /** The checkout the session works in (its toplevel), for the worktree sub-header (D8). */
+  worktree?: { id: string; branch: string | null; linked: boolean } | null;
 }
 
 /** Sessions grouped by project, the most recently active project first; no project last. Pure. */

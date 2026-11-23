@@ -48,7 +48,8 @@ import {
   hooksRecordSubagents,
   HookEventRecord,
 } from "../hooks.js";
-import { buildTree, childSource, childrenWithHooks, countSubagentFiles, helperIndex, relationUnknown, type TreeNode } from "../lineage.js";
+import { buildTree, childSource, childrenWithHooks, countSubagentFiles, helperIndex, relationUnknown, type Child, type TreeNode } from "../lineage.js";
+import { runtimeState, type RuntimeState } from "../runtime-state.js";
 import { gitFacts, type GitFacts } from "../git-facts.js";
 import { githubRepo, prCacheFile, prsForHead, readPrCache } from "../pr-facts.js";
 import { Store, storeFile } from "../store/store.js";
@@ -57,7 +58,8 @@ import { takeInHook } from "../hook-intake.js";
 import { codexHomeTrust, codexHooksNeedMigration, installCodexHooks, readCodexHooks, uninstallCodexHooks, type CodexTrust } from "../codex-hooks.js";
 import { readTelemetryConfig, writeTelemetryConfig } from "../notify.js";
 import { readTmuxRegistry, sendKeysArgs, tmuxSessionName } from "../tmux.js";
-import { TmuxHost } from "../host/tmux-host.js";
+import { TmuxHost, type HostedRow } from "../host/tmux-host.js";
+import { matchHostedRows, programStatusFile, readProgramStatus } from "../program-status.js";
 import { InputLeases, LeaseHeld } from "../host/lease.js";
 import { cacheForRow, contextForRow, desktopScan, formatContext } from "./shared.js";
 import { compactCacheLine, formatCache } from "../cache-words.js";
@@ -144,7 +146,13 @@ export function cmdHooks(sub?: string, name?: string, providerId: ProviderId = "
       // An install from ≤ 2.11 held every turn until the hook exited; bring it
       // to the non-blocking shape on sight. Only our own entries change.
       if (hooksNeedMigration(settings, hookCommand("agent-switch", relay))) {
-        installHooks(cfg, "agent-switch", relay);
+        try {
+          installHooks(cfg, "agent-switch", relay);
+        } catch (e) {
+          console.log(`claude/${p}: not migrated — ${(e as Error).message}`);
+          process.exitCode = 1;
+          continue;
+        }
         console.log(`claude/${p}: installed (migrated to ${relay ? "the as-hook relay" : "non-blocking hooks"})`);
         sharedWarn = true;
         continue;
@@ -152,7 +160,14 @@ export function cmdHooks(sub?: string, name?: string, providerId: ProviderId = "
       console.log(`claude/${p}: ${hooksInstalled(settings) ? "installed" : "not installed"}`);
       continue;
     }
-    const res = action === "install" ? installHooks(cfg, "agent-switch", relay) : uninstallHooks(cfg);
+    let res: { changed: boolean };
+    try {
+      res = action === "install" ? installHooks(cfg, "agent-switch", relay) : uninstallHooks(cfg);
+    } catch (e) {
+      console.log(`claude/${p}: ${action} refused — ${(e as Error).message}`);
+      process.exitCode = 1;
+      continue;
+    }
     console.log(`claude/${p}: ${action} ${res.changed ? "done" : "(no change)"}`);
     if (res.changed) sharedWarn = true;
   }
@@ -387,7 +402,12 @@ function cmdHooksRelay(file?: string): void {
   for (const p of listProfiles("claude")) {
     const cfg = configDir("claude", p);
     if (!hooksNeedMigration(readSettings(cfg), command)) continue;
-    installHooks(cfg, "agent-switch", relay);
+    try {
+      installHooks(cfg, "agent-switch", relay);
+    } catch (e) {
+      console.log(`claude/${p}: hooks not moved — ${(e as Error).message}`);
+      continue;
+    }
     console.log(`claude/${p}: hooks now run ${relay ? "through the relay" : "the CLI directly"}`);
   }
   for (const p of listProfiles("codex")) {
@@ -397,6 +417,27 @@ function cmdHooksRelay(file?: string): void {
     console.log(`codex/${p}: hooks now run ${relay ? "through the relay" : "the CLI directly"} — Codex asks you to approve the changed hooks at its next start`);
   }
   console.log(relay ? `Relay installed at ${relay}.` : "Relay removed; hooks run the CLI directly.");
+}
+
+function hostedCodexWindows(): HostedRow[] {
+  try {
+    return new TmuxHost(ROOT).list().filter((h) => h.provider === "codex" && h.alive && !h.parked);
+  } catch {
+    return [];
+  }
+}
+
+/** Live and the program's own report on the rollout a hosted Codex window writes; a window that is gone keeps neither. */
+export function markHostedCodex(rows: (SessionRow & { profile: string })[], hosted: readonly HostedRow[], root = ROOT): void {
+  for (const [row, h] of matchHostedRows(rows, hosted)) {
+    row.live = true;
+    row.hostKey = h.key;
+    const rec = readProgramStatus(programStatusFile(root, h.sessionId));
+    if (rec && rec.at >= Date.parse(h.startedAt)) {
+      row.programState = rec.state;
+      row.programAt = rec.at;
+    }
+  }
 }
 
 export async function cmdSessions(
@@ -427,6 +468,8 @@ export async function cmdSessions(
   const seesChildren = new Set<string>();
   // Claude Desktop's own sessions, filed by account (see desktop-sessions.ts).
   const desktop = providerId === "claude" ? desktopScan().rows : [];
+  // A hosted Codex window is live by its host record and speaks for itself over OSC 7501.
+  const hostedCodex = providerId === "codex" && TmuxHost.available() ? hostedCodexWindows() : [];
   for (const p of profiles) {
     const cfg = configDir(providerId, p);
     // Codex stores date-partitioned rollout files (no encoded-cwd dir); its live
@@ -436,6 +479,7 @@ export async function cmdSessions(
     if (providerId === "claude") markLive(cfg, rows); // POSIX: pid→cwd→dir match; win32: recent-only
     // Codex hooks (`hooks install --provider codex`) report the folder a session works in now.
     if (providerId === "codex") eventsOf.set(p, readEvents(eventFile(ROOT, providerId, p)));
+    if (providerId === "codex") markHostedCodex(rows.map((r) => Object.assign(r, { profile: p })), hostedCodex.filter((h) => h.account === p));
     if (providerId === "claude") {
       const mtime = new Map(rows.map((r) => [r.sessionId, r.mtimeMs]));
       const events = readEvents(eventFile(ROOT, providerId, p));
@@ -471,17 +515,25 @@ export async function cmdSessions(
     const prCache = readPrCache(prCacheFile(ROOT));
     // The library lives in the event store; without SQLite (Node 20) it is left out.
     const store = providerId === "claude" ? await Store.open(storeFile(ROOT)).catch(() => null) : null;
+    // D1/D4: one runtime state per live row; a child that is a listed session carries its row's.
+    const now = Date.now();
+    const runtimeOf = new Map<string, RuntimeState>(all.flatMap((r) => {
+      const rt = runtimeState(r, now);
+      return rt ? [[`${providerId}/${r.profile}/${r.sessionId}`, rt] as const] : [];
+    }));
+    const withRuntime = (children: Child[]): Child[] =>
+      children.map((ch) => ("sessionKey" in ch && runtimeOf.has(ch.sessionKey) ? { ...ch, runtime: runtimeOf.get(ch.sessionKey)! } : ch));
     const json = all.map((r) => {
       const c = contextForRow(providerId, r);
       const key = `${providerId}/${r.profile}/${r.sessionId}`;
       let kids: Record<string, unknown> = {};
       if (seesChildren.has(r.profile)) {
         const children = childrenWithHooks(key, eventsOf.get(r.profile) ?? [], helpers);
-        kids = { children, childCount: children.length, childSource: childSource(children) };
+        kids = { children: withRuntime(children), childCount: children.length, childSource: childSource(children) };
       } else {
         const named = childrenWithHooks(key, [], helpers);
         const counted = providerId === "claude" ? countSubagentFiles(configDir(providerId, r.profile), r.projectDir, r.sessionId) : 0;
-        if (named.length) kids = { children: named, childCount: named.length + counted, childSource: counted ? `${childSource(named)}+counted` : childSource(named) };
+        if (named.length) kids = { children: withRuntime(named), childCount: named.length + counted, childSource: counted ? `${childSource(named)}+counted` : childSource(named) };
         else if (counted) kids = { childCount: counted, childSource: "counted" };
       }
       const parent = helpers.parentOf.get(key);
@@ -491,6 +543,7 @@ export async function cmdSessions(
       return {
         provider: providerId,
         ...r,
+        ...(runtimeOf.get(key) ? { runtime: runtimeOf.get(key) } : {}),
         armed: armedFor(r),
         context: c
           ? { pct: c.pct, contextTokens: c.contextTokens, windowTokens: c.windowTokens, model: c.model, effort: c.effort ?? null, confidence: c.confidence, source: "transcript" }

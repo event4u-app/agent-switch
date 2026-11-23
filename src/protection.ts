@@ -195,3 +195,64 @@ export function clearAutoContinue(configDir: string): void {
   const { [AUTO_CONTINUE_KEY]: _removed, ...rest } = data;
   fs.writeFileSync(path.join(configDir, "settings.json"), JSON.stringify(rest, null, 2) + "\n", { mode: 0o600 });
 }
+
+// ---------- `protection wait … --all` ----------
+
+/** The file a profile's settings.json write lands in: through a shared link to its source. */
+function realSettingsFile(configDir: string): string {
+  const file = path.join(configDir, "settings.json");
+  try {
+    return fs.realpathSync(file);
+  } catch {
+    try {
+      return path.join(fs.realpathSync(configDir), "settings.json");
+    } catch {
+      return path.resolve(file);
+    }
+  }
+}
+
+export interface WaitTarget {
+  /** The real settings file one write changes. */
+  file: string;
+  /** The config dir the write goes through (the first profile's). */
+  configDir: string;
+  /** Every profile whose settings.json is this file, in the order given. */
+  profiles: string[];
+  before: AutoContinueState;
+}
+
+/** Group profiles by the real settings file they read, so a shared link is one target. */
+export function waitTargets(profiles: readonly { name: string; configDir: string }[]): WaitTarget[] {
+  const byFile = new Map<string, WaitTarget>();
+  for (const p of profiles) {
+    const file = realSettingsFile(p.configDir);
+    const t = byFile.get(file);
+    if (t) t.profiles.push(p.name);
+    else byFile.set(file, { file, configDir: p.configDir, profiles: [p.name], before: autoContinueState(p.configDir) });
+  }
+  return [...byFile.values()];
+}
+
+export interface WaitResult extends WaitTarget {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Write every previewed target. Each is checked again right before its write: a
+ * target whose real file is no longer the previewed one is skipped as failed, so
+ * nothing is written that the preview did not show. One failure never stops the rest.
+ */
+export function applyWait(targets: readonly WaitTarget[], state: "on" | "off" | "default"): WaitResult[] {
+  return targets.map((t) => {
+    if (realSettingsFile(t.configDir) !== t.file) return { ...t, ok: false, error: "the settings file changed since the preview — run the preview again" };
+    try {
+      if (state === "default") clearAutoContinue(t.configDir);
+      else setAutoContinue(t.configDir, state === "on");
+      return { ...t, ok: true };
+    } catch (e) {
+      return { ...t, ok: false, error: (e as Error).message };
+    }
+  });
+}

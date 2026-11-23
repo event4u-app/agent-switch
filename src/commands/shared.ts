@@ -48,7 +48,8 @@ import {
 } from "../single-load.js";
 import { fetchUsage, liveSessionPids } from "../api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "../token-freshen.js";
-import { UsageSnapshot, parseUsage, windowLabel } from "../usage.js";
+import { UsageSnapshot, mergeUsage, parseUsage, resolveClaudeUsage, windowLabel } from "../usage.js";
+import { servedStatuslineSnapshot, statuslineFresh } from "../statusline.js";
 import { SessionRow, listSessions, listCodexSessions, markLive } from "../sessions.js";
 import { cacheMaxAgeMs, snapshotFresh, readDaemonState } from "../daemon.js";
 import { serviceTarget } from "../service.js";
@@ -172,20 +173,32 @@ export function launch(p: Provider, name: string, args: string[], extraEnv: Node
   return res.status ?? 1;
 }
 
-/** A Claude profile's usage snapshot via the OAuth endpoint; null if the
- *  credential is unreadable or the API shape is unknown. Codex/Antigravity have no
- *  usage readout (verified), so this is Claude-only. */
+/** A Claude profile's usage snapshot: a fresh statusline sample (no request),
+ *  else the daemon's fresh cache, else the OAuth endpoint. When that read fails
+ *  the last real snapshot is served — its `capturedAt` says how old it is.
+ *  Codex/Antigravity have no usage readout here; this is Claude-only. */
 export async function claudeSnapshot(name: string): Promise<UsageSnapshot | null> {
-  // Prefer the daemon's cache while THIS profile's snapshot is fresh — the
-  // daemon is a cache, and the CLI works with or without it. The age of the
-  // last poll says nothing about a profile whose reads have been failing.
+  // The age of the last poll says nothing about a profile whose reads have been
+  // failing, so the daemon's entry is judged by its own capture time.
   const state = readDaemonState();
   const cached = state?.profiles?.[`claude/${name}`];
-  if (snapshotFresh(cached, Date.now(), cacheMaxAgeMs(state?.pollIntervalMs))) return cached!;
-  const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), claudeLoginRefreshAllowed(name));
-  if (!token) return null;
-  const raw = await fetchUsage(token);
-  return raw ? parseUsage(raw) : null;
+  const statusline = servedStatuslineSnapshot(profileDir("claude", name));
+  if (snapshotFresh(cached, Date.now(), cacheMaxAgeMs(state?.pollIntervalMs)) && !statuslineFresh(statusline)) return mergeUsage(statusline, cached!);
+  const latest = readLatestSnapshot(path.join(profileDir("claude", name), LATEST_FILE));
+  const base = latest && (!cached || latest.capturedMs > Date.parse(cached.capturedAt)) ? latest.snapshot : (cached ?? null);
+  const r = await resolveClaudeUsage({
+    statusline,
+    base,
+    now: Date.now(),
+    fresh: (s) => statuslineFresh(s),
+    pollOnlyMaxAgeMs: cacheMaxAgeMs(state?.pollIntervalMs),
+    poll: async () => {
+      const token = usageToken(configDir("claude", name), defaultFreshenDeps(readBinaryPath("claude")), claudeLoginRefreshAllowed(name));
+      const raw = token ? await fetchUsage(token) : null;
+      return raw ? parseUsage(raw) : null;
+    },
+  });
+  return r.snapshot ?? r.fallback;
 }
 
 /** Cached usage for one profile: the daemon's snapshot or the newest history

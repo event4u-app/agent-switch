@@ -146,6 +146,23 @@ describe("sessionFromRow", () => {
     expect(sessionFromRow(s({ live: false }), NOW).state).toBe("done");
   });
 
+  it("takes the engine's runtime over its own file-time rule, and names the source", () => {
+    // Fresh transcript but the host says the turn ended: idle, not working.
+    const ended = sessionFromRow(s({ runtime: { state: "idle", source: "host", observedAt: NOW - 2_000 } }), NOW);
+    expect(ended.state).toBe("idle");
+    expect(ended.stateSource).toBe("host");
+    // Quiet transcript inside a long tool call: working.
+    const long = sessionFromRow(s({ mtimeMs: NOW - 5 * MIN, runtime: { state: "working", source: "host", observedAt: NOW - 6 * MIN } }), NOW);
+    expect(long.state).toBe("working");
+    expect(long.quietSince).toBeNull();
+    const quiet = sessionFromRow(s({ mtimeMs: NOW - 40 * MIN, runtime: { state: "working", source: "host", observedAt: NOW - 34 * MIN, unconfirmed: true } }), NOW);
+    expect(quiet.quietSince).toBe(NOW - 34 * MIN);
+    // An older engine without the field keeps the window's own rule.
+    expect(sessionFromRow(s(), NOW).stateSource).toBe("transcript");
+    // A runtime on a row that is not live never revives it.
+    expect(sessionFromRow(s({ live: false, runtime: { state: "working", source: "host", observedAt: NOW } }), NOW).state).toBe("done");
+  });
+
   it("a live session waiting on a prompt needs you; a dead one is done", () => {
     expect(sessionFromRow(s({ waiting: true }), NOW).state).toBe("needs-you");
     expect(sessionFromRow(s({ waiting: true, live: false }), NOW).state).toBe("done");

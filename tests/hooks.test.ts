@@ -426,3 +426,12 @@ test("childrenOf on the live fixture: one finished general-purpose subagent", ()
     { agentId: "a3731b735e452e7b7", type: "general-purpose", state: "done", cwd: "/private/tmp/probe" },
   ]);
 });
+
+test("installHooks/uninstallHooks refuse a settings.json that does not parse and write nothing", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-hooks-strict-"));
+  const text = '{"permissions": {"allow": ["Bash(ls)"]}, "hooks": {';
+  fs.writeFileSync(path.join(dir, "settings.json"), text);
+  assert.throws(() => installHooks(dir), /does not parse.*nothing was written/);
+  assert.throws(() => uninstallHooks(dir), /does not parse.*nothing was written/);
+  assert.equal(fs.readFileSync(path.join(dir, "settings.json"), "utf8"), text);
+});

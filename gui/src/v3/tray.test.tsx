@@ -103,4 +103,19 @@ describe("tray accounts (like the v2 tray)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(handlers.signIn).toHaveBeenCalledWith("claude/side");
   });
+
+  it("holds the session list's order while the pointer is on it (D9)", () => {
+    const sessions = [s("claude/work/1"), s("claude/work/2"), s("claude/work/3")];
+    const t = (m: Record<string, number>) => (k: string) => m[k.split("/").pop()!] ?? null;
+    const view = (last: (k: string) => number | null) => <V3Tray nowMs={0} needs={[]} away={null} sessions={sessions} accounts={[acc("claude", "work")]} lastActiveOf={last} on={on()} />;
+    const order = (c: HTMLElement) => [1, 2, 3].map((i) => [i, c.textContent!.indexOf(`session claude/work/${i}`)]).sort((p, q) => p[1] - q[1]).map(([i]) => i);
+    const { container, rerender } = render(view(t({ 1: 3, 2: 2, 3: 1 })));
+    expect(order(container)).toEqual([1, 2, 3]);
+    const list = container.querySelector("[data-session-list]")!;
+    fireEvent.mouseEnter(list);
+    rerender(view(t({ 1: 3, 2: 2, 3: 4 })));
+    expect(order(container), "row 3 stays in place").toEqual([1, 2, 3]);
+    fireEvent.mouseLeave(list);
+    expect(order(container)).toEqual([3, 1, 2]);
+  });
 });

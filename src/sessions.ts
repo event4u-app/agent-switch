@@ -172,8 +172,15 @@ export interface SessionRow {
   live: boolean;
   /** The host registry's state word for a live session (`idle`, `busy`, …). */
   hostStatus?: string;
+  /** Epoch ms the host last changed that word (`statusUpdatedAt`); absent when it does not say. */
+  hostStatusAt?: number;
   /** Codex: who started the thread, when it was not the user (a subagent thread is no root). */
   codexThreadSource?: string;
+  /** A hosted Codex window's own OSC 7501 report (`idle`, `working`, `done`, …) and when it arrived. */
+  programState?: string;
+  programAt?: number;
+  /** The hosted window (its host key) this Codex rollout was matched to. */
+  hostKey?: string;
   /** The live process, when the host's registry names this session. */
   pid?: number;
   /** How `live` was decided: the registry named this session, or the cwd guess. */
@@ -285,6 +292,7 @@ export function markLive(
       row.liveSource = "registry";
       row.pid = s.pid;
       if (s.status) row.hostStatus = s.status;
+      if (s.statusUpdatedAt !== null) row.hostStatusAt = s.statusUpdatedAt;
       continue;
     }
     // A registry id that is not in the listing (older than the cap) needs no guess.

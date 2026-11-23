@@ -235,7 +235,7 @@ Scores are the review's judgement of read code, not measurements.
 | Automatic failover at the limit | `declined`: owner rule 2026-10-28 — no automatic switch of a running session; Phase 3 is the explicit form |
 | Own refresh grant | `declined`: ADR-004 |
 | Routing proxy or pooled accounts | `declined`: NON-GOALS |
-| Official statusline `rate_limits` | `already-planned`: `later/road-to-agent-switch-statusline-usage.md` |
+| Official statusline `rate_limits` | `already-planned`: `road-to-agent-switch-statusline-usage.md` (Phases 1–5 shipped 2026-11-23) |
 | Native in-app updater | `unblocked by Phase 1`; stays in `later/` |
 | Gemini CLI provider (v15 AS-019) | `parked`: `later/road-to-session-orchestration.md` Phase 4 (re-check Google login first) |
 | v15 P0 harness (AS-001 capability matrix, AS-002 upgrade fixtures, AS-005 OS launch matrix, AS-008 release reproducibility) | `declined` as a block: needs real multi-OS machines and provider logins; the parts that matter here are 4.2–4.4 and Phase 1 |

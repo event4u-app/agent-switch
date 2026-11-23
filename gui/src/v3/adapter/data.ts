@@ -12,12 +12,13 @@ import { paceFor, type LimitAccount, type LimitWindow } from "../limits.js";
 import type { DoneItem, PaletteEntry } from "../overlays.js";
 import type { LibraryRow, PageAccount, TableSession } from "../pages.js";
 import type { ChangedFile, SummaryFacts } from "../panels.js";
-import type { ChildModel, ChildSource, RowSession } from "../sessions.js";
+import type { ChildModel, ChildSource, ChildTool, RowSession } from "../sessions.js";
 import type { OpenTarget } from "../settings.js";
 import type { Appearance } from "../themes/resolve.js";
 import { SESSION_MENU, type SessionMenuItem, type V3Data } from "../window.js";
 import type { BarSession, ModelChoices } from "../workbench.js";
 import { modelLabel } from "../model-label.js";
+import { shortAge } from "../../ui/format.js";
 import { answeredElsewhere, cliAccount, requestKind } from "../../vm/switch-requests.js";
 import { parsePr, type HistoryRow, type PrFacts } from "./feeds.js";
 import type { V3Feeds } from "./useFeeds.js";
@@ -121,25 +122,72 @@ function limitAccount(a: Account, now: number): LimitAccount | null {
 const fiveH = (a: Account | undefined) => a?.windows.find((w) => w.key === "five_hour")?.utilization ?? null;
 const nearLimit = (a: Account | undefined) => !!a && (a.state === "near-limit" || a.state === "limited");
 
-function childState(s: unknown): SessionState {
-  return s === "running" ? "working" : "done";
+const RUNTIME_SOURCES = new Set(["hook", "host", "program", "transcript"]);
+
+/**
+ * A child's state (D4). A child that is a session reads its own runtime — the
+ * same function as a root — and a listed child session without one is not live.
+ * A subagent keeps running / done. Pure.
+ */
+function childState(o: Record<string, unknown>, rowOf?: (key: string) => SessionRow | undefined, now?: number): Pick<ChildModel, "state" | "stateSource" | "quiet"> {
+  const rt = o.runtime as { state?: unknown; source?: unknown; observedAt?: unknown; unconfirmed?: unknown } | undefined;
+  if (rt && (rt.state === "working" || rt.state === "idle" || rt.state === "needs-you")) {
+    const quiet = rt.unconfirmed === true && typeof rt.observedAt === "number" && now != null ? `no update in ${shortAge(rt.observedAt, now)}` : null;
+    return { state: rt.state, stateSource: RUNTIME_SOURCES.has(rt.source as string) ? (rt.source as ChildModel["stateSource"]) : null, ...(quiet ? { quiet } : {}) };
+  }
+  const own = typeof o.sessionKey === "string" ? rowOf?.(o.sessionKey) : undefined;
+  if (own && !own.live) return { state: "done" };
+  return { state: o.state === "running" ? "working" : "done" };
 }
 
 const CHILD_SOURCES = new Set<ChildSource>(["hook", "lineage", "host", "counted", "unknown"]);
+const toolOf = (provider: string | undefined): ChildTool => (provider === "codex" ? "codex" : provider === "antigravity" ? "antigravity" : "claude");
 
-/** `sessions --json` children → the tree's child rows. Pure. */
-export function childrenOf(r: SessionRow): ChildModel[] {
+/** What a child tree needs beyond the rows: account colours, the Needs-you subjects, the clock. */
+export interface ChildContext {
+  accountOf?: (provider: string, profile: string) => { color: IdentityColor; nearLimit: boolean } | undefined;
+  needing?: ReadonlySet<string>;
+  now?: number;
+}
+
+/**
+ * `sessions --json` children → the tree's child rows, to any depth: a child
+ * session's own children come from its own row (`rowOf`), never inferred. An
+ * edge back to a session already above is dropped, so a cycle in the input
+ * ends instead of looping (3.1). Pure.
+ */
+export function childrenOf(r: SessionRow, rowOf?: (key: string) => SessionRow | undefined, ctx: ChildContext = {}, above: ReadonlySet<string> = new Set([sessionKey(r)])): ChildModel[] {
   const out: ChildModel[] = [];
+  const parentAccount = { name: r.profile, color: ctx.accountOf?.(r.provider, r.profile)?.color ?? ("blue" as IdentityColor), nearLimit: ctx.accountOf?.(r.provider, r.profile)?.nearLimit ?? false };
+  const worktree = worktreeOf(r);
   for (const c of r.children ?? []) {
     const o = c as Record<string, unknown>;
     const kind = typeof o.kind === "string" ? o.kind : "other";
-    const id = typeof o.agentId === "string" ? o.agentId : typeof o.sessionKey === "string" ? o.sessionKey : `${kind}-${out.length}`;
+    const sessionKeyOf = typeof o.sessionKey === "string" ? o.sessionKey : null;
+    if (sessionKeyOf && above.has(sessionKeyOf)) continue;
+    const id = typeof o.agentId === "string" ? o.agentId : (sessionKeyOf ?? `${kind}-${out.length}`);
     const label = typeof o.label === "string" ? o.label : typeof o.type === "string" ? o.type : kind;
     const source = CHILD_SOURCES.has(o.source as ChildSource) ? (o.source as ChildSource) : "unknown";
-    out.push({ id, label, kind, state: childState(o.state), source });
+    const identity: Partial<ChildModel> = {};
+    let children: ChildModel[] = [];
+    if (sessionKeyOf) {
+      // A child session's key names its tool and account: `provider/account/id`.
+      const [provider, profile] = sessionKeyOf.split("/");
+      const a = provider && profile ? ctx.accountOf?.(provider, profile) : undefined;
+      identity.tool = toolOf(provider);
+      if (profile) identity.account = { name: profile, color: a?.color ?? "blue", nearLimit: a?.nearLimit ?? false };
+      const own = rowOf?.(sessionKeyOf);
+      if (own) children = childrenOf(own, rowOf, ctx, new Set([...above, sessionKeyOf]));
+    } else {
+      identity.tool = toolOf(r.provider);
+      identity.account = parentAccount;
+      if (typeof o.agentId === "string") identity.worktree = worktree(o.agentId);
+    }
+    const needsYou = !!ctx.needing?.has(id) || children.some((k) => k.needsYou);
+    out.push({ id, label, kind, ...childState(o, rowOf, ctx.now), source, ...identity, ...(children.length ? { children } : {}), ...(needsYou ? { needsYou } : {}) });
   }
-  const counted = (r.childCount ?? 0) - out.length;
-  if (counted > 0) out.push({ id: `${sessionKey(r)}#counted`, label: "subagents", kind: "subagent", state: "done", source: "counted", count: counted });
+  const counted = (r.childCount ?? 0) - (r.children ?? []).length;
+  if (counted > 0) out.push({ id: `${sessionKey(r)}#counted`, label: "subagents", kind: "subagent", state: "done", source: "counted", count: counted, tool: toolOf(r.provider), account: parentAccount });
   return out;
 }
 
@@ -208,12 +256,34 @@ function vaultOf(e: { kept: { state: string; bytes?: number; daysLeft?: number }
 
 const basename = (p: string | null) => (p ? p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p : null);
 
+/**
+ * One label per project root: the folder name, or as many trailing path parts
+ * as it takes to tell roots apart (`work/api`, `personal/api`). Pure.
+ */
+export function projectLabels(roots: readonly string[]): Map<string, string> {
+  const parts = new Map([...new Set(roots)].map((r) => [r, r.split("/").filter(Boolean)]));
+  const tail = (p: string[], n: number) => p.slice(-n).join("/");
+  const out = new Map<string, string>();
+  for (const [root, p] of parts) {
+    let n = 1;
+    while (n < p.length && [...parts].some(([o, q]) => o !== root && tail(q, n) === tail(p, n))) n++;
+    out.set(root, tail(p, n) || root);
+  }
+  return out;
+}
+
 /** The whole window's data. */
 export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Data {
   const now = env.now;
   // One row per account, whatever the reads returned (a reload racing a poll can repeat one).
   const vm: ViewModel = { ...vmIn, accounts: [...new Map(vmIn.accounts.map((a) => [a.id, a])).values()] };
-  const read = [...(vm.sessionRows ?? []), ...feeds.codexRows];
+  // A Codex rollout the engine matched to a live hosted window takes that window's key, so
+  // the window's actions (end, compact, its terminal) reach it and it is listed once.
+  const liveHost = new Map((feeds.host?.hosted ?? []).filter((h) => h.alive && h.sessionId).map((h) => [h.key, h]));
+  const read = [...(vm.sessionRows ?? []), ...feeds.codexRows].map((r) => {
+    const h = r.hostKey ? liveHost.get(r.hostKey) : undefined;
+    return h && h.sessionId !== r.sessionId ? { ...r, sessionId: h.sessionId } : r;
+  });
   const seen = new Set(read.map(sessionKey));
   // A hosted session started a moment ago has no transcript yet: it still gets a row.
   const hostedOnly: SessionRow[] = (feeds.host?.hosted ?? [])
@@ -232,19 +302,25 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
   const stateOf = (r: SessionRow) => sessionFromRow(r, now).state;
   const titleOf = (r: SessionRow) => r.library?.name || r.summary || basename(r.cwd) || r.sessionId.slice(0, 8);
 
+  const childCtx: ChildContext = { accountOf: (provider, profile) => { const a = accounts.get(accountId(provider, profile)); return a ? { color: a.color, nearLimit: nearLimit(a) } : undefined; }, needing, now };
   const roots = rows.filter((r) => !r.parent && (r.live || r.mtimeMs >= today));
   const sessions: RowSession[] = roots.map((r) => {
     const key = sessionKey(r);
     const pr = prsOf(r)[0];
+    const view = sessionFromRow(r, now);
+    const children = childrenOf(r, (k) => byKey.get(k), childCtx);
     return {
       key,
       title: titleOf(r),
-      state: stateOf(r),
+      state: view.state,
+      stateSource: view.stateSource ?? null,
+      quiet: view.quietSince != null ? `no update in ${shortAge(view.quietSince, now)}` : null,
       account: { name: r.profile, nearLimit: nearLimit(accountOf(r)) },
       branch: r.git?.branch ?? null,
       pr: pr ? { number: pr.number, ci: pr.ci, mergeable: pr.mergeable } : null,
-      children: childrenOf(r),
-      needsYou: needing.has(key),
+      children,
+      // D6: a Needs-you item on this session or any descendant.
+      needsYou: needing.has(key) || children.some((c) => c.needsYou),
       ...(r.live ? {} : { doneToday: true }),
     };
   });
@@ -255,12 +331,13 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     return l ? [{ ...l, email: a.identity, label: a.label, isDefault: a.isDefault, running: a.liveSessions }] : [];
   });
 
-  // A project is the repository (its main checkout, so worktrees join it), else the folder.
+  // A project is the repository (its main checkout, from git's common dir, so every worktree joins it), else the folder (D7).
+  // Keyed on the full path; labelled by its folder name, with as much of the parent path as tells two apart.
+  const rootOf = (r: SessionRow): string | null => r.git?.repoRoot ?? r.git?.toplevel ?? r.cwd ?? null;
+  const labels = projectLabels(rows.map(rootOf).filter((d): d is string => !!d));
   const projectOf = (r: SessionRow): string | null => {
-    const dir = r.git?.toplevel ?? r.cwd ?? null;
-    if (!dir) return null;
-    const wt = /^(.*?)(?:-wt\/[^/]+|\/\.worktrees?\/[^/]+)$/.exec(dir);
-    return (wt ? wt[1] : dir).split("/").filter(Boolean).pop() ?? null;
+    const dir = rootOf(r);
+    return dir ? (labels.get(dir) ?? null) : null;
   };
   const table: TableSession[] = rows.map((r) => {
     const pr = prsOf(r)[0];
@@ -278,6 +355,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       contextPct: r.context?.pct ?? null,
       lastActiveMs: r.mtimeMs,
       project: projectOf(r),
+      projectRoot: rootOf(r),
+      worktree: r.git ? { id: r.git.toplevel, branch: r.git.branch, linked: r.git.worktree } : null,
     };
   });
 

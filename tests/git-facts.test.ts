@@ -78,3 +78,28 @@ test("gitFacts through a second spelling of the same folder (a symlink here, an 
     fs.rmSync(real, { recursive: true, force: true });
   }
 });
+
+test("repoRoot is the main checkout's root for the main checkout, a worktree outside the repository folder and one under .claude/worktrees", () => {
+  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "gf-root-")));
+  try {
+    const repo = path.join(base, "repo");
+    fs.mkdirSync(repo);
+    g(repo, "init", "-q", "-b", "main");
+    fs.writeFileSync(path.join(repo, "a.txt"), "1");
+    g(repo, "add", ".");
+    g(repo, "commit", "-qm", "one");
+    const outside = path.join(base, "repo-wt", "feature");
+    g(repo, "worktree", "add", "-q", "-b", "feature", outside);
+    const inside = path.join(repo, ".claude", "worktrees", "x");
+    g(repo, "worktree", "add", "-q", "-b", "x", inside);
+
+    const main = gitFacts(repo)!;
+    assert.deepEqual([main.repoRoot, main.worktree], [repo, false]);
+    const o = gitFacts(outside)!;
+    assert.deepEqual([o.repoRoot, o.toplevel, o.worktree], [repo, outside, true]);
+    const i = gitFacts(path.join(inside))!;
+    assert.deepEqual([i.repoRoot, i.toplevel, i.worktree], [repo, inside, true]);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

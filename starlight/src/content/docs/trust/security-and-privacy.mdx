@@ -48,6 +48,9 @@ account's own folder under `~/.agent-switch`:
 **It reads** each account's login only to ask the provider how much of that
 account's usage is left, and who the account belongs to. It reads your local
 session files to show context %, the prompt cache and session previews.
+With `statusline on`, it reads the `rate_limits` numbers and the Claude Code
+`version` from what Claude Code passes to its status line, and stores both per
+account; nothing else from that payload is read.
 
 **It writes a login in exactly two cases, both on your command:**
 

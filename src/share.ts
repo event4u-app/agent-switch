@@ -22,7 +22,9 @@
  *     `history.jsonl.pre-share*` backup instead of blocking the link.
  *
  * Account-/instance-scoped items (`.claude.json`, `.credentials.json`,
- * `plugins/`, `sessions/`, `ide/`, `statsig/`) are deliberately never shared.
+ * `plugins/`, `sessions/`, `ide/`, `statsig/`) are deliberately never shared,
+ * nor is anything kept beside the config dir (usage history, the statusline
+ * usage cache and its install marker).
  * Conversations (`projects/`, `plans/`) are a POSIX-only opt-in (`--history`).
  * (`plans/` defaults to `<CLAUDE_CONFIG_DIR>/plans/` in Claude Code, so plan-mode
  * files are otherwise isolated per profile — verified against claude-code 2.1.215.)

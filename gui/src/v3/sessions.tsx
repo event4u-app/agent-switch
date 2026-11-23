@@ -9,9 +9,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, ChevronDown, ChevronRight, CircleX, Folder, SquareTerminal, TriangleAlert } from "lucide-react";
 import { cn } from "../lib/utils.js";
-import { SessionStateIcon } from "../ui/SessionStateIcon.js";
-import type { SessionState } from "../vm/types.js";
-import { BatchBar, Marker, type BatchActions } from "./kit.js";
+import { SessionStateIcon, type StateSource } from "../ui/SessionStateIcon.js";
+import type { IdentityColor, SessionState } from "../vm/types.js";
+import { AccountMark, BatchBar, Chip, Marker, type BatchActions } from "./kit.js";
+import { AppMono } from "./menus.js";
+import { useEngaged, useHeldOrder } from "./held-order.js";
 
 export type ChildSource = "hook" | "lineage" | "host" | "counted" | "unknown";
 
@@ -22,9 +24,25 @@ export interface ChildModel {
   kind: string;
   state: SessionState;
   source: ChildSource;
+  /** Who reported `state`, when the child is a session with a runtime. */
+  stateSource?: StateSource | null;
   /** Children known only by count. */
   count?: number;
+  /** The tool it runs in: from a session child's key, a subagent's parent. */
+  tool?: ChildTool;
+  /** The account it runs on (a subagent: its parent's). */
+  account?: { name: string; color: IdentityColor; nearLimit?: boolean };
+  /** A subagent's worktree name, when its hook record has one. */
+  worktree?: string | null;
+  /** Its own children, from its own row in `sessions --json` (any depth, never inferred). */
+  children?: ChildModel[];
+  /** A Needs-you item points at it or one of its descendants. */
+  needsYou?: boolean;
+  /** D3: "no update in 34m". */
+  quiet?: string | null;
 }
+
+export type ChildTool = "claude" | "codex" | "antigravity";
 
 export interface RowSession {
   key: string;
@@ -38,6 +56,10 @@ export interface RowSession {
   needsYou: boolean;
   /** Finished today (the "Done today" row), not in the live list. */
   doneToday?: boolean;
+  /** Who reported `state` (the dot's tooltip). */
+  stateSource?: StateSource | null;
+  /** D3: "no update in 34m" — working by the host's word, nothing changed since. */
+  quiet?: string | null;
 }
 
 /** `sessions --json` children → the rows under a session. Pure. */
@@ -90,13 +112,37 @@ export function liveOrder(sessions: readonly RowSession[]): RowSession[] {
   return sessions.filter((s) => s.state !== "done").sort((a, b) => rank(a) - rank(b));
 }
 
-/** The one trailing slot, by priority (spec §5.2). */
-export function trailing(s: RowSession): ReactNode {
+/** The first descendant that needs the user, depth first (D6). Pure. */
+export function waitingChild(children: readonly ChildModel[]): ChildModel | null {
+  for (const c of children) {
+    if (c.state === "needs-you") return c;
+    const deeper = waitingChild(c.children ?? []);
+    if (deeper) return deeper;
+    if (c.needsYou) return c;
+  }
+  return null;
+}
+
+/** Working descendants, any depth; a counted entry counts as its count. Pure. */
+export function runningOf(children: readonly ChildModel[]): number {
+  return children.reduce((n, c) => n + (c.state === "working" ? (c.count ?? 1) : 0) + runningOf(c.children ?? []), 0);
+}
+
+/**
+ * The one trailing slot, by priority (spec §5.2). Rank 4 rolls up: a waiting
+ * descendant lights the same amber dot, and the tooltip names it (D6). Rank 5
+ * counts running descendants at every depth. Pure.
+ */
+export function trailing(s: RowSession, { counts = true }: { counts?: boolean } = {}): ReactNode {
   if (s.account.nearLimit) return <span className="shrink-0 text-[11px] text-ac-warn-text" title={`${s.account.name} is near its limit`}>{s.account.name}</span>;
   if (s.pr?.ci === "FAILURE") return <CircleX className="size-3.5 shrink-0 text-ac-alert" aria-label="CI failing" />;
   if (s.pr?.mergeable === "CONFLICTING") return <TriangleAlert className="size-3.5 shrink-0 text-ac-alert" aria-label="merge conflict" />;
-  if (s.needsYou && s.state !== "needs-you") return <span className="size-1.5 shrink-0 rounded-full bg-ac-warn" aria-label="needs you" />;
-  const running = s.children.filter((c) => c.state === "working").reduce((n, c) => n + (c.count ?? 1), 0);
+  if (s.state !== "needs-you") {
+    const waiting = waitingChild(s.children);
+    if (s.needsYou || waiting) return <span className="size-1.5 shrink-0 rounded-full bg-ac-warn" aria-label="needs you" title={waiting ? `${waiting.label} needs you` : undefined} />;
+  }
+  if (s.quiet) return <span className="shrink-0 text-[11px] text-ac-muted">{s.quiet}</span>;
+  const running = counts ? runningOf(s.children) : 0;
   if (running)
     return (
       <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-ac-muted" title={`${childNoun(s)} · ${running} running`}>
@@ -107,25 +153,210 @@ export function trailing(s: RowSession): ReactNode {
   return null;
 }
 
-/** The trailing slot is the running-children count (nothing of higher priority took it). Pure. */
+/** The trailing slot speaks about the children — a waiting descendant's dot or the running count — so it unfolds them. Pure. */
 export function childrenSlot(s: RowSession): boolean {
-  if (s.account.nearLimit || s.pr?.ci === "FAILURE" || s.pr?.mergeable === "CONFLICTING" || (s.needsYou && s.state !== "needs-you")) return false;
-  return s.children.some((c) => c.state === "working");
+  if (s.account.nearLimit || s.pr?.ci === "FAILURE" || s.pr?.mergeable === "CONFLICTING") return false;
+  if (s.state !== "needs-you" && (s.needsYou || waitingChild(s.children))) return !!waitingChild(s.children);
+  if (s.quiet) return false;
+  return runningOf(s.children) > 0;
 }
 
 const VIA: Record<ChildSource, string> = { hook: "via hook", lineage: "via lineage", host: "via host", counted: "counted", unknown: "relation unknown" };
+const TOOL_NAME: Record<ChildTool, string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
+/** The same monograms the Open in menu gives the tools' desktop apps. */
+const TOOL_MONO: Record<ChildTool, string> = { claude: "C", codex: "Cx", antigravity: "Ag" };
 
-/** Provenance inline only when it matters (unknown, counted); otherwise in the tooltip. */
-export function ChildLine({ c }: { c: ChildModel }) {
+/** A child that is a session with a key opens like any session; a subagent or a counted entry has nothing to open. Pure. */
+export const childOpens = (c: ChildModel) => c.kind !== "subagent" && c.source !== "counted" && c.id.split("/").length === 3;
+
+/** The row's tooltip: identity and provenance in words (D5). Pure. */
+export function childTitle(c: ChildModel): string {
+  const via = VIA[c.source];
+  if (!childOpens(c)) return [c.count ? `${c.count} ${c.label}` : c.label, c.kind === "subagent" ? "subagent" : c.kind, c.worktree ? `worktree ${c.worktree}` : null, via, "runs inside its session — nothing to open"].filter(Boolean).join(" · ");
+  return [c.label, c.tool ? TOOL_NAME[c.tool] : null, c.account?.name ?? null, via].filter(Boolean).join(" · ");
+}
+
+/** A child as a row-shaped value, so it takes the same trailing slot by the same priority. Pure. */
+const asRow = (c: ChildModel): RowSession => ({ key: c.id, title: c.label, state: c.state, account: { name: c.account?.name ?? "", nearLimit: !!c.account?.nearLimit }, branch: null, pr: null, children: c.children ?? [], needsYou: !!c.needsYou, quiet: c.quiet ?? null });
+
+/** The cells of a child row (2.2): state dot · tool monogram · account tick · label · inline provenance when it matters · the trailing slot. */
+function ChildCells({ c }: { c: ChildModel }) {
   const label = c.count ? `${c.count} ${c.label}` : c.label;
   return (
-    <div className="flex h-6 min-w-0 items-center gap-2 text-[11.5px]" title={VIA[c.source]}>
-      <SessionStateIcon state={c.state} />
+    <>
+      <SessionStateIcon state={c.state} source={c.stateSource} quiet={!!c.quiet} />
+      {c.kind === "subagent" || !c.tool ? (
+        <span className="inline-flex size-4 shrink-0 items-center justify-center text-ac-muted">
+          <Bot className="size-3.5" aria-label="subagent" />
+        </span>
+      ) : (
+        <AppMono m={TOOL_MONO[c.tool]} />
+      )}
+      {c.account && <AccountMark color={c.account.color} />}
       <span className="min-w-0 flex-1 truncate text-ac-soft">{label}</span>
       {(c.source === "unknown" || c.source === "counted") && (
         <span className={cn("shrink-0 text-[10.5px]", c.source === "unknown" ? "text-ac-warn-text" : "text-ac-muted")}>{c.source === "unknown" ? "relation unknown ⓘ" : "counted"}</span>
       )}
+      {trailing(asRow(c), { counts: false })}
+    </>
+  );
+}
+
+/** One child, flat (the Children window, Running on): the same grammar as in the tree. */
+export function ChildLine({ c }: { c: ChildModel }) {
+  return (
+    <div className="flex h-6 min-w-0 items-center gap-2 text-[11.5px]" title={childTitle(c)}>
+      <ChildCells c={c} />
     </div>
+  );
+}
+
+/*
+ * Tree geometry (3.2). Each row paints only its own slice of the connectors:
+ * rails for ancestors that continue below it, a tee (middle child) or an
+ * elbow (last child) into its own dot, and a stem down from its dot when it
+ * has children. A root row's dot is centred 14 px from the row's left edge
+ * (`pl-2.5` + half the 8 px dot); each level steps 16 px, so a line at a
+ * level runs through the dot centre of the row above it. Pattern after the
+ * reference's lineage guides; written for these rows.
+ */
+const STEP = 16;
+const lineX = (depth: number) => 13 + depth * STEP;
+/** From a line to 2 px before the next level's dot. */
+const REACH = 11;
+
+function Guides({ depth, rails, last, stem }: { depth: number; rails: readonly boolean[]; last: boolean; stem: boolean }) {
+  const x = lineX(depth - 1);
+  return (
+    <span aria-hidden className="pointer-events-none absolute inset-0">
+      {rails.map((on, k) => on && <span key={k} data-guide="rail" className="absolute inset-y-0 w-px bg-ac-line" style={{ left: lineX(k) }} />)}
+      {last ? (
+        <span data-guide="elbow" className="absolute top-0 h-[13px] rounded-bl-md border-b border-l border-ac-line" style={{ left: x, width: REACH }} />
+      ) : (
+        <>
+          <span data-guide="tee" className="absolute inset-y-0 w-px bg-ac-line" style={{ left: x }} />
+          <span className="absolute top-3 h-px bg-ac-line" style={{ left: x + 1, width: REACH - 1 }} />
+        </>
+      )}
+      {stem && <span data-guide="stem" className="absolute bottom-0 top-[18px] w-px bg-ac-line" style={{ left: lineX(depth) }} />}
+    </span>
+  );
+}
+
+/** The child with this id anywhere under these rows, and the root it hangs under. Pure. */
+export function findChild(sessions: readonly RowSession[], id: string): { root: RowSession; child: ChildModel } | null {
+  const walk = (kids: readonly ChildModel[]): ChildModel | null => {
+    for (const c of kids) {
+      if (c.id === id) return c;
+      const deeper = walk(c.children ?? []);
+      if (deeper) return deeper;
+    }
+    return null;
+  };
+  for (const root of sessions) {
+    const child = walk(root.children);
+    if (child) return { root, child };
+  }
+  return null;
+}
+
+/** Live children: working, waiting, pointed at by a Needs-you item, or above one that is. Pure. */
+const isLive = (c: ChildModel): boolean => c.state === "working" || c.state === "needs-you" || !!c.needsYou || (c.children ?? []).some(isLive);
+const holds = (c: ChildModel, key: string): boolean => c.id === key || (c.children ?? []).some((k) => holds(k, key));
+
+/** The idle fold's state per parent, for the session (D11): survives the row folding and unfolding. */
+const IDLE_OPEN = new Set<string>();
+function useIdleFold(parent: string): [boolean, () => void] {
+  const [open, setOpen] = useState(() => IDLE_OPEN.has(parent));
+  return [
+    open,
+    () => {
+      if (open) IDLE_OPEN.delete(parent);
+      else IDLE_OPEN.add(parent);
+      setOpen(!open);
+    },
+  ];
+}
+
+interface TreeHandlers {
+  onSelect: (key: string) => void;
+  onPeek?: (key: string | null, y: number) => void;
+  /** ⌘J: the child row to focus (3.4). */
+  focusKey?: string | null;
+}
+
+function ChildRow({ c, depth, rails, last, onSelect, onPeek, focusKey }: { c: ChildModel; depth: number; rails: readonly boolean[]; last: boolean } & TreeHandlers) {
+  const ref = useRef<HTMLDivElement>(null);
+  const opens = childOpens(c);
+  useEffect(() => {
+    if (focusKey && focusKey === c.id) ref.current?.focus();
+  }, [focusKey, c.id]);
+  return (
+    <div
+      ref={ref}
+      data-child-row=""
+      data-depth={depth}
+      role={opens ? "button" : undefined}
+      tabIndex={opens ? 0 : -1}
+      title={childTitle(c)}
+      onClick={opens ? () => (onPeek?.(null, 0), onSelect(c.id)) : undefined}
+      onMouseEnter={
+        onPeek &&
+        ((e) => {
+          const shell = e.currentTarget.closest("[data-v3-shell]");
+          onPeek(c.id, Math.round(e.currentTarget.getBoundingClientRect().top - (shell?.getBoundingClientRect().top ?? 0)));
+        })
+      }
+      onMouseLeave={onPeek && (() => onPeek(null, 0))}
+      className={cn("relative flex h-6 min-w-0 items-center gap-2 rounded-md pr-2 text-[11.5px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ac-brand", opens && "hover:bg-ac-raise")}
+      style={{ paddingLeft: 10 + depth * STEP }}
+    >
+      <Guides depth={depth} rails={rails} last={last} stem={!!c.children?.length} />
+      <ChildCells c={c} />
+    </div>
+  );
+}
+
+/**
+ * The children under a row, to any depth (3.1–3.5): live children listed,
+ * idle and finished ones behind one "N idle" line that opens in place (D11).
+ * A single idle child is listed: a fold line in its place would hide nothing.
+ */
+export function ChildTree({ kids, parent, depth = 1, rails = [], ...h }: { kids: readonly ChildModel[]; parent: string; depth?: number; rails?: readonly boolean[] } & TreeHandlers) {
+  const [idleOpen, toggleIdle] = useIdleFold(parent);
+  const live = kids.filter(isLive);
+  const idle = kids.filter((c) => !isLive(c));
+  const fold = idle.length >= 2;
+  const shown = !fold || idleOpen || (!!h.focusKey && idle.some((c) => holds(c, h.focusKey!)));
+  const items: (ChildModel | "fold")[] = [...live, ...(fold ? (["fold"] as const) : []), ...(shown ? idle : [])];
+  return (
+    <>
+      {items.map((it, i) => {
+        const last = i === items.length - 1;
+        if (it === "fold")
+          return (
+            <div key="fold" data-child-row="" data-depth={depth} className="relative h-6" style={{ paddingLeft: 10 + depth * STEP }}>
+              <Guides depth={depth} rails={rails} last={last} stem={false} />
+              <button
+                type="button"
+                aria-expanded={shown}
+                aria-label={`${shown ? "Hide" : "Show"} ${idle.length} idle`}
+                onClick={toggleIdle}
+                className="flex h-6 min-w-0 items-center gap-2 rounded-md pr-2 text-[11.5px] text-ac-muted hover:text-ac-text"
+              >
+                <span className="-mx-0.5 inline-flex w-3 shrink-0 justify-center">{shown ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}</span>
+                <span className="truncate">{idle.length} idle</span>
+              </button>
+            </div>
+          );
+        return (
+          <div key={it.id} className="contents">
+            <ChildRow c={it} depth={depth} rails={rails} last={last} {...h} />
+            {!!it.children?.length && <ChildTree kids={it.children} parent={it.id} depth={depth + 1} rails={[...rails, !last]} {...h} />}
+          </div>
+        );
+      })}
+    </>
   );
 }
 
@@ -183,6 +414,7 @@ export function SessionRow({
   onToggleChildren,
   onCheck,
   onPeek,
+  focusKey,
 }: {
   s: RowSession;
   active?: boolean;
@@ -195,8 +427,13 @@ export function SessionRow({
   onCheck: (key: string) => void;
   /** Hover: the row's top edge inside the window shell; null when the pointer leaves. */
   onPeek?: (key: string | null, y: number) => void;
+  /** ⌘J: a child row to focus (3.4). */
+  focusKey?: string | null;
 }) {
   const second = active || comfortable;
+  const kids = !!open && s.children.length > 0;
+  // D12 (owner, Q1 2026-11-22): the active open row and its children are one block — one raise fill, one Marker.
+  const block = !!active && kids;
   const slot = trailing(s);
   const ref = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLSpanElement>(null);
@@ -205,7 +442,8 @@ export function SessionRow({
     if (active) ref.current?.scrollIntoView?.({ block: "nearest" });
   }, [active]);
   return (
-    <div ref={ref}>
+    <div ref={ref} className={cn(block && "relative mb-1 rounded-md bg-ac-raise pb-0.5")}>
+      {block && <Marker />}
       <div
         role="button"
         tabIndex={0}
@@ -219,14 +457,16 @@ export function SessionRow({
           })
         }
         onMouseLeave={onPeek && (() => onPeek(null, 0))}
-        className={cn("group/row relative rounded-md pl-2.5 pr-2", second ? "py-1.5" : "py-1", active ? "bg-ac-raise" : "hover:bg-ac-raise")}
+        className={cn("group/row relative rounded-md pl-2.5 pr-2", second ? "py-1.5" : "py-1", block ? null : active ? "bg-ac-raise" : "hover:bg-ac-raise")}
       >
-        {active && <Marker />}
+        {active && !block && <Marker />}
+        {/* The stem from the dot down to the first child (3.2). */}
+        {kids && <span aria-hidden data-guide="stem" className={cn("pointer-events-none absolute bottom-0 w-px bg-ac-line", second ? "top-[22px]" : "top-5")} style={{ left: lineX(0) }} />}
         <div className="flex h-5 min-w-0 items-center gap-2">
           {selecting ? (
             <span role="checkbox" aria-checked={!!checked} className={cn("inline-flex size-3.5 shrink-0 rounded border", checked ? "border-ac-brand bg-ac-brand" : "border-ac-line2")} />
           ) : (
-            <SessionStateIcon state={s.state} />
+            <SessionStateIcon state={s.state} source={s.stateSource} quiet={!!s.quiet} />
           )}
           {/* Keyed on the weight: Chromium keeps the ellipsis decision of the old weight
               when only font-weight changes, and the heavier title then runs past the edge. */}
@@ -259,11 +499,9 @@ export function SessionRow({
           </div>
         )}
       </div>
-      {open && (
-        <div className="mb-1 ml-[18px] border-l border-ac-line pl-2">
-          {s.children.map((c) => (
-            <ChildLine key={c.id} c={c} />
-          ))}
+      {kids && (
+        <div className={cn(!block && "mb-1")}>
+          <ChildTree kids={s.children} parent={s.key} onSelect={onSelect} onPeek={onPeek} focusKey={focusKey} />
         </div>
       )}
     </div>
@@ -286,12 +524,15 @@ export function SessionsZone({
   group = "none",
   lastActiveOf = () => null,
   groupOf,
+  worktreeOf,
   onView,
   viewOpen,
   onPeek,
   divider = true,
   loading,
   tray,
+  holdOrder,
+  focusKey,
   batch,
 }: {
   /** The tray card's variant (board "tray"): a 24 px head. */
@@ -317,6 +558,8 @@ export function SessionsZone({
   lastActiveOf?: (key: string) => number | null;
   /** The group a row belongs to (project, account or tool), or null for "none of them". */
   groupOf?: (key: string) => string | null;
+  /** The checkout a row works in, for the worktree sub-header under "Group by project" (D8). */
+  worktreeOf?: (key: string) => { id: string; branch: string | null; linked: boolean } | null;
   /** Opens the sort/group menu at the control's top inside the window shell; absent hides the control (tray). */
   onView?: (y: number) => void;
   viewOpen?: boolean;
@@ -325,14 +568,36 @@ export function SessionsZone({
   divider?: boolean;
   /** The first read has not settled: say nothing rather than "No sessions running". */
   loading?: boolean;
+  /** Engagement from outside the list (the tray card) that also holds the order (D9). */
+  holdOrder?: boolean;
+  /** ⌘J: a child row to focus; its root must be in `openKeys` (3.4). */
+  focusKey?: string | null;
   batch: BatchActions;
 }) {
-  const live = sortLive(sessions, sort, lastActiveOf);
+  const sorted = sortLive(sessions, sort, lastActiveOf);
+  // D9: while the pointer or keyboard focus is in the list, rows keep their place; grouping runs on the held order.
+  const { engaged, bind: holdBind } = useEngaged();
+  const order = useHeldOrder(sorted.map((s) => s.key), engaged || !!holdOrder);
+  const byKey = new Map(sorted.map((s) => [s.key, s]));
+  const live = order.map((k) => byKey.get(k)!);
   const done = sessions.filter((s) => s.doneToday).length;
   const grouped = group !== "none" && !!groupOf;
   // Grouped: one header per group, in the order the sorted list first meets it; rows keep the sort inside.
   const groups = grouped ? [...new Set(live.map((s) => groupOf!(s.key) ?? ""))] : [""];
   const rowsOf = (g: string) => (grouped ? live.filter((s) => (groupOf!(s.key) ?? "") === g) : live);
+  // A project's rows split by worktree only when more than one holds a live session (D8); otherwise one block, no sub-header.
+  const worktreesOf = (g: string) => {
+    const l = rowsOf(g);
+    if (group !== "project" || !worktreeOf) return [{ wt: undefined, rows: l }];
+    const by = new Map<string, { wt: NonNullable<ReturnType<typeof worktreeOf>> | null | undefined; rows: RowSession[] }>();
+    for (const s of l) {
+      const wt = worktreeOf(s.key);
+      const id = wt?.id ?? "";
+      by.set(id, { wt, rows: [...(by.get(id)?.rows ?? []), s] });
+    }
+    // undefined = no sub-header; null = rows outside any checkout, when other rows have one.
+    return by.size > 1 ? [...by.values()] : [{ wt: undefined, rows: l }];
+  };
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
   const fold = (g: string) => setFolded((f) => (f.has(g) ? new Set([...f].filter((x) => x !== g)) : new Set([...f, g])));
   return (
@@ -361,7 +626,7 @@ export function SessionsZone({
         )}
       </div>
       {selection && <BatchBar compact count={selection.size} actions={batch} className="mx-1.5 mb-1" />}
-      <div className="px-1.5">
+      <div className="px-1.5" data-session-list {...holdBind}>
         {live.length === 0 && !loading && (
           <p className="px-2 py-1.5 text-[12px] text-ac-muted">
             No sessions running.{" "}
@@ -384,11 +649,19 @@ export function SessionsZone({
             >
               {folded.has(g) ? <ChevronRight className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />}
               {group === "project" ? <Folder className="size-3.5 shrink-0" /> : group === "tool" ? <SquareTerminal className="size-3.5 shrink-0" /> : null}
-              <span className="min-w-0 truncate font-medium text-ac-soft">{g ? (group === "project" ? g.split("/").pop() : g) : group === "project" ? "No project" : "Other"}</span>
+              <span className="min-w-0 truncate font-medium text-ac-soft">{g || (group === "project" ? "No project" : "Other")}</span>
               <span>{rowsOf(g).length}</span>
             </button>
           ),
-          ...(folded.has(g) ? [] : rowsOf(g)).map((s) => (
+          ...(folded.has(g) ? [] : worktreesOf(g)).flatMap(({ wt, rows: wtRows }, i) => [
+          wt !== undefined ? (
+            <h4 key={`w:${g}:${wt?.id ?? i}`} title={wt?.id} className="flex h-6 items-center gap-1.5 pl-[26px] pr-1.5 text-[11px] font-normal text-ac-muted">
+              <span className={cn("min-w-0 truncate", wt && "font-ac-mono")}>{wt ? (wt.branch ?? "detached HEAD") : "No repository"}</span>
+              {wt?.linked && <Chip>worktree</Chip>}
+              <span>{wtRows.length}</span>
+            </h4>
+          ) : null,
+          ...wtRows.map((s) => (
           <SessionRow
             key={s.key}
             s={s}
@@ -401,8 +674,10 @@ export function SessionsZone({
             onToggleChildren={onToggleChildren}
             onCheck={onCheck}
             onPeek={onPeek}
+            focusKey={focusKey}
           />
           )),
+          ]),
         ])}
         {done > 0 && (
           <div className="mt-0.5 flex h-7 items-center gap-2 px-2.5 text-[11.5px] text-ac-muted">

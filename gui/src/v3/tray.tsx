@@ -17,6 +17,7 @@ import type { BatchActions } from "./kit.js";
 import { TrayAccount, type LimitAccount } from "./limits.js";
 import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
 import { SessionsZone, sortLive, type RowSession } from "./sessions.js";
+import { useEngaged, useHeldOrder } from "./held-order.js";
 
 export const TRAY_SESSIONS = 5;
 
@@ -90,7 +91,12 @@ export function V3Tray({
   const tools = trayTools(all, accounts);
   // A tool whose last session ended drops its tab; fall back to the default.
   const tab = tools.includes(picked) ? picked : "claude";
-  const live = all.filter((s) => toolOf(s.key) === tab);
+  const sorted = all.filter((s) => toolOf(s.key) === tab);
+  // D9: the pointer or keyboard focus in the session list holds its order, before the cut to TRAY_SESSIONS.
+  const { engaged, bind: holdBind } = useEngaged();
+  const order = useHeldOrder(sorted.map((s) => s.key), engaged);
+  const byKey = new Map(sorted.map((s) => [s.key, s]));
+  const live = order.map((k) => byKey.get(k)!);
   const shown = live.slice(0, TRAY_SESSIONS);
   const limits = accounts.filter((a) => a.tool === tab);
   return (
@@ -166,7 +172,7 @@ export function V3Tray({
           aria-label={TOOL_NAME[tab]}
           className="max-h-[400px] overflow-y-auto rounded-md border border-ac-line bg-ac-bg"
         >
-          <div className="pb-1">
+          <div className="pb-1" data-session-list {...holdBind}>
             <SessionsZone
               tray
               divider={false}
@@ -183,6 +189,7 @@ export function V3Tray({
               loading={loading}
               sort="activity"
               lastActiveOf={lastActiveOf}
+              holdOrder={engaged}
               batch={noBatch}
             />
             {live.length > TRAY_SESSIONS && (

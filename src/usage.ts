@@ -15,7 +15,12 @@ export interface UsageWindow {
   utilization: number | null;
   /** ISO reset timestamp; null when absent. */
   resetsAt: string | null;
+  /** Set on a merged snapshot only: when this window was read, and from where. */
+  capturedAt?: string;
+  source?: "statusline" | "poll";
 }
+
+export type UsageSource = "statusline" | "poll" | "merged";
 
 export interface UsageSnapshot {
   windows: UsageWindow[];
@@ -26,6 +31,8 @@ export interface UsageSnapshot {
   /** Codex only: banked rate-limit reset credits still available ("N available").
    *  Undefined for providers/plans that don't expose it. */
   resetCredits?: number | null;
+  /** Where the windows came from; absent on a plain poll. */
+  source?: UsageSource;
 }
 
 // The windows Claude's /usage exposes, richest first. seven_day_opus/sonnet are
@@ -95,6 +102,74 @@ export function parseUsage(raw: any, capturedAt: string = new Date().toISOString
     routines = { used: r.used, limit: r.limit };
   }
   return { windows, routines, capturedAt };
+}
+
+/** The windows Claude Code's statusLine stdin carries (2.1.316: `rate_limits`). */
+export const STATUSLINE_WINDOWS: ReadonlyArray<readonly [string, string]> = [
+  ["five_hour", "5h"],
+  ["seven_day", "7d"],
+];
+
+/** `rate_limits` from a statusLine stdin payload → a snapshot, or null when it
+ *  carries no usable window (free tier, a render before the first response). */
+export function parseStatuslineUsage(raw: any, capturedAt: string = new Date().toISOString()): UsageSnapshot | null {
+  const rl = raw && typeof raw === "object" ? raw.rate_limits : null;
+  if (!rl || typeof rl !== "object") return null;
+  const windows: UsageWindow[] = [];
+  for (const [key, label] of STATUSLINE_WINDOWS) {
+    const w = rl[key];
+    if (!w || typeof w !== "object") continue;
+    const pct = typeof w.used_percentage === "number" ? w.used_percentage : w.utilization;
+    const utilization = typeof pct === "number" && Number.isFinite(pct) ? Math.max(0, Math.min(100, Math.round(pct))) : null;
+    const resetsAt = isoReset(w.resets_at);
+    if (utilization === null) continue;
+    windows.push({ key, label, utilization, resetsAt });
+  }
+  return windows.length ? { windows, routines: null, capturedAt, source: "statusline" } : null;
+}
+
+/** Epoch seconds (2.1.316), epoch ms, or an ISO string → ISO; anything else → null. */
+function isoReset(v: unknown): string | null {
+  let ms: number;
+  if (typeof v === "number" && Number.isFinite(v) && v > 0) ms = v < 1e12 ? v * 1000 : v;
+  else if (typeof v === "string") ms = Date.parse(v);
+  else return null;
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+}
+
+/**
+ * Overlay `fresh` (the statusline sample) onto `base` (the last poll, or an
+ * earlier merge) by window key. Per window the newer reading wins; a window only
+ * one side has is kept, never dropped. Each window carries its own `capturedAt`
+ * and `source`; the snapshot's `capturedAt` is the oldest reading it shows, so a
+ * merged snapshot is never fresher than its stalest bar.
+ */
+export function mergeUsage(fresh: UsageSnapshot | null, base: UsageSnapshot | null): UsageSnapshot | null {
+  if (!fresh) return base;
+  if (!base) return fresh;
+  const stamp = (w: UsageWindow, snap: UsageSnapshot, src: "statusline" | "poll"): UsageWindow => ({
+    ...w,
+    capturedAt: w.capturedAt ?? snap.capturedAt,
+    source: w.source ?? (snap.source === "statusline" ? "statusline" : src),
+  });
+  const at = (w: UsageWindow) => Date.parse(w.capturedAt!);
+  const freshBy = new Map(fresh.windows.map((w) => [w.key, stamp(w, fresh, "statusline")]));
+  const windows: UsageWindow[] = [];
+  for (const bw of base.windows) {
+    const b = stamp(bw, base, "poll");
+    const f = freshBy.get(b.key);
+    freshBy.delete(b.key);
+    windows.push(f && !(at(b) > at(f)) ? { ...f, label: b.label } : b);
+  }
+  windows.push(...freshBy.values());
+  const oldest = windows.reduce((o, w) => (at(w) < at(o) ? w : o), windows[0]);
+  const sources = new Set(windows.map((w) => w.source));
+  return {
+    ...base,
+    windows,
+    capturedAt: oldest ? oldest.capturedAt! : base.capturedAt,
+    source: sources.size > 1 ? "merged" : sources.has("statusline") ? "statusline" : "poll",
+  };
 }
 
 function resetHint(iso: string): string {
@@ -287,4 +362,41 @@ export function freedAfterReset(prev: UsageSnapshot | undefined | null, next: Us
   if (!resetPassed(prev, threshold, now)) return false;
   const m = maxUtilization(next);
   return m !== null && m < threshold;
+}
+
+export interface UsageSourceInput {
+  /** The statusline sample, any age. */
+  statusline: UsageSnapshot | null;
+  /** The last known snapshot (daemon cache or the last poll), any age. */
+  base: UsageSnapshot | null;
+  now: number;
+  fresh: (s: UsageSnapshot | null) => boolean;
+  /** How old a window only the poll reports may get before a fresh sample stops covering for it. */
+  pollOnlyMaxAgeMs: number;
+  poll: () => Promise<UsageSnapshot | null>;
+  /** False while the poll is held back (its backoff): only the local sample is read. */
+  mayPoll?: boolean;
+}
+
+/**
+ * Which source answers: a fresh statusline sample merged onto the last known
+ * snapshot, with no request — unless a window only the poll knows (per-model
+ * limits, which the statusline does not send) has aged out; then one poll. A
+ * failed poll (`pollFailed`) still answers with that merge while the sample is
+ * fresh: the sample is a real reading, only the poll-only windows stay old.
+ * Without a fresh sample a failed poll yields `snapshot: null` (the daemon
+ * counts the failure) and the best real snapshot as `fallback` (the CLI serves it).
+ */
+export async function resolveClaudeUsage(i: UsageSourceInput): Promise<{ snapshot: UsageSnapshot | null; fallback: UsageSnapshot | null; pollFailed?: boolean }> {
+  const merged = i.fresh(i.statusline) ? mergeUsage(i.statusline, i.base) : null;
+  if (merged) {
+    const pollOnly = merged.windows.filter((w) => w.source !== "statusline");
+    const oldest = Math.min(...pollOnly.map((w) => Date.parse(w.capturedAt ?? merged.capturedAt)));
+    if (pollOnly.length === 0 || i.now - oldest <= i.pollOnlyMaxAgeMs || i.mayPoll === false) return { snapshot: merged, fallback: merged };
+  }
+  const fallback = mergeUsage(i.statusline, i.base);
+  if (i.mayPoll === false) return { snapshot: null, fallback };
+  const polled = await i.poll();
+  if (polled) return { snapshot: mergeUsage(i.statusline, polled), fallback };
+  return { snapshot: merged, fallback, pollFailed: true };
 }

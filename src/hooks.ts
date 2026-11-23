@@ -78,7 +78,30 @@ export function readSettings(configDir: string): Settings {
   }
 }
 
-function writeSettings(configDir: string, settings: Settings): void {
+/** For a write: a missing file is empty settings; a file that exists but does
+ *  not parse (an editor cut off mid-save) or is not an object throws, so a
+ *  rewrite can never replace a whole — possibly shared — settings.json with
+ *  just our keys. */
+export function readSettingsStrict(configDir: string): Settings {
+  const file = path.join(configDir, "settings.json");
+  let text: string;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch (e: any) {
+    if (e?.code === "ENOENT") return {};
+    throw new Error(`${file} cannot be read (${e?.code ?? e?.message}); nothing was written`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`${file} does not parse as JSON; fix or remove it — nothing was written`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${file} is not a JSON object; fix or remove it — nothing was written`);
+  return parsed as Settings;
+}
+
+export function writeSettings(configDir: string, settings: Settings): void {
   fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(path.join(configDir, "settings.json"), JSON.stringify(settings, null, 2) + "\n", { mode: 0o600 });
 }
@@ -165,14 +188,14 @@ export function withHooksRemoved(settings: Settings): Settings {
 }
 
 export function installHooks(configDir: string, bin = "agent-switch", relay?: string | null): { changed: boolean } {
-  const before = readSettings(configDir);
+  const before = readSettingsStrict(configDir);
   if (hooksInstalled(before, hookCommand(bin, relay))) return { changed: false };
   writeSettings(configDir, withHooksInstalled(before, bin, relay));
   return { changed: true };
 }
 
 export function uninstallHooks(configDir: string): { changed: boolean } {
-  const before = readSettings(configDir);
+  const before = readSettingsStrict(configDir);
   const after = withHooksRemoved(before);
   const changed = JSON.stringify(before) !== JSON.stringify(after);
   if (changed) writeSettings(configDir, after);

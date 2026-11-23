@@ -133,7 +133,7 @@ describe("Sessions window header (spec §5)", () => {
         data={{
           ...d,
           sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow" }],
-          table: [{ key: "s1", project: "/code/agent-switch" }, { key: "s2", project: "/code/shop" }] as never,
+          table: [{ key: "s1", project: "agent-switch", projectRoot: "/code/agent-switch" }, { key: "s2", project: "shop", projectRoot: "/code/shop" }] as never,
           library: [{ key: "s2", pinned: true }] as never,
         }}
         slots={slots}

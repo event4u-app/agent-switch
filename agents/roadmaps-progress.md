@@ -21,7 +21,7 @@
 
 ---
 
-## Parked — `later/` (10 roadmaps, not active backlog)
+## Parked — `later/` (11 roadmaps, not active backlog)
 
 > Excluded from the table above and from `/roadmap:process-*` by design. Listed here so a resume condition is visible without opening the file.
 
@@ -35,6 +35,7 @@
 | [road-to-multi-provider-and-provider-settings.md](roadmaps/later/road-to-multi-provider-and-provider-settings.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-open-in-with-the-right-account.md](roadmaps/later/road-to-open-in-with-the-right-account.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-session-orchestration.md](roadmaps/later/road-to-session-orchestration.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
+| [road-to-statusline-chaining.md](roadmaps/later/road-to-statusline-chaining.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-the-rows-where-others-lead.md](roadmaps/later/road-to-the-rows-where-others-lead.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-v3-design-gap-carried.md](roadmaps/later/road-to-v3-design-gap-carried.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 
@@ -75,6 +76,6 @@ Days since each active roadmap landed at its path and since its last ticked step
 
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
-| [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 8 | 8 |
-| [road-to-the-ready-remainders.md](roadmaps/road-to-the-ready-remainders.md) | 5 | — |
+| [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 18 | 18 |
+| [road-to-the-ready-remainders.md](roadmaps/road-to-the-ready-remainders.md) | 15 | — |
 
