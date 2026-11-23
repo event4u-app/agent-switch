@@ -10,6 +10,7 @@ import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { Act } from "./kit.js";
 import { ChildLine, type ChildModel } from "./sessions.js";
+import { moreFiles } from "./review.js";
 
 function Window({ title, aside, onHide, children }: { title: string; aside?: ReactNode; onHide: () => void; children: ReactNode }) {
   return (
@@ -101,7 +102,7 @@ export function SummaryWindow({ f, nextBlocked, onNext, onCreatePr, onOpenPr, on
         )}
       </Sect>
       {f.git && (
-        <Sect title="Git" source="from the session's hooks">
+        <Sect title="Git" source="git in the session's folder · the changed count is the Changes list's">
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-ac-soft">
             <GitBranch className="size-3.5 shrink-0 text-ac-muted" aria-hidden />
             <span className="truncate">{f.git.branch ?? "(detached)"}</span>
@@ -159,14 +160,14 @@ export interface ChangedFile {
 
 const REVIEW_LATER = "Review arrives with the next version";
 
-/** `onReview(path)` opens the review at that file; without a path, at the first. */
-export function ChangesWindow({ files, onReview, onCommit, onHide, reviewAvailable, commitAvailable = true }: { files: ChangedFile[]; onReview: (file?: string) => void; onCommit: () => void; onHide: () => void; reviewAvailable: boolean; commitAvailable?: boolean }) {
+/** `onReview(path)` opens the review at that file; without a path, at the first. `more`: changed files past the list's cap. */
+export function ChangesWindow({ files, more = 0, onReview, onCommit, onHide, reviewAvailable, commitAvailable = true }: { files: ChangedFile[]; more?: number; onReview: (file?: string) => void; onCommit: () => void; onHide: () => void; reviewAvailable: boolean; commitAvailable?: boolean }) {
   const added = files.reduce((n, f) => n + f.added, 0);
   const removed = files.reduce((n, f) => n + f.removed, 0);
   return (
     <Window title="Changes" aside="worktree vs HEAD" onHide={onHide}>
       <div className="px-3.5 py-2.5 text-xs text-ac-soft">
-        {files.length} files · <span className="text-ac-ok-text">+{added}</span> <span className="text-ac-alert-text">−{removed}</span>
+        {files.length + more} files · <span className="text-ac-ok-text">+{added}</span> <span className="text-ac-alert-text">−{removed}</span>
       </div>
       {files.map((f) => {
         const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/") + 1) : "";
@@ -190,6 +191,7 @@ export function ChangesWindow({ files, onReview, onCommit, onHide, reviewAvailab
           </button>
         );
       })}
+      {more > 0 && <p className="px-3.5 pt-1.5 text-[11px] text-ac-muted">{moreFiles(more)}</p>}
       <div className="flex gap-2 px-3.5 py-3">
         <Act kind="accent" onClick={() => onReview()} disabled={!reviewAvailable} title={reviewAvailable ? undefined : REVIEW_LATER}>
           Review changes

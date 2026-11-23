@@ -68,6 +68,17 @@ describe("right tool windows (spec §9)", () => {
     expect(onReview).toHaveBeenLastCalledWith();
   });
 
+  it("Changes: files past the cap are counted in the total and named, never dropped silently", () => {
+    render(<ChangesWindow files={[{ status: "M", path: "a.ts", added: 1, removed: 0 }]} more={7} onReview={vi.fn()} onCommit={vi.fn()} onHide={vi.fn()} reviewAvailable />);
+    expect(screen.getByText(/^8 files/)).toBeTruthy();
+    expect(screen.getByText("7 more files not listed")).toBeTruthy();
+  });
+
+  it("Summary: the Git section's tooltip names where its count comes from", () => {
+    render(sum(facts()));
+    expect(screen.getByText("Git").getAttribute("title")).toBe("git in the session's folder · the changed count is the Changes list's");
+  });
+
   it("Changes: without a review the rows are disabled with the reason", () => {
     render(<ChangesWindow files={[{ status: "M", path: "a.ts", added: 1, removed: 0 }]} onReview={vi.fn()} onCommit={vi.fn()} onHide={vi.fn()} reviewAvailable={false} />);
     const row = screen.getByRole("button", { name: "Review a.ts" }) as HTMLButtonElement;

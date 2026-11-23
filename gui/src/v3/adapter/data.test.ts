@@ -248,6 +248,15 @@ describe("toV3Data", () => {
     expect(unread.summary("claude/work/a1")!.git!.changed).toBe(7);
   });
 
+  it("summary and Changes count the files past the list's cap too", () => {
+    const r = row("a1", { git: { toplevel: "/r", branch: "feat", headSha: "a", dirty: true, changed: 7, ahead: 0, behind: 0, upstream: null, remote: null, worktree: false, cwd: "/r", cwdSource: "hook" as const } } as never);
+    const files = [{ status: "M" as const, path: "a", added: 1, removed: 0 }];
+    const d = toV3Data(vmWith([account("work")], [r]), emptyFeeds(), env({ changes: new Map([["claude/work/a1", files]]), changesMore: new Map([["claude/work/a1", 12]]) }));
+    expect(d.summary("claude/work/a1")!.git!.changed).toBe(13);
+    expect(d.changesMore!("claude/work/a1")).toBe(12);
+    expect(d.changesMore!("other")).toBe(0);
+  });
+
   it("Open-in: agent apps never reach the settings list", () => {
     const feeds = { ...emptyFeeds(), openTargets: { default: "vscode", perRepo: { "/r": "finder" }, lastUsed: "finder", targets: [{ target: "vscode", label: "VS Code", kind: "editor" as const, installed: true }], terminal: "iterm", terminals: [{ id: "iterm", name: "iTerm2", installed: true }] } };
     const d = toV3Data(emptyViewModel(NOW), feeds, env({ focusTerminal: false }));

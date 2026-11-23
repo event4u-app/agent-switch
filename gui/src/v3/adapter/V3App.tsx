@@ -164,6 +164,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const [focusTerminal, setFocusTerminalState] = useState(getFocusTerminal);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [changes, setChanges] = useState<Map<string, ChangedFile[]>>(new Map());
+  const [changesMore, setChangesMore] = useState<Map<string, number>>(new Map());
   const [terminals, setTerminals] = useState<ReadonlyMap<string, SessionTerminal>>(new Map());
   const terminalsAt = useRef(new Map<string, number>());
   const [takeover, setTakeover] = useState<TakeoverState | null>(null);
@@ -184,7 +185,10 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     setTimeout(() => {
       ipc
         .sessionChanges(key)
-        .then((files) => setChanges((m) => new Map(m).set(key, files)))
+        .then(({ files, more }) => {
+          setChanges((m) => new Map(m).set(key, files));
+          setChangesMore((m) => new Map(m).set(key, more));
+        })
         .catch(() => {});
     }, 0);
   }, []);
@@ -255,6 +259,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     home,
     terminalApp,
     changes,
+    changesMore,
     wantChanges,
     terminals,
     wantTerminal,
@@ -423,8 +428,10 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       const chat = tab ? chats.states.get(tab) : undefined;
       const row = byKey.get(key);
       const running = (chat ? chat.status === "ready" && fold(chat.events).running : false) || (row ? sessionFromRow(row, s.now).state === "working" : false);
+      // One host per session: a tab switch never carries one session's cards, undo or scope into another's.
       return (
         <ReviewHost
+          key={chat?.session?.key ?? key}
           sessionKey={chat?.session?.key ?? key}
           title={data.sessions.find((x) => x.key === key)?.title ?? row?.summary ?? key}
           running={running}

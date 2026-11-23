@@ -51,6 +51,13 @@ describe("v3 IPC calls", () => {
     expect(await ipc.engineStatus()).toEqual({ running: false, reason: "boom", hostedRunning: 0 });
   });
 
+  it("changes and the review carry the count of files past the cap", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: JSON.stringify({ files: [{ status: "M", path: "a b.ts", added: 1, removed: 0 }], more: 4 }), stderr: "" });
+    expect(await ipc.sessionChanges("k")).toEqual({ files: [{ status: "M", path: "a b.ts", added: 1, removed: 0 }], more: 4 });
+    execute.mockResolvedValue({ code: 0, stdout: JSON.stringify({ files: [], shared: [], base: null, baseRef: "HEAD", note: null, omitted: 0, more: 4, fingerprint: "f" }), stderr: "" });
+    expect(await ipc.sessionReview("k", "uncommitted")).toMatchObject({ more: 4 });
+  });
+
   it("needs carries its history", async () => {
     execute.mockResolvedValue({ code: 0, stdout: JSON.stringify({ items: [], away: null, history: [{ id: "1", kind: "ci", who: "w", what: "x", doneAt: "t" }] }), stderr: "" });
     expect((await ipc.listNeeds()).history).toHaveLength(1);

@@ -133,6 +133,23 @@ describe("Review: what it compares with, and large reviews", () => {
     expect(screen.getByText(/1 file too large to show/)).toBeTruthy();
   });
 
+  it("files past the file cap are counted, the same words as the Changes list", () => {
+    render(<Review {...base} scope="uncommitted" files={FILES} compare={{ ref: "HEAD", sha: null, note: null, omitted: 0, more: 7 }} />);
+    expect(screen.getByText("7 more files not listed")).toBeTruthy();
+  });
+
+  it("opened at a file, the card scrolls only as far as it must, so Scope and Layout stay in view", () => {
+    const spy = vi.fn();
+    const orig = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = spy;
+    try {
+      render(<Review {...base} scope="uncommitted" files={FILES} focus={{ file: "notes.md", seq: 1 }} />);
+      expect(spy).toHaveBeenCalledWith({ block: "nearest" });
+    } finally {
+      HTMLElement.prototype.scrollIntoView = orig;
+    }
+  });
+
   it("a small review stays open", () => {
     render(<Review {...base} scope="worktree" files={FILES} />);
     expect(screen.getAllByLabelText(/^Collapse /)).toHaveLength(FILES.length);
@@ -173,6 +190,43 @@ describe("ReviewHost", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("a tab switch mid-load never shows or acts on the other session's files: actions wait for the new session's own read", async () => {
+    const x = io();
+    const pending: { key: string; resolve: (r: ReviewJson) => void }[] = [];
+    x.sessionReview.mockImplementation((k: string) => new Promise<ReviewJson>((resolve) => pending.push({ key: k, resolve })));
+    const props = { title: "t", running: false, toast: vi.fn(), askMessage: vi.fn(), createPr: vi.fn(), io: x };
+    const { rerender } = render(<ReviewHost {...props} sessionKey="claude/w/a" />);
+    await waitFor(() => expect(pending).toHaveLength(1));
+    await act(async () => pending[0].resolve({ files: FILES, shared: [], base: null, baseRef: "HEAD", note: null, omitted: 0, more: 0, fingerprint: "a" }));
+    await waitFor(() => expect(screen.getAllByText("Discard").length).toBeGreaterThan(0));
+    // The same host now shows session b, whose read has not come back yet.
+    rerender(<ReviewHost {...props} sessionKey="claude/w/b" />);
+    await waitFor(() => expect(pending).toHaveLength(2));
+    expect(screen.queryByText("src/engine/ingest.ts")).toBeNull();
+    for (const b of screen.queryAllByRole("button", { name: /Discard|Stage|Commit|Create PR/ })) expect((b as HTMLButtonElement).disabled).toBe(true);
+    // a's late answer is not b's data.
+    await act(async () => pending[0].resolve({ files: FILES, shared: [], base: null, baseRef: "HEAD", note: null, omitted: 0, more: 0, fingerprint: "a" }));
+    expect(screen.queryByText("src/engine/ingest.ts")).toBeNull();
+    const own: ReviewFileJson[] = [{ path: "b.ts", status: "M", added: 1, removed: 0, hunks: [{ oldStart: 1, newStart: 1, lines: ["+b"], layer: "unstaged", hash: "hb", header: "@@ -1 +1 @@" }] }];
+    await act(async () => pending[1].resolve({ files: own, shared: [], base: null, baseRef: "HEAD", note: null, omitted: 0, more: 0, fingerprint: "b" }));
+    await waitFor(() => expect((screen.getByRole("button", { name: "Discard" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(x.reviewAct).toHaveBeenCalledWith("claude/w/b", "discard", "b.ts", undefined);
+  });
+
+  it("a scope switch mid-load disables every action until that scope's files are read", async () => {
+    const x = io();
+    render(<ReviewHost sessionKey="claude/w/s" title="t" running={false} toast={vi.fn()} askMessage={vi.fn()} createPr={vi.fn()} io={x} />);
+    await waitFor(() => expect(screen.getAllByText("Discard").length).toBeGreaterThan(0));
+    let resolve: (r: ReviewJson) => void = () => {};
+    x.sessionReview.mockImplementationOnce(() => new Promise<ReviewJson>((r) => (resolve = r)));
+    fireEvent.click(screen.getByRole("radio", { name: "Staged" }));
+    await waitFor(() => expect(x.sessionReview).toHaveBeenLastCalledWith("claude/w/s", "staged"));
+    for (const b of screen.queryAllByRole("button", { name: /Discard|Stage|Unstage|Commit|Create PR/ })) expect((b as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => resolve({ files: [FILES[1]], shared: [], base: null, baseRef: "HEAD", note: null, omitted: 0, more: 0, fingerprint: "s" }));
+    await waitFor(() => expect((screen.getByText("Unstage hunk").closest("button") as HTMLButtonElement).disabled).toBe(false));
   });
 
   it("a review the CLI refuses (git failed or timed out) is shown as an error, not as no changes", async () => {

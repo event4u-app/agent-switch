@@ -36,6 +36,8 @@ export interface AdapterEnv {
   terminalApp: string;
   /** Changed files per session key, as last read (`changes <s> --json`). */
   changes: ReadonlyMap<string, ChangedFile[]>;
+  /** Changed files past the list's cap, per session key (`more` of the same read). */
+  changesMore?: ReadonlyMap<string, number>;
   /** Ask for a session's changed files; the caller dedupes and reads. */
   wantChanges: (key: string) => void;
   /** Sessions this window shows in the chat view (their bridges run here). */
@@ -638,7 +640,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       return {
         next: n && { text: n.text, action: n.prompt ? promptAction(canType(key)) : n.action },
         pr: pr ? { number: pr.number, url: pr.url, ci: pr.ci, lifecycle: pr.lifecycle, mergeable: pr.mergeable, review: pr.review, failingChecks: pr.failingChecks } : null,
-        git: r.git ? { branch: r.git.branch, worktree: r.git.worktree, changed: files?.length ?? r.git.changed, ahead: r.git.ahead, behind: r.git.behind } : null,
+        git: r.git ? { branch: r.git.branch, worktree: r.git.worktree, changed: files ? files.length + (env.changesMore?.get(key) ?? 0) : r.git.changed, ahead: r.git.ahead, behind: r.git.behind } : null,
         limit: nearLimit(a) ? `${a!.name} is at ${fiveH(a) ?? "?"}% of its 5-hour window` : null,
         more: {
           id: r.sessionId,
@@ -653,6 +655,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       env.wantChanges(key);
       return env.changes.get(key) ?? [];
     },
+    changesMore: (key) => env.changesMore?.get(key) ?? 0,
     next: (key) => {
       const r = byKey.get(key);
       const n = r ? nextStep(r, needing.has(key) && focusOk(r, key)) : null;
