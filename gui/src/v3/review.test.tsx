@@ -218,7 +218,7 @@ describe("ReviewHost", () => {
     await act(async () => pending[1].resolve({ files: own, shared: [], base: null, baseRef: "HEAD", note: null, omitted: 0, more: 0, fingerprint: "b" }));
     await waitFor(() => expect((screen.getByRole("button", { name: "Discard" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
-    expect(x.reviewAct).toHaveBeenCalledWith("claude/w/b", "discard", "b.ts", undefined);
+    expect(x.reviewAct).toHaveBeenCalledWith("claude/w/b", "discard", "b.ts", undefined, undefined);
   });
 
   it("a scope switch mid-load disables every action until that scope's files are read", async () => {
@@ -268,5 +268,75 @@ describe("ReviewHost", () => {
     await waitFor(() => expect(toast).toHaveBeenCalledWith({ tone: "alert", text: "a turn is running — this unlocks when it ends" }));
     fireEvent.click(screen.getByRole("radio", { name: "This turn" }));
     await waitFor(() => expect(io.sessionReview).toHaveBeenLastCalledWith("claude/w/s", "turn"));
+  });
+});
+
+describe("Review: whole files", () => {
+  const WHOLE: ReviewFileJson[] = [
+    { path: "img.png", status: "M", added: 0, removed: 0, hunks: [], layers: ["unstaged"], hash: "f-img", preview: "binary" },
+    { path: "link", status: "?", added: 0, removed: 0, hunks: [], layers: ["unstaged"], hash: "f-link", preview: "link" },
+    { path: "moved.ts", status: "R", added: 0, removed: 0, hunks: [], layers: ["staged"], hash: "f-moved" },
+  ];
+
+  it("a binary file or a link has no lines but keeps its buttons; a staged pure rename counts for Commit and can be unstaged", () => {
+    const o = on();
+    render(<Review title="t" scope="uncommitted" files={WHOLE} shared={[]} running={false} loading={false} error={null} undoable={false} on={o} />);
+    expect(screen.getByText("Binary file — no preview")).toBeTruthy();
+    expect(screen.getByText("A link — no preview")).toBeTruthy();
+    const stage = screen.getAllByRole("button", { name: "Stage file" }) as HTMLButtonElement[];
+    expect(stage.map((b) => b.disabled)).toEqual([false, false, true]);
+    fireEvent.click(stage[0]);
+    expect(o.stage).toHaveBeenCalledWith("img.png");
+    fireEvent.click(screen.getAllByRole("button", { name: "Discard" })[1]);
+    expect(o.discard).toHaveBeenCalledWith("link");
+    const unstage = screen.getAllByRole("button", { name: "Unstage file" });
+    expect(unstage).toHaveLength(1);
+    fireEvent.click(unstage[0]);
+    expect(o.unstage).toHaveBeenCalledWith("moved.ts");
+    expect((screen.getByText("Commit 1 staged…").closest("button") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("a whole-file action carries the hash of the file as shown; a hunk action carries the hunk", async () => {
+    const files: ReviewFileJson[] = [{ path: "b.ts", status: "M", added: 1, removed: 0, hunks: [{ oldStart: 1, newStart: 1, lines: ["+b"], layer: "unstaged", hash: "hb", header: "@@ -1 +1 @@" }], layers: ["unstaged"], hash: "f-b" }];
+    const x = {
+      sessionReview: vi.fn(async (): Promise<ReviewJson> => ({ files, shared: [], base: null, baseRef: "HEAD", note: null, omitted: 0, fingerprint: "f" })),
+      reviewAct: vi.fn(async () => ""),
+      reviewUndo: vi.fn(async () => ""),
+      reviewCommit: vi.fn(async () => ""),
+    };
+    render(<ReviewHost sessionKey="claude/w/s" title="t" running={false} toast={vi.fn()} askMessage={vi.fn()} createPr={vi.fn()} io={x} />);
+    await waitFor(() => expect((screen.getByRole("button", { name: "Discard" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(x.reviewAct).toHaveBeenLastCalledWith("claude/w/s", "discard", "b.ts", undefined, "f-b");
+    await waitFor(() => expect((screen.getByText("Stage hunk").closest("button") as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByText("Stage hunk"));
+    expect(x.reviewAct).toHaveBeenLastCalledWith("claude/w/s", "stage", "b.ts", "hb", undefined);
+  });
+
+  it("while a turn runs the next poll is scheduled only after the previous read settled", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const x = {
+        sessionReview: vi.fn(async (_k: string, _s: string, _since?: string): Promise<ReviewJson> => ({ files: FILES, shared: [], base: null, baseRef: "HEAD", note: null, omitted: 0, fingerprint: "fp1" })),
+        reviewAct: vi.fn(async () => ""),
+        reviewUndo: vi.fn(async () => ""),
+        reviewCommit: vi.fn(async () => ""),
+      };
+      render(<ReviewHost sessionKey="claude/w/s" title="t" running toast={vi.fn()} askMessage={vi.fn()} createPr={vi.fn()} io={x} />);
+      await waitFor(() => expect(x.sessionReview).toHaveBeenCalledTimes(1));
+      let settle: (r: ReviewJson) => void = () => {};
+      x.sessionReview.mockImplementationOnce(() => new Promise<ReviewJson>((r) => (settle = r)));
+      await act(async () => void vi.advanceTimersByTime(REVIEW_POLL_MS));
+      await waitFor(() => expect(x.sessionReview).toHaveBeenCalledTimes(2));
+      // A slow read: no other read starts while it runs, however long it takes.
+      await act(async () => void vi.advanceTimersByTime(REVIEW_POLL_MS * 3));
+      expect(x.sessionReview).toHaveBeenCalledTimes(2);
+      await act(async () => settle({ unchanged: true, fingerprint: "fp1" }));
+      expect(screen.getAllByRole("treeitem")).toHaveLength(FILES.length);
+      await act(async () => void vi.advanceTimersByTime(REVIEW_POLL_MS));
+      await waitFor(() => expect(x.sessionReview).toHaveBeenCalledTimes(3));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

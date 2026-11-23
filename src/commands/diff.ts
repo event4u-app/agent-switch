@@ -6,9 +6,11 @@
  * Every hunk says which layer it lives in: `committed` (already in a commit
  * since the base), `staged`, `unstaged` (the working tree, Bash changes and new
  * files included) or `turn` (what the last turn's edits recorded). Only staged
- * and unstaged hunks can be acted on, and only through `git apply` with the
- * exact hunk, after a preflight: no index lock, the hunk unchanged since it was
- * shown, no turn running. A discard is undoable.
+ * and unstaged changes can be acted on, after a preflight: no index lock, no
+ * turn running, and what is acted on unchanged since it was shown. One hunk goes
+ * through `git apply` with the exact hunk; a whole file through git's own file
+ * commands (`add`, `restore`), so a deletion, a new file, a binary file or a
+ * link keeps its meaning. A discard is undoable.
  */
 
 import { spawnSync } from "node:child_process";
@@ -39,6 +41,14 @@ export interface ReviewHunk extends DiffHunk {
 export interface ReviewFile {
   path: string;
   status: "A" | "M" | "D" | "R" | "?";
+  /** The layers the file has changes in, also those without hunks (a binary file, a pure rename). */
+  layers: Layer[];
+  /** The file's state in the index and the working tree when it was read: a whole-file action carries it, and is refused when it moved. */
+  hash: string;
+  /** Why the file has no lines to show: binary, a new file over the size limit, or a link. */
+  preview?: "binary" | "too large" | "link";
+  /** A rename's old name. */
+  from?: string;
   added: number;
   removed: number;
   hunks: ReviewHunk[];
@@ -132,9 +142,17 @@ function headerPath(raw: string | undefined, prefix: "a/" | "b/"): string | null
   return name.startsWith(prefix) ? name.slice(2) : name;
 }
 
+/** One file's part of one layer. */
+interface Part {
+  status: ReviewFile["status"];
+  hunks: ReviewHunk[];
+  binary?: boolean;
+  from?: string;
+}
+
 /** `git diff` output for many files → per-file hunks, keyed by the file's real name. Pure. */
-export function splitDiff(text: string, layer: Layer): Map<string, { status: ReviewFile["status"]; hunks: ReviewHunk[] }> {
-  const out = new Map<string, { status: ReviewFile["status"]; hunks: ReviewHunk[] }>();
+export function splitDiff(text: string, layer: Layer): Map<string, Part> {
+  const out = new Map<string, Part>();
   for (const part of text.split(/^diff --git /m).slice(1)) {
     const header = part.split("\n")[0];
     const plus = headerPath(/^\+\+\+ (.+)$/m.exec(part)?.[1], "b/");
@@ -147,7 +165,8 @@ export function splitDiff(text: string, layer: Layer): Map<string, { status: Rev
       const head = /^@@[^\n]*@@[^\n]*$/m.exec(part.slice(part.indexOf(`@@ -${h.oldStart}`)))?.[0] ?? `@@ -${h.oldStart} +${h.newStart} @@`;
       return { ...h, layer, hash: hunkHash(file, h), header: head };
     });
-    out.set(file, { status, hunks });
+    const from = /^rename from (.+)$/m.exec(part)?.[1];
+    out.set(file, { status, hunks, ...(/^(Binary files .* differ|GIT binary patch)$/m.test(part) ? { binary: true } : {}), ...(from ? { from: unquotePath(from) } : {}) });
   }
   return out;
 }
@@ -176,29 +195,68 @@ function sessionBase(cwd: string, transcript: string | null): string | null {
 }
 
 /** The new files, by name only: their content is read once the file cap has picked the listed ones. */
-function untracked(cwd: string): Map<string, { status: ReviewFile["status"]; hunks: ReviewHunk[] }> {
+function untracked(cwd: string): Map<string, Part> {
   const list = gitRead(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]);
   return new Map(list.split("\0").filter(Boolean).map((file) => [file, { status: "?" as const, hunks: [] }]));
 }
 
-/** A new file as one added hunk; none when it is not a regular file, too large, or gone. */
-function untrackedHunks(cwd: string, file: string): ReviewHunk[] {
+/** A new file as one added hunk; none, and why, when it is a link, over the size limit, binary, not a file, or gone. */
+function untrackedHunks(cwd: string, file: string): { hunks: ReviewHunk[]; preview?: ReviewFile["preview"] } {
   const abs = path.join(cwd, file);
   try {
     const st = fs.lstatSync(abs);
-    if (!st.isFile() || st.size > 1_000_000) return [];
-    const text = fs.readFileSync(abs, "utf8").replace(/\n$/, "");
+    if (st.isSymbolicLink()) return { hunks: [], preview: "link" };
+    if (!st.isFile()) return { hunks: [] };
+    if (st.size > 1_000_000) return { hunks: [], preview: "too large" };
+    const buf = fs.readFileSync(abs);
+    // git's own test: a NUL in the first 8000 bytes makes a file binary.
+    if (buf.subarray(0, 8000).includes(0)) return { hunks: [], preview: "binary" };
+    const text = buf.toString("utf8").replace(/\n$/, "");
     const h: DiffHunk = { oldStart: 0, newStart: 1, lines: text ? text.split("\n").map((l) => `+${l}`) : [] };
-    return [{ ...h, layer: "unstaged", hash: hunkHash(file, h), header: `@@ -0,0 +1,${h.lines.length} @@` }];
+    return { hunks: [{ ...h, layer: "unstaged", hash: hunkHash(file, h), header: `@@ -0,0 +1,${h.lines.length} @@` }] };
   } catch {
-    return [];
+    return { hunks: [] };
   }
 }
 
-function merge(into: Map<string, ReviewFile>, from: Map<string, { status: ReviewFile["status"]; hunks: ReviewHunk[] }>): void {
+/** Files past this size are stamped by size and time instead of read whole. */
+const STAMP_READ_MAX = 64 * 1024 * 1024;
+
+/** What is in the working tree at `file` now, as a short string: a link's target, a file's mode and content hash, or gone. */
+function worktreeStamp(cwd: string, file: string): string {
+  const abs = path.join(cwd, file);
+  try {
+    const st = fs.lstatSync(abs);
+    if (st.isSymbolicLink()) return `link:${fs.readlinkSync(abs)}`;
+    if (!st.isFile()) return "other";
+    if (st.size > STAMP_READ_MAX) return `big:${st.size}:${st.mtimeMs}`;
+    return `file:${(st.mode & 0o111) !== 0 ? "x" : "-"}:${crypto.createHash("sha256").update(fs.readFileSync(abs)).digest("hex")}`;
+  } catch {
+    return "gone";
+  }
+}
+
+/** Each listed file's hash: its index entries and its working-tree state, the same in every scope. */
+function fileHashes(cwd: string, files: string[]): Map<string, string> {
+  const index = new Map<string, string>();
+  if (files.length) {
+    const out = git(cwd, ["--literal-pathspecs", "ls-files", "-s", "-z", "--", ...files]).out;
+    for (const entry of out.split("\0").filter(Boolean)) {
+      const tab = entry.indexOf("\t");
+      const name = entry.slice(tab + 1);
+      index.set(name, `${index.get(name) ?? ""}${entry.slice(0, tab)};`);
+    }
+  }
+  return new Map(files.map((f) => [f, crypto.createHash("sha256").update(`${f}\0${index.get(f) ?? "-"}\0${worktreeStamp(cwd, f)}`).digest("hex").slice(0, 16)]));
+}
+
+function merge(into: Map<string, ReviewFile>, from: Map<string, Part>, layer: Layer): void {
   for (const [p, v] of from) {
-    const cur = into.get(p) ?? { path: p, status: v.status, added: 0, removed: 0, hunks: [] };
+    const cur = into.get(p) ?? { path: p, status: v.status, layers: [], hash: "", added: 0, removed: 0, hunks: [] };
     if (cur.status === "M" && v.status !== "M") cur.status = v.status;
+    if (!cur.layers.includes(layer)) cur.layers.push(layer);
+    if (v.binary) cur.preview = "binary";
+    if (v.from) cur.from = v.from;
     cur.hunks.push(...v.hunks);
     into.set(p, cur);
   }
@@ -235,23 +293,29 @@ export function review(t: Target, scope: Scope, opts: { maxLines?: number; maxFi
       for (const e of events.slice(Math.max(0, lastTurn))) {
         if (e.t !== "diff") continue;
         const rel = path.isAbsolute(e.path) ? path.relative(cwd, e.path) : e.path;
-        merge(files, new Map([[rel, { status: "M" as const, hunks: e.hunks.map((h) => ({ ...h, layer: "turn" as const, hash: hunkHash(rel, h), header: `@@ -${h.oldStart} +${h.newStart} @@` })) }]]));
+        merge(files, new Map([[rel, { status: "M" as const, hunks: e.hunks.map((h) => ({ ...h, layer: "turn" as const, hash: hunkHash(rel, h), header: `@@ -${h.oldStart} +${h.newStart} @@` })) }]]), "turn");
       }
     }
   } else if (!(scope === "session" && !base)) {
-    if (base) merge(files, splitDiff(diff([base, "HEAD"]), "committed"));
-    merge(files, splitDiff(diff(["--cached"]), "staged"));
+    if (base) merge(files, splitDiff(diff([base, "HEAD"]), "committed"), "committed");
+    merge(files, splitDiff(diff(["--cached"]), "staged"), "staged");
     if (scope !== "staged") {
-      merge(files, splitDiff(diff([]), "unstaged"));
-      merge(files, untracked(cwd));
+      merge(files, splitDiff(diff([]), "unstaged"), "unstaged");
+      merge(files, untracked(cwd), "unstaged");
     }
   }
   let budget = opts.maxLines ?? Infinity;
   let omitted = 0;
   const all = [...files.values()].sort(byPath);
   const kept = (opts.only === undefined ? all : all.filter((f) => f.path === opts.only)).slice(0, opts.maxFiles ?? Infinity);
+  const hashes = fileHashes(cwd, kept.map((f) => f.path));
   const list = kept
-    .map((f) => (f.status === "?" && f.hunks.length === 0 ? { ...f, hunks: untrackedHunks(cwd, f.path) } : f))
+    .map((f): ReviewFile => {
+      const own = { ...f, hash: hashes.get(f.path) ?? "" };
+      if (f.status !== "?" || f.hunks.length) return own;
+      const u = untrackedHunks(cwd, f.path);
+      return { ...own, hunks: u.hunks, ...(u.preview ? { preview: u.preview } : {}) };
+    })
     .map((f): ReviewFile => {
       let added = 0;
       let removed = 0;
@@ -345,44 +409,95 @@ function preflight(t: Target, cwd: string): void {
 
 export type Action = "stage" | "unstage" | "discard";
 
-/** Stage, unstage or discard one hunk (or every hunk of the file's layer). */
-export function act(t: Target, action: Action, file: string, expect: string | null): { done: string; undo: boolean } {
+/** A fresh undo id: ordered by time, never one already taken (two discards in one millisecond). */
+function undoSlot(key: string): { dir: string; id: string } {
+  const dir = undoDir(key);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  let n = Date.now();
+  while (fs.existsSync(path.join(dir, `${n}.json`))) n++;
+  return { dir, id: `${n}` };
+}
+
+/** A copy of what is at `file` now, for undo: a link as its target, a file as a copy, nothing when it is gone. */
+function keepCopy(cwd: string, file: string, dir: string, id: string): { link?: string; gone?: true } {
+  const abs = path.join(cwd, file);
+  let st: fs.Stats;
+  try {
+    st = fs.lstatSync(abs);
+  } catch {
+    return { gone: true };
+  }
+  if (st.isSymbolicLink()) return { link: fs.readlinkSync(abs) };
+  fs.copyFileSync(abs, path.join(dir, `${id}.file`));
+  return {};
+}
+
+/** A git file command on names as written (no pathspec magic): refused with git's reason when it fails. */
+function runGit(cwd: string, args: string[], what: string): void {
+  const r = git(cwd, ["--literal-pathspecs", ...args]);
+  if (!r.ok) throw new ReviewRefused(`${what}: ${r.err.split("\n")[0]}`);
+}
+
+/** Stage, unstage or discard one hunk (`expect`, its hash) or the whole file. A whole-file action given the
+ *  file's hash as shown (`fileHash`) is refused when the file changed since. */
+export function act(t: Target, action: Action, file: string, expect: string | null, fileHash?: string): { done: string; undo: boolean } {
   const cwd = git(t.cwd, ["rev-parse", "--show-toplevel"]).out.trim();
   if (!cwd) throw new ReviewRefused(`${t.key} does not work in a git repository`);
   preflight(t, cwd);
   const layer: Layer = action === "unstage" ? "staged" : "unstaged";
   const cur = review(t, "uncommitted", { only: file }).files.find((f) => f.path === file);
-  const hunks = (cur?.hunks ?? []).filter((h) => h.layer === layer && (!expect || h.hash === expect));
-  if (!hunks.length) throw new ReviewRefused(expect ? "that change is no longer there as shown — refresh" : `nothing ${layer} in ${file}`);
-  const isNew = cur?.status === "?";
-  if (isNew) {
-    if (action === "stage") {
-      if (!git(cwd, ["add", "--", file]).ok) throw new ReviewRefused(`could not stage ${file}`);
-      return { done: `staged ${file}`, undo: false };
-    }
-    // Discarding a new file deletes it: keep a copy for undo first.
-    const dir = undoDir(t.key);
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const id = `${Date.now()}`;
-    fs.copyFileSync(path.join(cwd, file), path.join(dir, `${id}.file`));
-    fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ kind: "file", file }), { mode: 0o600 });
-    fs.rmSync(path.join(cwd, file));
-    return { done: `discarded ${file}`, undo: true };
-  }
+  if (fileHash !== undefined && cur?.hash !== fileHash) throw new ReviewRefused("the file changed since you looked — read it again");
+  if (!expect) return actFile(t, cwd, action, file, cur);
+  const hunks = (cur?.hunks ?? []).filter((h) => h.layer === layer && h.hash === expect);
+  if (!hunks.length) throw new ReviewRefused("that change is no longer there as shown — refresh");
+  // A new file's one hunk is the whole file.
+  if (cur?.status === "?") return actFile(t, cwd, action, file, cur);
   const patch = hunks.map((h) => hunkPatch(file, h)).join("");
   const args = action === "stage" ? ["apply", "--cached", "--whitespace=nowarn", "-"] : action === "unstage" ? ["apply", "--cached", "-R", "--whitespace=nowarn", "-"] : ["apply", "-R", "--whitespace=nowarn", "-"];
   const check = git(cwd, [...args.slice(0, -1), "--check", "-"], patch);
   if (!check.ok) throw new ReviewRefused(`git would not apply it: ${check.err.split("\n")[0]}`);
   if (action === "discard") {
-    const dir = undoDir(t.key);
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const id = `${Date.now()}`;
+    const { dir, id } = undoSlot(t.key);
     fs.writeFileSync(path.join(dir, `${id}.patch`), patch, { mode: 0o600 });
     fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ kind: "patch", file }), { mode: 0o600 });
   }
   const r = git(cwd, args, patch);
   if (!r.ok) throw new ReviewRefused(`git apply failed: ${r.err.split("\n")[0]}`);
   return { done: `${action === "stage" ? "staged" : action === "unstage" ? "unstaged" : "discarded"} ${hunks.length === 1 ? "a change" : `${hunks.length} changes`} in ${file}`, undo: action === "discard" };
+}
+
+/** A whole file through git's file commands, so what the file is (deleted, new, binary, a link) is kept. */
+function actFile(t: Target, cwd: string, action: Action, file: string, cur: ReviewFile | undefined): { done: string; undo: boolean } {
+  const layer: Layer = action === "unstage" ? "staged" : "unstaged";
+  if (!cur?.layers.includes(layer)) throw new ReviewRefused(`nothing ${layer} in ${file}`);
+  if (action === "stage") {
+    runGit(cwd, ["add", "-A", "--", file], `could not stage ${file}`);
+    return { done: `staged ${file}`, undo: false };
+  }
+  if (action === "unstage") {
+    const paths = cur.from ? [file, cur.from] : [file];
+    // Before the first commit there is no HEAD to restore from: the index entry goes, the file stays.
+    if (git(cwd, ["rev-parse", "--verify", "--quiet", "HEAD"]).ok) runGit(cwd, ["restore", "--staged", "--", ...paths], `could not unstage ${file}`);
+    else runGit(cwd, ["rm", "--cached", "-q", "--", ...paths], `could not unstage ${file}`);
+    return { done: `unstaged ${file}`, undo: false };
+  }
+  const { dir, id } = undoSlot(t.key);
+  const kept = keepCopy(cwd, file, dir, id);
+  if (cur.status === "?") {
+    // Discarding a new file deletes it.
+    fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ kind: "file", file, ...kept }), { mode: 0o600 });
+    fs.rmSync(path.join(cwd, file), { force: true });
+    return { done: `discarded ${file}`, undo: true };
+  }
+  // The working tree goes back to the index: a deleted file returns, an edit goes. Undo checks nothing moved since.
+  try {
+    runGit(cwd, ["restore", "--", file], `could not discard ${file}`);
+  } catch (e) {
+    fs.rmSync(path.join(dir, `${id}.file`), { force: true });
+    throw e;
+  }
+  fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ kind: "content", file, after: worktreeStamp(cwd, file), ...kept }), { mode: 0o600 });
+  return { done: `discarded ${file}`, undo: true };
 }
 
 /** Put the last discard back. */
@@ -393,13 +508,21 @@ export function undo(t: Target): string {
   if (!id) throw new ReviewRefused("nothing to undo");
   const cwd = git(t.cwd, ["rev-parse", "--show-toplevel"]).out.trim();
   preflight(t, cwd);
-  const meta = JSON.parse(fs.readFileSync(path.join(dir, `${id}.json`), "utf8")) as { kind: "file" | "patch"; file: string };
-  if (meta.kind === "file") {
-    const dest = path.join(cwd, meta.file);
-    if (fs.existsSync(dest)) throw new ReviewRefused(`${meta.file} exists again; not overwriting it`);
+  const meta = JSON.parse(fs.readFileSync(path.join(dir, `${id}.json`), "utf8")) as { kind: "file" | "content" | "patch"; file: string; link?: string; gone?: true; after?: string };
+  const dest = path.join(cwd, meta.file);
+  const put = () => {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.copyFileSync(path.join(dir, `${id}.file`), dest);
-    fs.rmSync(path.join(dir, `${id}.file`));
+    fs.rmSync(dest, { force: true });
+    if (meta.link !== undefined) fs.symlinkSync(meta.link, dest);
+    else if (!meta.gone) fs.copyFileSync(path.join(dir, `${id}.file`), dest);
+    fs.rmSync(path.join(dir, `${id}.file`), { force: true });
+  };
+  if (meta.kind === "file") {
+    if (worktreeStamp(cwd, meta.file) !== "gone") throw new ReviewRefused(`${meta.file} exists again; not overwriting it`);
+    put();
+  } else if (meta.kind === "content") {
+    if (worktreeStamp(cwd, meta.file) !== meta.after) throw new ReviewRefused(`the file changed since; the discard cannot be put back cleanly (${meta.file})`);
+    put();
   } else {
     const patch = fs.readFileSync(path.join(dir, `${id}.patch`), "utf8");
     const r = git(cwd, ["apply", "--whitespace=nowarn", "-"], patch);
@@ -439,7 +562,7 @@ function samePathKey(p: string): string {
 }
 
 export function cmdDiff(arg: string | undefined, action: string | undefined, flags: Record<string, string | boolean>): void {
-  if (!arg) die("usage: agent-switch diff <session> [--scope uncommitted|turn|session|worktree|staged] [--json [--since FINGERPRINT]] · diff <session> stage|unstage|discard --file F [--hunk HASH] · diff <session> undo · diff <session> commit --message M");
+  if (!arg) die("usage: agent-switch diff <session> [--scope uncommitted|turn|session|worktree|staged] [--json [--since FINGERPRINT]] · diff <session> stage|unstage|discard --file F [--hunk HASH | --file-hash HASH] · diff <session> undo · diff <session> commit --message M");
   const t = target(arg);
   const json = !!flags.json;
   const say = (o: Record<string, unknown>, text: string) => console.log(json ? JSON.stringify(o) : text);
@@ -458,8 +581,8 @@ export function cmdDiff(arg: string | undefined, action: string | undefined, fla
       return;
     }
     if (action === "stage" || action === "unstage" || action === "discard") {
-      if (typeof flags.file !== "string") die(`usage: agent-switch diff <session> ${action} --file F [--hunk HASH]`);
-      const r = act(t, action, flags.file, typeof flags.hunk === "string" ? flags.hunk : null);
+      if (typeof flags.file !== "string") die(`usage: agent-switch diff <session> ${action} --file F [--hunk HASH | --file-hash HASH]`);
+      const r = act(t, action, flags.file, typeof flags.hunk === "string" ? flags.hunk : null, typeof flags["file-hash"] === "string" ? flags["file-hash"] : undefined);
       return say({ ok: true, ...r }, r.done);
     }
     if (action === "undo") {

@@ -10,7 +10,7 @@ import type { V3Action } from "../window.js";
 import { dispatchV3, menuFor, type DispatchDeps } from "./actions.js";
 import { canTakeOver, decisionFor } from "./data.js";
 
-const plan = (over: Partial<PrPlanJson> = {}): PrPlanJson => ({ branch: "feat/x", head: "aaaaaaa1", base: "main", baseRemote: "origin", bases: ["dev/v3", "main"], remote: "origin", ref: "refs/heads/feat/x", upstream: null, setsUpstream: true, ahead: 2, title: "feat: the change", uncommitted: 1, existing: null, problem: null, ...over });
+const plan = (over: Partial<PrPlanJson> = {}): PrPlanJson => ({ branch: "feat/x", head: "aaaaaaa1", base: "main", baseRemote: "origin", bases: ["dev/v3", "main"], remote: "origin", ref: "refs/heads/feat/x", pushUrl: "git@github.com:o/r.git", repo: "o/r", upstream: null, setsUpstream: true, ahead: 2, title: "feat: the change", uncommitted: 1, existing: null, problem: null, ...over });
 const PR = { number: 9, url: "https://github.com/o/r/pull/9", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "NONE", ci: "FAILURE", failingChecks: ["lint"] };
 const row = (id: string, over: Partial<SessionRow> = {}): SessionRow => ({ provider: "claude", profile: "work", sessionId: id, projectDir: "-r", cwd: "/r", mtimeMs: 0, live: true, ...over });
 const need = (over: Partial<NeedItem>): NeedItem => ({ id: "n", kind: "approval", subject: "claude/work/a", who: "w", what: "x", verb: "v", since: "", version: "", ...over });
@@ -33,7 +33,7 @@ function deps(needs: NeedItem[] = [need({ id: "n1" }), need({ id: "n2", kind: "l
     setAgentEnabled: vi.fn(async () => {}),
     setRemoteControl: vi.fn(async () => {}),
     setRemoteSsh: vi.fn(async () => {}),
-    cleanupMerged: vi.fn(async (_keys?: string[]) => {}),
+    cleanupMerged: vi.fn(async (_keys?: string[]) => ({ removed: [] as string[], skipped: [] as { path: string; reason: string }[] })),
     prCreatePlan: vi.fn(async (_key: string, base?: string): Promise<PrPlanJson> => plan(base && base !== "main" ? { base, head: "bbbbbbb2", title: `first on ${base}` } : {})),
     prCreate: vi.fn(async (_key: string, _c: PrConfirmJson) => "https://github.com/o/r/pull/12"),
     engineRestart: vi.fn(async () => {}),
@@ -314,6 +314,7 @@ describe("dispatchV3", () => {
     expect(container.textContent).toContain("aaaaaaa");
     expect(container.textContent).toContain("feat/x");
     expect(container.textContent).toContain("origin as refs/heads/feat/x");
+    expect(container.textContent).toContain("at git@github.com:o/r.git, then opens a pull request in o/r with gh.");
     expect(container.textContent).toContain("sets its upstream");
     expect(container.textContent).toContain("1 uncommitted file stays out");
     const base = screen.getByRole("combobox", { name: "Base branch" });
@@ -324,7 +325,7 @@ describe("dispatchV3", () => {
     expect((screen.getByLabelText("PR title") as HTMLInputElement).value).toBe("feat: the change");
     ask.onConfirm();
     await flush();
-    expect(d.ipc.prCreate).toHaveBeenCalledWith("claude/work/a", { branch: "feat/x", head: "aaaaaaa1", remote: "origin", ref: "refs/heads/feat/x", base: "main", title: "feat: the change" });
+    expect(d.ipc.prCreate).toHaveBeenCalledWith("claude/work/a", { branch: "feat/x", head: "aaaaaaa1", remote: "origin", ref: "refs/heads/feat/x", pushUrl: "git@github.com:o/r.git", repo: "o/r", base: "main", title: "feat: the change" });
     expect(d.openUrl).toHaveBeenLastCalledWith("https://github.com/o/r/pull/12");
     expect(d.refresh).toHaveBeenCalled();
   });
@@ -345,7 +346,7 @@ describe("dispatchV3", () => {
     expect((screen.getByLabelText("PR title") as HTMLInputElement).value).toBe("Mine");
     ask.onConfirm();
     await flush();
-    expect(d.ipc.prCreate).toHaveBeenCalledWith("claude/work/a", { branch: "feat/x", head: "aaaaaaa1", remote: "origin", ref: "refs/heads/feat/x", base: "main", title: "Mine" });
+    expect(d.ipc.prCreate).toHaveBeenCalledWith("claude/work/a", { branch: "feat/x", head: "aaaaaaa1", remote: "origin", ref: "refs/heads/feat/x", pushUrl: "git@github.com:o/r.git", repo: "o/r", base: "main", title: "Mine" });
   });
 
   it("Create PR: a base the plan refuses says why in the confirm, and confirming pushes nothing", async () => {
@@ -393,6 +394,25 @@ describe("dispatchV3", () => {
     ask.onConfirm();
     await flush();
     expect(d.ipc.cleanupMerged).toHaveBeenCalledWith(["claude/work/a", "claude/work/h"]);
+  });
+
+  it("Clean up says what it removed and what it skipped, and why", async () => {
+    const d = deps([]);
+    d.ipc.cleanupMerged.mockResolvedValueOnce({ removed: ["/r.worktrees/a", "/r.worktrees/b"], skipped: [{ path: "/r.worktrees/c", reason: "a live session works in it (claude/work/c)" }] });
+    await dispatchV3({ type: "clean-up" }, d);
+    d.open.mock.calls.at(-1)![0].onConfirm();
+    await flush();
+    expect(d.toast).toHaveBeenLastCalledWith({ tone: "info", text: "Removed 2 worktrees. Skipped /r.worktrees/c: a live session works in it (claude/work/c)." });
+    d.ipc.cleanupMerged.mockResolvedValueOnce({ removed: [], skipped: [] });
+    await dispatchV3({ type: "clean-up" }, d);
+    d.open.mock.calls.at(-1)![0].onConfirm();
+    await flush();
+    expect(d.toast).toHaveBeenLastCalledWith({ tone: "info", text: "No merged worktree to remove." });
+    d.ipc.cleanupMerged.mockResolvedValueOnce({ removed: ["/r.worktrees/a"], skipped: [] });
+    await dispatchV3({ type: "clean-up" }, d);
+    d.open.mock.calls.at(-1)![0].onConfirm();
+    await flush();
+    expect(d.toast).toHaveBeenLastCalledWith({ tone: "ok", text: "Removed 1 worktree." });
   });
 
   it("accounts, library, settings, engine", async () => {

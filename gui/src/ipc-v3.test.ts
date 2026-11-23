@@ -38,12 +38,20 @@ describe("v3 IPC calls", () => {
     [() => ipc.hostStart("codex", "/r", undefined, { effort: "low" }), ["host", "start", "--provider", "codex", "--cwd", "/r", "--effort", "low", "--json"]],
     [() => ipc.hostEnd("k"), ["host", "end", "k", "--yes"]],
     [() => ipc.hostRespawn("k", { effort: "high" }), ["host", "respawn", "k", "--effort", "high"]],
-    [() => ipc.cleanupMerged(), ["sessions", "cleanup", "--yes"]],
+    [() => ipc.cleanupMerged(), ["sessions", "cleanup", "--yes", "--json"]],
+    [() => ipc.reviewAct("k", "stage", "a b.ts", "h1"), ["diff", "k", "stage", "--file", "a b.ts", "--hunk", "h1", "--json"]],
+    [() => ipc.reviewAct("k", "discard", "img.png", undefined, "f1"), ["diff", "k", "discard", "--file", "img.png", "--file-hash", "f1", "--json"]],
     [() => ipc.continueSession("k"), ["continue", "k"]],
     [() => ipc.continueSession("k", "fix lint"), ["continue", "k", "--text", "fix lint"]],
   ] as const)("%# runs the exact CLI line", async (call, args) => {
     await call();
     expect(create).toHaveBeenCalledWith("agent-switch", [...args]);
+  });
+
+  it("Create PR sends everything the confirm bound, push URL and PR repository included", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: JSON.stringify({ ok: true, url: "https://github.com/o/r/pull/1" }), stderr: "" });
+    await ipc.prCreate("k", { branch: "feat", head: "abc", remote: "origin", ref: "refs/heads/feat", pushUrl: "git@github.com:o/r.git", repo: "o/r", base: "main", title: "T" });
+    expect(create).toHaveBeenCalledWith("agent-switch", ["pr", "create", "k", "--base", "main", "--title", "T", "--expect-branch", "feat", "--expect-head", "abc", "--expect-remote", "origin", "--expect-ref", "refs/heads/feat", "--expect-push-url", "git@github.com:o/r.git", "--expect-repo", "o/r", "--yes", "--json"]);
   });
 
   it("a failing engine call reads as a stopped engine", async () => {

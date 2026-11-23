@@ -347,6 +347,12 @@ export interface ReviewFileJson {
   hunks: ReviewHunkJson[];
   /** Past the review's size budget: counted, its hunks left out. */
   omitted?: boolean;
+  /** The layers the file has changes in, also those without lines (a binary file, a pure rename). */
+  layers?: ReviewHunkJson["layer"][];
+  /** The file's state when read; a whole-file action carries it and is refused when the file moved. */
+  hash?: string;
+  /** Why the file has no lines to show. */
+  preview?: "binary" | "too large" | "link";
 }
 export type ReviewJson =
   | { unchanged: true; fingerprint: string }
@@ -390,7 +396,9 @@ async function cliCall(args: string[]): Promise<string> {
   return o.done ?? o.commit ?? "";
 }
 
-export const reviewAct = (key: string, action: "stage" | "unstage" | "discard", file: string, hunk?: string) => cliCall(["diff", key, action, "--file", file, ...(hunk ? ["--hunk", hunk] : []), "--json"]);
+/** One hunk (`hunk`) or the whole file; a whole-file action with `fileHash` is refused when the file changed since it was read. */
+export const reviewAct = (key: string, action: "stage" | "unstage" | "discard", file: string, hunk?: string, fileHash?: string) =>
+  cliCall(["diff", key, action, "--file", file, ...(hunk ? ["--hunk", hunk] : fileHash ? ["--file-hash", fileHash] : []), "--json"]);
 export const reviewUndo = (key: string) => cliCall(["diff", key, "undo", "--json"]);
 export interface McpAccountJson {
   key: string;
@@ -467,8 +475,14 @@ export async function hostRespawn(key: string, change: { model?: string; effort?
 }
 
 /** `sessions cleanup [<session>…] --yes`: remove the worktrees of merged sessions (dirty ones skipped); only those of `keys` when given. */
-export async function cleanupMerged(keys: string[] = []): Promise<void> {
-  await runCli(["sessions", "cleanup", ...keys, "--yes"]);
+/** What Clean up removed, and what it left with the reason. */
+export interface CleanupJson {
+  removed: string[];
+  skipped: { path: string; reason: string }[];
+}
+export async function cleanupMerged(keys: string[] = []): Promise<CleanupJson> {
+  const o = JSON.parse(await runCli(["sessions", "cleanup", ...keys, "--yes", "--json"])) as Partial<CleanupJson>;
+  return { removed: Array.isArray(o.removed) ? o.removed : [], skipped: Array.isArray(o.skipped) ? o.skipped : [] };
 }
 
 /** `pr create <session> --json` without `--yes`: what Create PR would do, or why it cannot. */
@@ -484,6 +498,10 @@ export interface PrPlanJson {
   remote: string;
   /** The full ref the push writes there (`refs/heads/…`). */
   ref: string | null;
+  /** The URL the push goes to, as git resolves it. */
+  pushUrl: string | null;
+  /** The GitHub repository the PR opens in (`owner/name`). */
+  repo: string | null;
   upstream: string | null;
   setsUpstream: boolean;
   /** Commits ahead of the base: what the PR holds. */
@@ -503,13 +521,15 @@ export interface PrConfirmJson {
   head: string;
   remote: string;
   ref: string;
+  pushUrl: string;
+  repo: string;
   base: string;
   title: string;
 }
 
 /** `pr create <session> --yes --json` bound to what was confirmed: push and create the PR; the PR's URL. */
 export async function prCreate(key: string, c: PrConfirmJson): Promise<string> {
-  const args = ["pr", "create", key, "--base", c.base, "--title", c.title, "--expect-branch", c.branch, "--expect-head", c.head, "--expect-remote", c.remote, "--expect-ref", c.ref, "--yes", "--json"];
+  const args = ["pr", "create", key, "--base", c.base, "--title", c.title, "--expect-branch", c.branch, "--expect-head", c.head, "--expect-remote", c.remote, "--expect-ref", c.ref, "--expect-push-url", c.pushUrl, "--expect-repo", c.repo, "--yes", "--json"];
   const out = await cli(args).execute();
   let o: { ok?: boolean; error?: string; url?: string } = {};
   try {
