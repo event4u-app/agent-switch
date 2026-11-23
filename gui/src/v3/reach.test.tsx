@@ -174,6 +174,25 @@ describe("v3.1 Review page", () => {
     expect(act).not.toHaveBeenCalledWith({ type: "review", key: "s1" });
   });
 
+  it("a Changes file row opens the Review tab at that file", () => {
+    const review = vi.fn((key: string, focus?: { file: string }) => <p>{`review of ${key} at ${focus?.file ?? "-"}`}</p>);
+    render(<V3Window data={{ ...data(), changes: () => [{ path: "src/a.ts", status: "M", added: 1, removed: 0 }] as never }} slots={{ ...slots, review }} act={vi.fn()} />);
+    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
+    fireEvent.click(screen.getByLabelText("Changes"));
+    fireEvent.click(screen.getByRole("button", { name: "Review src/a.ts" }));
+    expect(screen.getByText("review of s1 at src/a.ts")).toBeTruthy();
+  });
+
+  it("Summary's changed count opens the Review tab in one click", () => {
+    const review = vi.fn((key: string) => <p>{`review of ${key}`}</p>);
+    const summary = () => ({ next: null, pr: null, git: { branch: "b", worktree: false, changed: 1, ahead: 0, behind: 0 }, limit: null, more: { id: "i", host: "h", library: "l", children: "c" } });
+    render(<V3Window data={{ ...data(), summary, changes: () => [{ path: "a.ts", status: "M", added: 1, removed: 0 }] as never }} slots={{ ...slots, review }} act={vi.fn()} />);
+    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
+    if (!screen.queryByRole("complementary", { name: "Summary" })) fireEvent.click(screen.getByLabelText("Summary ⌘I"));
+    fireEvent.click(screen.getByRole("button", { name: "1 changed — open the review" }));
+    expect(screen.getByText("review of s1")).toBeTruthy();
+  });
+
   it("without a review slot, Review stays disabled", () => {
     render(<V3Window data={{ ...data(), changes: () => [{ path: "a.ts", status: "M", added: 1, removed: 0 }] as never }} slots={slots} act={vi.fn()} />);
     fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));

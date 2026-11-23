@@ -47,6 +47,23 @@ describe("Review", () => {
     expect(screen.queryByText("Ask Codex to review")).toBeNull();
   });
 
+  it("opened at a file: that file is selected and expanded; a new target moves the selection", () => {
+    const props = { title: "t", scope: "worktree" as const, files: FILES, shared: [], running: false, loading: false, error: null, undoable: false, on: on() };
+    const { rerender } = render(<Review {...props} focus={{ file: "notes.md", seq: 1 }} />);
+    expect(screen.getByRole("treeitem", { current: true }).textContent).toContain("notes.md");
+    fireEvent.click(screen.getByLabelText("Collapse src/engine/store.ts"));
+    rerender(<Review {...props} focus={{ file: "src/engine/store.ts", seq: 2 }} />);
+    expect(screen.getByRole("treeitem", { current: true }).textContent).toContain("store.ts");
+    expect(screen.getByLabelText("Collapse src/engine/store.ts")).toBeTruthy();
+  });
+
+  it("a file target that is not loaded yet is selected once the files arrive", () => {
+    const props = { title: "t", scope: "worktree" as const, shared: [], running: false, error: null, undoable: false, on: on(), focus: { file: "notes.md", seq: 1 } };
+    const { rerender } = render(<Review {...props} files={[]} loading />);
+    rerender(<Review {...props} files={FILES} loading={false} />);
+    expect(screen.getByRole("treeitem", { current: true }).textContent).toContain("notes.md");
+  });
+
   it("while a turn runs: the strip says so and every change action is locked with the reason", () => {
     render(<Review title="t" scope="worktree" files={FILES} shared={[]} running loading={false} error={null} undoable on={on()} />);
     expect(screen.getByText("A turn is running — stage and discard unlock when it ends")).toBeTruthy();

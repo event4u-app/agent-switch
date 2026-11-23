@@ -349,7 +349,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       />
       );
     },
-    review: (key) => {
+    review: (key, focus) => {
       const tab = chats.tabOf(key);
       const chat = tab ? chats.states.get(tab) : undefined;
       const row = byKey.get(key);
@@ -364,6 +364,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
           toast={(t) => s.toast({ tone: t.tone, text: t.text })}
           askMessage={(onSubmit) => setPrompt({ title: "Commit message", initial: "", onSubmit })}
           createPr={() => act({ type: "create-pr", key })}
+          focus={focus}
         />
       );
     },

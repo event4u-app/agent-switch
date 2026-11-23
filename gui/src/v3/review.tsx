@@ -3,7 +3,7 @@
  *  file tree with the Marker, per-file and per-hunk stage / discard (locked
  *  while a turn runs), line comments sent as the next prompt, Commit and PR. */
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, MessageSquare, SquareTerminal, TriangleAlert, Undo2 } from "lucide-react";
 
 import { cn } from "../lib/utils.js";
@@ -28,6 +28,12 @@ export interface ReviewActions {
   createPr: () => void;
   /** Codex only: ask the agent for a review of these changes. */
   agentReview?: () => void;
+}
+
+/** The file the review was opened at. `seq` changes on every open, so opening the same file again re-applies it. */
+export interface ReviewFocus {
+  file: string;
+  seq: number;
 }
 
 const LOCKED = "Unlocks when the turn ends";
@@ -152,7 +158,7 @@ function HunkView({ file, h, layout, running, on }: { file: string; h: ReviewHun
 function FileCard({ f, open, onToggle, layout, running, on }: { f: ReviewFileJson; open: boolean; onToggle: () => void; layout: "unified" | "split"; running: boolean; on: ReviewActions }) {
   const unstaged = f.hunks.some((h) => h.layer === "unstaged");
   return (
-    <div className="overflow-hidden rounded-[10px] border border-ac-line bg-ac-panel">
+    <div data-review-file={f.path} className="overflow-hidden rounded-[10px] border border-ac-line bg-ac-panel">
       <div className="flex items-center gap-2 border-b border-ac-line px-3 py-2">
         <button type="button" aria-expanded={open} aria-label={open ? `Collapse ${f.path}` : `Expand ${f.path}`} onClick={onToggle} className="text-ac-faint">
           {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
@@ -187,6 +193,7 @@ export function Review({
   error,
   undoable,
   on,
+  focus,
 }: {
   title: string;
   scope: ReviewScope;
@@ -197,6 +204,7 @@ export function Review({
   error: string | null;
   undoable: boolean;
   on: ReviewActions;
+  focus?: ReviewFocus;
 }) {
   const [layout, setLayout] = useState<"unified" | "split">("unified");
   const [current, setCurrent] = useState<string | null>(null);
@@ -204,6 +212,17 @@ export function Review({
   const staged = useMemo(() => files.filter((f) => f.hunks.some((h) => h.layer === "staged")).length, [files]);
   const dirs = [...new Set(files.map((f) => dirOf(f.path)))];
   const shown = current ?? files[0]?.path ?? null;
+  const cards = useRef<HTMLDivElement>(null);
+  const applied = useRef<number | null>(null);
+  // Applied once per open, as soon as the target is among the files read.
+  useEffect(() => {
+    if (!focus || applied.current === focus.seq || !files.some((f) => f.path === focus.file)) return;
+    applied.current = focus.seq;
+    setCurrent(focus.file);
+    setCollapsed((c) => (c.has(focus.file) ? new Set([...c].filter((x) => x !== focus.file)) : c));
+    const card = [...(cards.current?.children ?? [])].find((el) => (el as HTMLElement).dataset.reviewFile === focus.file);
+    card?.scrollIntoView?.({ block: "start" });
+  }, [focus, files]);
   return (
     <PageBody>
       <PageHeader
@@ -278,7 +297,7 @@ export function Review({
               </div>
             ))}
           </div>
-          <div className="space-y-3">
+          <div ref={cards} className="space-y-3">
             {[...files].sort((a, b) => (a.path === shown ? -1 : b.path === shown ? 1 : 0)).map((f) => (
               <FileCard
                 key={f.path}

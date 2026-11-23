@@ -210,6 +210,17 @@ describe("toV3Data", () => {
     expect(want.mock.calls).toEqual([["k"], ["other"]]);
   });
 
+  it("summary: the changed count is the length of the Changes list once it is read", () => {
+    const want = vi.fn();
+    const r = row("a1", { git: { toplevel: "/r", branch: "feat", headSha: "a", dirty: true, changed: 7, ahead: 0, behind: 0, upstream: null, remote: null, worktree: false, cwd: "/r", cwdSource: "hook" as const } } as never);
+    const files = [{ status: "M" as const, path: "a", added: 1, removed: 0 }, { status: "A" as const, path: "b", added: 2, removed: 0 }];
+    const read = toV3Data(vmWith([account("work")], [r]), emptyFeeds(), env({ wantChanges: want, changes: new Map([["claude/work/a1", files]]) }));
+    expect(read.summary("claude/work/a1")!.git!.changed).toBe(read.changes("claude/work/a1").length);
+    expect(want).toHaveBeenCalledWith("claude/work/a1");
+    const unread = toV3Data(vmWith([account("work")], [r]), emptyFeeds(), env());
+    expect(unread.summary("claude/work/a1")!.git!.changed).toBe(7);
+  });
+
   it("Open-in: agent apps never reach the settings list", () => {
     const feeds = { ...emptyFeeds(), openTargets: { default: "vscode", perRepo: { "/r": "finder" }, lastUsed: "finder", targets: [{ target: "vscode", label: "VS Code", kind: "editor" as const, installed: true }], terminal: "iterm", terminals: [{ id: "iterm", name: "iTerm2", installed: true }] } };
     const d = toV3Data(emptyViewModel(NOW), feeds, env({ focusTerminal: false }));

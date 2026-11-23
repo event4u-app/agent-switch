@@ -19,6 +19,7 @@ import { ToolsPage } from "../tools.js";
 import { ExternalBody, HostedTerminal } from "../workbench.js";
 import type { LimitAccount } from "../limits.js";
 import type { RowSession } from "../sessions.js";
+import type { ChangedFile } from "../panels.js";
 import type { TermBackend } from "../../terminal.js";
 import { TERMINALS } from "./terminal.js";
 import { Bubble } from "../chat.js";
@@ -76,6 +77,15 @@ const BAR: Record<string, { model: string; thinking: string; ctx: number; hosted
   "claude/personal/s-notes": { model: "Sonnet 5.5", thinking: "Low", ctx: 12, hosted: true, acct: "personal", color: "pink", five: 12, protect: 98 },
   "claude/personal/s-checkout": { model: "Opus 5.5", thinking: "High", ctx: 71, hosted: true, acct: "personal", color: "pink", five: 12, protect: 98 },
 };
+
+/** The Changes window's list; Summary's count is its length, as in the app. */
+const CHANGES: ChangedFile[] = [
+  { status: "M", path: "src/engine/ingest.ts", added: 38, removed: 6 },
+  { status: "A", path: "src/engine/store.ts", added: 112, removed: 0 },
+  { status: "A", path: "src/engine/schema.sql", added: 64, removed: 0 },
+  { status: "M", path: "src/engine/projection.ts", added: 21, removed: 4 },
+  { status: "A", path: "tests/engine/ingest.test.ts", added: 77, removed: 0 },
+];
 
 const iso = (ago: number) => new Date(NOW - ago).toISOString();
 
@@ -186,15 +196,9 @@ export function makeData(o: { theme: string; accent: Accent; health?: string; aw
   },
   summary: (key) =>
     key.endsWith("s-checkout")
-      ? { next: { text: "CI fails on e2e and the branch conflicts with main. One prompt: rebase, then fix e2e (log attached).", action: "Send to agent" }, pr: { number: 311, url: "#", ci: "FAILURE", lifecycle: "OPEN", mergeable: "CONFLICTING", review: "CHANGES_REQUESTED", failingChecks: ["e2e (chromium)"] }, git: { branch: "a11y/checkout", worktree: false, changed: 12, ahead: 5, behind: 9 }, limit: null, more: { id: "claude:personal/7a1c…e02", host: "tmux · as-personal-2", library: "not pinned", children: "1 related session" } }
-      : { next: { text: "#142 needs a review; you'll hear when CI is done.", action: "Request review" }, pr: { number: 142, url: "#", ci: "PENDING", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "REVIEW_REQUIRED", failingChecks: [] }, git: { branch: "feat/event-store", worktree: true, changed: 7, ahead: 3, behind: 0 }, limit: null, more: { id: "claude:work/9f2c…e41a", host: "tmux · as-work-3", library: "pinned · in vault", children: "3 subagents" } },
-  changes: () => [
-    { status: "M", path: "src/engine/ingest.ts", added: 38, removed: 6 },
-    { status: "A", path: "src/engine/store.ts", added: 112, removed: 0 },
-    { status: "A", path: "src/engine/schema.sql", added: 64, removed: 0 },
-    { status: "M", path: "src/engine/projection.ts", added: 21, removed: 4 },
-    { status: "A", path: "tests/engine/ingest.test.ts", added: 77, removed: 0 },
-  ],
+      ? { next: { text: "CI fails on e2e and the branch conflicts with main. One prompt: rebase, then fix e2e (log attached).", action: "Send to agent" }, pr: { number: 311, url: "#", ci: "FAILURE", lifecycle: "OPEN", mergeable: "CONFLICTING", review: "CHANGES_REQUESTED", failingChecks: ["e2e (chromium)"] }, git: { branch: "a11y/checkout", worktree: false, changed: CHANGES.length, ahead: 5, behind: 9 }, limit: null, more: { id: "claude:personal/7a1c…e02", host: "tmux · as-personal-2", library: "not pinned", children: "1 related session" } }
+      : { next: { text: "#142 needs a review; you'll hear when CI is done.", action: "Request review" }, pr: { number: 142, url: "#", ci: "PENDING", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "REVIEW_REQUIRED", failingChecks: [] }, git: { branch: "feat/event-store", worktree: true, changed: CHANGES.length, ahead: 3, behind: 0 }, limit: null, more: { id: "claude:work/9f2c…e41a", host: "tmux · as-work-3", library: "pinned · in vault", children: "3 subagents" } },
+  changes: () => CHANGES,
   next: (key) => (key.endsWith("s-checkout") ? { text: "CI fails on e2e and the branch conflicts with main. One prompt: rebase, then fix e2e (log attached).", action: "Send to agent" } : null),
   };
 }

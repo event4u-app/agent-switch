@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import * as ipc from "../../ipc.js";
-import { Review } from "../review.js";
+import { Review, type ReviewFocus } from "../review.js";
 
 export const REVIEW_POLL_MS = 5000;
 
@@ -19,10 +19,12 @@ export interface ReviewHostProps {
   toast: (t: { tone: "ok" | "alert" | "info"; text: string }) => void;
   askMessage: (onSubmit: (message: string) => void) => void;
   createPr: () => void;
+  /** The file the review was opened at. */
+  focus?: ReviewFocus;
   io?: Pick<typeof ipc, "sessionReview" | "reviewAct" | "reviewUndo" | "reviewCommit">;
 }
 
-export function ReviewHost({ sessionKey, title, running, comment, agentReview, toast, askMessage, createPr, io = ipc }: ReviewHostProps) {
+export function ReviewHost({ sessionKey, title, running, comment, agentReview, toast, askMessage, createPr, focus, io = ipc }: ReviewHostProps) {
   const [scope, setScope] = useState<ipc.ReviewScope>("worktree");
   const [data, setData] = useState<{ files: ipc.ReviewFileJson[]; shared: string[] }>({ files: [], shared: [] });
   const [loading, setLoading] = useState(true);
@@ -71,6 +73,7 @@ export function ReviewHost({ sessionKey, title, running, comment, agentReview, t
       loading={loading}
       error={error}
       undoable={undoable}
+      focus={focus}
       on={{
         setScope,
         stage: (file, hunk) => void run(io.reviewAct(sessionKey, "stage", file, hunk)),
