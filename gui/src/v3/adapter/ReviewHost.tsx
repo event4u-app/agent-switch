@@ -127,7 +127,7 @@ export function ReviewHost({ sessionKey, title, running, comment, agentReview, t
         undo: guard(() => void run(io.reviewUndo(sessionKey), () => setUndoable(false))),
         comment: comment && guard(comment),
         commit: guard(() => askMessage((message) => void run(io.reviewCommit(sessionKey, message).then((sha) => `committed ${sha}`)))),
-        createPr: guard(createPr),
+        createPr: createPr && guard(createPr),
         agentReview: agentReview && guard(agentReview),
       }}
     />
