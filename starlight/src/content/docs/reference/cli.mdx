@@ -458,7 +458,7 @@ of your enabled Claude and Codex accounts about every 5 minutes.
 | `activity [--limit N]` | What agent-switch itself did, and why (newest 2000 kept). |
 | `check-update` / `check-updates` | Compare your version with the latest GitHub release. |
 | `update` / `upgrade` | Update through npm, then restart the background service on the new version. |
-| `tooling` | Readout of related tools (`agent-config`, `rtk`, `claude`, `codex`, `agy`). No network. |
+| `tooling` | Readout of related tools (`agent-config`, `rtk`, `claude`, `codex`, `agy`). No network. Whether the `rtk` found is Token Killer comes from agent-config (`agent-config rtk:detect --json`) when it is installed, else from the output of `rtk gain`. |
 | `tooling install\|upgrade <tool>` | Install or upgrade one of them. Refused for `agy`. |
 | `tooling notes [<tool>] [--latest]` | Release notes newer than your version (fetched from GitHub). |
 | `list --format cswap-v1` / `--list --json` | Claude accounts in the format CodexBar and ccdeck read. See [CodexBar & ccdeck](/agent-switch/guides/codexbar-ccdeck/). |

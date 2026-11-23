@@ -57,6 +57,7 @@ saved.
 | D15 | The shared token source is vendored (`gui/design-tokens/event4u-agent-tokens.json`, verbatim from agent-config `tokens/` at e494248); `scripts/design-tokens.mjs` generates `gui/design-tokens/as-tokens.css` from it and `--check` compares generated against the vendored copy; the file is not pasted over `gui/src/index.css`. The embed `accent` is a name from the set's `brand` group (today `orange`), never a colour value | the source lives only in the agent-config repository, its npm package does not ship `tokens/`, so CI cannot read it; replacing the GUI palette is a visual change the step does not ask for; a name keeps colour values out of the URL | agent-config publishes the token file, or the owner wants the shared palette in the GUI |
 | D16 | Quiet hours hold only OS/desktop notifications (the service's and the app's); the bell list, the in-window toast and the desktop pet still get the notice, and nothing is replayed when the window ends; the window is local time, `start` inclusive, `end` exclusive, may run over midnight, and an unreadable setting counts as no window | the step holds "OS notifications" and keeps the in-app list; a burst of stale notices at the end of the night is noise, and a failed read must not swallow every notice | the owner wants the pet or the toast quiet too, or a digest after the window |
 | D17 | A profile's own agent-config root is explicit opt-in per Claude profile: the marker `own-agent-config` in the profile dir (`agent-switch agent-config-root <name> own\|global\|status`, the account sheet's switch). Off (the default): the GUI's server gets no `--config-root` and sessions get no `EVENT4U_CONFIG_HOME` (an inherited one stays); on: both get `<profile>/agent-config`. Every Claude launch path (run, `--tmux`, host, in-place handoff, chat bridge) and `ac.rs` read the same marker, pinned by `tests/fixtures/agent-config-root.json`. Toggling writes only the marker; running sessions keep their launch-time root. Supersedes D14's open gap ("sessions do not get the root yet") | AI council 2026-11-23 (both seats, converged): D14 started every active profile on an empty root (no council config, no keys) while its sessions still read the global one, so settings saved in the GUI silently did not apply; a directory's existence is not consent, and copying keys duplicates secrets | the owner wants per-key inheritance from the global root, or isolation on by default |
+| D18 | "PARITY journeys" are PARITY.md's own claims — each classic export's callers, each engine's home, each deleted file, and each gap-closed journey, which now names the test that drives it; exports added for the v3 window are not parity items, and journeys that need the OS are listed as checked by hand | PARITY.md has no journey list of its own and its export table covers the classic window only; requiring every later export would turn a parity record into an API index | the owner wants PARITY to cover the v3 window too |
 
 ## Phase 1 — A wrong account is never saved
 
@@ -173,9 +174,10 @@ saved.
 
 ## Phase 4 — The embedded agent-config, per profile
 
-- [ ] **4.1 rtk detection by delegation.** Use agent-config's published rtk
+- [x] **4.1 rtk detection by delegation.** Use agent-config's published rtk
       detection contract; keep the output-signature probe only as the fallback
       when agent-config is absent. verify: `tooling` tests for both paths.
+      done: `src/tooling.ts` `delegatedRtkDetection` (`agent-config rtk:detect --json`, contract 1); `tests/tooling.test.ts` › "with agent-config on PATH, rtk's identity comes from …", "agent-config's verdict holds for the collision and for an absent rtk" (seen red first), "an agent-config without the contract … falls back", "without agent-config, rtk is probed …".
       <!-- from: road-to-deferred-followups P3.1 -->
 - [x] **4.2 Per-profile agent-config settings.** Start the embedded agent-config
       server with the active profile's config root (`--config-root` /
@@ -205,9 +207,10 @@ saved.
 
 ## Phase 6 — Release hardening that runs on one machine
 
-- [ ] **6.1 PARITY journeys as tests.** `gui/src/redesign/PARITY.md` journeys
+- [x] **6.1 PARITY journeys as tests.** `gui/src/redesign/PARITY.md` journeys
       become executable tests; axe checks on the main views; the tray and the main
       window read one timestamped cache.
+      done: `gui/src/redesign/parity.test.ts` (red first on three drifted rows, D18); `gui/src/a11y.test.tsx` (axe-core 4.14.0 over every redesign screen, both trays, the v3 window; red first on the account rows' nested copy control, fixed; the v3 tab-strip finding is known, see 6.6); `vm/slow-cache.test.ts` › "the tray and the main window read one timestamped cache", `engines.test.ts` › "the tray reads what the main window fetched…" (seen red with a per-window key).
       <!-- from: road-to-session-orchestration P6.4 -->
 - [ ] **6.2 Versioned, scrubbed output shapes.** `doctor`, `auth-status` and
       `activity` JSON carry a shape version and are tested with fake tokens that
@@ -240,6 +243,13 @@ saved.
       verify: the test filtered and run 20 times in a row on Linux without a
       failure, and the next CI runs green on `ubuntu-latest · node 20` without a rerun.
       <!-- from: CI flake seen 2026-11-13, tracked like 6.4 -->
+- [ ] **6.6 Real ARIA tabs in the v3 tab strip.** axe reports `nested-interactive`
+      on `gui/src/v3/workbench.tsx`: each `role="tab"` holds its close button, and
+      a close button cannot simply move beside the tab either (a tablist may own
+      only tabs). Make the tabs focusable with arrow-key movement and a key that
+      closes the focused tab, so the close buttons can leave the tablist.
+      verify: `gui/src/a11y.test.tsx` › "v3 window" with `V3_TAB_CLOSE` removed.
+      <!-- from: 6.1 axe run, 2026-11-23 -->
 
 ## Phase 7 — Updates that can be stopped and undone
 
