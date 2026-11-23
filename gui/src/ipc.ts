@@ -492,6 +492,10 @@ export interface PrPlanJson {
   remote: string;
   /** The full ref the push writes there (`refs/heads/…`). */
   ref: string | null;
+  /** The URL the push goes to, as git resolves it. */
+  pushUrl: string | null;
+  /** The GitHub repository the PR opens in (`owner/name`). */
+  repo: string | null;
   upstream: string | null;
   setsUpstream: boolean;
   /** Commits ahead of the base: what the PR holds. */
@@ -511,13 +515,15 @@ export interface PrConfirmJson {
   head: string;
   remote: string;
   ref: string;
+  pushUrl: string;
+  repo: string;
   base: string;
   title: string;
 }
 
 /** `pr create <session> --yes --json` bound to what was confirmed: push and create the PR; the PR's URL. */
 export async function prCreate(key: string, c: PrConfirmJson): Promise<string> {
-  const args = ["pr", "create", key, "--base", c.base, "--title", c.title, "--expect-branch", c.branch, "--expect-head", c.head, "--expect-remote", c.remote, "--expect-ref", c.ref, "--yes", "--json"];
+  const args = ["pr", "create", key, "--base", c.base, "--title", c.title, "--expect-branch", c.branch, "--expect-head", c.head, "--expect-remote", c.remote, "--expect-ref", c.ref, "--expect-push-url", c.pushUrl, "--expect-repo", c.repo, "--yes", "--json"];
   const out = await cli(args).execute();
   let o: { ok?: boolean; error?: string; url?: string } = {};
   try {

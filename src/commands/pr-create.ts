@@ -1,11 +1,13 @@
 /**
  * `agent-switch pr create <session> [--base B] [--title T] [--yes] [--json]
- * [--expect-branch B --expect-head SHA --expect-remote R --expect-ref REF]` —
+ * [--expect-branch B --expect-head SHA --expect-remote R --expect-ref REF
+ * --expect-push-url URL --expect-repo OWNER/NAME]` —
  * push a session's branch and open its pull request with the GitHub CLI.
  * Without --yes it only says what it would do: the commit, where it goes (the
- * full destination ref, as `git push` would send it), the base, the title and
- * what stays out. With the --expect-* values of that preview, --yes refuses when
- * any of them changed, so what runs is what was confirmed. Everything it can
+ * full destination ref, as `git push` would send it, and the URL the push goes
+ * to), the base, the title and what stays out. With the --expect-* values of
+ * that preview, --yes refuses when any of them changed, then pushes to exactly
+ * that URL and opens the PR in exactly that repository. Everything it can
  * know before a push is checked before the push. Every git and gh argument is
  * passed as argv.
  */
@@ -42,6 +44,10 @@ export interface PrConfirmed {
   head: string;
   remote: string;
   ref: string;
+  /** The URL the push goes to (`git remote get-url --push`, a pushurl and URL rewrites applied). */
+  pushUrl: string;
+  /** The GitHub repository the PR opens in (`owner/name`). */
+  repo: string;
 }
 
 export interface PrPlan {
@@ -57,6 +63,10 @@ export interface PrPlan {
   remote: string;
   /** The full ref the push writes on `remote` (`refs/heads/…`), as push.default resolves it. */
   ref: string | null;
+  /** The URL the push goes to: `remote`'s push URL, as git resolves it. */
+  pushUrl: string | null;
+  /** The GitHub repository the PR opens in (`owner/name`), from the base remote. */
+  repo: string | null;
   /** The branch's configured upstream (`origin/feat`), null when it has none. */
   upstream: string | null;
   /** True when the branch has no upstream and the push sets it to `remote`/`ref`. */
@@ -91,7 +101,7 @@ function defaultBranch(cwd: string, run: PrRunner, remote: string): string | nul
 }
 
 /** What `pr create` would do in `cwd`. */
-export function prPlan(cwd: string, run: PrRunner = runPr, opts: { base?: string; title?: string } = {}): PrPlan & { repo: string | null; prHead: string | null } {
+export function prPlan(cwd: string, run: PrRunner = runPr, opts: { base?: string; title?: string } = {}): PrPlan & { prHead: string | null } {
   const cfg = (key: string) => line(run("git", cwd, ["config", "--get", key]).out);
   const b = run("git", cwd, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
   const branch = b.ok && line(b.out) ? line(b.out) : null;
@@ -113,17 +123,22 @@ export function prPlan(cwd: string, run: PrRunner = runPr, opts: { base?: string
     .sort();
   // A tracked branch under another name is where this one merges; otherwise the remote's main line.
   const base = opts.base || (upMerge && upRemote === baseRemote && short(upMerge) !== name ? short(upMerge) : defaultBranch(cwd, run, baseRemote));
-  const baseRef = base ? [`refs/remotes/${baseRemote}/${base}`, `refs/heads/${base}`].find((r) => run("git", cwd, ["rev-parse", "--verify", "--quiet", r]).ok) ?? null : null;
+  // Only the remote's branch: a base that exists here alone is not one a PR can go into.
+  const baseRef = base && run("git", cwd, ["rev-parse", "--verify", "--quiet", `refs/remotes/${baseRemote}/${base}`]).ok ? `refs/remotes/${baseRemote}/${base}` : null;
   const count = baseRef && head ? run("git", cwd, ["rev-list", "--count", `${baseRef}..${head}`]) : null;
   const ahead = count?.ok ? Number(line(count.out)) : null;
   const first = baseRef && head && ahead ? line(run("git", cwd, ["log", "--reverse", "--format=%s", `${baseRef}..${head}`]).out) : "";
   const title = opts.title?.trim() || first;
   const uncommitted = run("git", cwd, ["status", "--porcelain=v1"]).out.split("\n").filter(Boolean).length;
   const baseRepo = remoteRepo(cfg(`remote.${baseRemote}.url`));
-  const pushRepo = remoteRepo(cfg(`remote.${remote}.url`));
+  // Where the push really goes: a pushurl wins over the URL, and git applies its URL rewrites.
+  const pushRaw = cfg(`remote.${remote}.pushurl`) || cfg(`remote.${remote}.url`);
+  const pushRepo = remoteRepo(pushRaw);
+  const pu = run("git", cwd, ["remote", "get-url", "--push", remote]);
+  const pushUrl = pu.ok && line(pu.out) ? line(pu.out) : null;
   const repo = baseRepo ? slug(baseRepo) : null;
   const prHead = name && pushRepo && baseRepo ? (pushRepo.owner !== baseRepo.owner || pushRepo.host !== baseRepo.host ? `${pushRepo.owner}:${name}` : name) : name;
-  const plan = { branch, head, base, baseRemote, bases, remote, ref, upstream, setsUpstream: !upMerge, ahead, title, uncommitted, existing: null as PrPlan["existing"], problem: null as PrPlan["problem"], repo, prHead };
+  const plan = { branch, head, base, baseRemote, bases, remote, ref, pushUrl, repo, upstream, setsUpstream: !upMerge, ahead, title, uncommitted, existing: null as PrPlan["existing"], problem: null as PrPlan["problem"], prHead };
   const problem = (message: string, fix: string) => ({ ...plan, problem: { message, fix } });
   if (!branch) return problem("HEAD is on no branch", "check out a branch first");
   if (!head) return problem(`${branch} has no commits`, "commit the changes first");
@@ -132,7 +147,11 @@ export function prPlan(cwd: string, run: PrRunner = runPr, opts: { base?: string
   if (name === base && remote === baseRemote) return problem(`the session is on ${base}, the branch a PR would go into`, "start a branch for the change first");
   if (!baseRef) return problem(`${base} is not a branch on ${baseRemote}`, `git fetch ${baseRemote}, or pick another base`);
   if (ahead === 0) return problem(`there are no commits ahead of ${base}`, "commit the changes first, then create the PR");
-  for (const [r, parsed] of [[baseRemote, baseRepo], [remote, pushRepo]] as const) if (!parsed) return problem(`the remote ${r} is not on GitHub (${cfg(`remote.${r}.url`) || "no URL"})`, "Create PR works with GitHub remotes; open the PR on your host's site");
+  for (const [r, parsed, url] of [[baseRemote, baseRepo, cfg(`remote.${baseRemote}.url`)], [remote, pushRepo, pushRaw]] as const) if (!parsed) return problem(`the remote ${r} is not on GitHub (${url || "no URL"})`, "Create PR works with GitHub remotes; open the PR on your host's site");
+  // The tracking ref can outlive the branch: ask the remote itself, before anything is pushed.
+  const there = run("git", cwd, ["ls-remote", "--heads", baseRemote, `refs/heads/${base}`]);
+  if (!there.ok) return problem(`could not check ${baseRemote} for ${base}: ${line(there.err) || "no reason given"}`, "check the connection, then try again");
+  if (!there.out.split("\n").some((l) => l.trim().endsWith(`\trefs/heads/${base}`))) return problem(`${baseRemote} no longer has ${base}`, `git fetch --prune ${baseRemote}, or pick another base`);
   const gh = run("gh", cwd, ["--version"]);
   if (gh.missing || !gh.ok) return problem("the GitHub CLI (gh) is not installed", "install gh: https://cli.github.com");
   for (const host of new Set([baseRepo!.host, pushRepo!.host])) {
@@ -160,8 +179,8 @@ const urlIn = (s: string) =>
 /** Check what was confirmed against the plan now, push HEAD's commit to the destination ref (setting the upstream when there is none), then `gh pr create`. Returns the PR's URL. */
 export function prCreate(cwd: string, run: PrRunner = runPr, opts: { base?: string; title?: string; expect?: Partial<PrConfirmed> } = {}): { url: string; plan: PrPlan } {
   const plan = prPlan(cwd, run, opts);
-  const labels: Record<keyof PrConfirmed, string> = { branch: "the branch", head: "HEAD", remote: "the remote", ref: "the destination" };
-  for (const k of ["branch", "head", "remote", "ref"] as const) {
+  const labels: Record<keyof PrConfirmed, string> = { branch: "the branch", head: "HEAD", remote: "the remote", ref: "the destination", pushUrl: "the push URL", repo: "the PR repository" };
+  for (const k of ["branch", "head", "remote", "ref", "pushUrl", "repo"] as const) {
     const was = opts.expect?.[k];
     if (was === undefined || was === plan[k]) continue;
     const show = (v: string | null) => (k === "head" && v ? v.slice(0, 7) : (v ?? "none"));
@@ -169,8 +188,10 @@ export function prCreate(cwd: string, run: PrRunner = runPr, opts: { base?: stri
   }
   if (plan.problem) throw new PrRefused(`${plan.problem.message} — ${plan.problem.fix}`, plan.existing?.url);
   const branch = plan.branch!;
-  const push = run("git", cwd, ["push", plan.remote, `${plan.head}:${plan.ref}`]);
+  // To the URL itself, not the remote's name: what was confirmed is where it goes.
+  const push = run("git", cwd, ["push", plan.pushUrl!, `${plan.head}:${plan.ref}`]);
   if (!push.ok) throw new PrRefused(`git push failed: ${line(push.err) || "no reason given"}`);
+  if (plan.ref!.startsWith("refs/heads/")) run("git", cwd, ["update-ref", `refs/remotes/${plan.remote}/${short(plan.ref!)}`, plan.head!]);
   if (plan.setsUpstream) {
     run("git", cwd, ["config", `branch.${branch}.remote`, plan.remote]);
     run("git", cwd, ["config", `branch.${branch}.merge`, plan.ref!]);
@@ -184,22 +205,22 @@ export function prCreate(cwd: string, run: PrRunner = runPr, opts: { base?: stri
 export function prPreview(p: PrPlan): string[] {
   const n = p.ahead ?? 0;
   const out = [
-    `Would push ${p.head?.slice(0, 7)} (${p.branch}, ${n} commit${n === 1 ? "" : "s"} ahead of ${p.base}) to ${p.remote} as ${p.ref}${p.setsUpstream ? ", setting it as the upstream" : ""}, and open a PR into ${p.base}: "${p.title}".`,
+    `Would push ${p.head?.slice(0, 7)} (${p.branch}, ${n} commit${n === 1 ? "" : "s"} ahead of ${p.base}) to ${p.remote} (${p.pushUrl}) as ${p.ref}${p.setsUpstream ? ", setting it as the upstream" : ""}, and open a PR into ${p.repo} ${p.base}: "${p.title}".`,
   ];
   if (p.uncommitted) out.push(`${p.uncommitted} uncommitted ${p.uncommitted === 1 ? "file stays" : "files stay"} out of it.`);
-  out.push(`Run again with --yes to do it (add --expect-branch ${p.branch} --expect-head ${p.head} --expect-remote ${p.remote} --expect-ref ${p.ref} to refuse if any of this changes).`);
+  out.push(`Run again with --yes to do it (add --expect-branch ${p.branch} --expect-head ${p.head} --expect-remote ${p.remote} --expect-ref ${p.ref} --expect-push-url ${p.pushUrl} --expect-repo ${p.repo} to refuse if any of this changes).`);
   return out;
 }
 
 export function cmdPrCreate(arg: string | undefined, flags: Record<string, string | boolean>): void {
-  if (!arg) die("usage: agent-switch pr create <session> [--base B] [--title T] [--yes] [--json] [--expect-branch B --expect-head SHA --expect-remote R --expect-ref REF]");
+  if (!arg) die("usage: agent-switch pr create <session> [--base B] [--title T] [--yes] [--json] [--expect-branch B --expect-head SHA --expect-remote R --expect-ref REF --expect-push-url URL --expect-repo OWNER/NAME]");
   const cwd = target(arg).cwd;
   const str = (k: string) => (typeof flags[k] === "string" ? (flags[k] as string) : undefined);
-  const expect: Partial<PrConfirmed> = { branch: str("expect-branch"), head: str("expect-head"), remote: str("expect-remote"), ref: str("expect-ref") };
+  const expect: Partial<PrConfirmed> = { branch: str("expect-branch"), head: str("expect-head"), remote: str("expect-remote"), ref: str("expect-ref"), pushUrl: str("expect-push-url"), repo: str("expect-repo") };
   const opts = { base: str("base"), title: str("title"), expect };
   const json = !!flags.json;
   if (!flags.yes) {
-    const { repo: _repo, prHead: _head, ...p } = prPlan(cwd, runPr, opts);
+    const { prHead: _head, ...p } = prPlan(cwd, runPr, opts);
     if (json) return void console.log(JSON.stringify(p));
     if (p.problem) die(`${p.problem.message}. Fix: ${p.problem.fix}`);
     return void console.log(prPreview(p).join("\n"));

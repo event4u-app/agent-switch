@@ -54,7 +54,18 @@ export function PrConfirm({ initial, state, replan }: { initial: PrPlanJson; sta
     <div className="flex flex-col gap-3 text-[13px] text-ac-soft">
       <p className="[text-wrap:pretty]">
         Pushes <span className="font-ac-mono text-ac-text">{plan.head?.slice(0, 7)}</span> ({plan.branch}, {n} commit{n === 1 ? "" : "s"}) to {plan.remote} as <span className="font-ac-mono text-ac-text">{plan.ref}</span>
-        {plan.setsUpstream ? " (sets its upstream)" : ""}, then opens a pull request with gh.
+        {plan.setsUpstream ? " (sets its upstream)" : ""}
+        {plan.pushUrl ? (
+          <>
+            {" "}at <span className="font-ac-mono text-ac-text">{plan.pushUrl}</span>
+          </>
+        ) : null}
+        , then opens a pull request{plan.repo ? (
+          <>
+            {" "}in <span className="font-ac-mono text-ac-text">{plan.repo}</span>
+          </>
+        ) : null}{" "}
+        with gh.
       </p>
       <div className="flex flex-col gap-1">
         <span className="text-xs text-ac-muted">Into, on {plan.baseRemote}</span>

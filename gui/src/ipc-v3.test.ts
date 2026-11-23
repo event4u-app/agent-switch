@@ -48,6 +48,12 @@ describe("v3 IPC calls", () => {
     expect(create).toHaveBeenCalledWith("agent-switch", [...args]);
   });
 
+  it("Create PR sends everything the confirm bound, push URL and PR repository included", async () => {
+    execute.mockResolvedValue({ code: 0, stdout: JSON.stringify({ ok: true, url: "https://github.com/o/r/pull/1" }), stderr: "" });
+    await ipc.prCreate("k", { branch: "feat", head: "abc", remote: "origin", ref: "refs/heads/feat", pushUrl: "git@github.com:o/r.git", repo: "o/r", base: "main", title: "T" });
+    expect(create).toHaveBeenCalledWith("agent-switch", ["pr", "create", "k", "--base", "main", "--title", "T", "--expect-branch", "feat", "--expect-head", "abc", "--expect-remote", "origin", "--expect-ref", "refs/heads/feat", "--expect-push-url", "git@github.com:o/r.git", "--expect-repo", "o/r", "--yes", "--json"]);
+  });
+
   it("a failing engine call reads as a stopped engine", async () => {
     execute.mockResolvedValue({ code: 1, stdout: "", stderr: "boom" });
     expect(await ipc.engineStatus()).toEqual({ running: false, reason: "boom", hostedRunning: 0 });

@@ -31,13 +31,20 @@ type Gh = (args: string[]) => ReturnType<PrRunner>;
 const okGh: Gh = (a) =>
   a[0] === "pr" && a[1] === "create" ? { ok: true, out: "https://github.com/o/r/pull/7\n", err: "" } : a[0] === "pr" && a[1] === "list" ? { ok: true, out: "[]\n", err: "" } : { ok: true, out: "", err: "" };
 
-/** Real git for reads; push (unless `realPush`) and every gh call are recorded and answered here, never run. */
-function runner(gh: Gh = okGh, realPush = false) {
+/** Real git for reads; push (unless `realPush`), ls-remote and every gh call are recorded and answered here, never run.
+ *  The remote's branches are its tracking refs here, unless `remoteHeads` says what the remote has. */
+function runner(gh: Gh = okGh, realPush = false, remoteHeads?: string[]) {
   const calls: string[][] = [];
   const run: PrRunner = (cmd, cwd, args) => {
     calls.push([cmd, ...args]);
     if (cmd === "gh") return gh(args);
     if (args[0] === "push" && !realPush) return { ok: true, out: "", err: "" };
+    if (args[0] === "ls-remote") {
+      const [remote, ref] = args.slice(-2);
+      const name = ref.replace(/^refs\/heads\//, "");
+      const has = remoteHeads ? remoteHeads.includes(name) : spawnSync("git", ["-C", cwd, "rev-parse", "--verify", "--quiet", `refs/remotes/${remote}/${name}`]).status === 0;
+      return { ok: true, out: has ? `0000000000000000000000000000000000000000\t${ref}\n` : "", err: "" };
+    }
     const r = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8" });
     return { ok: r.status === 0, out: r.stdout ?? "", err: (r.stderr ?? "").trim() };
   };
@@ -117,7 +124,7 @@ test("create pushes the confirmed commit to the full destination ref, sets the u
   const res = prCreate(r, run, { expect: { branch: "feat", head, remote: "origin", ref: "refs/heads/feat" } });
   assert.equal(res.url, "https://github.com/o/r/pull/7");
   const push = calls.find((c) => c[1] === "push");
-  assert.deepEqual(push, ["git", "push", "origin", `${head}:refs/heads/feat`]);
+  assert.deepEqual(push, ["git", "push", "https://github.com/o/r.git", `${head}:refs/heads/feat`]);
   assert.equal(git(r, "config", "branch.feat.remote"), "origin");
   assert.equal(git(r, "config", "branch.feat.merge"), "refs/heads/feat");
   const create = calls.find((c) => c[0] === "gh" && c[1] === "pr" && c[2] === "create");
@@ -155,7 +162,7 @@ test("an upstream under another name is the merge target, not the push destinati
   const p = prPlan(r, run);
   assert.deepEqual({ ref: p.ref, base: p.base, setsUpstream: p.setsUpstream }, { ref: "refs/heads/feat", base: "release-fix", setsUpstream: false });
   prCreate(r, run, {});
-  assert.deepEqual(calls.find((c) => c[1] === "push"), ["git", "push", "origin", `${git(r, "rev-parse", "HEAD")}:refs/heads/feat`]);
+  assert.deepEqual(calls.find((c) => c[1] === "push"), ["git", "push", "https://github.com/o/r.git", `${git(r, "rev-parse", "HEAD")}:refs/heads/feat`]);
   assert.equal(git(r, "config", "branch.feat.merge"), "refs/heads/release-fix", "the configured upstream is left alone");
 });
 
@@ -169,7 +176,7 @@ test("push.default upstream pushes to the upstream's ref and the PR head is that
   const p = prPlan(r, run);
   assert.deepEqual({ ref: p.ref, base: p.base }, { ref: "refs/heads/release-fix", base: "main" });
   prCreate(r, run, {});
-  assert.deepEqual(calls.find((c) => c[1] === "push"), ["git", "push", "origin", `${git(r, "rev-parse", "HEAD")}:refs/heads/release-fix`]);
+  assert.deepEqual(calls.find((c) => c[1] === "push"), ["git", "push", "https://github.com/o/r.git", `${git(r, "rev-parse", "HEAD")}:refs/heads/release-fix`]);
   const create = calls.find((c) => c[0] === "gh" && c[2] === "create")!;
   assert.equal(create[create.indexOf("--head") + 1], "release-fix");
 });
@@ -182,7 +189,7 @@ test("a push remote on a fork opens the PR from owner:branch into the base repos
   const p = prPlan(r, run);
   assert.equal(p.remote, "fork");
   prCreate(r, run, {});
-  assert.equal(calls.find((c) => c[1] === "push")![2], "fork");
+  assert.equal(calls.find((c) => c[1] === "push")![2], "git@github.com:me/r.git");
   const create = calls.find((c) => c[0] === "gh" && c[2] === "create")!;
   assert.deepEqual(create.slice(3, 5), ["--repo", "o/r"]);
   assert.equal(create[create.indexOf("--head") + 1], "me:feat");
@@ -222,4 +229,56 @@ test("refused on the base branch, detached, or when the push fails; gh's own ref
   assert.throws(() => prCreate(r, failPush, {}), /git push failed: rejected/);
   const exists = runner((a) => (a[0] === "pr" && a[1] === "create" ? { ok: false, out: "", err: 'a pull request for branch "feat" into branch "main" already exists:\nhttps://github.com/o/r/pull/9' } : okGh(a)));
   assert.throws(() => prCreate(r, exists.run, {}), (e: unknown) => e instanceof PrRefused && /already exists/.test(e.message) && e.url === "https://github.com/o/r/pull/9");
+});
+
+test("a base that exists only locally, or that the remote no longer has, is refused before any push", () => {
+  const r = repo();
+  git(r, "branch", "localonly", "main");
+  const local = runner();
+  const p = prPlan(r, local.run, { base: "localonly" });
+  assert.match(p.problem!.message, /localonly is not a branch on origin/);
+  assert.throws(() => prCreate(r, local.run, { base: "localonly" }), PrRefused);
+  assert.ok(!pushed(local.calls));
+  // origin/main is still tracked here, but the remote itself no longer has main.
+  const gone = runner(okGh, false, ["other"]);
+  assert.match(prPlan(r, gone.run).problem!.message, /origin no longer has main/);
+  assert.throws(() => prCreate(r, gone.run, {}), PrRefused);
+  assert.ok(!pushed(gone.calls));
+  const unreachable: PrRunner = (cmd, cwd, args) => (cmd === "git" && args[0] === "ls-remote" ? { ok: false, out: "", err: "Could not resolve host" } : runner().run(cmd, cwd, args));
+  assert.match(prPlan(r, unreachable).problem!.message, /could not check origin.*Could not resolve host/);
+});
+
+test("the plan names the push URL and the PR repository; a confirm refuses when either changed, and the push goes to that URL", () => {
+  const r = repo();
+  const p = prPlan(r, runner().run);
+  assert.deepEqual({ pushUrl: p.pushUrl, repo: p.repo }, { pushUrl: "https://github.com/o/r.git", repo: "o/r" });
+  const confirmed = { branch: p.branch!, head: p.head!, remote: p.remote, ref: p.ref!, pushUrl: p.pushUrl!, repo: p.repo! };
+  git(r, "config", "remote.origin.pushurl", "https://github.com/evil/r.git");
+  const moved = runner();
+  assert.throws(() => prCreate(r, moved.run, { expect: confirmed }), /the push URL changed since the preview: was https:\/\/github\.com\/o\/r\.git, now https:\/\/github\.com\/evil\/r\.git/);
+  assert.ok(!pushed(moved.calls));
+  git(r, "config", "--unset", "remote.origin.pushurl");
+  git(r, "remote", "set-url", "origin", "https://github.com/other/r.git");
+  const repoMoved = runner();
+  assert.throws(() => prCreate(r, repoMoved.run, { expect: { ...confirmed, pushUrl: "https://github.com/other/r.git" } }), /the PR repository changed since the preview: was o\/r, now other\/r/);
+  assert.ok(!pushed(repoMoved.calls));
+  git(r, "remote", "set-url", "origin", "https://github.com/o/r.git");
+  const ok = runner();
+  prCreate(r, ok.run, { expect: confirmed });
+  assert.equal(ok.calls.find((c) => c[1] === "push")![2], "https://github.com/o/r.git");
+  const create = ok.calls.find((c) => c[0] === "gh" && c[2] === "create")!;
+  assert.equal(create[create.indexOf("--repo") + 1], "o/r");
+  assert.equal(git(r, "rev-parse", "refs/remotes/origin/feat"), p.head, "the tracking ref follows the push");
+});
+
+test("a push URL that differs from the fetch URL is where the push goes, and the PR head is named from it", () => {
+  const r = repo();
+  git(r, "config", "remote.origin.pushurl", "git@github.com:me/r.git");
+  const { run, calls } = runner();
+  const p = prPlan(r, run);
+  assert.equal(p.pushUrl, "git@github.com:me/r.git");
+  prCreate(r, run, {});
+  assert.equal(calls.find((c) => c[1] === "push")![2], "git@github.com:me/r.git");
+  const create = calls.find((c) => c[0] === "gh" && c[2] === "create")!;
+  assert.deepEqual([create[create.indexOf("--repo") + 1], create[create.indexOf("--head") + 1]], ["o/r", "me:feat"]);
 });

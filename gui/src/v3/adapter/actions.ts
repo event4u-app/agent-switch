@@ -174,7 +174,7 @@ async function createPr(key: string, deps: DispatchDeps): Promise<void> {
     onConfirm: () => {
       const p = shown.plan;
       if (p.problem) return deps.toast({ tone: "alert", text: `Create PR: ${p.problem.message} — ${p.problem.fix}` });
-      const confirmed: PrConfirmJson = { branch: p.branch!, head: p.head!, remote: p.remote, ref: p.ref!, base: p.base!, title: shown.title.trim() || p.title };
+      const confirmed: PrConfirmJson = { branch: p.branch!, head: p.head!, remote: p.remote, ref: p.ref!, pushUrl: p.pushUrl!, repo: p.repo!, base: p.base!, title: shown.title.trim() || p.title };
       void run(
         deps,
         "Create PR",

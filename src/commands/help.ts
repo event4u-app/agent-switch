@@ -28,7 +28,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch diff <session> [--scope uncommitted|turn|session|worktree|staged] [--json] | diff <session> stage|unstage|discard --file F [--hunk HASH | --file-hash HASH] | diff <session> undo | diff <session> commit --message M   review and act on a session's changes
   agent-switch files <session> [--query WORDS] [--json]   files of the session's repository whose path contains every word
   agent-switch pr status [--json] [--refresh]   each session's PR: lifecycle, conflicts, review and CI (uses gh)
-  agent-switch pr create <session> [--base B] [--title T] [--yes] [--json] [--expect-branch B --expect-head SHA --expect-remote R --expect-ref REF]   push the session's branch and open its PR with gh (without --yes: what it would push where; --expect-* refuses when that changed)
+  agent-switch pr create <session> [--base B] [--title T] [--yes] [--json] [--expect-branch B --expect-head SHA --expect-remote R --expect-ref REF --expect-push-url URL --expect-repo OWNER/NAME]   push the session's branch and open its PR with gh (without --yes: what it would push where; --expect-* refuses when that changed)
   agent-switch open-targets [<session>] [--json]   what the Open menu offers: installed targets, defaults, terminals
   agent-switch open-default <target> [--repo DIR]   the default Open target, for every repository or one
   agent-switch open-terminal <terminal>        the terminal app new windows open in (terminal, iterm, ghostty, warp, wezterm, kitty, alacritty, …)

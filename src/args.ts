@@ -68,6 +68,8 @@ const VALUE_FLAGS = new Set([
   "expect-head",
   "expect-remote",
   "expect-ref",
+  "expect-push-url",
+  "expect-repo",
   "subagent",
   "since",
   "dir",
