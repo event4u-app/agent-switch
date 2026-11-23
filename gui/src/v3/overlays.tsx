@@ -229,7 +229,8 @@ export interface DoneItem {
   doneAt: string;
 }
 
-export function InboxPopover({ items, history, focusedId, nowMs, onVerb, onAllLater }: { items: NeedItem[]; history: DoneItem[]; focusedId: string | null; nowMs: number; onVerb: (n: NeedItem) => void; onAllLater: () => void }) {
+/** `always`: whether ⇧↵ (allow always) answers that item — only a chat this window runs; absent means none. */
+export function InboxPopover({ items, history, focusedId, nowMs, onVerb, onAllLater, always = () => false }: { items: NeedItem[]; history: DoneItem[]; focusedId: string | null; nowMs: number; onVerb: (n: NeedItem) => void; onAllLater: () => void; always?: (n: NeedItem) => boolean }) {
   const focus = focusedId ?? items[0]?.id ?? null;
   return (
     <div role="dialog" aria-label="Needs you" className="w-[420px] rounded-xl border border-ac-line2 bg-ac-panel p-2" style={{ boxShadow: "var(--ac-shadow)" }}>
@@ -241,7 +242,7 @@ export function InboxPopover({ items, history, focusedId, nowMs, onVerb, onAllLa
         </button>
       </div>
       {items.map((n) => (
-        <NeedRow key={n.id} n={n} focused={n.id === focus} onVerb={onVerb} />
+        <NeedRow key={n.id} n={n} focused={n.id === focus} always={always(n)} onVerb={onVerb} />
       ))}
       {history.length > 0 && (
         <>

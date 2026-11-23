@@ -69,6 +69,7 @@ describe("⌃Tab switcher, peek card, inbox (spec §7.2–§7.4)", () => {
         focusedId={null}
         onVerb={vi.fn()}
         onAllLater={onAllLater}
+        always={(n) => n.subject === "s"}
         items={[{ id: "1", kind: "approval", subject: "s", who: "Theme system", what: "wants to run", verb: "Allow", since: "", version: "1" }]}
         history={[{ id: "h", who: "Checkout flow", what: "asked you", doneAt: new Date(NOW - 20 * 60_000).toISOString() }]}
       />,
@@ -78,5 +79,16 @@ describe("⌃Tab switcher, peek card, inbox (spec §7.2–§7.4)", () => {
     expect(screen.getByText("20m ago")).toBeTruthy();
     fireEvent.click(screen.getByText("All later"));
     expect(onAllLater).toHaveBeenCalledOnce();
+  });
+
+  it("the inbox offers ⇧↵ always only for a chat this window runs", () => {
+    const item = (id: string, subject: string) => ({ id, kind: "approval" as const, subject, who: id, what: "wants to run", verb: "Allow", since: "", version: id });
+    const { rerender } = render(<InboxPopover nowMs={NOW} focusedId="b" onVerb={vi.fn()} onAllLater={vi.fn()} always={(n) => n.subject === "here"} items={[item("a", "here"), item("b", "elsewhere")]} history={[]} />);
+    expect(screen.getByText("↵ once · ⌫ deny · L later")).toBeTruthy();
+    expect(screen.queryByText(/⇧↵ always/)).toBeNull();
+    rerender(<InboxPopover nowMs={NOW} focusedId="a" onVerb={vi.fn()} onAllLater={vi.fn()} always={(n) => n.subject === "here"} items={[item("a", "here"), item("b", "elsewhere")]} history={[]} />);
+    expect(screen.getByText("↵ once · ⇧↵ always · ⌫ deny · L later")).toBeTruthy();
+    rerender(<InboxPopover nowMs={NOW} focusedId="a" onVerb={vi.fn()} onAllLater={vi.fn()} items={[item("a", "here")]} history={[]} />);
+    expect(screen.queryByText(/⇧↵ always/)).toBeNull();
   });
 });
