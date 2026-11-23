@@ -53,9 +53,9 @@ canvas shows the result, because it renders the real app.
 
 ## Phase 3 — Your terminal and Agent Switch at the same time
 
-- [ ] 3.1 The session bar always shows where the session runs: "Hosted · type here or attach" / "Terminal.app · watching".
-- [ ] 3.2 A hosted session's Open-in menu has "Attach in Terminal" (runs `agent-switch host attach <key>` in the user's terminal); its effect — one shared tmux, input from both sides goes to the same agent — is said in the menu hint.
-- [ ] 3.3 A your-terminal session says how to type from the app (Take over) and what that changes, in place, not only in a tooltip.
+- [x] 3.1 The session bar always shows where the session runs: "Hosted · type here or attach" / "Terminal.app · watching".
+- [x] 3.2 A hosted session's Open-in menu has "Attach in Terminal" (runs `agent-switch host attach <key>` in the user's terminal); its effect — one shared tmux, input from both sides goes to the same agent — is said in the menu hint.
+- [x] 3.3 A your-terminal session says how to type from the app (Take over) and what that changes, in place, not only in a tooltip.
 
 ## Phase 4 — From a session to its diff
 
