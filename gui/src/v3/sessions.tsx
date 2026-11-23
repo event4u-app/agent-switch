@@ -649,7 +649,7 @@ export function SessionsZone({
             >
               {folded.has(g) ? <ChevronRight className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />}
               {group === "project" ? <Folder className="size-3.5 shrink-0" /> : group === "tool" ? <SquareTerminal className="size-3.5 shrink-0" /> : null}
-              <span className="min-w-0 truncate font-medium text-ac-soft">{g ? (group === "project" ? g.split("/").pop() : g) : group === "project" ? "No project" : "Other"}</span>
+              <span className="min-w-0 truncate font-medium text-ac-soft">{g || (group === "project" ? "No project" : "Other")}</span>
               <span>{rowsOf(g).length}</span>
             </button>
           ),

@@ -4,7 +4,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { SessionRow, trailing, type ChildModel, type RowSession } from "./sessions.js";
+import { SessionRow, SessionsZone, trailing, type ChildModel, type RowSession } from "./sessions.js";
 import { V3Window, type V3Data } from "./window.js";
 import { NOW, data, slots } from "./window-fixture.js";
 
@@ -188,5 +188,14 @@ describe("the tree in the window (2.3, 3.4)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("project group headers (D7)", () => {
+  it("two repositories with the same folder name keep their distinct labels in the headers", () => {
+    const groupOf = (k: string) => (k === "a" ? "work/api" : "personal/api");
+    const { container } = render(<SessionsZone sessions={[s("a"), s("b")]} activeKey={null} selection={null} openKeys={new Set()} onSelect={vi.fn()} onToggleChildren={vi.fn()} onCheck={vi.fn()} onCleanUp={vi.fn()} onDoneToday={vi.fn()} batch={{ onClear: vi.fn(), onPin: vi.fn(), onArchive: vi.fn(), onClean: vi.fn(), onEnd: vi.fn() }} group="project" groupOf={groupOf} />);
+    const heads = [...container.querySelectorAll("button[aria-expanded]")].map((b) => b.textContent);
+    expect(heads).toEqual(["work/api1", "personal/api1"]);
   });
 });

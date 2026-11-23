@@ -179,6 +179,8 @@ export interface SessionRow {
   /** A hosted Codex window's own OSC 7501 report (`idle`, `working`, `done`, …) and when it arrived. */
   programState?: string;
   programAt?: number;
+  /** The hosted window (its host key) this Codex rollout was matched to. */
+  hostKey?: string;
   /** The live process, when the host's registry names this session. */
   pid?: number;
   /** How `live` was decided: the registry named this session, or the cwd guess. */

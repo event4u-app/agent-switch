@@ -256,12 +256,34 @@ function vaultOf(e: { kept: { state: string; bytes?: number; daysLeft?: number }
 
 const basename = (p: string | null) => (p ? p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p : null);
 
+/**
+ * One label per project root: the folder name, or as many trailing path parts
+ * as it takes to tell roots apart (`work/api`, `personal/api`). Pure.
+ */
+export function projectLabels(roots: readonly string[]): Map<string, string> {
+  const parts = new Map([...new Set(roots)].map((r) => [r, r.split("/").filter(Boolean)]));
+  const tail = (p: string[], n: number) => p.slice(-n).join("/");
+  const out = new Map<string, string>();
+  for (const [root, p] of parts) {
+    let n = 1;
+    while (n < p.length && [...parts].some(([o, q]) => o !== root && tail(q, n) === tail(p, n))) n++;
+    out.set(root, tail(p, n) || root);
+  }
+  return out;
+}
+
 /** The whole window's data. */
 export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Data {
   const now = env.now;
   // One row per account, whatever the reads returned (a reload racing a poll can repeat one).
   const vm: ViewModel = { ...vmIn, accounts: [...new Map(vmIn.accounts.map((a) => [a.id, a])).values()] };
-  const read = [...(vm.sessionRows ?? []), ...feeds.codexRows];
+  // A Codex rollout the engine matched to a live hosted window takes that window's key, so
+  // the window's actions (end, compact, its terminal) reach it and it is listed once.
+  const liveHost = new Map((feeds.host?.hosted ?? []).filter((h) => h.alive && h.sessionId).map((h) => [h.key, h]));
+  const read = [...(vm.sessionRows ?? []), ...feeds.codexRows].map((r) => {
+    const h = r.hostKey ? liveHost.get(r.hostKey) : undefined;
+    return h && h.sessionId !== r.sessionId ? { ...r, sessionId: h.sessionId } : r;
+  });
   const seen = new Set(read.map(sessionKey));
   // A hosted session started a moment ago has no transcript yet: it still gets a row.
   const hostedOnly: SessionRow[] = (feeds.host?.hosted ?? [])
@@ -310,9 +332,12 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
   });
 
   // A project is the repository (its main checkout, from git's common dir, so every worktree joins it), else the folder (D7).
+  // Keyed on the full path; labelled by its folder name, with as much of the parent path as tells two apart.
+  const rootOf = (r: SessionRow): string | null => r.git?.repoRoot ?? r.git?.toplevel ?? r.cwd ?? null;
+  const labels = projectLabels(rows.map(rootOf).filter((d): d is string => !!d));
   const projectOf = (r: SessionRow): string | null => {
-    const dir = r.git?.repoRoot ?? r.git?.toplevel ?? r.cwd ?? null;
-    return dir ? (dir.split("/").filter(Boolean).pop() ?? null) : null;
+    const dir = rootOf(r);
+    return dir ? (labels.get(dir) ?? null) : null;
   };
   const table: TableSession[] = rows.map((r) => {
     const pr = prsOf(r)[0];
@@ -330,6 +355,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       contextPct: r.context?.pct ?? null,
       lastActiveMs: r.mtimeMs,
       project: projectOf(r),
+      projectRoot: rootOf(r),
       worktree: r.git ? { id: r.git.toplevel, branch: r.git.branch, linked: r.git.worktree } : null,
     };
   });

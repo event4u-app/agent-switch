@@ -139,13 +139,14 @@ function writeAtomic(file: string, rec: ProgramStatusRecord): void {
  * window ends), and write the latest report whenever the state changes. Never
  * throws on input; a failed write is skipped and the next change tries again.
  */
-export function runProgramStatus(file: string, input: NodeJS.ReadableStream = process.stdin, now: () => number = Date.now): Promise<void> {
+export function runProgramStatus(file: string, input: NodeJS.ReadableStream = process.stdin, now: () => number = Date.now, app = "codex"): Promise<void> {
   const scanner = new OscScanner();
   let last = readProgramStatus(file)?.state ?? null;
   return new Promise((resolve) => {
     input.on("data", (chunk: Buffer | string) => {
       for (const r of scanner.push(chunk)) {
-        if (r.state === last) continue;
+        // Anything the pane prints can carry this sequence; requiring the app's own name only stops the easy spoof.
+        if (r.app !== app || r.state === last) continue;
         try {
           writeAtomic(file, { state: r.state, ...(r.app ? { app: r.app } : {}), at: now() });
           last = r.state;
@@ -161,15 +162,16 @@ export function runProgramStatus(file: string, input: NodeJS.ReadableStream = pr
 
 /**
  * Which listed Codex rollout belongs to a hosted window. Codex picks its own
- * thread id, so the host's id rarely matches; the fallback is the same account,
- * the same folder, and the first rollout born at or after the window started
- * (a 5 s allowance for clock and file-system lag). Each row is claimed once. Pure.
+ * thread id, so the host's id rarely matches; the fallback is the same account
+ * and folder: the first rollout born at or after the window started, or — only
+ * when none is — the latest one born up to 5 s before (clock and file-system
+ * lag). Each row is claimed once. Pure.
  */
-export function matchHostedRows<R extends { sessionId: string; profile: string; cwd: string | null; birthtimeMs: number }>(
+export function matchHostedRows<R extends { sessionId: string; profile: string; cwd: string | null; birthtimeMs: number }, H extends { sessionId: string; account: string; cwd: string; startedAt: string }>(
   rows: readonly R[],
-  hosted: readonly { sessionId: string; account: string; cwd: string; startedAt: string }[],
-): Map<R, (typeof hosted)[number]> {
-  const out = new Map<R, (typeof hosted)[number]>();
+  hosted: readonly H[],
+): Map<R, H> {
+  const out = new Map<R, H>();
   const byStart = [...hosted].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
   for (const h of byStart) {
     const exact = rows.find((r) => r.profile === h.account && r.sessionId === h.sessionId && !out.has(r));
@@ -177,10 +179,11 @@ export function matchHostedRows<R extends { sessionId: string; profile: string; 
       out.set(exact, h);
       continue;
     }
-    const from = Date.parse(h.startedAt) - 5_000;
-    const cand = rows
-      .filter((r) => !out.has(r) && r.profile === h.account && r.cwd === h.cwd && r.birthtimeMs >= from)
-      .sort((a, b) => a.birthtimeMs - b.birthtimeMs)[0];
+    const start = Date.parse(h.startedAt);
+    const free = rows.filter((r) => !out.has(r) && r.profile === h.account && r.cwd === h.cwd);
+    const after = free.filter((r) => r.birthtimeMs >= start).sort((a, b) => a.birthtimeMs - b.birthtimeMs)[0];
+    const near = free.filter((r) => r.birthtimeMs < start && r.birthtimeMs >= start - 5_000).sort((a, b) => b.birthtimeMs - a.birthtimeMs)[0];
+    const cand = after ?? near;
     if (cand) out.set(cand, h);
   }
   return out;

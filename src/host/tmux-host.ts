@@ -186,6 +186,8 @@ export class TmuxHost {
     const settings = o.provider === "claude" ? this.ensureHookSettings(hookBin) : null;
     const argv = TmuxHost.programArgv(o, sessionId, settings);
     const name = `${o.account}:${sessionId.slice(0, 8)}`;
+    // Stamped before the window exists, so its first report is never older than its start.
+    const startedAt = new Date().toISOString();
     const exists = this.tmux(["has-session", "-t", `=${HOST_SESSION}`]).ok;
     const r = exists
       ? this.tmux(["new-window", "-d", "-P", "-F", "#{window_id}", "-t", `=${HOST_SESSION}:`, "-n", name, "-c", o.cwd, ...envArgs, "--", ...argv])
@@ -201,7 +203,7 @@ export class TmuxHost {
       sessionId,
       window: r.out.trim(),
       cwd: o.cwd,
-      startedAt: new Date().toISOString(),
+      startedAt,
       ...(o.args?.includes("--remote-control") ? { remoteControl: o.args[o.args.indexOf("--remote-control") + 1] } : {}),
     };
     const reg = this.readRegistry();

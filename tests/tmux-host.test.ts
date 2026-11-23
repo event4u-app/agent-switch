@@ -242,11 +242,11 @@ test("CLI host respawn: same window, same session, the next turn on another mode
 });
 
 /** A stand-in for tmux that records every argv and answers with a window id. */
-function recordingTmux(dir: string): { bin: string; calls: () => string[][] } {
+function recordingTmux(dir: string): { bin: string; calls: () => string[][]; at: (verb: string) => number | undefined } {
   const log = path.join(dir, "tmux-calls.jsonl");
   const bin = path.join(dir, "fake-tmux");
-  fs.writeFileSync(bin, `#!/bin/sh\nnode -e 'require("fs").appendFileSync(process.argv[1], JSON.stringify(process.argv.slice(2)) + "\\n")' "${log}" "$@"\necho @7\n`, { mode: 0o755 });
-  return { bin, calls: () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []) };
+  fs.writeFileSync(bin, `#!/bin/sh\nnode -e 'require("fs").appendFileSync(process.argv[1], JSON.stringify([Date.now(), ...process.argv.slice(2)]) + "\\n")' "${log}" "$@"\necho @7\n`, { mode: 0o755 });
+  return { bin, calls: () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).slice(1)) : []), at: (verb: string) => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((a) => a.includes(verb))?.[0] : undefined) };
 }
 
 test("a hosted Codex window gets a read-only pipe to the program-status reader; Claude does not", { skip: process.platform === "win32" ? "the recording tmux stand-in is a shell script" : false }, () => {
@@ -256,6 +256,7 @@ test("a hosted Codex window gets a read-only pipe to the program-status reader; 
   const s = host.start({ provider: "codex", account: "work", configDir: "/cfg", cwd: root, bin: "codex" }, "'/usr/bin/node' '/opt/as/index.js'");
   const pipes = t.calls().filter((a) => a.includes("pipe-pane"));
   assert.equal(pipes.length, 1, "one pipe per hosted Codex window");
+  assert.ok(Date.parse(s.startedAt) <= (t.at("pipe-pane") ?? 0), "the start is stamped before the pipe can deliver a report");
   const args = pipes[0].slice(pipes[0].indexOf("pipe-pane"));
   assert.deepEqual(args.slice(0, 4), ["pipe-pane", "-O", "-t", s.window]);
   assert.ok(!args.includes("-I") && !args.includes("-o"), "output direction only, never input");
@@ -301,6 +302,7 @@ sleep 30
     assert.equal(rows[0].live, true, "live by its host record");
     assert.equal(rows[0].runtime?.state, "working");
     assert.equal(rows[0].runtime?.source, "program");
+    assert.equal(rows[0].hostKey, s.key, "the matched rollout names the window it belongs to");
 
     host.end(s.key);
     assert.equal(fs.existsSync(file), false, "ending the window drops its state");

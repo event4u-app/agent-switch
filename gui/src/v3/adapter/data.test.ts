@@ -137,6 +137,18 @@ describe("toV3Data", () => {
     expect(d.bar("claude/work/fresh")?.hosted).toBe(true);
   });
 
+  it("a hosted Codex window whose rollout the engine matched is one row, not two", () => {
+    const feeds = {
+      ...emptyFeeds(),
+      codexRows: [row("rollout-1", { provider: "codex", profile: "cx", live: true, hostKey: "codex/cx/h-uuid" })],
+      host: { mode: "persistent" as const, hosted: [{ key: "codex/cx/h-uuid", provider: "codex", account: "cx", sessionId: "h-uuid", cwd: "/r", startedAt: new Date(NOW - 5000).toISOString(), alive: true, parked: false }] },
+    };
+    const d = toV3Data(vmWith([], []), feeds, env());
+    // Listed once, under the window's key, so the window's own actions reach it.
+    expect(d.sessions.map((s) => [s.key, s.title])).toEqual([["codex/cx/h-uuid", "task rollout-1"]]);
+    expect(d.menu?.("codex/cx/h-uuid")).toContain("End…");
+  });
+
   it("codex rows from the feed join the table and the palette", () => {
     const feeds = { ...emptyFeeds(), codexRows: [row("c1", { provider: "codex", profile: "cx" })] };
     const d = toV3Data(vmWith([], [row("a1")]), feeds, env());
@@ -369,6 +381,18 @@ describe("project (D7)", () => {
       { id: "/code/shop-wt/feature", branch: "feature", linked: true },
       { id: "/code/shop/.claude/worktrees/x", branch: "x", linked: true },
       null,
+    ]);
+  });
+
+  it("two repositories with the same folder name are two projects with distinct labels (D7)", () => {
+    const g = (root: string) => ({ ...git(root, false, "main"), repoRoot: root });
+    const rows = [row("w", { git: g("/work/api") }), row("p", { git: g("/personal/api") }), row("w2", { git: { ...g("/work/api-wt/x"), repoRoot: "/work/api", worktree: true } }), row("o", { git: g("/code/shop") })];
+    const t = toV3Data(vmWith([account("work")], rows), emptyFeeds(), env()).table;
+    expect(t.map((s) => [s.key, s.project, s.projectRoot])).toEqual([
+      ["claude/work/w", "work/api", "/work/api"],
+      ["claude/work/p", "personal/api", "/personal/api"],
+      ["claude/work/w2", "work/api", "/work/api"],
+      ["claude/work/o", "shop", "/code/shop"],
     ]);
   });
 

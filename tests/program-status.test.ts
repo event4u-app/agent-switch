@@ -95,3 +95,25 @@ test("matchHostedRows: exact id first, else same account and folder, first rollo
   const by = Object.fromEntries([...m].map(([r, h]) => [h.sessionId, r.sessionId]));
   assert.deepEqual(by, { h1: "r1", h2: "r2", h3: "h3" });
 });
+
+test("matchHostedRows: a standalone rollout begun just before the window loses to the window's own, in either listing order", () => {
+  const start = Date.parse("2026-11-23T10:00:00Z");
+  const before = { sessionId: "standalone", profile: "work", cwd: "/w", birthtimeMs: start - 2_000 };
+  const after = { sessionId: "hosted-own", profile: "work", cwd: "/w", birthtimeMs: start + 3_000 };
+  const h = [{ sessionId: "h1", account: "work", cwd: "/w", startedAt: new Date(start).toISOString() }];
+  for (const rows of [[before, after], [after, before]]) {
+    assert.deepEqual([...matchHostedRows(rows, h).keys()].map((r) => r.sessionId), ["hosted-own"]);
+  }
+  assert.deepEqual([...matchHostedRows([before], h).keys()].map((r) => r.sessionId), ["standalone"], "with nothing after the start, the near-before one may stand in");
+  const two = [h[0], { sessionId: "h2", account: "work", cwd: "/w", startedAt: new Date(start + 1_000).toISOString() }];
+  const m = matchHostedRows([after], two);
+  assert.equal(m.size, 1, "a rollout is never claimed by two windows");
+});
+
+test("runProgramStatus: a report from another app (or none) is not taken for Codex", async () => {
+  const file = path.join(tmp(), "s.json");
+  await runProgramStatus(file, Readable.from([Buffer.from("\x1b]7501;state=working:app=evil\x07\x1b]7501;state=blocked\x07")]), () => 1);
+  assert.equal(readProgramStatus(file), null);
+  await runProgramStatus(file, Readable.from([Buffer.from("\x1b]7501;state=working:app=codex\x07")]), () => 2);
+  assert.equal(readProgramStatus(file)?.state, "working");
+});

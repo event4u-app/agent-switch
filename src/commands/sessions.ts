@@ -146,7 +146,13 @@ export function cmdHooks(sub?: string, name?: string, providerId: ProviderId = "
       // An install from ≤ 2.11 held every turn until the hook exited; bring it
       // to the non-blocking shape on sight. Only our own entries change.
       if (hooksNeedMigration(settings, hookCommand("agent-switch", relay))) {
-        installHooks(cfg, "agent-switch", relay);
+        try {
+          installHooks(cfg, "agent-switch", relay);
+        } catch (e) {
+          console.log(`claude/${p}: not migrated — ${(e as Error).message}`);
+          process.exitCode = 1;
+          continue;
+        }
         console.log(`claude/${p}: installed (migrated to ${relay ? "the as-hook relay" : "non-blocking hooks"})`);
         sharedWarn = true;
         continue;
@@ -154,7 +160,14 @@ export function cmdHooks(sub?: string, name?: string, providerId: ProviderId = "
       console.log(`claude/${p}: ${hooksInstalled(settings) ? "installed" : "not installed"}`);
       continue;
     }
-    const res = action === "install" ? installHooks(cfg, "agent-switch", relay) : uninstallHooks(cfg);
+    let res: { changed: boolean };
+    try {
+      res = action === "install" ? installHooks(cfg, "agent-switch", relay) : uninstallHooks(cfg);
+    } catch (e) {
+      console.log(`claude/${p}: ${action} refused — ${(e as Error).message}`);
+      process.exitCode = 1;
+      continue;
+    }
     console.log(`claude/${p}: ${action} ${res.changed ? "done" : "(no change)"}`);
     if (res.changed) sharedWarn = true;
   }
@@ -389,7 +402,12 @@ function cmdHooksRelay(file?: string): void {
   for (const p of listProfiles("claude")) {
     const cfg = configDir("claude", p);
     if (!hooksNeedMigration(readSettings(cfg), command)) continue;
-    installHooks(cfg, "agent-switch", relay);
+    try {
+      installHooks(cfg, "agent-switch", relay);
+    } catch (e) {
+      console.log(`claude/${p}: hooks not moved — ${(e as Error).message}`);
+      continue;
+    }
     console.log(`claude/${p}: hooks now run ${relay ? "through the relay" : "the CLI directly"}`);
   }
   for (const p of listProfiles("codex")) {
@@ -413,6 +431,7 @@ function hostedCodexWindows(): HostedRow[] {
 export function markHostedCodex(rows: (SessionRow & { profile: string })[], hosted: readonly HostedRow[], root = ROOT): void {
   for (const [row, h] of matchHostedRows(rows, hosted)) {
     row.live = true;
+    row.hostKey = h.key;
     const rec = readProgramStatus(programStatusFile(root, h.sessionId));
     if (rec && rec.at >= Date.parse(h.startedAt)) {
       row.programState = rec.state;

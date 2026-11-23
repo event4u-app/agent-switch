@@ -97,6 +97,8 @@ export interface SessionRow {
   liveSource?: "registry" | "cwd";
   /** What a live session is doing, and who said so (engine `runtimeState`); absent from an older engine. */
   runtime?: SessionRuntime;
+  /** Codex: the hosted window this rollout belongs to, when the engine matched one. */
+  hostKey?: string;
   /** A switch armed for the end of this session's turn (`rebind --when-idle`). */
   armed?: { target: string; createdAt: string; expiresAt: string } | null;
   /** The session's prompt-cache state (Claude only; null when unknown). */
