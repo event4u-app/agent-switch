@@ -170,6 +170,9 @@ export interface SessionRow {
    *  not report a birthtime. */
   birthtimeMs: number;
   live: boolean;
+  /** Claude Desktop: written in the last minutes while no running process names
+   *  it — shown as "recently active", never as live. */
+  recentlyActive?: boolean;
   /** The host registry's state word for a live session (`idle`, `busy`, …). */
   hostStatus?: string;
   /** Epoch ms the host last changed that word (`statusUpdatedAt`); absent when it does not say. */

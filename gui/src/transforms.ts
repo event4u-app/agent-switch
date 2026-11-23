@@ -85,6 +85,8 @@ export interface SessionRow {
    *  activity). Optional: absent from older payloads/fakes → treat as mtime. */
   birthtimeMs?: number;
   live: boolean;
+  /** Claude Desktop: written lately, but no running process names it — never "live". */
+  recentlyActive?: boolean;
   summary?: string | null;
   context?: SessionContext | null;
   /** "desktop-app" = run from Claude Desktop (`sessions` attributes it by account). */

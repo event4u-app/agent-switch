@@ -88,6 +88,8 @@ export type SessionState =
   | "parked"
   | "auth-paused"
   | "idle"
+  /** Claude Desktop: written lately, but no running process proves it is live. */
+  | "recent"
   | "done";
 
 export type SessionSurface = "terminal" | "desktop-app" | "ide";

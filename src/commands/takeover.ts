@@ -378,6 +378,9 @@ function takeoverDesktop(
     die(`the Claude Desktop window holding this session is open (pid ${pid}) — quit it first so it can't write the session back (or --force).`);
   }
   if (loc.live && !opts.force) {
+    die(`session ${sessionId} is still running — let it finish first (or --force).`);
+  }
+  if (loc.recentlyActive && !opts.force) {
     die(`session ${sessionId} was active in the last ${DESKTOP_LIVE_MS / 60_000} minutes — let it finish first (or --force).`);
   }
   let moved: ReturnType<typeof moveDesktopSession>;

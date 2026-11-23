@@ -115,9 +115,10 @@ saved.
       7 days. verify: `balance` tests for both cases.
       done: `tests/balance.test.ts` — unknown reset weighed over the window's length (D11), same email + same org weighed once, two orgs kept apart, unknown org never folded (D12); seen red first.
       <!-- from: road-to-session-orchestration P6.2 -->
-- [ ] **3.2 Desktop "recently active".** A Desktop session found only by a fresh
+- [x] **3.2 Desktop "recently active".** A Desktop session found only by a fresh
       transcript is labelled "recently active", and "live" only when a process
       proves it. verify: `desktop-sessions` tests.
+      done: `tests/desktop-sessions.test.ts` › "live only when a running process names the session, whatever the transcript's age" + the Code-tab case (seen red first); `gui/src/vm/build.test.ts` › "a Desktop session written lately … is 'recently active'" (en "Recently active", de "Kürzlich aktiv"); CLI `sessions` prints `[recently active]`.
       <!-- from: road-to-session-orchestration P6.3 -->
 - [ ] **3.3 Warn before a live rebind moves other sessions.** A rebind of a
       profile with more than one live session says which sessions follow, before

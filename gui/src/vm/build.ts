@@ -268,7 +268,7 @@ function basename(path: string): string {
 /** The window's own rule for an engine that sends no `runtime`: live and written within a minute reads working. */
 function legacyState(row: SessionRow, now: number): Session["state"] {
   const fresh = now - row.mtimeMs;
-  return !row.live ? "done" : row.waiting ? "needs-you" : fresh >= 0 && fresh <= WORKING_FRESH_MS ? "working" : "idle";
+  return !row.live ? (row.recentlyActive ? "recent" : "done") : row.waiting ? "needs-you" : fresh >= 0 && fresh <= WORKING_FRESH_MS ? "working" : "idle";
 }
 
 export function sessionFromRow(row: SessionRow, now: number): Session {

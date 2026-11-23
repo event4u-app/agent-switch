@@ -588,7 +588,7 @@ export async function cmdSessions(
       const ctxCol = ctx ? `  ${ctx}` : "";
       const cache = formatCache(cacheOf(r));
       const cacheCol = cache ? `  ${cache}` : "";
-      console.log(`${mark} ${r.sessionId}  ${where}  ${ageOf(r.mtimeMs)}${ctxCol}${cacheCol}${r.live ? (r.hostStatus ? `  [live: ${r.hostStatus}]` : "  [live]") : ""}${armedFor(r) ? `  [switches to ${armedFor(r)!.target} when this turn ends]` : ""}${summary}`);
+      console.log(`${mark} ${r.sessionId}  ${where}  ${ageOf(r.mtimeMs)}${ctxCol}${cacheCol}${r.live ? (r.hostStatus ? `  [live: ${r.hostStatus}]` : "  [live]") : r.recentlyActive ? "  [recently active]" : ""}${armedFor(r) ? `  [switches to ${armedFor(r)!.target} when this turn ends]` : ""}${summary}`);
     }
   }
   if (!any) {

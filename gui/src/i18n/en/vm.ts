@@ -8,6 +8,7 @@ export const vm = {
   "vm.sessionState.parked": "Paused at limit",
   "vm.sessionState.authPaused": "Paused · sign-in needed",
   "vm.sessionState.idle": "Idle",
+  "vm.sessionState.recent": "Recently active",
   "vm.sessionState.done": "Done",
 
   "vm.rank.disabled": "Disabled — turn it back on to use it",

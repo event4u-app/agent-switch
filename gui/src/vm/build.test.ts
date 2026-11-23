@@ -23,7 +23,7 @@ import {
   surfacesFromApps,
   toolFromEntry,
 } from "./build.js";
-import { nextInPools } from "./rules.js";
+import { nextInPools, SESSION_STATE_LABEL } from "./rules.js";
 import type { AuthStatusRow } from "../ipc.js";
 import type { ProfileRow, SessionRow, UsageSnapshot } from "../transforms.js";
 
@@ -182,6 +182,16 @@ describe("sessionFromRow", () => {
   it("a live session waiting on a prompt needs you; a dead one is done", () => {
     expect(sessionFromRow(s({ waiting: true }), NOW).state).toBe("needs-you");
     expect(sessionFromRow(s({ waiting: true, live: false }), NOW).state).toBe("done");
+  });
+
+  it("a Desktop session written lately that no process proves is 'recently active', never working or live", () => {
+    const recent = sessionFromRow(s({ surface: "desktop-app", live: false, recentlyActive: true }), NOW);
+    expect(recent.state).toBe("recent");
+    expect(recent.stateSource).toBeNull();
+    expect(SESSION_STATE_LABEL.recent).toBe("Recently active");
+    // A process that proves it keeps the live states.
+    expect(sessionFromRow(s({ surface: "desktop-app" }), NOW).state).toBe("working");
+    expect(sessionFromRow(s({ surface: "desktop-app", live: false }), NOW).state).toBe("done");
   });
 
   it("marks a session started in Claude Desktop as such", () => {

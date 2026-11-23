@@ -9,6 +9,7 @@ export const vm: { readonly [K in keyof typeof en]: string } = {
   "vm.sessionState.parked": "Am Limit pausiert",
   "vm.sessionState.authPaused": "Pausiert · Anmeldung nötig",
   "vm.sessionState.idle": "Untätig",
+  "vm.sessionState.recent": "Kürzlich aktiv",
   "vm.sessionState.done": "Fertig",
 
   "vm.rank.disabled": "Deaktiviert – schalte es wieder ein, um es zu nutzen",

@@ -322,7 +322,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       children,
       // D6: a Needs-you item on this session or any descendant.
       needsYou: needing.has(key) || children.some((c) => c.needsYou),
-      ...(r.live ? {} : { doneToday: true }),
+      ...(r.live || r.recentlyActive ? {} : { doneToday: true }),
     };
   });
 
