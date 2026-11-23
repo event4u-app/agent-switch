@@ -189,6 +189,11 @@ export const settings = {
   "settings.notifications.onSwitch": "Notify on account switch",
   "settings.notifications.onSwitchDetail":
     "When you make an account the active one (Use) or turn it off, record a notification — the pet reacts and a desktop alert fires when that is on.",
+  "settings.notifications.quiet": "Quiet hours",
+  "settings.notifications.quietDetail": "No desktop notification in this window, every day (local time). Notices are still listed here; none are shown afterwards. A window may run over midnight.",
+  "settings.notifications.quietFrom": "Quiet from",
+  "settings.notifications.quietTo": "Quiet until",
+  "settings.notifications.quietSame": "Start and end must differ.",
   "settings.notifications.monitor": "Monitor Claude sessions",
   "settings.notifications.monitorDetail":
     "Watch every Claude session and alert you when Claude finishes a turn or is waiting on you — handy when it runs in a terminal you are not watching. Installs additive, reversible hooks into each Claude account's settings; works while this app is open.",

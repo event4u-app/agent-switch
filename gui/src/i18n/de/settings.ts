@@ -197,6 +197,11 @@ export const settings: { readonly [K in keyof typeof en]: string } = {
   "settings.notifications.onSwitch": "Bei Kontowechsel benachrichtigen",
   "settings.notifications.onSwitchDetail":
     "Wenn du ein Konto aktiv machst (Nutzen) oder ausschaltest, wird eine Benachrichtigung erfasst – das Pet reagiert, und eine Desktop-Benachrichtigung erscheint, wenn die an ist.",
+  "settings.notifications.quiet": "Ruhezeiten",
+  "settings.notifications.quietDetail": "In diesem Zeitfenster keine Desktop-Benachrichtigung, jeden Tag (Ortszeit). Hinweise stehen weiter in der Liste; danach wird keiner nachgeholt. Das Fenster darf über Mitternacht gehen.",
+  "settings.notifications.quietFrom": "Ruhe ab",
+  "settings.notifications.quietTo": "Ruhe bis",
+  "settings.notifications.quietSame": "Anfang und Ende müssen sich unterscheiden.",
   "settings.notifications.monitor": "Claude-Sitzungen überwachen",
   "settings.notifications.monitorDetail":
     "Beobachtet jede Claude-Sitzung und meldet sich, wenn die Antwort fertig ist oder Claude auf dich wartet – praktisch, wenn es in einem Terminal läuft, das du gerade nicht im Blick hast. Installiert zusätzliche, umkehrbare Hooks in die Einstellungen jedes Claude-Kontos; funktioniert, solange diese App offen ist.",

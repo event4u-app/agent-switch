@@ -1239,6 +1239,16 @@ export async function setOsNotify(on: boolean): Promise<void> {
   await runCli(["os-notify", on ? "on" : "off"]);
 }
 
+/** Quiet hours (`HH:MM-HH:MM`, local time) — no desktop notification inside; null = off. */
+export async function getQuietHours(): Promise<string | null> {
+  const { window } = JSON.parse(await runCli(["quiet-hours", "status", "--json"]));
+  return typeof window === "string" ? window : null;
+}
+
+export async function setQuietHours(window: string | null): Promise<void> {
+  await runCli(["quiet-hours", window ?? "off"]);
+}
+
 /** "Keep accounts signed in" — the service keeps Claude logins from lapsing (default on). */
 export async function getKeepSignedIn(): Promise<boolean> {
   const { enabled } = JSON.parse(await runCli(["keep-signed-in", "status", "--json"]));

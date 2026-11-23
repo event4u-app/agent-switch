@@ -9,7 +9,7 @@ import { forceUsageFor, loadUsage, newerSnapshot, type UsageDeps } from "../../v
 import { getAutoUpdateKinds, setAutoUpdateKinds } from "../../settings-store.js";
 import { getUsageAttempts, loadUsageCache, markUsageAttempt, saveUsageSnapshot } from "../../usage-cache.js";
 import { nearLimitMessage } from "./near-limit.js";
-import { deliver, freshSince, noticeText, toastFor, type FireContext, type FireSinks } from "./notifications.js";
+import { deliver, freshSince, noticeText, quietNow, toastFor, type FireContext, type FireSinks } from "./notifications.js";
 import { petRoute, petStartup } from "./pet.js";
 import { reconcileShare } from "./startup.js";
 import { withSwitchEffects } from "./switch-effects.js";
@@ -76,6 +76,21 @@ describe("notification fire path", () => {
     await deliver([n("a", 1, { osNotified: true }), n("b", 2, { kind: "info" })], ctx({ muted: ["info"] }), s);
     expect(log.desktop).toEqual([]);
     expect(log.toast).toEqual([]);
+  });
+
+  it("inside quiet hours nothing reaches the desktop; the in-window toast still shows it", async () => {
+    const { s, log } = sinks(true);
+    await deliver([n("a", 1)], ctx({ quiet: true }), s);
+    expect(log.desktop).toEqual([]);
+    expect(log.toast).toEqual(["a"]);
+  });
+
+  it("the quiet-hours check runs on local time and holds a window over midnight", () => {
+    const at = (h: number, m = 0) => new Date(2026, 10, 23, h, m);
+    expect(quietNow("22:00-07:00", at(23, 30))).toBe(true);
+    expect(quietNow("22:00-07:00", at(6, 59))).toBe(true);
+    expect(quietNow("22:00-07:00", at(7, 0))).toBe(false);
+    expect(quietNow(null, at(23))).toBe(false);
   });
 
   it("with Desktop notifications OFF never desktop-notifies — the toast stands in", async () => {

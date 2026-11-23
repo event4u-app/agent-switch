@@ -11,8 +11,10 @@ import {
   setNotifyOnSwitchFlag,
   setSessionMonitoringFlag,
 } from "../../../settings-store.js";
+import { formatQuietHours, parseQuietHours } from "../../../quiet-hours.js";
 import { SettingGroup, SettingRow } from "../../../ui/Setting.js";
 import { Switch } from "../../../ui/Switch.js";
+import { TextInput } from "../../../ui/TextInput.js";
 import { describeError, usePref, useRun } from "./prefs.js";
 import { WithReason } from "./shared.js";
 
@@ -43,6 +45,77 @@ const SESSION_EVENTS: readonly (readonly [TKey, TKey | undefined])[] = [
 
 function writeSessionMonitoring(on: boolean) {
   setSessionMonitoringFlag(on);
+}
+
+const QUIET_DEFAULT = { from: "22:00", to: "07:00" };
+
+/** Quiet hours: no desktop notification inside the window; the list still records them. */
+function QuietHoursRow() {
+  const run = useRun();
+  // undefined while loading; null = off.
+  const [stored, setStored] = useState<string | null | undefined>(undefined);
+  const [draft, setDraft] = useState(QUIET_DEFAULT);
+  const [hint, setHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    ipc
+      .getQuietHours()
+      .then((w) => {
+        setStored(w);
+        const q = parseQuietHours(w);
+        if (q) {
+          const [from, to] = formatQuietHours(q).split("-");
+          setDraft({ from, to });
+        }
+      })
+      .catch(() => setStored(null));
+  }, []);
+
+  async function save(next: string | null) {
+    const before = stored;
+    setStored(next);
+    const ok = await run(async () => (await ipc.setQuietHours(next), true));
+    if (!ok) setStored(before);
+  }
+
+  function edit(next: { from: string; to: string }) {
+    setDraft(next);
+    const q = parseQuietHours(`${next.from}-${next.to}`);
+    if (!q) return setHint(t("settings.notifications.quietSame"));
+    setHint(null);
+    void save(formatQuietHours(q));
+  }
+
+  return (
+    <SettingRow
+      title={t("settings.notifications.quiet")}
+      detail={
+        <>
+          {t("settings.notifications.quietDetail")}
+          {hint && <span className="mt-1 block text-ac-warn-text">{hint}</span>}
+        </>
+      }
+    >
+      <div className="flex items-center gap-2">
+        {stored && (
+          <>
+            <TextInput type="time" aria-label={t("settings.notifications.quietFrom")} value={draft.from} onChange={(e) => edit({ ...draft, from: e.target.value })} className="w-[92px]" />
+            <span className="text-xs text-ac-muted">–</span>
+            <TextInput type="time" aria-label={t("settings.notifications.quietTo")} value={draft.to} onChange={(e) => edit({ ...draft, to: e.target.value })} className="w-[92px]" />
+          </>
+        )}
+        <Switch
+          label={t("settings.notifications.quiet")}
+          checked={!!stored}
+          disabled={stored === undefined}
+          onChange={(on) => {
+            setHint(null);
+            void save(on ? `${draft.from}-${draft.to}` : null);
+          }}
+        />
+      </div>
+    </SettingRow>
+  );
 }
 
 /** Settings › Notifications (bundle `fR`, artboard 23). */
@@ -153,6 +226,7 @@ export function NotificationSettings() {
         >
           <Switch label={t("settings.notifications.monitor")} checked={monitoring} onChange={toggleMonitoring} />
         </SettingRow>
+        <QuietHoursRow />
       </SettingGroup>
 
       <SettingGroup title={t("settings.notifications.alertTypes")}>

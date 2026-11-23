@@ -45,7 +45,8 @@ import { readCodexUsage, rolloutUsage } from "./codex-usage.js";
 import { autoRedeemDue, redeemResetCredit, resetReflected, usageAfterRedeem } from "./codex-reset.js";
 import { LATEST_FILE, readHistory, recordHistorySample, writeLatestSnapshot } from "./history.js";
 import { appendNotification, markOsNotified, Notification } from "./notifications.js";
-import { readOsNotifications, readPaceSuggest } from "./profiles.js";
+import { readOsNotifications, readPaceSuggest, readQuietHours } from "./profiles.js";
+import { inQuietHours, parseQuietHours, type QuietHours } from "./quiet-hours.js";
 import { osNotify } from "./os-notify.js";
 import { SessionRow, listSessions, listCodexSessions, markLive } from "./sessions.js";
 import { readContext } from "./telemetry.js";
@@ -74,14 +75,23 @@ import { projectedAtReset } from "./link/pace.js";
 import { raiseAsks } from "./link/raise.js";
 import { FRESH_USAGE_MS } from "./dir-resolve.js";
 
+export interface NotifyDeps {
+  osOn: () => boolean;
+  quiet: () => QuietHours | null;
+  os: (title: string, body: string) => boolean;
+  now: () => Date;
+}
+
+const NOTIFY_DEPS: NotifyDeps = { osOn: readOsNotifications, quiet: () => parseQuietHours(readQuietHours()), os: osNotify, now: () => new Date() };
+
 /** Append an event to the shared log and, when the operator opted into
  *  daemon-side OS notifications, fire a desktop notification too — marking the
  *  record so the GUI does not show it a second time. Deduped events (append
  *  returns null) never OS-notify; a `key` (category + account) mutes repeats for
- *  NOTIFY_COOLDOWN_MS. */
-function notify(event: Pick<Notification, "kind" | "title" | "message" | "key">, opts: { os?: boolean } = {}): void {
+ *  NOTIFY_COOLDOWN_MS. Inside quiet hours the event is only logged. */
+export function notify(event: Pick<Notification, "kind" | "title" | "message" | "key">, opts: { os?: boolean } = {}, deps: NotifyDeps = NOTIFY_DEPS): void {
   const created = appendNotification(event);
-  if (created && opts.os !== false && readOsNotifications() && osNotify(event.title, event.message)) {
+  if (created && opts.os !== false && deps.osOn() && !inQuietHours(deps.quiet(), deps.now()) && deps.os(event.title, event.message)) {
     markOsNotified(created.id);
   }
 }

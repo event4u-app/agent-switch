@@ -29,6 +29,8 @@ const ipcMock = vi.hoisted(() => ({
   setAutoSwitch: vi.fn(),
   getOsNotify: vi.fn(),
   setOsNotify: vi.fn(),
+  getQuietHours: vi.fn(),
+  setQuietHours: vi.fn(),
   getKeepSignedIn: vi.fn(),
   setKeepSignedIn: vi.fn(),
   getCodexAutoReset: vi.fn(),
@@ -136,6 +138,8 @@ beforeEach(() => {
   ipcMock.setAutoSwitch.mockResolvedValue(undefined);
   ipcMock.getOsNotify.mockResolvedValue(false);
   ipcMock.setOsNotify.mockResolvedValue(undefined);
+  ipcMock.getQuietHours.mockResolvedValue(null);
+  ipcMock.setQuietHours.mockResolvedValue(undefined);
   ipcMock.getKeepSignedIn.mockResolvedValue(true);
   ipcMock.setKeepSignedIn.mockResolvedValue(undefined);
   ipcMock.getCodexAutoReset.mockResolvedValue(false);
@@ -471,6 +475,29 @@ describe("Notifications", () => {
     expect(ipcMock[mon.getAttribute("aria-checked") === "true" ? "installSessionHooks" : "uninstallSessionHooks"]).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("switch", { name: "Desktop notifications" }));
     await waitFor(() => expect(ipcMock.setOsNotify).toHaveBeenCalledWith(true));
+  });
+});
+
+describe("Quiet hours", () => {
+  it("turns quiet hours on at 22:00–07:00, moves an edge, and turns them off", async () => {
+    mount("notifications");
+    const sw = await screen.findByRole("switch", { name: "Quiet hours" });
+    expect(screen.queryByLabelText("Quiet from")).toBeNull();
+    fireEvent.click(sw);
+    await waitFor(() => expect(ipcMock.setQuietHours).toHaveBeenCalledWith("22:00-07:00"));
+    fireEvent.change(screen.getByLabelText("Quiet until"), { target: { value: "06:30" } });
+    await waitFor(() => expect(ipcMock.setQuietHours).toHaveBeenLastCalledWith("22:00-06:30"));
+    fireEvent.click(screen.getByRole("switch", { name: "Quiet hours" }));
+    await waitFor(() => expect(ipcMock.setQuietHours).toHaveBeenLastCalledWith(null));
+  });
+
+  it("shows a stored window, and never saves an empty one", async () => {
+    ipcMock.getQuietHours.mockResolvedValue("23:00-06:00");
+    mount("notifications");
+    expect(((await screen.findByLabelText("Quiet from")) as HTMLInputElement).value).toBe("23:00");
+    fireEvent.change(screen.getByLabelText("Quiet until"), { target: { value: "23:00" } });
+    expect(ipcMock.setQuietHours).not.toHaveBeenCalled();
+    expect(screen.getByText("Start and end must differ.")).toBeTruthy();
   });
 });
 

@@ -9,6 +9,7 @@ import { ProviderId, PROVIDER_IDS, provider, isProviderId } from "./providers.js
 import { CredentialStore, credentialStore } from "./credentials.js";
 import { DEFAULT_GUARD_POLICY, FRESH_INSTALL_GUARD_POLICY, GuardPolicy, isGuardPolicy } from "./single-load.js";
 import { START_STRATEGIES, type StartStrategy } from "./start-strategy.js";
+import { parseQuietHours } from "./quiet-hours.js";
 
 export const HOME = os.homedir();
 export const ROOT = process.env.AGENT_SWITCH_HOME ?? path.join(HOME, ".agent-switch");
@@ -137,6 +138,8 @@ export interface State {
    *  room expire (road-to-limits-that-last-the-whole-run). Default true; it only
    *  asks, never moves. */
   paceSuggest: boolean;
+  /** Daily `HH:MM-HH:MM` window in which no notice reaches the OS; null = none. */
+  quietHours: string | null;
   /** How a plain start picks per provider (`dir-resolve.ts`); absent = `balance`. */
   strategy: Partial<Record<ProviderId, StartStrategy>>;
   /** Rollback / circuit-breaker for the `rebind` write path (ADR-003). */
@@ -356,17 +359,18 @@ export function readState(): State {
     const linkAutoConnect = raw?.linkAutoConnect !== false;
     const linkExecutor: LinkExecutor = raw?.linkExecutor === "service" ? "service" : "app";
     const paceSuggest = raw?.paceSuggest !== false;
+    const quietHours = parseQuietHours(raw?.quietHours) ? (raw.quietHours as string) : null;
     const strategy = normalizeStrategy(raw?.strategy);
     const rebind = normalizeRebindState(raw?.rebind);
     const guard = normalizeGuard(raw?.guard);
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, strategy, rebind, guard };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, quietHours, strategy, rebind, guard };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, strategy, rebind, guard };
+      return { active: { ...emptyActive(), ...raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, quietHours, strategy, rebind, guard };
     }
-    return { active: emptyActive(), labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, strategy, rebind, guard };
+    return { active: emptyActive(), labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, quietHours, strategy, rebind, guard };
   } catch {
     /* absent / unparsable → default */
   }
@@ -374,7 +378,7 @@ export function readState(): State {
   // 2.1.0 install can have profiles and no state file — that user must keep the
   // pre-2.2 default (block), not be treated as new.
   const fresh = !fs.existsSync(STATE_FILE) && listAllProfiles().length === 0;
-  return { active: emptyActive(), labels: {}, colors: {}, disabled: [], autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, keepSignedIn: true, codexAutoReset: false, linkAutoConnect: true, linkExecutor: "app", paceSuggest: true, strategy: {}, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
+  return { active: emptyActive(), labels: {}, colors: {}, disabled: [], autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, keepSignedIn: true, codexAutoReset: false, linkAutoConnect: true, linkExecutor: "app", paceSuggest: true, quietHours: null, strategy: {}, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
 }
 
 export function readOsNotifications(): boolean {
@@ -385,6 +389,18 @@ export function setOsNotifications(on: boolean): void {
   return withFileLockSync(STATE_FILE, () => {
     const state = readState();
     state.osNotifications = on;
+    writeState(state);
+  });
+}
+
+export function readQuietHours(): string | null {
+  return readState().quietHours;
+}
+
+export function setQuietHours(window: string | null): void {
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    state.quietHours = window;
     writeState(state);
   });
 }

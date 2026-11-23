@@ -81,6 +81,7 @@ import {
   cmdNotifications,
   cmdNotify,
   cmdOsNotify,
+  cmdQuietHours,
 } from "./commands/settings.js";
 import { cmdConfig, cmdShare } from "./commands/sharing.js";
 import {
@@ -164,6 +165,7 @@ async function main(): Promise<void> {
     case "notify": return cmdNotify(flags);
     case "notifications": return cmdNotifications(positional[0], !!flags.json);
     case "os-notify": return cmdOsNotify(positional[0], !!flags.json);
+    case "quiet-hours": return cmdQuietHours(positional[0], !!flags.json);
     case "keep-signed-in": return cmdKeepSignedIn(positional[0], !!flags.json);
     case "auto-reset": return cmdAutoReset(positional[0], !!flags.json);
     case "uninstall": return cmdUninstall(flags);

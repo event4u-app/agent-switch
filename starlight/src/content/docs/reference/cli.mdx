@@ -439,6 +439,7 @@ App ids: `claude-desktop`, `codex-ide` (VS Code), `codex-desktop`,
 | `service start\|stop\|status\|run` | Start it now, stop it, show its state, or run it in the foreground. On macOS with the LaunchAgent installed, start and stop go through launchd; a stopped service stays stopped until the next start or login. |
 | `notifications [clear]` | Recent notifications (limit suggestions, protection warnings, failed usage reads). A token-shaped string in a notice is stored and shown as `[redacted]`, and never reaches a desktop notification. |
 | `os-notify [on\|off\|status]` | Let the background service show desktop notifications itself on Linux and Windows (default off). |
+| `quiet-hours [off\|HH:MM-HH:MM\|status] [--json]` | A daily window (local time, may run over midnight) in which no desktop notification is shown by the app or the service; notices are still listed. Default off. |
 | `providers status` | Which tools are on, installed or linked. |
 | `providers enable\|disable [--surface cli\|ui]` | Turn a tool on or off. Accounts are kept. Claude and Codex are on by default. |
 | `providers link --provider P --path <binary>` | Use a tool binary that is not on your PATH. |
