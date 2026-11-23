@@ -423,7 +423,7 @@ describe("the v3 keyboard (spec §12)", () => {
 
 describe("Limits popover (spec §7.5)", () => {
   it("a row opens the popover with every window; the row keeps its fill; Move opens the decision sheet", () => {
-    mount();
+    mount({ health: { state: "ready" } }); // a move waits for the engine (7.6)
     const strip = screen.getByLabelText("Limits");
     fireEvent.click(within(strip).getByText("work"));
     const pop = screen.getByRole("dialog", { name: "work limits" });

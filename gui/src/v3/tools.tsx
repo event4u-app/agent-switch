@@ -21,6 +21,10 @@ export interface ToolRowView {
   version: string | null;
   status: ToolStatus;
   latest: string | null;
+  /** False: Agent Switch has no verified install or update for it (agy); the row says how instead. Absent: it has. */
+  installable?: boolean;
+  /** The command the tool's own hint names, for a tool the app cannot install. */
+  how?: string | null;
 }
 
 const STATUS_CHIP: Partial<Record<ToolStatus, string>> = { ok: "up to date", unknown: "latest unknown", attention: "needs a look" };
@@ -49,7 +53,11 @@ export function ToolsPage({ rows, checking, on, below }: { rows: ToolRowView[]; 
             </span>
             <span className="font-ac-mono text-xs text-ac-soft">{t.version ?? "—"}</span>
             <span className="flex justify-end">
-              {t.status === "update" && t.latest ? (
+              {t.installable === false && (t.status === "missing" || (t.status === "update" && t.latest)) ? (
+                <Chip kind="meta" title={t.status === "missing" ? `Agent Switch cannot install this one.${t.how ? ` In a terminal: ${t.how}` : ""}` : "Agent Switch cannot update this one; update it the way you installed it"}>
+                  {t.status === "missing" ? "not installed" : `${t.latest} available`}
+                </Chip>
+              ) : t.status === "update" && t.latest ? (
                 <Act kind="accent" onClick={() => on.update(t.id)}>
                   <Download /> Update to {t.latest}
                 </Act>

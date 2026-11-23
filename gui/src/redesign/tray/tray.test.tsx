@@ -4,7 +4,7 @@ import { AcRoot } from "../../ui/AcRoot.js";
 import { emptyViewModel } from "../../vm/load.js";
 import { ASProvider, useAS } from "../../vm/store.js";
 import type { Account, Surface, ViewModel } from "../../vm/types.js";
-import { appRequest, forwardable, forwardedOverlay, forwardedScreen, forwardToMain, openAppFromTray, TRAY_APP_EVENT, TRAY_OPEN_EVENT } from "./bridge.js";
+import { appRequest, forwardable, forwardedNeed, forwardedOverlay, forwardedScreen, forwardNeedToMain, forwardToMain, openAppFromTray, TRAY_APP_EVENT, TRAY_NEED_EVENT, TRAY_OPEN_EVENT } from "./bridge.js";
 import { attentionTarget, Tray } from "./Tray.js";
 
 const tauri = vi.hoisted(() => ({ emitTo: vi.fn(() => Promise.resolve()), invoke: vi.fn(() => Promise.resolve()) }));
@@ -246,5 +246,18 @@ describe("tray bridge", () => {
     expect(tauri.emitTo).toHaveBeenCalledWith("main", TRAY_OPEN_EVENT, { kind: "start" });
     await waitFor(() => expect(tauri.invoke).toHaveBeenCalledWith("tray_hide"));
     expect(tauri.invoke).toHaveBeenCalledWith("show_window");
+  });
+
+  it("a Needs-you verb in the tray goes to its item in the main window, by id only (7.6)", async () => {
+    await forwardNeedToMain("3f2a9c01b7de");
+    expect(tauri.emitTo).toHaveBeenCalledWith("main", TRAY_NEED_EVENT, { id: "3f2a9c01b7de" });
+    await waitFor(() => expect(tauri.invoke).toHaveBeenCalledWith("tray_hide"));
+    expect(tauri.invoke).toHaveBeenCalledWith("show_window");
+    expect(forwardedNeed({ id: "update:agy" })).toBe("update:agy");
+    expect(forwardedNeed({ id: "" })).toBeNull();
+    expect(forwardedNeed({ id: 5 })).toBeNull();
+    expect(forwardedNeed({ id: "a b; rm -rf ~" })).toBeNull();
+    expect(forwardedNeed({ id: "x".repeat(200) })).toBeNull();
+    expect(forwardedNeed("3f2a9c01b7de")).toBeNull();
   });
 });

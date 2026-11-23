@@ -47,6 +47,23 @@ describe("Tools (spec §10.4)", () => {
     expect(table.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it("a tool the app cannot install (Antigravity) offers no Install or Update button; it says how instead (7.6)", () => {
+    const on = { check: vi.fn(), update: vi.fn(), install: vi.fn() };
+    render(
+      <ToolsPage
+        rows={[
+          { id: "agy", name: "Antigravity CLI", where: null, version: null, status: "missing", latest: null, installable: false, how: "brew install agy" },
+          { id: "agy2", name: "Antigravity 2", where: "/x", version: "1.0", status: "update", latest: "1.1", installable: false, how: null },
+        ]}
+        checking={false}
+        on={on}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Install|Update to/ })).toBeNull();
+    expect(screen.getByText("not installed").closest("[title]")?.getAttribute("title")).toBe("Agent Switch cannot install this one. In a terminal: brew install agy");
+    expect(screen.getByText("1.1 available").closest("[title]")?.getAttribute("title")).toBe("Agent Switch cannot update this one; update it the way you installed it");
+  });
+
   it("Check now says it is checking and cannot be pressed twice", () => {
     render(<ToolsPage rows={[]} checking on={{ check: vi.fn(), update: vi.fn(), install: vi.fn() }} />);
     expect((screen.getByRole("button", { name: /Checking/ }) as HTMLButtonElement).disabled).toBe(true);

@@ -139,6 +139,20 @@ describe("workbench (spec §6)", () => {
     expect(screen.getByRole("radio", { name: /Chat/ }).getAttribute("title")).toBe("This tool keeps the view it started in");
   });
 
+  it("session bar: a hosted session whose model and thinking cannot change locks both chips and says why (7.6)", () => {
+    const on = handlers();
+    render(<SessionBar s={bar({ respawnWhy: "Codex keeps the model and thinking it started with" })} openIn={null} on={on} />);
+    const model = screen.getByText("Opus 5.5").closest("button")!;
+    const thinking = screen.getByText("High").closest("button")!;
+    for (const chip of [model, thinking]) {
+      expect(chip.getAttribute("aria-disabled")).toBe("true");
+      expect(chip.getAttribute("title")).toMatch(/Codex keeps/);
+      fireEvent.click(chip);
+    }
+    expect(on.model).not.toHaveBeenCalled();
+    expect(on.thinking).not.toHaveBeenCalled();
+  });
+
   it("session bar: where the session runs is a visible chip — hosted, or the user's terminal app being watched", () => {
     const { rerender } = render(<SessionBar s={bar()} openIn={null} on={handlers()} />);
     const hosted = screen.getByText("Hosted");

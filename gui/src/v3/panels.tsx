@@ -60,14 +60,14 @@ export function prLine(pr: { lifecycle: string; mergeable: string; review: strin
   return [pr.lifecycle.toLowerCase(), merge, REVIEW[pr.review] ?? ""].filter(Boolean).join(" · ");
 }
 
-export function SummaryWindow({ f, onNext, onCreatePr, onOpenPr, onHide, moreOpen, onToggleMore, onReview }: { f: SummaryFacts; onNext: () => void; onCreatePr: () => void; onOpenPr: () => void; onHide: () => void; moreOpen: boolean; onToggleMore: () => void; /** Opens the review; absent: the count stays plain text. */ onReview?: () => void }) {
+export function SummaryWindow({ f, nextBlocked, onNext, onCreatePr, onOpenPr, onHide, moreOpen, onToggleMore, onReview }: { f: SummaryFacts; /** Why the next step cannot run now (the engine is stopped); absent: it can. */ nextBlocked?: string | null; onNext: () => void; onCreatePr: () => void; onOpenPr: () => void; onHide: () => void; moreOpen: boolean; onToggleMore: () => void; /** Opens the review; absent: the count stays plain text. */ onReview?: () => void }) {
   return (
     <Window title="Summary" onHide={onHide}>
       {f.next && (
         <div className="m-3 rounded-[10px] border border-ac-line bg-ac-bg p-3">
           <p className="text-[12.5px] leading-snug text-ac-text">{f.next.text}</p>
           <div className="mt-2">
-            <Act kind="accent" onClick={onNext}>
+            <Act kind="accent" blocked={nextBlocked} onClick={onNext}>
               {f.next.action}
             </Act>
           </div>

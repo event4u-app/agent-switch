@@ -147,10 +147,17 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   sRef.current = s;
   const chatsRunning = useRef(0);
   useEngines({ chatsHere: () => chatsRunning.current });
-  useTrayRequests(s.open, undefined, (payload) => {
-    const req = appRequest(sRef.current, payload);
-    if (req && sRef.current.act.openApp) void sRef.current.act.openApp(req.appId, req.accountId);
-  });
+  const [needFocus, setNeedFocus] = useState<{ id: string; n: number } | undefined>(undefined);
+  useTrayRequests(
+    s.open,
+    undefined,
+    (payload) => {
+      const req = appRequest(sRef.current, payload);
+      if (req && sRef.current.act.openApp) void sRef.current.act.openApp(req.appId, req.accountId);
+    },
+    // A tray verb: its item, focused in this window, where the verb acts.
+    (id) => setNeedFocus((p) => ({ id, n: (p?.n ?? 0) + 1 })),
+  );
   const { feeds, refresh: refreshFeeds } = useV3Feeds();
   const { appearance, prefersDark, vars } = theme;
   const setAppearanceState = theme.setAppearance;
@@ -284,6 +291,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     hosted: (k) => hostedKeys.has(k),
     setAppearance: (a) => (saveAppearance(a), setAppearanceState(a)),
     setFocusTerminal: (on) => (setFocusTerminalFlag(on), setFocusTerminalState(on)),
+    focusTerminal: () => focusTerminal,
     prompt: setPrompt,
     newChat,
     openTab,
@@ -403,7 +411,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
         vars={vars}
         followTheme={appearance.terminalFollows}
         where={data.bar(key)?.where ?? "your terminal"}
-        onFocus={data.bar(key)?.focusable ? () => void ipc.focusSessionTerminal(key).catch((e: unknown) => s.toast({ tone: "alert", text: `Focus failed: ${e instanceof Error ? e.message : String(e)}` })) : null}
+        onFocus={data.bar(key)?.focusable && focusTerminal !== false ? () => void ipc.focusSessionTerminal(key).catch((e: unknown) => s.toast({ tone: "alert", text: `Focus failed: ${e instanceof Error ? e.message : String(e)}` })) : null}
         onTakeOver={canTakeOver(byKey.get(key), hostedKeys.has(key)) ? () => deps.takeOver?.(key) : null}
         onExit={refresh}
       />
@@ -438,7 +446,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
 
   return (
     <>
-      <V3Window data={data} slots={slots} act={act} focus={focus} layout={localLayout} keys={keys} autoOpenLimits={getLimitAutoOpen()} />
+      <V3Window data={data} slots={slots} act={act} focus={focus} needFocus={needFocus} layout={localLayout} keys={keys} autoOpenLimits={getLimitAutoOpen()} />
       {chats.runners}
       <OverlayHost />
       <Toaster toasts={s.toasts} onDismiss={s.dismissToast} />

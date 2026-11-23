@@ -167,7 +167,7 @@ export function PaceLine({ a }: { a: LimitAccount }) {
 }
 
 /** From a Limits-strip row: every window, pace in words, actions. Never switches on its own. */
-export function LimitsPopover({ a, nowMs, onMove, onAccounts, running }: { a: LimitAccount; nowMs: number; onMove: () => void; onAccounts: () => void; /** What runs on this account ("Running on …"). */ running?: ReactNode }) {
+export function LimitsPopover({ a, nowMs, moveWhy, onMove, onAccounts, running }: { a: LimitAccount; nowMs: number; /** Why its sessions cannot move now; absent: they can. */ moveWhy?: string | null; onMove: () => void; onAccounts: () => void; /** What runs on this account ("Running on …"). */ running?: ReactNode }) {
   const near = tone(tightest(a)?.used ?? null, a.protect);
   return (
     <div role="dialog" aria-label={`${a.name} limits`} className="w-[320px] rounded-xl border border-ac-line2 bg-ac-panel p-3" style={{ boxShadow: "var(--ac-shadow)" }}>
@@ -191,7 +191,7 @@ export function LimitsPopover({ a, nowMs, onMove, onAccounts, running }: { a: Li
       <PaceLine a={a} />
       {running}
       <div className="mt-2.5 flex gap-1.5">
-        <button type="button" onClick={onMove} className="h-7 rounded-md border border-ac-line2 px-2.5 text-xs text-ac-soft hover:text-ac-text">
+        <button type="button" onClick={moveWhy ? undefined : onMove} aria-disabled={moveWhy ? true : undefined} title={moveWhy ?? undefined} aria-description={moveWhy ?? undefined} className={cn("h-7 rounded-md border border-ac-line2 px-2.5 text-xs", moveWhy ? "cursor-default text-ac-faint" : "text-ac-soft hover:text-ac-text")}>
           Move its session…
         </button>
         <button type="button" onClick={onAccounts} className="h-7 rounded-md px-2.5 text-xs text-ac-muted hover:text-ac-text">

@@ -187,6 +187,8 @@ const SESSION_ICON: Record<SessionMenuItem, ReactNode> = {
 };
 /** Session actions that move a running session: they answer through the engine, so they wait for it. */
 const MOVES: readonly SessionMenuItem[] = ["Move to another account…", "Take over here…", "Hand off…"];
+/** Why "Move to another account" has nothing to show: the decision sheet is built from the account's usage. */
+export const NO_USAGE_WHY = "This account's usage has not been read yet — refresh it on the Accounts page first";
 
 /** The palette's own commands: pages the window can open (spec §7.1). */
 export const PAGE_COMMANDS: PaletteEntry[] = [
@@ -205,6 +207,7 @@ export function V3Window({
   slots,
   act,
   focus,
+  needFocus,
   layout,
   keys = DEFAULT_KEYS,
   platform = PLATFORM,
@@ -214,6 +217,8 @@ export function V3Window({
   slots: V3Slots;
   act: (a: V3Action) => void;
   focus?: { key: string; n: number };
+  /** Focus one Needs-you item (a tray verb); `n` is the request, so the same item can be asked for again. */
+  needFocus?: { id: string; n: number };
   layout?: LayoutStore;
   keys?: Record<Action, Binding>;
   platform?: "mac" | "other";
@@ -340,7 +345,7 @@ export function V3Window({
             label: item,
             icon: SESSION_ICON[item],
             danger: item === "End…",
-            ...(down && MOVES.includes(item) ? { disabled: true, why: ENGINE_DOWN_WHY } : {}),
+            ...(itemWhy(key, item) ? { disabled: true, why: itemWhy(key, item)! } : {}),
             onClick: run(() => sessionItem(key, item)),
           };
     return [
@@ -359,6 +364,16 @@ export function V3Window({
 
   // Tool updates join the queue (spec §10.4); limit items open the decision sheet.
   const needs = useMemo(() => allNeeds({ needs: data.needs, tools: data.tools, nowMs: data.nowMs }), [data.needs, data.tools, data.nowMs]);
+  // A tray verb points at one Needs-you item: the window shows it focused, with its keys (as ⌘J does).
+  // The window's own read may lag the tray's by a poll: the request waits until the item is here.
+  const needFocusDone = useRef<number | null>(null);
+  useEffect(() => {
+    if (!needFocus || needFocusDone.current === needFocus.n || !needs.some((n) => n.id === needFocus.id)) return;
+    needFocusDone.current = needFocus.n;
+    frame.setSessionsShown(true);
+    setFocusedNeed(needFocus.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needFocus?.n, needs]);
   // A session at its limit opens its decision sheet by itself (once per item
   // version) and brings the window forward — the user still confirms the move.
   // agent-config's question opens it too (once per request), and a limit it
@@ -385,10 +400,20 @@ export function V3Window({
   const down = data.health.state === "down";
   /** Why a Needs-you verb cannot act now: the engine it answers through is stopped. */
   const blockedNeed = (n: NeedItem) => (down && needsEngine(n) ? ENGINE_DOWN_WHY : null);
+  /** Why a move of `key` cannot open its decision sheet now: the engine is stopped, or there is no usage to decide on. */
+  const moveWhy = (key: string): string | null => (down ? ENGINE_DOWN_WHY : data.decision(key) ? null : NO_USAGE_WHY);
+  /** Every entry point to the decision sheet (menu, chip, ⌘⇧M, hint, Limits) goes through here. */
+  const openMove = (key: string) => {
+    if (!moveWhy(key)) setOverlay({ decide: key });
+  };
+  /** Why a session-menu item is off: moves wait for the engine; the account move also needs usage. */
+  const itemWhy = (key: string, item: SessionMenuItem): string | null => (item === "Move to another account…" ? moveWhy(key) : down && MOVES.includes(item) ? ENGINE_DOWN_WHY : null);
+  /** Sending a prompt goes through the engine; copying one does not. */
+  const sendWhy = (action: string | undefined) => (down && action === "Send to agent" ? ENGINE_DOWN_WHY : null);
   /** A session-menu pick: the moves open the decision sheet, End… its dialog, the rest are actions. */
   const sessionItem = (key: string, item: SessionMenuItem) => {
-    if (down && MOVES.includes(item)) return;
-    if (item === "Move to another account…") return setOverlay({ decide: key });
+    if (itemWhy(key, item)) return;
+    if (item === "Move to another account…") return openMove(key);
     if (item === "End…") return setOverlay({ end: key });
     act({ type: "session-menu", key, item });
   };
@@ -481,8 +506,8 @@ export function V3Window({
       lastUsed: data.openIn.lastUsed,
       agentApp: app ? { id: app.id, label: app.label } : null,
       pr: pr ? { number: pr.number, url: pr.url } : null,
-      // Where the adapter knows the terminal, only where Focus reaches it; a design board without that fact keeps "not hosted".
-      focusable: data.bar(key)?.focusable ?? !data.bar(key)?.hosted,
+      // Where the adapter knows the terminal, only where Focus reaches it; a design board without that fact keeps "Claude, not hosted". The Focus terminal switch turns it off.
+      focusable: data.openIn.focusTerminal && (data.bar(key)?.focusable ?? (tool === "claude" && !data.bar(key)?.hosted)),
       attachable: !!data.bar(key)?.attachable,
     };
   };
@@ -534,7 +559,7 @@ export function V3Window({
         case "openDefault":
           return activeSession ? (openDefault(activeSession), true) : false;
         case "moveSession":
-          return activeSession ? (setOverlay({ decide: activeSession }), true) : false;
+          return activeSession ? (openMove(activeSession), true) : false;
         case "switcher":
           return recent.length ? (setOverlay((o) => ({ switcher: o && typeof o === "object" && "switcher" in o ? (o.switcher + 1) % recent.length : Math.min(1, recent.length - 1) })), true) : false;
         case "settings":
@@ -621,16 +646,19 @@ export function V3Window({
                 />
               ) : null
             }
-            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => setOverlay({ decide: activeSession }), model: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "model" ? null : { model: activeSession, x, chip: "model" })), thinking: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "thinking" ? null : { model: activeSession, x, chip: "thinking" })), menu: (el) => setOverlay((o) => (o && typeof o === "object" && "menu" in o ? null : { menu: activeSession, at: anchorUnder(el) })) }}
+            accountWhy={moveWhy(activeSession)}
+            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => openMove(activeSession), model: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "model" ? null : { model: activeSession, x, chip: "model" })), thinking: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "thinking" ? null : { model: activeSession, x, chip: "thinking" })), menu: (el) => setOverlay((o) => (o && typeof o === "object" && "menu" in o ? null : { menu: activeSession, at: anchorUnder(el) })) }}
           />
           {engineBanner}
           <HintStrip
             s={bar}
             dismissed={hintsDismissed}
             onDismiss={(k) => setHintsDismissed((d) => new Set([...d, k]))}
-            onAction={(h) => (h.action?.kind === "switch" ? setOverlay({ decide: activeSession }) : act({ type: "session-menu", key: activeSession, item: "Compact" }))}
+            canCompact={(data.menu ? data.menu(activeSession) : SESSION_MENU).includes("Compact")}
+            actionWhy={(h) => (h.action?.kind === "switch" ? moveWhy(activeSession) : null)}
+            onAction={(h) => (h.action?.kind === "switch" ? openMove(activeSession) : act({ type: "session-menu", key: activeSession, item: "Compact" }))}
           />
-          {next && <BlockerStrip text={next.text} action={next.action} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
+          {next && <BlockerStrip text={next.text} action={next.action} blocked={sendWhy(next.action)} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
           {down ? (
             // The engine is stopped: what the pane shows is the last known state, not a live one.
             <div data-stale="" className="relative flex min-h-0 flex-1 flex-col">
@@ -673,7 +701,7 @@ export function V3Window({
     if (!activeSession) return null;
     if (frame.right === "summary") {
       const f = data.summary(activeSession);
-      return f && <SummaryWindow f={f} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} onReview={slots.review ? () => openReview(activeSession) : undefined} />;
+      return f && <SummaryWindow f={f} nextBlocked={sendWhy(f.next?.action)} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} onReview={slots.review ? () => openReview(activeSession) : undefined} />;
     }
     if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={(file) => (slots.review ? openReview(activeSession, file) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openReview(activeSession) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} />;
     const s = data.sessions.find((x) => x.key === activeSession);
@@ -808,7 +836,8 @@ export function V3Window({
         <LimitsPopover
           a={limitsAccount}
           nowMs={data.nowMs}
-          onMove={() => setOverlay({ decide: limitsAccount.key })}
+          moveWhy={moveWhy(limitsAccount.key)}
+          onMove={() => openMove(limitsAccount.key)}
           onAccounts={() => (close(), openPage("accounts"))}
           running={
             <RunningOn

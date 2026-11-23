@@ -21,6 +21,10 @@ export interface NeedItem {
   verb: string;
   since: string;
   version: string;
+  /** The session an item about a PR acts on (a fix goes there). */
+  session?: string;
+  /** A CI item's own kind: failing checks by name, or a merge conflict. */
+  ci?: { state: "failing" | "conflict"; checks: string[] };
 }
 
 export interface AwayDigest {
