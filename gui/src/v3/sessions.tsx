@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bot, ChevronDown, ChevronRight, CircleX, Folder, SquareTerminal, TriangleAlert } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, Folder, SquareTerminal } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon, type StateSource } from "../ui/SessionStateIcon.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
@@ -128,15 +128,22 @@ export function runningOf(children: readonly ChildModel[]): number {
   return children.reduce((n, c) => n + (c.state === "working" ? (c.count ?? 1) : 0) + runningOf(c.children ?? []), 0);
 }
 
+/** What is wrong with the session's PR, in words; CI before a conflict. Pure. */
+export function prProblem(s: RowSession): "CI failing" | "merge conflict" | null {
+  return s.pr?.ci === "FAILURE" ? "CI failing" : s.pr?.mergeable === "CONFLICTING" ? "merge conflict" : null;
+}
+
 /**
  * The one trailing slot, by priority (spec §5.2). Rank 4 rolls up: a waiting
  * descendant lights the same amber dot, and the tooltip names it (D6). Rank 5
- * counts running descendants at every depth. Pure.
+ * counts running descendants at every depth. A PR problem is words, never a
+ * second status icon beside the state dot (5.1); on a two-line row it sits on
+ * the second line, so `second` leaves it out of the slot. Pure.
  */
-export function trailing(s: RowSession, { counts = true }: { counts?: boolean } = {}): ReactNode {
+export function trailing(s: RowSession, { counts = true, second = false }: { counts?: boolean; second?: boolean } = {}): ReactNode {
   if (s.account.nearLimit) return <span className="shrink-0 text-[11px] text-ac-warn-text" title={`${s.account.name} is near its limit`}>{s.account.name}</span>;
-  if (s.pr?.ci === "FAILURE") return <CircleX className="size-3.5 shrink-0 text-ac-alert" aria-label="CI failing" />;
-  if (s.pr?.mergeable === "CONFLICTING") return <TriangleAlert className="size-3.5 shrink-0 text-ac-alert" aria-label="merge conflict" />;
+  const problem = prProblem(s);
+  if (problem && !second) return <span className="shrink-0 text-[11px] text-ac-alert-text">{problem}</span>;
   if (s.state !== "needs-you") {
     const waiting = waitingChild(s.children);
     if (s.needsYou || waiting) return <span className="size-1.5 shrink-0 rounded-full bg-ac-warn" aria-label="needs you" title={waiting ? `${waiting.label} needs you` : undefined} />;
@@ -154,8 +161,8 @@ export function trailing(s: RowSession, { counts = true }: { counts?: boolean } 
 }
 
 /** The trailing slot speaks about the children — a waiting descendant's dot or the running count — so it unfolds them. Pure. */
-export function childrenSlot(s: RowSession): boolean {
-  if (s.account.nearLimit || s.pr?.ci === "FAILURE" || s.pr?.mergeable === "CONFLICTING") return false;
+export function childrenSlot(s: RowSession, { second = false }: { second?: boolean } = {}): boolean {
+  if (s.account.nearLimit || (prProblem(s) && !second)) return false;
   if (s.state !== "needs-you" && (s.needsYou || waitingChild(s.children))) return !!waitingChild(s.children);
   if (s.quiet) return false;
   return runningOf(s.children) > 0;
@@ -434,7 +441,8 @@ export function SessionRow({
   const kids = !!open && s.children.length > 0;
   // D12 (owner, Q1 2026-11-22): the active open row and its children are one block — one raise fill, one Marker.
   const block = !!active && kids;
-  const slot = trailing(s);
+  const slot = trailing(s, { second });
+  const problem = prProblem(s);
   const ref = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLSpanElement>(null);
   useEllipsisRefresh(titleRef, active);
@@ -443,7 +451,7 @@ export function SessionRow({
   }, [active]);
   return (
     <div ref={ref} className={cn(block && "relative mb-1 rounded-md bg-ac-raise pb-0.5")}>
-      {block && <Marker />}
+      {block && <Marker tone="neutral" />}
       <div
         role="button"
         tabIndex={0}
@@ -459,12 +467,12 @@ export function SessionRow({
         onMouseLeave={onPeek && (() => onPeek(null, 0))}
         className={cn("group/row relative rounded-md pl-2.5 pr-2", second ? "py-1.5" : "py-1", block ? null : active ? "bg-ac-raise" : "hover:bg-ac-raise")}
       >
-        {active && !block && <Marker />}
+        {active && !block && <Marker tone="neutral" />}
         {/* The stem from the dot down to the first child (3.2). */}
         {kids && <span aria-hidden data-guide="stem" className={cn("pointer-events-none absolute bottom-0 w-px bg-ac-line", second ? "top-[22px]" : "top-5")} style={{ left: lineX(0) }} />}
         <div className="flex h-5 min-w-0 items-center gap-2">
           {selecting ? (
-            <span role="checkbox" aria-checked={!!checked} className={cn("inline-flex size-3.5 shrink-0 rounded border", checked ? "border-ac-brand bg-ac-brand" : "border-ac-line2")} />
+            <span role="checkbox" aria-checked={!!checked} className={cn("inline-flex size-3.5 shrink-0 rounded border", checked ? "border-ac-text bg-ac-text" : "border-ac-line2")} />
           ) : (
             <SessionStateIcon state={s.state} source={s.stateSource} quiet={!!s.quiet} />
           )}
@@ -475,7 +483,7 @@ export function SessionRow({
           </span>
           {/* One trailing slot per row (spec §5.2, boards "Work" and "Hover a row"): the children
               unfold from the row's own children count; a chevron shows only while they are open. */}
-          {s.children.length > 0 && (open || childrenSlot(s) || !slot) ? (
+          {s.children.length > 0 && (open || childrenSlot(s, { second }) || !slot) ? (
             <button
               type="button"
               aria-label={open ? "Hide children" : `Show ${childNoun(s)}`}
@@ -496,6 +504,7 @@ export function SessionRow({
             <span>·</span>
             <span className="truncate">{s.branch ?? "no repo"}</span>
             {s.pr && <span className="shrink-0">· #{s.pr.number}</span>}
+            {problem && <span className="shrink-0 text-ac-alert-text">{problem}</span>}
           </div>
         )}
       </div>
