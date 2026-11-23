@@ -31,8 +31,8 @@ import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
 import { allNeeds } from "./tools.js";
-import { BlockerStrip, ENGINE_DOWN_WHY, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
-import { Act, type BatchActions } from "./kit.js";
+import { BlockerStrip, ENGINE_DOWN_WHY, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, HOSTED_HINT, type BarChipId, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
+import { AccountMark, Act, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
@@ -235,7 +235,7 @@ export function V3Window({
   const pages = strip.order.filter(isPageTab).map((id) => id.slice(5) as Page);
   const sessionTabs = strip.order.filter((id) => !isPageTab(id));
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor; moved?: BarChipId[] } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -369,6 +369,25 @@ export function V3Window({
       { id: "copy-key", label: "Copy session key", icon: <Copy />, onClick: run(() => void navigator.clipboard?.writeText(key).catch(() => undefined)) },
       ...(offered.includes("End…") ? [{ divider: true, label: "" }, row("End…")] : []),
     ];
+  };
+
+  /** 8.6: the bar's chips that did not fit, at the top of ⋯ — the same actions, locked ones disabled with the chip's reason. */
+  const movedChipItems = (key: string, moved: readonly BarChipId[], at?: Anchor): MenuItem[] => {
+    const b = data.bar(key);
+    if (!b || !moved.length) return [];
+    const run = (f: () => void) => () => (setOverlay(null), f());
+    // The model popover opens where the menu was, under ⋯.
+    const shellW = document.querySelector("[data-v3-shell]")?.getBoundingClientRect().width ?? 0;
+    const x = Math.max(8, shellW - (at?.right ?? 0) - 320) + 11;
+    const locked = b.respawnWhy ?? (b.hosted ? null : "Locked: change it in your terminal");
+    const why = (w: string | null) => (w ? { disabled: true, why: w } : {});
+    const items: MenuItem[] = [];
+    if (moved.includes("account")) items.push({ id: "chip:account", label: "Account…", icon: <AccountMark color={b.account.color} />, hint: `${b.account.name}${b.account.fiveH != null ? ` · ${b.account.fiveH}%` : ""}`, ...why(moveWhy(key)), onClick: run(() => openMove(key)) });
+    if (moved.includes("model")) items.push({ id: "chip:model", label: "Model…", hint: b.model ?? undefined, ...why(locked && (b.hosted ? locked : "Locked: change it in your terminal (/model)")), onClick: () => setOverlay({ model: key, x, chip: "model" }) });
+    if (moved.includes("thinking")) items.push({ id: "chip:thinking", label: "Thinking…", hint: b.thinking ? b.thinking[0].toUpperCase() + b.thinking.slice(1) : undefined, ...why(locked), onClick: () => setOverlay({ model: key, x, chip: "thinking" }) });
+    if (moved.includes("ctx") && b.contextPct != null) items.push({ label: "", note: `Context ${Math.round(b.contextPct)}% used` });
+    if (moved.includes("where")) items.push({ label: "", note: b.hosted ? `Hosted by Agent Switch: ${HOSTED_HINT}` : `${b.where ?? "Your terminal"} · watching. Take over to type here.` });
+    return [...items, { divider: true, label: "" }];
   };
 
   // The app opens a tab itself: a new chat, a Needs-you item that lives in a chat.
@@ -700,7 +719,7 @@ export function V3Window({
               ) : null
             }
             accountWhy={moveWhy(activeSession)}
-            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => openMove(activeSession), model: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "model" ? null : { model: activeSession, x, chip: "model" })), thinking: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "thinking" ? null : { model: activeSession, x, chip: "thinking" })), menu: (el) => setOverlay((o) => (o && typeof o === "object" && "menu" in o ? null : { menu: activeSession, at: anchorUnder(el) })) }}
+            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => openMove(activeSession), model: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "model" ? null : { model: activeSession, x, chip: "model" })), thinking: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "thinking" ? null : { model: activeSession, x, chip: "thinking" })), menu: (el, moved) => setOverlay((o) => (o && typeof o === "object" && "menu" in o ? null : { menu: activeSession, at: anchorUnder(el), moved })) }}
           />
           {engineBanner}
           <HintStrip
@@ -952,7 +971,7 @@ export function V3Window({
       </Anchored>
     ) : overlay && typeof overlay === "object" && "menu" in overlay ? (
       <Anchored onClose={close} className={cn("absolute z-10", !overlay.at && "right-[54px] top-[122px]")} style={overlay.at && { top: overlay.at.top, right: overlay.at.right }}>
-        <Menu label="Session actions" width={240} items={sessionMenuItems(overlay.menu)} />
+        <Menu label="Session actions" width={240} items={[...movedChipItems(overlay.menu, overlay.moved ?? [], overlay.at), ...sessionMenuItems(overlay.menu)]} />
       </Anchored>
     ) : overlay && typeof overlay === "object" && "end" in overlay ? (
       <EndDialog

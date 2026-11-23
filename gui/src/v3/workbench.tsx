@@ -4,7 +4,7 @@
  * banner. Adapted from the reference boards; data and actions come in as props.
  */
 
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { Brain, Check, ChevronDown, CircleX, Ellipsis, Eye, Lightbulb, Lock, MessageSquareText, Pin, Server, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
@@ -228,11 +228,20 @@ export interface BarSession {
   respawnWhy?: string;
 }
 
+/** The bar's chips that give way when it is narrow, by what stays longest: the last leaves first, where it runs last of all (8.6). */
+export const BAR_CHIPS = ["where", "account", "model", "thinking", "ctx"] as const;
+export type BarChipId = (typeof BAR_CHIPS)[number];
+
+/** A chip that left the bar: hidden (never a clipped chip, never an invisible Tab stop). */
+const away = (moved: boolean) => (moved ? { hidden: true, style: { display: "none" } } : {});
+
 /** Session-bar chip: opens a popover; a locked chip keeps its shape and says why. */
-function BarChip({ children, title, locked, open, onClick }: { children: ReactNode; title: string; locked?: boolean; open?: boolean; onClick: (e: MouseEvent<HTMLButtonElement>) => void }) {
+function BarChip({ children, title, locked, open, chip, moved, onClick }: { children: ReactNode; title: string; locked?: boolean; open?: boolean; chip: BarChipId; moved: boolean; onClick: (e: MouseEvent<HTMLButtonElement>) => void }) {
   return (
     <button
       type="button"
+      data-bar-chip={chip}
+      {...away(moved)}
       title={title}
       aria-disabled={locked || undefined}
       aria-expanded={locked ? undefined : !!open}
@@ -256,10 +265,44 @@ const shellX = (e: MouseEvent<HTMLElement>): number => {
   return Math.round(e.currentTarget.getBoundingClientRect().left - (shell?.getBoundingClientRect().left ?? 0));
 };
 
-const HOSTED_HINT = "type here, or attach from your terminal";
+export const HOSTED_HINT = "type here, or attach from your terminal";
 
-export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; menuOpen?: boolean; /** Why the account chip cannot open the decision sheet now; absent: it can. */ accountWhy?: string | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; thinking: (x: number) => void; menu: (trigger: HTMLElement) => void } }) {
+/**
+ * Which chips leave a bar too narrow for them, rightmost first, until the rest
+ * fits; measured with every chip shown. Hides them as it goes, so the caller's
+ * render only confirms what the DOM already shows.
+ */
+function fitChips(box: HTMLElement): BarChipId[] {
+  const chips = BAR_CHIPS.map((id) => [id, box.querySelector<HTMLElement>(`[data-bar-chip="${id}"]`)] as const).filter((c): c is readonly [BarChipId, HTMLElement] => !!c[1]);
+  const show = (el: HTMLElement, on: boolean) => ((el.hidden = !on), (el.style.display = on ? "" : "none"));
+  chips.forEach(([, el]) => show(el, true));
+  const moved: BarChipId[] = [];
+  for (let i = chips.length - 1; i >= 0 && box.scrollWidth > box.clientWidth + 1; i--) {
+    show(chips[i][1], false);
+    moved.unshift(chips[i][0]);
+  }
+  return moved;
+}
+
+export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; menuOpen?: boolean; /** Why the account chip cannot open the decision sheet now; absent: it can. */ accountWhy?: string | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; thinking: (x: number) => void; /** `moved`: the chips that left the bar, so ⋯ offers them. */ menu: (trigger: HTMLElement, moved: BarChipId[]) => void } }) {
   const t = tone(s.account.fiveH, s.account.protect);
+  // 8.6: a chip that does not fit leaves the bar and moves into ⋯, never clipped.
+  const clip = useRef<HTMLDivElement>(null);
+  const [moved, setMoved] = useState<BarChipId[]>([]);
+  useLayoutEffect(() => {
+    const box = clip.current;
+    if (!box) return;
+    const fit = () => {
+      const next = fitChips(box);
+      setMoved((cur) => (cur.join() === next.join() ? cur : next));
+    };
+    fit();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(fit);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [s, accountWhy]);
+  const isMoved = (id: BarChipId) => moved.includes(id);
   // A session in the user's own terminal shows both views read-only (the
   // transcript as chat or in terminal style); only a hosted tool without a
   // chat bridge keeps the view it started in.
@@ -269,7 +312,7 @@ export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { 
     <div className="flex h-10 shrink-0 items-center gap-1 overflow-hidden border-b border-ac-line bg-ac-panel px-2">
       {/* Everything but Open in and ⋯ gives way when the bar is narrow (a side panel open, a small
           window): those two stay whole and clickable, so the session's menus are always reachable. */}
-      <div data-bar-clip="" className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+      <div ref={clip} data-bar-clip="" className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
       <div role="radiogroup" aria-label="View" className="mr-1 inline-flex h-7 shrink-0 items-center rounded-md border border-ac-line bg-ac-bg p-0.5">
         {(
           [
@@ -296,7 +339,7 @@ export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { 
         })}
       </div>
       <span className="mx-1 h-4 w-px shrink-0 bg-ac-line" />
-      <BarChip title={accountWhy ?? `${s.account.name} — moving opens the decision sheet, it never switches by itself`} locked={!!accountWhy} onClick={on.account}>
+      <BarChip title={accountWhy ?? `${s.account.name} — moving opens the decision sheet, it never switches by itself`} locked={!!accountWhy} chip="account" moved={isMoved("account")} onClick={on.account}>
         <AccountMark color={s.account.color} />
         {s.account.name}
         <span className="ml-1 inline-flex items-center gap-1">
@@ -306,31 +349,32 @@ export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { 
           {s.account.fiveH != null && <span className={cn("font-ac-mono text-[10.5px]", t === "ok" || t === "none" ? "text-ac-muted" : t === "warn" ? "text-ac-warn-text" : "text-ac-alert-text")}>{s.account.fiveH}%</span>}
         </span>
       </BarChip>
-      <BarChip title={s.respawnWhy ?? (s.hosted ? "Model for the next turn" : "Locked: change it in your terminal (/model)")} locked={!s.hosted || !!s.respawnWhy} open={chipOpen === "model"} onClick={(e) => on.model(shellX(e))}>
+      <BarChip title={s.respawnWhy ?? (s.hosted ? "Model for the next turn" : "Locked: change it in your terminal (/model)")} locked={!s.hosted || !!s.respawnWhy} open={chipOpen === "model"} chip="model" moved={isMoved("model")} onClick={(e) => on.model(shellX(e))}>
         {/* Unknown: the field's name, muted — never a dash (gap §5b). */}
         {s.model ? <span title={s.modelId ?? undefined}>{s.model}</span> : <span className="text-ac-muted">Model</span>}
       </BarChip>
-      <BarChip title={s.respawnWhy ?? (s.hosted ? "Thinking for the next turn" : "Locked: change it in your terminal")} locked={!s.hosted || !!s.respawnWhy} open={chipOpen === "thinking"} onClick={(e) => on.thinking(shellX(e))}>
+      <BarChip title={s.respawnWhy ?? (s.hosted ? "Thinking for the next turn" : "Locked: change it in your terminal")} locked={!s.hosted || !!s.respawnWhy} open={chipOpen === "thinking"} chip="thinking" moved={isMoved("thinking")} onClick={(e) => on.thinking(shellX(e))}>
         <Brain className="size-3.5 text-ac-muted" /> {s.thinking ? s.thinking[0].toUpperCase() + s.thinking.slice(1) : <span className="text-ac-muted">Thinking</span>}
       </BarChip>
       {s.contextPct != null && (
-        <span className="ml-1 shrink-0 whitespace-nowrap font-ac-mono text-[11px] text-ac-muted" title="Context used">
+        <span data-bar-chip="ctx" {...away(isMoved("ctx"))} className="ml-1 shrink-0 whitespace-nowrap font-ac-mono text-[11px] text-ac-muted" title="Context used">
           ctx {Math.round(s.contextPct)}%
         </span>
       )}
       {/* Where it runs, always visible; the hint gives way first when the bar is narrow. */}
       {s.hosted ? (
         <>
-          <span className="ml-2 inline-flex shrink-0">
+          <span data-bar-chip="where" {...away(isMoved("where"))} className="ml-2 inline-flex shrink-0">
             <Chip kind="status" tone="info" icon={<Server />} title={`Hosted by Agent Switch: ${HOSTED_HINT}`}>
               Hosted
             </Chip>
           </span>
-          <span className="ml-1.5 min-w-0 flex-1 truncate text-[11px] text-ac-muted">{HOSTED_HINT}</span>
+          {/* The hint belongs to the chip: it leaves with it. */}
+          <span {...away(isMoved("where"))} className="ml-1.5 min-w-0 flex-1 truncate text-[11px] text-ac-muted">{HOSTED_HINT}</span>
         </>
       ) : (
         <>
-          <span className="ml-2 inline-flex shrink-0">
+          <span data-bar-chip="where" {...away(isMoved("where"))} className="ml-2 inline-flex shrink-0">
             <Chip kind="meta" icon={<Eye />} title="Runs in your terminal; Agent Switch reads along. Take over to type here.">
               {s.where ?? "Your terminal"} · watching
             </Chip>
@@ -340,7 +384,7 @@ export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { 
       )}
       </div>
       {openIn}
-      <IconButton {...POPOVER_TRIGGER} label="Session actions: rename, pin, move, detach, end" aria-haspopup="menu" aria-expanded={!!menuOpen} className="size-7" onClick={(e) => on.menu(e.currentTarget)}>
+      <IconButton {...POPOVER_TRIGGER} label="Session actions: rename, pin, move, detach, end" aria-haspopup="menu" aria-expanded={!!menuOpen} className="size-7" onClick={(e) => on.menu(e.currentTarget, moved)}>
         <Ellipsis />
       </IconButton>
     </div>
