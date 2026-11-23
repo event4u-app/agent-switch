@@ -167,6 +167,8 @@ export interface RunArgs {
   effort?: string;
   /** Start in a new worktree of the folder (src/start-choice.ts). */
   worktree?: true;
+  /** Start in a new window of the user's terminal instead of this one. */
+  newWindow?: true;
 }
 
 export function parseRun(rest: string[]): RunArgs {
@@ -200,11 +202,11 @@ export function parseRun(rest: string[]): RunArgs {
     choice[flag === "--model" ? "model" : "effort"] = v;
     args.splice(i, 2);
   }
-  const switches: Pick<RunArgs, "tmux" | "force" | "worktree"> = {};
-  for (const flag of ["--tmux", "--force", "--worktree"] as const) {
+  const switches: Pick<RunArgs, "tmux" | "force" | "worktree" | "newWindow"> = {};
+  for (const [flag, key] of [["--tmux", "tmux"], ["--force", "force"], ["--worktree", "worktree"], ["--new-window", "newWindow"]] as const) {
     const i = own(flag);
     if (i >= 0) {
-      switches[flag.slice(2) as "tmux" | "force" | "worktree"] = true;
+      switches[key] = true;
       args.splice(i, 1);
     }
   }

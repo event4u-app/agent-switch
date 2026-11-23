@@ -174,7 +174,7 @@ async function main(): Promise<void> {
     case "run": {
       let r: ReturnType<typeof parseRun>;
       try { r = parseRun(rest); } catch (e) { die((e as Error).message); }
-      return cmdRun(r.providerId, r.name, r.args, r.cwd, { tmux: r.tmux, force: r.force, model: r.model, effort: r.effort, worktree: r.worktree });
+      return cmdRun(r.providerId, r.name, r.args, r.cwd, { tmux: r.tmux, force: r.force, model: r.model, effort: r.effort, worktree: r.worktree, newWindow: r.newWindow });
     }
     case "handoff": return cmdHandoff(providerId, positional[0], positional.slice(1), flags);
     case "list": case "ls":
