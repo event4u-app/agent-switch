@@ -31,7 +31,7 @@ import { KEYS_STORAGE, withRebinds } from "../keys.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
 import { canTakeOver, chatStart, initialPlan, sessionKey, startKey, toV3Data, worktreeOf, type AdapterEnv, type SessionTerminal } from "./data.js";
-import { SessionBody, ToolsSlot, settingsSection } from "./slots.js";
+import { SessionBody, SubagentTranscript, ToolsSlot, settingsSection } from "./slots.js";
 import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
 import { useChats } from "./chats.js";
@@ -417,6 +417,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       />
       );
     },
+    subagent: (parent, agentId) => <SubagentTranscript key={`${parent}#${agentId}`} parent={parent} agentId={agentId} />,
     review: (key, focus) => {
       const tab = chats.tabOf(key);
       const chat = tab ? chats.states.get(tab) : undefined;

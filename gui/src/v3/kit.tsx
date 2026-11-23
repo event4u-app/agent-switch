@@ -222,6 +222,9 @@ export function duration(ms: number): string {
   return `${s}s`;
 }
 
+/** How long ago: "now" under a minute, else "21m ago", "1h 18m ago" — the one relative time of rows, peek and table. */
+export const ago = (ms: number) => (ms < 60_000 ? "now" : `${duration(ms)} ago`);
+
 /** "↻ 1h 18m" until a window resets. */
 export const resetIn = (ms: number) => `↻ ${duration(ms)}`;
 

@@ -16,7 +16,7 @@ import { Segmented } from "../ui/Segmented.js";
 import type { BatchActions } from "./kit.js";
 import { TrayAccount, type LimitAccount } from "./limits.js";
 import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
-import { SessionsZone, sortLive, type RowSession } from "./sessions.js";
+import { DEFAULT_SORT, SessionsZone, sortLive, type RowSession } from "./sessions.js";
 import { useEngaged, useHeldOrder } from "./held-order.js";
 
 export const TRAY_SESSIONS = 5;
@@ -89,8 +89,8 @@ export function V3Tray({
   };
 }) {
   const [picked, setPicked] = useState<TrayTool>("claude");
-  // The window's default order (activity); without times it stays the status order.
-  const all = sortLive(sessions, "activity", lastActiveOf ?? (() => null));
+  // The window's default order: status first, newest first inside each rank (spec §5.2).
+  const all = sortLive(sessions, DEFAULT_SORT, lastActiveOf ?? (() => null));
   const tools = trayTools(all, accounts);
   // A tool whose last session ended drops its tab; fall back to the default.
   const tab = tools.includes(picked) ? picked : "claude";
@@ -193,7 +193,7 @@ export function V3Tray({
               onDoneToday={() => {}}
               onStart={on.start}
               loading={loading}
-              sort="activity"
+              sort={DEFAULT_SORT}
               lastActiveOf={lastActiveOf}
               holdOrder={engaged}
               batch={noBatch}

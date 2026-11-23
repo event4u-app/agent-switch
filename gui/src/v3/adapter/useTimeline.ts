@@ -18,7 +18,7 @@ export interface TimelineState {
 
 const EMPTY: TimelineState = { events: [], version: null, newerThanFixtures: false, error: null, loaded: false };
 
-export function useTimeline(key: string | null, read: typeof ipc.sessionTimeline = ipc.sessionTimeline): TimelineState {
+export function useTimeline(key: string | null, read: (key: string) => Promise<Pick<Awaited<ReturnType<typeof ipc.sessionTimeline>>, "events" | "version" | "newerThanFixtures">> = ipc.sessionTimeline): TimelineState {
   // The state remembers which session it belongs to: another session's conversation is never shown under this one.
   const [s, set] = useState<{ owner: string | null; t: TimelineState }>({ owner: key, t: EMPTY });
   useEffect(() => {

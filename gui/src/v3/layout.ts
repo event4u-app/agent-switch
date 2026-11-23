@@ -15,7 +15,7 @@ export interface WindowLayout {
   /** Replaced by `group` ("project"); still read so an older layout keeps its grouping. */
   groupByProject?: boolean;
   pinnedOnly: boolean;
-  /** How the Sessions list is ordered; activity (most recent first) by default. */
+  /** How the Sessions list is ordered; status first by default (spec §5.2). */
   sort?: "activity" | "name" | "status";
   group?: "none" | "project" | "account" | "tool";
 }

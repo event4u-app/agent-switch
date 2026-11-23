@@ -208,9 +208,14 @@ export function fromClaudeLine(line: unknown, st: ClaudeState): AsEvent[] {
 
 /** A whole transcript → events, plus the Claude Code version it was written by. */
 export function readClaudeTranscript(file: string): { events: AsEvent[]; version: string | null; newerThanFixtures: boolean } {
+  return fromClaudeText(fs.readFileSync(file, "utf8"));
+}
+
+/** Transcript text (whole lines) → events, plus the Claude Code version it was written by. Pure. */
+export function fromClaudeText(text: string): { events: AsEvent[]; version: string | null; newerThanFixtures: boolean } {
   const st = claudeState();
   const events: AsEvent[] = [];
-  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+  for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     let parsed: unknown;
     try {

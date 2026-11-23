@@ -12,7 +12,7 @@ import { cn } from "../lib/utils.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { Kbd } from "../ui/Typography.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
-import { AccountMark, Chip, Label, Marker, duration } from "./kit.js";
+import { AccountMark, Chip, Label, Marker, ago } from "./kit.js";
 import { NeedRow, type NeedItem } from "./needs.js";
 import { useModalFocus } from "./focus.js";
 import { MenuSection } from "./menus.js";
@@ -206,7 +206,7 @@ export function PeekCard({ f, nowMs }: { f: PeekFacts; nowMs: number }) {
       <div className="flex items-center gap-2">
         {f.state && <SessionStateIcon state={f.state} />}
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ac-text">{f.title}</span>
-        {f.lastActiveMs != null && <span className="shrink-0 text-[11px] text-ac-muted">{nowMs - f.lastActiveMs < 60_000 ? "now" : `${duration(nowMs - f.lastActiveMs)} ago`}</span>}
+        {f.lastActiveMs != null && <span className="shrink-0 text-[11px] text-ac-muted">{ago(nowMs - f.lastActiveMs)}</span>}
       </div>
       <div className="mt-1.5 space-y-1 text-xs text-ac-muted">
         <div className="flex items-center gap-2 text-ac-soft">
@@ -259,7 +259,7 @@ export function InboxPopover({ items, history, focusedId, nowMs, onVerb, onAllLa
               <span className="min-w-0 flex-1 truncate text-ac-soft">
                 {h.who} {h.what}
               </span>
-              <span className="shrink-0 text-[11px] text-ac-faint">{duration(nowMs - Date.parse(h.doneAt))} ago</span>
+              <span className="shrink-0 text-[11px] text-ac-faint">{ago(nowMs - Date.parse(h.doneAt))}</span>
             </div>
           ))}
           </MenuSection>

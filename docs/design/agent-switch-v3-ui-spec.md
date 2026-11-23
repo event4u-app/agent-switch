@@ -335,9 +335,10 @@ soft title and a muted count). It has three zones, top to bottom.
   3. Working
   4. Everything else
 
-  Done sessions are not in this list.
+  Done sessions are not in this list. Inside each rank the most recent session comes first. This status order is the default; Activity and Name can be chosen in the zone head.
 - **Row (`SessionRow`)**: one line at rest, h 28.
-  - Left: the **state dot**, or a checkbox while selecting.
+  - Left: the **state dot**, or a checkbox while selecting. Waiting, idle and recent have shapes of their own (ring around a dot, ring, dashed ring), and every dot names its state in its tooltip.
+  - Then the **tool monogram** (`AppMono`, as on child rows), so a Claude and a Codex row never look alike.
   - Then the **title**: 13 px, soft; primary and medium when active. The tooltip holds the full title.
   - Then **one trailing slot**, by priority, showing only the first that applies:
     1. account name in amber when that account is near its limit;
@@ -347,12 +348,13 @@ soft title and a muted count). It has three zones, top to bottom.
     5. "no update in 34m" (muted) for quiet work (§3.3);
     6. running children → `Bot` icon plus count (muted), summed over every depth. The tooltip says e.g. "1 subagent · 1 running".
   - The amber dot and the running count also open the row's children.
-- The **active row** has the Marker and adds a second line: `account · branch · #PR` (11 px muted). Comfortable density adds the second line to every row. When its children are open, the row and its children are one block: one raise fill and one Marker around both (§3.2; owner, Q1 2026-11-22: "1").
+- The **active row** has the Marker and adds a second line: `AccountMark account · branch · #PR`, and the row's age ("21m ago") on the right (11 px muted). Comfortable density adds the second line to every row; a compact row shows the age in its trailing slot when nothing else takes it. Age is the one relative time of the app (§3.6): "now", then "21m ago"; the peek card and the All sessions table use the same. When its children are open, the row and its children are one block: one raise fill and one Marker around both (§3.2; owner, Q1 2026-11-22: "1").
 - **Hover** (≈400 ms) shows the **peek card** (§7.3): the details that left the row.
 - **Children** unfold under the row (`ChildLine`, h 24), in the parent's row grammar: state dot, tool monogram (`AppMono`; a `Bot` glyph for a subagent), `AccountMark`, label, and the same trailing slot. Words only when something is not OK; model, thinking and age are in the peek card, which a child shows on hover like a root.
   - A child that is a session takes its state from its own runtime, the same function as a root; a subagent is running or done.
   - **Tree.** Children nest to any depth along the parents the engine reported, never an inferred one. One `Guides` component draws the connectors, 16 px per level: a rail for an ancestor that continues, a tee for a middle child, a rounded elbow for the last, a stem under the parent; lines meet the dots. An edge back to a session already above is dropped.
-  - Clicking a session child opens it; a subagent or counted row is not a button and its tooltip says it runs inside its session.
+  - Clicking a session child opens it. Clicking a subagent its hooks reported opens its own transcript read-only in place of its parent's body: its label, the tool it runs now, how long it ran, and "Back to <parent>". A counted row is not a button and its tooltip says it runs inside its session.
+  - A subagent's label is its type and the first line of its Task description ("general-purpose · migrate JSON stores"), so siblings of one type read apart.
   - **Idle fold.** Under an open parent, children that are working or need you stay listed; the others fold into one "N idle" line that opens in place and keeps its state per parent for the session. A single idle child is listed, not folded.
   - ⌘J to a Needs-you item whose subject is a child opens its parents and focuses the child row.
   - Provenance is in the tooltip ("via hook", "via lineage", "via git", "via GitHub", "via host").
@@ -603,8 +605,8 @@ The header (h 36) has the title, optional aside text and "Hide ⌘I" (−).
 
 ### 9.3 Children
 
-- Count in words ("1 subagent", "3 helper sessions", "2 related sessions").
-- `ChildLine` list.
+- Count in words ("1 subagent", "3 helper sessions", "2 related sessions"); Summary's "Children" fact says the same.
+- `ChildLine` list; a row opens what its tree row opens.
 - A note explaining provenance and "relation unknown".
 
 ---

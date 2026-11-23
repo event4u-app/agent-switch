@@ -30,7 +30,9 @@ import { restoreAfterChat } from "./view.js";
 import { configDir, die, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
 import { provider as providerOf, type ProviderId } from "../providers.js";
 import { readSessionHeader } from "../sessions.js";
-import { readClaudeTranscript } from "../timeline/claude.js";
+import { fromClaudeText, readClaudeTranscript } from "../timeline/claude.js";
+import { readTail, subagentTranscript } from "../lineage.js";
+import * as fs from "node:fs";
 import { fromCodexThread } from "../timeline/codex.js";
 import type { AsEvent } from "../timeline/events.js";
 import { resolveSession } from "./library.js";
@@ -92,13 +94,42 @@ async function codexHistory(t: Target): Promise<AsEvent[]> {
   }
 }
 
+/** How much of a subagent's transcript `timeline --subagent` reads: its newest part, enough for the view, never the whole of a long run. */
+export const SUBAGENT_TIMELINE_BYTES = 4 * 1024 * 1024;
+
+/**
+ * One subagent's own transcript (`<session>/subagents/agent-<id>.jsonl`) as
+ * events, read-only. Only its last `maxBytes` are read; `truncated` says the
+ * head was left out. Throws for an id that is not a plain agent id.
+ */
+export function readSubagentTimeline(transcript: string, agentId: string, maxBytes = SUBAGENT_TIMELINE_BYTES): { events: AsEvent[]; version: string | null; newerThanFixtures: boolean; truncated: boolean } {
+  const file = subagentTranscript(transcript, agentId);
+  if (!file) throw new Error(`${agentId} is not a subagent id`);
+  let size: number;
+  try {
+    size = fs.statSync(file).size;
+  } catch {
+    throw new Error(`subagent ${agentId} has no transcript next to this session`);
+  }
+  return { ...fromClaudeText(readTail(file, maxBytes)), truncated: size > maxBytes };
+}
+
 export async function cmdTimeline(arg: string | undefined, flags: Record<string, string | boolean>): Promise<void> {
-  if (!arg) die("usage: agent-switch timeline <session> [--json] [--limit N] [--before N]");
+  if (!arg) die("usage: agent-switch timeline <session> [--subagent ID] [--json] [--limit N] [--before N]");
   const t = target(arg);
   let events: AsEvent[];
   let version: string | null = null;
   let newerThanFixtures = false;
-  if (t.provider === "codex") events = await codexHistory(t);
+  let truncated = false;
+  if (typeof flags.subagent === "string" || flags.subagent === true) {
+    if (t.provider !== "claude" || !t.transcript) die("--subagent reads Claude subagent transcripts only");
+    if (typeof flags.subagent !== "string") die("usage: agent-switch timeline <session> --subagent ID");
+    try {
+      ({ events, version, newerThanFixtures, truncated } = readSubagentTimeline(t.transcript, flags.subagent));
+    } catch (err) {
+      die((err as Error).message);
+    }
+  } else if (t.provider === "codex") events = await codexHistory(t);
   else {
     const r = readClaudeTranscript(t.transcript!);
     events = r.events;
@@ -107,7 +138,7 @@ export async function cmdTimeline(arg: string | undefined, flags: Record<string,
   }
   const n = (v: string | boolean | undefined) => (typeof v === "string" && /^\d+$/.test(v) ? Number(v) : undefined);
   const p = page(events, n(flags.limit) ?? DEFAULT_PAGE, n(flags.before));
-  if (flags.json) return void console.log(JSON.stringify({ key: t.key, provider: t.provider, version, newerThanFixtures, ...p }));
+  if (flags.json) return void console.log(JSON.stringify({ key: t.key, provider: t.provider, version, newerThanFixtures, ...(typeof flags.subagent === "string" ? { subagent: flags.subagent, truncated } : {}), ...p }));
   for (const e of p.events) {
     if (e.t === "message") console.log(`${e.role === "user" ? "›" : " "} ${e.text.split("\n")[0]}`);
     else if (e.t === "tool.started") console.log(`  ${e.name} ${e.summary}`);

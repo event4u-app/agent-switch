@@ -26,7 +26,8 @@ import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } fro
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
 import type { ReviewFocus } from "./review.js";
-import { SessionsZone, childNoun, findChild, type RowSession } from "./sessions.js";
+import { DEFAULT_SORT, SessionsZone, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
+import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
 import { allNeeds } from "./tools.js";
@@ -94,6 +95,8 @@ export interface V3Slots {
   /** Accounts › MCP & plugins (v3.1). */
   mcp?: ReactNode;
   tools: ReactNode;
+  /** 7.7: one subagent's transcript, read-only, opened from its row. Absent: subagent rows do not open. */
+  subagent?: (parent: string, agentId: string) => ReactNode;
   /** v3.1: the Review page of one session (spec §10.9), opened at `focus` when a file was picked. Absent: Review and Commit stay disabled. */
   review?: (key: string, focus?: ReviewFocus) => ReactNode;
   /** The 2.11 settings screens v3 keeps, by section. */
@@ -243,7 +246,7 @@ export function V3Window({
   const [reviewFocus, setReviewFocus] = useState<ReadonlyMap<string, ReviewFocus>>(new Map());
   // Two-line rows are the default (5.2); a saved choice wins.
   const [comfortable, setComfortable] = useState(saved?.comfortable ?? true);
-  const [sortBy, setSortBy] = useState<SortBy>(saved?.sort ?? "activity");
+  const [sortBy, setSortBy] = useState<SortBy>(saved?.sort ?? DEFAULT_SORT);
   // An older layout's "group by project" comes back as the project grouping.
   const [groupBy, setGroupBy] = useState<GroupBy>(saved?.group ?? (saved?.groupByProject ? "project" : "none"));
   const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
@@ -276,6 +279,18 @@ export function V3Window({
     setStrip((cur) => openTab(cur, key));
     setActive(key);
   };
+  // 7.7: a subagent opens read-only in place of its parent's body, until Back or another session.
+  const [subView, setSubView] = useState<{ parent: string; agentId: string } | null>(null);
+  const openSubagent = slots.subagent
+    ? (parent: string, agentId: string) => {
+        openSession(parent);
+        setSubView({ parent, agentId });
+      }
+    : undefined;
+  // Another session, or the parent's tab closed: the subagent view ends.
+  useEffect(() => {
+    if (subView && subView.parent !== active) setSubView(null);
+  }, [active, subView]);
   // The window opens where the user left off, else on the first live session;
   // once, when the sessions are first known (they arrive after the first paint).
   const started = useRef(false);
@@ -615,6 +630,18 @@ export function V3Window({
     </SystemBanner>
   );
 
+  /** The session body, or the subagent of it that is open. */
+  const bodyOf = (key: string): ReactNode => {
+    const hit = subView && subView.parent === key && slots.subagent ? findChild(data.sessions, subView.agentId) : null;
+    if (!hit || !subView) return slots.body(key);
+    const parentTitle = data.sessions.find((x) => x.key === key)?.title ?? key;
+    return (
+      <SubagentView c={hit.child} parentTitle={parentTitle} nowMs={data.nowMs} onBack={() => setSubView(null)}>
+        {slots.subagent!(key, subView.agentId)}
+      </SubagentView>
+    );
+  };
+
   const centre = (
     <section className="flex min-w-0 flex-1 flex-col bg-ac-bg">
       <TabStrip
@@ -665,10 +692,10 @@ export function V3Window({
               <p role="status" className="shrink-0 border-b border-ac-line bg-ac-raise px-4 py-1 text-[11.5px] text-ac-muted">
                 Engine stopped — showing the last known state
               </p>
-              <div className="flex min-h-0 flex-1 flex-col opacity-60 saturate-50">{slots.body(activeSession)}</div>
+              <div className="flex min-h-0 flex-1 flex-col opacity-60 saturate-50">{bodyOf(activeSession)}</div>
             </div>
           ) : (
-            slots.body(activeSession)
+            bodyOf(activeSession)
           )}
         </>
       ) : data.sessions.length === 0 && data.loading ? (
@@ -705,7 +732,7 @@ export function V3Window({
     }
     if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={(file) => (slots.review ? openReview(activeSession, file) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openReview(activeSession) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} />;
     const s = data.sessions.find((x) => x.key === activeSession);
-    return s && <ChildrenWindow noun={childNoun(s)} children={s.children} onHide={() => frame.setRight(null)} />;
+    return s && <ChildrenWindow noun={childNoun(s)} children={s.children} onHide={() => frame.setRight(null)} subagents={!!openSubagent} onOpen={(c) => (childOpens(c) ? openSession(c.id) : openSubagent?.(activeSession, c.id))} />;
   })();
 
   const modelOf = overlay && typeof overlay === "object" && "model" in overlay ? overlay.model : null;
@@ -752,6 +779,8 @@ export function V3Window({
           sort={sortBy}
           group={groupBy}
           lastActiveOf={(k) => data.table.find((t) => t.key === k)?.lastActiveMs ?? null}
+          nowMs={data.nowMs}
+          onSubagent={openSubagent}
           groupOf={(k) => {
             const t = data.table.find((x) => x.key === k);
             if (!t) return null;

@@ -49,6 +49,14 @@ is no link.
 
 `agent-switch sessions --json` lists, per session, `children` (each with `kind`,
 `state` and `source`), `childCount`, `childSource`, and for a child its `parent`.
+A hook subagent also carries `startedAt` / `endedAt` (its hook times),
+`description` (the first line of its Task call's description, from Claude Code's
+`agent-<id>.meta.json` or, failing that, from the session transcript's Task call
+joined by its tool-use id or the agent id its result names — never by order) and,
+while it runs, `doing` (its last tool call without a result, from the newest
+256 KB of its transcript). Prompts and answers are never read into this output.
+`agent-switch timeline <session> --subagent <id>` shows that subagent's own
+transcript, read-only.
 A session in a temp folder that no one claims carries `"relation": "unknown"`.
 `agent-switch sessions --tree --json` nests children under their parent; counts
 of sessions count roots only.

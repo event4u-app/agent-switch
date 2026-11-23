@@ -286,7 +286,9 @@ test("`sessions --json` lists a session's subagents from its hooks, and leaves `
 
     const kids = JSON.parse(run(home, ["sessions", "--json"]))[0].children;
     assert.equal(kids.length, 4, "4 subagents, 4 children");
-    assert.deepEqual(kids[0], { kind: "subagent", agentId: "a1", type: "general-purpose", state: "done", cwd: "/tmp/proj/.worktrees/w1", source: "hook" });
+    const { startedAt, endedAt, ...first } = kids[0];
+    assert.deepEqual(first, { kind: "subagent", agentId: "a1", type: "general-purpose", state: "done", cwd: "/tmp/proj/.worktrees/w1", source: "hook" });
+    assert.ok(Date.parse(startedAt) <= Date.parse(endedAt), "its hook times: started, then stopped");
     assert.deepEqual(kids.slice(1).map((k: any) => k.state), ["running", "running", "running"]);
     const ring = fs.readFileSync(path.join(home, "events", "claude-work.jsonl"), "utf8");
     assert.ok(!ring.includes("secret answer"), "the subagent's answer is never stored");

@@ -410,9 +410,9 @@ test("childrenOf: one entry per subagent of that session, running until its stop
     ev("SubagentStop", "p1", "orphan", 5), // its start was rotated away
   ];
   assert.deepEqual(childrenOf(events, "p1"), [
-    { agentId: "a1", type: "general-purpose", state: "done", cwd: "/repo" },
-    { agentId: "a2", type: "general-purpose", state: "running", cwd: "/repo" },
-    { agentId: "orphan", type: "general-purpose", state: "done", cwd: "/repo" },
+    { agentId: "a1", type: "general-purpose", state: "done", cwd: "/repo", startedAt: t(1), endedAt: t(4) },
+    { agentId: "a2", type: "general-purpose", state: "running", cwd: "/repo", startedAt: t(2) },
+    { agentId: "orphan", type: "general-purpose", state: "done", cwd: "/repo", endedAt: t(5) },
   ]);
   assert.deepEqual(childrenOf(events, "nobody"), []);
   const ended = [...events, ev("SessionEnd", "p1", undefined, 6)];
@@ -423,7 +423,7 @@ test("childrenOf: one entry per subagent of that session, running until its stop
 test("childrenOf on the live fixture: one finished general-purpose subagent", () => {
   const events = subagentPayloads().map((o) => recordFromPayload(o, at));
   assert.deepEqual(childrenOf(events, "d37f90b5-2201-4065-abbb-9e0cac14474a"), [
-    { agentId: "a3731b735e452e7b7", type: "general-purpose", state: "done", cwd: "/private/tmp/probe" },
+    { agentId: "a3731b735e452e7b7", type: "general-purpose", state: "done", cwd: "/private/tmp/probe", startedAt: at, endedAt: at },
   ]);
 });
 
