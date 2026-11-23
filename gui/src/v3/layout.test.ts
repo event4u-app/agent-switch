@@ -1,8 +1,32 @@
-import { describe, expect, it } from "vitest";
-import { parseLayout, startTabs } from "./layout.js";
+import { describe, expect, it, vi } from "vitest";
+import { LAYOUT_KEY, LAYOUT_VERSION, localLayout, parseLayout, startTabs } from "./layout.js";
 import type { RowSession } from "./sessions.js";
 
 const s = (key: string, state: RowSession["state"], extra: Partial<RowSession> = {}): RowSession => ({ key, title: key, state, account: { name: "w", nearLimit: false }, branch: null, pr: null, children: [], needsYou: false, ...extra });
+
+describe("an older layout gets the new list defaults once (8.6)", () => {
+  it("a layout saved before the version drops the old defaults it stored (activity order, one-line rows)", () => {
+    const old = parseLayout(JSON.stringify({ tabs: ["a"], active: "a", comfortable: false, pinnedOnly: false, sort: "activity" }));
+    expect(old).toEqual({ tabs: ["a"], active: "a", pinnedOnly: false });
+  });
+
+  it("an older layout keeps a choice the old defaults never made", () => {
+    expect(parseLayout(JSON.stringify({ sort: "name", comfortable: true }))).toEqual({ sort: "name", comfortable: true });
+  });
+
+  it("a layout saved at this version keeps an explicit choice, the old defaults included", () => {
+    expect(parseLayout(JSON.stringify({ version: LAYOUT_VERSION, sort: "activity", comfortable: false }))).toEqual({ version: LAYOUT_VERSION, sort: "activity", comfortable: false });
+  });
+
+  it("the store stamps the version, so the migration runs once", () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) });
+    localLayout.save({ tabs: [], active: null, comfortable: false, pinnedOnly: false, sort: "activity" });
+    expect(JSON.parse(store.get(LAYOUT_KEY)!).version).toBe(LAYOUT_VERSION);
+    expect(localLayout.load()).toMatchObject({ sort: "activity", comfortable: false });
+    vi.unstubAllGlobals();
+  });
+});
 
 describe("window layout", () => {
   it("parses field by field and drops anything malformed", () => {
