@@ -29,6 +29,7 @@ const run = (root: string, args: string[], input = "", env: Record<string, strin
 test("__statusline prints nothing and exits 0 on every path; writes the cache for a registered profile", gate, () => {
   const { root, cfg } = home();
   const dir = cfg("work");
+  fs.writeFileSync(path.join(root, "claude", "work", "statusline-installed"), "/opt/bin/agent-switch __statusline\n");
   const text = fs.readFileSync(FIX, "utf8");
   for (const [input, env] of [
     [text, { CLAUDE_CONFIG_DIR: dir }],

@@ -39,7 +39,7 @@ import { appHidden, visibilityFile } from "./app-visibility.js";
 import { fetchUsage, liveSessionPids, liveSessions, readProfileCredential } from "./api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "./token-freshen.js";
 import { codexProfilesWithSession, keepAliveSweep } from "./login-keepalive.js";
-import { readStatuslineSnapshot, statuslineFresh } from "./statusline.js";
+import { servedStatuslineSnapshot, statuslineFresh } from "./statusline.js";
 import { parseUsage, resolveClaudeUsage, detectCrossings, pickSwitchTarget, maxUtilization, freedAfterReset, resetPassed, SwitchCandidate, ThresholdState, UsageSnapshot, type Crossing } from "./usage.js";
 import { readCodexUsage, rolloutUsage } from "./codex-usage.js";
 import { autoRedeemDue, redeemResetCredit, resetReflected, usageAfterRedeem } from "./codex-reset.js";
@@ -664,14 +664,15 @@ interface RunOptions {
  *  `wham/usage` read. null when unreadable (counts as a poll failure). The
  *  merge keeps every window `last` had, so the switch and threshold logic never
  *  sees fewer windows than a poll would give it. */
-async function snapshotFor(provider: ProviderId, name: string, log: (l: string) => void, last?: UsageSnapshot): Promise<UsageSnapshot | null> {
-  if (provider === "codex") return readCodexUsage(configDir("codex", name));
+async function snapshotFor(provider: ProviderId, name: string, log: (l: string) => void, last?: UsageSnapshot, mayPoll = true): Promise<{ snapshot: UsageSnapshot | null; pollFailed?: boolean }> {
+  if (provider === "codex") return { snapshot: await readCodexUsage(configDir("codex", name)) };
   const r = await resolveClaudeUsage({
-    statusline: readStatuslineSnapshot(profileDir("claude", name)),
+    statusline: servedStatuslineSnapshot(profileDir("claude", name)),
     base: last ?? null,
     now: Date.now(),
     fresh: (s) => statuslineFresh(s),
     pollOnlyMaxAgeMs: POOL_POLL_INTERVAL_MS,
+    mayPoll,
     poll: async () => {
       // An expired access token is the daemon's most common "usage stopped
       // moving" cause — a profile nobody is running never refreshes itself. Let
@@ -686,7 +687,7 @@ async function snapshotFor(provider: ProviderId, name: string, log: (l: string) 
       return raw ? parseUsage(raw) : null;
     },
   });
-  return r.snapshot;
+  return { snapshot: r.snapshot, pollFailed: r.pollFailed };
 }
 
 /** The stored login behind a profile, fingerprinted: Claude's credential
@@ -844,7 +845,10 @@ async function pollProvider(
   // at once — "free again" should not wait for the 5-minute pool cadence.
   // Backoff still applies: a failing read is not retried every cycle.
   const afterReset = names.filter((n) => !selected.includes(n) && resetPassed(state.profiles[`${provider}/${n}`], thresholdOf(n), Date.now()));
-  const targets = dueTargets(provider, [...selected, ...afterReset], backoff, Date.now(), (n) => loginStampFor(provider, n));
+  const due = dueTargets(provider, [...selected, ...afterReset], backoff, Date.now(), (n) => loginStampFor(provider, n));
+  // The backoff holds back the poll only: a fresh local statusline sample is still read.
+  const localOnly = provider === "claude" ? [...selected, ...afterReset].filter((n) => !due.includes(n) && statuslineFresh(servedStatuslineSnapshot(profileDir("claude", n)))) : [];
+  const targets = [...due, ...localOnly];
   let failures = 0;
   const polled: SwitchCandidate[] = [];
 
@@ -852,10 +856,15 @@ async function pollProvider(
   state.fetchFailingSince = state.fetchFailingSince ?? {};
   for (const name of targets) {
     const key = `${provider}/${name}`;
-    let snapshot = await snapshotFor(provider, name, log, state.profiles[key]);
-    const nextBackoff = snapshot ? undefined : nextProfileBackoff(backoff.get(key), false, baseMs, Date.now(), loginStampFor(provider, name));
-    if (nextBackoff) backoff.set(key, nextBackoff);
-    else backoff.delete(key);
+    const mayPoll = !localOnly.includes(name);
+    const read = await snapshotFor(provider, name, log, state.profiles[key], mayPoll);
+    let snapshot = read.snapshot;
+    // A 429 next to a fresh sample still backs off the poll; the sample is used below.
+    if (mayPoll) {
+      const nextBackoff = snapshot && !read.pollFailed ? undefined : nextProfileBackoff(backoff.get(key), false, baseMs, Date.now(), loginStampFor(provider, name));
+      if (nextBackoff) backoff.set(key, nextBackoff);
+      else backoff.delete(key);
+    }
     if (!snapshot) {
       failures++;
       // Fail-safe: the last-known snapshot in state.profiles[key] is left intact

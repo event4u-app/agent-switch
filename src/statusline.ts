@@ -20,9 +20,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { readSettings, writeSettings } from "./hooks.js";
+import { readSettings, readSettingsStrict, writeSettings } from "./hooks.js";
 import { withFileLockSync } from "./locks.js";
-import { parseStatuslineUsage, sameResetCycle, type UsageSnapshot } from "./usage.js";
+import { parseStatuslineUsage, sameResetCycle, type UsageSnapshot, type UsageWindow } from "./usage.js";
 
 export const STATUSLINE_FILE = "usage-statusline.json";
 export const STATUSLINE_MARKER = "statusline-installed";
@@ -63,22 +63,32 @@ export function readStatuslineSnapshot(profileDir: string): UsageSnapshot | null
 
 /** ADR-011 rule 6, per window: within one reset window `used_percentage` never
  *  goes down (several sessions render the last payload each saw); a later reset
- *  starts a new window; a payload still on an earlier one changes nothing. */
+ *  starts a new window; a payload still on an earlier one changes nothing. Each
+ *  window keeps the capture time of the reading it actually holds, and the
+ *  sample's `capturedAt` is its OLDEST window (the rule `mergeUsage` uses), so
+ *  replaying an old reading never makes it look fresh. */
 export function mergeMonotone(prev: UsageSnapshot | null, next: UsageSnapshot): UsageSnapshot {
-  if (!prev) return next;
-  const prevBy = new Map(prev.windows.map((w) => [w.key, w]));
-  const windows = next.windows.map((n) => {
+  const stamp = (w: UsageWindow, s: UsageSnapshot): UsageWindow => ({ ...w, capturedAt: w.capturedAt ?? s.capturedAt });
+  const nextWins = next.windows.map((w) => stamp(w, next));
+  if (!prev) return { ...next, windows: nextWins, capturedAt: oldestOf(nextWins, next.capturedAt) };
+  const prevBy = new Map(prev.windows.map((w) => [w.key, stamp(w, prev)]));
+  const windows = nextWins.map((n) => {
     const p = prevBy.get(n.key);
     prevBy.delete(n.key);
     if (!p) return n;
-    if (sameResetCycle(p.resetsAt, n.resetsAt)) {
-      return (p.utilization ?? -1) > (n.utilization ?? -1) ? { ...n, utilization: p.utilization } : n;
-    }
+    if (sameResetCycle(p.resetsAt, n.resetsAt)) return (p.utilization ?? -1) > (n.utilization ?? -1) ? p : n;
     const tp = p.resetsAt ? Date.parse(p.resetsAt) : NaN;
     const tn = n.resetsAt ? Date.parse(n.resetsAt) : NaN;
     return !isNaN(tp) && !isNaN(tn) && tn < tp ? p : n;
   });
-  return { ...next, windows: [...windows, ...prevBy.values()] };
+  const all = [...windows, ...prevBy.values()];
+  return { ...next, windows: all, capturedAt: oldestOf(all, next.capturedAt) };
+}
+
+function oldestOf(windows: UsageWindow[], fallback: string): string {
+  let best = fallback;
+  for (const w of windows) if (w.capturedAt && Date.parse(w.capturedAt) < Date.parse(best)) best = w.capturedAt;
+  return best;
 }
 
 /** Record a sample (monotone against the file). A null sample writes nothing. */
@@ -138,7 +148,7 @@ export function profileForConfigDir(configDir: string | undefined, root: string)
 export function captureStatusline(stdinText: string, env: Record<string, string | undefined>, root: string, capturedAt: string = new Date().toISOString()): void {
   try {
     const name = profileForConfigDir(env.CLAUDE_CONFIG_DIR, root);
-    if (!name) return;
+    if (!name || !isMarkedInstalled(path.join(root, "claude", name))) return;
     const payload = JSON.parse(stdinText);
     const snap = parseStatuslineUsage({ rate_limits: payload?.rate_limits }, capturedAt);
     if (!snap) return;
@@ -172,28 +182,53 @@ export function statuslineCommand(bin: string): string {
   return `${shellQuote(bin)} ${STATUSLINE_ARG}`;
 }
 
-/** "Ours" is the command running `__statusline`, whatever path it names — so a
- *  moved binary is still ours to re-point or remove. Nothing else marks it: the
- *  object stays `{type, command, padding}`. */
-export function isOurStatusline(entry: unknown): boolean {
+/** What counts as Agent Switch's own statusLine: the command recorded when it
+ *  was installed, or one whose program is an Agent Switch binary. A command of
+ *  another tool that happens to end in `__statusline` is not ours. */
+export interface Ownership {
+  commands: string[];
+  binaries: string[];
+}
+
+/** The program of a `<path> __statusline` command, unquoted; null for any other shape. */
+function programOf(cmd: unknown): string | null {
+  if (typeof cmd !== "string") return null;
+  const m = /^('(?:[^']|'\\'')*'|\S+) __statusline$/.exec(cmd.trim());
+  if (!m) return null;
+  return m[1].startsWith("'") ? m[1].slice(1, -1).replace(/'\\''/g, "'") : m[1];
+}
+
+function realOrSelf(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+export function isOurStatusline(entry: unknown, own: Ownership): boolean {
   const cmd = (entry as any)?.command;
-  return typeof cmd === "string" && /^('(?:[^']|'\\'')*'|\S+) __statusline$/.test(cmd.trim());
+  const prog = programOf(cmd);
+  if (prog === null) return false;
+  if (own.commands.includes((cmd as string).trim())) return true;
+  const real = realOrSelf(prog);
+  return own.binaries.some((b) => realOrSelf(b) === real);
 }
 
 export type InstallReason = "has-own" | "repointed";
 export type RemoveReason = "not-ours" | "absent";
 
-export function withStatuslineInstalled(settings: Settings, command: string): { settings: Settings; changed: boolean; reason?: InstallReason } {
+export function withStatuslineInstalled(settings: Settings, command: string, own: Ownership): { settings: Settings; changed: boolean; reason?: InstallReason } {
   const cur = settings.statusLine;
-  if (isOurStatusline(cur) && cur.command === command) return { settings, changed: false };
-  if (cur !== undefined && !isOurStatusline(cur)) return { settings, changed: false, reason: "has-own" };
-  const repointed = isOurStatusline(cur);
+  if (cur?.command === command && programOf(command) !== null) return { settings, changed: false };
+  if (cur !== undefined && !isOurStatusline(cur, own)) return { settings, changed: false, reason: "has-own" };
+  const repointed = cur !== undefined;
   return { settings: { ...settings, statusLine: { type: "command", command, padding: 0 } }, changed: true, ...(repointed ? { reason: "repointed" as const } : {}) };
 }
 
-export function withStatuslineRemoved(settings: Settings): { settings: Settings; changed: boolean; reason?: RemoveReason } {
+export function withStatuslineRemoved(settings: Settings, own: Ownership): { settings: Settings; changed: boolean; reason?: RemoveReason } {
   if (settings.statusLine === undefined) return { settings, changed: false, reason: "absent" };
-  if (!isOurStatusline(settings.statusLine)) return { settings, changed: false, reason: "not-ours" };
+  if (!isOurStatusline(settings.statusLine, own)) return { settings, changed: false, reason: "not-ours" };
   const next = { ...settings };
   delete next.statusLine;
   return { settings: next, changed: true };
@@ -231,38 +266,66 @@ function markerFile(profileDir: string): string {
   return path.join(profileDir, STATUSLINE_MARKER);
 }
 
-export function installStatusline(configDir: string, profileDir: string, command: string): { changed: boolean; reason?: InstallReason } {
-  const r = withStatuslineInstalled(readSettings(configDir), command);
-  if (r.changed) writeSettings(configDir, r.settings);
-  if (r.changed || isOurStatusline(r.settings.statusLine)) {
-    fs.mkdirSync(profileDir, { recursive: true });
-    fs.writeFileSync(markerFile(profileDir), `${command}\n`, { mode: 0o600 });
+/** Record that collection is on for this profile, and with which command. */
+export function markInstalled(profileDir: string, command: string): void {
+  fs.mkdirSync(profileDir, { recursive: true });
+  fs.writeFileSync(markerFile(profileDir), `${command}\n`, { mode: 0o600 });
+}
+
+export function isMarkedInstalled(profileDir: string): boolean {
+  return fs.existsSync(markerFile(profileDir));
+}
+
+/** This profile's ownership: its recorded command plus the binaries Agent Switch runs from here. */
+export function ownershipFor(profileDir: string): Ownership {
+  let recorded: string[] = [];
+  try {
+    recorded = fs.readFileSync(markerFile(profileDir), "utf8").split("\n").map((l) => l.trim()).filter(Boolean);
+  } catch {
+    // never installed here
   }
+  const binaries = [resolveStatuslineBinary(), process.argv[1]].filter((b): b is string => typeof b === "string" && path.isAbsolute(b));
+  return { commands: recorded, binaries };
+}
+
+/** The sample the usage source may use: only while collection is on for the profile. */
+export function servedStatuslineSnapshot(profileDir: string): UsageSnapshot | null {
+  return isMarkedInstalled(profileDir) ? readStatuslineSnapshot(profileDir) : null;
+}
+
+export function installStatusline(configDir: string, profileDir: string, command: string): { changed: boolean; reason?: InstallReason } {
+  const r = withStatuslineInstalled(readSettingsStrict(configDir), command, ownershipFor(profileDir));
+  if (r.changed) writeSettings(configDir, r.settings);
+  if (r.reason !== "has-own") markInstalled(profileDir, command);
   return { changed: r.changed, ...(r.reason ? { reason: r.reason } : {}) };
 }
 
+/** Removes ours, the marker and the cache: a session still running the old
+ *  command records nothing once the marker is gone. */
 export function uninstallStatusline(configDir: string, profileDir: string): { changed: boolean; reason?: RemoveReason } {
-  const r = withStatuslineRemoved(readSettings(configDir));
+  const r = withStatuslineRemoved(readSettingsStrict(configDir), ownershipFor(profileDir));
   if (r.changed) writeSettings(configDir, r.settings);
   fs.rmSync(markerFile(profileDir), { force: true });
+  fs.rmSync(path.join(profileDir, STATUSLINE_FILE), { force: true });
   return { changed: r.changed, ...(r.reason ? { reason: r.reason } : {}) };
 }
 
-/** `present` ours is set · `displaced` we installed and something else took the
- *  slot · `missing` we installed and the slot is empty · `off` never installed. */
+/** `present` ours is set and collecting · `displaced` we installed and something
+ *  else took the slot · `missing` we installed and the slot is empty · `off`
+ *  not turned on (a leftover command of ours without the marker records nothing). */
 export type StatuslineHealth = "present" | "displaced" | "missing" | "off";
 
 export function statuslineHealth(configDir: string, profileDir: string): StatuslineHealth {
+  if (!isMarkedInstalled(profileDir)) return "off";
   const cur = readSettings(configDir).statusLine;
-  if (isOurStatusline(cur)) return "present";
-  if (!fs.existsSync(markerFile(profileDir))) return "off";
+  if (isOurStatusline(cur, ownershipFor(profileDir))) return "present";
   return cur === undefined ? "missing" : "displaced";
 }
 
 /** The binary an installed command of ours runs, or null when it is not ours. */
-export function installedBinary(configDir: string): string | null {
-  const cmd = readSettings(configDir).statusLine?.command;
-  if (!isOurStatusline({ command: cmd })) return null;
-  const head = (cmd as string).trim().slice(0, -` ${STATUSLINE_ARG}`.length);
-  return head.startsWith("'") ? head.slice(1, -1).replace(/'\\''/g, "'") : head;
+export function installedBinary(configDir: string, profileDir: string): string | null {
+  const cur = readSettings(configDir).statusLine;
+  return isOurStatusline(cur, ownershipFor(profileDir)) ? programOf(cur.command) : null;
 }
+
+export { readSettingsStrict };

@@ -374,23 +374,29 @@ export interface UsageSourceInput {
   /** How old a window only the poll reports may get before a fresh sample stops covering for it. */
   pollOnlyMaxAgeMs: number;
   poll: () => Promise<UsageSnapshot | null>;
+  /** False while the poll is held back (its backoff): only the local sample is read. */
+  mayPoll?: boolean;
 }
 
 /**
  * Which source answers: a fresh statusline sample merged onto the last known
  * snapshot, with no request — unless a window only the poll knows (per-model
  * limits, which the statusline does not send) has aged out; then one poll. A
- * failed poll yields `snapshot: null` (the daemon counts the failure) and the
- * best real snapshot as `fallback` (the CLI serves it rather than nothing).
+ * failed poll (`pollFailed`) still answers with that merge while the sample is
+ * fresh: the sample is a real reading, only the poll-only windows stay old.
+ * Without a fresh sample a failed poll yields `snapshot: null` (the daemon
+ * counts the failure) and the best real snapshot as `fallback` (the CLI serves it).
  */
-export async function resolveClaudeUsage(i: UsageSourceInput): Promise<{ snapshot: UsageSnapshot | null; fallback: UsageSnapshot | null }> {
-  if (i.fresh(i.statusline)) {
-    const merged = mergeUsage(i.statusline, i.base)!;
+export async function resolveClaudeUsage(i: UsageSourceInput): Promise<{ snapshot: UsageSnapshot | null; fallback: UsageSnapshot | null; pollFailed?: boolean }> {
+  const merged = i.fresh(i.statusline) ? mergeUsage(i.statusline, i.base) : null;
+  if (merged) {
     const pollOnly = merged.windows.filter((w) => w.source !== "statusline");
     const oldest = Math.min(...pollOnly.map((w) => Date.parse(w.capturedAt ?? merged.capturedAt)));
-    if (pollOnly.length === 0 || i.now - oldest <= i.pollOnlyMaxAgeMs) return { snapshot: merged, fallback: merged };
+    if (pollOnly.length === 0 || i.now - oldest <= i.pollOnlyMaxAgeMs || i.mayPoll === false) return { snapshot: merged, fallback: merged };
   }
-  const polled = await i.poll();
   const fallback = mergeUsage(i.statusline, i.base);
-  return polled ? { snapshot: mergeUsage(i.statusline, polled), fallback } : { snapshot: null, fallback };
+  if (i.mayPoll === false) return { snapshot: null, fallback };
+  const polled = await i.poll();
+  if (polled) return { snapshot: mergeUsage(i.statusline, polled), fallback };
+  return { snapshot: merged, fallback, pollFailed: true };
 }

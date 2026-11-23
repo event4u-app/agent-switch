@@ -73,7 +73,7 @@ export function cmdStatuslineCli(sub: string | undefined, name?: string): void {
   if (action === "status") {
     for (const p of profiles) {
       const health = statuslineHealth(configDir("claude", p), profileDir("claude", p));
-      const bin = installedBinary(configDir("claude", p));
+      const bin = installedBinary(configDir("claude", p), profileDir("claude", p));
       const text: Record<typeof health, string> = {
         present: `on · ${sampleLine(p)}`,
         displaced: "displaced — another statusLine took the slot after Agent Switch's; it is kept, and usage is polled",
@@ -106,7 +106,14 @@ export function cmdStatuslineCli(sub: string | undefined, name?: string): void {
     if (group.length > 1) console.log(`claude/${group.join(", claude/")} share one settings.json — this ${action === "on" ? "turns it on" : "turns it off"} for all of them.`);
     for (const g of group) {
       if (action === "on") {
-        const r = installStatusline(configDir("claude", g), profileDir("claude", g), command!);
+        let r: ReturnType<typeof installStatusline>;
+        try {
+          r = installStatusline(configDir("claude", g), profileDir("claude", g), command!);
+        } catch (e) {
+          console.log(`claude/${g}: refused — ${(e as Error).message}`);
+          process.exitCode = 1;
+          continue;
+        }
         changed ||= r.changed;
         const msg =
           r.reason === "has-own" ? "left alone — it has a statusLine of its own (Agent Switch never wraps one); usage keeps polling"
@@ -115,7 +122,14 @@ export function cmdStatuslineCli(sub: string | undefined, name?: string): void {
           : "already on";
         console.log(`claude/${g}: ${msg}`);
       } else {
-        const r = uninstallStatusline(configDir("claude", g), profileDir("claude", g));
+        let r: ReturnType<typeof uninstallStatusline>;
+        try {
+          r = uninstallStatusline(configDir("claude", g), profileDir("claude", g));
+        } catch (e) {
+          console.log(`claude/${g}: refused — ${(e as Error).message}`);
+          process.exitCode = 1;
+          continue;
+        }
         changed ||= r.changed;
         const msg = r.reason === "not-ours" ? "left alone — the statusLine there is not Agent Switch's" : r.changed ? "off" : "already off";
         console.log(`claude/${g}: ${msg}`);

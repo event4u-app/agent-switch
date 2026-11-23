@@ -7,7 +7,8 @@ import * as path from "node:path";
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), "asw-slsrc-"));
 process.env.AGENT_SWITCH_HOME = HOME;
 const { claudeSnapshot } = await import("../src/commands/shared.js");
-const { writeStatuslineSnapshot } = await import("../src/statusline.js");
+const { markInstalled, writeStatuslineSnapshot } = await import("../src/statusline.js");
+const { cmdStatus } = await import("../src/commands/usage.js");
 const { detectCrossings, maxUtilization, pickSwitchTarget, resolveClaudeUsage } = await import("../src/usage.js");
 type UsageSnapshot = import("../src/usage.js").UsageSnapshot;
 
@@ -16,7 +17,7 @@ const ago = (ms: number) => new Date(NOW - ms).toISOString();
 const ahead = (ms: number) => new Date(NOW + ms).toISOString();
 const win = (key: string, utilization: number) => ({ key, label: key, utilization, resetsAt: ahead(3_600_000) });
 
-function seedProfile(name: string): string {
+function seedProfile(name: string, turnedOn = true): string {
   const dir = path.join(HOME, "claude", name);
   fs.mkdirSync(path.join(dir, "config"), { recursive: true });
   // A valid-looking login, so the old code path would go on to poll.
@@ -24,15 +25,18 @@ function seedProfile(name: string): string {
     path.join(dir, "config", ".credentials.json"),
     JSON.stringify({ claudeAiOauth: { accessToken: "test-token-not-real", expiresAt: NOW + 24 * 3_600_000 } }),
   );
+  if (turnedOn) markInstalled(dir, "/opt/bin/agent-switch __statusline");
   return dir;
 }
 
-async function countingFetch<T>(body: unknown, status: number, run: () => Promise<T>): Promise<{ result: T; calls: number }> {
+async function countingFetch<T>(body: unknown, status: number, run: () => Promise<T>, profileBody?: unknown): Promise<{ result: T; calls: number }> {
   const real = globalThis.fetch;
   let calls = 0;
-  globalThis.fetch = (async () => {
-    calls++;
-    return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "retry-after": "0.001" } });
+  globalThis.fetch = (async (url: string | URL) => {
+    const profile = String(url).endsWith("/api/oauth/profile");
+    if (!profile) calls++;
+    const [b, st] = profile ? [profileBody ?? {}, profileBody ? 200 : 500] : [body, status];
+    return new Response(JSON.stringify(b), { status: st, headers: { "content-type": "application/json", "retry-after": "0.001" } });
   }) as typeof fetch;
   try {
     return { result: await run(), calls };
@@ -58,6 +62,32 @@ test("claudeSnapshot: a stale sample polls exactly once; a 429 serves the last r
   const limited = await countingFetch({ error: "rate_limited" }, 429, () => claudeSnapshot("stale"));
   assert.ok(limited.calls >= 1);
   assert.equal(limited.result?.windows.find((w) => w.key === "five_hour")?.utilization, 33);
+});
+
+test("claudeSnapshot: a cache left by a profile that is turned off is not trusted", async () => {
+  const dir = seedProfile("wasoff", false);
+  writeStatuslineSnapshot(dir, { windows: [win("five_hour", 12), win("seven_day", 4)], routines: null, capturedAt: ago(30_000), source: "statusline" }, "2.1.316");
+  const { result, calls } = await countingFetch({ five_hour: { utilization: 70, resets_at: ahead(3_600_000) } }, 200, () => claudeSnapshot("wasoff"));
+  assert.equal(calls, 1);
+  assert.equal(result?.windows.find((w) => w.key === "five_hour")?.utilization, 70);
+});
+
+test("plain `status` shows the statusline numbers too, through the same resolver", async () => {
+  const dir = seedProfile("human");
+  writeStatuslineSnapshot(dir, { windows: [win("five_hour", 23), win("seven_day", 6)], routines: null, capturedAt: ago(30_000), source: "statusline" }, "2.1.316");
+  const lines: string[] = [];
+  const log = console.log;
+  console.log = (...a: unknown[]) => void lines.push(a.join(" "));
+  try {
+    const { calls } = await countingFetch({ error: "rate_limited" }, 429, () => cmdStatus("claude", "human", false), { organization: { name: "Acme" } });
+    assert.equal(calls, 0, "no usage request while the sample is fresh");
+  } finally {
+    console.log = log;
+  }
+  const out = lines.join("\n");
+  assert.match(out, /org: Acme/);
+  assert.match(out, /five_hour:\s+23%/);
+  assert.match(out, /seven_day:\s+6%/);
 });
 
 // ---------- the pure source selection ----------
@@ -108,4 +138,34 @@ test("switch path: a per-model window at 95% known only to the poll still crosse
   assert.deepEqual(detectCrossings(snapshot!, {}).crossings.map((c) => [c.window, c.threshold]), [["seven_day_opus", 75], ["seven_day_opus", 90]]);
   const other = { windows: [win("five_hour", 1)], routines: null, capturedAt: ago(0) };
   assert.equal(pickSwitchTarget("work", [{ name: "work", snapshot: snapshot! }, { name: "side", snapshot: other }], 90), "side");
+});
+
+test("resolveClaudeUsage: a failed poll with a fresh sample still answers with the merge", async () => {
+  const base: UsageSnapshot = { windows: [win("five_hour", 5), win("seven_day", 9), win("seven_day_opus", 50)], routines: null, capturedAt: ago(10 * 60_000) };
+  const spy = spyPoll(null);
+  const r = await resolveClaudeUsage({ statusline: sl(30), base, now: NOW, fresh, pollOnlyMaxAgeMs: 5 * 60_000, poll: spy.poll });
+  assert.equal(spy.calls, 1);
+  assert.equal(r.pollFailed, true);
+  assert.deepEqual(r.snapshot?.windows.map((w) => [w.key, w.utilization]), [["five_hour", 30], ["seven_day", 10], ["seven_day_opus", 50]]);
+});
+
+test("resolveClaudeUsage: with polling held back (backoff) a fresh sample is still read, a stale one gives nothing", async () => {
+  const base: UsageSnapshot = { windows: [win("five_hour", 5), win("seven_day_opus", 50)], routines: null, capturedAt: ago(10 * 60_000) };
+  const spy = spyPoll({ windows: [win("five_hour", 1)], routines: null, capturedAt: ago(0) });
+  const r = await resolveClaudeUsage({ statusline: sl(30), base, now: NOW, fresh, pollOnlyMaxAgeMs: 5 * 60_000, poll: spy.poll, mayPoll: false });
+  assert.equal(spy.calls, 0);
+  assert.equal(r.snapshot?.windows.find((w) => w.key === "five_hour")?.utilization, 30);
+  const stale = await resolveClaudeUsage({ statusline: sl(30, 20 * 60_000), base, now: NOW, fresh, pollOnlyMaxAgeMs: 5 * 60_000, poll: spy.poll, mayPoll: false });
+  assert.equal(spy.calls, 0);
+  assert.equal(stale.snapshot, null);
+});
+
+test("daemon: a profile held back by its poll backoff still reads its fresh local sample", () => {
+  const here = path.dirname(new URL(import.meta.url).pathname);
+  const src = fs.readFileSync([path.resolve(here, "../src/daemon.ts"), path.resolve(here, "../../src/daemon.ts")].find((p) => fs.existsSync(p))!, "utf8");
+  const body = src.slice(src.indexOf("async function pollProvider("), src.indexOf("async function pollOnce("));
+  assert.match(body, /const localOnly = .*statuslineFresh\(servedStatuslineSnapshot\(/);
+  assert.match(body, /const targets = \[\.\.\.due, \.\.\.localOnly\]/);
+  assert.match(body, /snapshotFor\(provider, name, log, state\.profiles\[key\], mayPoll\)/);
+  assert.match(body, /snapshot && !read\.pollFailed \? undefined : nextProfileBackoff\(/);
 });

@@ -10,8 +10,11 @@ import {
   STATUSLINE_FILE,
   STATUSLINE_MARKER,
   STATUSLINE_TTL_MS,
+  markInstalled,
+  readSettingsStrict,
   NEWEST_KNOWN_VERSION,
   captureStatusline,
+  type Ownership,
   installStatusline,
   isOurStatusline,
   mergeMonotone,
@@ -133,7 +136,7 @@ test("cache round-trips; corrupted → null; null snapshot → no write", () => 
   assert.equal(fs.existsSync(path.join(dir, STATUSLINE_FILE)), false);
   const s = parseStatuslineUsage(fixture("statusline-stdin.json"), AT)!;
   assert.equal(writeStatuslineSnapshot(dir, s, "2.1.316"), true);
-  assert.deepEqual(readStatuslineSnapshot(dir)?.windows, s.windows);
+  assert.deepEqual(readStatuslineSnapshot(dir)?.windows, s.windows.map((w) => ({ ...w, capturedAt: AT })), "each window carries its own capture time");
   assert.equal(readStatuslineCache(dir)?.version, "2.1.316");
   if (process.platform !== "win32") assert.equal(fs.statSync(path.join(dir, STATUSLINE_FILE)).mode & 0o777, 0o600);
   fs.writeFileSync(path.join(dir, STATUSLINE_FILE), "{not json");
@@ -149,8 +152,12 @@ test("monotone: within one reset window the higher reading stays; a later reset 
   const busy = snap(60, R, 0);
   // An idle session renders its older, lower reading after the busy one.
   const idle = mergeMonotone(busy, snap(40, R, 1));
-  assert.equal(idle.windows.find((w) => w.key === "five_hour")!.utilization, 60);
-  assert.equal(idle.capturedAt, at(1));
+  const kept = idle.windows.find((w) => w.key === "five_hour")!;
+  assert.equal(kept.utilization, 60);
+  // The retained reading keeps its own time, so replaying it cannot keep it fresh.
+  assert.equal(kept.capturedAt, at(0));
+  assert.equal(idle.windows.find((w) => w.key === "seven_day")!.capturedAt, at(1));
+  assert.equal(idle.capturedAt, at(0), "the sample is as old as its oldest window");
   // Jitter of a few seconds on resets_at is the same window.
   assert.equal(mergeMonotone(busy, snap(55, "2026-11-23T15:00:03.000Z", 1)).windows[0].utilization, 60);
   // A later reset is a new window: the low number is the truth now.
@@ -161,6 +168,11 @@ test("monotone: within one reset window the higher reading stays; a later reset 
   assert.deepEqual([late.windows[0].utilization, late.windows[0].resetsAt], [2, "2026-11-23T20:00:00.000Z"]);
   // Higher in the same window replaces.
   assert.equal(mergeMonotone(busy, snap(70, R, 4)).windows[0].utilization, 70);
+  // A five-hour-only render does not refresh the weekly window it did not carry.
+  const fiveOnly: UsageSnapshot = { windows: [win("five_hour", 61, R, "5h")], routines: null, capturedAt: at(5), source: "statusline" };
+  const m = mergeMonotone(busy, fiveOnly);
+  assert.deepEqual(m.windows.map((w) => [w.key, w.capturedAt]), [["five_hour", at(5)], ["seven_day", at(0)]]);
+  assert.equal(m.capturedAt, at(0));
 });
 
 test("writeStatuslineSnapshot applies the monotone rule against the file on disk", () => {
@@ -187,30 +199,44 @@ test("statuslineFresh: age under the TTL, no reset that has passed", () => {
 
 const CMD = statuslineCommand("/opt/bin/agent-switch");
 
-test("statuslineCommand quotes a path with spaces; isOurStatusline matches any path running __statusline", () => {
+const OWN: Ownership = { commands: [], binaries: ["/opt/bin/agent-switch"] };
+
+test("statuslineCommand quotes a path with spaces; ours = the recorded command or an Agent Switch binary", () => {
   assert.equal(CMD, "/opt/bin/agent-switch __statusline");
   assert.equal(statuslineCommand("/Users/a b/bin/agent-switch"), "'/Users/a b/bin/agent-switch' __statusline");
-  assert.equal(isOurStatusline({ type: "command", command: "'/x y/agent-switch' __statusline", padding: 0 }), true);
-  assert.equal(isOurStatusline({ type: "command", command: "ccstatusline" }), false);
-  assert.equal(isOurStatusline(undefined), false);
+  assert.equal(isOurStatusline({ type: "command", command: CMD, padding: 0 }, OWN), true);
+  assert.equal(isOurStatusline({ type: "command", command: "'/x y/agent-switch' __statusline" }, { commands: ["'/x y/agent-switch' __statusline"], binaries: [] }), true);
+  // Another tool that happens to take the same argument is not ours.
+  assert.equal(isOurStatusline({ type: "command", command: "/usr/local/bin/other-tool __statusline" }, OWN), false);
+  assert.equal(isOurStatusline({ type: "command", command: "ccstatusline" }, OWN), false);
+  assert.equal(isOurStatusline(undefined, OWN), false);
+});
+
+test("a binary is matched through symlinks", { skip: process.platform === "win32" ? "symlinks" : false }, () => {
+  const dir = tmp();
+  const real = path.join(dir, "index.js");
+  fs.writeFileSync(real, "");
+  const link = path.join(dir, "agent-switch");
+  fs.symlinkSync(real, link);
+  assert.equal(isOurStatusline({ command: `${link} __statusline` }, { commands: [], binaries: [real] }), true);
 });
 
 test("install on a settings without statusLine adds a byte-clean {type,command,padding}; remove restores the rest", () => {
   const before = { model: "opus", hooks: { Stop: [{ hooks: [] }] }, env: { A: "1" } };
-  const ins = withStatuslineInstalled(before, CMD);
+  const ins = withStatuslineInstalled(before, CMD, OWN);
   assert.equal(ins.changed, true);
   assert.deepEqual(ins.settings.statusLine, { type: "command", command: CMD, padding: 0 });
   assert.deepEqual(Object.keys(ins.settings.statusLine).sort(), ["command", "padding", "type"]);
   assert.equal(JSON.stringify(before), JSON.stringify({ model: "opus", hooks: { Stop: [{ hooks: [] }] }, env: { A: "1" } }), "input not mutated");
-  assert.equal(withStatuslineInstalled(ins.settings, CMD).changed, false, "double install is a no-op");
-  const rem = withStatuslineRemoved(ins.settings);
+  assert.equal(withStatuslineInstalled(ins.settings, CMD, OWN).changed, false, "double install is a no-op");
+  const rem = withStatuslineRemoved(ins.settings, OWN);
   assert.equal(rem.changed, true);
   assert.equal(JSON.stringify(rem.settings), JSON.stringify(before));
 });
 
 test("install refuses a profile that already has its own statusLine", () => {
   const own = { statusLine: { type: "command", command: "~/.claude/statusline.sh" }, theme: "dark" };
-  const r = withStatuslineInstalled(own, CMD);
+  const r = withStatuslineInstalled(own, CMD, OWN);
   assert.equal(r.changed, false);
   assert.equal(r.reason, "has-own");
   assert.equal(JSON.stringify(r.settings), JSON.stringify(own));
@@ -218,13 +244,30 @@ test("install refuses a profile that already has its own statusLine", () => {
 
 test("install re-points ours at a moved binary; remove keeps a user's replacement", () => {
   const old = { statusLine: { type: "command", command: "/old/agent-switch __statusline", padding: 0 } };
-  const r = withStatuslineInstalled(old, CMD);
+  // Re-pointed only because the marker recorded that old command as ours.
+  const r = withStatuslineInstalled(old, CMD, { commands: ["/old/agent-switch __statusline"], binaries: OWN.binaries });
   assert.deepEqual([r.changed, r.reason, r.settings.statusLine.command], [true, "repointed", CMD]);
+  assert.equal(withStatuslineInstalled(old, CMD, OWN).reason, "has-own", "unrecorded: not ours to replace");
+  assert.equal(withStatuslineRemoved(old, OWN).reason, "not-ours", "unrecorded: not ours to delete");
   const replaced = { statusLine: { type: "command", command: "npx ccstatusline" } };
-  const rem = withStatuslineRemoved(replaced);
+  const rem = withStatuslineRemoved(replaced, OWN);
   assert.deepEqual([rem.changed, rem.reason], [false, "not-ours"]);
   assert.equal(JSON.stringify(rem.settings), JSON.stringify(replaced));
-  assert.deepEqual(withStatuslineRemoved({}).reason, "absent");
+  assert.deepEqual(withStatuslineRemoved({}, OWN).reason, "absent");
+});
+
+test("strict settings read: missing → {}, unparseable or non-object → refuse, nothing written", () => {
+  const root = tmp();
+  const p = profile(root, "broken");
+  assert.deepEqual(readSettingsStrict(p.configDir), {});
+  for (const text of ['{"theme": "dark", "hooks": {', "[1, 2]", "null"]) {
+    fs.writeFileSync(path.join(p.configDir, "settings.json"), text);
+    assert.throws(() => readSettingsStrict(p.configDir), /settings\.json .*not a JSON object|settings\.json .*does not parse/);
+    assert.throws(() => installStatusline(p.configDir, p.profileDir, CMD), /nothing was written/);
+    assert.throws(() => uninstallStatusline(p.configDir, p.profileDir), /nothing was written/);
+    assert.equal(fs.readFileSync(path.join(p.configDir, "settings.json"), "utf8"), text);
+    assert.equal(fs.existsSync(path.join(p.profileDir, STATUSLINE_MARKER)), false);
+  }
 });
 
 // ---------- binary resolution ----------
@@ -318,12 +361,17 @@ test("captureStatusline writes the cache for a registered profile and nothing ot
   const root = tmp();
   const p = profile(root, "work");
   const text = JSON.stringify(fixture("statusline-stdin.json"));
+  // Not turned on (or turned off while a session still renders): nothing is recorded.
+  captureStatusline(text, { CLAUDE_CONFIG_DIR: p.configDir }, root, AT);
+  assert.equal(fs.existsSync(path.join(p.profileDir, STATUSLINE_FILE)), false);
+  markInstalled(p.profileDir, CMD);
   captureStatusline(text, { CLAUDE_CONFIG_DIR: p.configDir }, root, AT);
   const cache = readStatuslineCache(p.profileDir)!;
   assert.equal(cache.version, "2.1.316");
   assert.equal(cache.snapshot.windows.length, 2);
   // Free tier: no write. Unknown dir: no write anywhere. Garbage: no throw.
   const q = profile(root, "free");
+  markInstalled(q.profileDir, CMD);
   captureStatusline(JSON.stringify(fixture("statusline-stdin-freetier.json")), { CLAUDE_CONFIG_DIR: q.configDir }, root, AT);
   assert.equal(fs.existsSync(path.join(q.profileDir, STATUSLINE_FILE)), false);
   captureStatusline(text, { CLAUDE_CONFIG_DIR: path.join(root, "elsewhere") }, root, AT);

@@ -49,7 +49,7 @@ import {
 import { fetchUsage, liveSessionPids } from "../api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "../token-freshen.js";
 import { UsageSnapshot, mergeUsage, parseUsage, resolveClaudeUsage, windowLabel } from "../usage.js";
-import { readStatuslineSnapshot, statuslineFresh } from "../statusline.js";
+import { servedStatuslineSnapshot, statuslineFresh } from "../statusline.js";
 import { SessionRow, listSessions, listCodexSessions, markLive } from "../sessions.js";
 import { cacheMaxAgeMs, snapshotFresh, readDaemonState } from "../daemon.js";
 import { serviceTarget } from "../service.js";
@@ -182,7 +182,7 @@ export async function claudeSnapshot(name: string): Promise<UsageSnapshot | null
   // failing, so the daemon's entry is judged by its own capture time.
   const state = readDaemonState();
   const cached = state?.profiles?.[`claude/${name}`];
-  const statusline = readStatuslineSnapshot(profileDir("claude", name));
+  const statusline = servedStatuslineSnapshot(profileDir("claude", name));
   if (snapshotFresh(cached, Date.now(), cacheMaxAgeMs(state?.pollIntervalMs)) && !statuslineFresh(statusline)) return mergeUsage(statusline, cached!);
   const latest = readLatestSnapshot(path.join(profileDir("claude", name), LATEST_FILE));
   const base = latest && (!cached || latest.capturedMs > Date.parse(cached.capturedAt)) ? latest.snapshot : (cached ?? null);

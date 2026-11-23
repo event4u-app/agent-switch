@@ -25,9 +25,9 @@ import {
 import { ProviderId, PROVIDER_IDS, provider } from "../providers.js";
 import { applyWait, autoContinueState, clearAutoContinue, readProtection, setAutoContinue, setProtection, waitTargets } from "../protection.js";
 import { HistorySample, LATEST_FILE, readHistory, recordHistorySample, writeLatestSnapshot } from "../history.js";
-import { checkAuth, fetchProfile, fetchUsage } from "../api.js";
+import { checkAuth, fetchProfile } from "../api.js";
 import { claudeLoginRefreshAllowed, defaultFreshenDeps, usageToken } from "../token-freshen.js";
-import { formatSnapshot, parseUsage } from "../usage.js";
+import { formatSnapshot } from "../usage.js";
 import { statuslineHealth } from "../statusline.js";
 import { readCodexUsage } from "../codex-usage.js";
 import { redeemResetCredit, resetReflected, usageAfterRedeem } from "../codex-reset.js";
@@ -106,10 +106,13 @@ export async function cmdStatus(providerId?: ProviderId, name?: string, json = f
       );
       continue;
     }
-    const [profileInfo, raw] = await Promise.all([fetchProfile(token), fetchUsage(token)]);
+    // Same source as `--json`: a fresh statusline sample, the daemon's cache, then the endpoint.
+    const [profileInfo, snap] = await Promise.all([fetchProfile(token), claudeSnapshot(n)]);
     const org = profileInfo?.organization?.name ?? profileInfo?.account?.email ?? null;
     if (org) console.log(`  org: ${org}`);
-    const lines = raw ? formatSnapshot(parseUsage(raw)) : [];
+    const lines = snap ? formatSnapshot(snap) : [];
+    const ageMin = snap ? Math.floor((Date.now() - Date.parse(snap.capturedAt)) / 60_000) : 0;
+    if (lines.length > 0 && ageMin >= 10) lines.push(`  (as of ${ageMin} min ago — the usage endpoint did not answer)`);
     if (lines.length > 0) lines.forEach((l) => console.log(l));
     else if (profileInfo) {
       // The profile read worked, so the usage read was most likely rate-limited.
