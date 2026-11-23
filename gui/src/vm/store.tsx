@@ -8,6 +8,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { t } from "../i18n/index.js";
 import type { Actions } from "./actions.js";
 import type { ViewModel } from "./types.js";
+import type { StartChoice } from "../ipc.js";
 
 export type Screen = "home" | "sessions" | "accounts" | "tools" | "activity" | "health" | "settings";
 export type SettingsTab =
@@ -45,7 +46,8 @@ export type Overlay =
   | { kind: "none" }
   | { kind: "session"; id: string }
   | { kind: "account"; id: string; section?: AccountSection }
-  | { kind: "start"; cwd?: string; tool?: string; accountId?: string }
+  /** `choice`: the model, thinking and worktree a New session dialog chose for `tool`. */
+  | { kind: "start"; cwd?: string; tool?: string; accountId?: string; choice?: StartChoice }
   | { kind: "add-account"; tool?: string }
   | { kind: "limit"; attentionId: string }
   | { kind: "notifications" }

@@ -82,7 +82,7 @@ export function OverlayHost() {
       />
     );
   if (o.kind === "session") return <SessionSheet key={o.id} id={o.id} />;
-  if (o.kind === "start") return <StartSessionDialog cwd={o.cwd} tool={o.tool} accountId={o.accountId} />;
+  if (o.kind === "start") return <StartSessionDialog cwd={o.cwd} tool={o.tool} accountId={o.accountId} choice={o.choice} />;
   if (o.kind === "limit") return <NearLimitSheet key={o.attentionId} attentionId={o.attentionId} />;
   if (o.kind === "terminal")
     return "run" in o ? <TerminalSheet run={terminalRun(o)} more={o.more} /> : <UpdateSheet key={`${o.toolId}:${o.action}`} toolId={o.toolId} action={o.action} />;

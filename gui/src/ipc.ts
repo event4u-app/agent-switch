@@ -372,9 +372,20 @@ export async function sessionChanges(key: string): Promise<ChangedFileRow[]> {
   return parseChanges(JSON.parse(await runCli(["changes", key, "--json"])));
 }
 
-/** `host start [profile] --cwd DIR`: a hosted session. */
-export async function hostStart(provider: ProviderId, cwd: string, profile?: string): Promise<void> {
-  await runCli(["host", "start", ...(profile ? [profile] : []), "--provider", provider, "--cwd", cwd, "--json"]);
+/** What a new session starts with beyond its account (CLI `--model`, `--effort`, `--worktree`). */
+export interface StartChoice {
+  model?: string;
+  effort?: string;
+  worktree?: boolean;
+}
+
+export function choiceFlags(c: StartChoice | undefined): string[] {
+  return [...(c?.model ? ["--model", c.model] : []), ...(c?.effort ? ["--effort", c.effort] : []), ...(c?.worktree ? ["--worktree"] : [])];
+}
+
+/** `host start [profile] --cwd DIR [--model M] [--effort E] [--worktree]`: a hosted session. */
+export async function hostStart(provider: ProviderId, cwd: string, profile?: string, choice?: StartChoice): Promise<void> {
+  await runCli(["host", "start", ...(profile ? [profile] : []), "--provider", provider, "--cwd", cwd, ...choiceFlags(choice), "--json"]);
 }
 
 /** `host end <session> --yes`. */
@@ -742,9 +753,8 @@ export async function listBrowsers(): Promise<BrowserInfo[]> {
   }
 }
 
-export function sessionArgs(provider: ProviderId, name: string, cwd?: string): string[] {
-  const args = ["run", name, "--provider", provider];
-  return cwd ? [...args, "--cwd", cwd] : args;
+export function sessionArgs(provider: ProviderId, name: string, cwd?: string, choice?: StartChoice): string[] {
+  return ["run", name, "--provider", provider, ...(cwd ? ["--cwd", cwd] : []), ...choiceFlags(choice)];
 }
 
 /** claude.ai in the persistent per-profile browser — a browser window, not a
