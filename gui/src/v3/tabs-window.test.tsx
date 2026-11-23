@@ -12,7 +12,7 @@ function mount(saved: Partial<WindowLayout> = { tabs: ["s1", "s2", "s3"], active
   const sessions = [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow" }, { ...d.sessions[0], key: "s3", title: "Themes" }];
   const act = vi.fn();
   const save = vi.fn();
-  render(<V3Window data={{ ...d, sessions }} slots={slots} act={act} platform="mac" layout={{ load: () => saved, save }} />);
+  render(<V3Window data={{ ...d, health: { state: "ready" }, sessions }} slots={slots} act={act} platform="mac" layout={{ load: () => saved, save }} />);
   return { act, save };
 }
 const tab = (name: string) => screen.getByRole("tab", { name: new RegExp(name) });
@@ -89,7 +89,9 @@ describe("tabs: pin, close, reopen, sort (owner request 2026-11-05)", () => {
     const { act } = mount();
     menu("Checkout flow");
     pick("End…");
-    expect(act).toHaveBeenCalledWith({ type: "session-menu", key: "s2", item: "End…" });
+    expect(screen.getByRole("dialog", { name: /End “Checkout flow”\?/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "End session" }));
+    expect(act).toHaveBeenCalledWith({ type: "end", key: "s2" });
     menu("Checkout flow");
     pick("Move to another account…");
     expect(screen.getByRole("dialog")).toBeTruthy();

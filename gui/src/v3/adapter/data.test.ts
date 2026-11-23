@@ -532,3 +532,24 @@ describe("the child tree (Phases 2 and 3)", () => {
     expect(d.sessions[0].children[0].quiet).toBe("no update in 34m");
   });
 });
+
+describe("what the app can type into decides the CI and blocker labels", () => {
+  const PR = { number: 9, url: "https://github.com/o/r/pull/9", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "NONE", ci: "FAILURE", failingChecks: ["lint"] };
+  const git = { toplevel: "/r", branch: "feat", headSha: "a", dirty: false, changed: 0, ahead: 1, behind: 0, upstream: "origin/feat", remote: "git@github.com:o/r.git", worktree: false, cwd: "/r", cwdSource: "hook" as const };
+  const withPr = row("a1", { prs: [PR], git });
+  const ciItem = { id: "ci", kind: "ci" as const, subject: "o/r#9", who: "w", what: "CI failing on #9", detail: "lint", verb: "Focus terminal", since: "", version: "a:ci" };
+  const hosted = { mode: "persistent" as const, hosted: [{ key: "claude/work/a1", provider: "claude", account: "work", sessionId: "a1", cwd: "/r", startedAt: "", alive: true, parked: false }] };
+
+  it("a CI item reads Fix for a hosted or chat session, Open checks elsewhere", () => {
+    const needs = { items: [ciItem], away: null, history: [] };
+    expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs, host: hosted }, env()).needs[0].verb).toBe("Fix");
+    expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs }, env({ chats: new Set(["claude/work/a1"]) })).needs[0].verb).toBe("Fix");
+    expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs }, env()).needs[0].verb).toBe("Open checks");
+  });
+
+  it("the blocker reads Send to agent where the app can type, Copy prompt elsewhere", () => {
+    expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), host: hosted }, env()).next("claude/work/a1")?.action).toBe("Send to agent");
+    expect(toV3Data(vmWith([], [withPr]), emptyFeeds(), env()).next("claude/work/a1")?.action).toBe("Copy prompt");
+    expect(nextStep(withPr, false)?.prompt).toContain("lint");
+  });
+});

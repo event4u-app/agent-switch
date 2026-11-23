@@ -481,6 +481,9 @@ export function SystemBanner({ children, action }: { children: ReactNode; action
   );
 }
 
+/** Why a control that needs the engine is off while it is stopped (tooltip and accessible description). */
+export const ENGINE_DOWN_WHY = "The engine is stopped — restart it to do this";
+
 /** "The engine stopped 2 min ago. Hosted sessions keep running in tmux; Agent Switch reconnects when it is back."
  *  When the background service belongs to another install, waiting cannot help: the text says so. Pure. */
 export function engineDownText(sinceMs: number, nowMs: number, hostedRunning: number, elsewhere?: boolean): string {

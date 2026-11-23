@@ -12,14 +12,14 @@ import { ArrowRightToLine, Copy, Ellipsis, FileCode, Layers, Library, ListTree, 
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
 import type { IdentityColor, ToolEntry } from "../vm/types.js";
-import { DecisionSheet, NewSessionDialog, type MoveHow, type NewSessionFacts, type NewSessionPlan, type SheetMove, type SheetSession } from "./dialogs.js";
+import { DecisionSheet, EndDialog, NewSessionDialog, type MoveHow, type NewSessionFacts, type NewSessionPlan, type SheetMove, type SheetSession } from "./dialogs.js";
 import { Shell, useFrame, type PageId } from "./frame.js";
 import { LimitsPopover, LimitsStrip, RoomLeft, type LimitAccount } from "./limits.js";
 import { RunningOn, runningOn } from "./running-on.js";
 
 /** The model popover opened from the limits popover sits to its right (352 + 320 + 12 + 11). */
 const LIMITS_MODEL_X = 695;
-import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
+import { NeedsZone, needsEngine, type AwayDigest, type NeedItem } from "./needs.js";
 import { limitToOpen, markLimitOpened, openedLimits, wasOpened } from "./adapter/limit-auto.js";
 import { accountOfKey } from "../vm/switch-requests.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
@@ -30,7 +30,7 @@ import { SessionsZone, childNoun, findChild, type RowSession } from "./sessions.
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
 import { allNeeds } from "./tools.js";
-import { BlockerStrip, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
+import { BlockerStrip, ENGINE_DOWN_WHY, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
 import { Act, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
@@ -113,6 +113,8 @@ export type V3Action =
   | { type: "move"; how: MoveHow; moves: SheetMove[] }
   | { type: "keep-account"; account: string }
   | { type: "session-menu"; key: string; item: SessionMenuItem }
+  /** Confirmed in the End dialog: the program stops, the transcript stays. */
+  | { type: "end"; key: string }
   | { type: "batch"; op: keyof BatchActions; keys: string[] }
   | { type: "clean-up" }
   | { type: "view"; key: string; view: "terminal" | "chat" }
@@ -163,6 +165,8 @@ function shellPoint(at: { x: number; y: number }, width = 260): { x: number; y: 
 
 /** The session actions a tab's menu repeats; "Pin" stays in the session's own menu (it pins in the list, not the tab). */
 const TAB_SESSION_ITEMS: readonly SessionMenuItem[] = ["Rename…", "Move to another account…", "Hand off…", "Detach", "End…"];
+/** Session actions that move a running session: they answer through the engine, so they wait for it. */
+const MOVES: readonly SessionMenuItem[] = ["Move to another account…", "Take over here…", "Hand off…"];
 
 /** The palette's own commands: pages the window can open (spec §7.1). */
 export const PAGE_COMMANDS: PaletteEntry[] = [
@@ -203,7 +207,7 @@ export function V3Window({
   const pages = strip.order.filter(isPageTab).map((id) => id.slice(5) as Page);
   const sessionTabs = strip.order.filter((id) => !isPageTab(id));
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string } | { openin: string } | { tabMenu: string; x: number; y: number }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string } | { end: string } | { openin: string } | { tabMenu: string; x: number; y: number }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -311,7 +315,8 @@ export function V3Window({
           id: `session:${item}`,
           label: item,
           danger: item === "End…",
-          onClick: run(() => (item === "Move to another account…" ? setOverlay({ decide: id }) : act({ type: "session-menu", key: id, item }))),
+          ...(down && MOVES.includes(item) ? { disabled: true, why: ENGINE_DOWN_WHY } : {}),
+          onClick: run(() => sessionItem(id, item)),
         }),
       ),
     ];
@@ -349,7 +354,18 @@ export function V3Window({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.link, overlay]);
 
+  const down = data.health.state === "down";
+  /** Why a Needs-you verb cannot act now: the engine it answers through is stopped. */
+  const blockedNeed = (n: NeedItem) => (down && needsEngine(n) ? ENGINE_DOWN_WHY : null);
+  /** A session-menu pick: the moves open the decision sheet, End… its dialog, the rest are actions. */
+  const sessionItem = (key: string, item: SessionMenuItem) => {
+    if (down && MOVES.includes(item)) return;
+    if (item === "Move to another account…") return setOverlay({ decide: key });
+    if (item === "End…") return setOverlay({ end: key });
+    act({ type: "session-menu", key, item });
+  };
   const onVerb = (n: NeedItem) => {
+    if (blockedNeed(n)) return;
     if (n.kind === "limit" || n.kind === "pace") setOverlay({ decide: n.subject });
     else if (n.kind === "update") openPage("tools");
     else if ((n.kind === "approval" || n.kind === "question") && data.bar(n.subject)?.hosted) openSession(n.subject);
@@ -454,7 +470,8 @@ export function V3Window({
       // A focused Needs-you item answers to its own keys (spec §5.1).
       if (e.key === "Enter" && !e.shiftKey) return void (e.preventDefault(), setFocusedNeed(null), onVerb(focused));
       if (e.key.toLowerCase() === "l") return void (e.preventDefault(), setFocusedNeed(nextFocus(needs.filter((n) => n.id !== focused.id), focused.id)), act({ type: "need-later", id: focused.id }));
-      if (focused.kind === "approval" && focused.verb !== "Focus terminal") {
+      // Answers go through the engine: while it is stopped they wait (the row says why).
+      if (focused.kind === "approval" && focused.verb !== "Focus terminal" && !down) {
         const always = e.key === "Enter" && e.shiftKey;
         const decision = always ? "always" : e.key === "Backspace" || e.key === "Delete" ? "deny" : e.key.toLowerCase() === "y" && !e.shiftKey ? "allow" : null;
         // "Always" widens a rule, so it is answered only where the chat runs, never from outside it.
@@ -583,7 +600,17 @@ export function V3Window({
             onAction={(h) => (h.action?.kind === "switch" ? setOverlay({ decide: activeSession }) : act({ type: "session-menu", key: activeSession, item: "Compact" }))}
           />
           {next && <BlockerStrip text={next.text} action={next.action} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
-          {slots.body(activeSession)}
+          {down ? (
+            // The engine is stopped: what the pane shows is the last known state, not a live one.
+            <div data-stale="" className="relative flex min-h-0 flex-1 flex-col">
+              <p role="status" className="shrink-0 border-b border-ac-line bg-ac-raise px-4 py-1 text-[11.5px] text-ac-muted">
+                Engine stopped — showing the last known state
+              </p>
+              <div className="flex min-h-0 flex-1 flex-col opacity-60 saturate-50">{slots.body(activeSession)}</div>
+            </div>
+          ) : (
+            slots.body(activeSession)
+          )}
         </>
       ) : data.sessions.length === 0 && data.loading ? (
         // First read still running: an empty list is not "no sessions" yet.
@@ -658,7 +685,7 @@ export function V3Window({
         </span>
       </div>
       <div className="relative min-h-0 flex-1 overflow-y-auto pb-2">
-        <NeedsZone items={needs} away={data.away} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
+        <NeedsZone items={needs} away={data.away} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} blocked={blockedNeed} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
         <SessionsZone
           sessions={pinnedOnly ? data.sessions.filter((x) => pinned.has(x.key)) : data.sessions}
           activeKey={activeSession}
@@ -695,6 +722,16 @@ export function V3Window({
 
   const decision = overlay && typeof overlay === "object" && "decide" in overlay ? data.decision(overlay.decide) : null;
   const close = () => setOverlay(null);
+  /** The End dialog's facts: what stops with the session (its running children) and whether the vault keeps it. */
+  const endFacts = (key: string) => {
+    const s = data.sessions.find((x) => x.key === key);
+    const running = (s?.children ?? []).filter((c) => c.state === "working");
+    return {
+      title: s?.title ?? key,
+      stops: running.map((c) => `${c.kind} ${c.label}${c.worktree ? ` in .claude/worktrees/${c.worktree}` : ""}`),
+      kept: data.library.find((l) => l.key === key)?.vault.state === "saved",
+    };
+  };
   const overlayNode =
     overlay === "palette" ? (
       <Palette
@@ -710,7 +747,7 @@ export function V3Window({
       />
     ) : overlay === "inbox" ? (
       <Anchored onClose={close} className="absolute right-3 top-11 z-10">
-        <InboxPopover items={needs} history={data.history} focusedId={null} nowMs={data.nowMs} always={(n) => !!data.chatHere?.(n.subject)} onVerb={(n) => (close(), onVerb(n))} onAllLater={() => (close(), act({ type: "needs-later-all" }))} />
+        <InboxPopover items={needs} history={data.history} focusedId={null} nowMs={data.nowMs} always={(n) => !!data.chatHere?.(n.subject)} blocked={blockedNeed} onVerb={(n) => (close(), onVerb(n))} onAllLater={() => (close(), act({ type: "needs-later-all" }))} />
       </Anchored>
     ) : overlay === "new" ? (
       <NewSessionDialog initial={data.newSession.initial} facts={data.newSession.facts} onClose={close} onChooseAccount={() => act({ type: "choose-account" })} onStart={(plan) => (close(), act({ type: "start", plan }))} />
@@ -802,24 +839,44 @@ export function V3Window({
     ) : overlay && typeof overlay === "object" && "menu" in overlay ? (
       <Anchored onClose={close} className="absolute right-[54px] top-[122px] z-10">
       <div role="menu" aria-label="Session actions" className="w-[240px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
-        {(data.menu ? data.menu(overlay.menu) : SESSION_MENU).map((item) => (
-          <button
-            key={item}
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              const key = overlay.menu;
-              close();
-              if (item === "Move to another account…") setOverlay({ decide: key });
-              else act({ type: "session-menu", key, item });
-            }}
-            className={`flex h-8 w-full items-center rounded-md px-2.5 text-left text-[13px] hover:bg-ac-raise ${item === "End…" ? "text-ac-alert-text" : "text-ac-soft"}`}
-          >
-            {item}
-          </button>
-        ))}
+        {(data.menu ? data.menu(overlay.menu) : SESSION_MENU).map((item) => {
+          const off = down && MOVES.includes(item);
+          return (
+            <button
+              key={item}
+              type="button"
+              role="menuitem"
+              aria-disabled={off || undefined}
+              title={off ? ENGINE_DOWN_WHY : undefined}
+              aria-description={off ? ENGINE_DOWN_WHY : undefined}
+              onClick={
+                off
+                  ? undefined
+                  : () => {
+                      const key = overlay.menu;
+                      close();
+                      sessionItem(key, item);
+                    }
+              }
+              className={cn("flex h-8 w-full items-center rounded-md px-2.5 text-left text-[13px]", off ? "cursor-default text-ac-faint" : "hover:bg-ac-raise", !off && (item === "End…" ? "text-ac-alert-text" : "text-ac-soft"))}
+            >
+              {item}
+            </button>
+          );
+        })}
       </div>
       </Anchored>
+    ) : overlay && typeof overlay === "object" && "end" in overlay ? (
+      <EndDialog
+        {...endFacts(overlay.end)}
+        onClose={close}
+        onEnd={() => (close(), act({ type: "end", key: overlay.end }))}
+        onCloseTab={() => {
+          const key = overlay.end;
+          close();
+          changeStrip((s) => closeTab(s, key, true));
+        }}
+      />
     ) : null;
 
   return (

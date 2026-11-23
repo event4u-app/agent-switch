@@ -13,7 +13,7 @@ import type { NeedItem } from "../needs.js";
 import type { Appearance } from "../themes/resolve.js";
 import type { SessionMenuItem, V3Action } from "../window.js";
 import type { MoveHow, SheetMove } from "../dialogs.js";
-import { menuFor, NEW_CHAT, nextStep, sessionKey } from "./data.js";
+import { ciPrompt, ciSession, menuFor, NEW_CHAT, nextStep, sessionKey } from "./data.js";
 import { parsePr } from "./feeds.js";
 /** The CLI calls the dispatcher makes (a subset of `ipc.ts`, injectable for tests). */
 export interface DispatchIpc {
@@ -39,7 +39,8 @@ export interface DispatchIpc {
   renameSession(key: string, name: string): Promise<void>;
   openSessionIn(key: string, target?: string): Promise<void>;
   openApp(appId: string, name: string): Promise<void>;
-  continueSession(key: string): Promise<void>;
+  /** Types the continuation, or `text`, into a session Agent Switch hosts. */
+  continueSession(key: string, text?: string): Promise<void>;
   takeoverHosted(key: string, target: string): Promise<void>;
   /** Records the answer to a switch request: carried out by the app (`executed`),
    *  or left to the background service (no `executed`). */
@@ -75,6 +76,8 @@ export interface DispatchDeps {
   chatOf?: (key: string) => { setModel: (m: string) => void; send?: (text: string) => void; approve?: (id: string, always: boolean) => void; deny?: (id: string) => void } | null;
   /** The session bar's [Terminal | Chat] switch. */
   switchView?: (key: string, to: "terminal" | "chat") => void;
+  /** Puts a prompt on the clipboard, for a session the app cannot type into. */
+  copyText?: (text: string) => Promise<void>;
 }
 /** Claude's `--model` aliases. */
 const vmSessionId = (key: string) => {
@@ -98,11 +101,29 @@ async function run(deps: DispatchDeps, what: string, p: Promise<unknown>): Promi
     deps.toast({ tone: "alert", text: `${what} failed: ${e instanceof Error ? e.message : String(e)}` });
   }
 }
+/** Types `text` into the session where the app can: its chat in this window, or
+ *  the window it hosts. False where it cannot, so the caller says where to go. */
+function sendPrompt(key: string, text: string, deps: DispatchDeps): Promise<void> | false {
+  const chat = deps.chatOf?.(key);
+  if (chat?.send) return Promise.resolve(chat.send(text));
+  if (deps.hosted(key)) return run(deps, "Send", deps.ipc.continueSession(key, text));
+  return false;
+}
+async function copyPrompt(text: string, deps: DispatchDeps): Promise<void> {
+  const copy = deps.copyText ?? ((t: string) => navigator.clipboard.writeText(t));
+  try {
+    await copy(text);
+    deps.toast({ tone: "info", text: "Prompt copied — paste it into the session's terminal" });
+  } catch (e) {
+    deps.toast({ tone: "alert", text: `Copy failed: ${e instanceof Error ? e.message : String(e)}` });
+  }
+}
 function blocker(key: string, deps: DispatchDeps): Promise<void> | void {
   const row = deps.rows().get(key);
   if (!row) return;
   const n = nextStep(row, deps.needs().some((x) => x.subject === key));
   if (!n) return;
+  if (n.prompt) return sendPrompt(key, n.prompt, deps) || copyPrompt(n.prompt, deps);
   if (n.does === "focus") return run(deps, "Focus", deps.ipc.focusSessionTerminal(key));
   if (n.does === "create-pr") return createPr(row, deps);
   const url = prUrl(row);
@@ -190,7 +211,16 @@ function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
   if (n.verb === "Open chat" && deps.openTab) return deps.openTab(n.subject);
   if (n.kind === "approval" || n.kind === "question") return run(deps, "Focus", deps.ipc.focusSessionTerminal(n.subject));
   if (n.kind === "ci") {
-    const url = prUrl(deps.rows().get(n.subject));
+    const row = ciSession(n.subject, deps.rows().values());
+    const prs = (row?.prs ?? []).map(parsePr).filter((p) => p !== null);
+    // The PR the item names; an item named by its session is about that session's PR.
+    const pr = prs.find((p) => n.subject.endsWith(`#${p.number}`)) ?? prs[0];
+    if (row && pr) {
+      const sent = sendPrompt(sessionKey(row), ciPrompt(pr), deps);
+      if (sent) return sent;
+    }
+    const m = /^([^#\s]+\/[^#\s]+)#(\d+)$/.exec(n.subject);
+    const url = pr?.url || (m ? `https://github.com/${m[1]}/pull/${m[2]}` : null);
     if (url) return deps.openUrl(`${url}/checks`);
     return;
   }
@@ -225,14 +255,8 @@ function sessionMenu(key: string, item: SessionMenuItem, deps: DispatchDeps): Pr
     case "Detach":
       return;
     case "End…":
-      return deps.open({
-        kind: "confirm",
-        title: "End this session?",
-        body: "The program in it stops. Its transcript stays.",
-        confirm: "End session",
-        danger: true,
-        onConfirm: () => void run(deps, "End", deps.ipc.hostEnd(key)),
-      });
+      // The window opens the End dialog (what stops with it, whether it is kept); its answer comes back as `end`.
+      return;
   }
 }
 export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | void {
@@ -284,6 +308,8 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
     }
     case "session-menu":
       return sessionMenu(a.key, a.item, deps);
+    case "end":
+      return run(deps, "End", deps.ipc.hostEnd(a.key));
     case "batch": {
       if (a.op === "onPin") return run(deps, "Pin", Promise.all(a.keys.map((k) => deps.ipc.setLibraryFlag(k, "pin", true))));
       if (a.op === "onArchive") return run(deps, "Archive", Promise.all(a.keys.map((k) => deps.ipc.setLibraryFlag(k, "archive", true))));

@@ -51,9 +51,13 @@ export function keysFor(n: NeedItem, always = true): string | null {
   return "↵ " + n.verb.toLowerCase() + " · L later";
 }
 
+/** The verbs that act through the engine: answering, deciding, sending a fix. Opening a chat,
+ *  focusing a terminal, opening checks, signing in and updating do not. Pure. */
+export const needsEngine = (n: NeedItem) => ["Allow", "Reply", "Decide", "Fix"].includes(n.verb);
+
 const warn = (n: NeedItem) => n.kind === "approval" || n.kind === "question" || n.kind === "limit" || n.kind === "ci";
 
-export function NeedRow({ n, top, focused, always = true, onVerb }: { n: NeedItem; top?: boolean; focused?: boolean; always?: boolean; onVerb: (n: NeedItem) => void }) {
+export function NeedRow({ n, top, focused, always = true, blocked, onVerb }: { n: NeedItem; top?: boolean; focused?: boolean; always?: boolean; blocked?: string | null; onVerb: (n: NeedItem) => void }) {
   const open = top || focused;
   return (
     <div className={cn("relative rounded-md px-2", open ? "py-1.5" : "py-1", focused ? "bg-ac-raise" : "hover:bg-ac-raise")} title={open ? undefined : n.detail}>
@@ -64,7 +68,7 @@ export function NeedRow({ n, top, focused, always = true, onVerb }: { n: NeedIte
           <span className="text-ac-text">{n.who}</span> <span className="text-ac-muted">{n.what}</span>
         </span>
         <span className={cn("rounded-md", focused && "ring-2 ring-ac-brand ring-offset-2 ring-offset-[var(--ac-raise)]")}>
-          <Act kind={open ? "accent" : "ghost"} onClick={() => onVerb(n)}>
+          <Act kind={open ? "accent" : "ghost"} blocked={blocked} onClick={() => onVerb(n)}>
             {n.verb}
           </Act>
         </span>
@@ -86,7 +90,10 @@ export function NeedsZone({
   onAway,
   tray,
   always,
+  blocked,
 }: {
+  /** Why an item's verb cannot act now (the engine is stopped); null or absent: it can. */
+  blocked?: (n: NeedItem) => string | null;
   /** Whether an approval can be answered "always" here (its chat runs in this window); all when absent. */
   always?: (n: NeedItem) => boolean;
   /** The tray card's variant (board "tray"): a 24 px head without the ⌘J hint. */
@@ -118,7 +125,7 @@ export function NeedsZone({
           </button>
         )}
         {shown.map((n, i) => (
-          <NeedRow key={n.id} n={n} top={i === 0 && !focusedId} focused={n.id === focusedId} always={always?.(n) ?? true} onVerb={onVerb} />
+          <NeedRow key={n.id} n={n} top={i === 0 && !focusedId} focused={n.id === focusedId} always={always?.(n) ?? true} blocked={blocked?.(n)} onVerb={onVerb} />
         ))}
         {items.length > MAX_ROWS && (
           <button type="button" onClick={onMore} className="h-6 px-2 text-[11px] text-ac-muted hover:text-ac-text">

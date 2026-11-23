@@ -300,7 +300,8 @@ describe("the v3 keyboard (spec §12)", () => {
   const press = (key: string, mods: Partial<KeyboardEventInit> = {}) => fireEvent.keyDown(window, { key, metaKey: true, ...mods });
   const mountMac = (over: Partial<V3Data> = {}) => {
     const act = vi.fn();
-    render(<V3Window data={{ ...data(), ...over }} slots={slots} act={act} platform="mac" />);
+    // The engine answers here; with it stopped the answer keys wait (controls-say-what-they-do.test).
+    render(<V3Window data={{ ...data(), health: { state: "ready" }, ...over }} slots={slots} act={act} platform="mac" />);
     return act;
   };
 

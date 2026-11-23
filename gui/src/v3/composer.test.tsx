@@ -23,6 +23,18 @@ describe("tokenAt", () => {
 });
 
 describe("Composer", () => {
+  it("blocked (the engine is stopped): nothing is sent, the draft stays, the send button says why", () => {
+    const c = setup({ blocked: "The engine is stopped — restart it to do this" });
+    type(c.box, "hello");
+    fireEvent.keyDown(c.box, { key: "Enter" });
+    const send = screen.getByRole("button", { name: /Queue/ });
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    expect(send.getAttribute("title")).toBe("The engine is stopped — restart it to do this");
+    fireEvent.click(send);
+    expect(c.onSend).not.toHaveBeenCalled();
+    expect(c.box.value).toBe("hello");
+  });
+
   it("Enter sends text and chips, Shift+Enter does not, ⌘. stops", () => {
     const c = setup({ running: true });
     expect(c.box.placeholder).toBe("Queue a message — sent when this turn ends · @ files · / commands · drop images");
