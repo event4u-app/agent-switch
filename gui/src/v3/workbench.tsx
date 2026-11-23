@@ -226,6 +226,8 @@ export interface BarSession {
   cache?: SessionCache | null;
   /** Hosted, yet model and thinking cannot change here (Codex): the chips stay locked and say why. */
   respawnWhy?: string;
+  /** No terminal to switch to (a session started in the chat): the Terminal segment is off and says why. */
+  terminalWhy?: string;
 }
 
 /** Session-bar chip: opens a popover; a locked chip keeps its shape and says why. */
@@ -277,7 +279,8 @@ export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { 
             ["chat", "Chat", <MessageSquareText key="c" className="size-3.5" />],
           ] as const
         ).map(([id, label, icon]) => {
-          const off = id === "chat" && chatOff;
+          const why = id === "chat" ? (chatOff ? chatWhy : null) : (s.terminalWhy ?? null);
+          const off = why !== null;
           return (
             <button
               key={id}
@@ -285,7 +288,7 @@ export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { 
               role="radio"
               aria-checked={s.view === id}
               aria-disabled={off || undefined}
-              title={off ? chatWhy : s.hosted ? `${label} · switches between turns` : `${label} · read-only here — you type in your terminal`}
+              title={why ?? (s.hosted ? `${label} · switches between turns` : `${label} · read-only here — you type in your terminal`)}
               onClick={off ? undefined : () => on.view(id)}
               className={cn("inline-flex h-full items-center gap-1.5 rounded-md px-2 text-xs", s.view === id ? "bg-ac-raise font-medium text-ac-text" : "text-ac-muted", off && "opacity-60")}
             >

@@ -134,7 +134,8 @@ describe("toV3Data", () => {
     const feeds: V3Feeds = { ...emptyFeeds(), host: { mode: "persistent", hosted: [{ key: "claude/work/h1", provider: "claude", account: "work", sessionId: "h1", cwd: "/r", startedAt: "", alive: true, parked: false }] } };
     const d = toV3Data(vm, feeds, env({ chats: new Set(["claude/work/chat1"]) }));
     expect(d.bar("claude/work/h1")).toMatchObject({ hosted: true, attachable: true });
-    expect(d.bar("claude/work/chat1")).toMatchObject({ hosted: true, attachable: false });
+    expect(d.bar("claude/work/chat1")).toMatchObject({ hosted: true, attachable: false, terminalWhy: "This session started in the chat view; it has no terminal here" });
+    expect(d.bar("claude/work/h1")?.terminalWhy).toBeUndefined();
     expect(d.bar("claude/work/own")).toMatchObject({ hosted: false, attachable: false, where: "your terminal" });
     expect(d.bar("claude/work/desk")?.where).toBe("Claude Desktop");
   });
