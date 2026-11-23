@@ -1,13 +1,10 @@
-import { useEffect, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { Check, Copy } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { t } from "../i18n/index.js";
 
 export interface CopyButtonProps {
   text: string;
-  /** Inside another button (an account row) a nested <button> is invalid
-   *  HTML, so it renders as a focusable span with the button role. */
-  nested?: boolean;
   className?: string;
   /** Accessible name when `text` is too long to read out (a message). */
   label?: string;
@@ -15,7 +12,7 @@ export interface CopyButtonProps {
 
 /** Small icon that copies `text`; shows a check for a moment after. The click
  *  never reaches the row or button around it. */
-export function CopyButton({ text, nested, className, label: name }: CopyButtonProps) {
+export function CopyButton({ text, className, label: name }: CopyButtonProps) {
   const [done, setDone] = useState(false);
   useEffect(() => {
     if (!done) return;
@@ -23,7 +20,7 @@ export function CopyButton({ text, nested, className, label: name }: CopyButtonP
     return () => clearTimeout(id);
   }, [done]);
 
-  const copy = (e: MouseEvent | KeyboardEvent) => {
+  const copy = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     void navigator.clipboard
@@ -43,24 +40,10 @@ export function CopyButton({ text, nested, className, label: name }: CopyButtonP
     ),
   };
   const icon = done ? <Check /> : <Copy />;
-  if (!nested) {
-    return (
-      <button type="button" {...props}>
-        {icon}
-      </button>
-    );
-  }
   return (
-    <span
-      role="button"
-      tabIndex={0}
-      {...props}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") copy(e);
-      }}
-    >
+    <button type="button" {...props}>
       {icon}
-    </span>
+    </button>
   );
 }
 

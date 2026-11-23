@@ -54,7 +54,7 @@ export function AccountRow({ account: a, ranked, showRank, nextIn }: { account: 
         a.disabled && "opacity-55",
       )}
     >
-      <button type="button" data-row-main className="flex min-w-0 items-center gap-3 text-left">
+      <div className="flex min-w-0 items-center gap-3 text-left">
         {ranked && showRank && (
           <span className={cn("w-5 shrink-0 text-right font-ac-mono text-[11px]", ranked.rank === 1 ? "text-ac-brand-text" : "text-ac-faint")}>
             {ranked.rank ? `#${ranked.rank}` : "–"}
@@ -63,7 +63,9 @@ export function AccountRow({ account: a, ranked, showRank, nextIn }: { account: 
         <AccountDot color={a.color} ring={a.liveSessions > 0} />
         <span className="flex min-w-0 flex-col">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-[13px] font-medium text-ac-text">{a.name}</span>
+            <button type="button" data-row-main className="truncate text-left text-[13px] font-medium text-ac-text">
+              {a.name}
+            </button>
             {a.disabled && <Badge>{t("common.disabled")}</Badge>}
             {a.desktopForeign && (
               <span title={t("accounts.list.desktopForeignTitle", { who: a.desktopForeign.join(", ") })}>
@@ -78,7 +80,7 @@ export function AccountRow({ account: a, ranked, showRank, nextIn }: { account: 
           </span>
           <AccountSubline account={a} signedOut={signedOut} />
         </span>
-      </button>
+      </div>
       <span className="hidden min-w-0 flex-col md:flex">
         {usedIn(a) && <span className="truncate text-xs text-ac-soft">{usedIn(a)}</span>}
         <span className="text-[11px] text-ac-faint">{a.liveSessions ? tp("accounts.list.running", a.liveSessions) : t("accounts.list.idle")}</span>

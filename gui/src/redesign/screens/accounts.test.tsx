@@ -791,9 +791,14 @@ describe("Copy email", () => {
     expect(screen.getByTestId("where").textContent).toBe("accounts/none");
   });
 
-  it("copies by keyboard from the row too", async () => {
+  it("the row's copy control is a real button outside the row's own, so the keyboard reaches it", async () => {
     mount(fixture());
-    fireEvent.keyDown(screen.getByRole("button", { name: "Copy work@example.test" }), { key: "Enter" });
+    const copy = screen.getByRole("button", { name: "Copy work@example.test" });
+    expect(copy.tagName).toBe("BUTTON");
+    expect(copy.closest("button:not([aria-label^='Copy'])")).toBeNull();
+    copy.focus();
+    expect(document.activeElement).toBe(copy);
+    fireEvent.click(copy);
     await waitFor(() => expect(copied).toEqual(["work@example.test"]));
     expect(screen.getByTestId("where").textContent).toBe("accounts/none");
   });
