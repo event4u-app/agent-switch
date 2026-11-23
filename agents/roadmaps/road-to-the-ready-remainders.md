@@ -286,11 +286,12 @@ saved.
       message.
       done: `guiSkewNotice` in `src/gui-launch.ts`, used by both fallbacks (no build in this release; nothing downloadable → newest cached); `tests/gui-launch.test.ts` › "guiSkewNotice names the CLI's version and the GUI version that is launched instead" (seen red first).
       <!-- from: road-to-agent-switch-native-updater AC "CLI↔GUI version skew is impossible or clearly surfaced" -->
-- [ ] **7.4 Document updates, releases and rollback.** README / docs: how
+- [x] **7.4 Document updates, releases and rollback.** README / docs: how
       updates arrive (notify by default, D5), how to cut a release, how to
       withdraw a bad one (7.1) and how a user goes back to the previous version
       (`npm install -g @event4u/agent-switch@<version>`). verify: the docs build
       and link check pass; every command in the page runs.
+      done: `starlight/src/content/docs/guides/updates-and-releases.mdx` (sidebar: Guides); desktop-app.mdx › Updates corrected to notify-by-default, install.mdx › Update links it. `npm run build` in `starlight/` (CI's docs job) passes with "All internal links are valid"; commands run: `check-update` (+`--json`), `update banana` (refused, exit 1), `npm view … versions`, `npm deprecate --help`, `npm dist-tag --help`, `task release -- --dry-run`; `update <version>`, `npm install -g …@<v>`, `npm deprecate` and `npm dist-tag add` were not executed (they install or publish).
       <!-- from: road-to-agent-switch-native-updater P1.4, P4.3, P5.3 -->
       <!-- adapted: Tauri channels and `latest.json` dropped; the npm path is the only update path -->
 

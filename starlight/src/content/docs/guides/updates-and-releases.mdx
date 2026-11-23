@@ -1,0 +1,143 @@
+---
+title: Updates, releases and rollback
+description: How a new Agent Switch version reaches you, how a release is cut and withdrawn, and how to go back to an earlier version.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Agent Switch updates through npm. There is no separate updater: the desktop app
+runs the same `agent-switch update` you can run yourself, and it downloads the
+GUI build that belongs to the installed CLI version.
+
+## How updates arrive
+
+**In a terminal.** Nothing happens on its own. Check, then update:
+
+```bash
+agent-switch check-update          # compares your version with the latest release
+agent-switch check-update --json
+agent-switch update                # installs the latest version through npm
+agent-switch update 2.12.1         # installs exactly this version
+```
+
+`update` restarts the background service on the version it installed.
+
+**In the desktop app.** The app looks for a new release when it opens and every
+24 hours. By default it only **tells you**: a notice names the version, and
+**Settings › Updates** offers **Update to …**. Nothing is installed without
+your click.
+
+Under **Settings › Updates › Install automatically for** you can switch on the
+release types the app may install without asking: **Major**, **Minor** and
+**Bugfix**. All three are off on a new install. When one of them is on, the app
+installs exactly the version it checked (`agent-switch update <version>`), never
+whatever npm calls the latest version by then.
+
+After an install the app does not restart by itself. It says a restart is
+needed and offers **Restart now** in **Settings › Updates**. While a session it
+hosts is running, the notice asks you to wait until that session is done.
+
+<Aside type="note" title="The app follows the CLI">
+The GUI build is downloaded from the GitHub release of the installed CLI
+version. When that release has no GUI build yet (it is still being built), or
+none can be downloaded, an earlier GUI starts and the app says which version it
+launched, and that it may not match the CLI.
+</Aside>
+
+## A withdrawn release
+
+A release can be withdrawn when it turns out to be bad. The app then never
+installs it, also not for a release type you switched on, and its notice says
+why. The manual **Update to …** refuses it with the same reason.
+
+The app reads two markers, and either one withdraws the version:
+
+- a line `Withdrawn: <reason>` in the release notes of its GitHub release;
+- an `npm deprecate` message on exactly that version.
+
+When the app cannot read these markers (no network, the registry does not
+answer), it does not install on its own; it tells you about the version and
+leaves the decision to you.
+
+<Aside type="caution" title="The terminal does not check for withdrawn versions">
+`agent-switch update` without a version installs npm's latest version. If the
+withdrawn version is still tagged `latest` on npm, that is the one it installs.
+The maintainer steps below move `latest` back for exactly that reason.
+</Aside>
+
+## Go back to an earlier version
+
+Install the version you want, by number:
+
+```bash
+npm view @event4u/agent-switch versions          # every published version
+npm install -g @event4u/agent-switch@2.11.0      # always works
+agent-switch update 2.11.0                       # the same, when `agent-switch --help` lists `update [<version>]`
+```
+
+`agent-switch update <version>` also restarts the background service on that
+version; an older CLI ignores the version and installs the latest, so use npm
+there. After a plain `npm install -g`, run `agent-switch service install` if you
+use the background service. The desktop app picks the matching GUI build
+on its next start; quit and open it again.
+
+Going back does not touch your accounts, sign-ins or settings. If a newer
+version is withdrawn later, the app stops offering it.
+
+## For maintainers: cut a release
+
+<Steps>
+
+1. **Preview the version.** The next free version is worked out from the
+   commits since the last tag and from every version npm has ever had.
+
+   ```bash
+   task release -- --dry-run
+   ```
+
+2. **Release.** This bumps the version in `package.json`, `gui/package.json`,
+   `gui/src-tauri/tauri.conf.json` and `gui/src-tauri/Cargo.toml`, commits,
+   tags `X.Y.Z` and pushes the tag.
+
+   ```bash
+   task release                 # or: task release:patch / release:minor / release:major
+   ```
+
+3. **CI publishes.** The tag push publishes the npm package, builds the GUI for
+   every platform into the GitHub release, and deploys these docs.
+
+</Steps>
+
+## For maintainers: withdraw a bad release
+
+<Steps>
+
+1. **Mark it in the release notes.** Add a line that starts with `Withdrawn:` to
+   the GitHub release of that version, for example:
+
+   ```text
+   Withdrawn: sign-in to a second Claude account fails; use 2.12.2.
+   ```
+
+2. **Deprecate it on npm.** npm warns everyone who installs it, and the app
+   reads the message as the reason.
+
+   ```bash
+   npm deprecate @event4u/agent-switch@2.12.1 "sign-in to a second Claude account fails; use 2.12.2"
+   ```
+
+3. **Point `latest` at a good version** until a fixed release is out, so
+   `agent-switch update` and `npm install -g @event4u/agent-switch` do not
+   install the bad one.
+
+   ```bash
+   npm dist-tag add @event4u/agent-switch@2.12.0 latest
+   ```
+
+4. **Publish the fix** with `task release`. A new release becomes `latest` again
+   on its own.
+
+</Steps>
+
+To lift a withdrawal, remove the `Withdrawn:` line and clear the npm message
+with `npm deprecate @event4u/agent-switch@2.12.1 ""`.
