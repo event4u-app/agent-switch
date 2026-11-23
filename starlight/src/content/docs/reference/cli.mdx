@@ -40,7 +40,7 @@ Running `agent-switch` with no command starts the desktop app (same as
 | `login <name> [--browser B] [--isolated]` | Sign an existing account in again (signed out, or login expired). Gives an imported account its own login. `--isolated` as for `add`. |
 | `browsers` | Browsers `--browser` can open; `--json` marks the ones `--isolated` can use (`isolatable`). <Badge text="macOS" variant="caution" /> and Linux. |
 | `mark-shared <name> [--off]` | Mark an account as sharing the default install's login (for imports made by older versions). |
-| `agent-config-root <name> [own\|global\|status] [--json]` | Claude only. `own`: the account's sessions and the app's agent-config settings use `~/.agent-switch/claude/<name>/agent-config`; `global` (the default): the shared agent-config settings. Only new sessions follow a change; nothing is copied or deleted. See [agent-config settings per account](/guides/agent-config/#agent-config-settings-per-account). |
+| `agent-config-root <name> [own\|global\|status] [--json]` | Claude only. `own`: the account's sessions and the app's agent-config settings use `~/.agent-switch/claude/<name>/agent-config`; `global` (the default): the shared agent-config settings. Only new sessions follow a change; nothing is copied or deleted. See [agent-config settings per account](/agent-switch/guides/agent-config/#agent-config-settings-per-account). |
 | `list` / `ls` | All accounts, grouped by tool; the preferred account is marked `*`. |
 | `status [name]` | Who each account is signed in as, plus its usage. `--json` covers the preferred account only. |
 | `current` | The preferred account per tool. |
