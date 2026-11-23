@@ -4,7 +4,7 @@
  * gives focus back to where it was.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { V3Window, type V3Data } from "./window.js";
 import { data, slots } from "./window-fixture.js";
 
@@ -94,6 +94,16 @@ describe("⌘J from a focused terminal (8.6)", () => {
     mount({ needs: [approval, signin] }, { id: "b", n: 1 });
     expect(inNeeds()).not.toBeNull();
     expect(active()?.textContent).toMatch(/signed out/);
+  });
+});
+
+describe("the sort menu names its real default (8.6)", () => {
+  it("Status carries the default hint, Activity none", () => {
+    mount();
+    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByTitle("Sort and group"));
+    const menu = screen.getByRole("menu", { name: "Sort and group" });
+    expect(within(menu).getByRole("menuitem", { name: /^Status/ }).textContent).toMatch(/default/);
+    expect(within(menu).getByRole("menuitem", { name: /^Activity/ }).textContent).not.toMatch(/default/);
   });
 });
 

@@ -906,7 +906,7 @@ export function V3Window({
           width={232}
           items={[
             { section: "Sort by", label: "" },
-            ...(Object.keys(SORT_LABEL) as SortBy[]).map((k) => ({ id: `sort-${k}`, label: SORT_LABEL[k], checked: k === sortBy, hint: k === "activity" ? "default" : k === "status" ? "needs you first" : undefined, onClick: () => (close(), setSortBy(k)) })),
+            ...(Object.keys(SORT_LABEL) as SortBy[]).map((k) => ({ id: `sort-${k}`, label: SORT_LABEL[k], checked: k === sortBy, hint: [k === DEFAULT_SORT && "default", k === "status" && "needs you first"].filter(Boolean).join(" · ") || undefined, onClick: () => (close(), setSortBy(k)) })),
             { section: "Group by", label: "" },
             ...(Object.keys(GROUP_LABEL) as GroupBy[]).map((k) => ({ id: `group-${k}`, label: GROUP_LABEL[k], checked: k === groupBy, onClick: () => (close(), setGroupBy(k)) })),
           ]}
