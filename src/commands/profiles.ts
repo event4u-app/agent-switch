@@ -45,7 +45,7 @@ import { withProperLock } from "../locks.js";
 import { renameProtection, forgetProtection } from "../protection.js";
 import { renamePoolMember } from "../pools.js";
 import { GUARD_REFUSED_EXIT } from "../single-load.js";
-import { mappingRows, pruneMappings, setMapping } from "../mappings.js";
+import { mappingRows, pruneMappings, remoteRows, setMapping, setRemoteMapping } from "../mappings.js";
 import { liveSessionPids } from "../api.js";
 import { codexSessionCounts } from "../login-keepalive.js";
 import { serviceInstall, serviceTarget } from "../service.js";
@@ -690,6 +690,9 @@ export function cmdRename(providerId: ProviderId, from?: string, to?: string): v
   }
   for (const m of mappingRows()) {
     if (m.provider === providerId && m.name === n) setMapping(m.path, providerId, to);
+  }
+  for (const m of remoteRows()) {
+    if (m.provider === providerId && m.name === n) setRemoteMapping(m.remote, providerId, to);
   }
   renameProtection(providerId, n, to);
   renamePoolMember(`${providerId}/${n}`, `${providerId}/${to}`);

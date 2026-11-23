@@ -1168,6 +1168,29 @@ function runRaw(home: string, args: string[], env: Record<string, string> = {}) 
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
+test("remote binding: `map --remote` routes every clone of an owner, `unmap --remote` removes it", { skip: gate.skip || (spawnSync("git", ["--version"]).status === 0 ? false : "git not installed") }, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-remote-"));
+  const repo = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "asw-clone-")), "widgets");
+  try {
+    seed(home, "claude", "work");
+    fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+    spawnSync("git", ["init", "-q", repo]);
+    spawnSync("git", ["-C", repo, "remote", "add", "origin", "git@github.com:Acme/widgets.git"]);
+    assert.match(run(home, ["map", "work", "--remote", "github.com/acme"]), /Mapped remote github\.com\/acme -> claude\/work/);
+    assert.notEqual(runRaw(home, ["map", "work", "--remote", "github.com"]).status, 0, "a bare host names no owner");
+    assert.deepEqual(JSON.parse(run(home, ["mappings", "--json"])), [{ remote: "github.com/acme", provider: "claude", target: "work", paused: false }]);
+    const dir = () => JSON.parse(spawnSync("node", [CLI, "dir", "--json"], { cwd: path.join(repo, "src"), env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" }).stdout);
+    const hit = dir();
+    assert.equal(hit.profile, "claude/work");
+    assert.match(hit.why[0], /^Rule: remote github\.com\/acme \(repo .*widgets\) → claude\/work$/);
+    assert.match(run(home, ["unmap", "--remote", "github.com/acme"]), /Removed remote binding github\.com\/acme/);
+    assert.doesNotMatch(dir().why.join("\n"), /Rule:/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(path.dirname(repo), { recursive: true, force: true });
+  }
+});
+
 test("guard: with every account busy, `dir --guard` shares the profile instead of refusing", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
   try {

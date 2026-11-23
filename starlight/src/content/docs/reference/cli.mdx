@@ -116,8 +116,10 @@ background service stops checking its usage.
 | `picks [--limit N]` | Which account each start from your terminal chose, and why (newest 500 kept). |
 | `map <name\|pool:<id>> [dir]` | Pin a folder (default: the current one) to an account or a pool. |
 | `map --pause\|--resume [dir]` | Pause a folder rule without deleting it, or turn it back on. |
+| `map <name\|pool:<id>> --remote <host/owner[/repo]>` | Bind every clone whose `origin` is under that owner or repo, wherever it is checked out. A remote URL works too. |
 | `unmap [dir]` | Remove a folder rule. |
-| `mappings` | List folder rules. |
+| `unmap --remote <host/owner[/repo]>` | Remove a remote binding. |
+| `mappings` | List folder rules and remote bindings. |
 | `pool …` | Groups of accounts a folder rule can point at. See [below](#pool). |
 | `guard [block\|warn\|off]` | One account, one running session: read or set the policy. See [below](#guard). |
 | `shellenv [--shell S]` | Print the shell integration. |
@@ -129,7 +131,13 @@ A plain `claude`, `codex` or `agy` in a terminal with the shell integration
 asks `agent-switch dir` first. The order is:
 
 1. **A folder rule** for this folder or the nearest parent folder: that account,
-   or the best account in that pool.
+   or the best account in that pool. A **remote binding** counts as a rule on
+   the repository's root folder: it matches the `origin` remote (the first
+   remote when there is no `origin`), `host/owner/repo` before `host/owner`.
+   Walking up from the start folder, the first rule found wins, and a folder
+   rule wins over a remote binding on the same folder. So a folder rule inside
+   the repo or on its root beats the remote binding, and the remote binding
+   beats a rule on a parent folder such as `~/code`.
 2. **No folder rule:** a balanced start across all of that tool's accounts.
 3. **The preferred account** (`use`) on a tie, or when no account has usage
    numbers from the last 10 minutes. With `strategy fill`, the preferred account

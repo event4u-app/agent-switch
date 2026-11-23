@@ -191,7 +191,7 @@ async function main(): Promise<void> {
     }
     case "guard": return cmdGuard(positional[0], !!flags.json);
     case "map": return cmdMap(providerId, positional[0], positional[1], flags);
-    case "unmap": return cmdUnmap(providerExplicit ? providerId : undefined, positional[0]);
+    case "unmap": return cmdUnmap(providerExplicit ? providerId : undefined, positional[0], typeof flags.remote === "string" ? flags.remote : undefined);
     case "mappings": return cmdMappings(rest.includes("--json"));
     case "share": return cmdShare(positional[0], rest.slice(1));
     case "claude-settings": return cmdClaudeSettings(positional[0], positional.slice(1), flags);

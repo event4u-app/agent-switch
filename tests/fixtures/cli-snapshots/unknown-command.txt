@@ -23,8 +23,10 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch guard [block|warn|off]          one profile, one live session (default warn on new installs)
   agent-switch map [--provider P] <name|pool:<id>> [dir]   map a directory to a profile or a pool
   agent-switch map --pause|--resume [--provider P] [dir]   pause a folder rule (kept, but skipped) or turn it back on
+  agent-switch map [--provider P] <name|pool:<id>> --remote <host/owner[/repo]>   bind every clone of a git remote
   agent-switch unmap [--provider P] [dir]      remove a directory mapping
-  agent-switch mappings                        list directory mappings
+  agent-switch unmap [--provider P] --remote <host/owner[/repo]>   remove a remote binding
+  agent-switch mappings                        list directory mappings and remote bindings
   agent-switch share on|sync|off|status [--history] [--source <profile|default>] [--json]   (Claude)
   agent-switch claude-settings [status|sync|set <path> <json>|unset <path>|rule allow|deny|ask <rule>… on|off] [--json]   manage ~/.claude/settings.json once; every Claude profile gets it (global wins, lists gain what they lack, own values stay)
   agent-switch config export|import <profile>   config-only cross-machine bundle to stdout / from stdin (settings, keybindings, CLAUDE.md, skills/, commands/, agents/ — NEVER credentials; pipe export | gpg -c)

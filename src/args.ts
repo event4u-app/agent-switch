@@ -51,6 +51,7 @@ const VALUE_FLAGS = new Set([
   "file",
   "line",
   "repo",
+  "remote",
   "mode",
   "before",
   "query",

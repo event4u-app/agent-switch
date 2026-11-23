@@ -44,8 +44,9 @@ export interface CachedUsage {
 
 export interface ResolveInputs {
   providerId: ProviderId;
-  /** Nearest folder rule for this provider, or null. `name` may be `pool:<id>`. */
-  mapping: { path: string; name: string } | null;
+  /** Nearest folder rule for this provider, or null. `name` may be `pool:<id>`;
+   *  `remote` is set when a remote binding matched at the repo root `path`. */
+  mapping: { path: string; name: string; remote?: string } | null;
   active: string | null;
   exists: (name: string) => boolean;
   signedIn: (name: string) => boolean;
@@ -139,10 +140,11 @@ function refuse(why: string[], reason: string): Resolution {
 export function resolveForDir(i: ResolveInputs): Resolution {
   const shown = (p: string) => (i.displayPath ? i.displayPath(p) : p);
   const why: string[] = [];
+  const rule = (m: { path: string; remote?: string }) => (m.remote ? `remote ${m.remote} (repo ${shown(m.path)})` : `folder ${shown(m.path)}`);
 
   if (i.mapping && isPoolRef(i.mapping.name)) {
     const id = poolIdOf(i.mapping.name);
-    why.push(`Rule: folder ${shown(i.mapping.path)} → pool ${id}`);
+    why.push(`Rule: ${rule(i.mapping)} → pool ${id}`);
     const pool = i.pool(id);
     if (!pool) return refuse(why, `pool ${id} no longer exists — bind the folder anew or remove the rule (agent-switch unmap)`);
     const considered = pool.members.map(parseMember).filter((m) => m && m.provider === i.providerId) as {
@@ -176,7 +178,7 @@ export function resolveForDir(i: ResolveInputs): Resolution {
   if (i.mapping) {
     const key = `${i.providerId}/${i.mapping.name}`;
     const flag = i.providerId === "claude" ? "" : ` --provider ${i.providerId}`;
-    why.push(`Rule: folder ${shown(i.mapping.path)} → ${key}`);
+    why.push(`Rule: ${rule(i.mapping)} → ${key}`);
     if (!i.exists(i.mapping.name)) return refuse(why, `${key} no longer exists — bind the folder anew (agent-switch map) or remove the rule (agent-switch unmap)`);
     if (i.disabled?.(i.mapping.name)) return refuse(why, `${key} is disabled — turn it back on (agent-switch enable ${i.mapping.name}${flag}) or change the rule`);
     return giveWayIfBusy(i, i.mapping.name, why) ?? { name: i.mapping.name, why };

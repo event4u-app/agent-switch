@@ -24,6 +24,9 @@ flowchart TD
    an account, that account is used. A rule can also point at a pool, a group
    of accounts; then the member with the most headroom is used.
    See [Projects & pools](/agent-switch/guides/projects-and-pools/).
+   A rule can also name a git remote instead of a folder
+   (`agent-switch map work --remote github.com/acme`); it then applies in every
+   clone of that owner or repo, as if it were a rule on the clone's root folder.
 2. **Balanced pick.** Without a rule, the start is balanced across all enabled
    accounts of that tool. It goes to the account that would lose the most of
    what is left at its next reset.

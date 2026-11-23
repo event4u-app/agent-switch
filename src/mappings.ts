@@ -15,8 +15,15 @@
  *
  * A rule can be paused without losing it: `paused` lists `{ "<path>": [provider] }`
  * next to `mappings`, and resolution skips a paused rule as if it were absent.
+ *
+ * Remote bindings (`remotes`, keyed `host/owner` or `host/owner/repo`) match a
+ * repository by its `origin` URL instead of its folder. They count at the
+ * depth of the repository root: walking up from the start folder, a folder
+ * rule wins at the same depth, so a remote beats a rule on a parent folder but
+ * never one on the repo itself or inside it. The longest key matches first.
  */
 
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { ROOT, ensureRoot } from "./profiles.js";
@@ -84,16 +91,104 @@ export function loadMappings(): Record<string, DirMapping> {
   return out;
 }
 
+export function loadRemotes(): Record<string, DirMapping> {
+  const raw = readFile()?.remotes;
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, DirMapping> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (value && typeof value === "object") out[key] = value as DirMapping;
+  }
+  return out;
+}
+
 /** Write mappings; paused flags of rules that no longer exist are dropped. */
-function save(mappings: Record<string, DirMapping>, paused: Paused = loadPaused()): void {
+function save(mappings: Record<string, DirMapping>, paused: Paused = loadPaused(), remotes: Record<string, DirMapping> = loadRemotes()): void {
   ensureRoot();
   const kept: Paused = {};
   for (const [key, providers] of Object.entries(paused)) {
     const live = providers.filter((p) => mappings[key]?.[p]);
     if (live.length > 0) kept[key] = live;
   }
-  const body = Object.keys(kept).length > 0 ? { schema: 2, mappings, paused: kept } : { schema: 2, mappings };
+  const body = {
+    schema: 2,
+    mappings,
+    ...(Object.keys(kept).length > 0 ? { paused: kept } : {}),
+    ...(Object.keys(remotes).length > 0 ? { remotes } : {}),
+  };
   fs.writeFileSync(MAPPINGS_FILE, JSON.stringify(body, null, 2) + "\n", { mode: 0o600 });
+}
+
+/** A remote URL as `[host, ...path segments]`, lower case, without `.git`;
+ *  null for a local path or a URL with no owner. Pure. */
+export function parseRemote(url: string): string[] | null {
+  const u = url.trim();
+  let host: string;
+  let rest: string;
+  const scheme = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]*@)?([^/:]+)(?::\d+)?(\/.*)?$/i.exec(u);
+  const scp = /^(?:[^@/:]+@)?([^/:]+):(?!\/)(.+)$/.exec(u);
+  if (scheme) [host, rest] = [scheme[1], scheme[2] ?? ""];
+  else if (scp) [host, rest] = [scp[1], scp[2]];
+  else return null;
+  const segs = rest.replace(/\.git\/?$/i, "").split("/").filter(Boolean);
+  if (segs.length === 0) return null;
+  return [host, ...segs].map((x) => x.toLowerCase());
+}
+
+/** The stored form of a binding target: `host/owner[/repo]`, or a remote URL
+ *  reduced to it. Null when it names no owner. */
+export function normalizeRemoteKey(input: string): string | null {
+  const t = input.trim();
+  const parsed = /:\/\/|^[^/]*:/.test(t) ? parseRemote(t) : t.replace(/\.git\/?$/i, "").split("/").filter(Boolean).map((x) => x.toLowerCase());
+  return parsed && parsed.length >= 2 ? parsed.join("/") : null;
+}
+
+function git(cwd: string, args: string[]): string | null {
+  const r = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", timeout: 1000, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" } });
+  return r.status === 0 && !r.error ? r.stdout.trim() : null;
+}
+
+/** The repository root of `dir` and its `origin` (else first) remote, parsed. */
+function repoRemote(dir: string): { root: string; segs: string[] } | null {
+  const top = git(dir, ["rev-parse", "--show-toplevel"]);
+  if (!top) return null;
+  const name = git(dir, ["config", "--get", "remote.origin.url"]) !== null ? "origin" : git(dir, ["remote"])?.split("\n")[0];
+  const url = name ? git(dir, ["config", "--get", `remote.${name}.url`]) : null;
+  const segs = url ? parseRemote(url) : null;
+  return segs ? { root: normalizePath(top), segs } : null;
+}
+
+export function setRemoteMapping(remote: string, providerId: ProviderId, name: string): string {
+  const key = normalizeRemoteKey(remote);
+  if (!key) throw new Error(`"${remote}" is not host/owner[/repo] or a remote URL`);
+  const remotes = loadRemotes();
+  remotes[key] = { ...remotes[key], [providerId]: name };
+  save(loadMappings(), loadPaused(), remotes);
+  return key;
+}
+
+/** Remove a remote binding — one provider, or the whole entry. */
+export function removeRemoteMapping(remote: string, providerId?: ProviderId): boolean {
+  const key = normalizeRemoteKey(remote);
+  const remotes = loadRemotes();
+  if (!key || !(key in remotes)) return false;
+  if (providerId) {
+    if (!(providerId in remotes[key])) return false;
+    delete remotes[key][providerId];
+    if (Object.keys(remotes[key]).length === 0) delete remotes[key];
+  } else {
+    delete remotes[key];
+  }
+  save(loadMappings(), loadPaused(), remotes);
+  return true;
+}
+
+/** All remote bindings as flat rows for display. */
+export function remoteRows(): { remote: string; provider: ProviderId; name: string }[] {
+  const rows: { remote: string; provider: ProviderId; name: string }[] = [];
+  for (const [key, entry] of Object.entries(loadRemotes())) {
+    for (const [provider, name] of Object.entries(entry)) rows.push({ remote: key, provider: provider as ProviderId, name: name as string });
+  }
+  return rows.sort((a, b) => a.remote.localeCompare(b.remote) || a.provider.localeCompare(b.provider));
 }
 
 /** Pause or resume one folder rule. False when the folder has no rule for the provider. */
@@ -132,35 +227,50 @@ export function removeMapping(dir: string, providerId?: ProviderId): boolean {
   return true;
 }
 
-/** Nearest mapped ancestor of `dir` (inclusive) for a provider; null if none. */
+/** Nearest rule for `dir` (inclusive) and a provider: a folder rule, or a
+ *  remote binding at the repository root (`remote` set); null if none. */
 export function resolveMapping(
   dir: string,
   providerId: ProviderId,
-): { path: string; name: string } | null {
+): { path: string; name: string; remote?: string } | null {
   const mappings = loadMappings();
   const paused = loadPaused();
+  const remotes = loadRemotes();
+  // Only a remote binding for this provider is worth the git calls on the start path.
+  const repo = Object.values(remotes).some((e) => e[providerId]) ? repoRemote(dir) : null;
   let current = normalizePath(dir);
   for (;;) {
     const entry = mappings[current];
     if (entry && entry[providerId] && !isPaused(paused, current, providerId)) return { path: current, name: entry[providerId]! };
+    if (repo && current === repo.root) {
+      for (let n = repo.segs.length; n >= 2; n--) {
+        const key = repo.segs.slice(0, n).join("/");
+        const name = remotes[key]?.[providerId];
+        if (name) return { path: current, name, remote: key };
+      }
+    }
     const parent = path.dirname(current);
     if (parent === current) return null;
     current = parent;
   }
 }
 
-/** Drop mappings pointing at a removed (provider, name). Returns removed keys. */
+/** Drop folder rules and remote bindings pointing at a removed (provider,
+ *  name). Returns removed keys. */
 export function pruneMappings(providerId: ProviderId, name: string): string[] {
   const mappings = loadMappings();
+  const remotes = loadRemotes();
   const removed: string[] = [];
-  for (const [key, entry] of Object.entries(mappings)) {
-    if (entry[providerId] === name) {
-      delete entry[providerId];
-      if (Object.keys(entry).length === 0) delete mappings[key];
-      removed.push(key);
+  for (const table of [mappings, remotes]) {
+    for (const [key, entry] of Object.entries(table)) {
+      if (entry[providerId] === name) {
+        delete entry[providerId];
+        if (Object.keys(entry).length === 0) delete table[key];
+        removed.push(key);
+      }
     }
   }
-  if (removed.length > 0) save(mappings);
+  if (removed.length > 0) save(mappings, loadPaused(), remotes);
   return removed;
 }
 

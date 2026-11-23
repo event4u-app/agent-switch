@@ -75,10 +75,12 @@ saved.
       done: `src/start-admission.ts`, `exec` and `dir --guard` refuse with 86;
       `tests/start-admission.test.ts` (changed / signed out seen red first; unchanged starts once).
       <!-- from: road-to-session-orchestration P2.2 -->
-- [ ] **2.2 Repo / org bindings.** A binding may match the `git remote` (host +
+- [x] **2.2 Repo / org bindings.** A binding may match the `git remote` (host +
       owner, optionally repo) next to the existing folder bindings; first match
       wins, folder before remote at equal depth. verify: binding tests for remote,
       folder and both.
+      done: `map --remote` / `unmap --remote` (`src/mappings.ts` `remotes`); `tests/remote-bindings.test.ts`
+      (remote, repo-before-owner, folder vs remote at/above/below the root; seen red first), cli-e2e "remote binding".
       <!-- from: road-to-session-orchestration P2.3 -->
 - [ ] **2.3 "Ask me" and "default account" for unbound starts.** An unbound start
       either asks (GUI dialog / CLI prompt, never in a non-interactive run) or

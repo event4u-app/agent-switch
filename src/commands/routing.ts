@@ -39,7 +39,7 @@ import { START_STRATEGIES, resolveForDir, type StartStrategy } from "../dir-reso
 import { appendPick, readPicks, PICKS_MAX_LINES } from "../picks.js";
 import { admissionRefusal } from "../start-admission.js";
 import { GUARD_POLICIES, GUARD_REFUSED_EXIT, GuardPolicy, OVERRIDE_ENV, isGuardPolicy } from "../single-load.js";
-import { mappingRows, removeMapping, resolveMapping, setMapping, setPaused, normalizePath } from "../mappings.js";
+import { mappingRows, normalizeRemoteKey, remoteRows, removeMapping, removeRemoteMapping, resolveMapping, setMapping, setPaused, setRemoteMapping, normalizePath } from "../mappings.js";
 import { liveSessionPids } from "../api.js";
 import { cachedUsage, checkSingleLoad, launch, logActivity, parseMemberArg, syncClaudeProfile, tildePath } from "./shared.js";
 
@@ -159,6 +159,7 @@ export function cmdDir(providerId: ProviderId, guarded = false, json = false, pl
 }
 
 export function cmdMap(providerId: ProviderId, name?: string, dir?: string, flags: Record<string, string | boolean> = {}): void {
+  if ("remote" in flags) return mapRemote(providerId, name, flags);
   if (flags.pause || flags.resume) {
     // `map --pause [dir]`: the positional is the folder, there is no profile.
     const target = name ?? process.cwd();
@@ -183,7 +184,32 @@ export function cmdMap(providerId: ProviderId, name?: string, dir?: string, flag
   console.log(`\`${provider(providerId).binary}\` in this directory (and subdirectories) now uses this profile.`);
 }
 
-export function cmdUnmap(providerId: ProviderId | undefined, dir?: string): void {
+/** `map <name|pool:<id>> --remote <host/owner[/repo]|url>` — bind every
+ *  clone of a remote, wherever it is checked out. */
+function mapRemote(providerId: ProviderId, name: string | undefined, flags: Record<string, string | boolean>): void {
+  const usage = `map [--provider ${providerId}] <profile|pool:<id>> --remote <host/owner[/repo]>`;
+  if (flags.pause || flags.resume) die("a remote binding cannot be paused — remove it with: agent-switch unmap --remote <host/owner[/repo]>");
+  const key = typeof flags.remote === "string" ? normalizeRemoteKey(flags.remote) : null;
+  if (!key) die(`usage: agent-switch ${usage} (e.g. github.com/acme or github.com/acme/widgets)`);
+  let target: string;
+  if (name && isPoolRef(name)) {
+    const pool = findPool(poolIdOf(name));
+    if (!pool) die(`no pool "${poolIdOf(name)}" — create it with: agent-switch pool create <name>`);
+    target = `${POOL_PREFIX}${pool.id}`;
+  } else {
+    target = requireProfile(providerId, name, usage);
+  }
+  setRemoteMapping(key, providerId, target);
+  console.log(`Mapped remote ${key} -> ${isPoolRef(target) ? `pool ${poolIdOf(target)}` : `${providerId}/${target}`} (${providerId})`);
+  console.log(`\`${provider(providerId).binary}\` in any clone whose origin is under ${key} uses it, unless a folder rule at or below the repo root says otherwise. See why: agent-switch dir --json`);
+}
+
+export function cmdUnmap(providerId: ProviderId | undefined, dir?: string, remote?: string): void {
+  if (remote !== undefined) {
+    if (removeRemoteMapping(remote, providerId)) console.log(`Removed remote binding ${normalizeRemoteKey(remote)}${providerId ? ` (${providerId})` : ""}`);
+    else die(`no remote binding for ${remote}${providerId ? ` (${providerId})` : ""}`);
+    return;
+  }
   const target = dir ?? process.cwd();
   if (removeMapping(target, providerId)) console.log(`Removed mapping for ${target}${providerId ? ` (${providerId})` : ""}`);
   else die(`no mapping for ${target}${providerId ? ` (${providerId})` : ""}`);
@@ -191,18 +217,24 @@ export function cmdUnmap(providerId: ProviderId | undefined, dir?: string): void
 
 export function cmdMappings(json = false): void {
   const rows = mappingRows();
+  const remotes = remoteRows();
   if (json) {
-    console.log(JSON.stringify(rows.map((r) => ({ path: r.path, provider: r.provider, target: r.name, paused: r.paused }))));
+    console.log(JSON.stringify([
+      ...rows.map((r) => ({ path: r.path, provider: r.provider, target: r.name, paused: r.paused })),
+      ...remotes.map((r) => ({ remote: r.remote, provider: r.provider, target: r.name, paused: false })),
+    ]));
     return;
   }
-  if (rows.length === 0) {
+  if (rows.length === 0 && remotes.length === 0) {
     console.log("No directory mappings. Create one with: agent-switch map <profile> [dir]");
     return;
   }
+  const show = (where: string, provider: ProviderId, name: string) => (isPoolRef(name) ? `${where} -> ${name} (${provider})` : `${where} -> ${provider}/${name}`);
   for (const r of rows) {
-    const line = isPoolRef(r.name) ? `${r.path} -> ${r.name} (${r.provider})` : `${r.path} -> ${r.provider}/${r.name}`;
+    const line = show(r.path, r.provider, r.name);
     console.log(r.paused ? `${line}  [paused]` : line);
   }
+  for (const r of remotes) console.log(show(`remote ${r.remote}`, r.provider, r.name));
 }
 
 /**
@@ -280,7 +312,10 @@ export function cmdPicks(flags: Record<string, string | boolean>): void {
 }
 
 function poolMappings(id: string): string[] {
-  return mappingRows().filter((r) => r.name === `${POOL_PREFIX}${id}`).map((r) => `${r.path} (${r.provider})`);
+  return [
+    ...mappingRows().filter((r) => r.name === `${POOL_PREFIX}${id}`).map((r) => `${r.path} (${r.provider})`),
+    ...remoteRows().filter((r) => r.name === `${POOL_PREFIX}${id}`).map((r) => `remote ${r.remote} (${r.provider})`),
+  ];
 }
 
 export function cmdPool(sub: string | undefined, args: string[], flags: Record<string, string | boolean>): void {
