@@ -59,14 +59,14 @@ canvas shows the result, because it renders the real app.
 
 ## Phase 4 — From a session to its diff
 
-- [ ] 4.1 Summary's changed-files count and the Changes panel count from one source and agree.
-- [ ] 4.2 The count and every file row open the review page at that file.
+- [x] 4.1 Summary's changed-files count and the Changes panel count from one source and agree.
+- [x] 4.2 The count and every file row open the review page at that file.
 
 ## Phase 5 — The list at a glance
 
-- [ ] 5.1 One status vocabulary: orange only for "needs you"; selection and checkboxes use the neutral accent; one status mark per row.
-- [ ] 5.2 Two-line rows are the default density (proposal A); compact stays a choice.
-- [ ] 5.3 The window and the tray count Needs-you the same way.
+- [x] 5.1 One status vocabulary: orange only for "needs you"; selection and checkboxes use the neutral accent; one status mark per row.
+- [x] 5.2 Two-line rows are the default density (proposal A); compact stays a choice.
+- [x] 5.3 The window and the tray count Needs-you the same way.
 
 ## Phase 6 — The canvas shows it
 

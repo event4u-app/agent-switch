@@ -6,10 +6,10 @@
 
 ## Overall
 
-**16 / 34 steps done · 47%**
+**21 / 34 steps done · 62%**
 
 ```text
-███████████████████░░░░░░░░░░░░░░░░░░░░░   47%
+█████████████████████████░░░░░░░░░░░░░░░   62%
 ```
 
 ## Open roadmaps
@@ -17,7 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 1 | 16 | 0 | 0 | 0 | █████████░ 94% |
-| 2 | [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md) | 6 | 17 | 17 | 0 | 0 | 0 | 0 | ░░░░░░░░░░ 0% |
+| 2 | [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md) | 6 | 17 | 12 | 5 | 0 | 0 | 0 | ███░░░░░░░ 29% |
 
 ---
 
@@ -60,15 +60,15 @@
 
 ### [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md)
 
-**a workbench that tells the truth** — 0 / 17 done (0%)
+**a workbench that tells the truth** — 5 / 17 done (29%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 1 | Actions that do what they say | ⬜ not started | 4 | 0 | 0 | 0 | 0% |
 | 2 | A session starts the way the dialog shows it | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
 | 3 | Your terminal and Agent Switch at the same time | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
-| 4 | From a session to its diff | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
-| 5 | The list at a glance | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 4 | From a session to its diff | ✅ done | 0 | 2 | 0 | 0 | 100% |
+| 5 | The list at a glance | ✅ done | 0 | 3 | 0 | 0 | 100% |
 | 6 | The canvas shows it | ⬜ not started | 2 | 0 | 0 | 0 | 0% |
 
 ## Age
@@ -78,5 +78,5 @@ Days since each active roadmap landed at its path and since its last ticked step
 | Roadmap | Days since landing | Days since last tick |
 |---|---:|---:|
 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 18 | 18 |
-| [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md) | — | — |
+| [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md) | 0 | — |
 
