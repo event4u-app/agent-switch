@@ -78,7 +78,7 @@ repos or the web research add to it.
 |---|---|---|---|
 | G1 | A plain `claude --resume <id>` (or `-c`, `codex resume <id>`) through the shell wrapper is routed like a new start: the wrapper asks `dir` without the arguments, and `dir` picks by folder rule or balance. If the session lives on another account the resume fails or starts on the wrong one. The wrapper also overwrites a config dir the caller had set | `src/shellenv.ts:121,125,139`; `src/commands/routing.ts:100` | The same failure is the best-documented multi-account complaint around herdr: restore types `claude --resume <id>` into a fresh shell that has no account (`herdr/src/agent_resume.rs:56`; herdr issue #1269; two blog posts; herdr-agent-board #146/#148). herdr does not save a pane's environment (`src/persist/snapshot.rs` has no env field) |
 | G2 | `typeIntoHosted` types text and Enter into a hosted window without looking at the session's state. At a permission prompt, Enter confirms the selected option. Callers: the daemon's continue after a move, `continue`, `needs` | `src/commands/continue.ts:18-31`; `src/host/lease.ts:144-151`; `src/daemon.ts:500` | `hc send` refuses while the program is blocked unless forced, and holds automated sends while a person has an unfinished draft (`herdr-core/crates/herdr-core/src/SKILL.md:103,243`; `terminal.send` params `force`, `if`) |
-| G3 | The lease guards against two programs typing; it does not guard against a person typing in an attached view, which attaches read-write | `src/host/tmux-host.ts:307`; `src/host/lease.ts:1-9` | Same source: the draft wait (`README.md` § Draft wait) |
+| G3 | The lease guards against two programs typing; it does not guard against a person typing in an attached view, which attaches read-write. Concretely (arena r3 code review, item 4): `type` reads the input line as empty (`capture-pane`), then sends text and Enter in later tmux calls; a key typed in an attached view between the capture and the send is submitted with the automated text | `src/host/tmux-host.ts:307`; `src/host/lease.ts:1-9`; `src/host/lease.ts:153-171` | Same source: the draft wait (`README.md` § Draft wait) |
 | G4 | An unreadable `host/sessions.json` reads as empty, and the next start writes a registry holding only the new session: every other running window is forgotten while it keeps running. Read-modify-write has no lock | `src/host/tmux-host.ts:116-123,125-130,209-211` | herdr keeps the unreadable file's bytes before it writes a replacement (`docs/…/session-state.mdx:39`); hc 0.1.22 resumes saving its registry after a failed write and reports the failure to the caller (`herdr-core/CHANGELOG.md:9`). The tree fixed the same class for `settings.json` in `21b5031` |
 | G5 | Only Codex windows are read for OSC 7501; the reader accepts only `app=codex`, drops child records, and ignores `kind`, `progress`, `msg`, `title` | `src/host/tmux-host.ts:164,171`; `src/program-status.ts:25-38,142,149` | The proposal (rev. 0.4) defines `kind=permission\|question\|auth`, `progress`, `msg`, record ids. A community tracker lists Claude Code 2.1.295, Antigravity CLI 1.4.0 and others as sending it — **unverified here**, hence spike P0.1. hc stores the full record and a turn counter (`status.rs:3,14-29`) |
 | G6 | `done` and `error` from the program are folded into `idle`, although ADR-007's runtime axis has `done` | `src/runtime-state.ts:14,69`; `docs/adr/ADR-007-v3-identity-model.md:61` | herdr-app shows "Done: finished while you were looking elsewhere" apart from idle (`herdr-app/README.md`) |
@@ -205,6 +205,12 @@ repos or the web research add to it.
       it" and leave the request for the user.
       verify: a test with an injected clock and client list: recent key → no
       send; quiet → send; never quiet → gives up, nothing typed.
+      The wait narrows the capture-to-send gap in `LeaseStore.type` but cannot
+      close it alone: also re-read the input line and the clients' activity
+      after typing the text and before Enter, and refuse (clearing only what
+      was typed) when either changed.
+      verify: a fake host whose client activity changes between capture and
+      send: no Enter is sent.
 
 ## Phase 3 — The program's own word, for every hosted program
 
