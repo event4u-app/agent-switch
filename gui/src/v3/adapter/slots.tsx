@@ -20,6 +20,7 @@ import { UpdatesSettings } from "../../redesign/screens/settings/updates.js";
 import type { SettingsSection } from "../settings.js";
 import { ChatTimeline, hiddenText } from "../chat.js";
 import { TranscriptTerminal } from "../transcript-terminal.js";
+import { EarlierNotShown } from "../subagent-view.js";
 import { fold } from "../timeline.js";
 import { ExternalBody, HostedTerminal } from "../workbench.js";
 import { useTimeline, type TimelineState } from "./useTimeline.js";
@@ -99,14 +100,15 @@ function ExternalSession({ sessionKey, row, view, where, facts, onFocus, onTakeO
 export function SubagentTranscript({ parent, agentId, read = ipc.subagentTimeline }: { parent: string; agentId: string; read?: typeof ipc.subagentTimeline }) {
   const readOne = useCallback((key: string) => read(key, agentId), [read, agentId]);
   const t = useTimeline(parent, readOne);
-  return <ReadOnlyTimeline t={t} />;
+  return <ReadOnlyTimeline t={t} sayEarlier />;
 }
 
 /** The read-only timeline of a session running elsewhere (ADR-010). Falls back
- *  to the facts while it loads or when it cannot be read. */
-export function ReadOnlyTimeline({ t, row, where, terminal }: { t: TimelineState; row?: SessionRow; /** Where the session runs, for "answer it there". */ where?: string; terminal?: boolean }) {
+ *  to the facts while it loads or when it cannot be read. `sayEarlier`: say so when only the end was read (a subagent's view, arena r2 04 F3). */
+export function ReadOnlyTimeline({ t, row, where, terminal, sayEarlier = false }: { t: TimelineState; row?: SessionRow; /** Where the session runs, for "answer it there". */ where?: string; terminal?: boolean; sayEarlier?: boolean }) {
   if (!t.loaded) return <p className="m-auto text-[13px] text-ac-muted">Reading the conversation…</p>;
-  const notice = t.error ? (
+  const earlier = sayEarlier && t.earlier ? <EarlierNotShown /> : null;
+  const state = t.error ? (
     <p role="status" className="shrink-0 border-b border-ac-line bg-ac-warn-tint px-4 py-1.5 text-xs text-ac-warn-text">
       The conversation could not be read: {t.error}
     </p>
@@ -114,6 +116,12 @@ export function ReadOnlyTimeline({ t, row, where, terminal }: { t: TimelineState
     <p role="status" className="shrink-0 border-b border-ac-line bg-ac-info-tint px-4 py-1.5 text-xs text-ac-info-text">
       Claude Code {t.version} is newer than the versions Agent Switch was tested with — some steps may show as not shown. Focus the terminal to see everything.
     </p>
+  ) : null;
+  const notice = earlier || state ? (
+    <>
+      {earlier}
+      {state}
+    </>
   ) : null;
   if (terminal)
     return (

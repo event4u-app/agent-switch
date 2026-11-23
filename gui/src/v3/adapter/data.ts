@@ -152,7 +152,7 @@ function childState(o: Record<string, unknown>, rowOf?: (key: string) => Session
   return { state: o.state === "running" ? "working" : "done" };
 }
 
-const CHILD_SOURCES = new Set<ChildSource>(["hook", "lineage", "host", "counted", "unknown"]);
+const CHILD_SOURCES = new Set<ChildSource>(["hook", "files", "lineage", "host", "counted", "unknown"]);
 const toolOf = (provider: string | undefined): ChildTool => (provider === "codex" ? "codex" : provider === "antigravity" ? "antigravity" : "claude");
 
 /** What a child tree needs beyond the rows: account colours, the Needs-you subjects, the clock. */
@@ -213,14 +213,16 @@ export function childrenOf(r: SessionRow, rowOf?: (key: string) => SessionRow | 
 /** Summary's "Children" fact: the Children window's noun and count, or "none". Pure. */
 const childSummary = (children: ChildModel[]) => (children.length ? childNoun({ children }) : "none");
 
-/** A subagent's worktree name, from the session's hook record of its children. Pure. */
+/** A subagent's worktree name, from the session's record of its children: by its agent id, and by the Task call that started it, which a running Task row already knows. Pure. */
 export function worktreeOf(r: SessionRow | undefined): (agentId: string) => string | null {
   const byAgent = new Map<string, string>();
   for (const c of r?.children ?? []) {
     const o = c as Record<string, unknown>;
     const cwd = typeof o.cwd === "string" ? o.cwd : "";
     const m = /[\\/]worktrees[\\/]([^\\/]+)[\\/]?$/.exec(cwd);
-    if (typeof o.agentId === "string" && m) byAgent.set(o.agentId, m[1]);
+    if (!m) continue;
+    if (typeof o.agentId === "string") byAgent.set(o.agentId, m[1]);
+    if (typeof o.toolUseId === "string") byAgent.set(o.toolUseId, m[1]);
   }
   return (agentId) => byAgent.get(agentId) ?? null;
 }

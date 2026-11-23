@@ -14,11 +14,15 @@ export interface TimelineState {
   newerThanFixtures: boolean;
   error: string | null;
   loaded: boolean;
+  /** Only the end is shown: the read left out the head of the file, or older events than this page. */
+  earlier: boolean;
 }
 
-const EMPTY: TimelineState = { events: [], version: null, newerThanFixtures: false, error: null, loaded: false };
+const EMPTY: TimelineState = { events: [], version: null, newerThanFixtures: false, error: null, loaded: false, earlier: false };
 
-export function useTimeline(key: string | null, read: (key: string) => Promise<Pick<Awaited<ReturnType<typeof ipc.sessionTimeline>>, "events" | "version" | "newerThanFixtures">> = ipc.sessionTimeline): TimelineState {
+type Read = Pick<Awaited<ReturnType<typeof ipc.sessionTimeline>>, "events" | "version" | "newerThanFixtures"> & { from?: number; truncated?: boolean };
+
+export function useTimeline(key: string | null, read: (key: string) => Promise<Read> = ipc.sessionTimeline): TimelineState {
   // The state remembers which session it belongs to: another session's conversation is never shown under this one.
   const [s, set] = useState<{ owner: string | null; t: TimelineState }>({ owner: key, t: EMPTY });
   useEffect(() => {
@@ -26,7 +30,7 @@ export function useTimeline(key: string | null, read: (key: string) => Promise<P
     let alive = true;
     const tick = () =>
       read(key)
-        .then((r) => alive && set({ owner: key, t: { events: r.events, version: r.version, newerThanFixtures: r.newerThanFixtures, error: null, loaded: true } }))
+        .then((r) => alive && set({ owner: key, t: { events: r.events, version: r.version, newerThanFixtures: r.newerThanFixtures, error: null, loaded: true, earlier: r.truncated === true || (r.from ?? 0) > 0 } }))
         .catch((e: unknown) => alive && set((p) => ({ owner: key, t: { ...(p.owner === key ? p.t : EMPTY), error: e instanceof Error ? e.message : String(e), loaded: true } })));
     void tick();
     const id = setInterval(() => document.visibilityState === "visible" && void tick(), TIMELINE_POLL_MS);

@@ -15,7 +15,7 @@ import { AccountMark, BatchBar, CheckMark, Chip, Marker, ago, duration, type Bat
 import { AppMono } from "./menus.js";
 import { useEngaged, useHeldOrder } from "./held-order.js";
 
-export type ChildSource = "hook" | "lineage" | "host" | "counted" | "unknown";
+export type ChildSource = "hook" | "files" | "lineage" | "host" | "counted" | "unknown";
 
 export interface ChildModel {
   id: string;
@@ -82,7 +82,7 @@ export function subagentLabel(c: { type?: unknown; description?: unknown }): str
 export function childrenFromCli(row: { children?: any[]; childCount?: number; childSource?: string | null }): ChildModel[] {
   const out: ChildModel[] = (row.children ?? []).map((c) =>
     c.kind === "subagent"
-      ? { id: c.agentId, label: subagentLabel(c), kind: "subagent", state: c.state === "running" ? "working" : "done", source: "hook" }
+      ? { id: c.agentId, label: subagentLabel(c), kind: "subagent", state: c.state === "running" ? "working" : "done", source: c.source === "files" ? "files" : "hook" }
       : { id: c.sessionKey, label: c.label ?? c.kind, kind: c.kind, state: c.state === "running" ? "working" : "done", source: c.source === "host" || c.source === "hook" ? c.source : "lineage" },
   );
   const counted = (row.childCount ?? 0) - out.length;
@@ -191,7 +191,7 @@ export function childrenSlot(s: RowSession, { second = false }: { second?: boole
   return runningOf(s.children) > 0;
 }
 
-const VIA: Record<ChildSource, string> = { hook: "via hook", lineage: "via lineage", host: "via host", counted: "counted", unknown: "relation unknown" };
+const VIA: Record<ChildSource, string> = { hook: "via hook", files: "from Claude Code's files", lineage: "via lineage", host: "via host", counted: "counted", unknown: "relation unknown" };
 const TOOL_NAME: Record<ChildTool, string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
 /** The same monograms the Open in menu gives the tools' desktop apps. */
 const TOOL_MONO: Record<ChildTool, string> = { claude: "C", codex: "Cx", antigravity: "Ag" };
@@ -199,8 +199,8 @@ const TOOL_MONO: Record<ChildTool, string> = { claude: "C", codex: "Cx", antigra
 /** A child that is a session with a key opens like any session; a subagent or a counted entry is not a session. Pure. */
 export const childOpens = (c: ChildModel) => c.kind !== "subagent" && c.source !== "counted" && c.id.split("/").length === 3;
 
-/** A subagent its hooks reported opens its own transcript, read-only (7.7); a counted one is known by number only. Pure. */
-export const subagentOpens = (c: ChildModel) => c.kind === "subagent" && c.source === "hook";
+/** A subagent its hooks or Claude Code's own files reported opens its own transcript, read-only (7.7); a counted one is known by number only. Pure. */
+export const subagentOpens = (c: ChildModel) => c.kind === "subagent" && (c.source === "hook" || c.source === "files");
 
 /** How long a subagent ran, or runs: "4m". Pure. */
 export const subagentElapsed = (c: ChildModel, nowMs: number): string | null => (c.startedMs == null ? null : duration((c.endedMs ?? nowMs) - c.startedMs));

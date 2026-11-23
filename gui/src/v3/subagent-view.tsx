@@ -10,6 +10,15 @@ import { ArrowLeft, Bot } from "lucide-react";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { subagentElapsed, type ChildModel } from "./sessions.js";
 
+/** At the top of a subagent's transcript when only its end is shown: what it was asked is the first thing to drop out. */
+export function EarlierNotShown() {
+  return (
+    <p role="status" className="shrink-0 border-b border-ac-line bg-ac-raise px-4 py-1.5 text-xs text-ac-muted">
+      Earlier steps not shown — this is the end of a long run, so its task and first steps are left out.
+    </p>
+  );
+}
+
 export function SubagentView({ c, parentTitle, nowMs, onBack, children }: { c: ChildModel; parentTitle: string; nowMs: number; onBack: () => void; children: ReactNode }) {
   const elapsed = subagentElapsed(c, nowMs);
   const running = c.state === "working";
