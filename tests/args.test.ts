@@ -177,3 +177,41 @@ test("parseExec: own flags only before `--`; everything after reaches the binary
   assert.deepEqual(parseExec(["exec", "-"]), { providerId: "claude", exclude: [], plain: false, args: ["exec", "-"] }, "no separator: all of it is the binary's");
   assert.throws(() => parseExec(["--exclude"]), /--exclude needs/);
 });
+
+test("parseArgs gives `diff <session> --since FP` its fingerprint (arena r3: the review poll lost it)", () => {
+  const p = parseArgs(["diff", "claude/w/s", "--scope", "uncommitted", "--json", "--since", "abc123"]);
+  assert.deepEqual(p.positional, ["claude/w/s"]);
+  assert.equal(p.flags.since, "abc123");
+});
+
+test("parseArgs gives `sign-in-browser --dir DIR URL` its folder and leaves the URL positional", () => {
+  const p = parseArgs(["sign-in-browser", "--dir", "/tmp/profile", "https://claude.ai/login"]);
+  assert.deepEqual(p.positional, ["https://claude.ai/login"]);
+  assert.equal(p.flags.dir, "/tmp/profile");
+});
+
+test("every flag a command reads as a string is a value flag (the class behind --base, --subagent, --since)", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const root = path.resolve(import.meta.dirname, "..", "..", "src");
+  const files: string[] = [];
+  const walk = (d: string) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) walk(f);
+      else if (f.endsWith(".ts")) files.push(f);
+    }
+  };
+  walk(root);
+  const argsSrc = fs.readFileSync(path.join(root, "args.ts"), "utf8");
+  const listed = new Set([...argsSrc.split("const VALUE_FLAGS = new Set([")[1].split("]);")[0].matchAll(/"([a-z][a-z-]*)"/g)].map((m) => m[1]));
+  const missing: string[] = [];
+  for (const f of files) {
+    const src = fs.readFileSync(f, "utf8");
+    for (const m of src.matchAll(/typeof flags(?:\.([a-zA-Z_]\w*)|\["([a-z-]+)"\]) === "string"/g)) {
+      const name = m[1] ?? m[2];
+      if (!listed.has(name)) missing.push(`${name} (${path.relative(root, f)})`);
+    }
+  }
+  assert.deepEqual(missing, []);
+});

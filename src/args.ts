@@ -68,6 +68,8 @@ const VALUE_FLAGS = new Set([
   "expect-remote",
   "expect-ref",
   "subagent",
+  "since",
+  "dir",
 ]);
 
 export interface ParsedArgs {
