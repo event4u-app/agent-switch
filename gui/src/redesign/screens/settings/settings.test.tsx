@@ -536,6 +536,36 @@ describe("Updates", () => {
     expect(restart).toHaveBeenCalledTimes(1);
   });
 
+  describe("the manual update", () => {
+    const release = { tag: "v1.0.1", name: "v1.0.1", url: "https://example.test/r", notes: "", publishedAt: "" };
+    const available = () => vi.fn(async () => ({ kind: "available" as const, current: "1.0.0", release }));
+    const ok = () => vi.fn(async () => ({ ok: true, output: "" }));
+
+    it("refuses a withdrawn version and says why", async () => {
+      const selfUpdate = ok();
+      mount("updates", { checkForUpdate: available(), selfUpdate, withdrawnReason: vi.fn(async () => "breaks sign-in") });
+      fireEvent.click(await screen.findByRole("button", { name: /Update to v1.0.1/ }));
+      expect(await screen.findByText("This release was withdrawn and is not installed: breaks sign-in")).toBeTruthy();
+      expect(selfUpdate).not.toHaveBeenCalled();
+    });
+
+    it("installs a version nothing withdraws", async () => {
+      const selfUpdate = ok();
+      const withdrawnReason = vi.fn(async () => null);
+      mount("updates", { checkForUpdate: available(), selfUpdate, withdrawnReason });
+      fireEvent.click(await screen.findByRole("button", { name: /Update to v1.0.1/ }));
+      await waitFor(() => expect(selfUpdate).toHaveBeenCalledTimes(1));
+      expect(withdrawnReason).toHaveBeenCalledWith(release);
+    });
+
+    it("installs on the user's click when the withdraw status cannot be read (the automatic path sends them here)", async () => {
+      const selfUpdate = ok();
+      mount("updates", { checkForUpdate: available(), selfUpdate, withdrawnReason: vi.fn(async () => Promise.reject(new Error("registry down"))) });
+      fireEvent.click(await screen.findByRole("button", { name: /Update to v1.0.1/ }));
+      await waitFor(() => expect(selfUpdate).toHaveBeenCalledTimes(1));
+    });
+  });
+
   it("offers no restart once the app runs that version, or when nothing was installed", async () => {
     setUpdateInstalledVersion("v1.0.1");
     mount("updates", { checkForUpdate: upToDate("1.0.1"), restart: vi.fn() });

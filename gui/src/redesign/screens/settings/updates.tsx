@@ -8,7 +8,7 @@ import { getAutoUpdateCheck, getAutoUpdateKinds, getUpdateInstalledVersion, setA
 import { Button } from "../../../ui/Button.js";
 import { SettingGroup, SettingRow } from "../../../ui/Setting.js";
 import { Switch } from "../../../ui/Switch.js";
-import { isNewer, type UpdateCheck, type UpdateKind } from "../../../updates.js";
+import { isNewer, type ReleaseInfo, type UpdateCheck, type UpdateKind } from "../../../updates.js";
 import { useAS } from "../../../vm/store.js";
 import { describeError, usePref } from "./prefs.js";
 
@@ -67,11 +67,19 @@ export function UpdatesSettings() {
     }
   }
 
-  async function runUpdate() {
+  async function runUpdate(release: ReleaseInfo) {
     if (!s.act.selfUpdate) return;
     setPhase("updating");
     setFailure(null);
     try {
+      // An unreadable status does not block this click: the automatic check
+      // sends the user here exactly for that case.
+      const withdrawn = await s.act.withdrawnReason?.(release).catch(() => null);
+      if (withdrawn) {
+        setFailure(t("engines.notice.updateWithdrawnBody", { reason: withdrawn }));
+        setPhase("idle");
+        return;
+      }
       const r = await s.act.selfUpdate();
       if (r.ok) setPhase("done");
       else {
@@ -140,7 +148,7 @@ export function UpdatesSettings() {
                 </>
               ) : (
                 <>
-                  <Button size="sm" variant="primary" disabled={phase === "updating" || !s.act.selfUpdate} onClick={() => void runUpdate()}>
+                  <Button size="sm" variant="primary" disabled={phase === "updating" || !s.act.selfUpdate} onClick={() => void runUpdate(available)}>
                     <Download /> {phase === "updating" ? t("settings.updates.updating") : t("settings.updates.updateTo", { tag: available.tag })}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => void openUrl(available.url).catch(() => {})}>

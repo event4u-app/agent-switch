@@ -1,13 +1,14 @@
 /**
- * Update checking (Approach A — check + notify, no self-install).
+ * Update checking: notify by default, install only where the user opted in.
  *
- * The app asks the GitHub Releases API whether a newer version exists and, if
- * so, links the user to the release page to download it. It never downloads or
- * installs anything itself — real in-app auto-install (the Tauri native
- * updater) is a parked follow-up (see the "native-updater" roadmap).
+ * The app asks the GitHub Releases API whether a newer version exists. By
+ * default it only announces it; installing in place (`agent-switch update`,
+ * npm) happens per release kind the user switched on in Settings › Updates, or
+ * on their click there. A withdrawn version (`npm deprecate`, or a `Withdrawn:`
+ * line in its release notes) is never installed — {@link withdrawnReason} says why.
  *
  * The version math + release parsing are pure and unit-tested; only
- * {@link currentVersion} and {@link fetchLatestRelease} touch the outside world.
+ * {@link currentVersion}, the fetches and {@link withdrawnReason} touch the outside world.
  */
 
 import { getVersion } from "@tauri-apps/api/app";

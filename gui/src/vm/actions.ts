@@ -14,7 +14,7 @@
 import * as ipc from "../ipc.js";
 import { clearDesktopNotifications, requestDesktopPermission, type DesktopPermission } from "../notifications.js";
 import type { ProfileLabel, ProviderId, ProviderSurface } from "../transforms.js";
-import { checkForUpdate, type UpdateCheck } from "../updates.js";
+import { checkForUpdate, withdrawnReason, type ReleaseInfo, type UpdateCheck } from "../updates.js";
 import { dropUsageSnapshot } from "../usage-cache.js";
 import { forceDoctorOnNextLoad, forceToolsOnNextLoad } from "./slow-cache.js";
 import { forceUsageFor, forceUsageOnNextLoad, restartUsageCountdown } from "./usage-loader.js";
@@ -63,6 +63,8 @@ export interface Actions {
   requestNotifyPermission?(): Promise<DesktopPermission>;
   checkForUpdate?(): Promise<UpdateCheck>;
   selfUpdate?(): Promise<ipc.SelfUpdateResult>;
+  /** Why a release must not be installed, null when nothing withdraws it; throws when unknown. */
+  withdrawnReason?(release: ReleaseInfo): Promise<string | null>;
   uninstall?(): Promise<void>;
   quit?(): Promise<void>;
   /** Quit and start the app again on the installed version (after an update). */
@@ -201,6 +203,7 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
     requestNotifyPermission: () => requestDesktopPermission(),
     checkForUpdate: () => checkForUpdate(),
     selfUpdate: () => ipc.selfUpdate(),
+    withdrawnReason: (release) => withdrawnReason(release),
     uninstall: () => ipc.uninstall(),
     quit: () => ipc.quitApp(),
     restart: () => ipc.restartApp(),
