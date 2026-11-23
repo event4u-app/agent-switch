@@ -210,7 +210,8 @@ export function V3Window({
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [hintsDismissed, setHintsDismissed] = useState<Set<string>>(new Set());
   const [moreOpen, setMoreOpen] = useState(false);
-  const [comfortable, setComfortable] = useState(saved?.comfortable ?? false);
+  // Two-line rows are the default (5.2); a saved choice wins.
+  const [comfortable, setComfortable] = useState(saved?.comfortable ?? true);
   const [sortBy, setSortBy] = useState<SortBy>(saved?.sort ?? "activity");
   // An older layout's "group by project" comes back as the project grouping.
   const [groupBy, setGroupBy] = useState<GroupBy>(saved?.group ?? (saved?.groupByProject ? "project" : "none"));
