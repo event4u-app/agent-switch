@@ -6,16 +6,21 @@
 
 import { sessionAgentConfigEnv } from "../agent-config-root.js";
 import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline";
 
 import { openSettingsFile, readOpenSettings, realEnv } from "../open-in.js";
 import { appendPick } from "../picks.js";
-import { configDir, die, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
+import { liveSessions } from "../api.js";
+import { codexProfilesWithSession } from "../login-keepalive.js";
+import { configDir, die, listProfiles, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
 import { provider, type ProviderId } from "../providers.js";
 import { readRemote, remoteControlArgs } from "../remote.js";
-import { HostUnavailable, TmuxHost, hostingMode } from "../host/tmux-host.js";
-import { listSessions } from "../sessions.js";
+import { adopt, AdoptRefused, type AdoptDeps } from "../host/adopt.js";
+import { HostUnavailable, TmuxHost, hostingMode, type HostedSession } from "../host/tmux-host.js";
+import { codexSessionMeta, listSessions, locateCodexSession, locateSession, readSessionHeader } from "../sessions.js";
+import { stopBetweenTurns } from "./takeover.js";
 import { turnInFlight } from "../telemetry.js";
 import { commandPlan, terminalName } from "../terminals.js";
 import { resolveDir } from "./routing.js";
@@ -31,7 +36,7 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
     setInterval(() => {}, 1 << 30);
     return;
   }
-  if (!["start", "list", "end", "attach", "respawn"].includes(action)) die("usage: agent-switch host start [profile] [--provider P] [--cwd DIR] [--model M] [--effort E] [--worktree] [--remote-control] [--title T] | list | attach <session> [--new-window] | respawn <session> [--model M] [--effort E] | end <session> [--yes]");
+  if (!["start", "list", "end", "attach", "respawn", "adopt"].includes(action)) die("usage: agent-switch host start [profile] [--provider P] [--cwd DIR] [--model M] [--effort E] [--worktree] [--remote-control] [--title T] | list | attach <session> [--new-window] | adopt <session> [--stop-source] [--force] [--json] | respawn <session> [--model M] [--effort E] | end <session> [--yes]");
   const mode = hostingMode(process.platform, TmuxHost.available());
   if (action === "list" && flags.json && mode === "ephemeral") {
     console.log(JSON.stringify({ mode, hosted: [], legacy: [] }));
@@ -87,6 +92,21 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
       process.exitCode = r.status ?? 0;
       return;
     }
+    if (action === "adopt") {
+      // "Take over here": the session from the user's own terminal continues in
+      // a hosted window on the same account (src/host/adopt.ts).
+      if (!arg) die("usage: agent-switch host adopt <provider/account/session> [--stop-source] [--force] [--json]");
+      let s: HostedSession;
+      try {
+        s = adopt(adoptDeps(host), arg, { stopSource: flags["stop-source"] === true, force: flags.force === true });
+      } catch (e) {
+        if (e instanceof AdoptRefused) die(e.message);
+        throw e;
+      }
+      if (flags.json) console.log(JSON.stringify(s));
+      else console.log(`${s.key} runs in Agent Switch now, in ${s.cwd}. Join it from a terminal with: agent-switch host attach ${s.key}`);
+      return;
+    }
     if (action === "respawn") {
       // Next-turn model and thinking (spike S8): restart the window on the same
       // session between turns. Typing /model or /effort would change the
@@ -130,6 +150,32 @@ export async function cmdHost(providerId: ProviderId, sub: string | undefined, a
     if (err instanceof HostUnavailable) die(err.message);
     throw err;
   }
+}
+
+/** The real world behind `adopt`: the accounts, transcripts and programs on this machine. */
+function adoptDeps(host: TmuxHost): AdoptDeps {
+  return {
+    accounts: (p) => listProfiles(p),
+    hosted: () => new Set(host.list().filter((h) => h.alive).map((h) => h.key)),
+    locate: (p, account, id) => {
+      const cfg = configDir(p, account);
+      if (p === "claude") {
+        const loc = locateSession(cfg, id);
+        return loc ? { cwd: readSessionHeader(loc.jsonl).cwd } : null;
+      }
+      const loc = locateCodexSession(cfg, id);
+      return loc ? { cwd: codexSessionMeta(loc.rollout)?.cwd ?? null } : null;
+    },
+    folderExists: (dir) => fs.existsSync(dir),
+    liveClaude: (account) => liveSessions(configDir("claude", account)),
+    codexRunning: (account) => codexProfilesWithSession([account]).has(account),
+    stop: stopBetweenTurns,
+    start: (o) => {
+      const cfg = configDir(o.provider, o.account);
+      if (o.provider === "claude") syncClaudeProfile(cfg);
+      return host.start({ provider: o.provider, account: o.account, configDir: cfg, cwd: o.cwd, bin: readBinaryPath(o.provider) ?? provider(o.provider).binary, env: sessionAgentConfigEnv(o.provider, o.account), sessionId: o.sessionId, args: o.args }, hookCommandPrefix());
+    },
+  };
 }
 
 /** The line a terminal runs to join hosted session `key` through `prefix` (this CLI). */

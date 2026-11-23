@@ -553,7 +553,7 @@ function pidAlive(pid: number): boolean {
 
 /** End the session's own process so it can move. Never mid-turn: the turn's
  *  work would be lost. Waits for the exit so nothing appends after the move. */
-function stopBetweenTurns(sessionId: string, procs: LiveSession[]): void {
+export function stopBetweenTurns(sessionId: string, procs: LiveSession[]): void {
   const busy = procs.filter((p) => p.status !== null && p.status !== "idle");
   if (busy.length > 0) {
     die(`session ${sessionId} is mid-turn (PID ${busy.map((p) => p.pid).join(", ")}, ${busy[0].status}). Wait until the turn ends, then move it.`);

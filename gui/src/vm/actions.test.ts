@@ -4,6 +4,8 @@ const ipc = vi.hoisted(() => ({
   clearNotifications: vi.fn(async () => {}),
   continueSession: vi.fn(async (_key: string) => {}),
   CONTINUE_TEXT: "Continue where you left off.",
+  extractHandoffBrief: vi.fn(async () => ({ brief: "b", briefPath: "/p" })),
+  deleteSession: vi.fn(async () => ({ trashId: "t1" })),
 }));
 const desktop = vi.hoisted(() => ({ clearDesktopNotifications: vi.fn(async () => {}), requestDesktopPermission: vi.fn() }));
 vi.mock("../ipc.js", () => ipc);
@@ -40,5 +42,18 @@ describe("carry on after a limit", () => {
     expect(ipc.continueSession).toHaveBeenCalledWith("claude/work/s1");
     ipc.continueSession.mockRejectedValueOnce(new Error("not hosted"));
     expect(await a.continueSession!("claude:s1")).toBe(false);
+  });
+});
+
+describe("a session the 2.11 list does not hold (Codex in the v3 window)", () => {
+  const codex = { id: "codex:019a", accountId: "codex:side", tool: "codex" } as never;
+
+  it("hand-off and trash act on the session the sheet was given", async () => {
+    const a = createActions(() => emptyViewModel(1), async () => {});
+    await a.handoffBrief!("codex:019a", "claude:work", codex);
+    expect(ipc.extractHandoffBrief).toHaveBeenCalledWith("codex", "side", "019a", "claude");
+    await a.trashSession!("codex:019a", codex);
+    expect(ipc.deleteSession).toHaveBeenCalledWith("codex", "019a", "side");
+    await expect(a.handoffBrief!("codex:019a", "claude:work")).rejects.toThrow(/Unknown session/);
   });
 });

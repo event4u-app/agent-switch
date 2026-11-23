@@ -239,6 +239,23 @@ export async function focusSessionTerminal(key: string): Promise<void> {
   await runCli(["focus", key]);
 }
 
+/** `focus <session> --where --json`: the terminal a session in the user's own terminal runs in, and whether Focus reaches it. */
+export async function sessionTerminal(key: string): Promise<{ running: boolean | null; terminal: string | null; focusable: boolean; why?: string }> {
+  const o = JSON.parse(await runCli(["focus", key, "--where", "--json"]));
+  return {
+    running: typeof o.running === "boolean" ? o.running : null,
+    terminal: typeof o.terminal === "string" && o.terminal ? o.terminal : null,
+    focusable: o.focusable === true,
+    ...(typeof o.why === "string" ? { why: o.why } : {}),
+  };
+}
+
+/** `host adopt <session>`: a session from the user's own terminal continues hosted here, on the same account.
+ *  `stopSource` ends a running Claude source between turns; `force` skips the running-program check. */
+export async function hostAdopt(key: string, o: { stopSource: boolean; force: boolean }): Promise<void> {
+  await runCli(["host", "adopt", key, ...(o.stopSource ? ["--stop-source"] : []), ...(o.force ? ["--force"] : []), "--json"]);
+}
+
 /** `sessions library --json`. */
 export async function libraryList(): Promise<LibraryList> {
   return parseLibrary(JSON.parse(await runCli(["sessions", "library", "--json"])));

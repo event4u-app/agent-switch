@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { ChatAccountDialog, DecisionSheet, EndDialog, NewSessionDialog, type NewSessionFacts, type NewSessionPlan } from "./dialogs.js";
+import { ChatAccountDialog, DecisionSheet, EndDialog, NewSessionDialog, TakeoverDialog, type NewSessionFacts, type NewSessionPlan } from "./dialogs.js";
 
 afterEach(cleanup);
 const plan: NewSessionPlan = { folder: "~/code/agent-switch", gitState: "main · clean", worktree: false, tool: "claude", model: "Opus 5.5 · last used here", thinking: "High", where: "terminal", remembered: true };
@@ -192,5 +192,49 @@ describe("decision sheet and End (spec §8.2, §8.3)", () => {
     expect(onCloseTab).toHaveBeenCalledOnce();
     rerender(<EndDialog title="x" stops={[]} kept={false} onEnd={vi.fn()} onCloseTab={vi.fn()} onClose={vi.fn()} />);
     expect(screen.getByText(/pin the session to keep a copy/)).toBeTruthy();
+  });
+});
+
+describe("Take over (from your terminal into Agent Switch)", () => {
+  const claude = { title: "Fix the parser", tool: "claude" as const, account: "work", where: "iTerm2", running: true };
+
+  it("a running Claude session: says what happens, and ends the source between turns by default", () => {
+    const onTakeOver = vi.fn();
+    render(<TakeoverDialog facts={claude} busy={false} error={null} onTakeOver={onTakeOver} onClose={vi.fn()} />);
+    expect(screen.getByText(/same conversation continues here, hosted by Agent Switch on work/)).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /End it in iTerm2 for me/ }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Take over" }));
+    expect(onTakeOver).toHaveBeenLastCalledWith({ stopSource: true, force: false });
+    fireEvent.click(screen.getByRole("radio", { name: /I end it myself/ }));
+    expect(screen.getByText(/type \/exit/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Take over" }));
+    expect(onTakeOver).toHaveBeenLastCalledWith({ stopSource: false, force: false });
+  });
+
+  it("a Claude session that no longer runs: nothing to end, no choice", () => {
+    render(<TakeoverDialog facts={{ ...claude, running: false }} busy={false} error={null} onTakeOver={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.getByText(/no longer runs in iTerm2/)).toBeTruthy();
+  });
+
+  it("Codex: Agent Switch cannot end it, so the user is told exactly what to do in the terminal first", () => {
+    const onTakeOver = vi.fn();
+    render(<TakeoverDialog facts={{ ...claude, tool: "codex", where: "your terminal", running: null }} busy={false} error={null} onTakeOver={onTakeOver} onClose={vi.fn()} />);
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.getByText(/Quit Codex in your terminal first: type \/quit/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Take over" }));
+    expect(onTakeOver).toHaveBeenCalledWith({ stopSource: false, force: false });
+  });
+
+  it("a refusal is shown; where the CLI allows it, 'Take over anyway' says the risk and forces", () => {
+    const onTakeOver = vi.fn();
+    const { rerender } = render(<TakeoverDialog facts={claude} busy={false} error={{ text: "codex is running on codex/main.", forceable: true }} onTakeOver={onTakeOver} onClose={vi.fn()} />);
+    expect(screen.getByRole("alert").textContent).toContain("codex is running on codex/main.");
+    fireEvent.click(screen.getByRole("button", { name: "Take over anyway" }));
+    expect(onTakeOver).toHaveBeenCalledWith({ stopSource: true, force: true });
+    rerender(<TakeoverDialog facts={claude} busy={false} error={{ text: "mid-turn", forceable: false }} onTakeOver={onTakeOver} onClose={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Take over anyway" })).toBeNull();
+    rerender(<TakeoverDialog facts={claude} busy error={null} onTakeOver={onTakeOver} onClose={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Taking over…" }).hasAttribute("disabled")).toBe(true);
   });
 });

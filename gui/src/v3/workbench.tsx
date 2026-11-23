@@ -207,8 +207,10 @@ export interface BarSession {
   hosted: boolean;
   /** A hosted tmux window the user's own terminal can join (`host attach`). */
   attachable?: boolean;
-  /** Not hosted: the app the session runs in ("Terminal.app", "Claude Desktop"). */
+  /** Not hosted: the app the session runs in ("iTerm2", "Claude Desktop", "your terminal"). */
   where?: string;
+  /** Not hosted: "Focus terminal" can bring its terminal tab forward (a live Claude session in Terminal.app or iTerm2). */
+  focusable?: boolean;
   /** Chat exists from v3.1 on; until then the switch shows it, disabled. */
   chatAvailable: boolean;
   view: "terminal" | "chat";
@@ -441,7 +443,8 @@ export function HintStrip({ s, dismissed, onDismiss, onAction }: { s: BarSession
  * session's facts and its last transcript line; a full read-only view comes
  * with the v3.1 timeline reader.
  */
-export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver, timeline, readOnlyTitle }: { where: string; facts: ReactNode; lastLine: string | null; onFocus: () => void; onTakeOver: () => void; timeline?: ReactNode; readOnlyTitle?: string | null }) {
+/** `onFocus` / `onTakeOver` null: that action cannot work for this session, so it is not offered. */
+export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver, timeline, readOnlyTitle }: { where: string; facts: ReactNode; lastLine: string | null; onFocus: (() => void) | null; onTakeOver: (() => void) | null; timeline?: ReactNode; readOnlyTitle?: string | null }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-3 border-b border-ac-line bg-ac-panel px-4 py-2">
@@ -450,14 +453,18 @@ export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver, time
           <span className="block truncate">
             Runs in <span className="text-ac-text">{where}</span> · <span title={readOnlyTitle ?? undefined}>read-only here</span>
           </span>
-          <span className="block truncate text-[11px] text-ac-muted">To type here, take it over: the session moves into Agent Switch and stops running in {where}.</span>
+          {onTakeOver && <span className="block truncate text-[11px] text-ac-muted">To type here, take it over: the same conversation continues in Agent Switch on this account, and stops running in {where}.</span>}
         </span>
-        <Act kind="accent" kbd="⌘↵" onClick={onFocus}>
-          Focus terminal
-        </Act>
-        <Act onClick={onTakeOver} title="Moves the session into a host owned by Agent Switch — explained before it acts">
-          Take over here…
-        </Act>
+        {onFocus && (
+          <Act kind="accent" onClick={onFocus}>
+            Focus terminal
+          </Act>
+        )}
+        {onTakeOver && (
+          <Act onClick={onTakeOver} title="Continues the session in a window Agent Switch hosts, on the same account — explained before it acts">
+            Take over here…
+          </Act>
+        )}
       </div>
       {/* v3.1: the read-only timeline replaces the facts once it can be read (D-mirror). */}
       {timeline ?? (

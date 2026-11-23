@@ -480,7 +480,8 @@ export function V3Window({
       lastUsed: data.openIn.lastUsed,
       agentApp: app ? { id: app.id, label: app.label } : null,
       pr: pr ? { number: pr.number, url: pr.url } : null,
-      focusable: !data.bar(key)?.hosted,
+      // Where the adapter knows the terminal, only where Focus reaches it; a design board without that fact keeps "not hosted".
+      focusable: data.bar(key)?.focusable ?? !data.bar(key)?.hosted,
       attachable: !!data.bar(key)?.attachable,
     };
   };

@@ -165,7 +165,7 @@ describe("dispatchV3", () => {
     await dispatchV3({ type: "move", how: "after-turn", moves: [{ key: "claude/work/a", target: "home" }] }, d);
     expect(d.act.armRebind).toHaveBeenCalledWith("claude:a", "claude:home");
     await dispatchV3({ type: "move", how: "brief", moves: [{ key: "claude/work/a", target: "home" }] }, d);
-    expect(d.open).toHaveBeenCalledWith({ kind: "session", id: "claude:a" });
+    expect(d.open).toHaveBeenCalledWith(expect.objectContaining({ kind: "session", id: "claude:a", session: expect.objectContaining({ id: "claude:a" }) }));
   });
 
   it("move: a Claude switch carries on — typed into a hosted window, else the user is told to send one message", async () => {
@@ -440,8 +440,32 @@ describe("dispatchV3", () => {
 describe("menuFor", () => {
   it("Detach never; End and Compact only when hosted; moves not for Antigravity", () => {
     expect(menuFor(row("a"), false)).toEqual(["Rename…", "Pin", "Move to another account…", "Take over here…", "Hand off…"]);
-    expect(menuFor(row("a"), true)).toEqual(["Rename…", "Pin", "Move to another account…", "Take over here…", "Hand off…", "Compact", "End…"]);
+    expect(menuFor(row("a"), true)).toEqual(["Rename…", "Pin", "Move to another account…", "Hand off…", "Compact", "End…"]);
     expect(menuFor(row("a", { provider: "antigravity" }), true)).toEqual(["Rename…", "Pin", "Compact", "End…"]);
+  });
+
+  it("Take over only for a session in the user's own terminal: not hosted, not in Claude Desktop", () => {
+    expect(menuFor(row("a"), true)).not.toContain("Take over here…");
+    expect(menuFor(row("a", { surface: "desktop-app" }), false)).not.toContain("Take over here…");
+    expect(menuFor(row("a", { provider: "codex" }), false)).toContain("Take over here…");
+  });
+});
+
+describe("Take over and Hand off", () => {
+  it("Take over here… opens the v3 take-over dialog for that session, never the account-move sheet", () => {
+    const d = { ...deps(), takeOver: vi.fn() };
+    dispatchV3({ type: "session-menu", key: "claude/work/a", item: "Take over here…" }, d);
+    expect(d.takeOver).toHaveBeenCalledWith("claude/work/a");
+    expect(d.open).not.toHaveBeenCalled();
+  });
+
+  it("Hand off… carries the session along, so a Codex session (not in the 2.11 list) opens its sheet", () => {
+    const d = deps();
+    const codex = row("c1", { provider: "codex", profile: "main" });
+    const rows = new Map(d.rows());
+    rows.set("codex/main/c1", codex);
+    dispatchV3({ type: "session-menu", key: "codex/main/c1", item: "Hand off…" }, { ...d, rows: () => rows });
+    expect(d.open).toHaveBeenCalledWith(expect.objectContaining({ kind: "session", id: "codex:c1", session: expect.objectContaining({ id: "codex:c1", tool: "codex", accountId: "codex:main" }) }));
   });
 });
 

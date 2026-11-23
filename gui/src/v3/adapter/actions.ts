@@ -3,7 +3,7 @@
  *  mapped here. Controls with nothing behind them are hidden by the adapter
  *  (`menuFor`, `commitAvailable`), so they never reach this function. */
 import type { SessionRow } from "../../transforms.js";
-import { accountId, accountIdFromMember } from "../../vm/build.js";
+import { accountId, accountIdFromMember, sessionFromRow } from "../../vm/build.js";
 import { splitAccountId, type Actions } from "../../vm/actions.js";
 import { sessionArgs, type PrPlanJson, type StartChoice, type SwitchRequestRow } from "../../ipc.js";
 import { requestKind, requestsForMoves } from "../../vm/switch-requests.js";
@@ -85,12 +85,20 @@ export interface DispatchDeps {
   copyText?: (text: string) => Promise<void>;
   /** Keep a New session choice as its folder's prefill. */
   rememberStart?: (plan: NewSessionPlan) => void;
+  /** Open the take-over dialog for a session in the user's own terminal. */
+  takeOver?: (key: string) => void;
 }
 /** Claude's `--model` aliases. */
 const vmSessionId = (key: string) => {
   const [provider, , id] = key.split("/");
   return `${provider}:${id}`;
 };
+/** The 2.11 session sheet for a session. Its list holds Claude sessions only,
+ *  so the row comes along and a Codex session opens too. */
+function sessionSheet(key: string, deps: DispatchDeps): Overlay {
+  const row = deps.rows().get(key);
+  return { kind: "session", id: vmSessionId(key), ...(row ? { session: sessionFromRow(row, Date.now()) } : {}) };
+}
 function prUrl(row: SessionRow | undefined): string | null {
   const pr = row ? (row.prs ?? []).map(parsePr).find((p) => p !== null) : null;
   return pr?.url || null;
@@ -178,7 +186,7 @@ const CONTINUE = "Continue where you left off.";
  *  of its own: it comes back as a run, so the caller opens them all together. */
 async function moveOne(key: string, target: string, how: MoveHow, deps: DispatchDeps, via?: "takeover"): Promise<TerminalRun | void> {
   const [provider] = key.split("/");
-  if (how === "brief") return void deps.open({ kind: "session", id: vmSessionId(key) });
+  if (how === "brief") return void deps.open(sessionSheet(key, deps));
   if (provider === "codex" || via === "takeover") {
     if (deps.hosted(key)) return deps.ipc.takeoverHosted(key, target);
     const id = key.split("/")[2];
@@ -273,10 +281,11 @@ function sessionMenu(key: string, item: SessionMenuItem, deps: DispatchDeps): Pr
       return deps.prompt({ title: "Rename session", initial: row?.library?.name ?? row?.summary ?? "", onSubmit: (v) => void run(deps, "Rename", deps.ipc.renameSession(key, v)) });
     case "Pin":
       return run(deps, "Pin", deps.ipc.setLibraryFlag(key, "pin", true));
-    case "Move to another account…":
     case "Take over here…":
+      return deps.takeOver?.(key);
+    case "Move to another account…":
     case "Hand off…":
-      return deps.open({ kind: "session", id: vmSessionId(key) });
+      return deps.open(sessionSheet(key, deps));
     case "Compact":
       return deps.open({ kind: "terminal", run: { args: ["compact", key], title: "Compact" } });
     case "Detach":
