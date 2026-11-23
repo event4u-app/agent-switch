@@ -24,7 +24,7 @@ import { parseUnifiedDiff, type DiffHunk } from "../timeline/events.js";
 import { target, type Target } from "./bridge.js";
 import { sessionsWithGit } from "./pr.js";
 
-export const SCOPES = ["turn", "session", "worktree", "staged"] as const;
+export const SCOPES = ["uncommitted", "turn", "session", "worktree", "staged"] as const;
 export type Scope = (typeof SCOPES)[number];
 export type Layer = "committed" | "staged" | "unstaged" | "turn";
 
@@ -41,15 +41,53 @@ export interface ReviewFile {
   added: number;
   removed: number;
   hunks: ReviewHunk[];
+  /** Past the review's line budget: listed with its counts, its hunks left out. */
+  omitted?: boolean;
 }
+
+export interface Review {
+  /** The commit compared against (null for `turn`, or when none was found). */
+  base: string | null;
+  /** What `base` is, in words the page shows: `HEAD`, `origin/main`, `session start`. */
+  baseRef: string | null;
+  /** Why the scope is empty or differs from what its name promises. */
+  note: string | null;
+  files: ReviewFile[];
+  /** Files whose hunks were left out (see `ReviewFile.omitted`). */
+  omitted: number;
+}
+
+/** Lines of hunks one review sends; past it, files keep their counts but not their hunks. */
+export const MAX_REVIEW_LINES = 20_000;
 
 export class ReviewRefused extends Error {}
 
 const GIT_MS = 5000;
 
+const GIT_MAX_BUFFER = 64 * 1024 * 1024;
+
+/** Why a git run did not succeed, in one line; null when it did. Pure. */
+export function gitFailure(r: { status: number | null; signal: NodeJS.Signals | null; error?: Error; stderr: string | null }): string | null {
+  const code = (r.error as NodeJS.ErrnoException | undefined)?.code;
+  if (code === "ETIMEDOUT") return `timed out after ${GIT_MS / 1000} s`;
+  if (code === "ENOBUFS") return `its output is too large (over ${GIT_MAX_BUFFER / 1024 / 1024} MB)`;
+  if (r.error) return r.error.message;
+  if (r.status === 0) return null;
+  if (r.signal) return `stopped by ${r.signal}`;
+  return (r.stderr ?? "").trim().split("\n")[0] || `exited ${r.status}`;
+}
+
 function git(cwd: string, args: string[], input?: string): { ok: boolean; out: string; err: string } {
-  const r = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", timeout: GIT_MS, maxBuffer: 64 * 1024 * 1024, input });
-  return { ok: r.status === 0, out: r.stdout ?? "", err: (r.stderr ?? "").trim() };
+  const r = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf8", timeout: GIT_MS, maxBuffer: GIT_MAX_BUFFER, input });
+  const failed = gitFailure(r);
+  return { ok: failed === null, out: r.stdout ?? "", err: failed ?? "" };
+}
+
+/** A git read the review cannot do without: a failure or a timeout is refused, never shown as "no changes". */
+function gitRead(cwd: string, args: string[]): string {
+  const r = git(cwd, args);
+  if (!r.ok) throw new ReviewRefused(`git ${args.find((a) => !a.startsWith("-")) ?? ""} failed: ${r.err}`);
+  return r.out;
 }
 
 export const hunkHash = (path: string, h: DiffHunk) => crypto.createHash("sha256").update(`${path}\0${h.oldStart}\0${h.newStart}\0${h.lines.join("\n")}`).digest("hex").slice(0, 16);
@@ -97,8 +135,8 @@ function sessionBase(cwd: string, transcript: string | null): string | null {
 
 function untracked(cwd: string): Map<string, { status: ReviewFile["status"]; hunks: ReviewHunk[] }> {
   const out = new Map<string, { status: ReviewFile["status"]; hunks: ReviewHunk[] }>();
-  const list = git(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]);
-  for (const file of list.out.split("\0").filter(Boolean).slice(0, 200)) {
+  const list = gitRead(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]);
+  for (const file of list.split("\0").filter(Boolean).slice(0, 200)) {
     const abs = path.join(cwd, file);
     try {
       const st = fs.lstatSync(abs);
@@ -125,45 +163,111 @@ function merge(into: Map<string, ReviewFile>, from: Map<string, { status: Review
   }
 }
 
-/** The review of one session in one scope. */
-export function review(t: Target, scope: Scope): { base: string | null; files: ReviewFile[] } {
+/** The commit a scope compares against, and its name. Session never falls back to the main line. */
+function baseFor(cwd: string, t: Target, scope: Scope): { base: string | null; baseRef: string | null; note: string | null } {
+  if (scope === "turn") return { base: null, baseRef: null, note: null };
+  if (scope === "uncommitted" || scope === "staged") return { base: null, baseRef: "HEAD", note: null };
+  if (scope === "session") {
+    const base = sessionBase(cwd, t.transcript);
+    return base
+      ? { base, baseRef: "session start", note: null }
+      : { base: null, baseRef: null, note: "The commit this session started on was not found, so there is nothing to compare with. Branch vs main shows the whole branch." };
+  }
+  const main = mainRef(cwd);
+  const mb = main ? git(cwd, ["merge-base", main, "HEAD"]) : null;
+  if (!main || !mb?.ok) return { base: null, baseRef: main, note: main ? `This branch shares no history with ${main}.` : "No main line (origin/HEAD, main or master) was found to compare with." };
+  return { base: mb.out.trim(), baseRef: main, note: null };
+}
+
+/** The review of one session in one scope. `maxLines` bounds the hunks sent; files past it keep their counts. */
+export function review(t: Target, scope: Scope, opts: { maxLines?: number } = {}): Review {
   const top = git(t.cwd, ["rev-parse", "--show-toplevel"]);
   if (!top.ok) throw new ReviewRefused(`${t.key} does not work in a git repository`);
   const cwd = top.out.trim();
   const files = new Map<string, ReviewFile>();
-  let base: string | null = null;
+  const { base, baseRef, note } = baseFor(cwd, t, scope);
+  const diff = (args: string[]) => gitRead(cwd, ["diff", "--no-color", "--no-ext-diff", ...args]);
   if (scope === "turn") {
-    if (!t.transcript) return { base: null, files: [] };
-    const { events } = readClaudeTranscript(t.transcript);
-    const lastTurn = events.map((e) => e.t).lastIndexOf("turn");
-    for (const e of events.slice(Math.max(0, lastTurn))) {
-      if (e.t !== "diff") continue;
-      const rel = path.isAbsolute(e.path) ? path.relative(cwd, e.path) : e.path;
-      merge(files, new Map([[rel, { status: "M" as const, hunks: e.hunks.map((h) => ({ ...h, layer: "turn" as const, hash: hunkHash(rel, h), header: `@@ -${h.oldStart} +${h.newStart} @@` })) }]]));
-    }
-  } else {
-    if (scope !== "staged") {
-      base = scope === "session" ? sessionBase(cwd, t.transcript) : null;
-      if (!base) {
-        const main = mainRef(cwd);
-        const mb = main ? git(cwd, ["merge-base", main, "HEAD"]) : null;
-        base = mb?.ok ? mb.out.trim() : null;
+    if (t.transcript) {
+      const { events } = readClaudeTranscript(t.transcript);
+      const lastTurn = events.map((e) => e.t).lastIndexOf("turn");
+      for (const e of events.slice(Math.max(0, lastTurn))) {
+        if (e.t !== "diff") continue;
+        const rel = path.isAbsolute(e.path) ? path.relative(cwd, e.path) : e.path;
+        merge(files, new Map([[rel, { status: "M" as const, hunks: e.hunks.map((h) => ({ ...h, layer: "turn" as const, hash: hunkHash(rel, h), header: `@@ -${h.oldStart} +${h.newStart} @@` })) }]]));
       }
-      if (base) merge(files, splitDiff(git(cwd, ["diff", "--no-color", "--no-ext-diff", base, "HEAD"]).out, "committed"));
     }
-    merge(files, splitDiff(git(cwd, ["diff", "--no-color", "--no-ext-diff", "--cached"]).out, "staged"));
+  } else if (!(scope === "session" && !base)) {
+    if (base) merge(files, splitDiff(diff([base, "HEAD"]), "committed"));
+    merge(files, splitDiff(diff(["--cached"]), "staged"));
     if (scope !== "staged") {
-      merge(files, splitDiff(git(cwd, ["diff", "--no-color", "--no-ext-diff"]).out, "unstaged"));
+      merge(files, splitDiff(diff([]), "unstaged"));
       merge(files, untracked(cwd));
     }
   }
-  const list = [...files.values()].map((f) => {
-    let added = 0;
-    let removed = 0;
-    for (const h of f.hunks) for (const l of h.lines) l.startsWith("+") ? added++ : l.startsWith("-") && removed++;
-    return { ...f, added, removed };
-  });
-  return { base, files: list.sort((a, b) => a.path.localeCompare(b.path)) };
+  let budget = opts.maxLines ?? Infinity;
+  let omitted = 0;
+  const list = [...files.values()]
+    .sort((x, y) => x.path.localeCompare(y.path))
+    .map((f): ReviewFile => {
+      let added = 0;
+      let removed = 0;
+      let lines = 0;
+      for (const h of f.hunks)
+        for (const l of h.lines) {
+          lines++;
+          if (l.startsWith("+")) added++;
+          else if (l.startsWith("-")) removed++;
+        }
+      if (lines > budget) {
+        budget = 0;
+        omitted++;
+        return { ...f, added, removed, hunks: [], omitted: true };
+      }
+      budget -= lines;
+      return { ...f, added, removed };
+    });
+  return { base, baseRef, note, files: list, omitted };
+}
+
+/** What a scope's review would show, cheaply: HEAD, the base, the index and each changed file's size and time.
+ *  The page re-reads the review only when this moves. */
+export function fingerprint(t: Target, scope: Scope): string {
+  const top = git(t.cwd, ["rev-parse", "--show-toplevel"]);
+  if (!top.ok) throw new ReviewRefused(`${t.key} does not work in a git repository`);
+  const cwd = top.out.trim();
+  const h = crypto.createHash("sha256").update(`${scope}\0${git(cwd, ["rev-parse", "HEAD"]).out}`);
+  if (scope === "turn") {
+    if (t.transcript) {
+      try {
+        const st = fs.statSync(t.transcript);
+        h.update(`${st.size}:${st.mtimeMs}`);
+      } catch {
+        h.update("no transcript");
+      }
+    }
+    return h.digest("hex").slice(0, 16);
+  }
+  if (scope === "worktree") {
+    const main = mainRef(cwd);
+    h.update(`${main}\0${main ? git(cwd, ["rev-parse", "--verify", "--quiet", main]).out : ""}`);
+  }
+  if (scope === "session") h.update(t.transcript ?? "");
+  // No optional locks: a poll must not rewrite the index (that would move what it measures).
+  const status = gitRead(cwd, ["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  h.update(status);
+  // What is staged, by blob: a staged file changed again keeps its status letters.
+  h.update(git(cwd, ["--no-optional-locks", "diff-index", "--cached", "--raw", "-z", "HEAD"]).out);
+  const paths = status.split("\0").filter((p) => p.length > 3).map((p) => path.join(cwd, p.slice(3)));
+  for (const f of paths) {
+    try {
+      const st = fs.statSync(f);
+      h.update(`${f}:${st.size}:${st.mtimeMs}`);
+    } catch {
+      h.update(`${f}:gone`);
+    }
+  }
+  return h.digest("hex").slice(0, 16);
 }
 
 // ---------- actions ----------
@@ -193,7 +297,7 @@ export function act(t: Target, action: Action, file: string, expect: string | nu
   if (!cwd) throw new ReviewRefused(`${t.key} does not work in a git repository`);
   preflight(t, cwd);
   const layer: Layer = action === "unstage" ? "staged" : "unstaged";
-  const cur = review(t, "worktree").files.find((f) => f.path === file);
+  const cur = review(t, "uncommitted").files.find((f) => f.path === file);
   const hunks = (cur?.hunks ?? []).filter((h) => h.layer === layer && (!expect || h.hash === expect));
   if (!hunks.length) throw new ReviewRefused(expect ? "that change is no longer there as shown — refresh" : `nothing ${layer} in ${file}`);
   const isNew = cur?.status === "?";
@@ -281,7 +385,7 @@ function samePathKey(p: string): string {
 }
 
 export function cmdDiff(arg: string | undefined, action: string | undefined, flags: Record<string, string | boolean>): void {
-  if (!arg) die("usage: agent-switch diff <session> [--scope turn|session|worktree|staged] [--json] · diff <session> stage|unstage|discard --file F [--hunk HASH] · diff <session> undo · diff <session> commit --message M");
+  if (!arg) die("usage: agent-switch diff <session> [--scope uncommitted|turn|session|worktree|staged] [--json [--since FINGERPRINT]] · diff <session> stage|unstage|discard --file F [--hunk HASH] · diff <session> undo · diff <session> commit --message M");
   const t = target(arg);
   const json = !!flags.json;
   const say = (o: Record<string, unknown>, text: string) => console.log(json ? JSON.stringify(o) : text);
@@ -289,10 +393,14 @@ export function cmdDiff(arg: string | undefined, action: string | undefined, fla
     if (!action) {
       const scope = (typeof flags.scope === "string" ? flags.scope : "worktree") as Scope;
       if (!SCOPES.includes(scope)) die(`--scope is one of ${SCOPES.join(", ")}`);
-      const r = review(t, scope);
+      const fp = fingerprint(t, scope);
+      if (json && typeof flags.since === "string" && flags.since === fp) return void console.log(JSON.stringify({ key: t.key, scope, unchanged: true, fingerprint: fp }));
+      const r = review(t, scope, { maxLines: json ? MAX_REVIEW_LINES : undefined });
       const shared = sharedWorktree(t, sessionsWithGit(20).map((x) => ({ key: x.key, toplevel: x.git?.toplevel ?? null, live: x.row.live })));
-      if (json) return void console.log(JSON.stringify({ key: t.key, scope, shared, ...r }));
+      if (json) return void console.log(JSON.stringify({ key: t.key, scope, shared, fingerprint: fp, ...r }));
       if (shared.length) console.log(`Also working here: ${shared.join(", ")} — stage and discard affect them too.`);
+      if (r.baseRef) console.log(`Compared with ${r.baseRef}${r.base ? ` (${r.base.slice(0, 7)})` : ""}.`);
+      if (r.note) console.log(r.note);
       for (const f of r.files) console.log(`${f.status} ${f.path}  +${f.added} -${f.removed}`);
       return;
     }
