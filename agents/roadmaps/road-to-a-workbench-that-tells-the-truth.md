@@ -40,10 +40,10 @@ canvas shows the result, because it renders the real app.
 
 ## Phase 1 — Actions that do what they say
 
-- [ ] 1.1 Engine stopped: the session pane is marked stale (no spinner, no live cursor) and every action that needs the engine is disabled with the reason.
-- [ ] 1.2 Needs-you CI item: the verb says what happens. With a hosted or chat session it sends the fix prompt (failing checks named) to the agent; otherwise it is labelled "Open checks".
-- [ ] 1.3 Blocker strip "Send to agent" sends its prompt to the session (hosted / chat); where Agent Switch cannot type, the button says "Copy prompt" and copies it.
-- [ ] 1.4 "End…" opens the built `EndDialog` instead of the generic confirm.
+- [x] 1.1 Engine stopped: the session pane is marked stale (no spinner, no live cursor) and every action that needs the engine is disabled with the reason.
+- [x] 1.2 Needs-you CI item: the verb says what happens. With a hosted or chat session it sends the fix prompt (failing checks named) to the agent; otherwise it is labelled "Open checks".
+- [x] 1.3 Blocker strip "Send to agent" sends its prompt to the session (hosted / chat); where Agent Switch cannot type, the button says "Copy prompt" and copies it.
+- [x] 1.4 "End…" opens the built `EndDialog` instead of the generic confirm.
 
 ## Phase 2 — A session starts the way the dialog shows it
 
