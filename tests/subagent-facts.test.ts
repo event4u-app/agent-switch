@@ -7,6 +7,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
+import fsDefault from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -200,4 +202,61 @@ test("subagentsFromFiles: Claude Code's own files, without hooks — type, task,
   const idle = subagentsFromFiles(transcript, false);
   assert.deepEqual(idle.children.map((c) => c.state), ["done", "done", "done"], "a session that is not live runs no subagent");
   assert.deepEqual(subagentsFromFiles(transcript, true, new Set(["a1", "a3"])).children.map((c) => c.agentId), ["a2"], "ids the hooks reported are not listed twice");
+});
+
+/**
+ * A directory of the path swapped for a link out of the session between the check and the open:
+ * O_NOFOLLOW guards only the last component, so the open would follow the swapped directory.
+ * `swap` runs just before the read's `open`; `back` (when set) just after it, before the read checks the file.
+ */
+function withSwap(target: string, swap: () => void, back: (() => void) | null, read: () => unknown): unknown {
+  const real = { openSync: fsDefault.openSync, fstatSync: fsDefault.fstatSync };
+  let opened = false;
+  fsDefault.openSync = ((p: fs.PathLike, ...rest: unknown[]) => {
+    if (!opened && String(p) === target) {
+      opened = true;
+      swap();
+    }
+    return (real.openSync as (...a: unknown[]) => number)(p, ...rest);
+  }) as typeof fs.openSync;
+  fsDefault.fstatSync = ((...a: unknown[]) => {
+    const st = (real.fstatSync as (...x: unknown[]) => fs.Stats)(...a);
+    if (opened && back) {
+      back();
+      back = null;
+    }
+    return st;
+  }) as typeof fs.fstatSync;
+  syncBuiltinESMExports();
+  try {
+    return read();
+  } finally {
+    Object.assign(fsDefault, real);
+    syncBuiltinESMExports();
+  }
+}
+
+test("confined reads: a directory swapped for a link out of the session after the check reads nothing", linkGate, () => {
+  const { dir, transcript } = fixture();
+  fs.writeFileSync(path.join(dir, "agent-a1.jsonl"), sidechain({ type: "user", message: { role: "user", content: "inside" } }));
+  const far = fs.mkdtempSync(path.join(os.tmpdir(), "asw-far-"));
+  fs.writeFileSync(path.join(far, "agent-a1.jsonl"), line({ type: "assistant", message: { id: "x", content: [{ type: "text", text: "outside the session" }] } }));
+  const folder = sessionFolder(transcript)!;
+  const subagents = path.join(folder, "subagents");
+  const target = path.join(subagents, "agent-a1.jsonl");
+  const aside = path.join(folder, "subagents-aside");
+  const swap = () => {
+    fs.renameSync(subagents, aside);
+    fs.symlinkSync(far, subagents);
+  };
+  const restore = () => {
+    fs.unlinkSync(subagents);
+    fs.renameSync(aside, subagents);
+  };
+  // Swapped while the read runs.
+  assert.equal(withSwap(target, swap, null, () => readConfined(folder, target, 1024)), null, "the link is seen on the walk");
+  restore();
+  // Swapped for the open and back before the read looks: the opened file is not the one the path names.
+  assert.equal(withSwap(target, swap, restore, () => readConfined(folder, target, 1024)), null, "the opened file is compared with the path");
+  assert.match(readConfined(folder, target, 1024)?.text ?? "", /inside/, "unswapped, the read works");
 });
