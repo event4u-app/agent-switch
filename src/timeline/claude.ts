@@ -9,7 +9,7 @@
 
 import * as fs from "node:fs";
 
-import { countHunks, toolSummary, type AsEvent, type DiffHunk } from "./events.js";
+import { countHunks, toolSummary, type AsEvent, type DiffHunk, type Question } from "./events.js";
 
 /** The newest Claude Code version a recorded fixture covers (tests/fixtures/timeline). */
 export const NEWEST_FIXTURE_VERSION = "2.1.316";
@@ -51,6 +51,40 @@ function resultText(content: unknown): string {
 function firstLine(s: string, n = 120): string {
   const l = s.trim().split("\n")[0] ?? "";
   return l.length > n ? `${l.slice(0, n - 1)}…` : l;
+}
+
+/** AskUserQuestion input → questions. */
+function questionsOf(input: Json): Question[] {
+  return arr(input.questions).map((q) => {
+    const o = obj(q);
+    return { question: str(o.question), options: arr(o.options).map((x) => str(obj(x).label) || str(x)), ...(o.multiSelect === true ? { multiSelect: true } : {}) };
+  });
+}
+
+const WHERE: Record<string, string> = { session: "for this session", localSettings: "in this project", projectSettings: "in this project's shared settings", userSettings: "for all your projects", cliArg: "for this session" };
+const MODE_WORDS: Record<string, string> = { acceptEdits: "accept edits", plan: "stay in plan mode", default: "ask before edits" };
+
+/** Claude's `permission_suggestions` → what "Always allow" adds, in words; null when it suggests nothing. Pure. */
+export function suggestionRule(suggestions: unknown): string | null {
+  const parts = arr(suggestions).map((x) => {
+    const s = obj(x);
+    const where = WHERE[str(s.destination)] ?? "";
+    const tail = where ? ` ${where}` : "";
+    if (s.type === "addRules" || s.type === "replaceRules") {
+      const rules = arr(s.rules).map((r) => (str(obj(r).ruleContent) ? `${str(obj(r).toolName)}(${str(obj(r).ruleContent)})` : str(obj(r).toolName))).filter(Boolean);
+      return rules.length ? `${str(s.behavior) === "deny" ? "deny" : "allow"} ${rules.join(", ")}${tail}` : "";
+    }
+    if (s.type === "setMode") return `${MODE_WORDS[str(s.mode)] ?? `switch to ${str(s.mode)} mode`}${tail}`;
+    if (s.type === "addDirectories") {
+      const dirs = arr(s.directories).map(str).filter(Boolean);
+      return dirs.length ? `allow access to ${dirs.join(", ")}${tail}` : "";
+    }
+    return "";
+  });
+  const said = parts.filter(Boolean);
+  if (said.length) return said.join("; ");
+  // Suggested, but in a shape this mapper does not know: still the rule that is applied, unnamed.
+  return parts.length ? "the rule Claude suggests" : null;
 }
 
 /** User-role lines Claude writes itself: slash-command output, the interrupt note. Not prompts. */
@@ -95,6 +129,10 @@ function userLine(e: Json, st: ClaudeState): AsEvent[] {
       summary = `+${lines.length}`;
     }
     out.push({ t: "tool.finished", id: toolId, ok, summary });
+    if (name === "AskUserQuestion") {
+      const answers = Object.fromEntries(Object.entries(obj(tur.answers)).filter((kv): kv is [string, string] => typeof kv[1] === "string"));
+      out.push({ t: "question.resolved", id: toolId, answers: ok ? answers : null });
+    }
     if (SUBAGENT_TOOLS.has(name)) out.push({ t: "subagent.finished", id: toolId, ok: ok && str(tur.status) !== "failed", ...(str(tur.agentId) ? { agentId: str(tur.agentId) } : {}) });
   }
   return out;
@@ -116,12 +154,7 @@ function assistantLine(e: Json, st: ClaudeState): AsEvent[] {
         st.tools.set(id, name);
         out.push({ t: "tool.started", id, name, summary: toolSummary(name, input), input, parentToolId: str(e.parent_tool_use_id) || null });
         if (SUBAGENT_TOOLS.has(name)) out.push({ t: "subagent.started", id, type: str(input.subagent_type) || "general-purpose", description: str(input.description) });
-        if (name === "AskUserQuestion")
-          out.push({
-            t: "question.requested",
-            id,
-            questions: arr(input.questions).map((q) => ({ question: str(obj(q).question), options: arr(obj(q).options).map((o) => str(obj(o).label) || str(o)) })),
-          });
+        if (name === "AskUserQuestion") out.push({ t: "question.requested", id, questions: questionsOf(input) });
         if (name === "ExitPlanMode") out.push({ t: "plan", id, text: str(input.plan) });
       } else out.push({ t: "unknown", kind: `assistant:${str(b.type) || "block"}` });
     });
@@ -149,9 +182,10 @@ export function fromClaudeLine(line: unknown, st: ClaudeState): AsEvent[] {
       const tool = str(r.tool_name);
       const input = obj(r.input);
       // A question is asked through the same channel; it is answered, not allowed.
-      if (tool === "AskUserQuestion")
-        return [{ t: "question.requested", id: str(e.request_id), questions: arr(input.questions).map((q) => ({ question: str(obj(q).question), options: arr(obj(q).options).map((o) => str(obj(o).label) || str(o)) })) }];
-      return [{ t: "approval.requested", id: str(e.request_id), tool, summary: toolSummary(tool, input), input }];
+      // The tool call it answers came first on the stream; the id lets the view show the question once.
+      if (tool === "AskUserQuestion") return [{ t: "question.requested", id: str(e.request_id), ...(str(r.tool_use_id) ? { toolId: str(r.tool_use_id) } : {}), questions: questionsOf(input) }];
+      const rule = suggestionRule(r.permission_suggestions);
+      return [{ t: "approval.requested", id: str(e.request_id), tool, summary: toolSummary(tool, input), input, ...(rule ? { rule } : {}) }];
     }
     return [{ t: "unknown", kind: `control_request:${str(r.subtype)}` }];
   }

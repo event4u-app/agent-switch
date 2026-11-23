@@ -215,6 +215,7 @@ test("codex bridge: history from thread/read, a turn with an approval, the queue
   c.ask(77, "item/commandExecution/requestApproval", { itemId: "it1", command: "npm test", threadId: "thr_1", turnId: "turn_9" });
   await tick();
   assert.deepEqual(b.openApprovals, ["it1"]);
+  assert.equal((events(out).at(-1) as { rule?: string }).rule, "allow “npm test” for this session", "Always allow names what acceptForSession covers");
   b.command({ cmd: "approve", id: "it1", always: true });
   await tick();
   assert.deepEqual(c.answers()[0], { jsonrpc: "2.0", id: 77, result: { decision: "acceptForSession" } });
@@ -258,4 +259,26 @@ test("hostedTarget: a hosted Claude session from the host registry, nothing else
   assert.deepEqual(hostedTarget("claude/work/s1", hosted), { key: "claude/work/s1", provider: "claude", account: "work", sessionId: "s1", cwd: "/w", transcript: null });
   assert.equal(hostedTarget("codex/me/t1", hosted), null);
   assert.equal(hostedTarget("claude/work/s2", hosted), null);
+});
+
+test("claude bridge: a live question is asked once, by the request the answer must name", async () => {
+  const { f, out } = claude();
+  const input = { questions: [{ question: "Colour?", options: [{ label: "Red" }] }] };
+  f.stdout.write(JSON.stringify({ type: "assistant", message: { id: "m1", content: [{ type: "tool_use", id: "toolu_Q", name: "AskUserQuestion", input }] } }) + "\n");
+  f.stdout.write(JSON.stringify({ type: "control_request", request_id: "req-1", request: { subtype: "can_use_tool", tool_name: "AskUserQuestion", input, tool_use_id: "toolu_Q" } }) + "\n");
+  await tick();
+  assert.deepEqual(events(out).filter((e) => e.t === "question.requested").map((e) => (e as { id: string }).id), ["req-1"]);
+});
+
+test("claude bridge: an answered or skipped question is resolved in the timeline", async () => {
+  const { b, f, out } = claude();
+  const ask = (id: string) => f.stdout.write(JSON.stringify({ type: "control_request", request_id: id, request: { subtype: "can_use_tool", tool_name: "AskUserQuestion", input: { questions: [{ question: "Colour?", options: [{ label: "Red" }] }] } } }) + "\n");
+  ask("q1");
+  ask("q2");
+  await tick();
+  b.command({ cmd: "answer", id: "q1", answers: { "Colour?": "Red" } });
+  assert.deepEqual(events(out).at(-1), { t: "question.resolved", id: "q1", answers: { "Colour?": "Red" } });
+  b.command({ cmd: "deny", id: "q2", message: "skipped" });
+  assert.deepEqual((f.written.at(-1) as { response: { response: unknown } }).response.response, { behavior: "deny", message: "skipped" });
+  assert.deepEqual(events(out).at(-1), { t: "question.resolved", id: "q2", answers: null }, "a skipped question is not an approval");
 });

@@ -155,6 +155,8 @@ export class ClaudeBridge {
         this.o.onSession?.(String(e.session_id));
       }
       for (const ev of fromClaudeLine(e, this.st)) {
+        // Live, the question is asked by the control request that follows; the tool call's copy cannot be answered.
+        if (e.type === "assistant" && ev.t === "question.requested") continue;
         this.o.out({ event: ev });
         if (ev.t === "turn.end") this.turnEnded();
       }
@@ -234,7 +236,9 @@ export class ClaudeBridge {
               }
             : { behavior: "deny", message: c.message || "Denied in Agent Switch" };
         this.write({ type: "control_response", response: { subtype: "success", request_id: c.id, response } });
-        this.o.out({ event: { t: "approval.resolved", id: c.id, decision: c.cmd === "approve" ? "allow" : "deny" } });
+        // Denying a question skips it: the agent goes on without an answer.
+        if (r.tool_name === "AskUserQuestion") this.o.out({ event: { t: "question.resolved", id: c.id, answers: null } });
+        else this.o.out({ event: { t: "approval.resolved", id: c.id, decision: c.cmd === "approve" ? "allow" : "deny" } });
         return;
       }
       case "answer": {
@@ -244,6 +248,7 @@ export class ClaudeBridge {
         this.approvalsChanged();
         const input = ((req.request ?? {}) as Json).input ?? {};
         this.write({ type: "control_response", response: { subtype: "success", request_id: c.id, response: { behavior: "allow", updatedInput: { ...(input as Json), answers: c.answers } } } });
+        this.o.out({ event: { t: "question.resolved", id: c.id, answers: c.answers } });
         return;
       }
       case "interrupt":
