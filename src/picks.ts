@@ -17,7 +17,7 @@ import { redactSecrets } from "./activity.js";
 import { ROOT, ensureRoot } from "./profiles.js";
 
 export const PICKS_FILE = path.join(ROOT, "picks.jsonl");
-export const PICKS_MAX_LINES = 500;
+export const PICKS_MAX_LINES = 1000;
 const TRIM_BYTES = 256 * 1024;
 const MAX_LINE = 300;
 const MAX_WHY = 20;

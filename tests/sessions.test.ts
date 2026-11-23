@@ -222,9 +222,27 @@ test("markLive trusts the registry's sessionId over the cwd guess, and carries i
     const newest = rows.find((r) => r.sessionId === "newest")!;
     assert.equal(named.live, true);
     assert.equal(named.hostStatus, "busy");
+    assert.equal(named.hostStatusAt, t);
     assert.equal(named.liveSource, "registry");
     assert.equal(newest.live, false);
     assert.equal(newest.hostStatus, undefined);
+    assert.equal("hostStatusAt" in newest, false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("markLive leaves hostStatusAt out when the registry gives a word but no time", () => {
+  const root = tmp();
+  try {
+    const cfg = path.join(root, "cfg");
+    seedSession(cfg, "-live-proj", "named", { mtimeMs: Date.now() });
+    fs.mkdirSync(path.join(cfg, "sessions"), { recursive: true });
+    fs.writeFileSync(path.join(cfg, "sessions", `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: "named", status: "idle" }));
+    const rows = listSessions(cfg, 10);
+    markLive(cfg, rows, () => null);
+    assert.equal(rows[0].hostStatus, "idle");
+    assert.equal("hostStatusAt" in rows[0], false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -242,6 +260,7 @@ test("markLive falls back to the cwd guess for an unreadable registry file", () 
     assert.equal(rows[0].live, true);
     assert.equal(rows[0].liveSource, "cwd");
     assert.equal(rows[0].hostStatus, undefined);
+    assert.equal("hostStatusAt" in rows[0], false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

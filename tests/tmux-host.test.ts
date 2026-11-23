@@ -7,6 +7,7 @@ import * as path from "node:path";
 
 import { TmuxHost, HOST_SESSION, hostingMode } from "../src/host/tmux-host.js";
 import { HOOK_EVENTS } from "../src/hooks.js";
+import { programStatusFile } from "../src/program-status.js";
 
 const gate = { skip: TmuxHost.available() ? false : "tmux is not installed here" };
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "asw-host-"));
@@ -235,6 +236,74 @@ test("CLI host respawn: same window, same session, the next turn on another mode
     assert.equal(host.list()[0].window, s.window);
     const screen = host.capture(s.key) ?? "";
     assert.doesNotMatch(screen, /\/model|\/effort/, "nothing was typed into the session");
+  } finally {
+    host.killServer();
+  }
+});
+
+/** A stand-in for tmux that records every argv and answers with a window id. */
+function recordingTmux(dir: string): { bin: string; calls: () => string[][] } {
+  const log = path.join(dir, "tmux-calls.jsonl");
+  const bin = path.join(dir, "fake-tmux");
+  fs.writeFileSync(bin, `#!/bin/sh\nnode -e 'require("fs").appendFileSync(process.argv[1], JSON.stringify(process.argv.slice(2)) + "\\n")' "${log}" "$@"\necho @7\n`, { mode: 0o755 });
+  return { bin, calls: () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []) };
+}
+
+test("a hosted Codex window gets a read-only pipe to the program-status reader; Claude does not", () => {
+  const root = tmp();
+  const t = recordingTmux(root);
+  const host = new TmuxHost(root, { socket: "rec", tmux: t.bin });
+  const s = host.start({ provider: "codex", account: "work", configDir: "/cfg", cwd: root, bin: "codex" }, "'/usr/bin/node' '/opt/as/index.js'");
+  const pipes = t.calls().filter((a) => a.includes("pipe-pane"));
+  assert.equal(pipes.length, 1, "one pipe per hosted Codex window");
+  const args = pipes[0].slice(pipes[0].indexOf("pipe-pane"));
+  assert.deepEqual(args.slice(0, 4), ["pipe-pane", "-O", "-t", s.window]);
+  assert.ok(!args.includes("-I") && !args.includes("-o"), "output direction only, never input");
+  assert.equal(args[4], `'/usr/bin/node' '/opt/as/index.js' __program-status '${programStatusFile(root, s.sessionId)}'`);
+
+  host.respawn(s.key, { provider: "codex", account: "side", configDir: "/cfg2", cwd: root, bin: "codex", args: ["resume", s.sessionId] }, "'/usr/bin/node' '/opt/as/index.js'");
+  assert.equal(t.calls().filter((a) => a.includes("pipe-pane")).length, 2, "a respawned Codex window is piped again");
+
+  const t2 = recordingTmux(fs.mkdtempSync(path.join(os.tmpdir(), "asw-host-")));
+  new TmuxHost(root, { socket: "rec2", tmux: t2.bin }).start({ provider: "claude", account: "work", configDir: "/cfg", cwd: root, bin: "claude" }, "agent-switch");
+  assert.equal(t2.calls().filter((a) => a.includes("pipe-pane")).length, 0);
+});
+
+test("CLI: a hosted Codex window's own OSC 7501 report reaches sessions --json as runtime source program", gate, () => {
+  const root = fs.realpathSync(tmp());
+  const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../src/index.js");
+  const cfg = path.join(root, "codex", "work", "config");
+  fs.mkdirSync(cfg, { recursive: true });
+  const bin = path.join(root, "fake-codex");
+  fs.writeFileSync(
+    bin,
+    `#!/bin/sh
+d="$CODEX_HOME/sessions/2026/11/23"; mkdir -p "$d"
+printf '{"type":"session_meta","payload":{"cwd":"%s","thread_source":"user"}}\\n' "$(pwd -P)" > "$d/rollout-2026-11-23T10-00-00-0199a1b2-c3d4-4e5f-8a9b-0c1d2e3f4a5b.jsonl"
+sleep 0.5
+printf '\\033]0;codex\\007\\033]7501;state=idle:app=codex\\007hello\\r\\n'
+printf '\\033]7501;state=working:app=codex\\033\\\\'
+sleep 30
+`,
+    { mode: 0o755 },
+  );
+  const socket = `as-test-p-${process.pid}`;
+  const host = new TmuxHost(root, { socket });
+  try {
+    const q = (s: string) => `'${s}'`;
+    const s = host.start({ provider: "codex", account: "work", configDir: cfg, cwd: root, bin }, `${q(process.execPath)} ${q(cli)}`);
+    const file = programStatusFile(root, s.sessionId);
+    assert.ok(waitFor(() => fs.existsSync(file) && fs.readFileSync(file, "utf8").includes("working"), 5000), "the reader wrote the state");
+    const r = spawnSync(process.execPath, [cli, "sessions", "--provider", "codex", "--json"], { env: { ...process.env, AGENT_SWITCH_HOME: root, AGENT_SWITCH_HOST_SOCKET: socket }, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const rows = JSON.parse(r.stdout);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].live, true, "live by its host record");
+    assert.equal(rows[0].runtime?.state, "working");
+    assert.equal(rows[0].runtime?.source, "program");
+
+    host.end(s.key);
+    assert.equal(fs.existsSync(file), false, "ending the window drops its state");
   } finally {
     host.killServer();
   }

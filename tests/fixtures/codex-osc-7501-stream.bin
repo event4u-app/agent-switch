@@ -1,0 +1,7 @@
+[?1049h]0;codex[1mOpenAI Codex[0m (v0.167.0)
+]7501;state=idle:app=codex]11;?\────────────────────
+]0;run ls -la and count]7501;state=working:app=codex\• Working (3s • esc to interrupt)
+]7501;state=idle:app=codex]8;;file:///tmptmp]8;;
+]0;run ls -la and count]7501;state=working:app=codex$ ls -la
+total 12
+]7501;state=done:app=codex\]0;codexThere are 5 entries.

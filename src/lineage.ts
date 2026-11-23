@@ -17,10 +17,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { childrenOf, type HookEventRecord, type Lineage } from "./hooks.js";
+import type { RuntimeState } from "./runtime-state.js";
 
 export type Child =
   | { kind: "subagent"; agentId: string; type?: string; state: "running" | "done"; cwd?: string; source: "hook" }
-  | { kind: Lineage["kind"]; sessionKey: string; label?: string; state: "running" | "done"; source: Lineage["source"] };
+  | { kind: Lineage["kind"]; sessionKey: string; label?: string; state: "running" | "done"; source: Lineage["source"]; runtime?: RuntimeState };
 
 export interface HelperIndex {
   /** parent key or bare parent id → the helper sessions that named it. */

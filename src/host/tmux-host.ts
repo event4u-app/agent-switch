@@ -23,6 +23,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { buildHookEntry, HOOK_EVENTS, relayPath } from "../hooks.js";
+import { programStatusFile } from "../program-status.js";
 import { readTmuxRegistry, type TmuxRegistry } from "../tmux.js";
 
 export const HOST_SESSION = "host";
@@ -157,6 +158,24 @@ export class TmuxHost {
     return [...argv, ...(o.args ?? [])];
   }
 
+  /**
+   * `pipe-pane -O`: the window's output, never its input, goes to this CLI's
+   * `__program-status` reader, which writes the program's own OSC 7501 state.
+   * Only Codex sends it unasked; nothing ever answers a probe. Pure.
+   */
+  static programStatusPipe(window: string, cliPrefix: string, file: string): string[] {
+    return ["pipe-pane", "-O", "-t", window, `${cliPrefix} __program-status '${file.replace(/'/g, "'\\''")}'`];
+  }
+
+  private pipeProgramStatus(provider: string, window: string, sessionId: string, cliPrefix: string): void {
+    if (provider !== "codex") return;
+    const file = programStatusFile(this.root, sessionId);
+    // A report from an earlier program in this window must not stand for the new one.
+    fs.rmSync(file, { force: true });
+    // Best effort: without the pipe the row falls back to the transcript.
+    this.tmux(TmuxHost.programStatusPipe(window, cliPrefix, file));
+  }
+
   start(o: StartOptions, hookBin = "agent-switch"): HostedSession {
     if (!/^[a-z][a-z0-9-]*$/.test(o.provider)) throw new Error(`bad provider ${o.provider}`);
     if (!o.account || o.account.includes("/")) throw new Error(`bad account ${o.account}`);
@@ -174,6 +193,7 @@ export class TmuxHost {
     if (!r.ok) throw new Error(`tmux could not start the session: ${r.err}`);
     // Keep a finished program's window, so its last screen can still be read.
     this.tmux(["set-option", "-w", "-t", r.out.trim(), "remain-on-exit", "on"]);
+    this.pipeProgramStatus(o.provider, r.out.trim(), sessionId, hookBin);
     const hosted: HostedSession = {
       key,
       provider: o.provider,
@@ -230,6 +250,7 @@ export class TmuxHost {
     const argv = TmuxHost.programArgv({ ...o, provider: cur.provider }, cur.sessionId, settings);
     const r = this.tmux(["respawn-pane", "-k", "-t", cur.window, "-c", o.cwd, ...TmuxHost.envArgs({ ...o, provider: cur.provider }, nextKey), "--", ...argv]);
     if (!r.ok) throw new Error(`tmux could not restart the session: ${r.err}`);
+    this.pipeProgramStatus(cur.provider, cur.window, cur.sessionId, hookBin);
     const next: HostedSession = { ...cur, key: nextKey, account: o.account, cwd: o.cwd };
     delete reg[key];
     reg[nextKey] = next;
@@ -249,6 +270,8 @@ export class TmuxHost {
     if (!cur) throw new Error(`no hosted session ${key}`);
     const r = this.tmux(["respawn-pane", "-k", "-t", cur.window, "-c", cur.cwd, "-e", `AGENT_SWITCH_HOST_PANE=${key}`, "--", ...argv]);
     if (!r.ok) throw new Error(`tmux could not park the session: ${r.err}`);
+    // The program is gone from the window; its last report no longer describes anything.
+    fs.rmSync(programStatusFile(this.root, cur.sessionId), { force: true });
     reg[key] = { ...cur, parked: true };
     this.writeRegistry(reg);
     return reg[key];
@@ -288,6 +311,7 @@ export class TmuxHost {
     const s = reg[key];
     if (!s) return false;
     this.tmux(["kill-window", "-t", s.window]);
+    fs.rmSync(programStatusFile(this.root, s.sessionId), { force: true });
     delete reg[key];
     this.writeRegistry(reg);
     return true;

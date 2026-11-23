@@ -1,0 +1,18 @@
+{
+  "claudeCode": "2.1.316",
+  "recordedAt": "2026-11-23",
+  "note": "status and statusUpdatedAt of one interactive session's sessions/<pid>.json, sampled about once a second; t = seconds since the first prompt; expect = what runtimeState must read",
+  "steps": [
+    { "situation": "at rest before the first prompt", "t": -10, "status": "idle", "statusAgeS": 12, "transcriptAgeS": 600, "expect": "idle" },
+    { "situation": "prompt sent, model thinking", "t": 1, "status": "busy", "statusAgeS": 1, "transcriptAgeS": 1, "expect": "working" },
+    { "situation": "turn ended, a background shell still runs", "t": 8, "status": "shell", "statusAgeS": 1, "transcriptAgeS": 1, "expect": "idle" },
+    { "situation": "one foreground tool call, 155 s in, word unchanged", "t": 243, "status": "busy", "statusAgeS": 155, "transcriptAgeS": 150, "expect": "working" },
+    { "situation": "Esc during the tool call", "t": 251, "status": "idle", "statusAgeS": 1, "transcriptAgeS": 1, "expect": "idle" },
+    { "situation": "permission prompt for a Bash command", "t": 270, "status": "waiting", "statusAgeS": 2, "transcriptAgeS": 3, "expect": "needs-you" },
+    { "situation": "permission prompt raised by a subagent", "t": 304, "status": "waiting", "statusAgeS": 1, "transcriptAgeS": 2, "expect": "needs-you" },
+    { "situation": "turn ended, subagent still runs in the background", "t": 317, "status": "idle", "statusAgeS": 1, "transcriptAgeS": 1, "expect": "idle" },
+    { "situation": "/compact running", "t": 337, "status": "busy", "statusAgeS": 4, "transcriptAgeS": 30, "expect": "working" },
+    { "situation": "/compact done", "t": 349, "status": "idle", "statusAgeS": 1, "transcriptAgeS": 1, "expect": "idle" },
+    { "situation": "/clear: new sessionId, same pid", "t": 355, "status": "idle", "statusAgeS": 1, "transcriptAgeS": 1, "expect": "idle" }
+  ]
+}
