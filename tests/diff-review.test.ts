@@ -285,6 +285,9 @@ function wholeRepo() {
   const r = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "asw-rev-whole-")));
   const g = (...a: string[]) => execFileSync("git", ["-C", r, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.autocrlf=false", ...a], { encoding: "utf8" });
   g("init", "-q", "-b", "main");
+  // The code under test commits without -c flags; the repo carries its own identity (CI has no global one).
+  g("config", "user.name", "t");
+  g("config", "user.email", "t@example.com");
   for (const f of ["keep.txt", "del.txt", "other.txt"]) fs.writeFileSync(path.join(r, f), `${f}\n`);
   fs.writeFileSync(path.join(r, "img.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3, 0, 255]));
   g("add", ".");
