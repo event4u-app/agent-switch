@@ -6,10 +6,10 @@
 
 ## Overall
 
-**28 / 34 steps done · 82%**
+**31 / 34 steps done · 91%**
 
 ```text
-█████████████████████████████████░░░░░░░   82%
+████████████████████████████████████░░░░   91%
 ```
 
 ## Open roadmaps
@@ -17,7 +17,7 @@
 | # | Roadmap | Phases | Steps | Open | Done | Deferred | Cancelled | Blocker | Progress |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | 1 | [road-to-a-chat-that-reads-well.md](roadmaps/road-to-a-chat-that-reads-well.md) | 6 | 17 | 1 | 16 | 0 | 0 | 0 | █████████░ 94% |
-| 2 | [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md) | 6 | 17 | 5 | 12 | 0 | 0 | 0 | ███████░░░ 71% |
+| 2 | [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md) | 6 | 17 | 2 | 15 | 0 | 0 | 0 | █████████░ 88% |
 
 ---
 
@@ -60,12 +60,12 @@
 
 ### [road-to-a-workbench-that-tells-the-truth.md](roadmaps/road-to-a-workbench-that-tells-the-truth.md)
 
-**a workbench that tells the truth** — 12 / 17 done (71%)
+**a workbench that tells the truth** — 15 / 17 done (88%)
 
 | # | Phase | State | Open | Done | Deferred | Cancelled | % |
 |---|---|---|---:|---:|---:|---:|---:|
 | 1 | Actions that do what they say | ✅ done | 0 | 4 | 0 | 0 | 100% |
-| 2 | A session starts the way the dialog shows it | ⬜ not started | 3 | 0 | 0 | 0 | 0% |
+| 2 | A session starts the way the dialog shows it | ✅ done | 0 | 3 | 0 | 0 | 100% |
 | 3 | Your terminal and Agent Switch at the same time | ✅ done | 0 | 3 | 0 | 0 | 100% |
 | 4 | From a session to its diff | ✅ done | 0 | 2 | 0 | 0 | 100% |
 | 5 | The list at a glance | ✅ done | 0 | 3 | 0 | 0 | 100% |

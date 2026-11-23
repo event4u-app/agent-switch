@@ -47,9 +47,9 @@ canvas shows the result, because it renders the real app.
 
 ## Phase 2 — A session starts the way the dialog shows it
 
-- [ ] 2.1 Model, thinking and "In a new worktree" from the New-session dialog reach the started session (hosted and your terminal), with CLI flags where `host start` lacks them.
-- [ ] 2.2 The dialog's prefill is really remembered per project (last tool, model, thinking, where), and says so only when it is.
-- [ ] 2.3 First start in a project defaults to "Your terminal" (D1).
+- [x] 2.1 Model, thinking and "In a new worktree" from the New-session dialog reach the started session (hosted and your terminal), with CLI flags where `host start` lacks them.
+- [x] 2.2 The dialog's prefill is really remembered per project (last tool, model, thinking, where), and says so only when it is.
+- [x] 2.3 First start in a project defaults to "Your terminal" (D1).
 
 ## Phase 3 — Your terminal and Agent Switch at the same time
 
