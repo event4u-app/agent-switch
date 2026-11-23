@@ -19,6 +19,8 @@ import { SESSION_MENU, type SessionMenuItem, type V3Data } from "../window.js";
 import type { BarSession, ModelChoices } from "../workbench.js";
 import { modelLabel } from "../model-label.js";
 import { shortAge } from "../../ui/format.js";
+import { choiceFlags, type StartChoice } from "../../ipc.js";
+import type { RememberedStart } from "../../settings-store.js";
 import { answeredElsewhere, cliAccount, requestKind } from "../../vm/switch-requests.js";
 import { parsePr, type HistoryRow, type PrFacts } from "./feeds.js";
 import type { V3Feeds } from "./useFeeds.js";
@@ -548,11 +550,28 @@ export function chatStart(route: Route, accounts: readonly Account[]): { profile
   return profile ? { profile } : null;
 }
 
+/** What the New-session dialog opens with: the project's last start, or — on
+ *  the first start there — your terminal (spec Principle 5). Pure. */
+export function initialPlan(folder: string, last: RememberedStart | null): NewSessionPlan {
+  const base = { folder, gitState: null, worktree: false };
+  return last ? { ...base, ...last, remembered: true } : { ...base, tool: "claude", model: "opus", thinking: "high", where: "terminal" };
+}
+
+/** The model, thinking and worktree a plan starts with — only what its tool takes. Pure. */
+export function startChoice(p: NewSessionPlan): StartChoice {
+  return {
+    ...(p.model && p.tool !== "antigravity" ? { model: p.model } : {}),
+    ...(THINKING_LEVELS[p.tool].includes(p.thinking) ? { effort: p.thinking } : {}),
+    ...(p.worktree ? { worktree: true } : {}),
+  };
+}
+
 /** The exact command the New-session dialog previews. Pure. */
 export function startCommand(p: NewSessionPlan, account: string | null): string {
   const q = (s: string) => (/^[\w./:@-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`);
-  if (p.where === "hosted") return ["agent-switch", "host", "start", ...(account ? [q(account)] : []), "--provider", p.tool, "--cwd", q(p.folder)].join(" ");
-  return ["agent-switch", "run", ...(account ? [q(account)] : []), ...(p.tool !== "claude" ? ["--provider", p.tool] : []), "--cwd", q(p.folder)].join(" ");
+  const choice = choiceFlags(startChoice(p)).map(q);
+  if (p.where === "hosted") return ["agent-switch", "host", "start", ...(account ? [q(account)] : []), "--provider", p.tool, "--cwd", q(p.folder), ...choice].join(" ");
+  return ["agent-switch", "run", ...(account ? [q(account)] : []), ...(p.tool !== "claude" ? ["--provider", p.tool] : []), "--cwd", q(p.folder), ...choice].join(" ");
 }
 
 /** The switch requests the window acts on. Pure. */

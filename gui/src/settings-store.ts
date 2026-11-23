@@ -1021,3 +1021,38 @@ export function setFocusTerminalFlag(on: boolean): void {
     /* no/blocked localStorage → in-memory only for this session */
   }
 }
+
+const START_CHOICE_KEY = "agent-switch-start-choice";
+
+/** The last New session choice in one folder ("Remembered for this project"). */
+export interface RememberedStart {
+  tool: "claude" | "codex" | "antigravity";
+  model: string;
+  thinking: string;
+  where: "terminal" | "hosted";
+}
+
+function readStartChoices(): Record<string, unknown> {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(START_CHOICE_KEY) ?? "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** What was chosen at the last start in `folder`; null when nothing (readable) was. */
+export function getStartChoice(folder: string): RememberedStart | null {
+  const c = readStartChoices()[folder] as Partial<RememberedStart> | undefined;
+  if (!c || typeof c !== "object") return null;
+  const ok = ["claude", "codex", "antigravity"].includes(c.tool as string) && typeof c.model === "string" && typeof c.thinking === "string" && (c.where === "terminal" || c.where === "hosted");
+  return ok ? { tool: c.tool!, model: c.model!, thinking: c.thinking!, where: c.where! } : null;
+}
+
+export function setStartChoice(folder: string, choice: RememberedStart): void {
+  try {
+    localStorage.setItem(START_CHOICE_KEY, JSON.stringify({ ...readStartChoices(), [folder]: { tool: choice.tool, model: choice.model, thinking: choice.thinking, where: choice.where } }));
+  } catch {
+    /* no/blocked localStorage → nothing remembered */
+  }
+}

@@ -4,7 +4,7 @@ import type { SessionRow } from "../../transforms.js";
 import { emptyViewModel } from "../../vm/load.js";
 import type { Account, ViewModel } from "../../vm/types.js";
 import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
-import { chatStart, childrenOf, decisionFor, doneToday, nextStep, sessionKey, startCommand, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
+import { chatStart, childrenOf, decisionFor, doneToday, initialPlan, nextStep, sessionKey, startCommand, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
 import { emptyFeeds, type V3Feeds } from "./useFeeds.js";
 
 const NOW = Date.parse("2026-11-03T15:00:00");
@@ -333,6 +333,12 @@ describe("pieces", () => {
     expect(d.sessions.map((s) => s.target).sort()).toEqual(["a", "b"]);
   });
 
+  it("startCommand shows the model, thinking and worktree the start will use", () => {
+    const p = { folder: "/r", gitState: null, worktree: true, tool: "claude" as const, model: "opus", thinking: "high", where: "hosted" as const };
+    expect(startCommand(p, "work")).toBe("agent-switch host start work --provider claude --cwd /r --model opus --effort high --worktree");
+    expect(startCommand({ ...p, where: "terminal", worktree: false }, "work")).toBe("agent-switch run work --cwd /r --model opus --effort high");
+  });
+
   it("startCommand quotes what needs it", () => {
     const p = { folder: "/r/my app", gitState: null, worktree: false, tool: "claude" as const, model: "", thinking: "", where: "hosted" as const };
     expect(startCommand(p, "work")).toBe("agent-switch host start work --provider claude --cwd '/r/my app'");
@@ -509,5 +515,20 @@ describe("the child tree (Phases 2 and 3)", () => {
     const root = row("q", { children: [seat("work", "slow", { state: "working", source: "host", observedAt: NOW - 34 * 60_000, unconfirmed: true })] });
     const d = toV3Data(vmWith(accounts, [root]), emptyFeeds(), env());
     expect(d.sessions[0].children[0].quiet).toBe("no update in 34m");
+  });
+});
+
+describe("the New session prefill", () => {
+  it("first start in a project: your terminal, nothing claimed as remembered", () => {
+    const p = initialPlan("/r", null);
+    expect(p.where).toBe("terminal");
+    expect(p.remembered).toBeFalsy();
+    expect(p.folder).toBe("/r");
+  });
+
+  it("a project started in before: its last tool, model, thinking and place", () => {
+    const p = initialPlan("/r", { tool: "codex", model: "gpt-5", thinking: "low", where: "hosted" });
+    expect([p.tool, p.model, p.thinking, p.where, p.remembered]).toEqual(["codex", "gpt-5", "low", "hosted", true]);
+    expect(p.worktree).toBe(false);
   });
 });

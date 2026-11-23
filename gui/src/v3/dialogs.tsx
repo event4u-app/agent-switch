@@ -74,6 +74,8 @@ export interface NewSessionPlan {
   where: "terminal" | "hosted";
   /** An account the person chose here; absent, the start routes as usual. */
   account?: string;
+  /** The prefill is this project's last start, not a first-start default. */
+  remembered?: boolean;
 }
 
 export interface NewSessionFacts {
@@ -97,7 +99,11 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
   const set = (patch: Partial<NewSessionPlan>) => {
     const next = { ...p, ...patch };
     // A chosen account belongs to the tool it was chosen for.
-    if (patch.tool && patch.tool !== p.tool) delete next.account;
+    if (patch.tool && patch.tool !== p.tool) {
+      delete next.account;
+      // A model belongs to its tool too: another tool starts on its own default.
+      next.model = patch.tool === initial.tool ? initial.model : "";
+    }
     setP(next);
     onChange?.(next);
   };
@@ -119,12 +125,12 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
     <Modal
       title={`${toolName} in ${p.folder}`}
       kicker="New session"
-      sub="Everything below is prefilled from your last start here — ⌘↵ starts right away."
+      sub={initial.remembered ? "Everything below is prefilled from your last start here — ⌘↵ starts right away." : "Your choices here are remembered for the next start — ⌘↵ starts right away."}
       width={620}
       onClose={onClose}
       footer={
         <>
-          <span className="mr-auto text-[11px] text-ac-muted">Remembered for this project</span>
+          <span className="mr-auto text-[11px] text-ac-muted">{initial.remembered ? "Remembered for this project" : ""}</span>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
@@ -153,7 +159,7 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
           <Field>
             {p.model ? (
               <>
-                {p.model} {p.model === initial.model && <span className="text-ac-muted">· last used here</span>}
+                {p.model} {initial.remembered && p.model === initial.model && <span className="text-ac-muted">· last used here</span>}
               </>
             ) : (
               <span className="text-ac-muted">Model</span>

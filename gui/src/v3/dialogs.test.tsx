@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ChatAccountDialog, DecisionSheet, EndDialog, NewSessionDialog, type NewSessionFacts, type NewSessionPlan } from "./dialogs.js";
 
 afterEach(cleanup);
-const plan: NewSessionPlan = { folder: "~/code/agent-switch", gitState: "main · clean", worktree: false, tool: "claude", model: "Opus 5.5 · last used here", thinking: "High", where: "terminal" };
+const plan: NewSessionPlan = { folder: "~/code/agent-switch", gitState: "main · clean", worktree: false, tool: "claude", model: "Opus 5.5 · last used here", thinking: "High", where: "terminal", remembered: true };
 const facts = (over: Partial<NewSessionFacts> = {}): NewSessionFacts => ({
   terminalApp: "Terminal.app",
   hosting: "persistent",
@@ -23,6 +23,20 @@ describe("New session (spec §8.1)", () => {
     expect(screen.getByRole("radio", { name: /Your terminal/ }).getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByText(/Start in Terminal.app/));
     expect(onStart).toHaveBeenCalledWith(plan);
+  });
+
+  it("says 'Remembered for this project' only when something was remembered", () => {
+    render(<NewSessionDialog initial={{ ...plan, model: "opus", remembered: false }} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    expect(screen.queryByText("Remembered for this project")).toBeNull();
+    expect(screen.queryByText(/last used here/)).toBeNull();
+  });
+
+  it("another tool starts on its own default model, not the one remembered for the first", () => {
+    const onStart = vi.fn();
+    render(<NewSessionDialog initial={{ ...plan, model: "opus" }} facts={facts()} onStart={onStart} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+    fireEvent.click(screen.getByText(/Start in Terminal.app/));
+    expect(onStart.mock.calls[0][0].model).toBe("");
   });
 
   it("hosting: the primary says 'Start here', and without tmux the card says it ends with the app", () => {

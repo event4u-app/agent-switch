@@ -150,7 +150,7 @@ export function makeData(o: { theme: string; accent: Accent; health?: string; aw
   },
   remote: { remoteControl: [], ssh: false },
   newSession: {
-    initial: { folder: "~/code/agent-switch", gitState: "main · clean", worktree: false, tool: "claude", model: "Opus 5.5", thinking: "High", where: "terminal" },
+    initial: { folder: "~/code/agent-switch", gitState: "main · clean", worktree: false, tool: "claude", model: "Opus 5.5", thinking: "High", where: "terminal", remembered: true },
     facts: { terminalApp: "Terminal.app", hosting: "persistent", thinkingLevels: { claude: ["Low", "Medium", "High", "Max"], codex: ["low", "medium", "high"], antigravity: ["default"] }, account: { name: "work", color: "teal", reason: "most room in pool “day”", limits: LIMITS[0], why: ["Folder rule: ~/code/agent-switch → pool day", "work has the most room in day"], paceText: "At today's pace: about 3h of Opus · High before the 5h window is full" }, command: "agent-switch run claude --model opus --effort high", nowMs: NOW },
   },
   decision: () => ({

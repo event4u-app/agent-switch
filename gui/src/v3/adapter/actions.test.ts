@@ -113,6 +113,32 @@ describe("dispatchV3", () => {
     expect(d.open).toHaveBeenCalledWith({ kind: "start", cwd: "/r", tool: "claude" });
   });
 
+  it("start: the model, thinking and new worktree shown in the dialog reach the session, hosted or in the terminal", async () => {
+    const d = deps();
+    const plan = { folder: "/r", gitState: null, worktree: true, tool: "claude" as const, model: "opus", thinking: "max", where: "hosted" as const };
+    await dispatchV3({ type: "start", plan }, d);
+    expect(d.ipc.hostStart).toHaveBeenCalledWith("claude", "/r", undefined, { model: "opus", effort: "max", worktree: true });
+    dispatchV3({ type: "start", plan: { ...plan, where: "terminal", account: "side" } }, d);
+    expect(d.open).toHaveBeenCalledWith({ kind: "start", cwd: "/r", tool: "claude", accountId: accountId("claude", "side"), choice: { model: "opus", effort: "max", worktree: true } });
+  });
+
+  it("start: a thinking level the tool does not have is not sent; Antigravity gets no model", async () => {
+    const d = deps();
+    const plan = { folder: "/r", gitState: null, worktree: false, tool: "antigravity" as const, model: "opus", thinking: "high", where: "hosted" as const };
+    await dispatchV3({ type: "start", plan }, d);
+    expect(d.ipc.hostStart).toHaveBeenCalledWith("antigravity", "/r");
+    await dispatchV3({ type: "start", plan: { ...plan, tool: "codex", thinking: "max" } }, d);
+    expect(d.ipc.hostStart).toHaveBeenLastCalledWith("codex", "/r", undefined, { model: "opus" });
+  });
+
+  it("start: the choice is remembered for the folder", async () => {
+    const d = deps();
+    const rememberStart = vi.fn();
+    const plan = { folder: "/r", gitState: null, worktree: false, tool: "claude" as const, model: "opus", thinking: "high", where: "terminal" as const };
+    dispatchV3({ type: "start", plan }, { ...d, rememberStart });
+    expect(rememberStart).toHaveBeenCalledWith(plan);
+  });
+
   it("start with an account chosen in the dialog: that account starts, hosted or in the terminal", async () => {
     const d = deps();
     const plan = { folder: "/r", gitState: null, worktree: false, tool: "claude" as const, model: "", thinking: "", where: "hosted" as const, account: "side" };

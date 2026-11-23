@@ -17,6 +17,8 @@ import {
   setAutoUpdateCheckFlag,
   getUpdateNotifiedVersion,
   setUpdateNotifiedVersion,
+  getStartChoice,
+  setStartChoice,
 } from "./settings-store.js";
 
 const KEY = "agent-switch-refresh-interval-min";
@@ -132,5 +134,26 @@ describe("getShareGlobal / setShareGlobalFlag", () => {
     expect(getShareGlobal()).toBe(false);
     setShareGlobalFlag(true);
     expect(getShareGlobal()).toBe(true);
+  });
+});
+
+describe("start choice per project", () => {
+  it("nothing remembered for a folder never started in", () => {
+    expect(getStartChoice("/r")).toBeNull();
+  });
+
+  it("remembers the last tool, model, thinking and place per folder", () => {
+    setStartChoice("/r", { tool: "codex", model: "gpt-5", thinking: "medium", where: "hosted" });
+    setStartChoice("/other", { tool: "claude", model: "opus", thinking: "max", where: "terminal" });
+    setStartChoice("/r", { tool: "claude", model: "sonnet", thinking: "low", where: "terminal" });
+    expect(getStartChoice("/r")).toEqual({ tool: "claude", model: "sonnet", thinking: "low", where: "terminal" });
+    expect(getStartChoice("/other")).toEqual({ tool: "claude", model: "opus", thinking: "max", where: "terminal" });
+  });
+
+  it("an unreadable or foreign value reads as nothing remembered", () => {
+    localStorage.setItem("agent-switch-start-choice", "{nope");
+    expect(getStartChoice("/r")).toBeNull();
+    localStorage.setItem("agent-switch-start-choice", JSON.stringify({ "/r": { tool: "vim", model: 1, where: "moon" } }));
+    expect(getStartChoice("/r")).toBeNull();
   });
 });

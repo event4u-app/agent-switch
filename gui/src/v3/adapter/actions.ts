@@ -5,15 +5,15 @@
 import type { SessionRow } from "../../transforms.js";
 import { accountId, accountIdFromMember } from "../../vm/build.js";
 import { splitAccountId, type Actions } from "../../vm/actions.js";
-import { sessionArgs, type SwitchRequestRow } from "../../ipc.js";
+import { sessionArgs, type StartChoice, type SwitchRequestRow } from "../../ipc.js";
 import { requestKind, requestsForMoves } from "../../vm/switch-requests.js";
 import type { Overlay, TerminalRun, Toast } from "../../vm/store.js";
 import type { ProviderId } from "../../transforms.js";
 import type { NeedItem } from "../needs.js";
 import type { Appearance } from "../themes/resolve.js";
 import type { SessionMenuItem, V3Action } from "../window.js";
-import type { MoveHow, SheetMove } from "../dialogs.js";
-import { menuFor, NEW_CHAT, nextStep, sessionKey } from "./data.js";
+import type { MoveHow, NewSessionPlan, SheetMove } from "../dialogs.js";
+import { menuFor, NEW_CHAT, nextStep, sessionKey, startChoice } from "./data.js";
 import { parsePr } from "./feeds.js";
 /** The CLI calls the dispatcher makes (a subset of `ipc.ts`, injectable for tests). */
 export interface DispatchIpc {
@@ -22,7 +22,7 @@ export interface DispatchIpc {
   needsSeen(): Promise<void>;
   /** Allow once or deny an approval through the inbox of the chat that holds it. */
   needsAnswer(key: string, approvalId: string, decision: "allow" | "deny"): Promise<void>;
-  hostStart(provider: ProviderId, cwd: string, profile?: string): Promise<void>;
+  hostStart(provider: ProviderId, cwd: string, profile?: string, choice?: StartChoice): Promise<void>;
   hostEnd(key: string): Promise<void>;
   hostRespawn(key: string, change: { model?: string; effort?: string }): Promise<void>;
   setLibraryFlag(key: string, flag: "pin" | "archive", on: boolean): Promise<void>;
@@ -73,6 +73,8 @@ export interface DispatchDeps {
   chatOf?: (key: string) => { setModel: (m: string) => void; send?: (text: string) => void; approve?: (id: string, always: boolean) => void; deny?: (id: string) => void } | null;
   /** The session bar's [Terminal | Chat] switch. */
   switchView?: (key: string, to: "terminal" | "chat") => void;
+  /** Keep a New session choice as its folder's prefill. */
+  rememberStart?: (plan: NewSessionPlan) => void;
 }
 /** Claude's `--model` aliases. */
 const vmSessionId = (key: string) => {
@@ -252,8 +254,11 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       return run(deps, "Later", Promise.all(deps.needs().map((n) => deps.ipc.needsLater(n.id))));
     case "start": {
       const p = a.plan;
-      if (p.where === "hosted") return run(deps, "Start", p.account ? deps.ipc.hostStart(p.tool, p.folder, p.account) : deps.ipc.hostStart(p.tool, p.folder));
-      return deps.open({ kind: "start", cwd: p.folder, tool: p.tool, ...(p.account ? { accountId: accountId(p.tool, p.account) } : {}) });
+      deps.rememberStart?.(p);
+      const choice = startChoice(p);
+      const chosen = Object.keys(choice).length > 0;
+      if (p.where === "hosted") return run(deps, "Start", chosen ? deps.ipc.hostStart(p.tool, p.folder, p.account, choice) : p.account ? deps.ipc.hostStart(p.tool, p.folder, p.account) : deps.ipc.hostStart(p.tool, p.folder));
+      return deps.open({ kind: "start", cwd: p.folder, tool: p.tool, ...(p.account ? { accountId: accountId(p.tool, p.account) } : {}), ...(chosen ? { choice } : {}) });
     }
     case "choose-account":
       return deps.open({ kind: "start" });

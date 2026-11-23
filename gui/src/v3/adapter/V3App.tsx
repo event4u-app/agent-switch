@@ -13,7 +13,7 @@ import { PoolsSection } from "../../redesign/screens/pools-panel.js";
 import { UsageHistory, useUsageHistory } from "../../redesign/screens/usage-history.js";
 import { openExternal } from "../../redesign/screens/tools.js";
 import { appRequest, useTrayRequests } from "../../redesign/tray/bridge.js";
-import { getFocusTerminal, getLimitAutoOpen, setFocusTerminalFlag, setNotifLastRead } from "../../settings-store.js";
+import { getFocusTerminal, getLimitAutoOpen, getStartChoice, setFocusTerminalFlag, setNotifLastRead, setStartChoice } from "../../settings-store.js";
 import { AcRoot } from "../../ui/AcRoot.js";
 import { Toaster } from "../../ui/Toaster.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
@@ -29,7 +29,7 @@ import { localLayout } from "../layout.js";
 import { KEYS_STORAGE, withRebinds } from "../keys.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
-import { chatStart, sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
+import { chatStart, initialPlan, sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
 import { SessionBody, ToolsSlot, settingsSection } from "./slots.js";
 import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
@@ -159,20 +159,22 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
 
   const rows = useMemo(() => [...(s.sessionRows ?? []), ...feeds.codexRows], [s.sessionRows, feeds.codexRows]);
   const lastFolder = rows.find((r) => r.cwd)?.cwd ?? "~";
-  const plan: NewSessionPlan = { folder: lastFolder, gitState: null, worktree: false, tool: "claude", model: "opus", thinking: "high", where: feeds.host?.mode === "persistent" ? "hosted" : "terminal" };
+  // Read again after each start, so the dialog opens on the choice just made.
+  const [startsMade, setStartsMade] = useState(0);
+  const plan: NewSessionPlan = useMemo(() => initialPlan(lastFolder, getStartChoice(lastFolder)), [lastFolder, startsMade]);
   const terminalApp = terminalAppFor(s.platform);
   const [route, setRoute] = useState<AdapterEnv["route"]>(null);
   useEffect(() => {
     if (lastFolder === "~") return;
     let alive = true;
     ipc
-      .resolveDir("claude", lastFolder)
+      .resolveDir(plan.tool, lastFolder)
       .then((r) => alive && setRoute({ profile: r.profile, why: r.why ?? [], ...(r.blocked ? { blocked: r.blocked } : {}), ...(r.ask ? { ask: r.ask } : {}) }))
       .catch(() => alive && setRoute(null));
     return () => {
       alive = false;
     };
-  }, [lastFolder]);
+  }, [lastFolder, plan.tool]);
 
   const byKeyRef = useRef(new Map<string, SessionRow>());
   const titleOf = (key: string) => byKeyRef.current.get(key)?.summary ?? key.split("/")[1] ?? "A session";
@@ -239,6 +241,10 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     prompt: setPrompt,
     newChat,
     openTab,
+    rememberStart: (p) => {
+      setStartChoice(p.folder, { tool: p.tool, model: p.model, thinking: p.thinking, where: p.where });
+      setStartsMade((n) => n + 1);
+    },
     chatOf: (key) => {
       const tab = chats.tabOf(key);
       return tab ? (chats.states.get(tab) ?? null) : null;
