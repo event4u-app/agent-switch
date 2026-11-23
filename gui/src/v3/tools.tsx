@@ -71,6 +71,11 @@ export function ToolsPage({ rows, checking, on, below }: { rows: ToolRowView[]; 
   );
 }
 
+/** The whole Needs-you queue: the CLI's items, then one update per outdated tool. The one count the window and the tray show (5.3). Pure. */
+export function allNeeds(d: { needs: readonly NeedItem[]; tools: readonly ToolEntry[]; nowMs: number }): NeedItem[] {
+  return [...d.needs, ...updateNeeds(d.tools, new Date(d.nowMs).toISOString())];
+}
+
 /** One "update" item per installed tool behind its latest version; dismissing with Later holds until the next version. Pure. */
 export function updateNeeds(tools: readonly ToolEntry[], since: string): NeedItem[] {
   return tools

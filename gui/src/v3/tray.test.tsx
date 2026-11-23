@@ -3,6 +3,9 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { V3Tray, trayTools } from "./tray.js";
 import type { RowSession } from "./sessions.js";
 import type { LimitAccount } from "./limits.js";
+import { allNeeds } from "./tools.js";
+import { V3Window } from "./window.js";
+import { data, slots } from "./window-fixture.js";
 
 afterEach(cleanup);
 const s = (key: string, over: Partial<RowSession> = {}): RowSession => ({ key, title: `session ${key}`, state: "idle", account: { name: "work", nearLimit: false }, branch: null, pr: null, children: [], needsYou: false, ...over });
@@ -69,6 +72,25 @@ describe("tray (spec §10.7)", () => {
     expect(open.className).not.toMatch(/\bborder\b/);
     fireEvent.click(open);
     expect(handlers.open).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("one Needs-you count for window and tray (5.3)", () => {
+  const count = (root: HTMLElement) => within(root).getByText("Needs you").nextElementSibling!.textContent;
+
+  it("the queue is the CLI's items plus one update per outdated tool, for both surfaces", () => {
+    const d = data();
+    expect(allNeeds(d).map((n) => n.id)).toEqual(["l", "update:codex"]);
+  });
+
+  it("the window and the tray show the same number for the same data", () => {
+    const d = data();
+    const w = render(<V3Window data={d} slots={slots} act={vi.fn()} />);
+    const inWindow = count(w.container.querySelector("section[aria-label='Needs you']")!);
+    cleanup();
+    const t = render(<V3Tray nowMs={d.nowMs} needs={allNeeds(d)} away={d.away} sessions={d.sessions} accounts={d.limits} on={on()} />);
+    expect(count(t.container.querySelector("section[aria-label='Needs you']")!)).toBe(inWindow);
+    expect(inWindow).toBe("2");
   });
 });
 
