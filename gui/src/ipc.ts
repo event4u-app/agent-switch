@@ -69,6 +69,7 @@ const TRAY_READ_SCOPES: readonly [string, RegExp][] = [
   ["as-read-host", /^host list --json$/],
   ["as-read-switch-requests", /^switch list --all --json$/],
   ["as-read-limits", /^limits --json$/],
+  ["as-read-plain-start", /^dir --provider (claude|codex) --plain --json$/],
 ];
 
 /** The tray scope name for `args`, or null when the tray may not run it. */

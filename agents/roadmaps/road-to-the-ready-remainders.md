@@ -93,10 +93,12 @@ saved.
       (seen red first), GUI `screens.test.tsx` "strategy ask" + `settings.test.tsx`; cli.mdx "Which account a start uses".
       <!-- from: road-to-session-orchestration P2.4 -->
       <!-- adapted: pool placement (P2.5) left out; decided by the owner 2026-11-08 in the source file (pool variant confirmed, narrowed) -->
-- [ ] **2.4 The reason for a pick on every surface.** The tray and project
+- [x] **2.4 The reason for a pick on every surface.** The tray and project
       bindings show why an account was picked, as `dir --json` and the start
       dialog already do. verify: tray and binding view tests assert the reason
       text.
+      done: v3 tray "Next start → … : reason" + `→ next` from the CLI's pick (`dir --plain --json`, new tray scope);
+      binding rows "Why: …"; `gui/src/v3/tray.test.tsx`, `accounts.test.tsx` bindings, `tray-calls.test.ts` (seen red first).
       <!-- from: road-to-session-orchestration P6.8 -->
 
 ## Phase 3 — Readouts and notices that tell the truth

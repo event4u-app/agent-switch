@@ -413,6 +413,22 @@ describe("Projects & pools — bindings", () => {
     expect(bindingTarget("", "claude")).toBeNull();
   });
 
+  it("each active folder binding says why its account is picked; a paused one is not asked", async () => {
+    const pool = { ...rule, id: "claude:/x/p", match: { kind: "folder" as const, value: "/x/p" }, target: { kind: "pool" as const, pool: "clients" } };
+    const paused = { ...rule, id: "claude:/x/b", match: { kind: "folder" as const, value: "/x/b" }, enabled: false };
+    const explainFolder = vi.fn(async (dir: string) =>
+      dir === "/x/p"
+        ? { profile: "claude/side", configDir: null, why: ["Rule: folder /x/p → pool clients", "Picked claude/side: 70% of its 5h window left"] }
+        : { profile: "claude/side", configDir: null, why: [`Rule: folder ${dir} → claude/side`] },
+    );
+    mount(fixture({ sessions: [], rules: [rule, pool, paused] }), { tab: "projects", act: { explainFolder } });
+    const picked = await screen.findByText("Why: Picked claude/side: 70% of its 5h window left");
+    expect(picked.getAttribute("title")).toBe("Rule: folder /x/p → pool clients\nPicked claude/side: 70% of its 5h window left");
+    expect(await screen.findByText("Why: Rule: folder /x/a → claude/side")).toBeTruthy();
+    expect(explainFolder).toHaveBeenCalledWith("/x/a", "claude");
+    expect(explainFolder).not.toHaveBeenCalledWith("/x/b", "claude");
+  });
+
   it("removes a binding from its row menu after a confirm", async () => {
     const unmapFolder = vi.fn(async () => {});
     mount(fixture({ rules: [rule] }), { tab: "projects", act: { unmapFolder } });

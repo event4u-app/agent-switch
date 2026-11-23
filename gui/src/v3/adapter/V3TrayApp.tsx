@@ -2,7 +2,7 @@
  *  scopes (capabilities/tray.json), so it reads the queue and the hosted
  *  sessions and nothing else; every action opens or drives the main window. */
 
-import { useEffect, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 import { LangKeyed } from "../../i18n/LangKeyed.js";
@@ -15,7 +15,7 @@ import { AcRoot } from "../../ui/AcRoot.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
 import { ASProvider, useAS } from "../../vm/store.js";
 import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
-import { V3Tray } from "../tray.js";
+import { V3Tray, type TrayTool } from "../tray.js";
 import { toV3Data } from "./data.js";
 import { useV3Feeds, type FeedDeps } from "./useFeeds.js";
 import { useTheme } from "./V3App.js";
@@ -34,10 +34,33 @@ export const TRAY_DEPS: FeedDeps = {
   codexRows: notInTray,
 };
 
+type Picks = Partial<Record<TrayTool, { name: string | null; why: string[] }>>;
+
+/** Where a plain start of each tool goes and why, read again whenever the tray opens. */
+export async function readPicks(resolve: (p: TrayTool) => Promise<ipc.DirResolution> = ipc.resolvePlainStart): Promise<Picks> {
+  const tools: TrayTool[] = ["claude", "codex"];
+  const out: Picks = {};
+  await Promise.all(
+    tools.map((t) =>
+      resolve(t).then(
+        (r) => void (out[t] = { name: r.profile ? r.profile.slice(r.profile.indexOf("/") + 1) : null, why: r.why ?? [] }),
+        () => undefined,
+      ),
+    ),
+  );
+  return out;
+}
+
 function V3TrayFrame() {
   const s = useAS();
   const ref = useFitWindow();
-  const { feeds, refresh } = useV3Feeds(TRAY_DEPS);
+  const { feeds, refresh: refreshFeeds } = useV3Feeds(TRAY_DEPS);
+  const [picks, setPicks] = useState<Picks>({});
+  const refresh = () => {
+    refreshFeeds();
+    void readPicks().then(setPicks);
+  };
+  useEffect(() => void readPicks().then(setPicks), []);
   // Opening the tray reads the queue at once: an open question is on top when it shows.
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -89,6 +112,7 @@ function V3TrayFrame() {
         ready={s.loaded ? s.readiness === "ready" : undefined}
         lastActiveOf={(k) => d.table.find((t) => t.key === k)?.lastActiveMs ?? null}
         appFor={app}
+        picks={picks}
         on={{ verb: main, moreNeeds: main, away: main, session: main, moreSessions: main, account: main, signIn: main, start: () => void forwardToMain({ kind: "start" }), open: main }}
       />
     </div>

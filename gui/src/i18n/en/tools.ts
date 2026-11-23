@@ -238,6 +238,7 @@ export const tools = {
   "tools.bindings.poolRow": "pool {name}",
   "tools.bindings.toolOnly": "({tool} only)",
   "tools.bindings.hitsTitle": "Matches in the last 7 days",
+  "tools.bindings.rowWhy": "Why: {why}",
   "tools.bindings.onTitle": "On — pause to keep the binding but stop using it",
   "tools.bindings.pausedTitle": "Paused — starts here ignore it until you turn it back on",
   "tools.bindings.switchLabel": "Binding {path}",

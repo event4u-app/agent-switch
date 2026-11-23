@@ -47,6 +47,9 @@ const TRAY_CALLS: string[][] = [
   ["host", "list", "--json"],
   // TrayLifecycle: the stored readouts, every minute and when the tray opens.
   ["limits", "--json"],
+  // The v3 tray's "Next start" line: where a plain start goes, and why.
+  ["dir", "--provider", "claude", "--plain", "--json"],
+  ["dir", "--provider", "codex", "--plain", "--json"],
 ];
 
 describe("tray capability: read-only agent-switch calls only", () => {
@@ -75,6 +78,8 @@ describe("tray capability: read-only agent-switch calls only", () => {
       ["status", "--provider", "claude", "--evil", "--json"],
       ["status", "--provider", "claude", "a b", "--json"],
       ["sessions", "--recent", "x", "--json"],
+      ["dir", "--provider", "claude", "--guard"],
+      ["dir", "--provider", "claude", "--json"],
     ]) {
       expect(trayScope(args), args.join(" ")).toBeNull();
     }

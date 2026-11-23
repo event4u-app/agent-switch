@@ -49,6 +49,20 @@ function useExplain(dir: string, tool: Tool): Explain {
   return out;
 }
 
+/** Why a binding's folder starts on the account it does — the CLI's last reason,
+ *  every reason on hover. Only an active folder binding with a full path is
+ *  asked: a paused one does not decide, and the CLI cannot find a `~` path. */
+function BindingWhy({ rule }: { rule: Binding }) {
+  const asks = rule.enabled && rule.match.kind === "folder" && /^(\/|[A-Za-z]:[\\/])/.test(rule.match.value);
+  const ex = useExplain(asks ? rule.match.value : "", rule.tool === "any" ? "claude" : rule.tool);
+  if (ex.state !== "done" || ex.res.why.length === 0) return null;
+  return (
+    <p className="col-span-full min-w-0 truncate text-[11px] text-ac-muted md:col-start-2" title={ex.res.why.join("\n")}>
+      {t("tools.bindings.rowWhy", { why: ex.res.why[ex.res.why.length - 1] })}
+    </p>
+  );
+}
+
 /** Tools a folder binding can be made for (Gemini has no backend). */
 export const BINDING_TOOLS: Tool[] = ["claude", "codex"];
 
@@ -369,6 +383,7 @@ export function ProjectsPools() {
                     </span>
                     <BindingMenu rule={r} onEdit={() => setEditing(r.id)} />
                   </span>
+                  <BindingWhy rule={r} />
                 </div>
               );
             })}

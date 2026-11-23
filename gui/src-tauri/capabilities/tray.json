@@ -194,6 +194,19 @@
             "limits",
             "--json"
           ]
+        },
+        {
+          "name": "as-read-plain-start",
+          "cmd": "agent-switch",
+          "args": [
+            "dir",
+            "--provider",
+            {
+              "validator": "(claude|codex)"
+            },
+            "--plain",
+            "--json"
+          ]
         }
       ]
     }

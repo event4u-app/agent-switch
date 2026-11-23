@@ -240,6 +240,7 @@ export const tools: { readonly [K in keyof typeof en]: string } = {
   "tools.bindings.poolRow": "Pool {name}",
   "tools.bindings.toolOnly": "(nur {tool})",
   "tools.bindings.hitsTitle": "Treffer in den letzten 7 Tagen",
+  "tools.bindings.rowWhy": "Warum: {why}",
   "tools.bindings.onTitle": "An – pausieren behält die Ordnerregel, nutzt sie aber nicht",
   "tools.bindings.pausedTitle": "Pausiert – Starts hier ignorieren sie, bis du sie wieder einschaltest",
   "tools.bindings.switchLabel": "Ordnerregel {path}",
