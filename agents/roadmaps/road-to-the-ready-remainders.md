@@ -235,7 +235,7 @@ saved.
       failure, and the next CI runs green on `gui macos-latest` without a rerun.
       done: cause — the window's "open the first live session" effect set the tab outright; when a click landed between the commit that brought the sessions and that effect, the effect overrode the Library tab (the page never came back, hence "Unable to find" / timeout, not slowness). It now keeps a pick already made. Red-then-green: `v3/design-gap.test.tsx` › "a page picked in the commit that brings the first sessions stays picked"; the reach test asserts synchronously, its 5 s wait and 15 s budget removed; 20/20 filtered runs locally. The CI half is seen on the next push.
       <!-- from: CI flake seen 2026-11-08, owner chose to track it here -->
-- [ ] **6.5 Fix the flaky "a finished program … last screen stays readable" test.**
+- [x] **6.5 Fix the flaky "a finished program … last screen stays readable" test.**
       `tests/tmux-host.test.ts` › "a finished program is reported as not alive
       and its last screen stays readable" failed on `ubuntu-latest · node 20`
       (PR #195, run 43421470798, job 131872269586) with `host.capture()`
@@ -245,6 +245,7 @@ saved.
       sleep as the fix).
       verify: the test filtered and run 20 times in a row on Linux without a
       failure, and the next CI runs green on `ubuntu-latest · node 20` without a rerun.
+      done: cause — `remain-on-exit` was set on the window after `new-session` returned; a program that ended first took its window (and the only session, so the server) with it, and `capture-pane` then found nothing (`''`). The option is now set server-wide in the same tmux call, before the window exists. Red-then-green: `tests/tmux-host.test.ts` › "a program that ends before tmux is told to keep its window still leaves its last screen" (a stand-in tmux holds the late option back until the program ended; red 3/3 before). 20/20 filtered runs of each test on macOS (tmux 3.7b); the Linux half is seen on the next CI push.
       <!-- from: CI flake seen 2026-11-13, tracked like 6.4 -->
 - [x] **6.6 Real ARIA tabs in the v3 tab strip.** axe reports `nested-interactive`
       on `gui/src/v3/workbench.tsx`: each `role="tab"` holds its close button, and
