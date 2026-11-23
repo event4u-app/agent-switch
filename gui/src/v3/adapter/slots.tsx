@@ -24,7 +24,7 @@ import { ExternalBody, HostedTerminal } from "../workbench.js";
 import { useTimeline, type TimelineState } from "./useTimeline.js";
 import { worktreeOf } from "./data.js";
 import { modelLabel } from "../model-label.js";
-import { AgentConfigCard, INSTALLABLE_TOOLS, NoAgentConfigCard, agentConfigMissing, forgetFailedReleaseLookups, isolatedLabel, sortTools, useAgentConfigLatest } from "../../redesign/screens/tools.js";
+import { AgentConfigCard, INSTALLABLE_TOOLS, copyCommand, NoAgentConfigCard, agentConfigMissing, forgetFailedReleaseLookups, isolatedLabel, sortTools, useAgentConfigLatest } from "../../redesign/screens/tools.js";
 import { useAS } from "../../vm/store.js";
 import { toolStatus } from "../../vm/rules.js";
 import { ToolsPage, type ToolRowView } from "../tools.js";
@@ -130,6 +130,9 @@ export function ToolsSlot() {
     version: t.present ? t.version : null,
     status: toolStatus(t),
     latest: t.latest,
+    // Only tools with a verified `tooling install|upgrade` get a button (2.11 rule).
+    installable: INSTALLABLE_TOOLS.has(t.id),
+    how: INSTALLABLE_TOOLS.has(t.id) ? null : copyCommand(t),
   }));
   const terminal = (toolId: string, action: "install" | "update") => INSTALLABLE_TOOLS.has(toolId) && s.open({ kind: "terminal", toolId, action });
   return (
