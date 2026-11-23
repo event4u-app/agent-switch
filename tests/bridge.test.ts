@@ -9,7 +9,8 @@ import type { ChildProcess } from "node:child_process";
 
 import { ClaudeBridge, claudeArgs, type BridgeOutput } from "../src/bridge/claude-bridge.js";
 import { AppServer, CodexBridge } from "../src/bridge/codex-bridge.js";
-import { hostedTarget, page } from "../src/commands/bridge.js";
+import { drawsRow, hostedTarget, page } from "../src/commands/bridge.js";
+import { fromClaudeText } from "../src/timeline/claude.js";
 
 const FIX = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../tests/fixtures/timeline");
 const STREAM = fs.readFileSync(path.join(FIX, "claude-stream-2.1.316.jsonl"), "utf8").split("\n").filter(Boolean);
@@ -241,14 +242,61 @@ test("codex bridge: history from thread/read, a turn with an approval, the queue
   assert.deepEqual(out.at(-1), { bridge: "error", message: "no open approval nope" });
 });
 
-test("timeline paging: newest last, before an index", () => {
-  const ev = Array.from({ length: 450 }, (_, i) => ({ t: "unknown" as const, kind: String(i) }));
+test("timeline paging: newest last, before an index, counted in drawn rows", () => {
+  const ev = Array.from({ length: 450 }, (_, i) => ({ t: "message" as const, id: String(i), role: "assistant" as const, text: String(i), images: 0 }));
   const last = page(ev);
-  assert.deepEqual([last.from, last.events.length, last.total, (last.events[0] as { kind: string }).kind], [250, 200, 450, "250"]);
+  assert.deepEqual([last.from, last.events.length, last.total, (last.events[0] as { id: string }).id], [250, 200, 450, "250"]);
   const prev = page(ev, 200, last.from);
   assert.deepEqual([prev.from, prev.events.length], [50, 200]);
   assert.deepEqual(page(ev, 200, 30).events.length, 30);
   assert.deepEqual(page([], 10).events, []);
+  assert.deepEqual(page(ev, 10, undefined, 440).events.length, 10, "--from: everything from that index on");
+});
+
+test("timeline paging: bookkeeping never spends the budget, and the page says what came before", () => {
+  const ev = [
+    { t: "turn" as const, id: "u1", at: null },
+    { t: "message" as const, id: "u1", role: "user" as const, text: "first", images: 0 },
+    ...Array.from({ length: 300 }, () => ({ t: "unknown" as const, kind: "attachment" })),
+    { t: "thinking" as const, id: "th" },
+    { t: "tool.started" as const, id: "a1", name: "Agent", summary: "", input: {}, parentToolId: null },
+    { t: "subagent.started" as const, id: "a1", type: "x", description: "d" },
+    { t: "tool.finished" as const, id: "a1", ok: true, summary: "" },
+    { t: "turn" as const, id: "u2", at: null },
+    { t: "message" as const, id: "u2", role: "user" as const, text: "second", images: 0 },
+    { t: "message" as const, id: "m2", role: "assistant" as const, text: "ok", images: 0 },
+  ];
+  const p = page(ev, 2);
+  assert.deepEqual(p.events.map((e) => e.t), ["message", "message"], "two rows: the newest prompt and its answer");
+  assert.equal(p.total, 8, "indices count only what the chat draws or folds");
+  assert.equal(p.earlierPrompts, 1);
+  assert.deepEqual(p.hidden, { attachment: 300, thinking: 1 });
+  const before = page(ev, 2, p.from);
+  assert.deepEqual(before.events.map((e) => e.t), ["message", "tool.started", "subagent.started", "tool.finished", "turn"], "the Agent tool is one row (its subagent), as the chat draws it");
+  assert.equal(before.earlierPrompts, 0);
+});
+
+test("timeline paging: a long real-shaped conversation is reachable page by page", () => {
+  // The fixture transcript 60 times over, ids made unique: 120 prompts, hundreds of tool calls, thousands of bookkeeping lines.
+  const lines = fs.readFileSync(path.join(FIX, "claude-2.1.316.jsonl"), "utf8").split("\n").filter(Boolean);
+  const text = Array.from({ length: 60 }, (_, n) => lines.map((l) => l.replace(/"(uuid|parentUuid|id|tool_use_id|promptId)": ?"([^"]+)"/g, `"$1": "$2-${n}"`)).join("\n")).join("\n");
+  const all = fromClaudeText(text).events;
+  const prompts = all.filter((e) => e.t === "message" && e.role === "user").length;
+  assert.equal(prompts, 120);
+  assert.ok(all.filter((e) => e.t === "tool.started").length >= 300 && all.filter((e) => e.t === "unknown").length > 2000);
+  const newest = page(all);
+  assert.equal(newest.events.filter(drawsRow).length, 200, "a full page is 200 drawn rows");
+  assert.ok(!newest.events.some((e) => e.t === "unknown" || e.t === "thinking"));
+  const seen: string[] = [];
+  let p = newest;
+  for (;;) {
+    seen.unshift(...p.events.filter((e) => e.t === "message" && e.role === "user").map((e) => (e as { id: string }).id));
+    if (p.from === 0) break;
+    assert.equal(p.earlierPrompts, all.filter((e) => e.t === "message" && e.role === "user").length - seen.length);
+    p = page(all, 200, p.from);
+  }
+  assert.equal(new Set(seen).size, 120, "every prompt is on some page, none twice");
+  assert.deepEqual(page(all, 200, undefined, newest.from).events, newest.events);
 });
 
 test("hostedTarget: a hosted Claude session from the host registry, nothing else", () => {
