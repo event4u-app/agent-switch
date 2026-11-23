@@ -94,6 +94,8 @@ saved.
       end to end in the CLI reference.
       done: `strategy default|ask` (`src/dir-resolve.ts`, `src/unbound-ask.ts`, D10); `tests/unbound-start.test.ts`
       (seen red first), GUI `screens.test.tsx` "strategy ask" + `settings.test.tsx`; cli.mdx "Which account a start uses".
+      v3 New session asks too (no Start until a pick, the pick is started hosted or in the terminal): `v3/dialogs.test.tsx`
+      "strategy ask", `v3/adapter/actions.test.ts` "account chosen in the dialog", `v3/adapter/data.test.ts` "under strategy ask" (seen red first).
       <!-- from: road-to-session-orchestration P2.4 -->
       <!-- adapted: pool placement (P2.5) left out; decided by the owner 2026-11-08 in the source file (pool variant confirmed, narrowed) -->
 - [x] **2.4 The reason for a pick on every surface.** The tray and project

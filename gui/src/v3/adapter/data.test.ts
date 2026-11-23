@@ -332,6 +332,15 @@ describe("start dialog routing", () => {
     const unknown = toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/gone", why: ["gone has room"] } })).newSession.facts.account;
     expect([unknown.name, unknown.why]).toEqual(["work", []]);
   });
+
+  it("under strategy ask the candidates come through in the CLI's order, accounts of other tools and unknown names left out", () => {
+    const vm = vmWith([account("work", { isDefault: true }), account("side"), account("cx", { tool: "codex" })], []);
+    const facts = toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: ["Strategy ask"], ask: ["side", "gone", "work", "cx"] } })).newSession.facts;
+    expect(facts.ask?.map((a) => a.name)).toEqual(["side", "work"]);
+    expect(facts.command).not.toMatch(/\bwork\b/);
+    expect(toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: [] } })).newSession.facts.ask).toBeUndefined();
+    expect(toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: [], ask: ["work"] } })).newSession.facts.ask).toBeUndefined();
+  });
 });
 
 describe("worktreeOf", () => {

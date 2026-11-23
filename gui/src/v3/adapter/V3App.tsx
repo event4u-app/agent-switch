@@ -166,7 +166,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     let alive = true;
     ipc
       .resolveDir("claude", lastFolder)
-      .then((r) => alive && setRoute({ profile: r.profile, why: r.why ?? [], ...(r.blocked ? { blocked: r.blocked } : {}) }))
+      .then((r) => alive && setRoute({ profile: r.profile, why: r.why ?? [], ...(r.blocked ? { blocked: r.blocked } : {}), ...(r.ask ? { ask: r.ask } : {}) }))
       .catch(() => alive && setRoute(null));
     return () => {
       alive = false;

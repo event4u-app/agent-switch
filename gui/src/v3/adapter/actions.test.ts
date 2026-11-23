@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { SessionRow } from "../../transforms.js";
 import { emptyViewModel } from "../../vm/load.js";
+import { accountId } from "../../vm/build.js";
 import type { NeedItem } from "../needs.js";
 import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
 import type { V3Action } from "../window.js";
@@ -110,6 +111,15 @@ describe("dispatchV3", () => {
     expect(d.ipc.hostStart).toHaveBeenCalledWith("claude", "/r");
     dispatchV3({ type: "start", plan: { ...plan, where: "terminal" } }, d);
     expect(d.open).toHaveBeenCalledWith({ kind: "start", cwd: "/r", tool: "claude" });
+  });
+
+  it("start with an account chosen in the dialog: that account starts, hosted or in the terminal", async () => {
+    const d = deps();
+    const plan = { folder: "/r", gitState: null, worktree: false, tool: "claude" as const, model: "", thinking: "", where: "hosted" as const, account: "side" };
+    await dispatchV3({ type: "start", plan }, d);
+    expect(d.ipc.hostStart).toHaveBeenCalledWith("claude", "/r", "side");
+    dispatchV3({ type: "start", plan: { ...plan, where: "terminal" } }, d);
+    expect(d.open).toHaveBeenCalledWith({ kind: "start", cwd: "/r", tool: "claude", accountId: accountId("claude", "side") });
   });
 
   it("move: now rebinds, after the turn arms, a brief opens the session sheet", async () => {

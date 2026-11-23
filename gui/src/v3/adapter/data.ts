@@ -43,7 +43,7 @@ export interface AdapterEnv {
   /** Chats with no session row yet (a new chat before the poll sees it): drawn from these. */
   chatRows?: readonly SessionRow[];
   /** Where a plain start in the plan's folder would go and why (`dir --json`); null until read. */
-  route?: { profile: string | null; why: string[]; blocked?: string } | null;
+  route?: { profile: string | null; why: string[]; blocked?: string; ask?: string[] } | null;
 }
 
 export const THINKING_LEVELS: NewSessionFacts["thinkingLevels"] = {
@@ -404,6 +404,9 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
   const routed = routedName ? vm.accounts.find((a) => a.tool === env.plan.tool && a.name === routedName) : undefined;
   const defaultClaude = routed ?? vm.accounts.find((a) => a.tool === env.plan.tool && a.isDefault) ?? vm.accounts.find((a) => a.tool === env.plan.tool);
   const planLimits = defaultClaude ? limitAccount(defaultClaude, now) : null;
+  // Strategy ask: the CLI's fallback pick is for scripts; here the person chooses.
+  const askable = (env.route?.ask ?? []).flatMap((name) => vm.accounts.filter((a) => a.tool === env.plan.tool && a.name === name)).map((a) => ({ name: a.name, color: a.color }));
+  const ask = askable.length > 1 ? askable : undefined;
   const facts: NewSessionFacts = {
     terminalApp: env.terminalApp,
     hosting: feeds.host?.mode ?? "ephemeral",
@@ -417,7 +420,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       why: routed ? (env.route?.why ?? []) : [],
       paceText: null,
     },
-    command: startCommand(env.plan, defaultClaude?.name ?? null),
+    ...(ask ? { ask } : {}),
+    command: startCommand(env.plan, ask ? null : (defaultClaude?.name ?? null)),
     nowMs: now,
   };
 

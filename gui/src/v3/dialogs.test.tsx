@@ -46,6 +46,30 @@ describe("New session (spec §8.1)", () => {
     expect(screen.getByText("CLAUDE_CONFIG_DIR=… claude")).toBeTruthy();
   });
 
+  it("strategy ask: no account until one is picked, then the pick is the one started", () => {
+    const onStart = vi.fn();
+    const ask = [{ name: "work", color: "teal" as const }, { name: "side", color: "blue" as const }];
+    render(<NewSessionDialog initial={plan} facts={facts({ ask })} onStart={onStart} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    expect(screen.getByText("Ask me — choose an account")).toBeTruthy();
+    expect(screen.queryByText("Automatic →")).toBeNull();
+    const startBtn = screen.getByRole("button", { name: /Start in Terminal.app/ }) as HTMLButtonElement;
+    expect(startBtn.disabled).toBe(true);
+    fireEvent.click(startBtn);
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    expect(onStart).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("radio", { name: /side/ }));
+    expect(startBtn.disabled).toBe(false);
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    expect(onStart).toHaveBeenLastCalledWith({ ...plan, account: "side" });
+  });
+
+  it("without ask the account line stays automatic and Start is ready", () => {
+    render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    expect(screen.getByText("Automatic →")).toBeTruthy();
+    expect(screen.queryByText("Ask me — choose an account")).toBeNull();
+    expect((screen.getByRole("button", { name: /Start in Terminal.app/ }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("Esc closes", () => {
     const onClose = vi.fn();
     render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={onClose} onChooseAccount={vi.fn()} />);

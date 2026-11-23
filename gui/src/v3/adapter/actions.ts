@@ -252,8 +252,8 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       return run(deps, "Later", Promise.all(deps.needs().map((n) => deps.ipc.needsLater(n.id))));
     case "start": {
       const p = a.plan;
-      if (p.where === "hosted") return run(deps, "Start", deps.ipc.hostStart(p.tool, p.folder));
-      return deps.open({ kind: "start", cwd: p.folder, tool: p.tool });
+      if (p.where === "hosted") return run(deps, "Start", p.account ? deps.ipc.hostStart(p.tool, p.folder, p.account) : deps.ipc.hostStart(p.tool, p.folder));
+      return deps.open({ kind: "start", cwd: p.folder, tool: p.tool, ...(p.account ? { accountId: accountId(p.tool, p.account) } : {}) });
     }
     case "choose-account":
       return deps.open({ kind: "start" });
