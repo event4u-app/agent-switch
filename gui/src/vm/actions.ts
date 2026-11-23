@@ -14,7 +14,7 @@
 import * as ipc from "../ipc.js";
 import { clearDesktopNotifications, requestDesktopPermission, type DesktopPermission } from "../notifications.js";
 import type { ProfileLabel, ProviderId, ProviderSurface } from "../transforms.js";
-import { checkForUpdate, type UpdateCheck } from "../updates.js";
+import { checkForUpdate, withdrawnReason, type ReleaseInfo, type UpdateCheck } from "../updates.js";
 import { dropUsageSnapshot } from "../usage-cache.js";
 import { forceDoctorOnNextLoad, forceToolsOnNextLoad } from "./slow-cache.js";
 import { forceUsageFor, forceUsageOnNextLoad, restartUsageCountdown } from "./usage-loader.js";
@@ -55,6 +55,8 @@ export interface Actions {
   setSharedSetup?(enabled: boolean, source?: string): Promise<void>;
   setAutostart?(on: boolean): Promise<void>;
   setAccountDisabled?(accountId: string, disabled: boolean): Promise<void>;
+  /** A Claude account's own agent-config root (true) or the shared one. */
+  setAgentConfigRoot?(accountId: string, own: boolean): Promise<void>;
   installShellIntegration?(): Promise<void>;
   setProvider?(tool: ProviderId, surface: ProviderSurface, on: boolean): Promise<void>;
   linkProviderBinary?(tool: ProviderId, path: string): Promise<void>;
@@ -62,7 +64,10 @@ export interface Actions {
   clearNotifications?(): Promise<void>;
   requestNotifyPermission?(): Promise<DesktopPermission>;
   checkForUpdate?(): Promise<UpdateCheck>;
-  selfUpdate?(): Promise<ipc.SelfUpdateResult>;
+  /** Installs exactly `version` (the release that was checked). */
+  selfUpdate?(version: string): Promise<ipc.SelfUpdateResult>;
+  /** Why a release must not be installed, null when nothing withdraws it; throws when unknown. */
+  withdrawnReason?(release: ReleaseInfo): Promise<string | null>;
   uninstall?(): Promise<void>;
   quit?(): Promise<void>;
   /** Quit and start the app again on the installed version (after an update). */
@@ -117,6 +122,7 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
       }
     }),
     setAccountDisabled: thenReload((id: string, disabled: boolean) => ipc.setProfileDisabled(...splitAccountId(id), disabled)),
+    setAgentConfigRoot: thenReload((id: string, own: boolean) => ipc.setAgentConfigRoot(splitAccountId(id)[1], own)),
     redeemReset: thenReload((id: string) => ipc.redeemReset(...splitAccountId(id))),
     // Manual refresh: past the per-account cooldown, and the countdown restarts.
     refreshUsage: async () => {
@@ -200,7 +206,8 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
     }),
     requestNotifyPermission: () => requestDesktopPermission(),
     checkForUpdate: () => checkForUpdate(),
-    selfUpdate: () => ipc.selfUpdate(),
+    selfUpdate: (version: string) => ipc.selfUpdate(version),
+    withdrawnReason: (release) => withdrawnReason(release),
     uninstall: () => ipc.uninstall(),
     quit: () => ipc.quitApp(),
     restart: () => ipc.restartApp(),

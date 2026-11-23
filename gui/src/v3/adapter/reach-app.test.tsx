@@ -110,13 +110,10 @@ describe("V3App on fixture CLI output (spec §11)", () => {
   it("Library: one click on the stripe", async () => {
     await mount();
     click(screen.getByLabelText("Library"));
-    // The Library page reads its feed after the click; the macOS CI runner has needed
-    // just over the 1 s default (runs 41991687366 on dev/v3, 42012788370), never locally.
-    expect(await screen.findByText(/Pinned sessions are kept in the vault/, undefined, { timeout: 5000 })).toBeTruthy();
+    // The page opens in the click itself; nothing to wait for.
+    expect(screen.getByText(/Pinned sessions are kept in the vault/)).toBeTruthy();
     expect(clicks).toBe(1);
-    // The test's own budget must exceed the 5 s wait above plus mount(): at the 5 s
-    // default the test timed out first on the Windows runner (run 45126187774).
-  }, 15_000);
+  });
 
   it("Session sheet actions: session row, then ⋯", async () => {
     await mount();

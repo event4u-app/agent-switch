@@ -14,11 +14,13 @@ import {
   sharesDefaultLogin,
   readBinaryPath,
   readGuard,
+  readJson,
   readStrategy,
   setStrategy,
   setGuard,
 } from "../profiles.js";
 import { spawnSync } from "node:child_process";
+import * as path from "node:path";
 
 import { ProviderId, PROVIDER_IDS, provider, resolveBinary } from "../providers.js";
 import { readProtection } from "../protection.js";
@@ -37,9 +39,13 @@ import {
 } from "../pools.js";
 import { START_STRATEGIES, resolveForDir, type StartStrategy } from "../dir-resolve.js";
 import { appendPick, readPicks, PICKS_MAX_LINES } from "../picks.js";
+import { admissionRefusal } from "../start-admission.js";
+import { askLines, canAsk, parseChoice } from "../unbound-ask.js";
+import * as readline from "node:readline";
 import { GUARD_POLICIES, GUARD_REFUSED_EXIT, GuardPolicy, OVERRIDE_ENV, isGuardPolicy } from "../single-load.js";
-import { mappingRows, removeMapping, resolveMapping, setMapping, setPaused, normalizePath } from "../mappings.js";
-import { liveSessionPids } from "../api.js";
+import { mappingRows, normalizeRemoteKey, remoteRows, removeMapping, removeRemoteMapping, resolveMapping, setMapping, setPaused, setRemoteMapping, normalizePath } from "../mappings.js";
+import { liveSessionPids, readProfileCredential } from "../api.js";
+import { credentialPlan } from "../balance.js";
 import { cachedUsage, checkSingleLoad, launch, logActivity, parseMemberArg, syncClaudeProfile, tildePath } from "./shared.js";
 
 /** Profile names are validated by `profileDir`, which exits on a bad name —
@@ -48,24 +54,49 @@ function profileExistsSafe(providerId: ProviderId, name: string): boolean {
   return /^[A-Za-z0-9_-]+$/.test(name) && profileExists(providerId, name);
 }
 
+/** Claude's account per organization (email + org uuid); null where either is
+ *  unknown — an unknown org must not fold two accounts into one. */
+function accountKey(providerId: ProviderId, name: string): string | null {
+  if (providerId !== "claude") return null;
+  const a = readJson(path.join(configDir(providerId, name), ".claude.json"))?.oauthAccount;
+  const email = typeof a?.emailAddress === "string" ? a.emailAddress.toLowerCase() : null;
+  const org = typeof a?.organizationUuid === "string" && a.organizationUuid ? a.organizationUuid : null;
+  return email && org ? `${email}\u0000${org}` : null;
+}
+
 export function resolveDir(
   providerId: ProviderId,
   plain = false,
   cwd = process.cwd(),
   exclude: readonly string[] = [],
-): { name: string | null; why: string[]; blocked?: string; note?: string } {
-  const r = resolveForDir({
+): { name: string | null; why: string[]; blocked?: string; note?: string; ask?: string[]; identity?: string | null } {
+  // The account each candidate was judged on, so the start can be held to it.
+  const seen = new Map<string, string | null>();
+  const signedInAs = (n: string) => {
+    if (!seen.has(n)) seen.set(n, identity(providerId, n));
+    return seen.get(n) ?? null;
+  };
+  const plans = new Map<string, unknown>();
+  const planOf = (n: string) => {
+    if (!plans.has(n)) plans.set(n, profileExistsSafe(providerId, n) ? credentialPlan(readProfileCredential(configDir(providerId, n))) : undefined);
+    return plans.get(n);
+  };
+  const picked = resolveForDir({
     providerId,
     mapping: plain ? null : resolveMapping(cwd, providerId),
     names: listProfiles(providerId),
     threshold: (n) => readProtection(providerId, n).thresholdPct,
     active: activeFor(providerId),
     exists: (n) => profileExistsSafe(providerId, n),
-    signedIn: (n) => identity(providerId, n) !== null,
+    signedIn: (n) => signedInAs(n) !== null,
     // An excluded account is out for THIS start only — the caller just saw it
     // fail (a limit, an outage) and asks for another one.
     disabled: (n) => isDisabled(providerId, n) || exclude.includes(n),
     sharesDefaultLogin: (n) => profileExistsSafe(providerId, n) && sharesDefaultLogin(providerId, n),
+    account: (n) => (profileExistsSafe(providerId, n) ? accountKey(providerId, n) : null),
+    // Read only for an account the balancer is about to weigh: on macOS each
+    // read is a keychain lookup, and this is every wrapped start's hot path.
+    ...(providerId === "claude" ? { plan: (n: string) => planOf(n) } : {}),
     pool: (id) => findPool(id),
     usage: (n) => cachedUsage(providerId, n),
     // Only providers that write a live-session signal can report one. A start
@@ -81,6 +112,7 @@ export function resolveDir(
     now: Date.now(),
     displayPath: tildePath,
   });
+  const r = picked.name ? { ...picked, identity: signedInAs(picked.name) } : picked;
   // The resolver says "disabled" for any account it may not use; name the
   // caller's exclusion as such so `picks` does not read like a setting changed.
   return exclude.length === 0 ? r : { ...r, why: r.why.map((w) => w.replace(/^Skipped (\S+?\/(\S+)): disabled$/, (m, key, n) => (exclude.includes(n) && !isDisabled(providerId, n) ? `Skipped ${key}: excluded by the caller` : m))) };
@@ -97,8 +129,9 @@ export function resolveDir(
  * a free one or shares the best. The distinct exit code lets the wrapper block
  * on that refusal without ever blocking on a missing or older `agent-switch`.
  */
-export function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = false, exclude: readonly string[] = []): void {
-  const r = resolveDir(providerId, plain, process.cwd(), exclude);
+export async function cmdDir(providerId: ProviderId, guarded = false, json = false, plain = false, exclude: readonly string[] = []): Promise<void> {
+  const resolved = resolveDir(providerId, plain, process.cwd(), exclude);
+  const r = guarded && !json && resolved.ask && canAsk({ stdin: !!process.stdin.isTTY, stderr: !!process.stderr.isTTY }) ? await askForAccount(providerId, resolved) : resolved;
   if (json) {
     console.log(
       JSON.stringify(
@@ -108,6 +141,7 @@ export function cmdDir(providerId: ProviderId, guarded = false, json = false, pl
           why: r.why,
           ...(r.blocked ? { blocked: r.blocked } : {}),
           ...(r.note ? { note: r.note } : {}),
+          ...(r.ask ? { ask: r.ask } : {}),
         },
         null,
         2,
@@ -127,7 +161,14 @@ export function cmdDir(providerId: ProviderId, guarded = false, json = false, pl
   const name = r.name;
   if (!name) return;
   // The shell wrapper starts the binary itself right after this, so this is the last stop before a start.
-  if (providerId === "claude" && guarded) syncClaudeProfile(configDir(providerId, name));
+  if (guarded) {
+    if (providerId === "claude") syncClaudeProfile(configDir(providerId, name));
+    const refused = admissionRefusal(`${providerId}/${name}`, r.identity ?? null, identity(providerId, name));
+    if (refused) {
+      console.error(`agent-switch: not starting here — ${refused}.`);
+      process.exit(GUARD_REFUSED_EXIT);
+    }
+  }
   console.log(configDir(providerId, name));
   if (!guarded) return;
   // The resolver already moved off a busy account where a free one exists, so
@@ -143,7 +184,23 @@ export function cmdDir(providerId: ProviderId, guarded = false, json = false, pl
   console.error(`agent-switch: ${providerId}/${name} already has ${n} live session${n === 1 ? "" : "s"} — starting another one on it.`);
 }
 
+/** Strategy `ask` at a terminal: the person picks; no answer starts nothing. */
+async function askForAccount(providerId: ProviderId, r: ReturnType<typeof resolveDir>): Promise<ReturnType<typeof resolveDir>> {
+  const choices = r.ask ?? [];
+  for (const line of askLines(providerId, choices, r.name)) process.stderr.write(`${line}\n`);
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  const answer: string = await new Promise((resolve) => {
+    rl.question("> ", resolve);
+    rl.on("close", () => resolve("\u0000"));
+  });
+  rl.close();
+  const chosen = parseChoice(answer, choices, r.name);
+  if (!chosen) return { ...r, name: null, blocked: "no account was chosen" };
+  return { ...r, name: chosen, identity: identity(providerId, chosen), why: [...r.why, `Chosen at the prompt: ${providerId}/${chosen}`] };
+}
+
 export function cmdMap(providerId: ProviderId, name?: string, dir?: string, flags: Record<string, string | boolean> = {}): void {
+  if ("remote" in flags) return mapRemote(providerId, name, flags);
   if (flags.pause || flags.resume) {
     // `map --pause [dir]`: the positional is the folder, there is no profile.
     const target = name ?? process.cwd();
@@ -168,7 +225,32 @@ export function cmdMap(providerId: ProviderId, name?: string, dir?: string, flag
   console.log(`\`${provider(providerId).binary}\` in this directory (and subdirectories) now uses this profile.`);
 }
 
-export function cmdUnmap(providerId: ProviderId | undefined, dir?: string): void {
+/** `map <name|pool:<id>> --remote <host/owner[/repo]|url>` — bind every
+ *  clone of a remote, wherever it is checked out. */
+function mapRemote(providerId: ProviderId, name: string | undefined, flags: Record<string, string | boolean>): void {
+  const usage = `map [--provider ${providerId}] <profile|pool:<id>> --remote <host/owner[/repo]>`;
+  if (flags.pause || flags.resume) die("a remote binding cannot be paused — remove it with: agent-switch unmap --remote <host/owner[/repo]>");
+  const key = typeof flags.remote === "string" ? normalizeRemoteKey(flags.remote) : null;
+  if (!key) die(`usage: agent-switch ${usage} (e.g. github.com/acme or github.com/acme/widgets)`);
+  let target: string;
+  if (name && isPoolRef(name)) {
+    const pool = findPool(poolIdOf(name));
+    if (!pool) die(`no pool "${poolIdOf(name)}" — create it with: agent-switch pool create <name>`);
+    target = `${POOL_PREFIX}${pool.id}`;
+  } else {
+    target = requireProfile(providerId, name, usage);
+  }
+  setRemoteMapping(key, providerId, target);
+  console.log(`Mapped remote ${key} -> ${isPoolRef(target) ? `pool ${poolIdOf(target)}` : `${providerId}/${target}`} (${providerId})`);
+  console.log(`\`${provider(providerId).binary}\` in any clone whose origin is under ${key} uses it, unless a folder rule at or below the repo root says otherwise. See why: agent-switch dir --json`);
+}
+
+export function cmdUnmap(providerId: ProviderId | undefined, dir?: string, remote?: string): void {
+  if (remote !== undefined) {
+    if (removeRemoteMapping(remote, providerId)) console.log(`Removed remote binding ${normalizeRemoteKey(remote)}${providerId ? ` (${providerId})` : ""}`);
+    else die(`no remote binding for ${remote}${providerId ? ` (${providerId})` : ""}`);
+    return;
+  }
   const target = dir ?? process.cwd();
   if (removeMapping(target, providerId)) console.log(`Removed mapping for ${target}${providerId ? ` (${providerId})` : ""}`);
   else die(`no mapping for ${target}${providerId ? ` (${providerId})` : ""}`);
@@ -176,18 +258,24 @@ export function cmdUnmap(providerId: ProviderId | undefined, dir?: string): void
 
 export function cmdMappings(json = false): void {
   const rows = mappingRows();
+  const remotes = remoteRows();
   if (json) {
-    console.log(JSON.stringify(rows.map((r) => ({ path: r.path, provider: r.provider, target: r.name, paused: r.paused }))));
+    console.log(JSON.stringify([
+      ...rows.map((r) => ({ path: r.path, provider: r.provider, target: r.name, paused: r.paused })),
+      ...remotes.map((r) => ({ remote: r.remote, provider: r.provider, target: r.name, paused: false })),
+    ]));
     return;
   }
-  if (rows.length === 0) {
+  if (rows.length === 0 && remotes.length === 0) {
     console.log("No directory mappings. Create one with: agent-switch map <profile> [dir]");
     return;
   }
+  const show = (where: string, provider: ProviderId, name: string) => (isPoolRef(name) ? `${where} -> ${name} (${provider})` : `${where} -> ${provider}/${name}`);
   for (const r of rows) {
-    const line = isPoolRef(r.name) ? `${r.path} -> ${r.name} (${r.provider})` : `${r.path} -> ${r.provider}/${r.name}`;
+    const line = show(r.path, r.provider, r.name);
     console.log(r.paused ? `${line}  [paused]` : line);
   }
+  for (const r of remotes) console.log(show(`remote ${r.remote}`, r.provider, r.name));
 }
 
 /**
@@ -265,7 +353,10 @@ export function cmdPicks(flags: Record<string, string | boolean>): void {
 }
 
 function poolMappings(id: string): string[] {
-  return mappingRows().filter((r) => r.name === `${POOL_PREFIX}${id}`).map((r) => `${r.path} (${r.provider})`);
+  return [
+    ...mappingRows().filter((r) => r.name === `${POOL_PREFIX}${id}`).map((r) => `${r.path} (${r.provider})`),
+    ...remoteRows().filter((r) => r.name === `${POOL_PREFIX}${id}`).map((r) => `remote ${r.remote} (${r.provider})`),
+  ];
 }
 
 export function cmdPool(sub: string | undefined, args: string[], flags: Record<string, string | boolean>): void {
@@ -369,7 +460,12 @@ export function cmdExec(a: { providerId: ProviderId; exclude: string[]; plain: b
     process.exit(res.status ?? 1);
   }
   if (r.note) console.error(`agent-switch: ${r.note}.`);
-  process.exit(launch(p, r.name, a.args));
+  process.exit(admittedLaunch(a.providerId, { name: r.name, identity: r.identity ?? null }, a.args));
+}
+
+/** Start a routed pick, held to the account it was picked on. */
+export function admittedLaunch(providerId: ProviderId, pick: { name: string; identity: string | null }, args: string[]): number {
+  return launch(provider(providerId), pick.name, args, {}, () => admissionRefusal(`${providerId}/${pick.name}`, pick.identity, identity(providerId, pick.name)));
 }
 
 /** `agent-switch strategy [balance|fill] [--provider P] [--json]` — how a start
@@ -378,7 +474,7 @@ export function cmdExec(a: { providerId: ProviderId; exclude: string[]; plain: b
  *  account until it reaches its limit. */
 export function cmdStrategy(providerId: ProviderId, sub: string | undefined, json = false): void {
   if (sub !== undefined && sub !== "status") {
-    if (!(START_STRATEGIES as readonly string[]).includes(sub)) die("usage: agent-switch strategy [balance|fill|status] [--provider P] [--json]");
+    if (!(START_STRATEGIES as readonly string[]).includes(sub)) die("usage: agent-switch strategy [balance|fill|default|ask|status] [--provider P] [--json]");
     const next = sub as StartStrategy;
     if (readStrategy(providerId) !== next) {
       setStrategy(providerId, next);
@@ -390,9 +486,11 @@ export function cmdStrategy(providerId: ProviderId, sub: string | undefined, jso
     console.log(JSON.stringify({ provider: providerId, strategy }));
     return;
   }
-  console.log(
-    strategy === "fill"
-      ? `${providerId}: fill — new starts stay on the preferred account until it reaches its limit, then go to the one with the most headroom.`
-      : `${providerId}: balance — new starts go to the account that would lose the most at its next reset.`,
-  );
+  const explain: Record<StartStrategy, string> = {
+    balance: "new starts go to the account that would lose the most at its next reset.",
+    fill: "new starts stay on the preferred account until it reaches its limit, then go to the one with the most headroom.",
+    default: "new starts always take the preferred account; the balanced pick only steps in when it cannot take work.",
+    ask: "a start from a terminal asks which account to use; scripts and the desktop app take the preferred account.",
+  };
+  console.log(`${providerId}: ${strategy} — ${explain[strategy]}`);
 }

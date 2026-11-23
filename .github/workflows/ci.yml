@@ -90,6 +90,8 @@ jobs:
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
+      # The generated token file must match the vendored shared token source.
+      - run: node scripts/design-tokens.mjs --check
       - run: npm ci
         working-directory: gui
       - run: npm test

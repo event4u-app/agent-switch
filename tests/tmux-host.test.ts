@@ -146,6 +146,38 @@ test("a finished program is reported as not alive and its last screen stays read
   }
 });
 
+test("a program that ends before tmux is told to keep its window still leaves its last screen", gate, () => {
+  const root = tmp();
+  const bin = path.join(root, "quick");
+  fs.writeFileSync(bin, "#!/bin/sh\necho bye from the program\n", { mode: 0o755 });
+  const real = spawnSync("sh", ["-c", "command -v tmux"], { encoding: "utf8" }).stdout.trim();
+  // A stand-in tmux that holds back a per-window "keep this window" until the
+  // program has ended — the order a busy CI runner can produce on its own.
+  const slowTmux = path.join(root, "tmux");
+  fs.writeFileSync(
+    slowTmux,
+    `#!/bin/sh
+case " $* " in
+  *" remain-on-exit "*" -t "*|*" -t "*" remain-on-exit "*)
+    for _ in $(seq 1 100); do
+      "${real}" "$1" "$2" "$3" "$4" list-windows -a -F '#{pane_dead}' 2>/dev/null | grep -q '^0$' || break
+      sleep 0.03
+    done ;;
+esac
+exec "${real}" "$@"
+`,
+    { mode: 0o755 },
+  );
+  const host = new TmuxHost(root, { socket: `as-test-q2-${process.pid}`, tmux: slowTmux });
+  try {
+    const s = host.start({ provider: "codex", account: "work", configDir: "/cfg", cwd: root, bin });
+    assert.ok(waitFor(() => host.list()[0]?.alive === false), "pane is dead after exit");
+    assert.match(host.capture(s.key) ?? "", /bye from the program/);
+  } finally {
+    host.killServer();
+  }
+});
+
 test("2.x per-profile tmux names are listed, read-only", () => {
   const host = new TmuxHost(tmp(), { socket: "never-used" });
   assert.deepEqual(host.legacy({ "asw-claude-work": { provider: "claude", profile: "work" } }), [{ name: "asw-claude-work", provider: "claude", profile: "work", legacy: true }]);

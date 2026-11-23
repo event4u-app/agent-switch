@@ -137,11 +137,9 @@ export function parseVersionToken(s: string): string | null {
 const RTK_SIGNATURE = /RTK Token Savings|Token Savings/;
 
 /**
- * The rtk identity probe — THE seam for the planned delegation: when
- * agent-config ships its rtk detection contract (AC-side
- * road-to-rtk-onboarding-correctness Phase 3), delegation replaces this
- * function's body with a mapping over that readout; everything else in this
- * module stays. Today's implementation is the documented fallback probe.
+ * The rtk identity probe — the fallback when agent-config, which publishes its
+ * own detection (`agent-config rtk:detect --json`), is not installed or does
+ * not answer in that contract.
  *
  * Semantics (output signature, never exit code):
  *   - stdout carries the Token Savings header → `token-killer` (+ version via
@@ -163,6 +161,37 @@ export function probeRtkIdentity(
   }
   if (`${gain.stdout}${gain.stderr}`.trim().length > 0) return { identity: "unknown-rtk", version: null };
   return { identity: "unverified", version: null }; // ran silent — ambiguous
+}
+
+/** agent-config's `rtk:detect --json` shape this module understands. */
+const RTK_DETECT_CONTRACT = 1;
+/** A cold Node CLI start plus its own `rtk gain` probe. */
+const RTK_DETECT_TIMEOUT_MS = 5000;
+const RTK_IDENTITIES: readonly RtkIdentity[] = ["token-killer", "unknown-rtk", "unverified"];
+
+/**
+ * rtk as agent-config sees it. null when that readout cannot be used (no
+ * answer, another contract, a shape it does not promise) — the caller then
+ * probes itself. Absent rtk is `{ present: false }`.
+ */
+export function delegatedRtkDetection(
+  agentConfigCmd: string,
+  run: Runner = defaultRunner,
+): { present: false } | { present: true; identity: RtkIdentity; version: string | null; binPath: string | null } | null {
+  const r = run(agentConfigCmd, ["rtk:detect", "--json"], RTK_DETECT_TIMEOUT_MS);
+  if (r.failedToStart || r.timedOut || r.status !== 0) return null;
+  let o: Record<string, unknown>;
+  try {
+    o = JSON.parse(r.stdout) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (!o || typeof o !== "object" || o.contract !== RTK_DETECT_CONTRACT || typeof o.present !== "boolean") return null;
+  if (!o.present) return { present: false };
+  const identity = o.identity as RtkIdentity;
+  if (!RTK_IDENTITIES.includes(identity)) return null;
+  const str = (v: unknown) => (typeof v === "string" && v ? v : null);
+  return { present: true, identity, version: identity === "token-killer" ? str(o.version) : null, binPath: str(o.binPath) };
 }
 
 // ---------- hints ---------------------------------------------------------------
@@ -224,21 +253,25 @@ export function checkTooling(opts: CheckOptions = {}): ToolStatus[] {
     const providerId = BINARY_PROVIDER[id];
     const linkedPath = providerId ? linked(providerId) : null;
     const binPath = linkedPath && fs.existsSync(linkedPath) ? linkedPath : findOnPath(id, searchPath, platform);
-    if (!binPath) return absent(id, platform);
 
     if (id === "rtk") {
-      const { identity, version } = probeRtkIdentity(binPath, run);
+      const agentConfig = findOnPath("agent-config", searchPath, platform);
+      const delegated = agentConfig ? delegatedRtkDetection(agentConfig, run) : null;
+      if (delegated && !delegated.present) return absent(id, platform);
+      if (!delegated && !binPath) return absent(id, platform);
+      const { identity, version } = delegated?.present ? delegated : probeRtkIdentity(binPath!, run);
       return {
         id,
         present: true,
         version,
-        path: binPath,
+        path: (delegated?.present ? delegated.binPath : null) ?? binPath,
         healthy: identity === "token-killer",
         identity,
         hint: identity === "token-killer" ? "" : rtkUnhealthyHint(identity, platform),
       };
     }
 
+    if (!binPath) return absent(id, platform);
     const probe = run(binPath, ["--version"], VERSION_PROBE_TIMEOUT_MS);
     const healthy = !probe.failedToStart && !probe.timedOut;
     return {

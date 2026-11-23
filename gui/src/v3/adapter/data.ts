@@ -43,7 +43,7 @@ export interface AdapterEnv {
   /** Chats with no session row yet (a new chat before the poll sees it): drawn from these. */
   chatRows?: readonly SessionRow[];
   /** Where a plain start in the plan's folder would go and why (`dir --json`); null until read. */
-  route?: { profile: string | null; why: string[]; blocked?: string } | null;
+  route?: { profile: string | null; why: string[]; blocked?: string; ask?: string[] } | null;
 }
 
 export const THINKING_LEVELS: NewSessionFacts["thinkingLevels"] = {
@@ -114,6 +114,7 @@ function limitAccount(a: Account, now: number): LimitAccount | null {
     signIn: a.state === "signed-out" || a.state === "wrong-account",
     checkedMs: a.checkedAt,
     windows,
+    routines: a.routines ?? null,
     identity: a.identity,
     plan: a.plan,
   };
@@ -321,7 +322,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       children,
       // D6: a Needs-you item on this session or any descendant.
       needsYou: needing.has(key) || children.some((c) => c.needsYou),
-      ...(r.live ? {} : { doneToday: true }),
+      ...(r.live || r.recentlyActive ? {} : { doneToday: true }),
     };
   });
 
@@ -403,6 +404,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
   const routed = routedName ? vm.accounts.find((a) => a.tool === env.plan.tool && a.name === routedName) : undefined;
   const defaultClaude = routed ?? vm.accounts.find((a) => a.tool === env.plan.tool && a.isDefault) ?? vm.accounts.find((a) => a.tool === env.plan.tool);
   const planLimits = defaultClaude ? limitAccount(defaultClaude, now) : null;
+  const ask = askCandidates(env.route, vm.accounts, env.plan.tool);
   const facts: NewSessionFacts = {
     terminalApp: env.terminalApp,
     hosting: feeds.host?.mode ?? "ephemeral",
@@ -416,7 +418,8 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       why: routed ? (env.route?.why ?? []) : [],
       paceText: null,
     },
-    command: startCommand(env.plan, defaultClaude?.name ?? null),
+    ...(ask ? { ask } : {}),
+    command: startCommand(env.plan, ask ? null : (defaultClaude?.name ?? null)),
     nowMs: now,
   };
 
@@ -456,6 +459,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     newSession: { initial: env.plan, facts },
     link: linkFor(vm, now),
     decision: (subject) => decisionFor(subject, vm, rows, now),
+    chatHere: (key) => !!env.chats?.has(key),
     bar: (key): BarSession | null => {
       const r = byKey.get(key);
       if (!r) return null;
@@ -525,6 +529,25 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
   };
 }
 
+type Route = AdapterEnv["route"];
+
+/** Strategy ask: the accounts of `tool` a person picks from, in the CLI's order;
+ *  undefined when there is no choice to make. The CLI's own pick is the fallback
+ *  for scripts, never for a person. Pure. */
+export function askCandidates(route: Route, accounts: readonly Account[], tool: string): { name: string; color: IdentityColor }[] | undefined {
+  const found = (route?.ask ?? []).flatMap((name) => accounts.filter((a) => a.tool === tool && a.name === name)).map((a) => ({ name: a.name, color: a.color }));
+  return found.length > 1 ? found : undefined;
+}
+
+/** Which Claude account a new chat starts on: the routed one, else the default;
+ *  under strategy ask, the candidates to ask about instead. Pure. */
+export function chatStart(route: Route, accounts: readonly Account[]): { profile: string } | { ask: { name: string; color: IdentityColor }[] } | null {
+  const ask = askCandidates(route, accounts, "claude");
+  if (ask) return { ask };
+  const profile = route?.profile ? route.profile.slice(route.profile.indexOf("/") + 1) : accounts.find((a) => a.tool === "claude" && a.isDefault)?.name;
+  return profile ? { profile } : null;
+}
+
 /** The exact command the New-session dialog previews. Pure. */
 export function startCommand(p: NewSessionPlan, account: string | null): string {
   const q = (s: string) => (/^[\w./:@-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`);
@@ -563,7 +586,10 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
     moving.map(({ r, state }) => ({ key: sessionKey(r), demand: sessionDemand(r, state) })),
     others,
   );
-  const sessions: SheetSession[] = moving.map(({ r, state }) => ({ key: sessionKey(r), title: r.library?.name || r.summary || r.sessionId.slice(0, 8), model: modelLabel(r.context?.model), target: assigned.get(sessionKey(r)) ?? "", state }));
+  const titleOf = (r: SessionRow) => r.library?.name || r.summary || r.sessionId.slice(0, 8);
+  const sessions: SheetSession[] = moving.map(({ r, state }) => ({ key: sessionKey(r), title: titleOf(r), model: modelLabel(r.context?.model), target: assigned.get(sessionKey(r)) ?? "", state }));
+  // A Desktop session runs on Desktop's own login: a rebind of the profile does not move it.
+  const alsoOn = rows.filter((r) => r.live && r.surface !== "desktop-app" && accountId(r.provider, r.profile) === a.id).map((r) => ({ key: sessionKey(r), title: titleOf(r) }));
   // The heaviest session's account: the one the sheet names when it names one.
   const heaviest = [...moving].sort((x, y) => sessionDemand(y.r, y.state) - sessionDemand(x.r, x.state))[0];
   const suggestion = (heaviest && assigned.get(sessionKey(heaviest.r))) ?? others[0]?.name ?? "";
@@ -577,6 +603,7 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
     window: windowLabel(w.key, w.label),
     resetsIn: mins === null ? "unknown" : mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`,
     sessions,
+    alsoOn,
     suggestion,
     suggestionWhy: suggestion ? (spread ? "spread by expected use — the busiest session gets the most room" : "most room left") : undefined,
     askedByAgentConfig: (vm.switchRequests ?? []).some((r) => r.state === "open" && r.raisedBy === "ac" && r.account === cliAccount(a.id) && Date.parse(r.expiresAt) > now),

@@ -4,11 +4,11 @@ import { Download, RefreshCw, RotateCw } from "lucide-react";
 import { getLang, locale, t, type TKey } from "../../../i18n/index.js";
 import { tx } from "../../../i18n/react.js";
 import { cn } from "../../../lib/utils.js";
-import { getAutoUpdateCheck, getAutoUpdateKinds, setAutoUpdateCheckFlag, setAutoUpdateKinds } from "../../../settings-store.js";
+import { getAutoUpdateCheck, getAutoUpdateKinds, getUpdateInstalledVersion, setAutoUpdateCheckFlag, setAutoUpdateKinds } from "../../../settings-store.js";
 import { Button } from "../../../ui/Button.js";
 import { SettingGroup, SettingRow } from "../../../ui/Setting.js";
 import { Switch } from "../../../ui/Switch.js";
-import type { UpdateCheck, UpdateKind } from "../../../updates.js";
+import { isNewer, type ReleaseInfo, type UpdateCheck, type UpdateKind } from "../../../updates.js";
 import { useAS } from "../../../vm/store.js";
 import { describeError, usePref } from "./prefs.js";
 
@@ -67,12 +67,20 @@ export function UpdatesSettings() {
     }
   }
 
-  async function runUpdate() {
+  async function runUpdate(release: ReleaseInfo) {
     if (!s.act.selfUpdate) return;
     setPhase("updating");
     setFailure(null);
     try {
-      const r = await s.act.selfUpdate();
+      // An unreadable status does not block this click: the automatic check
+      // sends the user here exactly for that case.
+      const withdrawn = await s.act.withdrawnReason?.(release).catch(() => null);
+      if (withdrawn) {
+        setFailure(t("engines.notice.updateWithdrawnBody", { reason: withdrawn }));
+        setPhase("idle");
+        return;
+      }
+      const r = await s.act.selfUpdate(release.tag);
       if (r.ok) setPhase("done");
       else {
         setFailure(t("settings.updates.updateFailed", { error: r.output.slice(-300) || t("settings.updates.unknownError") }));
@@ -90,6 +98,9 @@ export function UpdatesSettings() {
   }, []);
 
   const available = check?.kind === "available" ? check.release : null;
+  // Installed in place by the update check, not yet running: the restart waits for the user.
+  const installed = getUpdateInstalledVersion();
+  const pendingRestart = phase !== "done" && !!check && !!installed && isNewer(installed, check.current) ? installed : null;
 
   return (
     <>
@@ -111,7 +122,13 @@ export function UpdatesSettings() {
             <RefreshCw className={cn(phase === "checking" && "animate-spin")} /> {phase === "checking" ? t("settings.updates.checking") : t("settings.updates.checkNow")}
           </Button>
         </SettingRow>
-        {available && (
+        {pendingRestart && s.act.restart && (
+          <div className="flex flex-wrap items-center gap-2 bg-ac-brand-tint px-4 py-3.5">
+            <span className="text-xs text-ac-ok-text">{t("settings.updates.installedPending", { tag: pendingRestart })}</span>
+            <RestartButton restart={s.act.restart} />
+          </div>
+        )}
+        {available && !(pendingRestart && !isNewer(available.tag, pendingRestart)) && (
           <div className="flex flex-col gap-3 bg-ac-brand-tint px-4 py-3.5">
             <p className="flex items-center gap-2 text-[13px] text-ac-text">
               <span className="size-2 rounded-full bg-ac-brand" aria-hidden />
@@ -131,7 +148,7 @@ export function UpdatesSettings() {
                 </>
               ) : (
                 <>
-                  <Button size="sm" variant="primary" disabled={phase === "updating" || !s.act.selfUpdate} onClick={() => void runUpdate()}>
+                  <Button size="sm" variant="primary" disabled={phase === "updating" || !s.act.selfUpdate} onClick={() => void runUpdate(available)}>
                     <Download /> {phase === "updating" ? t("settings.updates.updating") : t("settings.updates.updateTo", { tag: available.tag })}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => void openUrl(available.url).catch(() => {})}>

@@ -7,6 +7,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import { agentConfigRootFor, sessionAgentConfigEnv, setOwnAgentConfigRoot } from "../agent-config-root.js";
 import {
   HOME,
   browserDir,
@@ -45,7 +46,7 @@ import { withProperLock } from "../locks.js";
 import { renameProtection, forgetProtection } from "../protection.js";
 import { renamePoolMember } from "../pools.js";
 import { GUARD_REFUSED_EXIT } from "../single-load.js";
-import { mappingRows, pruneMappings, setMapping } from "../mappings.js";
+import { mappingRows, pruneMappings, remoteRows, setMapping, setRemoteMapping } from "../mappings.js";
 import { liveSessionPids } from "../api.js";
 import { codexSessionCounts } from "../login-keepalive.js";
 import { serviceInstall, serviceTarget } from "../service.js";
@@ -60,8 +61,10 @@ import {
   confirmAction,
   credentials,
   launch,
+  launchIn,
   logActivity,
 } from "./shared.js";
+import { Account, Verdict, WRONG_ACCOUNT_EXIT, accountIn, commitStaged, discardStaging, judgeSignIn, makeStaging, signedInAt, sweepStaleStaging } from "../staged-login.js";
 
 export function cmdAdd(providerId: ProviderId, name: string | undefined, browserId?: string, isolated = false): void {
   if (!name) die(`usage: agent-switch add [--provider ${providerId}] <profile> [--browser B] [--isolated]`);
@@ -197,21 +200,55 @@ const LOGIN_ARGS: Record<ProviderId, string[]> = {
 /**
  * Sign an existing profile in again — `add` refuses a name that exists, and a
  * login the provider cleared (signed out, refresh window ended) needs exactly
- * this. Runs the provider's own sign-in under the profile's config dir, then
- * reads the stored login back: the identity in the config outlives a sign-out,
- * so only the credential proves the sign-in happened.
+ * this. Claude and Codex sign in into a staging dir first; only a sign-in to the
+ * account the profile already belongs to is copied in, so picking the wrong
+ * Google account in the browser never replaces the profile's login.
  */
-export function cmdLogin(providerId: ProviderId, name: string | undefined, browserId?: string, isolated = false): void {
+export async function cmdLogin(providerId: ProviderId, name: string | undefined, browserId?: string, isolated = false): Promise<void> {
   const n = requireProfile(providerId, name, "login");
   const p = provider(providerId);
   const env = isolated ? isolatedEnv(browserId, providerId, n) : browserId ? browserEnv(browserId, providerId) : {};
   const args = loginArgsFor(providerId);
   console.log(`Signing ${providerId}/${n} in with \`${[p.binary, ...args].join(" ")}\` (finish it in the browser if one opens)...`);
-  const code = launch(p, n, args, env);
-  const after = authStatusFor(providerId, n);
-  const ok = after.state === "connected" || after.state === "expiring";
-  logActivity("login", `${providerId}/${n}`, ok ? "signed in again" : "sign-in not confirmed", "user ran `agent-switch login`", ok);
-  if (!ok) {
+  if (providerId === "antigravity") return loginInPlace(p, n, args, env);
+
+  const profileConfig = configDir(providerId, n);
+  const expected = accountIn(providerId, profileConfig);
+  sweepStaleStaging(credentials);
+  const staging = makeStaging(providerId, n);
+  const cleanup = () => discardStaging(providerId, staging, credentials);
+  process.once("exit", cleanup); // `die` inside the launch exits without unwinding
+  let verdict: Verdict;
+  let staged: Account;
+  let code: number;
+  try {
+    if (providerId === "claude") seedClaudeOnboarding(staging);
+    code = launchIn(p, staging, args, env);
+    staged = accountIn(providerId, staging);
+    verdict = judgeSignIn(expected, staged, signedInAt(providerId, staging, credentials));
+    if (verdict === "commit") await withProperLock(profileConfig, () => commitStaged(providerId, staging, profileConfig, credentials));
+  } finally {
+    cleanup();
+    process.removeListener("exit", cleanup);
+  }
+
+  const who = (a: Account) => `${a.email ?? "an unknown account"}${a.org && providerId === "claude" ? ` (organization ${a.org})` : ""}`;
+  const ok = verdict === "commit";
+  const action = { commit: "signed in again", "wrong-account": "sign-in to a different account refused", unreadable: "sign-in account unreadable, not saved", unfinished: "sign-in not confirmed" }[verdict];
+  logActivity("login", `${providerId}/${n}`, action, "user ran `agent-switch login`", ok);
+  if (verdict === "wrong-account") {
+    console.error(
+      `${providerId}/${n}: that sign-in belongs to a different account — ${who(staged)}, not ${who(expected)}. Nothing was saved; ` +
+        `${providerId}/${n} keeps its login. Sign in with ${expected.email}, or add the other account as its own profile: agent-switch add <name>${providerId === "claude" ? "" : ` --provider ${providerId}`}`,
+    );
+    process.exit(WRONG_ACCOUNT_EXIT);
+  }
+  if (verdict === "unreadable") {
+    console.error(`${providerId}/${n}: the sign-in finished but its account could not be read, so it was not saved over ${who(expected)}. Nothing was changed.`);
+    process.exit(1);
+  }
+  if (verdict === "unfinished") {
+    const after = authStatusFor(providerId, n);
     console.error(`${providerId}/${n} is still not signed in (${after.detail})${code !== 0 ? ` — ${p.binary} exited with ${code}` : ""}.`);
     process.exit(1);
   }
@@ -219,6 +256,27 @@ export function cmdLogin(providerId: ProviderId, name: string | undefined, brows
   if (sharesDefaultLogin(providerId, n)) setSharesDefaultLogin(providerId, n, false);
   const id = identity(providerId, n);
   console.log(`${providerId}/${n} is signed in${id ? ` as ${id}` : ""}.`);
+}
+
+/** Antigravity's `agy` signs in inside a session under the profile HOME and keeps
+ *  its token in that HOME's keychain, so it cannot be staged. A changed account
+ *  is reported; it is not undone. */
+function loginInPlace(p: Provider, n: string, args: string[], env: NodeJS.ProcessEnv): void {
+  const before = identity(p.id, n);
+  const code = launch(p, n, args, env);
+  const after = authStatusFor(p.id, n);
+  const ok = after.state === "connected" || after.state === "expiring";
+  logActivity("login", `${p.id}/${n}`, ok ? "signed in again" : "sign-in not confirmed", "user ran `agent-switch login`", ok);
+  if (!ok) {
+    console.error(`${p.id}/${n} is still not signed in (${after.detail})${code !== 0 ? ` — ${p.binary} exited with ${code}` : ""}.`);
+    process.exit(1);
+  }
+  const id = identity(p.id, n);
+  if (before && id && before.toLowerCase() !== id.toLowerCase()) {
+    console.error(`${p.id}/${n} is now signed in as ${id}, not ${before}. ${p.binary} signs in in place, so this could not be prevented; sign in again with ${before} if that was not intended.`);
+    process.exit(WRONG_ACCOUNT_EXIT);
+  }
+  console.log(`${p.id}/${n} is signed in${id ? ` as ${id}` : ""}.`);
 }
 
 /**
@@ -362,7 +420,7 @@ export function cmdRun(
       // `takeover --in-place` knows this pane is ours to respawn).
       const sess = tmuxSessionName(providerId, n);
       recordManagedSession(sess, { provider: providerId, profile: n });
-      const argv = newSessionArgs(sess, p.envVar, configDir(providerId, n), [p.binary, ...passthrough]);
+      const argv = newSessionArgs(sess, p.envVar, configDir(providerId, n), [p.binary, ...passthrough], sessionAgentConfigEnv(providerId, n));
       const res = spawnSync("tmux", argv, { stdio: "inherit" });
       process.exit(res.status ?? 1);
     }
@@ -407,6 +465,8 @@ export function cmdList(providerId?: ProviderId, json = false): void {
         disabled: isDisabled(pid, n),
         active: activeFor(pid) === n,
         liveSessions: pid === "claude" ? liveSessionPids(configDir("claude", n)).length : pid === "codex" ? (codexLive.get(n) ?? 0) : 0,
+        // Claude only: the profile's own agent-config root, null = the shared one.
+        ...(pid === "claude" ? { agentConfigRoot: agentConfigRootFor(n) } : {}),
       })),
     );
     console.log(JSON.stringify(rows, null, 2));
@@ -546,6 +606,23 @@ export function cmdMarkShared(providerId: ProviderId, name: string | undefined, 
   );
 }
 
+/** `agent-config-root <name> [own|global|status] [--json]`: which agent-config
+ *  root a Claude profile's sessions and the GUI's settings server use. Only the
+ *  marker changes; config and keys are never copied or deleted. */
+export function cmdAgentConfigRoot(providerId: ProviderId, name: string | undefined, mode: string | undefined, json: boolean): void {
+  if (providerId !== "claude") die("agent-config-root applies to Claude profiles only");
+  if (mode !== undefined && mode !== "own" && mode !== "global" && mode !== "status") die("usage: agent-switch agent-config-root <name> [own|global|status] [--json]");
+  const n = requireProfile(providerId, name, "agent-config-root");
+  if (mode === "own" || mode === "global") setOwnAgentConfigRoot(n, mode === "own");
+  const own = agentConfigRootFor(n);
+  if (json) return void console.log(JSON.stringify({ provider: providerId, name: n, root: own ? "own" : "global", path: own }, null, 2));
+  console.log(
+    own
+      ? `claude/${n} uses its own agent-config settings: ${own}. New sessions of it and the GUI's settings window read them; running sessions keep the settings they started with.`
+      : `claude/${n} uses the shared agent-config settings. New sessions of it and the GUI's settings window read them; running sessions keep the settings they started with.`,
+  );
+}
+
 export function cmdDisable(providerId: ProviderId, name: string | undefined, disabled: boolean): void {
   const n = requireProfile(providerId, name, disabled ? "disable" : "enable");
   const wasActive = activeFor(providerId) === n;
@@ -633,6 +710,9 @@ export function cmdRename(providerId: ProviderId, from?: string, to?: string): v
   }
   for (const m of mappingRows()) {
     if (m.provider === providerId && m.name === n) setMapping(m.path, providerId, to);
+  }
+  for (const m of remoteRows()) {
+    if (m.provider === providerId && m.name === n) setRemoteMapping(m.remote, providerId, to);
   }
   renameProtection(providerId, n, to);
   renamePoolMember(`${providerId}/${n}`, `${providerId}/${to}`);

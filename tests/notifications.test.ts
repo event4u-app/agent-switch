@@ -130,3 +130,12 @@ test("dedupe:false bypasses the keyed cooldown too", () => {
   assert.ok(appendNotification({ kind: "info", title: "S", message: "m", key: "k" }, 1000, f));
   assert.ok(appendNotification({ kind: "info", title: "S", message: "m", key: "k" }, 1001, f, false));
 });
+
+test("appendNotification masks a token-shaped string in the title and message before it is stored", () => {
+  const f = tmpFile();
+  const token = "sk-ant-oat01-" + "Q".repeat(60);
+  const n = appendNotification({ kind: "error", title: `Failed for ${token}`, message: `Bearer ${token} was refused` }, 1000, f)!;
+  assert.equal(n.title, "Failed for [redacted]");
+  assert.equal(n.message, "Bearer [redacted] was refused");
+  assert.ok(!fs.readFileSync(f, "utf8").includes("QQQQ"));
+});

@@ -94,6 +94,26 @@ describe("tray accounts (like the v2 tray)", () => {
     expect(handlers.account).toHaveBeenCalledWith("claude/work");
   });
 
+  it("says which account the next start takes and why, and marks that one — not the preferred one — as next", () => {
+    const work = { ...acc("claude", "work"), next: true };
+    const side = acc("claude", "side");
+    const why = ["No folder rule — balancing across 2 claude accounts by what each would lose at its reset", "Picked claude/side: 70% of its week left, resets in 10 h (7.0 %/h to use it up)"];
+    render(<V3Tray nowMs={0} needs={[]} away={null} sessions={[]} accounts={[work, side]} picks={{ claude: { name: "side", why } }} on={on()} />);
+    const limits = screen.getByRole("region", { name: "Limits" });
+    const line = within(limits).getByText(/^Next start → side/);
+    expect(line.textContent).toBe(`Next start → side: ${why[1]}`);
+    expect(line.getAttribute("title")).toBe(why.join("\n"));
+    expect(within(limits).getAllByText("→ next")).toHaveLength(1);
+    expect(within(limits).getByText("→ next").parentElement!.textContent).toContain("side");
+  });
+
+  it("without a pick (not read, or no account) there is no reason line and the marks stay", () => {
+    render(<V3Tray nowMs={0} needs={[]} away={null} sessions={[]} accounts={[{ ...acc("claude", "work"), next: true }]} picks={{ claude: { name: null, why: ["No active profile — the tool starts with its own default login"] } }} on={on()} />);
+    const limits = screen.getByRole("region", { name: "Limits" });
+    expect(within(limits).queryByText(/^Next start/)).toBeNull();
+    expect(within(limits).getByText("→ next")).toBeTruthy();
+  });
+
   it("old readings say how old in amber; signed-out accounts offer Sign in instead of bars", () => {
     const handlers = on();
     const old: LimitAccount = { ...acc("claude", "work"), checkedMs: 0 };

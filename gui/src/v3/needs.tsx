@@ -41,17 +41,19 @@ const ICON: Record<NeedItem["kind"], ReactNode> = {
   update: <Download />,
 };
 
-/** The keys a focused item answers to (spec §5.1). Pure. */
-export function keysFor(n: NeedItem): string | null {
+/** The keys a focused item answers to (spec §5.1). `always` false: the
+ *  approval can only be answered from outside its chat, where "always" is never
+ *  offered. Pure. */
+export function keysFor(n: NeedItem, always = true): string | null {
   if (n.verb === "Focus terminal") return "↵ focus terminal · L later";
-  if (n.kind === "approval") return "↵ once · ⇧↵ always · ⌫ deny · L later";
+  if (n.kind === "approval") return [n.verb === "Allow" ? "↵ once" : `↵ ${n.verb.toLowerCase()} · Y once`, always ? "⇧↵ always" : null, "⌫ deny", "L later"].filter(Boolean).join(" · ");
   if (n.kind === "question") return "↵ reply · Y yes · L later";
   return "↵ " + n.verb.toLowerCase() + " · L later";
 }
 
 const warn = (n: NeedItem) => n.kind === "approval" || n.kind === "question" || n.kind === "limit" || n.kind === "ci";
 
-export function NeedRow({ n, top, focused, onVerb }: { n: NeedItem; top?: boolean; focused?: boolean; onVerb: (n: NeedItem) => void }) {
+export function NeedRow({ n, top, focused, always = true, onVerb }: { n: NeedItem; top?: boolean; focused?: boolean; always?: boolean; onVerb: (n: NeedItem) => void }) {
   const open = top || focused;
   return (
     <div className={cn("relative rounded-md px-2", open ? "py-1.5" : "py-1", focused ? "bg-ac-raise" : "hover:bg-ac-raise")} title={open ? undefined : n.detail}>
@@ -68,7 +70,7 @@ export function NeedRow({ n, top, focused, onVerb }: { n: NeedItem; top?: boolea
         </span>
       </div>
       {open && n.detail && <div className="truncate pl-[22px] font-ac-mono text-[11px] text-ac-muted">{n.detail}</div>}
-      {focused && <div className="mt-0.5 pl-[22px] text-[10.5px] text-ac-muted">{keysFor(n)}</div>}
+      {focused && <div className="mt-0.5 pl-[22px] text-[10.5px] text-ac-muted">{keysFor(n, always)}</div>}
     </div>
   );
 }
@@ -83,7 +85,10 @@ export function NeedsZone({
   onMore,
   onAway,
   tray,
+  always,
 }: {
+  /** Whether an approval can be answered "always" here (its chat runs in this window); all when absent. */
+  always?: (n: NeedItem) => boolean;
   /** The tray card's variant (board "tray"): a 24 px head without the ⌘J hint. */
   tray?: boolean;
   items: NeedItem[];
@@ -113,7 +118,7 @@ export function NeedsZone({
           </button>
         )}
         {shown.map((n, i) => (
-          <NeedRow key={n.id} n={n} top={i === 0 && !focusedId} focused={n.id === focusedId} onVerb={onVerb} />
+          <NeedRow key={n.id} n={n} top={i === 0 && !focusedId} focused={n.id === focusedId} always={always?.(n) ?? true} onVerb={onVerb} />
         ))}
         {items.length > MAX_ROWS && (
           <button type="button" onClick={onMore} className="h-6 px-2 text-[11px] text-ac-muted hover:text-ac-text">

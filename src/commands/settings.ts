@@ -3,7 +3,8 @@
  * notifications, gui-settings, activity.
  */
 
-import { die, readOsNotifications, setOsNotifications, readKeepSignedIn, setKeepSignedIn, readCodexAutoReset, setCodexAutoReset } from "../profiles.js";
+import { parseQuietHours, formatQuietHours } from "../quiet-hours.js";
+import { die, readOsNotifications, setOsNotifications, readQuietHours, setQuietHours, readKeepSignedIn, setKeepSignedIn, readCodexAutoReset, setCodexAutoReset } from "../profiles.js";
 import { readActivity, ACTIVITY_MAX_LINES } from "../activity.js";
 import { readGuiSettings, writeGuiSettings, applyGuiSetting, type GuiSettingUpdate } from "../gui-settings.js";
 import { appendNotification, readNotifications, clearNotifications, NotificationKind } from "../notifications.js";
@@ -41,6 +42,22 @@ export function cmdOsNotify(sub: string | undefined, json = false): void {
     console.log(`Daemon OS notifications ${enabled ? "ON" : "OFF"}.`);
     if (enabled && process.platform === "darwin") console.log("On macOS the daemon shows none itself — the Agent Switch app shows them while it runs.");
   }
+}
+
+/** `agent-switch quiet-hours [off|HH:MM-HH:MM|status] [--json]` — a daily
+ *  local-time window in which no notice is handed to the OS (the daemon's and
+ *  the app's); the notifications list still records them. A window may run
+ *  over midnight. */
+export function cmdQuietHours(sub: string | undefined, json = false): void {
+  if (sub === "off") setQuietHours(null);
+  else if (sub && sub !== "status") {
+    const q = parseQuietHours(sub);
+    if (!q) die("usage: agent-switch quiet-hours [off|HH:MM-HH:MM|status] [--json] — e.g. 22:00-07:00 (start and end differ)");
+    setQuietHours(formatQuietHours(q));
+  }
+  const window = readQuietHours();
+  if (json) console.log(JSON.stringify({ window }));
+  else console.log(window ? `Quiet hours ${window}: notices are listed but not shown on the desktop.` : "Quiet hours OFF.");
 }
 
 /** `agent-switch keep-signed-in [on|off|status] [--json]` — whether the
@@ -144,7 +161,7 @@ export function cmdActivity(flags: Record<string, string | boolean>): void {
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) die("--limit must be a whole number of at least 1");
   const entries = readActivity(limit ?? (flags.json ? undefined : 50));
   if (flags.json) {
-    console.log(JSON.stringify({ entries, capacity: ACTIVITY_MAX_LINES }, null, 2));
+    console.log(JSON.stringify({ schema: 1, entries, capacity: ACTIVITY_MAX_LINES }, null, 2));
     return;
   }
   if (entries.length === 0) {

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "samples": [
+    {
+      "at": "2026-05-01T08:30:00.000Z",
+      "windows": [
+        {
+          "key": "five_hour",
+          "utilization": 20
+        },
+        {
+          "key": "seven_day",
+          "utilization": 5
+        }
+      ]
+    }
+  ]
+}

@@ -259,7 +259,7 @@ export function cmdAuthStatus(providerId: ProviderId | undefined, json: boolean)
     authStatusFor(r.provider, r.name),
   );
   if (json) {
-    console.log(JSON.stringify(rows, null, 2));
+    console.log(JSON.stringify({ schema: 1, profiles: rows }, null, 2));
     return;
   }
   if (rows.length === 0) return void console.log("No profiles.");

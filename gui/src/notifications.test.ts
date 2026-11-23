@@ -9,7 +9,7 @@ const plugin = vi.hoisted(() => ({
 }));
 vi.mock("@tauri-apps/plugin-notification", () => plugin);
 
-import { clearDesktopNotifications } from "./notifications.js";
+import { clearDesktopNotifications, sendDesktopNotification } from "./notifications.js";
 
 beforeEach(() => {
   plugin.removeAllActive.mockClear();
@@ -25,5 +25,14 @@ describe("clearDesktopNotifications", () => {
   it("is best-effort: swallows a plugin error (non-Tauri env / no permission)", async () => {
     plugin.removeAllActive.mockRejectedValueOnce(new Error("plugin unavailable"));
     await expect(clearDesktopNotifications()).resolves.toBeUndefined();
+  });
+});
+
+describe("sendDesktopNotification", () => {
+  it("masks a token-shaped string before the OS gets the text", async () => {
+    const token = "sk-ant-oat01-" + "Q".repeat(60);
+    plugin.sendNotification.mockClear();
+    expect(await sendDesktopNotification(`Failed for ${token}`, `Bearer ${token} refused`)).toBe(true);
+    expect(plugin.sendNotification).toHaveBeenCalledWith({ title: "Failed for [redacted]", body: "Bearer [redacted] refused" });
   });
 });

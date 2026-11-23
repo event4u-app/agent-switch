@@ -25,7 +25,7 @@
  */
 
 import type { UsageSnapshot } from "./usage.js";
-import { describe, level, weigh, type Weighed } from "./balance.js";
+import { describe, level, planOutOfBalance, weigh, type Weighed } from "./balance.js";
 import { ProviderId } from "./providers.js";
 import { isPoolRef, poolIdOf, parseMember, type Pool } from "./pools.js";
 import type { GuardPolicy } from "./single-load.js";
@@ -44,8 +44,9 @@ export interface CachedUsage {
 
 export interface ResolveInputs {
   providerId: ProviderId;
-  /** Nearest folder rule for this provider, or null. `name` may be `pool:<id>`. */
-  mapping: { path: string; name: string } | null;
+  /** Nearest folder rule for this provider, or null. `name` may be `pool:<id>`;
+   *  `remote` is set when a remote binding matched at the repo root `path`. */
+  mapping: { path: string; name: string; remote?: string } | null;
   active: string | null;
   exists: (name: string) => boolean;
   signedIn: (name: string) => boolean;
@@ -53,6 +54,14 @@ export interface ResolveInputs {
   disabled?: (name: string) => boolean;
   /** True when the profile shares its login with the default install (default: none does). */
   sharesDefaultLogin?: (name: string) => boolean;
+  /** The account a profile is signed into, per organization (email + org), or
+   *  null when the organization is unknown. Two profiles with one key share one
+   *  set of limits and are weighed once (default: every profile is its own). */
+  account?: (name: string) => string | null;
+  /** The `subscriptionType` in a profile's stored credential. Given → only
+   *  Pro and Max accounts take part in balancing; absent (a provider without
+   *  the field) → the plan is not checked. */
+  plan?: (name: string) => unknown;
   /** All of this provider's profiles. Given → a start without a folder rule is
    *  balanced across them; absent → it uses the active profile. */
   names?: string[];
@@ -82,6 +91,9 @@ export interface Resolution {
   blocked?: string;
   /** Set when the start moved off a busy account — one line for the human. */
   note?: string;
+  /** Strategy `ask`: the accounts a person may choose from, the fallback
+   *  `name` first. Only set when there is a real choice (two or more). */
+  ask?: string[];
 }
 
 export function ago(ms: number): string {
@@ -102,6 +114,10 @@ function shareNote(i: ResolveInputs, name: string, why: string[]): string {
 }
 
 const takesWork = (i: ResolveInputs, n: string) => i.exists(n) && !i.disabled?.(n) && !i.sharesDefaultLogin?.(n) && i.signedIn(n);
+/** Why `n`'s plan keeps it out of balancing, or null (also when the plan is not checked). */
+const offPlan = (i: ResolveInputs, n: string) => (i.plan ? planOutOfBalance(i.plan(n)) : null);
+/** May take a balanced start: can take work and is on a personal plan. */
+const balanceable = (i: ResolveInputs, n: string) => takesWork(i, n) && !offPlan(i, n);
 
 /**
  * Under guard `block` a busy account moves to the free account with the most
@@ -111,7 +127,7 @@ const takesWork = (i: ResolveInputs, n: string) => i.exists(n) && !i.disabled?.(
  */
 function giveWayIfBusy(i: ResolveInputs, name: string, why: string[], share: string = name): Resolution | null {
   if (!busy(i, name)) return null;
-  const free = (i.names ?? []).filter((n) => n !== name && takesWork(i, n) && !busy(i, n));
+  const free = (i.names ?? []).filter((n) => n !== name && balanceable(i, n) && !busy(i, n));
   if (!free.length) return { name: share, why, note: shareNote(i, share, why) };
   const target = pickBalanced(i, free, [], null) ?? free[0];
   const note = `${i.providerId}/${name} already has a live session — starting on the free account ${i.providerId}/${target} instead`;
@@ -139,10 +155,11 @@ function refuse(why: string[], reason: string): Resolution {
 export function resolveForDir(i: ResolveInputs): Resolution {
   const shown = (p: string) => (i.displayPath ? i.displayPath(p) : p);
   const why: string[] = [];
+  const rule = (m: { path: string; remote?: string }) => (m.remote ? `remote ${m.remote} (repo ${shown(m.path)})` : `folder ${shown(m.path)}`);
 
   if (i.mapping && isPoolRef(i.mapping.name)) {
     const id = poolIdOf(i.mapping.name);
-    why.push(`Rule: folder ${shown(i.mapping.path)} → pool ${id}`);
+    why.push(`Rule: ${rule(i.mapping)} → pool ${id}`);
     const pool = i.pool(id);
     if (!pool) return refuse(why, `pool ${id} no longer exists — bind the folder anew or remove the rule (agent-switch unmap)`);
     const considered = pool.members.map(parseMember).filter((m) => m && m.provider === i.providerId) as {
@@ -154,8 +171,9 @@ export function resolveForDir(i: ResolveInputs): Resolution {
     const best = pickBalanced(i, members, why, null);
     if (best) return { name: best, why };
     // No fresh numbers to weigh: still a member — the rule is a boundary first.
-    const signedIn = members.filter((n) => takesWork(i, n));
-    if (!signedIn.length) return refuse(why, `pool ${id} has no usable ${i.providerId} member (signed out, disabled or sharing the default login)`);
+    const signedIn = members.filter((n) => balanceable(i, n));
+    if (!signedIn.length)
+      return refuse(why, `pool ${id} has no usable ${i.providerId} member (signed out, disabled, sharing the default login or not on a personal Pro or Max plan)`);
     const anyone = signedIn.filter((n) => !busy(i, n));
     if (!anyone.length) {
       const shared = pickBalanced(i, members, [], i.active, true) ?? (i.active && signedIn.includes(i.active) ? i.active : signedIn[0]);
@@ -176,7 +194,7 @@ export function resolveForDir(i: ResolveInputs): Resolution {
   if (i.mapping) {
     const key = `${i.providerId}/${i.mapping.name}`;
     const flag = i.providerId === "claude" ? "" : ` --provider ${i.providerId}`;
-    why.push(`Rule: folder ${shown(i.mapping.path)} → ${key}`);
+    why.push(`Rule: ${rule(i.mapping)} → ${key}`);
     if (!i.exists(i.mapping.name)) return refuse(why, `${key} no longer exists — bind the folder anew (agent-switch map) or remove the rule (agent-switch unmap)`);
     if (i.disabled?.(i.mapping.name)) return refuse(why, `${key} is disabled — turn it back on (agent-switch enable ${i.mapping.name}${flag}) or change the rule`);
     return giveWayIfBusy(i, i.mapping.name, why) ?? { name: i.mapping.name, why };
@@ -188,16 +206,57 @@ export function resolveForDir(i: ResolveInputs): Resolution {
  *  caller gave no profile list. */
 function balancePlain(i: ResolveInputs, why: string[]): Resolution {
   if (!i.names) return fallbackToActive(i, why);
+  if (i.strategy === "ask") {
+    const choices = i.names.filter((n) => takesWork(i, n));
+    if (choices.length > 1) {
+      why.push(`Strategy ask — a start from a terminal asks which of ${choices.length} accounts to use; anywhere else it takes the preferred account`);
+      const r = preferredStart(i, why, "ask") ?? balanceAll(i, i.names, why);
+      return { ...r, ask: r.name && choices.includes(r.name) ? [r.name, ...choices.filter((c) => c !== r.name)] : choices };
+    }
+  }
+  if (i.strategy === "default") {
+    const kept = preferredStart(i, why, "default");
+    if (kept) return kept;
+  }
   if (i.strategy === "fill") {
     const kept = fillPreferred(i, why);
     if (kept) return kept;
   }
-  const n = i.names.length;
+  return balanceAll(i, i.names, why);
+}
+
+function balanceAll(i: ResolveInputs, names: string[], why: string[]): Resolution {
+  const n = names.length;
   why.push(`No folder rule — balancing across ${n} ${i.providerId} account${n === 1 ? "" : "s"} by what each would lose at its reset`);
-  const best = pickBalanced(i, i.names, why, i.active);
+  const best = pickBalanced(i, names, why, i.active);
   if (best) return { name: best, why };
   why.push("No account has fresh usage to weigh — using the plain-start account");
   return fallbackToActive(i, why);
+}
+
+/**
+ * Strategy `default` (and `ask` when nobody can be asked): the preferred
+ * account takes every start it can take, whatever its usage. Without one, or
+ * when it is signed out, disabled or busy under guard `block`, null: the caller
+ * balances.
+ */
+function preferredStart(i: ResolveInputs, why: string[], label: "default" | "ask"): Resolution | null {
+  const a = i.active;
+  if (!a || !i.exists(a)) {
+    why.push(`Strategy ${label} — no preferred account (agent-switch use <name>), balancing instead`);
+    return null;
+  }
+  const key = `${i.providerId}/${a}`;
+  if (!takesWork(i, a)) {
+    why.push(`Strategy ${label} — ${key} cannot take work right now, balancing across the rest`);
+    return null;
+  }
+  if (busy(i, a)) {
+    why.push(`Strategy ${label} — ${key} already has a live session, balancing across the rest`);
+    return null;
+  }
+  why.push(`Strategy ${label} — taking the preferred account ${key}`);
+  return { name: a, why };
 }
 
 /**
@@ -231,6 +290,29 @@ function fillPreferred(i: ResolveInputs, why: string[]): Resolution | null {
   }
   why.push(`Strategy fill — staying on ${key} until it reaches its limit`);
   return { name: a, why };
+}
+
+/**
+ * Profiles signed into one account of one organization share one set of
+ * limits: only one of them is weighed — `prefer` when it is among them, else
+ * the first listed. The same email in another organization is another account.
+ */
+function dropSameAccount(i: ResolveInputs, picks: { name: string }[], why: string[], prefer: string | null): void {
+  if (!i.account) return;
+  const keep = new Map<string, string>();
+  const ordered = [...picks.filter((p) => p.name === prefer), ...picks.filter((p) => p.name !== prefer)];
+  for (const p of ordered) {
+    const k = i.account(p.name);
+    if (k && !keep.has(k)) keep.set(k, p.name);
+  }
+  for (let n = picks.length - 1; n >= 0; n--) {
+    const k = i.account(picks[n].name);
+    const owner = k ? keep.get(k) : undefined;
+    if (owner && owner !== picks[n].name) {
+      why.push(`Skipped ${i.providerId}/${picks[n].name}: same account as ${i.providerId}/${owner} (one set of limits)`);
+      picks.splice(n, 1);
+    }
+  }
 }
 
 /**
@@ -277,6 +359,11 @@ function pickBalanced(i: ResolveInputs, names: string[], why: string[], prefer: 
       why.push(`Skipped ${key}: usage checked ${ago(ageMs)} (too old to trust)`);
       continue;
     }
+    const off = offPlan(i, name);
+    if (off) {
+      why.push(`Skipped ${key}: ${off}`);
+      continue;
+    }
     const w = weigh(u.snapshot, i.now, i.threshold?.(name) ?? DEFAULT_LIMIT_PCT);
     if (!w.usable) {
       why.push(`Skipped ${key}: ${w.why}`);
@@ -284,6 +371,7 @@ function pickBalanced(i: ResolveInputs, names: string[], why: string[], prefer: 
     }
     picks.push({ name, w, live, ageMs });
   }
+  dropSameAccount(i, picks, why, prefer);
   if (!picks.length) return null;
   const top = picks.reduce((a, b) => (b.w.need > a.w.need ? b : a));
   const tied = picks.filter((p) => level(p.w.need, top.w.need));

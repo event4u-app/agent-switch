@@ -189,12 +189,15 @@ export class TmuxHost {
     // Stamped before the window exists, so its first report is never older than its start.
     const startedAt = new Date().toISOString();
     const exists = this.tmux(["has-session", "-t", `=${HOST_SESSION}`]).ok;
+    // Keep a finished program's window, so its last screen can still be read. Set
+    // server-wide before the window exists: set on the window afterwards, a program
+    // that ends at once is gone (window and all) before the option arrives. The
+    // server is AS's own, so every window on it wants this.
+    const keep = ["set-option", "-g", "-w", "remain-on-exit", "on", ";"];
     const r = exists
-      ? this.tmux(["new-window", "-d", "-P", "-F", "#{window_id}", "-t", `=${HOST_SESSION}:`, "-n", name, "-c", o.cwd, ...envArgs, "--", ...argv])
-      : this.tmux(["new-session", "-d", "-P", "-F", "#{window_id}", "-s", HOST_SESSION, "-n", name, "-x", "200", "-y", "50", "-c", o.cwd, ...envArgs, "--", ...argv]);
+      ? this.tmux([...keep, "new-window", "-d", "-P", "-F", "#{window_id}", "-t", `=${HOST_SESSION}:`, "-n", name, "-c", o.cwd, ...envArgs, "--", ...argv])
+      : this.tmux(["start-server", ";", ...keep, "new-session", "-d", "-P", "-F", "#{window_id}", "-s", HOST_SESSION, "-n", name, "-x", "200", "-y", "50", "-c", o.cwd, ...envArgs, "--", ...argv]);
     if (!r.ok) throw new Error(`tmux could not start the session: ${r.err}`);
-    // Keep a finished program's window, so its last screen can still be read.
-    this.tmux(["set-option", "-w", "-t", r.out.trim(), "remain-on-exit", "on"]);
     this.pipeProgramStatus(o.provider, r.out.trim(), sessionId, hookBin);
     const hosted: HostedSession = {
       key,

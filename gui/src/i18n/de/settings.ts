@@ -137,6 +137,10 @@ export const settings: { readonly [K in keyof typeof en]: string } = {
   "settings.protection.strategyBalanceHint": "Nutzt zuerst, was sonst verfällt",
   "settings.protection.strategyFill": "Bevorzugtes Konto zuerst",
   "settings.protection.strategyFillHint": "Nächstes Konto erst am Limit",
+  "settings.protection.strategyDefault": "Immer das bevorzugte Konto",
+  "settings.protection.strategyDefaultHint": "Ein anderes nur, wenn es keine Arbeit annehmen kann",
+  "settings.protection.strategyAsk": "Frag mich",
+  "settings.protection.strategyAskHint": "Im Terminal und unter „Sitzung starten“",
   "settings.protection.codexResets": "Codex-Resets",
   "settings.protection.autoReset": "Codex-Resets automatisch einlösen",
   "settings.protection.autoResetDetail":
@@ -193,6 +197,11 @@ export const settings: { readonly [K in keyof typeof en]: string } = {
   "settings.notifications.onSwitch": "Bei Kontowechsel benachrichtigen",
   "settings.notifications.onSwitchDetail":
     "Wenn du ein Konto aktiv machst (Nutzen) oder ausschaltest, wird eine Benachrichtigung erfasst – das Pet reagiert, und eine Desktop-Benachrichtigung erscheint, wenn die an ist.",
+  "settings.notifications.quiet": "Ruhezeiten",
+  "settings.notifications.quietDetail": "In diesem Zeitfenster keine Desktop-Benachrichtigung, jeden Tag (Ortszeit). Hinweise stehen weiter in der Liste; danach wird keiner nachgeholt. Das Fenster darf über Mitternacht gehen.",
+  "settings.notifications.quietFrom": "Ruhe ab",
+  "settings.notifications.quietTo": "Ruhe bis",
+  "settings.notifications.quietSame": "Anfang und Ende müssen sich unterscheiden.",
   "settings.notifications.monitor": "Claude-Sitzungen überwachen",
   "settings.notifications.monitorDetail":
     "Beobachtet jede Claude-Sitzung und meldet sich, wenn die Antwort fertig ist oder Claude auf dich wartet – praktisch, wenn es in einem Terminal läuft, das du gerade nicht im Blick hast. Installiert zusätzliche, umkehrbare Hooks in die Einstellungen jedes Claude-Kontos; funktioniert, solange diese App offen ist.",
@@ -304,6 +313,7 @@ export const settings: { readonly [K in keyof typeof en]: string } = {
   "settings.updates.checking": "Prüft …",
   "settings.updates.checkNow": "Jetzt prüfen",
   "settings.updates.available": "{tag} verfügbar",
+  "settings.updates.installedPending": "{tag} ist installiert – starte Agent Switch neu, um es zu nutzen. Warte damit, bis die Sitzungen darin fertig sind, falls welche laufen.",
   "settings.updates.updated":
     "Auf {tag} aktualisiert – starte Agent Switch neu, um es zu übernehmen. Deine Einstellungen bleiben, wie sie sind.",
   "settings.updates.updating": "Aktualisiert …",
@@ -312,10 +322,10 @@ export const settings: { readonly [K in keyof typeof en]: string } = {
   "settings.updates.automatic": "Automatisch",
   "settings.updates.automaticUpdates": "Automatische Updates",
   "settings.updates.automaticUpdatesDetail":
-    "Prüft beim Öffnen und alle 24 Stunden und installiert eine neue Version automatisch (für die unten gewählten Release-Arten). Du wirst informiert, wenn ein Neustart nötig ist.",
+    "Prüft beim Öffnen und alle 24 Stunden und sagt dir, wenn eine neue Version da ist. Von selbst installiert wird nur für die Release-Arten, die du unten einschaltest.",
   "settings.updates.installFor": "Automatisch installieren für",
   "settings.updates.installForDetail":
-    "Entferne den Haken bei einer Art, um nur benachrichtigt zu werden (z. B. Major aus lassen, um große Releases erst zu prüfen).",
+    "Standardmäßig aus: Du wirst über jedes Release informiert und installierst es hier. Schalte eine Art ein, damit sie ohne Nachfrage installiert wird.",
   "settings.updates.autoUpdateKind": "Auto-Update {kind}",
   "settings.updates.toolsNote": "agent-config, rtk und die Agent-CLIs werden unter Tools aktualisiert.",
 

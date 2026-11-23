@@ -69,6 +69,7 @@ const TRAY_READ_SCOPES: readonly [string, RegExp][] = [
   ["as-read-host", /^host list --json$/],
   ["as-read-switch-requests", /^switch list --all --json$/],
   ["as-read-limits", /^limits --json$/],
+  ["as-read-plain-start", /^dir --provider (claude|codex) --plain --json$/],
 ];
 
 /** The tray scope name for `args`, or null when the tray may not run it. */
@@ -396,6 +397,20 @@ export async function needsLater(id: string): Promise<void> {
   await runCli(["needs", "later", id]);
 }
 
+/** `needs allow|deny <session> <approval> --json`: answer an approval through
+ *  its chat's inbox. Not applied (already answered, no chat holds it) throws
+ *  with the CLI's reason. */
+export async function needsAnswer(key: string, approvalId: string, decision: "allow" | "deny"): Promise<void> {
+  const out = await cli(["needs", decision, key, approvalId, "--json"]).execute();
+  let r: { status?: string; reason?: string } = {};
+  try {
+    r = JSON.parse(out.stdout) as typeof r;
+  } catch {
+    /* no JSON: the error is in stderr */
+  }
+  if (r.status !== "applied") throw new Error(r.reason || out.stderr || `agent-switch needs ${decision} failed`);
+}
+
 /** `needs seen`: the "while you were away" summary was looked at; it stays until then. */
 export async function needsSeen(): Promise<void> {
   await runCli(["needs", "seen"]);
@@ -499,9 +514,10 @@ export async function acRelease(): Promise<void> {
  *  webview's JS context. Emits `ac-settings-closed` to this window when the
  *  settings window is destroyed. Currently not UI-wired (owner decision
  *  2026-07-24: the browser flow is the Settings entry) — returns to the UI
- *  once agent-config ships its embed contract. */
-export async function acOpenSettingsWindow(theme: "light" | "dark", profile?: string): Promise<AcStatus> {
-  return invoke<AcStatus>("ac_open_settings_window", { theme, profile: profile ?? null });
+ *  once agent-config ships its embed contract. `accent` names a brand colour
+ *  of the shared token set; Rust drops any other value. */
+export async function acOpenSettingsWindow(theme: "light" | "dark", profile?: string, accent?: string): Promise<AcStatus> {
+  return invoke<AcStatus>("ac_open_settings_window", { theme, accent: accent ?? null, profile: profile ?? null });
 }
 
 /** The "Settings" entry: opens AC's own browser bootstrap URL, built and
@@ -806,6 +822,12 @@ export async function installShellIntegration(): Promise<{ shell: string; file: 
 
 export async function setProfileDisabled(provider: ProviderId, name: string, disabled: boolean): Promise<void> {
   await runCli([disabled ? "disable" : "enable", name, "--provider", provider]);
+}
+
+/** `agent-config-root <name> own|global`: a Claude account's own agent-config
+ *  root or the shared one; the settings server follows on its next call. */
+export async function setAgentConfigRoot(name: string, own: boolean): Promise<void> {
+  await runCli(["agent-config-root", name, own ? "own" : "global"]);
 }
 
 export async function setProfileColor(provider: ProviderId, name: string, color: string | null): Promise<void> {
@@ -1183,13 +1205,19 @@ export interface SelfUpdateResult {
   output: string;
 }
 
-/** Update the installed CLI in place by running `agent-switch update`
- *  (`npm install -g @event4u/agent-switch@latest`). The GUI itself is fetched
- *  per-version from the release, so applying the update needs a restart; the
- *  caller surfaces that. Returns ok=false with the captured output on failure
- *  (e.g. no write access to the global npm prefix) rather than throwing. */
-export async function selfUpdate(): Promise<SelfUpdateResult> {
-  const out = await Command.create("agent-switch", ["update"]).execute();
+const SEMVER = /^v?((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$/;
+
+/** Update the installed CLI in place to exactly `version` (the release the GUI
+ *  checked, never whatever npm calls latest by then) by running
+ *  `agent-switch update <version>`. The GUI itself is fetched per-version from
+ *  the release, so applying the update needs a restart; the caller surfaces
+ *  that. Returns ok=false with the captured output on failure (e.g. no write
+ *  access to the global npm prefix) rather than throwing; a version that is not
+ *  a semver never reaches the CLI. */
+export async function selfUpdate(version: string): Promise<SelfUpdateResult> {
+  const v = SEMVER.exec(version)?.[1];
+  if (!v) return { ok: false, output: `not a version: "${version}"` };
+  const out = await Command.create("agent-switch", ["update", v]).execute();
   return { ok: out.code === 0, output: `${out.stdout}\n${out.stderr}`.trim() };
 }
 
@@ -1221,6 +1249,16 @@ export async function getOsNotify(): Promise<boolean> {
 
 export async function setOsNotify(on: boolean): Promise<void> {
   await runCli(["os-notify", on ? "on" : "off"]);
+}
+
+/** Quiet hours (`HH:MM-HH:MM`, local time) — no desktop notification inside; null = off. */
+export async function getQuietHours(): Promise<string | null> {
+  const { window } = JSON.parse(await runCli(["quiet-hours", "status", "--json"]));
+  return typeof window === "string" ? window : null;
+}
+
+export async function setQuietHours(window: string | null): Promise<void> {
+  await runCli(["quiet-hours", window ?? "off"]);
 }
 
 /** "Keep accounts signed in" — the service keeps Claude logins from lapsing (default on). */
@@ -1313,12 +1351,14 @@ export async function setPaceSuggest(on: boolean): Promise<void> {
 }
 
 /** How a start with no folder rule picks its account (`strategy`):
- *  `balance` spreads starts, `fill` uses the preferred account up first. */
-export type StartStrategy = "balance" | "fill";
+ *  `balance` spreads starts, `fill` uses the preferred account up first,
+ *  `default` always takes it, `ask` lets the person choose. */
+export type StartStrategy = "balance" | "fill" | "default" | "ask";
+const START_STRATEGIES: readonly StartStrategy[] = ["balance", "fill", "default", "ask"];
 
 export async function getStrategy(provider: ProviderId): Promise<StartStrategy> {
   const { strategy } = JSON.parse(await runCli(["strategy", "status", "--provider", provider, "--json"]));
-  return strategy === "fill" ? "fill" : "balance";
+  return START_STRATEGIES.includes(strategy) ? strategy : "balance";
 }
 
 export async function setStrategy(provider: ProviderId, strategy: StartStrategy): Promise<void> {
@@ -1636,6 +1676,8 @@ export interface DirResolution {
   why: string[];
   /** A folder rule refused every start it could make (the CLI exits 86). */
   blocked?: string;
+  /** Strategy `ask`: the accounts to choose from; nothing starts automatically. */
+  ask?: string[];
 }
 
 /** One Claude Desktop instance from `desktop --json`: the accounts that ran
@@ -1674,8 +1716,10 @@ export interface AuthStatusRow {
   detail: string;
 }
 
+/** `{schema: 1, profiles}`; a CLI older than the shape version printed the bare list. */
 export async function authStatus(provider?: ProviderId): Promise<AuthStatusRow[]> {
-  return JSON.parse(await runCli(["auth-status", ...(provider ? ["--provider", provider] : []), "--json"]));
+  const out = JSON.parse(await runCli(["auth-status", ...(provider ? ["--provider", provider] : []), "--json"])) as AuthStatusRow[] | { profiles?: AuthStatusRow[] };
+  return Array.isArray(out) ? out : (out.profiles ?? []);
 }
 
 export interface DoctorCheckRow {
@@ -1687,6 +1731,8 @@ export interface DoctorCheckRow {
 }
 
 export interface DoctorReport {
+  /** Absent from a CLI older than the shape version. */
+  schema?: number;
   readiness: "ready" | "attention" | "blocked";
   platform: string;
   checks: DoctorCheckRow[];

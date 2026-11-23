@@ -63,6 +63,24 @@ higher up:
     - legacy/ pinned to `personal`, which wins here
 </FileTree>
 
+## Pin every clone of a repo or an owner
+
+A folder pin has to be repeated for every checkout. A **remote pin** matches a
+repository by its `origin` URL instead, wherever it is cloned:
+
+```bash
+agent-switch map client-a --remote github.com/client-a          # every repo of that owner
+agent-switch map side --remote github.com/client-a/website      # one repo
+agent-switch unmap --remote github.com/client-a
+```
+
+A remote URL works too (`--remote git@github.com:client-a/website.git`). The
+repo pin wins over the owner pin. A remote pin counts as a pin on the
+repository's root folder: a folder pin inside the repo or on its root still
+wins, and the remote pin wins over a pin on a parent folder like `~/code`.
+`mappings` lists remote pins after the folder pins. A remote pin cannot be
+paused; remove it instead.
+
 ## Pause, remove, list
 
 ```bash
@@ -137,6 +155,9 @@ only its Codex members. Pools never add up limits; each account keeps its own.
   is older or unknown, or who is signed out, disabled or still sharing the
   default login, is skipped.
 - A member at its limit protection threshold (98% by default) is skipped.
+- A Claude member takes part only on a personal **Pro** or **Max** plan (the
+  `subscriptionType` in its stored login). A Team or Enterprise seat, any other
+  plan, or a login without the field is skipped, with that reason.
 - It never leaves the pool. With no fresh numbers, it still starts on a usable
   member: your preferred account if it is a member, otherwise the first usable
   one.
@@ -198,9 +219,11 @@ starting anything:
 | `why` | Each step of the decision, in order: the rule that applied, every account that was skipped and why, and the pick. |
 | `blocked` | Present when a pin refuses the start; the command then exits with code 86. |
 | `note` | Present when the start moved off a busy account or shares one. |
+| `ask` | Present under `strategy ask` when no pin decides: the accounts to choose from, the fallback first. |
 
 Add `--provider codex` for Codex. `agent-switch picks` shows the same reasons
-for starts that already happened.
+for starts that already happened. In the app, **Accounts › Projects & pools**
+shows the last reason under each active folder pin, and every step on hover.
 
 ## Next steps
 

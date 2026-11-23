@@ -27,6 +27,11 @@ function seed(home: string, provider: string, name: string): void {
   fs.writeFileSync(path.join(dir, provider === "claude" ? ".claude.json" : "auth.json"), "{}");
 }
 
+/** A Claude credential on `plan` — only Pro and Max accounts are balanced. */
+function onPlan(home: string, name: string, plan = "max"): void {
+  fs.writeFileSync(path.join(home, "claude", name, "config", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "t", subscriptionType: plan } }));
+}
+
 test("flag-first `remove --provider codex opfer` removes opfer, NOT codex (F1 repro)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
@@ -1168,6 +1173,29 @@ function runRaw(home: string, args: string[], env: Record<string, string> = {}) 
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
+test("remote binding: `map --remote` routes every clone of an owner, `unmap --remote` removes it", { skip: gate.skip || (spawnSync("git", ["--version"]).status === 0 ? false : "git not installed") }, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-remote-"));
+  const repo = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "asw-clone-")), "widgets");
+  try {
+    seed(home, "claude", "work");
+    fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+    spawnSync("git", ["init", "-q", repo]);
+    spawnSync("git", ["-C", repo, "remote", "add", "origin", "git@github.com:Acme/widgets.git"]);
+    assert.match(run(home, ["map", "work", "--remote", "github.com/acme"]), /Mapped remote github\.com\/acme -> claude\/work/);
+    assert.notEqual(runRaw(home, ["map", "work", "--remote", "github.com"]).status, 0, "a bare host names no owner");
+    assert.deepEqual(JSON.parse(run(home, ["mappings", "--json"])), [{ remote: "github.com/acme", provider: "claude", target: "work", paused: false }]);
+    const dir = () => JSON.parse(spawnSync("node", [CLI, "dir", "--json"], { cwd: path.join(repo, "src"), env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" }).stdout);
+    const hit = dir();
+    assert.equal(hit.profile, "claude/work");
+    assert.match(hit.why[0], /^Rule: remote github\.com\/acme \(repo .*widgets\) → claude\/work$/);
+    assert.match(run(home, ["unmap", "--remote", "github.com/acme"]), /Removed remote binding github\.com\/acme/);
+    assert.doesNotMatch(dir().why.join("\n"), /Rule:/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(path.dirname(repo), { recursive: true, force: true });
+  }
+});
+
 test("guard: with every account busy, `dir --guard` shares the profile instead of refusing", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
   try {
@@ -1188,6 +1216,32 @@ test("guard: with every account busy, `dir --guard` shares the profile instead o
   }
 });
 
+test("rebind: with two live sessions on the profile it names both before it runs", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-rebind-follow-"));
+  try {
+    seed(home, "claude", "work");
+    seed(home, "claude", "side");
+    const reg = path.join(home, "claude", "work", "config", "sessions");
+    fs.mkdirSync(reg, { recursive: true });
+    fs.writeFileSync(path.join(reg, `${process.pid}.json`), JSON.stringify({ sessionId: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }));
+    fs.writeFileSync(path.join(reg, `${process.ppid}.json`), JSON.stringify({ sessionId: "22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }));
+    // Neither profile holds a credential, so the switch itself refuses — the warning comes first.
+    const r = runRaw(home, ["rebind", "side", "--profile", "work"]);
+    assert.match(r.stdout, /Rebinding "work" moves every live session on it to side's account — 2 follow: (11111111|22222222)\b.*, (11111111|22222222)\b/);
+    const one = fs.mkdtempSync(path.join(os.tmpdir(), "asw-rebind-one-"));
+    try {
+      seed(one, "claude", "work");
+      seed(one, "claude", "side");
+      seedLiveSession(one, "work", process.pid);
+      assert.doesNotMatch(runRaw(one, ["rebind", "side", "--profile", "work"]).stdout, /follow:/);
+    } finally {
+      fs.rmSync(one, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("guard: a busy active profile moves `dir --guard` onto a free signed-in one instead of refusing", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-guard-"));
   try {
@@ -1197,6 +1251,7 @@ test("guard: a busy active profile moves `dir --guard` onto a free signed-in one
       path.join(home, "claude", "spare", "config", ".claude.json"),
       JSON.stringify({ oauthAccount: { emailAddress: "spare@example.com" } }),
     );
+    onPlan(home, "spare");
     run(home, ["guard", "block"]);
     run(home, ["use", "work"]);
     seedLiveSession(home, "work", process.pid);
@@ -1392,6 +1447,8 @@ function runFull(home: string, args: string[], cwd?: string) {
 
 const TOKEN = "sk-ant-oat01-" + "Z".repeat(64);
 const REFRESH = "sk-ant-ort01-" + "Y".repeat(64);
+const API_KEY = "sk-proj-" + "X".repeat(48);
+const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJ" + "W".repeat(40) + ".sig" + "W".repeat(20);
 
 test("upgrade from a 2.1.0 config: labels, mappings, alerts, autoswitch, guard untouched; zero pools", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
@@ -1461,7 +1518,7 @@ test("a fresh install keeps warn after its first profile appears", gate, () => {
   }
 });
 
-test("auth-status --json, doctor --json and activity --json never contain a token", gate, () => {
+test("auth-status --json, doctor --json and activity --json carry a shape version and never contain a token", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
     const ccfg = path.join(home, "claude", "work", "config");
@@ -1470,26 +1527,35 @@ test("auth-status --json, doctor --json and activity --json never contain a toke
     fs.writeFileSync(path.join(ccfg, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: TOKEN, refreshToken: REFRESH, expiresAt: Date.now() + 3600e3 } }));
     const xcfg = path.join(home, "codex", "w", "config");
     fs.mkdirSync(xcfg, { recursive: true });
-    fs.writeFileSync(path.join(xcfg, "auth.json"), JSON.stringify({ tokens: { access_token: TOKEN, refresh_token: REFRESH }, last_refresh: "2026-10-27T10:00:00Z" }));
+    fs.writeFileSync(path.join(xcfg, "auth.json"), JSON.stringify({ tokens: { access_token: TOKEN, refresh_token: REFRESH, id_token: JWT }, OPENAI_API_KEY: API_KEY, last_refresh: "2026-10-27T10:00:00Z" }));
+    // A line an older build (or a hand edit) wrote without redaction: reading it must not hand the token on.
+    fs.writeFileSync(path.join(home, "activity.jsonl"), JSON.stringify({ at: "2026-10-01T10:00:00Z", kind: "login", target: "claude/work", action: `stored ${TOKEN}`, reason: `refresh ${REFRESH} failed, key ${API_KEY}, id ${JWT}`, ok: false }) + "\n");
+    const env = { ANTHROPIC_API_KEY: API_KEY, CLAUDE_CODE_OAUTH_TOKEN: TOKEN, OPENAI_API_KEY: API_KEY };
+    const runEnv = (args: string[]) => spawnSync("node", [CLI, ...args], { env: { ...process.env, ...env, AGENT_SWITCH_HOME: home }, encoding: "utf8" });
 
-    const auth = run(home, ["auth-status", "--json"]);
-    const rows = JSON.parse(auth);
-    assert.equal(rows.find((r: any) => r.provider === "codex").state, "connected");
-    assert.ok(["connected", "unknown"].includes(rows.find((r: any) => r.provider === "claude").state));
+    const auth = runEnv(["auth-status", "--json"]).stdout;
+    const authOut = JSON.parse(auth);
+    assert.equal(authOut.schema, 1);
+    assert.equal(authOut.profiles.find((r: any) => r.provider === "codex").state, "connected");
+    assert.ok(["connected", "unknown"].includes(authOut.profiles.find((r: any) => r.provider === "claude").state));
 
     run(home, ["use", "work"]);
     run(home, ["protection", "set", "claude/work", "--threshold", "95"]);
-    const activity = run(home, ["activity", "--json"]);
-    const entries = JSON.parse(activity).entries;
-    assert.deepEqual(entries.map((e: any) => e.kind), ["switch", "protection"]);
+    const activity = runEnv(["activity", "--json"]).stdout;
+    const activityOut = JSON.parse(activity);
+    assert.equal(activityOut.schema, 1);
+    assert.deepEqual(activityOut.entries.map((e: any) => e.kind), ["login", "switch", "protection"]);
+    assert.match(activityOut.entries[0].reason, /\[redacted\]/);
 
-    const doctor = runFull(home, ["doctor", "--json"], undefined);
+    const doctor = runEnv(["doctor", "--json"]);
     const report = JSON.parse(doctor.stdout);
+    assert.equal(report.schema, 1);
     assert.ok(["ready", "attention", "blocked"].includes(report.readiness));
     for (const c of report.checks) assert.ok(c.id && c.status && typeof c.title === "string");
+    assert.match(report.checks.find((c: any) => c.id === "api-key-overrides").detail, /ANTHROPIC_API_KEY/, "the override is named");
 
-    for (const out of [auth, activity, doctor.stdout, fs.readFileSync(path.join(home, "activity.jsonl"), "utf8")]) {
-      assert.doesNotMatch(out, /ZZZZZZZZ|YYYYYYYY/, "no token value in any output or log");
+    for (const out of [auth, activity, doctor.stdout, doctor.stderr]) {
+      assert.doesNotMatch(out, /ZZZZZZZZ|YYYYYYYY|XXXXXXXX|WWWWWWWW/, "no token value in any output");
     }
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
@@ -1504,6 +1570,7 @@ test("pools: dir --json resolves a pool rule to the freshest member and explains
       const cfg = path.join(home, "claude", n, "config");
       fs.mkdirSync(cfg, { recursive: true });
       fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: `${n}@example.com` } }));
+      onPlan(home, n);
     }
     const sample = (util: number) => ({ samples: [{ at: new Date(Date.now() - 60_000).toISOString(), windows: [{ key: "five_hour", utilization: util }] }] });
     fs.writeFileSync(path.join(home, "claude", "a", "usage-history.json"), JSON.stringify(sample(90)));
@@ -1658,7 +1725,7 @@ function runLogin(home: string, bin: string, args: string[]) {
 
 const posixGate = { skip: gate.skip || (process.platform === "win32" ? "fake binaries are POSIX shell scripts" : false) };
 
-test("login: runs `claude auth login` in the profile's config dir and confirms the sign-in", posixGate, () => {
+test("login: runs `claude auth login` in a staging dir and confirms the sign-in", posixGate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
   try {
@@ -1666,9 +1733,158 @@ test("login: runs `claude auth login` in the profile's config dir and confirms t
     const log = fakeProvider(bin, "claude", true);
     const r = runLogin(home, bin, ["login", "work"]);
     assert.equal(r.status, 0, r.stderr);
-    const cfg = path.join(home, "claude", "work", "config");
-    assert.deepEqual(fs.readFileSync(log, "utf8").trim().split("\n"), [`auth login|${cfg}`]);
+    const [line, ...rest] = fs.readFileSync(log, "utf8").trim().split("\n");
+    assert.deepEqual(rest, []);
+    assert.match(line!, new RegExp(`^auth login\\|${path.join(home, "staging", "claude-work-")}\\d+$`.replace(/\//g, "\\/")));
+    assert.match(fs.readFileSync(path.join(home, "claude", "work", "config", ".credentials.json"), "utf8"), /refreshToken/);
     assert.match(r.stdout, /signed in/i);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+// ---------- login: a wrong account is never saved (threat model N1-N6) ----------
+
+/** A fake provider that signs in as `who` (null = signs nothing in): Claude writes
+ *  the credential and `oauthAccount`, Codex an `auth.json` whose id_token carries
+ *  the email. Records the config dir it ran in. */
+function fakeSignIn(dir: string, binary: "claude" | "codex", who: { email: string; org?: string } | null): string {
+  const log = path.join(dir, `${binary}.log`);
+  const envVar = binary === "claude" ? "CLAUDE_CONFIG_DIR" : "CODEX_HOME";
+  let write = "";
+  if (who && binary === "claude") {
+    const account = JSON.stringify({ oauthAccount: { emailAddress: who.email, organizationUuid: who.org ?? "org-1" } });
+    write = `printf '%s' '{"claudeAiOauth":{"accessToken":"new","refreshToken":"r","expiresAt":4102444800000}}' > "$${envVar}/.credentials.json"\nprintf '%s' '${account}' > "$${envVar}/.claude.json"`;
+  } else if (who) {
+    const idToken = `x.${Buffer.from(JSON.stringify({ email: who.email })).toString("base64url")}.y`;
+    write = `printf '%s' '{"tokens":{"access_token":"new","refresh_token":"r","id_token":"${idToken}"}}' > "$${envVar}/auth.json"`;
+  }
+  fs.writeFileSync(path.join(dir, binary), `#!/bin/sh\n[ "$1" = "--version" ] && { echo "1.0.0"; exit 0; }\necho "$*|$${envVar}" >> "${log}"\n${write}\nexit 0\n`, { mode: 0o755 });
+  return log;
+}
+
+/** A Claude profile signed in as `email` in `org`, with a credential file. */
+function seedClaudeAccount(home: string, name: string, email: string, org = "org-1"): string {
+  const cfg = path.join(home, "claude", name, "config");
+  fs.mkdirSync(cfg, { recursive: true });
+  fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ hasCompletedOnboarding: true, oauthAccount: { emailAddress: email, organizationUuid: org } }));
+  fs.writeFileSync(path.join(cfg, ".credentials.json"), '{"claudeAiOauth":{"accessToken":"old","refreshToken":"r","expiresAt":4102444800000}}');
+  return cfg;
+}
+
+function snapshotDir(dir: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of fs.readdirSync(dir)) {
+    const p = path.join(dir, f);
+    if (fs.statSync(p).isFile()) out[f] = fs.readFileSync(p, "utf8");
+  }
+  return out;
+}
+
+function stagingLeft(home: string): string[] {
+  const dir = path.join(home, "staging");
+  return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+}
+
+/** Exit code `login` uses for "signed in to a different account; nothing saved". */
+const WRONG_ACCOUNT_EXIT = 4;
+
+for (const c of [
+  { label: "another email", who: { email: "private@example.com", org: "org-1" } },
+  { label: "the same email in another organization", who: { email: "work@example.com", org: "org-2" } },
+]) {
+  test(`login: a Claude sign-in to ${c.label} leaves the profile byte-identical`, posixGate, () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
+    try {
+      const cfg = seedClaudeAccount(home, "work", "work@example.com", "org-1");
+      const before = snapshotDir(cfg);
+      fakeSignIn(bin, "claude", c.who);
+      const r = runLogin(home, bin, ["login", "work"]);
+      assert.equal(r.status, WRONG_ACCOUNT_EXIT, r.stderr);
+      assert.match(r.stderr, /different account/i);
+      assert.match(r.stderr, /nothing was saved/i);
+      assert.deepEqual(snapshotDir(cfg), before);
+      assert.deepEqual(stagingLeft(home), []);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(bin, { recursive: true, force: true });
+    }
+  });
+}
+
+test("login: a Codex sign-in to another email leaves auth.json byte-identical", posixGate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
+  try {
+    const cfg = path.join(home, "codex", "w", "config");
+    fs.mkdirSync(cfg, { recursive: true });
+    const idToken = `x.${Buffer.from(JSON.stringify({ email: "work@example.com" })).toString("base64url")}.y`;
+    fs.writeFileSync(path.join(cfg, "auth.json"), JSON.stringify({ tokens: { access_token: "old", refresh_token: "r", id_token: idToken } }));
+    const before = snapshotDir(cfg);
+    fakeSignIn(bin, "codex", { email: "private@example.com" });
+    const r = runLogin(home, bin, ["login", "--provider", "codex", "w"]);
+    assert.equal(r.status, WRONG_ACCOUNT_EXIT, r.stderr);
+    assert.deepEqual(snapshotDir(cfg), before);
+    assert.deepEqual(stagingLeft(home), []);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test("login: the right account is written into the profile once, staging removed", posixGate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
+  try {
+    const cfg = seedClaudeAccount(home, "work", "work@example.com", "org-1");
+    const log = fakeSignIn(bin, "claude", { email: "work@example.com", org: "org-1" });
+    const r = runLogin(home, bin, ["login", "work"]);
+    assert.equal(r.status, 0, r.stderr);
+    const runs = fs.readFileSync(log, "utf8").trim().split("\n");
+    assert.equal(runs.length, 1);
+    assert.doesNotMatch(runs[0]!, new RegExp(`\\|${cfg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`), "the provider never runs in the profile itself");
+    assert.match(fs.readFileSync(path.join(cfg, ".credentials.json"), "utf8"), /"accessToken":"new"/);
+    const account = JSON.parse(fs.readFileSync(path.join(cfg, ".claude.json"), "utf8"));
+    assert.equal(account.oauthAccount.emailAddress, "work@example.com");
+    assert.equal(account.hasCompletedOnboarding, true, "the profile's other settings are kept");
+    assert.deepEqual(stagingLeft(home), []);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test("login: an unfinished sign-in leaves the profile untouched and no staging behind", posixGate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
+  try {
+    const cfg = seedClaudeAccount(home, "work", "work@example.com");
+    fs.rmSync(path.join(cfg, ".credentials.json")); // signed out
+    const before = snapshotDir(cfg);
+    fakeSignIn(bin, "claude", null);
+    const r = runLogin(home, bin, ["login", "work"]);
+    assert.equal(r.status, 1);
+    assert.deepEqual(snapshotDir(cfg), before);
+    assert.deepEqual(stagingLeft(home), []);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test("login: a profile with no account yet takes whichever account signs in", posixGate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
+  try {
+    seed(home, "claude", "fresh");
+    fakeSignIn(bin, "claude", { email: "anyone@example.com" });
+    const r = runLogin(home, bin, ["login", "fresh"]);
+    assert.equal(r.status, 0, r.stderr);
+    const cfg = path.join(home, "claude", "fresh", "config");
+    assert.equal(JSON.parse(fs.readFileSync(path.join(cfg, ".claude.json"), "utf8")).oauthAccount.emailAddress, "anyone@example.com");
+    assert.deepEqual(stagingLeft(home), []);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(bin, { recursive: true, force: true });
@@ -1690,7 +1906,7 @@ test("login: an unfinished sign-in exits non-zero and says so", posixGate, () =>
   }
 });
 
-test("login: codex signs in with `codex login` under the profile's CODEX_HOME", posixGate, () => {
+test("login: codex signs in with `codex login` under a staging CODEX_HOME, then into the profile", posixGate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "asw-bin-"));
   try {
@@ -1698,7 +1914,11 @@ test("login: codex signs in with `codex login` under the profile's CODEX_HOME", 
     const log = fakeProvider(bin, "codex", true);
     const r = runLogin(home, bin, ["login", "--provider", "codex", "w"]);
     assert.equal(r.status, 0, r.stderr);
-    assert.deepEqual(fs.readFileSync(log, "utf8").trim().split("\n"), [`login|${path.join(home, "codex", "w", "config")}`]);
+    const lines = fs.readFileSync(log, "utf8").trim().split("\n");
+    assert.equal(lines.length, 1);
+    assert.ok(lines[0]!.startsWith(`login|${path.join(home, "staging", "codex-w-")}`), lines[0]);
+    assert.match(fs.readFileSync(path.join(home, "codex", "w", "config", "auth.json"), "utf8"), /refresh_token/);
+    assert.deepEqual(stagingLeft(home), []);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
     fs.rmSync(bin, { recursive: true, force: true });
@@ -1911,6 +2131,7 @@ test("dir --plain: ignores folder rules and balances by what each account would 
       const cfg = path.join(home, "claude", n, "config");
       fs.mkdirSync(cfg, { recursive: true });
       fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: `${n}@example.com` } }));
+      onPlan(home, n, n === "a" ? "pro" : "max");
     }
     const sample = (util: number) => ({ samples: [{ at: new Date(Date.now() - 60_000).toISOString(), windows: [{ key: "seven_day", utilization: util }] }] });
     fs.writeFileSync(path.join(home, "claude", "a", "usage-history.json"), JSON.stringify(sample(70)));
@@ -2257,6 +2478,32 @@ test("dir: a folder bound to a disabled account is refused with exit 86, never s
   }
 });
 
+test("dir --json: a team account is not balanced, and the reason is in the why-lines", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-plan-dir-"));
+  const cwd = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-plan-cwd-")));
+  try {
+    const now = Date.now();
+    for (const [name, util, plan] of [["mine", 60, "pro"], ["seat", 0, "team"], ["bare", 0, null]] as const) {
+      const cfg = path.join(home, "claude", name, "config");
+      fs.mkdirSync(cfg, { recursive: true });
+      fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: `${name}@example.com` } }));
+      if (plan) onPlan(home, name, plan);
+      else fs.writeFileSync(path.join(cfg, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "t" } }));
+      fs.writeFileSync(
+        path.join(home, "claude", name, "usage-latest.json"),
+        JSON.stringify({ windows: [{ key: "seven_day", label: "7d", utilization: util, resetsAt: new Date(now + 5 * 3600e3).toISOString() }], routines: null, capturedAt: new Date(now - 60e3).toISOString() }),
+      );
+    }
+    const j = JSON.parse(spawnSync("node", [CLI, "dir", "--json"], { cwd, env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" }).stdout);
+    assert.equal(j.profile, "claude/mine", j.why.join("\n"));
+    assert.ok(j.why.includes("Skipped claude/seat: a team plan — only personal Pro and Max accounts are balanced"), j.why.join("\n"));
+    assert.ok(j.why.includes("Skipped claude/bare: no plan in its credential — only personal Pro and Max accounts are balanced"), j.why.join("\n"));
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("dir: balances on the app's latest usage read without the background service", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-latest-dir-"));
   const cwd = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-latest-cwd-")));
@@ -2267,6 +2514,7 @@ test("dir: balances on the app's latest usage read without the background servic
       const cfg = path.join(home, "claude", name, "config");
       fs.mkdirSync(cfg, { recursive: true });
       fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: `${name}@example.com` } }));
+      onPlan(home, name);
       fs.writeFileSync(
         path.join(home, "claude", name, "usage-latest.json"),
         JSON.stringify({ windows: [{ key: "five_hour", label: "5h", utilization: util, resetsAt: reset }], routines: null, capturedAt: new Date(now - 2 * 60e3).toISOString() }),
@@ -2327,6 +2575,20 @@ test("`rebind --when-idle` arms, `sessions --json` shows it, `rebind --cancel` d
     assert.match(run(home, ["rebind", "--cancel", "--profile", "work"]), /Cancelled: "work" will not switch to "side"/);
     assert.equal(JSON.parse(run(home, ["sessions", "work", "--json"])).find((r: { sessionId: string }) => r.sessionId === "s-1").armed, null);
     assert.match(run(home, ["rebind", "--cancel"]), /No armed switch to cancel/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("update: a version that is not a semver is refused before npm runs", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
+  try {
+    for (const bad of ["latest", "2.12", "2.12.1;echo x", "@event4u/other"]) {
+      const r = runRaw(home, ["update", bad]);
+      assert.equal(r.status, 1, bad);
+      assert.match(r.stderr, /usage: agent-switch update \[<version>\]/);
+      assert.doesNotMatch(r.stdout, /npm/);
+    }
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

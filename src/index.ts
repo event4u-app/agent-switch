@@ -36,6 +36,7 @@ import {
   cmdList,
   cmdLogin,
   cmdMarkShared,
+  cmdAgentConfigRoot,
   cmdRemove,
   cmdRename,
   cmdRun,
@@ -81,6 +82,7 @@ import {
   cmdNotifications,
   cmdNotify,
   cmdOsNotify,
+  cmdQuietHours,
 } from "./commands/settings.js";
 import { cmdConfig, cmdShare } from "./commands/sharing.js";
 import {
@@ -145,12 +147,13 @@ async function main(): Promise<void> {
     case "disable": return cmdDisable(providerId, positional[0], true);
     case "enable": return cmdDisable(providerId, positional[0], false);
     case "mark-shared": return cmdMarkShared(providerId, positional[0], !!flags.off);
+    case "agent-config-root": return cmdAgentConfigRoot(providerId, positional[0], positional[1], !!flags.json);
     case "autoswitch": return cmdAutoswitch(providerId, providerExplicit, positional[0], flags);
     case "reset": return cmdReset(providerId, positional[0], !!flags.yes);
     case "rename": return cmdRename(providerId, positional[0], positional[1]);
     case "providers": return cmdProviders(providerId, providerExplicit, positional[0], flags);
     case "gui": return cmdGui(flags["after-pid"]);
-    case "update": case "upgrade": return cmdUpdate();
+    case "update": case "upgrade": return cmdUpdate(positional[0]);
     case "check-update": case "check-updates": return cmdCheckUpdate(!!flags.json);
     // `open <app> [profile]` opens a desktop app on an account; `open <session> [--with …]` opens a session's folder.
     case "open": return flags.with !== undefined || flags.file !== undefined || (positional[0] && !findApp(positional[0])) ? cmdOpenSession(positional[0], flags) : cmdOpen(positional[0], positional[1]);
@@ -164,6 +167,7 @@ async function main(): Promise<void> {
     case "notify": return cmdNotify(flags);
     case "notifications": return cmdNotifications(positional[0], !!flags.json);
     case "os-notify": return cmdOsNotify(positional[0], !!flags.json);
+    case "quiet-hours": return cmdQuietHours(positional[0], !!flags.json);
     case "keep-signed-in": return cmdKeepSignedIn(positional[0], !!flags.json);
     case "auto-reset": return cmdAutoReset(positional[0], !!flags.json);
     case "uninstall": return cmdUninstall(flags);
@@ -191,7 +195,7 @@ async function main(): Promise<void> {
     }
     case "guard": return cmdGuard(positional[0], !!flags.json);
     case "map": return cmdMap(providerId, positional[0], positional[1], flags);
-    case "unmap": return cmdUnmap(providerExplicit ? providerId : undefined, positional[0]);
+    case "unmap": return cmdUnmap(providerExplicit ? providerId : undefined, positional[0], typeof flags.remote === "string" ? flags.remote : undefined);
     case "mappings": return cmdMappings(rest.includes("--json"));
     case "share": return cmdShare(positional[0], rest.slice(1));
     case "claude-settings": return cmdClaudeSettings(positional[0], positional.slice(1), flags);

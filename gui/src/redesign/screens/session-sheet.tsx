@@ -20,7 +20,7 @@ import { splitAccountId } from "../../vm/actions.js";
 import { maxUtilization, rankAccounts, TOOL_LABEL, type RankedAccount } from "../../vm/rules.js";
 import { useAS, type Store } from "../../vm/store.js";
 import type { Session } from "../../vm/types.js";
-import { armSwitch, isRunning, liveSwitch, sessionHandle, switchTargets } from "./logic.js";
+import { armSwitch, isRunning, liveSwitch, rebindFollowers, sessionHandle, switchTargets } from "./logic.js";
 
 /** The arm dialog's copy (D3). Both sentences are load-bearing: the cache does
  *  not travel, and nothing switches unless the user confirms here. */
@@ -180,11 +180,13 @@ export function SessionSheet({ id }: { id: string }) {
     return next;
   };
 
+  const followers = rebindFollowers(n, s.sessions);
+  const followLine = followers.length ? ` ${t("sessions.sheet.followers", { account: account?.name ?? "", list: followers.map((x) => x.title).join(", ") })}` : "";
   const switchLive = () =>
     s.open({
       kind: "confirm",
       title: t("sessions.sheet.switchTitle", { project: n.project, name: switchAccount?.name ?? "" }),
-      body: t("sessions.sheet.switchBody"),
+      body: `${t("sessions.sheet.switchBody")}${followLine}`,
       confirm: t("sessions.sheet.switchAccount"),
       onConfirm: () => {
         s.act
@@ -203,7 +205,7 @@ export function SessionSheet({ id }: { id: string }) {
     s.open({
       kind: "confirm",
       title: t("sessions.sheet.armTitle", { project: n.project, name: switchAccount?.name ?? "" }),
-      body: `${t("sessions.sheet.armCache")} ${t("sessions.sheet.armClick")} ${t("sessions.sheet.armRest")}`,
+      body: `${t("sessions.sheet.armCache")} ${t("sessions.sheet.armClick")} ${t("sessions.sheet.armRest")}${followLine}`,
       confirm: t("sessions.sheet.armConfirm"),
       onConfirm: () => {
         s.act

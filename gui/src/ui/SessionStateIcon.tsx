@@ -10,6 +10,7 @@ const LOOK: Record<SessionState, { color: string; shape: "dot" | "ring" | "pause
   parked: { color: "text-ac-soft", shape: "pause" },
   "auth-paused": { color: "text-ac-warn", shape: "pause" },
   idle: { color: "text-ac-faint", shape: "ring" },
+  recent: { color: "text-ac-faint", shape: "ring" },
   done: { color: "text-ac-faint", shape: "dot" },
 };
 

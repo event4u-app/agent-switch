@@ -7,7 +7,7 @@ status: planned
 
 > **Owner question (/roadmap:triage-parked, 2026-11-07):** Phase 3 is unblocked — the agent-config contracts it waited for have shipped (`--config-root`/`EVENT4U_CONFIG_HOME`, `docs/contracts/rtk-detection.md`, `tokens/build-as.mjs`). P3.1 (`src/tooling.ts:139-143` still probes), P3.2 (`gui/src-tauri/src/ac.rs` passes no config root) and P3b.1 (`ac.rs:709` sends no accent) are agent-executable now. P3.3 (share-collision guard on the AS side) looks obsolete: agent-config guards it itself (`src/server/io/sharedWriteCheck.ts` + SharedWriteModal). Phase 2 still needs a non-macOS machine; P3b.2 (vitest/vite bump) waits for a tooling change or an advisory.
 > Candidates: (1) move P3.1/P3.2/P3b.1 into an active roadmap, cancel P3.3 as covered by agent-config, re-park the rest; (2) keep P3.3 as an AS-side test only; (3) leave parked.
-> **Decided 2026-11-07 (owner, option 1):** P3.1, P3.2, P3b.1 moved to [`road-to-the-ready-remainders.md`](../road-to-the-ready-remainders.md) phase 4. P3.3 cancelled by the owner on 2026-11-08 (covered by agent-config, see the step).
+> **Decided 2026-11-07 (owner, option 1):** P3.1, P3.2, P3b.1 moved to [`road-to-the-ready-remainders.md`](../archive/road-to-the-ready-remainders.md) phase 4. P3.3 cancelled by the owner on 2026-11-08 (covered by agent-config, see the step).
 
 > One home for the still-wanted `[~]` deferrals carried out of six roadmaps that
 > completed and were archived on 2026-07-29 (desktop-pet, live-rebind,
@@ -94,12 +94,12 @@ stays visible and tracked instead of being buried in an archive.
 
 ## Phase 3 — blocked on agent-config (AC) ecosystem contracts
 
-- [ ] **rtk detection real delegation** (from `road-to-agent-setup-hub`). The <!-- moved-to: road-to-the-ready-remainders.md 4.1 (2026-11-07) -->
+- [ ] **rtk detection real delegation** (from `road-to-agent-setup-hub`). The <!-- moved-to: archive/road-to-the-ready-remainders.md 4.1 (2026-11-07) -->
       fallback output-signature probe ships (`src/tooling.ts probeRtkIdentity`);
       the real delegation activates only when agent-config exposes its rtk
       detection contract (AC-side rtk roadmap Phase 3). One implementation, not
       two — wire the seam when that contract lands.
-- [ ] **Per-profile AC settings via config-root flag** (from <!-- moved-to: road-to-the-ready-remainders.md 4.2 (2026-11-07) -->
+- [ ] **Per-profile AC settings via config-root flag** (from <!-- moved-to: archive/road-to-the-ready-remainders.md 4.2 (2026-11-07) -->
       `road-to-ac-embedded-settings`). Pass the active profile's config dir to
       the spawned AC server (documented AC-side flag/env) so per-profile AC
       settings become possible ("work profile has the strict ruleset, private
@@ -126,7 +126,7 @@ stays visible and tracked instead of being buried in an archive.
 
 ## Phase 3b — carried from the July inbox (`inbox-2026-11-a`)
 
-- [ ] **AS side of shared design tokens.** The owner asked that the embedded <!-- moved-to: road-to-the-ready-remainders.md 4.3 (2026-11-07) -->
+- [ ] **AS side of shared design tokens.** The owner asked that the embedded <!-- moved-to: archive/road-to-the-ready-remainders.md 4.3 (2026-11-07) -->
       agent-config GUI match agent-switch's look (`omni-route` transcript, July).
       AS side: a generated token file from a shared source, a CI drift check, and
       a bounded `accent` parameter on the embed URL (`gui/src-tauri/src/ac.rs`

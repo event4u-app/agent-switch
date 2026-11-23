@@ -131,6 +131,10 @@ export const settings = {
   "settings.protection.strategyBalanceHint": "Uses what would expire first",
   "settings.protection.strategyFill": "Preferred account first",
   "settings.protection.strategyFillHint": "Next account only at the limit",
+  "settings.protection.strategyDefault": "Always the preferred account",
+  "settings.protection.strategyDefaultHint": "Another one only when it can't take work",
+  "settings.protection.strategyAsk": "Ask me",
+  "settings.protection.strategyAskHint": "In the terminal and in Start session",
   "settings.protection.codexResets": "Codex resets",
   "settings.protection.autoReset": "Redeem Codex resets automatically",
   "settings.protection.autoResetDetail":
@@ -185,6 +189,11 @@ export const settings = {
   "settings.notifications.onSwitch": "Notify on account switch",
   "settings.notifications.onSwitchDetail":
     "When you make an account the active one (Use) or turn it off, record a notification — the pet reacts and a desktop alert fires when that is on.",
+  "settings.notifications.quiet": "Quiet hours",
+  "settings.notifications.quietDetail": "No desktop notification in this window, every day (local time). Notices are still listed here; none are shown afterwards. A window may run over midnight.",
+  "settings.notifications.quietFrom": "Quiet from",
+  "settings.notifications.quietTo": "Quiet until",
+  "settings.notifications.quietSame": "Start and end must differ.",
   "settings.notifications.monitor": "Monitor Claude sessions",
   "settings.notifications.monitorDetail":
     "Watch every Claude session and alert you when Claude finishes a turn or is waiting on you — handy when it runs in a terminal you are not watching. Installs additive, reversible hooks into each Claude account's settings; works while this app is open.",
@@ -291,6 +300,7 @@ export const settings = {
   "settings.updates.checking": "Checking …",
   "settings.updates.checkNow": "Check now",
   "settings.updates.available": "{tag} available",
+  "settings.updates.installedPending": "{tag} is installed — restart Agent Switch to use it. Wait until the sessions it hosts are done if you have any running.",
   "settings.updates.updated": "Updated to {tag} — restart Agent Switch to apply. Your settings stay as they are.",
   "settings.updates.updating": "Updating …",
   "settings.updates.updateTo": "Update to {tag}",
@@ -298,9 +308,9 @@ export const settings = {
   "settings.updates.automatic": "Automatic",
   "settings.updates.automaticUpdates": "Automatic updates",
   "settings.updates.automaticUpdatesDetail":
-    "Check on open and every 24 hours, and install a new version automatically (for the release types selected below). You'll be told to restart once it's applied.",
+    "Check on open and every 24 hours and tell you when a new version is out. It installs by itself only for the release types you switch on below.",
   "settings.updates.installFor": "Install automatically for",
-  "settings.updates.installForDetail": "Uncheck a type to only be notified about it (e.g. leave Major off to review big releases first).",
+  "settings.updates.installForDetail": "Off by default: you're told about every release and install it here. Switch a type on to have it installed without asking.",
   "settings.updates.autoUpdateKind": "Auto-update {kind}",
   "settings.updates.toolsNote": "agent-config, rtk and the agent CLIs update from Tools.",
 

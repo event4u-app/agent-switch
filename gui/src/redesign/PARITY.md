@@ -1,9 +1,16 @@
 # Parity checklist — classic window → redesign
 
 The classic `App.tsx` page tree is retired; `main.tsx` mounts `RedesignApp`
-directly (no flag). This file lists every export of `gui/src/ipc.ts` and where
-the redesign reaches it, or why it is intentionally unreachable from the UI.
-Paths are relative to `gui/src/`.
+directly (no flag). This file lists every export of `gui/src/ipc.ts` the classic
+window used and where the redesign reaches it, or why it is intentionally
+unreachable from the UI. Exports added for the v3 window since are not parity
+items and are not listed. Paths are relative to `gui/src/`.
+
+Every table and journey below is checked by `redesign/parity.test.ts`: a named
+file must exist and use what its row names, a `—` export must have no caller,
+a deleted file must stay deleted, and each journey names the test that drives
+it. Journeys that need the OS or a native window are listed under
+"Checked by hand" with the reason.
 
 ## Background engines (were LegacyApp effects)
 
@@ -18,7 +25,7 @@ Paths are relative to `gui/src/`.
 | Session monitoring: hooks re-ensured on open, 5 s log poll while on | `redesign/engines/notifications.ts` |
 | Desktop-notification click → window + notifications sheet | `redesign/engines/notifications.ts` |
 | Clear all → also removes this app's delivered desktop notifications (`clearDesktopNotifications`, classic `clearNotifs`) | `vm/actions.ts` (`clearNotifications`). The redesign missed this until now: it cleared the log only and its confirm text said nothing else changes. |
-| Slow readouts cached between reloads: tooling sweep (re-run on "Check now", on tray focus when ≥ 60 s old, after a tooling terminal run), latest-version lookups (at most hourly per tool), `doctor` (re-run on Health open, "Check again", a repair, autostart / shared-setup writes) | `vm/slow-cache.ts` (used by `vm/load.ts`). Before, every reload — after each action and each tray focus — re-ran all three and spent the unauthenticated GitHub budget. |
+| Slow readouts cached between reloads: tooling sweep (re-run on "Check now", on tray focus when ≥ 60 s old, after a tooling terminal run), latest-version lookups (at most hourly per tool), `doctor` (re-run on Health open, "Check again", a repair, autostart / shared-setup writes) | `vm/slow-cache.ts` (used by `vm/load.ts`). Before, every reload — after each action and each tray focus — re-ran all three and spent the unauthenticated GitHub budget. The tray and the main window share it: each entry is stored with its time in the app's one localStorage, and a read takes the newer of that and the window's own. |
 | Record-and-sync from any writer (incl. the tray window via a Tauri event) | `redesign/engines/bus.ts` |
 | Tray tooltip (`setTrayTooltip`) + pet mood/working (`petEmitContext`) after every load | `redesign/engines/pet.ts` (`pushContext`) |
 | Pet show-on-open (presence "always") + one-time `PET_WELCOME` (`claimPetWelcome`) | `redesign/engines/pet.ts` (`petStartup`) |
@@ -39,6 +46,7 @@ Paths are relative to `gui/src/`.
 | `acDiscover` | `vm/load.ts` | |
 | `acOpenInBrowser` | `vm/actions.ts` → `screens/tools.tsx` | |
 | `acForceRestart` | `vm/actions.ts` → `screens/tools.tsx` | |
+| `setAgentConfigRoot` | `vm/actions.ts` → `screens/account-sheet.tsx` (the account's own agent-config settings switch) | New since the classic window (`agent-config-root <name> own\|global`). |
 | `acEnsure`, `acApi` | `ac-keepalive.ts` only | Keepalive not started (see above). |
 | `acRelease` | Rust on app exit | No UI control by design. |
 | `acOpenSettingsWindow` | — | Embedded view deliberately not UI-wired (owner decision 2026-07-24), same as the classic window. |
@@ -58,7 +66,7 @@ Paths are relative to `gui/src/`.
 | `setProfileDisabled` | `vm/actions.ts` (`setAccountDisabled`: row menu Disable / Turn back on) | |
 | `installShellIntegration` | `vm/actions.ts` (red banner in `Shell.tsx`, Health fix) | |
 | `setProfileColor` | `vm/actions.ts` (`updateAccount`: colour picked in Add account and the account flyout) | |
-| `PROFILE_NAME_RE`, `assertValidName` | `screens/account-logic.ts`; internal | |
+| `PROFILE_NAME_RE`, `assertValidName` | internal to `ipc.ts` (every name it passes to the CLI) | The Add account form checks with its own `ACCOUNT_NAME_RE` (`screens/account-logic.ts`). |
 | `loginArgs` | `screens/account-logic.ts` (add account) | |
 | `reloginArgs` | `screens/account-logic.ts` (sign in again — `agent-switch login`) | |
 | `sessionArgs` | `screens/start-session.tsx` (now with `--cwd`) | |
@@ -90,9 +98,9 @@ Paths are relative to `gui/src/`.
 | `setTrayTooltip` | `engines/pet.ts` | |
 | `quitApp` | `vm/actions.ts` → settings, tray | |
 | `restartApp` | `vm/actions.ts` → `screens/settings/updates.tsx`, `screens/terminal-sheet.tsx` (after an update) | |
-| `showWindow` | — | The redesign shows the window through `notifications.ts` `showAppWindow` / tray `bridge.ts` (same `show_window` command). |
+| `showWindow` | `engines/limit-open.ts` (a limit notice opens its sheet); `v3/adapter/V3App.tsx` | Elsewhere the window is shown through `notifications.ts` `showAppWindow` / tray `bridge.ts` (same `show_window` command). |
 | `setMinimizeToDock` | `screens/settings/general.tsx`, `engines/startup.ts` | |
-| `selfUpdate` | `vm/actions.ts` → `screens/settings/updates.tsx`; `engines/updates.ts` | |
+| `selfUpdate` | `vm/actions.ts` → `screens/settings/updates.tsx`; `engines/updates.ts` | Now `selfUpdate(version)`: installs exactly the version the GUI checked (`update <version>`), the release tag on both paths. |
 | `listNotifications` | `vm/load.ts`, `engines/notifications.ts` | |
 | `recordNotification` | `engines/bus.ts` (every notice the window records) | |
 | `clearNotifications` | `vm/actions.ts` → `screens/notifications-sheet.tsx` | Followed by `notifications.ts` `clearDesktopNotifications`. |
@@ -115,18 +123,18 @@ Paths are relative to `gui/src/`.
 | `setMappingPaused` | `vm/actions-foundations.ts` `setBindingPaused` → the per-binding switch (`map --pause/--resume`) | |
 | `resolveDir` | `vm/actions-foundations.ts` (`explainFolder`) → Projects & pools "Try a folder" | |
 | `authStatus` | `vm/load.ts` | |
-| `doctor` | `vm/load.ts`, `screens/health.tsx`, `screens/fix-dialog.tsx` | |
+| `doctor` | `vm/load.ts`; re-run via `forceDoctorOnNextLoad` from `screens/health.tsx`, `screens/fix-dialog.tsx` | |
 | `listActivity` | `vm/load.ts`, `vm/actions-foundations.ts` | |
 | `getGuard`, `setGuard` | `vm/load.ts`; `screens/settings/advanced.tsx` | |
 | Types (`AcStatus`, `AcError`, `AcApiResponse`, `ShareStatus`, `ToolingId`, `ToolingIdentity`, `ToolingEntry`, `UsageHistorySample`, `UsageHistoryProfile`, `AutoSwitch`, `AutoSwitchMap`, `AppInfo`, `NotifyConfig`, `SelfUpdateResult`, `ProtectionRow`, `PoolRow`, `PoolListRow`, `PoolProposal`, `MappingRow`, `DirResolution`, `AuthStatusRow`, `DoctorCheckRow`, `DoctorReport`, `ActivityEntryKind`, `ActivityEntry`, `GuardPolicy`, `GuardStatus`) | — | Types only. |
 
 ## Gaps closed in this change
 
-- **Start session in a folder**: `sessionArgs(provider, name, cwd)` adds `--cwd`; the preview reads `<folder> $ claude`. The "Not available here: starting in …" line is gone (the desktop-app path still says the app opens without a folder).
-- **Folder bindings**: Add binding (folder + tool + account or pool) and Remove binding were disabled / missing.
-- **Near-limit test fire** on lowering the threshold (classic footer select).
-- **Switch notices + shared relink** on use / deactivate / rebind (classic `runUse` / `runOff`).
-- **Every engine above** — the redesign window was not self-sufficient before.
+- **Start session in a folder**: `sessionArgs(provider, name, cwd)` adds `--cwd`; the preview reads `<folder> $ claude`. The "Not available here: starting in …" line is gone (the desktop-app path still says the app opens without a folder). test: `redesign/screens/screens.test.tsx` › "starts the terminal in the chosen folder via --cwd and previews `<folder> $ claude`"
+- **Folder bindings**: Add binding (folder + tool + account or pool) and Remove binding were disabled / missing. test: `redesign/screens/accounts.test.tsx` › "adds a binding through an inline form (folder + tool + account or pool)", test: `redesign/screens/accounts.test.tsx` › "removes a binding from its row menu after a confirm"
+- **Near-limit test fire** on lowering the threshold (classic footer select). test: `redesign/screens/settings/settings.test.tsx` › "fires the near-limit test notice only when the threshold write succeeded"
+- **Switch notices + shared relink** on use / deactivate / rebind (classic `runUse` / `runOff`). test: `redesign/engines/engines.test.ts` › "activating records a switch notification and relinks the shared setup", test: `redesign/engines/engines.test.ts` › "deactivating names the account that was active", test: `redesign/engines/engines.test.ts` › "a live rebind relinks too"
+- **Every engine above** — the redesign window was not self-sufficient before. test: `redesign/parity.test.ts` › "lives in the files it names, and they hold the functions it names"
 
 ## Deleted with the classic tree
 
@@ -146,3 +154,16 @@ Paths are relative to `gui/src/`.
 Kept although only the classic window used them before: `usage-cache.ts` (now
 `vm/usage-loader.ts`), `agent-config.ts`, `release-notes.ts`, `tool-updates.ts`,
 `ac-keepalive.ts`.
+
+## Checked by hand
+
+These need a real OS window or OS service, which jsdom does not have; the files
+that drive them are covered above, their native effect is not.
+
+| Journey | Why it is not automated |
+|---|---|
+| Tray popover shows next to the menu-bar icon on click and hides on blur | Window placement and focus loss come from Rust and the OS (`tray_hide`, the tray window's blur) |
+| A desktop-notification click brings the main window forward on the notifications sheet | The click arrives from the OS notification centre |
+| Minimize-to-Dock keeps the app in the Dock when the window closes | macOS Dock behaviour, applied by Rust |
+| Launch at login after a reboot | Needs a login session of the OS |
+| `acRelease` stops agent-config's server on app exit | Runs in Rust on process exit |

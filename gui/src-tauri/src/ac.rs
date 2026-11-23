@@ -118,10 +118,12 @@ pub struct ApiResponse {
 /// Ownership bookkeeping: whether AS spawned (or force-restarted into) the
 /// current server, and the discovery pid recorded at that moment. A server AS
 /// merely found is never shut down (the user may have it open in a browser).
-#[derive(Default, Clone, Copy, Debug)]
+#[derive(Default, Clone, Debug)]
 struct Owned {
     spawned: bool,
     pid: Option<u32>,
+    /// The `--config-root` the owned server was started with; None = agent-config's default.
+    root: Option<PathBuf>,
 }
 
 #[derive(Default, Clone)]
@@ -144,6 +146,71 @@ fn config_dir() -> PathBuf {
     }
     .unwrap_or_default();
     Path::new(&home).join(".event4u").join("agent-config")
+}
+
+/// agent-switch's own home, resolved the way the CLI resolves it.
+fn as_home() -> PathBuf {
+    match std::env::var("AGENT_SWITCH_HOME") {
+        Ok(h) if !h.is_empty() => PathBuf::from(h),
+        _ => {
+            let home = if cfg!(windows) {
+                std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME"))
+            } else {
+                std::env::var("HOME")
+            }
+            .unwrap_or_default();
+            Path::new(&home).join(".agent-switch")
+        }
+    }
+}
+
+/// The CLI's profile-name alphabet; anything else could step out of the profile tree.
+fn valid_profile_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Present in a Claude profile dir when the user switched that profile to its
+/// own agent-config root (`agent-switch agent-config-root <name> own`). The
+/// CLI writes it and sets the same root for the profile's sessions.
+const OWN_ROOT_MARKER: &str = "own-agent-config";
+/// The profile's own root, inside the profile but apart from Claude's `config` dir.
+const OWN_ROOT_DIR: &str = "agent-config";
+
+/// agent-config's config root for the active Claude profile. Some only when
+/// that profile opted in by its marker — a leftover root dir is not an opt-in.
+/// None (no opt-in, no active profile, unreadable state, a name the CLI would
+/// not write) means agent-config's own default root.
+fn active_root_at(as_home: &Path) -> Option<PathBuf> {
+    let raw = fs::read_to_string(as_home.join("state.json")).ok()?;
+    let state: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let name = state.get("active")?.get("claude")?.as_str()?;
+    if !valid_profile_name(name) {
+        return None;
+    }
+    let profile = as_home.join("claude").join(name);
+    profile
+        .join(OWN_ROOT_MARKER)
+        .is_file()
+        .then(|| profile.join(OWN_ROOT_DIR))
+}
+
+/// The directory agent-config writes its discovery and token files to for `root`.
+fn dir_for(root: Option<&Path>) -> PathBuf {
+    root.map(Path::to_path_buf).unwrap_or_else(config_dir)
+}
+
+fn current_dir() -> PathBuf {
+    dir_for(active_root_at(&as_home()).as_deref())
+}
+
+/// A server AS started under another root than the active one is stopped so
+/// the next ensure starts it under the active profile's root. A found server
+/// is never stopped.
+fn needs_restart(owned: &Owned, root: Option<&Path>) -> bool {
+    owned.spawned && owned.root.as_deref() != root
 }
 
 fn read_discovery(dir: &Path) -> Option<DiscoveryInfo> {
@@ -412,22 +479,28 @@ struct SpawnHandle {
 }
 
 #[cfg(windows)]
-fn server_command() -> Command {
+fn server_command(root: Option<&Path>) -> Command {
     // npm installs agent-config as a .cmd shim, which CreateProcess cannot
     // launch directly — go through cmd.exe.
     let mut c = Command::new("cmd");
     c.args(["/C", "agent-config", "ui:serve", "--no-open"]);
+    if let Some(root) = root {
+        c.arg("--config-root").arg(root);
+    }
     c
 }
 
 #[cfg(not(windows))]
-fn server_command() -> Command {
+fn server_command(root: Option<&Path>) -> Command {
     let mut c = Command::new("agent-config");
     c.args(["ui:serve", "--no-open"]);
+    if let Some(root) = root {
+        c.arg("--config-root").arg(root);
+    }
     c
 }
 
-fn spawn_server() -> Result<SpawnHandle, AcError> {
+fn spawn_server(root: Option<&Path>) -> Result<SpawnHandle, AcError> {
     // stderr goes to a temp file, not a pipe: the server outlives this call,
     // and holding a pipe read-end would EPIPE its logging once dropped; the
     // file also survives for the early-exit diagnosis below.
@@ -440,7 +513,7 @@ fn spawn_server() -> Result<SpawnHandle, AcError> {
         message: format!("stderr capture file: {e}"),
     })?;
 
-    let mut cmd = server_command();
+    let mut cmd = server_command(root);
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(stderr);
@@ -493,8 +566,12 @@ fn read_stderr_tail(path: &Path) -> String {
     format!("…{}", &s[start..])
 }
 
-fn spawn_and_wait(dir: &Path, state: &AcState) -> Result<AcStatus, AcError> {
-    let mut handle = spawn_server()?;
+fn spawn_and_wait(
+    dir: &Path,
+    root: Option<&Path>,
+    state: &AcState,
+) -> Result<AcStatus, AcError> {
+    let mut handle = spawn_server(root)?;
     let started = Instant::now();
     let outcome = loop {
         if let Ok(Some(status)) = handle.child.try_wait() {
@@ -527,6 +604,7 @@ fn spawn_and_wait(dir: &Path, state: &AcState) -> Result<AcStatus, AcError> {
             let mut owned = state.0.lock().unwrap();
             owned.spawned = true;
             owned.pid = Some(*pid);
+            owned.root = root.map(Path::to_path_buf);
         }
         // Unix zombie hygiene: reap the direct child when it eventually exits
         // (idle watchdog or shutdown beacon); on the failure branches it was
@@ -540,25 +618,38 @@ fn spawn_and_wait(dir: &Path, state: &AcState) -> Result<AcStatus, AcError> {
     outcome
 }
 
+/// The active profile's root, after stopping an owned server that runs under another one.
+fn follow_active_profile(state: &AcState) -> Option<PathBuf> {
+    let root = active_root_at(&as_home());
+    let stale = needs_restart(&state.0.lock().unwrap(), root.as_deref());
+    if stale {
+        release(state);
+        *state.0.lock().unwrap() = Owned::default();
+    }
+    root
+}
+
 fn ensure(state: &AcState) -> Result<AcStatus, AcError> {
-    let dir = config_dir();
+    let root = follow_active_profile(state);
+    let dir = dir_for(root.as_deref());
     match discover_at(&dir, LIVENESS_TIMEOUT, binary_on_path()) {
         live @ AcStatus::Live { .. } => Ok(live),
         // Never silently kill a wedged server — force-restart is a separate,
         // user-consented command.
         AcStatus::Wedged { pid, .. } => Err(AcError::Wedged { pid }),
         AcStatus::NotInstalled => Err(AcError::NotInstalled),
-        AcStatus::NotRunning => spawn_and_wait(&dir, state),
+        AcStatus::NotRunning => spawn_and_wait(&dir, root.as_deref(), state),
     }
 }
 
 fn force_restart(state: &AcState) -> Result<AcStatus, AcError> {
-    let dir = config_dir();
+    let root = follow_active_profile(state);
+    let dir = dir_for(root.as_deref());
     match discover_at(&dir, LIVENESS_TIMEOUT, binary_on_path()) {
         // Recovered on its own — nothing to kill, nothing to spawn.
         live @ AcStatus::Live { .. } => Ok(live),
         AcStatus::NotInstalled => Err(AcError::NotInstalled),
-        AcStatus::NotRunning => spawn_and_wait(&dir, state),
+        AcStatus::NotRunning => spawn_and_wait(&dir, root.as_deref(), state),
         AcStatus::Wedged { pid, .. } => {
             terminate_pid(pid);
             if !wait_pid_death(pid, Duration::from_secs(3)) {
@@ -571,7 +662,7 @@ fn force_restart(state: &AcState) -> Result<AcStatus, AcError> {
             }
             // The killed server can't clean its own discovery file up.
             let _ = fs::remove_file(dir.join(DISCOVERY_FILE));
-            spawn_and_wait(&dir, state)
+            spawn_and_wait(&dir, root.as_deref(), state)
         }
     }
 }
@@ -579,7 +670,7 @@ fn force_restart(state: &AcState) -> Result<AcStatus, AcError> {
 /// Which pid (if any) release may act on: only a server AS spawned, and only
 /// while the discovery file still points at that same pid — an externally
 /// restarted server is not ours to touch.
-fn release_target(owned: Owned, current: Option<&DiscoveryInfo>) -> Option<u32> {
+fn release_target(owned: &Owned, current: Option<&DiscoveryInfo>) -> Option<u32> {
     if !owned.spawned {
         return None;
     }
@@ -591,10 +682,10 @@ fn release_target(owned: Owned, current: Option<&DiscoveryInfo>) -> Option<u32> 
 /// exit path (RunEvent::Exit) and from the `ac_release` command; a found-only
 /// server is left running.
 pub fn release(state: &AcState) {
-    let owned = *state.0.lock().unwrap();
-    let dir = config_dir();
+    let owned = state.0.lock().unwrap().clone();
+    let dir = dir_for(owned.root.as_deref());
     let current = read_discovery(&dir);
-    let Some(pid) = release_target(owned, current.as_ref()) else {
+    let Some(pid) = release_target(&owned, current.as_ref()) else {
         return;
     };
     let port = current.map(|i| i.port).unwrap_or_default();
@@ -643,7 +734,7 @@ async fn run_blocking<T: Send + 'static>(
 pub async fn ac_discover() -> Result<AcStatus, AcError> {
     run_blocking(|| {
         Ok(discover_at(
-            &config_dir(),
+            &current_dir(),
             LIVENESS_TIMEOUT,
             binary_on_path(),
         ))
@@ -676,7 +767,7 @@ pub async fn ac_api(
 ) -> Result<ApiResponse, AcError> {
     run_blocking(move || {
         api_call_at(
-            &config_dir(),
+            &current_dir(),
             &method,
             &path,
             body.as_deref(),
@@ -701,12 +792,40 @@ pub async fn ac_release(state: tauri::State<'_, AcState>) -> Result<(), AcError>
 /// never the unstable child-webview API).
 pub const SETTINGS_WINDOW_LABEL: &str = "ac-settings";
 
+/// The accents the embed may name: the brand colours of the shared token set
+/// (`gui/design-tokens/event4u-agent-tokens.json`, the source of the generated
+/// `as-tokens.css`).
+fn accents() -> &'static [String] {
+    static ACCENTS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    ACCENTS.get_or_init(|| {
+        serde_json::from_str::<serde_json::Value>(include_str!(
+            "../../design-tokens/event4u-agent-tokens.json"
+        ))
+        .ok()
+        .and_then(|doc| {
+            doc.get("brand")?.as_object().map(|brand| {
+                brand
+                    .keys()
+                    .filter(|k| !k.starts_with('$'))
+                    .cloned()
+                    .collect()
+            })
+        })
+        .unwrap_or_default()
+    })
+}
+
 /// Build the settings-window URL. The token is placed here, in Rust — it never
 /// enters the main webview's JS context, is never logged, and AC's SPA strips
-/// it from the URL after boot (AC-side hardening).
-fn settings_url(port: u16, theme: &str, token: &str) -> String {
+/// it from the URL after boot (AC-side hardening). The accent reaches AC's
+/// stylesheet, so only a name from the token set passes; anything else is left out.
+fn settings_url(port: u16, theme: &str, accent: Option<&str>, token: &str) -> String {
     let theme = if theme == "light" { "light" } else { "dark" };
-    format!("http://127.0.0.1:{port}/#/settings?embed=1&theme={theme}&token={token}")
+    let accent = accent
+        .filter(|a| accents().iter().any(|known| known == a))
+        .map(|a| format!("&accent={a}"))
+        .unwrap_or_default();
+    format!("http://127.0.0.1:{port}/#/settings?embed=1&theme={theme}{accent}&token={token}")
 }
 
 /// Open (or focus) the embedded agent-config settings window: ensure a live
@@ -720,6 +839,7 @@ pub async fn ac_open_settings_window(
     app: tauri::AppHandle,
     state: tauri::State<'_, AcState>,
     theme: String,
+    accent: Option<String>,
     profile: Option<String>,
 ) -> Result<AcStatus, AcError> {
     use tauri::{Emitter, Manager};
@@ -741,8 +861,8 @@ pub async fn ac_open_settings_window(
         return Ok(status);
     }
 
-    let token = run_blocking(move || read_token(&config_dir())).await?;
-    let url = settings_url(port, &theme, &token)
+    let token = run_blocking(move || read_token(&current_dir())).await?;
+    let url = settings_url(port, &theme, accent.as_deref(), &token)
         .parse::<tauri::Url>()
         .map_err(|e| AcError::Request {
             message: format!("settings url failed to parse: {e}"),
@@ -815,7 +935,7 @@ pub async fn ac_open_in_browser(
             })
         }
     };
-    let token = run_blocking(move || read_token(&config_dir())).await?;
+    let token = run_blocking(move || read_token(&current_dir())).await?;
     // shell.open is deprecated upstream in favour of tauri-plugin-opener; the
     // whole app (webview side included) standardises on plugin-shell, so a
     // second opener dependency is not worth one call site.
@@ -1091,10 +1211,12 @@ mod tests {
         let found = Owned {
             spawned: false,
             pid: None,
+            root: None,
         };
         let spawned = Owned {
             spawned: true,
             pid: Some(1234),
+            root: None,
         };
         let current = DiscoveryInfo {
             pid: 1234,
@@ -1105,27 +1227,198 @@ mod tests {
             port: 41001,
         };
         // Found, not spawned → never kill (ownership rule).
-        assert_eq!(release_target(found, Some(&current)), None);
+        assert_eq!(release_target(&found, Some(&current)), None);
         // Spawned and still the recorded pid → ours to shut down.
-        assert_eq!(release_target(spawned, Some(&current)), Some(1234));
+        assert_eq!(release_target(&spawned, Some(&current)), Some(1234));
         // Replaced externally since our spawn → hands off.
-        assert_eq!(release_target(spawned, Some(&other)), None);
+        assert_eq!(release_target(&spawned, Some(&other)), None);
         // Already gone → nothing to do.
-        assert_eq!(release_target(spawned, None), None);
+        assert_eq!(release_target(&spawned, None), None);
+    }
+
+    fn write_state(home: &Path, active_claude: &str) {
+        fs::write(
+            home.join("state.json"),
+            format!(r#"{{"active":{{"claude":{active_claude},"codex":"other"}}}}"#),
+        )
+        .unwrap();
+    }
+
+    fn args_of(cmd: &Command) -> Vec<String> {
+        cmd.get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    /// The contract the CLI reads too (tests/agent-config-root.test.ts).
+    const CONTRACT: &str = include_str!("../../../tests/fixtures/agent-config-root.json");
+
+    fn contract(key: &str) -> String {
+        let v: serde_json::Value = serde_json::from_str(CONTRACT).unwrap();
+        v[key].as_str().unwrap().to_string()
+    }
+
+    fn opt_in(home: &Path, name: &str) {
+        let dir = home.join("claude").join(name);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(contract("marker")), "on").unwrap();
+    }
+
+    #[test]
+    fn the_marker_and_the_dir_are_the_contract_the_cli_uses() {
+        assert_eq!(OWN_ROOT_MARKER, contract("marker"));
+        assert_eq!(OWN_ROOT_DIR, contract("dir"));
+    }
+
+    #[test]
+    fn active_root_is_the_profiles_own_dir_only_when_it_opted_in() {
+        let home = fixture_dir();
+        write_state(&home, r#""work""#);
+        // Off: global, even with a leftover <profile>/agent-config.
+        fs::create_dir_all(home.join("claude").join("work").join(contract("dir"))).unwrap();
+        assert_eq!(active_root_at(&home), None);
+        opt_in(&home, "work");
+        assert_eq!(
+            active_root_at(&home),
+            Some(home.join("claude").join("work").join(contract("dir")))
+        );
+        // Another active profile without the marker: global again.
+        write_state(&home, r#""home-2""#);
+        assert_eq!(active_root_at(&home), None);
+        opt_in(&home, "home-2");
+        assert_eq!(
+            active_root_at(&home),
+            Some(home.join("claude").join("home-2").join(contract("dir")))
+        );
+        // Turned off: the marker is gone, the profile's dir stays and is not used.
+        fs::remove_file(home.join("claude").join("home-2").join(contract("marker"))).unwrap();
+        assert_eq!(active_root_at(&home), None);
+    }
+
+    #[test]
+    fn active_root_falls_back_to_agent_configs_default_when_unknown() {
+        let home = fixture_dir();
+        // No state file at all.
+        assert_eq!(active_root_at(&home), None);
+        // No active Claude profile.
+        write_state(&home, "null");
+        assert_eq!(active_root_at(&home), None);
+        // A name the CLI would never write must not reach a path, marker or not.
+        for bad in [r#""../escape""#, r#""a/b""#, r#""""#, r#""x y""#, "42"] {
+            write_state(&home, bad);
+            assert_eq!(active_root_at(&home), None, "{bad}");
+        }
+        fs::write(home.join("state.json"), "{not json").unwrap();
+        assert_eq!(active_root_at(&home), None);
+    }
+
+    #[test]
+    fn spawned_command_carries_the_profile_root_and_only_then() {
+        let root = PathBuf::from("/tmp/as/claude/work/agent-config");
+        let with = args_of(&server_command(Some(&root)));
+        let at = with.iter().position(|a| a == "--config-root").expect("flag");
+        assert_eq!(with[at + 1], root.to_string_lossy());
+        assert!(with.contains(&"ui:serve".to_string()));
+        // Agent-config's own default: the command is unchanged.
+        let without = args_of(&server_command(None));
+        assert!(!without.iter().any(|a| a == "--config-root"));
+    }
+
+    #[test]
+    fn switching_profiles_restarts_the_owned_server_with_the_new_root() {
+        let home = fixture_dir();
+        opt_in(&home, "work");
+        write_state(&home, r#""work""#);
+        let work = active_root_at(&home);
+        assert!(work.is_some());
+        let owned = Owned {
+            spawned: true,
+            pid: Some(1234),
+            root: work.clone(),
+        };
+        // Same profile: keep the server.
+        assert!(!needs_restart(&owned, work.as_deref()));
+        // Another profile with its own root: the old server goes, the new one gets the new root.
+        opt_in(&home, "home");
+        write_state(&home, r#""home""#);
+        let next = active_root_at(&home);
+        assert!(needs_restart(&owned, next.as_deref()));
+        let args = args_of(&server_command(next.as_deref()));
+        assert!(args.contains(&next.unwrap().to_string_lossy().into_owned()));
+        // A profile on the shared root: restart into agent-config's default.
+        write_state(&home, r#""plain""#);
+        assert_eq!(active_root_at(&home), None);
+        assert!(needs_restart(&owned, None));
+        // Two profiles on the shared root: one server serves both, nothing restarts.
+        let shared = Owned {
+            spawned: true,
+            pid: Some(1),
+            root: None,
+        };
+        write_state(&home, r#""other-plain""#);
+        assert!(!needs_restart(&shared, active_root_at(&home).as_deref()));
+        // A server AS only found is never stopped for a switch.
+        let found = Owned {
+            spawned: false,
+            pid: None,
+            root: work,
+        };
+        assert!(!needs_restart(&found, None));
     }
 
     #[test]
     fn settings_url_targets_loopback_and_sanitizes_the_theme() {
         assert_eq!(
-            settings_url(41066, "dark", "abc123"),
+            settings_url(41066, "dark", None, "abc123"),
             "http://127.0.0.1:41066/#/settings?embed=1&theme=dark&token=abc123"
         );
         assert_eq!(
-            settings_url(41066, "light", "abc123"),
+            settings_url(41066, "light", None, "abc123"),
             "http://127.0.0.1:41066/#/settings?embed=1&theme=light&token=abc123"
         );
         // Anything but "light" collapses to dark — the query is a bounded
         // contract, never a free-form passthrough.
-        assert!(settings_url(41066, "weird\"><script>", "t").contains("theme=dark"));
+        assert!(settings_url(41066, "weird\"><script>", None, "t").contains("theme=dark"));
+    }
+
+    #[test]
+    fn accents_come_from_the_shared_token_set() {
+        let doc: serde_json::Value =
+            serde_json::from_str(include_str!("../../design-tokens/event4u-agent-tokens.json"))
+                .unwrap();
+        let brand: Vec<&str> = doc["brand"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .filter(|k| !k.starts_with('$'))
+            .collect();
+        assert!(!brand.is_empty());
+        let ours: Vec<&str> = accents().iter().map(String::as_str).collect();
+        assert_eq!(ours, brand);
+    }
+
+    #[test]
+    fn settings_url_carries_only_an_accent_from_the_token_set() {
+        for accent in accents() {
+            assert_eq!(
+                settings_url(41066, "dark", Some(accent.as_str()), "t"),
+                format!("http://127.0.0.1:41066/#/settings?embed=1&theme=dark&accent={accent}&token=t")
+            );
+        }
+        for bad in [
+            "",
+            "purple",
+            "Orange",
+            " orange",
+            "#d15c38",
+            "orange&token=x",
+            "orange;background:url(x)",
+            "$description",
+        ] {
+            let url = settings_url(41066, "light", Some(bad), "t");
+            assert!(!url.contains("accent="), "{bad:?} reached the URL: {url}");
+            assert_eq!(url, "http://127.0.0.1:41066/#/settings?embed=1&theme=light&token=t");
+        }
     }
 }

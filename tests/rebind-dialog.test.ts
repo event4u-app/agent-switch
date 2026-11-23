@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildRebindDialog,
+  followersNote,
   resolveRebindChoice,
   selectableRows,
   type RebindDialogCandidate,
@@ -158,4 +159,27 @@ test("every other account busy → no suggestion", () => {
   const d = buildRebindDialog([{ name: "run", snapshot: null }, { name: "b", snapshot: null, busy: true }], "run");
   assert.equal(d.suggestedProfile, null);
   assert.deepEqual(resolveRebindChoice("", d), { kind: "invalid" });
+});
+
+// ---------- a live rebind moves every session on the profile ----------
+
+test("followersNote: two live sessions on one profile — both are named before the switch", () => {
+  const note = followersNote("work", "side", [
+    { sessionId: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa", cwd: "/w/app" },
+    { sessionId: "22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb", cwd: null },
+  ]);
+  assert.equal(
+    note,
+    'Rebinding "work" moves every live session on it to side\'s account — 2 follow: 11111111 (/w/app), 22222222.',
+  );
+});
+
+test("followersNote: one live session, or none, needs no warning", () => {
+  assert.equal(followersNote("work", "side", [{ sessionId: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa", cwd: "/w" }]), null);
+  assert.equal(followersNote("work", "side", []), null);
+});
+
+test("followersNote: a live process whose session id is unknown still counts", () => {
+  const note = followersNote("work", "side", [{ sessionId: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa", cwd: "/w" }, { sessionId: null, cwd: "/x", pid: 4242 }]);
+  assert.equal(note, 'Rebinding "work" moves every live session on it to side\'s account — 2 follow: 11111111 (/w), pid 4242 (/x).');
 });

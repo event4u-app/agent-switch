@@ -33,6 +33,46 @@ agent-switch link on       # the default
 agent-switch link status --json
 ```
 
+## agent-config settings per account
+
+By default every Claude account uses the shared agent-config settings
+(agent-config's own root, `~/.event4u/agent-config`): the settings window in
+the app and the account's sessions read the same place.
+
+An account can have its own settings instead. Turn it on per account, in the
+app (**Accounts › the account › Details › agent-config settings**) or in a
+terminal:
+
+```bash
+agent-switch agent-config-root work own       # this account's own settings
+agent-switch agent-config-root work global    # back to the shared ones (the default)
+agent-switch agent-config-root work --json    # {"root":"own","path":"…/claude/work/agent-config",…}
+```
+
+With its own settings on, both places use
+`~/.agent-switch/claude/<name>/agent-config`:
+
+- the app starts agent-config's settings server for the active Claude account
+  with that root (`agent-config ui:serve --config-root …`), and starts it again
+  when you make another account active or switch the setting;
+- every new session of that account starts with
+  `EVENT4U_CONFIG_HOME` set to it, so agent-config's hooks in the session read
+  what you saved in the app.
+
+With it off, Agent Switch sets nothing: no `--config-root`, and an
+`EVENT4U_CONFIG_HOME` you set yourself is left as it is. A folder
+`<name>/agent-config` that already exists does not turn it on.
+
+<Aside type="caution" title="Own settings start empty">
+Switching to own settings copies nothing: the account starts without your
+council configuration and without your keys, and you set them up again in the
+settings window. Switching back deletes nothing; the account's own settings
+stay where they are for the next time. Sessions that are already running keep
+the settings they started with until you start them again.
+</Aside>
+
+A settings server you started yourself is never stopped.
+
 ## What happens near a limit
 
 <Steps>

@@ -272,7 +272,7 @@ test("e2e: plain `list --json` keeps the GUI contract", gate, () => {
     seedProfile(home, "work", "w@example.com");
     const rows = JSON.parse(cli(home, ["list", "--json", "--provider", "claude"]).stdout);
     assert.ok(Array.isArray(rows));
-    assert.deepEqual(Object.keys(rows[0]).sort(), ["active", "color", "disabled", "identity", "label", "liveSessions", "name", "provider"]);
+    assert.deepEqual(Object.keys(rows[0]).sort(), ["active", "agentConfigRoot", "color", "disabled", "identity", "label", "liveSessions", "name", "provider"]);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

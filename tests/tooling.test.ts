@@ -220,6 +220,87 @@ test("checkTooling: rtk probe timeout → unverified, unhealthy, no install-comm
   }
 });
 
+// ---------- rtk detection delegated to agent-config (`rtk:detect --json`, contract 1) ----------
+
+/** Records every probe it is asked to run, then answers like stubRunner. */
+function recordingStub(map: Record<string, Partial<RunResult>>) {
+  const ran: string[] = [];
+  const inner = stubRunner(map);
+  const run: Runner = (cmd, args, t) => (ran.push(`${path.basename(cmd)} ${args.join(" ")}`), inner(cmd, args, t));
+  return { run, ran };
+}
+
+const detected = (o: Record<string, unknown>) => ({ stdout: JSON.stringify({ contract: 1, platform: "linux", repo: "https://github.com/rtk-ai/rtk", installCommands: null, ...o }) });
+
+test("checkTooling: with agent-config on PATH, rtk's identity comes from `agent-config rtk:detect --json`, not our own probe", () => {
+  const dir = stubBinDir("agent-config", "rtk");
+  const { run, ran } = recordingStub({
+    "agent-config rtk:detect --json": detected({ installed: true, present: true, identity: "token-killer", version: "1.5.0", binPath: path.join(dir, "rtk") }),
+  });
+  try {
+    const [t] = checkTooling({ ids: ["rtk"], searchPath: dir, platform: "linux", linked: noLinks, run });
+    assert.deepEqual(t, { id: "rtk", present: true, version: "1.5.0", path: path.join(dir, "rtk"), healthy: true, identity: "token-killer", hint: "" });
+    assert.deepEqual(ran, ["agent-config rtk:detect --json"], "no `rtk gain` of our own");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("checkTooling: agent-config's verdict holds for the collision and for an absent rtk", () => {
+  const dir = stubBinDir("agent-config");
+  try {
+    const wrong = recordingStub({ "agent-config rtk:detect --json": detected({ installed: false, present: true, identity: "unknown-rtk", version: null, binPath: "/opt/rtk" }) });
+    const [w] = checkTooling({ ids: ["rtk"], searchPath: dir, platform: "darwin", linked: noLinks, run: wrong.run });
+    assert.equal(w.identity, "unknown-rtk");
+    assert.equal(w.healthy, false);
+    assert.equal(w.path, "/opt/rtk");
+    assert.match(w.hint, /name collision/);
+    const none = recordingStub({ "agent-config rtk:detect --json": detected({ installed: false, present: false, identity: null, version: null, binPath: null }) });
+    const [n] = checkTooling({ ids: ["rtk"], searchPath: dir, platform: "linux", linked: noLinks, run: none.run });
+    assert.equal(n.present, false);
+    assert.equal("identity" in n, false);
+    assert.match(n.hint, /not installed/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("checkTooling: an agent-config without the contract (old, failing, other version, odd shape) falls back to the own probe", () => {
+  const dir = stubBinDir("agent-config", "rtk");
+  const answers: Partial<RunResult>[] = [
+    { stderr: "unknown command rtk:detect", status: 1 },
+    { timedOut: true, status: null },
+    { stdout: "not json" },
+    detected({ contract: 2, present: true, identity: "token-killer", version: "9.9.9", binPath: "/x" }),
+    detected({ present: true, identity: "rust-type-kit", version: null, binPath: "/x" }),
+    detected({ present: "yes", identity: "token-killer", version: null, binPath: "/x" }),
+  ];
+  try {
+    for (const a of answers) {
+      const { run, ran } = recordingStub({ "agent-config rtk:detect --json": a, "rtk gain": { stdout: "RTK Token Savings\n" }, "rtk --version": { stdout: "rtk 1.4.2\n" } });
+      const [t] = checkTooling({ ids: ["rtk"], searchPath: dir, platform: "linux", linked: noLinks, run });
+      assert.equal(t.identity, "token-killer", JSON.stringify(a));
+      assert.equal(t.version, "1.4.2");
+      assert.equal(t.path, path.join(dir, "rtk"));
+      assert.ok(ran.includes("rtk gain"), "the fallback probe ran");
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("checkTooling: without agent-config, rtk is probed by its output signature as before", () => {
+  const dir = stubBinDir("rtk");
+  const { run, ran } = recordingStub({ "rtk gain": { stdout: "RTK Token Savings\n" }, "rtk --version": { stdout: "rtk 1.4.2\n" } });
+  try {
+    const [t] = checkTooling({ ids: ["rtk"], searchPath: dir, platform: "linux", linked: noLinks, run });
+    assert.equal(t.identity, "token-killer");
+    assert.deepEqual(ran, ["rtk gain", "rtk --version"]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("checkTooling: present binary whose --version probe fails → unhealthy with hint", () => {
   const dir = stubBinDir("agent-config");
   const run = stubRunner({ "agent-config --version": { failedToStart: true, status: null } });

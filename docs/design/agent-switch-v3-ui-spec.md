@@ -737,6 +737,7 @@ The same components as the window, in this order:
 | ⌘J | Focus the next Needs-you item; then ↵ = its verb, ⇧↵ = always (approvals), ⌫ = deny, Y = yes (questions), L = later |
 | ⌘1…⌘9 | Tab N |
 | ⌃Tab | Recent sessions switcher |
+| ←/→, Home/End · ↵ · ⌦/⌫ (tab strip focused) | Move between tabs · open the focused tab · close it (not a pinned one) |
 | ⌘B | Hide/show the Sessions window (focus mode) |
 | ⌘I | Hide/show Summary |
 | ⌘O | Open in the default target |

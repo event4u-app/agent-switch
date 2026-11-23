@@ -9,6 +9,7 @@ import {
   guiLaunchArgv,
   guiProcessSignature,
   guiRunningIn,
+  guiSkewNotice,
   newestCachedVersion,
   pickReleaseAsset,
   pidAlive,
@@ -141,4 +142,16 @@ test("newestCachedVersion orders by version, not by string", () => {
   assert.equal(newestCachedVersion(["2.7.1", "2.10.0", "2.9.3", "junk", "1.2.1"]), "2.10.0");
   assert.equal(newestCachedVersion(["junk"]), null);
   assert.equal(newestCachedVersion([]), null);
+});
+
+test("guiSkewNotice names the CLI's version and the GUI version that is launched instead", () => {
+  const building = guiSkewNotice("2.12.0", "v2.11.3", "no-build")!;
+  assert.match(building, /agent-switch 2\.12\.0/);
+  assert.match(building, /GUI 2\.11\.3/, "the tag is shown as the version");
+  assert.match(building, /not built yet/);
+  const offline = guiSkewNotice("2.12.0", "2.10.0", "unreachable")!;
+  assert.match(offline, /agent-switch 2\.12\.0/);
+  assert.match(offline, /cached GUI 2\.10\.0/);
+  for (const n of [building, offline]) assert.match(n, /may not match/);
+  assert.equal(guiSkewNotice("2.12.0", "v2.12.0", "no-build"), null, "the same version is no skew");
 });

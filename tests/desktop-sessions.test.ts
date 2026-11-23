@@ -49,7 +49,10 @@ test("desktop sessions: a Code-tab session is attributed to the account it ran o
     assert.equal(row.cwd, "/w/app");
     assert.equal(row.summary, "Title 9544");
     assert.equal(row.file, path.join(t.claudeHome, "projects", "-w-app", `${cli}.jsonl`));
-    assert.equal(row.live, true, "written 30 s ago");
+    assert.equal(row.live, false, "a fresh transcript alone proves no running process");
+    assert.equal(row.recentlyActive, true, "written 30 s ago");
+    assert.equal(r.locations[0].live, false);
+    assert.equal(r.locations[0].recentlyActive, true);
     assert.deepEqual(r.instances, [{ profile: "work", dir: t.instance, accounts: [{ accountUuid: ME, profile: "work" }], mismatch: false }]);
   } finally {
     fs.rmSync(t.root, { recursive: true, force: true });
@@ -98,6 +101,44 @@ test("desktop sessions: a profile's instance signed in with another account is f
       r.instances[0].accounts.map((a) => a.profile),
       [null, "work", "side"],
     );
+  } finally {
+    fs.rmSync(t.root, { recursive: true, force: true });
+  }
+});
+
+/** A Claude Code registry entry under `cfg`: `sessions/<pid>.json` naming the session. */
+function registry(cfg: string, pid: number, sessionId: string): void {
+  write(path.join(cfg, "sessions", `${pid}.json`), JSON.stringify({ pid, sessionId, status: "busy" }));
+}
+
+/** A pid that is certainly not running. */
+const DEAD_PID = 2 ** 22 + 12345;
+
+test("desktop sessions: live only when a running process names the session, whatever the transcript's age", () => {
+  const t = tree();
+  try {
+    const code = "95448762-265a-42bc-9622-fbcae0cc0738";
+    const agent = "09a56289-d614-4946-bc3f-2fc40db5cf20";
+    const stale = "11111111-2222-4333-8444-555555555555";
+    const gone = "66666666-7777-4888-8999-aaaaaaaaaaaa";
+    const folder = path.join(t.instance, "local-agent-mode-sessions", ME, ORG);
+    write(path.join(t.instance, "claude-code-sessions", ME, ORG, `local_${code}.json`), meta(code));
+    write(path.join(t.claudeHome, "projects", "-w-app", `${code}.jsonl`), "{}\n", NOW - 3_600_000);
+    registry(t.claudeHome, process.pid, code);
+    write(path.join(folder, "local_ag.json"), meta(agent));
+    write(path.join(folder, "local_ag", ".claude", "projects", "-w-app", `${agent}.jsonl`), "{}\n", NOW - 10_000);
+    registry(path.join(folder, "local_ag", ".claude"), process.pid, agent);
+    write(path.join(t.instance, "claude-code-sessions", ME, ORG, `local_${stale}.json`), meta(stale));
+    write(path.join(t.claudeHome, "projects", "-w-app", `${stale}.jsonl`), "{}\n", NOW - 3_600_000);
+    write(path.join(t.instance, "claude-code-sessions", ME, ORG, `local_${gone}.json`), meta(gone));
+    write(path.join(t.claudeHome, "projects", "-w-app", `${gone}.jsonl`), "{}\n", NOW - 20_000);
+    registry(t.claudeHome, DEAD_PID, gone);
+    const r = scanDesktop({ instances: [{ profile: "work", dir: t.instance }], claudeHome: t.claudeHome, profileOf: () => "work", now: NOW });
+    const byId = new Map(r.rows.map((x) => [x.sessionId, x]));
+    assert.deepEqual([byId.get(code)?.live, byId.get(code)?.recentlyActive ?? false], [true, false], "a process proves it, an hour-old transcript or not");
+    assert.deepEqual([byId.get(agent)?.live, byId.get(agent)?.recentlyActive ?? false], [true, false], "agent mode: the process runs on the session's own .claude");
+    assert.deepEqual([byId.get(stale)?.live, byId.get(stale)?.recentlyActive ?? false], [false, false]);
+    assert.deepEqual([byId.get(gone)?.live, byId.get(gone)?.recentlyActive], [false, true], "a dead pid proves nothing; the fresh transcript is only recent");
   } finally {
     fs.rmSync(t.root, { recursive: true, force: true });
   }

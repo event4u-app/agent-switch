@@ -30,7 +30,7 @@ export function AccountSubline({ account: a, signedOut }: { account: Account; si
       {a.identity && (
         <>
           <span className="truncate">{a.identity}</span>
-          <CopyButton text={a.identity} nested />
+          <CopyButton text={a.identity} />
         </>
       )}
       {rest && <span className="truncate">{a.identity ? `· ${rest}` : rest}</span>}
@@ -108,11 +108,13 @@ export function CompactAccountRow({
         app ? "grid-cols-[minmax(0,1fr)_minmax(92px,118px)_auto] gap-x-2.5" : "grid-cols-[minmax(0,1fr)_minmax(120px,168px)]",
       )}
     >
-      <button type="button" data-row-main className="flex min-w-0 items-center gap-3 text-left">
+      <div className="flex min-w-0 items-center gap-3 text-left">
         <AccountDot color={a.color} ring={a.liveSessions > 0} />
         <span className="flex min-w-0 flex-col">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-[13px] font-medium text-ac-text">{a.name}</span>
+            <button type="button" data-row-main className="truncate text-left text-[13px] font-medium text-ac-text">
+              {a.name}
+            </button>
           </span>
           {nextIn || hasStateBadge(a) ? (
             <span className="mt-1 flex min-w-0 items-center gap-1.5">
@@ -123,7 +125,7 @@ export function CompactAccountRow({
             <AccountSubline account={a} signedOut={signedOut} />
           )}
         </span>
-      </button>
+      </div>
       <div>
         {signedOut ? (
           <span className="text-[11px] text-ac-faint">{a.windows.length ? t("accounts.rows.waitsForSignIn") : t("accounts.rows.noUsageYet")}</span>

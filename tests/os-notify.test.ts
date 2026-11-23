@@ -29,3 +29,9 @@ test("buildOsNotifyCommand: unsupported platform returns null", () => {
 test("osNotify returns false on an unsupported platform (never throws, no spawn)", () => {
   assert.equal(osNotify("t", "b", "aix"), false);
 });
+
+test("buildOsNotifyCommand: a token-shaped string never reaches the OS", () => {
+  const token = "sk-ant-oat01-" + "Q".repeat(60);
+  assert.deepEqual(buildOsNotifyCommand("linux", `t ${token}`, `b ${token}`)?.args, ["t [redacted]", "b [redacted]"]);
+  assert.ok(!JSON.stringify(buildOsNotifyCommand("win32", token, token)).includes("QQQQ"));
+});

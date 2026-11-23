@@ -119,12 +119,14 @@ export function accountFromProfile(row: ProfileRow, usage: UsageSnapshot | null 
     windows: usage ? usage.windows.map((w) => ({ ...w })) : [],
     checkedAt: parseTime(usage?.capturedAt),
     resetCredits: usage?.resetCredits ?? null,
+    routines: usage?.routines ?? null,
     threshold,
     protection,
     auth,
     surfaces: [],
     liveSessions: row.liveSessions,
     pools: extras.pools ?? [],
+    ...(row.agentConfigRoot !== undefined ? { agentConfigRoot: row.agentConfigRoot } : {}),
   };
 }
 
@@ -144,6 +146,7 @@ export function withStoredUsage(accounts: Account[], stored: ReadonlyMap<string,
       windows: snap.windows.map((w) => ({ ...w })),
       checkedAt: at,
       resetCredits: snap.resetCredits ?? null,
+      routines: snap.routines ?? null,
     };
   });
   // Nothing newer: the same list, so the tray does not redraw every minute.
@@ -266,7 +269,7 @@ function basename(path: string): string {
 /** The window's own rule for an engine that sends no `runtime`: live and written within a minute reads working. */
 function legacyState(row: SessionRow, now: number): Session["state"] {
   const fresh = now - row.mtimeMs;
-  return !row.live ? "done" : row.waiting ? "needs-you" : fresh >= 0 && fresh <= WORKING_FRESH_MS ? "working" : "idle";
+  return !row.live ? (row.recentlyActive ? "recent" : "done") : row.waiting ? "needs-you" : fresh >= 0 && fresh <= WORKING_FRESH_MS ? "working" : "idle";
 }
 
 export function sessionFromRow(row: SessionRow, now: number): Session {

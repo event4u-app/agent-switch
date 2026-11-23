@@ -1,0 +1,12 @@
+{
+  "schema": 2,
+  "mappings": {
+    "/home/dev/code/app": {
+      "claude": "work",
+      "codex": "w"
+    },
+    "/home/dev/code/side": {
+      "claude": "home"
+    }
+  }
+}

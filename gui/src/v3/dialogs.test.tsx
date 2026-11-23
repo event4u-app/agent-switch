@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { DecisionSheet, EndDialog, NewSessionDialog, type NewSessionFacts, type NewSessionPlan } from "./dialogs.js";
+import { ChatAccountDialog, DecisionSheet, EndDialog, NewSessionDialog, type NewSessionFacts, type NewSessionPlan } from "./dialogs.js";
 
 afterEach(cleanup);
 const plan: NewSessionPlan = { folder: "~/code/agent-switch", gitState: "main · clean", worktree: false, tool: "claude", model: "Opus 5.5 · last used here", thinking: "High", where: "terminal" };
@@ -44,6 +44,43 @@ describe("New session (spec §8.1)", () => {
     expect(screen.getByText("work has the most room")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Command preview" }));
     expect(screen.getByText("CLAUDE_CONFIG_DIR=… claude")).toBeTruthy();
+  });
+
+  it("strategy ask: no account until one is picked, then the pick is the one started", () => {
+    const onStart = vi.fn();
+    const ask = [{ name: "work", color: "teal" as const }, { name: "side", color: "blue" as const }];
+    render(<NewSessionDialog initial={plan} facts={facts({ ask })} onStart={onStart} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    expect(screen.getByText("Ask me — choose an account")).toBeTruthy();
+    expect(screen.queryByText("Automatic →")).toBeNull();
+    const startBtn = screen.getByRole("button", { name: /Start in Terminal.app/ }) as HTMLButtonElement;
+    expect(startBtn.disabled).toBe(true);
+    fireEvent.click(startBtn);
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    expect(onStart).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("radio", { name: /side/ }));
+    expect(startBtn.disabled).toBe(false);
+    fireEvent.keyDown(window, { key: "Enter", metaKey: true });
+    expect(onStart).toHaveBeenLastCalledWith({ ...plan, account: "side" });
+  });
+
+  it("without ask the account line stays automatic and Start is ready", () => {
+    render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    expect(screen.getByText("Automatic →")).toBeTruthy();
+    expect(screen.queryByText("Ask me — choose an account")).toBeNull();
+    expect((screen.getByRole("button", { name: /Start in Terminal.app/ }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("a chat under strategy ask: nothing starts until an account is picked", () => {
+    const onStart = vi.fn();
+    render(<ChatAccountDialog folder="~/r" ask={[{ name: "work", color: "teal" }, { name: "side", color: "blue" }]} onStart={onStart} onClose={vi.fn()} />);
+    expect(screen.getByText("Ask me — choose an account")).toBeTruthy();
+    const startBtn = screen.getByRole("button", { name: /Start here/ }) as HTMLButtonElement;
+    expect(startBtn.disabled).toBe(true);
+    fireEvent.click(startBtn);
+    expect(onStart).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("radio", { name: /side/ }));
+    fireEvent.click(startBtn);
+    expect(onStart).toHaveBeenCalledWith("side");
   });
 
   it("Esc closes", () => {
@@ -93,6 +130,22 @@ describe("decision sheet and End (spec §8.2, §8.3)", () => {
     fireEvent.click(screen.getAllByRole("checkbox")[1]); // leave "Docs" where it is
     fireEvent.click(screen.getByText("Continue on work"));
     expect(onDecide).toHaveBeenCalledWith("after-turn", [{ key: "a", target: "work" }]);
+  });
+
+  it("a live switch names the sessions on the account that switch along; a brief or a move does not", () => {
+    const sessions = [{ key: "a", title: "Fix wedge", model: "Opus", target: "work" }, { key: "b", title: "Docs", model: "Sonnet", target: "work" }];
+    const alsoOn = [{ key: "a", title: "Fix wedge" }, { key: "b", title: "Docs" }, { key: "c", title: "Release notes" }];
+    render(<DecisionSheet account="side" pctUsed={94} window="5h" resetsIn="1h" suggestion="work" room={null} onKeep={vi.fn()} onClose={vi.fn()} onDecide={vi.fn()} sessions={sessions} alsoOn={alsoOn} />);
+    // Both checked: the one outside the sheet still follows.
+    expect(screen.getByText("A live switch changes side's sign-in, so these sessions switch too: Release notes.")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("checkbox")[1]); // leave "Docs" — it follows anyway
+    expect(screen.getByText("A live switch changes side's sign-in, so these sessions switch too: Docs, Release notes.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: /New session with a brief/ }));
+    expect(screen.queryByText(/switch too/)).toBeNull();
+    cleanup();
+    render(<DecisionSheet account="side" pctUsed={94} window="5h" resetsIn="1h" suggestion="work" room={null} onKeep={vi.fn()} onClose={vi.fn()} onDecide={vi.fn()} sessions={sessions} alsoOn={alsoOn} tool="codex" />);
+    expect(screen.queryByText(/switch too/)).toBeNull();
+    cleanup();
   });
 
   it("sessions bound for different accounts all move, each to its own; the labels stop naming one account", () => {

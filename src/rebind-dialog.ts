@@ -115,3 +115,17 @@ export function resolveRebindChoice(input: string, dialog: RebindDialog): Rebind
   }
   return { kind: "invalid" };
 }
+
+/**
+ * A rebind switches the PROFILE's login, so every live session on it adopts
+ * the target, not only the one the user had in mind. With two or more live
+ * sessions, the line that names them all; null when at most one runs.
+ */
+export function followersNote(profile: string, target: string, live: { sessionId: string | null; cwd: string | null; pid?: number }[]): string | null {
+  if (live.length < 2) return null;
+  const names = live.map((s) => {
+    const who = s.sessionId ? s.sessionId.slice(0, 8) : `pid ${s.pid ?? "?"}`;
+    return s.cwd ? `${who} (${s.cwd})` : who;
+  });
+  return `Rebinding "${profile}" moves every live session on it to ${target}'s account — ${live.length} follow: ${names.join(", ")}.`;
+}

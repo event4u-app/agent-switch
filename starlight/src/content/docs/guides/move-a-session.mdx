@@ -117,8 +117,10 @@ agent-switch open claude-desktop personal
 ```
 
 Quit the Claude Desktop window that holds the session first, or it may write
-the session back. A session that was active in the last 2 minutes is refused
-until it is idle. The target account must be signed in. There is no
+the session back. A session that is still running, or was active in the last 2
+minutes, is refused until it is idle. `agent-switch sessions` and the app call a
+Desktop session "live" only when a running Claude Code process names it; one
+that was only written in the last 2 minutes shows as "recently active". The target account must be signed in. There is no
 `--keep-source` or `--in-place` for Desktop sessions.
 
 ## Switch a running session with `rebind` <Badge text="macOS" variant="caution" /> <Badge text="Claude only" variant="note" />
@@ -143,7 +145,10 @@ the suggestion, `q` cancels. Without a terminal, it only prints the suggested
 command.
 
 Before it switches, it prints the same cache-cost line as `takeover`, and the
-list marks accounts of the same organization.
+list marks accounts of the same organization. A switch changes the account's
+login, so every session running on that account follows; when there is more
+than one, `rebind` names them before it switches, and the app lists them in its
+confirmation.
 
 ### Switch when the turn ends
 

@@ -24,12 +24,18 @@ flowchart TD
    an account, that account is used. A rule can also point at a pool, a group
    of accounts; then the member with the most headroom is used.
    See [Projects & pools](/agent-switch/guides/projects-and-pools/).
+   A rule can also name a git remote instead of a folder
+   (`agent-switch map work --remote github.com/acme`); it then applies in every
+   clone of that owner or repo, as if it were a rule on the clone's root folder.
 2. **Balanced pick.** Without a rule, the start is balanced across all enabled
    accounts of that tool. It goes to the account that would lose the most of
    what is left at its next reset.
 3. **Your preferred account.** When the accounts are level, or no usage numbers
    are fresh, the start uses your preferred account: the one you set with
    `asw <name>` (or `agent-switch use <name>`), marked with `*` in `asw`.
+   If you would rather not have starts balanced, `agent-switch strategy default`
+   always takes the preferred account, and `agent-switch strategy ask` asks at
+   the terminal which account to use (Settings › Protection in the app).
 
 <Aside type="note" title="`use` is a preference, not a lock">
   `agent-switch use work` does not force every session onto `work`. It marks
@@ -52,6 +58,15 @@ the most at risk of being wasted.
 Here `personal` wins. Using it now spends quota that would otherwise be gone in
 14 hours, while `work` still has days to be used.
 
+When the reset time is unknown, the window's own length stands in for it (5
+hours, a week, 30 days): a window never resets later than that, so the pace is
+a lower bound, never a guess that flatters the account. `dir --json` then says
+"reset time unknown (at least … %/h)".
+
+Two profiles signed into the same email in the same organization share one set
+of limits, so only one of them is weighed (your preferred account when it is one
+of them). The same email in two organizations is two accounts, weighed apart.
+
 An account is never picked when:
 
 - it is at or over its [limit protection](/agent-switch/concepts/limits-and-protection/)
@@ -59,6 +74,11 @@ An account is never picked when:
 - it is disabled, signed out, or shares its login with your default install
   (see [Keep the login you already have](/agent-switch/start-here/quick-start/#keep-the-login-you-already-have));
 - its usage is unknown. Unknown is never treated as free.
+- it is a Claude account that is not on a personal **Pro** or **Max** plan
+  (the `subscriptionType` in its stored login). A Team or Enterprise seat, any
+  other plan and a login without the field are not balanced; the reason shows
+  in `dir --json` and in the app wherever the pick is explained. A folder rule
+  to that account, or making it your preferred account, still uses it.
 
 ## Fresh numbers matter
 

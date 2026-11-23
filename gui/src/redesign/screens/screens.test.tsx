@@ -181,6 +181,32 @@ describe("Session sheet", () => {
     expect(rebind).toHaveBeenCalledWith("claude:agent-config", "claude:side");
   });
 
+  it("names the other live sessions on the account before a live switch moves them too", () => {
+    const vm = fixture();
+    const me = vm.sessions.find((x) => x.id === "claude:agent-config")!;
+    vm.sessions = [
+      ...vm.sessions.filter((x) => x.accountId !== me.accountId || x.id === me.id),
+      { ...me, id: "claude:docs", title: "Docs rewrite", state: "idle" as const },
+      { ...me, id: "claude:old", title: "Old run", state: "done" as const },
+      { ...me, id: "claude:desk", title: "Desktop chat", surface: "desktop-app" as const, state: "working" as const },
+    ];
+    mount(vm, { overlay: { kind: "session", id: "claude:agent-config" }, act: { rebind: vi.fn(), armRebind: vi.fn() } });
+    fireEvent.click(screen.getByRole("button", { name: "Switch account" }));
+    const body = screen.getByText(/switch too/).textContent ?? "";
+    expect(body).toContain("so these sessions switch too: Docs rewrite.");
+    expect(body).not.toContain("Old run");
+    expect(body).not.toContain("Desktop chat");
+  });
+
+  it("says nothing about other sessions when the switched one is alone on its account", () => {
+    const vm = fixture();
+    const me = vm.sessions.find((x) => x.id === "claude:agent-config")!;
+    vm.sessions = vm.sessions.filter((x) => x.accountId !== me.accountId || x.id === me.id);
+    mount(vm, { overlay: { kind: "session", id: "claude:agent-config" }, act: { rebind: vi.fn() } });
+    fireEvent.click(screen.getByRole("button", { name: "Switch account" }));
+    expect(screen.queryByText(/switch too/)).toBeNull();
+  });
+
   it("arms a switch for the end of the turn behind a dialog that says the cache moves only within one organization and nothing switches without the click", () => {
     const armRebind = vi.fn(() => Promise.resolve());
     const vm = fixture();
@@ -308,6 +334,22 @@ describe("Start session", () => {
     expect(explainFolder).toHaveBeenCalledWith("/Users/x/dev/app/sub", "claude");
     expect(screen.getByText("· Mapped /Users/x/dev → side")).toBeTruthy();
     expect(document.querySelector('[title^="agent-switch run side --provider claude --cwd /Users/x/dev/app/sub"]')).toBeTruthy();
+  });
+
+  it("under strategy ask, Automatic picks nothing: Start waits until an account is chosen", async () => {
+    const explainFolder = vi.fn(async () => ({ profile: "claude/work", configDir: "/c", why: ["Strategy ask — a start from a terminal asks which of 2 accounts to use"], ask: ["work", "side"] }));
+    mount(fixture({ accounts: [acc("work", { isDefault: true }), acc("side")] }), {
+      overlay: { kind: "start", cwd: "/Users/x/dev/app" },
+      act: { explainFolder },
+    });
+    expect(await screen.findByText("Ask me — choose an account")).toBeTruthy();
+    const start = () => screen.getByRole("button", { name: /Start Claude/ }) as HTMLButtonElement;
+    expect(start().disabled).toBe(true);
+    expect(screen.getByRole("alert").textContent).toMatch(/New Claude sessions ask first: choose an account/);
+    fireEvent.click(screen.getByRole("combobox", { name: "Account" }));
+    fireEvent.click(screen.getByRole("option", { name: /^side/ }));
+    expect(start().disabled).toBe(false);
+    expect(document.querySelector('[title^="agent-switch run side --provider claude --cwd /Users/x/dev/app"]')).toBeTruthy();
   });
 
   it("falls back to the local match when the CLI doesn't answer", async () => {

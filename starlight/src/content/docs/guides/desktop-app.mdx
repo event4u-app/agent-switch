@@ -174,7 +174,9 @@ the account with the most left. Nothing happens until you click.
 ## The menu-bar popover
 
 A left click on the menu-bar icon opens the popover: the items that need you,
-every account's meters, and **Start session**. On macOS, each signed-in
+every account's meters, and **Start session**. Above the meters, **Next start**
+names the account a plain start of that tool would take and why (hover for
+every step); that account carries the **→ next** mark. On macOS, each signed-in
 account whose tool has a desktop app gets a button that opens that app as this
 account. A right click shows the classic menu with **Show agent-switch** and **Quit**.
 
@@ -225,10 +227,12 @@ in **Settings › General › Language**.
 ### Updates
 
 The app checks for a new Agent Switch release when it opens and every 24
-hours. For the release types you select under **Settings › Updates** (major,
-minor and bugfix by default), it installs the update itself with
-`agent-switch update` and asks you to restart. For any other type it only
-tells you. **Check now** checks right away.
+hours, and by default only tells you about it. For the release types you switch
+on under **Settings › Updates** (major, minor, bugfix; all off on a new
+install), it installs exactly that version itself with
+`agent-switch update <version>` and asks you to restart. A withdrawn release is
+never installed. **Check now** checks right away. See
+[Updates, releases and rollback](/agent-switch/guides/updates-and-releases/).
 
 ## Next steps
 

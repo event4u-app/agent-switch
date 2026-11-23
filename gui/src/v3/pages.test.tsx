@@ -29,6 +29,26 @@ describe("Accounts page (spec §10.1)", () => {
   });
 });
 
+describe("Accounts page › routines", () => {
+  const page = (a: PageAccount) => render(<AccountsPage nowMs={NOW} nextRefreshMs={null} view="accounts" onView={vi.fn()} history={null} pools={null} poolCount={0} on={actions()} accounts={[a]} />);
+
+  it("shows the routines the readout carries, used of limit, a used count of 0 included", () => {
+    page(acct({ routines: { used: 3, limit: 15 } }));
+    expect(screen.getByText("Routines 3/15 today")).toBeTruthy();
+    cleanup();
+    page(acct({ routines: { used: 0, limit: 5 } }));
+    expect(screen.getByText("Routines 0/5 today")).toBeTruthy();
+  });
+
+  it("a readout without routines draws no row, never a zero", () => {
+    page(acct({ routines: null }));
+    expect(screen.queryByText(/Routines/)).toBeNull();
+    cleanup();
+    page(acct({}));
+    expect(screen.queryByText(/Routines/)).toBeNull();
+  });
+});
+
 describe("All sessions page (spec §10.2)", () => {
   it("filters by words, state and tool; selecting shows the labelled batch bar", () => {
     const rows = [sess("a", { title: "Event store", branch: "feat/store" }), sess("b", { live: false }), sess("c", { tool: "codex" })];

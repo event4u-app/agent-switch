@@ -14,7 +14,7 @@ entry_condition:
 > Last run: 2026-11-23 — Codex OSC 7501 and bulk `wait --all` shipped; ledger cap raised to
 > 1000. Still parked: the ledger replay (a date), Codex session parity (no Codex release
 > documents the originator; 0.167.0 checked), Antigravity usage (`agy --help` lists none).
-> **Decided 2026-11-07 (owner, option 1):** "Mask secrets in previews and notices" moved to [`road-to-the-ready-remainders.md`](../road-to-the-ready-remainders.md) 3.4.
+> **Decided 2026-11-07 (owner, option 1):** "Mask secrets in previews and notices" moved to [`road-to-the-ready-remainders.md`](../archive/road-to-the-ready-remainders.md) 3.4.
 
 > **Source:** `agents/tmp.old/inbox-2026-10-d/` — the parts of the switchboard
 > comparison that `archive/road-to-signals-the-host-already-sends.md` could not
@@ -97,7 +97,7 @@ entry_condition:
       no double trigger. The Claude Desktop deep link stays out (undocumented, can
       hit the wrong instance). _Resume when:_ the owner asks for it (needs the
       Automation permission).
-- [ ] **Mask secrets in previews and notices.** Run session previews and <!-- moved-to: road-to-the-ready-remainders.md 3.4 (2026-11-07) -->
+- [ ] **Mask secrets in previews and notices.** Run session previews and <!-- moved-to: archive/road-to-the-ready-remainders.md 3.4 (2026-11-07) -->
       notification text through `redactSecrets` (`src/activity.ts`) before they are
       shown. _Resume when:_ a preview or notice is seen carrying a token-shaped
       string.

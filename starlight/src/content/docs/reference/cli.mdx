@@ -40,11 +40,12 @@ Running `agent-switch` with no command starts the desktop app (same as
 | `login <name> [--browser B] [--isolated]` | Sign an existing account in again (signed out, or login expired). Gives an imported account its own login. `--isolated` as for `add`. |
 | `browsers` | Browsers `--browser` can open; `--json` marks the ones `--isolated` can use (`isolatable`). <Badge text="macOS" variant="caution" /> and Linux. |
 | `mark-shared <name> [--off]` | Mark an account as sharing the default install's login (for imports made by older versions). |
+| `agent-config-root <name> [own\|global\|status] [--json]` | Claude only. `own`: the account's sessions and the app's agent-config settings use `~/.agent-switch/claude/<name>/agent-config`; `global` (the default): the shared agent-config settings. Only new sessions follow a change; nothing is copied or deleted. See [agent-config settings per account](/agent-switch/guides/agent-config/#agent-config-settings-per-account). |
 | `list` / `ls` | All accounts, grouped by tool; the preferred account is marked `*`. |
 | `status [name]` | Who each account is signed in as, plus its usage. `--json` covers the preferred account only. |
 | `current` | The preferred account per tool. |
 | `whoami [name]` | Which account identity an account is signed in as. |
-| `auth-status` | Login state per account: `connected`, `expiring`, `sign-in-needed` or `unknown`. Never prints a token. |
+| `auth-status [--json]` | Login state per account: `connected`, `expiring`, `sign-in-needed` or `unknown`. Never prints a token. `--json` prints `{schema, profiles[]}`. |
 | `rename <old> <new>` | Rename an account; its tag, colour and folder rules follow. |
 | `label <name> [Work\|Personal\|Other\|none]` | Tag an account. |
 | `color <name> [orange\|red\|yellow\|green\|teal\|blue\|purple\|pink\|none]` | Pick the account's colour in the app (`colour` works too). |
@@ -59,6 +60,12 @@ separate sign-in command; `agy` asks you to sign in when it starts.
 
 If the sign-in does not finish, the account is kept and `add` exits with `1`.
 Finish it with `agent-switch login <name>`.
+
+`login` on a Claude or Codex account that is already signed in to someone signs
+in in a separate folder first. Only a sign-in to the same account (same email,
+and for Claude the same organization) replaces the login. A different account
+saves nothing, keeps the old login and exits with `4`. Antigravity signs in in
+place, so `login` can only report a changed account afterwards (also exit `4`).
 
 `--browser <id>` opens the Claude sign-in in that browser (ids from
 `agent-switch browsers`). It is refused on Windows. Codex opens your default
@@ -106,12 +113,14 @@ background service stops checking its usage.
 | `run <name> [--cwd DIR] [--tmux] [--force] [-- args…]` | Start the tool on one named account. |
 | `dir [--guard] [--json] [--plain] [--exclude a,b]` | Which account a start in this folder would use, and why. |
 | `exec [--exclude a,b] [--plain] -- <args…>` | Start the tool on the account `dir` picks, from a script or another tool. |
-| `strategy [balance\|fill]` | How a start with no folder rule picks: `balance` (default) spreads starts, `fill` stays on the preferred account until it reaches its limit. |
+| `strategy [balance\|fill\|default\|ask]` | How a start with no folder rule picks: `balance` (default) spreads starts, `fill` stays on the preferred account until it reaches its limit, `default` always takes the preferred account, `ask` asks at the terminal. See [below](#which-account-a-start-uses). |
 | `picks [--limit N]` | Which account each start from your terminal chose, and why (newest 500 kept). |
 | `map <name\|pool:<id>> [dir]` | Pin a folder (default: the current one) to an account or a pool. |
 | `map --pause\|--resume [dir]` | Pause a folder rule without deleting it, or turn it back on. |
+| `map <name\|pool:<id>> --remote <host/owner[/repo]>` | Bind every clone whose `origin` is under that owner or repo, wherever it is checked out. A remote URL works too. |
 | `unmap [dir]` | Remove a folder rule. |
-| `mappings` | List folder rules. |
+| `unmap --remote <host/owner[/repo]>` | Remove a remote binding. |
+| `mappings` | List folder rules and remote bindings. |
 | `pool …` | Groups of accounts a folder rule can point at. See [below](#pool). |
 | `guard [block\|warn\|off]` | One account, one running session: read or set the policy. See [below](#guard). |
 | `shellenv [--shell S]` | Print the shell integration. |
@@ -119,21 +128,54 @@ background service stops checking its usage.
 
 ### Which account a start uses
 
-A plain `claude`, `codex` or `agy` in a terminal with the shell integration
-asks `agent-switch dir` first. The order is:
+A plain `claude` (or `codex`, `agy`) in a terminal with the shell integration
+goes through these steps, in this order:
 
-1. **A folder rule** for this folder or the nearest parent folder: that account,
-   or the best account in that pool.
-2. **No folder rule:** a balanced start across all of that tool's accounts.
-3. **The preferred account** (`use`) on a tie, or when no account has usage
-   numbers from the last 10 minutes. With `strategy fill`, the preferred account
-   takes every start until it reaches its limit; then the balanced pick decides.
+1. **The wrapper.** The `claude` function from `shellenv` runs
+   `agent-switch dir --provider claude --guard` in the current folder. If
+   `agent-switch` is missing or fails with any exit code other than `86`, the
+   real `claude` starts on its own default login: agent-switch never stands
+   between you and the tool.
+2. **A folder rule** for this folder or the nearest parent folder: that account,
+   or the best account in that pool. A **remote binding** counts as a rule on
+   the repository's root folder: it matches the `origin` remote (the first
+   remote when there is no `origin`), `host/owner/repo` before `host/owner`.
+   Walking up from the start folder, the first rule found wins, and a folder
+   rule wins over a remote binding on the same folder. So a folder rule inside
+   the repo or on its root beats the remote binding, and the remote binding
+   beats a rule on a parent folder such as `~/code`. A rule that cannot be
+   served (its account is disabled or removed, or its pool has no usable
+   account) refuses the start with exit code `86`.
+3. **No rule: the start strategy** (`strategy`, per tool) decides among the
+   accounts that can take work (enabled, signed in, not sharing the default
+   login):
 
-`dir --json` prints `{profile, configDir, why[], blocked?, note?}`. `--plain`
-ignores folder rules. A folder rule that cannot be served (its account is
-disabled or removed, or its pool has no usable account) refuses the start with
-exit code `86`. Details:
-[Which account a session uses](/agent-switch/concepts/which-account/).
+   | Strategy | The start goes to |
+   | --- | --- |
+   | `balance` (default) | the account that would lose the most at its next reset; the preferred account on a tie or when no account has usage numbers from the last 10 minutes |
+   | `fill` | the preferred account until it reaches its limit, then the balanced pick |
+   | `default` | always the preferred account; the balanced pick only when it cannot take work |
+   | `ask` | the account you choose at a numbered prompt (Enter takes the preferred one). The prompt only appears when stdin and stderr are both a terminal and two or more accounts can take work; a script, a pipe, `exec` and the desktop app are never asked and take the preferred account. An answer that names no account starts nothing (exit `86`). |
+
+4. **Nothing to pick:** when no account can be weighed and no preferred account
+   is set, the wrapper prints nothing and `claude` starts on its own default
+   login (`~/.claude`).
+5. **One account, one running session** (`guard`): the note or the move to a
+   free account described [below](#guard).
+6. **Start admission:** the picked account's settings are synced, then its
+   sign-in is read again. If it changed since the pick (a sign-in or a rebind
+   landed in between), the start is refused with exit code `86` and both
+   sign-ins are named.
+7. **The start:** the wrapper sets `CLAUDE_CONFIG_DIR` to the account's folder
+   and runs the real `claude` with your arguments. The wrapper runs the tool
+   itself after `dir --guard` has exited, and that last step is not checked
+   again: from there on the pick is advisory.
+
+Every start through the wrapper is recorded in `picks`. `dir --json` prints
+`{profile, configDir, why[], blocked?, note?, ask?}` (`ask` lists the accounts
+to choose from under `strategy ask`) and starts nothing; `--plain` ignores
+folder and remote rules. `exec` runs the same pick, admission and start without a shell (it never asks).
+Details: [Which account a session uses](/agent-switch/concepts/which-account/).
 
 `--exclude a,b` leaves those accounts out of this one pick, for a caller that
 just saw one of them fail (a limit, an outage) and wants another.
@@ -259,7 +301,7 @@ suggested. The background service must be running.
 | Command | What it does |
 | --- | --- |
 | `sessions [profile] [--recent N]` | Recent and running sessions per account, with context %. Claude and Codex; Antigravity sessions are not readable yet. |
-| `sessions preview <session-id> [--from <profile>]` | The first turns of one session. |
+| `sessions preview <session-id> [--from <profile>]` | The first turns of one session. Anything shaped like a token or key is shown as `[redacted]`. |
 | `sessions rm <session-id> --yes [--from <profile>] [--purge]` | Move a session to the trash; `--purge` deletes it for good. |
 | `sessions restore <trash-id\|session-id> [--from <profile>]` | Bring a removed session back. |
 | `sessions pin\|unpin\|archive\|unarchive <session>` | Keep a session in the library. A pinned session is copied into the vault, so Claude's own cleanup cannot take it; archived is not deleted. Claude and Codex, needs Node 22.13 or later. |
@@ -337,6 +379,10 @@ the new account from its next message.
 `rebind` moves the target account's login into the running session, so the
 target's own account is signed out while it is lent. It therefore refuses a
 target that has a running session of its own: that session would lose its login.
+It switches the account, not one session: when two or more sessions run on the
+account, it names each of them (`Rebinding "work" moves every live session on it
+to side's account — 2 follow: …`) before it switches, and the app says the same
+in its confirmation.
 
 `rebind` moves the target account's login into the running session, so the
 target's own account is signed out while it is lent. It therefore refuses a
@@ -392,8 +438,9 @@ App ids: `claude-desktop`, `codex-ide` (VS Code), `codex-desktop`,
 | `activate [--auto]` | Make this copy of the CLI the one terminals and the background service use. The desktop app runs it with `--auto` on every start; `--auto` does nothing when this copy is a source checkout (a build outside `node_modules`), so running a dev build leaves your installed version in charge. |
 | `service install\|uninstall` | Start the background service at login, or remove it. |
 | `service start\|stop\|status\|run` | Start it now, stop it, show its state, or run it in the foreground. On macOS with the LaunchAgent installed, start and stop go through launchd; a stopped service stays stopped until the next start or login. |
-| `notifications [clear]` | Recent notifications (limit suggestions, protection warnings, failed usage reads). |
+| `notifications [clear]` | Recent notifications (limit suggestions, protection warnings, failed usage reads). A token-shaped string in a notice is stored and shown as `[redacted]`, and never reaches a desktop notification. |
 | `os-notify [on\|off\|status]` | Let the background service show desktop notifications itself on Linux and Windows (default off). |
+| `quiet-hours [off\|HH:MM-HH:MM\|status] [--json]` | A daily window (local time, may run over midnight) in which no desktop notification is shown by the app or the service; notices are still listed. Default off. |
 | `providers status` | Which tools are on, installed or linked. |
 | `providers enable\|disable [--surface cli\|ui]` | Turn a tool on or off. Accounts are kept. Claude and Codex are on by default. |
 | `providers link --provider P --path <binary>` | Use a tool binary that is not on your PATH. |
@@ -408,10 +455,10 @@ of your enabled Claude and Codex accounts about every 5 minutes.
 | Command | What it does |
 | --- | --- |
 | `doctor` | Self-check for this OS and each tool. Exits `1` on a hard error. |
-| `activity [--limit N]` | What agent-switch itself did, and why (newest 2000 kept). |
+| `activity [--limit N] [--json]` | What agent-switch itself did, and why (newest 2000 kept). Anything shaped like a token is printed as `[redacted]`, also in entries an older version wrote. `--json` prints `{schema, entries[], capacity}`. |
 | `check-update` / `check-updates` | Compare your version with the latest GitHub release. |
-| `update` / `upgrade` | Update through npm, then restart the background service on the new version. |
-| `tooling` | Readout of related tools (`agent-config`, `rtk`, `claude`, `codex`, `agy`). No network. |
+| `update [<version>]` / `upgrade` | Update through npm to the latest version, or to exactly `<version>` (a semver such as `2.12.1`; also how you go back to an older one), then restart the background service on the new version. |
+| `tooling` | Readout of related tools (`agent-config`, `rtk`, `claude`, `codex`, `agy`). No network. Whether the `rtk` found is Token Killer comes from agent-config (`agent-config rtk:detect --json`) when it is installed, else from the output of `rtk gain`. |
 | `tooling install\|upgrade <tool>` | Install or upgrade one of them. Refused for `agy`. |
 | `tooling notes [<tool>] [--latest]` | Release notes newer than your version (fetched from GitHub). |
 | `list --format cswap-v1` / `--list --json` | Claude accounts in the format CodexBar and ccdeck read. See [CodexBar & ccdeck](/agent-switch/guides/codexbar-ccdeck/). |
@@ -434,7 +481,12 @@ of your enabled Claude and Codex accounts about every 5 minutes.
   Switch's, was replaced by another one, or is gone;
 - the guard policy, and whether an account runs twice right now.
 
-`--json` prints `{readiness, platform, checks[]}`.
+`--json` prints `{schema, readiness, platform, checks[]}`. It names an API-key
+variable, never its value.
+
+`schema` in the JSON of `doctor`, `auth-status` and `activity` is the shape's
+version, today `1`. A new field keeps the number; it goes up when a field is
+removed or changes meaning.
 
 ## Internal commands
 

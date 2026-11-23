@@ -3,15 +3,18 @@
  * failure (the Updates page / Tools card show live status):
  *
  * - agent-switch itself: once on open and every 24 h while the toggle is on. An
- *   enabled bump kind installs in place (`agent-switch update`); any other kind
- *   only notifies. A handled version is not re-announced; a FAILED install is
+ *   bump kind the user opted into installs in place (`agent-switch update`);
+ *   any other kind — every kind by default — only notifies. A withdrawn
+ *   version is never installed; the notice says why instead. After an install
+ *   the window never restarts by itself: the notice (and Settings › Updates)
+ *   offers the restart, and while a session it hosts runs it says to wait. A handled version is not re-announced; a FAILED install is
  *   not marked handled, so the next check retries.
  * - the agent-config companion: on open and hourly; notifies once per version,
  *   and only when it is installed and a newer release exists.
  */
 
-import { useEffect } from "react";
-import { agentConfigVersion, selfUpdate, type SelfUpdateResult } from "../../ipc.js";
+import { useEffect, useRef } from "react";
+import { agentConfigVersion, hostList, selfUpdate, type SelfUpdateResult } from "../../ipc.js";
 import { AGENT_CONFIG_REPO } from "../../agent-config.js";
 import { clampText, firstHighlight, releaseNoteBlocks } from "../../release-notes.js";
 import {
@@ -20,6 +23,7 @@ import {
   getAutoUpdateKinds,
   getUpdateNotifiedVersion,
   setAgentConfigNotifiedVersion,
+  setUpdateInstalledVersion,
   setUpdateNotifiedVersion,
 } from "../../settings-store.js";
 import {
@@ -29,6 +33,7 @@ import {
   isNewer,
   releaseKind,
   releasesNewerThan,
+  withdrawnReason,
   type ReleaseInfo,
   type UpdateCheck,
   type UpdateKind,
@@ -46,19 +51,36 @@ type Notify = (kind: NotificationKind, title: string, message: string) => Promis
 
 export interface AutoUpdateDeps {
   check(): Promise<UpdateCheck>;
-  install(): Promise<SelfUpdateResult>;
+  /** Installs exactly `tag`, the release that was checked. */
+  install(tag: string): Promise<SelfUpdateResult>;
   kinds(): UpdateKind[];
+  /** Why the release must not be installed, null when nothing withdraws it; throws when unknown. */
+  withdrawn(release: ReleaseInfo): Promise<string | null>;
+  /** Sessions this window hosts that are running; throws when that cannot be read. */
+  running(): Promise<number>;
   notified(): string;
   markNotified(tag: string): void;
+  /** Remember an installed version that waits for a restart. */
+  markInstalled(tag: string): void;
   notify: Notify;
+}
+
+/** Sessions the app hosts that are alive (the engine's host list) plus the
+ *  chats this window runs — a restart would cut every one of them off. */
+export async function hostedSessionsRunning(chatsHere: () => number = () => 0): Promise<number> {
+  const { hosted } = await hostList();
+  return hosted.filter((h) => h.alive).length + chatsHere();
 }
 
 const autoUpdateDeps: AutoUpdateDeps = {
   check: () => checkForUpdate(),
-  install: () => selfUpdate(),
+  install: (tag) => selfUpdate(tag),
   kinds: () => getAutoUpdateKinds() as UpdateKind[],
+  withdrawn: withdrawnReason,
+  running: () => hostedSessionsRunning(),
   notified: getUpdateNotifiedVersion,
   markNotified: setUpdateNotifiedVersion,
+  markInstalled: setUpdateInstalledVersion,
   notify,
 };
 
@@ -68,20 +90,46 @@ export async function runAutoUpdateCheck(d: AutoUpdateDeps = autoUpdateDeps): Pr
   const tag = res.release.tag;
   if (d.notified() === tag) return;
   const kind = releaseKind(res.current, tag);
-  if (kind && d.kinds().includes(kind)) {
-    const r = await d.install();
-    if (r.ok) d.markNotified(tag);
+  let withdrawn: string | null = null;
+  let unchecked = false;
+  try {
+    withdrawn = await d.withdrawn(res.release);
+  } catch {
+    unchecked = true;
+  }
+  if (withdrawn) {
+    d.markNotified(tag);
     await d.notify(
-      r.ok ? "success" : "warning",
-      noticeEn(r.ok ? "engines.notice.updatedTitle" : "engines.notice.updateFailedTitle", { tag }),
-      noticeEn(r.ok ? "engines.notice.updatedBody" : "engines.notice.updateFailedBody"),
+      "warning",
+      noticeEn("engines.notice.updateWithdrawnTitle", { tag }),
+      noticeEn("engines.notice.updateWithdrawnBody", { reason: clampText(withdrawn, 160) }),
+    );
+    return;
+  }
+  if (kind && d.kinds().includes(kind) && !unchecked) {
+    const r = await d.install(tag);
+    if (!r.ok) {
+      await d.notify("warning", noticeEn("engines.notice.updateFailedTitle", { tag }), noticeEn("engines.notice.updateFailedBody"));
+      return;
+    }
+    d.markNotified(tag);
+    d.markInstalled(tag);
+    const busy = await d.running().then((n) => n > 0, () => true);
+    await d.notify(
+      "success",
+      noticeEn("engines.notice.updatedTitle", { tag }),
+      noticeEn(busy ? "engines.notice.updatedBodyBusy" : "engines.notice.updatedBody"),
     );
   } else {
     d.markNotified(tag);
     await d.notify(
       "info",
       noticeEn("engines.notice.updateAvailableTitle", { tag }),
-      kind ? noticeEn("engines.notice.updateAvailableBodyKind", { kind }) : noticeEn("engines.notice.updateAvailableBody"),
+      unchecked && kind && d.kinds().includes(kind)
+        ? noticeEn("engines.notice.updateUncheckedBody")
+        : kind
+          ? noticeEn("engines.notice.updateAvailableBodyKind", { kind })
+          : noticeEn("engines.notice.updateAvailableBody"),
     );
   }
 }
@@ -147,11 +195,15 @@ export async function checkAgentConfigUpdate(d: AgentConfigWatchDeps = agentConf
   );
 }
 
-export function useUpdateWatchers(): void {
+/** `chatsHere`: how many chats this window runs (they end with the window). */
+export function useUpdateWatchers(chatsHere: () => number = () => 0): void {
+  const chats = useRef(chatsHere);
+  chats.current = chatsHere;
   useEffect(() => {
     const state = { wasOn: false, lastRun: null as number | null };
+    const deps: AutoUpdateDeps = { ...autoUpdateDeps, running: () => hostedSessionsRunning(() => chats.current()) };
     const tick = () => {
-      if (updateDue(state, getAutoUpdateCheck(), Date.now())) void runAutoUpdateCheck().catch(() => {});
+      if (updateDue(state, getAutoUpdateCheck(), Date.now())) void runAutoUpdateCheck(deps).catch(() => {});
     };
     tick();
     const id = setInterval(tick, UPDATE_TICK_MS);

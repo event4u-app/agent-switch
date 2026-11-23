@@ -175,13 +175,27 @@ export function npmSearchPath(
     .join(path.delimiter);
 }
 
-/** Self-update: reinstall the npm package at @latest (global). Streams npm's
+const SEMVER = /^v?((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$/;
+
+/** The version `update <version>` installs: a semver, an optional leading `v`
+ *  dropped; null for anything else. It ends up in an npm spec, so nothing
+ *  outside the semver alphabet may pass. */
+export function parseUpdateVersion(arg: string): string | null {
+  return SEMVER.exec(arg)?.[1] ?? null;
+}
+
+/** npm's argv for a self-update: `@latest`, or exactly `version`. Pure. */
+export function selfUpdateArgs(version?: string): string[] {
+  return ["install", "-g", `${PACKAGE_NAME}@${version ?? "latest"}`];
+}
+
+/** Self-update: reinstall the npm package at @latest, or at `version` (global). Streams npm's
  *  own output; returns its exit code (0 = success). The spawn runs with a
  *  PATH that can always find `npm` ({@link npmSearchPath}), so a GUI-triggered
  *  update works from Finder/menu-bar launches with a stripped PATH; `shell` is
  *  required on Windows, where `npm` is a `.cmd` shim. */
-export function selfUpdate(): number {
-  const r = spawnSync("npm", ["install", "-g", `${PACKAGE_NAME}@latest`], {
+export function selfUpdate(version?: string): number {
+  const r = spawnSync("npm", selfUpdateArgs(version), {
     stdio: "inherit",
     shell: process.platform === "win32",
     env: { ...process.env, PATH: npmSearchPath() },

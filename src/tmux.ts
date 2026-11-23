@@ -61,8 +61,8 @@ export function forgetManagedSession(name: string, file: string = TMUX_STATE): v
 
 /** `tmux new-session -A -s <name> -e VAR=dir -- <cmd...>` — attach-or-create a
  *  named session with the profile env exported into it. */
-export function newSessionArgs(name: string, envVar: string, dir: string, cmd: string[]): string[] {
-  return ["new-session", "-A", "-s", name, "-e", `${envVar}=${dir}`, "--", ...cmd];
+export function newSessionArgs(name: string, envVar: string, dir: string, cmd: string[], extraEnv: Record<string, string> = {}): string[] {
+  return ["new-session", "-A", "-s", name, "-e", `${envVar}=${dir}`, ...envPairs(extraEnv), "--", ...cmd];
 }
 
 /** `tmux respawn-pane -k -t <target> -c <cwd> -e VAR=dir -- <cmd...>` — replace the
@@ -71,8 +71,12 @@ export function newSessionArgs(name: string, envVar: string, dir: string, cmd: s
  *  handoff uses this rather than a send-keys/close dance that would tear the
  *  pane down when the CLI is the pane's own command. Without `-c` tmux starts
  *  in the pane's original folder, not the one the folder trust was carried for. */
-export function respawnPaneArgs(target: string, cwd: string, envVar: string, dir: string, cmd: string[]): string[] {
-  return ["respawn-pane", "-k", "-t", target, "-c", cwd, "-e", `${envVar}=${dir}`, "--", ...cmd];
+export function respawnPaneArgs(target: string, cwd: string, envVar: string, dir: string, cmd: string[], extraEnv: Record<string, string> = {}): string[] {
+  return ["respawn-pane", "-k", "-t", target, "-c", cwd, "-e", `${envVar}=${dir}`, ...envPairs(extraEnv), "--", ...cmd];
+}
+
+function envPairs(env: Record<string, string>): string[] {
+  return Object.entries(env).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
 }
 
 /** `tmux send-keys -t <target> <literal> Enter` — type a command into a pane.

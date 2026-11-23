@@ -116,8 +116,11 @@ agent-switch update
 ```
 
 This installs the latest version through npm and restarts the background
-service on it. `agent-switch check-update` only checks. The desktop app checks
-for updates on its own and offers **Restart now** when a new version is ready.
+service on it; `agent-switch update <version>` installs exactly that version,
+also an older one. `agent-switch check-update` only checks. The desktop app
+checks for updates on its own, tells you, and offers **Restart now** once a new
+version is installed. See
+[Updates, releases and rollback](/agent-switch/guides/updates-and-releases/).
 
 ## Uninstall
 

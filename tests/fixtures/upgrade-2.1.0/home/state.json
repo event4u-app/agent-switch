@@ -1,0 +1,52 @@
+{
+  "active": {
+    "claude": "work",
+    "codex": "w",
+    "antigravity": null
+  },
+  "labels": {
+    "claude/work": "Work",
+    "claude/home": "Personal",
+    "codex/w": "Other"
+  },
+  "autoSwitch": {
+    "claude": {
+      "enabled": true,
+      "threshold": 90,
+      "tag": "Work"
+    },
+    "codex": {
+      "enabled": false,
+      "threshold": 85,
+      "tag": "all"
+    },
+    "antigravity": {
+      "enabled": false,
+      "threshold": 95,
+      "tag": "all"
+    }
+  },
+  "providers": {
+    "claude": {
+      "cli": true,
+      "ui": false
+    },
+    "codex": {
+      "cli": true,
+      "ui": true
+    },
+    "antigravity": {
+      "cli": false,
+      "ui": false
+    }
+  },
+  "binaryPaths": {
+    "codex": "/opt/codex/bin/codex"
+  },
+  "osNotifications": true,
+  "rebind": {
+    "disabled": true,
+    "consecutiveFailures": 3
+  },
+  "guard": "off"
+}

@@ -11,7 +11,11 @@
  *   be retried on the next reload);
  * - doctor: kept until Health asks again (screen open, "Check again", a repair).
  *
- * Module state, one per window (each webview has its own JS context).
+ * One cache for both windows: the tray and the main window are separate
+ * webviews with their own module state but one localStorage, so every entry is
+ * written there with its time, and a read takes the newer of the shared entry
+ * and this window's own. The force flags stay per window — they mean "this
+ * window's next load", and the run they cause is shared like any other.
  */
 
 export const FOCUS_RESWEEP_MS = 60_000;
@@ -20,6 +24,44 @@ export const LATEST_TTL_MS = 3_600_000;
 interface Entry<T> {
   at: number;
   value: T;
+}
+
+export const SHARED_KEY = "agent-switch.slow-cache.v1";
+
+interface Shared {
+  tooling?: Entry<unknown>;
+  doctor?: Entry<unknown>;
+  latest?: Record<string, Entry<string | null>>;
+}
+
+function isEntry(e: unknown): e is Entry<unknown> {
+  return !!e && typeof e === "object" && typeof (e as Entry<unknown>).at === "number" && Number.isFinite((e as Entry<unknown>).at) && "value" in e;
+}
+
+/** localStorage can be missing or throw (a locked-down webview); that is a miss. */
+function readShared(): Shared {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SHARED_KEY) ?? "{}") as Shared;
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeShared(change: (s: Shared) => void): void {
+  try {
+    const s = readShared();
+    change(s);
+    localStorage.setItem(SHARED_KEY, JSON.stringify(s));
+  } catch {
+    /* this window keeps its own copy */
+  }
+}
+
+function newer<T>(own: Entry<T> | null | undefined, shared: unknown): Entry<T> | null {
+  const other = isEntry(shared) ? (shared as Entry<T>) : null;
+  if (!own) return other;
+  return other && other.at > own.at ? other : own;
 }
 
 let tooling: Entry<unknown> | null = null;
@@ -40,7 +82,8 @@ export function forceDoctorOnNextLoad(): void {
 
 /** A window focus: re-sweep only when the last sweep is at least FOCUS_RESWEEP_MS old. */
 export function resweepToolsIfStale(now: number = Date.now()): void {
-  if (tooling && now - tooling.at >= FOCUS_RESWEEP_MS) forceTooling = true;
+  const last = newer(tooling, readShared().tooling);
+  if (last && now - last.at >= FOCUS_RESWEEP_MS) forceTooling = true;
 }
 
 async function cached<T>(
@@ -61,22 +104,26 @@ async function cached<T>(
 export async function cachedTooling<T>(run: () => Promise<T>, now: () => number = Date.now): Promise<Entry<T>> {
   const force = forceTooling;
   forceTooling = false;
-  return cached(tooling, force, run, (e) => (tooling = e), now);
+  tooling = newer(tooling, readShared().tooling);
+  return cached(tooling, force, run, (e) => ((tooling = e), writeShared((s) => void (s.tooling = e))), now);
 }
 
 /** `doctor`, cached. A failed run is not cached (it throws through). */
 export async function cachedDoctor<T>(run: () => Promise<T>, now: () => number = Date.now): Promise<Entry<T>> {
   const force = forceDoctor;
   forceDoctor = false;
-  return cached(doctor, force, run, (e) => (doctor = e), now);
+  doctor = newer(doctor, readShared().doctor);
+  return cached(doctor, force, run, (e) => ((doctor = e), writeShared((s) => void (s.doctor = e))), now);
 }
 
 /** A tool's latest version, looked up at most once per LATEST_TTL_MS. */
 export async function cachedLatest(id: string, lookup: () => Promise<string | null>, now: () => number = Date.now): Promise<string | null> {
-  const hit = latest.get(id);
+  const hit = newer(latest.get(id), readShared().latest?.[id]);
   if (hit && now() - hit.at < LATEST_TTL_MS) return hit.value;
   const value = await lookup().catch(() => null);
-  latest.set(id, { at: now(), value });
+  const entry = { at: now(), value };
+  latest.set(id, entry);
+  writeShared((s) => void (s.latest = { ...(s.latest && typeof s.latest === "object" ? s.latest : {}), [id]: entry }));
   return value;
 }
 
@@ -87,4 +134,9 @@ export function resetSlowCache(): void {
   latest.clear();
   forceTooling = false;
   forceDoctor = false;
+  try {
+    localStorage.removeItem(SHARED_KEY);
+  } catch {
+    /* nothing shared to drop */
+  }
 }

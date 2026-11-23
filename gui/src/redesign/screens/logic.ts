@@ -92,6 +92,13 @@ export function liveSwitch(s: Session, platform: ViewModel["platform"]): Availab
   return { ok: true, reason: t("sessions.live.ok") };
 }
 
+/** The other live sessions a live switch of `s` moves along: a rebind changes
+ *  the account's login, which every session on it adopts. A Desktop session runs
+ *  on Desktop's own login and does not follow. */
+export function rebindFollowers(s: Session, sessions: readonly Session[]): Session[] {
+  return sessions.filter((x) => x.id !== s.id && x.accountId === s.accountId && x.surface !== "desktop-app" && x.state !== "done" && x.state !== "recent" && !x.trashed);
+}
+
 /** Whether a live switch can be ARMED for the end of the session's turn (D3).
  *  Needs the host's own state word: a session live only by its folder
  *  (`liveSource: "cwd"`) has no turn end the daemon could see. */

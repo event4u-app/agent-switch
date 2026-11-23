@@ -72,6 +72,8 @@ export interface NewSessionPlan {
   model: string;
   thinking: string;
   where: "terminal" | "hosted";
+  /** An account the person chose here; absent, the start routes as usual. */
+  account?: string;
 }
 
 export interface NewSessionFacts {
@@ -81,6 +83,8 @@ export interface NewSessionFacts {
   hosting: "persistent" | "ephemeral";
   thinkingLevels: Record<NewSessionPlan["tool"], string[]>;
   account: { name: string; color: IdentityColor; reason: string; limits: LimitAccount; why: string[]; paceText: string | null };
+  /** Strategy `ask`: the accounts to choose from; Start waits for a choice. */
+  ask?: { name: string; color: IdentityColor }[];
   /** The exact command, for the preview. */
   command: string;
   nowMs: number;
@@ -92,13 +96,18 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
   const [preview, setPreview] = useState(false);
   const set = (patch: Partial<NewSessionPlan>) => {
     const next = { ...p, ...patch };
+    // A chosen account belongs to the tool it was chosen for.
+    if (patch.tool && patch.tool !== p.tool) delete next.account;
     setP(next);
     onChange?.(next);
   };
   const toolName = p.tool === "claude" ? "Claude" : p.tool === "codex" ? "Codex" : "Antigravity";
+  // The candidates were resolved for the dialog's first tool only.
+  const asks = !!facts.ask && p.tool === initial.tool;
+  const ready = !asks || !!p.account;
   // ⌘↵ starts right away (the subtitle promises it).
   const start = useRef(() => onStart(p));
-  start.current = () => onStart(p);
+  start.current = () => ready && onStart(p);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) (e.preventDefault(), start.current());
@@ -119,7 +128,7 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={() => onStart(p)}>
+          <Button variant="primary" disabled={!ready} onClick={() => start.current()}>
             <Play /> {p.where === "terminal" ? `Start in ${facts.terminalApp}` : "Start here"} <Kbd>⌘↵</Kbd>
           </Button>
         </>
@@ -166,6 +175,26 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
         >
           Account
         </Label>
+        {asks ? (
+          <div className="rounded-[10px] border border-ac-line bg-ac-bg px-3 py-2.5">
+            <div className="text-[13px] text-ac-muted">Ask me — choose an account</div>
+            <div role="radiogroup" aria-label="Account" className="mt-2 flex flex-wrap gap-2">
+              {facts.ask!.map((a) => (
+                <button
+                  key={a.name}
+                  type="button"
+                  role="radio"
+                  aria-checked={p.account === a.name}
+                  onClick={() => set({ account: a.name })}
+                  className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12.5px] text-ac-text", p.account === a.name ? "border-ac-info-text bg-ac-panel" : "border-ac-line hover:bg-ac-panel")}
+                >
+                  <AccountMark color={a.color} /> {a.name}
+                </button>
+              ))}
+            </div>
+            {!p.account && <div className="mt-2 text-[11px] text-ac-muted">New {toolName} sessions ask first: pick the account this one runs on.</div>}
+          </div>
+        ) : (
         <div className="rounded-[10px] border border-ac-line bg-ac-bg px-3 py-2.5">
           <div className="flex items-center gap-2 text-[13px] text-ac-text">
             <span className="text-ac-muted">Automatic →</span>
@@ -191,6 +220,7 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
             </ul>
           )}
         </div>
+        )}
       </div>
       <div className="mt-4">
         <Label>Where it runs</Label>
@@ -208,6 +238,47 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
         <ChevronRight className={cn("size-3 transition-transform", preview && "rotate-90")} /> Command preview
       </button>
       {preview && <pre className="mt-1.5 whitespace-pre-wrap rounded-md bg-ac-bg px-2.5 py-2 font-ac-mono text-[11px] text-ac-soft">{facts.command}</pre>}
+    </Modal>
+  );
+}
+
+/** A new chat under strategy ask: the chat view has no New session plan, so
+ *  this asks only for the account. */
+export function ChatAccountDialog({ folder, ask, onStart, onClose }: { folder: string; ask: { name: string; color: IdentityColor }[]; onStart: (account: string) => void; onClose: () => void }) {
+  const [pick, setPick] = useState<string | null>(null);
+  return (
+    <Modal
+      title={`Claude in ${folder}`}
+      kicker="New session in chat view"
+      width={460}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" disabled={!pick} onClick={() => pick && onStart(pick)}>
+            <Play /> Start here
+          </Button>
+        </>
+      }
+    >
+      <Label>Account</Label>
+      <div className="text-[13px] text-ac-muted">Ask me — choose an account</div>
+      <div role="radiogroup" aria-label="Account" className="mt-2 flex flex-wrap gap-2">
+        {ask.map((a) => (
+          <Choice
+            key={a.name}
+            on={pick === a.name}
+            onPick={() => setPick(a.name)}
+            title={
+              <>
+                <AccountMark color={a.color} /> {a.name}
+              </>
+            }
+          />
+        ))}
+      </div>
     </Modal>
   );
 }
@@ -256,6 +327,7 @@ export function DecisionSheet({
   tool = "claude",
   askedByAgentConfig = false,
   pace,
+  alsoOn = [],
   onDecide,
   onKeep,
   onClose,
@@ -277,6 +349,9 @@ export function DecisionSheet({
   askedByAgentConfig?: boolean;
   /** A pace suggestion, not a limit: its own header words. */
   pace?: { title: string; sub: string };
+  /** Every live session on the account. A live switch changes the account's
+   *  login, so each one that is not itself moving switches along. */
+  alsoOn?: { key: string; title: string }[];
   onDecide: (how: MoveHow, moves: SheetMove[]) => void;
   onKeep: () => void;
   onClose: () => void;
@@ -305,6 +380,8 @@ export function DecisionSheet({
         const to = chosen[s.key] ?? s.target;
         return moving.includes(to) ? { key: s.key, target: to, via: "takeover" as const } : { key: s.key, target: to };
       });
+  const switching = tool !== "codex" && how !== "brief" ? moves().filter((m) => !m.via) : [];
+  const followers = switching.length ? alsoOn.filter((x) => !switching.some((m) => m.key === x.key)) : [];
   return (
     <Modal
       kicker={pace ? "Accounts at different paces" : "Near limit"}
@@ -383,6 +460,11 @@ export function DecisionSheet({
       {moving.length > 0 && (
         <p role="status" className="mt-2 text-xs text-ac-muted">
           {moving.join(", ")} {moving.length === 1 ? "runs a session of its" : "run sessions of their"} own, so this conversation moves to {moving.join(", ")} and resumes there — its own session keeps running. A session in your own terminal is ended there between turns; one Agent Switch hosts moves in its window.
+        </p>
+      )}
+      {followers.length > 0 && (
+        <p role="status" className="mt-2 text-xs text-ac-warn">
+          A live switch changes {account}'s sign-in, so these sessions switch too: {followers.map((f) => f.title).join(", ")}.
         </p>
       )}
       <Label className="mt-4" aside={suggestion ? `suggested: ${suggestion}${suggestionWhy ? ` — ${suggestionWhy}` : ""}` : undefined}>

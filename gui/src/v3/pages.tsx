@@ -115,6 +115,7 @@ function AccountRowFull({ a, i, nowMs, on }: { a: PageAccount; i: number; nowMs:
         ) : (
           <span className="text-xs text-ac-muted">No usage before the first sign-in</span>
         )}
+        {a.routines && <div className="text-[11px] text-ac-soft">{`Routines ${a.routines.used}/${a.routines.limit} today`}</div>}
         {a.windows.length > 0 && a.checkedMs != null && <div className={cn("text-[10.5px]", stale ? "text-ac-warn-text" : "text-ac-faint")}>{checkedAgo(nowMs - a.checkedMs)}{stale ? " · stale, refreshing" : ""}</div>}
       </div>
       <span className="inline-flex items-center gap-1 text-xs text-ac-soft" title="Warns at this share">

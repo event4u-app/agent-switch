@@ -4,7 +4,7 @@ import type { SessionRow } from "../../transforms.js";
 import { emptyViewModel } from "../../vm/load.js";
 import type { Account, ViewModel } from "../../vm/types.js";
 import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
-import { childrenOf, decisionFor, doneToday, nextStep, sessionKey, startCommand, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
+import { chatStart, childrenOf, decisionFor, doneToday, nextStep, sessionKey, startCommand, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
 import { emptyFeeds, type V3Feeds } from "./useFeeds.js";
 
 const NOW = Date.parse("2026-11-03T15:00:00");
@@ -102,6 +102,23 @@ describe("toV3Data", () => {
       const r = rows.find((x) => sessionKey(x) === s.key)!;
       return !r.parent && (r.live || r.mtimeMs >= startOfToday) && (s.doneToday === true) === !r.live;
     })).toBe(true);
+  });
+
+  it("a session only written lately (recently active, no live process) is not filed as done today", () => {
+    const rows = [
+      row("recent", { live: false, recentlyActive: true, surface: "desktop-app", mtimeMs: NOW - 60_000 }),
+      row("done", { live: false, mtimeMs: NOW - 60_000 }),
+      row("live", { live: true, mtimeMs: NOW - 60_000 }),
+    ];
+    const d = toV3Data(vmWith([account("work")], rows), emptyFeeds(), env());
+    const done = (id: string) => d.sessions.find((s) => s.key === `claude/work/${id}`)?.doneToday ?? false;
+    expect([done("recent"), done("done"), done("live")]).toEqual([false, true, false]);
+  });
+
+  it("an account's routines reach its Accounts-page row; absent stays absent", () => {
+    const d = toV3Data(vmWith([account("a", { routines: { used: 3, limit: 15 } }), account("b")], []), emptyFeeds(), env());
+    expect(d.accounts.find((a) => a.name === "a")?.routines).toEqual({ used: 3, limit: 15 });
+    expect(d.accounts.find((a) => a.name === "b")?.routines ?? null).toBeNull();
   });
 
   it("a session in the user's own terminal opens as chat and keeps the view picked for it; a hosted one starts in the terminal", () => {
@@ -285,6 +302,14 @@ describe("pieces", () => {
     expect(decisionFor("claude/none", vm, [], NOW)).toBeNull();
   });
 
+  it("decisionFor: one session's sheet still knows every live session on the account a live switch would move", () => {
+    const vm = vmWith([account("work", { windows: [{ key: "five_hour", label: "5h", utilization: 93, resetsAt: null }] }), account("home")], []);
+    const rows = [row("a", { summary: "Fix wedge" }), row("b", { summary: "Docs" }), row("old", { live: false }), row("desk", { surface: "desktop-app" }), row("c", { profile: "home" })];
+    const d = decisionFor("claude/work/a", vm, rows, NOW)!;
+    expect(d.sessions.map((s) => s.key)).toEqual(["claude/work/a"]);
+    expect(d.alsoOn).toEqual([{ key: "claude/work/a", title: "Fix wedge" }, { key: "claude/work/b", title: "Docs" }]);
+  });
+
   it("decisionFor spreads the sessions: the heaviest one gets the account with the most room", () => {
     const w = (five: number, week: number) => [
       { key: "five_hour", label: "5h", utilization: five, resetsAt: null },
@@ -325,6 +350,24 @@ describe("start dialog routing", () => {
     expect(toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: [], blocked: "no account may start here" } })).newSession.facts.account.reason).toBe("no account may start here");
     const unknown = toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/gone", why: ["gone has room"] } })).newSession.facts.account;
     expect([unknown.name, unknown.why]).toEqual(["work", []]);
+  });
+
+  it("under strategy ask the candidates come through in the CLI's order, accounts of other tools and unknown names left out", () => {
+    const vm = vmWith([account("work", { isDefault: true }), account("side"), account("cx", { tool: "codex" })], []);
+    const facts = toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: ["Strategy ask"], ask: ["side", "gone", "work", "cx"] } })).newSession.facts;
+    expect(facts.ask?.map((a) => a.name)).toEqual(["side", "work"]);
+    expect(facts.command).not.toMatch(/\bwork\b/);
+    expect(toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: [] } })).newSession.facts.ask).toBeUndefined();
+    expect(toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: [], ask: ["work"] } })).newSession.facts.ask).toBeUndefined();
+  });
+
+  it("a new chat under strategy ask asks instead of taking the fallback; otherwise the routed, then the default account", () => {
+    const accounts = [account("work", { isDefault: true }), account("side"), account("cx", { tool: "codex" })];
+    expect(chatStart({ profile: "claude/work", why: [], ask: ["side", "work"] }, accounts)).toEqual({ ask: [{ name: "side", color: accounts[1].color }, { name: "work", color: accounts[0].color }] });
+    expect(chatStart({ profile: "claude/side", why: [] }, accounts)).toEqual({ profile: "side" });
+    expect(chatStart({ profile: "claude/side", why: [], ask: ["side", "cx"] }, accounts)).toEqual({ profile: "side" });
+    expect(chatStart(null, accounts)).toEqual({ profile: "work" });
+    expect(chatStart(null, [])).toBeNull();
   });
 });
 

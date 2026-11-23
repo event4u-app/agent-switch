@@ -15,6 +15,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch browsers [--json]               browsers --browser can open (macOS / Linux)
   agent-switch import [--provider P] <name>    migrate the default install (no re-login)
   agent-switch mark-shared [--provider P] <name> [--off]   mark a profile as sharing the default install's login (never refreshed or balanced)
+  agent-switch agent-config-root <name> [own|global|status] [--json]   a Claude profile's own agent-config settings, or the shared ones (default); applies to new sessions and the GUI
   agent-switch use [--provider P] <name>       set the active profile for a provider
   agent-switch deactivate [--provider P]       clear the active profile for a provider
   agent-switch run [--provider P] <name> [--tmux] [..]  launch the provider's CLI (--tmux = managed tmux session, POSIX)
@@ -25,13 +26,15 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch whoami [--provider P] [name]    show a profile's account identity
   agent-switch dir [--provider P] [--guard] [--json] [--plain] [--exclude a,b]   resolve profile for CWD (rule > balanced pick > active); --json adds why
   agent-switch continue <provider/account/session> [--text "…"]   type one message into a session Agent Switch hosts (default: "Continue where you left off.")
-  agent-switch strategy [balance|fill] [--provider P] [--json]   how a start without a folder rule picks: spread (default) or fill the preferred account first
+  agent-switch strategy [balance|fill|default|ask] [--provider P] [--json]   how a start without a folder rule picks: spread (default), fill the preferred account first, always the preferred account, or ask at the terminal
   agent-switch exec [--provider P] [--exclude a,b] [--plain] -- <args…>   run the provider's CLI on the account \`dir\` picks — for scripts and tools that spawn it as a subprocess
   agent-switch guard [block|warn|off]          one profile, one live session (default warn on new installs)
   agent-switch map [--provider P] <name|pool:<id>> [dir]   map a directory to a profile or a pool
   agent-switch map --pause|--resume [--provider P] [dir]   pause a folder rule (kept, but skipped) or turn it back on
+  agent-switch map [--provider P] <name|pool:<id>> --remote <host/owner[/repo]>   bind every clone of a git remote
   agent-switch unmap [--provider P] [dir]      remove a directory mapping
-  agent-switch mappings                        list directory mappings
+  agent-switch unmap [--provider P] --remote <host/owner[/repo]>   remove a remote binding
+  agent-switch mappings                        list directory mappings and remote bindings
   agent-switch share on|sync|off|status [--history] [--source <profile|default>] [--json]   (Claude)
   agent-switch claude-settings [status|sync|set <path> <json>|unset <path>|rule allow|deny|ask <rule>… on|off] [--json]   manage ~/.claude/settings.json once; every Claude profile gets it (global wins, lists gain what they lack, own values stay)
   agent-switch config export|import <profile>   config-only cross-machine bundle to stdout / from stdin (settings, keybindings, CLAUDE.md, skills/, commands/, agents/ — NEVER credentials; pipe export | gpg -c)
@@ -76,7 +79,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch providers link|unlink --provider P [--path <binary>]   use a provider binary that is not on PATH
   agent-switch [gui] [--after-pid <pid>]       launch the tray/menubar GUI (the default with no command; won't start a second if one is running; --after-pid waits for that process to quit first — the GUI's restart)
   agent-switch check-update [--json]           check GitHub Releases for a newer version
-  agent-switch update                          self-update to the latest version (via npm); restarts the service on it, or offers to install one
+  agent-switch update [<version>]              self-update to the latest version, or exactly <version> (via npm); restarts the service on it, or offers to install one
   agent-switch apps                            list launchable GUI apps (macOS)
   agent-switch open <app> [profile]            launch a GUI app on a profile, isolated; focuses it if already open (macOS)
   agent-switch launcher add|remove <app> <profile> | list [--json] | repair   Dock/Spotlight launcher per account in ~/Applications/Agent Switch (macOS)
@@ -88,6 +91,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch notifications [clear] [--json]  recent notifications (usage-limit suggestions, fetch failures)
   agent-switch notify --kind K --title T --message M [--json]   record a notification event
   agent-switch os-notify [on|off|status] [--json]   daemon-side OS desktop notifications, Linux/Windows (default off; macOS: the app shows them)
+  agent-switch quiet-hours [off|HH:MM-HH:MM|status] [--json]   no desktop notification in this daily window (still listed)
   agent-switch keep-signed-in [on|off|status] [--json]   let the service keep unused logins from lapsing (default on)
   agent-switch auto-reset [on|off|status] [--json]   at 100 % the service redeems one banked Codex reset by itself, once per cycle (default off)
   agent-switch uninstall [--force]             remove all agent-switch data + daemon

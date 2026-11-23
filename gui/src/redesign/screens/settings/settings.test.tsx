@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { setLangForTests, setLanguagePref } from "../../../i18n/index.js";
 import { PET_WELCOME } from "../../../pet/model.js";
-import { getLanguagePref } from "../../../settings-store.js";
+import { getLanguagePref, setUpdateInstalledVersion } from "../../../settings-store.js";
 import { AcRoot } from "../../../ui/AcRoot.js";
 import type { Actions } from "../../../vm/actions.js";
 import { emptyViewModel } from "../../../vm/load.js";
@@ -29,6 +29,8 @@ const ipcMock = vi.hoisted(() => ({
   setAutoSwitch: vi.fn(),
   getOsNotify: vi.fn(),
   setOsNotify: vi.fn(),
+  getQuietHours: vi.fn(),
+  setQuietHours: vi.fn(),
   getKeepSignedIn: vi.fn(),
   setKeepSignedIn: vi.fn(),
   getCodexAutoReset: vi.fn(),
@@ -136,6 +138,8 @@ beforeEach(() => {
   ipcMock.setAutoSwitch.mockResolvedValue(undefined);
   ipcMock.getOsNotify.mockResolvedValue(false);
   ipcMock.setOsNotify.mockResolvedValue(undefined);
+  ipcMock.getQuietHours.mockResolvedValue(null);
+  ipcMock.setQuietHours.mockResolvedValue(undefined);
   ipcMock.getKeepSignedIn.mockResolvedValue(true);
   ipcMock.setKeepSignedIn.mockResolvedValue(undefined);
   ipcMock.getCodexAutoReset.mockResolvedValue(false);
@@ -385,6 +389,12 @@ describe("Protection", () => {
     expect(ipcMock.getStrategy).toHaveBeenCalledWith("claude");
     expect(screen.getByText("Claude starts")).toBeTruthy();
     expect(screen.getByText("Codex starts")).toBeTruthy();
+    const claude = () => screen.getByRole("combobox", { name: "Claude starts" }) as HTMLButtonElement;
+    await waitFor(() => expect(claude().disabled).toBe(false));
+    fireEvent.click(claude());
+    expect(screen.getByRole("option", { name: /Always the preferred account/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("option", { name: /Ask me/ }));
+    await waitFor(() => expect(ipcMock.setStrategy).toHaveBeenCalledWith("claude", "ask"));
   });
 
   it("turns the auto-reset switch back when the write fails", async () => {
@@ -468,6 +478,29 @@ describe("Notifications", () => {
   });
 });
 
+describe("Quiet hours", () => {
+  it("turns quiet hours on at 22:00–07:00, moves an edge, and turns them off", async () => {
+    mount("notifications");
+    const sw = await screen.findByRole("switch", { name: "Quiet hours" });
+    expect(screen.queryByLabelText("Quiet from")).toBeNull();
+    fireEvent.click(sw);
+    await waitFor(() => expect(ipcMock.setQuietHours).toHaveBeenCalledWith("22:00-07:00"));
+    fireEvent.change(screen.getByLabelText("Quiet until"), { target: { value: "06:30" } });
+    await waitFor(() => expect(ipcMock.setQuietHours).toHaveBeenLastCalledWith("22:00-06:30"));
+    fireEvent.click(screen.getByRole("switch", { name: "Quiet hours" }));
+    await waitFor(() => expect(ipcMock.setQuietHours).toHaveBeenLastCalledWith(null));
+  });
+
+  it("shows a stored window, and never saves an empty one", async () => {
+    ipcMock.getQuietHours.mockResolvedValue("23:00-06:00");
+    mount("notifications");
+    expect(((await screen.findByLabelText("Quiet from")) as HTMLInputElement).value).toBe("23:00");
+    fireEvent.change(screen.getByLabelText("Quiet until"), { target: { value: "23:00" } });
+    expect(ipcMock.setQuietHours).not.toHaveBeenCalled();
+    expect(screen.getByText("Start and end must differ.")).toBeTruthy();
+  });
+});
+
 describe("Desktop pet", () => {
   it("shows the intro text verbatim and the pet grid", () => {
     mount("pet");
@@ -515,5 +548,61 @@ describe("Advanced", () => {
     fireEvent.click(go);
     await waitFor(() => expect(quit).toHaveBeenCalled());
     expect(uninstall).toHaveBeenCalled();
+  });
+});
+
+describe("Updates", () => {
+  const upToDate = (current: string) => vi.fn(async () => ({ kind: "uptodate" as const, current, latest: current }));
+
+  it("offers the restart for a version the update check installed while the app still runs the old one", async () => {
+    setUpdateInstalledVersion("v1.0.1");
+    const restart = vi.fn(() => Promise.resolve());
+    mount("updates", { checkForUpdate: upToDate("1.0.0"), restart });
+    const btn = await screen.findByRole("button", { name: /Restart now/ });
+    fireEvent.click(btn);
+    expect(restart).toHaveBeenCalledTimes(1);
+  });
+
+  describe("the manual update", () => {
+    const release = { tag: "v1.0.1", name: "v1.0.1", url: "https://example.test/r", notes: "", publishedAt: "" };
+    const available = () => vi.fn(async () => ({ kind: "available" as const, current: "1.0.0", release }));
+    const ok = () => vi.fn(async () => ({ ok: true, output: "" }));
+
+    it("refuses a withdrawn version and says why", async () => {
+      const selfUpdate = ok();
+      mount("updates", { checkForUpdate: available(), selfUpdate, withdrawnReason: vi.fn(async () => "breaks sign-in") });
+      fireEvent.click(await screen.findByRole("button", { name: /Update to v1.0.1/ }));
+      expect(await screen.findByText("This release was withdrawn and is not installed: breaks sign-in")).toBeTruthy();
+      expect(selfUpdate).not.toHaveBeenCalled();
+    });
+
+    it("installs a version nothing withdraws", async () => {
+      const selfUpdate = ok();
+      const withdrawnReason = vi.fn(async () => null);
+      mount("updates", { checkForUpdate: available(), selfUpdate, withdrawnReason });
+      fireEvent.click(await screen.findByRole("button", { name: /Update to v1.0.1/ }));
+      await waitFor(() => expect(selfUpdate).toHaveBeenCalledTimes(1));
+      expect(selfUpdate).toHaveBeenCalledWith("v1.0.1");
+      expect(withdrawnReason).toHaveBeenCalledWith(release);
+    });
+
+    it("installs on the user's click when the withdraw status cannot be read (the automatic path sends them here)", async () => {
+      const selfUpdate = ok();
+      mount("updates", { checkForUpdate: available(), selfUpdate, withdrawnReason: vi.fn(async () => Promise.reject(new Error("registry down"))) });
+      fireEvent.click(await screen.findByRole("button", { name: /Update to v1.0.1/ }));
+      await waitFor(() => expect(selfUpdate).toHaveBeenCalledTimes(1));
+    });
+  });
+
+  it("offers no restart once the app runs that version, or when nothing was installed", async () => {
+    setUpdateInstalledVersion("v1.0.1");
+    mount("updates", { checkForUpdate: upToDate("1.0.1"), restart: vi.fn() });
+    await screen.findByText(/on the latest version/);
+    expect(screen.queryByRole("button", { name: /Restart now/ })).toBeNull();
+    cleanup();
+    setUpdateInstalledVersion("");
+    mount("updates", { checkForUpdate: upToDate("1.0.0"), restart: vi.fn() });
+    await screen.findByText(/on the latest version/);
+    expect(screen.queryByRole("button", { name: /Restart now/ })).toBeNull();
   });
 });

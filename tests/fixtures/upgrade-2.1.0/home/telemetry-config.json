@@ -1,0 +1,7 @@
+{
+  "notify": true,
+  "contextThresholds": [
+    70,
+    90
+  ]
+}

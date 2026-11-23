@@ -1,0 +1,16 @@
+{
+  "agent-switch-pet-enabled": "off",
+  "agent-switch-pet-presence": "always",
+  "agent-switch-pet-welcomed": "1",
+  "agent-switch-pet-choice": "dev-bot",
+  "agent-switch-pet-routing-tier": "pet-only",
+  "agent-switch-pet-react-kinds": "[\"error\",\"warning\"]",
+  "agent-switch-pet-bubbles": "off",
+  "agent-switch-pet-bubble-duration": "long",
+  "agent-switch-pet-size": "large",
+  "agent-switch-pet-motion": "off",
+  "agent-switch-pet-label": "on",
+  "agent-switch-pet-pos": "{\"x\":1210,\"y\":640}",
+  "agent-switch-pet-pos-lock": "on",
+  "agent-switch-pet-prev-pos": "{\"x\":40,\"y\":60}"
+}

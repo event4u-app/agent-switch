@@ -23,7 +23,7 @@ import {
   surfacesFromApps,
   toolFromEntry,
 } from "./build.js";
-import { nextInPools } from "./rules.js";
+import { nextInPools, SESSION_STATE_LABEL } from "./rules.js";
 import type { AuthStatusRow } from "../ipc.js";
 import type { ProfileRow, SessionRow, UsageSnapshot } from "../transforms.js";
 
@@ -45,6 +45,30 @@ const usage = (utils: (number | null)[], capturedAt = NOW - 2 * MIN): UsageSnaps
   windows: utils.map((u, i) => ({ key: `w${i}`, label: i ? "Week" : "5h", utilization: u, resetsAt: iso(NOW + 78 * MIN) })),
   routines: null,
   capturedAt: iso(capturedAt),
+});
+
+describe("agent-config root", () => {
+  it("carries the root the CLI names, null for the shared one, and nothing from an older CLI", () => {
+    expect(accountFromProfile(row({ agentConfigRoot: "/h/claude/work/agent-config" }), null).agentConfigRoot).toBe("/h/claude/work/agent-config");
+    expect(accountFromProfile(row({ agentConfigRoot: null }), null).agentConfigRoot).toBeNull();
+    expect("agentConfigRoot" in accountFromProfile(row(), null)).toBe(false);
+  });
+});
+
+describe("routines", () => {
+  it("an account carries the readout's routines, and none when the readout has none", () => {
+    expect(accountFromProfile(row(), { ...usage([20]), routines: { used: 2, limit: 15 } }).routines).toEqual({ used: 2, limit: 15 });
+    expect(accountFromProfile(row(), usage([20])).routines).toBeNull();
+    expect(accountFromProfile(row(), null).routines).toBeNull();
+  });
+
+  it("a newer stored readout moves the routines with the bars", () => {
+    const a = accountFromProfile(row(), { ...usage([20], NOW - 30 * MIN), routines: { used: 1, limit: 15 } });
+    const [b] = withStoredUsage([a], new Map([["claude/work", { ...usage([30], NOW - MIN), routines: { used: 4, limit: 15 } }]]));
+    expect(b.routines).toEqual({ used: 4, limit: 15 });
+    const [c] = withStoredUsage([a], new Map([["claude/work", usage([30], NOW - MIN)]]));
+    expect(c.routines).toBeNull();
+  });
 });
 
 describe("withStoredUsage", () => {
@@ -166,6 +190,16 @@ describe("sessionFromRow", () => {
   it("a live session waiting on a prompt needs you; a dead one is done", () => {
     expect(sessionFromRow(s({ waiting: true }), NOW).state).toBe("needs-you");
     expect(sessionFromRow(s({ waiting: true, live: false }), NOW).state).toBe("done");
+  });
+
+  it("a Desktop session written lately that no process proves is 'recently active', never working or live", () => {
+    const recent = sessionFromRow(s({ surface: "desktop-app", live: false, recentlyActive: true }), NOW);
+    expect(recent.state).toBe("recent");
+    expect(recent.stateSource).toBeNull();
+    expect(SESSION_STATE_LABEL.recent).toBe("Recently active");
+    // A process that proves it keeps the live states.
+    expect(sessionFromRow(s({ surface: "desktop-app" }), NOW).state).toBe("working");
+    expect(sessionFromRow(s({ surface: "desktop-app", live: false }), NOW).state).toBe("done");
   });
 
   it("marks a session started in Claude Desktop as such", () => {

@@ -56,8 +56,11 @@ export function V3Tray({
   ready,
   lastActiveOf,
   appFor,
+  picks,
   on,
 }: {
+  /** Where a plain start of each tool goes and why (`dir --plain --json`); absent = not read. */
+  picks?: Partial<Record<TrayTool, { name: string | null; why: string[] }>>;
   /** Last activity per session key, for the window's default order. */
   lastActiveOf?: (key: string) => number | null;
   /** The account's desktop app, when one is detected and the account is usable. */
@@ -98,7 +101,10 @@ export function V3Tray({
   const byKey = new Map(sorted.map((s) => [s.key, s]));
   const live = order.map((k) => byKey.get(k)!);
   const shown = live.slice(0, TRAY_SESSIONS);
-  const limits = accounts.filter((a) => a.tool === tab);
+  const pick = picks?.[tab];
+  // The CLI's pick outranks the preferred-account guess the marks start from.
+  const limits = accounts.filter((a) => a.tool === tab).map((a) => (pick?.name ? { ...a, next: a.name === pick.name } : a));
+  const reason = pick?.name ? pick.why[pick.why.length - 1] : undefined;
   return (
     <div
       className="w-[360px] overflow-hidden rounded-xl border border-ac-line2 bg-ac-panel"
@@ -210,6 +216,12 @@ export function V3Tray({
               <div className="flex h-7 items-center px-2 text-[11px] font-semibold text-ac-soft">
                 Limits
               </div>
+              {pick?.name && (
+                <p className="truncate px-2 pb-1 text-[11px] text-ac-muted" title={pick.why.join("\n")}>
+                  Next start → {pick.name}
+                  {reason ? `: ${reason}` : ""}
+                </p>
+              )}
               {limits.map((a) => (
                 <TrayAccount
                   key={a.key}

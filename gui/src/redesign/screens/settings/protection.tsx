@@ -275,6 +275,8 @@ function StartStrategyGroup() {
                 options={[
                   { value: "balance", label: t("settings.protection.strategyBalance"), hint: t("settings.protection.strategyBalanceHint") },
                   { value: "fill", label: t("settings.protection.strategyFill"), hint: t("settings.protection.strategyFillHint") },
+                  { value: "default", label: t("settings.protection.strategyDefault"), hint: t("settings.protection.strategyDefaultHint") },
+                  { value: "ask", label: t("settings.protection.strategyAsk"), hint: t("settings.protection.strategyAskHint") },
                 ]}
               />
             </div>

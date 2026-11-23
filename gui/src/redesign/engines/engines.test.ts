@@ -6,9 +6,10 @@ import type { Actions } from "../../vm/actions.js";
 import { emptyViewModel } from "../../vm/load.js";
 import type { Account, ViewModel } from "../../vm/types.js";
 import { forceUsageFor, loadUsage, newerSnapshot, type UsageDeps } from "../../vm/usage-loader.js";
+import { getAutoUpdateKinds, setAutoUpdateKinds } from "../../settings-store.js";
 import { getUsageAttempts, loadUsageCache, markUsageAttempt, saveUsageSnapshot } from "../../usage-cache.js";
 import { nearLimitMessage } from "./near-limit.js";
-import { deliver, freshSince, noticeText, toastFor, type FireContext, type FireSinks } from "./notifications.js";
+import { deliver, freshSince, noticeText, quietNow, toastFor, type FireContext, type FireSinks } from "./notifications.js";
 import { petRoute, petStartup } from "./pet.js";
 import { reconcileShare } from "./startup.js";
 import { withSwitchEffects } from "./switch-effects.js";
@@ -75,6 +76,21 @@ describe("notification fire path", () => {
     await deliver([n("a", 1, { osNotified: true }), n("b", 2, { kind: "info" })], ctx({ muted: ["info"] }), s);
     expect(log.desktop).toEqual([]);
     expect(log.toast).toEqual([]);
+  });
+
+  it("inside quiet hours nothing reaches the desktop; the in-window toast still shows it", async () => {
+    const { s, log } = sinks(true);
+    await deliver([n("a", 1)], ctx({ quiet: true }), s);
+    expect(log.desktop).toEqual([]);
+    expect(log.toast).toEqual(["a"]);
+  });
+
+  it("the quiet-hours check runs on local time and holds a window over midnight", () => {
+    const at = (h: number, m = 0) => new Date(2026, 10, 23, h, m);
+    expect(quietNow("22:00-07:00", at(23, 30))).toBe(true);
+    expect(quietNow("22:00-07:00", at(6, 59))).toBe(true);
+    expect(quietNow("22:00-07:00", at(7, 0))).toBe(false);
+    expect(quietNow(null, at(23))).toBe(false);
   });
 
   it("with Desktop notifications OFF never desktop-notifies — the toast stands in", async () => {
@@ -166,6 +182,26 @@ describe("usage loading (cache + cooldown)", () => {
     const forced = await loadUsage([{ provider: "claude", name: "a" }], { force: true, cooldownMs: 600_000 }, d);
     expect(calls).toEqual(["claude/a"]);
     expect(forced[0]?.windows[0].utilization).toBe(70);
+  });
+
+  it("the tray reads what the main window fetched, by its capture time, and a newer CLI readout wins in both", async () => {
+    vi.resetModules();
+    const main = await import("../../vm/usage-loader.js");
+    vi.resetModules();
+    const tray = await import("../../vm/usage-loader.js");
+    expect(tray.loadUsage).not.toBe(main.loadUsage);
+    const rows = [{ provider: "claude" as const, name: "a" }];
+    const fetched = deps(() => snap(40, "2026-10-01T10:00:00Z"));
+    await main.loadUsage(rows, { force: false, cooldownMs: 600_000 }, fetched.d);
+    const inTray = deps(() => snap(99));
+    const seen = await tray.loadUsage(rows, { force: false, cooldownMs: 600_000 }, inTray.d);
+    expect(inTray.calls).toEqual([]);
+    expect(seen[0]).toEqual(snap(40, "2026-10-01T10:00:00Z"));
+    const stored = new Map([["claude/a", snap(55, "2026-10-01T10:05:00Z")]]);
+    const fromTray = await tray.loadUsage(rows, { force: false, cooldownMs: 600_000, stored }, inTray.d);
+    const fromMain = await main.loadUsage(rows, { force: false, cooldownMs: 600_000 }, fetched.d);
+    expect([fromTray[0]?.capturedAt, fromMain[0]?.capturedAt]).toEqual(["2026-10-01T10:05:00Z", "2026-10-01T10:05:00Z"]);
+    expect(fetched.calls).toEqual(["claude/a"]);
   });
 
   it("a single-account refresh fetches only that account past its cooldown, once", async () => {
@@ -287,18 +323,26 @@ describe("usage auto-refresh tick", () => {
 const release = (tag: string, notes = ""): ReleaseInfo => ({ tag, name: tag, url: `https://x/${tag}`, notes, publishedAt: "2026-10-01T00:00:00Z" });
 
 describe("agent-switch auto-update loop", () => {
-  function deps(check: UpdateCheck, ok = true, kinds: AutoUpdateDeps["kinds"] = () => ["patch", "minor"]) {
-    const calls = { install: 0, notified: "" as string, notes: [] as string[] };
+  function deps(check: UpdateCheck, ok = true, kinds: AutoUpdateDeps["kinds"] = () => ["patch", "minor"], over: Partial<AutoUpdateDeps> = {}) {
+    const calls = { install: 0, installedTags: [] as string[], notified: "" as string, notes: [] as string[], bodies: [] as string[], installed: [] as string[] };
     const d: AutoUpdateDeps = {
       check: async () => check,
-      install: async () => {
+      install: async (tag: string) => {
         calls.install++;
+        calls.installedTags.push(tag);
         return { ok, output: "" };
       },
       kinds,
+      withdrawn: async () => null,
+      running: async () => 0,
+      markInstalled: (t) => void calls.installed.push(t),
       notified: () => calls.notified,
       markNotified: (t) => void (calls.notified = t),
-      notify: async (kind, title) => void calls.notes.push(`${kind}:${title}`),
+      notify: async (kind, title, message) => {
+        calls.notes.push(`${kind}:${title}`);
+        calls.bodies.push(message);
+      },
+      ...over,
     };
     return { d, calls };
   }
@@ -326,6 +370,90 @@ describe("agent-switch auto-update loop", () => {
     await runAutoUpdateCheck(d);
     expect(calls.install).toBe(0);
     expect(calls.notes).toEqual(["info:Update available — v2.0.0"]);
+  });
+
+  it("with no stored kinds setting it only announces, for every kind", async () => {
+    for (const tag of ["v1.0.1", "v1.1.0", "v2.0.0"]) {
+      const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release(tag) }, true, () => getAutoUpdateKinds());
+      await runAutoUpdateCheck(d);
+      expect(calls.install).toBe(0);
+      expect(calls.notes).toEqual([`info:Update available — ${tag}`]);
+    }
+  });
+
+  it("installs a kind the user opted into, and keeps a kinds value they set themselves", async () => {
+    setAutoUpdateKinds(["patch"]);
+    const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") }, true, () => getAutoUpdateKinds());
+    await runAutoUpdateCheck(d);
+    expect(calls.install).toBe(1);
+    expect(calls.installedTags).toEqual(["v1.0.1"]);
+    setAutoUpdateKinds(["major", "minor", "patch"]);
+    expect(getAutoUpdateKinds()).toEqual(["major", "minor", "patch"]);
+    setAutoUpdateKinds([]);
+    expect(getAutoUpdateKinds()).toEqual([]);
+  });
+
+  it("never installs a withdrawn version and says why, even for an opted-in kind", async () => {
+    const asked: string[] = [];
+    const withdrawn = async (r: ReleaseInfo) => (asked.push(r.tag), "corrupts the profile store");
+    const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") }, true, undefined, { withdrawn });
+    await runAutoUpdateCheck(d);
+    await runAutoUpdateCheck(d);
+    expect(asked).toEqual(["v1.0.1"]);
+    expect(calls.install).toBe(0);
+    expect(calls.notes).toEqual(["warning:Update v1.0.1 withdrawn"]);
+    expect(calls.bodies[0]).toContain("corrupts the profile store");
+  });
+
+  it("a withdrawn version is not announced as available to a notify-only user either", async () => {
+    const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v2.0.0") }, true, () => [], { withdrawn: async () => "bad build" });
+    await runAutoUpdateCheck(d);
+    expect(calls.install).toBe(0);
+    expect(calls.notes).toEqual(["warning:Update v2.0.0 withdrawn"]);
+  });
+
+  it("when the withdraw status cannot be read, an opted-in kind is announced instead of installed", async () => {
+    const withdrawn = async () => {
+      throw new Error("registry 503");
+    };
+    const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") }, true, undefined, { withdrawn });
+    await runAutoUpdateCheck(d);
+    expect(calls.install).toBe(0);
+    expect(calls.notes).toEqual(["info:Update available — v1.0.1"]);
+    expect(calls.bodies[0]).toMatch(/could not be checked/);
+  });
+
+  it("after an install with a hosted session running it does not offer a restart now, and says why", async () => {
+    const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") }, true, undefined, { running: async () => 2 });
+    await runAutoUpdateCheck(d);
+    expect(calls.install).toBe(1);
+    expect(calls.installed).toEqual(["v1.0.1"]);
+    expect(calls.notes).toEqual(["success:Updated to v1.0.1"]);
+    expect(calls.bodies[0]).toMatch(/once the sessions it hosts are done/);
+  });
+
+  it("after an install with no hosted session it offers the restart", async () => {
+    const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") });
+    await runAutoUpdateCheck(d);
+    expect(calls.installed).toEqual(["v1.0.1"]);
+    expect(calls.bodies[0]).toBe("Restart agent-switch to apply.");
+  });
+
+  it("when the hosted sessions cannot be read it counts them as running", async () => {
+    const running = async (): Promise<number> => {
+      throw new Error("host list failed");
+    };
+    const { d, calls } = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") }, true, undefined, { running });
+    await runAutoUpdateCheck(d);
+    expect(calls.bodies[0]).toMatch(/once the sessions it hosts are done/);
+  });
+
+  it("a failed or skipped install leaves nothing waiting for a restart", async () => {
+    const failed = deps({ kind: "available", current: "1.0.0", release: release("v1.0.1") }, false);
+    await runAutoUpdateCheck(failed.d);
+    const skipped = deps({ kind: "available", current: "1.0.0", release: release("v2.0.0") });
+    await runAutoUpdateCheck(skipped.d);
+    expect([...failed.calls.installed, ...skipped.calls.installed]).toEqual([]);
   });
 
   it("runs on open, when the toggle comes on, and then once a day", () => {

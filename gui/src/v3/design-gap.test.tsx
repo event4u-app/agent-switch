@@ -3,6 +3,7 @@
  * or wired differently from the boards, each checked through the real window.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useLayoutEffect } from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { V3Window, type V3Data } from "./window.js";
 import { data, slots } from "./window-fixture.js";
@@ -166,6 +167,28 @@ describe("start on a session (gap §4a)", () => {
     expect(screen.getByRole("tab", { name: /Event store/ }).getAttribute("aria-selected")).toBe("true");
   });
 
+  it("a page picked in the commit that brings the first sessions stays picked", () => {
+    // The pick lands between that commit and its passive effects: a click on a
+    // loaded machine can, and the startup tab must not override it.
+    function ClickWhenSessions({ on }: { on: boolean }) {
+      useLayoutEffect(() => {
+        if (on) screen.getByLabelText("Library").click();
+      }, [on]);
+      return null;
+    }
+    const d = data();
+    const ui = (sessions: V3Data["sessions"]) => (
+      <>
+        <V3Window data={{ ...d, sessions }} slots={slots} act={vi.fn()} />
+        <ClickWhenSessions on={sessions.length > 0} />
+      </>
+    );
+    const { rerender } = render(ui([]));
+    rerender(ui(d.sessions));
+    expect(screen.getByRole("tab", { name: /Library/ }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText(/Pinned sessions are kept in the vault/)).toBeTruthy();
+  });
+
   it("restores the saved tabs and the active one", () => {
     const d = data();
     const two = [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow" }];
@@ -178,7 +201,7 @@ describe("start on a session (gap §4a)", () => {
     const two = [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow" }];
     const act = vi.fn();
     render(<V3Window data={{ ...d, sessions: two }} slots={slots} act={act} layout={{ load: () => ({ tabs: ["s1", "s2"], active: "s2" }), save: vi.fn() }} />);
-    fireEvent.click(screen.getByRole("button", { name: "Close Checkout flow" }));
+    fireEvent.click(screen.getByRole("tab", { name: /Checkout flow/ }).querySelector("[data-tab-close]")!);
     expect(screen.queryByRole("tab", { name: /Checkout flow/ })).toBeNull();
     expect(screen.getByRole("tab", { name: /Event store/ }).getAttribute("aria-selected")).toBe("true");
     expect(act).not.toHaveBeenCalled();
@@ -270,6 +293,57 @@ describe("the v3 keyboard (spec §12)", () => {
     expect(screen.getByText("↵ sign in · L later")).toBeTruthy();
     fireEvent.keyDown(window, { key: "Enter" });
     expect(act).toHaveBeenCalledWith(expect.objectContaining({ type: "need", item: expect.objectContaining({ id: "b" }) }));
+  });
+
+  const chatApproval = { id: "a", kind: "approval" as const, subject: "claude/work/s1", who: "Bash · npm test", what: "wants your approval in the chat", verb: "Open chat", since: new Date().toISOString(), version: "toolu_1" };
+  const answers = (act: ReturnType<typeof vi.fn>) => act.mock.calls.map(([a]) => a).filter((a) => a.type === "need-answer").map((a) => a.decision);
+
+  it("a focused approval in this window's chat: Y once, ⇧↵ always, ⌫ deny, each with the item", () => {
+    const act = mountMac({ needs: [chatApproval], chatHere: (k) => k === "claude/work/s1" });
+    press("j");
+    expect(screen.getByText("↵ open chat · Y once · ⇧↵ always · ⌫ deny · L later")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "y" });
+    press("j");
+    fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
+    press("j");
+    fireEvent.keyDown(window, { key: "Backspace" });
+    expect(answers(act)).toEqual(["allow", "always", "deny"]);
+    expect(act).toHaveBeenCalledWith({ type: "need-answer", item: chatApproval, decision: "always" });
+    expect(act).not.toHaveBeenCalledWith(expect.objectContaining({ type: "need" }));
+  });
+
+  it("a chat this window does not run: ⇧↵ does nothing and is not offered; Y and ⌫ still answer", () => {
+    const act = mountMac({ needs: [chatApproval], chatHere: () => false });
+    press("j");
+    expect(screen.getByText("↵ open chat · Y once · ⌫ deny · L later")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
+    expect(answers(act)).toEqual([]);
+    expect(act).not.toHaveBeenCalledWith(expect.objectContaining({ type: "need" }));
+    fireEvent.keyDown(window, { key: "y" });
+    press("j");
+    fireEvent.keyDown(window, { key: "Backspace" });
+    expect(answers(act)).toEqual(["allow", "deny"]);
+  });
+
+  it("approval keys stay out of text fields, and other items and terminal approvals ignore them", () => {
+    const ci = { id: "c", kind: "ci" as const, subject: "s1", who: "Event store", what: "CI failing", verb: "Fix", since: new Date().toISOString(), version: "1" };
+    const own = { ...chatApproval, id: "t", verb: "Focus terminal" };
+    const act = mountMac({ needs: [chatApproval, ci, own], chatHere: () => true });
+    press("j");
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+    fireEvent.keyDown(input, { key: "y" });
+    fireEvent.keyDown(input, { key: "Backspace" });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    input.remove();
+    press("j");
+    fireEvent.keyDown(window, { key: "y" });
+    fireEvent.keyDown(window, { key: "Backspace" });
+    press("j");
+    fireEvent.keyDown(window, { key: "y" });
+    fireEvent.keyDown(window, { key: "Enter", shiftKey: true });
+    expect(answers(act)).toEqual([]);
   });
 
   it("⌘B hides the Sessions window, ⌘⇧M opens the decision sheet, ⌘O opens the default target", () => {

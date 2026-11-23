@@ -92,7 +92,9 @@ export function trimActivity(file: string): void {
   fs.renameSync(tmp, file);
 }
 
-/** Entries oldest → newest; malformed lines are skipped. `limit` keeps the newest N. */
+/** Entries oldest → newest; malformed lines are skipped. `limit` keeps the newest N.
+ *  Fields are redacted again on the way out: a line written before redaction
+ *  existed, or edited by hand, still carries whatever was put there. */
 export function readActivity(limit?: number, file: string = ACTIVITY_FILE): ActivityEntry[] {
   let raw = "";
   try {
@@ -105,7 +107,9 @@ export function readActivity(limit?: number, file: string = ACTIVITY_FILE): Acti
     if (!line) continue;
     try {
       const e = JSON.parse(line);
-      if (e && typeof e.at === "string" && (ACTIVITY_KINDS as readonly string[]).includes(e.kind)) out.push(e);
+      if (e && typeof e.at === "string" && (ACTIVITY_KINDS as readonly string[]).includes(e.kind)) {
+        out.push({ ...e, target: typeof e.target === "string" ? clean(e.target) : null, action: clean(e.action ?? ""), reason: clean(e.reason ?? "") });
+      }
     } catch {
       /* skip */
     }

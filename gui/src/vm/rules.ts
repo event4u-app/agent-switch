@@ -28,6 +28,7 @@ export const SESSION_STATE_KEY: Record<SessionState, TKey> = {
   parked: "vm.sessionState.parked",
   "auth-paused": "vm.sessionState.authPaused",
   idle: "vm.sessionState.idle",
+  recent: "vm.sessionState.recent",
   done: "vm.sessionState.done",
 };
 

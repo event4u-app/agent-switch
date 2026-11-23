@@ -60,6 +60,8 @@ export interface ProfileRow {
   disabled?: boolean;
   active: boolean;
   liveSessions: number;
+  /** Claude only: the profile's own agent-config root, null = the shared one; absent from older CLIs. */
+  agentConfigRoot?: string | null;
 }
 
 /** Context-window readout for a session/status (Claude). `pct` is that ONE
@@ -85,6 +87,8 @@ export interface SessionRow {
    *  activity). Optional: absent from older payloads/fakes → treat as mtime. */
   birthtimeMs?: number;
   live: boolean;
+  /** Claude Desktop: written lately, but no running process names it — never "live". */
+  recentlyActive?: boolean;
   summary?: string | null;
   context?: SessionContext | null;
   /** "desktop-app" = run from Claude Desktop (`sessions` attributes it by account). */

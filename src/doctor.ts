@@ -33,6 +33,7 @@ export interface DoctorCheck {
 }
 
 export interface DoctorReport {
+  schema: 1;
   /** `ready` = nothing to do · `attention` = warnings · `blocked` = a hard error. */
   readiness: "ready" | "attention" | "blocked";
   platform: NodeJS.Platform;
@@ -388,7 +389,7 @@ export async function collectDoctorReport(): Promise<DoctorReport> {
   checks.push(agentConfigLinkCheck(readLinkAutoConnect(), tooling.some((t) => t.id === "agent-config" && t.present)));
 
   const readiness = checks.some((c) => c.status === "error") ? "blocked" : checks.some((c) => c.status === "warn") ? "attention" : "ready";
-  return { readiness, platform: process.platform, checks };
+  return { schema: 1, readiness, platform: process.platform, checks };
 }
 
 const MARK: Record<CheckStatus, string> = { ok: "✅", warn: "⚠️", error: "❌", info: "ℹ️" };

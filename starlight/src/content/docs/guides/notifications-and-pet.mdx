@@ -149,6 +149,15 @@ sync` afterwards so the change reaches every account.
 current setting. When desktop notifications are off or blocked, notices still
 appear in the bell and as messages inside the app window.
 
+### Quiet hours
+
+**Settings › Notifications › Quiet hours** (or `agent-switch quiet-hours
+22:00-07:00`) sets a daily window, in local time, in which neither the app nor
+the background service shows a desktop notification. A window may run over
+midnight. Notices that arrive inside it are still listed in the bell; none is
+shown afterwards. `agent-switch quiet-hours off` ends it, and
+`agent-switch quiet-hours status` shows it.
+
 ## The desktop pet
 
 ![The pet in its seven states: idle, review, running, waiting, waving, jumping and failed](/agent-switch/media/pet-states.png)

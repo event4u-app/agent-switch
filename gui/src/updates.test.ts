@@ -14,6 +14,9 @@ import {
   fetchLatestRelease,
   fetchReleases,
   releaseKind,
+  withdrawnInNotes,
+  fetchNpmDeprecation,
+  withdrawnReason,
 } from "./updates.js";
 
 describe("releaseKind", () => {
@@ -126,6 +129,51 @@ describe("fetchLatestRelease", () => {
     } as unknown as Response);
     const r = await fetchLatestRelease("owner/repo");
     expect(r?.tag).toBe("v1.2.0");
+  });
+});
+
+describe("withdrawnInNotes", () => {
+  it("reads a `Withdrawn:` line anywhere in the release notes, bold or not", () => {
+    expect(withdrawnInNotes("## Fixes\n\nWithdrawn: breaks sign-in on macOS\n- x")).toBe("breaks sign-in on macOS");
+    expect(withdrawnInNotes("**Withdrawn:** data loss in pools")).toBe("data loss in pools");
+    expect(withdrawnInNotes("withdrawn:   use 1.2.4  ")).toBe("use 1.2.4");
+  });
+  it("ignores the word anywhere but at the start of a line, and an empty reason", () => {
+    expect(withdrawnInNotes("The withdrawn flag from 1.0 is gone: nothing to do")).toBeNull();
+    expect(withdrawnInNotes("Withdrawn:")).toBeNull();
+    expect(withdrawnInNotes("")).toBeNull();
+  });
+});
+
+describe("fetchNpmDeprecation", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    vi.restoreAllMocks();
+  });
+  it("asks the registry for that exact version and returns its deprecation message", async () => {
+    const f = vi.fn().mockResolvedValue({ status: 200, ok: true, json: async () => ({ version: "1.2.3", deprecated: "corrupts config" }) } as unknown as Response);
+    globalThis.fetch = f;
+    await expect(fetchNpmDeprecation("v1.2.3")).resolves.toBe("corrupts config");
+    expect(f.mock.calls[0][0]).toBe("https://registry.npmjs.org/@event4u%2Fagent-switch/1.2.3");
+  });
+  it("is null for a version without the marker, or one npm does not have", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 200, ok: true, json: async () => ({ version: "1.2.3" }) } as unknown as Response);
+    await expect(fetchNpmDeprecation("1.2.3")).resolves.toBeNull();
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 404, ok: false } as Response);
+    await expect(fetchNpmDeprecation("1.2.3")).resolves.toBeNull();
+  });
+  it("throws when the registry cannot answer, so the caller does not read it as 'not withdrawn'", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 503, ok: false } as Response);
+    await expect(fetchNpmDeprecation("1.2.3")).rejects.toThrow("503");
+  });
+  it("withdrawnReason prefers the release's own marker and only then asks npm", async () => {
+    const f = vi.fn().mockResolvedValue({ status: 200, ok: true, json: async () => ({ deprecated: "from npm" }) } as unknown as Response);
+    globalThis.fetch = f;
+    const rel = { tag: "v1.2.3", name: "", url: "", notes: "Withdrawn: from GitHub", publishedAt: "" };
+    await expect(withdrawnReason(rel)).resolves.toBe("from GitHub");
+    expect(f).not.toHaveBeenCalled();
+    await expect(withdrawnReason({ ...rel, notes: "" })).resolves.toBe("from npm");
   });
 });
 

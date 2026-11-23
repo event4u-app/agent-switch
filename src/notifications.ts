@@ -17,6 +17,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { ROOT } from "./profiles.js";
+import { redactSecrets } from "./activity.js";
 
 export type NotificationKind = "success" | "error" | "warning" | "info";
 
@@ -91,8 +92,8 @@ export function appendNotification(
     id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
     ts: now,
     kind: event.kind,
-    title: event.title,
-    message: event.message,
+    title: redactSecrets(event.title),
+    message: redactSecrets(event.message),
     ...(event.key ? { key: event.key } : {}),
   };
   writeNotifications([...list, created], file);

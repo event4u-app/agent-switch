@@ -167,6 +167,19 @@ test("the two release-notes mirrors are byte-identical below their header", () =
   );
 });
 
+test("the GUI's redactSecrets is the CLI's, byte for byte", () => {
+  const body = (src: string) => {
+    const m = /export function redactSecrets[\s\S]*?\n}\n/.exec(src.replace(/\r\n/g, "\n"));
+    assert.ok(m, "redactSecrets not found");
+    return m[0];
+  };
+  assert.equal(
+    body(fs.readFileSync(repoFile(path.join("gui", "src", "redact.ts")), "utf8")),
+    body(fs.readFileSync(repoFile(path.join("src", "activity.ts")), "utf8")),
+    "gui/src/redact.ts drifted from redactSecrets in src/activity.ts — copy the change across",
+  );
+});
+
 test("no gui/src file imports a node: builtin", () => {
   // The GUI is a browser bundle: its tsconfig carries `types: ["vitest/globals"]`
   // and no `@types/node`, so `import … from "node:fs"` typechecks in a full

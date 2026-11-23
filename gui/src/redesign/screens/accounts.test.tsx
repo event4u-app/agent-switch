@@ -413,6 +413,22 @@ describe("Projects & pools — bindings", () => {
     expect(bindingTarget("", "claude")).toBeNull();
   });
 
+  it("each active folder binding says why its account is picked; a paused one is not asked", async () => {
+    const pool = { ...rule, id: "claude:/x/p", match: { kind: "folder" as const, value: "/x/p" }, target: { kind: "pool" as const, pool: "clients" } };
+    const paused = { ...rule, id: "claude:/x/b", match: { kind: "folder" as const, value: "/x/b" }, enabled: false };
+    const explainFolder = vi.fn(async (dir: string) =>
+      dir === "/x/p"
+        ? { profile: "claude/side", configDir: null, why: ["Rule: folder /x/p → pool clients", "Picked claude/side: 70% of its 5h window left"] }
+        : { profile: "claude/side", configDir: null, why: [`Rule: folder ${dir} → claude/side`] },
+    );
+    mount(fixture({ sessions: [], rules: [rule, pool, paused] }), { tab: "projects", act: { explainFolder } });
+    const picked = await screen.findByText("Why: Picked claude/side: 70% of its 5h window left");
+    expect(picked.getAttribute("title")).toBe("Rule: folder /x/p → pool clients\nPicked claude/side: 70% of its 5h window left");
+    expect(await screen.findByText("Why: Rule: folder /x/a → claude/side")).toBeTruthy();
+    expect(explainFolder).toHaveBeenCalledWith("/x/a", "claude");
+    expect(explainFolder).not.toHaveBeenCalledWith("/x/b", "claude");
+  });
+
   it("removes a binding from its row menu after a confirm", async () => {
     const unmapFolder = vi.fn(async () => {});
     mount(fixture({ rules: [rule] }), { tab: "projects", act: { unmapFolder } });
@@ -520,6 +536,31 @@ describe("Account sheet", () => {
     expect(setPoolMembership).toHaveBeenCalledWith("clients", "claude:work", false);
     expect(setProtection).not.toHaveBeenCalled();
     expect(screen.getByTestId("where").textContent).toBe("accounts/none");
+  });
+
+  it("agent-config settings: shows the root in effect and switches it at once, for Claude accounts only", async () => {
+    const setAgentConfigRoot = vi.fn(() => Promise.resolve());
+    mount(fixture({ accounts: [acc("work", { agentConfigRoot: null }), { ...acc("cx", { agentConfigRoot: null }), id: "codex:cx", tool: "codex" }] }), {
+      overlay: { kind: "account", id: "claude:work" },
+      act: { setAgentConfigRoot },
+    });
+    const sw = screen.getByRole("switch", { name: "Own agent-config settings" });
+    expect(sw.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByText(/In effect: the shared agent-config settings/)).toBeTruthy();
+    fireEvent.click(sw);
+    await waitFor(() => expect(setAgentConfigRoot).toHaveBeenCalledWith("claude:work", true));
+    expect(screen.getByRole("switch", { name: "Own agent-config settings" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/In effect: this account's own agent-config settings/)).toBeTruthy();
+    expect(screen.getByText(/Own settings start empty/)).toBeTruthy();
+  });
+
+  it("agent-config settings: an own root names its folder; an older CLI shows no switch", () => {
+    mount(fixture({ accounts: [acc("work", { agentConfigRoot: "/Users/x/.agent-switch/claude/work/agent-config" })] }), { overlay: { kind: "account", id: "claude:work" }, act: {} });
+    expect(screen.getByRole("switch", { name: "Own agent-config settings" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/\/Users\/x\/\.agent-switch\/claude\/work\/agent-config/)).toBeTruthy();
+    cleanup();
+    mount(fixture({ accounts: [acc("work")] }), { overlay: { kind: "account", id: "claude:work" }, act: {} });
+    expect(screen.queryByRole("switch", { name: "Own agent-config settings" })).toBeNull();
   });
 
   it("refreshes the account's usage from the flyout, also when no usage is known yet", async () => {
@@ -775,9 +816,14 @@ describe("Copy email", () => {
     expect(screen.getByTestId("where").textContent).toBe("accounts/none");
   });
 
-  it("copies by keyboard from the row too", async () => {
+  it("the row's copy control is a real button outside the row's own, so the keyboard reaches it", async () => {
     mount(fixture());
-    fireEvent.keyDown(screen.getByRole("button", { name: "Copy work@example.test" }), { key: "Enter" });
+    const copy = screen.getByRole("button", { name: "Copy work@example.test" });
+    expect(copy.tagName).toBe("BUTTON");
+    expect(copy.closest("button:not([aria-label^='Copy'])")).toBeNull();
+    copy.focus();
+    expect(document.activeElement).toBe(copy);
+    fireEvent.click(copy);
     await waitFor(() => expect(copied).toEqual(["work@example.test"]));
     expect(screen.getByTestId("where").textContent).toBe("accounts/none");
   });

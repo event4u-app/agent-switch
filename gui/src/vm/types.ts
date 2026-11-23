@@ -66,6 +66,8 @@ export interface Account {
   checkedAt: number | null;
   /** Codex banked resets; null = not reported. */
   resetCredits: number | null;
+  /** Claude Code routines today (used of limit); null/absent = the readout carries none. */
+  routines?: { used: number; limit: number } | null;
   /** Near-limit threshold the meters tick at: the protection threshold, or the
    *  CLI default (98) when protection was not read. */
   threshold: number;
@@ -76,6 +78,9 @@ export interface Account {
   liveSessions: number;
   /** Ids of the pools this account is a member of. */
   pools: string[];
+  /** Claude: the account's own agent-config root ("" while just switched on),
+   *  null = the shared one; undefined = not reported. */
+  agentConfigRoot?: string | null;
 }
 
 export type SessionState =
@@ -86,6 +91,8 @@ export type SessionState =
   | "parked"
   | "auth-paused"
   | "idle"
+  /** Claude Desktop: written lately, but no running process proves it is live. */
+  | "recent"
   | "done";
 
 export type SessionSurface = "terminal" | "desktop-app" | "ide";

@@ -95,6 +95,7 @@ export default defineConfig({
 						{ slug: 'guides/remote-access' },
 						{ slug: 'guides/agent-config' },
 						{ slug: 'guides/desktop-app' },
+						{ slug: 'guides/updates-and-releases' },
 						{ slug: 'guides/notifications-and-pet' },
 						{ slug: 'guides/share-settings' },
 						{ slug: 'guides/codex' },

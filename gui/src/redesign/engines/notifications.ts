@@ -8,7 +8,8 @@
  */
 
 import { useCallback, useEffect, useRef } from "react";
-import { getOsNotify, installSessionHooks, listNotifications, petDeliver } from "../../ipc.js";
+import { getOsNotify, getQuietHours, installSessionHooks, listNotifications, petDeliver } from "../../ipc.js";
+import { inQuietHours, parseQuietHours } from "../../quiet-hours.js";
 import {
   onNotificationClick,
   sendDesktopNotification,
@@ -36,6 +37,8 @@ export interface FireContext {
   muted: NotificationKind[];
   /** The "Desktop notifications" master; off → the toast stands in. */
   osNotify: boolean;
+  /** Inside quiet hours: nothing goes to the desktop, the toast stands in. */
+  quiet?: boolean;
 }
 
 export interface FireSinks {
@@ -85,7 +88,7 @@ export async function deliver(fresh: readonly AppNotification[], ctx: FireContex
     if (routing.toPet) sinks.pet(n);
     if (n.osNotified || muted.has(n.kind)) continue;
     if (routing.suppressDesktopAndToast) continue;
-    const shown = ctx.osNotify ? await sinks.desktop(...desktopText(n)) : false;
+    const shown = ctx.osNotify && !ctx.quiet ? await sinks.desktop(...desktopText(n)) : false;
     if (!shown) sinks.toast(n);
   }
 }
@@ -96,13 +99,22 @@ function desktopText(n: AppNotification): [string, string] {
   return [title, message];
 }
 
+/** Whether `now` (local time) is inside the quiet-hours window (`HH:MM-HH:MM`). */
+export function quietNow(window: string | null, now: Date): boolean {
+  return inQuietHours(parseQuietHours(window), now);
+}
+
 async function readFireContext(): Promise<FireContext> {
+  // Unreadable → not quiet: the window is the user's opt-in, and a failed read
+  // must not silently swallow every desktop notice.
+  const window = await getQuietHours().catch(() => null);
   return {
     petEnabled: getPetEnabled(),
     petTier: getPetTier(),
     petKinds: getPetReactKinds(),
     muted: getMutedKinds(),
     osNotify: await getOsNotify().catch(() => false),
+    quiet: quietNow(window, new Date()),
   };
 }
 

@@ -18,8 +18,9 @@ import { AcRoot } from "../../ui/AcRoot.js";
 import { Toaster } from "../../ui/Toaster.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
 import { ASProvider, useAS } from "../../vm/store.js";
+import type { IdentityColor } from "../../vm/types.js";
 import { useServiceOutcomes } from "../../vm/service-outcomes.js";
-import { Modal, type NewSessionPlan } from "../dialogs.js";
+import { ChatAccountDialog, Modal, type NewSessionPlan } from "../dialogs.js";
 import { Act } from "../kit.js";
 import type { ChangedFile } from "../panels.js";
 import type { Appearance } from "../themes/resolve.js";
@@ -28,7 +29,7 @@ import { localLayout } from "../layout.js";
 import { KEYS_STORAGE, withRebinds } from "../keys.js";
 import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
-import { sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
+import { chatStart, sessionKey, toV3Data, worktreeOf, type AdapterEnv } from "./data.js";
 import { SessionBody, ToolsSlot, settingsSection } from "./slots.js";
 import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
@@ -122,7 +123,8 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const [ownViews, setOwnViews] = useState<ReadonlyMap<string, "terminal" | "chat">>(() => new Map());
   const sRef = useRef(s);
   sRef.current = s;
-  useEngines();
+  const chatsRunning = useRef(0);
+  useEngines({ chatsHere: () => chatsRunning.current });
   useTrayRequests(s.open, undefined, (payload) => {
     const req = appRequest(sRef.current, payload);
     if (req && sRef.current.act.openApp) void sRef.current.act.openApp(req.appId, req.accountId);
@@ -165,7 +167,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     let alive = true;
     ipc
       .resolveDir("claude", lastFolder)
-      .then((r) => alive && setRoute({ profile: r.profile, why: r.why ?? [], ...(r.blocked ? { blocked: r.blocked } : {}) }))
+      .then((r) => alive && setRoute({ profile: r.profile, why: r.why ?? [], ...(r.blocked ? { blocked: r.blocked } : {}), ...(r.ask ? { ask: r.ask } : {}) }))
       .catch(() => alive && setRoute(null));
     return () => {
       alive = false;
@@ -175,14 +177,20 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const byKeyRef = useRef(new Map<string, SessionRow>());
   const titleOf = (key: string) => byKeyRef.current.get(key)?.summary ?? key.split("/")[1] ?? "A session";
   const chats = useChats(titleOf);
+  chatsRunning.current = chats.rows.filter((r) => r.live).length;
   const [focus, setFocus] = useState<{ key: string; n: number } | undefined>(undefined);
   const openTab = (key: string) => setFocus((f) => ({ key: chats.tabOf(key) ?? key, n: (f?.n ?? 0) + 1 }));
-  const newChat = () => {
-    const profile = route?.profile ? route.profile.slice(route.profile.indexOf("/") + 1) : s.accounts.find((a) => a.tool === "claude" && a.isDefault)?.name;
-    if (!profile || lastFolder === "~") return s.toast({ tone: "warn", text: "No Claude account or folder to start a chat in yet" });
+  const [chatAsk, setChatAsk] = useState<{ name: string; color: IdentityColor }[] | null>(null);
+  const startChat = (profile: string) => {
     const tab = `claude/${profile}/chat-${Date.now().toString(36)}`;
     chats.open(tab, { new: { profile, provider: "claude", cwd: lastFolder }, mode: "default" });
     openTab(tab);
+  };
+  const newChat = () => {
+    const how = chatStart(route, s.accounts);
+    if (!how || lastFolder === "~") return s.toast({ tone: "warn", text: "No Claude account or folder to start a chat in yet" });
+    if ("ask" in how) return setChatAsk(how.ask);
+    startChat(how.profile);
   };
 
   const data = toV3Data(s, feeds, {
@@ -374,6 +382,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       <OverlayHost />
       <Toaster toasts={s.toasts} onDismiss={s.dismissToast} />
       {prompt && <PromptSheet req={prompt} onClose={() => setPrompt(null)} />}
+      {chatAsk && <ChatAccountDialog folder={lastFolder} ask={chatAsk} onClose={() => setChatAsk(null)} onStart={(name) => (setChatAsk(null), startChat(name))} />}
     </>
   );
 }

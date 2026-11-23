@@ -20,9 +20,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { liveSessions } from "./api.js";
 import { readSessionHeader, type SessionRow } from "./sessions.js";
 
-/** Written within this long → shown as running (Desktop leaves no pid to check). */
+/** Written within this long without a process naming it → "recently active",
+ *  never "live": a fresh transcript proves no process is still running. */
 export const DESKTOP_LIVE_MS = 2 * 60_000;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -57,6 +59,7 @@ export interface DesktopLocation {
   orgUuid: string;
   metaFile: string;
   live: boolean;
+  recentlyActive: boolean;
 }
 
 export interface DesktopScan {
@@ -110,7 +113,17 @@ export function scanDesktop(opts: {
   /** The agent-switch profile signed in as this account uuid, or null. */
   profileOf: (accountUuid: string) => string | null;
   now: number;
+  /** Session ids a running Claude Code process names in the registry of a
+   *  config dir (`sessions/<pid>.json`). Default: read it from disk. */
+  runningIn?: (configDir: string) => ReadonlySet<string>;
 }): DesktopScan {
+  const running = new Map<string, ReadonlySet<string>>();
+  const runningIn = (cfg: string) => {
+    if (!running.has(cfg)) {
+      running.set(cfg, opts.runningIn ? opts.runningIn(cfg) : new Set(liveSessions(cfg).flatMap((s) => (s.sessionId ? [s.sessionId] : []))));
+    }
+    return running.get(cfg)!;
+  };
   const rows: DesktopRow[] = [];
   const instances: DesktopInstanceReport[] = [];
   const locations: DesktopLocation[] = [];
@@ -140,8 +153,10 @@ export function scanDesktop(opts: {
             const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
             const mtimeMs = st?.mtimeMs ?? num(m.lastActivityAt) ?? num(m.createdAt) ?? 0;
             const header = transcript ? readSessionHeader(transcript) : { cwd: null, summary: null };
-            const live = !!st && opts.now - st.mtimeMs <= DESKTOP_LIVE_MS;
-            locations.push({ sessionId: id, profile, instance: { profile: inst.profile, dir: inst.dir }, kind, accountUuid: account, orgUuid: org, metaFile: path.join(folder, f), live });
+            // `<config>/projects/<dir>/<id>.jsonl`: the process runs on that config dir.
+            const live = !!transcript && runningIn(path.dirname(path.dirname(path.dirname(transcript)))).has(id);
+            const recentlyActive = !live && !!st && opts.now - st.mtimeMs <= DESKTOP_LIVE_MS;
+            locations.push({ sessionId: id, profile, instance: { profile: inst.profile, dir: inst.dir }, kind, accountUuid: account, orgUuid: org, metaFile: path.join(folder, f), live, recentlyActive });
             rows.push({
               sessionId: id,
               projectDir: transcript ? path.basename(path.dirname(transcript)) : "",
@@ -150,6 +165,7 @@ export function scanDesktop(opts: {
               mtimeMs,
               birthtimeMs: num(m.createdAt) ?? st?.birthtimeMs ?? mtimeMs,
               live,
+              ...(recentlyActive ? { recentlyActive } : {}),
               ...(transcript ? { file: transcript } : {}),
               profile,
               surface: "desktop-app",
