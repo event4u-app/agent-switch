@@ -17,16 +17,15 @@ import { Kbd } from "../ui/Typography.js";
 import { AccountMark, CheckBox, Chip, Disclosure, Label } from "./kit.js";
 import { LimitBar, type LimitAccount } from "./limits.js";
 import { Anchored } from "./menus.js";
+import { useModalFocus } from "./focus.js";
 
 export function Modal({ title, kicker, badge, sub, width = 600, children, footer, onClose }: { title: string; kicker?: string; badge?: ReactNode; sub?: ReactNode; width?: number; children: ReactNode; footer: ReactNode; onClose: () => void }) {
-  useEffect(() => {
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", esc);
-    return () => window.removeEventListener("keydown", esc);
-  }, [onClose]);
+  const scrim = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useModalFocus(scrim, box, onClose);
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center p-6" style={{ background: "var(--ac-scrim)" }}>
-      <div role="dialog" aria-label={title} className="flex max-h-full flex-col overflow-hidden rounded-xl border border-ac-line2 bg-ac-panel" style={{ width, boxShadow: "var(--ac-shadow)" }}>
+    <div ref={scrim} className="absolute inset-0 z-10 flex items-center justify-center p-6" style={{ background: "var(--ac-scrim)" }}>
+      <div ref={box} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} className="flex max-h-full flex-col overflow-hidden rounded-xl border border-ac-line2 bg-ac-panel outline-none" style={{ width, boxShadow: "var(--ac-shadow)" }}>
         <div className="flex items-start justify-between gap-3 border-b border-ac-line px-5 pb-3 pt-4">
           <div>
             {(kicker || badge) && (
@@ -42,7 +41,9 @@ export function Modal({ title, kicker, badge, sub, width = 600, children, footer
             <X />
           </IconButton>
         </div>
-        <div className="min-h-0 relative overflow-y-auto px-5 py-4">{children}</div>
+        <div data-dialog-body="" className="min-h-0 relative overflow-y-auto px-5 py-4">
+          {children}
+        </div>
         <div className="flex items-center justify-end gap-2 border-t border-ac-line bg-ac-rail px-5 py-3">{footer}</div>
       </div>
     </div>
