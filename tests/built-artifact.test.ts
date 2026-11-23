@@ -215,3 +215,43 @@ test("built host: Claude and Codex windows start, respawn, park and end with the
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+// The shipped `sessions`: a live registry word becomes `runtime`; the text listing shows it.
+const SESS = await load("commands/sessions.js");
+
+test("built sessions: the host's word becomes runtime, and the listing shows it", gate, async () => {
+  const cfg = claudeProfile("rt");
+  const dir = path.join(cfg, "projects", "-proj-rt");
+  fs.mkdirSync(dir, { recursive: true });
+  const old = Date.now() - 5 * 60_000;
+  for (const id of ["root-rt", "seat-rt"]) {
+    const file = path.join(dir, `${id}.jsonl`);
+    fs.writeFileSync(file, `${JSON.stringify({ cwd: "/proj/rt", summary: id })}\n`);
+    fs.utimesSync(file, new Date(old), new Date(old));
+  }
+  fs.mkdirSync(path.join(cfg, "sessions"), { recursive: true });
+  fs.writeFileSync(path.join(cfg, "sessions", `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: "root-rt", status: "busy", statusUpdatedAt: old }));
+  const lines: string[] = [];
+  const log = console.log;
+  console.log = (...a: unknown[]) => void lines.push(a.join(" "));
+  try {
+    await SESS.cmdSessions("claude", true, "rt", { json: true });
+  } finally {
+    console.log = log;
+  }
+  const rows = JSON.parse(lines.join("\n")) as { sessionId: string; live: boolean; hostStatus?: string; hostStatusAt?: number; runtime?: { state: string; source: string } }[];
+  const root = rows.find((r) => r.sessionId === "root-rt")!;
+  assert.equal(root.live, true);
+  assert.equal(root.hostStatusAt, old);
+  assert.deepEqual([root.runtime?.state, root.runtime?.source], ["working", "host"], "busy holds although the transcript is quiet");
+  const seat = rows.find((r) => r.sessionId === "seat-rt")!;
+  assert.equal(seat.runtime, undefined, "not live, no runtime");
+  const text: string[] = [];
+  console.log = (...a: unknown[]) => void text.push(a.join(" "));
+  try {
+    await SESS.cmdSessions("claude", true, "rt", {});
+  } finally {
+    console.log = log;
+  }
+  assert.match(text.join("\n"), /root-rt.*\[live: busy\]/);
+});
