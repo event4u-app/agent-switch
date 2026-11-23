@@ -34,7 +34,7 @@ export const BOARDS: Record<string, Board> = {
   morning: { scene: { away: true } },
   needs: { steps: [{ key: "j", mod: true }] },
   inbox: { steps: [{ key: "b", mod: true }, { click: "6" }] },
-  group: { steps: [{ click: "Activity" }] },
+  group: { steps: [{ click: "Status" }] },
   switcher: { steps: [{ click: "v3 engine" }, { click: "Release plan" }, { click: "Fix wedge" }, { key: "Tab", ctrl: true, hold: true }] },
   palette: { steps: [{ key: "k", mod: true }] },
   openin: { steps: [{ click: "Open in" }] },
