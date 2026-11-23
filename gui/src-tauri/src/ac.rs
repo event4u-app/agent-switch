@@ -778,12 +778,40 @@ pub async fn ac_release(state: tauri::State<'_, AcState>) -> Result<(), AcError>
 /// never the unstable child-webview API).
 pub const SETTINGS_WINDOW_LABEL: &str = "ac-settings";
 
+/// The accents the embed may name: the brand colours of the shared token set
+/// (`gui/design-tokens/event4u-agent-tokens.json`, the source of the generated
+/// `as-tokens.css`).
+fn accents() -> &'static [String] {
+    static ACCENTS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    ACCENTS.get_or_init(|| {
+        serde_json::from_str::<serde_json::Value>(include_str!(
+            "../../design-tokens/event4u-agent-tokens.json"
+        ))
+        .ok()
+        .and_then(|doc| {
+            doc.get("brand")?.as_object().map(|brand| {
+                brand
+                    .keys()
+                    .filter(|k| !k.starts_with('$'))
+                    .cloned()
+                    .collect()
+            })
+        })
+        .unwrap_or_default()
+    })
+}
+
 /// Build the settings-window URL. The token is placed here, in Rust — it never
 /// enters the main webview's JS context, is never logged, and AC's SPA strips
-/// it from the URL after boot (AC-side hardening).
-fn settings_url(port: u16, theme: &str, token: &str) -> String {
+/// it from the URL after boot (AC-side hardening). The accent reaches AC's
+/// stylesheet, so only a name from the token set passes; anything else is left out.
+fn settings_url(port: u16, theme: &str, accent: Option<&str>, token: &str) -> String {
     let theme = if theme == "light" { "light" } else { "dark" };
-    format!("http://127.0.0.1:{port}/#/settings?embed=1&theme={theme}&token={token}")
+    let accent = accent
+        .filter(|a| accents().iter().any(|known| known == a))
+        .map(|a| format!("&accent={a}"))
+        .unwrap_or_default();
+    format!("http://127.0.0.1:{port}/#/settings?embed=1&theme={theme}{accent}&token={token}")
 }
 
 /// Open (or focus) the embedded agent-config settings window: ensure a live
@@ -797,6 +825,7 @@ pub async fn ac_open_settings_window(
     app: tauri::AppHandle,
     state: tauri::State<'_, AcState>,
     theme: String,
+    accent: Option<String>,
     profile: Option<String>,
 ) -> Result<AcStatus, AcError> {
     use tauri::{Emitter, Manager};
@@ -819,7 +848,7 @@ pub async fn ac_open_settings_window(
     }
 
     let token = run_blocking(move || read_token(&current_dir())).await?;
-    let url = settings_url(port, &theme, &token)
+    let url = settings_url(port, &theme, accent.as_deref(), &token)
         .parse::<tauri::Url>()
         .map_err(|e| AcError::Request {
             message: format!("settings url failed to parse: {e}"),
@@ -1283,15 +1312,56 @@ mod tests {
     #[test]
     fn settings_url_targets_loopback_and_sanitizes_the_theme() {
         assert_eq!(
-            settings_url(41066, "dark", "abc123"),
+            settings_url(41066, "dark", None, "abc123"),
             "http://127.0.0.1:41066/#/settings?embed=1&theme=dark&token=abc123"
         );
         assert_eq!(
-            settings_url(41066, "light", "abc123"),
+            settings_url(41066, "light", None, "abc123"),
             "http://127.0.0.1:41066/#/settings?embed=1&theme=light&token=abc123"
         );
         // Anything but "light" collapses to dark — the query is a bounded
         // contract, never a free-form passthrough.
-        assert!(settings_url(41066, "weird\"><script>", "t").contains("theme=dark"));
+        assert!(settings_url(41066, "weird\"><script>", None, "t").contains("theme=dark"));
+    }
+
+    #[test]
+    fn accents_come_from_the_shared_token_set() {
+        let doc: serde_json::Value =
+            serde_json::from_str(include_str!("../../design-tokens/event4u-agent-tokens.json"))
+                .unwrap();
+        let brand: Vec<&str> = doc["brand"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .filter(|k| !k.starts_with('$'))
+            .collect();
+        assert!(!brand.is_empty());
+        let ours: Vec<&str> = accents().iter().map(String::as_str).collect();
+        assert_eq!(ours, brand);
+    }
+
+    #[test]
+    fn settings_url_carries_only_an_accent_from_the_token_set() {
+        for accent in accents() {
+            assert_eq!(
+                settings_url(41066, "dark", Some(accent.as_str()), "t"),
+                format!("http://127.0.0.1:41066/#/settings?embed=1&theme=dark&accent={accent}&token=t")
+            );
+        }
+        for bad in [
+            "",
+            "purple",
+            "Orange",
+            " orange",
+            "#d15c38",
+            "orange&token=x",
+            "orange;background:url(x)",
+            "$description",
+        ] {
+            let url = settings_url(41066, "light", Some(bad), "t");
+            assert!(!url.contains("accent="), "{bad:?} reached the URL: {url}");
+            assert_eq!(url, "http://127.0.0.1:41066/#/settings?embed=1&theme=light&token=t");
+        }
     }
 }

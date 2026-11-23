@@ -54,6 +54,7 @@ saved.
 | D12 | "Counted once per org": Claude profiles whose `.claude.json` names the same email AND the same `organizationUuid` are weighed once (the preferred one, else the first); a missing org never folds two profiles together; other providers are not folded | two profiles of one account share one set of limits; folding on email alone would merge two orgs, which the step forbids | providers expose an org id for Codex / agy |
 | D13 | The plan allowlist binds balancing only — balanced plain starts, pool picks (fresh or not) and the free account a busy one gives way to; a folder rule to one account, the preferred account (fallback, `strategy default`/`fill`) and the `ask` choices still use a Team seat. It applies to Claude only (Codex and agy credentials carry no `subscriptionType`), and the credential is read only for an account that is about to be weighed | the owner's rule is about balancing, and the user's own explicit choice is not a balance; reading every keychain item on each wrapped start would slow the shell hot path | the owner wants Team seats refused outright |
 | D14 | "The active profile's config root" is `<agent-switch home>/claude/<active claude profile>/agent-config`, read from `state.json` on every agent-config call; no active Claude profile, an unreadable state file or a name the CLI would not write means agent-config's default root; an owned server under another root is stopped and started again, a found one is never stopped | the GUI's agent-config card is about Claude profiles; the profile's `config` dir belongs to Claude Code, so a dedicated subdir keeps the two apart (agent-config creates it 0700); agent sessions do not get the root yet (their hooks still read `~/.event4u/agent-config`) | agent-config settings should follow another provider's profile, or sessions should carry `EVENT4U_CONFIG_HOME` |
+| D15 | The shared token source is vendored (`gui/design-tokens/event4u-agent-tokens.json`, verbatim from agent-config `tokens/` at e494248); `scripts/design-tokens.mjs` generates `gui/design-tokens/as-tokens.css` from it and `--check` compares generated against the vendored copy; the file is not pasted over `gui/src/index.css`. The embed `accent` is a name from the set's `brand` group (today `orange`), never a colour value | the source lives only in the agent-config repository, its npm package does not ship `tokens/`, so CI cannot read it; replacing the GUI palette is a visual change the step does not ask for; a name keeps colour values out of the URL | agent-config publishes the token file, or the owner wants the shared palette in the GUI |
 
 ## Phase 1 — A wrong account is never saved
 
@@ -127,10 +128,11 @@ saved.
       done: `tests/rebind-dialog.test.ts` › "followersNote: …", `tests/cli-e2e.test.ts` › "rebind: with two live sessions on the profile it names both before it runs"; GUI `src/v3/dialogs.test.tsx` › "a live switch names the sessions on the account that switch along…", `data.test.ts` › decisionFor alsoOn, `redesign/screens/screens.test.tsx` › "names the other live sessions…" (all seen red first).
       <!-- from: road-to-session-orchestration P4.8 -->
       <!-- adapted: warn part only; isolate-or-refuse stays parked (D3) -->
-- [ ] **3.4 Mask secrets in previews and notices.** Session previews and
+- [x] **3.4 Mask secrets in previews and notices.** Session previews and
       notification text pass through `redactSecrets` before they are shown or
       handed to the OS. verify: a token-shaped string in a transcript preview and
       in a notice renders masked.
+      done: `tests/session-preview.test.ts` › "a token-shaped string in a turn renders masked…" + "a token cut by the text cap…", `tests/notifications.test.ts` › "appendNotification masks…", `tests/os-notify.test.ts` › "a token-shaped string never reaches the OS", `gui/src/notifications.test.ts` › sendDesktopNotification masks; GUI mirror `gui/src/redact.ts` byte-compared in `tests/release-notes.test.ts` (all seen red first).
       <!-- from: road-to-host-signals-followups "Mask secrets in previews and notices" -->
       <!-- adapted: the "resume when a token is seen" gate dropped; the masking has no external dependency -->
 - [ ] **3.5 Quiet hours for notifications.** A time window in Settings during
@@ -180,10 +182,11 @@ saved.
       done: `gui/src-tauri/src/ac.rs` tests › `spawned_command_carries_the_profile_root_and_only_then`, `switching_profiles_restarts_the_owned_server_with_the_new_root`, `active_root_*` (seen red first, D14).
       <!-- from: road-to-deferred-followups P3.2 -->
       <!-- adapted: the blocker (agent-config flag) has shipped; the share-collision guard (P3.3) was cancelled by the owner on 2026-11-08 as covered by agent-config -->
-- [ ] **4.3 Shared design tokens, AS side.** A generated token file from the
+- [x] **4.3 Shared design tokens, AS side.** A generated token file from the
       shared source, a drift check in CI, and a bounded `accent` parameter on the
       embed URL built in `ac.rs` (D4). verify: the drift check fails on a changed
       token; the URL carries only an accent from the token set.
+      done: `tests/design-tokens.test.ts` (a changed token, a hand-edited or missing file fail `--check`; CI runs it in the gui job); `ac.rs` tests › `settings_url_carries_only_an_accent_from_the_token_set`, `accents_come_from_the_shared_token_set` (seen red, guard sensitivity checked, D15).
       <!-- from: road-to-deferred-followups P3b.1 -->
 
 ## Phase 5 — Approve from the keyboard

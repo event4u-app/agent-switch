@@ -514,9 +514,10 @@ export async function acRelease(): Promise<void> {
  *  webview's JS context. Emits `ac-settings-closed` to this window when the
  *  settings window is destroyed. Currently not UI-wired (owner decision
  *  2026-07-24: the browser flow is the Settings entry) — returns to the UI
- *  once agent-config ships its embed contract. */
-export async function acOpenSettingsWindow(theme: "light" | "dark", profile?: string): Promise<AcStatus> {
-  return invoke<AcStatus>("ac_open_settings_window", { theme, profile: profile ?? null });
+ *  once agent-config ships its embed contract. `accent` names a brand colour
+ *  of the shared token set; Rust drops any other value. */
+export async function acOpenSettingsWindow(theme: "light" | "dark", profile?: string, accent?: string): Promise<AcStatus> {
+  return invoke<AcStatus>("ac_open_settings_window", { theme, accent: accent ?? null, profile: profile ?? null });
 }
 
 /** The "Settings" entry: opens AC's own browser bootstrap URL, built and
