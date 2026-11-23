@@ -112,7 +112,7 @@ export function ApprovalCard({ row, onAllow, onAlways, onDeny }: { row: Extract<
       <div className="mt-2 break-all rounded-md border border-ac-line bg-ac-bg px-2.5 py-1.5 font-ac-mono text-xs text-ac-text">{row.summary || row.tool}</div>
       {onAllow && (
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
-          <Act kind="accent" kbd="↵" onClick={onAllow}>
+          <Act kind="accent" onClick={onAllow}>
             <Check /> Allow once
           </Act>
           {onAlways && (

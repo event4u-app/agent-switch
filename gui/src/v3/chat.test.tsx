@@ -33,6 +33,8 @@ describe("ChatTimeline", () => {
     const approve = vi.fn();
     const deny = vi.fn();
     render(<ChatTimeline events={events} on={{ approve, deny }} />);
+    // ↵ belongs to the composer; the card prints no key it does not answer to (7.6).
+    expect(screen.getByText("Allow once").closest("button")!.textContent).not.toContain("↵");
     fireEvent.click(screen.getByText("Allow once"));
     fireEvent.click(screen.getByText(/Always allow/));
     fireEvent.click(screen.getByText("Deny"));
