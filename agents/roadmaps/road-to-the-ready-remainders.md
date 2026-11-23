@@ -131,9 +131,10 @@ saved.
       verify: a test that a notice inside the window is recorded but not sent.
       <!-- from: road-to-session-orchestration P5.3 -->
       <!-- adapted: the KPI half ("measured against real tasks") needs real use and stays in the source file -->
-- [ ] **3.6 Show Claude Code routines.** Where the usage read returns `routines`
+- [x] **3.6 Show Claude Code routines.** Where the usage read returns `routines`
       (used/limit), the account's usage view shows it; absent means no row, never
       a zero. verify: a view test with and without `routines`.
+      done: `gui/src/v3/pages.test.tsx` › "Accounts page › routines" (with, with 0 used, without); `vm/build.test.ts` › "routines"; `v3/adapter/data.test.ts` › "an account's routines reach its Accounts-page row…". The CLI already carries `routines` in `status`/`limits --json`; no root change.
       <!-- from: road-to-agent-switch-gui-service, remainder (a) -->
 - [x] **3.7 Updates notify by default; self-install only when switched on.**
       A fresh install checks and notifies for every release kind but installs

@@ -104,6 +104,12 @@ describe("toV3Data", () => {
     })).toBe(true);
   });
 
+  it("an account's routines reach its Accounts-page row; absent stays absent", () => {
+    const d = toV3Data(vmWith([account("a", { routines: { used: 3, limit: 15 } }), account("b")], []), emptyFeeds(), env());
+    expect(d.accounts.find((a) => a.name === "a")?.routines).toEqual({ used: 3, limit: 15 });
+    expect(d.accounts.find((a) => a.name === "b")?.routines ?? null).toBeNull();
+  });
+
   it("a session in the user's own terminal opens as chat and keeps the view picked for it; a hosted one starts in the terminal", () => {
     const vm = vmWith([account("work")], [row("own"), row("h1")]);
     const feeds: V3Feeds = { ...emptyFeeds(), host: { mode: "persistent", hosted: [{ key: "claude/work/h1", provider: "claude", account: "work", sessionId: "h1", cwd: "/r", startedAt: "", alive: true, parked: false }] } };

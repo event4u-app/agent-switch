@@ -66,6 +66,8 @@ export interface Account {
   checkedAt: number | null;
   /** Codex banked resets; null = not reported. */
   resetCredits: number | null;
+  /** Claude Code routines today (used of limit); null/absent = the readout carries none. */
+  routines?: { used: number; limit: number } | null;
   /** Near-limit threshold the meters tick at: the protection threshold, or the
    *  CLI default (98) when protection was not read. */
   threshold: number;

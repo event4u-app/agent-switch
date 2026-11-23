@@ -34,6 +34,8 @@ export interface LimitAccount {
   /** Last reading; null = never read. */
   checkedMs: number | null;
   windows: LimitWindow[];
+  /** Claude Code routines today; null/absent = not reported, so no row is drawn. */
+  routines?: { used: number; limit: number } | null;
   /** Signed-in identity (email) and plan, as the CLI reports them; null = not read. */
   identity?: string | null;
   plan?: string | null;

@@ -114,6 +114,7 @@ function limitAccount(a: Account, now: number): LimitAccount | null {
     signIn: a.state === "signed-out" || a.state === "wrong-account",
     checkedMs: a.checkedAt,
     windows,
+    routines: a.routines ?? null,
     identity: a.identity,
     plan: a.plan,
   };

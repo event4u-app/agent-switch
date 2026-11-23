@@ -47,6 +47,22 @@ const usage = (utils: (number | null)[], capturedAt = NOW - 2 * MIN): UsageSnaps
   capturedAt: iso(capturedAt),
 });
 
+describe("routines", () => {
+  it("an account carries the readout's routines, and none when the readout has none", () => {
+    expect(accountFromProfile(row(), { ...usage([20]), routines: { used: 2, limit: 15 } }).routines).toEqual({ used: 2, limit: 15 });
+    expect(accountFromProfile(row(), usage([20])).routines).toBeNull();
+    expect(accountFromProfile(row(), null).routines).toBeNull();
+  });
+
+  it("a newer stored readout moves the routines with the bars", () => {
+    const a = accountFromProfile(row(), { ...usage([20], NOW - 30 * MIN), routines: { used: 1, limit: 15 } });
+    const [b] = withStoredUsage([a], new Map([["claude/work", { ...usage([30], NOW - MIN), routines: { used: 4, limit: 15 } }]]));
+    expect(b.routines).toEqual({ used: 4, limit: 15 });
+    const [c] = withStoredUsage([a], new Map([["claude/work", usage([30], NOW - MIN)]]));
+    expect(c.routines).toBeNull();
+  });
+});
+
 describe("withStoredUsage", () => {
   it("a newer stored readout moves windows, state and age; everything else stays", () => {
     const a = accountFromProfile(row(), usage([20], NOW - 30 * MIN), { auth: null });

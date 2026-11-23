@@ -119,6 +119,7 @@ export function accountFromProfile(row: ProfileRow, usage: UsageSnapshot | null 
     windows: usage ? usage.windows.map((w) => ({ ...w })) : [],
     checkedAt: parseTime(usage?.capturedAt),
     resetCredits: usage?.resetCredits ?? null,
+    routines: usage?.routines ?? null,
     threshold,
     protection,
     auth,
@@ -144,6 +145,7 @@ export function withStoredUsage(accounts: Account[], stored: ReadonlyMap<string,
       windows: snap.windows.map((w) => ({ ...w })),
       checkedAt: at,
       resetCredits: snap.resetCredits ?? null,
+      routines: snap.routines ?? null,
     };
   });
   // Nothing newer: the same list, so the tray does not redraw every minute.
