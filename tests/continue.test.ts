@@ -15,12 +15,14 @@ const me = { id: "cli-9", pid: process.pid, kind: "cli" };
 test("typeIntoHosted refuses a session Agent Switch does not host, and one someone else types into", { skip: TmuxHost.available() ? false : "tmux is not installed here" }, () => {
   const root = tmp();
   const bin = path.join(root, "echoer");
-  fs.writeFileSync(bin, '#!/bin/sh\nwhile IFS= read -r l; do echo "got: $l"; done\n', { mode: 0o755 });
+  fs.writeFileSync(bin, '#!/bin/sh\nwhile printf "> "; IFS= read -r l; do echo "got: $l"; done\n', { mode: 0o755 });
   const host = new TmuxHost(root, { socket: `as-test-continue-${process.pid}` });
   try {
     const leases = new InputLeases(root);
     assert.throws(() => typeIntoHosted(host, leases, "claude/work/not-hosted", me, CONTINUE_TEXT), /not hosted by Agent Switch/);
     const s = host.start({ provider: "claude", account: "work", configDir: "/cfg", cwd: root, bin });
+    // The program draws its input line before anything is typed into it.
+    for (let i = 0; i < 40 && !(host.capture(s.key) ?? "").includes(">"); i++) spawnSync("sleep", ["0.05"]);
     const other = { id: "app-1", pid: process.pid, kind: "app" };
     leases.acquire(s.key, other);
     assert.throws(() => typeIntoHosted(host, leases, s.key, me, CONTINUE_TEXT), /being typed into by app/);

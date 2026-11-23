@@ -12,7 +12,11 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { promptDraft } from "./prompt.js";
 import type { TmuxHost } from "./tmux-host.js";
+
+/** Typing into a hosted window did not happen; the message says why. */
+export class TypeFailed extends Error {}
 
 /** A holder that has not renewed for this long has lost the lease. */
 export const LEASE_TTL_MS = 15_000;
@@ -140,14 +144,30 @@ export class InputLeases {
     return true;
   }
 
-  /** Type `text` into a hosted session — only as the lease holder, only literally. */
+  /**
+   * Type `text` into a hosted session — only as the lease holder, only literally.
+   * With Enter, only into an empty input line: Enter submits whatever is there,
+   * so a draft the user left is never sent along. Every tmux call that fails is
+   * reported (TypeFailed), and nothing follows it.
+   */
   type(host: TmuxHost, key: string, holder: Holder, text: string, opts: { enter?: boolean } = {}): void {
     const cur = this.read(key);
     if (!cur || cur.holder.id !== holder.id || this.stale(cur)) throw new NotHolder(`${holder.id} does not hold the input lease for ${key}`);
     const window = host.windowOf(key);
     if (!window) throw new Error(`no hosted session ${key}`);
+    const tmux = (args: string[]) => {
+      const r = host.run(args);
+      if (!r.ok) throw new TypeFailed(`typing into ${key} failed: ${r.err.trim() || "tmux refused"}`);
+      return r.out;
+    };
+    if (opts.enter) {
+      // -e keeps the styling, which tells a dimmed placeholder from typed text.
+      const input = promptDraft(tmux(["capture-pane", "-p", "-e", "-J", "-t", window]));
+      if (!input.found) throw new TypeFailed(`nothing was sent: ${key} shows no input line to type into right now; type it in its window`);
+      if (input.draft) throw new TypeFailed(`nothing was sent: your draft is in the way in ${key} ("${input.draft.length > 40 ? `${input.draft.slice(0, 39)}…` : input.draft}"); send or clear it there first`);
+    }
     // -l: the text is typed as-is, never read as tmux key names.
-    if (text) host.run(["send-keys", "-t", window, "-l", text]);
-    if (opts.enter) host.run(["send-keys", "-t", window, "Enter"]);
+    if (text) tmux(["send-keys", "-t", window, "-l", text]);
+    if (opts.enter) tmux(["send-keys", "-t", window, "Enter"]);
   }
 }

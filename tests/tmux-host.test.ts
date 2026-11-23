@@ -192,10 +192,12 @@ test("CLI: compact reaches a hosted session through the lease; host end asks fir
   fs.mkdirSync(cfg, { recursive: true });
   fs.writeFileSync(path.join(cfg, "auth.json"), "{}");
   const bin = path.join(home, "echoer");
-  fs.writeFileSync(bin, '#!/bin/sh\nwhile IFS= read -r l; do echo "got: $l"; done\n', { mode: 0o755 });
+  fs.writeFileSync(bin, '#!/bin/sh\nwhile printf "> "; IFS= read -r l; do echo "got: $l"; done\n', { mode: 0o755 });
   const socket = `as-test-cli-${process.pid}`;
   const host = new TmuxHost(home, { socket });
   const s = host.start({ provider: "codex", account: "work", configDir: cfg, cwd: home, bin });
+  // compact types only into an empty input line: wait until the program draws it.
+  for (let i = 0; i < 40 && !(host.capture(s.key) ?? "").includes(">"); i++) run("sleep", ["0.05"]);
   try {
     const env = { ...process.env, AGENT_SWITCH_HOME: home, AGENT_SWITCH_HOST_SOCKET: socket };
     execFileSync("node", [CLI, "compact", s.key], { env, encoding: "utf8" });
