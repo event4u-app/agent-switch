@@ -95,6 +95,13 @@ canvas shows the result, because it renders the real app.
 - [x] 8.7 Owner inbox of 2026-11-23 triaged: three proposal roadmaps under `later/` (`road-to-a-reading-every-pick-can-trust`, `road-to-sessions-that-hold-wherever-they-run`, `road-to-skins-that-change-the-look-not-the-meaning`), each with its resume condition (the owner's answers); the inbox round archived as `agents/tmp.old/inbox-2026-11-d`.
 - [x] 8.8 The near-limit sheet (owner screenshot in that round): the suggested account is a real account and is the one preselected; the footer names what happens when sessions go to different accounts; the sheet does not call 60 % "near limit" below the account's protect threshold.
 
+## Phase 9 — Arena round 3 (6 DONE, 4 NOT DONE; reports in the session scratchpad `arena/r3/`) — the last round the owner asked for
+
+- [x] 9.0 `--since` and `--dir` take their values; a test fails when any command reads a flag as a string the parser does not give a value (r3 git blocker 1, code blocker 3; `sign-in-browser --dir` was broken since #153).
+- [ ] 9.1 Git integrity: whole-file stage / unstage / discard use whole-file git commands (deleted and new files keep their meaning); binary, large and symlinked files can be acted on; a file action applies to what the page showed (hash bound, refused when changed); a base that exists only locally is refused before any push; the confirmed PR binds the push URL and the PR repository; the review poll waits for the previous read; Clean up says what it did and checks for live sessions.
+- [ ] 9.2 Concurrency: adoption holds an OS-level lock through registration; timeline polls never roll back or drop events between pages; subagent reads stay confined even when a directory is swapped after validation; a CI item never falls back to another PR.
+- [ ] 9.3 Chat and engine: lines Claude Code adds itself (task notifications, compaction summaries) are not drawn as the user's prompts; the chat sends while the engine is stopped; load more shows what it loaded; the draft check reads multi-line drafts and an open permission menu right; the attached tmux view shows no other sessions' status and keeps the agent's own Ctrl-B; the design fixture shows the real hosted menu and the decision sheet of the subject it was opened for.
+
 ## Follow-ups (not in this roadmap)
 
 `road-to-a-v3-window-in-two-languages` (D2) and `road-to-the-workbench-second-pass`
