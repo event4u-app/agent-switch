@@ -1,5 +1,4 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import stored from "../../tests/fixtures/upgrade-2.1.0/gui-local-storage.json?raw";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   getPetBubbleDuration,
@@ -20,7 +19,7 @@ import {
 
 // The desktop pet's settings as 2.1.0's window left them in localStorage, every
 // value away from its default so a reader that falls back to one is caught.
-const STORED: Record<string, string> = JSON.parse(readFileSync(resolve(__dirname, "../../tests/fixtures/upgrade-2.1.0/gui-local-storage.json"), "utf8"));
+const STORED: Record<string, string> = JSON.parse(stored);
 
 describe("the desktop pet's settings from 2.1.0", () => {
   beforeEach(() => {
