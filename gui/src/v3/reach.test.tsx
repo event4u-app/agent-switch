@@ -11,9 +11,9 @@ import { installMemoryStorage } from "../redesign/engines/test-storage.js";
 installMemoryStorage();
 
 afterEach(cleanup);
-function open() {
+function open(over: Partial<ReturnType<typeof data>> = {}) {
   const act = vi.fn();
-  render(<V3Window data={data()} slots={slots} act={act} />);
+  render(<V3Window data={{ ...data(), ...over }} slots={slots} act={act} />);
   let clicks = 0;
   const click = (el: Element) => (clicks++, fireEvent.click(el));
   return { act, click, clicks: () => clicks };
@@ -51,7 +51,8 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
   });
 
   it("Near-limit decision: Needs-you Decide opens the same sheet, never automatic", () => {
-    const w = open();
+    // Deciding answers through the engine, so it runs while the engine is up.
+    const w = open({ health: { state: "ready" } });
     expect(screen.queryByText("Nothing changes until you choose.", { exact: false })).toBeNull();
     w.click(screen.getByText("Decide"));
     expect(screen.getByText(/Nothing changes until you choose/)).toBeTruthy();
