@@ -91,6 +91,7 @@ export function drawsRow(e: AsEvent): boolean {
     case "question.requested":
     case "plan":
     case "error":
+    case "notice":
       return true;
     case "tool.started":
       return !DRAWN_ELSEWHERE.has(e.name);
@@ -194,6 +195,7 @@ export async function cmdTimeline(arg: string | undefined, flags: Record<string,
   for (const e of p.events) {
     if (e.t === "message") console.log(`${e.role === "user" ? "›" : " "} ${e.text.split("\n")[0]}`);
     else if (e.t === "tool.started") console.log(`  ${e.name} ${e.summary}`);
+    else if (e.t === "notice") console.log(`  · ${e.text}`);
   }
 }
 

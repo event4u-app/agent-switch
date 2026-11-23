@@ -263,6 +263,15 @@ function ChatRowView({ row, on, agent }: { row: ChatRow; on: ChatHandlers; agent
           <TriangleAlert className="size-3.5" /> {row.message}
         </div>
       );
+    case "notice":
+      return (
+        <div data-row="notice" className="flex items-center gap-2 text-[11px] text-ac-faint" title={row.kind === "task" ? "Added by the agent's program when a background task finished; not a message of yours" : "Added by the agent's program: the earlier conversation was summarized"}>
+          <span className="h-px flex-1 bg-ac-line" />
+          {row.kind === "task" ? <Check className="size-3" /> : <ListChecks className="size-3" />}
+          <span className="max-w-[70%] truncate">{row.text}</span>
+          <span className="h-px flex-1 bg-ac-line" />
+        </div>
+      );
   }
 }
 

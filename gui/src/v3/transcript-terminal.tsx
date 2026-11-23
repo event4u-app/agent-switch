@@ -81,6 +81,12 @@ function Row({ r }: { r: ChatRow }) {
           {r.message}
         </div>
       );
+    case "notice":
+      return (
+        <div className="whitespace-pre-wrap" style={DIM}>
+          {`  ✻ ${r.text}`}
+        </div>
+      );
   }
 }
 

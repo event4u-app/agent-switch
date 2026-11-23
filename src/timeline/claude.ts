@@ -97,10 +97,28 @@ export function notAPrompt(text: string): string | null {
   return null;
 }
 
+const tag = (text: string, name: string): string => (new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(text)?.[1] ?? "").trim();
+
+/** A user-role line Claude Code adds itself, by its own marks (not by its text): a background task's
+ *  notification or the compaction summary. A prompt sent through the SDK (`promptSource: "sdk"`) is
+ *  the user's own. Null for a real prompt. Pure. */
+export function injectedNotice(e: Json, text: string): { kind: "task" | "compacted"; text: string } | null {
+  if (e.isCompactSummary === true || e.isVisibleInTranscriptOnly === true) return { kind: "compacted", text: "Conversation compacted here" };
+  if (str(obj(e.origin).kind) === "task-notification" || str(e.promptSource) === "system") {
+    const status = tag(text, "status");
+    return { kind: "task", text: tag(text, "summary") || `Background task ${status || "finished"}` };
+  }
+  return null;
+}
+
 function userLine(e: Json, st: ClaudeState): AsEvent[] {
   const msg = obj(e.message);
   const out: AsEvent[] = [];
   const id = str(e.uuid) || str(msg.id) || `u${st.tools.size}`;
+  const hasResult = arr(msg.content).some((b) => obj(b).type === "tool_result");
+  const injected = hasResult ? null : injectedNotice(e, typeof msg.content === "string" ? msg.content : arr(msg.content).map(obj).filter((b) => b.type === "text").map((b) => str(b.text)).join("\n"));
+  // The agent answers a notification in a turn of its own; a compaction starts none.
+  if (injected) return [...(injected.kind === "task" ? [{ t: "turn" as const, id, at: str(e.timestamp) || null }] : []), { t: "notice", id, ...injected }];
   const textOf = typeof msg.content === "string" ? msg.content : arr(msg.content).map(obj).filter((b) => b.type === "text").map((b) => str(b.text)).join("\n");
   const own = textOf ? notAPrompt(textOf) : null;
   if (own && (typeof msg.content === "string" || !arr(msg.content).some((b) => obj(b).type === "tool_result"))) return [{ t: "unknown", kind: own }];

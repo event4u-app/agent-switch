@@ -26,6 +26,21 @@ describe("ChatTimeline", () => {
     expect(screen.getAllByText("beta").filter((el) => el.tagName === "SPAN")).toHaveLength(1);
   });
 
+  it("a background task's notification and the compaction are small system rows, not your bubbles (arena r3 03 #1)", () => {
+    const events = [
+      { t: "turn", id: "u1", at: null },
+      { t: "message", id: "u1", role: "user", text: "Run the audit", images: 0 },
+      { t: "turn", id: "u2", at: null },
+      { t: "notice", id: "u2", kind: "task", text: 'Agent "Audit" finished' },
+      { t: "notice", id: "u3", kind: "compacted", text: "Conversation compacted here" },
+    ] as AsEvent[];
+    render(<ChatTimeline events={events} />);
+    const task = screen.getByText('Agent "Audit" finished');
+    expect(task.closest("[data-row=notice]")).toBeTruthy();
+    expect(screen.getByText("Conversation compacted here").closest("[data-row=notice]")).toBeTruthy();
+    expect(document.querySelectorAll("[data-row=notice]")).toHaveLength(2);
+  });
+
   it("a running Task row asks for its worktree by the Task call's id, before the subagent's id is known (arena r2 04 F4)", () => {
     const events = [{ t: "subagent.started", id: "toolu_1", type: "general-purpose", description: "Phase 1" }] as AsEvent[];
     const worktreeOf = vi.fn((id: string) => (id === "toolu_1" ? "agent-a7" : null));

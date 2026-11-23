@@ -46,6 +46,9 @@ export type AsEvent =
   | { t: "limits"; status: string; resetsAt: string | null }
   | { t: "turn.end"; ok: boolean; durationMs: number | null; costUsd: number | null }
   | { t: "error"; message: string }
+  /** A line the agent's program adds itself in the user role (a background task finished, the
+   *  conversation was compacted): drawn as a small system row, never as a prompt. */
+  | { t: "notice"; id: string; kind: "task" | "compacted"; text: string }
   | { t: "unknown"; kind: string };
 
 export type AsEventType = AsEvent["t"];
