@@ -245,6 +245,17 @@ describe("Session sheet", () => {
     expect(cancelArm).toHaveBeenCalledWith("claude:agent-config");
   });
 
+  it("opens for a session the list does not hold when the overlay brings it (Codex from the v3 window)", () => {
+    const vm = fixture();
+    const base = vm.sessions.find((x) => x.id === "claude:old")!;
+    const codex = { ...base, id: "codex:019a", tool: "codex" as const, title: "Codex task" };
+    mount(vm, { overlay: { kind: "session", id: "codex:019a", session: codex }, act: { handoffBrief: vi.fn() } });
+    expect(screen.getByText(/Codex task/)).toBeTruthy();
+    cleanup();
+    mount(vm, { overlay: { kind: "session", id: "codex:019a" } });
+    expect(screen.queryByText(/Codex task/)).toBeNull();
+  });
+
   it("takes a Claude Desktop session over to another account's Desktop window; trash, live switch and hand off stay out", () => {
     const vm = fixture();
     vm.sessions = vm.sessions.map((x) => (x.id === "claude:old" ? { ...x, surface: "desktop-app" as const } : x));

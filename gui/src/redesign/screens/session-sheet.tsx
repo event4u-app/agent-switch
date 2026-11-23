@@ -55,7 +55,7 @@ export function restoreSessionFrom(s: Store, session: Session) {
 function trash(s: Store, session: Session) {
   s.close();
   s.act
-    .trashSession?.(session.id)
+    .trashSession?.(session.id, session)
     .then(({ trashId }) => {
       if (trashId) trashHandles.set(session.id, trashId);
       const canUndo = session.tool === "codex" || !!trashId;
@@ -132,9 +132,10 @@ function Preview({ s, session }: { s: Store; session: Session }) {
 }
 
 /** Bundle `$P`, sheet 500. */
-export function SessionSheet({ id }: { id: string }) {
+export function SessionSheet({ id, given }: { id: string; given?: Session }) {
   const s = useAS();
-  const n = s.sessions.find((x) => x.id === id);
+  // The list holds Claude sessions only; a Codex session from the v3 window comes with the overlay.
+  const n = s.sessions.find((x) => x.id === id) ?? (given?.id === id ? given : undefined);
   const sameTool = n ? rankAccounts(s.accounts, n.tool, s.now).filter((r) => r.account.id !== n.accountId) : [];
   const otherTool = n
     ? s.accounts.filter((a) => a.tool !== n.tool && a.tool !== "gemini" && a.state !== "signed-out" && a.state !== "wrong-account")
@@ -174,7 +175,7 @@ export function SessionSheet({ id }: { id: string }) {
 
   const loadBrief = async (to: string) => {
     if (brief?.to === to) return brief;
-    const b = await s.act.handoffBrief!(n.id, to);
+    const b = await s.act.handoffBrief!(n.id, to, n);
     const next = { to, ...b };
     setBrief(next);
     return next;

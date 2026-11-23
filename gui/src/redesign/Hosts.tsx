@@ -81,7 +81,7 @@ export function OverlayHost() {
         onConfirm={() => void s.act.quit?.().catch(() => {})}
       />
     );
-  if (o.kind === "session") return <SessionSheet key={o.id} id={o.id} />;
+  if (o.kind === "session") return <SessionSheet key={o.id} id={o.id} given={o.session} />;
   if (o.kind === "start") return <StartSessionDialog cwd={o.cwd} tool={o.tool} accountId={o.accountId} choice={o.choice} />;
   if (o.kind === "limit") return <NearLimitSheet key={o.attentionId} attentionId={o.attentionId} />;
   if (o.kind === "terminal")
