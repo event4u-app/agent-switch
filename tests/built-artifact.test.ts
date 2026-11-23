@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { spawnSync } from "node:child_process";
 import { Readable } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -177,4 +178,62 @@ test("dist/protection.js + dist/commands/usage.js: wait --all previews, then wri
   assert.equal(JSON.parse(fs.readFileSync(shared, "utf8")).theme, "dark");
   const back = PROT.applyWait(PROT.waitTargets([{ name: "wa", configDir: path.join(ROOT, "claude", "wa", "config") }]), "default");
   assert.ok(back.every((r: any) => r.ok));
+});
+
+// The shipped host: start, respawn, view, capture, end on a private tmux server.
+const HOST = await load("host/tmux-host.js");
+const tmuxGate = { skip: !built ? gate.skip : WIN || !HOST.TmuxHost?.available() ? "tmux is not available here" : false };
+
+test("built host: start, respawn on another account, view, capture and end a hosted session", tmuxGate, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "asw-built-host-"));
+  const out = path.join(root, "out");
+  fs.mkdirSync(out);
+  const bin = path.join(root, "fake-agent");
+  fs.writeFileSync(bin, `#!/bin/sh\necho "args: $*" > "$AS_STUB_OUT/$$.txt"\necho ready\nwhile IFS= read -r line; do echo "got: $line"; done\n`, { mode: 0o755 });
+  const socket = `as-built-${process.pid}`;
+  const host = new HOST.TmuxHost(root, { socket });
+  const until = (pred: () => boolean) => {
+    for (const end = Date.now() + 3000; Date.now() < end; ) {
+      if (pred()) return true;
+      spawnSync("sleep", ["0.05"]);
+    }
+    return pred();
+  };
+  try {
+    const s = host.start({ provider: "claude", account: "work", configDir: "/cfg/work", cwd: root, bin, env: { AS_STUB_OUT: out } }, "h");
+    assert.ok(until(() => fs.readdirSync(out).length === 1), "the program started");
+    const moved = host.respawn(s.key, { provider: "claude", account: "side", configDir: "/cfg/side", cwd: root, bin, args: ["--resume", s.sessionId], env: { AS_STUB_OUT: out } }, "h");
+    assert.equal(moved.key, `claude/side/${s.sessionId}`);
+    assert.equal(moved.window, s.window, "same window");
+    assert.deepEqual(host.list().map((r: { key: string }) => r.key), [moved.key]);
+    assert.ok(until(() => /ready/.test(host.capture(moved.key) ?? "")), "its screen is readable");
+    assert.deepEqual(host.view(moved.key, "app1").slice(-3), ["attach-session", "-t", "=view-app1"]);
+    assert.throws(() => host.start({ provider: "x;y", account: "work", configDir: "/cfg", cwd: root, bin }));
+    host.end(moved.key);
+    assert.ok(until(() => host.list().length === 0), "ended");
+  } finally {
+    host.killServer();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("built host: a hosted Codex window pipes its output to the status reader, and park keeps the window", tmuxGate, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "asw-built-cx-"));
+  const bin = path.join(root, "fake-codex");
+  fs.writeFileSync(bin, `#!/bin/sh\nprintf '\\033]7501;state=working:app=codex\\007'\nwhile IFS= read -r line; do echo "got: $line"; done\n`, { mode: 0o755 });
+  const host = new HOST.TmuxHost(root, { socket: `as-built-cx-${process.pid}` });
+  const cli = `'${process.execPath}' '${path.join(DIST, "index.js")}'`;
+  try {
+    const s = host.start({ provider: "codex", account: "work", configDir: path.join(root, "cfg"), cwd: root, bin }, cli);
+    const file = PS.programStatusFile(root, s.sessionId);
+    const end = Date.now() + 5000;
+    while (Date.now() < end && !fs.existsSync(file)) spawnSync("sleep", ["0.05"]);
+    assert.equal(JSON.parse(fs.readFileSync(file, "utf8")).state, "working", "the report reached the state file");
+    const parked = host.park(s.key, [bin]);
+    assert.equal(parked.window, s.window);
+    assert.equal(fs.existsSync(file), false, "parking drops the old report");
+  } finally {
+    host.killServer();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
