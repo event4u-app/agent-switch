@@ -27,6 +27,8 @@ export interface GitFacts {
   remote: string | null;
   /** A linked worktree (not the main checkout). */
   worktree: boolean;
+  /** The main checkout's root, the same for every worktree of one repository. */
+  repoRoot: string;
 }
 
 export const GIT_TIMEOUT_MS = 1000;
@@ -81,6 +83,14 @@ export function canonical(p: string): string {
   }
 }
 
+/** The main checkout owns `<root>/.git`. A bare repository or a separate git dir has no
+ *  such checkout: the main checkout is then its own toplevel, and every linked
+ *  worktree shares the common dir, which keeps them together. Pure. */
+export function repoRootOf(commonDir: string, toplevel: string, worktree: boolean): string {
+  if (path.basename(commonDir) === ".git") return path.dirname(commonDir);
+  return worktree ? commonDir : toplevel;
+}
+
 export function gitFacts(cwd: string, timeoutMs = GIT_TIMEOUT_MS): GitFacts | null {
   if (!cwd || !fs.existsSync(cwd)) return null;
   const rp = git(cwd, ["rev-parse", "--show-toplevel", "--absolute-git-dir", "--git-common-dir"], timeoutMs);
@@ -104,5 +114,6 @@ export function gitFacts(cwd: string, timeoutMs = GIT_TIMEOUT_MS): GitFacts | nu
       remoteCache.set(toplevel, { key, remote });
     }
   }
-  return { toplevel, ...s, remote, worktree: canonical(gitDir) !== commonDir };
+  const worktree = canonical(gitDir) !== commonDir;
+  return { toplevel, ...s, remote, worktree, repoRoot: repoRootOf(commonDir, toplevel, worktree) };
 }
