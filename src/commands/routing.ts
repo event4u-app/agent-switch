@@ -44,7 +44,8 @@ import { askLines, canAsk, parseChoice } from "../unbound-ask.js";
 import * as readline from "node:readline";
 import { GUARD_POLICIES, GUARD_REFUSED_EXIT, GuardPolicy, OVERRIDE_ENV, isGuardPolicy } from "../single-load.js";
 import { mappingRows, normalizeRemoteKey, remoteRows, removeMapping, removeRemoteMapping, resolveMapping, setMapping, setPaused, setRemoteMapping, normalizePath } from "../mappings.js";
-import { liveSessionPids } from "../api.js";
+import { liveSessionPids, readProfileCredential } from "../api.js";
+import { credentialPlan } from "../balance.js";
 import { cachedUsage, checkSingleLoad, launch, logActivity, parseMemberArg, syncClaudeProfile, tildePath } from "./shared.js";
 
 /** Profile names are validated by `profileDir`, which exits on a bad name —
@@ -75,6 +76,11 @@ export function resolveDir(
     if (!seen.has(n)) seen.set(n, identity(providerId, n));
     return seen.get(n) ?? null;
   };
+  const plans = new Map<string, unknown>();
+  const planOf = (n: string) => {
+    if (!plans.has(n)) plans.set(n, profileExistsSafe(providerId, n) ? credentialPlan(readProfileCredential(configDir(providerId, n))) : undefined);
+    return plans.get(n);
+  };
   const picked = resolveForDir({
     providerId,
     mapping: plain ? null : resolveMapping(cwd, providerId),
@@ -88,6 +94,9 @@ export function resolveDir(
     disabled: (n) => isDisabled(providerId, n) || exclude.includes(n),
     sharesDefaultLogin: (n) => profileExistsSafe(providerId, n) && sharesDefaultLogin(providerId, n),
     account: (n) => (profileExistsSafe(providerId, n) ? accountKey(providerId, n) : null),
+    // Read only for an account the balancer is about to weigh: on macOS each
+    // read is a keychain lookup, and this is every wrapped start's hot path.
+    ...(providerId === "claude" ? { plan: (n: string) => planOf(n) } : {}),
     pool: (id) => findPool(id),
     usage: (n) => cachedUsage(providerId, n),
     // Only providers that write a live-session signal can report one. A start

@@ -74,6 +74,11 @@ An account is never picked when:
 - it is disabled, signed out, or shares its login with your default install
   (see [Keep the login you already have](/agent-switch/start-here/quick-start/#keep-the-login-you-already-have));
 - its usage is unknown. Unknown is never treated as free.
+- it is a Claude account that is not on a personal **Pro** or **Max** plan
+  (the `subscriptionType` in its stored login). A Team or Enterprise seat, any
+  other plan and a login without the field are not balanced; the reason shows
+  in `dir --json` and in the app wherever the pick is explained. A folder rule
+  to that account, or making it your preferred account, still uses it.
 
 ## Fresh numbers matter
 

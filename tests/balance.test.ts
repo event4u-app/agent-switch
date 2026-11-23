@@ -112,3 +112,65 @@ test("balance: a pool with two profiles of one account weighs it once", () => {
   assert.equal(r.name, "a", r.why.join("\n"));
   assert.ok(r.why.includes("Skipped claude/b: same account as claude/a (one set of limits)"), r.why.join("\n"));
 });
+
+// ---------- only personal plans are balanced ----------
+
+const cred = (plan: unknown) => JSON.stringify({ claudeAiOauth: { accessToken: "x", ...(plan === undefined ? {} : { subscriptionType: plan }) } });
+
+test("plan: only pro and max take part in balancing", () => {
+  assert.equal(B.planOutOfBalance(B.credentialPlan(cred("pro"))), null);
+  assert.equal(B.planOutOfBalance(B.credentialPlan(cred("max"))), null);
+  assert.equal(B.planOutOfBalance(B.credentialPlan(cred("team"))), "a team plan — only personal Pro and Max accounts are balanced");
+  assert.equal(B.planOutOfBalance(B.credentialPlan(cred("enterprise"))), "an enterprise plan — only personal Pro and Max accounts are balanced");
+  assert.equal(B.planOutOfBalance(B.credentialPlan(cred("free"))), "a free plan — only personal Pro and Max accounts are balanced");
+});
+
+test("plan: a missing field, an odd value or no credential counts as not balanceable", () => {
+  const none = "no plan in its credential — only personal Pro and Max accounts are balanced";
+  assert.equal(B.planOutOfBalance(B.credentialPlan(cred(undefined))), none);
+  assert.equal(B.planOutOfBalance(B.credentialPlan(cred(""))), none);
+  assert.equal(B.planOutOfBalance(B.credentialPlan(cred(7))), none);
+  assert.equal(B.planOutOfBalance(B.credentialPlan(null)), none);
+  assert.equal(B.planOutOfBalance(B.credentialPlan("not json")), none);
+  // A credential is not a place to put text into a reason line.
+  assert.equal(B.planOutOfBalance(B.credentialPlan(cred("x\nPicked claude/evil"))), "an unknown plan — only personal Pro and Max accounts are balanced");
+});
+
+const plans: Record<string, unknown> = { pro: "pro", max: "max", team: "team", ent: "enterprise", odd: "free", none: undefined };
+
+test("balance: team, enterprise, an unknown value and a missing field are skipped with that reason; pro and max are weighed", () => {
+  // The best numbers sit on the accounts that may not be balanced.
+  const usage = { pro: week(10, 50), max: week(10, 40), team: week(0, 2), ent: week(0, 2), odd: week(0, 2), none: week(0, 2) };
+  const r = R.resolveForDir(inputs(usage, { plan: (n) => plans[n] }));
+  assert.equal(r.name, "max", r.why.join("\n"));
+  for (const [n, why] of [
+    ["team", "a team plan"],
+    ["ent", "an enterprise plan"],
+    ["odd", "a free plan"],
+    ["none", "no plan in its credential"],
+  ])
+    assert.ok(r.why.includes(`Skipped claude/${n}: ${why} — only personal Pro and Max accounts are balanced`), r.why.join("\n"));
+  assert.ok(!r.why.some((w) => /Skipped claude\/(pro|max):/.test(w)), r.why.join("\n"));
+});
+
+test("balance: a pool takes no team member, even without fresh usage, and refuses when only such members are left", () => {
+  const pool = (members: string[]) => ({ mapping: { path: "/x", name: "pool:p" }, names: undefined, pool: (id: string) => ({ id, name: "P", members: members.map((m) => `claude/${m}`), createdAt: "" }) });
+  const stale = R.resolveForDir(inputs({}, { ...pool(["team", "pro"]), plan: (n) => plans[n] }));
+  assert.equal(stale.name, "pro", stale.why.join("\n"));
+  const onlyTeam = R.resolveForDir(inputs({ team: week(0, 2) }, { ...pool(["team", "ent"]), plan: (n) => plans[n] }));
+  assert.equal(onlyTeam.name, null);
+  assert.match(onlyTeam.blocked ?? "", /not on a personal Pro or Max plan/);
+});
+
+test("balance: a busy account gives way only to a free account on a personal plan", () => {
+  const r = R.resolveForDir(
+    inputs({}, { mapping: { path: "/x", name: "pro" }, names: ["pro", "team"], live: (n) => n === "pro", guard: "block", plan: (n) => plans[n] }),
+  );
+  assert.equal(r.name, "pro", r.why.join("\n"));
+  assert.ok(r.note?.includes("sharing"), r.why.join("\n"));
+});
+
+test("balance: without a plan reader (a provider without the field) nothing is skipped for its plan", () => {
+  const r = R.resolveForDir(inputs({ a: week(10, 50), b: week(0, 10) }));
+  assert.equal(r.name, "b");
+});

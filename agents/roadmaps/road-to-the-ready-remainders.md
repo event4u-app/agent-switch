@@ -52,6 +52,7 @@ saved.
 | D10 | `strategy ask` asks only with a terminal on stdin and stderr; anywhere else (pipe, script, `exec`, the GUI's own calls) the start takes the preferred account, else the balanced pick; an answer that names no account starts nothing (exit 86) | the step forbids a prompt in a non-interactive run but names no fallback; the preferred account is the one the user set themselves, and starting nothing on a bad answer is the conservative reading | the owner wants `ask` to refuse non-interactive starts instead |
 | D11 | Without a reset time a window is weighed over its own length (5 h, 7 d, 30 d; 30 d when the length is unknown), and the reason says "at least … %/h" | a window resets at the latest one length from now, so that is the only bound the data gives; a week for a 5 h window was a guess, not a bound | the usage read always carries a reset time |
 | D12 | "Counted once per org": Claude profiles whose `.claude.json` names the same email AND the same `organizationUuid` are weighed once (the preferred one, else the first); a missing org never folds two profiles together; other providers are not folded | two profiles of one account share one set of limits; folding on email alone would merge two orgs, which the step forbids | providers expose an org id for Codex / agy |
+| D13 | The plan allowlist binds balancing only — balanced plain starts, pool picks (fresh or not) and the free account a busy one gives way to; a folder rule to one account, the preferred account (fallback, `strategy default`/`fill`) and the `ask` choices still use a Team seat. It applies to Claude only (Codex and agy credentials carry no `subscriptionType`), and the credential is read only for an account that is about to be weighed | the owner's rule is about balancing, and the user's own explicit choice is not a balance; reading every keychain item on each wrapped start would slow the shell hot path | the owner wants Team seats refused outright |
 
 ## Phase 1 — A wrong account is never saved
 
@@ -148,13 +149,14 @@ saved.
       done: `gui/src/redesign/engines/engines.test.ts` › "with no stored kinds setting it only announces, for every kind", "installs a kind the user opted into, and keeps a kinds value they set themselves".
       <!-- from: owner decision 2026-11-08 (triage follow-up): `gui/src/redesign/engines/updates.ts:69-72` installs all kinds by default, against `settings-store.ts:140` "NOT silent self-install" and the native-updater council's "Notify is the ceiling"; also covers native-updater P3.3 and its AC "defaults to Notify" (merged 2026-11-08) -->
 
-- [ ] **3.8 Only personal plans are balanced.** An account takes part in balancing
+- [x] **3.8 Only personal plans are balanced.** An account takes part in balancing
       (starts and pools) only when its stored credential's `subscriptionType` is
       `pro` or `max`; Team, Enterprise, any other value and a missing field count as
       not balanceable, and every surface that shows a pick names that reason. The
       field is already read for the fingerprint (`src/rebind.ts:411-413`); the
       balancer (`src/balance.ts`) does not use it yet. verify: `balance` tests for
       pro, max, team, enterprise, an unknown value and a missing field, seen red first.
+      done: `tests/balance.test.ts` › "plan: …", "balance: team, enterprise, an unknown value and a missing field are skipped…", pool and give-way cases (seen red first); `tests/cli-e2e.test.ts` › "dir --json: a team account is not balanced, and the reason is in the why-lines" (D13).
       <!-- from: road-to-session-orchestration P6.1 -->
       <!-- adapted: allowlist instead of a team-credential probe; owner decision 2026-11-08 — a credential without the field drops out of balancing -->
 

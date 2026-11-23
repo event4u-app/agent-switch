@@ -27,6 +27,11 @@ function seed(home: string, provider: string, name: string): void {
   fs.writeFileSync(path.join(dir, provider === "claude" ? ".claude.json" : "auth.json"), "{}");
 }
 
+/** A Claude credential on `plan` — only Pro and Max accounts are balanced. */
+function onPlan(home: string, name: string, plan = "max"): void {
+  fs.writeFileSync(path.join(home, "claude", name, "config", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "t", subscriptionType: plan } }));
+}
+
 test("flag-first `remove --provider codex opfer` removes opfer, NOT codex (F1 repro)", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-e2e-"));
   try {
@@ -1220,6 +1225,7 @@ test("guard: a busy active profile moves `dir --guard` onto a free signed-in one
       path.join(home, "claude", "spare", "config", ".claude.json"),
       JSON.stringify({ oauthAccount: { emailAddress: "spare@example.com" } }),
     );
+    onPlan(home, "spare");
     run(home, ["guard", "block"]);
     run(home, ["use", "work"]);
     seedLiveSession(home, "work", process.pid);
@@ -1527,6 +1533,7 @@ test("pools: dir --json resolves a pool rule to the freshest member and explains
       const cfg = path.join(home, "claude", n, "config");
       fs.mkdirSync(cfg, { recursive: true });
       fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: `${n}@example.com` } }));
+      onPlan(home, n);
     }
     const sample = (util: number) => ({ samples: [{ at: new Date(Date.now() - 60_000).toISOString(), windows: [{ key: "five_hour", utilization: util }] }] });
     fs.writeFileSync(path.join(home, "claude", "a", "usage-history.json"), JSON.stringify(sample(90)));
@@ -2087,6 +2094,7 @@ test("dir --plain: ignores folder rules and balances by what each account would 
       const cfg = path.join(home, "claude", n, "config");
       fs.mkdirSync(cfg, { recursive: true });
       fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: `${n}@example.com` } }));
+      onPlan(home, n, n === "a" ? "pro" : "max");
     }
     const sample = (util: number) => ({ samples: [{ at: new Date(Date.now() - 60_000).toISOString(), windows: [{ key: "seven_day", utilization: util }] }] });
     fs.writeFileSync(path.join(home, "claude", "a", "usage-history.json"), JSON.stringify(sample(70)));
@@ -2433,6 +2441,32 @@ test("dir: a folder bound to a disabled account is refused with exit 86, never s
   }
 });
 
+test("dir --json: a team account is not balanced, and the reason is in the why-lines", gate, () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-plan-dir-"));
+  const cwd = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-plan-cwd-")));
+  try {
+    const now = Date.now();
+    for (const [name, util, plan] of [["mine", 60, "pro"], ["seat", 0, "team"], ["bare", 0, null]] as const) {
+      const cfg = path.join(home, "claude", name, "config");
+      fs.mkdirSync(cfg, { recursive: true });
+      fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: `${name}@example.com` } }));
+      if (plan) onPlan(home, name, plan);
+      else fs.writeFileSync(path.join(cfg, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "t" } }));
+      fs.writeFileSync(
+        path.join(home, "claude", name, "usage-latest.json"),
+        JSON.stringify({ windows: [{ key: "seven_day", label: "7d", utilization: util, resetsAt: new Date(now + 5 * 3600e3).toISOString() }], routines: null, capturedAt: new Date(now - 60e3).toISOString() }),
+      );
+    }
+    const j = JSON.parse(spawnSync("node", [CLI, "dir", "--json"], { cwd, env: { ...process.env, AGENT_SWITCH_HOME: home }, encoding: "utf8" }).stdout);
+    assert.equal(j.profile, "claude/mine", j.why.join("\n"));
+    assert.ok(j.why.includes("Skipped claude/seat: a team plan — only personal Pro and Max accounts are balanced"), j.why.join("\n"));
+    assert.ok(j.why.includes("Skipped claude/bare: no plan in its credential — only personal Pro and Max accounts are balanced"), j.why.join("\n"));
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("dir: balances on the app's latest usage read without the background service", gate, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asw-latest-dir-"));
   const cwd = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "asw-latest-cwd-")));
@@ -2443,6 +2477,7 @@ test("dir: balances on the app's latest usage read without the background servic
       const cfg = path.join(home, "claude", name, "config");
       fs.mkdirSync(cfg, { recursive: true });
       fs.writeFileSync(path.join(cfg, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: `${name}@example.com` } }));
+      onPlan(home, name);
       fs.writeFileSync(
         path.join(home, "claude", name, "usage-latest.json"),
         JSON.stringify({ windows: [{ key: "five_hour", label: "5h", utilization: util, resetsAt: reset }], routines: null, capturedAt: new Date(now - 2 * 60e3).toISOString() }),

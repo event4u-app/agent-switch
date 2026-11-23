@@ -65,3 +65,26 @@ export function describe(name: string, w: Extract<Weighed, { usable: true }>): s
   const of = w.key === "seven_day" ? "the week" : `its ${w.window} window`;
   return `${name}: ${Math.round(w.rest)}% of ${of} left, ${reset} (${w.resetH == null ? "at least " : ""}${w.need.toFixed(1)} %/h to use it up)`;
 }
+
+/** Plans whose limits belong to one person. A Team or Enterprise seat, any
+ *  other plan and a credential without the field are not balanced. */
+export const BALANCED_PLANS: readonly string[] = ["pro", "max"];
+
+/** The `subscriptionType` of a Claude credential, or undefined when it has none. */
+export function credentialPlan(cred: string | null): unknown {
+  if (!cred) return undefined;
+  try {
+    return JSON.parse(cred)?.claudeAiOauth?.subscriptionType;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Why an account on this plan stays out of balancing, or null when it takes part. */
+export function planOutOfBalance(plan: unknown): string | null {
+  if (typeof plan === "string" && BALANCED_PLANS.includes(plan)) return null;
+  // The value comes from a credential file: only a plain word reaches a reason line.
+  const name = typeof plan === "string" && plan ? (/^[a-z0-9_-]{1,24}$/i.test(plan) ? plan : null) : undefined;
+  const what = name === undefined ? "no plan in its credential" : name === null ? "an unknown plan" : `${/^[aeiou]/i.test(name) ? "an" : "a"} ${name} plan`;
+  return `${what} — only personal Pro and Max accounts are balanced`;
+}

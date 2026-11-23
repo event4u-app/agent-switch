@@ -25,7 +25,7 @@
  */
 
 import type { UsageSnapshot } from "./usage.js";
-import { describe, level, weigh, type Weighed } from "./balance.js";
+import { describe, level, planOutOfBalance, weigh, type Weighed } from "./balance.js";
 import { ProviderId } from "./providers.js";
 import { isPoolRef, poolIdOf, parseMember, type Pool } from "./pools.js";
 import type { GuardPolicy } from "./single-load.js";
@@ -58,6 +58,10 @@ export interface ResolveInputs {
    *  null when the organization is unknown. Two profiles with one key share one
    *  set of limits and are weighed once (default: every profile is its own). */
   account?: (name: string) => string | null;
+  /** The `subscriptionType` in a profile's stored credential. Given → only
+   *  Pro and Max accounts take part in balancing; absent (a provider without
+   *  the field) → the plan is not checked. */
+  plan?: (name: string) => unknown;
   /** All of this provider's profiles. Given → a start without a folder rule is
    *  balanced across them; absent → it uses the active profile. */
   names?: string[];
@@ -110,6 +114,10 @@ function shareNote(i: ResolveInputs, name: string, why: string[]): string {
 }
 
 const takesWork = (i: ResolveInputs, n: string) => i.exists(n) && !i.disabled?.(n) && !i.sharesDefaultLogin?.(n) && i.signedIn(n);
+/** Why `n`'s plan keeps it out of balancing, or null (also when the plan is not checked). */
+const offPlan = (i: ResolveInputs, n: string) => (i.plan ? planOutOfBalance(i.plan(n)) : null);
+/** May take a balanced start: can take work and is on a personal plan. */
+const balanceable = (i: ResolveInputs, n: string) => takesWork(i, n) && !offPlan(i, n);
 
 /**
  * Under guard `block` a busy account moves to the free account with the most
@@ -119,7 +127,7 @@ const takesWork = (i: ResolveInputs, n: string) => i.exists(n) && !i.disabled?.(
  */
 function giveWayIfBusy(i: ResolveInputs, name: string, why: string[], share: string = name): Resolution | null {
   if (!busy(i, name)) return null;
-  const free = (i.names ?? []).filter((n) => n !== name && takesWork(i, n) && !busy(i, n));
+  const free = (i.names ?? []).filter((n) => n !== name && balanceable(i, n) && !busy(i, n));
   if (!free.length) return { name: share, why, note: shareNote(i, share, why) };
   const target = pickBalanced(i, free, [], null) ?? free[0];
   const note = `${i.providerId}/${name} already has a live session — starting on the free account ${i.providerId}/${target} instead`;
@@ -163,8 +171,9 @@ export function resolveForDir(i: ResolveInputs): Resolution {
     const best = pickBalanced(i, members, why, null);
     if (best) return { name: best, why };
     // No fresh numbers to weigh: still a member — the rule is a boundary first.
-    const signedIn = members.filter((n) => takesWork(i, n));
-    if (!signedIn.length) return refuse(why, `pool ${id} has no usable ${i.providerId} member (signed out, disabled or sharing the default login)`);
+    const signedIn = members.filter((n) => balanceable(i, n));
+    if (!signedIn.length)
+      return refuse(why, `pool ${id} has no usable ${i.providerId} member (signed out, disabled, sharing the default login or not on a personal Pro or Max plan)`);
     const anyone = signedIn.filter((n) => !busy(i, n));
     if (!anyone.length) {
       const shared = pickBalanced(i, members, [], i.active, true) ?? (i.active && signedIn.includes(i.active) ? i.active : signedIn[0]);
@@ -348,6 +357,11 @@ function pickBalanced(i: ResolveInputs, names: string[], why: string[], prefer: 
     const ageMs = i.now - u.capturedMs;
     if (ageMs > FRESH_USAGE_MS) {
       why.push(`Skipped ${key}: usage checked ${ago(ageMs)} (too old to trust)`);
+      continue;
+    }
+    const off = offPlan(i, name);
+    if (off) {
+      why.push(`Skipped ${key}: ${off}`);
       continue;
     }
     const w = weigh(u.snapshot, i.now, i.threshold?.(name) ?? DEFAULT_LIMIT_PCT);
