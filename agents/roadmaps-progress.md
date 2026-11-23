@@ -20,13 +20,15 @@
 
 ---
 
-## Parked — `later/` (11 roadmaps, not active backlog)
+## Parked — `later/` (16 roadmaps, not active backlog)
 
 > Excluded from the table above and from `/roadmap:process-*` by design. Listed here so a resume condition is visible without opening the file.
 
 | Roadmap | Open blockers | Resume when |
 |---|---:|---|
+| [road-to-a-reading-every-pick-can-trust.md](roadmaps/later/road-to-a-reading-every-pick-can-trust.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-a-trusted-install.md](roadmaps/later/road-to-a-trusted-install.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
+| [road-to-a-v3-window-in-two-languages.md](roadmaps/later/road-to-a-v3-window-in-two-languages.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-agent-switch-statusline-usage.md](roadmaps/later/road-to-agent-switch-statusline-usage.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-agent-switch-v3-reach-carried.md](roadmaps/later/road-to-agent-switch-v3-reach-carried.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-deferred-followups.md](roadmaps/later/road-to-deferred-followups.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
@@ -34,8 +36,11 @@
 | [road-to-multi-provider-and-provider-settings.md](roadmaps/later/road-to-multi-provider-and-provider-settings.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 | [road-to-open-in-with-the-right-account.md](roadmaps/later/road-to-open-in-with-the-right-account.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-session-orchestration.md](roadmaps/later/road-to-session-orchestration.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
+| [road-to-sessions-that-hold-wherever-they-run.md](roadmaps/later/road-to-sessions-that-hold-wherever-they-run.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
+| [road-to-skins-that-change-the-look-not-the-meaning.md](roadmaps/later/road-to-skins-that-change-the-look-not-the-meaning.md) | 0 | \| Skins loaded from a folder on disk \| A second trust boundary. It needs 1.7, an asset scope limited to one folder, a schema check and size caps first. \| a later roadmap; resume when the owner want... | <!-- ref-ignore -->
 | [road-to-statusline-chaining.md](roadmaps/later/road-to-statusline-chaining.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-the-rows-where-others-lead.md](roadmaps/later/road-to-the-rows-where-others-lead.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
+| [road-to-the-workbench-second-pass.md](roadmaps/later/road-to-the-workbench-second-pass.md) | 0 | _no resume line recorded_ | <!-- ref-ignore -->
 | [road-to-v3-design-gap-carried.md](roadmaps/later/road-to-v3-design-gap-carried.md) | 0 | _condition present but unlabelled — see file_ | <!-- ref-ignore -->
 
 ---

@@ -388,3 +388,14 @@ export function parseMemberArg(v: string | undefined, usageLine: string): { prov
   if (!m) die(usageLine);
   return m;
 }
+
+/** This very CLI as one shell word each — the node binary and the script — for a
+ *  line another terminal or a hook runs, wherever agent-switch is installed. */
+export function selfCommand(): string {
+  return process.argv[1] ? `${shellQuote(process.execPath)} ${shellQuote(process.argv[1])}` : "agent-switch";
+}
+
+/** POSIX single quote, for a line agent-switch builds for a shell. */
+export function shellQuote(s: string): string {
+  return `'${s.replace(/'/g, "'\\''")}'`;
+}

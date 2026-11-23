@@ -494,3 +494,15 @@ export function cmdStrategy(providerId: ProviderId, sub: string | undefined, jso
   };
   console.log(`${providerId}: ${strategy} — ${explain[strategy]}`);
 }
+
+/** The account a start without one runs on: the same routing, folder rules and
+ *  pick record as a plain start in `cwd`. Dies when the folder refuses starts or
+ *  no account of the tool is left. */
+export function routedStart(providerId: ProviderId, cwd: string): string {
+  const r = resolveDir(providerId, false, cwd);
+  appendPick({ provider: providerId, chosen: r.name ? `${providerId}/${r.name}` : null, why: r.why, blocked: r.blocked, note: r.note });
+  if (r.blocked) die(`not starting here — ${r.blocked}`);
+  if (!r.name) die(`no ${providerId} account to start on`);
+  if (r.note) console.error(`agent-switch: ${r.note}.`);
+  return r.name;
+}

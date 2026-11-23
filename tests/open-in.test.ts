@@ -82,3 +82,49 @@ test("focus terminal: the script only takes a real tty; -1743 is explained with 
   assert.throws(() => interpret(0, "not found", "", "Terminal"), /no Terminal tab/);
   assert.doesNotThrow(() => interpret(0, "ok\n", "", "Terminal"));
 });
+
+test("terminal of a session: the app is read from the process tree, not guessed", async () => {
+  const { terminalOf } = await import("../src/focus-terminal.js");
+  // pid → "ppid comm": claude ← zsh ← login ← the terminal app.
+  const tree = (app: string) => {
+    const rows: Record<number, string> = { 40: "  30 claude", 30: "  20 -zsh", 20: "  10 login", 10: `   1 ${app}` };
+    return (pid: number) => rows[pid] ?? "";
+  };
+  assert.deepEqual(terminalOf(40, tree("/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal")), { name: "Terminal.app", app: "Terminal" });
+  assert.deepEqual(terminalOf(40, tree("/Applications/iTerm.app/Contents/MacOS/iTerm2")), { name: "iTerm2", app: "iTerm2" });
+  assert.deepEqual(terminalOf(40, tree("/Applications/Ghostty.app/Contents/MacOS/ghostty")), { name: "Ghostty", app: null });
+  assert.deepEqual(terminalOf(40, tree("/Applications/Warp.app/Contents/MacOS/stable")), { name: "Warp", app: null });
+  assert.deepEqual(terminalOf(40, tree("/Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin)")), { name: "VS Code", app: null });
+  assert.deepEqual(terminalOf(40, tree("tmux")), { name: "tmux", app: null });
+  assert.equal(terminalOf(40, tree("/usr/libexec/some-daemon")), null, "an unknown parent names no app");
+  assert.equal(terminalOf(40, () => ""), null);
+});
+
+test("terminal facts: only a live Claude session in Terminal.app or iTerm2 on macOS can be focused", async () => {
+  const { terminalFacts } = await import("../src/commands/open-in.js");
+  const iterm = () => ({ name: "iTerm2", app: "iTerm2" as const });
+  assert.deepEqual(terminalFacts("claude", 40, "darwin", iterm), { running: true, terminal: "iTerm2", focusable: true });
+  const ghostty = terminalFacts("claude", 40, "darwin", () => ({ name: "Ghostty", app: null }));
+  assert.equal(ghostty.terminal, "Ghostty");
+  assert.equal(ghostty.focusable, false);
+  assert.match(ghostty.why!, /Ghostty/);
+  assert.deepEqual(terminalFacts("claude", null, "darwin", iterm), { running: false, terminal: null, focusable: false, why: "it is not running" });
+  const linux = terminalFacts("claude", 40, "linux", () => ({ name: "kitty", app: null }));
+  assert.equal(linux.terminal, "kitty");
+  assert.equal(linux.focusable, false);
+  const codex = terminalFacts("codex", null, "darwin", iterm);
+  assert.equal(codex.running, null, "Codex names no process per session, so whether it runs is not known");
+  assert.equal(codex.focusable, false);
+  assert.match(codex.why!, /Codex/);
+});
+
+test("open: a Codex session's folder is read from its rollout's session_meta, as host adopt does", async () => {
+  const { sessionFolder } = await import("../src/commands/open-in.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-open-codex-"));
+  const rollout = path.join(dir, "rollout-2026-11-23T10-00-00-01a1a070.jsonl");
+  fs.writeFileSync(rollout, JSON.stringify({ timestamp: "t", type: "session_meta", payload: { id: "01a1a070", cwd: "/code/app", originator: "codex_cli_rs" } }) + "\n");
+  assert.equal(sessionFolder("codex", rollout), "/code/app");
+  const claude = path.join(dir, "s.jsonl");
+  fs.writeFileSync(claude, JSON.stringify({ type: "user", cwd: "/code/web", sessionId: "s" }) + "\n");
+  assert.equal(sessionFolder("claude", claude), "/code/web");
+});

@@ -4,8 +4,8 @@
  * view's connection to one session (ADR-009). JSON lines both ways: commands on
  * stdin, `{event}` / `{bridge}` lines on stdout.
  *
- * `agent-switch timeline <session> [--json] [--limit N] [--before N]` — the same
- * session's history, read-only (ADR-010).
+ * `agent-switch timeline <session> [--json] [--limit N] [--before N] [--from N]` — the
+ * same session's history, read-only (ADR-010). A page counts drawn rows, not events.
  */
 
 import { sessionAgentConfigEnv } from "../agent-config-root.js";
@@ -30,7 +30,9 @@ import { restoreAfterChat } from "./view.js";
 import { configDir, die, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
 import { provider as providerOf, type ProviderId } from "../providers.js";
 import { readSessionHeader } from "../sessions.js";
-import { readClaudeTranscript } from "../timeline/claude.js";
+import { fromClaudeText, readClaudeTranscript } from "../timeline/claude.js";
+import { readConfined, sessionFolder, subagentTranscript } from "../lineage.js";
+import * as fs from "node:fs";
 import { fromCodexThread } from "../timeline/codex.js";
 import type { AsEvent } from "../timeline/events.js";
 import { resolveSession } from "./library.js";
@@ -74,11 +76,66 @@ function refuse(key: string, message: string): void {
   process.exitCode = 1;
 }
 
-/** Events of one page, newest last: `limit` events ending before index `before`. Pure. */
-export function page(events: readonly AsEvent[], limit = DEFAULT_PAGE, before?: number): { events: AsEvent[]; from: number; total: number } {
-  const end = Math.max(0, Math.min(before ?? events.length, events.length));
-  const from = Math.max(0, end - limit);
-  return { events: events.slice(from, end), from, total: events.length };
+/** Events the chat never draws (bookkeeping lines, thinking blocks): dropped before a page
+ *  is cut, so the budget goes to the conversation. They are counted in `hidden`. */
+const BOOKKEEPING: ReadonlySet<AsEvent["t"]> = new Set(["unknown", "thinking"]);
+/** Tools drawn by another event's row (their subagent row, their question card), as the chat folds them. */
+const DRAWN_ELSEWHERE = new Set(["Agent", "Task", "AskUserQuestion"]);
+
+/** The event starts a row of the chat (a prompt, an answer, a tool card, a subagent, a card). Pure. */
+export function drawsRow(e: AsEvent): boolean {
+  switch (e.t) {
+    case "message":
+    case "subagent.started":
+    case "approval.requested":
+    case "question.requested":
+    case "plan":
+    case "error":
+    case "notice":
+      return true;
+    case "tool.started":
+      return !DRAWN_ELSEWHERE.has(e.name);
+    default:
+      return false;
+  }
+}
+
+export interface Page {
+  events: AsEvent[];
+  /** Index of the first event among the kept events (bookkeeping dropped). */
+  from: number;
+  total: number;
+  /** User prompts before `from`: what loading earlier turns brings back. */
+  earlierPrompts: number;
+  /** Dropped bookkeeping events of the whole session, by kind. */
+  hidden: Record<string, number>;
+}
+
+/**
+ * One page, newest last: up to `limit` drawn rows ending before index `before`,
+ * or every event from index `from` on when it is given. Bookkeeping is dropped
+ * first, so indices count only kept events and stay stable as the session grows. Pure.
+ */
+export function page(events: readonly AsEvent[], limit = DEFAULT_PAGE, before?: number, from?: number): Page {
+  const hidden: Record<string, number> = {};
+  const kept: AsEvent[] = [];
+  for (const e of events) {
+    if (!BOOKKEEPING.has(e.t)) kept.push(e);
+    else {
+      const k = e.t === "unknown" ? e.kind : e.t;
+      hidden[k] = (hidden[k] ?? 0) + 1;
+    }
+  }
+  const end = Math.max(0, Math.min(before ?? kept.length, kept.length));
+  let start = end;
+  if (from !== undefined) start = Math.max(0, Math.min(from, end));
+  else for (let rows = 0; start > 0 && rows < limit; ) if (drawsRow(kept[--start])) rows++;
+  let earlierPrompts = 0;
+  for (let i = 0; i < start; i++) {
+    const e = kept[i];
+    if (e.t === "message" && e.role === "user") earlierPrompts++;
+  }
+  return { events: kept.slice(start, end), from: start, total: kept.length, earlierPrompts, hidden };
 }
 
 async function codexHistory(t: Target): Promise<AsEvent[]> {
@@ -92,13 +149,40 @@ async function codexHistory(t: Target): Promise<AsEvent[]> {
   }
 }
 
+/** How much of a subagent's transcript `timeline --subagent` reads: its newest part, enough for the view, never the whole of a long run. */
+export const SUBAGENT_TIMELINE_BYTES = 4 * 1024 * 1024;
+
+/**
+ * One subagent's own transcript (`<session>/subagents/agent-<id>.jsonl`) as
+ * events, read-only. Only its last `maxBytes` are read; `truncated` says the
+ * head was left out. Throws for an id that is not a plain agent id, and for a
+ * file that is not a regular file inside the session's folder.
+ */
+export function readSubagentTimeline(transcript: string, agentId: string, maxBytes = SUBAGENT_TIMELINE_BYTES): { events: AsEvent[]; version: string | null; newerThanFixtures: boolean; truncated: boolean } {
+  const file = subagentTranscript(transcript, agentId);
+  if (!file) throw new Error(`${agentId} is not a subagent id`);
+  const folder = sessionFolder(transcript);
+  const read = folder && fs.existsSync(file) ? readConfined(folder, file, maxBytes) : null;
+  if (!read) throw new Error(fs.existsSync(file) ? `subagent ${agentId}'s transcript is not a regular file inside this session's folder` : `subagent ${agentId} has no transcript next to this session`);
+  return { ...fromClaudeText(read.text, { sidechain: true }), truncated: read.size > maxBytes };
+}
+
 export async function cmdTimeline(arg: string | undefined, flags: Record<string, string | boolean>): Promise<void> {
-  if (!arg) die("usage: agent-switch timeline <session> [--json] [--limit N] [--before N]");
+  if (!arg) die("usage: agent-switch timeline <session> [--subagent ID] [--json] [--limit N] [--before N] [--from N]");
   const t = target(arg);
   let events: AsEvent[];
   let version: string | null = null;
   let newerThanFixtures = false;
-  if (t.provider === "codex") events = await codexHistory(t);
+  let truncated = false;
+  if (typeof flags.subagent === "string" || flags.subagent === true) {
+    if (t.provider !== "claude" || !t.transcript) die("--subagent reads Claude subagent transcripts only");
+    if (typeof flags.subagent !== "string") die("usage: agent-switch timeline <session> --subagent ID");
+    try {
+      ({ events, version, newerThanFixtures, truncated } = readSubagentTimeline(t.transcript, flags.subagent));
+    } catch (err) {
+      die((err as Error).message);
+    }
+  } else if (t.provider === "codex") events = await codexHistory(t);
   else {
     const r = readClaudeTranscript(t.transcript!);
     events = r.events;
@@ -106,11 +190,12 @@ export async function cmdTimeline(arg: string | undefined, flags: Record<string,
     newerThanFixtures = r.newerThanFixtures;
   }
   const n = (v: string | boolean | undefined) => (typeof v === "string" && /^\d+$/.test(v) ? Number(v) : undefined);
-  const p = page(events, n(flags.limit) ?? DEFAULT_PAGE, n(flags.before));
-  if (flags.json) return void console.log(JSON.stringify({ key: t.key, provider: t.provider, version, newerThanFixtures, ...p }));
+  const p = page(events, n(flags.limit) ?? DEFAULT_PAGE, n(flags.before), n(flags.from));
+  if (flags.json) return void console.log(JSON.stringify({ key: t.key, provider: t.provider, version, newerThanFixtures, ...(typeof flags.subagent === "string" ? { subagent: flags.subagent, truncated } : {}), ...p }));
   for (const e of p.events) {
     if (e.t === "message") console.log(`${e.role === "user" ? "›" : " "} ${e.text.split("\n")[0]}`);
     else if (e.t === "tool.started") console.log(`  ${e.name} ${e.summary}`);
+    else if (e.t === "notice") console.log(`  · ${e.text}`);
   }
 }
 

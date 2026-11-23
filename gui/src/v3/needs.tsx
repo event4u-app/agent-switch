@@ -21,6 +21,10 @@ export interface NeedItem {
   verb: string;
   since: string;
   version: string;
+  /** The session an item about a PR acts on (a fix goes there). */
+  session?: string;
+  /** A CI item's own kind: failing checks by name, or a merge conflict. */
+  ci?: { state: "failing" | "conflict"; checks: string[] };
 }
 
 export interface AwayDigest {
@@ -46,17 +50,22 @@ const ICON: Record<NeedItem["kind"], ReactNode> = {
  *  offered. Pure. */
 export function keysFor(n: NeedItem, always = true): string | null {
   if (n.verb === "Focus terminal") return "↵ focus terminal · L later";
+  if (n.verb === "Open session") return "↵ open session · L later";
   if (n.kind === "approval") return [n.verb === "Allow" ? "↵ once" : `↵ ${n.verb.toLowerCase()} · Y once`, always ? "⇧↵ always" : null, "⌫ deny", "L later"].filter(Boolean).join(" · ");
   if (n.kind === "question") return "↵ reply · Y yes · L later";
   return "↵ " + n.verb.toLowerCase() + " · L later";
 }
+
+/** An approval or question that is answered where its session runs, never from here. Pure. */
+export const answeredThere = (n: NeedItem) => n.verb === "Focus terminal" || n.verb === "Open session";
 
 const warn = (n: NeedItem) => n.kind === "approval" || n.kind === "question" || n.kind === "limit" || n.kind === "ci";
 
 export function NeedRow({ n, top, focused, always = true, onVerb }: { n: NeedItem; top?: boolean; focused?: boolean; always?: boolean; onVerb: (n: NeedItem) => void }) {
   const open = top || focused;
   return (
-    <div className={cn("relative rounded-md px-2", open ? "py-1.5" : "py-1", focused ? "bg-ac-raise" : "hover:bg-ac-raise")} title={open ? undefined : n.detail}>
+    // A focused item holds DOM focus (tabIndex -1), so its keys never reach a focused terminal.
+    <div data-need={n.id} tabIndex={focused ? -1 : undefined} className={cn("relative rounded-md px-2 outline-none", open ? "py-1.5" : "py-1", focused ? "bg-ac-raise" : "hover:bg-ac-raise")} title={open ? undefined : n.detail}>
       {focused && <Marker tone="warn" />}
       <div className="flex h-6 items-center gap-2">
         <span className={cn("shrink-0 [&_svg]:size-3.5", warn(n) ? "text-ac-warn-text" : "text-ac-muted")}>{ICON[n.kind]}</span>

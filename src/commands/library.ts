@@ -33,8 +33,8 @@ import { eventFile, lastHookCwd, readEvents } from "../hooks.js";
 import { gitFacts } from "../git-facts.js";
 import { handoffDir } from "../handoff.js";
 import { identity } from "../profiles.js";
-import { readSessionHeader } from "../sessions.js";
-import { preflight, shellLine, type How } from "../resume.js";
+import { codexSessionMeta, readSessionHeader } from "../sessions.js";
+import { codexResumeCommand, preflight, shellLine, type How } from "../resume.js";
 import { cachedUsage } from "./shared.js";
 
 /** Auto-keep sessions with an open PR (spec §10.3): on unless the user turned it off. */
@@ -265,42 +265,96 @@ export function libraryFacts(store: Store, key: string, files: SessionFiles | nu
 
 export { vaultBytes };
 
+/** A linked worktree of a session whose PR is merged, with the live sessions that still work in it. */
+export interface MergedWorktree {
+  path: string;
+  dirty: boolean;
+  keys: string[];
+  /** Live sessions in this worktree, merged or not: removing it would pull the folder from under them. */
+  live: string[];
+}
+
 /**
  * Remove the linked worktrees of sessions whose PR is merged, skipping any
- * worktree with changes. Asks first unless --yes.
+ * worktree with changes or with a live session in it. Asks first unless --yes.
  */
-export function mergedWorktrees(): { path: string; dirty: boolean; keys: string[] }[] {
+export function mergedWorktrees(): MergedWorktree[] {
   const cache = readPrCache(prCacheFile(ROOT));
-  const out = new Map<string, { path: string; dirty: boolean; keys: string[] }>();
-  for (const r of sessionsWithGit(50)) {
+  const rows = sessionsWithGit(50);
+  const out = new Map<string, MergedWorktree>();
+  for (const r of rows) {
     if (!r.git?.worktree) continue;
     if (!prsForRow(r, cache).some((p) => p.lifecycle === "MERGED")) continue;
-    const cur = out.get(r.git.toplevel) ?? { path: r.git.toplevel, dirty: r.git.dirty, keys: [] };
+    const top = r.git.toplevel;
+    const cur = out.get(top) ?? { path: top, dirty: r.git.dirty, keys: [], live: rows.filter((o) => o.row.live && o.git?.toplevel === top).map((o) => o.key) };
     cur.keys.push(r.key);
-    out.set(r.git.toplevel, cur);
+    out.set(top, cur);
   }
   return [...out.values()];
 }
 
-export function cmdCleanup(flags: Record<string, string | boolean>): void {
-  const list = mergedWorktrees();
-  if (list.length === 0) return void console.log("No worktree of a merged session to clean up.");
+/** The merged worktrees the named sessions work in; every one when none is named. Pure. */
+export function worktreesFor<W extends { keys: string[] }>(list: readonly W[], sessions: readonly string[]): W[] {
+  return sessions.length ? list.filter((w) => w.keys.some((k) => sessions.includes(k))) : [...list];
+}
+
+export interface CleanupResult {
+  removed: string[];
+  skipped: { path: string; reason: string }[];
+  /** Without --yes: what would be removed. */
+  wouldRemove: string[];
+}
+
+/** Removes (with `yes`) the worktrees that can go and says why the others stay. `remove` returns git's refusal, or null. */
+export function cleanupWorktrees(list: readonly MergedWorktree[], yes: boolean, remove: (path: string) => string | null = removeLinkedWorktree): CleanupResult {
+  const res: CleanupResult = { removed: [], skipped: [], wouldRemove: [] };
   for (const w of list) {
-    if (w.dirty) {
-      console.log(`skip ${w.path}: it has changes`);
-      continue;
+    const why = w.live.length ? `a live session works in it (${w.live.join(", ")})` : w.dirty ? "it has changes" : null;
+    if (why) res.skipped.push({ path: w.path, reason: why });
+    else if (!yes) res.wouldRemove.push(w.path);
+    else {
+      const refused = remove(w.path);
+      if (refused === null) res.removed.push(w.path);
+      else res.skipped.push({ path: w.path, reason: `git kept it: ${refused}` });
     }
-    if (!flags.yes) {
-      console.log(`would remove ${w.path} (merged; ${w.keys.join(", ")})`);
-      continue;
-    }
-    // From the main checkout (a worktree cannot remove itself); no --force: git refuses on its own if anything is left to lose.
-    const common = spawnSync("git", ["-C", w.path, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", timeout: 1000 }).stdout?.trim();
-    const main = common ? path.dirname(common) : w.path;
-    const r = spawnSync("git", ["-C", main, "worktree", "remove", w.path], { encoding: "utf8", timeout: 10_000 });
-    console.log(r.status === 0 ? `removed ${w.path}` : `kept ${w.path}: ${(r.stderr || "").trim().split("\n")[0]}`);
   }
-  if (!flags.yes) console.log("\nRun again with --yes to remove them.");
+  return res;
+}
+
+/** From the main checkout (a worktree cannot remove itself); no --force: git refuses on its own if anything is left to lose. */
+function removeLinkedWorktree(dir: string): string | null {
+  const common = spawnSync("git", ["-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir"], { encoding: "utf8", timeout: 1000 }).stdout?.trim();
+  const main = common ? path.dirname(common) : dir;
+  const r = spawnSync("git", ["-C", main, "worktree", "remove", dir], { encoding: "utf8", timeout: 10_000 });
+  return r.status === 0 ? null : (r.stderr || "").trim().split("\n")[0] || `exited ${r.status}`;
+}
+
+export function cmdCleanup(sessions: readonly string[], flags: Record<string, string | boolean>): void {
+  const list = worktreesFor(mergedWorktrees(), sessions);
+  const res = cleanupWorktrees(list, !!flags.yes);
+  if (flags.json) return void console.log(JSON.stringify(res));
+  if (list.length === 0) return void console.log(sessions.length ? "None of these sessions works in the worktree of a merged PR." : "No worktree of a merged session to clean up.");
+  for (const s of res.skipped) console.log(`skip ${s.path}: ${s.reason}`);
+  for (const p of res.wouldRemove) console.log(`would remove ${p} (merged; ${list.find((w) => w.path === p)!.keys.join(", ")})`);
+  for (const p of res.removed) console.log(`removed ${p}`);
+  if (res.wouldRemove.length) console.log("\nRun again with --yes to remove them.");
+}
+
+/** A Codex session resumes as it is, with `codex resume <id>` on its own account
+ *  in the folder it ran in; the preflight's other ways are Claude's. */
+function resumeCodex(key: string, transcript: string, how: How, flags: Record<string, string | boolean>): void {
+  const [, account, id] = key.split("/");
+  if (how !== "continue") die(`a Codex session resumes as it is (--how continue); to move it to another account: agent-switch takeover ${id} --provider codex --to <profile>`);
+  if (!fs.existsSync(transcript)) die(`no Codex session ${key} with a rollout`);
+  const cwd = codexSessionMeta(transcript)?.cwd ?? null;
+  const folder = cwd && fs.existsSync(cwd) ? cwd : null;
+  const command = codexResumeCommand(account, id, folder);
+  if (flags.json) return void console.log(JSON.stringify({ key, cwd: folder, commands: [command], commandLines: [shellLine(command)] }, null, 2));
+  console.log(folder ? `✓ resumes in ${folder}` : `! its folder ${cwd ?? "(not recorded)"} is gone; it resumes where this runs`);
+  console.log(`\n  ${shellLine(command)}`);
+  if (!flags.yes) return void console.log("\nRun it with --yes.");
+  const r = spawnSync(process.execPath, [process.argv[1], ...command.slice(1)], { stdio: "inherit" });
+  if (r.status !== 0) die(`stopped: ${shellLine(command)} exited ${r.status}`);
 }
 
 /**
@@ -313,7 +367,7 @@ export function cmdResume(arg: string | undefined, flags: Record<string, string 
   const how = (typeof flags.how === "string" ? flags.how : "continue") as How;
   if (!["continue", "fork", "account", "brief"].includes(how)) die("--how is one of continue, fork, account, brief");
   const s = resolveSession(arg);
-  if (s?.key.startsWith("codex/")) die("resume with a preflight is for Claude sessions; a Codex session resumes with: agent-switch takeover " + s.key.split("/")[2] + " --provider codex --to <profile>");
+  if (s?.key.startsWith("codex/")) return resumeCodex(s.key, s.files.transcript, how, flags);
   if (!s || !fs.existsSync(s.files.transcript)) die(`no Claude session ${arg} with a transcript${s ? "; restore it from the vault first: agent-switch sessions vault " + s.key + " restore" : ""}`);
   const id = s.key.split("/")[2];
   const cfg = configDir("claude", s.account);

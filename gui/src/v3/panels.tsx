@@ -10,6 +10,7 @@ import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { Act } from "./kit.js";
 import { ChildLine, type ChildModel } from "./sessions.js";
+import { moreFiles } from "./review.js";
 
 function Window({ title, aside, onHide, children }: { title: string; aside?: ReactNode; onHide: () => void; children: ReactNode }) {
   return (
@@ -60,14 +61,14 @@ export function prLine(pr: { lifecycle: string; mergeable: string; review: strin
   return [pr.lifecycle.toLowerCase(), merge, REVIEW[pr.review] ?? ""].filter(Boolean).join(" · ");
 }
 
-export function SummaryWindow({ f, onNext, onCreatePr, onOpenPr, onHide, moreOpen, onToggleMore }: { f: SummaryFacts; onNext: () => void; onCreatePr: () => void; onOpenPr: () => void; onHide: () => void; moreOpen: boolean; onToggleMore: () => void }) {
+export function SummaryWindow({ f, nextBlocked, onNext, onCreatePr, onOpenPr, onHide, moreOpen, onToggleMore, onReview }: { f: SummaryFacts; /** Why the next step cannot run now (the engine is stopped); absent: it can. */ nextBlocked?: string | null; onNext: () => void; onCreatePr: () => void; onOpenPr: () => void; onHide: () => void; moreOpen: boolean; onToggleMore: () => void; /** Opens the review; absent: the count stays plain text. */ onReview?: () => void }) {
   return (
     <Window title="Summary" onHide={onHide}>
       {f.next && (
         <div className="m-3 rounded-[10px] border border-ac-line bg-ac-bg p-3">
           <p className="text-[12.5px] leading-snug text-ac-text">{f.next.text}</p>
           <div className="mt-2">
-            <Act kind="accent" onClick={onNext}>
+            <Act kind="accent" blocked={nextBlocked} onClick={onNext}>
               {f.next.action}
             </Act>
           </div>
@@ -101,13 +102,21 @@ export function SummaryWindow({ f, onNext, onCreatePr, onOpenPr, onHide, moreOpe
         )}
       </Sect>
       {f.git && (
-        <Sect title="Git" source="from the session's hooks">
+        <Sect title="Git" source="git in the session's folder · the changed count is the Changes list's">
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-ac-soft">
             <GitBranch className="size-3.5 shrink-0 text-ac-muted" aria-hidden />
             <span className="truncate">{f.git.branch ?? "(detached)"}</span>
             {f.git.worktree && <FolderGit2 className="size-3.5 shrink-0 text-ac-muted" aria-label="worktree" />}
             <span className="ml-auto shrink-0 text-ac-muted">
-              {f.git.changed ? <span className="text-ac-warn-text">{f.git.changed} changed</span> : "clean"}
+              {!f.git.changed ? (
+                "clean"
+              ) : onReview ? (
+                <button type="button" aria-label={`${f.git.changed} changed — open the review`} onClick={onReview} className="rounded-md text-ac-warn-text underline-offset-2 hover:underline">
+                  {f.git.changed} changed
+                </button>
+              ) : (
+                <span className="text-ac-warn-text">{f.git.changed} changed</span>
+              )}
               {f.git.ahead || f.git.behind ? ` · ↑${f.git.ahead ?? 0} ↓${f.git.behind ?? 0}` : ""}
             </span>
           </div>
@@ -149,18 +158,29 @@ export interface ChangedFile {
   removed: number;
 }
 
-export function ChangesWindow({ files, onReview, onCommit, onHide, reviewAvailable, commitAvailable = true }: { files: ChangedFile[]; onReview: () => void; onCommit: () => void; onHide: () => void; reviewAvailable: boolean; commitAvailable?: boolean }) {
+const REVIEW_LATER = "Review arrives with the next version";
+
+/** `onReview(path)` opens the review at that file; without a path, at the first. `more`: changed files past the list's cap. */
+export function ChangesWindow({ files, more = 0, onReview, onCommit, onHide, reviewAvailable, commitAvailable = true }: { files: ChangedFile[]; more?: number; onReview: (file?: string) => void; onCommit: () => void; onHide: () => void; reviewAvailable: boolean; commitAvailable?: boolean }) {
   const added = files.reduce((n, f) => n + f.added, 0);
   const removed = files.reduce((n, f) => n + f.removed, 0);
   return (
     <Window title="Changes" aside="worktree vs HEAD" onHide={onHide}>
       <div className="px-3.5 py-2.5 text-xs text-ac-soft">
-        {files.length} files · <span className="text-ac-ok-text">+{added}</span> <span className="text-ac-alert-text">−{removed}</span>
+        {files.length + more} files · <span className="text-ac-ok-text">+{added}</span> <span className="text-ac-alert-text">−{removed}</span>
       </div>
       {files.map((f) => {
         const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/") + 1) : "";
         return (
-          <div key={f.path} className="flex h-6 items-center gap-2 px-3.5 font-ac-mono text-[11.5px]">
+          <button
+            key={f.path}
+            type="button"
+            aria-label={`Review ${f.path}`}
+            disabled={!reviewAvailable}
+            title={reviewAvailable ? undefined : REVIEW_LATER}
+            onClick={() => onReview(f.path)}
+            className="mx-1 flex h-6 w-[calc(100%-8px)] items-center gap-2 rounded-md px-2.5 text-left font-ac-mono text-[11.5px] enabled:hover:bg-ac-raise"
+          >
             <span className={cn("w-3 shrink-0", f.status === "A" ? "text-ac-ok-text" : f.status === "D" ? "text-ac-alert-text" : "text-ac-info-text")}>{f.status}</span>
             <span className="min-w-0 flex-1 truncate">
               <span className="text-ac-faint">{dir}</span>
@@ -168,11 +188,12 @@ export function ChangesWindow({ files, onReview, onCommit, onHide, reviewAvailab
             </span>
             <span className="text-ac-ok-text">+{f.added}</span>
             <span className="text-ac-alert-text">−{f.removed}</span>
-          </div>
+          </button>
         );
       })}
+      {more > 0 && <p className="px-3.5 pt-1.5 text-[11px] text-ac-muted">{moreFiles(more)}</p>}
       <div className="flex gap-2 px-3.5 py-3">
-        <Act kind="accent" onClick={onReview} disabled={!reviewAvailable} title={reviewAvailable ? undefined : "Review arrives with the next version"}>
+        <Act kind="accent" onClick={() => onReview()} disabled={!reviewAvailable} title={reviewAvailable ? undefined : REVIEW_LATER}>
           Review changes
         </Act>
         <Act onClick={onCommit} disabled={!commitAvailable} title={commitAvailable ? undefined : "Commit arrives with the next version"}>
@@ -204,12 +225,13 @@ export function changedFiles(numstat: string, porcelain: string): ChangedFile[] 
 
 // ---------- Children (spec §9.3) ----------
 
-export function ChildrenWindow({ noun, children, onHide }: { noun: string; children: ChildModel[]; onHide: () => void }) {
+/** `onOpen`: a row opens what its tree row opens — a child session, or a subagent's transcript. */
+export function ChildrenWindow({ noun, children, onHide, onOpen, subagents = true }: { noun: string; children: ChildModel[]; onHide: () => void; onOpen?: (c: ChildModel) => void; subagents?: boolean }) {
   return (
     <Window title="Children" aside={noun} onHide={onHide}>
       <div className="px-3.5 py-2">
         {children.map((c) => (
-          <ChildLine key={c.id} c={c} />
+          <ChildLine key={c.id} c={c} onOpen={onOpen} subagents={subagents} />
         ))}
       </div>
       <p className="px-3.5 pb-3 text-[11px] leading-relaxed text-ac-muted">

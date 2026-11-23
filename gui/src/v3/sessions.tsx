@@ -7,15 +7,15 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bot, ChevronDown, ChevronRight, CircleX, Folder, SquareTerminal, TriangleAlert } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, Folder, SquareTerminal } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon, type StateSource } from "../ui/SessionStateIcon.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
-import { AccountMark, BatchBar, Chip, Marker, type BatchActions } from "./kit.js";
+import { AccountMark, BatchBar, CheckMark, Chip, Marker, ago, duration, type BatchActions } from "./kit.js";
 import { AppMono } from "./menus.js";
 import { useEngaged, useHeldOrder } from "./held-order.js";
 
-export type ChildSource = "hook" | "lineage" | "host" | "counted" | "unknown";
+export type ChildSource = "hook" | "files" | "lineage" | "host" | "counted" | "unknown";
 
 export interface ChildModel {
   id: string;
@@ -40,6 +40,11 @@ export interface ChildModel {
   needsYou?: boolean;
   /** D3: "no update in 34m". */
   quiet?: string | null;
+  /** A running subagent's last tool call without a result: "Bash · npm test". */
+  doing?: string;
+  /** A subagent's hook times, for how long it ran. */
+  startedMs?: number | null;
+  endedMs?: number | null;
 }
 
 export type ChildTool = "claude" | "codex" | "antigravity";
@@ -48,7 +53,12 @@ export interface RowSession {
   key: string;
   title: string;
   state: SessionState;
-  account: { name: string; nearLimit: boolean };
+  /** `color`: the account's identity colour, the tick before its name. */
+  account: { name: string; nearLimit: boolean; color?: IdentityColor };
+  /** The tool it runs in: a monogram before the title, as on child rows. */
+  tool?: ChildTool;
+  /** Its last activity, for the row's age. */
+  lastActiveMs?: number | null;
   branch: string | null;
   pr: { number: number; ci: string; mergeable: string } | null;
   children: ChildModel[];
@@ -62,11 +72,17 @@ export interface RowSession {
   quiet?: string | null;
 }
 
+/** A subagent's label: its type and, when known, the first line of its Task description. Pure. */
+export function subagentLabel(c: { type?: unknown; description?: unknown }): string {
+  const type = typeof c.type === "string" && c.type ? c.type : "subagent";
+  return typeof c.description === "string" && c.description ? `${type} · ${c.description}` : type;
+}
+
 /** `sessions --json` children → the rows under a session. Pure. */
 export function childrenFromCli(row: { children?: any[]; childCount?: number; childSource?: string | null }): ChildModel[] {
   const out: ChildModel[] = (row.children ?? []).map((c) =>
     c.kind === "subagent"
-      ? { id: c.agentId, label: c.type ?? "subagent", kind: "subagent", state: c.state === "running" ? "working" : "done", source: "hook" }
+      ? { id: c.agentId, label: subagentLabel(c), kind: "subagent", state: c.state === "running" ? "working" : "done", source: c.source === "files" ? "files" : "hook" }
       : { id: c.sessionKey, label: c.label ?? c.kind, kind: c.kind, state: c.state === "running" ? "working" : "done", source: c.source === "host" || c.source === "hook" ? c.source : "lineage" },
   );
   const counted = (row.childCount ?? 0) - out.length;
@@ -74,42 +90,49 @@ export function childrenFromCli(row: { children?: any[]; childCount?: number; ch
   return out;
 }
 
-export const childTotal = (s: RowSession) => s.children.reduce((n, c) => n + (c.count ?? 1), 0);
+export const childTotal = (s: Pick<RowSession, "children">) => s.children.reduce((n, c) => n + (c.count ?? 1), 0);
 
 /** "1 subagent", "3 helper sessions", "2 related sessions". Pure. */
-export function childNoun(s: RowSession): string {
+export function childNoun(s: Pick<RowSession, "children">): string {
   const n = childTotal(s);
   const kinds = new Set(s.children.map((c) => c.kind));
   const noun = kinds.size === 1 && kinds.has("subagent") ? "subagent" : [...kinds].every((k) => ["council", "arena", "court", "helper"].includes(k)) ? "helper session" : "related session";
   return `${n} ${n === 1 ? noun : noun + "s"}`;
 }
 
-/** One order everywhere (window, tray): needs you · CI failing · working · rest; done sessions are not listed. Pure. */
 export type SortBy = "activity" | "name" | "status";
 export type GroupBy = "none" | "project" | "account" | "tool";
 export const SORT_LABEL: Record<SortBy, string> = { activity: "Activity", name: "Name", status: "Status" };
 export const GROUP_LABEL: Record<GroupBy, string> = { none: "None", project: "Project / folder", account: "Account", tool: "Tool" };
 
+/** The default order of the list, the same in window and tray (spec §5.2). */
+export const DEFAULT_SORT: SortBy = "status";
+
 /**
- * The live list in the chosen order. Activity (default) = most recent first —
- * what needs you already sits in its own zone; status = `liveOrder`. A session
+ * The live list in the chosen order. Status (default, spec §5.2) = `liveOrder`,
+ * newest first inside each rank; activity = most recent first; name. A session
  * without a known time sorts last. Pure.
  */
 export function sortLive(sessions: readonly RowSession[], sort: SortBy, lastActiveMs: (key: string) => number | null): RowSession[] {
   const live = liveOrder(sessions);
-  if (sort === "status") return live;
   if (sort === "name") return [...live].sort((a, b) => a.title.localeCompare(b.title));
+  const t = (x: RowSession) => x.lastActiveMs ?? lastActiveMs(x.key);
   // Unknown times sort last and keep the status order among themselves.
-  return [...live].sort((a, b) => {
-    const x = lastActiveMs(a.key);
-    const y = lastActiveMs(b.key);
-    return x === y ? 0 : x === null ? 1 : y === null ? -1 : y - x;
-  });
+  const recent = (a: RowSession, b: RowSession) => {
+    const x = t(a);
+    const y = t(b);
+    return x === y ? 0 : x == null ? 1 : y == null ? -1 : y - x;
+  };
+  if (sort === "status") return [...live].sort((a, b) => statusRank(a) - statusRank(b) || recent(a, b));
+  return [...live].sort(recent);
 }
 
+/** Needs you · CI failing · working · everything else (spec §5.2). Pure. */
+const statusRank = (x: RowSession) => (x.needsYou || x.state === "needs-you" ? 0 : x.pr?.ci === "FAILURE" ? 1 : x.state === "working" ? 2 : 3);
+
+/** One order everywhere (window, tray): needs you · CI failing · working · rest; done sessions are not listed. Pure. */
 export function liveOrder(sessions: readonly RowSession[]): RowSession[] {
-  const rank = (x: RowSession) => (x.needsYou || x.state === "needs-you" ? 0 : x.pr?.ci === "FAILURE" ? 1 : x.state === "working" ? 2 : 3);
-  return sessions.filter((s) => s.state !== "done").sort((a, b) => rank(a) - rank(b));
+  return sessions.filter((s) => s.state !== "done").sort((a, b) => statusRank(a) - statusRank(b));
 }
 
 /** The first descendant that needs the user, depth first (D6). Pure. */
@@ -128,15 +151,22 @@ export function runningOf(children: readonly ChildModel[]): number {
   return children.reduce((n, c) => n + (c.state === "working" ? (c.count ?? 1) : 0) + runningOf(c.children ?? []), 0);
 }
 
+/** What is wrong with the session's PR, in words; CI before a conflict. Pure. */
+export function prProblem(s: RowSession): "CI failing" | "merge conflict" | null {
+  return s.pr?.ci === "FAILURE" ? "CI failing" : s.pr?.mergeable === "CONFLICTING" ? "merge conflict" : null;
+}
+
 /**
  * The one trailing slot, by priority (spec §5.2). Rank 4 rolls up: a waiting
  * descendant lights the same amber dot, and the tooltip names it (D6). Rank 5
- * counts running descendants at every depth. Pure.
+ * counts running descendants at every depth. A PR problem is words, never a
+ * second status icon beside the state dot (5.1); on a two-line row it sits on
+ * the second line, so `second` leaves it out of the slot. Pure.
  */
-export function trailing(s: RowSession, { counts = true }: { counts?: boolean } = {}): ReactNode {
+export function trailing(s: RowSession, { counts = true, second = false }: { counts?: boolean; second?: boolean } = {}): ReactNode {
   if (s.account.nearLimit) return <span className="shrink-0 text-[11px] text-ac-warn-text" title={`${s.account.name} is near its limit`}>{s.account.name}</span>;
-  if (s.pr?.ci === "FAILURE") return <CircleX className="size-3.5 shrink-0 text-ac-alert" aria-label="CI failing" />;
-  if (s.pr?.mergeable === "CONFLICTING") return <TriangleAlert className="size-3.5 shrink-0 text-ac-alert" aria-label="merge conflict" />;
+  const problem = prProblem(s);
+  if (problem && !second) return <span className="shrink-0 text-[11px] text-ac-alert-text">{problem}</span>;
   if (s.state !== "needs-you") {
     const waiting = waitingChild(s.children);
     if (s.needsYou || waiting) return <span className="size-1.5 shrink-0 rounded-full bg-ac-warn" aria-label="needs you" title={waiting ? `${waiting.label} needs you` : undefined} />;
@@ -154,24 +184,31 @@ export function trailing(s: RowSession, { counts = true }: { counts?: boolean } 
 }
 
 /** The trailing slot speaks about the children — a waiting descendant's dot or the running count — so it unfolds them. Pure. */
-export function childrenSlot(s: RowSession): boolean {
-  if (s.account.nearLimit || s.pr?.ci === "FAILURE" || s.pr?.mergeable === "CONFLICTING") return false;
+export function childrenSlot(s: RowSession, { second = false }: { second?: boolean } = {}): boolean {
+  if (s.account.nearLimit || (prProblem(s) && !second)) return false;
   if (s.state !== "needs-you" && (s.needsYou || waitingChild(s.children))) return !!waitingChild(s.children);
   if (s.quiet) return false;
   return runningOf(s.children) > 0;
 }
 
-const VIA: Record<ChildSource, string> = { hook: "via hook", lineage: "via lineage", host: "via host", counted: "counted", unknown: "relation unknown" };
+const VIA: Record<ChildSource, string> = { hook: "via hook", files: "from Claude Code's files", lineage: "via lineage", host: "via host", counted: "counted", unknown: "relation unknown" };
 const TOOL_NAME: Record<ChildTool, string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
 /** The same monograms the Open in menu gives the tools' desktop apps. */
 const TOOL_MONO: Record<ChildTool, string> = { claude: "C", codex: "Cx", antigravity: "Ag" };
 
-/** A child that is a session with a key opens like any session; a subagent or a counted entry has nothing to open. Pure. */
+/** A child that is a session with a key opens like any session; a subagent or a counted entry is not a session. Pure. */
 export const childOpens = (c: ChildModel) => c.kind !== "subagent" && c.source !== "counted" && c.id.split("/").length === 3;
 
-/** The row's tooltip: identity and provenance in words (D5). Pure. */
-export function childTitle(c: ChildModel): string {
+/** A subagent its hooks or Claude Code's own files reported opens its own transcript, read-only (7.7); a counted one is known by number only. Pure. */
+export const subagentOpens = (c: ChildModel) => c.kind === "subagent" && (c.source === "hook" || c.source === "files");
+
+/** How long a subagent ran, or runs: "4m". Pure. */
+export const subagentElapsed = (c: ChildModel, nowMs: number): string | null => (c.startedMs == null ? null : duration((c.endedMs ?? nowMs) - c.startedMs));
+
+/** The row's tooltip: identity and provenance in words (D5). `viewable`: a subagent row here opens its transcript. Pure. */
+export function childTitle(c: ChildModel, viewable = false): string {
   const via = VIA[c.source];
+  if (viewable && subagentOpens(c)) return [c.label, "subagent", c.doing ?? null, c.worktree ? `worktree ${c.worktree}` : null, via, "opens its transcript, read-only"].filter(Boolean).join(" · ");
   if (!childOpens(c)) return [c.count ? `${c.count} ${c.label}` : c.label, c.kind === "subagent" ? "subagent" : c.kind, c.worktree ? `worktree ${c.worktree}` : null, via, "runs inside its session — nothing to open"].filter(Boolean).join(" · ");
   return [c.label, c.tool ? TOOL_NAME[c.tool] : null, c.account?.name ?? null, via].filter(Boolean).join(" · ");
 }
@@ -202,10 +239,25 @@ function ChildCells({ c }: { c: ChildModel }) {
   );
 }
 
-/** One child, flat (the Children window, Running on): the same grammar as in the tree. */
-export function ChildLine({ c }: { c: ChildModel }) {
+/** Enter and Space on a div that acts as a button. */
+const pressKeys = (run: () => void) => (e: React.KeyboardEvent) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  e.preventDefault();
+  run();
+};
+
+/** One child, flat (the Children window, Running on): the same grammar as in the tree; with `onOpen`, it opens what the tree row opens. */
+export function ChildLine({ c, onOpen, subagents = true }: { c: ChildModel; onOpen?: (c: ChildModel) => void; subagents?: boolean }) {
+  const opens = !!onOpen && (childOpens(c) || (subagents && subagentOpens(c)));
   return (
-    <div className="flex h-6 min-w-0 items-center gap-2 text-[11.5px]" title={childTitle(c)}>
+    <div
+      role={opens ? "button" : undefined}
+      tabIndex={opens ? 0 : undefined}
+      onClick={opens ? () => onOpen!(c) : undefined}
+      onKeyDown={opens ? pressKeys(() => onOpen!(c)) : undefined}
+      className={cn("flex h-6 min-w-0 items-center gap-2 rounded-md text-[11.5px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ac-brand", opens && "-mx-1.5 px-1.5 hover:bg-ac-raise")}
+      title={childTitle(c, !!onOpen && subagents)}
+    >
       <ChildCells c={c} />
     </div>
   );
@@ -280,14 +332,18 @@ function useIdleFold(parent: string): [boolean, () => void] {
 
 interface TreeHandlers {
   onSelect: (key: string) => void;
+  /** A hook subagent opens its transcript under its parent session (7.7). */
+  onSubagent?: (parent: string, agentId: string) => void;
   onPeek?: (key: string | null, y: number) => void;
   /** ⌘J: the child row to focus (3.4). */
   focusKey?: string | null;
 }
 
-function ChildRow({ c, depth, rails, last, onSelect, onPeek, focusKey }: { c: ChildModel; depth: number; rails: readonly boolean[]; last: boolean } & TreeHandlers) {
+function ChildRow({ c, parent, depth, rails, last, onSelect, onSubagent, onPeek, focusKey }: { c: ChildModel; parent: string; depth: number; rails: readonly boolean[]; last: boolean } & TreeHandlers) {
   const ref = useRef<HTMLDivElement>(null);
-  const opens = childOpens(c);
+  const viewable = !!onSubagent && subagentOpens(c);
+  const opens = childOpens(c) || viewable;
+  const open = () => (onPeek?.(null, 0), viewable ? onSubagent!(parent, c.id) : onSelect(c.id));
   useEffect(() => {
     if (focusKey && focusKey === c.id) ref.current?.focus();
   }, [focusKey, c.id]);
@@ -298,8 +354,9 @@ function ChildRow({ c, depth, rails, last, onSelect, onPeek, focusKey }: { c: Ch
       data-depth={depth}
       role={opens ? "button" : undefined}
       tabIndex={opens ? 0 : -1}
-      title={childTitle(c)}
-      onClick={opens ? () => (onPeek?.(null, 0), onSelect(c.id)) : undefined}
+      title={childTitle(c, !!onSubagent)}
+      onClick={opens ? open : undefined}
+      onKeyDown={opens ? pressKeys(open) : undefined}
       onMouseEnter={
         onPeek &&
         ((e) => {
@@ -351,7 +408,7 @@ export function ChildTree({ kids, parent, depth = 1, rails = [], ...h }: { kids:
           );
         return (
           <div key={it.id} className="contents">
-            <ChildRow c={it} depth={depth} rails={rails} last={last} {...h} />
+            <ChildRow c={it} parent={parent} depth={depth} rails={rails} last={last} {...h} />
             {!!it.children?.length && <ChildTree kids={it.children} parent={it.id} depth={depth + 1} rails={[...rails, !last]} {...h} />}
           </div>
         );
@@ -414,7 +471,9 @@ export function SessionRow({
   onToggleChildren,
   onCheck,
   onPeek,
+  onSubagent,
   focusKey,
+  age,
 }: {
   s: RowSession;
   active?: boolean;
@@ -429,12 +488,16 @@ export function SessionRow({
   onPeek?: (key: string | null, y: number) => void;
   /** ⌘J: a child row to focus (3.4). */
   focusKey?: string | null;
+  onSubagent?: (parent: string, agentId: string) => void;
+  /** "21m ago": how long since the session last did something. */
+  age?: string | null;
 }) {
   const second = active || comfortable;
   const kids = !!open && s.children.length > 0;
   // D12 (owner, Q1 2026-11-22): the active open row and its children are one block — one raise fill, one Marker.
   const block = !!active && kids;
-  const slot = trailing(s);
+  const slot = trailing(s, { second });
+  const problem = prProblem(s);
   const ref = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLSpanElement>(null);
   useEllipsisRefresh(titleRef, active);
@@ -443,7 +506,7 @@ export function SessionRow({
   }, [active]);
   return (
     <div ref={ref} className={cn(block && "relative mb-1 rounded-md bg-ac-raise pb-0.5")}>
-      {block && <Marker />}
+      {block && <Marker tone="neutral" />}
       <div
         role="button"
         tabIndex={0}
@@ -459,14 +522,20 @@ export function SessionRow({
         onMouseLeave={onPeek && (() => onPeek(null, 0))}
         className={cn("group/row relative rounded-md pl-2.5 pr-2", second ? "py-1.5" : "py-1", block ? null : active ? "bg-ac-raise" : "hover:bg-ac-raise")}
       >
-        {active && !block && <Marker />}
+        {active && !block && <Marker tone="neutral" />}
         {/* The stem from the dot down to the first child (3.2). */}
         {kids && <span aria-hidden data-guide="stem" className={cn("pointer-events-none absolute bottom-0 w-px bg-ac-line", second ? "top-[22px]" : "top-5")} style={{ left: lineX(0) }} />}
         <div className="flex h-5 min-w-0 items-center gap-2">
           {selecting ? (
-            <span role="checkbox" aria-checked={!!checked} className={cn("inline-flex size-3.5 shrink-0 rounded border", checked ? "border-ac-brand bg-ac-brand" : "border-ac-line2")} />
+            <CheckMark role="checkbox" checked={!!checked} size={14} />
           ) : (
             <SessionStateIcon state={s.state} source={s.stateSource} quiet={!!s.quiet} />
+          )}
+          {/* The tool, as on child rows: Claude and Codex never look alike. */}
+          {s.tool && (
+            <span title={TOOL_NAME[s.tool]} className="inline-flex">
+              <AppMono m={TOOL_MONO[s.tool]} />
+            </span>
           )}
           {/* Keyed on the weight: Chromium keeps the ellipsis decision of the old weight
               when only font-weight changes, and the heavier title then runs past the edge. */}
@@ -475,7 +544,9 @@ export function SessionRow({
           </span>
           {/* One trailing slot per row (spec §5.2, boards "Work" and "Hover a row"): the children
               unfold from the row's own children count; a chevron shows only while they are open. */}
-          {s.children.length > 0 && (open || childrenSlot(s) || !slot) ? (
+          {/* Compact: the age takes the free trailing slot. */}
+          {!second && !slot && age && <span className="shrink-0 text-[11px] text-ac-muted">{age}</span>}
+          {s.children.length > 0 && (open || childrenSlot(s, { second }) || !slot) ? (
             <button
               type="button"
               aria-label={open ? "Hide children" : `Show ${childNoun(s)}`}
@@ -492,16 +563,19 @@ export function SessionRow({
         </div>
         {second && (
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-4 text-[11px] text-ac-muted">
+            {s.account.color && <AccountMark color={s.account.color} />}
             <span className="shrink-0">{s.account.name}</span>
             <span>·</span>
             <span className="truncate">{s.branch ?? "no repo"}</span>
             {s.pr && <span className="shrink-0">· #{s.pr.number}</span>}
+            {problem && <span className="shrink-0 text-ac-alert-text">{problem}</span>}
+            {age && <span className="ml-auto shrink-0 pl-1">{age}</span>}
           </div>
         )}
       </div>
       {kids && (
         <div className={cn(!block && "mb-1")}>
-          <ChildTree kids={s.children} parent={s.key} onSelect={onSelect} onPeek={onPeek} focusKey={focusKey} />
+          <ChildTree kids={s.children} parent={s.key} onSelect={onSelect} onSubagent={onSubagent} onPeek={onPeek} focusKey={focusKey} />
         </div>
       )}
     </div>
@@ -520,9 +594,11 @@ export function SessionsZone({
   onCleanUp,
   onDoneToday,
   onStart,
-  sort = "activity",
+  sort = DEFAULT_SORT,
   group = "none",
   lastActiveOf = () => null,
+  nowMs,
+  onSubagent,
   groupOf,
   worktreeOf,
   onView,
@@ -554,8 +630,12 @@ export function SessionsZone({
   /** The list's order and grouping (the zone head shows and opens them). */
   sort?: SortBy;
   group?: GroupBy;
-  /** Last activity of a row, for the activity order. */
+  /** Last activity of a row, for the orders and its age (a row's own `lastActiveMs` wins). */
   lastActiveOf?: (key: string) => number | null;
+  /** The clock for the rows' age; absent: no age. */
+  nowMs?: number;
+  /** A hook subagent's row opens its transcript (7.7). */
+  onSubagent?: (parent: string, agentId: string) => void;
   /** The group a row belongs to (project, account or tool), or null for "none of them". */
   groupOf?: (key: string) => string | null;
   /** The checkout a row works in, for the worktree sub-header under "Group by project" (D8). */
@@ -597,6 +677,10 @@ export function SessionsZone({
     }
     // undefined = no sub-header; null = rows outside any checkout, when other rows have one.
     return by.size > 1 ? [...by.values()] : [{ wt: undefined, rows: l }];
+  };
+  const ageOf = (s: RowSession) => {
+    const t = s.lastActiveMs ?? lastActiveOf(s.key);
+    return t == null || nowMs == null ? null : ago(nowMs - t);
   };
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
   const fold = (g: string) => setFolded((f) => (f.has(g) ? new Set([...f].filter((x) => x !== g)) : new Set([...f, g])));
@@ -674,7 +758,9 @@ export function SessionsZone({
             onToggleChildren={onToggleChildren}
             onCheck={onCheck}
             onPeek={onPeek}
+            onSubagent={onSubagent}
             focusKey={focusKey}
+            age={ageOf(s)}
           />
           )),
           ]),

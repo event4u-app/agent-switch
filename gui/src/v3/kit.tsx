@@ -49,8 +49,9 @@ export function Chip({ kind = "meta", tone = "warn", icon, children, title }: { 
  *  State language: hover / keyboard cursor = raise fill only; chosen option in a list = check;
  *  where you are (tab, row, rail button, nav item) = the Marker.
  *  Selection is always the same Marker: a rounded frame whose leading edge is the accent — left on items, top on tabs, never an inset shadow. */
-export function Marker({ side = "left", tone = "brand" }: { side?: "left"; tone?: "brand" | "warn" }) {
-  const lead = tone === "warn" ? "border-l-ac-warn" : "border-l-ac-brand";
+/** `neutral` is for lists that carry status colour (the session list), where orange must mean "needs you" only. */
+export function Marker({ side = "left", tone = "brand" }: { side?: "left"; tone?: "brand" | "warn" | "neutral" }) {
+  const lead = tone === "warn" ? "border-l-ac-warn" : tone === "neutral" ? "border-l-ac-text" : "border-l-ac-brand";
   void side;
   // Same frame as the active tab, turned 90°: a 1px line around the rounded item,
   // with a 2px accent leading edge that follows the corners.
@@ -71,6 +72,7 @@ export function Act({
   kbd,
   onClick,
   disabled,
+  blocked,
 }: {
   kind?: "primary" | "accent" | "secondary" | "ghost" | "danger";
   children: ReactNode;
@@ -79,7 +81,14 @@ export function Act({
   kbd?: string;
   onClick?: () => void;
   disabled?: boolean;
+  /** Why the control cannot act now: it stays focusable and says so (tooltip, accessible description). */
+  blocked?: string | null;
 }) {
+  const off = blocked ? { "aria-disabled": true, "aria-description": blocked } : {};
+  if (blocked) {
+    title = blocked;
+    onClick = undefined;
+  }
   if (kind === "accent")
     return (
       <button
@@ -87,8 +96,10 @@ export function Act({
         title={title}
         onClick={onClick}
         disabled={disabled}
+        {...off}
         className={cn(
           "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-ac-brand-line px-2.5 text-xs font-medium text-ac-brand-text hover:bg-ac-brand-tint [&_svg]:size-3.5",
+          blocked && "cursor-default opacity-50 hover:bg-transparent",
           className,
         )}
       >
@@ -97,7 +108,7 @@ export function Act({
       </button>
     );
   return (
-    <Button size="sm" variant={kind} className={cn("[&_svg]:size-3.5", className)} title={title} onClick={onClick} disabled={disabled}>
+    <Button size="sm" variant={kind} className={cn("[&_svg]:size-3.5", blocked && "cursor-default opacity-50", className)} title={title} onClick={onClick} disabled={disabled} {...off}>
       {children}
       {kbd && <span className="font-ac-mono text-[10px] opacity-70">{kbd}</span>}
     </Button>
@@ -211,6 +222,9 @@ export function duration(ms: number): string {
   return `${s}s`;
 }
 
+/** How long ago: "now" under a minute, else "21m ago", "1h 18m ago" — the one relative time of rows, peek and table. */
+export const ago = (ms: number) => (ms < 60_000 ? "now" : `${duration(ms)} ago`);
+
 /** "↻ 1h 18m" until a window resets. */
 export const resetIn = (ms: number) => `↻ ${duration(ms)}`;
 
@@ -218,14 +232,21 @@ export const resetIn = (ms: number) => `↻ ${duration(ms)}`;
 export const age = (ms: number) => `${duration(ms)} old`;
 export const checkedAgo = (ms: number) => (ms < 60_000 ? "checked just now" : `checked ${duration(ms)} ago`);
 
-/** The one checkbox (boards "decide", "table", "new"): a rounded square, filled with the accent when on. */
+/** The box of a checkbox: neutral fill and a check when on, so on and off never read alike at any size. */
+export function CheckMark({ checked, size = 16, className, role }: { checked: boolean; size?: 14 | 16; className?: string; role?: "checkbox" }) {
+  return (
+    <span role={role} aria-checked={role ? checked : undefined} aria-hidden={role ? undefined : true} className={cn("inline-flex shrink-0 items-center justify-center rounded border text-ac-bg", size === 14 ? "size-3.5" : "size-4", checked ? "border-ac-text bg-ac-text" : "border-ac-line2", className)}>
+      {checked && <Check strokeWidth={3} className={size === 14 ? "size-2.5" : "size-3"} />}
+    </span>
+  );
+}
+
+/** The one checkbox (boards "decide", "table", "new"): a rounded square, filled with the neutral text colour when on — orange means "needs you" (5.1). */
 export function CheckBox({ checked, onChange, label, size = 16, children }: { checked: boolean; onChange: () => void; label?: string; size?: 14 | 16; children?: ReactNode }) {
   return (
     <label className={cn("inline-flex shrink-0 cursor-pointer items-center gap-2", children && "text-xs text-ac-soft")} onClick={(e) => e.stopPropagation()}>
       <input type="checkbox" className="peer sr-only" aria-label={label} checked={checked} onChange={onChange} />
-      <span className={cn("inline-flex items-center justify-center rounded border text-ac-on-color peer-focus-visible:ring-2 peer-focus-visible:ring-ac-brand-line", size === 14 ? "size-3.5" : "size-4", checked ? "border-ac-brand bg-ac-brand" : "border-ac-line2")}>
-        {checked && size === 16 && <Check className="size-3" />}
-      </span>
+      <CheckMark checked={checked} size={size} className="peer-focus-visible:ring-2 peer-focus-visible:ring-ac-brand-line" />
       {children}
     </label>
   );

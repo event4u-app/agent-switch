@@ -11,8 +11,10 @@ describe("ChatTimeline", () => {
     render(<ChatTimeline events={fx.transcript as AsEvent[]} />);
     expect(screen.getByText(/Create a file notes\.md/)).toBeTruthy();
     expect(screen.getAllByText("Update").length).toBeGreaterThan(0);
-    const subagentRow = screen.getByText("subagent · via hook").parentElement!;
+    // The row comes from the transcript's Task call, never from a hook (arena r2 04 F4).
+    const subagentRow = screen.getByText("subagent · from transcript").parentElement!;
     expect(subagentRow.textContent).toContain("Task");
+    expect(screen.queryByText(/via hook/)).toBeNull();
     // The reply's `Task` is markdown inline code now, not literal backticks.
     expect(screen.getAllByText("Task").some((el) => el.tagName === "CODE")).toBe(true);
     // The count moved into the "read-only here" tooltip (gap §5e).
@@ -24,6 +26,28 @@ describe("ChatTimeline", () => {
     expect(screen.getAllByText("beta").filter((el) => el.tagName === "SPAN")).toHaveLength(1);
   });
 
+  it("a background task's notification and the compaction are small system rows, not your bubbles (arena r3 03 #1)", () => {
+    const events = [
+      { t: "turn", id: "u1", at: null },
+      { t: "message", id: "u1", role: "user", text: "Run the audit", images: 0 },
+      { t: "turn", id: "u2", at: null },
+      { t: "notice", id: "u2", kind: "task", text: 'Agent "Audit" finished' },
+      { t: "notice", id: "u3", kind: "compacted", text: "Conversation compacted here" },
+    ] as AsEvent[];
+    render(<ChatTimeline events={events} />);
+    const task = screen.getByText('Agent "Audit" finished');
+    expect(task.closest("[data-row=notice]")).toBeTruthy();
+    expect(screen.getByText("Conversation compacted here").closest("[data-row=notice]")).toBeTruthy();
+    expect(document.querySelectorAll("[data-row=notice]")).toHaveLength(2);
+  });
+
+  it("a running Task row asks for its worktree by the Task call's id, before the subagent's id is known (arena r2 04 F4)", () => {
+    const events = [{ t: "subagent.started", id: "toolu_1", type: "general-purpose", description: "Phase 1" }] as AsEvent[];
+    const worktreeOf = vi.fn((id: string) => (id === "toolu_1" ? "agent-a7" : null));
+    render(<ChatTimeline events={events} on={{ worktreeOf }} />);
+    expect(screen.getByText("agent-a7")).toBeTruthy();
+  });
+
   it("an open approval offers allow once, always and deny only when the session is bridged", () => {
     const events = fx.stream as AsEvent[];
     const { unmount } = render(<ChatTimeline events={events} />);
@@ -33,8 +57,10 @@ describe("ChatTimeline", () => {
     const approve = vi.fn();
     const deny = vi.fn();
     render(<ChatTimeline events={events} on={{ approve, deny }} />);
+    // ↵ belongs to the composer; the card prints no key it does not answer to (7.6).
+    expect(screen.getByText("Allow once").closest("button")!.textContent).not.toContain("↵");
     fireEvent.click(screen.getByText("Allow once"));
-    fireEvent.click(screen.getByText(/Always allow/));
+    fireEvent.click(screen.getByText("Always: accept edits for this session"));
     fireEvent.click(screen.getByText("Deny"));
     expect(approve.mock.calls.map((c) => c[1])).toEqual([false, true]);
     expect(deny).toHaveBeenCalledTimes(1);

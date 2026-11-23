@@ -17,6 +17,25 @@ function mount(over: Partial<V3Data> = {}) {
 }
 const openSession = () => fireEvent.click(screen.getAllByText("Event store")[0]);
 
+describe("two-line rows by default (5.2)", () => {
+  const two = (): Partial<V3Data> => ({ sessions: [data().sessions[0], { ...data().sessions[0], key: "s2", title: "Checkout flow", branch: "feat/checkout", account: { name: "side", nearLimit: false } }] });
+  const win = () => within(screen.getByLabelText("Sessions window"));
+
+  it("a fresh layout shows every row's second line (account · branch), not only the selected one", () => {
+    render(<V3Window data={{ ...data(), ...two() }} slots={slots} act={vi.fn()} layout={{ load: () => null, save: vi.fn() }} />);
+    expect(win().getByText("feat/checkout")).toBeTruthy();
+  });
+
+  it("a saved compact choice stays compact, and Density switches it back", () => {
+    const store = { load: vi.fn(() => ({ tabs: [], active: "s1", comfortable: false })), save: vi.fn() };
+    render(<V3Window data={{ ...data(), ...two() }} slots={slots} act={vi.fn()} layout={store} />);
+    expect(win().queryByText("feat/checkout")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Select · density · show pinned"));
+    fireEvent.click(within(screen.getByRole("menu", { name: "Sessions view" })).getByText("Density"));
+    expect(win().getByText("feat/checkout")).toBeTruthy();
+  });
+});
+
 describe("Open in (spec §7.7)", () => {
   const targets = [
     { target: "phpstorm", label: "PhpStorm", kind: "editor" as const, installed: true },
@@ -83,6 +102,25 @@ describe("Open in (spec §7.7)", () => {
     expect(screen.queryByRole("menu", { name: "Session actions" })).toBeNull();
   });
 
+  it("a hosted session attaches in the user's terminal: one shared session, typing on either side reaches the same agent", () => {
+    const { act } = mount({ ...withTargets(), bar: () => ({ ...data().bar("s1")!, key: "claude/work/s1", attachable: true }) });
+    openSession();
+    fireEvent.click(screen.getByRole("button", { name: "Open in…" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Terminal/ }));
+    const sub = screen.getByRole("menu", { name: "Terminal" });
+    expect(sub.textContent).toContain("One shared session: typing on either side goes to the same agent.");
+    fireEvent.click(within(sub).getByRole("menuitem", { name: /Attach in Terminal/ }));
+    expect(act).toHaveBeenCalledWith({ type: "open-in", key: "claude/work/s1", pick: { kind: "attach" } });
+  });
+
+  it("a session without a hosted window offers no attach", () => {
+    mount(withTargets());
+    openSession();
+    fireEvent.click(screen.getByRole("button", { name: "Open in…" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Terminal/ }));
+    expect(within(screen.getByRole("menu", { name: "Terminal" })).queryByRole("menuitem", { name: /Attach/ })).toBeNull();
+  });
+
   it("offers only the agent app of the session's own tool, as opening the project", () => {
     const { act } = mount(withTargets());
     openSession();
@@ -143,19 +181,19 @@ describe("Sessions window header (spec §5)", () => {
       />,
     );
     const view = () => (fireEvent.click(screen.getByLabelText("Select · density · show pinned")), screen.getByRole("menu", { name: "Sessions view" }));
-    expect(within(view()).getAllByRole("menuitem").map((b) => b.textContent)).toEqual(["Select", "DensityCompact", "Show pinned only"]);
+    expect(within(view()).getAllByRole("menuitem").map((b) => b.textContent)).toEqual(["Select", "DensityComfortable", "Show pinned only"]);
     fireEvent.click(screen.getByLabelText("Select · density · show pinned"));
     const win = screen.getByLabelText("Sessions window");
     fireEvent.click(within(win).getByTitle("Sort and group"));
     fireEvent.click(within(screen.getByRole("menu", { name: "Sort and group" })).getByText("Project / folder"));
-    expect(within(win).getByTitle("Sort and group").textContent).toBe("Project · Activity");
+    expect(within(win).getByTitle("Sort and group").textContent).toBe("Project · Status");
     expect(within(win).getByText("agent-switch")).toBeTruthy();
     expect(within(win).getByText("shop")).toBeTruthy();
     fireEvent.click(within(view()).getByText("Show pinned only"));
     expect(within(win).queryByText("Event store")).toBeNull();
     expect(within(win).getByText("Checkout flow")).toBeTruthy();
     fireEvent.click(within(view()).getByText("Density"));
-    expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ comfortable: true, group: "project", sort: "activity", pinnedOnly: true }));
+    expect(store.save).toHaveBeenLastCalledWith(expect.objectContaining({ comfortable: false, group: "project", sort: "status", pinnedOnly: true }));
     fireEvent.click(within(view()).getByText("Select"));
     expect(within(win).getAllByRole("checkbox").length).toBeGreaterThan(0);
   });
@@ -262,7 +300,8 @@ describe("the v3 keyboard (spec §12)", () => {
   const press = (key: string, mods: Partial<KeyboardEventInit> = {}) => fireEvent.keyDown(window, { key, metaKey: true, ...mods });
   const mountMac = (over: Partial<V3Data> = {}) => {
     const act = vi.fn();
-    render(<V3Window data={{ ...data(), ...over }} slots={slots} act={act} platform="mac" />);
+    // The engine answers here; with it stopped the answer keys wait (controls-say-what-they-do.test).
+    render(<V3Window data={{ ...data(), health: { state: "ready" }, ...over }} slots={slots} act={act} platform="mac" />);
     return act;
   };
 
@@ -384,7 +423,7 @@ describe("the v3 keyboard (spec §12)", () => {
 
 describe("Limits popover (spec §7.5)", () => {
   it("a row opens the popover with every window; the row keeps its fill; Move opens the decision sheet", () => {
-    mount();
+    mount({ health: { state: "ready" } }); // a move waits for the engine (7.6)
     const strip = screen.getByLabelText("Limits");
     fireEvent.click(within(strip).getByText("work"));
     const pop = screen.getByRole("dialog", { name: "work limits" });

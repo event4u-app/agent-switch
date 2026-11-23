@@ -9,16 +9,21 @@ import "../../index.css";
 import { AcRoot } from "../../ui/AcRoot.js";
 import { themeById } from "../themes/registry.js";
 import { DEFAULT_APPEARANCE, resolveTheme, type Accent } from "../themes/resolve.js";
-import { V3Window, type V3Data, type V3Slots } from "../window.js";
+import { SESSION_MENU, V3Window, type V3Data, type V3Slots } from "../window.js";
+import type { WindowLayout } from "../layout.js";
 import { V3Tray } from "../tray.js";
 import { FirstRun } from "../firstrun.js";
 import { ChatTimeline } from "../chat.js";
+import { EarlierNotShown } from "../subagent-view.js";
 import type { AsEvent } from "../timeline.js";
 import CHAT from "../fixtures/timeline-claude-2.1.316.json";
-import { ToolsPage } from "../tools.js";
+import { ToolsPage, allNeeds } from "../tools.js";
 import { ExternalBody, HostedTerminal } from "../workbench.js";
 import type { LimitAccount } from "../limits.js";
 import type { RowSession } from "../sessions.js";
+import type { ChangedFile, SummaryFacts } from "../panels.js";
+import { Review } from "../review.js";
+import type { ReviewFileJson } from "../../ipc.js";
 import type { TermBackend } from "../../terminal.js";
 import { TERMINALS } from "./terminal.js";
 import { Bubble } from "../chat.js";
@@ -44,14 +49,29 @@ const LIMITS: LimitAccount[] = [
   { identity: "me@example.com", plan: null, key: "codex/personal", tool: "codex", name: "personal", color: "pink", protect: 90, next: false, signIn: true, checkedMs: null, windows: [] },
 ];
 
-const S = (s: Partial<RowSession> & Pick<RowSession, "key" | "title" | "state">): RowSession => ({ account: { name: "work", nearLimit: false }, branch: null, pr: null, children: [], needsYou: false, ...s });
+/** A row as the adapter builds it: the tool from the key, the account's colour from its limits entry. */
+const S = (s: Partial<RowSession> & Pick<RowSession, "key" | "title" | "state">): RowSession => {
+  const tool = s.key.split("/")[0] as "claude" | "codex";
+  const account = s.account ?? { name: "work", nearLimit: false };
+  return { branch: null, pr: null, children: [], needsYou: false, ...s, tool, account: { ...account, color: LIMITS.find((l) => l.key === `${tool}/${account.name}`)?.color } };
+};
+
+/** The subagents' own transcripts, by agent id: what the subagent board opens. */
+const SUBAGENT_RUNS: Record<string, AsEvent[]> = {
+  c2: [
+    { t: "tool.started", id: "t1", name: "Edit", summary: "src/engine/stores.ts", input: { file_path: "src/engine/stores.ts" }, parentToolId: null },
+    { t: "tool.finished", id: "t1", ok: true, summary: "" },
+    { t: "message", id: "m1", role: "assistant", text: "Moved sessions.json and arms.json into the event store; the JSON files stay as a read-only fallback. Running the store tests.", images: 0 },
+    { t: "tool.started", id: "t2", name: "Bash", summary: "npm test -- store", input: { command: "npm test -- store" }, parentToolId: null },
+  ],
+};
 
 const SESSIONS: RowSession[] = [
   S({ key: "claude/work/s-store", title: "v3 engine: event store + ingest", state: "working", branch: "feat/event-store", pr: { number: 142, ci: "PENDING", mergeable: "MERGEABLE" },
     children: [
       { id: "c1", label: "Explore · schema of sessions.json", kind: "subagent", state: "done", source: "hook" },
-      { id: "c2", label: "general-purpose · migrate JSON stores", kind: "subagent", state: "working", source: "hook" },
-      { id: "c3", label: "code-reviewer · ingest dedupe", kind: "subagent", state: "waiting", source: "hook" },
+      { id: "c2", label: "general-purpose · migrate JSON stores", kind: "subagent", state: "working", source: "files", doing: "Bash · npm test -- store", startedMs: NOW - 6 * MIN },
+      { id: "c3", label: "code-reviewer · ingest dedupe", kind: "subagent", state: "working", source: "hook", doing: "Read · src/engine/ingest.ts", startedMs: NOW - 2 * MIN },
     ] }),
   S({ key: "claude/personal/s-themes", title: "Theme system, Darcula default", state: "needs-you", account: { name: "personal", nearLimit: false }, branch: "feat/themes", pr: { number: 145, ci: "SUCCESS", mergeable: "MERGEABLE" }, needsYou: true }),
   S({ key: "codex/work/s-hook", title: "as-hook p95 benchmark", state: "idle", branch: "perf/as-hook", children: [{ id: "c9", label: "subagent rollouts, content not read", kind: "subagent", state: "done", source: "counted", count: 2 }] }),
@@ -77,7 +97,83 @@ const BAR: Record<string, { model: string; thinking: string; ctx: number; hosted
   "claude/personal/s-checkout": { model: "Opus 5.5", thinking: "High", ctx: 71, hosted: true, acct: "personal", color: "pink", five: 12, protect: 98 },
 };
 
+/** The Changes window's list; Summary's count is its length, as in the app. */
+const CHANGES: ChangedFile[] = [
+  { status: "M", path: "src/engine/ingest.ts", added: 38, removed: 6 },
+  { status: "A", path: "src/engine/store.ts", added: 112, removed: 0 },
+  { status: "A", path: "src/engine/schema.sql", added: 64, removed: 0 },
+  { status: "M", path: "src/engine/projection.ts", added: 21, removed: 4 },
+  { status: "A", path: "tests/engine/ingest.test.ts", added: 77, removed: 0 },
+];
+
+/** Each session's own changed files, so Summary, Changes and Review follow the selected session. */
+const CHANGES_OF: Record<string, ChangedFile[]> = {
+  "claude/work/s-store": CHANGES,
+  "claude/personal/s-themes": [
+    { status: "M", path: "gui/src/v3/themes/registry.ts", added: 3, removed: 3 },
+    { status: "M", path: "gui/src/v3/themes/resolve.ts", added: 8, removed: 2 },
+    { status: "A", path: "gui/src/v3/themes/darcula.test.ts", added: 41, removed: 0 },
+  ],
+  "claude/personal/s-checkout": [
+    { status: "M", path: "src/checkout/PaymentStep.vue", added: 24, removed: 9 },
+    { status: "M", path: "tests/e2e/checkout.spec.ts", added: 6, removed: 2 },
+  ],
+  "claude/side/s-wedge": [{ status: "M", path: "src/daemon/lease.ts", added: 12, removed: 4 }],
+  "claude/personal/s-notes": [{ status: "A", path: "docs/release-2.11.md", added: 86, removed: 0 }],
+};
+const changesOf = (key: string) => CHANGES_OF[key] ?? [];
+
+/** Review files for the fixture: one small hunk per changed file. */
+const reviewFiles = (key: string): ReviewFileJson[] =>
+  changesOf(key).map((f, i) => ({
+    path: f.path,
+    status: f.status as ReviewFileJson["status"],
+    added: f.added,
+    removed: f.removed,
+    hunks: [
+      {
+        oldStart: 12,
+        newStart: 12,
+        layer: i === 0 ? "turn" : "unstaged",
+        hash: `h${i}`,
+        header: "@@ -12,4 +12,5 @@",
+        lines: f.status === "A" ? ["+// new file", `+export const added = ${f.added};`] : [" const before = true;", "-const old = load();", `+const next = load({ dedupe: true }); // +${f.added} −${f.removed}`, " export { next };"],
+      },
+    ],
+  }));
+
 const iso = (ago: number) => new Date(NOW - ago).toISOString();
+
+const resetsText = (ms: number | null) => {
+  if (ms === null) return "unknown";
+  const mins = Math.max(0, Math.round((ms - NOW) / MIN));
+  return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+};
+
+/** The decision sheet for the subject it is opened for, as the adapter's decisionFor builds it:
+ *  an account (`claude/side`) moves its live sessions, a session (`claude/work/<id>`) only itself. */
+function decisionFor(subject: string): ReturnType<V3Data["decision"]> {
+  const [tool, name] = subject.split("/");
+  const only = subject.split("/").length === 3 ? subject : null;
+  const acct = LIMITS.find((l) => l.key === `${tool}/${name}`);
+  const w = acct?.windows.find((x) => x.label === "5h") ?? acct?.windows[0];
+  if (!acct || !w) return null;
+  const others = LIMITS.filter((l) => l.tool === acct.tool && l.key !== acct.key && !l.signIn).sort((a, b) => (a.windows[0]?.used ?? 100) - (b.windows[0]?.used ?? 100));
+  const target = others[0]?.name ?? "";
+  const moving = SESSIONS.filter((s) => (only ? s.key === only : s.key.startsWith(`${acct.key}/`) && s.state !== "done"));
+  return {
+    account: acct.name,
+    tool: acct.tool,
+    nearLimit: acct.windows.some((x) => (x.used ?? 0) >= 90),
+    targets: others.map((l) => ({ name: l.name, color: l.color })),
+    pctUsed: w.used ?? 0,
+    window: w.label,
+    resetsIn: resetsText(w.resetsAtMs),
+    sessions: moving.map((s) => ({ key: s.key, title: s.title, model: BAR[s.key]?.model ?? null, target, state: s.state })),
+    suggestion: target,
+    suggestionWhy: "the most room left",
+  };
+}
 
 export function makeData(o: { theme: string; accent: Accent; health?: string; away?: boolean; chat?: (key: string) => boolean }): V3Data {
   const THEME = o.theme;
@@ -150,23 +246,13 @@ export function makeData(o: { theme: string; accent: Accent; health?: string; aw
   },
   remote: { remoteControl: [], ssh: false },
   newSession: {
-    initial: { folder: "~/code/agent-switch", gitState: "main · clean", worktree: false, tool: "claude", model: "Opus 5.5", thinking: "High", where: "terminal" },
-    facts: { terminalApp: "Terminal.app", hosting: "persistent", thinkingLevels: { claude: ["Low", "Medium", "High", "Max"], codex: ["low", "medium", "high"], antigravity: ["default"] }, account: { name: "work", color: "teal", reason: "most room in pool “day”", limits: LIMITS[0], why: ["Folder rule: ~/code/agent-switch → pool day", "work has the most room in day"], paceText: "At today's pace: about 3h of Opus · High before the 5h window is full" }, command: "agent-switch run claude --model opus --effort high", nowMs: NOW },
+    initial: { folder: "~/code/agent-switch", gitState: "main · clean", worktree: false, tool: "claude", model: "Opus 5.5", thinking: "High", where: "terminal", remembered: true },
+    facts: { terminalApp: "Terminal.app", hosting: "persistent", thinkingLevels: { claude: ["Low", "Medium", "High", "Max"], codex: ["low", "medium", "high"], antigravity: ["default"] }, account: { name: "work", color: "teal", reason: "most room in pool “day”", limits: LIMITS[0], why: ["Folder rule: ~/code/agent-switch → pool day", "work has the most room in day"], paceText: "At today's pace: about 3h of Opus · High before the 5h window is full" }, command: "agent-switch run --provider claude --cwd ~/code/agent-switch --model opus --effort high --new-window", nowMs: NOW, models: { claude: [{ id: "opus", label: "Opus" }, { id: "sonnet", label: "Sonnet" }, { id: "haiku", label: "Haiku" }], codex: [], antigravity: [] }, folders: ["~/code/agent-switch"], home: null, accounts: { claude: [{ name: "work", color: "teal" }, { name: "personal", color: "pink" }], codex: [], antigravity: [] } },
   },
-  decision: () => ({
-    account: "side",
-    tool: "claude",
-    targets: [
-      { name: "work", color: "teal" },
-      { name: "personal", color: "pink" },
-    ],
-    pctUsed: 94,
-    window: "5h",
-    resetsIn: "1h 18m",
-    sessions: [{ key: "claude/side/s-wedge", title: "Fix wedge on daemon restart", model: "Sonnet 5.5", target: "work", state: "working" }],
-    suggestion: "work",
-    suggestionWhy: "next in this project's pool",
-  }),
+  decision: decisionFor,
+  // The adapter's menuFor with this fixture's persistent hosting: Detach never; End and Compact
+  // only hosted; Take over only a session in your own terminal.
+  menu: (key) => SESSION_MENU.filter((item) => item !== "Detach" && (item === "End…" || item === "Compact" ? !!BAR[key]?.hosted : item === "Take over here…" ? !BAR[key]?.hosted : true)),
   models: (key) =>
     key.startsWith("codex")
       ? { models: [], current: null, thinking: ["minimal", "low", "medium", "high"], currentThinking: "medium" }
@@ -185,16 +271,12 @@ export function makeData(o: { theme: string; accent: Accent; health?: string; aw
     return b ? { key, hosted: b.hosted, chatAvailable: b.hosted, view: o.chat?.(key) && b.hosted ? "chat" : "terminal", account: { name: b.acct, color: b.color, fiveH: b.five, protect: b.protect }, model: b.model, thinking: b.thinking, contextPct: b.ctx } : null;
   },
   summary: (key) =>
-    key.endsWith("s-checkout")
-      ? { next: { text: "CI fails on e2e and the branch conflicts with main. One prompt: rebase, then fix e2e (log attached).", action: "Send to agent" }, pr: { number: 311, url: "#", ci: "FAILURE", lifecycle: "OPEN", mergeable: "CONFLICTING", review: "CHANGES_REQUESTED", failingChecks: ["e2e (chromium)"] }, git: { branch: "a11y/checkout", worktree: false, changed: 12, ahead: 5, behind: 9 }, limit: null, more: { id: "claude:personal/7a1c…e02", host: "tmux · as-personal-2", library: "not pinned", children: "1 related session" } }
-      : { next: { text: "#142 needs a review; you'll hear when CI is done.", action: "Request review" }, pr: { number: 142, url: "#", ci: "PENDING", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "REVIEW_REQUIRED", failingChecks: [] }, git: { branch: "feat/event-store", worktree: true, changed: 7, ahead: 3, behind: 0 }, limit: null, more: { id: "claude:work/9f2c…e41a", host: "tmux · as-work-3", library: "pinned · in vault", children: "3 subagents" } },
-  changes: () => [
-    { status: "M", path: "src/engine/ingest.ts", added: 38, removed: 6 },
-    { status: "A", path: "src/engine/store.ts", added: 112, removed: 0 },
-    { status: "A", path: "src/engine/schema.sql", added: 64, removed: 0 },
-    { status: "M", path: "src/engine/projection.ts", added: 21, removed: 4 },
-    { status: "A", path: "tests/engine/ingest.test.ts", added: 77, removed: 0 },
-  ],
+    !key.endsWith("s-checkout") && !key.endsWith("s-store")
+      ? otherSummary(key)
+      : key.endsWith("s-checkout")
+      ? { next: { text: "CI fails on e2e and the branch conflicts with main. One prompt: rebase, then fix e2e (log attached).", action: "Send to agent" }, pr: { number: 311, url: "#", ci: "FAILURE", lifecycle: "OPEN", mergeable: "CONFLICTING", review: "CHANGES_REQUESTED", failingChecks: ["e2e (chromium)"] }, git: { branch: "a11y/checkout", worktree: false, changed: changesOf("claude/personal/s-checkout").length, ahead: 5, behind: 9 }, limit: null, more: { id: "claude:personal/7a1c…e02", host: "tmux · as-personal-2", library: "not pinned", children: "1 related session" } }
+      : { next: { text: "#142 needs a review; you'll hear when CI is done.", action: "Request review" }, pr: { number: 142, url: "#", ci: "PENDING", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "REVIEW_REQUIRED", failingChecks: [] }, git: { branch: "feat/event-store", worktree: true, changed: changesOf("claude/work/s-store").length, ahead: 3, behind: 0 }, limit: null, more: { id: "claude:work/9f2c…e41a", host: "tmux · as-work-3", library: "pinned · in vault", children: "3 subagents" } },
+  changes: (key) => changesOf(key),
   next: (key) => (key.endsWith("s-checkout") ? { text: "CI fails on e2e and the branch conflicts with main. One prompt: rebase, then fix e2e (log attached).", action: "Send to agent" } : null),
   };
 }
@@ -210,6 +292,15 @@ const fakeBackend = (key: string): TermBackend => ({
   async close() {},
 });
 
+/** Summary for a session without a hand-written one, from its row. */
+function otherSummary(key: string): SummaryFacts | null {
+  const s = SESSIONS.find((x) => x.key === key);
+  if (!s) return null;
+  const pr = s.pr && { number: s.pr.number, url: "#", ci: s.pr.ci, lifecycle: "OPEN", mergeable: s.pr.mergeable ?? "MERGEABLE", review: "NONE", failingChecks: [] };
+  const next = s.needsYou ? { text: "It waits for your answer in Needs you.", action: "Focus terminal" } : s.state === "done" ? { text: `#${s.pr?.number} is green; merge when you're ready.`, action: "Open PR" } : null;
+  return { next, pr, git: s.branch ? { branch: s.branch, worktree: false, changed: changesOf(key).length, ahead: 1, behind: 0 } : null, limit: null, more: { id: key, host: BAR[key]?.hosted ? "tmux · as-" + BAR[key].acct : "Terminal.app · tab 3", library: "not pinned", children: s.children.length ? `${s.children.length} related` : "none" } };
+}
+
 export interface SceneOptions {
   /** A board name (embed.tsx) or one of the fixture's own: markdown, claude-settings, hints, tray, tray-codex, firstrun. */
   view?: string;
@@ -221,17 +312,36 @@ export interface SceneOptions {
   chat?: boolean;
   /** Key glyphs and shortcuts; the embed pins mac so every board reads alike. */
   platform?: "mac" | "other";
+  /** The window's remembered view (density, order, grouping), so a board names its state instead of toggling the default. */
+  layout?: Partial<WindowLayout>;
 }
 
 /** One board: the real v3 window, or one of the screens that live outside it, on fixture data. */
-export function Scene({ view = "main", theme = "darcula", accent = "theme", health, away, chat, platform }: SceneOptions) {
+export function Scene({ view = "main", theme = "darcula", accent = "theme", health, away, chat, platform, layout }: SceneOptions) {
   // The Terminal / Chat switch is live: the window asks for a view, the fixture keeps it per session.
   const [views, setViews] = useState<Record<string, "terminal" | "chat">>({});
   const inChat = (key: string) => (views[key] ?? (chat ? "chat" : "terminal")) === "chat";
   const data = makeData({ theme, accent, health, away, chat: inChat });
   const def = themeById(theme);
   const { vars } = resolveTheme(def, accent);
+  const noop = () => {};
   const slots: V3Slots = {
+    // A subagent's own transcript, never its parent's; the end of a long run, as the real view reads it.
+    subagent: (_parent, agentId) => <ChatTimeline events={SUBAGENT_RUNS[agentId] ?? []} notice={<EarlierNotShown />} />,
+    review: (key, focus) => (
+      <Review
+        title={SESSIONS.find((x) => x.key === key)?.title ?? key}
+        scope="worktree"
+        files={reviewFiles(key)}
+        shared={[]}
+        running={SESSIONS.find((x) => x.key === key)?.state === "working"}
+        loading={false}
+        error={null}
+        undoable={false}
+        focus={focus}
+        on={{ setScope: noop, stage: noop, unstage: noop, discard: noop, undo: noop, comment: noop, commit: noop, createPr: noop }}
+      />
+    ),
     body: (key) =>
       BAR[key]?.hosted === false ? (
         <ExternalBody where="Terminal.app · tab 3" facts={<p>as-hook p95 benchmark · ~/code/agent-switch · perf/as-hook</p>} lastLine="as-hook is 6.7× faster at p95 (6.2 ms vs 41.8 ms)." onFocus={() => {}} onTakeOver={() => {}} />
@@ -336,7 +446,7 @@ export function Scene({ view = "main", theme = "darcula", accent = "theme", heal
     return (
       <AcRoot className="h-full" mode={def.mode} style={vars as CSSProperties}>
         <div className="flex h-full items-start justify-center bg-ac-bg p-5">
-          <V3Tray needs={data.needs} away={data.away} sessions={data.sessions} accounts={data.limits} nowMs={data.nowMs} ready appFor={(a) => (a.signIn ? undefined : { name: a.tool === "claude" ? "Claude Desktop" : "Codex Desktop", onOpen: noop })} on={{ verb: noop, moreNeeds: noop, away: noop, session: noop, moreSessions: noop, account: noop, signIn: noop, start: noop, open: noop }} />
+          <V3Tray needs={allNeeds(data)} away={data.away} sessions={data.sessions} accounts={data.limits} nowMs={data.nowMs} ready appFor={(a) => (a.signIn ? undefined : { name: a.tool === "claude" ? "Claude Desktop" : "Codex Desktop", onOpen: noop })} on={{ verb: noop, moreNeeds: noop, away: noop, session: noop, moreSessions: noop, account: noop, signIn: noop, start: noop, open: noop }} />
         </div>
       </AcRoot>
     );
@@ -359,7 +469,7 @@ export function Scene({ view = "main", theme = "darcula", accent = "theme", heal
   }
   return (
     <AcRoot className="h-full" mode={def.mode} style={vars as CSSProperties}>
-      <V3Window data={data} slots={slots} platform={platform} act={(a) => (a.type === "view" ? setViews((v) => ({ ...v, [a.key]: a.view })) : console.log("[act]", JSON.stringify(a).slice(0, 200)))} />
+      <V3Window data={data} slots={slots} platform={platform} layout={layout && { load: () => layout, save: () => {} }} act={(a) => (a.type === "view" ? setViews((v) => ({ ...v, [a.key]: a.view })) : console.log("[act]", JSON.stringify(a).slice(0, 200)))} />
     </AcRoot>
   );
 }

@@ -181,6 +181,12 @@ describe("Session sheet", () => {
     expect(rebind).toHaveBeenCalledWith("claude:agent-config", "claude:side");
   });
 
+  it("opened from Hand off…, it starts on the hand-off, not on the switch", () => {
+    mount(fixture(), { overlay: { kind: "session", id: "claude:agent-config", how: "handoff" } });
+    expect(screen.getByText(/Starts a new session on another provider/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Switch account" })).toBeNull();
+  });
+
   it("names the other live sessions on the account before a live switch moves them too", () => {
     const vm = fixture();
     const me = vm.sessions.find((x) => x.id === "claude:agent-config")!;
@@ -245,6 +251,17 @@ describe("Session sheet", () => {
     expect(cancelArm).toHaveBeenCalledWith("claude:agent-config");
   });
 
+  it("opens for a session the list does not hold when the overlay brings it (Codex from the v3 window)", () => {
+    const vm = fixture();
+    const base = vm.sessions.find((x) => x.id === "claude:old")!;
+    const codex = { ...base, id: "codex:019a", tool: "codex" as const, title: "Codex task" };
+    mount(vm, { overlay: { kind: "session", id: "codex:019a", session: codex }, act: { handoffBrief: vi.fn() } });
+    expect(screen.getByText(/Codex task/)).toBeTruthy();
+    cleanup();
+    mount(vm, { overlay: { kind: "session", id: "codex:019a" } });
+    expect(screen.queryByText(/Codex task/)).toBeNull();
+  });
+
   it("takes a Claude Desktop session over to another account's Desktop window; trash, live switch and hand off stay out", () => {
     const vm = fixture();
     vm.sessions = vm.sessions.map((x) => (x.id === "claude:old" ? { ...x, surface: "desktop-app" as const } : x));
@@ -304,6 +321,21 @@ describe("Start session", () => {
     expect(startPlan(ready, "claude", "terminal", null, "")).toEqual({ kind: "terminal", args: ["run", "work", "--provider", "claude"] });
     expect(startPlan(ready, "claude", "terminal", null, "C:\\dev\\app")?.kind).toBe("terminal");
     expect(startPlan(ready, "claude", "terminal", null, "\\\\srv\\share")?.kind).toBe("terminal");
+  });
+
+  it("a start handed over from the New session dialog keeps its model, thinking and worktree", () => {
+    const ready = { ...acc("work"), isDefault: true };
+    const choice = { model: "opus", effort: "high", worktree: true };
+    expect(startPlan(ready, "claude", "terminal", null, "/r", choice)).toEqual({ kind: "terminal", args: ["run", "work", "--provider", "claude", "--cwd", "/r", "--model", "opus", "--effort", "high", "--worktree"] });
+  });
+
+  it("the handed-over choice belongs to its tool: switching the tool here drops it", () => {
+    const vm = fixture();
+    vm.accounts = [...vm.accounts, acc("cw", { id: "codex:cw", tool: "codex", isDefault: true })];
+    mount(vm, { overlay: { kind: "start", cwd: "/r", tool: "claude", choice: { model: "opus", effort: "max", worktree: true } } });
+    expect(document.querySelector('[title="agent-switch run work --provider claude --cwd /r --model opus --effort max --worktree"]')).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+    expect(document.querySelector('[title="agent-switch run cw --provider codex --cwd /r"]')).toBeTruthy();
   });
 
   it("won't start on a disabled account, and says how to get it back", () => {

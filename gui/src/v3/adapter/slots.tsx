@@ -2,7 +2,8 @@
  *  (hosted terminal or the user's own terminal) and the
  *  2.11 settings sections v3 keeps. */
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
+import * as ipc from "../../ipc.js";
 
 import { tauriBackend } from "../../terminal.js";
 import type { SessionRow } from "../../transforms.js";
@@ -17,14 +18,15 @@ import { ProvidersSettings } from "../../redesign/screens/settings/providers.js"
 import { SignInSettings } from "../../redesign/screens/settings/sign-ins.js";
 import { UpdatesSettings } from "../../redesign/screens/settings/updates.js";
 import type { SettingsSection } from "../settings.js";
-import { ChatTimeline, hiddenText } from "../chat.js";
+import { ChatTimeline, EarlierTurns, hiddenText } from "../chat.js";
 import { TranscriptTerminal } from "../transcript-terminal.js";
+import { EarlierNotShown } from "../subagent-view.js";
 import { fold } from "../timeline.js";
 import { ExternalBody, HostedTerminal } from "../workbench.js";
 import { useTimeline, type TimelineState } from "./useTimeline.js";
 import { worktreeOf } from "./data.js";
 import { modelLabel } from "../model-label.js";
-import { AgentConfigCard, INSTALLABLE_TOOLS, NoAgentConfigCard, agentConfigMissing, forgetFailedReleaseLookups, isolatedLabel, sortTools, useAgentConfigLatest } from "../../redesign/screens/tools.js";
+import { AgentConfigCard, INSTALLABLE_TOOLS, copyCommand, NoAgentConfigCard, agentConfigMissing, forgetFailedReleaseLookups, isolatedLabel, sortTools, useAgentConfigLatest } from "../../redesign/screens/tools.js";
 import { useAS } from "../../vm/store.js";
 import { toolStatus } from "../../vm/rules.js";
 import { ToolsPage, type ToolRowView } from "../tools.js";
@@ -69,7 +71,7 @@ function legacyScreen(section: SettingsSection): ReactNode {
 
 /** The session body: Agent Switch's own terminal for a hosted session, the
  *  facts and a focus button for one in the user's terminal (D-mirror). */
-export function SessionBody({ sessionKey, row, hosted, ownView = "chat", vars, followTheme, where, onFocus, onTakeOver, onExit }: { sessionKey: string; row: SessionRow | undefined; hosted: boolean; ownView?: "terminal" | "chat"; vars: Record<string, string>; followTheme: boolean; where: string; onFocus: () => void; onTakeOver: () => void; onExit: () => void }) {
+export function SessionBody({ sessionKey, row, hosted, ownView = "chat", vars, followTheme, where, onFocus, onTakeOver, onExit }: { sessionKey: string; row: SessionRow | undefined; hosted: boolean; ownView?: "terminal" | "chat"; vars: Record<string, string>; followTheme: boolean; where: string; onFocus: (() => void) | null; onTakeOver: (() => void) | null; onExit: () => void }) {
   if (hosted) return <HostedTerminal sessionKey={sessionKey} vars={vars} followTheme={followTheme} backend={tauriBackend} onExit={onExit} />;
   const facts = row ? (
     <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1">
@@ -88,17 +90,30 @@ export function SessionBody({ sessionKey, row, hosted, ownView = "chat", vars, f
 
 /** One read of the transcript feeds the timeline and the "read-only here"
  *  tooltip, which carries the count of lines not drawn (gap §5e). */
-function ExternalSession({ sessionKey, row, view, where, facts, onFocus, onTakeOver }: { sessionKey: string; row: SessionRow | undefined; view: "terminal" | "chat"; where: string; facts: ReactNode; onFocus: () => void; onTakeOver: () => void }) {
+function ExternalSession({ sessionKey, row, view, where, facts, onFocus, onTakeOver }: { sessionKey: string; row: SessionRow | undefined; view: "terminal" | "chat"; where: string; facts: ReactNode; onFocus: (() => void) | null; onTakeOver: (() => void) | null }) {
   const t = useTimeline(sessionKey);
-  const hidden = useMemo(() => hiddenText(fold(t.events).hidden), [t.events]);
-  return <ExternalBody where={where} facts={facts} lastLine={null} onFocus={onFocus} onTakeOver={onTakeOver} readOnlyTitle={hidden} timeline={<ReadOnlyTimeline t={t} row={row} terminal={view === "terminal"} />} />;
+  // The CLI leaves bookkeeping out and counts it; what it sent and the view does not draw adds to that.
+  const hidden = useMemo(() => {
+    const all = { ...t.hidden };
+    for (const [k, n] of Object.entries(fold(t.events).hidden)) all[k] = (all[k] ?? 0) + n;
+    return hiddenText(all);
+  }, [t.events, t.hidden]);
+  return <ExternalBody where={where} facts={facts} lastLine={null} onFocus={onFocus} onTakeOver={onTakeOver} readOnlyTitle={hidden} timeline={<ReadOnlyTimeline t={t} row={row} where={where} focusable={!!onFocus} terminal={view === "terminal"} />} />;
+}
+
+/** 7.7: one subagent's transcript, polled while it is on screen like a session's. */
+export function SubagentTranscript({ parent, agentId, read = ipc.subagentTimeline }: { parent: string; agentId: string; read?: typeof ipc.subagentTimeline }) {
+  const readOne = useCallback((key: string) => read(key, agentId), [read, agentId]);
+  const t = useTimeline(parent, readOne);
+  return <ReadOnlyTimeline t={t} sayEarlier />;
 }
 
 /** The read-only timeline of a session running elsewhere (ADR-010). Falls back
- *  to the facts while it loads or when it cannot be read. */
-export function ReadOnlyTimeline({ t, row, terminal }: { t: TimelineState; row?: SessionRow; terminal?: boolean }) {
+ *  to the facts while it loads or when it cannot be read. `sayEarlier`: say so when only the end was read. */
+export function ReadOnlyTimeline({ t, row, where, focusable = false, terminal, sayEarlier = false }: { t: TimelineState; row?: SessionRow; /** Where the session runs, for "answer it there". */ where?: string; /** A Focus terminal button is offered next to it. */ focusable?: boolean; terminal?: boolean; /** Say so when only the end was read (a subagent's view). */ sayEarlier?: boolean }) {
   if (!t.loaded) return <p className="m-auto text-[13px] text-ac-muted">Reading the conversation…</p>;
-  const notice = t.error ? (
+  const earlier = sayEarlier && t.cut ? <EarlierNotShown /> : null;
+  const state = t.error ? (
     <p role="status" className="shrink-0 border-b border-ac-line bg-ac-warn-tint px-4 py-1.5 text-xs text-ac-warn-text">
       The conversation could not be read: {t.error}
     </p>
@@ -107,14 +122,21 @@ export function ReadOnlyTimeline({ t, row, terminal }: { t: TimelineState; row?:
       Claude Code {t.version} is newer than the versions Agent Switch was tested with — some steps may show as not shown. Focus the terminal to see everything.
     </p>
   ) : null;
+  const notice = earlier || state ? (
+    <>
+      {earlier}
+      {state}
+    </>
+  ) : null;
   if (terminal)
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         {notice}
+        {t.earlier && <EarlierTurns prompts={t.earlier.prompts} load={t.earlier.load} />}
         <TranscriptTerminal events={t.events} />
       </div>
     );
-  return <ChatTimeline events={t.events} notice={notice} on={{ worktreeOf: worktreeOf(row) }} />;
+  return <ChatTimeline events={t.events} notice={notice} earlier={t.earlier} agent={row?.provider === "codex" ? "Codex" : "Claude"} on={{ worktreeOf: worktreeOf(row), ...(where ? { unanswerable: focusable ? `Answer it in ${where} — Focus terminal brings it up.` : `Answer it in ${where}.` } : {}) }} />;
 }
 
 /** Tools on the store: the board's rows, then the 2.11 agent-config card
@@ -130,6 +152,9 @@ export function ToolsSlot() {
     version: t.present ? t.version : null,
     status: toolStatus(t),
     latest: t.latest,
+    // Only tools with a verified `tooling install|upgrade` get a button (2.11 rule).
+    installable: INSTALLABLE_TOOLS.has(t.id),
+    how: INSTALLABLE_TOOLS.has(t.id) ? null : copyCommand(t),
   }));
   const terminal = (toolId: string, action: "install" | "update") => INSTALLABLE_TOOLS.has(toolId) && s.open({ kind: "terminal", toolId, action });
   return (

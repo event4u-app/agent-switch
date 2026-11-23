@@ -57,16 +57,16 @@ describe("Composer", () => {
     expect(c.box.value).toBe("/review ");
   });
 
-  it("a pasted image becomes an image chip; Stop is off while idle; Queue needs content", async () => {
+  it("a pasted image becomes an image chip; Stop is off while idle; Send needs content", async () => {
     const c = setup();
     expect((screen.getByText("Stop").closest("button") as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByText("Queue").closest("button") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByText("Send").closest("button") as HTMLButtonElement).disabled).toBe(true);
     const png = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "shot.png", { type: "image/png" });
     await act(async () => {
       fireEvent.paste(c.box, { clipboardData: { files: [png] } });
     });
     await waitFor(() => expect(screen.getByText("shot.png")).toBeTruthy());
-    fireEvent.click(screen.getByText("Queue"));
+    fireEvent.click(screen.getByText("Send"));
     expect(c.onSend).toHaveBeenCalledWith("", [{ image: { mediaType: "image/png", data: "iVBORw==" } }]);
   });
 

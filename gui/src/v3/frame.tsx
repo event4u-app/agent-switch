@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useState, type ReactNode } from "react";
-import { FileDiff, GitBranch, Inbox, Layers, Library, ListTree, PanelLeft, Plus, Search, Settings, TriangleAlert, Wrench } from "lucide-react";
+import { FileDiff, Inbox, Layers, Library, ListTree, Network, PanelLeft, Plus, Search, Settings, TriangleAlert, Wrench } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { AppLogo } from "../ui/AppLogo.js";
 import { Button, IconButton } from "../ui/Button.js";
@@ -90,23 +90,24 @@ export interface StripeItem {
   dot?: boolean;
 }
 
-export function Stripe({ side, items, active, onSelect }: { side: "left" | "right"; items: StripeItem[]; active?: string | null; onSelect: (id: string) => void }) {
+export function Stripe({ side, items, active, why, onSelect }: { side: "left" | "right"; items: StripeItem[]; active?: string | null; /** Why no button can act here (a page tab has no session); absent: they can. */ why?: string | null; onSelect: (id: string) => void }) {
   return (
     <nav
       aria-label={side === "left" ? "Tool windows" : "Session panels"}
       className={cn("flex w-11 shrink-0 flex-col items-center gap-1 bg-ac-rail py-2", side === "left" ? "border-r border-ac-line" : "border-l border-ac-line")}
     >
       {items.map((it) => {
-        const on = it.id === active;
+        const on = !why && it.id === active;
         return (
           <button
             key={it.id}
             type="button"
-            title={it.label}
+            title={why ? `${it.label.trim()} · ${why}` : it.label}
             aria-label={it.label}
             aria-pressed={on}
-            onClick={() => onSelect(it.id)}
-            className={cn("relative inline-flex size-9 items-center justify-center rounded-md [&_svg]:size-[18px]", on ? "bg-ac-raise text-ac-text" : "text-ac-muted hover:bg-ac-raise hover:text-ac-text")}
+            aria-disabled={why ? true : undefined}
+            onClick={why ? undefined : () => onSelect(it.id)}
+            className={cn("relative inline-flex size-9 items-center justify-center rounded-md [&_svg]:size-[18px]", on ? "bg-ac-raise text-ac-text" : why ? "cursor-not-allowed text-ac-muted opacity-50" : "text-ac-muted hover:bg-ac-raise hover:text-ac-text")}
           >
             {on && <Marker />}
             {it.icon}
@@ -132,7 +133,7 @@ export function rightItems(blocker: boolean): StripeItem[] {
   return [
     { id: "summary", label: "Summary  ⌘I", icon: <PanelLeft className="rotate-180" />, dot: blocker },
     { id: "changes", label: "Changes", icon: <FileDiff /> },
-    { id: "children", label: "Children", icon: <GitBranch /> },
+    { id: "children", label: "Children", icon: <Network /> },
   ];
 }
 
@@ -166,6 +167,7 @@ export function Shell({
   inboxOpen,
   needsYou,
   blocker,
+  rightWhy,
   sessionsWindow,
   centre,
   rightWindow,
@@ -180,6 +182,8 @@ export function Shell({
   needsYou: boolean;
   /** The active session has a blocker: the Summary button dots while Summary is closed. */
   blocker: boolean;
+  /** Why the session panels cannot open (a page tab is active); absent: they can. */
+  rightWhy?: string | null;
   sessionsWindow: ReactNode;
   centre: ReactNode;
   rightWindow: ReactNode;
@@ -193,8 +197,8 @@ export function Shell({
         <Stripe side="left" items={leftItems(!frame.sessionsShown && needsYou)} active={frame.sessionsShown ? "sessions" : null} onSelect={frame.selectLeft} />
         {frame.sessionsShown && sessionsWindow}
         {centre}
-        {frame.right && rightWindow}
-        <Stripe side="right" items={rightItems(blocker && frame.right !== "summary")} active={frame.right} onSelect={frame.selectRight} />
+        {frame.right && !rightWhy && rightWindow}
+        <Stripe side="right" items={rightItems(blocker && frame.right !== "summary")} active={frame.right} why={rightWhy} onSelect={frame.selectRight} />
       </div>
       {overlay}
     </div>

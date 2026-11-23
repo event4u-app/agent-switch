@@ -12,13 +12,15 @@ import { paceFor, type LimitAccount, type LimitWindow } from "../limits.js";
 import type { DoneItem, PaletteEntry } from "../overlays.js";
 import type { LibraryRow, PageAccount, TableSession } from "../pages.js";
 import type { ChangedFile, SummaryFacts } from "../panels.js";
-import type { ChildModel, ChildSource, ChildTool, RowSession } from "../sessions.js";
+import { childNoun, subagentLabel, type ChildModel, type ChildSource, type ChildTool, type RowSession } from "../sessions.js";
 import type { OpenTarget } from "../settings.js";
 import type { Appearance } from "../themes/resolve.js";
 import { SESSION_MENU, type SessionMenuItem, type V3Data } from "../window.js";
 import type { BarSession, ModelChoices } from "../workbench.js";
 import { modelLabel } from "../model-label.js";
 import { shortAge } from "../../ui/format.js";
+import { choiceFlags, type StartChoice } from "../../ipc.js";
+import type { RememberedStart } from "../../settings-store.js";
 import { answeredElsewhere, cliAccount, requestKind } from "../../vm/switch-requests.js";
 import { parsePr, type HistoryRow, type PrFacts } from "./feeds.js";
 import type { V3Feeds } from "./useFeeds.js";
@@ -34,6 +36,8 @@ export interface AdapterEnv {
   terminalApp: string;
   /** Changed files per session key, as last read (`changes <s> --json`). */
   changes: ReadonlyMap<string, ChangedFile[]>;
+  /** Changed files past the list's cap, per session key (`more` of the same read). */
+  changesMore?: ReadonlyMap<string, number>;
   /** Ask for a session's changed files; the caller dedupes and reads. */
   wantChanges: (key: string) => void;
   /** Sessions this window shows in the chat view (their bridges run here). */
@@ -42,8 +46,17 @@ export interface AdapterEnv {
   ownViews?: ReadonlyMap<string, "terminal" | "chat">;
   /** Chats with no session row yet (a new chat before the poll sees it): drawn from these. */
   chatRows?: readonly SessionRow[];
-  /** Where a plain start in the plan's folder would go and why (`dir --json`); null until read. */
-  route?: { profile: string | null; why: string[]; blocked?: string; ask?: string[] } | null;
+  /** Where a session in the user's own terminal runs, as last read (`focus <s> --where --json`). */
+  terminals?: ReadonlyMap<string, SessionTerminal>;
+  /** Ask for a session's terminal; the caller dedupes and reads. */
+  wantTerminal?: (key: string) => void;
+  /** Where a plain start in the plan's folder would go and why (`dir --json`); null until read.
+   *  `for` names the tool and folder it was read for: a route read for another one is ignored. */
+  route?: { profile: string | null; why: string[]; blocked?: string; ask?: string[]; for?: { tool: string; folder: string } } | null;
+  /** The New-session plan as the dialog has it now; the facts follow it. Absent: `plan`. */
+  draft?: NewSessionPlan | null;
+  /** The user's home folder, for a typed `~/…` folder; null until read. */
+  home?: string | null;
 }
 
 export const THINKING_LEVELS: NewSessionFacts["thinkingLevels"] = {
@@ -141,7 +154,7 @@ function childState(o: Record<string, unknown>, rowOf?: (key: string) => Session
   return { state: o.state === "running" ? "working" : "done" };
 }
 
-const CHILD_SOURCES = new Set<ChildSource>(["hook", "lineage", "host", "counted", "unknown"]);
+const CHILD_SOURCES = new Set<ChildSource>(["hook", "files", "lineage", "host", "counted", "unknown"]);
 const toolOf = (provider: string | undefined): ChildTool => (provider === "codex" ? "codex" : provider === "antigravity" ? "antigravity" : "claude");
 
 /** What a child tree needs beyond the rows: account colours, the Needs-you subjects, the clock. */
@@ -167,7 +180,7 @@ export function childrenOf(r: SessionRow, rowOf?: (key: string) => SessionRow | 
     const sessionKeyOf = typeof o.sessionKey === "string" ? o.sessionKey : null;
     if (sessionKeyOf && above.has(sessionKeyOf)) continue;
     const id = typeof o.agentId === "string" ? o.agentId : (sessionKeyOf ?? `${kind}-${out.length}`);
-    const label = typeof o.label === "string" ? o.label : typeof o.type === "string" ? o.type : kind;
+    const label = typeof o.label === "string" ? o.label : typeof o.agentId === "string" ? subagentLabel(o) : typeof o.type === "string" ? o.type : kind;
     const source = CHILD_SOURCES.has(o.source as ChildSource) ? (o.source as ChildSource) : "unknown";
     const identity: Partial<ChildModel> = {};
     let children: ChildModel[] = [];
@@ -182,7 +195,14 @@ export function childrenOf(r: SessionRow, rowOf?: (key: string) => SessionRow | 
     } else {
       identity.tool = toolOf(r.provider);
       identity.account = parentAccount;
-      if (typeof o.agentId === "string") identity.worktree = worktree(o.agentId);
+      if (typeof o.agentId === "string") {
+        identity.worktree = worktree(o.agentId);
+        // 7.7: what it runs now and its hook times, for its read-only view.
+        if (typeof o.doing === "string" && o.state === "running") identity.doing = o.doing;
+        const ms = (v: unknown) => (typeof v === "string" && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null);
+        if (ms(o.startedAt) != null) identity.startedMs = ms(o.startedAt);
+        if (ms(o.endedAt) != null) identity.endedMs = ms(o.endedAt);
+      }
     }
     const needsYou = !!ctx.needing?.has(id) || children.some((k) => k.needsYou);
     out.push({ id, label, kind, ...childState(o, rowOf, ctx.now), source, ...identity, ...(children.length ? { children } : {}), ...(needsYou ? { needsYou } : {}) });
@@ -192,36 +212,123 @@ export function childrenOf(r: SessionRow, rowOf?: (key: string) => SessionRow | 
   return out;
 }
 
-/** A subagent's worktree name, from the session's hook record of its children. Pure. */
+/** Summary's "Children" fact: the Children window's noun and count, or "none". Pure. */
+const childSummary = (children: ChildModel[]) => (children.length ? childNoun({ children }) : "none");
+
+/** A subagent's worktree name, from the session's record of its children: by its agent id, and by the Task call that started it, which a running Task row already knows. Pure. */
 export function worktreeOf(r: SessionRow | undefined): (agentId: string) => string | null {
   const byAgent = new Map<string, string>();
   for (const c of r?.children ?? []) {
     const o = c as Record<string, unknown>;
     const cwd = typeof o.cwd === "string" ? o.cwd : "";
     const m = /[\\/]worktrees[\\/]([^\\/]+)[\\/]?$/.exec(cwd);
-    if (typeof o.agentId === "string" && m) byAgent.set(o.agentId, m[1]);
+    if (!m) continue;
+    if (typeof o.agentId === "string") byAgent.set(o.agentId, m[1]);
+    if (typeof o.toolUseId === "string") byAgent.set(o.toolUseId, m[1]);
   }
   return (agentId) => byAgent.get(agentId) ?? null;
 }
 
 /** Menu entries that do something for this session. Detach has no meaning
  *  outside the attached terminal view, which closing its tab already does;
- *  End and Compact reach only sessions Agent Switch hosts. Pure. */
-export function menuFor(row: SessionRow | undefined, hosted: boolean): SessionMenuItem[] {
+ *  End and Compact reach only sessions Agent Switch hosts; Take over only a
+ *  session in the user's own terminal, and only with tmux (`host adopt`). Pure. */
+export function menuFor(row: SessionRow | undefined, hosted: boolean, hosting: "persistent" | "ephemeral"): SessionMenuItem[] {
   return SESSION_MENU.filter((item) => {
     if (item === "Detach") return false;
     if (item === "End…" || item === "Compact") return hosted;
-    if (item === "Take over here…" || item === "Hand off…" || item === "Move to another account…") return !!row && row.provider !== "antigravity";
+    if (item === "Take over here…") return canTakeOver(row, hosted, hosting);
+    if (item === "Hand off…" || item === "Move to another account…") return !!row && row.provider !== "antigravity";
     return true;
   });
 }
 
+/** A Claude or Codex session in the user's own terminal can be taken over into a
+ *  hosted window — where tmux hosts sessions; without it `host adopt` refuses. Pure. */
+export function canTakeOver(row: SessionRow | undefined, hosted: boolean, hosting: "persistent" | "ephemeral"): boolean {
+  return hosting === "persistent" && !!row && !hosted && row.surface !== "desktop-app" && (row.provider === "claude" || row.provider === "codex");
+}
+
+/** What `focus <s> --where --json` says about a session in the user's own terminal. */
+export interface SessionTerminal {
+  running: boolean | null;
+  terminal: string | null;
+  focusable: boolean;
+  why?: string;
+}
+
+/** Where a session not hosted here runs, named only as far as it is known, and
+ *  whether "Focus terminal" reaches it. Codex names no program per session, so
+ *  it is never asked about. Asks for a Claude session's terminal once. */
+function externalWhere(r: SessionRow, key: string, here: boolean, env: AdapterEnv): { where: string; focusable: boolean } {
+  if (r.surface === "desktop-app") return { where: "Claude Desktop", focusable: false };
+  if (here) return { where: "Agent Switch", focusable: false };
+  if (r.provider !== "claude") return { where: "your terminal", focusable: false };
+  const t = env.terminals?.get(key);
+  if (!t) env.wantTerminal?.(key);
+  return { where: t?.terminal ?? "your terminal", focusable: !!t?.focusable };
+}
+
 const prsOf = (r: SessionRow): PrFacts[] => (r.prs ?? []).map(parsePr).filter((p): p is PrFacts => p !== null);
+/** True when the session has an open PR: Create PR is then not offered. */
+export const hasOpenPr = (r: SessionRow): boolean => prsOf(r).some((p) => p.lifecycle === "OPEN");
 
 export interface NextStep {
   text: string;
   action: string;
   does: "open-checks" | "open-pr" | "create-pr" | "focus";
+  /** What the agent is asked to do about it: sent where the app can type, copied elsewhere. */
+  prompt?: string;
+}
+
+/** A PR page as GitHub names it; anything else is left out of a prompt. Pure. */
+const prPage = (url: string | null | undefined): string | null => (url && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/\d+$/.test(url) ? url : null);
+
+/** The request a failing PR's agent is sent: fixed text and the PR's checks page,
+ *  nothing else. Check names are text anyone who can push a workflow controls, so
+ *  they never reach the agent; it reads them on that page. Same as `needs fix`. Pure. */
+export function ciPrompt(pr: Pick<PrFacts, "number" | "url">): string {
+  const page = prPage(pr.url);
+  return `CI is failing on PR #${pr.number}${page ? ` (${page}/checks)` : ""}. Find the cause and fix it.`;
+}
+
+/** The request a PR with a merge conflict sends its agent. Pure. */
+export function conflictPrompt(pr: Pick<PrFacts, "number" | "url">): string {
+  const page = prPage(pr.url);
+  return `PR #${pr.number} has a merge conflict with its base branch${page ? ` (${page})` : ""}. Bring the branch up to date with its base and resolve the conflict.`;
+}
+
+/** Why a hosted Codex session's model and thinking stay as they started: `host respawn` restarts Claude only. */
+export const NO_TERMINAL_WHY = "This session started in the chat view; it has no terminal here";
+export const CODEX_RESPAWN_WHY ="Codex keeps the model and thinking it started with; start a new session to change them";
+
+/**
+ * Whether "Focus terminal" can bring this session's terminal to the front: only a
+ * Claude session in the user's own terminal (`focus` finds it by its process), not
+ * one the app hosts or runs as a chat, and only while the Open in › Focus terminal
+ * switch is on. Pure.
+ */
+export const canFocus = (r: { provider: string }, hereOrHosted: boolean, focusTerminal: boolean): boolean => focusTerminal && r.provider === "claude" && !hereOrHosted;
+
+/** The label of a step the agent can be asked to do: sent, or copied for the user to paste. Pure. */
+export const promptAction = (canType: boolean) => (canType ? "Send to agent" : "Copy prompt");
+
+/** The folder's git state as the New-session dialog labels it ("main · clean",
+ *  "feat/x · 3 changed"), from the newest session the CLI read there with its git
+ *  facts (`sessions --json`). Null for a folder no session ran in, or outside git:
+ *  nothing is shown rather than a guess. Pure. */
+export function folderGitState(folder: string, rows: readonly SessionRow[]): string | null {
+  const here = rows.filter((r) => r.git && (r.cwd === folder || r.git.cwd === folder || r.git.toplevel === folder)).sort((a, b) => b.mtimeMs - a.mtimeMs)[0]?.git;
+  if (!here) return null;
+  const changed = here.changed > 0 ? `${here.changed} changed` : here.dirty ? "changed" : "clean";
+  return `${here.branch ?? "detached"} · ${changed}`;
+}
+
+/** The session a CI item is about: the one it names, or — from an older CLI that
+ *  named the item by a session key — that key. Never another session found on the
+ *  same PR: a fix sent there would go to work the user did not pick. Pure. */
+export function ciSession(n: { subject: string; session?: string }, byKey: ReadonlyMap<string, SessionRow>): SessionRow | undefined {
+  return byKey.get(n.session ?? n.subject);
 }
 
 /** The one next step for a session, by its PR and git state (spec §6.4). Pure. */
@@ -229,9 +336,13 @@ export function nextStep(r: SessionRow, needsYou: boolean): NextStep | null {
   const pr = prsOf(r)[0];
   if (needsYou) return { text: "Waits for you in its terminal", action: "Focus terminal", does: "focus" };
   if (pr && pr.lifecycle === "OPEN") {
-    if (pr.ci === "FAILURE") return { text: `CI failing: ${pr.failingChecks.join(", ") || "checks"}`, action: "Open checks", does: "open-checks" };
-    if (pr.mergeable === "CONFLICTING") return { text: `PR #${pr.number} has a merge conflict`, action: "Open PR", does: "open-pr" };
-    if (pr.review === "CHANGES_REQUESTED") return { text: `Changes requested on PR #${pr.number}`, action: "Open PR", does: "open-pr" };
+    if (pr.ci === "FAILURE") return { text: `CI failing: ${pr.failingChecks.join(", ") || "checks"}`, action: "Open checks", does: "open-checks", prompt: ciPrompt(pr) };
+    if (pr.mergeable === "CONFLICTING")
+      return { text: `PR #${pr.number} has a merge conflict`, action: "Open PR", does: "open-pr", prompt: conflictPrompt(pr) };
+    if (pr.review === "CHANGES_REQUESTED") {
+      const page = prPage(pr.url);
+      return { text: `Changes requested on PR #${pr.number}`, action: "Open PR", does: "open-pr", prompt: `Changes were requested on PR #${pr.number}${page ? ` (${page})` : ""}. Please read the review comments and address them.` };
+    }
     return null;
   }
   const g = r.git;
@@ -296,9 +407,25 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
   const accounts = new Map(vm.accounts.map((a) => [a.id, a]));
   const accountOf = (r: SessionRow) => accounts.get(accountId(r.provider, r.profile));
   const colorOf = (r: SessionRow): IdentityColor => accountOf(r)?.color ?? "blue";
-  const needs = feeds.needs?.items ?? [];
-  const needing = new Set(needs.map((n) => n.subject));
   const hosted = new Map((feeds.host?.hosted ?? []).filter((h) => h.alive).map((h) => [h.key, h]));
+  /** The app types into a session it hosts or whose chat runs in this window. */
+  const canType = (key: string) => hosted.has(key) || !!env.chats?.has(key);
+  const focusOk = (r: SessionRow, key: string) => canFocus(r, canType(key), env.focusTerminal);
+  // A verb says what it does here. CI: the fix is sent where the app can type into the
+  // session the item names; elsewhere the checks (or, for a conflict, the PR) open.
+  // "Focus terminal" only where focusing works; elsewhere the click opens the session.
+  const needs = (feeds.needs?.items ?? []).map((n) => {
+    if (n.kind === "ci") {
+      const r = ciSession(n, byKey);
+      return { ...n, verb: r && canType(sessionKey(r)) ? "Fix" : n.ci?.state === "conflict" ? "Open PR" : "Open checks" };
+    }
+    if (n.verb === "Focus terminal") {
+      const r = byKey.get(n.subject);
+      return r && focusOk(r, n.subject) ? n : { ...n, verb: "Open session" };
+    }
+    return n;
+  });
+  const needing = new Set(needs.map((n) => n.subject));
   const today = startOfDay(now);
   const stateOf = (r: SessionRow) => sessionFromRow(r, now).state;
   const titleOf = (r: SessionRow) => r.library?.name || r.summary || basename(r.cwd) || r.sessionId.slice(0, 8);
@@ -316,7 +443,9 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       state: view.state,
       stateSource: view.stateSource ?? null,
       quiet: view.quietSince != null ? `no update in ${shortAge(view.quietSince, now)}` : null,
-      account: { name: r.profile, nearLimit: nearLimit(accountOf(r)) },
+      account: { name: r.profile, nearLimit: nearLimit(accountOf(r)), color: colorOf(r) },
+      tool: toolOf(r.provider),
+      lastActiveMs: r.mtimeMs,
       branch: r.git?.branch ?? null,
       pr: pr ? { number: pr.number, ci: pr.ci, mergeable: pr.mergeable } : null,
       children,
@@ -399,27 +528,39 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
 
   const targets: OpenTarget[] = (feeds.openTargets?.targets ?? []).map((t) => ({ target: t.target, label: t.label, kind: t.kind, installed: t.installed, app: t.app, launcher: t.launcher }));
 
-  // The account the CLI's routing picks for this folder; the default account until that is read.
-  const routedName = env.route?.profile ? env.route.profile.slice(env.route.profile.indexOf("/") + 1) : null;
-  const routed = routedName ? vm.accounts.find((a) => a.tool === env.plan.tool && a.name === routedName) : undefined;
-  const defaultClaude = routed ?? vm.accounts.find((a) => a.tool === env.plan.tool && a.isDefault) ?? vm.accounts.find((a) => a.tool === env.plan.tool);
-  const planLimits = defaultClaude ? limitAccount(defaultClaude, now) : null;
-  const ask = askCandidates(env.route, vm.accounts, env.plan.tool);
+  // The dialog's facts follow the plan as it is now: its tool, folder and chosen account.
+  const live = env.draft ?? env.plan;
+  // The account the CLI's routing picks for this folder; the tool's default account until that is read.
+  const route = env.route && (!env.route.for || (env.route.for.tool === live.tool && env.route.for.folder === live.folder)) ? env.route : null;
+  const routedName = route?.profile && route.profile.startsWith(`${live.tool}/`) ? route.profile.slice(live.tool.length + 1) : null;
+  const routed = routedName ? vm.accounts.find((a) => a.tool === live.tool && a.name === routedName) : undefined;
+  const chosen = live.account ? vm.accounts.find((a) => a.tool === live.tool && a.name === live.account) : undefined;
+  const shown = chosen ?? routed ?? vm.accounts.find((a) => a.tool === live.tool && a.isDefault) ?? vm.accounts.find((a) => a.tool === live.tool);
+  const planLimits = shown ? limitAccount(shown, now) : null;
+  const ask = askCandidates(route, vm.accounts, live.tool);
+  const accountsOf = (tool: string) => vm.accounts.filter((a) => a.tool === tool && !a.disabled).map((a) => ({ name: a.name, color: a.color }));
   const facts: NewSessionFacts = {
-    terminalApp: env.terminalApp,
+    gitState: folderGitState(live.folder, rows),
+    terminalApp: startTerminalName(feeds.openTargets, env.terminalApp),
     hosting: feeds.host?.mode ?? "ephemeral",
     thinkingLevels: THINKING_LEVELS,
+    models: { claude: CLAUDE_MODELS.map((m) => ({ id: m.id, label: m.label })), codex: [], antigravity: [] },
+    folders: recentFolders(rows),
+    home: env.home ?? null,
+    accounts: { claude: accountsOf("claude"), codex: accountsOf("codex"), antigravity: accountsOf("antigravity") },
     account: {
-      name: defaultClaude?.name ?? "—",
-      color: defaultClaude?.color ?? "blue",
-      reason: env.route?.blocked ? env.route.blocked : routed ? (env.route?.why[0] ?? "the folder's rule") : defaultClaude?.isDefault ? "the account for plain starts" : "the only account of this tool",
-      limits: planLimits ?? { key: "none", tool: "claude", name: "—", color: "blue", protect: 98, next: false, signIn: false, checkedMs: null, windows: [] },
+      name: shown?.name ?? "—",
+      color: shown?.color ?? "blue",
+      ...(chosen ? { chosen: true as const } : {}),
+      reason: chosen ? "chosen here" : route?.blocked ? route.blocked : routed ? (route?.why[0] ?? "the folder's rule") : shown?.isDefault ? "the account for plain starts" : "the only account of this tool",
+      limits: planLimits ?? { key: "none", tool: live.tool === "codex" ? "codex" : "claude", name: "—", color: "blue", protect: 98, next: false, signIn: false, checkedMs: null, windows: [] },
       // Reasons belong to the routed account; shown beside another one they would mislead.
-      why: routed ? (env.route?.why ?? []) : [],
+      why: routed && !chosen ? (route?.why ?? []) : [],
       paceText: null,
     },
     ...(ask ? { ask } : {}),
-    command: startCommand(env.plan, ask ? null : (defaultClaude?.name ?? null)),
+    // What the start passes: the account chosen here, else none — the CLI routes, as the box shows.
+    command: startCommand(live, live.account ?? (ask ? "ask" : null)),
     nowMs: now,
   };
 
@@ -467,6 +608,12 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       return {
         key,
         hosted: hosted.has(key) || !!env.chats?.has(key),
+        // Only a tmux window can be joined from the user's terminal; a chat has none.
+        attachable: hosted.has(key),
+        // Started in the chat: there is no program in a terminal to switch to.
+        ...(env.chats?.has(key) && !hosted.has(key) ? { terminalWhy: NO_TERMINAL_WHY } : {}),
+        ...externalWhere(r, key, hosted.has(key) || !!env.chats?.has(key), env),
+        ...(r.provider === "codex" && hosted.has(key) && !env.chats?.has(key) ? { respawnWhy: CODEX_RESPAWN_WHY } : {}),
         // v3.1: chat and terminal share one conversation for Claude and Codex.
         chatAvailable: r.provider === "claude" || r.provider === "codex",
         view: env.chats?.has(key) ? "chat" : hosted.has(key) ? "terminal" : (env.ownViews?.get(key) ?? "chat"),
@@ -500,17 +647,22 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       if (!r) return null;
       const pr = prsOf(r)[0];
       const a = accountOf(r);
-      const n = nextStep(r, needing.has(key));
+      const n = nextStep(r, needing.has(key) && focusOk(r, key));
+      // The Changes list is the authority: once read, the count is its length, so Summary and
+      // Changes agree. Before the first read the hooks' count stands in.
+      if (r.git) env.wantChanges(key);
+      const files = env.changes.get(key);
       return {
-        next: n && { text: n.text, action: n.action },
+        next: n && { text: n.text, action: n.prompt ? promptAction(canType(key)) : n.action },
         pr: pr ? { number: pr.number, url: pr.url, ci: pr.ci, lifecycle: pr.lifecycle, mergeable: pr.mergeable, review: pr.review, failingChecks: pr.failingChecks } : null,
-        git: r.git ? { branch: r.git.branch, worktree: r.git.worktree, changed: r.git.changed, ahead: r.git.ahead, behind: r.git.behind } : null,
+        git: r.git ? { branch: r.git.branch, worktree: r.git.worktree, changed: files ? files.length + (env.changesMore?.get(key) ?? 0) : r.git.changed, ahead: r.git.ahead, behind: r.git.behind } : null,
         limit: nearLimit(a) ? `${a!.name} is at ${fiveH(a) ?? "?"}% of its 5-hour window` : null,
         more: {
           id: r.sessionId,
           host: hosted.has(key) ? "Hosted by Agent Switch" : r.surface === "desktop-app" ? "Claude Desktop" : "Your terminal",
           library: keptText(r),
-          children: `${r.childCount ?? 0} child session${r.childCount === 1 ? "" : "s"}`,
+          // The Children window's count and words, so the two never disagree.
+          children: childSummary(sessions.find((x) => x.key === key)?.children ?? childrenOf(r, (k) => byKey.get(k), childCtx)),
         },
       };
     },
@@ -518,12 +670,13 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       env.wantChanges(key);
       return env.changes.get(key) ?? [];
     },
+    changesMore: (key) => env.changesMore?.get(key) ?? 0,
     next: (key) => {
       const r = byKey.get(key);
-      const n = r ? nextStep(r, needing.has(key)) : null;
-      return n && { text: n.text, action: n.action };
+      const n = r ? nextStep(r, needing.has(key) && focusOk(r, key)) : null;
+      return n && { text: n.text, action: n.prompt ? promptAction(canType(key)) : n.action };
     },
-    menu: (key) => menuFor(byKey.get(key), hosted.has(key)),
+    menu: (key) => menuFor(byKey.get(key), hosted.has(key), feeds.host?.mode ?? "ephemeral"),
     // v3.1: "Commit…" opens the Review page, where staged changes are committed.
     commitAvailable: true,
   };
@@ -542,17 +695,72 @@ export function askCandidates(route: Route, accounts: readonly Account[], tool: 
 /** Which Claude account a new chat starts on: the routed one, else the default;
  *  under strategy ask, the candidates to ask about instead. Pure. */
 export function chatStart(route: Route, accounts: readonly Account[]): { profile: string } | { ask: { name: string; color: IdentityColor }[] } | null {
-  const ask = askCandidates(route, accounts, "claude");
+  // A route read for another tool (the New-session dialog's last pick) says nothing about Claude.
+  const own = route?.profile?.startsWith("claude/") ? route : null;
+  const ask = askCandidates(own, accounts, "claude");
   if (ask) return { ask };
-  const profile = route?.profile ? route.profile.slice(route.profile.indexOf("/") + 1) : accounts.find((a) => a.tool === "claude" && a.isDefault)?.name;
+  const profile = own?.profile ? own.profile.slice("claude/".length) : accounts.find((a) => a.tool === "claude" && a.isDefault)?.name;
   return profile ? { profile } : null;
 }
 
-/** The exact command the New-session dialog previews. Pure. */
-export function startCommand(p: NewSessionPlan, account: string | null): string {
+/** What the New-session dialog opens with: the project's last start, or — on
+ *  the first start there — your terminal (spec Principle 5). Pure. */
+export function initialPlan(folder: string, last: RememberedStart | null, hosting: "persistent" | "ephemeral" = "persistent"): NewSessionPlan {
+  const base = { folder, gitState: null, worktree: false };
+  if (!last) return { ...base, tool: "claude", model: "opus", thinking: "high", where: "terminal" };
+  // `host start` refuses without tmux, so a remembered hosted start opens in the user's terminal there.
+  return { ...base, ...last, ...(last.where === "hosted" && hosting !== "persistent" ? { where: "terminal" as const } : {}), remembered: true };
+}
+
+/** The model, thinking and worktree a plan starts with — only what its tool takes. Pure. */
+export function startChoice(p: NewSessionPlan): StartChoice {
+  return {
+    ...(p.model && p.tool !== "antigravity" ? { model: p.model } : {}),
+    ...(THINKING_LEVELS[p.tool].includes(p.thinking) ? { effort: p.thinking } : {}),
+    ...(p.worktree ? { worktree: true } : {}),
+  };
+}
+
+/** The exact command the New-session dialog previews — the one its start runs.
+ *  `account`: the one named on it; null lets the CLI route; "ask" marks one still to be chosen. Pure. */
+export function startCommand(p: NewSessionPlan, account: string | null | "ask"): string {
   const q = (s: string) => (/^[\w./:@-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`);
-  if (p.where === "hosted") return ["agent-switch", "host", "start", ...(account ? [q(account)] : []), "--provider", p.tool, "--cwd", q(p.folder)].join(" ");
-  return ["agent-switch", "run", ...(account ? [q(account)] : []), ...(p.tool !== "claude" ? ["--provider", p.tool] : []), "--cwd", q(p.folder)].join(" ");
+  const choice = choiceFlags(startChoice(p)).map(q);
+  const who = account === "ask" ? ["<account>"] : account ? [q(account)] : [];
+  if (p.where === "hosted") return ["agent-switch", "host", "start", ...who, "--provider", p.tool, "--cwd", q(p.folder), ...choice].join(" ");
+  return ["agent-switch", "run", ...who, "--provider", p.tool, "--cwd", q(p.folder), ...choice, "--new-window"].join(" ");
+}
+
+/** The terminal `run --new-window` opens: the one set in Settings (the CLI's
+ *  pick), Terminal for Warp, which cannot be asked to run a command; `fallback`
+ *  until Settings is read. Pure. */
+export function startTerminalName(o: V3Feeds["openTargets"], fallback: string): string {
+  const id = o?.terminal;
+  if (!id) return fallback;
+  if (id === "warp") return "Terminal";
+  return o.terminals.find((t) => t.id === id)?.name ?? fallback;
+}
+
+/** The folders sessions ran in, newest first. Pure. */
+function recentFolders(rows: readonly SessionRow[], limit = 8): string[] {
+  const out: string[] = [];
+  for (const r of [...rows].sort((a, b) => b.mtimeMs - a.mtimeMs)) {
+    if (r.cwd && !out.includes(r.cwd)) out.push(r.cwd);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** Where a start in `folder` is remembered: the main repository it belongs to —
+ *  also from a worktree or a subfolder — as the sessions' git facts know it; the
+ *  folder itself when none does. Pure. */
+export function startKey(folder: string, rows: readonly SessionRow[]): string {
+  const inside = (dir: string) => folder === dir || folder.startsWith(dir.endsWith("/") ? dir : `${dir}/`);
+  for (const r of rows) {
+    const g = r.git;
+    if (g && inside(g.toplevel)) return g.repoRoot ?? g.toplevel;
+  }
+  return folder;
 }
 
 /** The switch requests the window acts on. Pure. */
@@ -597,6 +805,8 @@ export function decisionFor(subject: string, vm: ViewModel, rows: readonly Sessi
   return {
     account: a.name,
     tool: a.tool,
+    // The sheet also opens from Move at any level; only a near or limited account is "near limit".
+    nearLimit: nearLimit(a),
     // The accounts a session can move to, most room first; the picker offers these only.
     targets: others.map((x) => ({ name: x.name, color: x.color, busy: x.liveSessions > 0 })),
     pctUsed: w.utilization ?? 0,

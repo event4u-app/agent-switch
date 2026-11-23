@@ -22,8 +22,8 @@ describe("Summary PR line", () => {
 describe("Library Last", () => {
   it("now, minutes, hours, then a short date", () => {
     expect(lastSeen(NOW - 10_000, NOW)).toBe("now");
-    expect(lastSeen(NOW - 5 * 60_000, NOW)).toBe("5 min");
-    expect(lastSeen(NOW - 3 * 3_600_000, NOW)).toBe("3 h");
+    expect(lastSeen(NOW - 5 * 60_000, NOW)).toBe("5m ago");
+    expect(lastSeen(NOW - 3 * 3_600_000, NOW)).toBe("3h ago");
     expect(lastSeen(Date.UTC(2026, 9, 28, 12), NOW, "en-US")).toBe("Oct 28");
   });
 });

@@ -6,19 +6,25 @@
  * Marker (where you are).
  */
 
-import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ArrowRight, Check, GitBranch, Hash, Search } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { Kbd } from "../ui/Typography.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
-import { AccountMark, Chip, Label, Marker, duration } from "./kit.js";
+import { AccountMark, Chip, Label, Marker, ago } from "./kit.js";
 import { NeedRow, type NeedItem } from "./needs.js";
+import { useModalFocus } from "./focus.js";
+import { MenuSection } from "./menus.js";
 
+/** A modal layer over the window: it takes focus, traps Tab and closes on Esc (focus.ts). */
 function Overlay({ children, top = 72, onClose }: { children: ReactNode; top?: number; onClose: () => void }) {
+  const scrim = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useModalFocus(scrim, box, onClose);
   return (
-    <div className="absolute inset-0 z-10 flex justify-center" style={{ background: "var(--ac-scrim)", paddingTop: top }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="h-fit">
+    <div ref={scrim} className="absolute inset-0 z-10 flex justify-center" style={{ background: "var(--ac-scrim)", paddingTop: top }} onClick={onClose}>
+      <div ref={box} tabIndex={-1} onClick={(e) => e.stopPropagation()} className="h-fit outline-none">
         {children}
       </div>
     </div>
@@ -67,11 +73,11 @@ export function Palette({ entries, onOpen, onClose }: { entries: PaletteEntry[];
   let row = -1;
   return (
     <Overlay onClose={onClose}>
-      <div role="dialog" aria-label="Go to or do" className="w-[640px] overflow-hidden rounded-xl border border-ac-line2 bg-ac-panel" style={{ boxShadow: "var(--ac-shadow)" }}>
+      <div role="dialog" aria-modal="true" aria-label="Go to or do" className="w-[640px] overflow-hidden rounded-xl border border-ac-line2 bg-ac-panel" style={{ boxShadow: "var(--ac-shadow)" }}>
         <div className="flex h-12 items-center gap-2.5 border-b border-ac-line px-4">
           <Search className="size-4 text-ac-muted" />
           <input
-            autoFocus
+            data-autofocus
             data-palette
             aria-label="Search"
             value={query}
@@ -149,7 +155,7 @@ export interface RecentSession {
 export function Switcher({ recent, pick, onClose }: { recent: RecentSession[]; pick: number; onClose: () => void }) {
   return (
     <Overlay top={160} onClose={onClose}>
-      <div role="dialog" aria-label="Recent sessions" className="w-[520px] overflow-hidden rounded-xl border border-ac-line2 bg-ac-panel p-2" style={{ boxShadow: "var(--ac-shadow)" }}>
+      <div role="dialog" aria-modal="true" aria-label="Recent sessions" className="w-[520px] overflow-hidden rounded-xl border border-ac-line2 bg-ac-panel p-2" style={{ boxShadow: "var(--ac-shadow)" }}>
         <Label className="px-2 pt-1" aside="hold ⌃, press Tab">
           Recent sessions
         </Label>
@@ -200,7 +206,7 @@ export function PeekCard({ f, nowMs }: { f: PeekFacts; nowMs: number }) {
       <div className="flex items-center gap-2">
         {f.state && <SessionStateIcon state={f.state} />}
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ac-text">{f.title}</span>
-        {f.lastActiveMs != null && <span className="shrink-0 text-[11px] text-ac-muted">{nowMs - f.lastActiveMs < 60_000 ? "now" : `${duration(nowMs - f.lastActiveMs)} ago`}</span>}
+        {f.lastActiveMs != null && <span className="shrink-0 text-[11px] text-ac-muted">{ago(nowMs - f.lastActiveMs)}</span>}
       </div>
       <div className="mt-1.5 space-y-1 text-xs text-ac-muted">
         <div className="flex items-center gap-2 text-ac-soft">
@@ -235,7 +241,7 @@ export function InboxPopover({ items, history, focusedId, nowMs, onVerb, onAllLa
   return (
     <div role="dialog" aria-label="Needs you" className="w-[420px] rounded-xl border border-ac-line2 bg-ac-panel p-2" style={{ boxShadow: "var(--ac-shadow)" }}>
       <div className="flex h-8 items-center gap-2 px-2">
-        <span className="text-[13px] font-medium text-ac-text">Needs you</span>
+        <span className="ac-caps">Needs you</span>
         <span className="text-[11px] text-ac-muted">⌘J next · ↵ do it · L later</span>
         <button type="button" onClick={onAllLater} className="ml-auto text-[11px] text-ac-muted hover:text-ac-text">
           All later
@@ -246,16 +252,17 @@ export function InboxPopover({ items, history, focusedId, nowMs, onVerb, onAllLa
       ))}
       {history.length > 0 && (
         <>
-          <Label className="mt-2 px-2">Earlier today</Label>
+          <MenuSection title="Earlier today" className="mt-1">
           {history.map((h) => (
             <div key={`${h.id}-${h.doneAt}`} className="flex h-6 items-center gap-2 px-2 text-[12px]">
               <Check className="size-3.5 text-ac-ok" />
               <span className="min-w-0 flex-1 truncate text-ac-soft">
                 {h.who} {h.what}
               </span>
-              <span className="shrink-0 text-[11px] text-ac-faint">{duration(nowMs - Date.parse(h.doneAt))} ago</span>
+              <span className="shrink-0 text-[11px] text-ac-faint">{ago(nowMs - Date.parse(h.doneAt))}</span>
             </div>
           ))}
+          </MenuSection>
         </>
       )}
     </div>

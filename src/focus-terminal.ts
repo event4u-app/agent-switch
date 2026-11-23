@@ -22,15 +22,45 @@ export function ttyOf(pid: number): string | null {
   return t && t !== "??" && t !== "?" ? (t.startsWith("/dev/") ? t : `/dev/${t}`) : null;
 }
 
-/** Walk up from `pid` to the terminal app that owns it. */
-export function terminalAppOf(pid: number): "Terminal" | "iTerm2" | null {
+/** The terminal a session runs in: its name as the user knows it, and the app
+ *  "Focus terminal" can drive (Terminal.app and iTerm2 only), else null. */
+export interface TerminalApp {
+  name: string;
+  app: "Terminal" | "iTerm2" | null;
+}
+
+/** Process names (`comm`) of the terminals people run agents in, first match wins.
+ *  An editor's terminal names the editor; the user's own tmux names tmux, whose
+ *  server is not a child of the terminal it is shown in. */
+const TERMINALS: [RegExp, TerminalApp][] = [
+  [/Terminal\.app|\/Terminal$/, { name: "Terminal.app", app: "Terminal" }],
+  [/iTerm/, { name: "iTerm2", app: "iTerm2" }],
+  [/Ghostty|(^|\/)ghostty$/, { name: "Ghostty", app: null }],
+  [/Warp\.app/, { name: "Warp", app: null }],
+  [/WezTerm|(^|\/)wezterm-gui$/, { name: "WezTerm", app: null }],
+  [/kitty/, { name: "kitty", app: null }],
+  [/Alacritty|(^|\/)alacritty$/, { name: "Alacritty", app: null }],
+  [/Hyper\.app/, { name: "Hyper", app: null }],
+  [/Visual Studio Code|Code Helper|(^|\/)code$/, { name: "VS Code", app: null }],
+  [/Cursor\.app|Cursor Helper/, { name: "Cursor", app: null }],
+  [/gnome-terminal/, { name: "GNOME Terminal", app: null }],
+  [/konsole/, { name: "Konsole", app: null }],
+  [/xfce4-terminal/, { name: "Xfce Terminal", app: null }],
+  [/(^|\/)tmux/, { name: "tmux", app: null }],
+];
+
+function psLine(pid: number): string {
+  return spawnSync("ps", ["-o", "ppid=,comm=", "-p", String(pid)], { encoding: "utf8", timeout: 1000 }).stdout ?? "";
+}
+
+/** Walk up from `pid` to the terminal that owns it. `ps` answers "ppid comm" for one pid (tests stub it). */
+export function terminalOf(pid: number, ps: (pid: number) => string = psLine): TerminalApp | null {
   let cur = pid;
   for (let i = 0; i < 12 && cur > 1; i++) {
-    const r = spawnSync("ps", ["-o", "ppid=,comm=", "-p", String(cur)], { encoding: "utf8", timeout: 1000 });
-    const m = /^\s*(\d+)\s+(.*)$/.exec((r.stdout ?? "").trim());
+    const m = /^\s*(\d+)\s+(.*)$/.exec(ps(cur).trim());
     if (!m) return null;
-    if (/Terminal\.app|\/Terminal$/.test(m[2])) return "Terminal";
-    if (/iTerm/.test(m[2])) return "iTerm2";
+    const hit = TERMINALS.find(([re]) => re.test(m[2]));
+    if (hit) return { ...hit[1] };
     cur = Number(m[1]);
   }
   return null;
@@ -88,8 +118,9 @@ export function focusSession(pid: number): { app: string; tty: string } {
   if (process.platform !== "darwin") throw new FocusFailed("focusing a terminal tab works on macOS only");
   const tty = ttyOf(pid);
   if (!tty) throw new FocusFailed("the session has no terminal (it may run in an app or in the background)");
-  const app = terminalAppOf(pid);
-  if (!app) throw new FocusFailed("the session runs in a terminal Agent Switch cannot focus (Terminal.app and iTerm2 are supported)");
+  const found = terminalOf(pid);
+  const app = found?.app;
+  if (!app) throw new FocusFailed(`the session runs in ${found ? found.name : "a terminal"}, which Agent Switch cannot focus (Terminal.app and iTerm2 are supported)`);
   const r = spawnSync("osascript", ["-e", focusScript(app, tty)], { encoding: "utf8", timeout: 5000 });
   interpret(r.status, r.stdout ?? "", r.stderr ?? "", app);
   return { app, tty };

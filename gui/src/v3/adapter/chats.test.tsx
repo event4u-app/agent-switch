@@ -19,7 +19,7 @@ describe("useChats", () => {
   it("runs a chat's bridge outside its tab, follows a new chat to its session key, notifies only while hidden", async () => {
     let emit: (o: object) => void = () => {};
     const deps: BridgeDeps = {
-      history: async () => [],
+      history: async () => ({ events: [], from: 0, earlierPrompts: 0 }),
       open: async (_s, onLine) => {
         emit = (o) => onLine(JSON.stringify(o));
         return { send: async () => {}, kill: async () => {} };

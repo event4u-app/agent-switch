@@ -10,7 +10,7 @@ function fake() {
   let close: (c: number | null) => void = () => {};
   const sent: object[] = [];
   const deps: BridgeDeps = {
-    history: vi.fn(async () => [{ t: "turn", id: "h", at: null }, { t: "message", id: "h", role: "user", text: "earlier", images: 0 }] as never),
+    history: vi.fn(async () => ({ events: [{ t: "turn", id: "h", at: null }, { t: "message", id: "h", role: "user", text: "earlier", images: 0 }] as never, from: 0, earlierPrompts: 0 })),
     open: vi.fn(async (_spec: ipc.BridgeSpec, onLine: (l: string) => void, onClose: (c: number | null) => void) => {
       line = onLine;
       close = onClose;

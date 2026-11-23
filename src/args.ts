@@ -56,12 +56,23 @@ const VALUE_FLAGS = new Set([
   "before",
   "query",
   "hunk",
+  "file-hash",
   "scope",
   "name",
   "binary",
   "agent",
   "account",
   "executed",
+  "base",
+  "expect-branch",
+  "expect-head",
+  "expect-remote",
+  "expect-ref",
+  "expect-push-url",
+  "expect-repo",
+  "subagent",
+  "since",
+  "dir",
 ]);
 
 export interface ParsedArgs {
@@ -163,6 +174,12 @@ export interface RunArgs {
   cwd?: string;
   tmux?: true;
   force?: true;
+  model?: string;
+  effort?: string;
+  /** Start in a new worktree of the folder (src/start-choice.ts). */
+  worktree?: true;
+  /** Start in a new window of the user's terminal instead of this one. */
+  newWindow?: true;
 }
 
 export function parseRun(rest: string[]): RunArgs {
@@ -187,11 +204,20 @@ export function parseRun(rest: string[]): RunArgs {
     if (!cwd) throw new Error("--cwd needs a folder");
     args.splice(ci, 2);
   }
-  const switches: Pick<RunArgs, "tmux" | "force"> = {};
-  for (const flag of ["--tmux", "--force"] as const) {
+  const choice: Pick<RunArgs, "model" | "effort"> = {};
+  for (const flag of ["--model", "--effort"] as const) {
+    const i = own(flag);
+    if (i < 0) continue;
+    const v = args[i + 1];
+    if (!v || v === "--") throw new Error(`${flag} needs a value`);
+    choice[flag === "--model" ? "model" : "effort"] = v;
+    args.splice(i, 2);
+  }
+  const switches: Pick<RunArgs, "tmux" | "force" | "worktree" | "newWindow"> = {};
+  for (const [flag, key] of [["--tmux", "tmux"], ["--force", "force"], ["--worktree", "worktree"], ["--new-window", "newWindow"]] as const) {
     const i = own(flag);
     if (i >= 0) {
-      switches[flag === "--tmux" ? "tmux" : "force"] = true;
+      switches[key] = true;
       args.splice(i, 1);
     }
   }
@@ -201,5 +227,5 @@ export function parseRun(rest: string[]): RunArgs {
   if (end >= 0) args.splice(end, 1);
   const name = args.shift();
   const parsed: RunArgs = cwd === undefined ? { providerId, name, args } : { providerId, name, args, cwd };
-  return { ...parsed, ...switches };
+  return { ...parsed, ...choice, ...switches };
 }

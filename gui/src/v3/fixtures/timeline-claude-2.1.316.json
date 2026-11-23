@@ -445,7 +445,8 @@
    "input": {
     "file_path": "/work/fx2/hello.txt",
     "content": "hi\n"
-   }
+   },
+   "rule": "accept edits for this session"
   },
   {
    "t": "diff",

@@ -38,11 +38,18 @@ function row(r: ChatRow): string {
     case "approval":
       return `- **Approval** ${r.tool}: \`${r.summary.replace(/`/g, "'")}\` — ${r.resolved === "allow" ? "allowed" : r.resolved === "deny" ? "denied" : "waiting"}`;
     case "question":
-      return r.questions.map((q) => `- **Question:** ${q.question} (${q.options.join(" / ")})`).join("\n");
+      return r.questions
+        .map((q) => {
+          const a = !r.resolved ? "" : r.resolved.answers ? ` → ${r.resolved.answers[q.question] ?? "—"}` : " → not answered";
+          return `- **Question:** ${q.question} (${q.options.join(" / ")})${a}`;
+        })
+        .join("\n");
     case "plan":
       return `**Plan**\n\n${r.text}`;
     case "error":
       return `> **Error:** ${r.message}`;
+    case "notice":
+      return `_${r.text}_`;
   }
 }
 

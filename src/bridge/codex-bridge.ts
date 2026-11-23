@@ -173,7 +173,9 @@ export class CodexBridge {
     const command = str(p.command);
     this.pending.set(approvalId, { rpcId: id, method, tool: method.includes("fileChange") ? "Edit" : "Bash", summary: command || str(p.reason) });
     this.approvalsChanged();
-    this.emit({ t: "approval.requested", id: approvalId, tool: method.includes("fileChange") ? "Edit" : "Bash", summary: command || str(p.reason), input: command ? { command } : {} });
+    // "Always" answers acceptForSession: this command (or file changes) without asking again until the session ends.
+    const rule = method.includes("fileChange") ? "allow file changes for this session" : command ? `allow “${command}” for this session` : "allow this command for this session";
+    this.emit({ t: "approval.requested", id: approvalId, tool: method.includes("fileChange") ? "Edit" : "Bash", summary: command || str(p.reason), input: command ? { command } : {}, rule });
   }
 
   private async startTurn(text: string): Promise<void> {

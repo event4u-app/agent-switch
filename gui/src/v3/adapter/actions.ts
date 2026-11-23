@@ -3,26 +3,32 @@
  *  mapped here. Controls with nothing behind them are hidden by the adapter
  *  (`menuFor`, `commitAvailable`), so they never reach this function. */
 import type { SessionRow } from "../../transforms.js";
-import { accountId, accountIdFromMember } from "../../vm/build.js";
+import { accountId, accountIdFromMember, sessionFromRow } from "../../vm/build.js";
 import { splitAccountId, type Actions } from "../../vm/actions.js";
-import { sessionArgs, type SwitchRequestRow } from "../../ipc.js";
+import { createElement } from "react";
+import { sessionArgs, type CleanupJson, type PrConfirmJson, type PrPlanJson, type StartChoice, type SwitchRequestRow } from "../../ipc.js";
 import { requestKind, requestsForMoves } from "../../vm/switch-requests.js";
 import type { Overlay, TerminalRun, Toast } from "../../vm/store.js";
 import type { ProviderId } from "../../transforms.js";
-import type { NeedItem } from "../needs.js";
+import { answeredThere, type NeedItem } from "../needs.js";
 import type { Appearance } from "../themes/resolve.js";
 import type { SessionMenuItem, V3Action } from "../window.js";
-import type { MoveHow, SheetMove } from "../dialogs.js";
-import { menuFor, NEW_CHAT, nextStep, sessionKey } from "./data.js";
+import type { MoveHow, NewSessionPlan, SheetMove } from "../dialogs.js";
+import { canFocus, ciPrompt, ciSession, CODEX_RESPAWN_WHY, conflictPrompt, menuFor, NEW_CHAT, nextStep, sessionKey, startChoice } from "./data.js";
 import { parsePr } from "./feeds.js";
+import { PrConfirm, type PrConfirmState } from "./PrConfirm.js";
 /** The CLI calls the dispatcher makes (a subset of `ipc.ts`, injectable for tests). */
 export interface DispatchIpc {
   focusSessionTerminal(key: string): Promise<void>;
+  /** Joins a hosted session from a new window of the user's terminal app. */
+  hostAttachInTerminal(key: string): Promise<void>;
   needsLater(id: string): Promise<void>;
   needsSeen(): Promise<void>;
   /** Allow once or deny an approval through the inbox of the chat that holds it. */
   needsAnswer(key: string, approvalId: string, decision: "allow" | "deny"): Promise<void>;
-  hostStart(provider: ProviderId, cwd: string, profile?: string): Promise<void>;
+  hostStart(provider: ProviderId, cwd: string, profile?: string, choice?: StartChoice): Promise<void>;
+  /** Starts a session in a new window of the user's terminal (`run … --new-window`). */
+  startInTerminal(provider: ProviderId, cwd: string, profile?: string, choice?: StartChoice): Promise<void>;
   hostEnd(key: string): Promise<void>;
   hostRespawn(key: string, change: { model?: string; effort?: string }): Promise<void>;
   setLibraryFlag(key: string, flag: "pin" | "archive", on: boolean): Promise<void>;
@@ -32,12 +38,18 @@ export interface DispatchIpc {
   setAgentEnabled(id: string, on: boolean): Promise<void>;
   setRemoteControl(account: string, on: boolean): Promise<void>;
   setRemoteSsh(on: boolean): Promise<void>;
-  cleanupMerged(): Promise<void>;
+  /** Removes merged worktrees: only those of `keys` when given; says what it removed and skipped. */
+  cleanupMerged(keys?: string[]): Promise<CleanupJson>;
+  /** What Create PR would do (commit, destination ref, base, title), or why it cannot; for `base` when given. */
+  prCreatePlan(key: string, base?: string): Promise<PrPlanJson>;
+  /** Pushes what was confirmed and creates the PR (refused when it changed since); the PR's URL. */
+  prCreate(key: string, confirmed: PrConfirmJson): Promise<string>;
   engineRestart(): Promise<void>;
   renameSession(key: string, name: string): Promise<void>;
   openSessionIn(key: string, target?: string): Promise<void>;
   openApp(appId: string, name: string): Promise<void>;
-  continueSession(key: string): Promise<void>;
+  /** Types the continuation, or `text`, into a session Agent Switch hosts. */
+  continueSession(key: string, text?: string): Promise<void>;
   takeoverHosted(key: string, target: string): Promise<void>;
   /** Records the answer to a switch request: carried out by the app (`executed`),
    *  or left to the background service (no `executed`). */
@@ -60,11 +72,17 @@ export interface DispatchDeps {
   /** Who carries out a move answered here (`agent-switch link executor`); read
    *  when the user answers. Absent or unreadable → the app. */
   executor?: () => Promise<"app" | "service">;
+  /** The background service (the engine) is stopped: nothing is handed to it. */
+  serviceDown?: () => boolean;
   hosted: (key: string) => boolean;
   setAppearance: (a: Appearance) => void;
   setFocusTerminal: (on: boolean) => void;
+  /** The Open in › Focus terminal switch: off, nothing brings a terminal to the front. Absent: on. */
+  focusTerminal?: () => boolean;
   /** One line of text (rename). */
   prompt: (req: { title: string; initial: string; onSubmit: (v: string) => void }) => void;
+  /** The New-session dialog's plan as it is now (null: the dialog closed), so its facts follow it. */
+  draftStart?: (plan: NewSessionPlan | null) => void;
   /** Start a new session in the chat view and open its tab. */
   newChat?: () => void;
   /** Open a session's tab (its chat, where an approval waits). */
@@ -73,21 +91,38 @@ export interface DispatchDeps {
   chatOf?: (key: string) => { setModel: (m: string) => void; send?: (text: string) => void; approve?: (id: string, always: boolean) => void; deny?: (id: string) => void } | null;
   /** The session bar's [Terminal | Chat] switch. */
   switchView?: (key: string, to: "terminal" | "chat") => void;
+  /** Puts a prompt on the clipboard, for a session the app cannot type into. */
+  copyText?: (text: string) => Promise<void>;
+  /** Keep a New session choice as its folder's prefill. */
+  rememberStart?: (plan: NewSessionPlan) => void;
+  /** Open the take-over dialog for a session in the user's own terminal. */
+  takeOver?: (key: string) => void;
 }
 /** Claude's `--model` aliases. */
 const vmSessionId = (key: string) => {
   const [provider, , id] = key.split("/");
   return `${provider}:${id}`;
 };
-/** `git@github.com:o/r.git` / `https://github.com/o/r` → `o/r`. */
-export function githubSlug(remote: string | null | undefined): string | null {
-  const m = remote ? /github\.com[:/]([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/.exec(remote) : null;
-  return m ? `${m[1]}/${m[2]}` : null;
+/** The 2.11 session sheet for a session. Its list holds Claude sessions only,
+ *  so the row comes along and a Codex session opens too. */
+function sessionSheet(key: string, deps: DispatchDeps, how?: "handoff"): Overlay {
+  const row = deps.rows().get(key);
+  return { kind: "session", id: vmSessionId(key), ...(row ? { session: sessionFromRow(row, Date.now()) } : {}), ...(how ? { how } : {}) };
 }
 function prUrl(row: SessionRow | undefined): string | null {
   const pr = row ? (row.prs ?? []).map(parsePr).find((p) => p !== null) : null;
   return pr?.url || null;
 }
+/** Clean up's answer in one toast: how many went, and each one kept with its reason. Pure. */
+export function cleanupToast(r: CleanupJson): { tone: "ok" | "info"; text: string } {
+  const n = r.removed.length;
+  const removed = n ? `Removed ${n} worktree${n === 1 ? "" : "s"}.` : r.skipped.length ? "Removed no worktree." : "No merged worktree to remove.";
+  const skipped = r.skipped.map((s) => `Skipped ${s.path}: ${s.reason}.`);
+  return { tone: r.skipped.length || !n ? "info" : "ok", text: [removed, ...skipped].join(" ") };
+}
+/** Runs Clean up and says what it did. */
+const cleanUp = (deps: DispatchDeps, keys?: string[]) => run(deps, "Clean up", deps.ipc.cleanupMerged(keys).then((r) => deps.toast(cleanupToast(r))));
+
 async function run(deps: DispatchDeps, what: string, p: Promise<unknown>): Promise<void> {
   try {
     await p;
@@ -96,21 +131,70 @@ async function run(deps: DispatchDeps, what: string, p: Promise<unknown>): Promi
     deps.toast({ tone: "alert", text: `${what} failed: ${e instanceof Error ? e.message : String(e)}` });
   }
 }
+/** Types `text` into the session where the app can: its chat in this window, or
+ *  the window it hosts. False where it cannot, so the caller says where to go. */
+function sendPrompt(key: string, text: string, deps: DispatchDeps): Promise<void> | false {
+  const chat = deps.chatOf?.(key);
+  if (chat?.send) return Promise.resolve(chat.send(text));
+  if (deps.hosted(key)) return run(deps, "Send", deps.ipc.continueSession(key, text));
+  return false;
+}
+async function copyPrompt(text: string, deps: DispatchDeps): Promise<void> {
+  const copy = deps.copyText ?? ((t: string) => navigator.clipboard.writeText(t));
+  try {
+    await copy(text);
+    deps.toast({ tone: "info", text: "Prompt copied — paste it into the session's terminal" });
+  } catch (e) {
+    deps.toast({ tone: "alert", text: `Copy failed: ${e instanceof Error ? e.message : String(e)}` });
+  }
+}
 function blocker(key: string, deps: DispatchDeps): Promise<void> | void {
   const row = deps.rows().get(key);
   if (!row) return;
-  const n = nextStep(row, deps.needs().some((x) => x.subject === key));
+  // The same rule as the window's next step (data.ts): focus only a terminal that can be focused.
+  const waits = deps.needs().some((x) => x.subject === key) && canFocus(row, deps.hosted(key) || !!deps.chatOf?.(key), deps.focusTerminal?.() ?? true);
+  const n = nextStep(row, waits);
   if (!n) return;
+  if (n.prompt) return sendPrompt(key, n.prompt, deps) || copyPrompt(n.prompt, deps);
   if (n.does === "focus") return run(deps, "Focus", deps.ipc.focusSessionTerminal(key));
-  if (n.does === "create-pr") return createPr(row, deps);
+  if (n.does === "create-pr") return createPr(key, deps);
   const url = prUrl(row);
   if (url) deps.openUrl(n.does === "open-checks" ? `${url}/checks` : url);
 }
-function createPr(row: SessionRow | undefined, deps: DispatchDeps): void {
-  const slug = githubSlug(row?.git?.remote);
-  const branch = row?.git?.branch;
-  if (!slug || !branch) return void deps.toast({ tone: "warn", text: "This session's branch is not on GitHub" });
-  deps.openUrl(`https://github.com/${slug}/compare/${encodeURIComponent(branch)}?expand=1`);
+/** Asks with the commit, where it goes, a base to pick and the title; then pushes and creates
+ *  exactly the plan last shown, which the CLI re-checks before it pushes. */
+async function createPr(key: string, deps: DispatchDeps): Promise<void> {
+  let plan: PrPlanJson;
+  try {
+    plan = await deps.ipc.prCreatePlan(key);
+  } catch (e) {
+    return deps.toast({ tone: "alert", text: `Create PR failed: ${e instanceof Error ? e.message : String(e)}` });
+  }
+  if (plan.existing) {
+    deps.openUrl(plan.existing.url);
+    return deps.toast({ tone: "info", text: `PR #${plan.existing.number} is already open for ${plan.ref?.replace(/^refs\/heads\//, "") ?? plan.branch} — opened it` });
+  }
+  if (plan.problem) return deps.toast({ tone: "alert", text: `Create PR: ${plan.problem.message} — ${plan.problem.fix}` });
+  const shown: PrConfirmState = { plan, title: plan.title };
+  deps.open({
+    kind: "confirm",
+    title: "Create a pull request?",
+    body: createElement(PrConfirm, { initial: plan, state: shown, replan: (base: string) => deps.ipc.prCreatePlan(key, base) }),
+    confirm: "Push and create PR",
+    onConfirm: () => {
+      const p = shown.plan;
+      if (p.problem) return deps.toast({ tone: "alert", text: `Create PR: ${p.problem.message} — ${p.problem.fix}` });
+      const confirmed: PrConfirmJson = { branch: p.branch!, head: p.head!, remote: p.remote, ref: p.ref!, pushUrl: p.pushUrl!, repo: p.repo!, base: p.base!, title: shown.title.trim() || p.title };
+      void run(
+        deps,
+        "Create PR",
+        deps.ipc.prCreate(key, confirmed).then((url) => {
+          deps.toast({ tone: "ok", text: `Pull request created: ${url}` });
+          if (/^https:\/\//.test(url)) deps.openUrl(url);
+        }),
+      );
+    },
+  });
 }
 /** The message a switched session is sent so it carries on. */
 const CONTINUE = "Continue where you left off.";
@@ -128,7 +212,7 @@ const CONTINUE = "Continue where you left off.";
  *  of its own: it comes back as a run, so the caller opens them all together. */
 async function moveOne(key: string, target: string, how: MoveHow, deps: DispatchDeps, via?: "takeover"): Promise<TerminalRun | void> {
   const [provider] = key.split("/");
-  if (how === "brief") return void deps.open({ kind: "session", id: vmSessionId(key) });
+  if (how === "brief") return void deps.open(sessionSheet(key, deps));
   if (provider === "codex" || via === "takeover") {
     if (deps.hosted(key)) return deps.ipc.takeoverHosted(key, target);
     const id = key.split("/")[2];
@@ -165,7 +249,8 @@ function recordMoves(how: MoveHow, moves: readonly { key: string; target: string
  * answer is left undone. Returns the moves left to the app.
  */
 async function handOver(how: "after-turn" | "now", moves: readonly SheetMove[], deps: DispatchDeps): Promise<SheetMove[]> {
-  if (!deps.executor || !deps.ipc.decideSwitchRequest || !deps.requests) return [...moves];
+  // A stopped service would leave the answer undone: the app moves the sessions itself.
+  if (!deps.executor || !deps.ipc.decideSwitchRequest || !deps.requests || deps.serviceDown?.()) return [...moves];
   const executor = await deps.executor().catch(() => "app" as const);
   if (executor !== "service") return [...moves];
   const rows = deps.requests();
@@ -183,14 +268,38 @@ async function handOver(how: "after-turn" | "now", moves: readonly SheetMove[], 
   return moves.filter((m) => !handed.has(m.key));
 }
 
+/** "owner/repo" of a GitHub PR page, lower-cased; null for any other URL. Pure. */
+function prRepo(url: string): string | null {
+  const m = /^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/\d+\/?$/i.exec(url);
+  return m ? m[1].toLowerCase() : null;
+}
+
 function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
   // A chat's approval or question is answered in the chat (spec §13.5: one decision).
   if (n.verb === "Open chat" && deps.openTab) return deps.openTab(n.subject);
-  if (n.kind === "approval" || n.kind === "question") return run(deps, "Focus", deps.ipc.focusSessionTerminal(n.subject));
+  if (n.kind === "approval" || n.kind === "question") {
+    // Open in › Focus terminal off: nothing brings a terminal forward; the session's tab opens instead.
+    if (n.verb === "Open session" || !(deps.focusTerminal?.() ?? true)) return deps.openTab?.(n.subject);
+    return run(deps, "Focus", deps.ipc.focusSessionTerminal(n.subject));
+  }
   if (n.kind === "ci") {
-    const url = prUrl(deps.rows().get(n.subject));
-    if (url) return deps.openUrl(`${url}/checks`);
-    return;
+    // Only the session the item names (several can share a PR); without it, the PR's page opens.
+    const row = ciSession(n, deps.rows());
+    // Only the PR the item names, by repository and number: a session's other PR never gets its fix.
+    const m = /^([^#\s]+\/[^#\s]+)#(\d+)$/.exec(n.subject);
+    const pr = m ? ((row?.prs ?? []).map(parsePr).find((p) => p !== null && p.number === Number(m[2]) && prRepo(p.url) === m[1].toLowerCase()) ?? null) : null;
+    const conflict = n.ci ? n.ci.state === "conflict" : !!pr && pr.ci !== "FAILURE" && pr.mergeable === "CONFLICTING";
+    if (row && pr) {
+      const sent = sendPrompt(sessionKey(row), conflict ? conflictPrompt(pr) : ciPrompt(pr), deps);
+      if (sent) return sent;
+    }
+    const typeable = !!row && (!!deps.chatOf?.(sessionKey(row))?.send || deps.hosted(sessionKey(row)));
+    if (!m || (typeable && !pr)) {
+      deps.toast({ tone: "alert", text: "This item no longer matches the session's pull request — refresh Needs you and try again" });
+      return;
+    }
+    const url = pr?.url || `https://github.com/${m[1]}/pull/${m[2]}`;
+    return deps.openUrl(conflict ? url : `${url}/checks`);
   }
   if (n.kind === "signin") {
     const id = accountIdFromMember(n.subject);
@@ -200,7 +309,7 @@ function onNeed(n: NeedItem, deps: DispatchDeps): Promise<void> | void {
 /** An approval answered from the Needs-you queue, by the approval id the item carries. */
 function onAnswer(n: NeedItem, decision: "allow" | "always" | "deny", deps: DispatchDeps): Promise<void> | void {
   // AS answers only approvals of chats; a terminal it does not host is answered there.
-  if (n.kind !== "approval" || n.verb === "Focus terminal" || !n.version) return;
+  if (n.kind !== "approval" || answeredThere(n) || !n.version) return;
   const chat = deps.chatOf?.(n.subject);
   if (chat?.approve && chat.deny) return decision === "deny" ? chat.deny(n.version) : chat.approve(n.version, decision === "always");
   // From outside the chat only allow-once and deny exist: "always" widens a rule and stays in the chat.
@@ -214,23 +323,20 @@ function sessionMenu(key: string, item: SessionMenuItem, deps: DispatchDeps): Pr
       return deps.prompt({ title: "Rename session", initial: row?.library?.name ?? row?.summary ?? "", onSubmit: (v) => void run(deps, "Rename", deps.ipc.renameSession(key, v)) });
     case "Pin":
       return run(deps, "Pin", deps.ipc.setLibraryFlag(key, "pin", true));
-    case "Move to another account…":
     case "Take over here…":
+      return deps.takeOver?.(key);
+    case "Move to another account…":
+      // The window opens the v3 decision sheet for it (every entry point, as the account chip does).
+      return;
     case "Hand off…":
-      return deps.open({ kind: "session", id: vmSessionId(key) });
+      return deps.open(sessionSheet(key, deps, "handoff"));
     case "Compact":
       return deps.open({ kind: "terminal", run: { args: ["compact", key], title: "Compact" } });
     case "Detach":
       return;
     case "End…":
-      return deps.open({
-        kind: "confirm",
-        title: "End this session?",
-        body: "The program in it stops. Its transcript stays.",
-        confirm: "End session",
-        danger: true,
-        onConfirm: () => void run(deps, "End", deps.ipc.hostEnd(key)),
-      });
+      // The window opens the End dialog (what stops with it, whether it is kept); its answer comes back as `end`.
+      return;
   }
 }
 export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | void {
@@ -252,11 +358,17 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       return run(deps, "Later", Promise.all(deps.needs().map((n) => deps.ipc.needsLater(n.id))));
     case "start": {
       const p = a.plan;
-      if (p.where === "hosted") return run(deps, "Start", p.account ? deps.ipc.hostStart(p.tool, p.folder, p.account) : deps.ipc.hostStart(p.tool, p.folder));
-      return deps.open({ kind: "start", cwd: p.folder, tool: p.tool, ...(p.account ? { accountId: accountId(p.tool, p.account) } : {}) });
+      deps.draftStart?.(null);
+      const choice = startChoice(p);
+      const chosen = Object.keys(choice).length > 0;
+      // The command the dialog previewed: hosted here, or a new window of the user's terminal.
+      const go = p.where === "hosted" ? deps.ipc.hostStart : deps.ipc.startInTerminal;
+      const started = chosen ? go(p.tool, p.folder, p.account, choice) : p.account ? go(p.tool, p.folder, p.account) : go(p.tool, p.folder);
+      // Remembered for the next start only once this one went through.
+      return run(deps, "Start", started.then(() => deps.rememberStart?.(p)));
     }
-    case "choose-account":
-      return deps.open({ kind: "start" });
+    case "start-draft":
+      return deps.draftStart?.(a.plan);
     case "move": {
       const how = a.how;
       const left = how === "brief" ? Promise.resolve([...a.moves]) : handOver(how, a.moves, deps);
@@ -274,18 +386,27 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       );
     }
     case "keep-account": {
-      const limits = deps.needs().filter((n) => (n.kind === "limit" || n.kind === "pace") && n.subject.split("/")[1] === a.account);
+      // An account is its tool and name: another tool's account of the same name keeps its items.
+      const same = (subject: string) => subject.split("/")[1] === a.account && (!a.tool || subject.split("/")[0] === a.tool);
+      const limits = deps.needs().filter((n) => (n.kind === "limit" || n.kind === "pace") && same(n.subject));
       // A pace suggestion put off is answered too, so agent-config stops asking and it is not raised again before its reset.
-      const paced = (deps.requests?.() ?? []).filter((r) => requestKind(r) === "pace" && r.state === "open" && r.account.split("/")[1] === a.account && Date.parse(r.expiresAt) > Date.now());
+      const paced = (deps.requests?.() ?? []).filter((r) => requestKind(r) === "pace" && r.state === "open" && same(r.account) && Date.parse(r.expiresAt) > Date.now());
       for (const r of paced) void deps.ipc.decideSwitchRequest?.(r.id, "snooze")?.catch(() => {});
       return run(deps, "Keep", Promise.all(limits.map((n) => deps.ipc.needsLater(n.id))));
     }
     case "session-menu":
       return sessionMenu(a.key, a.item, deps);
+    case "end":
+      return run(deps, "End", deps.ipc.hostEnd(a.key));
     case "batch": {
       if (a.op === "onPin") return run(deps, "Pin", Promise.all(a.keys.map((k) => deps.ipc.setLibraryFlag(k, "pin", true))));
       if (a.op === "onArchive") return run(deps, "Archive", Promise.all(a.keys.map((k) => deps.ipc.setLibraryFlag(k, "archive", true))));
-      if (a.op === "onClean") return run(deps, "Clean up", deps.ipc.cleanupMerged());
+      if (a.op === "onClean") {
+        if (!a.keys.length) return;
+        const n = a.keys.length;
+        const keys = [...a.keys];
+        return deps.open({ kind: "confirm", title: `Clean up the worktrees of ${n} selected session${n === 1 ? "" : "s"}?`, body: "Removes the worktrees of the selected sessions whose PR is merged. A worktree with changes is skipped; other worktrees stay.", confirm: "Clean up", onConfirm: () => void cleanUp(deps, keys) });
+      }
       if (a.op === "onEnd") {
         const keys = a.keys.filter(deps.hosted);
         if (!keys.length) return deps.toast({ tone: "info", text: "Only sessions hosted in Agent Switch can be ended here" });
@@ -294,13 +415,14 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       return;
     }
     case "clean-up":
-      return deps.open({ kind: "confirm", title: "Clean up merged worktrees?", body: "Removes the worktrees of sessions whose PR is merged. A worktree with changes is skipped.", confirm: "Clean up", onConfirm: () => void run(deps, "Clean up", deps.ipc.cleanupMerged()) });
+      return deps.open({ kind: "confirm", title: "Clean up merged worktrees?", body: "Removes the worktrees of sessions whose PR is merged. A worktree with changes is skipped.", confirm: "Clean up", onConfirm: () => void cleanUp(deps) });
     case "view":
       return deps.switchView?.(a.key, a.view);
     case "open-in": {
       const p = a.pick;
       if (p.kind === "pr") return deps.openUrl(p.url);
       if (p.kind === "focus") return run(deps, "Focus", deps.ipc.focusSessionTerminal(a.key));
+      if (p.kind === "attach") return run(deps, "Attach", deps.ipc.hostAttachInTerminal(a.key));
       // The app opens on the session's own account; it never resumes the conversation (spike S9).
       if (p.kind === "app") return run(deps, "Open", deps.ipc.openApp(p.app, a.key.split("/")[1] ?? ""));
       if (p.kind === "target") return run(deps, "Open", deps.ipc.openSessionIn(a.key, p.target));
@@ -310,17 +432,20 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       const chat = deps.chatOf?.(a.key);
       if (chat) return chat.setModel(a.model);
       if (!deps.hosted(a.key)) return;
+      if (!a.key.startsWith("claude/")) return deps.toast({ tone: "info", text: CODEX_RESPAWN_WHY });
       return run(deps, "Model change", deps.ipc.hostRespawn(a.key, { model: a.model }));
     }
     case "set-thinking": {
       if (deps.chatOf?.(a.key)) return deps.toast({ tone: "info", text: "Thinking is set when the chat starts; switch to the terminal view to change it" });
       if (!deps.hosted(a.key)) return;
+      // `host respawn` restarts Claude only; it refuses anything else.
+      if (!a.key.startsWith("claude/")) return deps.toast({ tone: "info", text: CODEX_RESPAWN_WHY });
       return run(deps, "Thinking change", deps.ipc.hostRespawn(a.key, { effort: a.level }));
     }
     case "blocker":
       return blocker(a.key, deps);
     case "create-pr":
-      return createPr(deps.rows().get(a.key), deps);
+      return createPr(a.key, deps);
     case "open-pr": {
       const url = prUrl(deps.rows().get(a.key));
       return url ? deps.openUrl(url) : undefined;

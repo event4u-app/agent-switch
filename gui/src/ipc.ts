@@ -229,9 +229,31 @@ export async function openSessionIn(key: string, target?: string): Promise<void>
   await runCli(["open", key, ...(target ? ["--with", target] : [])]);
 }
 
+/** `host attach <session> --new-window`: the user's terminal app joins the hosted session; both can type. */
+export async function hostAttachInTerminal(key: string): Promise<void> {
+  await runCli(["host", "attach", key, "--new-window"]);
+}
+
 /** `focus <session>`: bring the session's terminal tab to the front (macOS). */
 export async function focusSessionTerminal(key: string): Promise<void> {
   await runCli(["focus", key]);
+}
+
+/** `focus <session> --where --json`: the terminal a session in the user's own terminal runs in, and whether Focus reaches it. */
+export async function sessionTerminal(key: string): Promise<{ running: boolean | null; terminal: string | null; focusable: boolean; why?: string }> {
+  const o = JSON.parse(await runCli(["focus", key, "--where", "--json"]));
+  return {
+    running: typeof o.running === "boolean" ? o.running : null,
+    terminal: typeof o.terminal === "string" && o.terminal ? o.terminal : null,
+    focusable: o.focusable === true,
+    ...(typeof o.why === "string" ? { why: o.why } : {}),
+  };
+}
+
+/** `host adopt <session>`: a session from the user's own terminal continues hosted here, on the same account.
+ *  `stopSource` ends a running Claude source between turns; `force` skips the running-program check. */
+export async function hostAdopt(key: string, o: { stopSource: boolean; force: boolean }): Promise<void> {
+  await runCli(["host", "adopt", key, ...(o.stopSource ? ["--stop-source"] : []), ...(o.force ? ["--force"] : []), "--json"]);
 }
 
 /** `sessions library --json`. */
@@ -244,10 +266,23 @@ export async function setLibraryFlag(key: string, flag: "pin" | "archive", on: b
   await runCli(["sessions", on ? flag : `un${flag}`, key]);
 }
 
-/** `timeline <session> --json`: one page of the session's history as AS events. */
-export async function sessionTimeline(key: string, limit = 200, before?: number): Promise<{ events: import("./v3/timeline.js").AsEvent[]; from: number; total: number; version: string | null; newerThanFixtures: boolean }> {
-  const o = JSON.parse(await runCli(["timeline", key, "--json", "--limit", String(limit), ...(before !== undefined ? ["--before", String(before)] : [])]));
-  return { events: Array.isArray(o.events) ? o.events : [], from: Number(o.from) || 0, total: Number(o.total) || 0, version: typeof o.version === "string" ? o.version : null, newerThanFixtures: o.newerThanFixtures === true };
+/** `timeline <session> --json`: one page of the session's history as AS events — `limit` drawn
+ *  rows before index `before`, or every event from index `from` on. `earlierPrompts`: prompts
+ *  before the page; `hidden`: the bookkeeping lines left out, by kind. */
+export async function sessionTimeline(
+  key: string,
+  at: { limit?: number; before?: number; from?: number } = {},
+): Promise<{ events: import("./v3/timeline.js").AsEvent[]; from: number; total: number; earlierPrompts: number; hidden: Record<string, number>; version: string | null; newerThanFixtures: boolean }> {
+  const n = (flag: string, v: number | undefined) => (v === undefined ? [] : [flag, String(v)]);
+  const o = JSON.parse(await runCli(["timeline", key, "--json", ...n("--limit", at.limit), ...n("--before", at.before), ...n("--from", at.from)]));
+  const hidden = o.hidden && typeof o.hidden === "object" ? Object.fromEntries(Object.entries(o.hidden as Record<string, unknown>).filter((e): e is [string, number] => typeof e[1] === "number")) : {};
+  return { events: Array.isArray(o.events) ? o.events : [], from: Number(o.from) || 0, total: Number(o.total) || 0, earlierPrompts: Number(o.earlierPrompts) || 0, hidden, version: typeof o.version === "string" ? o.version : null, newerThanFixtures: o.newerThanFixtures === true };
+}
+
+/** `timeline <session> --subagent <id> --json`: one subagent's own transcript, read-only; the CLI reads only its newest part. */
+export async function subagentTimeline(parent: string, agentId: string, limit = 400): Promise<{ events: import("./v3/timeline.js").AsEvent[]; from: number; total: number; version: string | null; newerThanFixtures: boolean; truncated: boolean }> {
+  const o = JSON.parse(await runCli(["timeline", parent, "--subagent", agentId, "--json", "--limit", String(limit)]));
+  return { events: Array.isArray(o.events) ? o.events : [], from: Number(o.from) || 0, total: Number(o.total) || 0, version: typeof o.version === "string" ? o.version : null, newerThanFixtures: o.newerThanFixtures === true, truncated: o.truncated === true };
 }
 
 export type BridgeSpec =
@@ -295,7 +330,7 @@ export async function sessionFiles(key: string, query: string): Promise<string[]
   return Array.isArray(o.files) ? o.files.filter((f: unknown): f is string => typeof f === "string") : [];
 }
 
-export type ReviewScope = "turn" | "session" | "worktree" | "staged";
+export type ReviewScope = "uncommitted" | "turn" | "session" | "worktree" | "staged";
 export interface ReviewHunkJson {
   oldStart: number;
   newStart: number;
@@ -310,12 +345,42 @@ export interface ReviewFileJson {
   added: number;
   removed: number;
   hunks: ReviewHunkJson[];
+  /** Past the review's size budget: counted, its hunks left out. */
+  omitted?: boolean;
+  /** The layers the file has changes in, also those without lines (a binary file, a pure rename). */
+  layers?: ReviewHunkJson["layer"][];
+  /** The file's state when read; a whole-file action carries it and is refused when the file moved. */
+  hash?: string;
+  /** Why the file has no lines to show. */
+  preview?: "binary" | "too large" | "link";
 }
+export type ReviewJson =
+  | { unchanged: true; fingerprint: string }
+  | { unchanged?: false; files: ReviewFileJson[]; shared: string[]; base: string | null; baseRef: string | null; note: string | null; omitted: number; more?: number; fingerprint: string | null };
 
-/** `diff <session> --scope S --json`: the Review page's files. */
-export async function sessionReview(key: string, scope: ReviewScope): Promise<{ files: ReviewFileJson[]; shared: string[]; base: string | null }> {
-  const o = JSON.parse(await runCli(["diff", key, "--scope", scope, "--json"]));
-  return { files: Array.isArray(o.files) ? o.files : [], shared: Array.isArray(o.shared) ? o.shared : [], base: typeof o.base === "string" ? o.base : null };
+/** `diff <session> --scope S --json [--since FP]`: the Review page's files, or `unchanged` when `since` still holds. */
+export async function sessionReview(key: string, scope: ReviewScope, since?: string): Promise<ReviewJson> {
+  const out = await cli(["diff", key, "--scope", scope, "--json", ...(since ? ["--since", since] : [])]).execute();
+  let o: Record<string, unknown> = {};
+  try {
+    o = JSON.parse(out.stdout.trim().split("\n").pop() ?? "{}");
+  } catch {
+    /* not JSON: the exit code decides */
+  }
+  // A refused review (git failed or timed out) carries its reason; never read as "no changes".
+  if (out.code !== 0 || o.ok === false) throw new Error((typeof o.error === "string" && o.error) || out.stderr || "agent-switch diff failed");
+  if (o.unchanged === true && typeof o.fingerprint === "string") return { unchanged: true, fingerprint: o.fingerprint };
+  const str = (v: unknown) => (typeof v === "string" ? v : null);
+  return {
+    files: Array.isArray(o.files) ? o.files : [],
+    shared: Array.isArray(o.shared) ? o.shared : [],
+    base: str(o.base),
+    baseRef: str(o.baseRef),
+    note: str(o.note),
+    omitted: typeof o.omitted === "number" ? o.omitted : 0,
+    more: typeof o.more === "number" ? o.more : 0,
+    fingerprint: str(o.fingerprint),
+  };
 }
 
 /** A CLI action answering `--json` with ok/error; a refusal comes back as an Error with the CLI's reason. */
@@ -331,7 +396,9 @@ async function cliCall(args: string[]): Promise<string> {
   return o.done ?? o.commit ?? "";
 }
 
-export const reviewAct = (key: string, action: "stage" | "unstage" | "discard", file: string, hunk?: string) => cliCall(["diff", key, action, "--file", file, ...(hunk ? ["--hunk", hunk] : []), "--json"]);
+/** One hunk (`hunk`) or the whole file; a whole-file action with `fileHash` is refused when the file changed since it was read. */
+export const reviewAct = (key: string, action: "stage" | "unstage" | "discard", file: string, hunk?: string, fileHash?: string) =>
+  cliCall(["diff", key, action, "--file", file, ...(hunk ? ["--hunk", hunk] : fileHash ? ["--file-hash", fileHash] : []), "--json"]);
 export const reviewUndo = (key: string) => cliCall(["diff", key, "undo", "--json"]);
 export interface McpAccountJson {
   key: string;
@@ -367,14 +434,34 @@ export async function setAutoKeep(on: boolean): Promise<void> {
   await runCli(["sessions", "keep", "auto", on ? "on" : "off"]);
 }
 
-/** `changes <session> --json`: the session's changed files against HEAD. */
-export async function sessionChanges(key: string): Promise<ChangedFileRow[]> {
-  return parseChanges(JSON.parse(await runCli(["changes", key, "--json"])));
+/** `changes <session> --json`: the session's changed files against HEAD, and how many more there are past the list's cap. */
+export async function sessionChanges(key: string): Promise<{ files: ChangedFileRow[]; more: number }> {
+  const o: unknown = JSON.parse(await runCli(["changes", key, "--json"]));
+  const more = (o as { more?: unknown } | null)?.more;
+  return { files: parseChanges(o), more: typeof more === "number" && more > 0 ? more : 0 };
 }
 
-/** `host start [profile] --cwd DIR`: a hosted session. */
-export async function hostStart(provider: ProviderId, cwd: string, profile?: string): Promise<void> {
-  await runCli(["host", "start", ...(profile ? [profile] : []), "--provider", provider, "--cwd", cwd, "--json"]);
+/** What a new session starts with beyond its account (CLI `--model`, `--effort`, `--worktree`). */
+export interface StartChoice {
+  model?: string;
+  effort?: string;
+  worktree?: boolean;
+}
+
+export function choiceFlags(c: StartChoice | undefined): string[] {
+  return [...(c?.model ? ["--model", c.model] : []), ...(c?.effort ? ["--effort", c.effort] : []), ...(c?.worktree ? ["--worktree"] : [])];
+}
+
+/** `host start [profile] --cwd DIR [--model M] [--effort E] [--worktree]`: a hosted session. */
+export async function hostStart(provider: ProviderId, cwd: string, profile?: string, choice?: StartChoice): Promise<void> {
+  await runCli(["host", "start", ...(profile ? [profile] : []), "--provider", provider, "--cwd", cwd, ...choiceFlags(choice), "--json"]);
+}
+
+/** `run [profile] --provider P --cwd DIR [--model M] [--effort E] [--worktree] --new-window`:
+ *  the user's terminal opens a new window and starts the session there. Without
+ *  a profile the CLI routes as for a plain start. */
+export async function startInTerminal(provider: ProviderId, cwd: string, profile?: string, choice?: StartChoice): Promise<void> {
+  await runCli(["run", ...(profile ? [profile] : []), "--provider", provider, "--cwd", cwd, ...choiceFlags(choice), "--new-window"]);
 }
 
 /** `host end <session> --yes`. */
@@ -387,9 +474,71 @@ export async function hostRespawn(key: string, change: { model?: string; effort?
   await runCli(["host", "respawn", key, ...(change.model ? ["--model", change.model] : []), ...(change.effort ? ["--effort", change.effort] : [])]);
 }
 
-/** `sessions cleanup --yes`: remove the worktrees of merged sessions (dirty ones skipped). */
-export async function cleanupMerged(): Promise<void> {
-  await runCli(["sessions", "cleanup", "--yes"]);
+/** `sessions cleanup [<session>…] --yes`: remove the worktrees of merged sessions (dirty ones skipped); only those of `keys` when given. */
+/** What Clean up removed, and what it left with the reason. */
+export interface CleanupJson {
+  removed: string[];
+  skipped: { path: string; reason: string }[];
+}
+export async function cleanupMerged(keys: string[] = []): Promise<CleanupJson> {
+  const o = JSON.parse(await runCli(["sessions", "cleanup", ...keys, "--yes", "--json"])) as Partial<CleanupJson>;
+  return { removed: Array.isArray(o.removed) ? o.removed : [], skipped: Array.isArray(o.skipped) ? o.skipped : [] };
+}
+
+/** `pr create <session> --json` without `--yes`: what Create PR would do, or why it cannot. */
+export interface PrPlanJson {
+  branch: string | null;
+  /** The commit the push sends. */
+  head: string | null;
+  base: string | null;
+  baseRemote: string;
+  /** Branches on the base remote a PR could go into. */
+  bases: string[];
+  /** The remote the push goes to. */
+  remote: string;
+  /** The full ref the push writes there (`refs/heads/…`). */
+  ref: string | null;
+  /** The URL the push goes to, as git resolves it. */
+  pushUrl: string | null;
+  /** The GitHub repository the PR opens in (`owner/name`). */
+  repo: string | null;
+  upstream: string | null;
+  setsUpstream: boolean;
+  /** Commits ahead of the base: what the PR holds. */
+  ahead: number | null;
+  title: string;
+  uncommitted: number;
+  existing: { number: number; url: string } | null;
+  problem: { message: string; fix: string } | null;
+}
+export async function prCreatePlan(key: string, base?: string): Promise<PrPlanJson> {
+  return JSON.parse(await runCli(["pr", "create", key, ...(base ? ["--base", base] : []), "--json"])) as PrPlanJson;
+}
+
+/** What a Create PR confirm showed: the CLI refuses when the push part changed since. */
+export interface PrConfirmJson {
+  branch: string;
+  head: string;
+  remote: string;
+  ref: string;
+  pushUrl: string;
+  repo: string;
+  base: string;
+  title: string;
+}
+
+/** `pr create <session> --yes --json` bound to what was confirmed: push and create the PR; the PR's URL. */
+export async function prCreate(key: string, c: PrConfirmJson): Promise<string> {
+  const args = ["pr", "create", key, "--base", c.base, "--title", c.title, "--expect-branch", c.branch, "--expect-head", c.head, "--expect-remote", c.remote, "--expect-ref", c.ref, "--expect-push-url", c.pushUrl, "--expect-repo", c.repo, "--yes", "--json"];
+  const out = await cli(args).execute();
+  let o: { ok?: boolean; error?: string; url?: string } = {};
+  try {
+    o = JSON.parse(out.stdout.trim().split("\n").pop() ?? "{}");
+  } catch {
+    /* not JSON: fall through to the exit code */
+  }
+  if (out.code !== 0 || o.ok === false || !o.url) throw new Error(o.error || out.stderr || "agent-switch pr create failed");
+  return o.url;
 }
 
 /** "Later": hide one item until it changes. */
@@ -742,9 +891,8 @@ export async function listBrowsers(): Promise<BrowserInfo[]> {
   }
 }
 
-export function sessionArgs(provider: ProviderId, name: string, cwd?: string): string[] {
-  const args = ["run", name, "--provider", provider];
-  return cwd ? [...args, "--cwd", cwd] : args;
+export function sessionArgs(provider: ProviderId, name: string, cwd?: string, choice?: StartChoice): string[] {
+  return ["run", name, "--provider", provider, ...(cwd ? ["--cwd", cwd] : []), ...choiceFlags(choice)];
 }
 
 /** claude.ai in the persistent per-profile browser — a browser window, not a
@@ -864,9 +1012,9 @@ export async function setAutoSwitch(
  *  (mirrors the CLI's `CONTINUE_TEXT`). */
 export const CONTINUE_TEXT = "Continue where you left off.";
 
-/** Type the continuation into a session Agent Switch hosts (`continue`). */
-export async function continueSession(key: string): Promise<void> {
-  await runCli(["continue", key]);
+/** Type the continuation, or `text`, into a session Agent Switch hosts (`continue [--text]`). */
+export async function continueSession(key: string, text?: string): Promise<void> {
+  await runCli(["continue", key, ...(text ? ["--text", text] : [])]);
 }
 
 /** Move a hosted session (`provider/account/id`) to `target` in its own window

@@ -7,7 +7,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { t } from "../i18n/index.js";
 import type { Actions } from "./actions.js";
-import type { ViewModel } from "./types.js";
+import type { Session, ViewModel } from "./types.js";
+import type { StartChoice } from "../ipc.js";
 
 export type Screen = "home" | "sessions" | "accounts" | "tools" | "activity" | "health" | "settings";
 export type SettingsTab =
@@ -43,9 +44,11 @@ export type AccountSection = "usage" | "edit";
 
 export type Overlay =
   | { kind: "none" }
-  | { kind: "session"; id: string }
+  /** `session`: the session itself, when the list does not hold it (a Codex session from the v3 window). */
+  | { kind: "session"; id: string; session?: Session; how?: "handoff" }
   | { kind: "account"; id: string; section?: AccountSection }
-  | { kind: "start"; cwd?: string; tool?: string; accountId?: string }
+  /** `choice`: the model, thinking and worktree a New session dialog chose for `tool`. */
+  | { kind: "start"; cwd?: string; tool?: string; accountId?: string; choice?: StartChoice }
   | { kind: "add-account"; tool?: string }
   | { kind: "limit"; attentionId: string }
   | { kind: "notifications" }

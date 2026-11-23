@@ -12,11 +12,11 @@ import * as path from "node:path";
 import { die, ROOT } from "../profiles.js";
 import { eventFile, lastHookCwd, readEvents } from "../hooks.js";
 import { canonical, gitFacts } from "../git-facts.js";
-import { readSessionHeader } from "../sessions.js";
+import { codexSessionMeta, readSessionHeader } from "../sessions.js";
 import { liveSessions } from "../api.js";
 import { configDir } from "../profiles.js";
 import { confine, defaultTarget, menu, OpenRefused, openSettingsFile, plan, readOpenSettings, realEnv, TARGET_IDS, writeOpenSettings, type TargetId } from "../open-in.js";
-import { focusSession, FocusFailed } from "../focus-terminal.js";
+import { focusSession, FocusFailed, terminalOf, type TerminalApp } from "../focus-terminal.js";
 import { pickTerminal, terminals, TERMINAL_IDS, type TerminalId } from "../terminals.js";
 import { githubRepo, prCacheFile, prsForHead, readPrCache } from "../pr-facts.js";
 import { resolveSession } from "./library.js";
@@ -35,13 +35,20 @@ interface Where {
   headSha: string | null;
 }
 
+/** The folder a session ran in, read from its own transcript: a Codex rollout
+ *  keeps it in its first line's `session_meta` payload (as `host adopt` reads it). */
+export function sessionFolder(provider: string, transcript: string): string | null {
+  if (provider === "codex") return codexSessionMeta(transcript)?.cwd ?? null;
+  return readSessionHeader(transcript).cwd ?? null;
+}
+
 function where(arg: string | undefined): Where {
   if (!arg) die("name a session (an id or provider/account/id; see agent-switch sessions)");
   const s = resolveSession(arg);
   if (!s) die(`unknown app "${arg}" and no session of that id (see agent-switch apps, agent-switch sessions)`);
   const [provider, account, sessionId] = s.key.split("/");
   const events = provider === "claude" ? readEvents(eventFile(ROOT, provider, account)) : [];
-  const cwd = lastHookCwd(events, sessionId) ?? readSessionHeader(s.files.transcript).cwd;
+  const cwd = lastHookCwd(events, sessionId) ?? sessionFolder(provider, s.files.transcript);
   if (!cwd) die(`${s.key} names no folder`);
   const git = gitFacts(cwd);
   const root = git?.toplevel ?? cwd;
@@ -130,7 +137,44 @@ export function cmdOpenTerminal(id: string | undefined): void {
   console.log(`Terminal: ${installed.name}.`);
 }
 
-export function cmdFocus(arg: string | undefined): void {
+/** Where a session in the user's own terminal runs, and whether "Focus
+ *  terminal" can bring it forward. Codex sessions name no process of their
+ *  own, so neither is known for them. Pure. */
+export interface TerminalFacts {
+  /** null: cannot be told (Codex). */
+  running: boolean | null;
+  /** The terminal's name ("iTerm2", "Ghostty", "VS Code"); null when unknown. */
+  terminal: string | null;
+  focusable: boolean;
+  /** Why it cannot be focused. */
+  why?: string;
+}
+
+export function terminalFacts(provider: string, pid: number | null, platform: NodeJS.Platform, detect: (pid: number) => TerminalApp | null): TerminalFacts {
+  if (provider !== "claude") return { running: null, terminal: null, focusable: false, why: `${provider === "codex" ? "Codex" : provider} names no program per session, so Agent Switch cannot tell which terminal holds it` };
+  if (pid === null) return { running: false, terminal: null, focusable: false, why: "it is not running" };
+  const t = detect(pid);
+  if (platform !== "darwin") return { running: true, terminal: t?.name ?? null, focusable: false, why: "focusing a terminal works on macOS only" };
+  if (!t) return { running: true, terminal: null, focusable: false, why: "the terminal it runs in is not known" };
+  if (!t.app) return { running: true, terminal: t.name, focusable: false, why: `${t.name} cannot be focused from Agent Switch (Terminal.app and iTerm2 can)` };
+  return { running: true, terminal: t.name, focusable: true };
+}
+
+/** `focus <session> --where [--json]`: what `terminalFacts` says, without focusing. */
+function cmdFocusWhere(arg: string | undefined, json: boolean): void {
+  if (!arg) die("usage: agent-switch focus <session> [--where] [--json]");
+  const s = resolveSession(arg);
+  if (!s) die(`no session ${arg} (see agent-switch sessions)`);
+  const [provider, account, sessionId] = s.key.split("/");
+  const pid = provider === "claude" ? (liveSessions(configDir("claude", account)).find((l) => l.sessionId === sessionId)?.pid ?? null) : null;
+  const f = terminalFacts(provider, pid, process.platform, (p) => terminalOf(p));
+  if (json) return void console.log(JSON.stringify({ session: s.key, ...f }));
+  const runs = f.running === false ? "Not running" : f.terminal ? `Runs in ${f.terminal}` : "Runs in a terminal Agent Switch cannot name";
+  console.log(f.focusable ? `${runs}; \`agent-switch focus ${s.key}\` brings it to the front.` : `${runs}${f.why ? ` (${f.why})` : ""}.`);
+}
+
+export function cmdFocus(arg: string | undefined, flags: Record<string, string | boolean> = {}): void {
+  if (flags.where) return cmdFocusWhere(arg, !!flags.json);
   const w = where(arg);
   if (w.provider !== "claude") die("focusing a terminal works for Claude sessions (their process is known)");
   const live = liveSessions(configDir("claude", w.account)).find((l) => l.sessionId === w.sessionId);

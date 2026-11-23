@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Play } from "lucide-react";
-import { sessionArgs, type DirResolution } from "../../ipc.js";
+import { sessionArgs, type DirResolution, type StartChoice } from "../../ipc.js";
 import { t } from "../../i18n/index.js";
 import { expandHome, typedFolder, useHomeDir } from "../../lib/paths.js";
 import type { ProviderId } from "../../transforms.js";
@@ -38,12 +38,12 @@ type OpenIn = "terminal" | "desktop-app";
 
 /** What the Start button runs; null when it can't start. A terminal start runs
  *  in `folder` (`agent-switch run … --cwd`); the desktop apps take no folder. */
-export function startPlan(account: Account | null, tool: Tool, openIn: OpenIn, appId: string | null, folder = "") {
+export function startPlan(account: Account | null, tool: Tool, openIn: OpenIn, appId: string | null, folder = "", choice?: StartChoice) {
   if (!canStartOn(account) || !account || tool === "gemini") return null;
   if (openIn === "desktop-app") return appId ? { kind: "app" as const, appId, accountId: account.id } : null;
   const dir = folder.trim();
   if (dir && !isAbsoluteFolder(dir)) return null;
-  return { kind: "terminal" as const, args: sessionArgs(tool as ProviderId, account.name, dir || undefined) };
+  return { kind: "terminal" as const, args: sessionArgs(tool as ProviderId, account.name, dir || undefined, choice) };
 }
 
 /** POSIX `/…`, Windows `C:\\…` / `C:/…` and UNC `\\\\server\\…`. The CLI checks
@@ -104,7 +104,7 @@ function useCliResolution(folder: string, tool: Tool, home: string | null): CliA
 /** Bundle `gR`, dialog 580. Automatic is the CLI's own answer (`dir --json`):
  *  the account it resolves and why. The local rule match is only the offline
  *  fallback (no backend, or the CLI didn't answer). */
-export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?: string; tool?: string; accountId?: string }) {
+export function StartSessionDialog({ cwd, tool: initialTool, accountId, choice }: { cwd?: string; tool?: string; accountId?: string; choice?: StartChoice }) {
   const s = useAS();
   const recent = recentFolders(s.sessions);
   const [folder, setFolder] = useState(cwd ?? recent[0] ?? "");
@@ -141,7 +141,8 @@ export function StartSessionDialog({ cwd, tool: initialTool, accountId }: { cwd?
   const account = asks ? null : pick === AUTO ? resolution.account : (s.accountById(pick) ?? null);
   const appWhy = appUnavailableReason(s, tool);
   const effectiveOpenIn: OpenIn = appWhy ? "terminal" : openIn;
-  const plan = startPlan(account, tool, effectiveOpenIn, appFor(s, tool), expandHome(folder.trim(), home));
+  // The New session dialog's model, thinking and worktree were chosen for its tool only.
+  const plan = startPlan(account, tool, effectiveOpenIn, appFor(s, tool), expandHome(folder.trim(), home), tool === initialTool ? choice : undefined);
   const folders = Array.from(new Set([...(cwd ? [cwd] : []), ...recent]));
   const preview = startPreview(tool, effectiveOpenIn, folder, appFor(s, tool), account?.name ?? null);
   const why = pick === AUTO ? resolution.why : [t("sessions.start.pickedByYou", { name: account?.name ?? "?" })];

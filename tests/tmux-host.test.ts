@@ -192,10 +192,12 @@ test("CLI: compact reaches a hosted session through the lease; host end asks fir
   fs.mkdirSync(cfg, { recursive: true });
   fs.writeFileSync(path.join(cfg, "auth.json"), "{}");
   const bin = path.join(home, "echoer");
-  fs.writeFileSync(bin, '#!/bin/sh\nwhile IFS= read -r l; do echo "got: $l"; done\n', { mode: 0o755 });
+  fs.writeFileSync(bin, '#!/bin/sh\nwhile printf "> "; IFS= read -r l; do echo "got: $l"; done\n', { mode: 0o755 });
   const socket = `as-test-cli-${process.pid}`;
   const host = new TmuxHost(home, { socket });
   const s = host.start({ provider: "codex", account: "work", configDir: cfg, cwd: home, bin });
+  // compact types only into an empty input line: wait until the program draws it.
+  for (let i = 0; i < 40 && !(host.capture(s.key) ?? "").includes(">"); i++) run("sleep", ["0.05"]);
   try {
     const env = { ...process.env, AGENT_SWITCH_HOME: home, AGENT_SWITCH_HOST_SOCKET: socket };
     execFileSync("node", [CLI, "compact", s.key], { env, encoding: "utf8" });
@@ -280,6 +282,21 @@ function recordingTmux(dir: string): { bin: string; calls: () => string[][]; at:
   fs.writeFileSync(bin, `#!/bin/sh\nnode -e 'require("fs").appendFileSync(process.argv[1], JSON.stringify([Date.now(), ...process.argv.slice(2)]) + "\\n")' "${log}" "$@"\necho @7\n`, { mode: 0o755 });
   return { bin, calls: () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).slice(1)) : []), at: (verb: string) => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((a) => a.includes(verb))?.[0] : undefined) };
 }
+
+test("a view of a hosted session shows only that session: no status line, and Ctrl-B stays the agent's (arena r3 01 F3)", { skip: process.platform === "win32" ? "the recording tmux stand-in is a shell script" : false }, () => {
+  const root = tmp();
+  const t = recordingTmux(root);
+  const host = new TmuxHost(root, { socket: "rec", tmux: t.bin });
+  const s = host.start({ provider: "claude", account: "work", configDir: "/cfg", cwd: root, bin: "claude" }, "agent-switch");
+  const before = t.calls().length;
+  const attach = host.view(s.key, "app1");
+  const calls = t.calls().slice(before);
+  // Agent Switch's own server never reads the user's ~/.tmux.conf; the options live on the view session.
+  for (const c of calls) assert.deepEqual(c.slice(0, 4), ["-L", "rec", "-f", "/dev/null"]);
+  assert.deepEqual(attach.slice(1, 5), ["-L", "rec", "-f", "/dev/null"]);
+  const set = calls.flatMap((c) => c.slice(4).join(" ").split(" ; ")).filter((x) => x.startsWith("set-option"));
+  for (const opt of ["status off", "prefix None", "prefix2 None"]) assert.ok(set.includes(`set-option -t =view-app1 ${opt}`), `the view sets ${opt}: ${JSON.stringify(set)}`);
+});
 
 test("a hosted Codex window gets a read-only pipe to the program-status reader; Claude does not", { skip: process.platform === "win32" ? "the recording tmux stand-in is a shell script" : false }, () => {
   const root = tmp();

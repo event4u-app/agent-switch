@@ -40,7 +40,7 @@ import { moveCacheLine } from "../cache-words.js";
 import { eventFile, readEvents } from "../hooks.js";
 import { TmuxHost } from "../host/tmux-host.js";
 import { openSettingsFile, readOpenSettings, realEnv } from "../open-in.js";
-import { pickTerminal, runPlan, terminalName } from "../terminals.js";
+import { commandPlan, terminalName } from "../terminals.js";
 
 /** POSIX single-quote for a printed command line (the prompt may hold spaces). */
 export function shellQuote(a: string): string {
@@ -51,13 +51,10 @@ export function shellQuote(a: string): string {
  *  Settings › Open in (Terminal.app by default), else print it. Used when
  *  --in-place is asked for but there is no managed pane. */
 function spawnNewTerminal(command: string): void {
-  const chosen = readOpenSettings(openSettingsFile(ROOT)).terminal;
-  const first = pickTerminal(chosen, realEnv);
   // A terminal that cannot be asked to run a command (Warp) hands over to Terminal.app.
-  const id = first && runPlan(first, process.cwd(), command, realEnv) ? first : process.platform === "darwin" ? "terminal" : null;
-  const p = id ? runPlan(id, process.cwd(), command, realEnv) : null;
-  if (p && spawnSync(p.program, p.args, { stdio: "ignore" }).status === 0) {
-    console.log(`Opened the resume in a new ${terminalName(id!)} window — close the old window when you're done.`);
+  const c = commandPlan(readOpenSettings(openSettingsFile(ROOT)).terminal, process.cwd(), command, realEnv);
+  if (c && spawnSync(c.plan.program, c.plan.args, { stdio: "ignore" }).status === 0) {
+    console.log(`Opened the resume in a new ${terminalName(c.id)} window — close the old window when you're done.`);
     return;
   }
   console.log(`Open a new terminal and run:\n  ${command}\n(then close the old window).`);
@@ -556,7 +553,7 @@ function pidAlive(pid: number): boolean {
 
 /** End the session's own process so it can move. Never mid-turn: the turn's
  *  work would be lost. Waits for the exit so nothing appends after the move. */
-function stopBetweenTurns(sessionId: string, procs: LiveSession[]): void {
+export function stopBetweenTurns(sessionId: string, procs: LiveSession[]): void {
   const busy = procs.filter((p) => p.status !== null && p.status !== "idle");
   if (busy.length > 0) {
     die(`session ${sessionId} is mid-turn (PID ${busy.map((p) => p.pid).join(", ")}, ${busy[0].status}). Wait until the turn ends, then move it.`);

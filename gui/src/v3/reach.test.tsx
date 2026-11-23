@@ -11,9 +11,9 @@ import { installMemoryStorage } from "../redesign/engines/test-storage.js";
 installMemoryStorage();
 
 afterEach(cleanup);
-function open() {
+function open(over: Partial<ReturnType<typeof data>> = {}) {
   const act = vi.fn();
-  render(<V3Window data={data()} slots={slots} act={act} />);
+  render(<V3Window data={{ ...data(), ...over }} slots={slots} act={act} />);
   let clicks = 0;
   const click = (el: Element) => (clicks++, fireEvent.click(el));
   return { act, click, clicks: () => clicks };
@@ -44,14 +44,15 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
   it("Session sheet: move, take over, hand off, compact — session row, then ⋯", () => {
     const w = open();
     w.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
-    w.click(screen.getByLabelText("Session actions: rename, pin, move, detach, end"));
+    w.click(screen.getByLabelText("Session actions"));
     const menu = screen.getByRole("menu");
     for (const item of ["Move to another account…", "Take over here…", "Hand off…", "Compact"]) expect(within(menu).getByText(item)).toBeTruthy();
     expect(w.clicks()).toBe(2);
   });
 
   it("Near-limit decision: Needs-you Decide opens the same sheet, never automatic", () => {
-    const w = open();
+    // Deciding answers through the engine, so it runs while the engine is up.
+    const w = open({ health: { state: "ready" } });
     expect(screen.queryByText("Nothing changes until you choose.", { exact: false })).toBeNull();
     w.click(screen.getByText("Decide"));
     expect(screen.getByText(/Nothing changes until you choose/)).toBeTruthy();
@@ -164,14 +165,37 @@ describe("every 2.11 function in ≤ 2 clicks (spec §11)", () => {
 describe("v3.1 Review page", () => {
   it("Changes › Review changes opens a Review tab for the session; it closes like any page", () => {
     const act = vi.fn();
-    const review = vi.fn((key: string) => <p>{`review of ${key}`}</p>);
+    const review = vi.fn((key: string, _focus?: { seq: number }) => <p>{`review of ${key}`}</p>);
     render(<V3Window data={{ ...data(), changes: () => [{ path: "a.ts", status: "M", added: 1, removed: 0 }] as never }} slots={{ ...slots, review }} act={act} />);
     fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
     fireEvent.click(screen.getByLabelText("Changes"));
     fireEvent.click(screen.getByText("Review changes"));
     expect(screen.getByText("review of s1")).toBeTruthy();
+    // A new open each time: the review goes back to Uncommitted, the files this count counts.
+    expect(review).toHaveBeenLastCalledWith("s1", { seq: 1 });
     expect(screen.getByRole("tab", { name: /Review · Event store/ })).toBeTruthy();
     expect(act).not.toHaveBeenCalledWith({ type: "review", key: "s1" });
+  });
+
+  it("a Changes file row opens the Review tab at that file", () => {
+    const review = vi.fn((key: string, focus?: { file?: string }) => <p>{`review of ${key} at ${focus?.file ?? "-"}`}</p>);
+    render(<V3Window data={{ ...data(), changes: () => [{ path: "src/a.ts", status: "M", added: 1, removed: 0 }] as never }} slots={{ ...slots, review }} act={vi.fn()} />);
+    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
+    fireEvent.click(screen.getByLabelText("Changes"));
+    fireEvent.click(screen.getByRole("button", { name: "Review src/a.ts" }));
+    expect(screen.getByText("review of s1 at src/a.ts")).toBeTruthy();
+  });
+
+  it("Summary's changed count opens the Review tab in one click", () => {
+    const review = vi.fn((key: string, _focus?: { seq: number }) => <p>{`review of ${key}`}</p>);
+    const summary = () => ({ next: null, pr: null, git: { branch: "b", worktree: false, changed: 1, ahead: 0, behind: 0 }, limit: null, more: { id: "i", host: "h", library: "l", children: "c" } });
+    render(<V3Window data={{ ...data(), summary, changes: () => [{ path: "a.ts", status: "M", added: 1, removed: 0 }] as never }} slots={{ ...slots, review }} act={vi.fn()} />);
+    fireEvent.click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
+    if (!screen.queryByRole("complementary", { name: "Summary" })) fireEvent.click(screen.getByLabelText("Summary ⌘I"));
+    fireEvent.click(screen.getByRole("button", { name: "1 changed — open the review" }));
+    expect(screen.getByText("review of s1")).toBeTruthy();
+    // A new open each time: the review goes back to Uncommitted, the files this count counts.
+    expect(review).toHaveBeenLastCalledWith("s1", { seq: 1 });
   });
 
   it("without a review slot, Review stays disabled", () => {

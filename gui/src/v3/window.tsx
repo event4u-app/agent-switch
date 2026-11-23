@@ -8,29 +8,31 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../lib/utils.js";
-import { ArrowRightToLine, Copy, Ellipsis, FileCode, Layers, Library, ListTree, Pin, PinOff, Plus, RotateCcw, Settings, Wrench, X } from "lucide-react";
+import { ArrowLeftRight, ArrowRightToLine, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, Unplug, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
 import type { IdentityColor, ToolEntry } from "../vm/types.js";
-import { DecisionSheet, NewSessionDialog, type MoveHow, type NewSessionFacts, type NewSessionPlan, type SheetMove, type SheetSession } from "./dialogs.js";
+import { DecisionSheet, EndDialog, NewSessionDialog, type MoveHow, type NewSessionFacts, type NewSessionPlan, type SheetMove, type SheetSession } from "./dialogs.js";
 import { Shell, useFrame, type PageId } from "./frame.js";
 import { LimitsPopover, LimitsStrip, RoomLeft, type LimitAccount } from "./limits.js";
 import { RunningOn, runningOn } from "./running-on.js";
 
 /** The model popover opened from the limits popover sits to its right (352 + 320 + 12 + 11). */
 const LIMITS_MODEL_X = 695;
-import { NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
+import { answeredThere, NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
 import { limitToOpen, markLimitOpened, openedLimits, wasOpened } from "./adapter/limit-auto.js";
 import { accountOfKey } from "../vm/switch-requests.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
 import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
-import { SessionsZone, childNoun, findChild, type RowSession } from "./sessions.js";
+import type { ReviewFocus } from "./review.js";
+import { DEFAULT_SORT, SessionsZone, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
+import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
-import { updateNeeds } from "./tools.js";
-import { BlockerStrip, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
-import { Act, type BatchActions } from "./kit.js";
+import { allNeeds } from "./tools.js";
+import { AFTER_TURN_DOWN_WHY, BlockerStrip, HintStrip, ModelPopover, SessionBar, SystemBanner, TabStrip, engineDownText, HOSTED_HINT, type BarChipId, type BarSession, type ModelChoices, type TabItem } from "./workbench.js";
+import { AccountMark, Act, type BatchActions } from "./kit.js";
 import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, type MenuItem, type OpenFacts, type OpenPick } from "./menus.js";
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
@@ -67,7 +69,7 @@ export interface V3Data {
    *  already answered outside the app this cycle. */
   link?: { asked: { id: string; account: string }[]; answered: string[] };
   /** The near-limit decision, by account key ("claude/work") or by session key — a limit item's subject is either. */
-  decision: (subject: string) => { account: string; tool?: string; targets?: { name: string; color: IdentityColor }[]; pctUsed: number; window: string; resetsIn: string; sessions: SheetSession[]; alsoOn?: { key: string; title: string }[]; suggestion: string; suggestionWhy?: string; askedByAgentConfig?: boolean } | null;
+  decision: (subject: string) => { account: string; tool?: string; nearLimit?: boolean; targets?: { name: string; color: IdentityColor }[]; pctUsed: number; window: string; resetsIn: string; sessions: SheetSession[]; alsoOn?: { key: string; title: string }[]; suggestion: string; suggestionWhy?: string; askedByAgentConfig?: boolean } | null;
   bar: (key: string) => BarSession | null;
   /** The session's chat runs in this window, so its approvals may be answered "always" here. */
   chatHere?: (key: string) => boolean;
@@ -75,7 +77,9 @@ export interface V3Data {
   models?: (key: string) => ModelChoices | null;
   summary: (key: string) => SummaryFacts | null;
   changes: (key: string) => ChangedFile[];
-  next: (key: string) => { text: string; action: string } | null;
+  /** Changed files past the Changes list's cap (it names them as a count). */
+  changesMore?: (key: string) => number;
+  next:(key: string) => { text: string; action: string } | null;
   /** The session-menu entries that do something for this session; all when absent. */
   menu?: (key: string) => readonly SessionMenuItem[];
   /** "Commit…" in the Changes window; disabled with its reason when false. */
@@ -93,8 +97,10 @@ export interface V3Slots {
   /** Accounts › MCP & plugins (v3.1). */
   mcp?: ReactNode;
   tools: ReactNode;
-  /** v3.1: the Review page of one session (spec §10.9). Absent: Review and Commit stay disabled. */
-  review?: (key: string) => ReactNode;
+  /** 7.7: one subagent's transcript, read-only, opened from its row. Absent: subagent rows do not open. */
+  subagent?: (parent: string, agentId: string) => ReactNode;
+  /** v3.1: the Review page of one session (spec §10.9), opened at `focus` when a file was picked. Absent: Review and Commit stay disabled. */
+  review?: (key: string, focus?: ReviewFocus) => ReactNode;
   /** The 2.11 settings screens v3 keeps, by section. */
   settings: (section: SettingsSection) => ReactNode;
 }
@@ -108,10 +114,13 @@ export type V3Action =
   | { type: "away" }
   | { type: "needs-later-all" }
   | { type: "start"; plan: NewSessionPlan }
-  | { type: "choose-account" }
+  /** The New-session dialog changed (null: it closed without starting). */
+  | { type: "start-draft"; plan: NewSessionPlan | null }
   | { type: "move"; how: MoveHow; moves: SheetMove[] }
-  | { type: "keep-account"; account: string }
+  | { type: "keep-account"; account: string; tool?: string }
   | { type: "session-menu"; key: string; item: SessionMenuItem }
+  /** Confirmed in the End dialog: the program stops, the transcript stays. */
+  | { type: "end"; key: string }
   | { type: "batch"; op: keyof BatchActions; keys: string[] }
   | { type: "clean-up" }
   | { type: "view"; key: string; view: "terminal" | "chat" }
@@ -160,8 +169,29 @@ function shellPoint(at: { x: number; y: number }, width = 260): { x: number; y: 
   return { x: r && r.width ? Math.max(4, Math.min(x, r.width - width - 4)) : x, y };
 }
 
-/** The session actions a tab's menu repeats; "Pin" stays in the session's own menu (it pins in the list, not the tab). */
-const TAB_SESSION_ITEMS: readonly SessionMenuItem[] = ["Rename…", "Move to another account…", "Hand off…", "Detach", "End…"];
+/** Where a menu opens under its trigger, in shell coordinates: its top and its distance from the right edge. */
+type Anchor = { top: number; right: number };
+/** Under `trigger`, right edges aligned, so the menu follows its button wherever the bar puts it. */
+function anchorUnder(trigger: Element): Anchor | undefined {
+  const shell = trigger.closest("[data-v3-shell]")?.getBoundingClientRect();
+  const r = trigger.getBoundingClientRect();
+  if (!shell || !shell.width) return undefined;
+  return { top: Math.round(r.bottom - shell.top + 4), right: Math.max(4, Math.round(shell.right - r.right)) };
+}
+
+/** One icon per session action, the same in the ⋯ menu and the tab's menu. */
+const SESSION_ICON: Record<SessionMenuItem, ReactNode> = {
+  "Rename…": <Pencil />,
+  Pin: <Pin />,
+  "Move to another account…": <ArrowLeftRight />,
+  "Take over here…": <Hand />,
+  "Hand off…": <Send />,
+  Compact: <Minimize2 />,
+  Detach: <Unplug />,
+  "End…": <Power />,
+};
+/** Why "Move to another account" has nothing to show: the decision sheet is built from the account's usage. */
+export const NO_USAGE_WHY = "This account's usage has not been read yet — refresh it on the Accounts page first";
 
 /** The palette's own commands: pages the window can open (spec §7.1). */
 export const PAGE_COMMANDS: PaletteEntry[] = [
@@ -180,6 +210,8 @@ export function V3Window({
   slots,
   act,
   focus,
+  needFocus,
+  newSession,
   layout,
   keys = DEFAULT_KEYS,
   platform = PLATFORM,
@@ -189,6 +221,10 @@ export function V3Window({
   slots: V3Slots;
   act: (a: V3Action) => void;
   focus?: { key: string; n: number };
+  /** Focus one Needs-you item (a tray verb); `n` is the request, so the same item can be asked for again. */
+  needFocus?: { id: string; n: number };
+  /** Open the New-session dialog (the tray's Start session); `n` is the request, so each opens it once. */
+  newSession?: { n: number };
   layout?: LayoutStore;
   keys?: Record<Action, Binding>;
   platform?: "mac" | "other";
@@ -202,7 +238,7 @@ export function V3Window({
   const pages = strip.order.filter(isPageTab).map((id) => id.slice(5) as Page);
   const sessionTabs = strip.order.filter((id) => !isPageTab(id));
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string } | { openin: string } | { tabMenu: string; x: number; y: number }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor; moved?: BarChipId[] } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -210,12 +246,15 @@ export function V3Window({
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [hintsDismissed, setHintsDismissed] = useState<Set<string>>(new Set());
   const [moreOpen, setMoreOpen] = useState(false);
-  const [comfortable, setComfortable] = useState(saved?.comfortable ?? false);
-  const [sortBy, setSortBy] = useState<SortBy>(saved?.sort ?? "activity");
+  const [reviewFocus, setReviewFocus] = useState<ReadonlyMap<string, ReviewFocus>>(new Map());
+  // Two-line rows are the default (5.2); a saved choice wins.
+  const [comfortable, setComfortable] = useState(saved?.comfortable ?? true);
+  const [sortBy, setSortBy] = useState<SortBy>(saved?.sort ?? DEFAULT_SORT);
   // An older layout's "group by project" comes back as the project grouping.
   const [groupBy, setGroupBy] = useState<GroupBy>(saved?.group ?? (saved?.groupByProject ? "project" : "none"));
   const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
   const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
+  const lastActiveOf = (k: string) => data.table.find((t) => t.key === k)?.lastActiveMs ?? null;
   const [focusChild, setFocusChild] = useState<string | null>(null);
   // Hover peek (spec §5.2): after 400 ms on a row, one card at a time, never while a layer is open.
   const [peek, setPeek] = useState<{ key: string; y: number } | null>(null);
@@ -235,10 +274,27 @@ export function V3Window({
     setActive(`page:${p}`);
   }, []);
   const frame = useFrame(openPage);
+  /** The session's Review tab, at `file` when one was picked; every open is new, so the review goes back to Uncommitted. */
+  const openReview = (key: string, file?: string) => {
+    setReviewFocus((m) => new Map(m).set(key, { ...(file ? { file } : {}), seq: (m.get(key)?.seq ?? 0) + 1 }));
+    openPage(`review:${key}`);
+  };
   const openSession = (key: string) => {
     setStrip((cur) => openTab(cur, key));
     setActive(key);
   };
+  // 7.7: a subagent opens read-only in place of its parent's body, until Back or another session.
+  const [subView, setSubView] = useState<{ parent: string; agentId: string } | null>(null);
+  const openSubagent = slots.subagent
+    ? (parent: string, agentId: string) => {
+        openSession(parent);
+        setSubView({ parent, agentId });
+      }
+    : undefined;
+  // Another session, or the parent's tab closed: the subagent view ends.
+  useEffect(() => {
+    if (subView && subView.parent !== active) setSubView(null);
+  }, [active, subView]);
   // The window opens where the user left off, else on the first live session;
   // once, when the sessions are first known (they arrive after the first paint).
   const started = useRef(false);
@@ -293,20 +349,48 @@ export function V3Window({
       { id: "reopen", label: "Reopen closed tab", icon: <RotateCcw />, kbd: keyLabel(keys.reopenTab, platform), disabled: !canReopen(strip), onClick: run(() => void reopenClosed()) },
     ];
     if (isPageTab(id)) return items;
-    const offered = new Set<string>(data.menu ? data.menu(id) : SESSION_MENU);
+    return [...items, { divider: true, label: "" }, ...sessionMenuItems(id)];
+  };
+  /** The session's own actions, one list for the ⋯ menu and the tab's menu: Pin reads Unpin when pinned, End… comes last. */
+  const sessionMenuItems = (key: string): MenuItem[] => {
+    const offered = data.menu ? data.menu(key) : SESSION_MENU;
+    const pinned = !!data.library.find((l) => l.key === key)?.pinned;
+    const run = (f: () => void) => () => (setOverlay(null), f());
+    const row = (item: SessionMenuItem): MenuItem =>
+      item === "Pin"
+        ? { id: "session:Pin", label: pinned ? "Unpin session" : "Pin session", icon: pinned ? <PinOff /> : <Pin />, onClick: run(() => (pinned ? act({ type: "library", op: "pin", key, value: false }) : sessionItem(key, "Pin"))) }
+        : {
+            id: `session:${item}`,
+            label: item,
+            icon: SESSION_ICON[item],
+            danger: item === "End…",
+            ...(itemWhy(key, item) ? { disabled: true, why: itemWhy(key, item)! } : {}),
+            onClick: run(() => sessionItem(key, item)),
+          };
     return [
-      ...items,
-      { divider: true, label: "" },
-      { id: "copy-key", label: "Copy session key", icon: <Copy />, onClick: run(() => void navigator.clipboard?.writeText(id).catch(() => undefined)) },
-      ...TAB_SESSION_ITEMS.filter((item) => offered.has(item)).map(
-        (item): MenuItem => ({
-          id: `session:${item}`,
-          label: item,
-          danger: item === "End…",
-          onClick: run(() => (item === "Move to another account…" ? setOverlay({ decide: id }) : act({ type: "session-menu", key: id, item }))),
-        }),
-      ),
+      ...offered.filter((item) => item !== "End…").map(row),
+      { id: "copy-key", label: "Copy session key", icon: <Copy />, onClick: run(() => void navigator.clipboard?.writeText(key).catch(() => undefined)) },
+      ...(offered.includes("End…") ? [{ divider: true, label: "" }, row("End…")] : []),
     ];
+  };
+
+  /** 8.6: the bar's chips that did not fit, at the top of ⋯ — the same actions, locked ones disabled with the chip's reason. */
+  const movedChipItems = (key: string, moved: readonly BarChipId[], at?: Anchor): MenuItem[] => {
+    const b = data.bar(key);
+    if (!b || !moved.length) return [];
+    const run = (f: () => void) => () => (setOverlay(null), f());
+    // The model popover opens where the menu was, under ⋯.
+    const shellW = document.querySelector("[data-v3-shell]")?.getBoundingClientRect().width ?? 0;
+    const x = Math.max(8, shellW - (at?.right ?? 0) - 320) + 11;
+    const locked = b.respawnWhy ?? (b.hosted ? null : "Locked: change it in your terminal");
+    const why = (w: string | null) => (w ? { disabled: true, why: w } : {});
+    const items: MenuItem[] = [];
+    if (moved.includes("account")) items.push({ id: "chip:account", label: "Account…", icon: <AccountMark color={b.account.color} />, hint: `${b.account.name}${b.account.fiveH != null ? ` · ${b.account.fiveH}%` : ""}`, ...why(moveWhy(key)), onClick: run(() => openMove(key)) });
+    if (moved.includes("model")) items.push({ id: "chip:model", label: "Model…", hint: b.model ?? undefined, ...why(locked && (b.hosted ? locked : "Locked: change it in your terminal (/model)")), onClick: () => setOverlay({ model: key, x, chip: "model" }) });
+    if (moved.includes("thinking")) items.push({ id: "chip:thinking", label: "Thinking…", hint: b.thinking ? b.thinking[0].toUpperCase() + b.thinking.slice(1) : undefined, ...why(locked), onClick: () => setOverlay({ model: key, x, chip: "thinking" }) });
+    if (moved.includes("ctx") && b.contextPct != null) items.push({ label: "", note: `Context ${Math.round(b.contextPct)}% used` });
+    if (moved.includes("where")) items.push({ label: "", note: b.hosted ? `Hosted by Agent Switch: ${HOSTED_HINT}` : `${b.where ?? "Your terminal"} · watching. Take over to type here.` });
+    return [...items, { divider: true, label: "" }];
   };
 
   // The app opens a tab itself: a new chat, a Needs-you item that lives in a chat.
@@ -317,7 +401,47 @@ export function V3Window({
   }, [focus?.n]);
 
   // Tool updates join the queue (spec §10.4); limit items open the decision sheet.
-  const needs = useMemo(() => [...data.needs, ...updateNeeds(data.tools, new Date(data.nowMs).toISOString())], [data.needs, data.tools, data.nowMs]);
+  const needs = useMemo(() => allNeeds({ needs: data.needs, tools: data.tools, nowMs: data.nowMs }), [data.needs, data.tools, data.nowMs]);
+  // The tray's Start session opens the same New-session dialog as ⌘N, once per request.
+  const newSessionDone = useRef<number | null>(null);
+  useEffect(() => {
+    if (!newSession || newSessionDone.current === newSession.n) return;
+    newSessionDone.current = newSession.n;
+    setOverlay("new");
+  }, [newSession]);
+  // A tray verb points at one Needs-you item: the window shows it focused, with its keys (as ⌘J does).
+  // The window's own read may lag the tray's by a poll: the request waits until the item is here.
+  const needFocusDone = useRef<number | null>(null);
+  useEffect(() => {
+    if (!needFocus || needFocusDone.current === needFocus.n || !needs.some((n) => n.id === needFocus.id)) return;
+    needFocusDone.current = needFocus.n;
+    frame.setSessionsShown(true);
+    setFocusedNeed(needFocus.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needFocus?.n, needs]);
+  // 8.6: a focused item takes DOM focus, so ↵, ⌫, L and Y answer it and never reach a
+  // focused terminal; when no item is focused any more, focus goes back where it was.
+  // An item about a child focuses the child row instead (3.4); the window's keys answer the item there too.
+  const needOpener = useRef<HTMLElement | null>(null);
+  const zoneHolds = (el: Element) => !!el.closest('[aria-label="Needs you"], [data-child-row]');
+  /** Where focus goes back to: what had it before the first item took it. */
+  const holdNeedOpener = () => {
+    const now = document.activeElement as HTMLElement | null;
+    if (!needOpener.current && now && now !== document.body && !zoneHolds(now)) needOpener.current = now;
+  };
+  useEffect(() => {
+    const now = document.activeElement as HTMLElement | null;
+    if (focusedNeed) {
+      holdNeedOpener();
+      if (!focusChild) [...document.querySelectorAll<HTMLElement>("[data-need]")].find((el) => el.dataset.need === focusedNeed)?.focus();
+      return;
+    }
+    const opener = needOpener.current;
+    needOpener.current = null;
+    const lost = !now || now === document.body || !now.isConnected || zoneHolds(now);
+    if (opener?.isConnected && lost) opener.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedNeed]);
   // A session at its limit opens its decision sheet by itself (once per item
   // version) and brings the window forward — the user still confirms the move.
   // agent-config's question opens it too (once per request), and a limit it
@@ -341,6 +465,24 @@ export function V3Window({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.link, overlay]);
 
+  const down = data.health.state === "down";
+  /** Why a move of `key` cannot open its decision sheet now: there is no usage to decide on. A
+   *  stopped engine does not stop a move — a switch now, a take-over and a send are CLI calls;
+   *  only "After this turn" waits for the background service, and the sheet says so there. */
+  const moveWhy = (key: string): string | null => (data.decision(key) ? null : NO_USAGE_WHY);
+  /** Every entry point to the decision sheet (menu, chip, ⌘⇧M, hint, Limits) goes through here. */
+  const openMove = (key: string) => {
+    if (!moveWhy(key)) setOverlay({ decide: key });
+  };
+  /** Why a session-menu item is off: the account move needs usage. */
+  const itemWhy = (key: string, item: SessionMenuItem): string | null => (item === "Move to another account…" ? moveWhy(key) : null);
+  /** A session-menu pick: the moves open the decision sheet, End… its dialog, the rest are actions. */
+  const sessionItem = (key: string, item: SessionMenuItem) => {
+    if (itemWhy(key, item)) return;
+    if (item === "Move to another account…") return openMove(key);
+    if (item === "End…") return setOverlay({ end: key });
+    act({ type: "session-menu", key, item });
+  };
   const onVerb = (n: NeedItem) => {
     if (n.kind === "limit" || n.kind === "pace") setOverlay({ decide: n.subject });
     else if (n.kind === "update") openPage("tools");
@@ -374,7 +516,7 @@ export function V3Window({
   });
 
   const page = (p: Page): ReactNode => {
-    if (p.startsWith("review:")) return slots.review ? slots.review(p.slice(7)) : null;
+    if (p.startsWith("review:")) return slots.review ? slots.review(p.slice(7), reviewFocus.get(p.slice(7))) : null;
     if (p === "accounts")
       return (
         <AccountsPage
@@ -400,7 +542,8 @@ export function V3Window({
           on={{ autoKeep: (value) => act({ type: "library", op: "auto-keep", value }), pin: (key, value) => act({ type: "library", op: "pin", key, value }), resume: (key) => act({ type: "library", op: "resume", key }), archive: (key, value) => act({ type: "library", op: "archive", key, value }) }}
         />
       );
-    if (p === "sessions-table") return <AllSessionsPage sessions={data.table} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
+    // 8.6: the table in the sidebar's order (its sort), ended sessions after it.
+    if (p === "sessions-table") return <AllSessionsPage sessions={data.table} order={sortLive(data.sessions, sortBy, lastActiveOf).map((row) => row.key)} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
     if (p === "tools") return slots.tools;
     return (
       <SettingsPage current={section} onSection={setSection}>
@@ -429,7 +572,9 @@ export function V3Window({
       lastUsed: data.openIn.lastUsed,
       agentApp: app ? { id: app.id, label: app.label } : null,
       pr: pr ? { number: pr.number, url: pr.url } : null,
-      focusable: !data.bar(key)?.hosted,
+      // Where the adapter knows the terminal, only where Focus reaches it; a design board without that fact keeps "Claude, not hosted". The Focus terminal switch turns it off.
+      focusable: data.openIn.focusTerminal && (data.bar(key)?.focusable ?? (tool === "claude" && !data.bar(key)?.hosted)),
+      attachable: !!data.bar(key)?.attachable,
     };
   };
   const openDefault = (key: string) => act({ type: "open-in", key, pick: { kind: "default" } });
@@ -445,7 +590,8 @@ export function V3Window({
       // A focused Needs-you item answers to its own keys (spec §5.1).
       if (e.key === "Enter" && !e.shiftKey) return void (e.preventDefault(), setFocusedNeed(null), onVerb(focused));
       if (e.key.toLowerCase() === "l") return void (e.preventDefault(), setFocusedNeed(nextFocus(needs.filter((n) => n.id !== focused.id), focused.id)), act({ type: "need-later", id: focused.id }));
-      if (focused.kind === "approval" && focused.verb !== "Focus terminal") {
+      // An answer goes through the chat's inbox (`needs allow`), not the engine: it works while the engine is stopped.
+      if (focused.kind === "approval" && !answeredThere(focused)) {
         const always = e.key === "Enter" && e.shiftKey;
         const decision = always ? "always" : e.key === "Backspace" || e.key === "Delete" ? "deny" : e.key.toLowerCase() === "y" && !e.shiftKey ? "allow" : null;
         // "Always" widens a rule, so it is answered only where the chat runs, never from outside it.
@@ -465,6 +611,7 @@ export function V3Window({
         case "nextNeed": {
           const id = nextFocus(needs, focusedNeed);
           if (!id) return false;
+          holdNeedOpener();
           frame.setSessionsShown(true);
           // 3.4: an item about a child opens its root's children and focuses the child row.
           const hit = findChild(data.sessions, needs.find((n) => n.id === id)?.subject ?? "");
@@ -475,11 +622,11 @@ export function V3Window({
         case "toggleSessions":
           return (frame.selectLeft("sessions"), true);
         case "toggleSummary":
-          return (frame.selectRight("summary"), true);
+          return activeSession ? (frame.selectRight("summary"), true) : false;
         case "openDefault":
           return activeSession ? (openDefault(activeSession), true) : false;
         case "moveSession":
-          return activeSession ? (setOverlay({ decide: activeSession }), true) : false;
+          return activeSession ? (openMove(activeSession), true) : false;
         case "switcher":
           return recent.length ? (setOverlay((o) => ({ switcher: o && typeof o === "object" && "switcher" in o ? (o.switcher + 1) % recent.length : Math.min(1, recent.length - 1) })), true) : false;
         case "settings":
@@ -520,6 +667,7 @@ export function V3Window({
   };
 
   const openMenuOf = overlay && typeof overlay === "object" && "openin" in overlay ? overlay.openin : null;
+  const openAt = overlay && typeof overlay === "object" && "openin" in overlay ? overlay.at : undefined;
 
   // Under the session bar: it belongs to the body (gap §4e); its one action restarts the engine.
   const engineBanner = data.health.state === "down" && (
@@ -533,6 +681,18 @@ export function V3Window({
       {engineDownText(data.health.sinceMs, data.nowMs, data.health.hostedRunning, data.health.elsewhere)}
     </SystemBanner>
   );
+
+  /** The session body, or the subagent of it that is open. */
+  const bodyOf = (key: string): ReactNode => {
+    const hit = subView && subView.parent === key && slots.subagent ? findChild(data.sessions, subView.agentId) : null;
+    if (!hit || !subView) return slots.body(key);
+    const parentTitle = data.sessions.find((x) => x.key === key)?.title ?? key;
+    return (
+      <SubagentView c={hit.child} parentTitle={parentTitle} nowMs={data.nowMs} onBack={() => setSubView(null)}>
+        {slots.subagent!(key, subView.agentId)}
+      </SubagentView>
+    );
+  };
 
   const centre = (
     <section className="flex min-w-0 flex-1 flex-col bg-ac-bg">
@@ -554,27 +714,41 @@ export function V3Window({
           <SessionBar
             s={bar}
             chipOpen={overlay && typeof overlay === "object" && "chip" in overlay ? overlay.chip : null}
+            menuOpen={!!overlay && typeof overlay === "object" && "menu" in overlay}
             openIn={
               data.openIn.targets.length ? (
                 <OpenInButton
                   def={defTarget && { label: defTarget.label, mono: monogram(defTarget.target, defTarget.label) }}
                   open={openMenuOf === activeSession}
                   onDefault={() => openDefault(activeSession)}
-                  onMenu={() => setOverlay((o) => (o && typeof o === "object" && "openin" in o ? null : { openin: activeSession }))}
+                  onMenu={(el) => setOverlay((o) => (o && typeof o === "object" && "openin" in o ? null : { openin: activeSession, at: anchorUnder(el) }))}
                 />
               ) : null
             }
-            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => setOverlay({ decide: activeSession }), model: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "model" ? null : { model: activeSession, x, chip: "model" })), thinking: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "thinking" ? null : { model: activeSession, x, chip: "thinking" })), menu: () => setOverlay({ menu: activeSession }) }}
+            accountWhy={moveWhy(activeSession)}
+            on={{ view: (view) => act({ type: "view", key: activeSession, view }), account: () => openMove(activeSession), model: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "model" ? null : { model: activeSession, x, chip: "model" })), thinking: (x) => setOverlay((o) => (o && typeof o === "object" && "chip" in o && o.chip === "thinking" ? null : { model: activeSession, x, chip: "thinking" })), menu: (el, moved) => setOverlay((o) => (o && typeof o === "object" && "menu" in o ? null : { menu: activeSession, at: anchorUnder(el), moved })) }}
           />
           {engineBanner}
           <HintStrip
             s={bar}
             dismissed={hintsDismissed}
             onDismiss={(k) => setHintsDismissed((d) => new Set([...d, k]))}
-            onAction={(h) => (h.action?.kind === "switch" ? setOverlay({ decide: activeSession }) : act({ type: "session-menu", key: activeSession, item: "Compact" }))}
+            canCompact={(data.menu ? data.menu(activeSession) : SESSION_MENU).includes("Compact")}
+            actionWhy={(h) => (h.action?.kind === "switch" ? moveWhy(activeSession) : null)}
+            onAction={(h) => (h.action?.kind === "switch" ? openMove(activeSession) : act({ type: "session-menu", key: activeSession, item: "Compact" }))}
           />
           {next && <BlockerStrip text={next.text} action={next.action} summaryOpen={frame.right === "summary"} onAction={() => act({ type: "blocker", key: activeSession })} onDismiss={() => setDismissed((d) => new Set([...d, activeSession]))} />}
-          {slots.body(activeSession)}
+          {down ? (
+            // The engine is stopped: what the pane shows is the last known state, not a live one.
+            <div data-stale="" className="relative flex min-h-0 flex-1 flex-col">
+              <p role="status" className="shrink-0 border-b border-ac-line bg-ac-raise px-4 py-1 text-[11.5px] text-ac-muted">
+                Engine stopped — showing the last known state
+              </p>
+              <div className="flex min-h-0 flex-1 flex-col opacity-60 saturate-50">{bodyOf(activeSession)}</div>
+            </div>
+          ) : (
+            bodyOf(activeSession)
+          )}
         </>
       ) : data.sessions.length === 0 && data.loading ? (
         // First read still running: an empty list is not "no sessions" yet.
@@ -606,11 +780,11 @@ export function V3Window({
     if (!activeSession) return null;
     if (frame.right === "summary") {
       const f = data.summary(activeSession);
-      return f && <SummaryWindow f={f} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} />;
+      return f && <SummaryWindow f={f} onNext={() => act({ type: "blocker", key: activeSession })} onCreatePr={() => act({ type: "create-pr", key: activeSession })} onOpenPr={() => act({ type: "open-pr", key: activeSession })} onHide={() => frame.setRight(null)} moreOpen={moreOpen} onToggleMore={() => setMoreOpen((v) => !v)} onReview={slots.review ? () => openReview(activeSession) : undefined} />;
     }
-    if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={() => (slots.review ? openPage(`review:${activeSession}`) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openPage(`review:${activeSession}`) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} />;
+    if (frame.right === "changes") return <ChangesWindow files={data.changes(activeSession)} more={data.changesMore?.(activeSession) ?? 0} reviewAvailable={!!slots.review} commitAvailable={data.commitAvailable ?? true} onReview={(file) => (slots.review ? openReview(activeSession, file) : act({ type: "review", key: activeSession }))} onCommit={() => (slots.review ? openReview(activeSession) : act({ type: "commit", key: activeSession }))} onHide={() => frame.setRight(null)} />;
     const s = data.sessions.find((x) => x.key === activeSession);
-    return s && <ChildrenWindow noun={childNoun(s)} children={s.children} onHide={() => frame.setRight(null)} />;
+    return s && <ChildrenWindow noun={childNoun(s)} children={s.children} onHide={() => frame.setRight(null)} subagents={!!openSubagent} onOpen={(c) => (childOpens(c) ? openSession(c.id) : openSubagent?.(activeSession, c.id))} />;
   })();
 
   const modelOf = overlay && typeof overlay === "object" && "model" in overlay ? overlay.model : null;
@@ -656,7 +830,9 @@ export function V3Window({
           comfortable={comfortable}
           sort={sortBy}
           group={groupBy}
-          lastActiveOf={(k) => data.table.find((t) => t.key === k)?.lastActiveMs ?? null}
+          lastActiveOf={lastActiveOf}
+          nowMs={data.nowMs}
+          onSubagent={openSubagent}
           groupOf={(k) => {
             const t = data.table.find((x) => x.key === k);
             if (!t) return null;
@@ -686,6 +862,16 @@ export function V3Window({
 
   const decision = overlay && typeof overlay === "object" && "decide" in overlay ? data.decision(overlay.decide) : null;
   const close = () => setOverlay(null);
+  /** The End dialog's facts: what stops with the session (its running children) and whether the vault keeps it. */
+  const endFacts = (key: string) => {
+    const s = data.sessions.find((x) => x.key === key);
+    const running = (s?.children ?? []).filter((c) => c.state === "working");
+    return {
+      title: s?.title ?? key,
+      stops: running.map((c) => `${c.kind} ${c.label}${c.worktree ? ` in .claude/worktrees/${c.worktree}` : ""}`),
+      kept: data.library.find((l) => l.key === key)?.vault.state === "saved",
+    };
+  };
   const overlayNode =
     overlay === "palette" ? (
       <Palette
@@ -704,9 +890,9 @@ export function V3Window({
         <InboxPopover items={needs} history={data.history} focusedId={null} nowMs={data.nowMs} always={(n) => !!data.chatHere?.(n.subject)} onVerb={(n) => (close(), onVerb(n))} onAllLater={() => (close(), act({ type: "needs-later-all" }))} />
       </Anchored>
     ) : overlay === "new" ? (
-      <NewSessionDialog initial={data.newSession.initial} facts={data.newSession.facts} onClose={close} onChooseAccount={() => act({ type: "choose-account" })} onStart={(plan) => (close(), act({ type: "start", plan }))} />
+      <NewSessionDialog key={data.newSession.initial.folder} initial={data.newSession.initial} facts={data.newSession.facts} onClose={() => (close(), act({ type: "start-draft", plan: null }))} onChange={(plan) => act({ type: "start-draft", plan })} onStart={(plan) => (close(), act({ type: "start", plan }))} />
     ) : decision ? (
-      <DecisionSheet {...decision} room={<RoomLeft accounts={data.limits.filter((a) => a.tool === (decision.tool ?? data.limits.find((l) => l.name === decision.account)?.tool))} nowMs={data.nowMs} />} onClose={close} onKeep={() => (close(), act({ type: "keep-account", account: decision.account }))} onDecide={(how, moves) => (close(), act({ type: "move", how, moves }))} />
+      <DecisionSheet {...decision} afterTurnWhy={down ? AFTER_TURN_DOWN_WHY : null} room={<RoomLeft accounts={data.limits.filter((a) => a.tool === (decision.tool ?? data.limits.find((l) => l.name === decision.account)?.tool))} nowMs={data.nowMs} />} onClose={close} onKeep={() => (close(), act({ type: "keep-account", account: decision.account, ...(decision.tool ? { tool: decision.tool } : {}) }))} onDecide={(how, moves) => (close(), act({ type: "move", how, moves }))} />
     ) : overlay && typeof overlay === "object" && "switcher" in overlay ? (
       <Switcher
         pick={overlay.switcher}
@@ -723,7 +909,7 @@ export function V3Window({
         className={cn("absolute z-10", overlay && typeof overlay === "object" && "at" in overlay ? "bottom-[40px]" : "top-[124px]")}
         style={{ left: overlay && typeof overlay === "object" && "x" in overlay ? overlay.x - 11 : 0 }}
       >
-        <ModelPopover c={modelChoices} onModel={(model) => (close(), act({ type: "set-model", key: modelOf, model }))} onThinking={(level) => (close(), act({ type: "set-thinking", key: modelOf, level }))} />
+        <ModelPopover c={modelChoices} tool={modelOf.split("/")[0]} onModel={(model) => (close(), act({ type: "set-model", key: modelOf, model }))} onThinking={(level) => (close(), act({ type: "set-thinking", key: modelOf, level }))} />
       </Anchored>
     ) : limitsAccount ? (
       // Anchored beside the Limits strip; it never switches anything by itself (spec §7.5).
@@ -731,7 +917,8 @@ export function V3Window({
         <LimitsPopover
           a={limitsAccount}
           nowMs={data.nowMs}
-          onMove={() => setOverlay({ decide: limitsAccount.key })}
+          moveWhy={moveWhy(limitsAccount.key)}
+          onMove={() => openMove(limitsAccount.key)}
           onAccounts={() => (close(), openPage("accounts"))}
           running={
             <RunningOn
@@ -754,10 +941,9 @@ export function V3Window({
           label="Sort and group"
           width={232}
           items={[
-            { note: "Sort by", label: "" },
-            ...(Object.keys(SORT_LABEL) as SortBy[]).map((k) => ({ id: `sort-${k}`, label: SORT_LABEL[k], checked: k === sortBy, hint: k === "activity" ? "default" : k === "status" ? "needs you first" : undefined, onClick: () => (close(), setSortBy(k)) })),
-            { divider: true, label: "" },
-            { note: "Group by", label: "" },
+            { section: "Sort by", label: "" },
+            ...(Object.keys(SORT_LABEL) as SortBy[]).map((k) => ({ id: `sort-${k}`, label: SORT_LABEL[k], checked: k === sortBy, hint: [k === DEFAULT_SORT && "default", k === "status" && "needs you first"].filter(Boolean).join(" · ") || undefined, onClick: () => (close(), setSortBy(k)) })),
+            { section: "Group by", label: "" },
             ...(Object.keys(GROUP_LABEL) as GroupBy[]).map((k) => ({ id: `group-${k}`, label: GROUP_LABEL[k], checked: k === groupBy, onClick: () => (close(), setGroupBy(k)) })),
           ]}
         />
@@ -776,7 +962,7 @@ export function V3Window({
       </Anchored>
     ) : openMenuOf ? (
       // Outside the session bar, which clips at 40 px (spec §7.7); anchored under the caret.
-      <Anchored onClose={close} className="absolute right-[81px] top-[122px] z-10">
+      <Anchored onClose={close} className={cn("absolute z-10", !openAt && "right-[81px] top-[122px]")} style={openAt && { top: openAt.top, right: openAt.right }}>
         <OpenInMenu
           f={openFacts(openMenuOf)}
           onPick={(p) => {
@@ -791,26 +977,20 @@ export function V3Window({
         <Menu label="Tab" width={260} items={tabMenuItems(overlay.tabMenu)} />
       </Anchored>
     ) : overlay && typeof overlay === "object" && "menu" in overlay ? (
-      <Anchored onClose={close} className="absolute right-[54px] top-[122px] z-10">
-      <div role="menu" aria-label="Session actions" className="w-[240px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
-        {(data.menu ? data.menu(overlay.menu) : SESSION_MENU).map((item) => (
-          <button
-            key={item}
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              const key = overlay.menu;
-              close();
-              if (item === "Move to another account…") setOverlay({ decide: key });
-              else act({ type: "session-menu", key, item });
-            }}
-            className={`flex h-8 w-full items-center rounded-md px-2.5 text-left text-[13px] hover:bg-ac-raise ${item === "End…" ? "text-ac-alert-text" : "text-ac-soft"}`}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
+      <Anchored onClose={close} className={cn("absolute z-10", !overlay.at && "right-[54px] top-[122px]")} style={overlay.at && { top: overlay.at.top, right: overlay.at.right }}>
+        <Menu label="Session actions" width={240} items={[...movedChipItems(overlay.menu, overlay.moved ?? [], overlay.at), ...sessionMenuItems(overlay.menu)]} />
       </Anchored>
+    ) : overlay && typeof overlay === "object" && "end" in overlay ? (
+      <EndDialog
+        {...endFacts(overlay.end)}
+        onClose={close}
+        onEnd={() => (close(), act({ type: "end", key: overlay.end }))}
+        onCloseTab={() => {
+          const key = overlay.end;
+          close();
+          changeStrip((s) => closeTab(s, key, true));
+        }}
+      />
     ) : null;
 
   return (
@@ -821,6 +1001,7 @@ export function V3Window({
       inboxOpen={overlay === "inbox"}
       needsYou={needs.length > 0}
       blocker={!!next}
+      rightWhy={activeSession ? null : "no session in this tab"}
       sessionsWindow={sessionsWindow}
       centre={centre}
       rightWindow={rightWindow}

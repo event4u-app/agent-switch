@@ -44,6 +44,48 @@ describe("right tool windows (spec §9)", () => {
     expect((screen.getByText("Review changes").closest("button") as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("Summary: the changed count opens the review; plain text when there is no review", () => {
+    const onReview = vi.fn();
+    render(sum(facts(), { onReview }));
+    const count = screen.getByRole("button", { name: "3 changed — open the review" });
+    fireEvent.click(count);
+    expect(onReview).toHaveBeenCalledOnce();
+    cleanup();
+    render(sum(facts()));
+    expect(screen.queryByRole("button", { name: /3 changed/ })).toBeNull();
+    expect(screen.getByText("3 changed")).toBeTruthy();
+  });
+
+  it("Changes: every file row is a button that opens the review at that file", () => {
+    const onReview = vi.fn();
+    const files = changedFiles("12\t3\tsrc/a.ts\n", " M src/a.ts\n?? notes.md\n");
+    render(<ChangesWindow files={files} onReview={onReview} onCommit={vi.fn()} onHide={vi.fn()} reviewAvailable />);
+    fireEvent.click(screen.getByRole("button", { name: "Review src/a.ts" }));
+    expect(onReview).toHaveBeenLastCalledWith("src/a.ts");
+    screen.getByRole("button", { name: "Review notes.md" }).focus();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Review notes.md");
+    fireEvent.click(screen.getByText("Review changes"));
+    expect(onReview).toHaveBeenLastCalledWith();
+  });
+
+  it("Changes: files past the cap are counted in the total and named, never dropped silently", () => {
+    render(<ChangesWindow files={[{ status: "M", path: "a.ts", added: 1, removed: 0 }]} more={7} onReview={vi.fn()} onCommit={vi.fn()} onHide={vi.fn()} reviewAvailable />);
+    expect(screen.getByText(/^8 files/)).toBeTruthy();
+    expect(screen.getByText("7 more files not listed")).toBeTruthy();
+  });
+
+  it("Summary: the Git section's tooltip names where its count comes from", () => {
+    render(sum(facts()));
+    expect(screen.getByText("Git").getAttribute("title")).toBe("git in the session's folder · the changed count is the Changes list's");
+  });
+
+  it("Changes: without a review the rows are disabled with the reason", () => {
+    render(<ChangesWindow files={[{ status: "M", path: "a.ts", added: 1, removed: 0 }]} onReview={vi.fn()} onCommit={vi.fn()} onHide={vi.fn()} reviewAvailable={false} />);
+    const row = screen.getByRole("button", { name: "Review a.ts" }) as HTMLButtonElement;
+    expect(row.disabled).toBe(true);
+    expect(row.title).toBe("Review arrives with the next version");
+  });
+
   it("Children: the count in words, the lines, and the note on provenance", () => {
     const onHide = vi.fn();
     render(<ChildrenWindow noun="1 subagent" onHide={onHide} children={[{ id: "a", label: "Explore", kind: "subagent", state: "working", source: "hook" }]} />);

@@ -3,12 +3,23 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { V3Tray, trayTools } from "./tray.js";
 import type { RowSession } from "./sessions.js";
 import type { LimitAccount } from "./limits.js";
+import { allNeeds } from "./tools.js";
+import { V3Window } from "./window.js";
+import { data, slots } from "./window-fixture.js";
 
 afterEach(cleanup);
 const s = (key: string, over: Partial<RowSession> = {}): RowSession => ({ key, title: `session ${key}`, state: "idle", account: { name: "work", nearLimit: false }, branch: null, pr: null, children: [], needsYou: false, ...over });
 const on = () => ({ verb: vi.fn(), moreNeeds: vi.fn(), away: vi.fn(), session: vi.fn(), moreSessions: vi.fn(), account: vi.fn(), signIn: vi.fn(), start: vi.fn(), open: vi.fn() });
 const acc = (tool: "claude" | "codex", name: string): LimitAccount => ({ key: `${tool}/${name}`, tool, name, color: "teal", protect: 98, next: false, signIn: false, checkedMs: 0, windows: [{ label: "5h", used: 20, resetsAtMs: null, pace: null }] });
 const need = [{ id: "n", kind: "approval" as const, subject: "x", who: "Theme system", what: "wants to run", verb: "Allow", since: "", version: "1" }];
+
+describe("tray rows show their age (8.6)", () => {
+  it("a row with a known last activity shows how long ago, as in the window", () => {
+    const NOW = Date.UTC(2026, 10, 23, 12);
+    render(<V3Tray nowMs={NOW} needs={[]} away={null} sessions={[s("claude/work/1", { lastActiveMs: NOW - 14 * 60_000 })]} accounts={[]} on={on()} />);
+    expect(screen.getByText("14m ago")).toBeTruthy();
+  });
+});
 
 describe("tray (spec §10.7)", () => {
   it("Needs you, tool tabs, Sessions (5 rows in the shared order, then N more), Limits, Open and Start — in that order", () => {
@@ -69,6 +80,25 @@ describe("tray (spec §10.7)", () => {
     expect(open.className).not.toMatch(/\bborder\b/);
     fireEvent.click(open);
     expect(handlers.open).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("one Needs-you count for window and tray (5.3)", () => {
+  const count = (root: HTMLElement) => within(root).getByText("Needs you").nextElementSibling!.textContent;
+
+  it("the queue is the CLI's items plus one update per outdated tool, for both surfaces", () => {
+    const d = data();
+    expect(allNeeds(d).map((n) => n.id)).toEqual(["l", "update:codex"]);
+  });
+
+  it("the window and the tray show the same number for the same data", () => {
+    const d = data();
+    const w = render(<V3Window data={d} slots={slots} act={vi.fn()} />);
+    const inWindow = count(w.container.querySelector("section[aria-label='Needs you']")!);
+    cleanup();
+    const t = render(<V3Tray nowMs={d.nowMs} needs={allNeeds(d)} away={d.away} sessions={d.sessions} accounts={d.limits} on={on()} />);
+    expect(count(t.container.querySelector("section[aria-label='Needs you']")!)).toBe(inWindow);
+    expect(inWindow).toBe("2");
   });
 });
 

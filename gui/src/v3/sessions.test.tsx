@@ -45,8 +45,8 @@ describe("Sessions zone (spec §5.2)", () => {
   it("one trailing slot by priority: near limit beats CI beats conflict beats needs-you beats children", () => {
     render(zone([s("a", { account: { name: "side", nearLimit: true }, pr: { number: 1, ci: "FAILURE", mergeable: "CONFLICTING" } }), s("b", { pr: { number: 2, ci: "SUCCESS", mergeable: "CONFLICTING" } })]));
     expect(screen.getByTitle("side is near its limit")).toBeTruthy();
-    expect(screen.queryByLabelText("CI failing")).toBeNull();
-    expect(screen.getByLabelText("merge conflict")).toBeTruthy();
+    expect(screen.queryByText("CI failing")).toBeNull();
+    expect(screen.getByText("merge conflict")).toBeTruthy();
   });
 
   it("the active row has the Marker and its second line; children unfold under it, unknown said inline", () => {
@@ -200,5 +200,38 @@ describe("order hold (D9)", () => {
     fireEvent.mouseEnter(container.querySelector("[data-session-list]")!);
     rerender(zone(rows, { group: "project", groupOf, lastActiveOf: times({ a: 1, b: 2, c: 3 }) }));
     expect(order(container)).toEqual(["a", "c", "b"]);
+  });
+});
+
+describe("one status vocabulary (5.1)", () => {
+  const on = { onSelect: () => {}, onToggleChildren: () => {}, onCheck: () => {} };
+  const failing = (over: Partial<RowSession> = {}) => s("ci", { state: "needs-you", pr: { number: 12, ci: "FAILURE", mergeable: "MERGEABLE" }, ...over });
+
+  it("a row carries one status mark: CI failing is words on the second line, never a ⊗ beside the state dot", () => {
+    const { container } = render(<SessionRow s={failing()} comfortable {...on} />);
+    expect(container.querySelectorAll("svg")).toHaveLength(0);
+    const ci = screen.getAllByText("CI failing");
+    expect(ci, "said once").toHaveLength(1);
+    expect(ci[0].className).toMatch(/text-ac-alert-text/);
+    expect(ci[0].parentElement!.textContent).toContain("#12");
+  });
+
+  it("a compact row says CI failing and merge conflict in words in its one trailing slot", () => {
+    render(<SessionRow s={failing()} {...on} />);
+    expect(screen.getByText("CI failing")).toBeTruthy();
+    cleanup();
+    const { container } = render(<SessionRow s={s("m", { pr: { number: 3, ci: "SUCCESS", mergeable: "CONFLICTING" } })} {...on} />);
+    expect(screen.getByText("merge conflict").className).toMatch(/text-ac-alert-text/);
+    expect(container.querySelectorAll("svg")).toHaveLength(0);
+  });
+
+  it("the selected row and a checked box use the neutral accent; brand orange stays out of the list", () => {
+    const { container } = render(<SessionRow s={s("a")} active {...on} />);
+    expect(container.querySelector(".border-l-ac-text")).toBeTruthy();
+    expect(container.innerHTML).not.toMatch(/ac-brand/);
+    cleanup();
+    const sel = render(<SessionRow s={s("b")} selecting checked {...on} />);
+    expect(sel.getByRole("checkbox").className).toMatch(/bg-ac-text/);
+    expect(sel.container.innerHTML).not.toMatch(/ac-brand/);
   });
 });

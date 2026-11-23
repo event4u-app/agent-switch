@@ -6,27 +6,28 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronRight, Play, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Play, X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
+import { Select } from "../ui/Select.js";
+import { TextInput } from "../ui/TextInput.js";
+import { typedFolder } from "../lib/paths.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
-import { ChevronDown } from "lucide-react";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { Kbd } from "../ui/Typography.js";
 import { AccountMark, CheckBox, Chip, Disclosure, Label } from "./kit.js";
 import { LimitBar, type LimitAccount } from "./limits.js";
 import { Anchored } from "./menus.js";
+import { useModalFocus } from "./focus.js";
 
 export function Modal({ title, kicker, badge, sub, width = 600, children, footer, onClose }: { title: string; kicker?: string; badge?: ReactNode; sub?: ReactNode; width?: number; children: ReactNode; footer: ReactNode; onClose: () => void }) {
-  useEffect(() => {
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", esc);
-    return () => window.removeEventListener("keydown", esc);
-  }, [onClose]);
+  const scrim = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useModalFocus(scrim, box, onClose);
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center p-6" style={{ background: "var(--ac-scrim)" }}>
-      <div role="dialog" aria-label={title} className="flex max-h-full flex-col overflow-hidden rounded-xl border border-ac-line2 bg-ac-panel" style={{ width, boxShadow: "var(--ac-shadow)" }}>
+    <div ref={scrim} className="absolute inset-0 z-10 flex items-center justify-center p-6" style={{ background: "var(--ac-scrim)" }}>
+      <div ref={box} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} className="flex max-h-full flex-col overflow-hidden rounded-xl border border-ac-line2 bg-ac-panel outline-none" style={{ width, boxShadow: "var(--ac-shadow)" }}>
         <div className="flex items-start justify-between gap-3 border-b border-ac-line px-5 pb-3 pt-4">
           <div>
             {(kicker || badge) && (
@@ -42,7 +43,9 @@ export function Modal({ title, kicker, badge, sub, width = 600, children, footer
             <X />
           </IconButton>
         </div>
-        <div className="min-h-0 relative overflow-y-auto px-5 py-4">{children}</div>
+        <div data-dialog-body="" className="min-h-0 relative overflow-y-auto px-5 py-4">
+          {children}
+        </div>
         <div className="flex items-center justify-end gap-2 border-t border-ac-line bg-ac-rail px-5 py-3">{footer}</div>
       </div>
     </div>
@@ -50,9 +53,16 @@ export function Modal({ title, kicker, badge, sub, width = 600, children, footer
 }
 
 /** Radio card: accent outline and tint, filled radio dot (spec §3.2). */
-export function Choice({ on, title, detail, onPick }: { on?: boolean; title: ReactNode; detail?: ReactNode; onPick: () => void }) {
+export function Choice({ on, title, detail, onPick, disabled }: { on?: boolean; title: ReactNode; detail?: ReactNode; onPick: () => void; disabled?: boolean }) {
   return (
-    <button type="button" role="radio" aria-checked={!!on} onClick={onPick} className={cn("flex flex-1 items-start gap-2.5 rounded-[10px] border px-3 py-2 text-left", on ? "border-ac-brand-line bg-ac-brand-tint" : "border-ac-line hover:border-ac-line2")}>
+    <button
+      type="button"
+      role="radio"
+      aria-checked={!!on}
+      aria-disabled={disabled || undefined}
+      onClick={disabled ? undefined : onPick}
+      className={cn("flex flex-1 items-start gap-2.5 rounded-[10px] border px-3 py-2 text-left", on ? "border-ac-brand-line bg-ac-brand-tint" : "border-ac-line", disabled ? "cursor-default opacity-60" : !on && "hover:border-ac-line2")}
+    >
       <span className={cn("mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full border", on ? "border-ac-brand bg-ac-brand" : "border-ac-line2")}>{on && <span className="size-1.5 rounded-full bg-ac-on-color" />}</span>
       <span className="min-w-0">
         <span className="block text-[13px] font-medium text-ac-text">{title}</span>
@@ -74,36 +84,69 @@ export interface NewSessionPlan {
   where: "terminal" | "hosted";
   /** An account the person chose here; absent, the start routes as usual. */
   account?: string;
+  /** The prefill is this project's last start, not a first-start default. */
+  remembered?: boolean;
 }
 
 export interface NewSessionFacts {
+  /** The folder's git state for the plan as it is now ("main · clean"); null: none known. Absent: the plan's own. */
+  gitState?: string | null;
   /** "Terminal.app" — where "Your terminal" opens. */
   terminalApp: string;
   /** From `host list --json`: persistent with tmux, ephemeral without. */
   hosting: "persistent" | "ephemeral";
   thinkingLevels: Record<NewSessionPlan["tool"], string[]>;
-  account: { name: string; color: IdentityColor; reason: string; limits: LimitAccount; why: string[]; paceText: string | null };
+  /** The models each tool offers here; empty: the tool's own default only. */
+  models: Record<NewSessionPlan["tool"], { id: string; label: string }[]>;
+  /** Folders sessions ran in, newest first. */
+  folders: string[];
+  /** The user's home folder, for a typed `~/…`; null until read. */
+  home: string | null;
+  /** The accounts of each tool, for "Choose another…". */
+  accounts: Record<NewSessionPlan["tool"], { name: string; color: IdentityColor }[]>;
+  /** The account the start runs on, for the plan as it is now. `chosen`: picked here. */
+  account: { name: string; color: IdentityColor; chosen?: true; reason: string; limits: LimitAccount; why: string[]; paceText: string | null };
   /** Strategy `ask`: the accounts to choose from; Start waits for a choice. */
   ask?: { name: string; color: IdentityColor }[];
-  /** The exact command, for the preview. */
+  /** The exact command the start runs, for the preview. */
   command: string;
   nowMs: number;
 }
 
-export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, onChooseAccount }: { initial: NewSessionPlan; facts: NewSessionFacts; onChange?: (p: NewSessionPlan) => void; onStart: (p: NewSessionPlan) => void; onClose: () => void; onChooseAccount: () => void }) {
-  const [p, setP] = useState(initial);
+const TOOL_NAME: Record<NewSessionPlan["tool"], string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
+const TYPED = "\u0000typed";
+
+/** The thinking level a plan keeps when its tool changes: the same level when the
+ *  new tool has it, else high, else the tool's highest. Pure. */
+export function thinkingFor(levels: string[], current: string): string {
+  return levels.includes(current) ? current : levels.includes("high") ? "high" : (levels[levels.length - 1] ?? "");
+}
+
+export function NewSessionDialog({ initial, facts, onChange, onStart, onClose }: { initial: NewSessionPlan; facts: NewSessionFacts; onChange?: (p: NewSessionPlan) => void; onStart: (p: NewSessionPlan) => void; onClose: () => void }) {
+  // Without tmux nothing here keeps a hosted session running, so it is not offered.
+  const hostable = facts.hosting === "persistent";
+  const [p, setP] = useState<NewSessionPlan>(() => (hostable || initial.where !== "hosted" ? initial : { ...initial, where: "terminal" }));
   const [why, setWhy] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [typing, setTyping] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [typedError, setTypedError] = useState<string | null>(null);
   const set = (patch: Partial<NewSessionPlan>) => {
     const next = { ...p, ...patch };
-    // A chosen account belongs to the tool it was chosen for.
-    if (patch.tool && patch.tool !== p.tool) delete next.account;
+    if (patch.tool && patch.tool !== p.tool) {
+      // A chosen account and a model belong to the tool they were chosen for:
+      // another tool starts on its routed account and its own default model.
+      delete next.account;
+      next.model = patch.tool === initial.tool ? initial.model : "";
+      next.thinking = thinkingFor(facts.thinkingLevels[patch.tool], p.thinking);
+    }
+    if (patch.account === undefined && "account" in patch) delete next.account;
     setP(next);
     onChange?.(next);
   };
-  const toolName = p.tool === "claude" ? "Claude" : p.tool === "codex" ? "Codex" : "Antigravity";
-  // The candidates were resolved for the dialog's first tool only.
-  const asks = !!facts.ask && p.tool === initial.tool;
+  const toolName = TOOL_NAME[p.tool];
+  const asks = !!facts.ask;
   const ready = !asks || !!p.account;
   // ⌘↵ starts right away (the subtitle promises it).
   const start = useRef(() => onStart(p));
@@ -115,16 +158,29 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
+  const folders = Array.from(new Set([p.folder, ...facts.folders]));
+  const models = facts.models[p.tool];
+  const modelOptions = [{ value: "", label: `${toolName}'s default` }, ...models.map((m) => ({ value: m.id, label: m.label })), ...(p.model && !models.some((m) => m.id === p.model) ? [{ value: p.model, label: p.model }] : [])].map((o) => ({
+    ...o,
+    hint: initial.remembered && o.value && o.value === initial.model && p.tool === initial.tool ? "last used here" : undefined,
+  }));
+  const typeFolder = () => {
+    const tf = typedFolder(typed, facts.home);
+    if (!tf.ok) return setTypedError(tf.reason);
+    setTyping(false);
+    setTyped("");
+    set({ folder: tf.path });
+  };
   return (
     <Modal
       title={`${toolName} in ${p.folder}`}
       kicker="New session"
-      sub="Everything below is prefilled from your last start here — ⌘↵ starts right away."
+      sub={initial.remembered ? "Everything below is prefilled from your last start here — ⌘↵ starts right away." : "Your choices here are remembered for the next start — ⌘↵ starts right away."}
       width={620}
       onClose={onClose}
       footer={
         <>
-          <span className="mr-auto text-[11px] text-ac-muted">Remembered for this project</span>
+          <span className="mr-auto text-[11px] text-ac-muted">{initial.remembered ? "Remembered for this project" : ""}</span>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
@@ -136,8 +192,42 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
     >
       <div className="grid grid-cols-2 gap-x-3 gap-y-4">
         <div>
-          <Label aside={p.gitState ?? undefined}>Folder</Label>
-          <Field mono>{p.folder}</Field>
+          <Label aside={(facts.gitState !== undefined ? facts.gitState : p.gitState) ?? undefined}>Folder</Label>
+          <Select
+            ariaLabel="Folder"
+            mono
+            value={typing ? TYPED : p.folder}
+            onChange={(v) => {
+              if (v === TYPED) return setTyping(true);
+              setTyping(false);
+              set({ folder: v });
+            }}
+            options={[...folders.map((f) => ({ value: f, label: f })), { value: TYPED, label: "Another folder…" }]}
+          />
+          {typing && (
+            <>
+              <TextInput
+                mono
+                autoFocus
+                aria-label="Folder path"
+                placeholder="/path/to/project or ~/project — Enter to use it"
+                className="mt-2 w-full"
+                value={typed}
+                aria-invalid={typedError ? true : undefined}
+                onChange={(e) => (setTyped(e.target.value), setTypedError(null))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") typeFolder();
+                  // Esc leaves the field, not the dialog.
+                  if (e.key === "Escape") (e.stopPropagation(), setTyping(false), setTyped(""), setTypedError(null));
+                }}
+              />
+              {typedError && (
+                <p role="alert" className="mt-1 text-[11px] text-ac-alert-text">
+                  {typedError}
+                </p>
+              )}
+            </>
+          )}
           <div className="mt-2">
             <CheckBox checked={p.worktree} onChange={() => set({ worktree: !p.worktree })}>
               In a new worktree
@@ -146,19 +236,11 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
         </div>
         <div>
           <Label>Tool</Label>
-          <Segmented label="Tool" size="sm" fill value={p.tool} onChange={(tool) => set({ tool, thinking: facts.thinkingLevels[tool][0] ?? p.thinking })} options={[{ value: "claude", label: "Claude" }, { value: "codex", label: "Codex" }, { value: "antigravity", label: "Antigravity" }]} />
+          <Segmented label="Tool" size="sm" fill value={p.tool} onChange={(tool) => set({ tool })} options={[{ value: "claude", label: "Claude" }, { value: "codex", label: "Codex" }, { value: "antigravity", label: "Antigravity" }]} />
         </div>
         <div>
           <Label>Model</Label>
-          <Field>
-            {p.model ? (
-              <>
-                {p.model} {p.model === initial.model && <span className="text-ac-muted">· last used here</span>}
-              </>
-            ) : (
-              <span className="text-ac-muted">Model</span>
-            )}
-          </Field>
+          <Select ariaLabel="Model" value={p.model} disabled={p.tool === "antigravity"} onChange={(model) => set({ model })} options={p.tool === "antigravity" ? [{ value: "", label: "Antigravity's own model" }] : modelOptions} />
         </div>
         <div>
           <Label aside="higher = slower, uses more limit">Thinking</Label>
@@ -168,69 +250,80 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
       <div className="mt-4">
         <Label
           aside={
-            <button type="button" onClick={onChooseAccount} className="text-ac-info-text hover:underline">
+            <button type="button" aria-expanded={picking} onClick={() => setPicking((v) => !v)} className="text-ac-info-text hover:underline">
               Choose another…
             </button>
           }
         >
           Account
         </Label>
-        {asks ? (
+        {picking && (
+          <div role="radiogroup" aria-label="Account to start on" className="mb-2 flex flex-wrap gap-2">
+            {!asks && (
+              <AccountPick on={!p.account} onPick={() => set({ account: undefined })}>
+                Automatic
+              </AccountPick>
+            )}
+            {facts.accounts[p.tool].map((a) => (
+              <AccountPick key={a.name} on={p.account === a.name} onPick={() => set({ account: a.name })}>
+                <AccountMark color={a.color} /> {a.name}
+              </AccountPick>
+            ))}
+            {facts.accounts[p.tool].length === 0 && <span className="text-[11.5px] text-ac-muted">No {toolName} account yet.</span>}
+          </div>
+        )}
+        {asks && !p.account ? (
           <div className="rounded-[10px] border border-ac-line bg-ac-bg px-3 py-2.5">
             <div className="text-[13px] text-ac-muted">Ask me — choose an account</div>
             <div role="radiogroup" aria-label="Account" className="mt-2 flex flex-wrap gap-2">
               {facts.ask!.map((a) => (
-                <button
-                  key={a.name}
-                  type="button"
-                  role="radio"
-                  aria-checked={p.account === a.name}
-                  onClick={() => set({ account: a.name })}
-                  className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12.5px] text-ac-text", p.account === a.name ? "border-ac-info-text bg-ac-panel" : "border-ac-line hover:bg-ac-panel")}
-                >
+                <AccountPick key={a.name} on={false} onPick={() => set({ account: a.name })}>
                   <AccountMark color={a.color} /> {a.name}
-                </button>
+                </AccountPick>
               ))}
             </div>
-            {!p.account && <div className="mt-2 text-[11px] text-ac-muted">New {toolName} sessions ask first: pick the account this one runs on.</div>}
+            <div className="mt-2 text-[11px] text-ac-muted">New {toolName} sessions ask first: pick the account this one runs on.</div>
           </div>
         ) : (
-        <div className="rounded-[10px] border border-ac-line bg-ac-bg px-3 py-2.5">
-          <div className="flex items-center gap-2 text-[13px] text-ac-text">
-            <span className="text-ac-muted">Automatic →</span>
-            <AccountMark color={facts.account.color} /> {facts.account.name}
-            <span className="ml-auto text-[11px] text-ac-muted">{facts.account.reason}</span>
-          </div>
-          <div className="mt-2 space-y-1 rounded-md px-2 py-1.5">
-            {facts.account.limits.windows.map((w) => (
-              <LimitBar key={w.label} w={w} protect={facts.account.limits.protect} nowMs={facts.nowMs} />
-            ))}
-          </div>
-          <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-ac-muted">
-            <span>{facts.account.paceText ?? ""}</span>
-            <button type="button" aria-expanded={why} onClick={() => setWhy((v) => !v)} className="inline-flex shrink-0 items-center gap-1 hover:text-ac-text">
-              <ChevronRight className={cn("size-3 transition-transform", why && "rotate-90")} /> Why?
-            </button>
-          </div>
-          {why && (
-            <ul className="mt-1.5 space-y-0.5 text-[11.5px] text-ac-muted">
-              {facts.account.why.map((l) => (
-                <li key={l}>{l}</li>
+          <div className="rounded-[10px] border border-ac-line bg-ac-bg px-3 py-2.5">
+            <div className="flex items-center gap-2 text-[13px] text-ac-text">
+              <span className="text-ac-muted">{facts.account.chosen ? "Chosen →" : "Automatic →"}</span>
+              <AccountMark color={facts.account.color} /> {facts.account.name}
+              <span className="ml-auto text-[11px] text-ac-muted">{facts.account.reason}</span>
+            </div>
+            <div className="mt-2 space-y-1 rounded-md px-2 py-1.5">
+              {facts.account.limits.windows.map((w) => (
+                <LimitBar key={w.label} w={w} protect={facts.account.limits.protect} nowMs={facts.nowMs} />
               ))}
-            </ul>
-          )}
-        </div>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-ac-muted">
+              <span>{facts.account.paceText ?? ""}</span>
+              {facts.account.why.length > 0 && (
+                <button type="button" aria-expanded={why} onClick={() => setWhy((v) => !v)} className="inline-flex shrink-0 items-center gap-1 hover:text-ac-text">
+                  <ChevronRight className={cn("size-3 transition-transform", why && "rotate-90")} /> Why?
+                </button>
+              )}
+            </div>
+            {why && (
+              <ul className="mt-1.5 space-y-0.5 text-[11.5px] text-ac-muted">
+                {facts.account.why.map((l) => (
+                  <li key={l}>{l}</li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </div>
       <div className="mt-4">
         <Label>Where it runs</Label>
         <div role="radiogroup" aria-label="Where it runs" className="flex gap-2">
-          <Choice on={p.where === "terminal"} onPick={() => set({ where: "terminal" })} title="Your terminal" detail={`As today: ${facts.terminalApp}. Agent Switch shows it; you type there.`} />
+          <Choice on={p.where === "terminal"} onPick={() => set({ where: "terminal" })} title="Your terminal" detail={`A new ${facts.terminalApp} window. Agent Switch shows it; you type there.`} />
           <Choice
             on={p.where === "hosted"}
+            disabled={!hostable}
             onPick={() => set({ where: "hosted" })}
             title="Host in Agent Switch"
-            detail={facts.hosting === "persistent" ? "Keeps running when the window closes; type into it here. Chat view possible." : "Runs in this window and ends when the app closes (no tmux here)."}
+            detail={hostable ? "Keeps running when the window closes; type into it here. Chat view possible." : "Hosting needs tmux, which this computer does not have (macOS: brew install tmux)."}
           />
         </div>
       </div>
@@ -239,6 +332,20 @@ export function NewSessionDialog({ initial, facts, onChange, onStart, onClose, o
       </button>
       {preview && <pre className="mt-1.5 whitespace-pre-wrap rounded-md bg-ac-bg px-2.5 py-2 font-ac-mono text-[11px] text-ac-soft">{facts.command}</pre>}
     </Modal>
+  );
+}
+
+function AccountPick({ on, onPick, children }: { on: boolean; onPick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={on}
+      onClick={onPick}
+      className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12.5px] text-ac-text", on ? "border-ac-info-text bg-ac-panel" : "border-ac-line hover:bg-ac-panel")}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -283,16 +390,6 @@ export function ChatAccountDialog({ folder, ask, onStart, onClose }: { folder: s
   );
 }
 
-/** A picker-shaped field (spec §8.1): the value, then a chevron. */
-function Field({ children, mono }: { children: ReactNode; mono?: boolean }) {
-  return (
-    <div className={cn("flex h-8 items-center gap-2 rounded-md border border-ac-line2 bg-ac-bg px-2.5 text-xs text-ac-text", mono && "font-ac-mono")}>
-      <span className="min-w-0 truncate">{children}</span>
-      <ChevronDown className="ml-auto size-3.5 shrink-0 text-ac-faint" />
-    </div>
-  );
-}
-
 // ---------- near-limit decision sheet (spec §8.2) ----------
 
 export type MoveHow = "after-turn" | "now" | "brief";
@@ -317,6 +414,7 @@ export interface SheetSession {
 export function DecisionSheet({
   account,
   pctUsed,
+  nearLimit,
   window,
   resetsIn,
   sessions,
@@ -328,12 +426,15 @@ export function DecisionSheet({
   askedByAgentConfig = false,
   pace,
   alsoOn = [],
+  afterTurnWhy = null,
   onDecide,
   onKeep,
   onClose,
 }: {
   account: string;
   pctUsed: number;
+  /** The account is near or at its limit; false when the sheet was opened to move sessions earlier. Absent: near. */
+  nearLimit?: boolean;
   window: string;
   resetsIn: string;
   sessions: SheetSession[];
@@ -352,11 +453,13 @@ export function DecisionSheet({
   /** Every live session on the account. A live switch changes the account's
    *  login, so each one that is not itself moving switches along. */
   alsoOn?: { key: string; title: string }[];
+  /** Why "After this turn" cannot be chosen now: the background service that carries it out is stopped. */
+  afterTurnWhy?: string | null;
   onDecide: (how: MoveHow, moves: SheetMove[]) => void;
   onKeep: () => void;
   onClose: () => void;
 }) {
-  const [how, setHow] = useState<MoveHow>("after-turn");
+  const [how, setHow] = useState<MoveHow>(afterTurnWhy && tool !== "codex" ? "now" : "after-turn");
   const [checked, setChecked] = useState<Set<string>>(new Set(sessions.map((s) => s.key)));
   const [chosen, setChosen] = useState<Record<string, string>>(() => Object.fromEntries(sessions.map((s) => [s.key, s.target])));
   const [picking, setPicking] = useState<string | null>(null);
@@ -384,7 +487,7 @@ export function DecisionSheet({
   const followers = switching.length ? alsoOn.filter((x) => !switching.some((m) => m.key === x.key)) : [];
   return (
     <Modal
-      kicker={pace ? "Accounts at different paces" : "Near limit"}
+      kicker={pace ? "Accounts at different paces" : nearLimit === false ? "Move sessions" : "Near limit"}
       badge={
         askedByAgentConfig ? (
           <Chip kind="status" tone="info" title="agent-config asked the same in your session. Answer here or there; the first answer counts for both.">
@@ -451,7 +554,7 @@ export function DecisionSheet({
           <Choice on={how !== "brief"} onPick={() => setHow("now")} title={`Move and continue on ${where}`} detail={`Moves ${spread ? "each conversation to its account" : `the conversation to ${target}`} and resumes it there with “continue”. End codex in your own terminal first; a session Agent Switch hosts moves in its window.`} />
         ) : (
           <>
-            <Choice on={how === "after-turn"} onPick={() => setHow("after-turn")} title={`After this turn, continue on ${where}`} detail={`Switches when the turn ends, then carries on by itself where Agent Switch hosts the session.`} />
+            <Choice on={how === "after-turn"} disabled={!!afterTurnWhy} onPick={() => setHow("after-turn")} title={`After this turn, continue on ${where}`} detail={afterTurnWhy ?? `Switches when the turn ends, then carries on by itself where Agent Switch hosts the session.`} />
             <Choice on={how === "now"} onPick={() => setHow("now")} title="Switch now and continue" detail={spread ? `Checked for this Claude version. Each session adopts its account and is told to continue; a session whose switch fails stays on ${account}.` : `Checked for this Claude version. The session adopts ${target} and is told to continue; if the switch fails, it stays on ${account}.`} />
           </>
         )}
@@ -476,6 +579,74 @@ export function DecisionSheet({
 }
 
 // ---------- End session (spec §8.3, D-vault) ----------
+
+/** What the take-over dialog says about the session. `running` null: cannot be told (Codex). */
+export interface TakeoverFacts {
+  title: string;
+  tool: "claude" | "codex";
+  account: string;
+  /** The terminal it runs in ("iTerm2"), or "your terminal". */
+  where: string;
+  running: boolean | null;
+}
+
+/**
+ * "Take over here": the session in the user's own terminal continues as a
+ * hosted session on the same account. The source program has to end first,
+ * so the dialog says how: Claude can be ended between turns by Agent Switch or
+ * by the user; Codex names no program per session, so only the user can.
+ */
+export function TakeoverDialog({ facts, busy, error, onTakeOver, onClose }: { facts: TakeoverFacts; busy: boolean; error: { text: string; forceable: boolean } | null; onTakeOver: (o: { stopSource: boolean; force: boolean }) => void; onClose: () => void }) {
+  const [stopSource, setStopSource] = useState(true);
+  const choose = facts.tool === "claude" && facts.running === true;
+  const stop = choose && stopSource;
+  return (
+    <Modal
+      title={`Take over “${facts.title}”?`}
+      kicker="Take over here"
+      sub={`The same conversation continues here, hosted by Agent Switch on ${facts.account}: you type in this window, and it keeps running when the window closes.`}
+      width={520}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          {error?.forceable && (
+            <Button variant="secondary" disabled={busy} onClick={() => onTakeOver({ stopSource: stop, force: true })}>
+              Take over anyway
+            </Button>
+          )}
+          <Button variant="primary" disabled={busy} onClick={() => onTakeOver({ stopSource: stop, force: false })}>
+            {busy ? "Taking over…" : "Take over"}
+          </Button>
+        </>
+      }
+    >
+      {choose ? (
+        <>
+          <Label>It still runs in {facts.where}</Label>
+          <div role="radiogroup" aria-label="How it ends there" className="flex flex-col gap-2">
+            <Choice on={stopSource} onPick={() => setStopSource(true)} title={`End it in ${facts.where} for me`} detail={`Agent Switch ends the program there when its current turn is over, then resumes the conversation here. Mid-turn it waits for you to try again.`} />
+            <Choice on={!stopSource} onPick={() => setStopSource(false)} title="I end it myself" detail={`In ${facts.where}, type /exit (or press Ctrl+C twice), then take over.`} />
+          </div>
+        </>
+      ) : facts.tool === "codex" ? (
+        <p className="text-[12.5px] text-ac-soft">
+          Quit Codex in {facts.where} first: type /quit, or press Ctrl+C twice. Agent Switch cannot tell which Codex program holds this conversation, so it cannot end it for you; two programs writing one conversation would corrupt it.
+        </p>
+      ) : (
+        <p className="text-[12.5px] text-ac-soft">It no longer runs in {facts.where}, so nothing has to end there first.</p>
+      )}
+      {error && (
+        <p role="alert" className="mt-3 rounded-[10px] border border-ac-alert bg-ac-alert-tint px-3 py-2 text-[12px] text-ac-alert-text">
+          {error.text}
+          {error.forceable && <span className="mt-1 block text-ac-muted">Take over anyway only if you are sure the running program is another session.</span>}
+        </p>
+      )}
+    </Modal>
+  );
+}
 
 export function EndDialog({ title, stops, kept, onEnd, onCloseTab, onClose }: { title: string; stops: string[]; kept: boolean; onEnd: () => void; onCloseTab: () => void; onClose: () => void }) {
   return (

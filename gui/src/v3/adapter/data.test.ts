@@ -4,7 +4,7 @@ import type { SessionRow } from "../../transforms.js";
 import { emptyViewModel } from "../../vm/load.js";
 import type { Account, ViewModel } from "../../vm/types.js";
 import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
-import { chatStart, childrenOf, decisionFor, doneToday, nextStep, sessionKey, startCommand, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
+import { chatStart, childrenOf, decisionFor, doneToday, hasOpenPr, initialPlan, nextStep, sessionKey, startCommand, startKey, toV3Data, windowLabel, worktreeOf, type AdapterEnv } from "./data.js";
 import { emptyFeeds, type V3Feeds } from "./useFeeds.js";
 
 const NOW = Date.parse("2026-11-03T15:00:00");
@@ -129,6 +129,33 @@ describe("toV3Data", () => {
     expect(toV3Data(vm, feeds, env({ ownViews: new Map([["claude/work/h1", "chat"]]) })).bar("claude/work/h1")?.view).toBe("terminal");
   });
 
+  it("the bar knows where a session runs: a hosted window can be attached; elsewhere it names the app watched", () => {
+    const vm = vmWith([account("work")], [row("own"), row("h1"), row("desk", { surface: "desktop-app" }), row("chat1")]);
+    const feeds: V3Feeds = { ...emptyFeeds(), host: { mode: "persistent", hosted: [{ key: "claude/work/h1", provider: "claude", account: "work", sessionId: "h1", cwd: "/r", startedAt: "", alive: true, parked: false }] } };
+    const d = toV3Data(vm, feeds, env({ chats: new Set(["claude/work/chat1"]) }));
+    expect(d.bar("claude/work/h1")).toMatchObject({ hosted: true, attachable: true });
+    expect(d.bar("claude/work/chat1")).toMatchObject({ hosted: true, attachable: false, terminalWhy: "This session started in the chat view; it has no terminal here" });
+    expect(d.bar("claude/work/h1")?.terminalWhy).toBeUndefined();
+    expect(d.bar("claude/work/own")).toMatchObject({ hosted: false, attachable: false, where: "your terminal" });
+    expect(d.bar("claude/work/desk")?.where).toBe("Claude Desktop");
+  });
+
+  it("the bar names the terminal the session really runs in, and offers focus only where it works", () => {
+    const vm = vmWith([account("work")], [row("own"), row("ghost"), row("unread"), row("c", { provider: "codex", profile: "work" })]);
+    const wanted: string[] = [];
+    const terminals = new Map([
+      ["claude/work/own", { running: true, terminal: "iTerm2", focusable: true }],
+      ["claude/work/ghost", { running: true, terminal: "Ghostty", focusable: false, why: "Ghostty cannot be focused" }],
+    ]);
+    const d = toV3Data(vm, emptyFeeds(), env({ terminals, wantTerminal: (k) => void wanted.push(k) }));
+    expect(d.bar("claude/work/own")).toMatchObject({ where: "iTerm2", focusable: true });
+    expect(d.bar("claude/work/ghost")).toMatchObject({ where: "Ghostty", focusable: false });
+    expect(d.bar("claude/work/unread")).toMatchObject({ where: "your terminal", focusable: false });
+    expect(wanted).toContain("claude/work/unread");
+    // Codex names no program per session: never a guessed app, never Focus.
+    expect(d.bar("codex/work/c")).toMatchObject({ where: "your terminal", focusable: false });
+  });
+
   it("joins needs, hosting, PR and account into a row", () => {
     const r = row("a1", { prs: [{ number: 12, url: "https://github.com/o/r/pull/12", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "NONE", ci: "FAILURE", failingChecks: ["lint"] }], context: { pct: 41, model: "opus", contextTokens: 1, windowTokens: 2, confidence: "high", source: "transcript", effort: "high" } as never });
     const feeds: V3Feeds = {
@@ -140,7 +167,8 @@ describe("toV3Data", () => {
     expect(d.sessions[0]).toMatchObject({ key: "claude/work/a1", needsYou: true, pr: { number: 12, ci: "FAILURE" }, account: { name: "work", nearLimit: true } });
     expect(d.bar("claude/work/a1")).toMatchObject({ hosted: true, model: "Opus", modelId: "opus", thinking: "high", contextPct: 41, account: { fiveH: 40, protect: 90 } });
     const s = d.summary("claude/work/a1")!;
-    expect(s.next).toEqual({ text: "Waits for you in its terminal", action: "Focus terminal" });
+    // Hosted: it waits in its tab here, so no outside terminal to focus (7.6); the PR's step shows.
+    expect(s.next).toEqual({ text: "CI failing: lint", action: "Send to agent" });
     expect(s.pr?.failingChecks).toEqual(["lint"]);
     expect(s.limit).toContain("40%");
     expect(s.more.host).toBe("Hosted by Agent Switch");
@@ -208,6 +236,26 @@ describe("toV3Data", () => {
     expect(d.changes("k")).toHaveLength(1);
     expect(d.changes("other")).toEqual([]);
     expect(want.mock.calls).toEqual([["k"], ["other"]]);
+  });
+
+  it("summary: the changed count is the length of the Changes list once it is read", () => {
+    const want = vi.fn();
+    const r = row("a1", { git: { toplevel: "/r", branch: "feat", headSha: "a", dirty: true, changed: 7, ahead: 0, behind: 0, upstream: null, remote: null, worktree: false, cwd: "/r", cwdSource: "hook" as const } } as never);
+    const files = [{ status: "M" as const, path: "a", added: 1, removed: 0 }, { status: "A" as const, path: "b", added: 2, removed: 0 }];
+    const read = toV3Data(vmWith([account("work")], [r]), emptyFeeds(), env({ wantChanges: want, changes: new Map([["claude/work/a1", files]]) }));
+    expect(read.summary("claude/work/a1")!.git!.changed).toBe(read.changes("claude/work/a1").length);
+    expect(want).toHaveBeenCalledWith("claude/work/a1");
+    const unread = toV3Data(vmWith([account("work")], [r]), emptyFeeds(), env());
+    expect(unread.summary("claude/work/a1")!.git!.changed).toBe(7);
+  });
+
+  it("summary and Changes count the files past the list's cap too", () => {
+    const r = row("a1", { git: { toplevel: "/r", branch: "feat", headSha: "a", dirty: true, changed: 7, ahead: 0, behind: 0, upstream: null, remote: null, worktree: false, cwd: "/r", cwdSource: "hook" as const } } as never);
+    const files = [{ status: "M" as const, path: "a", added: 1, removed: 0 }];
+    const d = toV3Data(vmWith([account("work")], [r]), emptyFeeds(), env({ changes: new Map([["claude/work/a1", files]]), changesMore: new Map([["claude/work/a1", 12]]) }));
+    expect(d.summary("claude/work/a1")!.git!.changed).toBe(13);
+    expect(d.changesMore!("claude/work/a1")).toBe(12);
+    expect(d.changesMore!("other")).toBe(0);
   });
 
   it("Open-in: agent apps never reach the settings list", () => {
@@ -294,12 +342,25 @@ describe("pieces", () => {
     expect(nextStep(row("y"), true)?.does).toBe("focus");
   });
 
+  it("hasOpenPr: only an open PR keeps Create PR away", () => {
+    const pr = (lifecycle: string) => row("x", { prs: [{ number: 4, url: "u", lifecycle, mergeable: "MERGEABLE", review: "NONE", ci: "SUCCESS", failingChecks: [] }] });
+    expect(hasOpenPr(pr("OPEN"))).toBe(true);
+    expect(hasOpenPr(pr("MERGED"))).toBe(false);
+    expect(hasOpenPr(row("y"))).toBe(false);
+  });
+
   it("decisionFor: the account's live sessions, moved to the least-used other account", () => {
     const vm = vmWith([account("work", { windows: [{ key: "five_hour", label: "5h", utilization: 93, resetsAt: new Date(NOW + 125 * 60_000).toISOString() }] }), account("home", { windows: [{ key: "five_hour", label: "5h", utilization: 10, resetsAt: null }] }), account("lab")], []);
     const d = decisionFor("claude/work", vm, [row("a"), row("b", { live: false }), row("c", { profile: "home" })], NOW)!;
     expect(d).toMatchObject({ account: "work", pctUsed: 93, window: "5h", resetsIn: "2 h 5 min", suggestion: "home" });
     expect(d.sessions.map((s) => [s.key, s.target])).toEqual([["claude/work/a", "home"]]);
     expect(decisionFor("claude/none", vm, [], NOW)).toBeNull();
+  });
+
+  it("decisionFor says whether the account is near its limit, so the sheet does not call 60 % near", () => {
+    const vm = vmWith([account("work", { state: "ready", windows: [{ key: "five_hour", label: "5h", utilization: 60, resetsAt: null }] }), account("near", { state: "near-limit", windows: [{ key: "five_hour", label: "5h", utilization: 97, resetsAt: null }] }), account("home")], []);
+    expect(decisionFor("claude/work", vm, [], NOW)?.nearLimit).toBe(false);
+    expect(decisionFor("claude/near", vm, [], NOW)?.nearLimit).toBe(true);
   });
 
   it("decisionFor: one session's sheet still knows every live session on the account a live switch would move", () => {
@@ -333,10 +394,27 @@ describe("pieces", () => {
     expect(d.sessions.map((s) => s.target).sort()).toEqual(["a", "b"]);
   });
 
-  it("startCommand quotes what needs it", () => {
+  it("startCommand shows the model, thinking and worktree the start will use; your terminal is a new window of it", () => {
+    const p = { folder: "/r", gitState: null, worktree: true, tool: "claude" as const, model: "opus", thinking: "high", where: "hosted" as const };
+    expect(startCommand(p, "work")).toBe("agent-switch host start work --provider claude --cwd /r --model opus --effort high --worktree");
+    expect(startCommand({ ...p, where: "terminal", worktree: false }, "work")).toBe("agent-switch run work --provider claude --cwd /r --model opus --effort high --new-window");
+  });
+
+  it("startCommand quotes what needs it; without an account the CLI routes; under ask the account is still to be chosen", () => {
     const p = { folder: "/r/my app", gitState: null, worktree: false, tool: "claude" as const, model: "", thinking: "", where: "hosted" as const };
     expect(startCommand(p, "work")).toBe("agent-switch host start work --provider claude --cwd '/r/my app'");
-    expect(startCommand({ ...p, where: "terminal", tool: "codex", folder: "/r" }, null)).toBe("agent-switch run --provider codex --cwd /r");
+    expect(startCommand({ ...p, where: "terminal", tool: "codex", folder: "/r" }, null)).toBe("agent-switch run --provider codex --cwd /r --new-window");
+    expect(startCommand({ ...p, where: "terminal", folder: "/r" }, "ask")).toBe("agent-switch run <account> --provider claude --cwd /r --new-window");
+  });
+
+  it("startKey: a folder in a worktree or a subfolder is remembered under its main repository", () => {
+    const git = (toplevel: string, repoRoot: string) => ({ toplevel, branch: "b", headSha: null, dirty: false, changed: 0, ahead: null, behind: null, upstream: null, remote: null, worktree: toplevel !== repoRoot, repoRoot, cwd: toplevel, cwdSource: "hook" as const });
+    const rows = [row("w", { cwd: "/r/app.worktrees/claude-1", git: git("/r/app.worktrees/claude-1", "/r/app") }), row("m", { cwd: "/r/app/sub", git: git("/r/app", "/r/app") })];
+    expect(startKey("/r/app.worktrees/claude-1", rows)).toBe("/r/app");
+    expect(startKey("/r/app.worktrees/claude-1/pkg", rows)).toBe("/r/app");
+    expect(startKey("/r/app", rows)).toBe("/r/app");
+    expect(startKey("/r/app2", rows)).toBe("/r/app2");
+    expect(startKey("/elsewhere", rows)).toBe("/elsewhere");
   });
 });
 
@@ -359,6 +437,51 @@ describe("start dialog routing", () => {
     expect(facts.command).not.toMatch(/\bwork\b/);
     expect(toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: [] } })).newSession.facts.ask).toBeUndefined();
     expect(toV3Data(vm, emptyFeeds(), env({ route: { profile: "claude/work", why: [], ask: ["work"] } })).newSession.facts.ask).toBeUndefined();
+  });
+
+  it("the dialog follows the live plan: another tool shows that tool's routed account, its limits and its command", () => {
+    const vm = vmWith([account("work", { isDefault: true }), account("cx", { tool: "codex", isDefault: true }), account("cy", { tool: "codex" })], []);
+    const plan = env().plan;
+    const draft = { ...plan, tool: "codex" as const, model: "", thinking: "medium", where: "terminal" as const };
+    const facts = toV3Data(vm, emptyFeeds(), env({ plan, draft, route: { profile: "codex/cy", why: ["folder rule ~/r → cy"], for: { tool: "codex", folder: "/r/app" } } })).newSession.facts;
+    expect(facts.account.name).toBe("cy");
+    expect(facts.account.limits.tool).toBe("codex");
+    expect(facts.command).toBe("agent-switch run --provider codex --cwd /r/app --effort medium --new-window");
+    // A route read for another tool or folder is not this plan's: the tool's default stands in.
+    const stale = toV3Data(vm, emptyFeeds(), env({ plan, draft, route: { profile: "claude/work", why: ["x"], for: { tool: "claude", folder: "/r/app" } } })).newSession.facts;
+    expect([stale.account.name, stale.account.why]).toEqual(["cx", []]);
+  });
+
+  it("an account chosen in the dialog is the one shown and the one in the command", () => {
+    const vm = vmWith([account("work", { isDefault: true }), account("side", { color: "pink" })], []);
+    const draft = { ...env().plan, account: "side" };
+    const facts = toV3Data(vm, emptyFeeds(), env({ draft, route: { profile: "claude/work", why: ["work has room"], for: { tool: "claude", folder: "/r/app" } } })).newSession.facts;
+    expect([facts.account.name, facts.account.color, facts.account.chosen, facts.account.why]).toEqual(["side", "pink", true, []]);
+    expect(facts.command).toMatch(/^agent-switch host start side /);
+    expect(facts.accounts.claude.map((a) => a.name)).toEqual(["work", "side"]);
+  });
+
+  it("the dialog offers recent folders, newest first, and the models of each tool", () => {
+    const vm = vmWith([account("work")], [row("a", { cwd: "/r/one", mtimeMs: NOW - 10 }), row("b", { cwd: "/r/two", mtimeMs: NOW - 5 }), row("c", { cwd: "/r/one", mtimeMs: NOW - 1 })]);
+    const facts = toV3Data(vm, emptyFeeds(), env()).newSession.facts;
+    expect(facts.folders).toEqual(["/r/one", "/r/two"]);
+    expect(facts.models.claude.map((m) => m.id)).toEqual(["opus", "sonnet", "haiku"]);
+    expect(facts.models.antigravity).toEqual([]);
+  });
+
+  it("Start in … names the terminal the start opens: the one set in Settings, Terminal for Warp (it cannot run a command)", () => {
+    const vm = vmWith([account("work")], []);
+    const targets = (terminal: string | null) => ({ ...emptyFeeds(), openTargets: { default: null, perRepo: {}, lastUsed: null, targets: [], terminal, terminals: [{ id: "terminal", name: "Terminal", installed: true }, { id: "iterm", name: "iTerm2", installed: true }, { id: "warp", name: "Warp", installed: true }] } });
+    expect(toV3Data(vm, targets("iterm"), env()).newSession.facts.terminalApp).toBe("iTerm2");
+    expect(toV3Data(vm, targets("warp"), env()).newSession.facts.terminalApp).toBe("Terminal");
+    expect(toV3Data(vm, targets(null), env()).newSession.facts.terminalApp).toBe("Terminal.app");
+    expect(toV3Data(vm, emptyFeeds(), env()).newSession.facts.terminalApp).toBe("Terminal.app");
+  });
+
+  it("a new chat never takes a route read for another tool", () => {
+    const accounts = [account("work", { isDefault: true }), account("cx", { tool: "codex" })];
+    expect(chatStart({ profile: "codex/cx", why: [] }, accounts)).toEqual({ profile: "work" });
+    expect(chatStart({ profile: "codex/cx", why: [], ask: ["cx", "cy"] }, accounts)).toEqual({ profile: "work" });
   });
 
   it("a new chat under strategy ask asks instead of taking the fallback; otherwise the routed, then the default account", () => {
@@ -509,5 +632,102 @@ describe("the child tree (Phases 2 and 3)", () => {
     const root = row("q", { children: [seat("work", "slow", { state: "working", source: "host", observedAt: NOW - 34 * 60_000, unconfirmed: true })] });
     const d = toV3Data(vmWith(accounts, [root]), emptyFeeds(), env());
     expect(d.sessions[0].children[0].quiet).toBe("no update in 34m");
+  });
+});
+
+describe("what the app can type into decides the CI and blocker labels", () => {
+  const PR = { number: 9, url: "https://github.com/o/r/pull/9", lifecycle: "OPEN", mergeable: "MERGEABLE", review: "NONE", ci: "FAILURE", failingChecks: ["lint"] };
+  const git = { toplevel: "/r", branch: "feat", headSha: "a", dirty: false, changed: 0, ahead: 1, behind: 0, upstream: "origin/feat", remote: "git@github.com:o/r.git", worktree: false, cwd: "/r", cwdSource: "hook" as const };
+  const withPr = row("a1", { prs: [PR], git });
+  const ciItem = { id: "ci", kind: "ci" as const, subject: "o/r#9", who: "w", what: "CI failing on #9", detail: "lint", verb: "Focus terminal", since: "", version: "a:ci" };
+  const hosted = { mode: "persistent" as const, hosted: [{ key: "claude/work/a1", provider: "claude", account: "work", sessionId: "a1", cwd: "/r", startedAt: "", alive: true, parked: false }] };
+
+  it("a CI item reads Fix for a hosted or chat session, Open checks elsewhere", () => {
+    const needs = { items: [{ ...ciItem, session: "claude/work/a1" }], away: null, history: [] };
+    expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs, host: hosted }, env()).needs[0].verb).toBe("Fix");
+    expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs }, env({ chats: new Set(["claude/work/a1"]) })).needs[0].verb).toBe("Fix");
+    expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs }, env()).needs[0].verb).toBe("Open checks");
+  });
+
+  it("the CI label reads the session the item names, never another session on the PR; a conflict opens the PR", () => {
+    const other = { ...ciItem, session: "claude/work/b2" };
+    // a1 is hosted and on the PR, but the item names b2, which the app cannot type into.
+    expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs: { items: [other], away: null, history: [] }, host: hosted }, env()).needs[0].verb).toBe("Open checks");
+    expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs: { items: [ciItem], away: null, history: [] }, host: hosted }, env()).needs[0].verb).toBe("Open checks");
+    const conflict = { ...ciItem, what: "#9 has a merge conflict", session: "claude/work/b2", ci: { state: "conflict" as const, checks: [] } };
+    expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), needs: { items: [conflict], away: null, history: [] } }, env()).needs[0].verb).toBe("Open PR");
+  });
+
+  it("the blocker reads Send to agent where the app can type, Copy prompt elsewhere; its prompt names no check", () => {
+    expect(toV3Data(vmWith([], [withPr]), { ...emptyFeeds(), host: hosted }, env()).next("claude/work/a1")?.action).toBe("Send to agent");
+    expect(toV3Data(vmWith([], [withPr]), emptyFeeds(), env()).next("claude/work/a1")?.action).toBe("Copy prompt");
+    expect(nextStep(withPr, false)?.prompt).toBe("CI is failing on PR #9 (https://github.com/o/r/pull/9/checks). Find the cause and fix it.");
+  });
+});
+
+describe("Focus terminal, model and thinking are offered only where they work (7.6)", () => {
+  const ask = (subject: string) => ({ items: [{ id: "q", kind: "question" as const, subject, who: "w", what: "asks you", verb: "Focus terminal", since: "", version: "1" }], away: null, history: [] });
+  const host = (key: string, provider = "claude") => ({ mode: "persistent" as const, hosted: [{ key, provider, account: "work", sessionId: key.split("/")[2], cwd: "/r", startedAt: "", alive: true, parked: false }] });
+
+  it("the needs-you step focuses a Claude terminal; never a hosted session, a Codex one, or with the switch off", () => {
+    const claude = row("a1");
+    expect(toV3Data(vmWith([], [claude]), { ...emptyFeeds(), needs: ask("claude/work/a1") }, env()).next("claude/work/a1")?.action).toBe("Focus terminal");
+    expect(toV3Data(vmWith([], [claude]), { ...emptyFeeds(), needs: ask("claude/work/a1"), host: host("claude/work/a1") }, env()).next("claude/work/a1")).toBeNull();
+    expect(toV3Data(vmWith([], [claude]), { ...emptyFeeds(), needs: ask("claude/work/a1") }, env({ focusTerminal: false })).next("claude/work/a1")).toBeNull();
+    const codex = row("c1", { provider: "codex" });
+    expect(toV3Data(vmWith([], [codex]), { ...emptyFeeds(), needs: ask("codex/work/c1") }, env()).next("codex/work/c1")).toBeNull();
+  });
+
+  it("the Needs verb Focus terminal reads Open session where focusing does not work: switch off, or a Codex session", () => {
+    const verb = (rows: SessionRow[], subject: string, e = env()) => toV3Data(vmWith([], rows), { ...emptyFeeds(), needs: ask(subject) }, e).needs[0].verb;
+    expect(verb([row("a1")], "claude/work/a1")).toBe("Focus terminal");
+    expect(verb([row("a1")], "claude/work/a1", env({ focusTerminal: false }))).toBe("Open session");
+    expect(verb([row("c1", { provider: "codex" })], "codex/work/c1")).toBe("Open session");
+  });
+
+  it("a hosted Codex session locks model and thinking with the reason; a hosted Claude session does not", () => {
+    const codex = row("c1", { provider: "codex" });
+    const bar = toV3Data(vmWith([], [codex]), { ...emptyFeeds(), host: host("codex/work/c1", "codex") }, env()).bar("codex/work/c1");
+    expect(bar?.hosted).toBe(true);
+    expect(bar?.respawnWhy).toMatch(/Codex/);
+    const claude = row("a1");
+    expect(toV3Data(vmWith([], [claude]), { ...emptyFeeds(), host: host("claude/work/a1") }, env()).bar("claude/work/a1")?.respawnWhy).toBeUndefined();
+  });
+});
+
+describe("the New-session dialog shows the folder's git state (spec §8.1)", () => {
+  const git = (over: Partial<NonNullable<SessionRow["git"]>> = {}) => ({ toplevel: "/r/app", branch: "main", headSha: "a", dirty: false, changed: 0, ahead: 0, behind: 0, upstream: null, remote: null, worktree: false, cwd: "/r/app", cwdSource: "hook" as const, ...over });
+  const gitState = (rows: SessionRow[], folder = "/r/app") => toV3Data(vmWith([], rows), emptyFeeds(), env({ draft: { ...env().plan, folder } })).newSession.facts.gitState;
+
+  it("branch · clean, or branch · N changed, from the newest session read in that folder", () => {
+    expect(gitState([row("a", { git: git() })])).toBe("main · clean");
+    expect(gitState([row("old", { mtimeMs: NOW - 9e6, git: git({ branch: "old" }) }), row("new", { git: git({ branch: "feat/x", dirty: true, changed: 3 }) })])).toBe("feat/x · 3 changed");
+    expect(gitState([row("d", { git: git({ branch: null }) })])).toBe("detached · clean");
+  });
+
+  it("a folder no session was read in, or one outside git, shows nothing rather than a guess", () => {
+    expect(gitState([row("a", { git: git() })], "/elsewhere")).toBeNull();
+    expect(gitState([row("a", { git: null })])).toBeNull();
+  });
+});
+
+describe("the New session prefill", () => {
+  it("first start in a project: your terminal, nothing claimed as remembered", () => {
+    const p = initialPlan("/r", null);
+    expect(p.where).toBe("terminal");
+    expect(p.remembered).toBeFalsy();
+    expect(p.folder).toBe("/r");
+  });
+
+  it("a remembered hosted start without tmux falls back to your terminal (host start refuses there)", () => {
+    const p = initialPlan("/r", { tool: "claude", model: "opus", thinking: "high", where: "hosted" }, "ephemeral");
+    expect(p.where).toBe("terminal");
+    expect(p.model).toBe("opus");
+  });
+
+  it("a project started in before: its last tool, model, thinking and place", () => {
+    const p = initialPlan("/r", { tool: "codex", model: "gpt-5", thinking: "low", where: "hosted" });
+    expect([p.tool, p.model, p.thinking, p.where, p.remembered]).toEqual(["codex", "gpt-5", "low", "hosted", true]);
+    expect(p.worktree).toBe(false);
   });
 });

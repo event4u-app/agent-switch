@@ -30,7 +30,8 @@ export interface Actions {
   /** One account's usage, past its cooldown. */
   refreshAccountUsage?(accountId: string): Promise<void>;
   recheckTools?(): Promise<void>;
-  trashSession?(sessionId: string): Promise<{ trashId: string | null }>;
+  /** `from`: the session itself, when the view model does not hold it (a Codex session in the v3 window). */
+  trashSession?(sessionId: string, from?: Session): Promise<{ trashId: string | null }>;
   restoreSession?(sessionId: string, handle: string): Promise<void>;
   /** Live switch of a running Claude session's account (macOS, ADR-003). */
   rebind?(sessionId: string, targetAccountId: string): Promise<void>;
@@ -76,7 +77,8 @@ export interface Actions {
   previewSession?(sessionId: string): Promise<{ role: "you" | "agent"; text: string }[]>;
   /** Metadata-only handoff brief of a session for a target account; writes the
    *  brief file the seed command references by path. */
-  handoffBrief?(sessionId: string, targetAccountId: string): Promise<{ brief: string; briefPath: string }>;
+  /** `from`: the session itself, when the view model does not hold it (a Codex session in the v3 window). */
+  handoffBrief?(sessionId: string, targetAccountId: string, from?: Session): Promise<{ brief: string; briefPath: string }>;
   /** Relink drifted shared-setup links (`share sync`) against a source. */
   shareSync?(source: string): Promise<void>;
 }
@@ -93,8 +95,8 @@ function sessionParts(s: Session): { provider: ProviderId; sessionId: string; pr
 }
 
 export function createActions(getVm: () => ViewModel, reload: () => Promise<void>): Actions {
-  const session = (id: string) => {
-    const s = getVm().sessions.find((x) => x.id === id);
+  const session = (id: string, from?: Session) => {
+    const s = getVm().sessions.find((x) => x.id === id) ?? (from?.id === id ? from : undefined);
     if (!s) throw new Error(`Unknown session ${id}`);
     return sessionParts(s);
   };
@@ -140,8 +142,8 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
       forceToolsOnNextLoad();
       await reload();
     },
-    trashSession: async (id: string) => {
-      const p = session(id);
+    trashSession: async (id: string, from?: Session) => {
+      const p = session(id, from);
       const res = await ipc.deleteSession(p.provider, p.sessionId, p.profile);
       await reload();
       return { trashId: res.trashId };
@@ -216,8 +218,8 @@ export function createActions(getVm: () => ViewModel, reload: () => Promise<void
       const res = await ipc.sessionPreview(p.provider, p.sessionId, p.profile);
       return res.messages.map((m) => ({ role: m.role === "user" ? ("you" as const) : ("agent" as const), text: m.text }));
     },
-    handoffBrief: (id: string, target: string) => {
-      const p = session(id);
+    handoffBrief: async (id: string, target: string, from?: Session) => {
+      const p = session(id, from);
       return ipc.extractHandoffBrief(p.provider, p.profile, p.sessionId, splitAccountId(target)[0]);
     },
     shareSync: thenReload((source: string) => {

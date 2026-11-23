@@ -70,3 +70,9 @@ test("a checkout git cannot answer for counts as not clean, so resume never land
   assert.equal(realGit.dirty(notARepo), true);
 });
 
+
+test("a Codex session resumes as it is: `codex resume <id>` on its own account, in its own folder", async () => {
+  const { codexResumeCommand } = await import("../src/resume.js");
+  assert.deepEqual(codexResumeCommand("main", "01a1a070-0000-4000-8000-000000000001", "/code/app"), ["agent-switch", "run", "--provider", "codex", "main", "--cwd", "/code/app", "--", "resume", "01a1a070-0000-4000-8000-000000000001"]);
+  assert.deepEqual(codexResumeCommand("main", "01a1a070", null), ["agent-switch", "run", "--provider", "codex", "main", "--", "resume", "01a1a070"], "no folder known: where the command runs");
+});

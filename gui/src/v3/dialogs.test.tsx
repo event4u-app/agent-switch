@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { ChatAccountDialog, DecisionSheet, EndDialog, NewSessionDialog, type NewSessionFacts, type NewSessionPlan } from "./dialogs.js";
+import { ChatAccountDialog, DecisionSheet, EndDialog, NewSessionDialog, TakeoverDialog, type NewSessionFacts, type NewSessionPlan } from "./dialogs.js";
 
 afterEach(cleanup);
-const plan: NewSessionPlan = { folder: "~/code/agent-switch", gitState: "main · clean", worktree: false, tool: "claude", model: "Opus 5.5 · last used here", thinking: "High", where: "terminal" };
+const plan: NewSessionPlan = { folder: "~/code/agent-switch", gitState: "main · clean", worktree: false, tool: "claude", model: "Opus 5.5 · last used here", thinking: "High", where: "terminal", remembered: true };
 const facts = (over: Partial<NewSessionFacts> = {}): NewSessionFacts => ({
   terminalApp: "Terminal.app",
   hosting: "persistent",
@@ -11,13 +11,17 @@ const facts = (over: Partial<NewSessionFacts> = {}): NewSessionFacts => ({
   account: { name: "work", color: "teal", reason: "most room in pool “day”", limits: { key: "claude/work", tool: "claude", name: "work", color: "teal", protect: 98, next: true, signIn: false, checkedMs: 0, windows: [{ label: "5h", used: 39, resetsAtMs: null, pace: null }] }, why: ["work has the most room", "side is near its limit"], paceText: "At today's pace: about 3h of Opus · High before the 5h window is full" },
   command: "CLAUDE_CONFIG_DIR=… claude",
   nowMs: 0,
+  models: { claude: [{ id: "opus", label: "Opus" }, { id: "sonnet", label: "Sonnet" }], codex: [], antigravity: [] },
+  folders: ["~/code/agent-switch", "~/code/other"],
+  home: "/Users/me",
+  accounts: { claude: [{ name: "work", color: "teal" }, { name: "side", color: "blue" }], codex: [{ name: "cx", color: "green" }], antigravity: [] },
   ...over,
 });
 
 describe("New session (spec §8.1)", () => {
   it("prefilled, one primary naming the outcome, your terminal by default", () => {
     const onStart = vi.fn();
-    render(<NewSessionDialog initial={plan} facts={facts()} onStart={onStart} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    render(<NewSessionDialog initial={plan} facts={facts()} onStart={onStart} onClose={vi.fn()} />);
     expect(screen.getByText("Claude in ~/code/agent-switch")).toBeTruthy();
     expect(screen.getByText("Remembered for this project")).toBeTruthy();
     expect(screen.getByRole("radio", { name: /Your terminal/ }).getAttribute("aria-checked")).toBe("true");
@@ -25,17 +29,107 @@ describe("New session (spec §8.1)", () => {
     expect(onStart).toHaveBeenCalledWith(plan);
   });
 
-  it("hosting: the primary says 'Start here', and without tmux the card says it ends with the app", () => {
+  it("the folder's git state comes from the facts as they are now, over the plan's", () => {
+    const { rerender } = render(<NewSessionDialog initial={{ ...plan, gitState: null }} facts={facts({ gitState: "feat/x · 3 changed" })} onStart={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByText("feat/x · 3 changed")).toBeTruthy();
+    rerender(<NewSessionDialog initial={{ ...plan, gitState: null }} facts={facts({ gitState: null })} onStart={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByText(/changed|clean/)).toBeNull();
+  });
+
+  it("says 'Remembered for this project' only when something was remembered", () => {
+    render(<NewSessionDialog initial={{ ...plan, model: "opus", remembered: false }} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByText("Remembered for this project")).toBeNull();
+    expect(screen.queryByText(/last used here/)).toBeNull();
+  });
+
+  it("another tool starts on its own default model, not the one remembered for the first", () => {
     const onStart = vi.fn();
-    render(<NewSessionDialog initial={plan} facts={facts({ hosting: "ephemeral" })} onStart={onStart} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    render(<NewSessionDialog initial={{ ...plan, model: "opus" }} facts={facts()} onStart={onStart} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+    fireEvent.click(screen.getByText(/Start in Terminal.app/));
+    expect(onStart.mock.calls[0][0].model).toBe("");
+  });
+
+  it("hosting: the primary says 'Start here'", () => {
+    const onStart = vi.fn();
+    render(<NewSessionDialog initial={plan} facts={facts()} onStart={onStart} onClose={vi.fn()} />);
     fireEvent.click(screen.getByRole("radio", { name: /Host in Agent Switch/ }));
-    expect(screen.getByText(/ends when the app closes/)).toBeTruthy();
     fireEvent.click(screen.getByText(/Start here/));
     expect(onStart.mock.calls[0][0].where).toBe("hosted");
   });
 
+  it("without tmux hosting is off and says why; a remembered hosted start starts in the terminal", () => {
+    const onStart = vi.fn();
+    render(<NewSessionDialog initial={{ ...plan, where: "hosted" }} facts={facts({ hosting: "ephemeral" })} onStart={onStart} onClose={vi.fn()} />);
+    const card = screen.getByRole("radio", { name: /Host in Agent Switch/ });
+    expect(card.getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByText(/needs tmux/)).toBeTruthy();
+    fireEvent.click(card);
+    expect(screen.getByRole("radio", { name: /Your terminal/ }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByText(/Start in Terminal.app/));
+    expect(onStart.mock.calls[0][0].where).toBe("terminal");
+  });
+
+  it("every change is reported, so the account box and the preview can follow it", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<NewSessionDialog initial={plan} facts={facts()} onChange={onChange} onStart={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ tool: "codex" }));
+    rerender(<NewSessionDialog initial={plan} facts={facts({ command: "agent-switch run --provider codex --cwd ~/code/agent-switch --new-window" })} onChange={onChange} onStart={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Command preview" }));
+    expect(screen.getByText(/--provider codex/)).toBeTruthy();
+  });
+
+  it("switching the tool keeps a thinking level the new tool has, else high — never silently the lowest", () => {
+    const onStart = vi.fn();
+    render(<NewSessionDialog initial={{ ...plan, thinking: "max" }} facts={facts({ thinkingLevels: { claude: ["low", "high", "max"], codex: ["minimal", "low", "high"], antigravity: [] } })} onStart={onStart} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
+    fireEvent.click(screen.getByText(/Start in Terminal.app/));
+    expect(onStart.mock.calls[0][0].thinking).toBe("high");
+  });
+
+  it("Choose another… picks the account inside the dialog; the rest of the plan stays", () => {
+    const onStart = vi.fn();
+    const onChange = vi.fn();
+    render(<NewSessionDialog initial={{ ...plan, worktree: true, where: "hosted" }} facts={facts()} onChange={onChange} onStart={onStart} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Choose another…" }));
+    fireEvent.click(screen.getByRole("radio", { name: /side/ }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ account: "side", worktree: true, where: "hosted" }));
+    fireEvent.click(screen.getByText(/Start here/));
+    expect(onStart).toHaveBeenCalledWith({ ...plan, worktree: true, where: "hosted", account: "side" });
+    // Back to automatic: the CLI routes again.
+    fireEvent.click(screen.getByRole("radio", { name: /Automatic/ }));
+    expect(onChange.mock.calls.at(-1)![0].account).toBeUndefined();
+  });
+
+  it("the folder is picked from recent folders or typed; a typed ~ path is expanded and a dash refused", () => {
+    const onChange = vi.fn();
+    render(<NewSessionDialog initial={plan} facts={facts()} onChange={onChange} onStart={vi.fn()} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Folder" }));
+    fireEvent.click(screen.getByRole("option", { name: "~/code/other" }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ folder: "~/code/other" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Folder" }));
+    fireEvent.click(screen.getByRole("option", { name: /Another folder/ }));
+    const field = screen.getByRole("textbox", { name: "Folder path" });
+    fireEvent.change(field, { target: { value: "-rf" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(screen.getByRole("alert")).toBeTruthy();
+    fireEvent.change(field, { target: { value: "~/x/y" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ folder: "/Users/me/x/y" }));
+  });
+
+  it("the model is picked from the tool's models; that model is the one started", () => {
+    const onStart = vi.fn();
+    render(<NewSessionDialog initial={plan} facts={facts()} onStart={onStart} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Model" }));
+    fireEvent.click(screen.getByRole("option", { name: "Sonnet" }));
+    fireEvent.click(screen.getByText(/Start in Terminal.app/));
+    expect(onStart.mock.calls[0][0].model).toBe("sonnet");
+  });
+
   it("the tool's own thinking levels; Why? and the command preview open on demand", () => {
-    render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} />);
     expect(screen.getByRole("radio", { name: "Max" })).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "Codex" }));
     expect(screen.queryByRole("radio", { name: "Max" })).toBeNull();
@@ -49,7 +143,7 @@ describe("New session (spec §8.1)", () => {
   it("strategy ask: no account until one is picked, then the pick is the one started", () => {
     const onStart = vi.fn();
     const ask = [{ name: "work", color: "teal" as const }, { name: "side", color: "blue" as const }];
-    render(<NewSessionDialog initial={plan} facts={facts({ ask })} onStart={onStart} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    render(<NewSessionDialog initial={plan} facts={facts({ ask })} onStart={onStart} onClose={vi.fn()} />);
     expect(screen.getByText("Ask me — choose an account")).toBeTruthy();
     expect(screen.queryByText("Automatic →")).toBeNull();
     const startBtn = screen.getByRole("button", { name: /Start in Terminal.app/ }) as HTMLButtonElement;
@@ -64,7 +158,7 @@ describe("New session (spec §8.1)", () => {
   });
 
   it("without ask the account line stays automatic and Start is ready", () => {
-    render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} onChooseAccount={vi.fn()} />);
+    render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={vi.fn()} />);
     expect(screen.getByText("Automatic →")).toBeTruthy();
     expect(screen.queryByText("Ask me — choose an account")).toBeNull();
     expect((screen.getByRole("button", { name: /Start in Terminal.app/ }) as HTMLButtonElement).disabled).toBe(false);
@@ -85,7 +179,7 @@ describe("New session (spec §8.1)", () => {
 
   it("Esc closes", () => {
     const onClose = vi.fn();
-    render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={onClose} onChooseAccount={vi.fn()} />);
+    render(<NewSessionDialog initial={plan} facts={facts()} onStart={vi.fn()} onClose={onClose} />);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -121,6 +215,16 @@ describe("decision sheet and End (spec §8.2, §8.3)", () => {
     fireEvent.click(go);
     expect(onDecide).toHaveBeenCalledWith("brief", [{ key: "a", target: "work" }]);
     cleanup();
+  });
+
+  it("the kicker says Near limit only for an account that is near its limit (owner screenshot, 60 %)", () => {
+    const base = { account: "MathiasB", window: "5h", resetsIn: "1 h 48 min", suggestion: "MBerg", room: null, onKeep: vi.fn(), onClose: vi.fn(), onDecide: vi.fn(), sessions: [{ key: "a", title: "Fix wedge", model: "Opus", target: "MBerg" }] };
+    const { unmount } = render(<DecisionSheet {...base} pctUsed={60} nearLimit={false} />);
+    expect(screen.queryByText("Near limit")).toBeNull();
+    expect(screen.getByText("Move sessions")).toBeTruthy();
+    unmount();
+    render(<DecisionSheet {...base} pctUsed={96} nearLimit />);
+    expect(screen.getByText("Near limit")).toBeTruthy();
   });
 
   it("nothing changes until a choice; the default is after this turn; unchecked sessions are not moved", () => {
@@ -178,5 +282,49 @@ describe("decision sheet and End (spec §8.2, §8.3)", () => {
     expect(onCloseTab).toHaveBeenCalledOnce();
     rerender(<EndDialog title="x" stops={[]} kept={false} onEnd={vi.fn()} onCloseTab={vi.fn()} onClose={vi.fn()} />);
     expect(screen.getByText(/pin the session to keep a copy/)).toBeTruthy();
+  });
+});
+
+describe("Take over (from your terminal into Agent Switch)", () => {
+  const claude = { title: "Fix the parser", tool: "claude" as const, account: "work", where: "iTerm2", running: true };
+
+  it("a running Claude session: says what happens, and ends the source between turns by default", () => {
+    const onTakeOver = vi.fn();
+    render(<TakeoverDialog facts={claude} busy={false} error={null} onTakeOver={onTakeOver} onClose={vi.fn()} />);
+    expect(screen.getByText(/same conversation continues here, hosted by Agent Switch on work/)).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /End it in iTerm2 for me/ }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Take over" }));
+    expect(onTakeOver).toHaveBeenLastCalledWith({ stopSource: true, force: false });
+    fireEvent.click(screen.getByRole("radio", { name: /I end it myself/ }));
+    expect(screen.getByText(/type \/exit/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Take over" }));
+    expect(onTakeOver).toHaveBeenLastCalledWith({ stopSource: false, force: false });
+  });
+
+  it("a Claude session that no longer runs: nothing to end, no choice", () => {
+    render(<TakeoverDialog facts={{ ...claude, running: false }} busy={false} error={null} onTakeOver={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.getByText(/no longer runs in iTerm2/)).toBeTruthy();
+  });
+
+  it("Codex: Agent Switch cannot end it, so the user is told exactly what to do in the terminal first", () => {
+    const onTakeOver = vi.fn();
+    render(<TakeoverDialog facts={{ ...claude, tool: "codex", where: "your terminal", running: null }} busy={false} error={null} onTakeOver={onTakeOver} onClose={vi.fn()} />);
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.getByText(/Quit Codex in your terminal first: type \/quit/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Take over" }));
+    expect(onTakeOver).toHaveBeenCalledWith({ stopSource: false, force: false });
+  });
+
+  it("a refusal is shown; where the CLI allows it, 'Take over anyway' says the risk and forces", () => {
+    const onTakeOver = vi.fn();
+    const { rerender } = render(<TakeoverDialog facts={claude} busy={false} error={{ text: "codex is running on codex/main.", forceable: true }} onTakeOver={onTakeOver} onClose={vi.fn()} />);
+    expect(screen.getByRole("alert").textContent).toContain("codex is running on codex/main.");
+    fireEvent.click(screen.getByRole("button", { name: "Take over anyway" }));
+    expect(onTakeOver).toHaveBeenCalledWith({ stopSource: true, force: true });
+    rerender(<TakeoverDialog facts={claude} busy={false} error={{ text: "mid-turn", forceable: false }} onTakeOver={onTakeOver} onClose={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Take over anyway" })).toBeNull();
+    rerender(<TakeoverDialog facts={claude} busy error={null} onTakeOver={onTakeOver} onClose={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Taking over…" }).hasAttribute("disabled")).toBe(true);
   });
 });

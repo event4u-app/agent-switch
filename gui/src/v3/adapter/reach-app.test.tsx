@@ -57,7 +57,13 @@ const session = {
 
 function fixture(engineRunning: boolean) {
   const lines: Record<string, unknown> = {
-    "list --json": [{ provider: "claude", name: "work", identity: "me@example.com", label: "work", color: null, disabled: false, active: true, liveSessions: 1 }],
+    "list --json": [
+      { provider: "claude", name: "work", identity: "me@example.com", label: "work", color: null, disabled: false, active: true, liveSessions: 1 },
+      { provider: "codex", name: "cx", identity: "cx@example.com", label: "work", color: null, disabled: false, active: true, liveSessions: 0 },
+    ],
+    "dir --provider claude --json": { profile: "claude/work", why: ["work is the account for plain starts"] },
+    "dir --provider codex --json": { profile: "codex/cx", why: ["cx has the most room"] },
+    "run --provider codex --cwd /code/store --effort high --new-window": {},
     "sessions --recent 50 --json": [session],
     "sessions --recent 20 --json": [session],
     "sessions --recent 20 --provider codex --json": [],
@@ -118,7 +124,7 @@ describe("V3App on fixture CLI output (spec §11)", () => {
   it("Session sheet actions: session row, then ⋯", async () => {
     await mount();
     click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
-    click(await screen.findByLabelText("Session actions: rename, pin, move, detach, end"));
+    click(await screen.findByLabelText("Session actions"));
     expect(screen.getByRole("menu")).toBeTruthy();
     expect(clicks).toBe(2);
   });
@@ -160,6 +166,22 @@ describe("V3App on fixture CLI output (spec §11)", () => {
     await mount();
     await screen.findByText("94% of 5h");
     expect(screen.queryByText("Engine stopped")).toBeNull();
+  });
+
+  it("New session follows every change and starts in the user's terminal from the dialog itself", async () => {
+    await mount();
+    click(screen.getByText("Start session"));
+    const dialog = await screen.findByRole("dialog", { name: /in \/code\/store/ });
+    click(within(dialog).getByRole("radio", { name: "Codex" }));
+    // The account box and the preview are the Codex ones, read from `dir --provider codex`.
+    expect(await within(dialog).findByText("cx has the most room")).toBeTruthy();
+    click(within(dialog).getByRole("button", { name: "Command preview" }));
+    expect(within(dialog).getByText("agent-switch run --provider codex --cwd /code/store --effort high --new-window")).toBeTruthy();
+    const before = calls.length;
+    click(within(dialog).getByRole("button", { name: /^Start in / }));
+    await vi.waitFor(() => expect(calls.slice(before).map((c) => c.args.join(" "))).toContain("run --provider codex --cwd /code/store --effort high --new-window"));
+    // No second start dialog: the start went straight to the terminal. (The limit's decision sheet may open on its own.)
+    expect(screen.queryAllByRole("dialog").map((d) => d.getAttribute("aria-label")).filter((l) => /start|session|store/i.test(l ?? ""))).toEqual([]);
   });
 
   it("Start session: Start, then Why?", async () => {

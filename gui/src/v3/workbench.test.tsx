@@ -139,6 +139,55 @@ describe("workbench (spec §6)", () => {
     expect(screen.getByRole("radio", { name: /Chat/ }).getAttribute("title")).toBe("This tool keeps the view it started in");
   });
 
+  it("session bar: a session started in the chat offers no Terminal and says why (8.3)", () => {
+    const on = handlers();
+    render(<SessionBar s={bar({ view: "chat", terminalWhy: "This session started in the chat view; it has no terminal here" })} openIn={null} on={on} />);
+    const terminal = screen.getByRole("radio", { name: /Terminal/ });
+    expect(terminal.getAttribute("aria-disabled")).toBe("true");
+    expect(terminal.getAttribute("title")).toBe("This session started in the chat view; it has no terminal here");
+    fireEvent.click(terminal);
+    expect(on.view).not.toHaveBeenCalled();
+  });
+
+  it("session bar: a hosted session whose model and thinking cannot change locks both chips and says why (7.6)", () => {
+    const on = handlers();
+    render(<SessionBar s={bar({ respawnWhy: "Codex keeps the model and thinking it started with" })} openIn={null} on={on} />);
+    const model = screen.getByText("Opus 5.5").closest("button")!;
+    const thinking = screen.getByText("High").closest("button")!;
+    for (const chip of [model, thinking]) {
+      expect(chip.getAttribute("aria-disabled")).toBe("true");
+      expect(chip.getAttribute("title")).toMatch(/Codex keeps/);
+      fireEvent.click(chip);
+    }
+    expect(on.model).not.toHaveBeenCalled();
+    expect(on.thinking).not.toHaveBeenCalled();
+  });
+
+  it("session bar: where the session runs is a visible chip — hosted, or the user's terminal app being watched", () => {
+    const { rerender } = render(<SessionBar s={bar()} openIn={null} on={handlers()} />);
+    const hosted = screen.getByText("Hosted");
+    expect(hosted.closest("[title]")?.getAttribute("title")).toBe("Hosted by Agent Switch: type here, or attach from your terminal");
+    expect(screen.getByText("type here, or attach from your terminal")).toBeTruthy();
+    rerender(<SessionBar s={bar({ hosted: false, where: "Terminal.app" })} openIn={null} on={handlers()} />);
+    expect(screen.queryByText("Hosted")).toBeNull();
+    expect(screen.getByText("Terminal.app · watching")).toBeTruthy();
+  });
+
+  it("a session in the user's own terminal says in place how to type from the app and what taking over changes", () => {
+    const onTakeOver = vi.fn();
+    render(<ExternalBody where="iTerm2" facts={null} lastLine={null} onFocus={vi.fn()} onTakeOver={onTakeOver} />);
+    expect(screen.getByText(/To type here, take it over: the same conversation continues in Agent Switch on this account, and stops running in iTerm2\./)).toBeTruthy();
+    fireEvent.click(screen.getByText("Take over here…"));
+    expect(onTakeOver).toHaveBeenCalledOnce();
+  });
+
+  it("Focus terminal and Take over show only where they work", () => {
+    render(<ExternalBody where="Ghostty" facts={null} lastLine={null} onFocus={null} onTakeOver={null} />);
+    expect(screen.queryByText("Focus terminal")).toBeNull();
+    expect(screen.queryByText("Take over here…")).toBeNull();
+    expect(screen.queryByText(/To type here, take it over/)).toBeNull();
+  });
+
   it("the blocker shows only while Summary is closed, with one action", () => {
     const onAction = vi.fn();
     const { rerender } = render(<BlockerStrip text="CI fails and the branch has a conflict." action="Send to agent" summaryOpen={false} onAction={onAction} onDismiss={vi.fn()} />);

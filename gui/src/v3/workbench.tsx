@@ -4,19 +4,20 @@
  * banner. Adapted from the reference boards; data and actions come in as props.
  */
 
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { Brain, Check, ChevronDown, CircleX, Ellipsis, Lightbulb, Lock, MessageSquareText, Pin, SquareTerminal, TriangleAlert, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { Brain, Check, ChevronDown, CircleX, Ellipsis, Eye, Lightbulb, Lock, MessageSquareText, Pin, Server, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
-import { Act, AccountMark } from "./kit.js";
+import { Act, AccountMark, Chip } from "./kit.js";
 import { Segmented } from "../ui/Segmented.js";
 import { tone } from "./limits.js";
 import { XtermBox } from "../redesign/screens/terminal-sheet.js";
 import type { TermBackend } from "../terminal.js";
 import type { SessionCache } from "../transforms.js";
 import { sessionHints, type Hint } from "./hints.js";
+import { MenuSection, POPOVER_TRIGGER } from "./menus.js";
 
 // ---------- tab strip ----------
 
@@ -204,6 +205,12 @@ export function TabStrip({
 export interface BarSession {
   key: string;
   hosted: boolean;
+  /** A hosted tmux window the user's own terminal can join (`host attach`). */
+  attachable?: boolean;
+  /** Not hosted: the app the session runs in ("iTerm2", "Claude Desktop", "your terminal"). */
+  where?: string;
+  /** Not hosted: "Focus terminal" can bring its terminal tab forward (a live Claude session in Terminal.app or iTerm2). */
+  focusable?: boolean;
   /** Chat exists from v3.1 on; until then the switch shows it, disabled. */
   chatAvailable: boolean;
   view: "terminal" | "chat";
@@ -217,13 +224,26 @@ export interface BarSession {
   tool?: string;
   contextTokens?: number | null;
   cache?: SessionCache | null;
+  /** Hosted, yet model and thinking cannot change here (Codex): the chips stay locked and say why. */
+  respawnWhy?: string;
+  /** No terminal to switch to (a session started in the chat): the Terminal segment is off and says why. */
+  terminalWhy?: string;
 }
 
+/** The bar's chips that give way when it is narrow, by what stays longest: the last leaves first, where it runs last of all (8.6). */
+export const BAR_CHIPS = ["where", "account", "model", "thinking", "ctx"] as const;
+export type BarChipId = (typeof BAR_CHIPS)[number];
+
+/** A chip that left the bar: hidden (never a clipped chip, never an invisible Tab stop). */
+const away = (moved: boolean) => (moved ? { hidden: true, style: { display: "none" } } : {});
+
 /** Session-bar chip: opens a popover; a locked chip keeps its shape and says why. */
-function BarChip({ children, title, locked, open, onClick }: { children: ReactNode; title: string; locked?: boolean; open?: boolean; onClick: (e: MouseEvent<HTMLButtonElement>) => void }) {
+function BarChip({ children, title, locked, open, chip, moved, onClick }: { children: ReactNode; title: string; locked?: boolean; open?: boolean; chip: BarChipId; moved: boolean; onClick: (e: MouseEvent<HTMLButtonElement>) => void }) {
   return (
     <button
       type="button"
+      data-bar-chip={chip}
+      {...away(moved)}
       title={title}
       aria-disabled={locked || undefined}
       aria-expanded={locked ? undefined : !!open}
@@ -247,8 +267,44 @@ const shellX = (e: MouseEvent<HTMLElement>): number => {
   return Math.round(e.currentTarget.getBoundingClientRect().left - (shell?.getBoundingClientRect().left ?? 0));
 };
 
-export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; thinking: (x: number) => void; menu: () => void } }) {
+export const HOSTED_HINT = "type here, or attach from your terminal";
+
+/**
+ * Which chips leave a bar too narrow for them, rightmost first, until the rest
+ * fits; measured with every chip shown. Hides them as it goes, so the caller's
+ * render only confirms what the DOM already shows.
+ */
+function fitChips(box: HTMLElement): BarChipId[] {
+  const chips = BAR_CHIPS.map((id) => [id, box.querySelector<HTMLElement>(`[data-bar-chip="${id}"]`)] as const).filter((c): c is readonly [BarChipId, HTMLElement] => !!c[1]);
+  const show = (el: HTMLElement, on: boolean) => ((el.hidden = !on), (el.style.display = on ? "" : "none"));
+  chips.forEach(([, el]) => show(el, true));
+  const moved: BarChipId[] = [];
+  for (let i = chips.length - 1; i >= 0 && box.scrollWidth > box.clientWidth + 1; i--) {
+    show(chips[i][1], false);
+    moved.unshift(chips[i][0]);
+  }
+  return moved;
+}
+
+export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; menuOpen?: boolean; /** Why the account chip cannot open the decision sheet now; absent: it can. */ accountWhy?: string | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; thinking: (x: number) => void; /** `moved`: the chips that left the bar, so ⋯ offers them. */ menu: (trigger: HTMLElement, moved: BarChipId[]) => void } }) {
   const t = tone(s.account.fiveH, s.account.protect);
+  // 8.6: a chip that does not fit leaves the bar and moves into ⋯, never clipped.
+  const clip = useRef<HTMLDivElement>(null);
+  const [moved, setMoved] = useState<BarChipId[]>([]);
+  useLayoutEffect(() => {
+    const box = clip.current;
+    if (!box) return;
+    const fit = () => {
+      const next = fitChips(box);
+      setMoved((cur) => (cur.join() === next.join() ? cur : next));
+    };
+    fit();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(fit);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [s, accountWhy]);
+  const isMoved = (id: BarChipId) => moved.includes(id);
   // A session in the user's own terminal shows both views read-only (the
   // transcript as chat or in terminal style); only a hosted tool without a
   // chat bridge keeps the view it started in.
@@ -256,6 +312,9 @@ export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn:
   const chatWhy = "This tool keeps the view it started in";
   return (
     <div className="flex h-10 shrink-0 items-center gap-1 overflow-hidden border-b border-ac-line bg-ac-panel px-2">
+      {/* Everything but Open in and ⋯ gives way when the bar is narrow (a side panel open, a small
+          window): those two stay whole and clickable, so the session's menus are always reachable. */}
+      <div ref={clip} data-bar-clip="" className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
       <div role="radiogroup" aria-label="View" className="mr-1 inline-flex h-7 shrink-0 items-center rounded-md border border-ac-line bg-ac-bg p-0.5">
         {(
           [
@@ -263,7 +322,8 @@ export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn:
             ["chat", "Chat", <MessageSquareText key="c" className="size-3.5" />],
           ] as const
         ).map(([id, label, icon]) => {
-          const off = id === "chat" && chatOff;
+          const why = id === "chat" ? (chatOff ? chatWhy : null) : (s.terminalWhy ?? null);
+          const off = why !== null;
           return (
             <button
               key={id}
@@ -271,7 +331,7 @@ export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn:
               role="radio"
               aria-checked={s.view === id}
               aria-disabled={off || undefined}
-              title={off ? chatWhy : s.hosted ? `${label} · switches between turns` : `${label} · read-only here — you type in your terminal`}
+              title={why ?? (s.hosted ? `${label} · switches between turns` : `${label} · read-only here — you type in your terminal`)}
               onClick={off ? undefined : () => on.view(id)}
               className={cn("inline-flex h-full items-center gap-1.5 rounded-md px-2 text-xs", s.view === id ? "bg-ac-raise font-medium text-ac-text" : "text-ac-muted", off && "opacity-60")}
             >
@@ -282,7 +342,7 @@ export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn:
         })}
       </div>
       <span className="mx-1 h-4 w-px shrink-0 bg-ac-line" />
-      <BarChip title={`${s.account.name} — moving opens the decision sheet, it never switches by itself`} onClick={on.account}>
+      <BarChip title={accountWhy ?? `${s.account.name} — moving opens the decision sheet, it never switches by itself`} locked={!!accountWhy} chip="account" moved={isMoved("account")} onClick={on.account}>
         <AccountMark color={s.account.color} />
         {s.account.name}
         <span className="ml-1 inline-flex items-center gap-1">
@@ -292,21 +352,42 @@ export function SessionBar({ s, openIn, chipOpen, on }: { s: BarSession; openIn:
           {s.account.fiveH != null && <span className={cn("font-ac-mono text-[10.5px]", t === "ok" || t === "none" ? "text-ac-muted" : t === "warn" ? "text-ac-warn-text" : "text-ac-alert-text")}>{s.account.fiveH}%</span>}
         </span>
       </BarChip>
-      <BarChip title={s.hosted ? "Model for the next turn" : "Locked: change it in your terminal (/model)"} locked={!s.hosted} open={chipOpen === "model"} onClick={(e) => on.model(shellX(e))}>
+      <BarChip title={s.respawnWhy ?? (s.hosted ? "Model for the next turn" : "Locked: change it in your terminal (/model)")} locked={!s.hosted || !!s.respawnWhy} open={chipOpen === "model"} chip="model" moved={isMoved("model")} onClick={(e) => on.model(shellX(e))}>
         {/* Unknown: the field's name, muted — never a dash (gap §5b). */}
         {s.model ? <span title={s.modelId ?? undefined}>{s.model}</span> : <span className="text-ac-muted">Model</span>}
       </BarChip>
-      <BarChip title={s.hosted ? "Thinking for the next turn" : "Locked: change it in your terminal"} locked={!s.hosted} open={chipOpen === "thinking"} onClick={(e) => on.thinking(shellX(e))}>
+      <BarChip title={s.respawnWhy ?? (s.hosted ? "Thinking for the next turn" : "Locked: change it in your terminal")} locked={!s.hosted || !!s.respawnWhy} open={chipOpen === "thinking"} chip="thinking" moved={isMoved("thinking")} onClick={(e) => on.thinking(shellX(e))}>
         <Brain className="size-3.5 text-ac-muted" /> {s.thinking ? s.thinking[0].toUpperCase() + s.thinking.slice(1) : <span className="text-ac-muted">Thinking</span>}
       </BarChip>
       {s.contextPct != null && (
-        <span className="ml-1 shrink-0 whitespace-nowrap font-ac-mono text-[11px] text-ac-muted" title="Context used">
+        <span data-bar-chip="ctx" {...away(isMoved("ctx"))} className="ml-1 shrink-0 whitespace-nowrap font-ac-mono text-[11px] text-ac-muted" title="Context used">
           ctx {Math.round(s.contextPct)}%
         </span>
       )}
-      <span className="flex-1" />
+      {/* Where it runs, always visible; the hint gives way first when the bar is narrow. */}
+      {s.hosted ? (
+        <>
+          <span data-bar-chip="where" {...away(isMoved("where"))} className="ml-2 inline-flex shrink-0">
+            <Chip kind="status" tone="info" icon={<Server />} title={`Hosted by Agent Switch: ${HOSTED_HINT}`}>
+              Hosted
+            </Chip>
+          </span>
+          {/* The hint belongs to the chip: it leaves with it. */}
+          <span {...away(isMoved("where"))} className="ml-1.5 min-w-0 flex-1 truncate text-[11px] text-ac-muted">{HOSTED_HINT}</span>
+        </>
+      ) : (
+        <>
+          <span data-bar-chip="where" {...away(isMoved("where"))} className="ml-2 inline-flex shrink-0">
+            <Chip kind="meta" icon={<Eye />} title="Runs in your terminal; Agent Switch reads along. Take over to type here.">
+              {s.where ?? "Your terminal"} · watching
+            </Chip>
+          </span>
+          <span className="flex-1" />
+        </>
+      )}
+      </div>
       {openIn}
-      <IconButton label="Session actions: rename, pin, move, detach, end" className="size-7" onClick={on.menu}>
+      <IconButton {...POPOVER_TRIGGER} label="Session actions" aria-haspopup="menu" aria-expanded={!!menuOpen} className="size-7" onClick={(e) => on.menu(e.currentTarget, moved)}>
         <Ellipsis />
       </IconButton>
     </div>
@@ -326,10 +407,10 @@ export interface ModelChoices {
 }
 
 /** Under the model chip (spec §7.6): the models with only the chosen one checked, thinking as a segmented control. */
-export function ModelPopover({ c, onModel, onThinking }: { c: ModelChoices; onModel: (id: string) => void; onThinking: (level: string) => void }) {
+export function ModelPopover({ c, tool, onModel, onThinking }: { c: ModelChoices; /** The session's tool (its key's first part); the closing line names it. */ tool?: string; onModel: (id: string) => void; onThinking: (level: string) => void }) {
   return (
     <div role="dialog" aria-label="Model and thinking" className="w-[320px] rounded-xl border border-ac-line2 bg-ac-panel p-3" style={{ boxShadow: "var(--ac-shadow)" }}>
-      <div className="ac-caps mb-2">Model · next turn</div>
+      <MenuSection title="Model · next turn" className="px-0 pt-0">
       {c.models.map((m) => (
         <button key={m.id} type="button" role="menuitemradio" aria-checked={m.id === c.current} onClick={() => onModel(m.id)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-ac-raise">
           <span className="inline-flex size-4 items-center justify-center">{m.id === c.current && <Check className="size-3.5 text-ac-brand-text" />}</span>
@@ -337,17 +418,19 @@ export function ModelPopover({ c, onModel, onThinking }: { c: ModelChoices; onMo
           <span className="ml-auto text-[11px] text-ac-muted">{m.hint}</span>
         </button>
       ))}
+      </MenuSection>
       {c.thinking.length > 0 && (
-        <>
-          <div className="ac-caps mb-2 mt-3">Thinking</div>
+        <MenuSection title="Thinking" className="px-0 pt-3">
           {c.thinkingWhy ? (
             <p className="text-[11px] leading-snug text-ac-muted">{c.thinkingWhy}</p>
           ) : (
             <Segmented size="sm" fill label="Thinking" value={c.currentThinking ?? ""} onChange={onThinking} options={c.thinking.map((t) => ({ value: t, label: t[0].toUpperCase() + t.slice(1) }))} />
           )}
-        </>
+        </MenuSection>
       )}
-      <p className="mt-2.5 text-[11px] leading-snug text-ac-muted">Applies from the next turn. The levels come from the tool itself — Codex shows its reasoning levels here.</p>
+      <p className="mt-2.5 text-[11px] leading-snug text-ac-muted">
+        Applies from the next turn. {tool === "codex" ? "The levels are Codex's own reasoning levels." : tool === "claude" ? "The levels come from Claude Code itself." : "The levels come from the tool itself."}
+      </p>
     </div>
   );
 }
@@ -355,13 +438,13 @@ export function ModelPopover({ c, onModel, onThinking }: { c: ModelChoices; onMo
 // ---------- blocker strip ----------
 
 /** Only while Summary is closed; with Summary open the same next step shows there, never twice (spec §6.3). */
-export function BlockerStrip({ text, action, summaryOpen, onAction, onDismiss }: { text: string; action: string; summaryOpen: boolean; onAction: () => void; onDismiss: () => void }) {
+export function BlockerStrip({ text, action, blocked, summaryOpen, onAction, onDismiss }: { text: string; action: string; /** Why the action cannot run now (the engine is stopped); absent: it can. */ blocked?: string | null; summaryOpen: boolean; onAction: () => void; onDismiss: () => void }) {
   if (summaryOpen) return null;
   return (
     <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-ac-line bg-ac-panel px-4 py-2">
       <CircleX className="size-4 shrink-0 text-ac-alert" />
       <span className="min-w-0 flex-1 text-xs leading-snug text-ac-soft">{text}</span>
-      <Act kind="accent" onClick={onAction}>
+      <Act kind="accent" blocked={blocked} onClick={onAction}>
         {action}
       </Act>
       <IconButton label="Dismiss" className="size-6" onClick={onDismiss}>
@@ -377,7 +460,7 @@ export function BlockerStrip({ text, action, summaryOpen, onAction, onDismiss }:
  * time, re-read every few seconds (the cache hint counts down); a dismissed hint
  * stays away until its situation changes.
  */
-export function HintStrip({ s, dismissed, onDismiss, onAction }: { s: BarSession; dismissed: ReadonlySet<string>; onDismiss: (stateKey: string) => void; onAction: (h: Hint) => void }) {
+export function HintStrip({ s, dismissed, onDismiss, onAction, canCompact = true, actionWhy }: { s: BarSession; dismissed: ReadonlySet<string>; onDismiss: (stateKey: string) => void; onAction: (h: Hint) => void; /** Compact reaches only sessions Agent Switch hosts: elsewhere the hint keeps its words (/compact) and offers no button. */ canCompact?: boolean; /** Why a hint's action cannot run now; absent: it can. */ actionWhy?: (h: Hint) => string | null }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 5_000);
@@ -391,8 +474,8 @@ export function HintStrip({ s, dismissed, onDismiss, onAction }: { s: BarSession
       <Lightbulb className={cn("size-4 shrink-0", h.tone === "warn" ? "text-ac-warn-text" : "text-ac-info-text")} />
       <span className="min-w-0 flex-1 text-xs leading-snug text-ac-soft">{h.text}</span>
       {hints.length > 1 && <span className="shrink-0 text-[11px] text-ac-faint">+{hints.length - 1}</span>}
-      {h.action && (
-        <Act kind="accent" onClick={() => onAction(h)}>
+      {h.action && (h.action.kind !== "compact" || canCompact) && (
+        <Act kind="accent" blocked={actionWhy?.(h)} onClick={() => onAction(h)}>
           {h.action.label}
         </Act>
       )}
@@ -411,20 +494,28 @@ export function HintStrip({ s, dismissed, onDismiss, onAction }: { s: BarSession
  * session's facts and its last transcript line; a full read-only view comes
  * with the v3.1 timeline reader.
  */
-export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver, timeline, readOnlyTitle }: { where: string; facts: ReactNode; lastLine: string | null; onFocus: () => void; onTakeOver: () => void; timeline?: ReactNode; readOnlyTitle?: string | null }) {
+/** `onFocus` / `onTakeOver` null: that action cannot work for this session, so it is not offered. */
+export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver, timeline, readOnlyTitle }: { where: string; facts: ReactNode; lastLine: string | null; onFocus: (() => void) | null; onTakeOver: (() => void) | null; timeline?: ReactNode; readOnlyTitle?: string | null }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-3 border-b border-ac-line bg-ac-panel px-4 py-2">
         <SquareTerminal className="size-4 shrink-0 text-ac-muted" />
         <span className="min-w-0 flex-1 text-xs text-ac-soft">
-          Runs in <span className="text-ac-text">{where}</span> · <span title={readOnlyTitle ?? undefined}>read-only here</span>
+          <span className="block truncate">
+            Runs in <span className="text-ac-text">{where}</span> · <span title={readOnlyTitle ?? undefined}>read-only here</span>
+          </span>
+          {onTakeOver && <span className="block truncate text-[11px] text-ac-muted">To type here, take it over: the same conversation continues in Agent Switch on this account, and stops running in {where}.</span>}
         </span>
-        <Act kind="accent" kbd="⌘↵" onClick={onFocus}>
-          Focus terminal
-        </Act>
-        <Act onClick={onTakeOver} title="Moves the session into a host owned by Agent Switch — explained before it acts">
-          Take over here…
-        </Act>
+        {onFocus && (
+          <Act kind="accent" onClick={onFocus}>
+            Focus terminal
+          </Act>
+        )}
+        {onTakeOver && (
+          <Act onClick={onTakeOver} title="Continues the session in a window Agent Switch hosts, on the same account — explained before it acts">
+            Take over here…
+          </Act>
+        )}
       </div>
       {/* v3.1: the read-only timeline replaces the facts once it can be read (D-mirror). */}
       {timeline ?? (
@@ -452,6 +543,11 @@ export function SystemBanner({ children, action }: { children: ReactNode; action
     </div>
   );
 }
+
+
+/** Why "After this turn" waits: the background service is what switches when the turn
+ *  ends. A switch now, a take-over and a send go through the CLI and do not wait. */
+export const AFTER_TURN_DOWN_WHY = "The background service is stopped, and it is what switches when the turn ends — restart it, or switch now";
 
 /** "The engine stopped 2 min ago. Hosted sessions keep running in tmux; Agent Switch reconnects when it is back."
  *  When the background service belongs to another install, waiting cannot help: the text says so. Pure. */

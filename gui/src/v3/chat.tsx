@@ -3,10 +3,11 @@
  *  caller passes the approval and question handlers (a bridged session). */
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Check, ChevronDown, ChevronRight, ClipboardCopy, FolderGit2, Hand, ListChecks, MessageCircleQuestion, TriangleAlert } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, ChevronUp, ClipboardCopy, FolderGit2, Hand, ListChecks, MessageCircleQuestion, TriangleAlert } from "lucide-react";
 
 import { cn } from "../lib/utils.js";
 import { Button } from "../ui/Button.js";
+import { TextInput } from "../ui/TextInput.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { sessionMarkdown } from "./chat-export.js";
 import { Act } from "./kit.js";
@@ -85,17 +86,21 @@ export function SubagentRow({ row, worktree }: { row: Extract<ChatRow, { k: "sub
       </span>
       {row.state === "failed" && <span className="shrink-0 text-[11px] text-ac-alert-text">failed</span>}
       {worktree && (
-        <span className="inline-flex shrink-0 items-center gap-1 font-ac-mono text-[11px] text-ac-violet-text" title="The subagent's own worktree, from its hook">
+        <span className="inline-flex shrink-0 items-center gap-1 font-ac-mono text-[11px] text-ac-violet-text" title="The subagent's own worktree">
           <FolderGit2 className="size-3" />
           {worktree}
         </span>
       )}
-      <span className="ml-auto shrink-0 text-[10.5px] text-ac-faint">subagent · via hook</span>
+      <span className="ml-auto shrink-0 text-[10.5px] text-ac-faint">subagent · from transcript</span>
     </div>
   );
 }
 
-export function ApprovalCard({ row, onAllow, onAlways, onDeny }: { row: Extract<ChatRow, { k: "approval" }>; onAllow?: () => void; onAlways?: () => void; onDeny?: () => void }) {
+/** Where a read-only card is answered, when the caller says nothing else. */
+export const IN_TERMINAL = "Answer it in the terminal.";
+
+export function ApprovalCard({ row, agent = "Claude", unanswerable = IN_TERMINAL, onAllow, onAlways, onDeny }: { row: Extract<ChatRow, { k: "approval" }>; agent?: string; unanswerable?: string; onAllow?: () => void; onAlways?: () => void; onDeny?: () => void }) {
+  const [focused, setFocused] = useState(false);
   if (row.resolved)
     return (
       <div className="flex items-center gap-2 rounded-[10px] border border-ac-line bg-ac-panel px-3 py-1.5 text-xs text-ac-muted">
@@ -104,20 +109,31 @@ export function ApprovalCard({ row, onAllow, onAlways, onDeny }: { row: Extract<
       </div>
     );
   const verb = row.tool === "Bash" ? "run a command" : row.tool === "Write" || row.tool === "Edit" ? "change a file" : `use ${row.tool}`;
+  const title = `${agent} wants to ${verb}`;
   return (
-    <div className="rounded-[10px] border border-ac-warn bg-ac-warn-tint p-3">
+    <div
+      role="group"
+      aria-label={title}
+      tabIndex={onAllow ? 0 : undefined}
+      onFocus={() => setFocused(true)}
+      onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setFocused(false)}
+      // ↵ on the card itself allows once; on a button, the button's own Enter does what it says.
+      onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && onAllow && (e.preventDefault(), onAllow())}
+      className="rounded-[10px] border border-ac-warn bg-ac-warn-tint p-3 outline-none focus-visible:border-ac-brand-line"
+    >
       <div className="flex items-center gap-2 text-[13px] font-medium text-ac-warn-text">
-        <Hand className="size-4" /> Claude wants to {verb}
+        <Hand className="size-4" /> {title}
       </div>
       <div className="mt-2 break-all rounded-md border border-ac-line bg-ac-bg px-2.5 py-1.5 font-ac-mono text-xs text-ac-text">{row.summary || row.tool}</div>
-      {onAllow && (
+      {onAllow ? (
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
-          <Act kind="accent" kbd="↵" onClick={onAllow}>
+          {/* The key is printed only while it works: when the card has focus. */}
+          <Act kind="accent" kbd={focused ? "↵" : undefined} onClick={onAllow}>
             <Check /> Allow once
           </Act>
-          {onAlways && (
-            <Button size="sm" onClick={onAlways}>
-              Always allow “{row.summary.split(" ")[0] || row.tool}”
+          {onAlways && row.rule && (
+            <Button size="sm" onClick={onAlways} title={`Adds this rule, as the terminal prompt would: ${row.rule}`}>
+              Always: {row.rule}
             </Button>
           )}
           <Button size="sm" variant="danger" onClick={onDeny}>
@@ -125,41 +141,98 @@ export function ApprovalCard({ row, onAllow, onAlways, onDeny }: { row: Extract<
           </Button>
           <span className="ml-auto text-[11px] text-ac-muted">Same rule as the terminal prompt · never bypassed</span>
         </div>
+      ) : (
+        <p className="mt-2 text-[11px] text-ac-muted">{unanswerable}</p>
       )}
     </div>
   );
 }
 
-export function QuestionCard({ row, onAnswer }: { row: Extract<ChatRow, { k: "question" }>; onAnswer?: (answers: Record<string, string>) => void }) {
-  const [picked, setPicked] = useState<Record<string, string>>({});
-  const choose = (q: string, o: string) => {
-    const next = { ...picked, [q]: o };
+/** One answer per question: the typed Other wins over the picks; several picks join with ", ". Pure. */
+export function answerOf(picked: readonly string[] | undefined, other: string | undefined): string {
+  return other?.trim() || (picked ?? []).join(", ");
+}
+
+export function QuestionCard({ row, unanswerable = IN_TERMINAL, onAnswer, onSkip }: { row: Extract<ChatRow, { k: "question" }>; unanswerable?: string; onAnswer?: (answers: Record<string, string>) => void; onSkip?: () => void }) {
+  const [picked, setPicked] = useState<Record<string, string[]>>({});
+  const [other, setOther] = useState<Record<string, string>>({});
+  if (row.resolved)
+    return (
+      <div data-answered="" className="rounded-[10px] border border-ac-line bg-ac-panel px-3 py-1.5 text-xs text-ac-muted">
+        {row.questions.map((q) => (
+          <div key={q.question} className="flex items-center gap-2">
+            <MessageCircleQuestion className="size-3.5 shrink-0" />
+            <span className="min-w-0 truncate">{q.question}</span>
+            {row.resolved?.answers ? <span className="shrink-0 font-medium text-ac-text">{row.resolved.answers[q.question] ?? "—"}</span> : <span className="shrink-0">Not answered</span>}
+          </div>
+        ))}
+      </div>
+    );
+  const all = (p: Record<string, string[]>, o: Record<string, string>) => Object.fromEntries(row.questions.map((q) => [q.question, answerOf(p[q.question], o[q.question])]));
+  const complete = (a: Record<string, string>) => row.questions.every((q) => a[q.question]);
+  const send = (p = picked, o = other) => {
+    const a = all(p, o);
+    if (onAnswer && complete(a)) onAnswer(a);
+  };
+  const choose = (q: string, o: string, multi: boolean) => {
+    const cur = picked[q] ?? [];
+    const next = { ...picked, [q]: multi ? (cur.includes(o) ? cur.filter((x) => x !== o) : [...cur, o]) : [o] };
+    const nextOther = { ...other, [q]: "" };
     setPicked(next);
-    // One pick per question; the answers go together once each question has one.
-    if (onAnswer && row.questions.every((x) => next[x.question])) onAnswer(next);
+    setOther(nextOther);
+    // Single picks on every question go at once; several picks wait for Answer.
+    if (!row.questions.some((x) => x.multiSelect)) send(next, nextOther);
   };
   return (
     <div className="rounded-[10px] border border-ac-info bg-ac-info-tint p-3 text-[13px]">
       {row.questions.map((q) => (
-        <div key={q.question} className="mb-2 last:mb-0">
+        <div key={q.question} className="mb-2.5 last:mb-0">
           <div className="flex items-center gap-2 font-medium text-ac-info-text">
             <MessageCircleQuestion className="size-4" /> {q.question}
+            {q.multiSelect && <span className="text-[11px] font-normal text-ac-muted">pick any</span>}
           </div>
-          <div role="radiogroup" aria-label={q.question} className="mt-1.5 flex flex-wrap gap-1.5">
-            {q.options.map((o) => (
-              <Button key={o} size="sm" role="radio" aria-checked={picked[q.question] === o} variant={picked[q.question] === o ? "primary" : undefined} disabled={!onAnswer} onClick={() => choose(q.question, o)}>
-                {picked[q.question] === o && <Check />}
-                {o}
-              </Button>
-            ))}
+          <div role={q.multiSelect ? "group" : "radiogroup"} aria-label={q.question} className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {q.options.map((o) => {
+              const on = (picked[q.question] ?? []).includes(o) && !other[q.question]?.trim();
+              return (
+                <Button key={o} size="sm" role={q.multiSelect ? "checkbox" : "radio"} aria-checked={on} variant={on ? "primary" : undefined} disabled={!onAnswer} onClick={() => choose(q.question, o, !!q.multiSelect)}>
+                  {on && <Check />}
+                  {o}
+                </Button>
+              );
+            })}
+            {onAnswer && (
+              <TextInput
+                aria-label={`Other answer to ${q.question}`}
+                placeholder="Other…"
+                className="w-[180px]"
+                value={other[q.question] ?? ""}
+                onChange={(e) => setOther({ ...other, [q.question]: e.target.value })}
+                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), send())}
+              />
+            )}
           </div>
         </div>
       ))}
+      {onAnswer ? (
+        <div className="mt-2.5 flex items-center gap-2">
+          <Button size="sm" variant="primary" disabled={!complete(all(picked, other))} onClick={() => send()}>
+            Answer
+          </Button>
+          {onSkip && (
+            <Button size="sm" variant="ghost" onClick={onSkip} title="Go on without an answer; the agent is told it was skipped">
+              Skip
+            </Button>
+          )}
+        </div>
+      ) : (
+        <p className="mt-2 text-[11px] text-ac-muted">{unanswerable}</p>
+      )}
     </div>
   );
 }
 
-function ChatRowView({ row, on }: { row: ChatRow; on: ChatHandlers }) {
+function ChatRowView({ row, on, agent }: { row: ChatRow; on: ChatHandlers; agent?: string }) {
   switch (row.k) {
     case "user":
       return <Bubble images={row.images}>{row.text}</Bubble>;
@@ -168,11 +241,13 @@ function ChatRowView({ row, on }: { row: ChatRow; on: ChatHandlers }) {
     case "tool":
       return <ToolCard row={row} />;
     case "subagent":
-      return <SubagentRow row={row} worktree={row.agentId ? on.worktreeOf?.(row.agentId) : null} />;
+      return <SubagentRow row={row} worktree={on.worktreeOf?.(row.agentId ?? row.id) ?? null} />;
     case "approval":
-      return <ApprovalCard row={row} onAllow={on.approve && (() => on.approve!(row.id, false))} onAlways={on.approve && (() => on.approve!(row.id, true))} onDeny={on.deny && (() => on.deny!(row.id))} />;
+      if (on.stale?.has(row.id)) return <ApprovalCard row={row} agent={agent} unanswerable={STALE_CARD} />;
+      return <ApprovalCard row={row} agent={agent} unanswerable={on.unanswerable} onAllow={on.approve && (() => on.approve!(row.id, false))} onAlways={on.approve && (() => on.approve!(row.id, true))} onDeny={on.deny && (() => on.deny!(row.id))} />;
     case "question":
-      return <QuestionCard row={row} onAnswer={on.answer && ((a) => on.answer!(row.id, a))} />;
+      if (on.stale?.has(row.id)) return <QuestionCard row={row} unanswerable={STALE_CARD} />;
+      return <QuestionCard row={row} unanswerable={on.unanswerable} onAnswer={on.answer && ((a) => on.answer!(row.id, a))} onSkip={on.skip && (() => on.skip!(row.id))} />;
     case "plan":
       return (
         <div className="rounded-[10px] border border-ac-line bg-ac-panel px-3 py-2 text-[13px] text-ac-soft">
@@ -188,6 +263,15 @@ function ChatRowView({ row, on }: { row: ChatRow; on: ChatHandlers }) {
           <TriangleAlert className="size-3.5" /> {row.message}
         </div>
       );
+    case "notice":
+      return (
+        <div data-row="notice" className="flex items-center gap-2 text-[11px] text-ac-faint" title={row.kind === "task" ? "Added by the agent's program when a background task finished; not a message of yours" : "Added by the agent's program: the earlier conversation was summarized"}>
+          <span className="h-px flex-1 bg-ac-line" />
+          {row.kind === "task" ? <Check className="size-3" /> : <ListChecks className="size-3" />}
+          <span className="max-w-[70%] truncate">{row.text}</span>
+          <span className="h-px flex-1 bg-ac-line" />
+        </div>
+      );
   }
 }
 
@@ -195,8 +279,43 @@ export interface ChatHandlers {
   approve?: (id: string, always: boolean) => void;
   deny?: (id: string) => void;
   answer?: (id: string, answers: Record<string, string>) => void;
+  /** Decline an open question: the agent goes on without an answer. */
+  skip?: (id: string) => void;
+  /** What an open card says when it cannot be answered here (read-only, not connected). */
+  unanswerable?: string;
   /** A subagent's worktree name from its hook record, when it has one. */
   worktreeOf?: (agentId: string) => string | null;
+  /** Cards asked before this chat opened: the agent no longer waits for them, so they say so instead of offering buttons. */
+  stale?: ReadonlySet<string>;
+}
+
+/** What a card from before the chat opened says: the new connection cannot answer it, a message can. */
+export const STALE_CARD = "Asked before this chat opened; the agent no longer waits for this answer. Reply in a message below.";
+
+/** "12 earlier prompts — load more". Pure. */
+export function earlierLabel(prompts: number): string {
+  return prompts > 0 ? `${prompts} earlier ${prompts === 1 ? "prompt" : "prompts"} — load more` : "Earlier steps — load more";
+}
+
+/** The strip over a conversation that does not start at its beginning: says so and loads the turns before. */
+export function EarlierTurns({ prompts, load }: { prompts: number; load: () => Promise<void> }) {
+  const [state, setState] = useState<"idle" | "loading" | "failed">("idle");
+  const go = () => {
+    setState("loading");
+    load().then(
+      () => setState("idle"),
+      () => setState("failed"),
+    );
+  };
+  return (
+    <div className="flex h-7 shrink-0 items-center gap-2 border-b border-ac-line px-3 text-[11px] text-ac-muted">
+      <span>{state === "failed" ? "The earlier turns could not be read." : "The conversation starts earlier."}</span>
+      <button type="button" disabled={state === "loading"} onClick={go} className="inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-ac-text hover:bg-ac-raise disabled:opacity-50 [&_svg]:size-3.5">
+        <ChevronUp />
+        {state === "loading" ? "Reading…" : earlierLabel(prompts)}
+      </button>
+    </div>
+  );
 }
 
 /** "3 internal lines not shown" with the kinds, for a tooltip; null when nothing was dropped. Pure. */
@@ -206,8 +325,18 @@ export function hiddenText(hidden: Record<string, number>): string | null {
   return [`${n} internal ${n === 1 ? "line" : "lines"} not shown`, ...Object.entries(hidden).map(([k, c]) => `${k}: ${c}`)].join("\n");
 }
 
-/** Copies the whole conversation as Markdown, from the source text of every row. */
-export function CopyConversation({ rows }: { rows: readonly ChatRow[] }) {
+/** Put text on the clipboard that is still being read. The clipboard item is created inside the
+ *  click, so the browser keeps the user's gesture while the text arrives. */
+function copyLater(text: Promise<string>): Promise<void> {
+  const c = navigator.clipboard;
+  if (!c) return Promise.reject(new Error("no clipboard"));
+  if (c.write && typeof ClipboardItem !== "undefined") return c.write([new ClipboardItem({ "text/plain": text.then((t) => new Blob([t], { type: "text/plain" })) })]);
+  return text.then((t) => c.writeText(t));
+}
+
+/** Copies the whole conversation as Markdown, from the source text of every row. `full`: the
+ *  conversation goes back further than `rows`; it is read first, so the copy is never a cut. */
+export function CopyConversation({ rows, full }: { rows: readonly ChatRow[]; full?: () => Promise<readonly ChatRow[]> }) {
   const [done, setDone] = useState(false);
   useEffect(() => {
     if (!done) return;
@@ -219,9 +348,9 @@ export function CopyConversation({ rows }: { rows: readonly ChatRow[] }) {
     <button
       type="button"
       aria-label={label}
-      title={done ? "Copied as Markdown" : "Copy the whole conversation as Markdown"}
+      title={done ? "Copied as Markdown" : full ? "Copy the whole conversation as Markdown — the earlier turns are read first" : "Copy the whole conversation as Markdown"}
       disabled={!rows.length}
-      onClick={() => void navigator.clipboard?.writeText(sessionMarkdown(rows)).then(() => setDone(true), () => {})}
+      onClick={() => void (full ? copyLater(full().then((r) => sessionMarkdown(r))) : (navigator.clipboard?.writeText(sessionMarkdown(rows)) ?? Promise.reject())).then(() => setDone(true), () => {})}
       className="inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] text-ac-muted hover:bg-ac-raise hover:text-ac-text disabled:opacity-50 [&_svg]:size-3.5"
     >
       {done ? <Check /> : <ClipboardCopy />}
@@ -230,22 +359,31 @@ export function CopyConversation({ rows }: { rows: readonly ChatRow[] }) {
   );
 }
 
+/** The conversation before the loaded part: how many prompts, how to load them, how to read all of it. */
+export interface Earlier {
+  prompts: number;
+  load: () => Promise<void>;
+  all: () => Promise<readonly AsEvent[]>;
+}
+
 /** The timeline of one session. `notice` sits above it (version or read-only banner).
- *  `copyBar={false}`: the caller puts "Copy conversation" into its own header. */
-export function ChatTimeline({ events, on = {}, notice, copyBar = true }: { events: readonly AsEvent[]; on?: ChatHandlers; notice?: ReactNode; copyBar?: boolean }) {
+ *  `copyBar={false}`: the caller puts "Copy conversation" into its own header.
+ *  `earlier`: the events start after the beginning; a strip says so and loads the turns before. */
+export function ChatTimeline({ events, on = {}, notice, copyBar = true, agent, earlier }: { events: readonly AsEvent[]; on?: ChatHandlers; notice?: ReactNode; copyBar?: boolean; /** Who asks, on approval cards: Claude unless said. */ agent?: string; earlier?: Earlier | null }) {
   const f = useMemo(() => fold(events), [events]);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {notice}
       {copyBar && f.rows.length > 0 && (
         <div className="flex h-7 shrink-0 items-center justify-end border-b border-ac-line px-3">
-          <CopyConversation rows={f.rows} />
+          <CopyConversation rows={f.rows} full={earlier ? () => earlier.all().then((all) => fold(all).rows) : undefined} />
         </div>
       )}
+      {earlier && <EarlierTurns prompts={earlier.prompts} load={earlier.load} />}
       {f.rows.length === 0 ? (
         <p className="m-auto text-[13px] text-ac-muted">Nothing in this session yet.</p>
       ) : (
-        <VirtualList label="Conversation" className="relative min-h-0 flex-1 overflow-y-auto px-6 py-4" items={f.rows} keyOf={(r) => `${r.k}:${r.id}`} render={(r) => <ChatRowView row={r} on={on} />} />
+        <VirtualList label="Conversation" className="relative min-h-0 flex-1 overflow-y-auto px-6 py-4" items={f.rows} keyOf={(r) => `${r.k}:${r.id}`} render={(r) => <ChatRowView row={r} on={on} agent={agent} />} />
       )}
     </div>
   );

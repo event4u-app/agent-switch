@@ -5,7 +5,7 @@
  */
 
 import { useMemo, useState, type ReactNode } from "react";
-import { Archive, ArchiveRestore, CircleAlert, CircleCheck, CircleX, Clock, Copy, LoaderCircle, Ellipsis, GitBranch, LogIn, Pin, Play, Plus, RefreshCw, Search, Shield, SquareTerminal, Tag, Vault } from "lucide-react";
+import { Archive, ArchiveRestore, CircleAlert, Clock, Copy, Ellipsis, GitBranch, LogIn, Pin, Play, Plus, RefreshCw, Search, Shield, SquareTerminal, Tag, Vault } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
@@ -13,7 +13,7 @@ import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { Switch } from "../ui/Switch.js";
 import { TextInput } from "../ui/TextInput.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
-import { Act, AccountMark, BatchBar, CheckBox, Chip, PageHeader, checkedAgo, duration, type BatchActions } from "./kit.js";
+import { Act, AccountMark, BatchBar, CheckBox, Chip, PageHeader, ago, checkedAgo, duration, type BatchActions } from "./kit.js";
 import { LimitBar, isStale, tightest, tone, type LimitAccount } from "./limits.js";
 
 export function PageBody({ eyebrow, title, sub, actions, children }: { eyebrow?: string; title?: string; sub?: ReactNode; actions?: ReactNode; children: ReactNode }) {
@@ -256,17 +256,31 @@ export function byProject(rows: readonly TableSession[]): { project: string | nu
   return [...m].map(([project, l]) => ({ project, rows: l })).sort((a, b) => (a.project === null ? 1 : b.project === null ? -1 : last(b.rows) - last(a.rows)));
 }
 
+/** The rows in the sidebar's order (`order`, its keys); the rest (ended sessions) after it, newest first. Pure. */
+export function inListOrder(rows: readonly TableSession[], order: readonly string[]): TableSession[] {
+  const at = new Map(order.map((k, i) => [k, i]));
+  return [...rows].sort((a, b) => {
+    const x = at.get(a.key);
+    const y = at.get(b.key);
+    if (x != null || y != null) return x == null ? 1 : y == null ? -1 : x - y;
+    return b.lastActiveMs - a.lastActiveMs;
+  });
+}
+
 export function filterSessions(rows: readonly TableSession[], q: string, state: "all" | "live" | "done", tool: "any" | TableSession["tool"]): TableSession[] {
   return rows.filter((s) => (state === "all" || (state === "live") === s.live) && (tool === "any" || s.tool === tool) && matches(q, s.title, s.account.name, s.branch, s.pr ? `#${s.pr.number}` : null));
 }
 
-export function AllSessionsPage({ sessions, nowMs, onOpen, batch }: { sessions: TableSession[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions }) {
+export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch }: { sessions: TableSession[]; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions }) {
   const [q, setQ] = useState("");
   const [state, setState] = useState<"all" | "live" | "done">("all");
   const [tool, setTool] = useState<"any" | TableSession["tool"]>("any");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [group, setGroup] = useState<"none" | "project">("none");
-  const rows = useMemo(() => filterSessions(sessions, q, state, tool), [sessions, q, state, tool]);
+  const rows = useMemo(() => {
+    const hits = filterSessions(sessions, q, state, tool);
+    return order ? inListOrder(hits, order) : hits;
+  }, [sessions, order, q, state, tool]);
   const sections = useMemo(() => (group === "project" ? byProject(rows) : [{ project: null as string | null, rows }]), [rows, group]);
   const live = sessions.filter((s) => s.live).length;
   const cols = "grid-cols-[24px_minmax(0,1.6fr)_120px_minmax(0,1.2fr)_120px_70px_80px]";
@@ -306,7 +320,7 @@ export function AllSessionsPage({ sessions, nowMs, onOpen, batch }: { sessions: 
                   <GitBranch className="size-3 shrink-0" />
                   <span className="truncate">{s.branch ?? "no repo"}</span>
                   {s.pr && <span className="shrink-0">#{s.pr.number}</span>}
-                  {s.pr && <CiGlyph ci={s.pr.ci} />}
+                  {(s.pr?.ci === "FAILURE" || s.pr?.ci === "ERROR") && <span className="shrink-0 font-sans text-ac-alert-text">CI failing</span>}
                 </span>
                 <span className="truncate text-xs text-ac-soft">{[s.model, s.thinking].filter(Boolean).join(" · ")}</span>
                 <span className="font-ac-mono text-[11px] text-ac-muted">{s.contextPct == null ? "" : `${Math.round(s.contextPct)}%`}</span>
@@ -321,22 +335,12 @@ export function AllSessionsPage({ sessions, nowMs, onOpen, batch }: { sessions: 
   );
 }
 
-/** A PR's checks as one glyph (board "table"): running, passed, failed. */
-function CiGlyph({ ci }: { ci: string }) {
-  if (ci === "FAILURE" || ci === "ERROR") return <CircleX className="size-3 shrink-0 text-ac-alert" aria-label="CI failing" />;
-  if (ci === "SUCCESS") return <CircleCheck className="size-3 shrink-0 text-ac-ok" aria-label="CI passed" />;
-  if (ci === "PENDING" || ci === "EXPECTED") return <LoaderCircle className="size-3 shrink-0 text-ac-warn" aria-label="CI running" />;
-  return null;
-}
-
 // ---------- Library (spec §10.3) ----------
 
-/** Library "Last": "now", "3 h", then a short date ("Oct 28"). Pure for a given locale. */
+/** "Active" and the Library's "Last": the one relative time ("now", "21m ago") within a day, then a short date ("Oct 28"). Pure for a given locale. */
 export function lastSeen(ms: number, nowMs: number, locale?: string): string {
   const d = nowMs - ms;
-  if (d < 60_000) return "now";
-  if (d < 3_600_000) return `${Math.floor(d / 60_000)} min`;
-  if (d < 86_400_000) return `${Math.floor(d / 3_600_000)} h`;
+  if (d < 86_400_000) return ago(d);
   return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(ms));
 }
 

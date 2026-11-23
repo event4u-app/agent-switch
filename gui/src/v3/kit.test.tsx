@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { Act, AccountMark, BatchBar, Chip, Disclosure, Later, Marker, PageHeader, age, checkedAgo, duration, pct, resetIn } from "./kit.js";
+import { Act, AccountMark, BatchBar, CheckBox, Chip, Disclosure, Later, Marker, PageHeader, age, checkedAgo, duration, pct, resetIn } from "./kit.js";
 
 afterEach(cleanup);
 const MIN = 60_000;
@@ -85,5 +85,13 @@ describe("kit primitives keep one look per meaning (spec §3)", () => {
     render(<PageHeader title="Accounts" sub="Each sign-in" actions={<Act>Add</Act>} />);
     expect(screen.getByText("Accounts").className).toMatch(/text-\[20px\]/);
     expect(screen.getByText("Each sign-in").className).toMatch(/text-ac-muted/);
+  });
+
+  it("a checked box and the neutral Marker carry no brand orange: orange means needs you (5.1)", () => {
+    const { container } = render(<CheckBox checked onChange={() => {}} label="pick" />);
+    const box = container.querySelector("input")!.nextElementSibling!;
+    expect(box.className).toMatch(/bg-ac-text/);
+    expect(box.className).not.toMatch(/(bg|border)-ac-brand/);
+    expect(render(<Marker tone="neutral" />).container.firstElementChild!.className).toMatch(/border-l-ac-text/);
   });
 });

@@ -15,9 +15,11 @@ export interface WindowLayout {
   /** Replaced by `group` ("project"); still read so an older layout keeps its grouping. */
   groupByProject?: boolean;
   pinnedOnly: boolean;
-  /** How the Sessions list is ordered; activity (most recent first) by default. */
+  /** How the Sessions list is ordered; status first by default (spec §5.2). */
   sort?: "activity" | "name" | "status";
   group?: "none" | "project" | "account" | "tool";
+  /** The layout's shape; absent: saved before LAYOUT_VERSION 2. */
+  version?: number;
 }
 
 export interface LayoutStore {
@@ -26,6 +28,13 @@ export interface LayoutStore {
 }
 
 export const LAYOUT_KEY = "agent-switch-v3-layout";
+
+/**
+ * 2: the list defaults became status order and two-line rows (5.2). Before it,
+ * every save stored the old defaults (activity, one-line), so a layout without
+ * a version drops exactly those once; any other stored choice stays.
+ */
+export const LAYOUT_VERSION = 2;
 
 /** A stored layout, field by field; anything malformed is dropped, never thrown. Pure. */
 export function parseLayout(raw: string | null): Partial<WindowLayout> | null {
@@ -45,6 +54,11 @@ export function parseLayout(raw: string | null): Partial<WindowLayout> | null {
   for (const k of ["comfortable", "groupByProject", "pinnedOnly"] as const) if (typeof v[k] === "boolean") out[k] = v[k] as boolean;
   if (v.sort === "activity" || v.sort === "name" || v.sort === "status") out.sort = v.sort;
   if (v.group === "none" || v.group === "project" || v.group === "account" || v.group === "tool") out.group = v.group;
+  if (typeof v.version === "number") out.version = v.version;
+  else {
+    if (out.sort === "activity") delete out.sort;
+    if (out.comfortable === false) delete out.comfortable;
+  }
   return out;
 }
 
@@ -71,7 +85,7 @@ export const localLayout: LayoutStore = {
   },
   save(l) {
     try {
-      localStorage.setItem(LAYOUT_KEY, JSON.stringify(l));
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify({ ...l, version: LAYOUT_VERSION }));
     } catch {
       /* blocked: this start only */
     }

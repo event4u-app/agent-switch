@@ -52,6 +52,7 @@ import { cmdCleanup, cmdLibrary, cmdResume } from "./commands/library.js";
 const LIBRARY_ACTIONS = new Set(["library", "pin", "unpin", "name", "tag", "untag", "archive", "unarchive", "search", "keep", "vault"]);
 import { visibilityFile, writeVisibility } from "./app-visibility.js";
 import { cmdPr, cmdWorktrees } from "./commands/pr.js";
+import { cmdPrCreate } from "./commands/pr-create.js";
 import { cmdChanges } from "./commands/changes.js";
 import { cmdBridge, cmdFiles, cmdTimeline } from "./commands/bridge.js";
 import { cmdAgents } from "./commands/agents.js";
@@ -160,7 +161,7 @@ async function main(): Promise<void> {
     case "open-targets": return cmdOpenTargets(positional[0], flags);
     case "open-default": return cmdOpenDefault(positional[0], flags);
     case "open-terminal": return cmdOpenTerminal(positional[0]);
-    case "focus": return cmdFocus(positional[0]);
+    case "focus": return cmdFocus(positional[0], flags);
     case "launcher": case "launchers": return cmdLauncher(positional[0], positional.slice(1), flags);
     case "app-settings": return cmdAppSettings(positional[0], positional.slice(1), flags);
     case "apps": return cmdApps(!!flags.json);
@@ -174,7 +175,7 @@ async function main(): Promise<void> {
     case "run": {
       let r: ReturnType<typeof parseRun>;
       try { r = parseRun(rest); } catch (e) { die((e as Error).message); }
-      return cmdRun(r.providerId, r.name, r.args, r.cwd, { tmux: r.tmux, force: r.force });
+      return cmdRun(r.providerId, r.name, r.args, r.cwd, { tmux: r.tmux, force: r.force, model: r.model, effort: r.effort, worktree: r.worktree, newWindow: r.newWindow });
     }
     case "handoff": return cmdHandoff(providerId, positional[0], positional.slice(1), flags);
     case "list": case "ls":
@@ -206,7 +207,7 @@ async function main(): Promise<void> {
       if (positional[0] === "restore") return cmdSessionsRestore(providerId, providerExplicit, positional[1], flags);
       if (positional[0] === "preview") return cmdSessionsPreview(providerId, providerExplicit, positional[1], flags);
       if (positional[0] && LIBRARY_ACTIONS.has(positional[0])) return cmdLibrary(positional[0], positional[1], positional.slice(2).join(" ") || undefined, flags);
-      if (positional[0] === "cleanup") return cmdCleanup(flags);
+      if (positional[0] === "cleanup") return cmdCleanup(positional.slice(1), flags);
       if (positional[0] === "resume") return cmdResume(positional[1], flags);
       return cmdSessions(providerId, providerExplicit, positional[0], flags);
     case "hooks": return cmdHooks(positional[0], positional[1], providerExplicit ? providerId : "claude", positional[2]);
@@ -215,7 +216,7 @@ async function main(): Promise<void> {
     case "app-visibility":
       if (positional[0] !== "visible" && positional[0] !== "hidden") die("usage: agent-switch app-visibility visible|hidden");
       return writeVisibility(visibilityFile(ROOT), positional[0] === "visible");
-    case "pr": return cmdPr(positional[0], flags);
+    case "pr": return positional[0] === "create" ? cmdPrCreate(positional[1], flags) : cmdPr(positional[0], flags);
     case "worktrees": return cmdWorktrees(flags);
     case "changes": return cmdChanges(positional[0], flags);
     case "timeline": return cmdTimeline(positional[0], flags);

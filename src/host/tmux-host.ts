@@ -306,6 +306,11 @@ export class TmuxHost {
       if (!r.ok) throw new Error(`tmux could not open a view: ${r.err}`);
       this.tmux(["set-option", "-t", `=${name}`, "destroy-unattached", "on"]);
     }
+    // A view shows one session. tmux's status line would list every hosted window (other accounts'
+    // too), and its prefix would take Ctrl-B, Claude Code's own key, and let C-b n move the view to
+    // another agent while the tab names this one. Set on every view, also one a viewer already has.
+    const view = (opt: string, value: string) => ["set-option", "-t", `=${name}`, opt, value];
+    this.tmux([...view("status", "off"), ";", ...view("prefix", "None"), ";", ...view("prefix2", "None")]);
     this.tmux(["select-window", "-t", `=${name}:${s.window}`]);
     return [this.tmuxBin, "-L", this.socket, "-f", "/dev/null", "attach-session", "-t", `=${name}`];
   }

@@ -159,6 +159,8 @@ describe("ipc", () => {
     expect(loginArgs("claude", "work", undefined, true)).toEqual(["add", "work", "--provider", "claude"]);
     expect(sessionArgs("antigravity", "g")).toEqual(["run", "g", "--provider", "antigravity"]);
     expect(sessionArgs("claude", "w", "/a b")).toEqual(["run", "w", "--provider", "claude", "--cwd", "/a b"]);
+    expect(sessionArgs("claude", "w", "/a", { model: "opus", effort: "max", worktree: true })).toEqual(["run", "w", "--provider", "claude", "--cwd", "/a", "--model", "opus", "--effort", "max", "--worktree"]);
+    expect(sessionArgs("codex", "w", undefined, { worktree: false })).toEqual(["run", "w", "--provider", "codex"]);
   });
 
   it("loginArgs / assertValidName reject an unsafe profile name (injection guard)", () => {

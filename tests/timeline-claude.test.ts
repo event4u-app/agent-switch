@@ -6,6 +6,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { claudeState, compareVersions, fromClaudeLine, readClaudeTranscript } from "../src/timeline/claude.js";
+import { drawsRow, page } from "../src/commands/bridge.js";
 import { countHunks, parseUnifiedDiff, toolSummary, type AsEvent } from "../src/timeline/events.js";
 
 const FIX = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../tests/fixtures/timeline");
@@ -82,6 +83,30 @@ test("lines Claude writes in the user role are not prompts", () => {
   assert.equal(fromClaudeLine({ type: "user", message: { content: "please explain <local-command-stdout> tags" } }, st)[0].t, "turn", "only a line that starts with it");
 });
 
+test("lines Claude Code injects (task notifications, the compaction summary) are notices, not prompts", () => {
+  const { events } = readClaudeTranscript(path.join(FIX, "claude-injected-2.1.316.jsonl"));
+  const prompts = events.filter((e) => e.t === "message" && e.role === "user").map((e) => (e as { text: string }).text);
+  assert.deepEqual(prompts, ["Run the audit in the background and tell me when it is done.", "Thanks. Now write the release notes.", "# Council question: is this sent by the bridge?"], "a bridge's sdk prompt stays a prompt");
+  assert.deepEqual(
+    events.filter((e) => e.t === "notice"),
+    [
+      { t: "notice", id: "u2", kind: "task", text: 'Agent "Audit the repo" finished' },
+      { t: "notice", id: "u3", kind: "task", text: "Background task completed" },
+      { t: "notice", id: "u4", kind: "compacted", text: "Conversation compacted here" },
+    ],
+  );
+  // The agent answers a notification in a turn of its own, so its reply is not folded into the previous turn.
+  assert.equal(events[events.findIndex((e) => e.t === "notice" && e.id === "u2") - 1]?.t, "turn");
+  assert.notEqual(events[events.findIndex((e) => e.t === "notice" && e.id === "u4") - 1]?.t, "turn", "a compaction starts no turn");
+});
+
+test("page: injected lines are not earlier prompts", () => {
+  const { events } = readClaudeTranscript(path.join(FIX, "claude-injected-2.1.316.jsonl"));
+  const p = page(events, 1);
+  assert.equal(p.earlierPrompts, 2, "two typed prompts before the last row, never the notifications or the summary");
+  assert.equal(drawsRow({ t: "notice", id: "n", kind: "task", text: "x" }), true, "a notice is a row of its own");
+});
+
 test("a transcript's turn_duration line ends the turn", () => {
   assert.deepEqual(fromClaudeLine({ type: "system", subtype: "turn_duration", durationMs: 4200 }, claudeState()), [{ t: "turn.end", ok: true, durationMs: 4200, costUsd: null }]);
 });
@@ -113,4 +138,33 @@ test("helpers: version compare, unified diff, tool summaries", () => {
   assert.equal(toolSummary("Grep", { pattern: "foo", path: "src" }), "foo in src");
   assert.equal(toolSummary("Bash", { command: "x".repeat(100) }).length, 80);
   assert.equal(toolSummary("mcp__thing", { query: "q", n: 3 }), "q");
+});
+
+test("a live question: the control request names the tool call it answers; multi-select is carried", () => {
+  const st = claudeState();
+  const q = { questions: [{ question: "Which?", multiSelect: true, options: [{ label: "A", description: "first" }, { label: "B" }] }] };
+  const fromTool = fromClaudeLine({ type: "assistant", message: { id: "m1", content: [{ type: "tool_use", id: "toolu_Q", name: "AskUserQuestion", input: q }] } }, st);
+  assert.deepEqual(fromTool.find((e) => e.t === "question.requested"), { t: "question.requested", id: "toolu_Q", questions: [{ question: "Which?", options: ["A", "B"], multiSelect: true }] });
+  const fromReq = fromClaudeLine({ type: "control_request", request_id: "req-1", request: { subtype: "can_use_tool", tool_name: "AskUserQuestion", input: q, tool_use_id: "toolu_Q" } }, st);
+  assert.deepEqual(fromReq, [{ t: "question.requested", id: "req-1", toolId: "toolu_Q", questions: [{ question: "Which?", options: ["A", "B"], multiSelect: true }] }]);
+});
+
+test("the answer to a question in the transcript resolves it, with the answers it carried", () => {
+  const st = claudeState();
+  fromClaudeLine({ type: "assistant", message: { id: "m1", content: [{ type: "tool_use", id: "toolu_Q", name: "AskUserQuestion", input: { questions: [{ question: "Colour?", options: [{ label: "Red" }] }] } }] } }, st);
+  const ok = fromClaudeLine({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "toolu_Q", content: "User has answered" }] }, toolUseResult: { answers: { "Colour?": "Red" } } }, st);
+  assert.deepEqual(ok.find((e) => e.t === "question.resolved"), { t: "question.resolved", id: "toolu_Q", answers: { "Colour?": "Red" } });
+  fromClaudeLine({ type: "assistant", message: { id: "m2", content: [{ type: "tool_use", id: "toolu_R", name: "AskUserQuestion", input: { questions: [] } }] } }, st);
+  const no = fromClaudeLine({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "toolu_R", is_error: true, content: "declined" }] } }, st);
+  assert.deepEqual(no.find((e) => e.t === "question.resolved"), { t: "question.resolved", id: "toolu_R", answers: null });
+});
+
+test("an approval names the rule \"Always allow\" would add, from Claude's own suggestion", () => {
+  const ask = (permission_suggestions?: unknown) =>
+    fromClaudeLine({ type: "control_request", request_id: "r", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "npx vitest run" }, ...(permission_suggestions ? { permission_suggestions } : {}) } }, claudeState())[0] as Extract<AsEvent, { t: "approval.requested" }>;
+  assert.equal(ask([{ type: "addRules", rules: [{ toolName: "Bash", ruleContent: "npx vitest:*" }], behavior: "allow", destination: "localSettings" }]).rule, "allow Bash(npx vitest:*) in this project");
+  assert.equal(ask([{ type: "setMode", mode: "acceptEdits", destination: "session" }]).rule, "accept edits for this session");
+  assert.equal(ask([{ type: "addDirectories", directories: ["/x"], destination: "session" }]).rule, "allow access to /x for this session");
+  assert.equal(ask().rule, undefined, "no suggestion, no rule");
+  assert.equal(ask([]).rule, undefined);
 });

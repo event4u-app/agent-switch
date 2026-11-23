@@ -1,6 +1,6 @@
 /** The chat composer (spec §10.8), adapted from the reference board `v31.tsx`:
  *  attachment chips, the queue placeholder while a turn runs, Attach, Mode,
- *  "Stop ⌘." and "Queue ↵". `@` completes repository files, `/` the agent's
+ *  "Stop ⌘." and "Send ↵" ("Queue ↵" while a turn runs). `@` completes repository files, `/` the agent's
  *  slash commands; pasted or dropped files become attachments. */
 
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
@@ -80,6 +80,9 @@ export function Composer({
   const [chips, setChips] = useState<Chip[]>([]);
   const [caret, setCaret] = useState(0);
   const [suggest, setSuggest] = useState<string[]>([]);
+  /** The suggestion ↑/↓ point at; Enter or Tab takes it. */
+  const [sel, setSel] = useState(0);
+  useEffect(() => setSel(0), [suggest]);
   const [modeOpen, setModeOpen] = useState(false);
   const [drag, setDrag] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
@@ -88,9 +91,11 @@ export function Composer({
 
   useEffect(() => {
     let alive = true;
-    if (!tok) return void setSuggest([]);
-    if (tok.kind === "/") setSuggest(commands.filter((c) => c.toLowerCase().startsWith(tok.query.toLowerCase())).slice(0, 8));
-    else if (findFiles) void findFiles(tok.query).then((f) => alive && setSuggest(f.slice(0, 8))).catch(() => alive && setSuggest([]));
+    // An equal list keeps its identity: a caller passing a fresh array each render must not loop this effect.
+    const show = (next: string[]) => setSuggest((p) => (p.length === next.length && p.every((x, i) => x === next[i]) ? p : next));
+    if (!tok) return void show([]);
+    if (tok.kind === "/") show(commands.filter((c) => c.toLowerCase().startsWith(tok.query.toLowerCase())).slice(0, 8));
+    else if (findFiles) void findFiles(tok.query).then((f) => alive && show(f.slice(0, 8))).catch(() => alive && show([]));
     return () => {
       alive = false;
     };
@@ -119,9 +124,18 @@ export function Composer({
     setChips([]);
   };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (suggest.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      const n = suggest.length;
+      return setSel((i) => (Math.min(i, n - 1) + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+    }
     if (suggest.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) {
       e.preventDefault();
-      return pick(suggest[0]);
+      return pick(suggest[Math.min(sel, suggest.length - 1)]);
+    }
+    if (suggest.length && e.key === "Escape") {
+      e.preventDefault();
+      return setSuggest([]);
     }
     if (e.key === "Enter" && e.altKey && running && onSteer && text.trim()) {
       e.preventDefault();
@@ -172,7 +186,7 @@ export function Composer({
         {suggest.length > 0 && (
           <div role="listbox" aria-label={tok?.kind === "/" ? "Commands" : "Files"} className="absolute bottom-full left-2 mb-1 w-[360px] rounded-xl border border-ac-line2 bg-ac-panel p-1" style={{ boxShadow: "var(--ac-shadow)" }}>
             {suggest.map((s, i) => (
-              <button key={s} type="button" role="option" aria-selected={i === 0} onMouseDown={(e) => (e.preventDefault(), pick(s))} className={cn("flex h-7 w-full items-center rounded-md px-2 text-left font-ac-mono text-[12px] text-ac-soft", i === 0 ? "bg-ac-raise text-ac-text" : "hover:bg-ac-raise")}>
+              <button key={s} type="button" role="option" aria-selected={i === sel} onMouseEnter={() => setSel(i)} onMouseDown={(e) => (e.preventDefault(), pick(s))} className={cn("flex h-7 w-full items-center rounded-md px-2 text-left font-ac-mono text-[12px] text-ac-soft", i === sel ? "bg-ac-raise text-ac-text" : "hover:bg-ac-raise")}>
                 {tok?.kind === "/" ? `/${s}` : s}
               </button>
             ))}
@@ -217,7 +231,7 @@ export function Composer({
               <Square /> Stop <span className="font-ac-mono text-[10px] opacity-70">⌘.</span>
             </Act>
             <Act kind="accent" kbd="↵" onClick={submit} disabled={disabled || (!text.trim() && !chips.length)}>
-              <Send /> Queue
+              <Send /> {running ? "Queue" : "Send"}
             </Act>
           </span>
         </div>

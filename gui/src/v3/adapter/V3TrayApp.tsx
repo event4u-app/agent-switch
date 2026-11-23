@@ -1,13 +1,13 @@
 /** The v3 tray card on real data. The tray window may only run its read-only
  *  scopes (capabilities/tray.json), so it reads the queue and the hosted
- *  sessions and nothing else; every action opens or drives the main window. */
+ *  sessions and nothing else; every action opens or drives the main window; a Needs-you verb goes to its item there. */
 
 import { useEffect, useState, type CSSProperties } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 import { LangKeyed } from "../../i18n/LangKeyed.js";
 import * as ipc from "../../ipc.js";
-import { forwardToMain, openAppFromTray, openMainWindow } from "../../redesign/tray/bridge.js";
+import { forwardNeedToMain, forwardToMain, openAppFromTray, openMainWindow } from "../../redesign/tray/bridge.js";
 import { appFor } from "../../redesign/screens/logic.js";
 import type { LimitAccount } from "../limits.js";
 import { TrayBridge, TrayLifecycle, trayActions, useFitWindow } from "../../redesign/tray/TrayApp.js";
@@ -15,6 +15,7 @@ import { AcRoot } from "../../ui/AcRoot.js";
 import { emptyViewModel, loadViewModel } from "../../vm/load.js";
 import { ASProvider, useAS } from "../../vm/store.js";
 import { DEFAULT_APPEARANCE } from "../themes/resolve.js";
+import { allNeeds } from "../tools.js";
 import { V3Tray, type TrayTool } from "../tray.js";
 import { toV3Data } from "./data.js";
 import { useV3Feeds, type FeedDeps } from "./useFeeds.js";
@@ -103,7 +104,7 @@ function V3TrayFrame() {
       <TrayBridge />
       <TrayLifecycle />
       <V3Tray
-        needs={d.needs}
+        needs={allNeeds(d)}
         away={d.away}
         sessions={d.sessions}
         accounts={d.limits}
@@ -113,7 +114,7 @@ function V3TrayFrame() {
         lastActiveOf={(k) => d.table.find((t) => t.key === k)?.lastActiveMs ?? null}
         appFor={app}
         picks={picks}
-        on={{ verb: main, moreNeeds: main, away: main, session: main, moreSessions: main, account: main, signIn: main, start: () => void forwardToMain({ kind: "start" }), open: main }}
+        on={{ verb: (n) => void forwardNeedToMain(n.id), moreNeeds: main, away: main, session: main, moreSessions: main, account: main, signIn: main, start: () => void forwardToMain({ kind: "start" }), open: main }}
       />
     </div>
   );

@@ -7,6 +7,12 @@ export interface DiffHunk {
   lines: string[];
 }
 
+export interface Question {
+  question: string;
+  options: string[];
+  multiSelect?: boolean;
+}
+
 /** Mirrors `src/timeline/events.ts` (the CLI owns the model; the GUI reads it). */
 export type AsEvent =
   | { t: "turn"; id: string; at: string | null }
@@ -17,14 +23,16 @@ export type AsEvent =
   | { t: "tool.finished"; id: string; ok: boolean; summary: string }
   | { t: "diff"; toolId: string; path: string; added: number; removed: number; hunks: DiffHunk[] }
   | { t: "plan"; id: string; text: string }
-  | { t: "approval.requested"; id: string; tool: string; summary: string; input: Record<string, unknown> }
+  | { t: "approval.requested"; id: string; tool: string; summary: string; input: Record<string, unknown>; rule?: string }
   | { t: "approval.resolved"; id: string; decision: "allow" | "deny" }
-  | { t: "question.requested"; id: string; questions: { question: string; options: string[] }[] }
+  | { t: "question.requested"; id: string; toolId?: string; questions: Question[] }
+  | { t: "question.resolved"; id: string; answers: Record<string, string> | null }
   | { t: "subagent.started"; id: string; type: string; description: string }
   | { t: "subagent.finished"; id: string; ok: boolean; agentId?: string }
   | { t: "limits"; status: string; resetsAt: string | null }
   | { t: "turn.end"; ok: boolean; durationMs: number | null; costUsd: number | null }
   | { t: "error"; message: string }
+  | { t: "notice"; id: string; kind: "task" | "compacted"; text: string }
   | { t: "unknown"; kind: string };
 
 export interface FileDiff {
@@ -39,10 +47,13 @@ export type ChatRow =
   | { k: "assistant"; id: string; text: string; live: boolean }
   | { k: "tool"; id: string; name: string; summary: string; state: "running" | "ok" | "failed"; result: string | null; diffs: FileDiff[] }
   | { k: "subagent"; id: string; type: string; description: string; state: "running" | "ok" | "failed"; agentId: string | null }
-  | { k: "approval"; id: string; tool: string; summary: string; resolved: "allow" | "deny" | null }
-  | { k: "question"; id: string; questions: { question: string; options: string[] }[] }
+  | { k: "approval"; id: string; tool: string; summary: string; rule: string | null; resolved: "allow" | "deny" | null }
+  /** `resolved`: null while open; `answers: null` when it was skipped or declined. */
+  | { k: "question"; id: string; questions: Question[]; resolved: { answers: Record<string, string> | null } | null }
   | { k: "plan"; id: string; text: string }
-  | { k: "error"; id: string; message: string };
+  | { k: "error"; id: string; message: string }
+  /** A line the agent's program adds itself (a background task finished, the conversation was compacted). */
+  | { k: "notice"; id: string; kind: "task" | "compacted"; text: string };
 
 export interface Folded {
   rows: ChatRow[];
@@ -57,6 +68,8 @@ export interface Folded {
 }
 
 const SUBAGENT = new Set(["Agent", "Task"]);
+/** Tools drawn as their own card, not as a tool row. */
+const OWN_CARD = new Set(["AskUserQuestion"]);
 
 /** Fold events in order into rows. Pure. */
 export function fold(events: readonly AsEvent[]): Folded {
@@ -102,7 +115,7 @@ export function fold(events: readonly AsEvent[]): Folded {
         break;
       case "tool.started":
         live = null;
-        if (SUBAGENT.has(e.name)) break; // drawn as its subagent row
+        if (SUBAGENT.has(e.name) || OWN_CARD.has(e.name)) break; // drawn as its subagent row / its question card
         push({ k: "tool", id: e.id, name: e.name, summary: e.summary, state: "running", result: null, diffs: [] });
         break;
       case "tool.finished": {
@@ -124,21 +137,38 @@ export function fold(events: readonly AsEvent[]): Folded {
         break;
       }
       case "approval.requested":
-        push({ k: "approval", id: e.id, tool: e.tool, summary: e.summary, resolved: null });
+        push({ k: "approval", id: e.id, tool: e.tool, summary: e.summary, rule: e.rule ?? null, resolved: null });
         break;
       case "approval.resolved": {
         const r = get("approval", e.id);
         if (r) rows[at.get(`approval:${e.id}`)!] = { ...r, resolved: e.decision };
         break;
       }
-      case "question.requested":
-        push({ k: "question", id: e.id, questions: e.questions });
+      case "question.requested": {
+        // Live, the tool call shows the question first and the control request asks it again:
+        // one card, under the request's id, which is the one the bridge answers.
+        const i = e.toolId === undefined ? undefined : at.get(`question:${e.toolId}`);
+        if (i === undefined) push({ k: "question", id: e.id, questions: e.questions, resolved: null });
+        else {
+          rows[i] = { ...(rows[i] as Extract<ChatRow, { k: "question" }>), id: e.id, questions: e.questions };
+          at.set(`question:${e.id}`, i);
+        }
         break;
+      }
+      case "question.resolved": {
+        const i = at.get(`question:${e.id}`);
+        if (i !== undefined) rows[i] = { ...(rows[i] as Extract<ChatRow, { k: "question" }>), resolved: { answers: e.answers } };
+        break;
+      }
       case "plan":
         push({ k: "plan", id: e.id, text: e.text });
         break;
       case "error":
         push({ k: "error", id: `e${n++}`, message: e.message });
+        break;
+      case "notice":
+        live = null;
+        push({ k: "notice", id: e.id, kind: e.kind, text: e.text });
         break;
       case "turn.end":
         running = false;

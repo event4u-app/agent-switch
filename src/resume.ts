@@ -114,6 +114,13 @@ export function preflight(i: PreflightInput, git: GitProbe = realGit): Preflight
   return { checks, target, suggestion, cwd: base, commands };
 }
 
+/** How a Codex session resumes: `codex resume <id>` on its own account, in the
+ *  folder it ran in. There is no fork, account move or brief here — a move to
+ *  another account is `takeover --provider codex`. Pure. */
+export function codexResumeCommand(account: string, sessionId: string, cwd: string | null): string[] {
+  return ["agent-switch", "run", "--provider", "codex", account, ...(cwd ? ["--cwd", cwd] : []), "--", "resume", sessionId];
+}
+
 /** A command as one copyable line, quoting what needs it. Pure. */
 export function shellLine(argv: readonly string[]): string {
   return argv.map((a) => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`)).join(" ");

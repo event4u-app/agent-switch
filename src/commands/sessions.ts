@@ -48,7 +48,7 @@ import {
   hooksRecordSubagents,
   HookEventRecord,
 } from "../hooks.js";
-import { buildTree, childSource, childrenWithHooks, countSubagentFiles, helperIndex, relationUnknown, type Child, type TreeNode } from "../lineage.js";
+import { buildTree, childSource, childrenWithHooks, helperIndex, relationUnknown, subagentFacts, subagentsFromFiles, type Child, type TreeNode } from "../lineage.js";
 import { runtimeState, type RuntimeState } from "../runtime-state.js";
 import { gitFacts, type GitFacts } from "../git-facts.js";
 import { githubRepo, prCacheFile, prsForHead, readPrCache } from "../pr-facts.js";
@@ -60,7 +60,7 @@ import { readTelemetryConfig, writeTelemetryConfig } from "../notify.js";
 import { readTmuxRegistry, sendKeysArgs, tmuxSessionName } from "../tmux.js";
 import { TmuxHost, type HostedRow } from "../host/tmux-host.js";
 import { matchHostedRows, programStatusFile, readProgramStatus } from "../program-status.js";
-import { InputLeases, LeaseHeld } from "../host/lease.js";
+import { InputLeases, LeaseHeld, TypeFailed } from "../host/lease.js";
 import { cacheForRow, contextForRow, desktopScan, formatContext } from "./shared.js";
 import { compactCacheLine, formatCache } from "../cache-words.js";
 
@@ -329,6 +329,9 @@ function compactHosted(key: string, flags: Record<string, string | boolean>): vo
   }
   try {
     leases.type(host, key, me, literal, { enter: true });
+  } catch (err) {
+    if (err instanceof TypeFailed) die(err.message);
+    throw err;
   } finally {
     leases.release(key, me);
   }
@@ -440,6 +443,32 @@ export function markHostedCodex(rows: (SessionRow & { profile: string })[], host
   }
 }
 
+/** A session's hook subagents with their task and current tool (7.7), read from the files next to its transcript. */
+export function withSubagentFacts(children: Child[], transcript: string | null | undefined): Child[] {
+  const ids = children.flatMap((c) => ("agentId" in c ? [c.agentId] : []));
+  if (!transcript || !ids.length) return children;
+  const running = new Set(children.flatMap((c) => ("agentId" in c && c.state === "running" ? [c.agentId] : [])));
+  const facts = subagentFacts(transcript, ids, running);
+  return children.map((c) => ("agentId" in c && facts.has(c.agentId) ? { ...c, ...facts.get(c.agentId) } : c));
+}
+
+/**
+ * A row's `children` / `childCount` / `childSource`: the children its hooks and
+ * helpers reported, plus the subagents Claude Code's own files list that the
+ * hooks did not (arena r2 04-subagents F2: without our hooks, every subagent
+ * was a count with nothing to open). A file that cannot be read safely only
+ * counts. Without hooks and without any child, the field stays absent.
+ */
+export function childrenField(reported: Child[], transcript: string | null, live: boolean, hooks: boolean): Record<string, unknown> {
+  const seen = new Set(reported.flatMap((c) => ("agentId" in c ? [c.agentId] : [])));
+  const files = transcript ? subagentsFromFiles(transcript, live, seen) : { children: [], unreadable: 0 };
+  const subagents = reported.filter((c) => "agentId" in c);
+  const children = [...subagents, ...files.children, ...reported.filter((c) => !("agentId" in c))];
+  const source = [childSource(children), files.unreadable ? "counted" : null].filter(Boolean).join("+");
+  if (!children.length && !hooks) return files.unreadable ? { childCount: files.unreadable, childSource: "counted" } : {};
+  return { children, childCount: children.length + files.unreadable, childSource: source || null };
+}
+
 export async function cmdSessions(
   providerId: ProviderId,
   providerExplicit: boolean,
@@ -526,16 +555,14 @@ export async function cmdSessions(
     const json = all.map((r) => {
       const c = contextForRow(providerId, r);
       const key = `${providerId}/${r.profile}/${r.sessionId}`;
-      let kids: Record<string, unknown> = {};
-      if (seesChildren.has(r.profile)) {
-        const children = childrenWithHooks(key, eventsOf.get(r.profile) ?? [], helpers);
-        kids = { children: withRuntime(children), childCount: children.length, childSource: childSource(children) };
-      } else {
-        const named = childrenWithHooks(key, [], helpers);
-        const counted = providerId === "claude" ? countSubagentFiles(configDir(providerId, r.profile), r.projectDir, r.sessionId) : 0;
-        if (named.length) kids = { children: withRuntime(named), childCount: named.length + counted, childSource: counted ? `${childSource(named)}+counted` : childSource(named) };
-        else if (counted) kids = { childCount: counted, childSource: "counted" };
-      }
+      const hooks = seesChildren.has(r.profile);
+      const kids = childrenField(
+        hooks ? withSubagentFacts(childrenWithHooks(key, eventsOf.get(r.profile) ?? [], helpers), providerId === "claude" ? r.file : null) : childrenWithHooks(key, [], helpers),
+        providerId === "claude" && r.file ? r.file : null,
+        r.live,
+        hooks,
+      );
+      if (Array.isArray(kids.children)) kids.children = withRuntime(kids.children as Child[]);
       const parent = helpers.parentOf.get(key);
       const git = gitFor(r, eventsOf.get(r.profile) ?? []);
       const repo = githubRepo(git?.remote ?? null);

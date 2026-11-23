@@ -51,8 +51,10 @@ test("diff: the review as JSON and text, stage a change, a refused undo, a commi
   assert.equal(o.scope, "worktree");
   assert.deepEqual(o.files.map((f: { path: string; hunks: { layer: string }[] }) => [f.path, f.hunks.map((h) => h.layer)]), [["a.txt", ["unstaged"]]]);
   assert.match(run("diff", ID).stdout, /^M a\.txt {2}\+1 -1$/m);
-  const staged = run("diff", ID, "stage", "--file", "a.txt", "--json");
-  assert.deepEqual(JSON.parse(staged.stdout), { ok: true, done: "staged a change in a.txt", undo: false });
+  const stale = run("diff", ID, "stage", "--file", "a.txt", "--file-hash", "0000000000000000", "--json");
+  assert.deepEqual(JSON.parse(stale.stdout), { ok: false, error: "the file changed since you looked — read it again" });
+  const staged = run("diff", ID, "stage", "--file", "a.txt", "--file-hash", o.files[0].hash, "--json");
+  assert.deepEqual(JSON.parse(staged.stdout), { ok: true, done: "staged a.txt", undo: false });
   const undo = run("diff", ID, "undo", "--json");
   assert.equal(undo.status, 2);
   assert.deepEqual(JSON.parse(undo.stdout), { ok: false, error: "nothing to undo" });
@@ -99,6 +101,36 @@ test("timeline and files: the session as AS events; repository files by query", 
   const f = run("files", ID, "--query", "a", "--json");
   assert.equal(f.status, 0, f.stderr);
   assert.ok(JSON.parse(f.stdout).files.includes("a.txt"));
+});
+
+test("timeline --subagent: a subagent's own transcript, not the parent's; an id that leaves the folder is refused", gate, () => {
+  const { home, run } = setup();
+  const session = path.join(home, "claude", "work", "config", "projects", "-repo", ID);
+  const sub = path.join(session, "subagents");
+  fs.mkdirSync(sub, { recursive: true });
+  const ts = new Date().toISOString();
+  fs.writeFileSync(
+    path.join(sub, "agent-a39139b91dc5ad63f.jsonl"),
+    [
+      { type: "user", isSidechain: true, agentId: "a39139b91dc5ad63f", timestamp: ts, uuid: "s1", message: { role: "user", content: "map the schema" } },
+      { type: "assistant", isSidechain: true, agentId: "a39139b91dc5ad63f", timestamp: ts, uuid: "s2", message: { role: "assistant", model: "claude-sonnet-5-5", stop_reason: "end_turn", content: [{ type: "text", text: "Subagent answer." }] } },
+    ]
+      .map((o) => JSON.stringify(o))
+      .join("\n") + "\n",
+  );
+  const t = run("timeline", ID, "--subagent", "a39139b91dc5ad63f", "--json", "--limit", "400");
+  assert.equal(t.status, 0, t.stderr);
+  const o = JSON.parse(t.stdout);
+  assert.equal(o.subagent, "a39139b91dc5ad63f");
+  assert.equal(o.truncated, false);
+  assert.ok(o.events.some((e: { t: string; text?: string }) => e.t === "message" && e.text === "Subagent answer."));
+  assert.ok(!o.events.some((e: { t: string; text?: string }) => e.t === "message" && e.text === "Done."), "never the parent's conversation");
+  // A file one level up, where `../x` would point if the id were not checked.
+  fs.writeFileSync(path.join(session, "agent-x.jsonl"), "");
+  const bad = run("timeline", ID, "--subagent", "../x", "--json");
+  assert.notEqual(bad.status, 0);
+  assert.match(bad.stderr, /not a subagent id/);
+  assert.notEqual(run("timeline", ID, "--subagent", "nobody", "--json").status, 0);
 });
 
 // The stand-in agent is a script with a shebang, which Windows cannot spawn directly.
