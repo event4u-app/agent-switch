@@ -203,7 +203,7 @@ function adoptDeps(host: TmuxHost): AdoptDeps {
     start: (o) => {
       const cfg = configDir(o.provider, o.account);
       if (o.provider === "claude") syncClaudeProfile(cfg);
-      return host.start({ provider: o.provider, account: o.account, configDir: cfg, cwd: o.cwd, bin: readBinaryPath(o.provider) ?? provider(o.provider).binary, env: sessionAgentConfigEnv(o.provider, o.account), sessionId: o.sessionId, args: o.args }, hookCommandPrefix());
+      return host.start({ provider: o.provider, account: o.account, configDir: cfg, cwd: o.cwd, bin: readBinaryPath(o.provider) ?? provider(o.provider).binary, env: sessionAgentConfigEnv(o.provider, o.account), sessionId: o.sessionId, args: o.args }, selfCommand());
     },
   };
 }
