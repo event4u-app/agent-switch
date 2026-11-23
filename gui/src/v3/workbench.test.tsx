@@ -139,6 +139,24 @@ describe("workbench (spec §6)", () => {
     expect(screen.getByRole("radio", { name: /Chat/ }).getAttribute("title")).toBe("This tool keeps the view it started in");
   });
 
+  it("session bar: where the session runs is a visible chip — hosted, or the user's terminal app being watched", () => {
+    const { rerender } = render(<SessionBar s={bar()} openIn={null} on={handlers()} />);
+    const hosted = screen.getByText("Hosted");
+    expect(hosted.closest("[title]")?.getAttribute("title")).toBe("Hosted by Agent Switch: type here, or attach from your terminal");
+    expect(screen.getByText("type here, or attach from your terminal")).toBeTruthy();
+    rerender(<SessionBar s={bar({ hosted: false, where: "Terminal.app" })} openIn={null} on={handlers()} />);
+    expect(screen.queryByText("Hosted")).toBeNull();
+    expect(screen.getByText("Terminal.app · watching")).toBeTruthy();
+  });
+
+  it("a session in the user's own terminal says in place how to type from the app and what taking over changes", () => {
+    const onTakeOver = vi.fn();
+    render(<ExternalBody where="Terminal.app" facts={null} lastLine={null} onFocus={vi.fn()} onTakeOver={onTakeOver} />);
+    expect(screen.getByText(/To type here, take it over: the session moves into Agent Switch and stops running in Terminal\.app\./)).toBeTruthy();
+    fireEvent.click(screen.getByText("Take over here…"));
+    expect(onTakeOver).toHaveBeenCalledOnce();
+  });
+
   it("the blocker shows only while Summary is closed, with one action", () => {
     const onAction = vi.fn();
     const { rerender } = render(<BlockerStrip text="CI fails and the branch has a conflict." action="Send to agent" summaryOpen={false} onAction={onAction} onDismiss={vi.fn()} />);

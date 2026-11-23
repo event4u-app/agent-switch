@@ -467,6 +467,9 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
       return {
         key,
         hosted: hosted.has(key) || !!env.chats?.has(key),
+        // Only a tmux window can be joined from the user's terminal; a chat has none.
+        attachable: hosted.has(key),
+        where: r.surface === "desktop-app" ? "Claude Desktop" : env.terminalApp,
         // v3.1: chat and terminal share one conversation for Claude and Codex.
         chatAvailable: r.provider === "claude" || r.provider === "codex",
         view: env.chats?.has(key) ? "chat" : hosted.has(key) ? "terminal" : (env.ownViews?.get(key) ?? "chat"),
