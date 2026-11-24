@@ -200,20 +200,31 @@ describe("All sessions opens on the tab the sidebar asked for (owner, 2026-11-24
 });
 
 describe("All sessions by time (owner, 2026-11-24)", () => {
-  it("a from–to range keeps only sessions active inside it; Any time clears it", () => {
-    const rows = [sess("a", { title: "Early", lastActiveMs: NOW - 5 * 3_600_000 }), sess("b", { title: "Late", lastActiveMs: NOW - 60_000 })];
-    render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+  it("a day range from the calendar keeps only sessions active inside it; a time narrows it; Any time clears it", () => {
+    const day = (d: number, h: number) => new Date(2026, 10, d, h).getTime();
+    const now = day(24, 15);
+    const rows = [sess("a", { title: "Early", lastActiveMs: day(20, 9) }), sess("b", { title: "Late", lastActiveMs: day(24, 14) }), sess("c", { title: "Morning", lastActiveMs: day(21, 7) })];
+    render(<AllSessionsPage sessions={rows} nowMs={now} onOpen={vi.fn()} batch={() => ({}) as never} />);
     fireEvent.click(screen.getByRole("button", { name: "Active: Any time" }));
-    const field = (ms: number) => {
-      const d = new Date(ms);
-      const p = (n: number) => String(n).padStart(2, "0");
-      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-    };
-    fireEvent.change(screen.getByLabelText("From"), { target: { value: field(NOW - 6 * 3_600_000) } });
-    fireEvent.change(screen.getByLabelText("To"), { target: { value: field(NOW - 4 * 3_600_000) } });
+    const cell = (label: RegExp) => screen.getByRole("gridcell", { name: label });
+    fireEvent.click(cell(/^Friday,? 20 November/));
+    fireEvent.click(cell(/^Saturday,? 21 November/));
     expect(screen.getByText("Early")).toBeTruthy();
+    expect(screen.getByText("Morning")).toBeTruthy();
     expect(screen.queryByText("Late")).toBeNull();
+    // The end time narrows the last day: 06:30 leaves the 07:00 session out.
+    const to = screen.getByLabelText("To time");
+    fireEvent.change(to, { target: { value: "06:30" } });
+    fireEvent.blur(to);
+    expect(screen.queryByText("Morning")).toBeNull();
+    expect(screen.getByText("Early")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Any time" }));
     expect(screen.getByText("Late")).toBeTruthy();
+  });
+  it("days after today cannot be picked", () => {
+    const now = new Date(2026, 10, 24, 15).getTime();
+    render(<AllSessionsPage sessions={[sess("a")]} nowMs={now} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    fireEvent.click(screen.getByRole("button", { name: "Active: Any time" }));
+    expect((screen.getByRole("gridcell", { name: /^Wednesday,? 25 November/ }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

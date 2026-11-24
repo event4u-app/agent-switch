@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ANY_TIME, inRange, presets, rangeLabel } from "./date-range.js";
+import { ANY_TIME, inRange, monthGrid, pickDay, presets, rangeLabel, withClock } from "./date-range.js";
 
 const NOW = new Date(2026, 10, 24, 15, 30).getTime();
 const at = (d: number, h = 0, m = 0) => new Date(2026, 10, d, h, m).getTime();
@@ -23,5 +23,33 @@ describe("time range", () => {
     expect(rangeLabel(presets(NOW)[1].range, NOW)).toBe("Today");
     expect(rangeLabel({ from: at(22, 9), to: at(23, 18) }, NOW)).toBe("22 Nov, 09:00 – 23 Nov, 18:00");
     expect(rangeLabel({ from: at(22, 9), to: null }, NOW)).toBe("Since 22 Nov, 09:00");
+  });
+});
+
+describe("calendar picking (owner, 2026-11-24)", () => {
+  it("weeks start on Monday; six weeks are shown", () => {
+    const g = monthGrid(new Date(2026, 10, 15).getTime());
+    expect(g).toHaveLength(42);
+    expect(new Date(g[0]).getDay()).toBe(1);
+    expect(new Date(g[0]).getDate()).toBe(26); // Mon 26 Oct 2026 leads November
+  });
+  it("first click starts, second ends (either order), a third starts again", () => {
+    let r = pickDay(ANY_TIME, at(20, 13));
+    expect(r).toEqual({ from: at(20), to: null });
+    r = pickDay(r, at(18));
+    expect(r).toEqual({ from: at(18), to: new Date(2026, 10, 20, 23, 59, 59, 999).getTime() });
+    expect(pickDay(r, at(22))).toEqual({ from: at(22), to: null });
+  });
+  it("a typed clock sets the time of its day; nonsense is refused", () => {
+    expect(withClock(at(20), "9:30")).toBe(at(20, 9, 30));
+    expect(withClock(at(20), "0930")).toBe(at(20, 9, 30));
+    expect(withClock(at(20), "25:00")).toBeNull();
+  });
+});
+
+describe("short trigger words for whole days", () => {
+  it("a range of whole days says only its dates", () => {
+    expect(rangeLabel(pickDay(pickDay(ANY_TIME, at(18)), at(21)), NOW)).toBe("18 Nov – 21 Nov");
+    expect(rangeLabel(pickDay(pickDay(ANY_TIME, at(18)), at(18)), NOW)).toBe("18 Nov");
   });
 });
