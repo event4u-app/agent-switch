@@ -753,7 +753,8 @@ export function SessionsZone({
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
   const fold = (g: string) => setFolded((f) => (f.has(g) ? new Set([...f].filter((x) => x !== g)) : new Set([...f, g])));
   return (
-    <section aria-label="Sessions">
+    // A column that fills the window, so Done today and Older sit at its foot, right above the limits.
+    <section aria-label="Sessions" className="flex flex-1 flex-col">
       {divider ? <div className="mx-3.5 my-1.5 h-px bg-ac-line" /> : <div className="h-2" />}
       <div className={cn("flex items-center gap-2 px-3.5", tray ? "mt-0.5 h-6" : "sticky top-0 z-[1] h-8 bg-ac-panel")}>
         <span className="text-[11px] font-semibold text-ac-soft">Sessions</span>
@@ -854,9 +855,9 @@ export function SessionsZone({
         )}
       </div>
       {byStatus && doneRows.length > 0 && (
-        <div data-done-groups="" className="sticky bottom-0 z-[1] mt-1 border-t border-ac-line bg-ac-panel px-1.5 py-1">
+        <div data-done-groups="" className="sticky bottom-0 z-[1] mt-auto border-t border-ac-line bg-ac-panel px-1.5 py-1">
           {doneRows.map((g, i) => (
-            <div key={g.id} className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[11.5px] text-ac-muted hover:bg-ac-raise">
+            <div key={g.id} className="flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[11.5px] text-ac-muted hover:bg-ac-raise">
               <button type="button" onClick={onDoneToday} title="Open All sessions" className="flex min-w-0 flex-1 items-center gap-1.5 text-left hover:text-ac-text">
                 <ChevronRight className="size-3 shrink-0" />
                 <span className="font-medium text-ac-soft">{g.id}</span>

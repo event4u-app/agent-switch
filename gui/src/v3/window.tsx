@@ -837,7 +837,7 @@ export function V3Window({
           </IconButton>
         </span>
       </div>
-      <div className="relative min-h-0 flex-1 overflow-y-auto pb-2">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
         <NeedsZone items={needs} away={data.away} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
         <SessionsZone
           sessions={pinnedOnly ? data.sessions.filter((x) => pinned.has(x.key)) : data.sessions}
