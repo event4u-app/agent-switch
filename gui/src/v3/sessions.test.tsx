@@ -235,3 +235,31 @@ describe("one status vocabulary (5.1)", () => {
     expect(sel.container.innerHTML).not.toMatch(/ac-brand/);
   });
 });
+
+describe("status groups with counts (proposal B)", () => {
+  const rows = [
+    s("w1", { title: "Working one", state: "working" }),
+    s("n1", { title: "Asking one", state: "needs-you", needsYou: true }),
+    s("n2", { title: "Failing one", pr: { number: 3, ci: "FAILURE", mergeable: "MERGEABLE" } }),
+    s("i1", { title: "Idle one" }),
+  ];
+  it("Needs you, Running, Idle — in that order, each with a count pill", () => {
+    render(zone(rows, { group: "status" }));
+    const heads = screen.getAllByRole("button", { expanded: true }).map((b) => b.textContent);
+    expect(heads).toEqual(["Needs you2", "Running1", "Idle1"]);
+    expect(screen.getAllByText(/^(Asking|Failing|Working|Idle) one$/).map((e) => e.textContent)).toEqual(["Asking one", "Failing one", "Working one", "Idle one"]);
+  });
+  it("a session a Needs-you row already shows is not listed twice; an empty group has no header", () => {
+    render(zone(rows, { group: "status", inNeeds: new Set(["n1", "n2"]) }));
+    expect(screen.queryByText("Asking one")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Needs you/ })).toBeNull();
+    expect(screen.getByText("Working one")).toBeTruthy();
+  });
+  it("a long group shows five rows and “N more”, which opens it; the active row always shows", () => {
+    const many = Array.from({ length: 9 }, (_, i) => s(`r${i}`, { title: `Run ${i}`, state: "working" }));
+    render(zone(many, { group: "status", sort: "name", activeKey: "r8" }));
+    expect(screen.getAllByText(/^Run \d$/).map((e) => e.textContent)).toEqual(["Run 0", "Run 1", "Run 2", "Run 3", "Run 4", "Run 8"]);
+    fireEvent.click(screen.getByRole("button", { name: "3 more ›" }));
+    expect(screen.getAllByText(/^Run \d$/)).toHaveLength(9);
+  });
+});

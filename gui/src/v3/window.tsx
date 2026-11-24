@@ -37,9 +37,9 @@ import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, ty
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
 import { EMPTY_TABS, canReopen, closable, closeOthers, closeTab, closeToRight, closeUnpinned, isPageTab, moveTab, nextActive, openTab, pinTab, reopenTab, seedTabs, unpinTab, type TabState } from "./tabs.js";
-import { nextFocus } from "./needs.js";
+import { needSession, nextFocus, shownNeeds } from "./needs.js";
 import { Switcher } from "./overlays.js";
-import { GROUP_LABEL, SORT_LABEL, liveOrder, type GroupBy, type SortBy } from "./sessions.js";
+import { DEFAULT_GROUP, GROUP_LABEL, SORT_LABEL, liveOrder, type GroupBy, type SortBy } from "./sessions.js";
 
 export interface V3Data {
   nowMs: number;
@@ -251,7 +251,10 @@ export function V3Window({
   const [comfortable, setComfortable] = useState(saved?.comfortable ?? true);
   const [sortBy, setSortBy] = useState<SortBy>(saved?.sort ?? DEFAULT_SORT);
   // An older layout's "group by project" comes back as the project grouping.
-  const [groupBy, setGroupBy] = useState<GroupBy>(saved?.group ?? (saved?.groupByProject ? "project" : "none"));
+  // Status groups are the default (proposal B); a grouping picked in the menu wins.
+  const [groupBy, setGroupByState] = useState<GroupBy>(saved?.groupSet && saved.group ? saved.group : saved?.group && saved.group !== "none" ? saved.group : saved?.groupByProject ? "project" : DEFAULT_GROUP);
+  const [groupSet, setGroupSet] = useState(!!saved?.groupSet);
+  const setGroupBy = (g: GroupBy) => (setGroupByState(g), setGroupSet(true));
   const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
   const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
   const lastActiveOf = (k: string) => data.table.find((t) => t.key === k)?.lastActiveMs ?? null;
@@ -312,10 +315,10 @@ export function V3Window({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.sessions]);
   useEffect(() => {
-    if (started.current) layout?.save({ tabs: sessionTabs, pinned: strip.pinned, active: active?.startsWith("page:") ? null : active, comfortable, pinnedOnly, sort: sortBy, group: groupBy });
+    if (started.current) layout?.save({ tabs: sessionTabs, pinned: strip.pinned, active: active?.startsWith("page:") ? null : active, comfortable, pinnedOnly, sort: sortBy, group: groupBy, groupSet });
     // sessionTabs is derived from strip.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, strip, active, comfortable, pinnedOnly, sortBy, groupBy]);
+  }, [layout, strip, active, comfortable, pinnedOnly, sortBy, groupBy, groupSet]);
 
   /** Apply a change to the strip; when the active tab leaves, its neighbour takes over. */
   const changeStrip = (f: (s: TabState) => TabState) => {
@@ -830,6 +833,7 @@ export function V3Window({
           comfortable={comfortable}
           sort={sortBy}
           group={groupBy}
+          inNeeds={new Set(shownNeeds(needs, focusedNeed).map(needSession).filter((k): k is string => !!k))}
           lastActiveOf={lastActiveOf}
           nowMs={data.nowMs}
           onSubagent={openSubagent}
@@ -944,7 +948,7 @@ export function V3Window({
             { section: "Sort by", label: "" },
             ...(Object.keys(SORT_LABEL) as SortBy[]).map((k) => ({ id: `sort-${k}`, label: SORT_LABEL[k], checked: k === sortBy, hint: [k === DEFAULT_SORT && "default", k === "status" && "needs you first"].filter(Boolean).join(" · ") || undefined, onClick: () => (close(), setSortBy(k)) })),
             { section: "Group by", label: "" },
-            ...(Object.keys(GROUP_LABEL) as GroupBy[]).map((k) => ({ id: `group-${k}`, label: GROUP_LABEL[k], checked: k === groupBy, onClick: () => (close(), setGroupBy(k)) })),
+            ...(Object.keys(GROUP_LABEL) as GroupBy[]).map((k) => ({ id: `group-${k}`, label: GROUP_LABEL[k], checked: k === groupBy, hint: k === DEFAULT_GROUP ? "default" : undefined, onClick: () => (close(), setGroupBy(k)) })),
           ]}
         />
       </Anchored>

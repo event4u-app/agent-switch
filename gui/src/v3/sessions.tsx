@@ -101,9 +101,22 @@ export function childNoun(s: Pick<RowSession, "children">): string {
 }
 
 export type SortBy = "activity" | "name" | "status";
-export type GroupBy = "none" | "project" | "account" | "tool";
+export type GroupBy = "none" | "status" | "project" | "account" | "tool";
 export const SORT_LABEL: Record<SortBy, string> = { activity: "Activity", name: "Name", status: "Status" };
-export const GROUP_LABEL: Record<GroupBy, string> = { none: "None", project: "Project / folder", account: "Account", tool: "Tool" };
+export const GROUP_LABEL: Record<GroupBy, string> = { none: "None", status: "Status", project: "Project / folder", account: "Account", tool: "Tool" };
+
+/** The list's default grouping (proposal B): cut by what you have to do. */
+export const DEFAULT_GROUP: GroupBy = "status";
+
+/** The status groups, in their fixed order (proposal B). */
+export const STATUS_GROUPS = ["Needs you", "Running", "Idle"] as const;
+export type StatusGroup = (typeof STATUS_GROUPS)[number];
+
+/** A live row's status group: waiting for you (or its PR is failing), running, or idle. Pure. */
+export const statusGroup = (s: RowSession): StatusGroup => (statusRank(s) <= 1 ? "Needs you" : s.state === "working" ? "Running" : "Idle");
+
+/** A group longer than this shows its first rows and "N more" (proposal B). */
+export const GROUP_ROWS = 5;
 
 /** The default order of the list, the same in window and tray (spec §5.2). */
 export const DEFAULT_SORT: SortBy = "status";
@@ -609,8 +622,11 @@ export function SessionsZone({
   tray,
   holdOrder,
   focusKey,
+  inNeeds,
   batch,
 }: {
+  /** Sessions a row of the Needs-you zone already shows: under the status grouping they are not listed twice (proposal B). */
+  inNeeds?: ReadonlySet<string>;
   /** The tray card's variant (board "tray"): a 24 px head. */
   tray?: boolean;
   sessions: RowSession[];
@@ -661,10 +677,17 @@ export function SessionsZone({
   const byKey = new Map(sorted.map((s) => [s.key, s]));
   const live = order.map((k) => byKey.get(k)!);
   const done = sessions.filter((s) => s.doneToday).length;
-  const grouped = group !== "none" && !!groupOf;
-  // Grouped: one header per group, in the order the sorted list first meets it; rows keep the sort inside.
-  const groups = grouped ? [...new Set(live.map((s) => groupOf!(s.key) ?? ""))] : [""];
-  const rowsOf = (g: string) => (grouped ? live.filter((s) => (groupOf!(s.key) ?? "") === g) : live);
+  const byStatus = group === "status";
+  const grouped = byStatus || (group !== "none" && !!groupOf);
+  const groupKey = (s: RowSession) => (byStatus ? statusGroup(s) : (groupOf!(s.key) ?? ""));
+  // Status: a session the Needs-you zone already shows is not listed again; the group keeps the rest.
+  const listed = byStatus && inNeeds ? live.filter((s) => statusGroup(s) !== "Needs you" || !inNeeds.has(s.key)) : live;
+  // Grouped: one header per group — status groups in their fixed order, others in the order the sorted list first meets them; rows keep the sort inside.
+  const groups = byStatus ? STATUS_GROUPS.filter((g) => listed.some((s) => statusGroup(s) === g)) : grouped ? [...new Set(listed.map(groupKey))] : [""];
+  const rowsOf = (g: string) => (grouped ? listed.filter((s) => groupKey(s) === g) : listed);
+  // A long group shows its first rows and "N more"; the active row always shows.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const capped = (g: string, rows: RowSession[]) => (!grouped || expanded.has(g) || rows.length <= GROUP_ROWS + 1 ? rows : rows.filter((s, i) => i < GROUP_ROWS || s.key === activeKey));
   // A project's rows split by worktree only when more than one holds a live session (D8); otherwise one block, no sub-header.
   const worktreesOf = (g: string) => {
     const l = rowsOf(g);
@@ -703,7 +726,8 @@ export function SessionsZone({
             title="Sort and group"
             className={cn("-mr-1.5 ml-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-ac-muted hover:bg-ac-raise hover:text-ac-text", viewOpen && "bg-ac-raise text-ac-text")}
           >
-            {grouped && <>{GROUP_LABEL[group].split(" ")[0]} · </>}
+            {/* "Status · Status" says one thing twice: grouped and sorted by status reads "Status". */}
+            {grouped && GROUP_LABEL[group] !== SORT_LABEL[sort] && <>{GROUP_LABEL[group].split(" ")[0]} · </>}
             {SORT_LABEL[sort]}
             <ChevronDown className="size-3" />
           </button>
@@ -734,10 +758,12 @@ export function SessionsZone({
               {folded.has(g) ? <ChevronRight className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />}
               {group === "project" ? <Folder className="size-3.5 shrink-0" /> : group === "tool" ? <SquareTerminal className="size-3.5 shrink-0" /> : null}
               <span className="min-w-0 truncate font-medium text-ac-soft">{g || (group === "project" ? "No project" : "Other")}</span>
-              <span>{rowsOf(g).length}</span>
+              <span data-group-count="" className="min-w-[18px] shrink-0 rounded-full bg-ac-raise px-1.5 text-center text-[10.5px] text-ac-soft">{rowsOf(g).length}</span>
             </button>
           ),
-          ...(folded.has(g) ? [] : worktreesOf(g)).flatMap(({ wt, rows: wtRows }, i) => [
+          ...(folded.has(g) ? [] : worktreesOf(g)).flatMap(({ wt, rows: all }, i) => {
+          const wtRows = capped(`${g}\0${i}`, all);
+          return [
           wt !== undefined ? (
             <h4 key={`w:${g}:${wt?.id ?? i}`} title={wt?.id} className="flex h-6 items-center gap-1.5 pl-[26px] pr-1.5 text-[11px] font-normal text-ac-muted">
               <span className={cn("min-w-0 truncate", wt && "font-ac-mono")}>{wt ? (wt.branch ?? "detached HEAD") : "No repository"}</span>
@@ -763,7 +789,13 @@ export function SessionsZone({
             age={ageOf(s)}
           />
           )),
-          ]),
+          wtRows.length < all.length ? (
+            <button key={`m:${g}:${i}`} type="button" onClick={() => setExpanded((x) => new Set([...x, `${g}\0${i}`]))} className="ml-[26px] flex h-6 items-center text-[11px] text-ac-muted hover:text-ac-text">
+              {all.length - wtRows.length} more ›
+            </button>
+          ) : null,
+          ];
+          }),
         ])}
         {done > 0 && (
           <div className="mt-0.5 flex h-7 items-center gap-2 px-2.5 text-[11.5px] text-ac-muted">

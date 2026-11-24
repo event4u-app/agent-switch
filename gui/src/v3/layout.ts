@@ -17,7 +17,9 @@ export interface WindowLayout {
   pinnedOnly: boolean;
   /** How the Sessions list is ordered; status first by default (spec §5.2). */
   sort?: "activity" | "name" | "status";
-  group?: "none" | "project" | "account" | "tool";
+  group?: "none" | "status" | "project" | "account" | "tool";
+  /** The grouping was picked in the menu; an older layout's "none" without it was never a choice, so it takes the status default. */
+  groupSet?: boolean;
   /** The layout's shape; absent: saved before LAYOUT_VERSION 2. */
   version?: number;
 }
@@ -51,9 +53,9 @@ export function parseLayout(raw: string | null): Partial<WindowLayout> | null {
   if (Array.isArray(v.tabs)) out.tabs = v.tabs.filter((t): t is string => typeof t === "string").slice(0, 20);
   if (Array.isArray(v.pinned)) out.pinned = v.pinned.filter((t): t is string => typeof t === "string").slice(0, 20);
   if (typeof v.active === "string" || v.active === null) out.active = v.active as string | null;
-  for (const k of ["comfortable", "groupByProject", "pinnedOnly"] as const) if (typeof v[k] === "boolean") out[k] = v[k] as boolean;
+  for (const k of ["comfortable", "groupByProject", "pinnedOnly", "groupSet"] as const) if (typeof v[k] === "boolean") out[k] = v[k] as boolean;
   if (v.sort === "activity" || v.sort === "name" || v.sort === "status") out.sort = v.sort;
-  if (v.group === "none" || v.group === "project" || v.group === "account" || v.group === "tool") out.group = v.group;
+  if (v.group === "none" || v.group === "status" || v.group === "project" || v.group === "account" || v.group === "tool") out.group = v.group;
   if (typeof v.version === "number") out.version = v.version;
   else {
     if (out.sort === "activity") delete out.sort;
