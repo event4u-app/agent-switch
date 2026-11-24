@@ -48,6 +48,7 @@ import {
   hooksRecordSubagents,
   HookEventRecord,
 } from "../hooks.js";
+import { boardFields } from "./workflows.js";
 import { buildTree, childSource, childrenWithHooks, helperIndex, relationUnknown, subagentFacts, subagentsFromFiles, type Child, type TreeNode } from "../lineage.js";
 import { runtimeState, type RuntimeState } from "../runtime-state.js";
 import { gitFacts, type GitFacts } from "../git-facts.js";
@@ -581,6 +582,7 @@ export async function cmdSessions(
         prs,
         ...(store ? libraryFacts(store, key, { transcript: r.file ?? "", sessionDir: path.join(configDir(providerId, r.profile), "projects", r.projectDir, r.sessionId), fileHistory: path.join(configDir(providerId, r.profile), "file-history", r.sessionId) }) : {}),
         ...kids,
+        ...(providerId === "claude" && r.file ? boardFields(r.file, r.live, r.cwd ?? undefined) : {}),
         ...(parent ? { parent } : r.codexThreadSource ? { root: false, relation: "unknown" } : relationUnknown(r.cwd, false, TEMP_ROOTS) ? { relation: "unknown" } : {}),
       };
     });

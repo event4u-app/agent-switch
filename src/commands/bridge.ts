@@ -34,6 +34,7 @@ import { provider as providerOf, type ProviderId } from "../providers.js";
 import { readSessionHeader } from "../sessions.js";
 import { fromClaudeText, readClaudeTranscript } from "../timeline/claude.js";
 import { readConfined, sessionFolder, subagentTranscript } from "../lineage.js";
+import { workflowAgentTranscript } from "../workflows.js";
 import * as fs from "node:fs";
 import { fromCodexThread } from "../timeline/codex.js";
 import type { AsEvent } from "../timeline/events.js";
@@ -162,8 +163,10 @@ export const SUBAGENT_TIMELINE_BYTES = 4 * 1024 * 1024;
  * file that is not a regular file inside the session's folder.
  */
 export function readSubagentTimeline(transcript: string, agentId: string, maxBytes = SUBAGENT_TIMELINE_BYTES): { events: AsEvent[]; version: string | null; newerThanFixtures: boolean; truncated: boolean } {
-  const file = subagentTranscript(transcript, agentId);
-  if (!file) throw new Error(`${agentId} is not a subagent id`);
+  const flat = subagentTranscript(transcript, agentId);
+  if (!flat) throw new Error(`${agentId} is not a subagent id`);
+  // A Workflow run's agents live one level down, under subagents/workflows/<runId>/.
+  const file = fs.existsSync(flat) ? flat : (workflowAgentTranscript(transcript, agentId) ?? flat);
   const folder = sessionFolder(transcript);
   const read = folder && fs.existsSync(file) ? readConfined(folder, file, maxBytes) : null;
   if (!read) throw new Error(fs.existsSync(file) ? `subagent ${agentId}'s transcript is not a regular file inside this session's folder` : `subagent ${agentId} has no transcript next to this session`);

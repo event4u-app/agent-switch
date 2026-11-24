@@ -55,6 +55,7 @@ import { cmdPr, cmdWorktrees } from "./commands/pr.js";
 import { cmdPrCreate } from "./commands/pr-create.js";
 import { cmdChanges } from "./commands/changes.js";
 import { cmdBridge, cmdFiles, cmdTimeline } from "./commands/bridge.js";
+import { cmdWorkflows } from "./commands/workflows.js";
 import { cmdAgents } from "./commands/agents.js";
 import { cmdNeedsAnswer, cmdRemote } from "./commands/remote.js";
 import { cmdDiff } from "./commands/diff.js";
@@ -225,6 +226,7 @@ async function main(): Promise<void> {
     case "worktrees": return cmdWorktrees(flags);
     case "changes": return cmdChanges(positional[0], flags);
     case "timeline": return cmdTimeline(positional[0], flags);
+    case "workflows": return cmdWorkflows(positional[0], flags);
     case "bridge": return cmdBridge(providerId, positional[0], flags);
     case "agents": return cmdAgents(positional, flags, rest.includes("--") ? rest.slice(rest.indexOf("--") + 1) : undefined);
     case "files": return cmdFiles(positional[0], flags);
