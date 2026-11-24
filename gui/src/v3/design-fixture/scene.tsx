@@ -344,7 +344,7 @@ export function Scene({ view = "main", theme = "darcula", accent = "theme", heal
     ),
     body: (key) =>
       BAR[key]?.hosted === false ? (
-        <ExternalBody where="Terminal.app · tab 3" facts={<p>as-hook p95 benchmark · ~/code/agent-switch · perf/as-hook</p>} lastLine="as-hook is 6.7× faster at p95 (6.2 ms vs 41.8 ms)." onFocus={() => {}} onTakeOver={() => {}} />
+        <ExternalBody facts={<p>as-hook p95 benchmark · ~/code/agent-switch · perf/as-hook</p>} lastLine="as-hook is 6.7× faster at p95 (6.2 ms vs 41.8 ms)." />
       ) : inChat(key) ? (
         <div className="h-full overflow-y-auto bg-ac-bg px-6 py-4">
           <ChatTimeline events={CHAT.transcript as AsEvent[]} />

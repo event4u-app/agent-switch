@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../lib/utils.js";
-import { ArrowLeftRight, ArrowRightToLine, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, Unplug, Wrench, X } from "lucide-react";
+import { ArrowLeftRight, ArrowRightToLine, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Unplug, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
 import type { IdentityColor, ToolEntry } from "../vm/types.js";
@@ -38,6 +38,7 @@ import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
 import { EMPTY_TABS, canReopen, closable, closeOthers, closeTab, closeToRight, closeUnpinned, isPageTab, moveTab, nextActive, openTab, pinTab, reopenTab, seedTabs, unpinTab, type TabState } from "./tabs.js";
 import { needSession, nextFocus, shownNeeds } from "./needs.js";
+import { canCopy, copyConversation } from "./copy-source.js";
 import { Switcher } from "./overlays.js";
 import { DEFAULT_GROUP, GROUP_LABEL, SORT_LABEL, liveOrder, type GroupBy, type SortBy } from "./sessions.js";
 
@@ -370,8 +371,19 @@ export function V3Window({
             ...(itemWhy(key, item) ? { disabled: true, why: itemWhy(key, item)! } : {}),
             onClick: run(() => sessionItem(key, item)),
           };
+    // Proposal C: what used to be a strip over the session — Focus terminal, Take over, Copy conversation — leads the menu.
+    const b = data.bar(key);
+    const elsewhere = !!b && !b.hosted;
+    const where = b?.where ?? "your terminal";
+    const lead: MenuItem[] = [
+      ...(elsewhere && openFacts(key).focusable ? [{ id: "session:focus", label: "Focus terminal", icon: <SquareTerminal />, hint: where, onClick: run(() => act({ type: "open-in", key, pick: { kind: "focus" } })) }] : []),
+      ...(elsewhere && offered.includes("Take over here…") ? [row("Take over here…"), { label: "", note: `The same conversation continues here on this account and stops running in ${where}.` }] : []),
+      ...(canCopy(key) ? [{ id: "session:copy", label: "Copy conversation", icon: <ClipboardCopy />, hint: "Markdown", onClick: run(() => void copyConversation(key).catch(() => undefined)) }] : []),
+    ];
     return [
-      ...offered.filter((item) => item !== "End…").map(row),
+      ...lead,
+      ...(lead.length ? [{ divider: true, label: "" }] : []),
+      ...offered.filter((item) => item !== "End…" && !(elsewhere && item === "Take over here…")).map(row),
       { id: "copy-key", label: "Copy session key", icon: <Copy />, onClick: run(() => void navigator.clipboard?.writeText(key).catch(() => undefined)) },
       ...(offered.includes("End…") ? [{ divider: true, label: "" }, row("End…")] : []),
     ];
@@ -392,7 +404,7 @@ export function V3Window({
     if (moved.includes("model")) items.push({ id: "chip:model", label: "Model…", hint: b.model ?? undefined, ...why(locked && (b.hosted ? locked : "Locked: change it in your terminal (/model)")), onClick: () => setOverlay({ model: key, x, chip: "model" }) });
     if (moved.includes("thinking")) items.push({ id: "chip:thinking", label: "Thinking…", hint: b.thinking ? b.thinking[0].toUpperCase() + b.thinking.slice(1) : undefined, ...why(locked), onClick: () => setOverlay({ model: key, x, chip: "thinking" }) });
     if (moved.includes("ctx") && b.contextPct != null) items.push({ label: "", note: `Context ${Math.round(b.contextPct)}% used` });
-    if (moved.includes("where")) items.push({ label: "", note: b.hosted ? `Hosted by Agent Switch: ${HOSTED_HINT}` : `${b.where ?? "Your terminal"} · watching. Take over to type here.` });
+    if (moved.includes("where")) items.push({ label: "", note: b.hosted ? `Hosted by Agent Switch: ${HOSTED_HINT}` : `${b.where ?? "Your terminal"} · read-only. Take over to type here.` });
     return [...items, { divider: true, label: "" }];
   };
 

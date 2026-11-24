@@ -334,6 +334,11 @@ function copyLater(text: Promise<string>): Promise<void> {
   return text.then((t) => c.writeText(t));
 }
 
+/** Copies `rows` as Markdown; with `full`, the whole conversation is read first, so the copy is never a cut. */
+export function copyRows(rows: readonly ChatRow[], full?: () => Promise<readonly ChatRow[]>): Promise<void> {
+  return full ? copyLater(full().then((r) => sessionMarkdown(r))) : (navigator.clipboard?.writeText(sessionMarkdown(rows)) ?? Promise.reject(new Error("no clipboard")));
+}
+
 /** Copies the whole conversation as Markdown, from the source text of every row. `full`: the
  *  conversation goes back further than `rows`; it is read first, so the copy is never a cut. */
 export function CopyConversation({ rows, full }: { rows: readonly ChatRow[]; full?: () => Promise<readonly ChatRow[]> }) {
@@ -350,7 +355,7 @@ export function CopyConversation({ rows, full }: { rows: readonly ChatRow[]; ful
       aria-label={label}
       title={done ? "Copied as Markdown" : full ? "Copy the whole conversation as Markdown — the earlier turns are read first" : "Copy the whole conversation as Markdown"}
       disabled={!rows.length}
-      onClick={() => void (full ? copyLater(full().then((r) => sessionMarkdown(r))) : (navigator.clipboard?.writeText(sessionMarkdown(rows)) ?? Promise.reject())).then(() => setDone(true), () => {})}
+      onClick={() => void copyRows(rows, full).then(() => setDone(true), () => {})}
       className="inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] text-ac-muted hover:bg-ac-raise hover:text-ac-text disabled:opacity-50 [&_svg]:size-3.5"
     >
       {done ? <Check /> : <ClipboardCopy />}

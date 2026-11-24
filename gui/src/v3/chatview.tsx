@@ -3,7 +3,8 @@
 
 import { useMemo } from "react";
 
-import { ChatTimeline, CopyConversation } from "./chat.js";
+import { ChatTimeline, copyRows } from "./chat.js";
+import { useCopySource } from "./copy-source.js";
 import { Composer, MODE_LABEL } from "./composer.js";
 import { fold } from "./timeline.js";
 import type { BridgeActions, BridgeState } from "./adapter/useBridge.js";
@@ -19,6 +20,8 @@ export function ChatView({ b, sessionKey, findFiles, worktreeOf }: { b: BridgeSt
   const f = useMemo(() => fold(b.events), [b.events]);
   const cost = useMemo(() => b.events.reduce((n, e) => (e.t === "turn.end" && e.costUsd ? n + e.costUsd : n), 0), [b.events]);
   const running = b.status === "ready" && f.running;
+  // Copy conversation sits in the session's ⋯ menu (proposal C).
+  useCopySource(b.session?.key ?? sessionKey, f.rows.length ? () => copyRows(f.rows, b.earlier ? () => b.allEvents().then((all) => fold(all).rows) : undefined) : null);
   const notice =
     b.status === "error" ? (
       <p role="alert" className="shrink-0 border-b border-ac-line bg-ac-alert-tint px-4 py-1.5 text-xs text-ac-alert-text">
@@ -49,7 +52,6 @@ export function ChatView({ b, sessionKey, findFiles, worktreeOf }: { b: BridgeSt
         )}
         <span className="ml-auto flex items-center gap-2">
           {b.status === "starting" && <span>Connecting…</span>}
-          {f.rows.length > 0 && <CopyConversation rows={f.rows} full={b.earlier ? () => b.allEvents().then((all) => fold(all).rows) : undefined} />}
         </span>
       </div>
       <ChatTimeline

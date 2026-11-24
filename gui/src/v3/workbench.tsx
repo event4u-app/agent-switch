@@ -377,9 +377,10 @@ export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { 
         </>
       ) : (
         <>
+          {/* Proposal C: where it runs is this chip; Focus terminal and Take over are in ⋯. */}
           <span data-bar-chip="where" {...away(isMoved("where"))} className="ml-2 inline-flex shrink-0">
-            <Chip kind="meta" icon={<Eye />} title="Runs in your terminal; Agent Switch reads along. Take over to type here.">
-              {s.where ?? "Your terminal"} · watching
+            <Chip kind="meta" icon={<SquareTerminal />} title={`Runs in ${s.where ?? "your terminal"}; Agent Switch reads along. You type there — or take it over from ⋯ to type here.`}>
+              {s.where ?? "Your terminal"} · read-only
             </Chip>
           </span>
           <span className="flex-1" />
@@ -494,29 +495,14 @@ export function HintStrip({ s, dismissed, onDismiss, onAction, canCompact = true
  * session's facts and its last transcript line; a full read-only view comes
  * with the v3.1 timeline reader.
  */
-/** `onFocus` / `onTakeOver` null: that action cannot work for this session, so it is not offered. */
-export function ExternalBody({ where, facts, lastLine, onFocus, onTakeOver, timeline, readOnlyTitle }: { where: string; facts: ReactNode; lastLine: string | null; onFocus: (() => void) | null; onTakeOver: (() => void) | null; timeline?: ReactNode; readOnlyTitle?: string | null }) {
+/**
+ * Proposal C: no strip of its own. Where it runs is the session bar's chip;
+ * Focus terminal, Take over and Copy conversation are in the session's ⋯ menu.
+ * `readOnlyTitle`: what the read-only view leaves out, on hover.
+ */
+export function ExternalBody({ facts, lastLine, timeline, readOnlyTitle }: { facts: ReactNode; lastLine: string | null; timeline?: ReactNode; readOnlyTitle?: string | null }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-3 border-b border-ac-line bg-ac-panel px-4 py-2">
-        <SquareTerminal className="size-4 shrink-0 text-ac-muted" />
-        <span className="min-w-0 flex-1 text-xs text-ac-soft">
-          <span className="block truncate">
-            Runs in <span className="text-ac-text">{where}</span> · <span title={readOnlyTitle ?? undefined}>read-only here</span>
-          </span>
-          {onTakeOver && <span className="block truncate text-[11px] text-ac-muted">To type here, take it over: the same conversation continues in Agent Switch on this account, and stops running in {where}.</span>}
-        </span>
-        {onFocus && (
-          <Act kind="accent" onClick={onFocus}>
-            Focus terminal
-          </Act>
-        )}
-        {onTakeOver && (
-          <Act onClick={onTakeOver} title="Continues the session in a window Agent Switch hosts, on the same account — explained before it acts">
-            Take over here…
-          </Act>
-        )}
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col" title={readOnlyTitle ?? undefined}>
       {/* v3.1: the read-only timeline replaces the facts once it can be read (D-mirror). */}
       {timeline ?? (
         <div className="min-h-0 flex-1 space-y-3 relative overflow-y-auto px-5 py-4 text-[12.5px] text-ac-soft">
