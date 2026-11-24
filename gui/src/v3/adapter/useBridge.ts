@@ -108,7 +108,10 @@ export function useBridge(spec: ipc.BridgeSpec | null, deps: BridgeDeps = realDe
       const h = "key" in spec ? await deps.history(spec.key).catch(() => none) : none;
       if (!alive) return;
       set((p) => ({ ...p, events: [...h.events, ...p.events], earlier: h.from > 0 ? { from: h.from, prompts: h.earlierPrompts } : null, stale: new Set([...p.stale, ...cardIds(h.events)]) }));
-      proc.current = await deps.open(spec, onLine, () => alive && set((p) => ({ ...p, status: p.status === "error" ? "error" : "closed" })));
+      const child = await deps.open(spec, onLine, () => alive && set((p) => ({ ...p, status: p.status === "error" ? "error" : "closed" })));
+      // Closed while it was starting: nobody would ever close this bridge, and it would hold the session.
+      if (!alive) return void child.send({ cmd: "close" }).catch(() => {});
+      proc.current = child;
     })().catch((e: unknown) => alive && set((p) => ({ ...p, status: "error", error: e instanceof Error ? e.message : String(e) })));
     return () => {
       alive = false;

@@ -30,6 +30,20 @@ const flush = () => act(async () => {
 });
 
 describe("useBridge", () => {
+  it("a chat closed while its bridge was starting closes that bridge once it is up, so it never holds the session", async () => {
+    const f = fake();
+    let started: () => void = () => {};
+    const gate = new Promise<void>((r) => (started = r));
+    const open = f.deps.open;
+    const deps: BridgeDeps = { ...f.deps, open: async (...a) => (await gate, open(...a)) };
+    const { unmount } = render(<Probe spec={{ key: "claude/w/s1", mode: "default" }} deps={deps} />);
+    await flush();
+    unmount();
+    started();
+    await flush();
+    expect(f.sent).toEqual([{ cmd: "close" }]);
+  });
+
   it("history first, then live events; session, queue, exit; commands go out as JSON", async () => {
     const f = fake();
     render(<Probe spec={{ key: "claude/w/s1", mode: "default" }} deps={f.deps} />);
