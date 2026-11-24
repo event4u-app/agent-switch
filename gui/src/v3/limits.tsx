@@ -6,7 +6,8 @@
  * reference boards; nothing here ever switches an account.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { Segmented } from "../ui/Segmented.js";
 import { cn } from "../lib/utils.js";
 import type { IdentityColor } from "../vm/types.js";
 import { AppWindow, Copy } from "lucide-react";
@@ -107,7 +108,7 @@ const ROW_GRID = "grid grid-cols-[minmax(0,1fr)_44px_34px_58px] items-center gap
 
 /** One row of the Limits strip (proposal D): account and tool · bar · used · reset, always. Near limit is colour and the number;
  *  an old reading is italic with its age on hover; a missing sign-in fills the row. */
-export function LimitRow({ a, nowMs, open, current, onOpen, onSignIn }: { a: LimitAccount; nowMs: number; open?: boolean; /** The account the open session runs on (owner, 2026-11-24): marked like the active session row. */ current?: boolean; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
+export function LimitRow({ a, nowMs, open, current, toolShown, onOpen, onSignIn }: { a: LimitAccount; nowMs: number; open?: boolean; /** The tool switch above already names the tool: the row leaves it out. */ toolShown?: boolean; /** The account the open session runs on (owner, 2026-11-24): marked like the active session row. */ current?: boolean; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
   const w = rowWindow(a);
   const stale = isStale(a, nowMs);
   const age = stale ? `${duration(nowMs - a.checkedMs!)} old` : null;
@@ -134,8 +135,8 @@ export function LimitRow({ a, nowMs, open, current, onOpen, onSignIn }: { a: Lim
         <AccountMark color={a.color} />
         <span className={cn("shrink-0", current && "font-semibold")}>{a.name}</span>
         <span className="min-w-0 truncate text-[11px] text-ac-muted">
-          {a.tool === "codex" ? "Codex" : "Claude"}
-          {w && w.label !== "5h" && ` · ${w.label.replace("week · ", "week ")}`}
+          {!toolShown && (a.tool === "codex" ? "Codex" : "Claude")}
+          {w && w.label !== "5h" && `${toolShown ? "" : " · "}${w.label.replace("week · ", "week ")}`}
         </span>
         {a.next && (
           <span className="shrink-0 text-ac-muted" title="Next for new sessions">
@@ -158,9 +159,21 @@ export function LimitRow({ a, nowMs, open, current, onOpen, onSignIn }: { a: Lim
   );
 }
 
-/** Claude first, then Codex (spec §5.3). */
+/** Rows the strip shows before its list scrolls: many accounts (hundreds) never push the sessions away. */
+export const STRIP_ROWS = 5;
+
+/**
+ * Claude first, then Codex (spec §5.3). With accounts on more than one tool, a
+ * tool switch sits under the head — the tray's segmented control (owner,
+ * 2026-11-24): the open session's tool first, Claude otherwise — and the rows
+ * scroll inside the strip past STRIP_ROWS.
+ */
 export function LimitsStrip({ accounts, nowMs, openKey, currentKey, onOpen, onSignIn }: { accounts: LimitAccount[]; nowMs: number; openKey: string | null; /** The open session's account; absent: none marked. */ currentKey?: string | null; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
-  const ordered = [...accounts.filter((a) => a.tool === "claude"), ...accounts.filter((a) => a.tool === "codex")];
+  const tools = (["claude", "codex"] as const).filter((t) => accounts.some((a) => a.tool === t));
+  const currentTool = accounts.find((a) => a.key === currentKey)?.tool;
+  const [picked, setPicked] = useState<"claude" | "codex" | null>(null);
+  const tab = picked && tools.includes(picked) ? picked : currentTool && tools.includes(currentTool) ? currentTool : (tools[0] ?? "claude");
+  const shown = tools.length > 1 ? accounts.filter((a) => a.tool === tab) : [...accounts.filter((a) => a.tool === "claude"), ...accounts.filter((a) => a.tool === "codex")];
   return (
     <section aria-label="Limits" className="relative shrink-0 border-t border-ac-line px-1.5 pb-1.5 pt-1">
       <div className={cn(ROW_GRID, "h-7 px-2 text-[11px]")}>
@@ -169,9 +182,31 @@ export function LimitsStrip({ accounts, nowMs, openKey, currentKey, onOpen, onSi
         </span>
         <span className="col-span-3 justify-self-end text-ac-muted">resets</span>
       </div>
-      {ordered.map((a) => (
-        <LimitRow key={a.key} a={a} nowMs={nowMs} open={a.key === openKey} current={a.key === currentKey} onOpen={onOpen} onSignIn={onSignIn} />
-      ))}
+      {tools.length > 1 && (
+        <div className="px-1 pb-1.5">
+          <Segmented
+            label="Tool"
+            size="sm"
+            fill
+            value={tab}
+            onChange={setPicked}
+            options={tools.map((t) => ({
+              value: t,
+              label: (
+                <>
+                  {t === "claude" ? "Claude" : "Codex"}
+                  <span className="ml-1.5 font-ac-mono text-[10.5px] font-normal text-ac-muted">{accounts.filter((a) => a.tool === t).length}</span>
+                </>
+              ),
+            }))}
+          />
+        </div>
+      )}
+      <div data-limit-rows="" role="region" aria-label={tools.length > 1 ? `${tab === "claude" ? "Claude" : "Codex"} limits` : undefined} className={cn(shown.length > STRIP_ROWS && "max-h-[150px] overflow-y-auto")}>
+        {shown.map((a) => (
+          <LimitRow key={a.key} a={a} nowMs={nowMs} open={a.key === openKey} current={a.key === currentKey} toolShown={tools.length > 1} onOpen={onOpen} onSignIn={onSignIn} />
+        ))}
+      </div>
     </section>
   );
 }

@@ -53,13 +53,18 @@ describe("limits (spec §5.3, §7.5)", () => {
     render(<LimitsStrip accounts={[acct({ key: "codex/w", tool: "codex", name: "work", windows: [{ label: "5h", used: 10, resetsAtMs: NOW + 3 * H, pace: null }] }), acct()]} nowMs={NOW} openKey={null} onOpen={onOpen} onSignIn={vi.fn()} />);
     expect(screen.getByText("· 5h")).toBeTruthy();
     expect(screen.getByText("resets")).toBeTruthy();
-    const rows = screen.getAllByRole("button");
-    expect(rows[0].textContent).toBe("sideClaude94%↻ 1h 18m");
-    expect(rows[1].textContent).toBe("workCodex10%↻ 3h");
-    expect(rows[0].className).toBe(rows[1].className);
+    // Accounts on two tools: the tray's tool switch, Claude first and picked (owner, 2026-11-24).
+    expect(screen.getAllByRole("radio").map((r) => [r.textContent, r.getAttribute("aria-checked")])).toEqual([["Claude1", "true"], ["Codex1", "false"]]);
+    const rowsOf = () => screen.getAllByRole("button").filter((b) => b.hasAttribute("data-popover-trigger"));
+    const claude = rowsOf();
+    expect(claude.map((r) => r.textContent)).toEqual(["side94%↻ 1h 18m"]);
     expect(screen.queryByTestId("pace-tick"), "no tick on small bars").toBeNull();
-    fireEvent.click(rows[0]);
+    fireEvent.click(claude[0]);
     expect(onOpen).toHaveBeenCalledWith("claude/side");
+    fireEvent.click(screen.getByRole("radio", { name: /^Codex/ }));
+    const codex = rowsOf();
+    expect(codex.map((r) => r.textContent)).toEqual(["work10%↻ 3h"]);
+    expect(codex[0].className, "same columns on every row").toBe(claude[0].className);
     expect(tightest(acct())!.label).toBe("5h");
   });
 
@@ -101,5 +106,18 @@ describe("the open session's account (owner, 2026-11-24)", () => {
     expect(cur.getAttribute("aria-current")).toBe("true");
     expect(cur.className).toMatch(/bg-ac-raise/);
     expect(rows.filter((r) => r.hasAttribute("data-current"))).toHaveLength(1);
+  });
+});
+
+describe("many accounts (owner, 2026-11-24)", () => {
+  it("one tool: no switch; past five rows the list scrolls inside the strip", () => {
+    const many = Array.from({ length: 7 }, (_, i) => acct({ key: `claude/a${i}`, name: `a${i}` }));
+    render(<LimitsStrip accounts={many} nowMs={NOW} openKey={null} onOpen={vi.fn()} onSignIn={vi.fn()} />);
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    expect(document.querySelector("[data-limit-rows]")!.className).toMatch(/max-h-\[150px\] overflow-y-auto/);
+  });
+  it("the open session's tool is the first tab shown", () => {
+    render(<LimitsStrip accounts={[acct(), acct({ key: "codex/w", tool: "codex", name: "work" })]} nowMs={NOW} openKey={null} currentKey="codex/w" onOpen={vi.fn()} onSignIn={vi.fn()} />);
+    expect(screen.getByRole("radio", { name: /^Codex/ }).getAttribute("aria-checked")).toBe("true");
   });
 });

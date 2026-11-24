@@ -73,12 +73,12 @@ describe("Sessions zone (spec §5.2)", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("'Done today' is one row with Clean up", () => {
-    const onCleanUp = vi.fn();
-    render(zone([s("a"), s("d1", { state: "done", doneToday: true }), s("d2", { state: "done", doneToday: true })], { onCleanUp }));
-    expect(screen.getByText(/Done today 2/)).toBeTruthy();
-    fireEvent.click(screen.getByText("Clean up"));
-    expect(onCleanUp).toHaveBeenCalledOnce();
+  it("'Done today' is one row that opens All sessions; Clean up lives there (owner, 2026-11-24)", () => {
+    const onDoneToday = vi.fn();
+    render(zone([s("a"), s("d1", { state: "done", doneToday: true }), s("d2", { state: "done", doneToday: true })], { onDoneToday }));
+    fireEvent.click(screen.getByText(/Done today 2/));
+    expect(onDoneToday).toHaveBeenCalledOnce();
+    expect(screen.queryByText("Clean up")).toBeNull();
   });
 });
 
