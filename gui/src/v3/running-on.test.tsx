@@ -40,3 +40,32 @@ describe("running on an account (limits popover)", () => {
     expect(on.onModel).toHaveBeenCalledOnce();
   });
 });
+
+describe("switch from the limits popover (owner, 2026-11-24)", () => {
+  it("each session has the account chip of the session bar: it opens the move sheet, or says why it cannot", () => {
+    const onMove = vi.fn();
+    render(
+      <RunningOn
+        name="side"
+        sessions={[
+          { row: s("claude/side/a", { title: "Fix wedge", account: { name: "side", nearLimit: true, color: "purple" } }), model: "Sonnet 5.5", thinking: "medium", hosted: true },
+          { row: s("claude/side/b", { title: "No usage" }), model: null, thinking: null, hosted: true },
+        ]}
+        onOpen={vi.fn()}
+        onShowChild={vi.fn()}
+        onModel={vi.fn()}
+        onMove={onMove}
+        moveWhy={(k) => (k === "claude/side/b" ? "No usage read yet" : null)}
+      />,
+    );
+    const chips = screen.getAllByText("side", { selector: "button" });
+    fireEvent.click(chips[0]);
+    expect(onMove).toHaveBeenCalledWith("claude/side/a");
+    expect(chips[1].getAttribute("aria-disabled")).toBe("true");
+    expect(chips[1].getAttribute("title")).toBe("No usage read yet");
+    fireEvent.click(chips[1]);
+    expect(onMove).toHaveBeenCalledOnce();
+    // Model and thinking read as in the session bar: the model, then the level arrow.
+    expect(document.querySelector('[data-thinking="medium"]')).not.toBeNull();
+  });
+});

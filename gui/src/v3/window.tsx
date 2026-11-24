@@ -945,6 +945,8 @@ export function V3Window({
               onOpen={(key) => (close(), openSession(key))}
               onShowChild={(key) => (close(), openSession(key), frame.selectRight("children"))}
               onModel={(key, chip) => setOverlay({ model: key, x: LIMITS_MODEL_X, chip, at: "limits" })}
+              onMove={openMove}
+              moveWhy={moveWhy}
             />
           }
         />

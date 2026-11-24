@@ -6,10 +6,12 @@
  * window. Locked for a session in the user's own terminal.
  */
 import { useState } from "react";
-import { ArrowUpRight, Brain, ChevronDown, ChevronRight, Lock, PanelRight } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronRight, Lock, PanelRight } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
+import { AccountMark } from "./kit.js";
 import { ChildLine, childNoun, type RowSession } from "./sessions.js";
+import { ThinkingArrow } from "./workbench.js";
 
 export interface RunningSession {
   row: RowSession;
@@ -30,8 +32,14 @@ export function RunningOn({
   onOpen,
   onShowChild,
   onModel,
+  onMove,
+  moveWhy,
 }: {
   name: string;
+  /** The account chip, as in the session bar (owner, 2026-11-24): opens the move sheet for that session. */
+  onMove?: (key: string) => void;
+  /** Why that session cannot move now; null: it can. */
+  moveWhy?: (key: string) => string | null;
   sessions: RunningSession[];
   onOpen: (key: string) => void;
   onShowChild: (key: string) => void;
@@ -67,17 +75,30 @@ export function RunningOn({
                   <ArrowUpRight className="size-3.5 shrink-0 text-ac-faint group-hover:text-ac-text" />
                 </button>
               </div>
-              <div className="flex h-6 items-center pl-[30px]">
+              {/* Account, then model and thinking: the same chips, in the same order, as the session bar. */}
+              <div className="flex h-6 items-center gap-0.5 pl-[30px]">
+                {onMove && (
+                  <button
+                    type="button"
+                    aria-disabled={moveWhy?.(s.key) ? true : undefined}
+                    onClick={() => !moveWhy?.(s.key) && onMove(s.key)}
+                    title={moveWhy?.(s.key) ?? `${name} — moving opens the decision sheet, it never switches by itself`}
+                    className={cn("-ml-1.5 inline-flex h-6 items-center gap-1 rounded-md border border-transparent px-1.5 text-[11px] text-ac-muted", moveWhy?.(s.key) ? "opacity-60" : "hover:border-ac-line2 hover:text-ac-text")}
+                  >
+                    {s.account.color && <AccountMark color={s.account.color} />}
+                    {s.account.name}
+                    <ChevronDown className="size-3" />
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={!hosted}
                   onClick={() => onModel(s.key, "model")}
                   title={hosted ? "Model and thinking for the next turn — same popover as the session bar" : "Locked: change it in your terminal (/model)"}
-                  className={cn("-ml-1.5 inline-flex h-6 items-center gap-1 rounded-md border border-transparent px-1.5 text-[11px] text-ac-muted", hosted ? "hover:border-ac-line2 hover:text-ac-text" : "opacity-60")}
+                  className={cn("inline-flex h-6 items-center gap-1 rounded-md border border-transparent px-1.5 text-[11px] text-ac-muted", !onMove && "-ml-1.5", hosted ? "hover:border-ac-line2 hover:text-ac-text" : "opacity-60")}
                 >
                   {model ?? "Model"}
-                  <Brain className="ml-1 size-3" />
-                  {thinking ?? "Thinking"}
+                  {thinking && <ThinkingArrow level={thinking} />}
                   {hosted ? <ChevronDown className="size-3" /> : <Lock className="size-3" />}
                 </button>
               </div>
