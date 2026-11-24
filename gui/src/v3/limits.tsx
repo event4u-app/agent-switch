@@ -70,28 +70,48 @@ export function tightest(a: LimitAccount): LimitWindow | undefined {
   return [...a.windows].sort((x, y) => (y.used ?? -1) - (x.used ?? -1))[0];
 }
 
+/** The same three cells on every limit row (proposal D): bar · used · reset. `tick`: the pace tick (full-size rows only). */
+function LimitCells({ w, protect, stale, nowMs, tick = true, bar = "h-1.5" }: { w: LimitWindow; protect: number; stale?: boolean; nowMs: number; tick?: boolean; bar?: string }) {
+  const t = stale ? "none" : tone(w.used, protect);
+  return (
+    <>
+      <span className={cn("relative block rounded-full bg-ac-raise", bar)}>
+        <span className={cn("absolute inset-y-0 left-0 rounded-full", FILL[t], stale && "opacity-50")} style={{ width: `${w.used ?? 0}%` }} />
+        {tick && w.pace != null && <span data-testid="pace-tick" className="absolute -top-1 h-3.5 w-0.5 -translate-x-1/2 rounded-full bg-ac-text" style={{ left: `${w.pace}%` }} />}
+      </span>
+      <span className={cn("text-right font-ac-mono text-[11px]", TEXT[t], stale && "italic")}>{pct(w.used)}</span>
+      <span className={cn("truncate text-right font-ac-mono text-[11px] text-ac-muted", stale && "italic")}>{w.resetsAtMs ? `↻ ${duration(w.resetsAtMs - nowMs)}` : ""}</span>
+    </>
+  );
+}
+
 /** One window, full size: label · bar with pace tick · used · reset. */
 export function LimitBar({ w, protect, stale, nowMs }: { w: LimitWindow; protect: number; stale?: boolean; nowMs: number }) {
-  const t = stale ? "none" : tone(w.used, protect);
   return (
     <div className="grid grid-cols-[76px_1fr_36px_64px] items-center gap-2">
       <span className="truncate text-[11px] text-ac-muted">{w.label.replace("week · ", "week ")}</span>
-      <span className="relative block h-1.5 rounded-full bg-ac-raise">
-        <span className={cn("absolute inset-y-0 left-0 rounded-full", FILL[t], stale && "opacity-50")} style={{ width: `${w.used ?? 0}%` }} />
-        {w.pace != null && <span data-testid="pace-tick" className="absolute -top-1 h-3.5 w-0.5 -translate-x-1/2 rounded-full bg-ac-text" style={{ left: `${w.pace}%` }} />}
-      </span>
-      <span className={cn("text-right font-ac-mono text-[11px]", TEXT[t])}>{pct(w.used)}</span>
-      <span className="truncate text-right font-ac-mono text-[11px] text-ac-muted">{w.resetsAtMs ? `↻ ${duration(w.resetsAtMs - nowMs)}` : ""}</span>
+      <LimitCells w={w} protect={protect} stale={stale} nowMs={nowMs} />
     </div>
   );
 }
 
-/** One row of the Limits strip: name · numbers when not OK · a 64×4 bar (no pace tick on small bars). */
-export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount; nowMs: number; open?: boolean; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
+/** The window a one-line row shows: a window near its limit, else the current (5h) one. Pure. */
+export function rowWindow(a: LimitAccount): LimitWindow | undefined {
   const top = tightest(a);
+  const t = tone(top?.used ?? null, a.protect);
+  return t === "warn" || t === "alert" ? top : currentWindow(a);
+}
+
+/** The strip's columns (proposal D): account + tool · bar · used · reset, the same on every row. */
+const ROW_GRID = "grid grid-cols-[minmax(0,1fr)_44px_34px_58px] items-center gap-2";
+
+/** One row of the Limits strip (proposal D): account and tool · bar · used · reset, always. Near limit is colour and the number;
+ *  an old reading is italic with its age on hover; a missing sign-in fills the row. */
+export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount; nowMs: number; open?: boolean; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
+  const w = rowWindow(a);
   const stale = isStale(a, nowMs);
-  const t = stale ? "none" : tone(top?.used ?? null, a.protect);
-  const tip = a.windows.map((w) => `${w.label} ${pct(w.used)}${w.resetsAtMs ? ` · resets in ${duration(w.resetsAtMs - nowMs)}` : ""}`).join("\n");
+  const age = stale ? `${duration(nowMs - a.checkedMs!)} old` : null;
+  const tip = [age && `Read ${age} — refreshing`, ...a.windows.map((x) => `${x.label} ${pct(x.used)}${x.resetsAtMs ? ` · resets in ${duration(x.resetsAtMs - nowMs)}` : ""}`)].filter(Boolean).join("\n");
   return (
     <div
       role="button"
@@ -104,36 +124,28 @@ export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount
         e.preventDefault();
         onOpen(a.key);
       }}
-      title={tip} className={cn("flex h-6 items-center gap-2 rounded-md px-2", open ? "bg-ac-raise" : "hover:bg-ac-raise")}>
-      <span className="min-w-0 flex-1 truncate text-xs text-ac-soft">
+      title={tip || undefined}
+      className={cn(ROW_GRID, "h-6 rounded-md px-2", open ? "bg-ac-raise" : "hover:bg-ac-raise")}
+    >
+      <span className={cn("min-w-0 truncate text-xs text-ac-soft", stale && "italic")}>
         {a.name}
-        {a.tool === "codex" && <span className="text-ac-muted"> · Codex</span>}
+        <span className="text-ac-muted"> · {a.tool === "codex" ? "Codex" : "Claude"}</span>
         {a.next && (
           <span className="ml-1 text-ac-muted" title="Next for new sessions">
             →
           </span>
         )}
-        {stale && <span className="text-[11px] text-ac-muted"> · {duration(nowMs - a.checkedMs!)} old</span>}
+        {w && w.label !== "5h" && <span className="text-ac-muted"> · {w.label.replace("week · ", "week ")}</span>}
       </span>
       {a.signIn ? (
-        <button type="button" onClick={(e) => (e.stopPropagation(), onSignIn(a.key))} className="shrink-0 text-[11px] text-ac-muted hover:text-ac-text">
-          sign in ›
+        <button type="button" onClick={(e) => (e.stopPropagation(), onSignIn(a.key))} className="col-span-3 justify-self-end text-[11px] text-ac-muted hover:text-ac-text">
+          Sign in ›
         </button>
-      ) : !a.windows.length ? (
+      ) : !w ? (
         // Not read yet: never an empty track, which reads as 0 % used.
-        <span className="shrink-0 text-[11px] text-ac-muted">no data yet</span>
+        <span className="col-span-3 justify-self-end text-[11px] text-ac-muted">no data yet</span>
       ) : (
-        <>
-          {(t === "warn" || t === "alert") && top && (
-            <span className={cn("shrink-0 font-ac-mono text-[10.5px]", TEXT[t])}>
-              {pct(top.used)}
-              {top.resetsAtMs ? ` · ${duration(top.resetsAtMs - nowMs)}` : ""}
-            </span>
-          )}
-          <span className="relative block h-1 w-16 shrink-0 rounded-full bg-ac-raise">
-            <span className={cn("absolute inset-y-0 left-0 rounded-full", FILL[t], stale && "opacity-50")} style={{ width: `${top?.used ?? 0}%` }} />
-          </span>
-        </>
+        <LimitCells w={w} protect={a.protect} stale={stale} nowMs={nowMs} tick={false} bar="h-1" />
       )}
     </div>
   );
@@ -144,7 +156,12 @@ export function LimitsStrip({ accounts, nowMs, openKey, onOpen, onSignIn }: { ac
   const ordered = [...accounts.filter((a) => a.tool === "claude"), ...accounts.filter((a) => a.tool === "codex")];
   return (
     <section aria-label="Limits" className="relative shrink-0 border-t border-ac-line px-1.5 pb-1.5 pt-1">
-      <div className="flex h-7 items-center px-2 text-[11px] font-semibold text-ac-soft">Limits</div>
+      <div className={cn(ROW_GRID, "h-7 px-2 text-[11px]")}>
+        <span className="font-semibold text-ac-soft">
+          Limits <span className="font-normal text-ac-muted">· 5h</span>
+        </span>
+        <span className="col-span-3 justify-self-end text-ac-muted">resets</span>
+      </div>
       {ordered.map((a) => (
         <LimitRow key={a.key} a={a} nowMs={nowMs} open={a.key === openKey} onOpen={onOpen} onSignIn={onSignIn} />
       ))}

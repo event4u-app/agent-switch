@@ -30,7 +30,7 @@ describe("limits rows by keyboard (8.6)", () => {
     fireEvent.keyDown(row, { key: "Enter" });
     fireEvent.keyDown(row, { key: " " });
     expect(onOpen.mock.calls).toEqual([["claude/side"], ["claude/side"]]);
-    fireEvent.keyDown(screen.getByText("sign in ›"), { key: "Enter" });
+    fireEvent.keyDown(screen.getByText("Sign in ›"), { key: "Enter" });
     expect(onOpen).toHaveBeenCalledTimes(2);
   });
 });
@@ -48,26 +48,33 @@ describe("limits (spec §5.3, §7.5)", () => {
     expect([tone(82, 98), tone(83, 98), tone(97, 98), tone(98, 98), tone(null, 98)]).toEqual(["ok", "warn", "warn", "alert", "none"]);
   });
 
-  it("the strip: one bar per account for its tightest window, numbers only when not OK, Claude first", () => {
+  it("the strip (proposal D): every row the same columns — account and tool · bar · used · reset; Claude first", () => {
     const onOpen = vi.fn();
-    render(<LimitsStrip accounts={[acct({ key: "codex/w", tool: "codex", name: "work", windows: [{ label: "5h", used: 10, resetsAtMs: null, pace: null }] }), acct()]} nowMs={NOW} openKey={null} onOpen={onOpen} onSignIn={vi.fn()} />);
+    render(<LimitsStrip accounts={[acct({ key: "codex/w", tool: "codex", name: "work", windows: [{ label: "5h", used: 10, resetsAtMs: NOW + 3 * H, pace: null }] }), acct()]} nowMs={NOW} openKey={null} onOpen={onOpen} onSignIn={vi.fn()} />);
+    expect(screen.getByText("· 5h")).toBeTruthy();
+    expect(screen.getByText("resets")).toBeTruthy();
     const rows = screen.getAllByRole("button");
-    expect(rows[0].textContent).toContain("side");
-    expect(rows[0].textContent).toContain("94% · 1h 18m");
-    expect(rows[1].textContent).toContain("work · Codex");
-    expect(rows[1].textContent).not.toContain("%");
+    expect(rows[0].textContent).toBe("side · Claude94%↻ 1h 18m");
+    expect(rows[1].textContent).toBe("work · Codex10%↻ 3h");
+    expect(rows[0].className).toBe(rows[1].className);
     expect(screen.queryByTestId("pace-tick"), "no tick on small bars").toBeNull();
     fireEvent.click(rows[0]);
     expect(onOpen).toHaveBeenCalledWith("claude/side");
     expect(tightest(acct())!.label).toBe("5h");
   });
 
-  it("stale data is greyed with its age; a signed-out account offers sign in", () => {
+  it("a window near its limit other than 5h names itself; otherwise the row shows 5h", () => {
+    render(<LimitsStrip accounts={[acct({ windows: [{ label: "5h", used: 20, resetsAtMs: null, pace: null }, { label: "week", used: 90, resetsAtMs: null, pace: null }] })]} nowMs={NOW} openKey={null} onOpen={vi.fn()} onSignIn={vi.fn()} />);
+    expect(screen.getByRole("button").textContent).toBe("side · Claude · week90%");
+  });
+
+  it("an old reading is italic with its age on hover; a signed-out account's row is its sign-in", () => {
     const onSignIn = vi.fn();
     render(<LimitsStrip accounts={[acct({ checkedMs: NOW - 14 * 60_000 }), acct({ key: "claude/x", name: "x", signIn: true })]} nowMs={NOW} openKey={null} onOpen={vi.fn()} onSignIn={onSignIn} />);
-    expect(screen.getByText(/14m old/)).toBeTruthy();
-    expect(screen.queryByText(/94% · 1h 18m/), "stale numbers are not shown as current").toBeNull();
-    fireEvent.click(screen.getByText("sign in ›"));
+    const old = screen.getByText("94%");
+    expect(old.className).toContain("italic");
+    expect(old.closest("[role=button]")!.getAttribute("title")).toMatch(/^Read 14m old — refreshing/);
+    fireEvent.click(screen.getByText("Sign in ›"));
     expect(onSignIn).toHaveBeenCalledWith("claude/x");
   });
 
