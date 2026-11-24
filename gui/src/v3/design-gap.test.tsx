@@ -92,7 +92,7 @@ describe("Open in (spec §7.7)", () => {
     const models = () => ({ models: [{ id: "opus", label: "Opus", hint: "deepest" }], current: "opus", thinking: ["high"], currentThinking: "high" });
     mount({ ...withTargets(), models });
     openSession();
-    fireEvent.click(screen.getByTitle("Model for the next turn"));
+    fireEvent.click(screen.getByTitle("Model and thinking for the next turn"));
     expect(screen.queryByRole("dialog", { name: "Model and thinking" })).not.toBeNull();
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole("dialog", { name: "Model and thinking" })).toBeNull();
@@ -460,7 +460,7 @@ describe("Model popover (spec §7.6)", () => {
 
   it("opens under the chip, marks only the chosen model and changes it for the next turn", () => {
     const { act } = mount({ models });
-    fireEvent.click(screen.getByTitle("Model for the next turn"));
+    fireEvent.click(screen.getByTitle("Model and thinking for the next turn"));
     const pop = screen.getByRole("dialog", { name: "Model and thinking" });
     expect(within(pop).getAllByRole("menuitemradio").map((b) => b.getAttribute("aria-checked"))).toEqual(["true", "false"]);
     expect(within(pop).getByText("Applies from the next turn.", { exact: false })).toBeTruthy();
@@ -469,9 +469,10 @@ describe("Model popover (spec §7.6)", () => {
     expect(screen.queryByRole("dialog", { name: "Model and thinking" })).toBeNull();
   });
 
-  it("the thinking chip opens the same popover; the segmented control sets the level", () => {
+  it("one chip for model and thinking (owner, 2026-11-24): the arrow says the level; the segmented control sets it", () => {
     const { act } = mount({ models });
-    fireEvent.click(screen.getByTitle("Thinking for the next turn"));
+    expect(document.querySelector("[data-thinking]")?.getAttribute("aria-label")).toMatch(/^Thinking /);
+    fireEvent.click(screen.getByTitle("Model and thinking for the next turn"));
     fireEvent.click(screen.getByRole("radio", { name: "Low" }));
     expect(act).toHaveBeenCalledWith({ type: "set-thinking", key: "s1", level: "low" });
   });
@@ -481,10 +482,10 @@ describe("real data without placeholders (gap §5a–§5b)", () => {
   it("unknown model, thinking and 5h read as the muted field names, never a dash", () => {
     const d = data();
     mount({ bar: () => ({ ...d.bar("s1")!, model: null, thinking: null, account: { ...d.bar("s1")!.account, fiveH: null } }) });
-    const bar = screen.getByTitle("Model for the next turn").parentElement!;
+    const bar = screen.getByTitle("Model and thinking for the next turn").parentElement!;
     expect(bar.textContent).not.toContain("—");
-    expect(screen.getByTitle("Model for the next turn").textContent).toBe("Model");
-    expect(screen.getByTitle("Thinking for the next turn").textContent!.trim()).toBe("Thinking");
+    expect(screen.getByTitle("Model and thinking for the next turn").textContent).toBe("Model");
+    expect(document.querySelector("[data-thinking]"), "no level, no arrow").toBeNull();
   });
 
   it("the model chip shows the label and keeps the raw id in its tooltip", () => {

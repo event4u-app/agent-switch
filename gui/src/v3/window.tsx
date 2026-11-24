@@ -401,8 +401,7 @@ export function V3Window({
     const why = (w: string | null) => (w ? { disabled: true, why: w } : {});
     const items: MenuItem[] = [];
     if (moved.includes("account")) items.push({ id: "chip:account", label: "Account…", icon: <AccountMark color={b.account.color} />, hint: `${b.account.name}${b.account.fiveH != null ? ` · ${b.account.fiveH}%` : ""}`, ...why(moveWhy(key)), onClick: run(() => openMove(key)) });
-    if (moved.includes("model")) items.push({ id: "chip:model", label: "Model…", hint: b.model ?? undefined, ...why(locked && (b.hosted ? locked : "Locked: change it in your terminal (/model)")), onClick: () => setOverlay({ model: key, x, chip: "model" }) });
-    if (moved.includes("thinking")) items.push({ id: "chip:thinking", label: "Thinking…", hint: b.thinking ? b.thinking[0].toUpperCase() + b.thinking.slice(1) : undefined, ...why(locked), onClick: () => setOverlay({ model: key, x, chip: "thinking" }) });
+    if (moved.includes("model")) items.push({ id: "chip:model", label: "Model and thinking…", hint: [b.model, b.thinking && b.thinking[0].toUpperCase() + b.thinking.slice(1)].filter(Boolean).join(" · ") || undefined, ...why(locked && (b.hosted ? locked : "Locked: change it in your terminal (/model)")), onClick: () => setOverlay({ model: key, x, chip: "model" }) });
     if (moved.includes("ctx") && b.contextPct != null) items.push({ label: "", note: `Context ${Math.round(b.contextPct)}% used` });
     if (moved.includes("where")) items.push({ label: "", note: b.hosted ? `Hosted by Agent Switch: ${HOSTED_HINT}` : `${b.where ?? "Your terminal"} · read-only. Take over to type here.` });
     return [...items, { divider: true, label: "" }];

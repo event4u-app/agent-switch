@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { Brain, Check, ChevronDown, CircleX, Ellipsis, Eye, Lightbulb, Lock, MessageSquareText, Pin, Server, SquareTerminal, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, ArrowDownRight, ArrowRight, ArrowUp, ArrowUpRight, Check, ChevronDown, CircleX, Ellipsis, Eye, Lightbulb, Lock, MessageSquareText, Pin, Server, SquareTerminal, TriangleAlert, X } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
@@ -231,7 +231,32 @@ export interface BarSession {
 }
 
 /** The bar's chips that give way when it is narrow, by what stays longest: the last leaves first, where it runs last of all (8.6). */
-export const BAR_CHIPS = ["where", "account", "model", "thinking", "ctx"] as const;
+/**
+ * Thinking as an arrow behind the model (owner, 2026-11-24): down for the least,
+ * right for medium, up for the most, the half steps between. One scale for
+ * every tool, so the same arrow means the same level everywhere. Pure.
+ */
+const THINKING_ARROW: Record<string, { Icon: typeof ArrowUp; step: number }> = {
+  minimal: { Icon: ArrowDown, step: 0 },
+  low: { Icon: ArrowDownRight, step: 1 },
+  medium: { Icon: ArrowRight, step: 2 },
+  high: { Icon: ArrowUpRight, step: 3 },
+  xhigh: { Icon: ArrowUp, step: 4 },
+  max: { Icon: ArrowUp, step: 4 },
+};
+export const thinkingStep = (level: string): number | null => THINKING_ARROW[level.toLowerCase()]?.step ?? null;
+export function ThinkingArrow({ level }: { level: string }) {
+  const a = THINKING_ARROW[level.toLowerCase()];
+  const name = level[0].toUpperCase() + level.slice(1);
+  if (!a) return <span className="text-ac-muted">{name}</span>;
+  return (
+    <span data-thinking={level.toLowerCase()} aria-label={`Thinking ${name}`} title={`Thinking ${name}`} className={cn("inline-flex items-center", level.toLowerCase() === "max" ? "text-ac-text" : "text-ac-muted")}>
+      <a.Icon aria-hidden className="size-3.5" strokeWidth={level.toLowerCase() === "max" ? 2.5 : 2} />
+    </span>
+  );
+}
+
+export const BAR_CHIPS = ["where", "account", "model", "ctx"] as const;
 export type BarChipId = (typeof BAR_CHIPS)[number];
 
 /** A chip that left the bar: hidden (never a clipped chip, never an invisible Tab stop). */
@@ -286,7 +311,7 @@ function fitChips(box: HTMLElement): BarChipId[] {
   return moved;
 }
 
-export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; menuOpen?: boolean; /** Why the account chip cannot open the decision sheet now; absent: it can. */ accountWhy?: string | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; thinking: (x: number) => void; /** `moved`: the chips that left the bar, so ⋯ offers them. */ menu: (trigger: HTMLElement, moved: BarChipId[]) => void } }) {
+export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { s: BarSession; openIn: ReactNode; chipOpen?: "model" | "thinking" | null; menuOpen?: boolean; /** Why the account chip cannot open the decision sheet now; absent: it can. */ accountWhy?: string | null; on: { view: (v: "terminal" | "chat") => void; account: () => void; model: (x: number) => void; /** Unused since model and thinking share one chip; kept so callers need not change. */ thinking?: (x: number) => void; /** `moved`: the chips that left the bar, so ⋯ offers them. */ menu: (trigger: HTMLElement, moved: BarChipId[]) => void } }) {
   const t = tone(s.account.fiveH, s.account.protect);
   // 8.6: a chip that does not fit leaves the bar and moves into ⋯, never clipped.
   const clip = useRef<HTMLDivElement>(null);
@@ -352,12 +377,11 @@ export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { 
           {s.account.fiveH != null && <span className={cn("font-ac-mono text-[10.5px]", t === "ok" || t === "none" ? "text-ac-muted" : t === "warn" ? "text-ac-warn-text" : "text-ac-alert-text")}>{s.account.fiveH}%</span>}
         </span>
       </BarChip>
-      <BarChip title={s.respawnWhy ?? (s.hosted ? "Model for the next turn" : "Locked: change it in your terminal (/model)")} locked={!s.hosted || !!s.respawnWhy} open={chipOpen === "model"} chip="model" moved={isMoved("model")} onClick={(e) => on.model(shellX(e))}>
+      {/* One chip for model and thinking (owner, 2026-11-24): both opened the same popover. The arrow says the thinking level. */}
+      <BarChip title={s.respawnWhy ?? (s.hosted ? "Model and thinking for the next turn" : "Locked: change it in your terminal (/model)")} locked={!s.hosted || !!s.respawnWhy} open={chipOpen === "model" || chipOpen === "thinking"} chip="model" moved={isMoved("model")} onClick={(e) => on.model(shellX(e))}>
         {/* Unknown: the field's name, muted — never a dash (gap §5b). */}
         {s.model ? <span title={s.modelId ?? undefined}>{s.model}</span> : <span className="text-ac-muted">Model</span>}
-      </BarChip>
-      <BarChip title={s.respawnWhy ?? (s.hosted ? "Thinking for the next turn" : "Locked: change it in your terminal")} locked={!s.hosted || !!s.respawnWhy} open={chipOpen === "thinking"} chip="thinking" moved={isMoved("thinking")} onClick={(e) => on.thinking(shellX(e))}>
-        <Brain className="size-3.5 text-ac-muted" /> {s.thinking ? s.thinking[0].toUpperCase() + s.thinking.slice(1) : <span className="text-ac-muted">Thinking</span>}
+        {s.thinking && <ThinkingArrow level={s.thinking} />}
       </BarChip>
       {s.contextPct != null && (
         <span data-bar-chip="ctx" {...away(isMoved("ctx"))} className="ml-1 shrink-0 whitespace-nowrap font-ac-mono text-[11px] text-ac-muted" title="Context used">
