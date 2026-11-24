@@ -57,7 +57,8 @@ test("a hosted start: routed account, the shell's own environment, this terminal
   assert.deepEqual(o.args, ["--model", "opus", "fix it"]);
   assert.deepEqual(o.env, { AGENT_CONFIG_HOME: "/ac" });
   const [script, mode] = calls.envSeen;
-  assert.equal(mode, "600");
+  // Windows has no POSIX modes (and never hosts a terminal start); everywhere else only the owner reads it.
+  if (process.platform !== "win32") assert.equal(mode, "600");
   assert.match(script, /^export PATH='\/usr\/bin:\/opt\/bin'$/m);
   assert.match(script, /^export PROJECT_TOKEN_NAME='it'\\''s here'$/m);
   // The host's own variables and the outer terminal's are not carried over.

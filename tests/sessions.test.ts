@@ -660,7 +660,8 @@ test("listSessions dates a session by its last transcript event, not by a later 
     const rows = listSessions(cfg, 10);
     assert.deepEqual(rows.map((r) => r.sessionId), ["recent", "no-stamps", "skewed", "touched-old"]);
     assert.equal(rows.find((r) => r.sessionId === "touched-old")!.mtimeMs, now - week);
-    assert.equal(rows.find((r) => r.sessionId === "skewed")!.mtimeMs, now - 180_000);
+    // The file time as the filesystem stores it (some round utimes below a millisecond).
+    assert.equal(rows.find((r) => r.sessionId === "skewed")!.mtimeMs, fs.statSync(path.join(cfg, "projects", "-p", "skewed.jsonl")).mtimeMs);
 
     // The cap counts true activity: a touched old file never pushes a recent one out.
     assert.deepEqual(listSessions(cfg, 1).map((r) => r.sessionId), ["recent"]);
