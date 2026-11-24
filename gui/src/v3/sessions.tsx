@@ -597,7 +597,7 @@ export function SessionRow({
   }, [active]);
   return (
     <div ref={ref} className={cn(block && "relative mb-1 rounded-md bg-ac-raise pb-0.5")}>
-      {block && <Marker tone="neutral" />}
+      {block && <Marker />}
       <div
         role="button"
         tabIndex={0}
@@ -613,7 +613,7 @@ export function SessionRow({
         onMouseLeave={onPeek && (() => onPeek(null, 0))}
         className={cn("group/row relative rounded-md pl-2.5 pr-2", second ? "py-1.5" : "py-1", block ? null : active ? "bg-ac-raise" : "hover:bg-ac-raise")}
       >
-        {active && !block && <Marker tone="neutral" />}
+        {active && !block && <Marker />}
         {/* The stem from the dot down to the first child (3.2). */}
         {kids && <span aria-hidden data-guide="stem" className={cn("pointer-events-none absolute bottom-0 w-px bg-ac-line", second ? "top-[22px]" : "top-5")} style={{ left: lineX(0) }} />}
         <div className="flex h-5 min-w-0 items-center gap-2">

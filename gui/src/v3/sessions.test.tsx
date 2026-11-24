@@ -259,10 +259,10 @@ describe("one status vocabulary (5.1)", () => {
     expect(container.querySelectorAll("svg")).toHaveLength(0);
   });
 
-  it("the selected row and a checked box use the neutral accent; brand orange stays out of the list", () => {
+  it("the selected row's frame takes the accent (owner, 2026-11-24); a checked box stays neutral", () => {
     const { container } = render(<SessionRow s={s("a")} active {...on} />);
-    expect(container.querySelector(".border-l-ac-text")).toBeTruthy();
-    expect(container.innerHTML).not.toMatch(/ac-brand/);
+    expect(container.querySelector(".border-l-ac-brand")).toBeTruthy();
+    expect(container.querySelector(".border-l-ac-text")).toBeNull();
     cleanup();
     const sel = render(<SessionRow s={s("b")} selecting checked {...on} />);
     expect(sel.getByRole("checkbox").className).toMatch(/bg-ac-text/);

@@ -31,7 +31,7 @@ describe("v3 design guard (spec §14)", () => {
     const seat = (id: string) => ({ id: `claude/work/${id}`, label: `seat ${id}`, kind: "council", state: "idle" as const, source: "lineage" as const, tool: "claude" as const, account: { name: "work", color: "teal" as const } });
     const s: RowSession = { key: "p", title: "council", state: "working", account: { name: "work", nearLimit: false }, branch: "main", pr: null, children: [seat("a"), seat("b"), seat("c")], needsYou: false };
     const { container } = render(createElement(SessionRow, { s, active: true, open: true, onSelect: () => {}, onToggleChildren: () => {}, onCheck: () => {} }));
-    const markers = container.querySelectorAll(".border-l-ac-text");
+    const markers = container.querySelectorAll(".border-l-ac-brand");
     expect(markers).toHaveLength(1);
     const block = markers[0].parentElement!;
     // The fill sits on the element that holds the row and every child row, and nowhere inside it.

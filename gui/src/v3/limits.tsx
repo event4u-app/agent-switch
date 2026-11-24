@@ -130,7 +130,7 @@ export function LimitRow({ a, nowMs, open, current, toolShown, onOpen, onSignIn 
       data-current={current ? "" : undefined}
       className={cn(ROW_GRID, "relative h-6 rounded-md px-2", open || current ? "bg-ac-raise" : "hover:bg-ac-raise")}
     >
-      {current && <Marker tone="neutral" />}
+      {current && <Marker />}
       <span className={cn("flex min-w-0 items-center gap-1.5 text-xs", current ? "text-ac-text" : "text-ac-soft", stale && "italic")}>
         <AccountMark color={a.color} />
         <span className={cn("shrink-0", current && "font-semibold")}>{a.name}</span>
