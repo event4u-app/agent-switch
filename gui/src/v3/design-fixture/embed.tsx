@@ -44,6 +44,13 @@ export const BOARDS: Record<string, Board> = {
   externalchat: { steps: [{ click: "as-hook p95" }, { click: "Chat" }] },
   tree: { steps: [{ click: "Show 3 subagents" }] },
   subagent: { steps: [{ click: "Show 3 subagents" }, { click: "general-purpose · migrate JSON stores" }] },
+  // The board of a session that runs an arena: the tournament, its council, its workflow runs.
+  arena: { steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }] },
+  "arena-match": { steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }, { click: "R3M1" }] },
+  "arena-line": { steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }, { click: "L005" }] },
+  council: { steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }, { click: "Council · 20261124T1300Z-tcc" }] },
+  "council-live": { steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }, { click: "Council · 20261124T1735Z-board" }] },
+  workflows: { steps: [{ click: "Show 2 runs" }, { click: "Arena · tcc-signing" }, { wait: 300 }, { click: "Workflows (3)" }] },
   batch: { steps: [{ click: "Select · density" }, { click: "Select", exact: true }, { click: "v3 engine" }, { click: "Release plan" }] },
   focus: { steps: [{ key: "b", mod: true }] },
   offline: { scene: { health: "down" } },

@@ -16,6 +16,8 @@ import { FirstRun } from "../firstrun.js";
 import { ChatTimeline } from "../chat.js";
 import { Composer } from "../composer.js";
 import { EarlierNotShown } from "../subagent-view.js";
+import { BoardPage } from "../board/BoardPage.js";
+import { BOARD_FIXTURE } from "./board-fixture.js";
 import type { AsEvent } from "../timeline.js";
 import CHAT from "../fixtures/timeline-claude-2.1.316.json";
 import { ToolsPage, allNeeds } from "../tools.js";
@@ -83,6 +85,16 @@ const SESSIONS: RowSession[] = [
       { id: "k2", label: "Council seat · skeptic", kind: "council-seat", state: "working", source: "lineage" },
       { id: "k3", label: "Council seat · release manager", kind: "council-seat", state: "working", source: "lineage" },
     ] }),
+  S({ key: "claude/work/s-arena", title: "Signing arena: stable TCC identity", state: "working", branch: "dev/v3",
+    children: [
+      { id: "board:claude/work/s-arena|arena:tcc-signing", label: "Arena · tcc-signing · round 3 · 4/10 left", kind: "arena-board", state: "working", source: "files",
+        children: [
+          { id: "board:claude/work/s-arena|workflow:wf_r3", label: "tcc-signing-arena-judge · 1/2 · Judge", kind: "workflow", state: "working", source: "files" },
+          { id: "board:claude/work/s-arena|workflow:wf_r2", label: "tcc-signing-arena-judge · 4/4", kind: "workflow", state: "done", source: "files" },
+          { id: "board:claude/work/s-arena|workflow:wf_lines", label: "tcc-signing-arena-lines · 10/10", kind: "workflow", state: "done", source: "files" },
+        ] },
+      { id: "board:claude/work/s-arena|council", label: "Council", kind: "council-board", state: "done", source: "files" },
+    ] }),
   S({ key: "claude/side/s-wedge", title: "Fix wedge on daemon restart", state: "working", account: { name: "side", nearLimit: true }, branch: "fix/wedge-restart", pr: { number: 88, ci: "SUCCESS", mergeable: "MERGEABLE" } }),
   S({ key: "claude/personal/s-notes", title: "Release notes 2.11", state: "done", account: { name: "personal", nearLimit: false }, branch: "docs/release-2.11", pr: { number: 140, ci: "SUCCESS", mergeable: "MERGEABLE" }, doneToday: true }),
   S({ key: "claude/personal/s-checkout", title: "Checkout flow accessibility", state: "needs-you", account: { name: "personal", nearLimit: false }, branch: "a11y/checkout", pr: { number: 311, ci: "FAILURE", mergeable: "CONFLICTING" }, needsYou: true,
@@ -96,6 +108,7 @@ const BAR: Record<string, { model: string; thinking: string; ctx: number; hosted
   "claude/work/s-spike": { model: "Sonnet 5.5", thinking: "Medium", ctx: 9, hosted: false, acct: "work", color: "teal", five: 39, protect: 95 },
   "claude/personal/s-themes": { model: "Opus 5.5", thinking: "High", ctx: 21, hosted: true, acct: "personal", color: "pink", five: 12, protect: 98 },
   "codex/work/s-hook": { model: "default", thinking: "medium", ctx: 33, hosted: false, acct: "work", color: "teal", five: 30, protect: 90 },
+  "claude/work/s-arena": { model: "Opus 5.5", thinking: "High", ctx: 61, hosted: true, acct: "work", color: "teal", five: 39, protect: 95 },
   "claude/work/s-council": { model: "Opus 5.5", thinking: "High", ctx: 44, hosted: true, acct: "work", color: "teal", five: 39, protect: 95 },
   "claude/side/s-wedge": { model: "Sonnet 5.5", thinking: "Medium", ctx: 47, hosted: true, acct: "side", color: "purple", five: 94, protect: 98 },
   "claude/personal/s-notes": { model: "Sonnet 5.5", thinking: "Low", ctx: 12, hosted: true, acct: "personal", color: "pink", five: 12, protect: 98 },
@@ -343,6 +356,7 @@ export function Scene({ view = "main", theme = "darcula", accent = "theme", heal
   const slots: V3Slots = {
     // A subagent's own transcript, never its parent's; the end of a long run, as the real view reads it.
     subagent: (_parent, agentId) => <ChatTimeline events={SUBAGENT_RUNS[agentId] ?? []} notice={<EarlierNotShown />} />,
+    board: (key, focus) => <BoardPage sessionKey={key} title={SESSIONS.find((x) => x.key === key)?.title ?? key} live focus={focus} read={async () => BOARD_FIXTURE} readLine={async (_k, run, id) => `# ${id}\n\n${run}: the line's rationale, then its diff.\n\n\`\`\`diff\n+ export function signBundle(app: string): SignResult {\n\`\`\`\n`} transcript={(agentId) => <ChatTimeline events={SUBAGENT_RUNS[agentId] ?? SUBAGENT_RUNS.c2} notice={<EarlierNotShown />} />} speak={async () => undefined} />,
     review: (key, focus) => (
       <Review
         title={SESSIONS.find((x) => x.key === key)?.title ?? key}
