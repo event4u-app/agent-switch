@@ -811,9 +811,16 @@ function walkCodexRollouts(sessionsDir: string): string[] {
  *  rollout blob is never read (format is opaque + version-unstable), so `cwd`
  *  and `summary` are null; `projectDir` carries the date-partition path for
  *  display parity with the Claude listing. */
-export function listCodexSessions(configDir: string, limit: number): SessionRow[] {
+export function listCodexSessions(
+  configDir: string,
+  limit: number,
+  /** The temp folders, encoded; injectable because a test's own home lives in one. */
+  temp: readonly string[] = tempProjectPrefixes(),
+): SessionRow[] {
   const sessionsDir = path.join(configDir, "sessions");
   const rows: SessionRow[] = [];
+  // As for Claude: a profile that itself lives in a temp folder hides nothing.
+  const sandbox = inTempFolder(encodeProjectDir(path.resolve(configDir)), temp);
   for (const file of walkCodexRollouts(sessionsDir)) {
     const id = codexSessionId(path.basename(file));
     if (id === null) continue;
@@ -824,6 +831,11 @@ export function listCodexSessions(configDir: string, limit: number): SessionRow[
       continue;
     }
     if (!st.isFile()) continue;
+    // AI-council calls run `codex exec` in the OS temp folder: left out before the cap.
+    if (!sandbox) {
+      const cwd = codexCwdHint(file);
+      if (cwd && inTempFolder(encodeProjectDir(cwd), temp)) continue;
+    }
     rows.push({
       sessionId: id,
       projectDir: path.relative(sessionsDir, path.dirname(file)),
@@ -844,6 +856,25 @@ export function listCodexSessions(configDir: string, limit: number): SessionRow[
     if (meta.threadSource && meta.threadSource !== "user") r.codexThreadSource = meta.threadSource;
   }
   return top;
+}
+
+/** The `cwd` a rollout's `session_meta` names, from its first 4 KiB: it sits ahead of
+ *  the base instructions, so the whole line need not be read. Null when not there. */
+const CWD_HINT_CAP = 4 * 1024;
+function codexCwdHint(file: string): string | null {
+  if (file.endsWith(".zst")) return null;
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(file, "r");
+    const buf = Buffer.alloc(CWD_HINT_CAP);
+    const n = fs.readSync(fd, buf, 0, CWD_HINT_CAP, 0);
+    const m = /"cwd":("(?:[^"\\]|\\.)*")/.exec(buf.subarray(0, n).toString("utf8"));
+    return m ? (JSON.parse(m[1]) as string) : null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) fs.closeSync(fd);
+  }
 }
 
 /**

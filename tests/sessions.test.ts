@@ -457,6 +457,30 @@ test("listCodexSessions walks the date partitions, newest first, capped", () => 
   }
 });
 
+test("listCodexSessions leaves out sessions in a temp folder, like the Claude list (owner, 2026-11-24)", () => {
+  const root = tmp();
+  try {
+    const cfg = path.join(root, "codex");
+    const meta = (uuid: string, cwd: string) => `${JSON.stringify({ timestamp: "t", type: "session_meta", payload: { id: uuid, cwd, originator: "codex_exec", source: "exec", base_instructions: "x".repeat(300 * 1024) } })}\n`;
+    const ids = ["11111111-1111-4111-8111-1111111111a1", "11111111-1111-4111-8111-1111111111a2", "11111111-1111-4111-8111-1111111111a3", "11111111-1111-4111-8111-1111111111a4"];
+    // AI-council calls run `codex exec` in the OS temp folder.
+    seedCodexRollout(cfg, "2026/11/24", "2026-11-24T13-01-00", ids[0], { mtimeMs: 4000, bytes: meta(ids[0], "/private/var/folders/_s/abc123/T") });
+    seedCodexRollout(cfg, "2026/11/24", "2026-11-24T13-02-00", ids[1], { mtimeMs: 3000, bytes: meta(ids[1], "/Users/me/code/app") });
+    seedCodexRollout(cfg, "2026/11/24", "2026-11-24T13-03-00", ids[2], { mtimeMs: 2000, bytes: meta(ids[2], "/private/tmp/claude-501/scratchpad") });
+    seedCodexRollout(cfg, "2026/11/24", "2026-11-24T13-04-00", ids[3], { mtimeMs: 1000, bytes: meta(ids[3], "/Users/me/code/other") });
+    // This test's own home sits in the real temp folder, so the temp folders are given here.
+    const temp = ["/private/var/folders", "/private/tmp"].map(encodeProjectDir);
+    const rows = listCodexSessions(cfg, 10, temp);
+    assert.deepEqual(rows.map((r) => r.cwd), ["/Users/me/code/app", "/Users/me/code/other"]);
+    // Hidden sessions never take a slot from the cap.
+    assert.deepEqual(listCodexSessions(cfg, 1, temp).map((r) => r.cwd), ["/Users/me/code/app"]);
+    // A profile that itself lives in a temp folder is a sandbox: nothing there is hidden.
+    assert.equal(listCodexSessions(cfg, 10, [...temp, encodeProjectDir(path.resolve(cfg))]).length, 4);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("locateCodexSession finds the rollout by id and preserves its relative path", () => {
   const root = tmp();
   try {
