@@ -39,7 +39,6 @@ import { ReviewHost } from "./ReviewHost.js";
 import { McpHost } from "./McpHost.js";
 import { afterChatClosed, loadOwnViews, OWN_VIEWS_STORAGE, rememberOwnView, ResumeGate, resumesChat, viewStep, type OwnView } from "./viewSwitch.js";
 import { keyOf, recordDebug } from "../../debug-log.js";
-import { fold } from "../timeline.js";
 import { sessionFromRow } from "../../vm/build.js";
 import { ChatView } from "../chatview.js";
 
@@ -359,7 +358,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const chatRunning = (key: string) => {
     const tab = chats.tabOf(key);
     const c = tab ? chats.states.get(tab) : undefined;
-    return !!c && c.status === "ready" && fold(c.events).running;
+    return !!c && c.status === "ready" && c.turnOpen;
   };
   const terminalRunning = (key: string) => {
     const r = byKey.get(key);
@@ -481,7 +480,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       const tab = chats.tabOf(key);
       const chat = tab ? chats.states.get(tab) : undefined;
       const row = byKey.get(key);
-      const running = (chat ? chat.status === "ready" && fold(chat.events).running : false) || (row ? sessionFromRow(row, s.now).state === "working" : false);
+      const running = (chat ? chat.status === "ready" && chat.turnOpen : false) || (row ? sessionFromRow(row, s.now).state === "working" : false);
       // One host per session: a tab switch never carries one session's cards, undo or scope into another's.
       return (
         <ReviewHost

@@ -23,6 +23,9 @@ export interface BridgeState {
   earlier: { from: number; prompts: number } | null;
   /** Cards from the history: asked before this chat opened, so this bridge cannot answer them. */
   stale: ReadonlySet<string>;
+  /** A turn this bridge started has not ended. Never read from the history: a transcript
+   *  often has no record of a turn's end, so its last turn would look open forever. */
+  turnOpen: boolean;
 }
 
 export interface BridgeActions {
@@ -97,24 +100,27 @@ export function failed(p: BridgeState, message: string): BridgeState {
 }
 
 export function useBridge(spec: ipc.BridgeSpec | null, deps: BridgeDeps = realDeps): BridgeState & BridgeActions {
-  const [s, set] = useState<BridgeState>({ events: [], status: "starting", error: null, queued: 0, mode: shownMode(spec?.mode), session: null, earlier: null, stale: new Set() });
+  const [s, set] = useState<BridgeState>({ events: [], status: "starting", error: null, queued: 0, mode: shownMode(spec?.mode), session: null, earlier: null, stale: new Set(), turnOpen: false });
   const proc = useRef<ipc.BridgeProcess | null>(null);
   const specKey = spec ? JSON.stringify(spec) : null;
 
   useEffect(() => {
     if (!spec) return;
     let alive = true;
-    set({ events: [], status: "starting", error: null, queued: 0, mode: shownMode(spec.mode), session: null, earlier: null, stale: new Set() });
+    set({ events: [], status: "starting", error: null, queued: 0, mode: shownMode(spec.mode), session: null, earlier: null, stale: new Set(), turnOpen: false });
     const onLine = (line: string) => {
       if (!alive) return;
       const r = bridgeLine(line);
-      if (r.event) set((p) => ({ ...p, events: [...p.events, r.event!] }));
+      if (r.event) {
+        const t = r.event.t;
+        set((p) => ({ ...p, events: [...p.events, r.event!], turnOpen: t === "turn" ? true : t === "turn.end" ? false : p.turnOpen }));
+      }
       else if (r.bridge?.kind === "ready") set((p) => ({ ...p, status: "ready", mode: asChatMode(r.bridge!.mode) ?? p.mode }));
       else if (r.bridge?.kind === "queued") set((p) => ({ ...p, queued: r.bridge!.count ?? 0 }));
       // The agent says which mode it really runs in (`manual` is the chat's `default`).
       else if (r.bridge?.kind === "session" && r.bridge.key) set((p) => ({ ...p, mode: asChatMode(r.bridge!.mode) ?? p.mode, session: { key: r.bridge!.key!, model: r.bridge!.model ?? null, commands: r.bridge!.commands ?? [] } }));
       else if (r.bridge?.kind === "error") set((p) => failed(p, r.bridge!.message ?? "bridge error"));
-      else if (r.bridge?.kind === "exit") set((p) => ({ ...p, status: p.status === "error" ? "error" : "closed" }));
+      else if (r.bridge?.kind === "exit") set((p) => ({ ...p, status: p.status === "error" ? "error" : "closed", turnOpen: false }));
     };
     (async () => {
       // History first, so the live events continue it.
@@ -125,7 +131,7 @@ export function useBridge(spec: ipc.BridgeSpec | null, deps: BridgeDeps = realDe
       const child = await deps.open(spec, onLine, (code, stderr) => {
         // A bridge that failed (exit code) is in the debug log with why; a closed chat ends with 0.
         if (code !== 0) recordDebug({ kind: "bridge", what: "chat process ended", key: "key" in spec ? spec.key : undefined, ok: false, error: errorLine(stderr), detail: { code: code ?? "signal" } });
-        if (alive) set((p) => ({ ...p, status: p.status === "error" ? "error" : "closed" }));
+        if (alive) set((p) => ({ ...p, status: p.status === "error" ? "error" : "closed", turnOpen: false }));
       });
       // Closed while it was starting: nobody would ever close this bridge, and it would hold the session.
       if (!alive) return void child.send({ cmd: "close" }).catch(() => {});

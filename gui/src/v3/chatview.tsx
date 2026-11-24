@@ -18,7 +18,7 @@ export function ChatView({ b, sessionKey, findFiles, worktreeOf }: { b: BridgeSt
   const agent = (b.session?.key ?? sessionKey ?? "").startsWith("codex/") ? "Codex" : "Claude";
   const f = useMemo(() => fold(b.events), [b.events]);
   const cost = useMemo(() => b.events.reduce((n, e) => (e.t === "turn.end" && e.costUsd ? n + e.costUsd : n), 0), [b.events]);
-  const running = b.status === "ready" && f.running;
+  const running = b.status === "ready" && b.turnOpen;
   const notice =
     b.status === "error" ? (
       <p role="alert" className="shrink-0 border-b border-ac-line bg-ac-alert-tint px-4 py-1.5 text-xs text-ac-alert-text">
