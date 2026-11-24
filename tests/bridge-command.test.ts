@@ -60,7 +60,7 @@ test("bridge: a second writer is refused while the lease is held; the holder's b
   assert.deepEqual(lines.at(-1), { after: null }, "the lease is released when the bridge ends");
 });
 
-test("bridge: SIGTERM mid-turn lets the turn finish, then closes and releases the lease", async () => {
+test("bridge: SIGTERM mid-turn lets the turn finish, then closes and releases the lease", { skip: process.platform === "win32" ? "POSIX signals, and the fake agent is a script with a shebang" : false }, async () => {
   const h = home();
   const key = "claude/work/9f640d3b-0a51-47b5-944c-934d3148a098";
   // An agent whose turn takes a while: it answers the user's message after 1.5 s.
@@ -102,7 +102,7 @@ test("bridge: SIGTERM mid-turn lets the turn finish, then closes and releases th
   }
 });
 
-test("bridge: a close or handover that arrives the moment it says ready still ends it cleanly, lease released", async () => {
+test("bridge: a close or handover that arrives the moment it says ready still ends it cleanly, lease released", { skip: process.platform === "win32" ? "POSIX signals, and the fake agent is a script with a shebang" : false }, async () => {
   const h = home();
   const id = "9f640d3b-0a51-47b5-944c-934d3148a098";
   const key = `claude/work/${id}`;
@@ -131,7 +131,7 @@ test("bridge: a close or handover that arrives the moment it says ready still en
   assert.equal(JSON.parse(lease.stdout), null);
 });
 
-test("bridge: a close while the chat waits for an approval nobody sees denies it, so the turn ends and the bridge closes", async () => {
+test("bridge: a close while the chat waits for an approval nobody sees denies it, so the turn ends and the bridge closes", { skip: process.platform === "win32" ? "POSIX signals, and the fake agent is a script with a shebang" : false }, async () => {
   const h = home();
   const id = "9f640d3b-0a51-47b5-944c-934d3148a098";
   const key = `claude/work/${id}`;
@@ -192,7 +192,7 @@ process.stdin.on("end", () => process.exit(0));
   }
 });
 
-test("bridge: the chat runs in the mode the session last ran in (auto), and says so; a mode that skips approvals is refused", () => {
+test("bridge: the chat runs in the mode the session last ran in (auto), and says so; a mode that skips approvals is refused", { skip: process.platform === "win32" ? "fake binaries are POSIX shell scripts" : false }, () => {
   const h = home();
   const id = "9f640d3b-0a51-47b5-944c-934d3148a098";
   const tr = path.join(h, "claude", "work", "config", "projects", "-work-fx", `${id}.jsonl`);

@@ -167,7 +167,8 @@ test("sameApp: a bridge of the app that runs this CLI, or of an app that has gon
   assert.equal(sameApp(10, () => 1), true);
   assert.equal(sameApp(10, () => process.ppid + 100_000), false);
   assert.equal(sameApp(10, () => null), false, "unknown parent: not ours");
-  assert.equal(sameApp(process.pid), true, "the real lookup: this test's own process");
+  // `ps` reads a process's parent; Windows has none of that (and no hosting, where a takeover happens).
+  if (process.platform !== "win32") assert.equal(sameApp(process.pid), true, "the real lookup: this test's own process");
 });
 
 test("endBridge: signals only a live bridge holder and waits for its process to end", async () => {
