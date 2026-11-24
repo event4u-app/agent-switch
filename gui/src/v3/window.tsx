@@ -260,6 +260,8 @@ export function V3Window({
   const [groupBy, setGroupByState] = useState<GroupBy>(saved?.groupSet && saved.group ? saved.group : saved?.group && saved.group !== "none" ? saved.group : saved?.groupByProject ? "project" : DEFAULT_GROUP);
   const [groupSet, setGroupSet] = useState(!!saved?.groupSet);
   const setGroupBy = (g: GroupBy) => (setGroupByState(g), setGroupSet(true));
+  // All sessions keeps its own List or Projects once switched there (owner, 2026-11-24); until then it follows the sidebar.
+  const [tableGroup, setTableGroup] = useState<"none" | "project" | undefined>(saved?.tableGroup);
   const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
   const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
   const lastActiveOf = (k: string) => data.table.find((t) => t.key === k)?.lastActiveMs ?? null;
@@ -322,10 +324,10 @@ export function V3Window({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.sessions]);
   useEffect(() => {
-    if (started.current) layout?.save({ tabs: sessionTabs, pinned: strip.pinned, active: active?.startsWith("page:") ? null : active, comfortable, pinnedOnly, sort: sortBy, group: groupBy, groupSet });
+    if (started.current) layout?.save({ tabs: sessionTabs, pinned: strip.pinned, active: active?.startsWith("page:") ? null : active, comfortable, pinnedOnly, sort: sortBy, group: groupBy, groupSet, ...(tableGroup ? { tableGroup } : {}) });
     // sessionTabs is derived from strip.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, strip, active, comfortable, pinnedOnly, sortBy, groupBy, groupSet]);
+  }, [layout, strip, active, comfortable, pinnedOnly, sortBy, groupBy, groupSet, tableGroup]);
 
   /** Apply a change to the strip; when the active tab leaves, its neighbour takes over. */
   const changeStrip = (f: (s: TabState) => TabState) => {
@@ -563,7 +565,7 @@ export function V3Window({
         />
       );
     // 8.6: the table in the sidebar's order (its sort), ended sessions after it.
-    if (p === "sessions-table") return <AllSessionsPage key={tableTab.n} status={tableTab.status} sessions={data.table} order={sortLive(data.sessions, sortBy, lastActiveOf).map((row) => row.key)} group={groupBy === "project" ? "project" : "none"} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
+    if (p === "sessions-table") return <AllSessionsPage key={tableTab.n} status={tableTab.status} sessions={data.table} order={sortLive(data.sessions, sortBy, lastActiveOf).map((row) => row.key)} group={tableGroup ?? (groupBy === "project" ? "project" : "none")} onGroup={setTableGroup} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
     if (p === "tools") return slots.tools;
     return (
       <SettingsPage current={section} onSection={setSection}>

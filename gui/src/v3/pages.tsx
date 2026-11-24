@@ -330,7 +330,7 @@ function shared<T>(rows: readonly TableSession[], f: (s: TableSession) => T): T 
  * above the table instead of in every row. Grouping by project follows the
  * Sessions window's own Group menu.
  */
-export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: initialGroup = "none", status: initialStatus = "all" }: { /** The tab it opens on (Done today or Older from the sidebar). */ status?: StatusTab; sessions: TableSession[]; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions; /** The Sessions window's grouping: by project, or one list. */ group?: "none" | "project" }) {
+export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: initialGroup = "none", onGroup, status: initialStatus = "all" }: { /** Each switch between List and Projects, for the window to keep. */ onGroup?: (g: "none" | "project") => void; /** The tab it opens on (Done today or Older from the sidebar). */ status?: StatusTab; sessions: TableSession[]; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions; /** The Sessions window's grouping: by project, or one list. */ group?: "none" | "project" }) {
   const [q, setQ] = useState("");
   // Status and time as dropdowns (owner, 2026-11-24): several statuses at once; nothing ticked = every status.
   const [state, setState] = useState<ReadonlySet<Exclude<StatusTab, "all">>>(() => new Set(initialStatus === "all" ? [] : [initialStatus]));
@@ -363,7 +363,7 @@ export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: 
         <MultiSelect width={176} label="Status" all={`All ${sessions.length}`} picked={state} onChange={setState} options={tabs.map((t) => ({ value: t.value, label: t.label, hint: count(t.value) }))} />
         {tools.length > 1 && <MultiSelect width={150} label="Tool" all="All tools" picked={tool} onChange={setTool} options={tools.map((t) => ({ value: t, label: TOOL_LABEL[t], hint: sessions.filter((s) => s.tool === t).length }))} />}
         <DateRange label="Active" value={range} onChange={setRange} nowMs={nowMs} width={156} />
-        <Segmented size="sm" label="Group" value={group} onChange={setGroup} options={[{ value: "none", label: "List" }, { value: "project", label: "Projects" }]} />
+        <Segmented size="sm" label="Group" value={group} onChange={(g) => (setGroup(g), onGroup?.(g))} options={[{ value: "none", label: "List" }, { value: "project", label: "Projects" }]} />
       </div>
       {sel.size > 0 && <BatchBar count={sel.size} className="mb-2" actions={batch([...sel])} />}
       {rows.length > 1 && sharedLine && <p className="mb-2 text-xs text-ac-muted">Every session here runs {sharedLine}.</p>}

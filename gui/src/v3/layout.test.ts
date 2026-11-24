@@ -36,6 +36,12 @@ describe("window layout", () => {
     expect(parseLayout(JSON.stringify({ tabs: ["a", 2, "b"], active: "b", comfortable: true, groupByProject: "yes", pinnedOnly: false }))).toEqual({ tabs: ["a", "b"], active: "b", comfortable: true, pinnedOnly: false });
   });
 
+  it("keeps All sessions' List or Projects (owner, 2026-11-24); anything else is dropped", () => {
+    expect(parseLayout(JSON.stringify({ version: 2, tableGroup: "project" }))?.tableGroup).toBe("project");
+    expect(parseLayout(JSON.stringify({ version: 2, tableGroup: "none" }))?.tableGroup).toBe("none");
+    expect(parseLayout(JSON.stringify({ version: 2, tableGroup: "tool" }))?.tableGroup).toBeUndefined();
+  });
+
   it("restores the saved tabs that still exist, and their active one", () => {
     expect(startTabs({ tabs: ["gone", "b", "a"], active: "a" }, [s("a", "idle"), s("b", "idle")])).toEqual({ tabs: ["b", "a"], active: "a" });
     expect(startTabs({ tabs: ["b"], active: "gone" }, [s("a", "idle"), s("b", "idle")])).toEqual({ tabs: ["b"], active: "b" });

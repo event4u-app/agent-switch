@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { AccountsPage, AllSessionsPage, LibraryPage, byProject, filterSessions, inListOrder, nextDeadline, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
 
 afterEach(cleanup);
@@ -162,6 +162,14 @@ describe("All sessions › Projects", () => {
     cleanup();
     render(<AllSessionsPage sessions={rows} group="project" nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
     expect(screen.getByText("No project")).toBeTruthy();
+  });
+
+  it("says each switch between List and Projects, so the window can keep it (owner, 2026-11-24)", () => {
+    const onGroup = vi.fn();
+    render(<AllSessionsPage sessions={[sess("a")]} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} onGroup={onGroup} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Projects" }));
+    fireEvent.click(screen.getByRole("radio", { name: "List" }));
+    expect(onGroup.mock.calls).toEqual([["project"], ["none"]]);
   });
 });
 
