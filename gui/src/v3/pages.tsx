@@ -336,8 +336,8 @@ export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Filter value={q} onChange={setQ} placeholder="Filter…" />
         <Segmented size="sm" label="Status" value={state} onChange={setState} options={tabs.map((t) => ({ value: t.value, label: `${t.label} ${count(t.value)}` }))} />
-        <Segmented size="sm" label="Group" value={group} onChange={setGroup} options={[{ value: "none", label: "List" }, { value: "project", label: "Projects" }]} />
         {tools.length > 1 && <Segmented size="sm" label="Tool" value={tool} onChange={setTool} options={[{ value: "any", label: "Any tool" }, ...tools.map((t) => ({ value: t, label: `${TOOL_LABEL[t]} ${sessions.filter((s) => s.tool === t).length}` }))]} />}
+        <Segmented size="sm" label="Group" value={group} onChange={setGroup} options={[{ value: "none", label: "List" }, { value: "project", label: "Projects" }]} />
       </div>
       {sel.size > 0 && <BatchBar count={sel.size} className="mb-2" actions={batch([...sel])} />}
       {rows.length > 1 && sharedLine && <p className="mb-2 text-xs text-ac-muted">Every session here runs {sharedLine}.</p>}

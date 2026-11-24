@@ -59,7 +59,7 @@ describe("All sessions page (spec §10.2)", () => {
     const batch = vi.fn(() => ({ onClear: vi.fn(), onPin: vi.fn(), onArchive: vi.fn(), onClean: vi.fn(), onEnd: vi.fn() }));
     render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={onOpen} batch={batch} />);
     // Status tabs with counts; a tab with nothing behind it is hidden (proposal E).
-    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["All 3", "Idle 2", "Done 1", "List", "Projects", "Any tool", "Claude 2", "Codex 1"]);
+    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["All 3", "Idle 2", "Done 1", "Any tool", "Claude 2", "Codex 1", "List", "Projects"]);
     fireEvent.click(screen.getByLabelText("Select Event store"));
     expect(onOpen).not.toHaveBeenCalled();
     expect(batch).toHaveBeenLastCalledWith(["a"]);
