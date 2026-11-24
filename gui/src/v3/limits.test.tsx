@@ -54,8 +54,8 @@ describe("limits (spec §5.3, §7.5)", () => {
     expect(screen.getByText("· 5h")).toBeTruthy();
     expect(screen.getByText("resets")).toBeTruthy();
     const rows = screen.getAllByRole("button");
-    expect(rows[0].textContent).toBe("side · Claude94%↻ 1h 18m");
-    expect(rows[1].textContent).toBe("work · Codex10%↻ 3h");
+    expect(rows[0].textContent).toBe("sideClaude94%↻ 1h 18m");
+    expect(rows[1].textContent).toBe("workCodex10%↻ 3h");
     expect(rows[0].className).toBe(rows[1].className);
     expect(screen.queryByTestId("pace-tick"), "no tick on small bars").toBeNull();
     fireEvent.click(rows[0]);
@@ -65,7 +65,7 @@ describe("limits (spec §5.3, §7.5)", () => {
 
   it("a window near its limit other than 5h names itself; otherwise the row shows 5h", () => {
     render(<LimitsStrip accounts={[acct({ windows: [{ label: "5h", used: 20, resetsAtMs: null, pace: null }, { label: "week", used: 90, resetsAtMs: null, pace: null }] })]} nowMs={NOW} openKey={null} onOpen={vi.fn()} onSignIn={vi.fn()} />);
-    expect(screen.getByRole("button").textContent).toBe("side · Claude · week90%");
+    expect(screen.getByRole("button").textContent).toBe("sideClaude · week90%");
   });
 
   it("an old reading is italic with its age on hover; a signed-out account's row is its sign-in", () => {

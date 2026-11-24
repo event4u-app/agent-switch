@@ -127,18 +127,21 @@ export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount
       title={tip || undefined}
       className={cn(ROW_GRID, "h-6 rounded-md px-2", open ? "bg-ac-raise" : "hover:bg-ac-raise")}
     >
-      <span className={cn("min-w-0 truncate text-xs text-ac-soft", stale && "italic")}>
-        {a.name}
-        <span className="text-ac-muted"> · {a.tool === "codex" ? "Codex" : "Claude"}</span>
+      <span className={cn("flex min-w-0 items-center gap-1.5 text-xs text-ac-soft", stale && "italic")}>
+        <AccountMark color={a.color} />
+        <span className="shrink-0">{a.name}</span>
+        <span className="min-w-0 truncate text-[11px] text-ac-muted">
+          {a.tool === "codex" ? "Codex" : "Claude"}
+          {w && w.label !== "5h" && ` · ${w.label.replace("week · ", "week ")}`}
+        </span>
         {a.next && (
-          <span className="ml-1 text-ac-muted" title="Next for new sessions">
+          <span className="shrink-0 text-ac-muted" title="Next for new sessions">
             →
           </span>
         )}
-        {w && w.label !== "5h" && <span className="text-ac-muted"> · {w.label.replace("week · ", "week ")}</span>}
       </span>
       {a.signIn ? (
-        <button type="button" onClick={(e) => (e.stopPropagation(), onSignIn(a.key))} className="col-span-3 justify-self-end text-[11px] text-ac-muted hover:text-ac-text">
+        <button type="button" onClick={(e) => (e.stopPropagation(), onSignIn(a.key))} className="col-span-3 justify-self-end text-[11px] text-ac-info-text hover:underline">
           Sign in ›
         </button>
       ) : !w ? (
