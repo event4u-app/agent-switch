@@ -43,8 +43,10 @@ describe("kit primitives keep one look per meaning (spec §3)", () => {
   it("the Marker is a frame with an accent leading edge, never an inset shadow", () => {
     const { container } = render(<Marker />);
     const m = container.firstElementChild!;
-    expect(m.className).toMatch(/border-l-2/);
     expect(m.className).toMatch(/border-l-ac-brand/);
+    // The leading edge is a straight 2px bar, not a thick border bent round the corners (owner, 2026-11-24).
+    expect(m.className).not.toMatch(/border-l-2/);
+    expect(m.firstElementChild!.className).toMatch(/w-\[2px\].*bg-ac-brand/);
     expect(m.className).not.toMatch(/shadow-\[inset/);
     expect(render(<Marker tone="warn" />).container.firstElementChild!.className).toMatch(/border-l-ac-warn/);
   });

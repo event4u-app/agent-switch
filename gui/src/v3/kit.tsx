@@ -53,9 +53,15 @@ export function Chip({ kind = "meta", tone = "warn", icon, children, title }: { 
 export function Marker({ side = "left", tone = "brand" }: { side?: "left"; tone?: "brand" | "warn" | "neutral" }) {
   const lead = tone === "warn" ? "border-l-ac-warn" : tone === "neutral" ? "border-l-ac-text" : "border-l-ac-brand";
   void side;
-  // Same frame as the active tab, turned 90°: a 1px line around the rounded item,
-  // with a 2px accent leading edge that follows the corners.
-  return <span aria-hidden className={cn("pointer-events-none absolute inset-0 rounded-md border border-l-2 border-ac-line", lead)} />;
+  const bar = tone === "warn" ? "bg-ac-warn" : tone === "neutral" ? "bg-ac-text" : "bg-ac-brand";
+  // Same frame as the active tab, turned 90°: a 1px line around the rounded item, its left side in the
+  // tone, plus a straight 2px bar inside it (owner, 2026-11-24): a thick border bent around the corners
+  // thinned out at the top and bottom and read as cut off.
+  return (
+    <span aria-hidden className={cn("pointer-events-none absolute inset-0 rounded-md border border-ac-line", lead)}>
+      <span className={cn("absolute -left-px bottom-1 top-1 w-[2px] rounded-full", bar)} />
+    </span>
+  );
 }
 
 /** Account identity: a 3×12 tick in the account colour (never a dot). */
