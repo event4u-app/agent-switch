@@ -55,11 +55,15 @@ describe("All sessions page (spec §10.2)", () => {
     expect(filterSessions(rows, "store", "all", "any").map((r) => r.key)).toEqual(["a"]);
     expect(filterSessions(rows, "", "done", "any").map((r) => r.key)).toEqual(["b"]);
     expect(filterSessions(rows, "", "all", "codex").map((r) => r.key)).toEqual(["c"]);
+    expect(filterSessions(rows, "", "all", new Set(["codex"] as const)).map((r) => r.key)).toEqual(["c"]);
+    expect(filterSessions(rows, "", "all", new Set()).length, "nothing ticked = every tool").toBe(3);
     const onOpen = vi.fn();
     const batch = vi.fn(() => ({ onClear: vi.fn(), onPin: vi.fn(), onArchive: vi.fn(), onClean: vi.fn(), onEnd: vi.fn() }));
     render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={onOpen} batch={batch} />);
     // Status tabs with counts; a tab with nothing behind it is hidden (proposal E).
-    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["All 3", "Idle 2", "Done 1", "Any tool", "Claude 2", "Codex 1", "List", "Projects"]);
+    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["All 3", "Idle 2", "Done 1", "List", "Projects"]);
+    // Tools: a multi-select dropdown (owner, 2026-11-24); nothing ticked reads "All tools".
+    expect(screen.getByRole("button", { name: "Tool: All tools" })).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Select Event store"));
     expect(onOpen).not.toHaveBeenCalled();
     expect(batch).toHaveBeenLastCalledWith(["a"]);

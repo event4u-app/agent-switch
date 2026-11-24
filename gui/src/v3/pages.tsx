@@ -9,6 +9,7 @@ import { Archive, ArchiveRestore, CircleAlert, Clock, Copy, Ellipsis, GitBranch,
 import { cn } from "../lib/utils.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
+import { MultiSelect } from "./multi-select.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { Switch } from "../ui/Switch.js";
 import { TextInput } from "../ui/TextInput.js";
@@ -285,9 +286,11 @@ export function tableStatus(s: TableSession): Exclude<TableStatus, "all" | "live
   return s.state === "working" ? "running" : "idle";
 }
 
-export function filterSessions(rows: readonly TableSession[], q: string, state: TableStatus, tool: "any" | TableSession["tool"]): TableSession[] {
+/** `tool`: one tool, "any", or a set of tools (an empty set is every tool). */
+export function filterSessions(rows: readonly TableSession[], q: string, state: TableStatus, tool: "any" | TableSession["tool"] | ReadonlySet<TableSession["tool"]>): TableSession[] {
   const inState = (s: TableSession) => state === "all" || (state === "live" ? s.live : tableStatus(s) === state);
-  return rows.filter((s) => inState(s) && (tool === "any" || s.tool === tool) && matches(q, s.title, s.account.name, s.branch, s.pr ? `#${s.pr.number}` : null));
+  const inTool = (s: TableSession) => (typeof tool === "string" ? tool === "any" || s.tool === tool : tool.size === 0 || tool.has(s.tool));
+  return rows.filter((s) => inState(s) && inTool(s) && matches(q, s.title, s.account.name, s.branch, s.pr ? `#${s.pr.number}` : null));
 }
 
 const TOOL_LABEL: Record<TableSession["tool"], string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
@@ -311,7 +314,8 @@ function shared<T>(rows: readonly TableSession[], f: (s: TableSession) => T): T 
 export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: initialGroup = "none" }: { sessions: TableSession[]; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions; /** The Sessions window's grouping: by project, or one list. */ group?: "none" | "project" }) {
   const [q, setQ] = useState("");
   const [state, setState] = useState<Exclude<TableStatus, "live">>("all");
-  const [tool, setTool] = useState<"any" | TableSession["tool"]>("any");
+  // Tools as a multi-select dropdown (owner, 2026-11-24); nothing ticked = every tool.
+  const [tool, setTool] = useState<ReadonlySet<TableSession["tool"]>>(() => new Set());
   const [sel, setSel] = useState<Set<string>>(new Set());
   const rows = useMemo(() => {
     const hits = filterSessions(sessions, q, state, tool);
@@ -336,7 +340,7 @@ export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Filter value={q} onChange={setQ} placeholder="Filter…" />
         <Segmented size="sm" label="Status" value={state} onChange={setState} options={tabs.map((t) => ({ value: t.value, label: `${t.label} ${count(t.value)}` }))} />
-        {tools.length > 1 && <Segmented size="sm" label="Tool" value={tool} onChange={setTool} options={[{ value: "any", label: "Any tool" }, ...tools.map((t) => ({ value: t, label: `${TOOL_LABEL[t]} ${sessions.filter((s) => s.tool === t).length}` }))]} />}
+        {tools.length > 1 && <MultiSelect label="Tool" all="All tools" picked={tool} onChange={setTool} options={tools.map((t) => ({ value: t, label: TOOL_LABEL[t], hint: sessions.filter((s) => s.tool === t).length }))} />}
         <Segmented size="sm" label="Group" value={group} onChange={setGroup} options={[{ value: "none", label: "List" }, { value: "project", label: "Projects" }]} />
       </div>
       {sel.size > 0 && <BatchBar count={sel.size} className="mb-2" actions={batch([...sel])} />}
