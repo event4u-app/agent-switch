@@ -123,6 +123,7 @@ background service stops checking its usage.
 | `mappings` | List folder rules and remote bindings. |
 | `pool …` | Groups of accounts a folder rule can point at. See [below](#pool). |
 | `guard [block\|warn\|off]` | One account, one running session: read or set the policy. See [below](#guard). |
+| `terminal-sync [on\|off\|status] [--json]` | Whether a `claude` or `codex` typed in your terminal runs in Agent Switch, so you can type into the same session there and in the app (default on). See [below](#terminal-starts-run-in-agent-switch). |
 | `shellenv [--shell S]` | Print the shell integration. |
 | `shellenv install [--shell S]` | Add the shell integration to your shell's startup file. |
 
@@ -166,8 +167,10 @@ goes through these steps, in this order:
    sign-in is read again. If it changed since the pick (a sign-in or a rebind
    landed in between), the start is refused with exit code `86` and both
    sign-ins are named.
-7. **The start:** the wrapper sets `CLAUDE_CONFIG_DIR` to the account's folder
-   and runs the real `claude` with your arguments. The wrapper runs the tool
+7. **The start:** with `terminal-sync` on, an interactive start runs in Agent
+   Switch (see [below](#terminal-starts-run-in-agent-switch)). Otherwise the
+   wrapper sets `CLAUDE_CONFIG_DIR` to the account's folder and runs the real
+   `claude` with your arguments. The wrapper runs the tool
    itself after `dir --guard` has exited, and that last step is not checked
    again: from there on the pick is advisory.
 
@@ -180,6 +183,35 @@ Details: [Which account a session uses](/agent-switch/concepts/which-account/).
 `--exclude a,b` leaves those accounts out of this one pick, for a caller that
 just saw one of them fail (a limit, an outage) and wants another.
 
+
+### Terminal starts run in Agent Switch
+
+With `terminal-sync` on (the default) and tmux installed, a `claude` or
+`codex` you type in your own terminal runs in Agent Switch's host, and your
+terminal shows it. It is one session with two windows: what you type in the
+terminal and what you type in the app reach the same program, and both see
+everything. The wrapper asks `dir --guard --launch` as before, then hands the
+start to `launch`, so account, folder rules, `ask` and the guard work as above.
+
+- **Your shell's environment comes along** (PATH, project variables). It passes
+  through a file only you can read, which the session removes before the
+  program starts; it never appears in a process list.
+- **Ending the program** (`/exit`, Ctrl-D) ends the session and your terminal
+  returns to its prompt with the program's exit status.
+- **Closing the terminal window** leaves the session running in Agent Switch.
+  Join it again with `agent-switch host attach <session>`, or end it in the app.
+- **A resume** (`claude --resume <id>`, `--session-id <id>`) keeps its id and
+  runs on the account that holds the session, whatever the folder routes to.
+  `claude -c` resumes the folder's newest session on the routed account.
+- **Typing from both sides at once:** when the app sends something into the
+  session, it waits until nobody has typed in an attached terminal for 3
+  seconds, at most a minute, and never sends Enter after a key someone typed
+  in between.
+- **Not hosted, exactly as before:** `-p`/`--print`, `--output-format`,
+  `--version`, `--help`, subcommands (`claude mcp`, `codex exec`, …), the
+  `--resume` picker, `--fork-session`, a pipe instead of a terminal, Windows,
+  no tmux, and a start inside an Agent Switch window. `agent-switch
+  terminal-sync off` turns it off; so does Settings › Open in.
 ### `exec`
 
 The shell integration only works in a shell. A tool that starts `codex` or
@@ -518,6 +550,7 @@ Used by the desktop app and by hooks; not for direct use.
 | `app-visibility visible\|hidden` | The desktop app, when its window is shown or hidden; the background PR refresh pauses while it is hidden. |
 | `__hook-event` | Claude Code and Codex hooks installed by `hooks install`, and the `as-hook` relay when the app is not running. |
 | `__chat-hint` | The prompt hook installed by `hooks chat on`. Prints nothing and exits 0 on any error. |
+| `launch <claude\|codex> --config-dir DIR -- <args…>` | The shell wrapper, after `dir --guard --launch` answered `launch:<dir>`: runs an interactive start in Agent Switch with this terminal as its view. Exit `87` means "start it the old way"; otherwise the program's exit status. |
 | `__statusline` | The status line set by `statusline on`. Records `rate_limits` from its stdin for the account in `CLAUDE_CONFIG_DIR`; no network, prints nothing, exits 0. |
 | `notify --kind K --title T --message M` | The desktop app, to log a notification. |
 | `gui-settings` | The desktop app, for its start-at-login and pet-intro settings. |

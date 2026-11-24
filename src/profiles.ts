@@ -121,6 +121,11 @@ export interface State {
    *  login (token-freshen.ts). Default true — also for a state file written
    *  before the key existed, because that is what the service already did. */
   keepSignedIn: boolean;
+  /** "Terminal starts run in Agent Switch": a `claude` or `codex` typed in the
+   *  user's own terminal runs hosted, the terminal one view of it, so the app can
+   *  type into it too (road-to-terminal-sessions-in-sync). Default true — also for
+   *  a state file written before the key existed. */
+  terminalSync: boolean;
   /** "Redeem Codex resets automatically": the service redeems one banked reset
    *  credit when a Codex account reaches its limit (at most once per reset
    *  cycle). Default false — a credit is scarce and cannot be returned. */
@@ -355,6 +360,7 @@ export function readState(): State {
     const binaryPaths = normalizeBinaryPaths(raw?.binaryPaths);
     const osNotifications = raw?.osNotifications === true;
     const keepSignedIn = raw?.keepSignedIn !== false;
+    const terminalSync = raw?.terminalSync !== false;
     const codexAutoReset = raw?.codexAutoReset === true;
     const linkAutoConnect = raw?.linkAutoConnect !== false;
     const linkExecutor: LinkExecutor = raw?.linkExecutor === "service" ? "service" : "app";
@@ -365,12 +371,12 @@ export function readState(): State {
     const guard = normalizeGuard(raw?.guard);
     // v1: { active: "<name>" } — a single Claude profile.
     if (typeof raw?.active === "string") {
-      return { active: { ...emptyActive(), claude: raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, quietHours, strategy, rebind, guard };
+      return { active: { ...emptyActive(), claude: raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, terminalSync, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, quietHours, strategy, rebind, guard };
     }
     if (raw?.active && typeof raw.active === "object") {
-      return { active: { ...emptyActive(), ...raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, quietHours, strategy, rebind, guard };
+      return { active: { ...emptyActive(), ...raw.active }, labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, terminalSync, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, quietHours, strategy, rebind, guard };
     }
-    return { active: emptyActive(), labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, quietHours, strategy, rebind, guard };
+    return { active: emptyActive(), labels, colors, disabled, autoSwitch, providers, binaryPaths, osNotifications, keepSignedIn, terminalSync, codexAutoReset, linkAutoConnect, linkExecutor, paceSuggest, quietHours, strategy, rebind, guard };
   } catch {
     /* absent / unparsable → default */
   }
@@ -378,7 +384,7 @@ export function readState(): State {
   // 2.1.0 install can have profiles and no state file — that user must keep the
   // pre-2.2 default (block), not be treated as new.
   const fresh = !fs.existsSync(STATE_FILE) && listAllProfiles().length === 0;
-  return { active: emptyActive(), labels: {}, colors: {}, disabled: [], autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, keepSignedIn: true, codexAutoReset: false, linkAutoConnect: true, linkExecutor: "app", paceSuggest: true, quietHours: null, strategy: {}, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
+  return { active: emptyActive(), labels: {}, colors: {}, disabled: [], autoSwitch: emptyAutoSwitch(), providers: emptyProviders(), binaryPaths: {}, osNotifications: false, keepSignedIn: true, terminalSync: true, codexAutoReset: false, linkAutoConnect: true, linkExecutor: "app", paceSuggest: true, quietHours: null, strategy: {}, rebind: { ...DEFAULT_REBIND_STATE }, guard: fresh ? FRESH_INSTALL_GUARD_POLICY : DEFAULT_GUARD_POLICY };
 }
 
 export function readOsNotifications(): boolean {
@@ -413,6 +419,18 @@ export function setKeepSignedIn(on: boolean): void {
   return withFileLockSync(STATE_FILE, () => {
     const state = readState();
     state.keepSignedIn = on;
+    writeState(state);
+  });
+}
+
+export function readTerminalSync(): boolean {
+  return readState().terminalSync;
+}
+
+export function setTerminalSync(on: boolean): void {
+  return withFileLockSync(STATE_FILE, () => {
+    const state = readState();
+    state.terminalSync = on;
     writeState(state);
   });
 }

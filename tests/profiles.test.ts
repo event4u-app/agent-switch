@@ -59,6 +59,7 @@ test("activeFor / setActive are per-provider", () => {
     binaryPaths: {},
     osNotifications: false,
     keepSignedIn: true,
+    terminalSync: true,
     codexAutoReset: false,
     linkAutoConnect: true,
     linkExecutor: "app",
@@ -149,6 +150,7 @@ test("legacy global auto-switch migrates onto every provider", () => {
     binaryPaths: {},
     osNotifications: false,
     keepSignedIn: true,
+    terminalSync: true,
     codexAutoReset: false,
     linkAutoConnect: true,
     linkExecutor: "app",
@@ -404,4 +406,14 @@ test("writeState keeps keys this version does not know, so an older CLI cannot d
   assert.deepEqual(raw.laterSetting, { kept: true });
   assert.equal(raw.active.claude, "work");
   fs.rmSync(file);
+});
+
+test("terminal sync: on by default, also for a state file written before it existed; off and on again stick", () => {
+  fs.writeFileSync(P.STATE_FILE, JSON.stringify({ active: { claude: null, codex: null, antigravity: null } }));
+  assert.equal(P.readTerminalSync(), true);
+  P.setTerminalSync(false);
+  assert.equal(P.readTerminalSync(), false);
+  assert.equal(JSON.parse(fs.readFileSync(P.STATE_FILE, "utf8")).terminalSync, false);
+  P.setTerminalSync(true);
+  assert.equal(P.readTerminalSync(), true);
 });

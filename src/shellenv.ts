@@ -40,6 +40,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { allProviders } from "./providers.js";
 import { GUARD_REFUSED_EXIT } from "./single-load.js";
+import { LAUNCH_PLAIN_EXIT } from "./terminal-sync.js";
 
 export type Shell = "zsh" | "bash" | "fish" | "powershell";
 
@@ -113,14 +114,32 @@ function __agent_switch {
     if ($as -like '*.js') { & node $as @args } else { & $as @args }
 }`;
 
+/** Providers whose terminal starts can run in Agent Switch's host (src/commands/launch.ts). */
+const LAUNCHED = new Set(["claude", "codex"]);
+
+// `dir --launch` answers `launch:<dir>` when this agent-switch has `launch`; an older one ignores
+// the flag and prints the bare dir, so launch is only ever asked of a CLI that has it.
+function posixLaunch(id: string): string {
+  return `
+  case "$dir" in
+    launch:*)
+      dir="\${dir#launch:}"
+      command "$as" launch ${id} --config-dir "$dir" -- "$@"
+      rc=$?
+      [ $rc -eq ${LAUNCH_PLAIN_EXIT} ] || return $rc
+      ;;
+  esac`;
+}
+
 function posixWrapper(binary: string, envVar: string, id: string): string {
+  const launch = LAUNCHED.has(id);
   return `${binary}() {
   local dir rc as
   as="$(__agent_switch_bin)"
   [ -n "$as" ] || { command ${binary} "$@"; return; }
-  dir="$(command "$as" dir --provider ${id} --guard)"
+  dir="$(command "$as" dir --provider ${id} --guard${launch ? " --launch" : ""})"
   rc=$?
-  if [ $rc -eq ${GUARD_REFUSED_EXIT} ]; then return $rc; fi
+  if [ $rc -eq ${GUARD_REFUSED_EXIT} ]; then return $rc; fi${launch ? posixLaunch(id) : ""}
   if [ -n "$dir" ]; then
     ${envVar}="$dir" command ${binary} "$@"
   else
@@ -130,17 +149,26 @@ function posixWrapper(binary: string, envVar: string, id: string): string {
 }
 
 function fishWrapper(binary: string, envVar: string, id: string): string {
+  const launch = LAUNCHED.has(id);
   return `function ${binary}
     set -l as (__agent_switch_bin)
     if test -z "$as"
         command ${binary} $argv
         return
     end
-    set -l dir (command $as dir --provider ${id} --guard)
+    set -l dir (command $as dir --provider ${id} --guard${launch ? " --launch" : ""})
     set -l rc $status
     if test $rc -eq ${GUARD_REFUSED_EXIT}
         return $rc
-    end
+    end${launch ? `
+    if string match -q 'launch:*' -- "$dir"
+        set dir (string replace -r '^launch:' '' -- "$dir")
+        command $as launch ${id} --config-dir $dir -- $argv
+        set rc $status
+        if test $rc -ne ${LAUNCH_PLAIN_EXIT}
+            return $rc
+        end
+    end` : ""}
     if test -n "$dir"
         ${envVar}=$dir command ${binary} $argv
     else
