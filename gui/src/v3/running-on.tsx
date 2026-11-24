@@ -27,8 +27,6 @@ export function runningOn(account: { tool: string; name: string }, sessions: rea
   return sessions.filter((s) => s.state !== "done" && statusGroup(s) !== "Idle" && s.key.startsWith(prefix));
 }
 
-/** Two sessions show whole; a third scrolls inside the box. */
-const BOX_ROWS = 2;
 
 export function RunningOn({
   name,
@@ -60,8 +58,8 @@ export function RunningOn({
           {sessions.length} {sessions.length === 1 ? "session" : "sessions"}
         </span>
       </div>
-      {/* A dark box like the tray's (owner, 2026-11-24): two sessions show whole, more scroll inside it. */}
-      <div data-running-box="" className={cn("rounded-md border border-ac-line bg-ac-bg p-1", sessions.length > BOX_ROWS && "max-h-[122px] overflow-y-auto")}>
+      {/* A dark box like the tray's (owner, 2026-11-24), always the same height: sessions and unfolded subagents scroll inside it. */}
+      <div data-running-box="" className="h-[160px] overflow-y-auto rounded-md border border-ac-line bg-ac-bg p-1">
       {sessions.map(({ row: s, model, thinking, hosted }) => {
         const unfolded = open.has(s.key);
         return (
