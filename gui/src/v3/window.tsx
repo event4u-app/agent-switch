@@ -872,7 +872,6 @@ export function V3Window({
           // One session unfolded at a time (owner, 2026-11-24): opening one folds the other.
           onToggleChildren={(k) => setOpenKids((c) => (c.has(k) ? new Set() : new Set([k])))}
           onCheck={(k) => setSelection((c) => { const n = new Set(c ?? []); n.has(k) ? n.delete(k) : n.add(k); return n; })}
-          onCleanUp={() => act({ type: "clean-up" })}
           onDoneToday={(which) => (setTableTab((t) => ({ status: which ?? "all", n: t.n + 1 })), openPage("sessions-table"))}
           batch={batch([...(selection ?? [])])}
         />

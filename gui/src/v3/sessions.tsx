@@ -687,7 +687,6 @@ export function SessionsZone({
   onSelect,
   onToggleChildren,
   onCheck,
-  onCleanUp,
   onDoneToday,
   onStart,
   sort = DEFAULT_SORT,
@@ -722,7 +721,6 @@ export function SessionsZone({
   onSelect: (key: string) => void;
   onToggleChildren: (key: string) => void;
   onCheck: (key: string) => void;
-  onCleanUp: () => void;
   /** Opens All sessions; `which` picks its Done today or Older tab. */
   onDoneToday: (which?: "today" | "older") => void;
   /** The empty zone's one action (spec §5.2). */

@@ -189,7 +189,6 @@ export function V3Tray({
               onSelect={on.session}
               onToggleChildren={() => {}}
               onCheck={() => {}}
-              onCleanUp={() => {}}
               onDoneToday={() => {}}
               onStart={on.start}
               loading={loading}
