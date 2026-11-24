@@ -54,7 +54,8 @@ test("bridge: a second writer is refused while the lease is held; the holder's b
   const ok = run(free, `const { cmdBridge } = await import(${JSON.stringify(mod)}); await cmdBridge("claude", "9f640d3b-0a51-47b5-944c-934d3148a098", {}); const { InputLeases } = await import(${JSON.stringify(leaseMod)}); console.log(JSON.stringify({ after: new InputLeases(process.env.AGENT_SWITCH_HOME).read(${JSON.stringify(key)}) }));`, "");
   assert.equal(ok.status, 0, ok.stderr);
   const lines = ok.stdout.trim().split("\n").map((l) => JSON.parse(l));
-  assert.deepEqual(lines[0], { bridge: "ready", key, mode: "default" });
+  // The fixture session last ran in acceptEdits: the chat takes that mode over.
+  assert.deepEqual(lines[0], { bridge: "ready", key, mode: "acceptEdits" });
   assert.ok(lines.some((l) => l.bridge === "exit"));
   assert.deepEqual(lines.at(-1), { after: null }, "the lease is released when the bridge ends");
 });
@@ -189,6 +190,27 @@ process.stdin.on("end", () => process.exit(0));
   } finally {
     child.kill("SIGKILL");
   }
+});
+
+test("bridge: the chat runs in the mode the session last ran in (auto), and says so; a mode that skips approvals is refused", () => {
+  const h = home();
+  const id = "9f640d3b-0a51-47b5-944c-934d3148a098";
+  const tr = path.join(h, "claude", "work", "config", "projects", "-work-fx", `${id}.jsonl`);
+  fs.writeFileSync(tr, fs.readFileSync(tr, "utf8").replaceAll('"/work/fx"', JSON.stringify(h)) + JSON.stringify({ type: "user", permissionMode: "auto", message: { role: "user", content: "x" } }) + "\n");
+  const argv = path.join(h, "argv");
+  const fake = path.join(h, "fake-claude-argv.mjs");
+  fs.writeFileSync(fake, `#!${process.execPath}\nimport fs from "node:fs";\nfs.writeFileSync(${JSON.stringify(argv)}, JSON.stringify(process.argv.slice(2)));\nprocess.stdin.on("data", () => {});\nprocess.stdin.on("end", () => process.exit(0));\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(h, "state.json"), JSON.stringify({ active: {}, binaryPaths: { claude: fake } }));
+  const ok = run(h, `const { cmdBridge } = await import(${JSON.stringify(mod)}); await cmdBridge("claude", ${JSON.stringify(id)}, {});`, "");
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.equal(JSON.parse(ok.stdout.trim().split("\n")[0]).mode, "auto", "the chat shows the session's mode");
+  const args: string[] = JSON.parse(fs.readFileSync(argv, "utf8"));
+  assert.equal(args[args.indexOf("--permission-mode") + 1], "auto", "and runs Claude in it");
+  const asked = run(h, `const { cmdBridge } = await import(${JSON.stringify(mod)}); await cmdBridge("claude", ${JSON.stringify(id)}, { mode: "plan" });`, "");
+  assert.equal(JSON.parse(asked.stdout.trim().split("\n")[0]).mode, "plan", "a mode asked for wins");
+  const bypass = run(h, `const { cmdBridge } = await import(${JSON.stringify(mod)}); await cmdBridge("claude", ${JSON.stringify(id)}, { mode: "bypassPermissions" });`, "");
+  assert.notEqual(bypass.status, 0);
+  assert.match(bypass.stderr, /approvals are never bypassed/);
 });
 
 test("bridge: an agent binary that cannot start ends the bridge instead of hanging", () => {

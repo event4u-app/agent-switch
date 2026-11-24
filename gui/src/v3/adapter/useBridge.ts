@@ -15,7 +15,8 @@ export interface BridgeState {
   status: BridgeStatus;
   error: string | null;
   queued: number;
-  mode: ipc.BridgeSpec["mode"];
+  /** The mode the chat runs in: as asked, then as the bridge reports it (an inherited one). */
+  mode: ipc.ChatMode;
   /** What the agent reported: the real session key (a new chat gets one), model, slash commands. */
   session: { key: string; model: string | null; commands: string[] } | null;
   /** The loaded history starts at index `from`; `prompts` lie before it. Null when all of it is loaded. */
@@ -36,7 +37,7 @@ export interface BridgeActions {
   /** Codex: ask the agent to review the uncommitted changes. */
   review: () => void;
   setModel: (model: string) => void;
-  setMode: (mode: ipc.BridgeSpec["mode"]) => void;
+  setMode: (mode: ipc.ChatMode) => void;
   close: () => void;
   /** Read the turns before the loaded history and put them in front. */
   loadEarlier: () => Promise<void>;
@@ -63,6 +64,17 @@ export function cardIds(events: readonly AsEvent[]): string[] {
 }
 
 /** Parse one bridge output line. Pure. */
+/** A mode the chat can show and run, or null. Pure. */
+export function asChatMode(m: unknown): ipc.ChatMode | null {
+  if (m === "manual") return "default";
+  return (ipc.CHAT_MODES as readonly unknown[]).includes(m) ? (m as ipc.ChatMode) : null;
+}
+
+/** What the mode picker shows before the bridge reports: an inherited mode reads as the default until then. */
+function shownMode(m: ipc.BridgeSpec["mode"] | undefined): ipc.ChatMode {
+  return asChatMode(m) ?? "default";
+}
+
 export function bridgeLine(line: string): { event?: AsEvent; bridge?: { kind: string; message?: string; count?: number; mode?: string; key?: string; model?: string | null; commands?: string[] } } {
   try {
     const o = JSON.parse(line) as { event?: AsEvent; bridge?: string; message?: string; count?: number; mode?: string; key?: string; model?: string | null; commands?: unknown };
@@ -85,21 +97,22 @@ export function failed(p: BridgeState, message: string): BridgeState {
 }
 
 export function useBridge(spec: ipc.BridgeSpec | null, deps: BridgeDeps = realDeps): BridgeState & BridgeActions {
-  const [s, set] = useState<BridgeState>({ events: [], status: "starting", error: null, queued: 0, mode: spec?.mode ?? "default", session: null, earlier: null, stale: new Set() });
+  const [s, set] = useState<BridgeState>({ events: [], status: "starting", error: null, queued: 0, mode: shownMode(spec?.mode), session: null, earlier: null, stale: new Set() });
   const proc = useRef<ipc.BridgeProcess | null>(null);
   const specKey = spec ? JSON.stringify(spec) : null;
 
   useEffect(() => {
     if (!spec) return;
     let alive = true;
-    set({ events: [], status: "starting", error: null, queued: 0, mode: spec.mode, session: null, earlier: null, stale: new Set() });
+    set({ events: [], status: "starting", error: null, queued: 0, mode: shownMode(spec.mode), session: null, earlier: null, stale: new Set() });
     const onLine = (line: string) => {
       if (!alive) return;
       const r = bridgeLine(line);
       if (r.event) set((p) => ({ ...p, events: [...p.events, r.event!] }));
-      else if (r.bridge?.kind === "ready") set((p) => ({ ...p, status: "ready" }));
+      else if (r.bridge?.kind === "ready") set((p) => ({ ...p, status: "ready", mode: asChatMode(r.bridge!.mode) ?? p.mode }));
       else if (r.bridge?.kind === "queued") set((p) => ({ ...p, queued: r.bridge!.count ?? 0 }));
-      else if (r.bridge?.kind === "session" && r.bridge.key) set((p) => ({ ...p, session: { key: r.bridge!.key!, model: r.bridge!.model ?? null, commands: r.bridge!.commands ?? [] } }));
+      // The agent says which mode it really runs in (`manual` is the chat's `default`).
+      else if (r.bridge?.kind === "session" && r.bridge.key) set((p) => ({ ...p, mode: asChatMode(r.bridge!.mode) ?? p.mode, session: { key: r.bridge!.key!, model: r.bridge!.model ?? null, commands: r.bridge!.commands ?? [] } }));
       else if (r.bridge?.kind === "error") set((p) => failed(p, r.bridge!.message ?? "bridge error"));
       else if (r.bridge?.kind === "exit") set((p) => ({ ...p, status: p.status === "error" ? "error" : "closed" }));
     };

@@ -14,6 +14,7 @@ import * as path from "node:path";
 
 import { configDir, die, readBinaryPath, ROOT } from "../profiles.js";
 import { provider as providerOf } from "../providers.js";
+import { chatMode, findTranscript, lastPermissionMode } from "../bridge/permission-mode.js";
 import { logDebug } from "../debug-log.js";
 import { alive as pidAlive, InputLeases } from "../host/lease.js";
 import { TmuxHost, type HostedSession } from "../host/tmux-host.js";
@@ -35,11 +36,13 @@ export function hasClaudeTranscript(dir: string, id: string): boolean {
 /** Providers whose terminal and chat share one conversation the bridge can resume. */
 export const SHARED_CONVERSATION = new Set(["claude", "codex"]);
 
-/** How the program comes back after the chat: resume the same conversation.
- *  A Claude session without one yet (no turn) starts again under its id instead. Pure. */
-export function resumeArgs(provider: string, sessionId: string, hasConversation = true): string[] {
+/** How the program comes back after the chat: resume the same conversation, in the permission
+ *  mode it last ran in (the one set in the chat, if it was changed there). A Claude session without
+ *  a conversation yet (no turn) starts again under its id instead. Pure. */
+export function resumeArgs(provider: string, sessionId: string, hasConversation = true, mode: string | null = null): string[] {
   if (provider === "codex") return ["resume", sessionId];
-  return hasConversation ? ["--resume", sessionId] : [];
+  const inMode = mode ? ["--permission-mode", mode] : [];
+  return hasConversation ? ["--resume", sessionId, ...inMode] : inMode;
 }
 
 /** The parked window's program: this CLI, printing a notice and waiting. */
@@ -58,6 +61,8 @@ export interface ViewDeps {
   parked: (key: string) => string[];
   /** Has the session a conversation to resume (a transcript)? */
   hasConversation: (key: string) => boolean;
+  /** The permission mode the session last ran in, when it is one a chat runs in. */
+  lastMode?: (key: string) => string | null;
   /** Ask the chat's bridge holding `key` (only while it is still `writer`) to close and wait until it has gone. True when no writer holds it any more. */
   endChat?: (key: string, writer: string) => boolean;
   /** Hand a parked session over from a chat bridge this app lost track of (a reloaded window):
@@ -105,7 +110,7 @@ export function toTerminal(d: ViewDeps, key: string, opts: { takeOver?: boolean;
     s = hosted(d, key);
     if (!s.parked) return s;
   }
-  const back = d.host.respawn(key, { provider: s.provider, account: s.account, configDir: d.configDir(s.provider, s.account), cwd: s.cwd, bin: d.bin(s.provider), args: resumeArgs(s.provider, s.sessionId, d.hasConversation(key)) });
+  const back = d.host.respawn(key, { provider: s.provider, account: s.account, configDir: d.configDir(s.provider, s.account), cwd: s.cwd, bin: d.bin(s.provider), args: resumeArgs(s.provider, s.sessionId, d.hasConversation(key), d.lastMode?.(key) ?? null) });
   d.host.unparked(back.key);
   return { ...back, parked: undefined };
 }
@@ -133,6 +138,11 @@ export function realViewDeps(): ViewDeps {
       const [provider, account, id] = key.split("/");
       if (provider !== "claude" || !account || !id) return true;
       return hasClaudeTranscript(configDir("claude", account), id);
+    },
+    lastMode: (key) => {
+      const [provider, account, id] = key.split("/");
+      if (provider !== "claude" || !account || !id) return null;
+      return chatMode(lastPermissionMode(findTranscript(configDir("claude", account), id)));
     },
     endChat: (key, writer) => endBridge(leases, key, { expect: writer }),
     adoptChat: (key, writer) => endBridge(leases, key, { expect: writer, signal: (pid) => process.kill(pid, "SIGUSR2"), only: sameApp }),

@@ -258,7 +258,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const [chatAsk, setChatAsk] = useState<{ name: string; color: IdentityColor }[] | null>(null);
   const startChat = (profile: string) => {
     const tab = `claude/${profile}/chat-${Date.now().toString(36)}`;
-    chats.open(tab, { new: { profile, provider: "claude", cwd: lastFolder }, mode: "default" });
+    chats.open(tab, { new: { profile, provider: "claude", cwd: lastFolder }, mode: "inherit" });
     openTab(tab);
   };
   const newChat = () => {
@@ -415,7 +415,8 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
             arm(key, null);
             // The chat is the view now: if it ends without the person choosing the terminal, opening the session brings it back.
             resumed.current.chose(key, "chat");
-            chats.open(key, { key, mode: "default" });
+            // The mode the session runs in comes along (auto in the terminal is auto in the chat).
+            chats.open(key, { key, mode: "inherit" });
           })
           .catch((e: unknown) => {
             const msg = e instanceof Error ? e.message : String(e);

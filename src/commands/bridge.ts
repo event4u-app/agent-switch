@@ -27,6 +27,7 @@ import { eventFile, lastHookCwd, readEvents } from "../hooks.js";
 import { InputLeases, LeaseHeld, type Holder } from "../host/lease.js";
 import { TmuxHost, type HostedRow, type HostedSession } from "../host/tmux-host.js";
 import { logDebug } from "../debug-log.js";
+import { inheritedMode } from "../bridge/permission-mode.js";
 import { restoreAfterChat } from "./view.js";
 import { configDir, die, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
 import { provider as providerOf, type ProviderId } from "../providers.js";
@@ -323,8 +324,9 @@ async function cmdAcpBridge(arg: string | undefined, flags: Record<string, strin
 
 export async function cmdBridge(providerId: ProviderId, arg: string | undefined, flags: Record<string, string | boolean>): Promise<void> {
   if ((flags.new && typeof flags.agent === "string") || arg?.startsWith("acp/")) return cmdAcpBridge(arg, flags);
-  const mode = (typeof flags.mode === "string" ? flags.mode : "default") as PermissionMode;
-  if (!PERMISSION_MODES.includes(mode)) die(`--mode is one of ${PERMISSION_MODES.join(", ")} (approvals are never bypassed)`);
+  // `inherit` (the default): the mode the session last ran in, as in the terminal (see permission-mode.ts).
+  const askedMode = typeof flags.mode === "string" ? flags.mode : "inherit";
+  if (askedMode !== "inherit" && !PERMISSION_MODES.includes(askedMode as PermissionMode)) die(`--mode is one of inherit, ${PERMISSION_MODES.join(", ")} (approvals are never bypassed)`);
   const model = typeof flags.model === "string" ? flags.model : undefined;
   let t: Target;
   if (flags.new) {
@@ -333,7 +335,7 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
     if (!routed) die(`no ${providerId} account to start on`);
     t = { key: `${providerId}/${routed}/new`, provider: providerId, account: routed, sessionId: null, cwd, transcript: null };
   } else {
-    if (!arg) die("usage: agent-switch bridge <session> [--mode default|acceptEdits|plan] [--model M] · bridge --new [profile] --cwd DIR");
+    if (!arg) die("usage: agent-switch bridge <session> [--mode inherit|default|acceptEdits|plan|auto] [--model M] · bridge --new [profile] --cwd DIR");
     const hosted = TmuxHost.available() ? new TmuxHost(ROOT).list() : [];
     const found = resolveSession(arg) ? target(arg) : hostedTarget(arg, hosted);
     if (!found) return refuse(arg, `no Claude or Codex session ${arg}`);
@@ -343,6 +345,8 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
     if (runsElsewhere(t)) return refuse(t.key, `${t.key} is running in a terminal; open it there, or take it over first`);
   }
 
+  const mode: PermissionMode =
+    askedMode !== "inherit" ? (askedMode as PermissionMode) : t.provider === "claude" ? inheritedMode(t.transcript, configDir("claude", t.account)) : "default";
   const out = (o: BridgeOutput) => {
     // What the chat showed as an error, and how the agent ended, without the conversation itself.
     if ("bridge" in o && o.bridge === "error") logDebug({ kind: "bridge", what: "error", key: t.key, ok: false, error: o.message });

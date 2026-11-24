@@ -59,6 +59,16 @@ test("chat → terminal before the first turn: the program starts again under it
   assert.deepEqual(resumeArgs("codex", "t1", false), ["resume", "t1"], "Codex resumes its thread either way");
 });
 
+test("back to the terminal in the mode the chat last ran in (auto stays auto); Codex resumes its thread either way", () => {
+  assert.deepEqual(resumeArgs("claude", "s1", true, "auto"), ["--resume", "s1", "--permission-mode", "auto"]);
+  assert.deepEqual(resumeArgs("claude", "s1", false, "plan"), ["--permission-mode", "plan"]);
+  assert.deepEqual(resumeArgs("claude", "s1", true, null), ["--resume", "s1"]);
+  assert.deepEqual(resumeArgs("codex", "t1", true, "auto"), ["resume", "t1"]);
+  const { host, log } = fakeHost([row({ parked: true })]);
+  toTerminal(deps(host, { lastMode: () => "auto" }), "claude/work/s1");
+  assert.deepEqual(log, ["respawn claude/work/s1 claude --resume s1 --permission-mode auto"]);
+});
+
 test("hasClaudeTranscript: a transcript in any project folder; no projects folder is no; an unreadable one counts as yes", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "asw-view-tr-"));
   assert.equal(hasClaudeTranscript(dir, "s1"), false, "no projects folder");

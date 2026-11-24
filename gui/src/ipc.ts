@@ -338,9 +338,13 @@ export async function subagentTimeline(parent: string, agentId: string, limit = 
   return { events: Array.isArray(o.events) ? o.events : [], from: Number(o.from) || 0, total: Number(o.total) || 0, version: typeof o.version === "string" ? o.version : null, newerThanFixtures: o.newerThanFixtures === true, truncated: o.truncated === true };
 }
 
+/** The permission modes a chat runs in (never one that skips approvals). */
+export type ChatMode = "default" | "acceptEdits" | "plan" | "auto";
+export const CHAT_MODES: readonly ChatMode[] = ["default", "acceptEdits", "plan", "auto"];
+/** `inherit`: the mode the session last ran in, as the CLI reads it from its transcript (else the account's default). */
 export type BridgeSpec =
-  | { key: string; mode: "default" | "acceptEdits" | "plan"; model?: string }
-  | { new: { profile: string; provider: "claude" | "codex"; cwd: string }; mode: "default" | "acceptEdits" | "plan"; model?: string };
+  | { key: string; mode: ChatMode | "inherit"; model?: string }
+  | { new: { profile: string; provider: "claude" | "codex"; cwd: string }; mode: ChatMode | "inherit"; model?: string };
 
 /** The spawn scope (capabilities/default.json `shell:allow-spawn`) and arguments for a bridge. Pure. */
 export function bridgeArgs(spec: BridgeSpec): { scope: string; args: string[] } {
