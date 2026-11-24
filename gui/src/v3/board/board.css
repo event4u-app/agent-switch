@@ -1,0 +1,228 @@
+/*
+ * The board's motion and texture: the ring a fight runs in, the knockout, the
+ * champion's shine, a judge's provisional stripes, the council's round table.
+ * Colours come only from the theme tokens (--ac-*), so every theme works.
+ */
+
+@property --ab-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/* A rotating light around a card: a match being judged, a line in the ring. */
+.ab-ring {
+  position: relative;
+  isolation: isolate;
+}
+.ab-ring::before {
+  content: "";
+  position: absolute;
+  inset: -1.5px;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(from var(--ab-angle), transparent 0 55%, var(--ac-brand) 75%, var(--ac-violet) 88%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: ab-spin 2.4s linear infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+@keyframes ab-spin {
+  to {
+    --ab-angle: 360deg;
+  }
+}
+
+/* Alive: a slow breath of the accent. */
+.ab-alive {
+  box-shadow: 0 0 0 1px var(--ac-brand-line), 0 0 0 0 color-mix(in srgb, var(--ac-brand) 30%, transparent);
+  animation: ab-breathe 3.6s ease-in-out infinite;
+}
+@keyframes ab-breathe {
+  50% {
+    box-shadow: 0 0 0 1px var(--ac-brand-line), 0 0 14px 1px color-mix(in srgb, var(--ac-brand) 22%, transparent);
+  }
+}
+
+/* Out: drained, struck through, stamped. */
+.ab-out {
+  filter: grayscale(0.9);
+  opacity: 0.55;
+}
+.ab-out .ab-strike {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(to top right, transparent calc(50% - 0.6px), color-mix(in srgb, var(--ac-alert) 55%, transparent) 50%, transparent calc(50% + 0.6px));
+  pointer-events: none;
+}
+.ab-stamp {
+  transform: rotate(-8deg);
+  border: 1.5px solid var(--ac-alert);
+  color: var(--ac-alert-text);
+  letter-spacing: 0.08em;
+}
+
+/* Knocked out just now: a hit, then the drain. */
+.ab-knockout {
+  animation: ab-hit 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97) both, ab-drain 1.4s 0.5s ease-out both;
+}
+@keyframes ab-hit {
+  10%,
+  90% {
+    transform: translateX(-1px);
+  }
+  20%,
+  80% {
+    transform: translateX(2px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-4px) rotate(-1deg);
+  }
+  40%,
+  60% {
+    transform: translateX(4px) rotate(1deg);
+  }
+}
+@keyframes ab-drain {
+  from {
+    filter: grayscale(0) brightness(1.4);
+    opacity: 1;
+  }
+}
+
+/* The champion: a moving shine over the warm token. */
+.ab-champion {
+  background-image: linear-gradient(110deg, transparent 30%, color-mix(in srgb, var(--ac-warn) 28%, transparent) 45%, transparent 60%);
+  background-size: 250% 100%;
+  box-shadow: 0 0 0 1.5px var(--ac-warn), 0 0 22px 2px color-mix(in srgb, var(--ac-warn) 30%, transparent);
+  animation: ab-shine 3s ease-in-out infinite;
+}
+@keyframes ab-shine {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* A verdict a judge returned that the engine has not recorded yet. */
+.ab-provisional {
+  background-image: repeating-linear-gradient(-45deg, transparent 0 7px, color-mix(in srgb, var(--ac-violet) 9%, transparent) 7px 14px);
+}
+
+/* A match that was just decided. */
+.ab-flash {
+  animation: ab-flash 1.6s ease-out;
+}
+@keyframes ab-flash {
+  0% {
+    box-shadow: 0 0 0 2px var(--ac-ok), 0 0 24px 4px color-mix(in srgb, var(--ac-ok) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* Cards an appeal spent: football cards, tilted. */
+.ab-card {
+  display: inline-block;
+  width: 7px;
+  height: 10px;
+  border-radius: 1.5px;
+  background: var(--ac-warn);
+  transform: rotate(8deg);
+  box-shadow: 0 1px 0 color-mix(in srgb, #000 25%, transparent);
+}
+.ab-card + .ab-card {
+  margin-left: -2px;
+  transform: rotate(-6deg);
+}
+
+/* Score bars grow in. */
+.ab-bar {
+  transform-origin: left center;
+  animation: ab-grow 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes ab-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* Dimmed when another line's path is traced. */
+.ab-dim {
+  opacity: 0.28;
+  transition: opacity 0.2s;
+}
+.ab-trace {
+  box-shadow: 0 0 0 1.5px var(--ac-brand);
+}
+
+/* New log lines slide in. */
+.ab-enter {
+  animation: ab-enter 0.45s ease-out both;
+}
+@keyframes ab-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* A dot that pulses: something runs. */
+.ab-pulse {
+  animation: ab-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ab-pulse {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+
+/* ---- the council's round table ---- */
+.ct-table {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  width: min(100%, 620px);
+  margin-inline: auto;
+}
+.ct-surface {
+  position: absolute;
+  inset: 28%;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 50% 40%, var(--ac-raise), var(--ac-panel) 70%);
+  box-shadow: inset 0 0 0 1px var(--ac-line), 0 10px 40px -12px color-mix(in srgb, #000 45%, transparent);
+}
+.ct-live .ct-surface {
+  box-shadow: inset 0 0 0 1px var(--ac-brand-line), 0 0 40px -6px color-mix(in srgb, var(--ac-brand) 35%, transparent);
+}
+/* left/top: the seat's place around the table, set from its angle. */
+.ct-seat {
+  position: absolute;
+  width: 32%;
+  transform: translate(-50%, -50%);
+}
+.ct-empty {
+  border-style: dashed !important;
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ab-ring::before,
+  .ab-alive,
+  .ab-knockout,
+  .ab-champion,
+  .ab-flash,
+  .ab-bar,
+  .ab-enter,
+  .ab-pulse {
+    animation: none !important;
+  }
+}

@@ -338,6 +338,23 @@ export async function subagentTimeline(parent: string, agentId: string, limit = 
   return { events: Array.isArray(o.events) ? o.events : [], from: Number(o.from) || 0, total: Number(o.total) || 0, version: typeof o.version === "string" ? o.version : null, newerThanFixtures: o.newerThanFixtures === true, truncated: o.truncated === true };
 }
 
+/** `workflows <session> --json`: what a session orchestrates — Workflow runs, agent-config brackets, councils — for the board. `live`: the GUI's word that the session runs. */
+export async function sessionBoard(key: string, live: boolean): Promise<import("./v3/board/types.js").Orchestration> {
+  return JSON.parse(await runCli(["workflows", key, "--json", ...(live ? ["--live"] : [])]));
+}
+
+/** `workflows <session> --council RUN --say TEXT|--pause|--resume|--stop`: speak at a live council table (agent-config reads it before the next seat). */
+export async function councilSay(key: string, run: string, msg: import("./v3/board/types.js").CouncilMessage): Promise<void> {
+  const flag = msg.type === "say" ? ["--say", msg.text] : [`--${msg.type}`];
+  await runCli(["workflows", key, "--council", run, ...flag, "--json"]);
+}
+
+/** `workflows <session> --line RUN/LINE --json`: one bracket line's full output (its rationale and diff). */
+export async function bracketLineOutput(key: string, run: string, line: string): Promise<string> {
+  const o = JSON.parse(await runCli(["workflows", key, "--line", `${run}/${line}`, "--json"]));
+  return typeof o.text === "string" ? o.text : "";
+}
+
 /** The permission modes a chat runs in (never one that skips approvals). */
 export type ChatMode = "default" | "acceptEdits" | "plan" | "auto";
 export const CHAT_MODES: readonly ChatMode[] = ["default", "acceptEdits", "plan", "auto"];

@@ -32,6 +32,7 @@ import { dispatchV3, type DispatchDeps } from "./actions.js";
 import { applyAppearance, loadAppearance, saveAppearance, themeVars } from "./appearance.js";
 import { canTakeOver, chatStart, hasOpenPr, initialPlan, NO_TERMINAL_WHY, sessionKey, startKey, toV3Data, worktreeOf, type AdapterEnv, type SessionTerminal } from "./data.js";
 import { SessionBody, SubagentTranscript, ToolsSlot, settingsSection } from "./slots.js";
+import { BoardPage } from "../board/BoardPage.js";
 import type { SessionRow } from "../../transforms.js";
 import { useV3Feeds } from "./useFeeds.js";
 import { useChats } from "./chats.js";
@@ -475,6 +476,22 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       );
     },
     subagent: (parent, agentId) => <SubagentTranscript key={`${parent}#${agentId}`} parent={parent} agentId={agentId} />,
+    board: (key, focus) => {
+      const row = byKey.get(key);
+      return (
+        <BoardPage
+          key={key}
+          sessionKey={key}
+          title={data.sessions.find((x) => x.key === key)?.title ?? row?.summary ?? key}
+          live={!!row?.live}
+          focus={focus}
+          read={ipc.sessionBoard}
+          readLine={ipc.bracketLineOutput}
+          speak={ipc.councilSay}
+          transcript={(agentId) => <SubagentTranscript key={`${key}#${agentId}`} parent={key} agentId={agentId} />}
+        />
+      );
+    },
     review: (key, focus) => {
       const tab = chats.tabOf(key);
       const chat = tab ? chats.states.get(tab) : undefined;

@@ -211,6 +211,51 @@ export function childrenOf(r: SessionRow, rowOf?: (key: string) => SessionRow | 
   }
   const counted = (r.childCount ?? 0) - (r.children ?? []).length;
   if (counted > 0) out.push({ id: `${sessionKey(r)}#counted`, label: "subagents", kind: "subagent", state: "done", source: "counted", count: counted, tool: toolOf(r.provider), account: parentAccount });
+  out.push(...boardChildren(r));
+  return out;
+}
+
+/** The id of a board row: the session's board, opened at `focus` ("arena:<run>", "workflow:<runId>", "council"). Pure. */
+export const boardChildId = (key: string, focus: string) => `board:${key}|${focus}`;
+/** A board row's session and focus; null for any other id. Pure. */
+export function parseBoardChildId(id: string): { key: string; focus: string } | null {
+  const m = /^board:([^|]+)\|(.+)$/.exec(id);
+  return m ? { key: m[1], focus: m[2] } : null;
+}
+
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+
+/**
+ * What a session orchestrates, as rows under it: one row per arena (its
+ * workflow runs under it), one per other workflow run, one for its councils.
+ * A row opens the session's board. Pure.
+ */
+export function boardChildren(r: SessionRow): ChildModel[] {
+  const key = sessionKey(r);
+  const live = !!r.live;
+  const runs = (r.workflows ?? []).map((w) => w as Record<string, unknown>).filter((w) => str(w.runId));
+  const brackets = (r.brackets ?? []).map((b) => b as Record<string, unknown>).filter((b) => str(b.run));
+  const runRow = (w: Record<string, unknown>): ChildModel => ({
+    id: boardChildId(key, `workflow:${str(w.runId)}`),
+    label: `${str(w.name) || str(w.runId)} · ${num(w.done)}/${num(w.total)}${str(w.phase) && w.status === "running" ? ` · ${str(w.phase)}` : ""}`,
+    kind: "workflow",
+    state: w.status === "running" ? "working" : "done",
+    source: "files",
+  });
+  const out: ChildModel[] = [];
+  const claimed = new Set<string>();
+  for (const b of brackets) {
+    const run = str(b.run);
+    // The runs that drive this arena: named after it, or arena/bracket runs when it is the only one.
+    const mine = runs.filter((w) => str(w.name).includes(run) || (brackets.length === 1 && /arena|bracket|judge|appeal/i.test(str(w.name))));
+    for (const w of mine) claimed.add(str(w.runId));
+    const champion = str(b.champion);
+    const label = champion ? `Arena · ${run} · ${champion} wins` : `Arena · ${run} · round ${num(b.round)} · ${num(b.alive)}/${num(b.total)} left`;
+    out.push({ id: boardChildId(key, `arena:${run}`), label, kind: "arena-board", state: live && b.phase !== "done" ? "working" : "done", source: "files", ...(mine.length ? { children: mine.map(runRow) } : {}) });
+  }
+  for (const w of runs) if (!claimed.has(str(w.runId))) out.push(runRow(w));
+  if ((r.boards ?? []).includes("council")) out.push({ id: boardChildId(key, "council"), label: r.councilLive ? "Council · live" : "Council", kind: "council-board", state: r.councilLive && live ? "working" : "done", source: "files" });
   return out;
 }
 

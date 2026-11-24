@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../lib/utils.js";
-import { ArrowLeftRight, ArrowRightToLine, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Unplug, Wrench, X } from "lucide-react";
+import { ArrowLeftRight, ArrowRightToLine, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Swords, Unplug, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
 import type { ActivityEvent, IdentityColor, ToolEntry } from "../vm/types.js";
@@ -105,6 +105,8 @@ export interface V3Slots {
   subagent?: (parent: string, agentId: string) => ReactNode;
   /** v3.1: the Review page of one session (spec §10.9), opened at `focus` when a file was picked. Absent: Review and Commit stay disabled. */
   review?: (key: string, focus?: ReviewFocus) => ReactNode;
+  /** The board of one session: its arenas, councils and workflow runs, opened at `focus` ("arena:<run>", "council", "workflow:<runId>"). Absent: those rows do not open. */
+  board?: (key: string, focus?: string) => ReactNode;
   /** The 2.11 settings screens v3 keeps, by section. */
   settings: (section: SettingsSection) => ReactNode;
 }
@@ -152,7 +154,7 @@ export type V3Action =
 export const SESSION_MENU = ["Rename…", "Pin", "Move to another account…", "Take over here…", "Hand off…", "Compact", "Detach", "End…"] as const;
 export type SessionMenuItem = (typeof SESSION_MENU)[number];
 
-type Page = PageId | "sessions-table" | `review:${string}`;
+type Page = PageId | "sessions-table" | `review:${string}` | `board:${string}`;
 const PAGE_TAB: Record<PageId | "sessions-table", { label: string; icon: ReactNode }> = {
   accounts: { label: "Accounts", icon: <Layers className="size-3.5" /> },
   library: { label: "Library", icon: <Library className="size-3.5" /> },
@@ -163,7 +165,7 @@ const PAGE_TAB: Record<PageId | "sessions-table", { label: string; icon: ReactNo
 
 /** A page id the window can (re)open: a known page, or the review of a session that still exists. */
 function isKnownPage(p: string, sessions: ReadonlySet<string>): boolean {
-  return p in PAGE_TAB || (p.startsWith("review:") && sessions.has(p.slice(7)));
+  return p in PAGE_TAB || (p.startsWith("review:") && sessions.has(p.slice(7))) || (p.startsWith("board:") && sessions.has(p.slice(6)));
 }
 
 /** A window point in the shell's coordinates, kept so a menu `width` wide stays inside. */
@@ -291,6 +293,16 @@ export function V3Window({
     setReviewFocus((m) => new Map(m).set(key, { ...(file ? { file } : {}), seq: (m.get(key)?.seq ?? 0) + 1 }));
     openPage(`review:${key}`);
   };
+  /** The board of a session, at the row that opened it; the tab is the session's one board. */
+  const [boardFocus, setBoardFocus] = useState<ReadonlyMap<string, string>>(new Map());
+  const openBoard = slots.board
+    ? (id: string) => {
+        const m = /^board:([^|]+)\|(.+)$/.exec(id);
+        if (!m) return;
+        setBoardFocus((cur) => new Map(cur).set(m[1], m[2]));
+        openPage(`board:${m[1]}`);
+      }
+    : undefined;
   const openSession = (key: string) => {
     setStrip((cur) => openTab(cur, key));
     setActive(key);
@@ -523,7 +535,9 @@ export function V3Window({
         id,
         ...(p.startsWith("review:")
           ? { label: `Review · ${data.sessions.find((x) => x.key === p.slice(7))?.title ?? p.slice(7)}`, icon: <FileCode className="size-3.5" /> }
-          : PAGE_TAB[p as PageId | "sessions-table"]),
+          : p.startsWith("board:")
+            ? { label: `Board · ${data.sessions.find((x) => x.key === p.slice(6))?.title ?? p.slice(6)}`, icon: <Swords className="size-3.5" /> }
+            : PAGE_TAB[p as PageId | "sessions-table"]),
       };
     }
     const s = data.sessions.find((x) => x.key === id);
@@ -539,6 +553,7 @@ export function V3Window({
 
   const page = (p: Page): ReactNode => {
     if (p.startsWith("review:")) return slots.review ? slots.review(p.slice(7), reviewFocus.get(p.slice(7))) : null;
+    if (p.startsWith("board:")) return slots.board ? slots.board(p.slice(6), boardFocus.get(p.slice(6))) : null;
     if (p === "accounts")
       return (
         <AccountsPage
@@ -856,6 +871,7 @@ export function V3Window({
           lastActiveOf={lastActiveOf}
           nowMs={data.nowMs}
           onSubagent={openSubagent}
+          onBoard={openBoard}
           groupOf={(k) => {
             const t = data.table.find((x) => x.key === k);
             if (!t) return null;
