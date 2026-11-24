@@ -33,12 +33,13 @@ describe("running on an account (limits popover)", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Idle/, expanded: false }));
     fireEvent.click(screen.getByTitle("Show in the Children window"));
     expect(on.onShowChild).toHaveBeenCalledWith("claude/side/a");
-    fireEvent.click(screen.getByTitle("Model and thinking for the next turn — same popover as the session bar"));
-    expect(on.onModel).toHaveBeenCalledWith("claude/side/a", "model");
-    const locked = screen.getByTitle("Locked: change it in your terminal (/model)");
-    expect(locked.textContent).toContain("Model");
-    fireEvent.click(locked);
-    expect(on.onModel).toHaveBeenCalledOnce();
+    // Model and thinking are shown, not switched (owner, 2026-11-24).
+    expect(screen.queryByTitle(/same popover as the session bar/)).toBeNull();
+    const readouts = [...document.querySelectorAll("[data-model-readout]")];
+    expect(readouts.map((r) => r.tagName)).toEqual(["SPAN", "SPAN"]);
+    expect(readouts[0].textContent).toBe("Sonnet 5.5");
+    fireEvent.click(readouts[0]);
+    expect(on.onModel).not.toHaveBeenCalled();
   });
 });
 
