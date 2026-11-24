@@ -171,7 +171,7 @@ test("sameApp: a bridge of the app that runs this CLI, or of an app that has gon
   if (process.platform !== "win32") assert.equal(sameApp(process.pid), true, "the real lookup: this test's own process");
 });
 
-test("endBridge: signals only a live bridge holder and waits for its process to end", async () => {
+test("endBridge: signals only a live bridge holder and waits for its process to end", { skip: process.platform === "win32" ? "POSIX signals and a background process from sh" : false }, async () => {
   const { endBridge } = await import("../src/commands/view.js");
   const leases = new InputLeases(HOME);
   const key = "claude/work/end1";
