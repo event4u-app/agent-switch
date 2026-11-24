@@ -82,7 +82,7 @@ export function RunningOn({
                 </button>
               </div>
               {/* Account, then model and thinking: the same chips, in the same order, as the session bar. */}
-              <div className="flex h-6 items-center gap-0.5 pl-[30px]">
+              <div className="flex h-6 items-center gap-0.5 pl-[39px]">
                 {onMove && (
                   <button
                     type="button"
