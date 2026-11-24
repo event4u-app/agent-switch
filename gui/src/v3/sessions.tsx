@@ -750,7 +750,11 @@ export function SessionsZone({
     const t = s.lastActiveMs ?? lastActiveOf(s.key);
     return t == null || nowMs == null ? null : ago(nowMs - t);
   };
-  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
+  // Idle starts folded under the status grouping (owner, 2026-11-24), unless the open session is idle.
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => {
+    const open = sessions.find((s) => s.key === activeKey);
+    return new Set(group === "status" && !(open && statusGroup(open) === "Idle") ? ["Idle"] : []);
+  });
   const fold = (g: string) => setFolded((f) => (f.has(g) ? new Set([...f].filter((x) => x !== g)) : new Set([...f, g])));
   return (
     // A column that fills the window, so Done today and Older sit at its foot, right above the limits.

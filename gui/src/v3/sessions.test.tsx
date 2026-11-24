@@ -260,8 +260,17 @@ describe("status groups with counts (proposal B)", () => {
   it("Needs you, Running, Idle — in that order, each with a count pill", () => {
     render(zone(rows, { group: "status" }));
     const heads = screen.getAllByRole("button", { expanded: true }).map((b) => b.textContent);
-    expect(heads).toEqual(["Needs you2", "Running1", "Idle1"]);
+    expect(heads).toEqual(["Needs you2", "Running1"]);
+    // Idle starts folded (owner, 2026-11-24); one click opens it.
+    const idle = screen.getByRole("button", { expanded: false, name: /^Idle/ });
+    expect(idle.textContent).toBe("Idle1");
+    expect(screen.queryByText("Idle one")).toBeNull();
+    fireEvent.click(idle);
     expect(screen.getAllByText(/^(Asking|Failing|Working|Idle) one$/).map((e) => e.textContent)).toEqual(["Asking one", "Failing one", "Working one", "Idle one"]);
+  });
+  it("Idle stays open when the open session is idle", () => {
+    render(zone(rows, { group: "status", activeKey: "i1" }));
+    expect(screen.getByText("Idle one")).toBeTruthy();
   });
   it("a session a Needs-you row already shows is not listed twice; an empty group has no header", () => {
     render(zone(rows, { group: "status", inNeeds: new Set(["n1", "n2"]) }));
