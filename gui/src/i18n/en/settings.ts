@@ -54,6 +54,10 @@ export const settings = {
   "settings.general.devModeDetail":
     "Adds in-app test helpers: generate 25 test notifications in the bell, force a near-limit suggestion, pet bubble tests and poses. Dev builds only.",
   "settings.general.devModeReason": "This is a release build.",
+  "settings.general.debugLog": "Debug log",
+  "settings.general.debugLogDetail":
+    "Keeps the last 100 things you did in the app and what came of them — failed calls, chat and view switches, errors — so a bug can be traced. Never prompts, messages or file contents. Stored in ~/.agent-switch/debug-log.jsonl.",
+  "settings.general.debugLogShow": "Show file",
   "settings.general.support": "Support Agent Switch",
   "settings.general.supportDetail": "Free & open source — stars, votes and shares help other developers find it.",
   "settings.general.starOnGitHub": "Star on GitHub",

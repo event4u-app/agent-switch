@@ -37,7 +37,8 @@ import { useV3Feeds } from "./useFeeds.js";
 import { useChats } from "./chats.js";
 import { ReviewHost } from "./ReviewHost.js";
 import { McpHost } from "./McpHost.js";
-import { viewStep } from "./viewSwitch.js";
+import { afterChatClosed, loadOwnViews, OWN_VIEWS_STORAGE, rememberOwnView, ResumeGate, resumesChat, viewStep, type OwnView } from "./viewSwitch.js";
+import { keyOf, recordDebug } from "../../debug-log.js";
 import { fold } from "../timeline.js";
 import { sessionFromRow } from "../../vm/build.js";
 import { ChatView } from "../chatview.js";
@@ -140,8 +141,26 @@ export function useTheme(): ThemeState & { mode: "dark" | "light" } {
 
 export function V3Frame({ theme }: { theme: ThemeState }) {
   const s = useAS();
-  // Terminal or chat for each session that runs in the user's own terminal (both read-only).
-  const [ownViews, setOwnViews] = useState<ReadonlyMap<string, "terminal" | "chat">>(() => new Map());
+  // Terminal or chat for each session that runs in the user's own terminal (both read-only), kept across restarts.
+  const [ownViews, setOwnViewsState] = useState<ReadonlyMap<string, OwnView>>(() => {
+    try {
+      return loadOwnViews(localStorage.getItem(OWN_VIEWS_STORAGE));
+    } catch {
+      return new Map();
+    }
+  });
+  const setOwnView = (key: string, view: OwnView) =>
+    setOwnViewsState((m) => {
+      const n = rememberOwnView(m, key, view);
+      try {
+        localStorage.setItem(OWN_VIEWS_STORAGE, JSON.stringify([...n]));
+      } catch {
+        // no storage: remembered until the window closes
+      }
+      return n;
+    });
+  // Parked sessions whose chat this window already brought back once (a failed start is not retried in a loop).
+  const resumed = useRef(new ResumeGate());
   const sRef = useRef(s);
   sRef.current = s;
   const chatsRunning = useRef(0);
@@ -239,7 +258,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
   const [chatAsk, setChatAsk] = useState<{ name: string; color: IdentityColor }[] | null>(null);
   const startChat = (profile: string) => {
     const tab = `claude/${profile}/chat-${Date.now().toString(36)}`;
-    chats.open(tab, { new: { profile, provider: "claude", cwd: lastFolder }, mode: "default" });
+    chats.open(tab, { new: { profile, provider: "claude", cwd: lastFolder }, mode: "inherit" });
     openTab(tab);
   };
   const newChat = () => {
@@ -320,7 +339,11 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     },
     takeOver: (key) => setTakeover({ key, busy: false, error: null }),
   };
-  const act = (a: V3Action) => void dispatchV3(a, deps);
+  const act = (a: V3Action) => {
+    // What the person did: the action and the session it is about, never what it carries (text, files).
+    recordDebug({ kind: "action", what: a.type, key: keyOf(Object.values(a)) });
+    void dispatchV3(a, deps);
+  };
 
   // The [Terminal | Chat] switch (Phase 4): only between turns, so a switch
   // asked for during a turn is armed and happens when the turn ends.
@@ -342,12 +365,16 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
     const r = byKey.get(key);
     return !!r && sessionFromRow(r, s.now).state === "working";
   };
+  // The newest chats and parked windows, for a step that looks again later.
+  const latest = useRef({ tabOf: chats.tabOf, parked: parkedKeys });
+  latest.current = { tabOf: chats.tabOf, parked: parkedKeys };
   function switchView(key: string, to: "terminal" | "chat") {
     const tab = chats.tabOf(key);
     // In the user's own terminal both views are read-only renderings of the
     // transcript: switching only changes the drawing, nothing is started.
-    if (!tab && !hostedKeys.has(key)) return setOwnViews((m) => new Map(m).set(key, to));
+    if (!tab && !hostedKeys.has(key)) return setOwnView(key, to);
     const step = viewStep(to, { inChat: !!tab, hosted: hostedKeys.has(key), parked: parkedKeys.has(key), chatRunning: chatRunning(key), terminalRunning: terminalRunning(key) });
+    recordDebug({ kind: "view", what: `switch to ${to}: ${step.do}`, key, detail: { inChat: !!tab, hosted: hostedKeys.has(key), parked: parkedKeys.has(key) } });
     const restore = () =>
       void ipc
         .viewSwitch(key, "terminal")
@@ -366,24 +393,37 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
         return armTo(step.to);
       case "close-chat":
         arm(key, null);
+        // The person chose the terminal: the window still reads as parked for a moment, which must not bring the chat back.
+        resumed.current.chose(key, "terminal");
         // Closing the chat ends its bridge, which brings the program back in the window.
         chats.close(tab!);
         // A bridge that already ended (a failed start, a reloaded window) brings nothing back: ask once more. Idempotent.
-        return void setTimeout(() => (parkedKeys.has(key) ? restore() : refresh()), 1500);
+        // Not when a chat was opened again meanwhile: that chat holds the window now.
+        return void setTimeout(() => {
+          const now = latest.current;
+          if (afterChatClosed({ chatOpen: !!now.tabOf(key), parked: now.parked.has(key) }) === "restore") restore();
+          else refresh();
+        }, 1500);
       case "restore":
         arm(key, null);
+        resumed.current.chose(key, "terminal");
         return restore();
       case "open-chat":
         void ipc
           .viewSwitch(key, "chat")
           .then(() => {
             arm(key, null);
-            chats.open(key, { key, mode: "default" });
+            // The chat is the view now: if it ends without the person choosing the terminal, opening the session brings it back.
+            resumed.current.chose(key, "chat");
+            // The mode the session runs in comes along (auto in the terminal is auto in the chat).
+            chats.open(key, { key, mode: "inherit" });
           })
           .catch((e: unknown) => {
             const msg = e instanceof Error ? e.message : String(e);
             if (/switch after this turn/.test(msg)) return armTo("chat");
             arm(key, null);
+            // Not opened (a chat from before still finishing its turn): opening the session again tries again.
+            resumed.current.failed(key);
             s.toast({ tone: "alert", text: msg });
           });
     }
@@ -410,7 +450,17 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
       const tab = chats.tabOf(key);
       const chat = tab ? chats.states.get(tab) : undefined;
       if (tab) return chat ? <ChatView b={chat} sessionKey={key} findFiles={(q) => ipc.sessionFiles(chat.session?.key ?? key, q)} worktreeOf={worktreeOf(byKey.get(chat.session?.key ?? key))} /> : <p className="m-auto text-[13px] text-ac-muted">Starting the chat…</p>;
+      // Last seen in the chat (still parked for it): opening the session brings the chat back — once per
+      // opening, and never after the person chose the terminal here.
+      const resume = resumesChat({ inChat: false, hosted: hostedKeys.has(key), parked: parkedKeys.has(key) });
       return (
+      <>
+      {resume && (
+        <OnMount
+          key={`resume:${key}`}
+          run={() => resumed.current.take(key) && switchView(key, "chat")}
+        />
+      )}
       <SessionBody
         sessionKey={key}
         row={byKey.get(key)}
@@ -423,6 +473,7 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
         onTakeOver={canTakeOver(byKey.get(key), hostedKeys.has(key), feeds.host?.mode ?? "ephemeral") ? () => deps.takeOver?.(key) : null}
         onExit={refresh}
       />
+      </>
       );
     },
     subagent: (parent, agentId) => <SubagentTranscript key={`${parent}#${agentId}`} parent={parent} agentId={agentId} />,
@@ -482,6 +533,15 @@ type TakeoverState = { key: string; busy: boolean; error: { text: string; forcea
 
 /** The take-over dialog on the CLI (`host adopt`): busy while it runs, the
  *  refusal in place when it refuses, the hosted tab once it is done. */
+/** Runs `run` once when it mounts; draws nothing. */
+function OnMount({ run }: { run: () => void }) {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    run();
+  }, []);
+  return null;
+}
+
 function TakeoverHost({ t, set, title, where, running, done, toast }: { t: TakeoverState; set: (t: TakeoverState | null) => void; title: string; where: string; running: boolean | null; done: (key: string) => void; toast: DispatchDeps["toast"] }) {
   const [provider, account] = t.key.split("/");
   const go = (o: { stopSource: boolean; force: boolean }) => {

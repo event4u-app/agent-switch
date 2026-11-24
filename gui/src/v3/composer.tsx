@@ -11,8 +11,8 @@ import { Button } from "../ui/Button.js";
 import { Act } from "./kit.js";
 import type { Attachment } from "./adapter/useBridge.js";
 
-export type Mode = "default" | "acceptEdits" | "plan";
-export const MODE_LABEL: Record<Mode, string> = { default: "Ask before edits", acceptEdits: "Edit without asking", plan: "Plan only" };
+export type Mode = "default" | "acceptEdits" | "plan" | "auto";
+export const MODE_LABEL: Record<Mode, string> = { default: "Ask before edits", acceptEdits: "Edit without asking", plan: "Plan only", auto: "Auto mode" };
 
 export interface Chip {
   id: string;

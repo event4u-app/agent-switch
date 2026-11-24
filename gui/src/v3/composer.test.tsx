@@ -70,12 +70,14 @@ describe("Composer", () => {
     expect(c.onSend).toHaveBeenCalledWith("", [{ image: { mediaType: "image/png", data: "iVBORw==" } }]);
   });
 
-  it("the mode menu offers the three modes, never a bypass", () => {
+  it("the mode menu offers the CLI's modes including auto, never a bypass", () => {
     const c = setup();
     fireEvent.click(screen.getByText("Ask before edits"));
-    expect(screen.getAllByRole("menuitemradio").map((m) => m.textContent)).toEqual(["Ask before edits", "Edit without asking", "Plan only"]);
-    fireEvent.click(screen.getByText("Plan only"));
-    expect(c.onMode).toHaveBeenCalledWith("plan");
+    const items = screen.getAllByRole("menuitemradio").map((m) => m.textContent);
+    expect(items).toEqual(["Ask before edits", "Edit without asking", "Plan only", "Auto mode"]);
+    expect(items.join(" ")).not.toMatch(/bypass|don't ask/i);
+    fireEvent.click(screen.getByText("Auto mode"));
+    expect(c.onMode).toHaveBeenCalledWith("auto");
   });
 
   it("chipOf: a non-image file is sent by name and bytes; the bridge stages it", async () => {

@@ -17,7 +17,8 @@ import { claudeState, fromClaudeLine } from "../timeline/claude.js";
 import { toolSummary } from "../timeline/events.js";
 import type { AsEvent } from "../timeline/events.js";
 
-export const PERMISSION_MODES = ["default", "acceptEdits", "plan"] as const;
+/** The modes a chat runs in; never one that skips approvals (see permission-mode.ts). */
+export const PERMISSION_MODES = ["default", "acceptEdits", "plan", "auto"] as const;
 export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
 export type { Incoming as Attachment } from "./attachments.js";
