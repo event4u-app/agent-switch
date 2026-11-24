@@ -10,6 +10,7 @@ import { cn } from "../lib/utils.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
 import { MultiSelect } from "./multi-select.js";
+import { ANY_TIME, DateRange, inRange, type TimeRange } from "./date-range.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { Switch } from "../ui/Switch.js";
 import { TextInput } from "../ui/TextInput.js";
@@ -331,20 +332,22 @@ function shared<T>(rows: readonly TableSession[], f: (s: TableSession) => T): T 
  */
 export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: initialGroup = "none", status: initialStatus = "all" }: { /** The tab it opens on (Done today or Older from the sidebar). */ status?: StatusTab; sessions: TableSession[]; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions; /** The Sessions window's grouping: by project, or one list. */ group?: "none" | "project" }) {
   const [q, setQ] = useState("");
-  const [state, setState] = useState<StatusTab>(initialStatus);
+  // Status and time as dropdowns (owner, 2026-11-24): several statuses at once; nothing ticked = every status.
+  const [state, setState] = useState<ReadonlySet<Exclude<StatusTab, "all">>>(() => new Set(initialStatus === "all" ? [] : [initialStatus]));
+  const [range, setRange] = useState<TimeRange>(ANY_TIME);
   // Tools as a multi-select dropdown (owner, 2026-11-24); nothing ticked = every tool.
   const [tool, setTool] = useState<ReadonlySet<TableSession["tool"]>>(() => new Set());
   const [sel, setSel] = useState<Set<string>>(new Set());
   const rows = useMemo(() => {
-    const hits = filterSessions(sessions, q, state, tool, nowMs);
+    const hits = filterSessions(sessions, q, "all", tool, nowMs).filter((s) => (state.size === 0 || [...state].some((st) => inStatus(s, st, nowMs))) && inRange(s.lastActiveMs, range));
     return order ? inListOrder(hits, order) : hits;
-  }, [sessions, order, q, state, tool, nowMs]);
+  }, [sessions, order, q, state, tool, nowMs, range]);
   // List or Projects stays a switch on the page (owner, 2026-11-24); it starts from the sidebar's grouping.
   const [group, setGroup] = useState<"none" | "project">(initialGroup);
   const sections = useMemo(() => (group === "project" ? byProject(rows) : [{ project: null as string | null, rows }]), [rows, group]);
   const count = (v: StatusTab) => sessions.filter((s) => inStatus(s, v, nowMs)).length;
   // A tab with nothing behind it is hidden, unless it is the one chosen.
-  const tabs = STATUS_TAB.filter((t) => t.value === "all" || t.value === state || count(t.value) > 0);
+  const tabs = STATUS_TAB.filter((t) => t.value !== "all" && (state.has(t.value) || count(t.value) > 0)) as { value: Exclude<StatusTab, "all">; label: string }[];
   const tools = (["claude", "codex", "antigravity"] as const).filter((t) => sessions.some((s) => s.tool === t));
   const oneAccount = shared(rows, accountText);
   const oneModel = shared(rows, modelText);
@@ -357,8 +360,9 @@ export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: 
     <PageBody title="All sessions" sub="Scan, filter and act on many sessions at once.">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Filter value={q} onChange={setQ} placeholder="Filter…" />
-        <Segmented size="sm" label="Status" value={state} onChange={setState} options={tabs.map((t) => ({ value: t.value, label: `${t.label} ${count(t.value)}` }))} />
+        <MultiSelect width={176} label="Status" all={`All ${sessions.length}`} picked={state} onChange={setState} options={tabs.map((t) => ({ value: t.value, label: t.label, hint: count(t.value) }))} />
         {tools.length > 1 && <MultiSelect width={150} label="Tool" all="All tools" picked={tool} onChange={setTool} options={tools.map((t) => ({ value: t, label: TOOL_LABEL[t], hint: sessions.filter((s) => s.tool === t).length }))} />}
+        <DateRange label="Active" value={range} onChange={setRange} nowMs={nowMs} width={156} />
         <Segmented size="sm" label="Group" value={group} onChange={setGroup} options={[{ value: "none", label: "List" }, { value: "project", label: "Projects" }]} />
       </div>
       {sel.size > 0 && <BatchBar count={sel.size} className="mb-2" actions={batch([...sel])} />}

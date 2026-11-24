@@ -65,7 +65,10 @@ describe("All sessions page (spec §10.2)", () => {
     const batch = vi.fn(() => ({ onClear: vi.fn(), onPin: vi.fn(), onArchive: vi.fn(), onClean: vi.fn(), onEnd: vi.fn() }));
     render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={onOpen} batch={batch} />);
     // Status tabs with counts; a tab with nothing behind it is hidden (proposal E).
-    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["All 3", "Idle 2", "Done today 1", "List", "Projects"]);
+    // Status, tool and time are dropdowns (owner, 2026-11-24); only List | Projects stays a switch.
+    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["List", "Projects"]);
+    expect(screen.getByRole("button", { name: "Status: All 3" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Active: Any time" })).toBeTruthy();
     // Tools: a multi-select dropdown (owner, 2026-11-24); nothing ticked reads "All tools".
     expect(screen.getByRole("button", { name: "Tool: All tools" })).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Select Event store"));
@@ -165,9 +168,11 @@ describe("All sessions, fewer columns (proposal E)", () => {
   it("Needs you counts waiting and CI-failing sessions; one tool hides the tool filter", () => {
     const rows = [sess("a", { state: "needs-you" }), sess("b", { pr: { number: 1, ci: "FAILURE" } }), sess("c", { state: "working" }), sess("d")];
     expect(filterSessions(rows, "", "needs", "any").map((r) => r.key)).toEqual(["a", "b"]);
-    render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
-    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["All 4", "Needs you 2", "Running 1", "Idle 1", "List", "Projects"]);
-    fireEvent.click(screen.getByRole("radio", { name: "Needs you 2" }));
+    const { unmount } = render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    expect(screen.getByRole("button", { name: "Status: All 4" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Tool:/ }), "one tool: no tool filter").toBeNull();
+    unmount();
+    render(<AllSessionsPage sessions={rows} nowMs={NOW} status="needs" onOpen={vi.fn()} batch={() => ({}) as never} />);
     expect(screen.getAllByLabelText(/^Select /)).toHaveLength(2);
   });
 
@@ -187,8 +192,27 @@ describe("All sessions opens on the tab the sidebar asked for (owner, 2026-11-24
   it("Older opens on Older and lists only what ended before today", () => {
     const rows = [sess("t", { live: false, title: "Today one" }), sess("o", { live: false, title: "Old one", lastActiveMs: new Date(NOW).setHours(0, 0, 0, 0) - 60_000 })];
     render(<AllSessionsPage sessions={rows} nowMs={NOW} status="older" onOpen={vi.fn()} batch={() => ({}) as never} />);
-    expect(screen.getByRole("radio", { name: "Older 1" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("button", { name: "Status: Older" })).toBeTruthy();
     expect(screen.getByText("Old one")).toBeTruthy();
     expect(screen.queryByText("Today one")).toBeNull();
+  });
+});
+
+describe("All sessions by time (owner, 2026-11-24)", () => {
+  it("a from–to range keeps only sessions active inside it; Any time clears it", () => {
+    const rows = [sess("a", { title: "Early", lastActiveMs: NOW - 5 * 3_600_000 }), sess("b", { title: "Late", lastActiveMs: NOW - 60_000 })];
+    render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    fireEvent.click(screen.getByRole("button", { name: "Active: Any time" }));
+    const field = (ms: number) => {
+      const d = new Date(ms);
+      const p = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: field(NOW - 6 * 3_600_000) } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: field(NOW - 4 * 3_600_000) } });
+    expect(screen.getByText("Early")).toBeTruthy();
+    expect(screen.queryByText("Late")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Any time" }));
+    expect(screen.getByText("Late")).toBeTruthy();
   });
 });
