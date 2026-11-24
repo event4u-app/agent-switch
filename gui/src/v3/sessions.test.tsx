@@ -275,3 +275,29 @@ describe("status groups with counts (proposal B)", () => {
     expect(screen.getAllByText(/^Run \d$/)).toHaveLength(9);
   });
 });
+
+describe("ended sessions under the status grouping", () => {
+  const NOW = new Date(2026, 10, 24, 15, 0).getTime();
+  const rows = [
+    s("claude/w/live", { state: "working" }),
+    s("claude/w/today", { state: "done", doneToday: true, lastActiveMs: NOW - 60 * 60_000 }),
+    s("claude/w/old", { state: "done", doneToday: true, lastActiveMs: NOW - 26 * 60 * 60_000 }),
+  ];
+  it("pins Done today and Older below the list, folded, and opens each one", () => {
+    render(zone(rows, { group: "status", nowMs: NOW, onCleanUp: vi.fn() }));
+    const pinned = document.querySelector("[data-done-groups]") as HTMLElement;
+    expect(pinned).toBeTruthy();
+    const heads = pinned.querySelectorAll("button[aria-expanded]");
+    expect([...heads].map((b) => b.textContent)).toEqual([expect.stringContaining("Done today"), expect.stringContaining("Older")]);
+    expect(screen.queryByText("title claude/w/today")).toBeNull();
+    fireEvent.click(heads[0]);
+    expect(screen.getByText("title claude/w/today")).toBeTruthy();
+    expect(screen.queryByText("title claude/w/old")).toBeNull();
+    fireEvent.click(heads[1]);
+    expect(screen.getByText("title claude/w/old")).toBeTruthy();
+  });
+  it("leaves an empty group out", () => {
+    render(zone(rows.slice(0, 2), { group: "status", nowMs: NOW }));
+    expect(document.querySelector("[data-done-groups]")!.textContent).not.toContain("Older");
+  });
+});

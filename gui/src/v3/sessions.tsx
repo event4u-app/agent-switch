@@ -716,6 +716,15 @@ export function SessionsZone({
   const byKey = new Map(sorted.map((s) => [s.key, s]));
   const live = order.map((k) => byKey.get(k)!);
   const done = sessions.filter((s) => s.doneToday).length;
+  // Status grouping: ended sessions stay reachable in two folded groups pinned under the list — Done today and Older.
+  const ended = sessions.filter((s) => s.doneToday);
+  const midnight = nowMs == null ? null : new Date(nowMs).setHours(0, 0, 0, 0);
+  const endedAt = (s: RowSession) => s.lastActiveMs ?? lastActiveOf(s.key);
+  const doneGroups = [
+    { id: "Done today", rows: ended.filter((s) => midnight == null || (endedAt(s) ?? midnight) >= midnight) },
+    { id: "Older", rows: ended.filter((s) => midnight != null && (endedAt(s) ?? midnight) < midnight) },
+  ].filter((g) => g.rows.length > 0);
+  const [doneOpen, setDoneOpen] = useState<ReadonlySet<string>>(() => new Set());
   const byStatus = group === "status";
   const grouped = byStatus || (group !== "none" && !!groupOf);
   const groupKey = (s: RowSession) => (byStatus ? statusGroup(s) : (groupOf!(s.key) ?? ""));
@@ -836,7 +845,7 @@ export function SessionsZone({
           ];
           }),
         ])}
-        {done > 0 && (
+        {!byStatus && done > 0 && (
           <div className="mt-0.5 flex h-7 items-center gap-2 px-2.5 text-[11.5px] text-ac-muted">
             <button type="button" onClick={onDoneToday} className="inline-flex items-center gap-2 hover:text-ac-text">
               <ChevronRight className="size-3" /> Done today {done}
@@ -847,6 +856,39 @@ export function SessionsZone({
           </div>
         )}
       </div>
+      {byStatus && doneGroups.length > 0 && (
+        // Pinned under the list: folded by default, so the live groups keep the room.
+        <div data-done-groups="" className="sticky bottom-0 z-[1] mt-1 max-h-[280px] overflow-y-auto border-t border-ac-line bg-ac-panel px-1.5 py-1">
+          {doneGroups.map((g, i) => {
+            const open = doneOpen.has(g.id);
+            const shown = open ? g.rows.slice(0, GROUP_ROWS) : [];
+            return (
+              <div key={g.id}>
+                <div className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[11.5px] text-ac-muted hover:bg-ac-raise">
+                  <button type="button" aria-expanded={open} onClick={() => setDoneOpen((x) => (x.has(g.id) ? new Set([...x].filter((y) => y !== g.id)) : new Set([...x, g.id])))} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+                    {open ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
+                    <span className="font-medium text-ac-soft">{g.id}</span>
+                    <span data-group-count="" className="min-w-[18px] shrink-0 rounded-full bg-ac-raise px-1.5 text-center text-[10.5px] text-ac-soft">{g.rows.length}</span>
+                  </button>
+                  {i === 0 && (
+                    <button type="button" onClick={onCleanUp} title="Removes worktrees whose PR merged; dirty ones are skipped" className="shrink-0 hover:text-ac-text">
+                      Clean up
+                    </button>
+                  )}
+                </div>
+                {shown.map((s) => (
+                  <SessionRow key={s.key} s={s} active={s.key === activeKey} comfortable={comfortable} open={false} onSelect={onSelect} onToggleChildren={onToggleChildren} onCheck={onCheck} onPeek={onPeek} age={ageOf(s)} />
+                ))}
+                {open && g.rows.length > shown.length && (
+                  <button type="button" onClick={onDoneToday} className="ml-[26px] flex h-6 items-center text-[11px] text-ac-muted hover:text-ac-text">
+                    {g.rows.length - shown.length} more in All sessions ›
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

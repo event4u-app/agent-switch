@@ -86,10 +86,13 @@ const SESSIONS: RowSession[] = [
   S({ key: "claude/personal/s-notes", title: "Release notes 2.11", state: "done", account: { name: "personal", nearLimit: false }, branch: "docs/release-2.11", pr: { number: 140, ci: "SUCCESS", mergeable: "MERGEABLE" }, doneToday: true }),
   S({ key: "claude/personal/s-checkout", title: "Checkout flow accessibility", state: "needs-you", account: { name: "personal", nearLimit: false }, branch: "a11y/checkout", pr: { number: 311, ci: "FAILURE", mergeable: "CONFLICTING" }, needsYou: true,
     children: [{ id: "u1", label: "claude --print in /tmp/tmp.k2J9", kind: "unknown", state: "done", source: "unknown" }] }),
+  // Ended yesterday: the status grouping's "Older" group.
+  S({ key: "claude/work/s-spike", title: "Spike: tmux control mode", state: "done", branch: "spike/tmux-cc", lastActiveMs: NOW - 26 * 60 * MIN, doneToday: true }),
 ];
 
 const BAR: Record<string, { model: string; thinking: string; ctx: number; hosted: boolean; acct: string; color: "teal" | "pink" | "purple"; five: number; protect: number }> = {
   "claude/work/s-store": { model: "Opus 5.5", thinking: "High", ctx: 58, hosted: true, acct: "work", color: "teal", five: 39, protect: 95 },
+  "claude/work/s-spike": { model: "Sonnet 5.5", thinking: "Medium", ctx: 9, hosted: false, acct: "work", color: "teal", five: 39, protect: 95 },
   "claude/personal/s-themes": { model: "Opus 5.5", thinking: "High", ctx: 21, hosted: true, acct: "personal", color: "pink", five: 12, protect: 98 },
   "codex/work/s-hook": { model: "default", thinking: "medium", ctx: 33, hosted: false, acct: "work", color: "teal", five: 30, protect: 90 },
   "claude/work/s-council": { model: "Opus 5.5", thinking: "High", ctx: 44, hosted: true, acct: "work", color: "teal", five: 39, protect: 95 },
