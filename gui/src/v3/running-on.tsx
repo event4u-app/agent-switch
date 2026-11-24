@@ -49,7 +49,8 @@ export function RunningOn({
 }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   if (!sessions.length) return null;
-  const toggle = (k: string) => setOpen((o) => (o.has(k) ? new Set([...o].filter((x) => x !== k)) : new Set([...o, k])));
+  // One session unfolded at a time (owner, 2026-11-24): opening one folds the other.
+  const toggle = (k: string) => setOpen((o) => (o.has(k) ? new Set() : new Set([k])));
   return (
     <div className="mt-3 border-t border-ac-line pt-2.5">
       <div className="mb-1.5 flex h-5 items-center gap-2">

@@ -105,3 +105,27 @@ describe("subagents split into Running and Idle (owner, 2026-11-24)", () => {
     expect(screen.getByText("Plan")).toBeTruthy();
   });
 });
+
+describe("one session unfolded at a time (owner, 2026-11-24)", () => {
+  it("opening a second session folds the first", () => {
+    const kid = (id: string) => ({ id, label: `kid ${id}`, kind: "subagent", state: "working" as const, source: "hook" as const });
+    render(
+      <RunningOn
+        name="side"
+        sessions={[
+          { row: s("claude/side/a", { title: "A", children: [kid("1")] }), model: null, thinking: null, hosted: true },
+          { row: s("claude/side/b", { title: "B", children: [kid("2")] }), model: null, thinking: null, hosted: true },
+        ]}
+        onOpen={vi.fn()}
+        onShowChild={vi.fn()}
+        onModel={vi.fn()}
+      />,
+    );
+    const [a, b] = screen.getAllByLabelText(/^Show /);
+    fireEvent.click(a);
+    expect(screen.getByText("kid 1")).toBeTruthy();
+    fireEvent.click(b);
+    expect(screen.getByText("kid 2")).toBeTruthy();
+    expect(screen.queryByText("kid 1")).toBeNull();
+  });
+});

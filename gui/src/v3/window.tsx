@@ -634,7 +634,7 @@ export function V3Window({
           frame.setSessionsShown(true);
           // 3.4: an item about a child opens its root's children and focuses the child row.
           const hit = findChild(data.sessions, needs.find((n) => n.id === id)?.subject ?? "");
-          if (hit) setOpenKids((c) => new Set([...c, hit.root.key]));
+          if (hit) setOpenKids(new Set([hit.root.key]));
           setFocusChild(hit ? hit.child.id : null);
           return (setFocusedNeed(id), true);
         }
@@ -869,7 +869,8 @@ export function V3Window({
           selection={selection}
           openKeys={openKids}
           onSelect={openSession}
-          onToggleChildren={(k) => setOpenKids((c) => (c.has(k) ? new Set([...c].filter((x) => x !== k)) : new Set([...c, k])))}
+          // One session unfolded at a time (owner, 2026-11-24): opening one folds the other.
+          onToggleChildren={(k) => setOpenKids((c) => (c.has(k) ? new Set() : new Set([k])))}
           onCheck={(k) => setSelection((c) => { const n = new Set(c ?? []); n.has(k) ? n.delete(k) : n.add(k); return n; })}
           onCleanUp={() => act({ type: "clean-up" })}
           onDoneToday={(which) => (setTableTab((t) => ({ status: which ?? "all", n: t.n + 1 })), openPage("sessions-table"))}

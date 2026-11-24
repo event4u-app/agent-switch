@@ -280,6 +280,18 @@ describe("one trailing glyph per row (spec §5.2)", () => {
     expect(screen.getByLabelText("Hide children")).toBeTruthy();
   });
 
+  it("one session unfolded at a time (owner, 2026-11-24): opening another folds the first", () => {
+    const d = data();
+    const two = (key: string, title: string, label: string) => ({ ...d.sessions[0], key, title, account: { name: "work", nearLimit: false }, children: [{ id: `c-${key}`, label, kind: "subagent", state: "working" as const, source: "hook" as const }] });
+    render(<V3Window data={{ ...d, sessions: [two("s2", "Two", "Kid two"), two("s3", "Three", "Kid three")] }} slots={slots} act={vi.fn()} />);
+    const [first, second] = screen.getAllByLabelText("Show 1 subagent");
+    fireEvent.click(first);
+    expect(screen.getByText("Kid two")).toBeTruthy();
+    fireEvent.click(second);
+    expect(screen.getByText("Kid three")).toBeTruthy();
+    expect(screen.queryByText("Kid two")).toBeNull();
+  });
+
   it("finished children in an empty slot: a chevron on hover only", () => {
     const d = data();
     render(<V3Window data={{ ...d, sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow", account: { name: "work", nearLimit: false }, children: kid("done") }] }} slots={slots} act={vi.fn()} />);
