@@ -171,14 +171,17 @@ export function prProblem(s: RowSession): "CI failing" | "merge conflict" | null
   return s.pr?.ci === "FAILURE" ? "CI failing" : s.pr?.mergeable === "CONFLICTING" ? "merge conflict" : null;
 }
 
+/** The title line's tint (owner, 2026-11-24): the row's title line carries the colour, the words go to its tooltip.
+ *  Information gets no tint — only what asks you to act is marked. */
+const TITLE_TINT: Record<AttentionTone, string | null> = {
+  info: null,
+  warn: "bg-ac-warn-tint",
+  needs: "bg-ac-brand-tint",
+  alert: "bg-ac-alert-tint",
+};
+
 /** `needs` is the accent set in Settings: waiting on you is the app's call to act, not a warning. */
 type AttentionTone = "needs" | "warn" | "alert" | "info";
-const ATTENTION_TONE: Record<AttentionTone, string> = {
-  info: "bg-ac-info-tint text-ac-info-text",
-  warn: "bg-ac-warn-tint text-ac-warn-text",
-  needs: "bg-ac-brand-tint text-ac-brand-text",
-  alert: "bg-ac-alert-tint text-ac-alert-text",
-};
 const RANK: readonly AttentionTone[] = ["alert", "needs", "warn", "info"];
 /** The bar takes the most serious tone of what it says: a problem, then needs you, then a warning. Pure. */
 export const worst = (asks: readonly { tone: AttentionTone }[]): AttentionTone => RANK.find((t) => asks.some((a) => a.tone === t)) ?? "info";
@@ -412,7 +415,8 @@ export function ChildGroups({ kids, render }: { kids: readonly ChildModel[]; ren
               <span className="font-medium text-ac-soft">{g.id}</span>
               <span data-group-count="" className="ml-auto inline-flex h-4 min-w-[18px] shrink-0 items-center justify-center rounded-full bg-ac-raise px-1.5 text-[10.5px] tabular-nums leading-none text-ac-soft">{g.rows.length}</span>
             </button>
-            {open && g.rows.map((c) => <div key={c.id}>{render(c)}</div>)}
+            {/* Rows start under their group's label, as rows sit under a group header in the session list (owner, 2026-11-24). */}
+            {open && g.rows.map((c) => <div key={c.id} data-child-indent="" className="pl-[24px]">{render(c)}</div>)}
           </div>
         );
       })}
@@ -638,7 +642,7 @@ export function SessionRow({
         {active && !block && <Marker />}
         {/* The stem from the dot down to the first child (3.2). */}
         {kids && <span aria-hidden data-guide="stem" className={cn("pointer-events-none absolute bottom-0 w-px bg-ac-line", second ? "top-[22px]" : "top-5")} style={{ left: lineX(0) }} />}
-        <div className="flex h-5 min-w-0 items-center gap-2">
+        <div data-attention={asks.length ? "" : undefined} data-tone={asks.length ? worst(asks) : undefined} title={asks.length ? asks.map((x) => x.text).join("\n") : undefined} className={cn("flex h-5 min-w-0 items-center gap-2", asks.length && TITLE_TINT[worst(asks)] && cn("-mx-1.5 rounded px-1.5", TITLE_TINT[worst(asks)]))}>
           {selecting ? (
             <CheckMark role="checkbox" checked={!!checked} size={14} />
           ) : (
@@ -652,7 +656,7 @@ export function SessionRow({
           )}
           {/* Keyed on the weight: Chromium keeps the ellipsis decision of the old weight
               when only font-weight changes, and the heavier title then runs past the edge. */}
-          <span key={active ? "on" : "off"} ref={titleRef} className={cn("min-w-0 flex-1 truncate text-[13px]", active ? "font-medium text-ac-text" : "text-ac-soft")} title={s.title}>
+          <span key={active ? "on" : "off"} ref={titleRef} className={cn("min-w-0 flex-1 truncate text-[13px]", active ? "font-medium text-ac-text" : "text-ac-soft")} title={asks.length ? [s.title, ...asks.map((x) => x.text)].join("\n") : s.title}>
             {s.title}
           </span>
           {/* One trailing slot per row (spec §5.2, boards "Work" and "Hover a row"): the children
@@ -674,14 +678,6 @@ export function SessionRow({
             slot
           )}
         </div>
-        {/* What to do, on its own line between the title and the account (owner, 2026-11-24): highlighted, so it reads as a task. */}
-        {second && asks.length > 0 && (
-          // One bar across the row (owner, 2026-11-24): blue for information, orange for warnings, red for problems.
-          // Words only, no icon: the state dot stays the row's one status mark (5.1).
-          <div data-attention="" data-tone={worst(asks)} className={cn("mt-1 ml-4 flex min-w-0 items-center gap-1.5 rounded px-1.5 py-[3px] text-[11px] font-medium leading-4", ATTENTION_TONE[worst(asks)])}>
-            <span className="min-w-0 truncate" title={asks.map((x) => x.text).join(" · ")}>{asks.map((x) => x.text).join(" · ")}</span>
-          </div>
-        )}
         {second && (
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-4 text-[11px] text-ac-muted">
             {s.account.color && <AccountMark color={s.account.color} />}

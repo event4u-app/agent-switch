@@ -6,7 +6,7 @@
  * window. Locked for a session in the user's own terminal.
  */
 import { useState } from "react";
-import { ChevronDown, ChevronRight, ExternalLink, Lock, PanelRight } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, PanelRight } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { AccountMark } from "./kit.js";
@@ -45,7 +45,8 @@ export function RunningOn({
   sessions: RunningSession[];
   onOpen: (key: string) => void;
   onShowChild: (key: string) => void;
-  onModel: (key: string, chip: "model" | "thinking") => void;
+  /** Unused since the readout is display only (owner, 2026-11-24); kept so callers need not change. */
+  onModel?: (key: string, chip: "model" | "thinking") => void;
 }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   if (!sessions.length) return null;
@@ -61,7 +62,7 @@ export function RunningOn({
       </div>
       {/* A dark box like the tray's (owner, 2026-11-24), always the same height: sessions and unfolded subagents scroll inside it. */}
       <div data-running-box="" className="h-[160px] overflow-y-auto rounded-md border border-ac-line bg-ac-bg p-1">
-      {sessions.map(({ row: s, model, thinking, hosted }) => {
+      {sessions.map(({ row: s, model, thinking }) => {
         const unfolded = open.has(s.key);
         return (
           <div key={s.key}>
@@ -81,7 +82,7 @@ export function RunningOn({
                 </button>
               </div>
               {/* Account, then model and thinking: the same chips, in the same order, as the session bar. */}
-              <div className="flex h-6 items-center gap-0.5 pl-[30px]">
+              <div className="flex h-6 items-center gap-0.5 pl-[39px]">
                 {onMove && (
                   <button
                     type="button"
@@ -95,17 +96,11 @@ export function RunningOn({
                     <ChevronDown className="size-3" />
                   </button>
                 )}
-                <button
-                  type="button"
-                  disabled={!hosted}
-                  onClick={() => onModel(s.key, "model")}
-                  title={hosted ? "Model and thinking for the next turn — same popover as the session bar" : "Locked: change it in your terminal (/model)"}
-                  className={cn("inline-flex h-6 items-center gap-1 rounded-md border border-transparent px-1.5 text-[11px] text-ac-muted", !onMove && "-ml-1.5", hosted ? "hover:border-ac-line2 hover:text-ac-text" : "opacity-60")}
-                >
+                {/* Model and thinking are shown here, not changed (owner, 2026-11-24): that happens in the session's own bar. */}
+                <span data-model-readout="" title={[model ?? "Model unknown", thinking && `thinking ${thinking}`].filter(Boolean).join(" · ")} className={cn("inline-flex h-6 items-center gap-1 px-1.5 text-[11px] text-ac-muted", !onMove && "-ml-1.5")}>
                   {model ?? "Model"}
                   {thinking && <ThinkingArrow level={thinking} />}
-                  {hosted ? <ChevronDown className="size-3" /> : <Lock className="size-3" />}
-                </button>
+                </span>
               </div>
             </div>
             {unfolded && (

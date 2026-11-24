@@ -307,10 +307,10 @@ describe("one trailing glyph per row (spec §5.2)", () => {
     expect(screen.getByTitle("side is near its limit")).toBeTruthy();
   });
 
-  it("a two-line row says it on its attention line; the slot keeps the running count", () => {
+  it("a two-line row tints its title line and says why in the tooltip; the slot keeps the running count", () => {
     const d = data();
     render(<V3Window data={{ ...d, sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow", account: { name: "side", nearLimit: true }, children: kid("working") }] }} slots={slots} act={vi.fn()} />);
-    expect(screen.getByText("side near its limit")).toBeTruthy();
+    expect(document.querySelector('[data-attention][title="side near its limit"]')).toBeTruthy();
     expect(screen.getByLabelText("Show 1 subagent")).toBeTruthy();
   });
 });

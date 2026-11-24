@@ -362,7 +362,7 @@ export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: 
         <Filter value={q} onChange={setQ} placeholder="Filter…" />
         <MultiSelect width={176} label="Status" all={`All ${sessions.length}`} picked={state} onChange={setState} options={tabs.map((t) => ({ value: t.value, label: t.label, hint: count(t.value) }))} />
         {tools.length > 1 && <MultiSelect width={150} label="Tool" all="All tools" picked={tool} onChange={setTool} options={tools.map((t) => ({ value: t, label: TOOL_LABEL[t], hint: sessions.filter((s) => s.tool === t).length }))} />}
-        <DateRange label="Active" value={range} onChange={setRange} nowMs={nowMs} width={156} />
+        <DateRange label="Active" value={range} onChange={setRange} nowMs={nowMs} width={180} />
         <Segmented size="sm" label="Group" value={group} onChange={(g) => (setGroup(g), onGroup?.(g))} options={[{ value: "none", label: "List" }, { value: "project", label: "Projects" }]} />
       </div>
       {sel.size > 0 && <BatchBar count={sel.size} className="mb-2" actions={batch([...sel])} />}
