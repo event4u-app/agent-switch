@@ -169,16 +169,21 @@ export function prProblem(s: RowSession): "CI failing" | "merge conflict" | null
   return s.pr?.ci === "FAILURE" ? "CI failing" : s.pr?.mergeable === "CONFLICTING" ? "merge conflict" : null;
 }
 
+const ATTENTION_TONE = { info: "bg-ac-info-tint text-ac-info-text", warn: "bg-ac-warn-tint text-ac-warn-text", alert: "bg-ac-alert-tint text-ac-alert-text" } as const;
+/** The bar takes the most serious tone of what it says. Pure. */
+export const worst = (asks: readonly { tone: "warn" | "alert" | "info" }[]): "warn" | "alert" | "info" =>
+  asks.some((a) => a.tone === "alert") ? "alert" : asks.some((a) => a.tone === "warn") ? "warn" : "info";
+
 /** What a row asks of you, for its own line under the title (two-line rows): what to do first. Pure. */
-export function attention(s: RowSession): { text: string; tone: "warn" | "alert" | "neutral" }[] {
-  const out: { text: string; tone: "warn" | "alert" | "neutral" }[] = [];
+export function attention(s: RowSession): { text: string; tone: "warn" | "alert" | "info" }[] {
+  const out: { text: string; tone: "warn" | "alert" | "info" }[] = [];
   const waiting = s.state !== "needs-you" ? waitingChild(s.children) : null;
   if (s.state === "needs-you" || s.needsYou) out.push({ text: "Needs you", tone: "warn" });
   else if (waiting) out.push({ text: `${waiting.label} needs you`, tone: "warn" });
   const problem = prProblem(s);
   if (problem) out.push({ text: problem === "CI failing" ? `#${s.pr!.number} CI failing` : `#${s.pr!.number} merge conflict`, tone: "alert" });
   if (s.account.nearLimit) out.push({ text: `${s.account.name} near its limit`, tone: "warn" });
-  if (s.quiet) out.push({ text: s.quiet, tone: "neutral" });
+  if (s.quiet) out.push({ text: s.quiet, tone: "info" });
   return out;
 }
 
@@ -600,18 +605,10 @@ export function SessionRow({
         </div>
         {/* What to do, on its own line between the title and the account (owner, 2026-11-24): highlighted, so it reads as a task. */}
         {second && asks.length > 0 && (
-          <div data-attention="" className="mt-1 flex min-w-0 flex-wrap items-center gap-1 pl-4">
-            {asks.map((a) =>
-              a.tone === "neutral" ? (
-                <span key={a.text} className="text-[11px] text-ac-muted">
-                  {a.text}
-                </span>
-              ) : (
-                <Chip key={a.text} kind="status" tone={a.tone}>
-                  {a.text}
-                </Chip>
-              ),
-            )}
+          // One bar across the row (owner, 2026-11-24): blue for information, orange for warnings, red for problems.
+          // Words only, no icon: the state dot stays the row's one status mark (5.1).
+          <div data-attention="" data-tone={worst(asks)} className={cn("mt-1 ml-4 flex min-w-0 items-center gap-1.5 rounded px-1.5 py-[3px] text-[11px] font-medium leading-4", ATTENTION_TONE[worst(asks)])}>
+            <span className="min-w-0 truncate" title={asks.map((x) => x.text).join(" · ")}>{asks.map((x) => x.text).join(" · ")}</span>
           </div>
         )}
         {second && (
@@ -716,15 +713,15 @@ export function SessionsZone({
   const byKey = new Map(sorted.map((s) => [s.key, s]));
   const live = order.map((k) => byKey.get(k)!);
   const done = sessions.filter((s) => s.doneToday).length;
-  // Status grouping: ended sessions stay reachable in two folded groups pinned under the list — Done today and Older.
+  // Status grouping: ended sessions stay one click away in two rows pinned under the list,
+  // Done today and Older; each opens the All sessions window (owner, 2026-11-24).
   const ended = sessions.filter((s) => s.doneToday);
   const midnight = nowMs == null ? null : new Date(nowMs).setHours(0, 0, 0, 0);
   const endedAt = (s: RowSession) => s.lastActiveMs ?? lastActiveOf(s.key);
-  const doneGroups = [
-    { id: "Done today", rows: ended.filter((s) => midnight == null || (endedAt(s) ?? midnight) >= midnight) },
-    { id: "Older", rows: ended.filter((s) => midnight != null && (endedAt(s) ?? midnight) < midnight) },
-  ].filter((g) => g.rows.length > 0);
-  const [doneOpen, setDoneOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const doneRows = [
+    { id: "Done today", count: ended.filter((s) => midnight == null || (endedAt(s) ?? midnight) >= midnight).length },
+    { id: "Older", count: ended.filter((s) => midnight != null && (endedAt(s) ?? midnight) < midnight).length },
+  ].filter((g) => g.count > 0);
   const byStatus = group === "status";
   const grouped = byStatus || (group !== "none" && !!groupOf);
   const groupKey = (s: RowSession) => (byStatus ? statusGroup(s) : (groupOf!(s.key) ?? ""));
@@ -856,37 +853,22 @@ export function SessionsZone({
           </div>
         )}
       </div>
-      {byStatus && doneGroups.length > 0 && (
-        // Pinned under the list: folded by default, so the live groups keep the room.
-        <div data-done-groups="" className="sticky bottom-0 z-[1] mt-1 max-h-[280px] overflow-y-auto border-t border-ac-line bg-ac-panel px-1.5 py-1">
-          {doneGroups.map((g, i) => {
-            const open = doneOpen.has(g.id);
-            const shown = open ? g.rows.slice(0, GROUP_ROWS) : [];
-            return (
-              <div key={g.id}>
-                <div className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[11.5px] text-ac-muted hover:bg-ac-raise">
-                  <button type="button" aria-expanded={open} onClick={() => setDoneOpen((x) => (x.has(g.id) ? new Set([...x].filter((y) => y !== g.id)) : new Set([...x, g.id])))} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
-                    {open ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
-                    <span className="font-medium text-ac-soft">{g.id}</span>
-                    <span data-group-count="" className="min-w-[18px] shrink-0 rounded-full bg-ac-raise px-1.5 text-center text-[10.5px] text-ac-soft">{g.rows.length}</span>
-                  </button>
-                  {i === 0 && (
-                    <button type="button" onClick={onCleanUp} title="Removes worktrees whose PR merged; dirty ones are skipped" className="shrink-0 hover:text-ac-text">
-                      Clean up
-                    </button>
-                  )}
-                </div>
-                {shown.map((s) => (
-                  <SessionRow key={s.key} s={s} active={s.key === activeKey} comfortable={comfortable} open={false} onSelect={onSelect} onToggleChildren={onToggleChildren} onCheck={onCheck} onPeek={onPeek} age={ageOf(s)} />
-                ))}
-                {open && g.rows.length > shown.length && (
-                  <button type="button" onClick={onDoneToday} className="ml-[26px] flex h-6 items-center text-[11px] text-ac-muted hover:text-ac-text">
-                    {g.rows.length - shown.length} more in All sessions ›
-                  </button>
-                )}
-              </div>
-            );
-          })}
+      {byStatus && doneRows.length > 0 && (
+        <div data-done-groups="" className="sticky bottom-0 z-[1] mt-1 border-t border-ac-line bg-ac-panel px-1.5 py-1">
+          {doneRows.map((g, i) => (
+            <div key={g.id} className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[11.5px] text-ac-muted hover:bg-ac-raise">
+              <button type="button" onClick={onDoneToday} title="Open All sessions" className="flex min-w-0 flex-1 items-center gap-1.5 text-left hover:text-ac-text">
+                <ChevronRight className="size-3 shrink-0" />
+                <span className="font-medium text-ac-soft">{g.id}</span>
+                <span data-group-count="" className="min-w-[18px] shrink-0 rounded-full bg-ac-raise px-1.5 text-center text-[10.5px] text-ac-soft">{g.count}</span>
+              </button>
+              {i === 0 && (
+                <button type="button" onClick={onCleanUp} title="Removes worktrees whose PR merged; dirty ones are skipped" className="shrink-0 hover:text-ac-text">
+                  Clean up
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </section>

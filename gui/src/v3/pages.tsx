@@ -43,9 +43,10 @@ function Table({ cols, heads, children }: { cols: string; heads: ReactNode[]; ch
   );
 }
 
-function Filter({ value, onChange, placeholder, width }: { value: string; onChange: (v: string) => void; placeholder: string; width: number }) {
+/** `width` fixes it; without one it takes the room the switches leave, so a filter bar stays one line. */
+function Filter({ value, onChange, placeholder, width }: { value: string; onChange: (v: string) => void; placeholder: string; width?: number }) {
   return (
-    <div className="relative" style={{ width }}>
+    <div className={cn("relative", width === undefined && "min-w-[140px] flex-1")} style={width === undefined ? undefined : { width }}>
       <Search className="absolute left-2.5 top-2 size-4 text-ac-faint" />
       <TextInput aria-label="Filter" className="w-full pl-8" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
@@ -307,7 +308,7 @@ function shared<T>(rows: readonly TableSession[], f: (s: TableSession) => T): T 
  * above the table instead of in every row. Grouping by project follows the
  * Sessions window's own Group menu.
  */
-export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group = "none" }: { sessions: TableSession[]; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions; /** The Sessions window's grouping: by project, or one list. */ group?: "none" | "project" }) {
+export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: initialGroup = "none" }: { sessions: TableSession[]; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions; /** The Sessions window's grouping: by project, or one list. */ group?: "none" | "project" }) {
   const [q, setQ] = useState("");
   const [state, setState] = useState<Exclude<TableStatus, "live">>("all");
   const [tool, setTool] = useState<"any" | TableSession["tool"]>("any");
@@ -316,6 +317,8 @@ export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group =
     const hits = filterSessions(sessions, q, state, tool);
     return order ? inListOrder(hits, order) : hits;
   }, [sessions, order, q, state, tool]);
+  // List or Projects stays a switch on the page (owner, 2026-11-24); it starts from the sidebar's grouping.
+  const [group, setGroup] = useState<"none" | "project">(initialGroup);
   const sections = useMemo(() => (group === "project" ? byProject(rows) : [{ project: null as string | null, rows }]), [rows, group]);
   const count = (v: Exclude<TableStatus, "live">) => (v === "all" ? sessions.length : sessions.filter((s) => tableStatus(s) === v).length);
   // A tab with nothing behind it is hidden, unless it is the one chosen.
@@ -331,8 +334,9 @@ export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group =
   return (
     <PageBody title="All sessions" sub="Scan, filter and act on many sessions at once.">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Filter value={q} onChange={setQ} placeholder="Filter…" width={240} />
+        <Filter value={q} onChange={setQ} placeholder="Filter…" />
         <Segmented size="sm" label="Status" value={state} onChange={setState} options={tabs.map((t) => ({ value: t.value, label: `${t.label} ${count(t.value)}` }))} />
+        <Segmented size="sm" label="Group" value={group} onChange={setGroup} options={[{ value: "none", label: "List" }, { value: "project", label: "Projects" }]} />
         {tools.length > 1 && <Segmented size="sm" label="Tool" value={tool} onChange={setTool} options={[{ value: "any", label: "Any tool" }, ...tools.map((t) => ({ value: t, label: `${TOOL_LABEL[t]} ${sessions.filter((s) => s.tool === t).length}` }))]} />}
       </div>
       {sel.size > 0 && <BatchBar count={sel.size} className="mb-2" actions={batch([...sel])} />}

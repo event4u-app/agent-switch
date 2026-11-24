@@ -212,17 +212,19 @@ describe("one status vocabulary (5.1)", () => {
     expect(container.querySelectorAll("svg")).toHaveLength(0);
     const ci = screen.getAllByText(/CI failing/);
     expect(ci, "said once").toHaveLength(1);
-    expect(ci[0].textContent).toBe("#12 CI failing");
-    expect(ci[0].className).toMatch(/text-ac-alert-text/);
-    // Between the title and the account line (owner, 2026-11-24).
-    expect(ci[0].closest("[data-attention]")).not.toBeNull();
+    expect(ci[0].textContent).toMatch(/#12 CI failing$/);
+    // Between the title and the account line (owner, 2026-11-24), on the red bar.
+    expect(ci[0].closest("[data-attention]")!.className).toMatch(/text-ac-alert-text/);
   });
 
   it("the attention line: needs you, a waiting child, the PR problem, a near limit — highlighted, in that order", () => {
     const row = s("x", { state: "idle", needsYou: true, pr: { number: 5, ci: "SUCCESS", mergeable: "CONFLICTING" }, account: { name: "side", nearLimit: true } });
     render(<SessionRow s={row} comfortable {...on} />);
     const line = document.querySelector("[data-attention]")!;
-    expect([...line.children].map((c) => c.textContent)).toEqual(["Needs you", "#5 merge conflict", "side near its limit"]);
+    // One bar, in that order, in its most serious tone (owner, 2026-11-24: info blue, warnings orange, problems red).
+    expect(line.textContent).toBe("Needs you · #5 merge conflict · side near its limit");
+    expect(line.getAttribute("data-tone")).toBe("alert");
+    expect(line.className).toMatch(/bg-ac-alert-tint/);
     cleanup();
     render(<SessionRow s={s("calm")} comfortable {...on} />);
     expect(document.querySelector("[data-attention]"), "nothing to do: no extra line").toBeNull();
@@ -283,20 +285,16 @@ describe("ended sessions under the status grouping", () => {
     s("claude/w/today", { state: "done", doneToday: true, lastActiveMs: NOW - 60 * 60_000 }),
     s("claude/w/old", { state: "done", doneToday: true, lastActiveMs: NOW - 26 * 60 * 60_000 }),
   ];
-  it("pins Done today and Older below the list, folded, and opens each one", () => {
-    render(zone(rows, { group: "status", nowMs: NOW, onCleanUp: vi.fn() }));
+  it("pins Done today and Older below the list; each opens All sessions", () => {
+    const onDoneToday = vi.fn();
+    render(zone(rows, { group: "status", nowMs: NOW, onDoneToday }));
     const pinned = document.querySelector("[data-done-groups]") as HTMLElement;
-    expect(pinned).toBeTruthy();
-    const heads = pinned.querySelectorAll("button[aria-expanded]");
-    expect([...heads].map((b) => b.textContent)).toEqual([expect.stringContaining("Done today"), expect.stringContaining("Older")]);
+    expect(pinned.textContent).toMatch(/Done today1.*Older1/);
     expect(screen.queryByText("title claude/w/today")).toBeNull();
-    fireEvent.click(heads[0]);
-    expect(screen.getByText("title claude/w/today")).toBeTruthy();
-    expect(screen.queryByText("title claude/w/old")).toBeNull();
-    fireEvent.click(heads[1]);
-    expect(screen.getByText("title claude/w/old")).toBeTruthy();
+    for (const b of pinned.querySelectorAll('button[title="Open All sessions"]')) fireEvent.click(b);
+    expect(onDoneToday).toHaveBeenCalledTimes(2);
   });
-  it("leaves an empty group out", () => {
+  it("leaves an empty row out", () => {
     render(zone(rows.slice(0, 2), { group: "status", nowMs: NOW }));
     expect(document.querySelector("[data-done-groups]")!.textContent).not.toContain("Older");
   });

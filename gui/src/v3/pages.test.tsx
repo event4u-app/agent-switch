@@ -59,7 +59,7 @@ describe("All sessions page (spec §10.2)", () => {
     const batch = vi.fn(() => ({ onClear: vi.fn(), onPin: vi.fn(), onArchive: vi.fn(), onClean: vi.fn(), onEnd: vi.fn() }));
     render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={onOpen} batch={batch} />);
     // Status tabs with counts; a tab with nothing behind it is hidden (proposal E).
-    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["All 3", "Idle 2", "Done 1", "Any tool", "Claude 2", "Codex 1"]);
+    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["All 3", "Idle 2", "Done 1", "List", "Projects", "Any tool", "Claude 2", "Codex 1"]);
     fireEvent.click(screen.getByLabelText("Select Event store"));
     expect(onOpen).not.toHaveBeenCalled();
     expect(batch).toHaveBeenLastCalledWith(["a"]);
@@ -142,12 +142,13 @@ describe("All sessions › Projects", () => {
       ["agent-switch", ["a", "d"]],
       [null, ["b"]],
     ]);
-    // The grouping follows the Sessions window's Group menu (proposal E): no switch of its own.
-    const { rerender } = render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    // List or Projects is the page's own switch (owner, 2026-11-24); it starts from the sidebar's grouping.
+    render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
     expect(screen.queryByText("No project")).toBeNull();
-    expect(screen.queryByRole("radio", { name: "Projects" })).toBeNull();
-    rerender(<AllSessionsPage sessions={rows} group="project" nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Projects" }));
     expect(screen.getByText("agent-switch")).toBeTruthy();
+    cleanup();
+    render(<AllSessionsPage sessions={rows} group="project" nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
     expect(screen.getByText("No project")).toBeTruthy();
   });
 });
@@ -157,7 +158,7 @@ describe("All sessions, fewer columns (proposal E)", () => {
     const rows = [sess("a", { state: "needs-you" }), sess("b", { pr: { number: 1, ci: "FAILURE" } }), sess("c", { state: "working" }), sess("d")];
     expect(filterSessions(rows, "", "needs", "any").map((r) => r.key)).toEqual(["a", "b"]);
     render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
-    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["All 4", "Needs you 2", "Running 1", "Idle 1"]);
+    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["All 4", "Needs you 2", "Running 1", "Idle 1", "List", "Projects"]);
     fireEvent.click(screen.getByRole("radio", { name: "Needs you 2" }));
     expect(screen.getAllByLabelText(/^Select /)).toHaveLength(2);
   });
