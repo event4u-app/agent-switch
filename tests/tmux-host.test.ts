@@ -131,9 +131,12 @@ test("respawn keeps the window and the session id, moves the key to the new acco
     assert.deepEqual(host.list().map((r) => r.key), [moved.key]);
 
     const attach = host.view(moved.key, "app1");
-    assert.deepEqual(attach.slice(-3), ["attach-session", "-t", "=view-app1"]);
+    assert.deepEqual(attach.slice(-9), ["attach-session", "-t", "=view-app1", ";", "set-option", "-t", "=view-app1:", "destroy-unattached", "on"]);
     const viewWin = spawnSync("tmux", ["-L", socket, "display-message", "-p", "-t", "=view-app1:", "#{window_id}"], { encoding: "utf8" }).stdout.trim();
     assert.equal(viewWin, moved.window, "the view shows that session's window");
+    // Read back from the real server: set-option takes a pane target, so a bare `=view-app1` is refused there.
+    const opts = spawnSync("tmux", ["-L", socket, "show-options", "-t", "=view-app1:"], { encoding: "utf8" }).stdout;
+    for (const line of ["status off", "prefix None", "prefix2 None"]) assert.match(opts, new RegExp(`^${line}$`, "m"), `the view has ${line}: ${opts}`);
     spawnSync("tmux", ["-L", socket, "kill-session", "-t", "=view-app1"]);
     assert.equal(host.list()[0].alive, true, "closing the view leaves the session running");
     assert.throws(() => host.view(moved.key, "../x"));
@@ -305,7 +308,7 @@ test("a view of a hosted session shows only that session: no status line, and Ct
   for (const c of calls) assert.deepEqual(c.slice(0, 4), ["-L", "rec", "-f", "/dev/null"]);
   assert.deepEqual(attach.slice(1, 5), ["-L", "rec", "-f", "/dev/null"]);
   const set = calls.flatMap((c) => c.slice(4).join(" ").split(" ; ")).filter((x) => x.startsWith("set-option"));
-  for (const opt of ["status off", "prefix None", "prefix2 None"]) assert.ok(set.includes(`set-option -t =view-app1 ${opt}`), `the view sets ${opt}: ${JSON.stringify(set)}`);
+  for (const opt of ["status off", "prefix None", "prefix2 None"]) assert.ok(set.includes(`set-option -t =view-app1: ${opt}`), `the view sets ${opt}: ${JSON.stringify(set)}`);
 });
 
 test("a hosted Codex window gets a read-only pipe to the program-status reader; Claude does not", { skip: process.platform === "win32" ? "the recording tmux stand-in is a shell script" : false }, () => {
