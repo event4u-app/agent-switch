@@ -57,11 +57,15 @@ describe("All sessions page (spec §10.2)", () => {
     expect(filterSessions(rows, "", "all", "codex").map((r) => r.key)).toEqual(["c"]);
     expect(filterSessions(rows, "", "all", new Set(["codex"] as const)).map((r) => r.key)).toEqual(["c"]);
     expect(filterSessions(rows, "", "all", new Set()).length, "nothing ticked = every tool").toBe(3);
+    // Ended sessions split like the sidebar (owner, 2026-11-24): since midnight is Done today, before is Older.
+    const old = sess("o", { live: false, lastActiveMs: new Date(NOW).setHours(0, 0, 0, 0) - 60_000 });
+    expect(filterSessions([...rows, old], "", "today", "any", NOW).map((r) => r.key)).toEqual(["b"]);
+    expect(filterSessions([...rows, old], "", "older", "any", NOW).map((r) => r.key)).toEqual(["o"]);
     const onOpen = vi.fn();
     const batch = vi.fn(() => ({ onClear: vi.fn(), onPin: vi.fn(), onArchive: vi.fn(), onClean: vi.fn(), onEnd: vi.fn() }));
     render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={onOpen} batch={batch} />);
     // Status tabs with counts; a tab with nothing behind it is hidden (proposal E).
-    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["All 3", "Idle 2", "Done 1", "List", "Projects"]);
+    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["All 3", "Idle 2", "Done today 1", "List", "Projects"]);
     // Tools: a multi-select dropdown (owner, 2026-11-24); nothing ticked reads "All tools".
     expect(screen.getByRole("button", { name: "Tool: All tools" })).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Select Event store"));
@@ -176,5 +180,15 @@ describe("All sessions, fewer columns (proposal E)", () => {
     rerender(<AllSessionsPage sessions={[...same, sess("c", { tool: "codex", model: "default", thinking: "medium" })]} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
     expect(screen.getByText("Account")).toBeTruthy();
     expect(screen.getAllByText(/ · Codex$/)).toHaveLength(1);
+  });
+});
+
+describe("All sessions opens on the tab the sidebar asked for (owner, 2026-11-24)", () => {
+  it("Older opens on Older and lists only what ended before today", () => {
+    const rows = [sess("t", { live: false, title: "Today one" }), sess("o", { live: false, title: "Old one", lastActiveMs: new Date(NOW).setHours(0, 0, 0, 0) - 60_000 })];
+    render(<AllSessionsPage sessions={rows} nowMs={NOW} status="older" onOpen={vi.fn()} batch={() => ({}) as never} />);
+    expect(screen.getByRole("radio", { name: "Older 1" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText("Old one")).toBeTruthy();
+    expect(screen.queryByText("Today one")).toBeNull();
   });
 });

@@ -47,7 +47,7 @@ function Table({ cols, heads, children }: { cols: string; heads: ReactNode[]; ch
 /** `width` fixes it; without one it takes the room the switches leave, so a filter bar stays one line. */
 function Filter({ value, onChange, placeholder, width }: { value: string; onChange: (v: string) => void; placeholder: string; width?: number }) {
   return (
-    <div className={cn("relative", width === undefined && "min-w-[140px] flex-1")} style={width === undefined ? undefined : { width }}>
+    <div className={cn("relative", width === undefined && "min-w-[120px] flex-1")} style={width === undefined ? undefined : { width }}>
       <Search className="absolute left-2.5 top-2 size-4 text-ac-faint" />
       <TextInput aria-label="Filter" className="w-full pl-8" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
@@ -269,15 +269,24 @@ export function inListOrder(rows: readonly TableSession[], order: readonly strin
   });
 }
 
-/** The status tabs of All sessions (proposal E), in their order; "live" is every running or idle one. */
-export type TableStatus = "all" | "needs" | "running" | "idle" | "done" | "live";
-const STATUS_TAB: { value: Exclude<TableStatus, "live">; label: string }[] = [
+/** The status tabs of All sessions (proposal E), in their order; "live" is every running or idle one, "done" every ended one.
+ *  Ended sessions split as in the sidebar (owner, 2026-11-24): Done today since midnight, Older before. */
+export type TableStatus = "all" | "needs" | "running" | "idle" | "today" | "older" | "done" | "live";
+export type StatusTab = Exclude<TableStatus, "live" | "done">;
+const STATUS_TAB: { value: StatusTab; label: string }[] = [
   { value: "all", label: "All" },
   { value: "needs", label: "Needs you" },
   { value: "running", label: "Running" },
   { value: "idle", label: "Idle" },
-  { value: "done", label: "Done" },
+  { value: "today", label: "Done today" },
+  { value: "older", label: "Older" },
 ];
+
+/** An ended row: Done today (ended since local midnight) or Older. Without a clock, today. Pure. */
+export function endedWhen(s: TableSession, nowMs?: number): "today" | "older" {
+  if (nowMs == null || s.lastActiveMs == null) return "today";
+  return s.lastActiveMs >= new Date(nowMs).setHours(0, 0, 0, 0) ? "today" : "older";
+}
 
 /** A row's status: waiting for you (or its CI is failing), running, idle, or done. Pure. */
 export function tableStatus(s: TableSession): Exclude<TableStatus, "all" | "live"> {
@@ -286,9 +295,18 @@ export function tableStatus(s: TableSession): Exclude<TableStatus, "all" | "live
   return s.state === "working" ? "running" : "idle";
 }
 
+/** Whether a row belongs under a status tab. Pure. */
+export function inStatus(s: TableSession, state: TableStatus, nowMs?: number): boolean {
+  if (state === "all") return true;
+  if (state === "live") return s.live;
+  const st = tableStatus(s);
+  if (state === "today" || state === "older") return st === "done" && endedWhen(s, nowMs) === state;
+  return st === state;
+}
+
 /** `tool`: one tool, "any", or a set of tools (an empty set is every tool). */
-export function filterSessions(rows: readonly TableSession[], q: string, state: TableStatus, tool: "any" | TableSession["tool"] | ReadonlySet<TableSession["tool"]>): TableSession[] {
-  const inState = (s: TableSession) => state === "all" || (state === "live" ? s.live : tableStatus(s) === state);
+export function filterSessions(rows: readonly TableSession[], q: string, state: TableStatus, tool: "any" | TableSession["tool"] | ReadonlySet<TableSession["tool"]>, nowMs?: number): TableSession[] {
+  const inState = (s: TableSession) => inStatus(s, state, nowMs);
   const inTool = (s: TableSession) => (typeof tool === "string" ? tool === "any" || s.tool === tool : tool.size === 0 || tool.has(s.tool));
   return rows.filter((s) => inState(s) && inTool(s) && matches(q, s.title, s.account.name, s.branch, s.pr ? `#${s.pr.number}` : null));
 }
@@ -311,20 +329,20 @@ function shared<T>(rows: readonly TableSession[], f: (s: TableSession) => T): T 
  * above the table instead of in every row. Grouping by project follows the
  * Sessions window's own Group menu.
  */
-export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: initialGroup = "none" }: { sessions: TableSession[]; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions; /** The Sessions window's grouping: by project, or one list. */ group?: "none" | "project" }) {
+export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: initialGroup = "none", status: initialStatus = "all" }: { /** The tab it opens on (Done today or Older from the sidebar). */ status?: StatusTab; sessions: TableSession[]; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions; /** The Sessions window's grouping: by project, or one list. */ group?: "none" | "project" }) {
   const [q, setQ] = useState("");
-  const [state, setState] = useState<Exclude<TableStatus, "live">>("all");
+  const [state, setState] = useState<StatusTab>(initialStatus);
   // Tools as a multi-select dropdown (owner, 2026-11-24); nothing ticked = every tool.
   const [tool, setTool] = useState<ReadonlySet<TableSession["tool"]>>(() => new Set());
   const [sel, setSel] = useState<Set<string>>(new Set());
   const rows = useMemo(() => {
-    const hits = filterSessions(sessions, q, state, tool);
+    const hits = filterSessions(sessions, q, state, tool, nowMs);
     return order ? inListOrder(hits, order) : hits;
-  }, [sessions, order, q, state, tool]);
+  }, [sessions, order, q, state, tool, nowMs]);
   // List or Projects stays a switch on the page (owner, 2026-11-24); it starts from the sidebar's grouping.
   const [group, setGroup] = useState<"none" | "project">(initialGroup);
   const sections = useMemo(() => (group === "project" ? byProject(rows) : [{ project: null as string | null, rows }]), [rows, group]);
-  const count = (v: Exclude<TableStatus, "live">) => (v === "all" ? sessions.length : sessions.filter((s) => tableStatus(s) === v).length);
+  const count = (v: StatusTab) => sessions.filter((s) => inStatus(s, v, nowMs)).length;
   // A tab with nothing behind it is hidden, unless it is the one chosen.
   const tabs = STATUS_TAB.filter((t) => t.value === "all" || t.value === state || count(t.value) > 0);
   const tools = (["claude", "codex", "antigravity"] as const).filter((t) => sessions.some((s) => s.tool === t));
@@ -340,7 +358,7 @@ export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Filter value={q} onChange={setQ} placeholder="Filter…" />
         <Segmented size="sm" label="Status" value={state} onChange={setState} options={tabs.map((t) => ({ value: t.value, label: `${t.label} ${count(t.value)}` }))} />
-        {tools.length > 1 && <MultiSelect label="Tool" all="All tools" picked={tool} onChange={setTool} options={tools.map((t) => ({ value: t, label: TOOL_LABEL[t], hint: sessions.filter((s) => s.tool === t).length }))} />}
+        {tools.length > 1 && <MultiSelect width={150} label="Tool" all="All tools" picked={tool} onChange={setTool} options={tools.map((t) => ({ value: t, label: TOOL_LABEL[t], hint: sessions.filter((s) => s.tool === t).length }))} />}
         <Segmented size="sm" label="Group" value={group} onChange={setGroup} options={[{ value: "none", label: "List" }, { value: "project", label: "Projects" }]} />
       </div>
       {sel.size > 0 && <BatchBar count={sel.size} className="mb-2" actions={batch([...sel])} />}

@@ -676,7 +676,8 @@ export function SessionsZone({
   onToggleChildren: (key: string) => void;
   onCheck: (key: string) => void;
   onCleanUp: () => void;
-  onDoneToday: () => void;
+  /** Opens All sessions; `which` picks its Done today or Older tab. */
+  onDoneToday: (which?: "today" | "older") => void;
   /** The empty zone's one action (spec §5.2). */
   onStart?: () => void;
   /** The list's order and grouping (the zone head shows and opens them). */
@@ -849,7 +850,7 @@ export function SessionsZone({
         ])}
         {!byStatus && done > 0 && (
           <div className="mt-0.5 flex h-7 items-center gap-2 px-2.5 text-[11.5px] text-ac-muted">
-            <button type="button" onClick={onDoneToday} className="inline-flex flex-1 items-center gap-2 text-left hover:text-ac-text">
+            <button type="button" onClick={() => onDoneToday("today")} className="inline-flex flex-1 items-center gap-2 text-left hover:text-ac-text">
               <ChevronRight className="size-3" /> Done today {done}
             </button>
           </div>
@@ -859,7 +860,7 @@ export function SessionsZone({
         <div data-done-groups="" className="sticky bottom-0 z-[1] mt-auto border-t border-ac-line bg-ac-panel px-1.5 py-1">
           {/* Each row is one full-width button; Clean up lives in All sessions for now (owner, 2026-11-24). */}
           {doneRows.map((g) => (
-            <button key={g.id} type="button" onClick={onDoneToday} title="Open All sessions" className="flex h-6 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[11.5px] text-ac-muted hover:bg-ac-raise hover:text-ac-text">
+            <button key={g.id} type="button" onClick={() => onDoneToday(g.id === "Older" ? "older" : "today")} title={`Open All sessions · ${g.id}`} className="flex h-6 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[11.5px] text-ac-muted hover:bg-ac-raise hover:text-ac-text">
               <ChevronRight className="size-3 shrink-0" />
               <span className="font-medium text-ac-soft">{g.id}</span>
               <span data-group-count="" className="min-w-[18px] shrink-0 rounded-full bg-ac-raise px-1.5 text-center text-[10.5px] text-ac-soft">{g.count}</span>

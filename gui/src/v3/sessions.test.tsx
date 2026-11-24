@@ -300,8 +300,9 @@ describe("ended sessions under the status grouping", () => {
     const pinned = document.querySelector("[data-done-groups]") as HTMLElement;
     expect(pinned.textContent).toMatch(/Done today1.*Older1/);
     expect(screen.queryByText("title claude/w/today")).toBeNull();
-    for (const b of pinned.querySelectorAll('button[title="Open All sessions"]')) fireEvent.click(b);
-    expect(onDoneToday).toHaveBeenCalledTimes(2);
+    for (const b of pinned.querySelectorAll('button[title^="Open All sessions"]')) fireEvent.click(b);
+    // Each opens All sessions on its own tab.
+    expect(onDoneToday.mock.calls).toEqual([["today"], ["older"]]);
   });
   it("leaves an empty row out", () => {
     render(zone(rows.slice(0, 2), { group: "status", nowMs: NOW }));

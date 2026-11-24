@@ -23,7 +23,7 @@ import { answeredThere, NeedsZone, type AwayDigest, type NeedItem } from "./need
 import { limitToOpen, markLimitOpened, openedLimits, wasOpened } from "./adapter/limit-auto.js";
 import { accountOfKey } from "../vm/switch-requests.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
-import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession } from "./pages.js";
+import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession, type StatusTab } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
 import type { ReviewFocus } from "./review.js";
 import { DEFAULT_SORT, SessionsZone, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
@@ -278,6 +278,8 @@ export function V3Window({
     setActive(`page:${p}`);
   }, []);
   const frame = useFrame(openPage);
+  /** The tab All sessions opens on, and a counter that remounts it when Done today or Older asks again. */
+  const [tableTab, setTableTab] = useState<{ status: StatusTab; n: number }>({ status: "all", n: 0 });
   /** The session's Review tab, at `file` when one was picked; every open is new, so the review goes back to Uncommitted. */
   const openReview = (key: string, file?: string) => {
     setReviewFocus((m) => new Map(m).set(key, { ...(file ? { file } : {}), seq: (m.get(key)?.seq ?? 0) + 1 }));
@@ -557,7 +559,7 @@ export function V3Window({
         />
       );
     // 8.6: the table in the sidebar's order (its sort), ended sessions after it.
-    if (p === "sessions-table") return <AllSessionsPage sessions={data.table} order={sortLive(data.sessions, sortBy, lastActiveOf).map((row) => row.key)} group={groupBy === "project" ? "project" : "none"} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
+    if (p === "sessions-table") return <AllSessionsPage key={tableTab.n} status={tableTab.status} sessions={data.table} order={sortLive(data.sessions, sortBy, lastActiveOf).map((row) => row.key)} group={groupBy === "project" ? "project" : "none"} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
     if (p === "tools") return slots.tools;
     return (
       <SettingsPage current={section} onSection={setSection}>
@@ -867,7 +869,7 @@ export function V3Window({
           onToggleChildren={(k) => setOpenKids((c) => (c.has(k) ? new Set([...c].filter((x) => x !== k)) : new Set([...c, k])))}
           onCheck={(k) => setSelection((c) => { const n = new Set(c ?? []); n.has(k) ? n.delete(k) : n.add(k); return n; })}
           onCleanUp={() => act({ type: "clean-up" })}
-          onDoneToday={() => openPage("sessions-table")}
+          onDoneToday={(which) => (setTableTab((t) => ({ status: which ?? "all", n: t.n + 1 })), openPage("sessions-table"))}
           batch={batch([...(selection ?? [])])}
         />
       </div>
