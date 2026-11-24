@@ -558,7 +558,7 @@ export function V3Window({
         />
       );
     // 8.6: the table in the sidebar's order (its sort), ended sessions after it.
-    if (p === "sessions-table") return <AllSessionsPage sessions={data.table} order={sortLive(data.sessions, sortBy, lastActiveOf).map((row) => row.key)} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
+    if (p === "sessions-table") return <AllSessionsPage sessions={data.table} order={sortLive(data.sessions, sortBy, lastActiveOf).map((row) => row.key)} group={groupBy === "project" ? "project" : "none"} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
     if (p === "tools") return slots.tools;
     return (
       <SettingsPage current={section} onSection={setSection}>

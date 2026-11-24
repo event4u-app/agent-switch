@@ -58,7 +58,8 @@ describe("All sessions page (spec §10.2)", () => {
     const onOpen = vi.fn();
     const batch = vi.fn(() => ({ onClear: vi.fn(), onPin: vi.fn(), onArchive: vi.fn(), onClean: vi.fn(), onEnd: vi.fn() }));
     render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={onOpen} batch={batch} />);
-    expect(screen.getByRole("radio", { name: "Live 2" })).toBeTruthy();
+    // Status tabs with counts; a tab with nothing behind it is hidden (proposal E).
+    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["All 3", "Idle 2", "Done 1", "Any tool", "Claude 2", "Codex 1"]);
     fireEvent.click(screen.getByLabelText("Select Event store"));
     expect(onOpen).not.toHaveBeenCalled();
     expect(batch).toHaveBeenLastCalledWith(["a"]);
@@ -141,10 +142,34 @@ describe("All sessions › Projects", () => {
       ["agent-switch", ["a", "d"]],
       [null, ["b"]],
     ]);
-    render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    // The grouping follows the Sessions window's Group menu (proposal E): no switch of its own.
+    const { rerender } = render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
     expect(screen.queryByText("No project")).toBeNull();
-    fireEvent.click(screen.getByRole("radio", { name: "Projects" }));
+    expect(screen.queryByRole("radio", { name: "Projects" })).toBeNull();
+    rerender(<AllSessionsPage sessions={rows} group="project" nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
     expect(screen.getByText("agent-switch")).toBeTruthy();
     expect(screen.getByText("No project")).toBeTruthy();
+  });
+});
+
+describe("All sessions, fewer columns (proposal E)", () => {
+  it("Needs you counts waiting and CI-failing sessions; one tool hides the tool filter", () => {
+    const rows = [sess("a", { state: "needs-you" }), sess("b", { pr: { number: 1, ci: "FAILURE" } }), sess("c", { state: "working" }), sess("d")];
+    expect(filterSessions(rows, "", "needs", "any").map((r) => r.key)).toEqual(["a", "b"]);
+    render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["All 4", "Needs you 2", "Running 1", "Idle 1"]);
+    fireEvent.click(screen.getByRole("radio", { name: "Needs you 2" }));
+    expect(screen.getAllByLabelText(/^Select /)).toHaveLength(2);
+  });
+
+  it("a value every row shares is said once above the table, not in every row; the tool is named only where it is not Claude", () => {
+    const same = [sess("a", { model: "Opus 5.5", thinking: "High" }), sess("b", { model: "Opus 5.5", thinking: "High" })];
+    const { rerender } = render(<AllSessionsPage sessions={same} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    expect(screen.getByText(/^Every session here runs on .+ · Opus 5.5 · High\.$/)).toBeTruthy();
+    expect(screen.queryByText("Account")).toBeNull();
+    expect(screen.queryByText("Model")).toBeNull();
+    rerender(<AllSessionsPage sessions={[...same, sess("c", { tool: "codex", model: "default", thinking: "medium" })]} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    expect(screen.getByText("Account")).toBeTruthy();
+    expect(screen.getAllByText(/ · Codex$/)).toHaveLength(1);
   });
 });

@@ -33,10 +33,10 @@ Start when `road-to-a-workbench-that-tells-the-truth` is archived.
 
 ## Phase 5 — The canvas proposals B–E, as directions
 
-- [ ] 5.1 Status groups with counts in the session list (B).
-- [ ] 5.2 Slimmer session header: where-it-runs as a chip, secondary actions in ⋯ (C).
-- [ ] 5.3 One shared limit row for sidebar, tray, decide sheet and accounts (D).
-- [ ] 5.4 All sessions: two-line rows, status tabs, hidden empty filters (E).
+- [x] 5.1 Status groups with counts in the session list (B): Needs you · Running · Idle by default, count pills, "N more" after five rows; a session a Needs-you row shows is not listed twice.
+- [x] 5.2 Slimmer session header: where-it-runs as a chip, secondary actions in ⋯ (C): Focus terminal, Take over (with what it changes) and Copy conversation lead ⋯; the strip over a your-terminal session is gone.
+- [x] 5.3 One shared limit row for sidebar, tray, decide sheet and accounts (D): one set of cells (bar · used · reset); the strip's rows have the same columns, 5h unless another window is near its limit.
+- [x] 5.4 All sessions: two-line rows, status tabs, hidden empty filters (E); a shared account/model is said once; List/Projects follows the Sessions window's Group menu.
 
 ## Phase 6 — Fit and read
 

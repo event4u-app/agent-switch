@@ -267,33 +267,76 @@ export function inListOrder(rows: readonly TableSession[], order: readonly strin
   });
 }
 
-export function filterSessions(rows: readonly TableSession[], q: string, state: "all" | "live" | "done", tool: "any" | TableSession["tool"]): TableSession[] {
-  return rows.filter((s) => (state === "all" || (state === "live") === s.live) && (tool === "any" || s.tool === tool) && matches(q, s.title, s.account.name, s.branch, s.pr ? `#${s.pr.number}` : null));
+/** The status tabs of All sessions (proposal E), in their order; "live" is every running or idle one. */
+export type TableStatus = "all" | "needs" | "running" | "idle" | "done" | "live";
+const STATUS_TAB: { value: Exclude<TableStatus, "live">; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "needs", label: "Needs you" },
+  { value: "running", label: "Running" },
+  { value: "idle", label: "Idle" },
+  { value: "done", label: "Done" },
+];
+
+/** A row's status: waiting for you (or its CI is failing), running, idle, or done. Pure. */
+export function tableStatus(s: TableSession): Exclude<TableStatus, "all" | "live"> {
+  if (!s.live) return "done";
+  if (s.state === "needs-you" || s.pr?.ci === "FAILURE" || s.pr?.ci === "ERROR") return "needs";
+  return s.state === "working" ? "running" : "idle";
 }
 
-export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch }: { sessions: TableSession[]; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions }) {
+export function filterSessions(rows: readonly TableSession[], q: string, state: TableStatus, tool: "any" | TableSession["tool"]): TableSession[] {
+  const inState = (s: TableSession) => state === "all" || (state === "live" ? s.live : tableStatus(s) === state);
+  return rows.filter((s) => inState(s) && (tool === "any" || s.tool === tool) && matches(q, s.title, s.account.name, s.branch, s.pr ? `#${s.pr.number}` : null));
+}
+
+const TOOL_LABEL: Record<TableSession["tool"], string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
+/** The account as the table says it: the tool only where it is not Claude (proposal E). */
+const accountText = (s: TableSession) => (s.tool === "claude" ? s.account.name : `${s.account.name} · ${TOOL_LABEL[s.tool]}`);
+const modelText = (s: TableSession) => [s.model, s.thinking].filter(Boolean).join(" · ");
+/** One value for every row, or null when they differ (or there are none). Pure. */
+function shared<T>(rows: readonly TableSession[], f: (s: TableSession) => T): T | null {
+  if (!rows.length) return null;
+  const v = f(rows[0]);
+  return rows.every((r) => f(r) === v) ? v : null;
+}
+
+/**
+ * All sessions (spec §10.2, proposal E): search and status tabs with counts —
+ * Needs you first — a tool filter only when more than one tool has sessions,
+ * branch · PR · CI under the title, and a value every row shares said once
+ * above the table instead of in every row. Grouping by project follows the
+ * Sessions window's own Group menu.
+ */
+export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group = "none" }: { sessions: TableSession[]; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions; /** The Sessions window's grouping: by project, or one list. */ group?: "none" | "project" }) {
   const [q, setQ] = useState("");
-  const [state, setState] = useState<"all" | "live" | "done">("all");
+  const [state, setState] = useState<Exclude<TableStatus, "live">>("all");
   const [tool, setTool] = useState<"any" | TableSession["tool"]>("any");
   const [sel, setSel] = useState<Set<string>>(new Set());
-  const [group, setGroup] = useState<"none" | "project">("none");
   const rows = useMemo(() => {
     const hits = filterSessions(sessions, q, state, tool);
     return order ? inListOrder(hits, order) : hits;
   }, [sessions, order, q, state, tool]);
   const sections = useMemo(() => (group === "project" ? byProject(rows) : [{ project: null as string | null, rows }]), [rows, group]);
-  const live = sessions.filter((s) => s.live).length;
-  const cols = "grid-cols-[24px_minmax(0,1.6fr)_120px_minmax(0,1.2fr)_120px_70px_80px]";
+  const count = (v: Exclude<TableStatus, "live">) => (v === "all" ? sessions.length : sessions.filter((s) => tableStatus(s) === v).length);
+  // A tab with nothing behind it is hidden, unless it is the one chosen.
+  const tabs = STATUS_TAB.filter((t) => t.value === "all" || t.value === state || count(t.value) > 0);
+  const tools = (["claude", "codex", "antigravity"] as const).filter((t) => sessions.some((s) => s.tool === t));
+  const oneAccount = shared(rows, accountText);
+  const oneModel = shared(rows, modelText);
+  const sharedLine = [oneAccount && `on ${oneAccount}`, oneModel && oneModel].filter(Boolean).join(" · ");
+  // Static classes (Tailwind sees only whole strings): one per set of columns shown.
+  const cols = oneAccount === null ? (oneModel === null ? "grid-cols-[24px_minmax(0,2fr)_minmax(0,0.9fr)_minmax(0,1fr)_56px_76px]" : "grid-cols-[24px_minmax(0,2fr)_minmax(0,0.9fr)_56px_76px]") : oneModel === null ? "grid-cols-[24px_minmax(0,2fr)_minmax(0,1fr)_56px_76px]" : "grid-cols-[24px_minmax(0,2fr)_56px_76px]";
+  const heads = ["", "Session", ...(oneAccount === null ? ["Account"] : []), ...(oneModel === null ? ["Model"] : []), "Context", "Active"];
   const toggle = (k: string) => setSel((c) => (c.has(k) ? new Set([...c].filter((x) => x !== k)) : new Set([...c, k])));
   return (
     <PageBody title="All sessions" sub="Scan, filter and act on many sessions at once.">
-      <div className="mb-3 flex items-center gap-2">
-        <Filter value={q} onChange={setQ} placeholder="Filter…" width={300} />
-        <Segmented size="sm" label="State" value={state} onChange={setState} options={[{ value: "all", label: `All ${sessions.length}` }, { value: "live", label: `Live ${live}` }, { value: "done", label: `Done ${sessions.length - live}` }]} />
-        <Segmented size="sm" label="Tool" value={tool} onChange={setTool} options={[{ value: "any", label: "Any tool" }, { value: "claude", label: "Claude" }, { value: "codex", label: "Codex" }, { value: "antigravity", label: "Antigravity" }]} />
-        <Segmented size="sm" label="Group" value={group} onChange={setGroup} options={[{ value: "none", label: "List" }, { value: "project", label: "Projects" }]} />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Filter value={q} onChange={setQ} placeholder="Filter…" width={240} />
+        <Segmented size="sm" label="Status" value={state} onChange={setState} options={tabs.map((t) => ({ value: t.value, label: `${t.label} ${count(t.value)}` }))} />
+        {tools.length > 1 && <Segmented size="sm" label="Tool" value={tool} onChange={setTool} options={[{ value: "any", label: "Any tool" }, ...tools.map((t) => ({ value: t, label: `${TOOL_LABEL[t]} ${sessions.filter((s) => s.tool === t).length}` }))]} />}
       </div>
       {sel.size > 0 && <BatchBar count={sel.size} className="mb-2" actions={batch([...sel])} />}
+      {rows.length > 1 && sharedLine && <p className="mb-2 text-xs text-ac-muted">Every session here runs {sharedLine}.</p>}
       {sections.map((sec) => (
         <div key={sec.project ?? "-"} className={group === "project" ? "mb-4" : undefined}>
           {group === "project" && (
@@ -302,27 +345,30 @@ export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch }: { ses
               <span className="font-ac-mono text-[11px] text-ac-faint">{sec.rows.length}</span>
             </div>
           )}
-          <Table cols={cols} heads={["", "Session", "Account", "Branch · PR", "Model", "Context", "Active"]}>
+          <Table cols={cols} heads={heads}>
             {sec.rows.map((s) => (
               <div key={s.key} onClick={() => onOpen(s.key)} className={cn("grid cursor-default items-center gap-3 border-b border-ac-line px-3 py-2 last:border-b-0 hover:bg-ac-raise", cols)}>
                 <CheckBox label={`Select ${s.title}`} checked={sel.has(s.key)} onChange={() => toggle(s.key)} />
-                <span className="flex min-w-0 items-center gap-2">
-                  <SessionStateIcon state={s.state} />
-                  <span className="truncate text-[13px] text-ac-text">{s.title}</span>
-                </span>
-                <span className="flex min-w-0 items-center gap-1.5 text-xs text-ac-soft">
-                  <AccountMark color={s.account.color} />
-                  <span className="truncate">
-                    {s.tool === "claude" ? "Claude" : s.tool === "codex" ? "Codex" : "Antigravity"} · {s.account.name}
+                <span className="min-w-0">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <SessionStateIcon state={s.state} />
+                    <span className="truncate text-[13px] text-ac-text">{s.title}</span>
+                  </span>
+                  {/* Branch · PR · CI under the title (proposal E). */}
+                  <span className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-4 font-ac-mono text-[11px] text-ac-muted">
+                    <GitBranch className="size-3 shrink-0" />
+                    <span className="truncate">{s.branch ?? "no repo"}</span>
+                    {s.pr && <span className="shrink-0">· #{s.pr.number}</span>}
+                    {(s.pr?.ci === "FAILURE" || s.pr?.ci === "ERROR") && <span className="shrink-0 font-sans text-ac-alert-text">CI failing</span>}
                   </span>
                 </span>
-                <span className="flex min-w-0 items-center gap-1.5 font-ac-mono text-[11px] text-ac-muted">
-                  <GitBranch className="size-3 shrink-0" />
-                  <span className="truncate">{s.branch ?? "no repo"}</span>
-                  {s.pr && <span className="shrink-0">#{s.pr.number}</span>}
-                  {(s.pr?.ci === "FAILURE" || s.pr?.ci === "ERROR") && <span className="shrink-0 font-sans text-ac-alert-text">CI failing</span>}
-                </span>
-                <span className="truncate text-xs text-ac-soft">{[s.model, s.thinking].filter(Boolean).join(" · ")}</span>
+                {oneAccount === null && (
+                  <span className="flex min-w-0 items-center gap-1.5 text-xs text-ac-soft">
+                    <AccountMark color={s.account.color} />
+                    <span className="truncate">{accountText(s)}</span>
+                  </span>
+                )}
+                {oneModel === null && <span className="truncate text-xs text-ac-soft">{modelText(s)}</span>}
                 <span className="font-ac-mono text-[11px] text-ac-muted">{s.contextPct == null ? "" : `${Math.round(s.contextPct)}%`}</span>
                 <span className="text-right text-xs text-ac-muted">{lastSeen(s.lastActiveMs, nowMs)}</span>
               </div>
