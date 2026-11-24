@@ -10,7 +10,7 @@ import { ArrowUpRight, ChevronDown, ChevronRight, Lock, PanelRight } from "lucid
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { AccountMark } from "./kit.js";
-import { ChildLine, childNoun, statusGroup, type RowSession } from "./sessions.js";
+import { ChildGroups, ChildLine, childNoun, statusGroup, type RowSession } from "./sessions.js";
 import { ThinkingArrow } from "./workbench.js";
 
 export interface RunningSession {
@@ -111,14 +111,17 @@ export function RunningOn({
             </div>
             {unfolded && (
               <div className="ml-[13px] border-l border-ac-line pl-3.5">
-                {s.children.map((c) => (
-                  <button key={c.id} type="button" onClick={() => onShowChild(s.key)} title="Show in the Children window" className="group/child flex w-full items-center gap-1 rounded-md pr-1 text-left hover:bg-ac-raise">
-                    <span className="min-w-0 flex-1">
-                      <ChildLine c={c} />
-                    </span>
-                    <PanelRight className="size-3.5 shrink-0 text-ac-faint group-hover/child:text-ac-text" />
-                  </button>
-                ))}
+                <ChildGroups
+                  kids={s.children}
+                  render={(c) => (
+                    <button type="button" onClick={() => onShowChild(s.key)} title="Show in the Children window" className="group/child flex w-full items-center gap-1 rounded-md pr-1 text-left hover:bg-ac-raise">
+                      <span className="min-w-0 flex-1">
+                        <ChildLine c={c} />
+                      </span>
+                      <PanelRight className="size-3.5 shrink-0 text-ac-faint group-hover/child:text-ac-text" />
+                    </button>
+                  )}
+                />
               </div>
             )}
           </div>

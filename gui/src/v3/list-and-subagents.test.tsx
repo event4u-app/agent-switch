@@ -163,6 +163,8 @@ describe("Children rows open (04 F3) and a subagent opens read-only (04 F1)", ()
     const onOpen = vi.fn();
     const kids: ChildModel[] = [{ id: "claude/work/seat", label: "seat", kind: "council", state: "done", source: "lineage" }, sub("a1"), { id: "c", label: "subagents", kind: "subagent", state: "done", source: "counted", count: 2 }];
     render(<ChildrenWindow noun="4 related sessions" children={kids} onHide={vi.fn()} onOpen={onOpen} />);
+    // Running open, Idle folded (owner, 2026-11-24): all three are idle here.
+    fireEvent.click(screen.getByRole("button", { name: /^Idle/, expanded: false }));
     fireEvent.click(screen.getByRole("button", { name: /seat/ }));
     fireEvent.click(screen.getByRole("button", { name: /migrate JSON stores/ }));
     expect(onOpen.mock.calls.map((c) => c[0].id)).toEqual(["claude/work/seat", "a1"]);

@@ -30,6 +30,7 @@ describe("running on an account (limits popover)", () => {
     expect(on.onOpen).toHaveBeenCalledWith("claude/side/a");
     expect(screen.queryByText("Explore")).toBeNull();
     fireEvent.click(screen.getByLabelText(/^Show /));
+    fireEvent.click(screen.getByRole("button", { name: /^Idle/, expanded: false }));
     fireEvent.click(screen.getByTitle("Show in the Children window"));
     expect(on.onShowChild).toHaveBeenCalledWith("claude/side/a");
     fireEvent.click(screen.getByTitle("Model and thinking for the next turn — same popover as the session bar"));
@@ -83,5 +84,24 @@ describe("only active sessions, in a dark box (owner, 2026-11-24)", () => {
     expect(box().className).not.toMatch(/overflow-y-auto/);
     rerender(<RunningOn name="side" sessions={[one("claude/side/a"), one("claude/side/b"), one("claude/side/c")]} onOpen={vi.fn()} onShowChild={vi.fn()} onModel={vi.fn()} />);
     expect(box().className).toMatch(/max-h-\[122px\] overflow-y-auto/);
+  });
+});
+
+describe("subagents split into Running and Idle (owner, 2026-11-24)", () => {
+  it("Running is open, Idle is folded, each with its count; an empty group has no header", () => {
+    const kids = [
+      { id: "r1", label: "Explore", kind: "subagent", state: "working" as const, source: "hook" as const },
+      { id: "i1", label: "Plan", kind: "subagent", state: "done" as const, source: "hook" as const },
+      { id: "i2", label: "Review", kind: "subagent", state: "done" as const, source: "hook" as const },
+    ];
+    render(<RunningOn name="side" sessions={[{ row: s("claude/side/a", { title: "Fix wedge", children: kids }), model: null, thinking: null, hosted: true }]} onOpen={vi.fn()} onShowChild={vi.fn()} onModel={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText(/^Show /));
+    expect(screen.getByRole("button", { name: /^Running/ }).textContent).toBe("Running1");
+    expect(screen.getByRole("button", { name: /^Running/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: /^Idle/ }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText("Explore")).toBeTruthy();
+    expect(screen.queryByText("Plan")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Idle/ }));
+    expect(screen.getByText("Plan")).toBeTruthy();
   });
 });

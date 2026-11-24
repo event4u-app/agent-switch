@@ -63,7 +63,8 @@ describe("one row grammar (2.1, 2.2)", () => {
 describe("open and peek (2.3, 2.4)", () => {
   it("a click on a session child opens it", () => {
     const onSelect = vi.fn();
-    const { container } = rowOf(s("p", { children: [seat("a")] }), { onSelect });
+    // A running seat: idle ones start folded (owner, 2026-11-24).
+    const { container } = rowOf(s("p", { children: [seat("a", { state: "working" })] }), { onSelect });
     fireEvent.click(childRows(container)[0]);
     expect(onSelect).toHaveBeenCalledWith("claude/work/a");
   });
@@ -80,7 +81,7 @@ describe("open and peek (2.3, 2.4)", () => {
 
   it("hovering a child asks for its peek card, and leaving drops it", () => {
     const onPeek = vi.fn();
-    const { container } = rowOf(s("p", { children: [seat("a")] }), { onPeek });
+    const { container } = rowOf(s("p", { children: [seat("a", { state: "working" })] }), { onPeek });
     fireEvent.mouseEnter(childRows(container)[0]);
     expect(onPeek).toHaveBeenLastCalledWith("claude/work/a", expect.any(Number));
     fireEvent.mouseLeave(childRows(container)[0]);
@@ -113,7 +114,7 @@ describe("idle children fold (3.5, D11)", () => {
   it("a nine-seat council with one working seat shows two lines, and the fold opens in place", () => {
     const { container } = rowOf(nine());
     const rows = childRows(container);
-    expect(rows.map((r) => r.textContent)).toEqual(["WorkingCseat n4", "8 idle"]);
+    expect(rows.map((r) => r.textContent)).toEqual(["WorkingCseat n4", "Idle8"]);
     fireEvent.click(within(rows[1]).getByRole("button", { name: "Show 8 idle" }));
     expect(childRows(container)).toHaveLength(10);
   });
@@ -130,7 +131,7 @@ describe("idle children fold (3.5, D11)", () => {
   it("a waiting idle seat is never folded away", () => {
     const r = s("q", { children: [seat("a", { state: "needs-you" }), seat("b"), seat("c")] });
     const { container } = rowOf(r);
-    expect(childRows(container).map((x) => x.textContent)).toEqual(["Needs a decisionCseat a", "2 idle"]);
+    expect(childRows(container).map((x) => x.textContent)).toEqual(["Needs a decisionCseat a", "Idle2"]);
   });
 });
 

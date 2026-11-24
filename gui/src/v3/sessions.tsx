@@ -358,6 +358,42 @@ export function findChild(sessions: readonly RowSession[], id: string): { root: 
 const isLive = (c: ChildModel): boolean => c.state === "working" || c.state === "needs-you" || !!c.needsYou || (c.children ?? []).some(isLive);
 const holds = (c: ChildModel, key: string): boolean => c.id === key || (c.children ?? []).some((k) => holds(k, key));
 
+/**
+ * Subagents split like the session list (owner, 2026-11-24): "Running" open,
+ * "Idle" folded, each header with its count. Running is everything live
+ * (working, or a child that needs you); the rest is idle. An empty group has
+ * no header. Used by the Children window and the limits popover.
+ */
+export function ChildGroups({ kids, render }: { kids: readonly ChildModel[]; render: (c: ChildModel) => ReactNode }) {
+  const [shut, setShut] = useState<ReadonlySet<string>>(() => new Set(["Idle"]));
+  const groups = [
+    { id: "Running", rows: kids.filter(isLive) },
+    { id: "Idle", rows: kids.filter((c) => !isLive(c)) },
+  ].filter((g) => g.rows.length > 0);
+  return (
+    <>
+      {groups.map((g) => {
+        const open = !shut.has(g.id);
+        return (
+          <div key={g.id} data-child-group={g.id}>
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setShut((x) => (x.has(g.id) ? new Set([...x].filter((y) => y !== g.id)) : new Set([...x, g.id])))}
+              className="flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[11.5px] text-ac-muted hover:bg-ac-raise"
+            >
+              {open ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
+              <span className="font-medium text-ac-soft">{g.id}</span>
+              <span data-group-count="" className="min-w-[18px] shrink-0 rounded-full bg-ac-raise px-1.5 text-center text-[10.5px] text-ac-soft">{g.rows.length}</span>
+            </button>
+            {open && g.rows.map((c) => <div key={c.id}>{render(c)}</div>)}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 /** The idle fold's state per parent, for the session (D11): survives the row folding and unfolding. */
 const IDLE_OPEN = new Set<string>();
 function useIdleFold(parent: string): [boolean, () => void] {
@@ -418,14 +454,15 @@ function ChildRow({ c, parent, depth, rails, last, onSelect, onSubagent, onPeek,
 
 /**
  * The children under a row, to any depth (3.1–3.5): live children listed,
- * idle and finished ones behind one "N idle" line that opens in place (D11).
- * A single idle child is listed: a fold line in its place would hide nothing.
+ * idle and finished ones behind one "N idle" line that opens in place (D11),
+ * folded at first even for one (owner, 2026-11-24).
  */
 export function ChildTree({ kids, parent, depth = 1, rails = [], ...h }: { kids: readonly ChildModel[]; parent: string; depth?: number; rails?: readonly boolean[] } & TreeHandlers) {
   const [idleOpen, toggleIdle] = useIdleFold(parent);
   const live = kids.filter(isLive);
   const idle = kids.filter((c) => !isLive(c));
-  const fold = idle.length >= 2;
+  // Idle children start folded, even a single one; running ones are listed (owner, 2026-11-24).
+  const fold = idle.length >= 1;
   const shown = !fold || idleOpen || (!!h.focusKey && idle.some((c) => holds(c, h.focusKey!)));
   const items: (ChildModel | "fold")[] = [...live, ...(fold ? (["fold"] as const) : []), ...(shown ? idle : [])];
   return (
@@ -444,7 +481,10 @@ export function ChildTree({ kids, parent, depth = 1, rails = [], ...h }: { kids:
                 className="flex h-6 min-w-0 items-center gap-2 rounded-md pr-2 text-[11.5px] text-ac-muted hover:text-ac-text"
               >
                 <span className="-mx-0.5 inline-flex w-3 shrink-0 justify-center">{shown ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}</span>
-                <span className="truncate">{idle.length} idle</span>
+                {/* Reads like the group headers: name, then its count (owner, 2026-11-24). */}
+                <span className="font-medium text-ac-soft">Idle</span>
+                {/* Inside the active block (raised) the pill steps a shade deeper, so it stays visible. */}
+                <span data-group-count="" className="min-w-[18px] shrink-0 rounded-full bg-ac-line px-1.5 text-center text-[10.5px] text-ac-soft">{idle.length}</span>
               </button>
             </div>
           );
@@ -751,12 +791,17 @@ export function SessionsZone({
     const t = s.lastActiveMs ?? lastActiveOf(s.key);
     return t == null || nowMs == null ? null : ago(nowMs - t);
   };
-  // Idle starts folded under the status grouping (owner, 2026-11-24), unless the open session is idle.
-  const [folded, setFolded] = useState<ReadonlySet<string>>(() => {
-    const open = sessions.find((s) => s.key === activeKey);
-    return new Set(group === "status" && !(open && statusGroup(open) === "Idle") ? ["Idle"] : []);
-  });
-  const fold = (g: string) => setFolded((f) => (f.has(g) ? new Set([...f].filter((x) => x !== g)) : new Set([...f, g])));
+  // Idle starts folded under the status grouping (owner, 2026-11-24) — unless the open session is idle, or
+  // nothing else is listed (an all-idle list would read as empty). A click on the header decides from then on.
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
+  const [idleChoice, setIdleChoice] = useState<boolean | null>(null);
+  const openRow = sessions.find((s) => s.key === activeKey);
+  const idleDefault = byStatus && !(openRow && statusGroup(openRow) === "Idle") && listed.some((s) => statusGroup(s) !== "Idle");
+  const isFolded = (g: string) => (byStatus && g === "Idle" ? (idleChoice ?? idleDefault) : folded.has(g));
+  const fold = (g: string) => {
+    if (byStatus && g === "Idle") return setIdleChoice(!isFolded(g));
+    setFolded((f) => (f.has(g) ? new Set([...f].filter((x) => x !== g)) : new Set([...f, g])));
+  };
   return (
     // A column that fills the window, so Done today and Older sit at its foot, right above the limits.
     <section aria-label="Sessions" className="flex flex-1 flex-col">
@@ -801,18 +846,18 @@ export function SessionsZone({
             <button
               key={`h:${g}`}
               type="button"
-              aria-expanded={!folded.has(g)}
+              aria-expanded={!isFolded(g)}
               onClick={() => fold(g)}
               title={g ? `${GROUP_LABEL[group]}: ${g}` : undefined}
               className="flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[11.5px] text-ac-muted hover:bg-ac-raise"
             >
-              {folded.has(g) ? <ChevronRight className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />}
+              {isFolded(g) ? <ChevronRight className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />}
               {group === "project" ? <Folder className="size-3.5 shrink-0" /> : group === "tool" ? <SquareTerminal className="size-3.5 shrink-0" /> : null}
               <span className="min-w-0 truncate font-medium text-ac-soft">{g || (group === "project" ? "No project" : "Other")}</span>
               <span data-group-count="" className="min-w-[18px] shrink-0 rounded-full bg-ac-raise px-1.5 text-center text-[10.5px] text-ac-soft">{rowsOf(g).length}</span>
             </button>
           ),
-          ...(folded.has(g) ? [] : worktreesOf(g)).flatMap(({ wt, rows: all }, i) => {
+          ...(isFolded(g) ? [] : worktreesOf(g)).flatMap(({ wt, rows: all }, i) => {
           const wtRows = capped(`${g}\0${i}`, all);
           return [
           wt !== undefined ? (

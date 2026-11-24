@@ -59,6 +59,9 @@ describe("Sessions zone (spec §5.2)", () => {
     fireEvent.click(screen.getByLabelText("Show 1 helper session"));
     expect(onToggle).toHaveBeenCalledWith("a");
     rerender(zone([s("a", { children: kids })], { activeKey: "a", openKeys: new Set(["a"]) }));
+    // An idle child starts folded, even one (owner, 2026-11-24).
+    expect(screen.queryByText("seat 1")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Show 1 idle"));
     expect(screen.getByText("seat 1")).toBeTruthy();
     expect(screen.getByText("relation unknown ⓘ")).toBeTruthy();
   });
@@ -267,6 +270,10 @@ describe("status groups with counts (proposal B)", () => {
     expect(screen.queryByText("Idle one")).toBeNull();
     fireEvent.click(idle);
     expect(screen.getAllByText(/^(Asking|Failing|Working|Idle) one$/).map((e) => e.textContent)).toEqual(["Asking one", "Failing one", "Working one", "Idle one"]);
+  });
+  it("an all-idle list keeps Idle open, so it never reads as empty", () => {
+    render(zone([s("i1", { title: "Idle one" }), s("i2", { title: "Idle two" })], { group: "status" }));
+    expect(screen.getByText("Idle one")).toBeTruthy();
   });
   it("Idle stays open when the open session is idle", () => {
     render(zone(rows, { group: "status", activeKey: "i1" }));
