@@ -14,6 +14,7 @@ import type { WindowLayout } from "../layout.js";
 import { V3Tray } from "../tray.js";
 import { FirstRun } from "../firstrun.js";
 import { ChatTimeline } from "../chat.js";
+import { Composer } from "../composer.js";
 import { EarlierNotShown } from "../subagent-view.js";
 import type { AsEvent } from "../timeline.js";
 import CHAT from "../fixtures/timeline-claude-2.1.316.json";
@@ -346,8 +347,10 @@ export function Scene({ view = "main", theme = "darcula", accent = "theme", heal
       BAR[key]?.hosted === false ? (
         <ExternalBody facts={<p>as-hook p95 benchmark · ~/code/agent-switch · perf/as-hook</p>} lastLine="as-hook is 6.7× faster at p95 (6.2 ms vs 41.8 ms)." />
       ) : inChat(key) ? (
-        <div className="h-full overflow-y-auto bg-ac-bg px-6 py-4">
-          <ChatTimeline events={CHAT.transcript as AsEvent[]} />
+        // As the app's ChatView: the timeline, then the message box (copy is in ⋯, proposal C).
+        <div className="flex h-full min-h-0 flex-col bg-ac-bg">
+          <ChatTimeline events={CHAT.transcript as AsEvent[]} copyBar={false} />
+          <Composer running={false} queued={0} mode="default" onMode={() => {}} onSend={() => {}} onStop={() => {}} />
         </div>
       ) : (
         <HostedTerminal sessionKey={key} vars={vars} followTheme backend={fakeBackend(key)} onExit={() => {}} />
