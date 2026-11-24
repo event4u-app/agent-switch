@@ -144,7 +144,7 @@ export function LimitRow({ a, nowMs, open, current, onOpen, onSignIn }: { a: Lim
         )}
       </span>
       {a.signIn ? (
-        <button type="button" onClick={(e) => (e.stopPropagation(), onSignIn(a.key))} className="col-span-3 justify-self-end text-[11px] text-ac-info-text hover:underline">
+        <button type="button" onClick={(e) => (e.stopPropagation(), onSignIn(a.key))} className="col-span-3 justify-self-end text-[11px] font-medium text-ac-brand-text hover:underline">
           Sign in ›
         </button>
       ) : !w ? (
