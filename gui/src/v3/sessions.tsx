@@ -398,7 +398,8 @@ export function ChildGroups({ kids, render }: { kids: readonly ChildModel[]; ren
               <span className="font-medium text-ac-soft">{g.id}</span>
               <span data-group-count="" className="ml-auto inline-flex h-4 min-w-[18px] shrink-0 items-center justify-center rounded-full bg-ac-raise px-1.5 text-[10.5px] tabular-nums leading-none text-ac-soft">{g.rows.length}</span>
             </button>
-            {open && g.rows.map((c) => <div key={c.id}>{render(c)}</div>)}
+            {/* Rows start under their group's label, as rows sit under a group header in the session list (owner, 2026-11-24). */}
+            {open && g.rows.map((c) => <div key={c.id} data-child-indent="" className="pl-[24px]">{render(c)}</div>)}
           </div>
         );
       })}
