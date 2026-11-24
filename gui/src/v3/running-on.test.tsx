@@ -69,3 +69,19 @@ describe("switch from the limits popover (owner, 2026-11-24)", () => {
     expect(document.querySelector('[data-thinking="medium"]')).not.toBeNull();
   });
 });
+
+describe("only active sessions, in a dark box (owner, 2026-11-24)", () => {
+  it("leaves idle and ended sessions out", () => {
+    const rows = [s("claude/side/run"), s("claude/side/ask", { state: "needs-you" }), s("claude/side/idle", { state: "idle" }), s("claude/side/end", { state: "done" })];
+    expect(runningOn({ tool: "claude", name: "side" }, rows).map((r) => r.key)).toEqual(["claude/side/run", "claude/side/ask"]);
+  });
+  it("scrolls inside the box from the third session on", () => {
+    const one = (k: string) => ({ row: s(k), model: null, thinking: null, hosted: true });
+    const { rerender } = render(<RunningOn name="side" sessions={[one("claude/side/a"), one("claude/side/b")]} onOpen={vi.fn()} onShowChild={vi.fn()} onModel={vi.fn()} />);
+    const box = () => document.querySelector("[data-running-box]")!;
+    expect(box().className).toMatch(/bg-ac-bg/);
+    expect(box().className).not.toMatch(/overflow-y-auto/);
+    rerender(<RunningOn name="side" sessions={[one("claude/side/a"), one("claude/side/b"), one("claude/side/c")]} onOpen={vi.fn()} onShowChild={vi.fn()} onModel={vi.fn()} />);
+    expect(box().className).toMatch(/max-h-\[122px\] overflow-y-auto/);
+  });
+});

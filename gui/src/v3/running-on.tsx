@@ -10,7 +10,7 @@ import { ArrowUpRight, ChevronDown, ChevronRight, Lock, PanelRight } from "lucid
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { AccountMark } from "./kit.js";
-import { ChildLine, childNoun, type RowSession } from "./sessions.js";
+import { ChildLine, childNoun, statusGroup, type RowSession } from "./sessions.js";
 import { ThinkingArrow } from "./workbench.js";
 
 export interface RunningSession {
@@ -20,11 +20,15 @@ export interface RunningSession {
   hosted: boolean;
 }
 
-/** The live sessions of one account (`<tool>:<name>` ↔ `<tool>/<name>/<id>`). Pure. */
+/** The active sessions of one account (`<tool>:<name>` ↔ `<tool>/<name>/<id>`): running or needing you — the
+ *  status groups' Running and Needs you; idle and ended ones stay out (owner, 2026-11-24). Pure. */
 export function runningOn(account: { tool: string; name: string }, sessions: readonly RowSession[]): RowSession[] {
   const prefix = `${account.tool}/${account.name}/`;
-  return sessions.filter((s) => s.state !== "done" && s.key.startsWith(prefix));
+  return sessions.filter((s) => s.state !== "done" && statusGroup(s) !== "Idle" && s.key.startsWith(prefix));
 }
+
+/** Two sessions show whole; a third scrolls inside the box. */
+const BOX_ROWS = 2;
 
 export function RunningOn({
   name,
@@ -56,6 +60,8 @@ export function RunningOn({
           {sessions.length} {sessions.length === 1 ? "session" : "sessions"}
         </span>
       </div>
+      {/* A dark box like the tray's (owner, 2026-11-24): two sessions show whole, more scroll inside it. */}
+      <div data-running-box="" className={cn("rounded-md border border-ac-line bg-ac-bg p-1", sessions.length > BOX_ROWS && "max-h-[122px] overflow-y-auto")}>
       {sessions.map(({ row: s, model, thinking, hosted }) => {
         const unfolded = open.has(s.key);
         return (
@@ -118,6 +124,7 @@ export function RunningOn({
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
