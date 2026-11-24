@@ -169,6 +169,19 @@ export function prProblem(s: RowSession): "CI failing" | "merge conflict" | null
   return s.pr?.ci === "FAILURE" ? "CI failing" : s.pr?.mergeable === "CONFLICTING" ? "merge conflict" : null;
 }
 
+/** What a row asks of you, for its own line under the title (two-line rows): what to do first. Pure. */
+export function attention(s: RowSession): { text: string; tone: "warn" | "alert" | "neutral" }[] {
+  const out: { text: string; tone: "warn" | "alert" | "neutral" }[] = [];
+  const waiting = s.state !== "needs-you" ? waitingChild(s.children) : null;
+  if (s.state === "needs-you" || s.needsYou) out.push({ text: "Needs you", tone: "warn" });
+  else if (waiting) out.push({ text: `${waiting.label} needs you`, tone: "warn" });
+  const problem = prProblem(s);
+  if (problem) out.push({ text: problem === "CI failing" ? `#${s.pr!.number} CI failing` : `#${s.pr!.number} merge conflict`, tone: "alert" });
+  if (s.account.nearLimit) out.push({ text: `${s.account.name} near its limit`, tone: "warn" });
+  if (s.quiet) out.push({ text: s.quiet, tone: "neutral" });
+  return out;
+}
+
 /**
  * The one trailing slot, by priority (spec §5.2). Rank 4 rolls up: a waiting
  * descendant lights the same amber dot, and the tooltip names it (D6). Rank 5
@@ -177,6 +190,16 @@ export function prProblem(s: RowSession): "CI failing" | "merge conflict" | null
  * the second line, so `second` leaves it out of the slot. Pure.
  */
 export function trailing(s: RowSession, { counts = true, second = false }: { counts?: boolean; second?: boolean } = {}): ReactNode {
+  // A two-line row says these on its own attention line; the slot keeps the running count.
+  if (second) {
+    const running = counts ? runningOf(s.children) : 0;
+    return running ? (
+      <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-ac-muted" title={`${childNoun(s)} · ${running} running`}>
+        <Bot className="size-3.5" />
+        {running}
+      </span>
+    ) : null;
+  }
   if (s.account.nearLimit) return <span className="shrink-0 text-[11px] text-ac-warn-text" title={`${s.account.name} is near its limit`}>{s.account.name}</span>;
   const problem = prProblem(s);
   if (problem && !second) return <span className="shrink-0 text-[11px] text-ac-alert-text">{problem}</span>;
@@ -198,6 +221,7 @@ export function trailing(s: RowSession, { counts = true, second = false }: { cou
 
 /** The trailing slot speaks about the children — a waiting descendant's dot or the running count — so it unfolds them. Pure. */
 export function childrenSlot(s: RowSession, { second = false }: { second?: boolean } = {}): boolean {
+  if (second) return runningOf(s.children) > 0;
   if (s.account.nearLimit || (prProblem(s) && !second)) return false;
   if (s.state !== "needs-you" && (s.needsYou || waitingChild(s.children))) return !!waitingChild(s.children);
   if (s.quiet) return false;
@@ -510,7 +534,7 @@ export function SessionRow({
   // D12 (owner, Q1 2026-11-22): the active open row and its children are one block — one raise fill, one Marker.
   const block = !!active && kids;
   const slot = trailing(s, { second });
-  const problem = prProblem(s);
+  const asks = second ? attention(s) : [];
   const ref = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLSpanElement>(null);
   useEllipsisRefresh(titleRef, active);
@@ -574,6 +598,22 @@ export function SessionRow({
             slot
           )}
         </div>
+        {/* What to do, on its own line between the title and the account (owner, 2026-11-24): highlighted, so it reads as a task. */}
+        {second && asks.length > 0 && (
+          <div data-attention="" className="mt-1 flex min-w-0 flex-wrap items-center gap-1 pl-4">
+            {asks.map((a) =>
+              a.tone === "neutral" ? (
+                <span key={a.text} className="text-[11px] text-ac-muted">
+                  {a.text}
+                </span>
+              ) : (
+                <Chip key={a.text} kind="status" tone={a.tone}>
+                  {a.text}
+                </Chip>
+              ),
+            )}
+          </div>
+        )}
         {second && (
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-4 text-[11px] text-ac-muted">
             {s.account.color && <AccountMark color={s.account.color} />}
@@ -581,7 +621,6 @@ export function SessionRow({
             <span>·</span>
             <span className="truncate">{s.branch ?? "no repo"}</span>
             {s.pr && <span className="shrink-0">· #{s.pr.number}</span>}
-            {problem && <span className="shrink-0 text-ac-alert-text">{problem}</span>}
             {age && <span className="ml-auto shrink-0 pl-1">{age}</span>}
           </div>
         )}

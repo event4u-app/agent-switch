@@ -207,13 +207,25 @@ describe("one status vocabulary (5.1)", () => {
   const on = { onSelect: () => {}, onToggleChildren: () => {}, onCheck: () => {} };
   const failing = (over: Partial<RowSession> = {}) => s("ci", { state: "needs-you", pr: { number: 12, ci: "FAILURE", mergeable: "MERGEABLE" }, ...over });
 
-  it("a row carries one status mark: CI failing is words on the second line, never a ⊗ beside the state dot", () => {
+  it("a row carries one status mark: CI failing is words on its own attention line, never a ⊗ beside the state dot", () => {
     const { container } = render(<SessionRow s={failing()} comfortable {...on} />);
     expect(container.querySelectorAll("svg")).toHaveLength(0);
-    const ci = screen.getAllByText("CI failing");
+    const ci = screen.getAllByText(/CI failing/);
     expect(ci, "said once").toHaveLength(1);
+    expect(ci[0].textContent).toBe("#12 CI failing");
     expect(ci[0].className).toMatch(/text-ac-alert-text/);
-    expect(ci[0].parentElement!.textContent).toContain("#12");
+    // Between the title and the account line (owner, 2026-11-24).
+    expect(ci[0].closest("[data-attention]")).not.toBeNull();
+  });
+
+  it("the attention line: needs you, a waiting child, the PR problem, a near limit — highlighted, in that order", () => {
+    const row = s("x", { state: "idle", needsYou: true, pr: { number: 5, ci: "SUCCESS", mergeable: "CONFLICTING" }, account: { name: "side", nearLimit: true } });
+    render(<SessionRow s={row} comfortable {...on} />);
+    const line = document.querySelector("[data-attention]")!;
+    expect([...line.children].map((c) => c.textContent)).toEqual(["Needs you", "#5 merge conflict", "side near its limit"]);
+    cleanup();
+    render(<SessionRow s={s("calm")} comfortable {...on} />);
+    expect(document.querySelector("[data-attention]"), "nothing to do: no extra line").toBeNull();
   });
 
   it("a compact row says CI failing and merge conflict in words in its one trailing slot", () => {

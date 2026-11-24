@@ -288,11 +288,18 @@ describe("one trailing glyph per row (spec §5.2)", () => {
     expect(toggle.className).toMatch(/group-hover\/row:opacity-100/);
   });
 
-  it("a slot taken by a higher priority keeps its glyph alone", () => {
+  it("a slot taken by a higher priority keeps its glyph alone (compact)", () => {
     const d = data();
-    render(<V3Window data={{ ...d, sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow", account: { name: "side", nearLimit: true }, children: kid("working") }] }} slots={slots} act={vi.fn()} />);
+    render(<V3Window data={{ ...d, sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow", account: { name: "side", nearLimit: true }, children: kid("working") }] }} slots={slots} act={vi.fn()} layout={{ load: () => ({ comfortable: false }), save: vi.fn() }} />);
     expect(screen.queryByLabelText("Show 1 subagent")).toBeNull();
     expect(screen.getByTitle("side is near its limit")).toBeTruthy();
+  });
+
+  it("a two-line row says it on its attention line; the slot keeps the running count", () => {
+    const d = data();
+    render(<V3Window data={{ ...d, sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow", account: { name: "side", nearLimit: true }, children: kid("working") }] }} slots={slots} act={vi.fn()} />);
+    expect(screen.getByText("side near its limit")).toBeTruthy();
+    expect(screen.getByLabelText("Show 1 subagent")).toBeTruthy();
   });
 });
 
