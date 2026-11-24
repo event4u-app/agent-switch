@@ -358,7 +358,7 @@ export function SessionBar({ s, openIn, chipOpen, menuOpen, accountWhy, on }: { 
               aria-disabled={off || undefined}
               title={why ?? (s.hosted ? `${label} · switches between turns` : `${label} · read-only here — you type in your terminal`)}
               onClick={off ? undefined : () => on.view(id)}
-              className={cn("inline-flex h-full items-center gap-1.5 rounded-md px-2 text-xs", s.view === id ? "bg-ac-brand-tint font-medium text-ac-brand-text shadow-[inset_0_0_0_1px_var(--ac-brand-line)]" : "text-ac-muted", off && "opacity-60")}
+              className={cn("inline-flex h-full items-center gap-1.5 rounded-md px-2 text-xs", s.view === id ? "bg-ac-raise font-medium text-ac-text" : "text-ac-muted", off && "opacity-60")}
             >
               {icon}
               {label}
