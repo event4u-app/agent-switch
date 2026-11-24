@@ -91,3 +91,15 @@ describe("limits (spec §5.3, §7.5)", () => {
     expect(aheadOfPace(acct({ windows: [{ label: "5h", used: 50, resetsAtMs: null, pace: 45 }] }))).toEqual([]);
   });
 });
+
+describe("the open session's account (owner, 2026-11-24)", () => {
+  it("is marked like the active session row: frame, raised, bold name, aria-current", () => {
+    render(<LimitsStrip accounts={[acct(), acct({ key: "claude/home", name: "home" })]} nowMs={NOW} openKey={null} currentKey="claude/home" onOpen={vi.fn()} onSignIn={vi.fn()} />);
+    const rows = screen.getAllByRole("button").filter((b) => b.hasAttribute("data-popover-trigger"));
+    const cur = rows.find((r) => r.hasAttribute("data-current"))!;
+    expect(cur.textContent).toMatch(/^home/);
+    expect(cur.getAttribute("aria-current")).toBe("true");
+    expect(cur.className).toMatch(/bg-ac-raise/);
+    expect(rows.filter((r) => r.hasAttribute("data-current"))).toHaveLength(1);
+  });
+});

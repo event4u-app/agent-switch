@@ -871,7 +871,7 @@ export function V3Window({
           batch={batch([...(selection ?? [])])}
         />
       </div>
-      <LimitsStrip accounts={data.limits} nowMs={data.nowMs} openKey={limitsOpen} onOpen={(key) => setOverlay((o) => (o && typeof o === "object" && "limits" in o && o.limits === key ? null : { limits: key }))} onSignIn={(key) => act({ type: "account", op: "sign-in", key })} />
+      <LimitsStrip accounts={data.limits} nowMs={data.nowMs} openKey={limitsOpen} currentKey={bar && activeSession ? (data.limits.find((l) => l.tool === activeSession.split("/")[0] && l.name === bar.account.name)?.key ?? null) : null} onOpen={(key) => setOverlay((o) => (o && typeof o === "object" && "limits" in o && o.limits === key ? null : { limits: key }))} onSignIn={(key) => act({ type: "account", op: "sign-in", key })} />
     </aside>
   );
 

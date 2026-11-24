@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { cn } from "../lib/utils.js";
 import type { IdentityColor } from "../vm/types.js";
 import { AppWindow, Copy } from "lucide-react";
-import { AccountMark, Chip, checkedAgo, duration, pct } from "./kit.js";
+import { AccountMark, Chip, Marker, checkedAgo, duration, pct } from "./kit.js";
 
 export interface LimitWindow {
   /** "5h", "week", "week · Opus" */
@@ -107,7 +107,7 @@ const ROW_GRID = "grid grid-cols-[minmax(0,1fr)_44px_34px_58px] items-center gap
 
 /** One row of the Limits strip (proposal D): account and tool · bar · used · reset, always. Near limit is colour and the number;
  *  an old reading is italic with its age on hover; a missing sign-in fills the row. */
-export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount; nowMs: number; open?: boolean; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
+export function LimitRow({ a, nowMs, open, current, onOpen, onSignIn }: { a: LimitAccount; nowMs: number; open?: boolean; /** The account the open session runs on (owner, 2026-11-24): marked like the active session row. */ current?: boolean; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
   const w = rowWindow(a);
   const stale = isStale(a, nowMs);
   const age = stale ? `${duration(nowMs - a.checkedMs!)} old` : null;
@@ -124,12 +124,15 @@ export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount
         e.preventDefault();
         onOpen(a.key);
       }}
-      title={tip || undefined}
-      className={cn(ROW_GRID, "h-6 rounded-md px-2", open ? "bg-ac-raise" : "hover:bg-ac-raise")}
+      title={[current && "The open session runs on this account", tip].filter(Boolean).join("\n") || undefined}
+      aria-current={current || undefined}
+      data-current={current ? "" : undefined}
+      className={cn(ROW_GRID, "relative h-6 rounded-md px-2", open || current ? "bg-ac-raise" : "hover:bg-ac-raise")}
     >
-      <span className={cn("flex min-w-0 items-center gap-1.5 text-xs text-ac-soft", stale && "italic")}>
+      {current && <Marker tone="neutral" />}
+      <span className={cn("flex min-w-0 items-center gap-1.5 text-xs", current ? "text-ac-text" : "text-ac-soft", stale && "italic")}>
         <AccountMark color={a.color} />
-        <span className="shrink-0">{a.name}</span>
+        <span className={cn("shrink-0", current && "font-semibold")}>{a.name}</span>
         <span className="min-w-0 truncate text-[11px] text-ac-muted">
           {a.tool === "codex" ? "Codex" : "Claude"}
           {w && w.label !== "5h" && ` · ${w.label.replace("week · ", "week ")}`}
@@ -148,14 +151,15 @@ export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount
         // Not read yet: never an empty track, which reads as 0 % used.
         <span className="col-span-3 justify-self-end text-[11px] text-ac-muted">no data yet</span>
       ) : (
-        <LimitCells w={w} protect={a.protect} stale={stale} nowMs={nowMs} tick={false} bar="h-1" />
+        // On a raised row (open, or the current account) the track steps up a shade so it stays visible.
+        <LimitCells w={w} protect={a.protect} stale={stale} nowMs={nowMs} tick={false} bar={open || current ? "h-1 bg-ac-line2" : "h-1"} />
       )}
     </div>
   );
 }
 
 /** Claude first, then Codex (spec §5.3). */
-export function LimitsStrip({ accounts, nowMs, openKey, onOpen, onSignIn }: { accounts: LimitAccount[]; nowMs: number; openKey: string | null; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
+export function LimitsStrip({ accounts, nowMs, openKey, currentKey, onOpen, onSignIn }: { accounts: LimitAccount[]; nowMs: number; openKey: string | null; /** The open session's account; absent: none marked. */ currentKey?: string | null; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
   const ordered = [...accounts.filter((a) => a.tool === "claude"), ...accounts.filter((a) => a.tool === "codex")];
   return (
     <section aria-label="Limits" className="relative shrink-0 border-t border-ac-line px-1.5 pb-1.5 pt-1">
@@ -166,7 +170,7 @@ export function LimitsStrip({ accounts, nowMs, openKey, onOpen, onSignIn }: { ac
         <span className="col-span-3 justify-self-end text-ac-muted">resets</span>
       </div>
       {ordered.map((a) => (
-        <LimitRow key={a.key} a={a} nowMs={nowMs} open={a.key === openKey} onOpen={onOpen} onSignIn={onSignIn} />
+        <LimitRow key={a.key} a={a} nowMs={nowMs} open={a.key === openKey} current={a.key === currentKey} onOpen={onOpen} onSignIn={onSignIn} />
       ))}
     </section>
   );
