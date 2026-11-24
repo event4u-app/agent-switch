@@ -384,7 +384,7 @@ export function ChildGroups({ kids, render }: { kids: readonly ChildModel[]; ren
             >
               {open ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
               <span className="font-medium text-ac-soft">{g.id}</span>
-              <span data-group-count="" className="min-w-[18px] shrink-0 rounded-full bg-ac-raise px-1.5 text-center text-[10.5px] text-ac-soft">{g.rows.length}</span>
+              <span data-group-count="" className="ml-auto inline-flex h-4 min-w-[18px] shrink-0 items-center justify-center rounded-full bg-ac-raise px-1.5 text-[10.5px] tabular-nums leading-none text-ac-soft">{g.rows.length}</span>
             </button>
             {open && g.rows.map((c) => <div key={c.id}>{render(c)}</div>)}
           </div>
@@ -478,13 +478,13 @@ export function ChildTree({ kids, parent, depth = 1, rails = [], ...h }: { kids:
                 aria-expanded={shown}
                 aria-label={`${shown ? "Hide" : "Show"} ${idle.length} idle`}
                 onClick={toggleIdle}
-                className="flex h-6 min-w-0 items-center gap-2 rounded-md pr-2 text-[11.5px] text-ac-muted hover:text-ac-text"
+                className="flex h-6 w-full min-w-0 items-center gap-2 rounded-md pr-2 text-[11.5px] text-ac-muted hover:text-ac-text"
               >
                 <span className="-mx-0.5 inline-flex w-3 shrink-0 justify-center">{shown ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}</span>
                 {/* Reads like the group headers: name, then its count (owner, 2026-11-24). */}
                 <span className="font-medium text-ac-soft">Idle</span>
                 {/* Inside the active block (raised) the pill steps a shade deeper, so it stays visible. */}
-                <span data-group-count="" className="min-w-[18px] shrink-0 rounded-full bg-ac-line px-1.5 text-center text-[10.5px] text-ac-soft">{idle.length}</span>
+                <span data-group-count="" className="ml-auto inline-flex h-4 min-w-[18px] shrink-0 items-center justify-center rounded-full bg-ac-line px-1.5 text-[10.5px] tabular-nums leading-none text-ac-soft">{idle.length}</span>
               </button>
             </div>
           );
@@ -854,7 +854,7 @@ export function SessionsZone({
               {isFolded(g) ? <ChevronRight className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />}
               {group === "project" ? <Folder className="size-3.5 shrink-0" /> : group === "tool" ? <SquareTerminal className="size-3.5 shrink-0" /> : null}
               <span className="min-w-0 truncate font-medium text-ac-soft">{g || (group === "project" ? "No project" : "Other")}</span>
-              <span data-group-count="" className="min-w-[18px] shrink-0 rounded-full bg-ac-raise px-1.5 text-center text-[10.5px] text-ac-soft">{rowsOf(g).length}</span>
+              <span data-group-count="" className="ml-auto inline-flex h-4 min-w-[18px] shrink-0 items-center justify-center rounded-full bg-ac-raise px-1.5 text-[10.5px] tabular-nums leading-none text-ac-soft">{rowsOf(g).length}</span>
             </button>
           ),
           ...(isFolded(g) ? [] : worktreesOf(g)).flatMap(({ wt, rows: all }, i) => {
@@ -908,7 +908,7 @@ export function SessionsZone({
             <button key={g.id} type="button" onClick={() => onDoneToday(g.id === "Older" ? "older" : "today")} title={`Open All sessions · ${g.id}`} className="flex h-6 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[11.5px] text-ac-muted hover:bg-ac-raise hover:text-ac-text">
               <ChevronRight className="size-3 shrink-0" />
               <span className="font-medium text-ac-soft">{g.id}</span>
-              <span data-group-count="" className="min-w-[18px] shrink-0 rounded-full bg-ac-raise px-1.5 text-center text-[10.5px] text-ac-soft">{g.count}</span>
+              <span data-group-count="" className="ml-auto inline-flex h-4 min-w-[18px] shrink-0 items-center justify-center rounded-full bg-ac-raise px-1.5 text-[10.5px] tabular-nums leading-none text-ac-soft">{g.count}</span>
             </button>
           ))}
         </div>
