@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -59,6 +59,48 @@ test("bridge: a second writer is refused while the lease is held; the holder's b
   assert.deepEqual(lines.at(-1), { after: null }, "the lease is released when the bridge ends");
 });
 
+test("bridge: SIGTERM mid-turn lets the turn finish, then closes and releases the lease", async () => {
+  const h = home();
+  const key = "claude/work/9f640d3b-0a51-47b5-944c-934d3148a098";
+  // An agent whose turn takes a while: it answers the user's message after 1.5 s.
+  const slow = path.join(h, "slow-claude.mjs");
+  fs.writeFileSync(
+    slow,
+    `#!${process.execPath}\nlet done=false;process.stdin.on('data',(d)=>{if(done||!String(d).includes('"type":"user"'))return;done=true;setTimeout(()=>process.stdout.write(JSON.stringify({type:'result',subtype:'success',is_error:false,duration_ms:1,total_cost_usd:0})+'\\n'),1500)});process.stdin.on('end',()=>process.exit(0));\n`,
+    { mode: 0o755 },
+  );
+  fs.writeFileSync(path.join(h, "state.json"), JSON.stringify({ active: {}, binaryPaths: { claude: slow } }));
+  // The agent starts in the session's folder: the fixture's own one does not exist here.
+  const tr = path.join(h, "claude", "work", "config", "projects", "-work-fx", "9f640d3b-0a51-47b5-944c-934d3148a098.jsonl");
+  fs.writeFileSync(tr, fs.readFileSync(tr, "utf8").replaceAll('"/work/fx"', JSON.stringify(h)));
+  const code = `const { cmdBridge } = await import(${JSON.stringify(mod)}); await cmdBridge("claude", "9f640d3b-0a51-47b5-944c-934d3148a098", {}); const { InputLeases } = await import(${JSON.stringify(leaseMod)}); console.log(JSON.stringify({ after: new InputLeases(process.env.AGENT_SWITCH_HOME).read(${JSON.stringify(key)}) }));`;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", code], { env: { ...process.env, AGENT_SWITCH_HOME: h }, stdio: ["pipe", "pipe", "pipe"] });
+  let out = "";
+  child.stdout.on("data", (d: Buffer) => (out += d.toString()));
+  const exited = new Promise<number | null>((r) => child.once("exit", (c) => r(c)));
+  const until = async (f: () => boolean, ms: number) => {
+    const end = Date.now() + ms;
+    while (!f() && Date.now() < end) await new Promise((r) => setTimeout(r, 25));
+    return f();
+  };
+  try {
+    assert.ok(await until(() => out.includes('"bridge":"ready"'), 10_000), out);
+    child.stdin.write(JSON.stringify({ cmd: "send", text: "hi" }) + "\n");
+    await new Promise((r) => setTimeout(r, 300));
+    child.kill("SIGTERM");
+    await new Promise((r) => setTimeout(r, 600));
+    assert.equal(child.exitCode, null, "still running: the turn is not cut off");
+    assert.equal(await exited, 0);
+    const lines = out.trim().split("\n").map((l) => JSON.parse(l));
+    const end = lines.findIndex((l) => l.event?.t === "turn.end");
+    const exit = lines.findIndex((l) => l.bridge === "exit");
+    assert.ok(end >= 0 && exit > end, "the turn ended, then the bridge closed");
+    assert.deepEqual(lines.at(-1), { after: null }, "the lease is released");
+  } finally {
+    child.kill("SIGKILL");
+  }
+});
+
 test("bridge: an agent binary that cannot start ends the bridge instead of hanging", () => {
   const h = home();
   fs.writeFileSync(path.join(h, "state.json"), JSON.stringify({ active: {}, binaryPaths: { claude: path.join(h, "no-such-claude") } }));
@@ -99,6 +141,48 @@ test("bridge: a hosted session parked for the chat gets its terminal back when t
     assert.ok(runs().some((l) => /--resume 9f640d3b/.test(l) && !/(^| )-p( |$)/.test(l)), `the window runs the program again, resuming: ${runs().join(" | ")}`);
     const reg = JSON.parse(fs.readFileSync(path.join(h, "host", "sessions.json"), "utf8"));
     assert.equal(reg[key].parked, undefined, "no longer parked");
+  } finally {
+    spawnSync("tmux", ["-L", socket, "kill-server"]);
+  }
+});
+
+test("bridge: handed over to a new chat (SIGUSR2), it closes and leaves the window parked for that chat", { skip: spawnSync("tmux", ["-V"]).status === 0 ? false : "tmux is not installed here" }, async () => {
+  const h = home();
+  const id = "9f640d3b-0a51-47b5-944c-934d3148a098";
+  const key = `claude/work/${id}`;
+  const log = path.join(h, "runs");
+  const fake = path.join(h, "fake-claude-log.mjs");
+  fs.writeFileSync(fake, `#!${process.execPath}\nimport fs from "node:fs";\nfs.appendFileSync(${JSON.stringify(log)}, process.argv.slice(2).join(" ") + "\\n");\nprocess.stdin.on("data", () => {});\nprocess.stdin.on("end", () => process.exit(0));\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(h, "state.json"), JSON.stringify({ active: {}, binaryPaths: { claude: fake } }));
+  // The agent must really start (in the session's folder), or the bridge ends on its own before the handover.
+  const tr = path.join(h, "claude", "work", "config", "projects", "-work-fx", `${id}.jsonl`);
+  fs.writeFileSync(tr, fs.readFileSync(tr, "utf8").replaceAll('"/work/fx"', JSON.stringify(h)));
+  const socket = `asw-bh-${process.pid}`;
+  const env = { ...process.env, AGENT_SWITCH_HOME: h, AGENT_SWITCH_HOST_SOCKET: socket };
+  const hostMod = new URL("../src/host/tmux-host.js", import.meta.url).href;
+  try {
+    const started = spawnSync(process.execPath, ["--input-type=module", "-e", `const { TmuxHost } = await import(${JSON.stringify(hostMod)}); const host = new TmuxHost(process.env.AGENT_SWITCH_HOME); host.start({ provider: "claude", account: "work", configDir: "/tmp", cwd: process.env.AGENT_SWITCH_HOME, bin: ${JSON.stringify(fake)}, sessionId: ${JSON.stringify(id)} }); host.park(${JSON.stringify(key)}, ["sh", "-c", "read x"]);`], { env, encoding: "utf8", timeout: 20_000 });
+    assert.equal(started.status, 0, started.stderr);
+    const child = spawn(process.execPath, ["--input-type=module", "-e", `const { cmdBridge } = await import(${JSON.stringify(mod)}); await cmdBridge("claude", ${JSON.stringify(id)}, {});`], { env, stdio: ["pipe", "pipe", "pipe"] });
+    let out = "";
+    child.stdout.on("data", (d: Buffer) => (out += d.toString()));
+    const exited = new Promise<number | null>((r) => child.once("exit", (c) => r(c)));
+    try {
+      const end = Date.now() + 10_000;
+      while (!out.includes('"bridge":"ready"') && Date.now() < end) await new Promise((r) => setTimeout(r, 25));
+      assert.ok(out.includes('"bridge":"ready"'), out);
+      child.kill("SIGUSR2");
+      assert.equal(await exited, 0);
+      assert.ok(!out.includes('"bridge":"error"'), out);
+    } finally {
+      child.kill("SIGKILL");
+    }
+    const reg = JSON.parse(fs.readFileSync(path.join(h, "host", "sessions.json"), "utf8"));
+    assert.equal(reg[key].parked, true, "still parked: the new chat takes it");
+    const runs = fs.existsSync(log) ? fs.readFileSync(log, "utf8").trim().split("\n") : [];
+    assert.ok(!runs.some((l) => /--resume 9f640d3b/.test(l) && !/(^| )-p( |$)/.test(l)), `no terminal program came back: ${runs.join(" | ")}`);
+    const lease = JSON.parse(spawnSync(process.execPath, ["--input-type=module", "-e", `const { InputLeases } = await import(${JSON.stringify(leaseMod)}); console.log(JSON.stringify(new InputLeases(process.env.AGENT_SWITCH_HOME).read(${JSON.stringify(key)})));`], { env, encoding: "utf8" }).stdout);
+    assert.equal(lease, null, "the lease is free for the new chat");
   } finally {
     spawnSync("tmux", ["-L", socket, "kill-server"]);
   }

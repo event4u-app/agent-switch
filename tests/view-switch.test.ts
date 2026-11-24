@@ -89,6 +89,96 @@ test("refusals: not hosted, a provider without a shared conversation, a running 
   refused(() => toTerminal(deps(host, { writer: () => "app bridge:42" }), "claude/work/s1"), /close the chat first/);
 });
 
+test("the person's switch to the terminal ends a chat bridge left holding the session — never during a turn, never another writer", () => {
+  const ended: string[] = [];
+  const parkedRow = () => [row({ parked: true })];
+  // A bridge that ends brings the window back itself: the switch then has nothing left to do.
+  {
+    const rows = parkedRow();
+    const { host, log } = fakeHost(rows);
+    const d = deps(host, { writer: () => "app bridge:42", endChat: (k, w) => (ended.push(`${k} ${w}`), delete rows[0].parked, true) });
+    assert.equal(toTerminal(d, "claude/work/s1", { takeOver: true }).parked, undefined);
+    assert.deepEqual(ended, ["claude/work/s1 app bridge:42"], "the writer that was checked is the one asked to close");
+    assert.deepEqual(log, [], "the bridge restored it; no second program");
+  }
+  // A bridge that died without restoring: the switch respawns.
+  {
+    const { host, log } = fakeHost(parkedRow());
+    toTerminal(deps(host, { writer: () => "app bridge:42", endChat: () => true }), "claude/work/s1", { takeOver: true });
+    assert.deepEqual(log, ["respawn claude/work/s1 claude --resume s1"]);
+  }
+  const refused = (f: () => unknown, re: RegExp) => assert.throws(f, (e: unknown) => e instanceof ViewRefused && re.test(e.message));
+  const { host } = fakeHost(parkedRow());
+  let asked = 0;
+  const endChat = () => (asked++, true);
+  refused(() => toTerminal(deps(host, { writer: () => "app bridge:42", turnRunning: () => true, endChat }), "claude/work/s1", { takeOver: true }), /switch after this turn/);
+  refused(() => toTerminal(deps(host, { writer: () => "app bridge:42", endChat }), "claude/work/s1"), /close the chat first/);
+  refused(() => toTerminal(deps(host, { writer: () => "app bridge:42", endChat: () => false }), "claude/work/s1", { takeOver: true }), /has not closed yet/);
+  assert.equal(asked, 0, "no takeover asked, or a turn running: the bridge is left alone");
+});
+
+test("chat again on a parked session: a bridge left from before is handed over; one that will not go is a refusal", () => {
+  const refused = (f: () => unknown, re: RegExp) => assert.throws(f, (e: unknown) => e instanceof ViewRefused && re.test(e.message));
+  const { host, log } = fakeHost([row({ parked: true })]);
+  const asked: string[] = [];
+  assert.equal(toChat(deps(host, { writer: () => "app bridge:42", adoptChat: (k, w) => (asked.push(`${k} ${w}`), true) }), "claude/work/s1").parked, true);
+  assert.deepEqual(asked, ["claude/work/s1 app bridge:42"]);
+  assert.deepEqual(log, [], "nothing respawned or parked again: the window waits for the new chat");
+  assert.equal(toChat(deps(host, { adoptChat: () => assert.fail("no writer: nothing to hand over") }), "claude/work/s1").parked, true);
+  refused(() => toChat(deps(host, { writer: () => "app bridge:42", adoptChat: () => false }), "claude/work/s1"), /open in a chat elsewhere/);
+  refused(() => toChat(deps(host, { writer: () => "app bridge:42" }), "claude/work/s1"), /open in a chat elsewhere/);
+});
+
+test("terminalHolds: a live hosted window running its program keeps the chat out, for any provider; parked or gone does not", async () => {
+  const { terminalHolds } = await import("../src/commands/bridge.js");
+  const k = "codex/work/t1";
+  assert.equal(terminalHolds(k, [{ key: k, alive: true }]), true);
+  assert.equal(terminalHolds(k, [{ key: k, alive: true, parked: true }]), false);
+  assert.equal(terminalHolds(k, [{ key: k, alive: false }]), false);
+  assert.equal(terminalHolds(k, [{ key: "codex/work/other", alive: true }]), false);
+  assert.equal(terminalHolds(k, []), false);
+});
+
+test("sameApp: a bridge of the app that runs this CLI, or of an app that has gone; never another app's", async () => {
+  const { sameApp } = await import("../src/commands/view.js");
+  assert.equal(sameApp(10, () => process.ppid), true);
+  assert.equal(sameApp(10, () => 1), true);
+  assert.equal(sameApp(10, () => process.ppid + 100_000), false);
+  assert.equal(sameApp(10, () => null), false, "unknown parent: not ours");
+  assert.equal(sameApp(process.pid), true, "the real lookup: this test's own process");
+});
+
+test("endBridge: signals only a live bridge holder and waits for its process to end", async () => {
+  const { endBridge } = await import("../src/commands/view.js");
+  const leases = new InputLeases(HOME);
+  const key = "claude/work/end1";
+  assert.equal(endBridge(leases, key, { waitMs: 100 }), true, "nobody holds it");
+  // Not our own child: a child we do not reap stays a zombie, which still answers kill(pid, 0).
+  const script = "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000)";
+  const out = spawnSync("sh", ["-c", `"${process.execPath}" -e "${script}" >/dev/null 2>&1 & echo $!`], { encoding: "utf8" });
+  const pid = Number(out.stdout.trim());
+  assert.ok(pid > 0, out.stderr);
+  try {
+    await new Promise((r) => setTimeout(r, 300));
+    leases.acquire(key, { id: "cli:1", pid, kind: "cli" });
+    const signalled: number[] = [];
+    const record = (p: number) => void signalled.push(p);
+    assert.equal(endBridge(leases, key, { waitMs: 100, signal: record }), false, "a CLI writer is never ended");
+    leases.release(key, { id: "cli:1", pid, kind: "cli" });
+    leases.acquire(key, { id: `bridge:${pid}`, pid, kind: "app" });
+    assert.equal(endBridge(leases, key, { expect: "app bridge:1", waitMs: 100, signal: record }), false, "only the bridge that was checked is ended, never one that took over since");
+    assert.deepEqual(signalled, []);
+    assert.equal(endBridge(leases, key, { waitMs: 200, signal: () => {} }), false, "a bridge that does not end in time still holds it");
+    assert.equal(endBridge(leases, key, { expect: `app bridge:${pid}`, waitMs: 5000 }), true, "SIGTERM ends it; a dead holder holds nothing");
+  } finally {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // ended
+    }
+  }
+});
+
 const gate = { skip: TmuxHost.available() ? false : "tmux is not installed here" };
 
 test("20 switches on a real tmux window: one program at a time, always the same conversation", gate, () => {
@@ -138,6 +228,10 @@ test("restoreAfterChat: only a parked session is brought back; it never throws",
   assert.deepEqual(log, ["respawn claude/work/s1 claude --resume s1"]);
   rows[0].parked = true;
   assert.equal(restoreAfterChat("claude/work/s1", deps(host, { writer: () => "app bridge:1" })), null, "a refusal is swallowed");
+  assert.equal(restoreAfterChat("claude/work/s1", deps(host, { writer: () => "app bridge:1" }), "app bridge:1"), "claude/work/s1", "the bridge restores its own window before it lets go of the lease");
+  assert.equal(log.length, 2);
+  rows[0].parked = true;
+  assert.equal(restoreAfterChat("claude/work/s1", deps(host, { writer: () => "app bridge:2" }), "app bridge:1"), null, "another bridge holding it: not this bridge's to restore");
   assert.equal(restoreAfterChat("claude/work/gone", deps(host)), null);
 });
 

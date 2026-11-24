@@ -248,4 +248,8 @@ export class CodexBridge {
   get openApprovals(): string[] {
     return [...this.pending.keys()];
   }
+  /** A turn is starting or running. */
+  get isRunning(): boolean {
+    return this.turnId !== null;
+  }
 }

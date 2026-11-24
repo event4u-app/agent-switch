@@ -25,7 +25,7 @@ import { clearPending, writePending, type PendingItem } from "../bridge/pending.
 import { liveSessions } from "../api.js";
 import { eventFile, lastHookCwd, readEvents } from "../hooks.js";
 import { InputLeases, LeaseHeld, type Holder } from "../host/lease.js";
-import { TmuxHost, type HostedSession } from "../host/tmux-host.js";
+import { TmuxHost, type HostedRow, type HostedSession } from "../host/tmux-host.js";
 import { restoreAfterChat } from "./view.js";
 import { configDir, die, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
 import { provider as providerOf, type ProviderId } from "../providers.js";
@@ -219,6 +219,11 @@ export function cmdFiles(arg: string | undefined, flags: Record<string, string |
 }
 
 /** Refuse a session that runs elsewhere: the bridge must be its only writer. */
+/** Does a live hosted window run the session's program (not parked for a chat)? Pure. */
+export function terminalHolds(key: string, hosted: readonly Pick<HostedRow, "key" | "parked" | "alive">[]): boolean {
+  return hosted.some((s) => s.key === key && s.alive !== false && !s.parked);
+}
+
 function runsElsewhere(t: Target): boolean {
   if (!t.sessionId || t.provider !== "claude") return false;
   return liveSessions(configDir("claude", t.account)).some((s) => s.sessionId === t.sessionId);
@@ -327,9 +332,12 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
     t = { key: `${providerId}/${routed}/new`, provider: providerId, account: routed, sessionId: null, cwd, transcript: null };
   } else {
     if (!arg) die("usage: agent-switch bridge <session> [--mode default|acceptEdits|plan] [--model M] · bridge --new [profile] --cwd DIR");
-    const found = resolveSession(arg) ? target(arg) : hostedTarget(arg, TmuxHost.available() ? new TmuxHost(ROOT).list() : []);
+    const hosted = TmuxHost.available() ? new TmuxHost(ROOT).list() : [];
+    const found = resolveSession(arg) ? target(arg) : hostedTarget(arg, hosted);
     if (!found) return refuse(arg, `no Claude or Codex session ${arg}`);
     t = found;
+    // Its window in Agent Switch runs the program (any provider): the chat starts only once the window is parked for it.
+    if (terminalHolds(t.key, hosted)) return refuse(t.key, `${t.key} is open in its terminal in Agent Switch; switch it to the chat there`);
     if (runsElsewhere(t)) return refuse(t.key, `${t.key} is running in a terminal; open it there, or take it over first`);
   }
 
@@ -372,12 +380,16 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
     clearInterval(renew);
     clearInterval(inbox);
     clearPending(ROOT, t.key);
+    // A hosted session switched to chat gets its terminal back (Phase 4) — while this bridge
+    // still holds the lease, so nobody else can bring it back a second time in between.
+    // Handed over to a new chat (SIGUSR2): the window stays parked for it.
+    if (t.sessionId && !handedOver) restoreAfterChat(t.key, undefined, `${holder.kind} ${holder.id}`);
     if (t.sessionId) leases.release(t.key, holder);
-    // A hosted session switched to chat gets its terminal back (Phase 4).
-    if (t.sessionId) restoreAfterChat(t.key);
   };
 
   let send: (c: BridgeCommand) => void = () => {};
+  let busy: () => boolean = () => false;
+  let handedOver = false;
   let openNow: () => readonly string[] = () => [];
   const inbox = setInterval(() => t.sessionId && drainInbox(ROOT, t.key, bridgeApplier(openNow, (c) => send(c))), INBOX_POLL_MS);
   let finished: Promise<void>;
@@ -387,6 +399,7 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
       const b = new CodexBridge({ key: t.key, threadId: t.sessionId, cwd: t.cwd, server, out: (o) => (out(o), "bridge" in o && o.bridge === "exit" && res()), onSession: (id) => sessionNamed(id), onApprovals: (items) => approvals(items) });
       send = (c) => b.command(c);
       openNow = () => b.openApprovals;
+      busy = () => b.isRunning;
       b.start().catch((e: unknown) => out({ bridge: "error", message: e instanceof Error ? e.message : String(e) }));
     });
   } else {
@@ -408,6 +421,7 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
       });
       send = (c) => b.command(c);
       openNow = () => b.openApprovals;
+      busy = () => b.isRunning || b.queued > 0;
       b.start();
     });
   }
@@ -422,7 +436,26 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
     }
   });
   rl.on("close", () => send({ cmd: "close" }));
+  // `view <key> terminal` ends a chat the app lost track of: close as if the chat closed, so the
+  // window gets its program back. Never mid-turn: the close waits for the turn (and anything
+  // queued) to end. Kept until `done()` has run, so a second signal cannot cut a restore short.
+  let closing = false;
+  const onTerm = () => {
+    if (closing) return;
+    closing = true;
+    const tick = () => (busy() ? void setTimeout(tick, 250) : send({ cmd: "close" }));
+    tick();
+  };
+  // `view <key> chat` from an app window that lost this chat (a reload) takes it over: same close, window stays parked.
+  const onHandover = () => {
+    handedOver = true;
+    onTerm();
+  };
+  process.on("SIGTERM", onTerm);
+  process.on("SIGUSR2", onHandover);
   await finished;
   rl.close();
   done();
+  process.off("SIGTERM", onTerm);
+  process.off("SIGUSR2", onHandover);
 }
