@@ -83,3 +83,16 @@ describe("window frame (spec §4)", () => {
     }
   });
 });
+
+describe("the notification bell (owner, 2026-11-24, as in v2)", () => {
+  it("sits right before Settings, carries the count and opens Needs you", () => {
+    const onInbox = vi.fn();
+    render(<TitleBar health="ready" inbox={null} notifications={12} {...actions} onInbox={onInbox} />);
+    const buttons = screen.getAllByRole("button").map((b) => b.getAttribute("aria-label"));
+    expect(buttons.slice(-2)).toEqual(["Notifications", "Settings  ⌘,"]);
+    const bell = screen.getByRole("button", { name: "Notifications" });
+    expect(bell.textContent).toBe("9+");
+    fireEvent.click(bell);
+    expect(onInbox).toHaveBeenCalledOnce();
+  });
+});
