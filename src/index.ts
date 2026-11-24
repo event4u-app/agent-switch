@@ -86,6 +86,7 @@ import {
   cmdOsNotify,
   cmdQuietHours,
 } from "./commands/settings.js";
+import { cmdDebugLog } from "./commands/debug-log.js";
 import { cmdConfig, cmdShare } from "./commands/sharing.js";
 import { cmdLaunch } from "./commands/launch.js";
 import {
@@ -269,6 +270,7 @@ async function main(): Promise<void> {
     case "protection": return cmdProtection(positional[0], positional.slice(1), flags);
     case "pool": case "pools": return cmdPool(positional[0], positional.slice(1), flags);
     case "gui-settings": return cmdGuiSettings(positional[0], positional.slice(1), flags);
+    case "debug-log": return cmdDebugLog(positional[0], positional.slice(1), flags);
     case "help": case "--help": case "-h": return usage();
     // A bare `agent-switch` (no command) launches the GUI; an unknown command
     // still prints usage and exits non-zero.

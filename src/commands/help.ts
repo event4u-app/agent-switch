@@ -86,6 +86,7 @@ Run with no command to launch the tray/menubar GUI (single-instance).
   agent-switch pool [list|create|rename|delete|add|remove|suggest] [--json]    optional groups a folder rule can point at
   agent-switch auth-status [--provider P] [--json]   per-profile login state from the provider's store (no tokens)
   agent-switch activity [--limit N] [--json]   what agent-switch itself did, and why
+  agent-switch debug-log [--json] | status | on|off|clear | reveal   the app's last 100 actions and errors, for bug reports (no prompts or file contents)
   agent-switch picks [--limit N] [--json]      which account each wrapped start chose, and why
   agent-switch limits [--provider P] [--json]  every account's limits from cache: usable or why not, and how fresh
   agent-switch switch list|show|request|decide … [--json]   switch requests near a limit: raise one, or record your decision (first decision counts)
