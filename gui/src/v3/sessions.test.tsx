@@ -210,27 +210,30 @@ describe("one status vocabulary (5.1)", () => {
   const on = { onSelect: () => {}, onToggleChildren: () => {}, onCheck: () => {} };
   const failing = (over: Partial<RowSession> = {}) => s("ci", { state: "needs-you", pr: { number: 12, ci: "FAILURE", mergeable: "MERGEABLE" }, ...over });
 
-  it("a row carries one status mark: CI failing is words on its own attention line, never a ⊗ beside the state dot", () => {
+  it("a row carries one status mark: CI failing tints the title line red and is said in its tooltip, never a ⊗ beside the state dot", () => {
     const { container } = render(<SessionRow s={failing()} comfortable {...on} />);
     expect(container.querySelectorAll("svg")).toHaveLength(0);
-    const ci = screen.getAllByText(/CI failing/);
-    expect(ci, "said once").toHaveLength(1);
-    expect(ci[0].textContent).toMatch(/#12 CI failing$/);
-    // Between the title and the account line (owner, 2026-11-24), on the red bar.
-    expect(ci[0].closest("[data-attention]")!.className).toMatch(/text-ac-alert-text/);
+    // The title line carries the colour; the words go to the tooltip (owner, 2026-11-24).
+    const line = container.querySelector("[data-attention]")!;
+    expect(line.className).toMatch(/bg-ac-alert-tint/);
+    expect(line.getAttribute("title")).toMatch(/#12 CI failing$/);
+    expect(screen.queryByText(/CI failing/), "no extra line").toBeNull();
   });
 
   it("the attention line: needs you, a waiting child, the PR problem, a near limit — highlighted, in that order", () => {
     const row = s("x", { state: "idle", needsYou: true, pr: { number: 5, ci: "SUCCESS", mergeable: "CONFLICTING" }, account: { name: "side", nearLimit: true } });
     render(<SessionRow s={row} comfortable {...on} />);
     const line = document.querySelector("[data-attention]")!;
-    // One bar, in that order, in its most serious tone (owner, 2026-11-24: info blue, warnings orange, problems red).
-    expect(line.textContent).toBe("Needs you · #5 merge conflict · side near its limit");
+    // The title line in its most serious tone; the words, in that order, in its tooltip (owner, 2026-11-24).
+    expect(line.getAttribute("title")).toBe("Needs you\n#5 merge conflict\nside near its limit");
     expect(line.getAttribute("data-tone")).toBe("alert");
     expect(line.className).toMatch(/bg-ac-alert-tint/);
     cleanup();
     render(<SessionRow s={s("calm")} comfortable {...on} />);
-    expect(document.querySelector("[data-attention]"), "nothing to do: no extra line").toBeNull();
+    expect(document.querySelector("[data-attention]"), "nothing to do: no tint").toBeNull();
+    cleanup();
+    render(<SessionRow s={s("q", { quiet: "no update in 34m" })} comfortable {...on} />);
+    expect(document.querySelector("[data-attention]")!.className, "information is not tinted").not.toMatch(/-tint/);
   });
 
   it("needs you takes the accent from the settings, over a warning, under a problem (owner, 2026-11-24)", () => {
@@ -243,7 +246,6 @@ describe("one status vocabulary (5.1)", () => {
       const line = bar(row);
       expect(line.getAttribute("data-tone")).toBe("needs");
       expect(line.className).toMatch(/bg-ac-brand-tint/);
-      expect(line.className).toMatch(/text-ac-brand-text/);
     }
     expect(bar(s("w", { state: "needs-you", account: { name: "side", nearLimit: true } })).getAttribute("data-tone"), "over a warning").toBe("needs");
     expect(bar(s("a", { state: "needs-you", pr: { number: 7, ci: "FAILURE", mergeable: "MERGEABLE" } })).getAttribute("data-tone"), "under a problem").toBe("alert");
