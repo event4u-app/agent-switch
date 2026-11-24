@@ -58,6 +58,19 @@ describe("Settings (spec §10.5)", () => {
     expect(screen.getByText(/Off: Agent Switch never brings a terminal to the front/)).toBeTruthy();
   });
 
+  it("Open in: 'Terminal starts run in Agent Switch' shows the read value and changes it; unread hides it", () => {
+    const on = { setDefault: vi.fn(), focusTerminal: vi.fn(), terminalSync: vi.fn() };
+    const { unmount } = render(<OpenInSettings defaultTarget={null} perRepo={{}} focusTerminal terminalSync on={on} targets={[]} />);
+    const sw = screen.getByRole("switch", { name: "Terminal starts run in Agent Switch" });
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/Closing the terminal window leaves the session running/)).toBeTruthy();
+    fireEvent.click(sw);
+    expect(on.terminalSync).toHaveBeenCalledWith(false);
+    unmount();
+    render(<OpenInSettings defaultTarget={null} perRepo={{}} focusTerminal terminalSync={null} on={on} targets={[]} />);
+    expect(screen.queryByRole("switch", { name: "Terminal starts run in Agent Switch" })).toBeNull();
+  });
+
   it("Open in: a Terminal row lists only installed terminals and shows the chosen one; no row without any", () => {
     const on = { setDefault: vi.fn(), setTerminal: vi.fn(), focusTerminal: vi.fn() };
     const terminals = [

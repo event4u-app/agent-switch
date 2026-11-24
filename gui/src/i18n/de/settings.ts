@@ -338,6 +338,8 @@ export const settings: { readonly [K in keyof typeof en]: string } = {
   "settings.advanced.windowPrevious": "Vorheriges",
   "settings.advanced.chatMarkdown": "Chat-Antworten formatieren",
   "settings.advanced.chatMarkdownDetail": "Tabellen, Code, Diffs und aufklappbare Abschnitte in Agent-Antworten. Aus zeigt jede Antwort als reinen Text.",
+  "settings.advanced.doneAfter": "Done today nach",
+  "settings.advanced.doneAfterDetail": "Eine Sitzung, die so lange ruht, verlässt die Sitzungsliste und zählt unter Done today; ruht sie länger als einen Tag, unter „Older than a day“. Wartet sie auf Dich oder arbeitet sie, bleibt sie.",
   "settings.advanced.sameAccount": "Gleiches Konto an zwei Orten",
   "settings.advanced.sameAccountDetail":
     "Warnen passt für die meisten Setups; Blockieren nur für Anmeldungen, die beim Teilen kaputtgehen.",

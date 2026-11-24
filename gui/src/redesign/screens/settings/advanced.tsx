@@ -7,7 +7,7 @@ import { Segmented } from "../../../ui/Segmented.js";
 import { SettingGroup, SettingRow } from "../../../ui/Setting.js";
 import { TextInput } from "../../../ui/TextInput.js";
 import { useAS } from "../../../vm/store.js";
-import { getChatMarkdown, getUiWindow, setChatMarkdown, setUiWindow, type UiWindow } from "../../../settings-store.js";
+import { DONE_AFTER_CHOICES, getChatMarkdown, getDoneAfterMin, getUiWindow, setChatMarkdown, setDoneAfterMin, setUiWindow, type DoneAfterMin, type UiWindow } from "../../../settings-store.js";
 import { Switch } from "../../../ui/Switch.js";
 import { setMarkdownEnabled } from "../../../v3/markdown/Markdown.js";
 import type { GuardPolicy } from "../../../vm/types.js";
@@ -27,6 +27,7 @@ export function AdvancedSettings() {
   const run = useRun();
   const [confirm, setConfirm] = useState("");
   const [markdown, setMarkdown] = useState(getChatMarkdown);
+  const [doneAfter, setDoneAfter] = useState(getDoneAfterMin);
   const [busy, setBusy] = useState(false);
   const armed = uninstallArmed(confirm);
 
@@ -54,6 +55,19 @@ export function AdvancedSettings() {
               { value: "v3", label: t("settings.advanced.windowV3") },
               { value: "2.11", label: t("settings.advanced.windowPrevious") },
             ]}
+          />
+        </SettingRow>
+        <SettingRow title={t("settings.advanced.doneAfter")} detail={t("settings.advanced.doneAfterDetail")}>
+          <Segmented<`${DoneAfterMin}`>
+            label={t("settings.advanced.doneAfter")}
+            size="sm"
+            value={`${doneAfter}`}
+            onChange={(v) => {
+              const min = Number(v) as DoneAfterMin;
+              setDoneAfterMin(min);
+              setDoneAfter(min);
+            }}
+            options={DONE_AFTER_CHOICES.map((m) => ({ value: `${m}` as `${DoneAfterMin}`, label: t("settings.general.minutes", { n: m }) }))}
           />
         </SettingRow>
         <SettingRow title={t("settings.advanced.chatMarkdown")} detail={t("settings.advanced.chatMarkdownDetail")}>

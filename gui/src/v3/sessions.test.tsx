@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { SessionRow, SessionsZone, childNoun, childrenFromCli, liveOrder, sortLive, type RowSession } from "./sessions.js";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { SessionRow, SessionsFooter, SessionsZone, childNoun, childrenFromCli, liveOrder, sortLive, type RowSession } from "./sessions.js";
 
 afterEach(cleanup);
 const s = (key: string, over: Partial<RowSession> = {}): RowSession => ({ key, title: `title ${key}`, state: "idle", account: { name: "work", nearLimit: false }, branch: "main", pr: null, children: [], needsYou: false, ...over });
 const batch = { onClear: vi.fn(), onPin: vi.fn(), onArchive: vi.fn(), onClean: vi.fn(), onEnd: vi.fn() };
 const zone = (sessions: RowSession[], extra: Partial<Parameters<typeof SessionsZone>[0]> = {}) => (
-  <SessionsZone sessions={sessions} activeKey={null} selection={null} openKeys={new Set()} onSelect={vi.fn()} onToggleChildren={vi.fn()} onCheck={vi.fn()} onCleanUp={vi.fn()} onDoneToday={vi.fn()} batch={batch} {...extra} />
+  <SessionsZone sessions={sessions} activeKey={null} selection={null} openKeys={new Set()} onSelect={vi.fn()} onToggleChildren={vi.fn()} onCheck={vi.fn()} batch={batch} {...extra} />
 );
 
 describe("children from the CLI", () => {
@@ -73,12 +73,52 @@ describe("Sessions zone (spec §5.2)", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("'Done today' is one row with Clean up", () => {
+});
+
+describe("the pinned footer", () => {
+  it("the list keeps only the active rows; quiet and older ones are not drawn there", () => {
+    render(zone([s("a"), s("o1", { older: true }), s("d", { doneToday: true })]));
+    expect(screen.getByText("title a")).toBeTruthy();
+    expect(screen.queryByText("title o1")).toBeNull();
+    expect(screen.queryByText("title d")).toBeNull();
+    expect(screen.queryByText(/Done today|Older than a day/)).toBeNull();
+  });
+
+  it("Done today and Older than a day look alike, each opens its list, Clean up stays with Done today", () => {
+    const onOpen = vi.fn();
     const onCleanUp = vi.fn();
-    render(zone([s("a"), s("d1", { state: "done", doneToday: true }), s("d2", { state: "done", doneToday: true })], { onCleanUp }));
-    expect(screen.getByText(/Done today 2/)).toBeTruthy();
+    render(<SessionsFooter done={3} older={2} onOpen={onOpen} onCleanUp={onCleanUp} />);
+    const done = screen.getByRole("button", { name: /Done today 3/ });
+    const older = screen.getByRole("button", { name: /Older than a day 2/ });
+    expect(done.className).toBe(older.className);
+    expect(done.getAttribute("aria-expanded")).toBeNull();
+    expect(older.getAttribute("aria-expanded")).toBeNull();
+    const order = screen.getAllByRole("button").map((b) => b.textContent);
+    expect(order.findIndex((t) => /Done today/.test(t ?? ""))).toBeLessThan(order.findIndex((t) => /Older than a day/.test(t ?? "")));
+    fireEvent.click(done);
+    fireEvent.click(older);
+    expect(onOpen.mock.calls).toEqual([["done"], ["older"]]);
     fireEvent.click(screen.getByText("Clean up"));
     expect(onCleanUp).toHaveBeenCalledOnce();
+  });
+
+  it("the counts sit in badges in one shared column", () => {
+    const { container } = render(<SessionsFooter done={3} older={12} onOpen={vi.fn()} onCleanUp={vi.fn()} />);
+    const badge = (row: RegExp) => within(screen.getByRole("button", { name: row })).getByText(/^\d+$/);
+    expect(badge(/Done today/).textContent).toBe("3");
+    expect(badge(/Older than a day/).textContent).toBe("12");
+    // One grid holds both rows; each row lays its label and badge on that grid's columns.
+    const grid = container.firstElementChild!;
+    expect(grid.className).toMatch(/\bgrid\b/);
+    for (const b of screen.getAllByRole("button", { name: /Done today|Older than a day/ })) expect(b.className).toMatch(/grid-cols-subgrid/);
+  });
+
+  it("an empty group leaves its row out; nothing to show draws nothing", () => {
+    const { container, rerender } = render(<SessionsFooter done={0} older={4} onOpen={vi.fn()} onCleanUp={vi.fn()} />);
+    expect(screen.queryByText(/Done today/)).toBeNull();
+    expect(screen.getByText(/Older than a day/)).toBeTruthy();
+    rerender(<SessionsFooter done={0} older={0} onOpen={vi.fn()} onCleanUp={vi.fn()} />);
+    expect(container.textContent).toBe("");
   });
 });
 

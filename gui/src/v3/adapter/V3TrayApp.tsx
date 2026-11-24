@@ -2,6 +2,7 @@
  *  scopes (capabilities/tray.json), so it reads the queue and the hosted
  *  sessions and nothing else; every action opens or drives the main window; a Needs-you verb goes to its item there. */
 
+import { getDoneAfterMin } from "../../settings-store.js";
 import { useEffect, useState, type CSSProperties } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
@@ -32,6 +33,7 @@ export const TRAY_DEPS: FeedDeps = {
   openTargets: notInTray,
   agents: notInTray,
   remote: notInTray,
+  terminalSync: notInTray,
   codexRows: notInTray,
 };
 
@@ -91,6 +93,7 @@ function V3TrayFrame() {
     terminalApp: "",
     changes: new Map(),
     wantChanges: () => {},
+    doneAfterMs: getDoneAfterMin() * 60_000,
   });
   const main = () => void openMainWindow();
   // Same rule as the v2 tray: a detected desktop app, for a usable account.

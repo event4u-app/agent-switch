@@ -144,6 +144,17 @@ export async function setRemoteControl(account: string, on: boolean): Promise<vo
   await runCli(["remote", "rc", on ? "on" : "off", account]);
 }
 
+/** `terminal-sync --json`: a terminal start runs in Agent Switch's host. */
+export async function getTerminalSync(): Promise<boolean> {
+  const { enabled } = JSON.parse(await runCli(["terminal-sync", "status", "--json"]));
+  return enabled !== false;
+}
+
+/** `terminal-sync on|off`. */
+export async function setTerminalSync(on: boolean): Promise<void> {
+  await runCli(["terminal-sync", on ? "on" : "off"]);
+}
+
 /** `remote ssh on|off`. */
 export async function setRemoteSsh(on: boolean): Promise<void> {
   await runCli(["remote", "ssh", on ? "on" : "off"]);

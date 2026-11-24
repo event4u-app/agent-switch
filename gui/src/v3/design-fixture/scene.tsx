@@ -21,6 +21,7 @@ import { ToolsPage, allNeeds } from "../tools.js";
 import { ExternalBody, HostedTerminal } from "../workbench.js";
 import type { LimitAccount } from "../limits.js";
 import type { RowSession } from "../sessions.js";
+import type { TableSession } from "../pages.js";
 import type { ChangedFile, SummaryFacts } from "../panels.js";
 import { Review } from "../review.js";
 import type { ReviewFileJson } from "../../ipc.js";
@@ -197,7 +198,11 @@ export function makeData(o: { theme: string; accent: Accent; health?: string; aw
   sessions: SESSIONS,
   limits: LIMITS,
   accounts: LIMITS.map((a, i) => ({ ...a, email: a.tool === "codex" ? null : `${a.name}@example.com`, label: ["Work", "Personal", "Other", "Work", "Personal"][i], isDefault: a.name === "work", running: [2, 2, 1, 1, 0][i] })),
-  table: SESSIONS.map((s, i) => ({ key: s.key, title: s.title, state: s.state, live: s.state !== "done", tool: s.key.startsWith("codex") ? "codex" : "claude", account: { name: s.account.name, color: BAR[s.key].color }, branch: s.branch, pr: s.pr && { number: s.pr.number, ci: s.pr.ci }, model: BAR[s.key].model, thinking: BAR[s.key].thinking, contextPct: BAR[s.key].ctx, lastActiveMs: NOW - i * 7 * MIN, project: "agent-switch" })),
+  table: SESSIONS.map((s, i): TableSession => ({ key: s.key, title: s.title, state: s.state, live: s.state !== "done", tool: s.key.startsWith("codex") ? "codex" : "claude", account: { name: s.account.name, color: BAR[s.key].color }, branch: s.branch, pr: s.pr && { number: s.pr.number, ci: s.pr.ci }, model: BAR[s.key].model, thinking: BAR[s.key].thinking, contextPct: BAR[s.key].ctx, lastActiveMs: NOW - i * 7 * MIN, project: "agent-switch", when: s.doneToday ? ("done" as const) : ("active" as const) })).concat([
+    // Quiet for days, still in the transcript list: the footer's "Older than a day".
+    { key: "claude/work/s-old-docs", title: "Docs site search index", state: "idle", live: true, tool: "claude", account: { name: "work", color: "teal" }, branch: "docs/search", pr: null, model: "Sonnet 5.5", thinking: "Medium", contextPct: 22, lastActiveMs: NOW - 3 * 24 * H, project: "agent-switch", when: "older" as const },
+    { key: "claude/personal/s-old-spike", title: "Spike: tmux control mode", state: "done", live: false, tool: "claude", account: { name: "personal", color: "pink" }, branch: "spike/tmux-cc", pr: null, model: "Opus 5.5", thinking: "High", contextPct: 64, lastActiveMs: NOW - 6 * 24 * H, project: "agent-switch", when: "older" as const },
+  ]),
   library: [
     { key: "l1", name: "Rebind ADR discussion", summary: "Why live rebind stays explicit; provider/version checks; recovery path", tags: ["adr", "rebind"], color: "teal", project: "agent-switch", branch: "docs/adr-003", pr: { number: 120, lifecycle: "merged" }, lastMs: NOW - 6 * 24 * H, pinned: true, archived: false, vault: { state: "saved", bytes: 2_400_000 }, transcript: true },
     { key: "l2", name: "v3 engine: event store + ingest", summary: "M1 schema, WAL, dedupe per producer", tags: ["v3", "engine"], color: "teal", project: "agent-switch", branch: "feat/event-store", pr: { number: 142, lifecycle: "open" }, lastMs: NOW, pinned: true, archived: false, vault: { state: "saved", bytes: 8_100_000 }, transcript: true },

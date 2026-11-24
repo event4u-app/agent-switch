@@ -322,6 +322,8 @@ export const settings = {
   "settings.advanced.windowPrevious": "Previous",
   "settings.advanced.chatMarkdown": "Format chat replies",
   "settings.advanced.chatMarkdownDetail": "Tables, code, diffs and collapsible sections in agent replies. Off shows every reply as plain text.",
+  "settings.advanced.doneAfter": "Done today after",
+  "settings.advanced.doneAfterDetail": "A session quiet this long leaves the session list and counts under Done today; quiet for over a day, under Older than a day. One that needs you or is working stays.",
   "settings.advanced.sameAccount": "Same account in two places",
   "settings.advanced.sameAccountDetail": "Warn is safe for most setups; Block only for sign-ins that break when shared.",
   "settings.advanced.policyNotRead": "The current policy wasn't read — pick one to set it.",

@@ -38,6 +38,7 @@ export interface DispatchIpc {
   setAgentEnabled(id: string, on: boolean): Promise<void>;
   setRemoteControl(account: string, on: boolean): Promise<void>;
   setRemoteSsh(on: boolean): Promise<void>;
+  setTerminalSync(on: boolean): Promise<void>;
   /** Removes merged worktrees: only those of `keys` when given; says what it removed and skipped. */
   cleanupMerged(keys?: string[]): Promise<CleanupJson>;
   /** What Create PR would do (commit, destination ref, base, title), or why it cannot; for `base` when given. */
@@ -486,6 +487,8 @@ export function dispatchV3(a: V3Action, deps: DispatchDeps): Promise<void> | voi
       return run(deps, "Remote Control", deps.ipc.setRemoteControl(a.account, a.value));
     case "remote-ssh":
       return run(deps, "Remote over SSH", deps.ipc.setRemoteSsh(a.value));
+    case "terminal-sync":
+      return run(deps, a.value ? "Terminal starts run in Agent Switch" : "Terminal starts stay in the terminal", deps.ipc.setTerminalSync(a.value));
     case "agent-install":
       return deps.open({ kind: "terminal", run: { args: ["agents", "install", a.id], title: `Install ${a.id}` } });
     case "restart-engine":
