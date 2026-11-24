@@ -159,14 +159,14 @@ export function LimitRow({ a, nowMs, open, current, toolShown, onOpen, onSignIn 
   );
 }
 
-/** Rows the strip shows before its list scrolls: many accounts (hundreds) never push the sessions away. */
-export const STRIP_ROWS = 5;
+/** Rows the strip's box holds; its height stays the same on every tab, more rows scroll inside it (owner, 2026-11-24). */
+export const STRIP_ROWS = 4;
 
 /**
  * Claude first, then Codex (spec §5.3). With accounts on more than one tool, a
  * tool switch sits under the head — the tray's segmented control (owner,
  * 2026-11-24): the open session's tool first, Claude otherwise — and the rows
- * scroll inside the strip past STRIP_ROWS.
+ * sit in a dark box like the tray's, always STRIP_ROWS high, scrolling past that.
  */
 export function LimitsStrip({ accounts, nowMs, openKey, currentKey, onOpen, onSignIn }: { accounts: LimitAccount[]; nowMs: number; openKey: string | null; /** The open session's account; absent: none marked. */ currentKey?: string | null; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
   const tools = (["claude", "codex"] as const).filter((t) => accounts.some((a) => a.tool === t));
@@ -202,7 +202,7 @@ export function LimitsStrip({ accounts, nowMs, openKey, currentKey, onOpen, onSi
           />
         </div>
       )}
-      <div data-limit-rows="" role="region" aria-label={tools.length > 1 ? `${tab === "claude" ? "Claude" : "Codex"} limits` : undefined} className={cn(shown.length > STRIP_ROWS && "max-h-[150px] overflow-y-auto")}>
+      <div data-limit-rows="" role="region" aria-label={tools.length > 1 ? `${tab === "claude" ? "Claude" : "Codex"} limits` : undefined} className="mx-1 h-[106px] overflow-y-auto rounded-md border border-ac-line bg-ac-bg p-1">
         {shown.map((a) => (
           <LimitRow key={a.key} a={a} nowMs={nowMs} open={a.key === openKey} current={a.key === currentKey} toolShown={tools.length > 1} onOpen={onOpen} onSignIn={onSignIn} />
         ))}

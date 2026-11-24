@@ -110,11 +110,11 @@ describe("the open session's account (owner, 2026-11-24)", () => {
 });
 
 describe("many accounts (owner, 2026-11-24)", () => {
-  it("one tool: no switch; past five rows the list scrolls inside the strip", () => {
+  it("one tool: no switch; the rows sit in a dark box of a fixed height that scrolls", () => {
     const many = Array.from({ length: 7 }, (_, i) => acct({ key: `claude/a${i}`, name: `a${i}` }));
     render(<LimitsStrip accounts={many} nowMs={NOW} openKey={null} onOpen={vi.fn()} onSignIn={vi.fn()} />);
     expect(screen.queryAllByRole("radio")).toHaveLength(0);
-    expect(document.querySelector("[data-limit-rows]")!.className).toMatch(/max-h-\[150px\] overflow-y-auto/);
+    expect(document.querySelector("[data-limit-rows]")!.className).toMatch(/h-\[106px\] overflow-y-auto rounded-md border border-ac-line bg-ac-bg/);
   });
   it("the open session's tool is the first tab shown", () => {
     render(<LimitsStrip accounts={[acct(), acct({ key: "codex/w", tool: "codex", name: "work" })]} nowMs={NOW} openKey={null} currentKey="codex/w" onOpen={vi.fn()} onSignIn={vi.fn()} />);
