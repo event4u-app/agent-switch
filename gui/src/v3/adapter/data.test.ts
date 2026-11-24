@@ -132,8 +132,6 @@ describe("toV3Data", () => {
     // The time is a setting: at 30 minutes the 20-minute-quiet session is still active.
     const later = toV3Data(vmWith([account("work")], rows), emptyFeeds(), env({ doneAfterMs: 30 * 60_000 }));
     expect(at(later, "quiet")).toBe("active");
-    // The All sessions table carries the same split, so its counts match the footer.
-    expect(["busy", "quiet", "stale", "asks"].map((id) => d.table.find((t) => t.key === `claude/work/${id}`)!.when)).toEqual(["active", "done", "older", "active"]);
   });
 
   it("an account's routines reach its Accounts-page row; absent stays absent", () => {

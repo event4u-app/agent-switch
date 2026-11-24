@@ -63,7 +63,8 @@ describe("one row grammar (2.1, 2.2)", () => {
 describe("open and peek (2.3, 2.4)", () => {
   it("a click on a session child opens it", () => {
     const onSelect = vi.fn();
-    const { container } = rowOf(s("p", { children: [seat("a")] }), { onSelect });
+    // A running seat: idle ones start folded (owner, 2026-11-24).
+    const { container } = rowOf(s("p", { children: [seat("a", { state: "working" })] }), { onSelect });
     fireEvent.click(childRows(container)[0]);
     expect(onSelect).toHaveBeenCalledWith("claude/work/a");
   });
@@ -80,7 +81,7 @@ describe("open and peek (2.3, 2.4)", () => {
 
   it("hovering a child asks for its peek card, and leaving drops it", () => {
     const onPeek = vi.fn();
-    const { container } = rowOf(s("p", { children: [seat("a")] }), { onPeek });
+    const { container } = rowOf(s("p", { children: [seat("a", { state: "working" })] }), { onPeek });
     fireEvent.mouseEnter(childRows(container)[0]);
     expect(onPeek).toHaveBeenLastCalledWith("claude/work/a", expect.any(Number));
     fireEvent.mouseLeave(childRows(container)[0]);
@@ -113,7 +114,7 @@ describe("idle children fold (3.5, D11)", () => {
   it("a nine-seat council with one working seat shows two lines, and the fold opens in place", () => {
     const { container } = rowOf(nine());
     const rows = childRows(container);
-    expect(rows.map((r) => r.textContent)).toEqual(["WorkingCseat n4", "8 idle"]);
+    expect(rows.map((r) => r.textContent)).toEqual(["WorkingCseat n4", "Idle8"]);
     fireEvent.click(within(rows[1]).getByRole("button", { name: "Show 8 idle" }));
     expect(childRows(container)).toHaveLength(10);
   });
@@ -130,14 +131,14 @@ describe("idle children fold (3.5, D11)", () => {
   it("a waiting idle seat is never folded away", () => {
     const r = s("q", { children: [seat("a", { state: "needs-you" }), seat("b"), seat("c")] });
     const { container } = rowOf(r);
-    expect(childRows(container).map((x) => x.textContent)).toEqual(["Needs a decisionCseat a", "2 idle"]);
+    expect(childRows(container).map((x) => x.textContent)).toEqual(["Needs a decisionCseat a", "Idle2"]);
   });
 });
 
 describe("one block for the open row (5.2, D12)", () => {
   it("the active open row and its children share one raise surface and one Marker", () => {
     const { container } = rowOf(s("p", { children: [seat("a"), seat("b"), seat("c")] }), { active: true });
-    const markers = container.querySelectorAll(".border-l-ac-text");
+    const markers = container.querySelectorAll(".border-l-ac-brand");
     expect(markers).toHaveLength(1);
     const block = markers[0].parentElement!;
     expect(block.className).toMatch(/bg-ac-raise/);
@@ -147,7 +148,7 @@ describe("one block for the open row (5.2, D12)", () => {
 
   it("closed, the active row alone carries fill and Marker", () => {
     const { container } = render(<SessionRow s={s("p", { children: [seat("a")] })} active {...on} />);
-    const marker = container.querySelector(".border-l-ac-text")!;
+    const marker = container.querySelector(".border-l-ac-brand")!;
     expect(marker.parentElement!.getAttribute("role")).toBe("button");
   });
 });
@@ -194,7 +195,7 @@ describe("the tree in the window (2.3, 3.4)", () => {
 describe("project group headers (D7)", () => {
   it("two repositories with the same folder name keep their distinct labels in the headers", () => {
     const groupOf = (k: string) => (k === "a" ? "work/api" : "personal/api");
-    const { container } = render(<SessionsZone sessions={[s("a"), s("b")]} activeKey={null} selection={null} openKeys={new Set()} onSelect={vi.fn()} onToggleChildren={vi.fn()} onCheck={vi.fn()} batch={{ onClear: vi.fn(), onPin: vi.fn(), onArchive: vi.fn(), onClean: vi.fn(), onEnd: vi.fn() }} group="project" groupOf={groupOf} />);
+    const { container } = render(<SessionsZone sessions={[s("a"), s("b")]} activeKey={null} selection={null} openKeys={new Set()} onSelect={vi.fn()} onToggleChildren={vi.fn()} onCheck={vi.fn()} onDoneToday={vi.fn()} batch={{ onClear: vi.fn(), onPin: vi.fn(), onArchive: vi.fn(), onClean: vi.fn(), onEnd: vi.fn() }} group="project" groupOf={groupOf} />);
     const heads = [...container.querySelectorAll("button[aria-expanded]")].map((b) => b.textContent);
     expect(heads).toEqual(["work/api1", "personal/api1"]);
   });

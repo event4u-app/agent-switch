@@ -4,7 +4,7 @@
  *  the engine's lists (it is the one that read the transcript last). */
 
 import type { SessionRow } from "../../transforms.js";
-import { accountId } from "../../vm/build.js";
+import { accountId, activityFromEntries } from "../../vm/build.js";
 import { sessionFromRow } from "../../vm/build.js";
 import type { Account, IdentityColor, SessionState, ViewModel } from "../../vm/types.js";
 import type { NewSessionFacts, NewSessionPlan, SheetSession } from "../dialogs.js";
@@ -488,9 +488,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
   };
   const table: TableSession[] = rows.map((r) => {
     const pr = prsOf(r)[0];
-    const key = sessionKey(r);
     return {
-      when: whenOf(r, stateOf(r), needing.has(key)),
       key: sessionKey(r),
       title: titleOf(r),
       state: stateOf(r),
@@ -592,6 +590,7 @@ export function toV3Data(vmIn: ViewModel, feeds: V3Feeds, env: AdapterEnv): V3Da
     needs,
     away: feeds.needs?.away ?? null,
     history: doneToday(feeds.needs?.history ?? [], now),
+    activity: activityFromEntries(feeds.activity ?? []),
     sessions,
     limits,
     accounts: pageAccounts,

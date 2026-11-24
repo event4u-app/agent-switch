@@ -73,3 +73,14 @@ describe("useV3Feeds", () => {
     expect(d.needs).toHaveBeenCalledTimes(3);
   });
 });
+
+describe("the activity feed (owner, 2026-11-24)", () => {
+  it("is read every round when given, and its last good value stays on a failed read", async () => {
+    const entries = [{ at: "2026-11-24T10:00:00Z", kind: "switch", action: "moved", target: "work", ok: true }] as never;
+    const first = await pollFeeds(emptyFeeds(), deps({ activity: ok(entries) }), false, 1);
+    expect(first.activity).toEqual(entries);
+    const second = await pollFeeds(first, deps({ activity: fail() }), false, 2);
+    expect(second.activity).toEqual(entries);
+    expect(second.readAt.activity).toBe(1);
+  });
+});

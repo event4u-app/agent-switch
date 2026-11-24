@@ -6,11 +6,12 @@
  * reference boards; nothing here ever switches an account.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { Segmented } from "../ui/Segmented.js";
 import { cn } from "../lib/utils.js";
 import type { IdentityColor } from "../vm/types.js";
 import { AppWindow, Copy } from "lucide-react";
-import { AccountMark, Chip, checkedAgo, duration, pct } from "./kit.js";
+import { AccountMark, Chip, Marker, checkedAgo, duration, pct } from "./kit.js";
 
 export interface LimitWindow {
   /** "5h", "week", "week · Opus" */
@@ -70,28 +71,48 @@ export function tightest(a: LimitAccount): LimitWindow | undefined {
   return [...a.windows].sort((x, y) => (y.used ?? -1) - (x.used ?? -1))[0];
 }
 
+/** The same three cells on every limit row (proposal D): bar · used · reset. `tick`: the pace tick (full-size rows only). */
+function LimitCells({ w, protect, stale, nowMs, tick = true, bar = "h-1.5" }: { w: LimitWindow; protect: number; stale?: boolean; nowMs: number; tick?: boolean; bar?: string }) {
+  const t = stale ? "none" : tone(w.used, protect);
+  return (
+    <>
+      <span className={cn("relative block rounded-full bg-ac-raise", bar)}>
+        <span className={cn("absolute inset-y-0 left-0 rounded-full", FILL[t], stale && "opacity-50")} style={{ width: `${w.used ?? 0}%` }} />
+        {tick && w.pace != null && <span data-testid="pace-tick" className="absolute -top-1 h-3.5 w-0.5 -translate-x-1/2 rounded-full bg-ac-text" style={{ left: `${w.pace}%` }} />}
+      </span>
+      <span className={cn("text-right font-ac-mono text-[11px]", TEXT[t], stale && "italic")}>{pct(w.used)}</span>
+      <span className={cn("truncate text-right font-ac-mono text-[11px] text-ac-muted", stale && "italic")}>{w.resetsAtMs ? `↻ ${duration(w.resetsAtMs - nowMs)}` : ""}</span>
+    </>
+  );
+}
+
 /** One window, full size: label · bar with pace tick · used · reset. */
 export function LimitBar({ w, protect, stale, nowMs }: { w: LimitWindow; protect: number; stale?: boolean; nowMs: number }) {
-  const t = stale ? "none" : tone(w.used, protect);
   return (
     <div className="grid grid-cols-[76px_1fr_36px_64px] items-center gap-2">
       <span className="truncate text-[11px] text-ac-muted">{w.label.replace("week · ", "week ")}</span>
-      <span className="relative block h-1.5 rounded-full bg-ac-raise">
-        <span className={cn("absolute inset-y-0 left-0 rounded-full", FILL[t], stale && "opacity-50")} style={{ width: `${w.used ?? 0}%` }} />
-        {w.pace != null && <span data-testid="pace-tick" className="absolute -top-1 h-3.5 w-0.5 -translate-x-1/2 rounded-full bg-ac-text" style={{ left: `${w.pace}%` }} />}
-      </span>
-      <span className={cn("text-right font-ac-mono text-[11px]", TEXT[t])}>{pct(w.used)}</span>
-      <span className="truncate text-right font-ac-mono text-[11px] text-ac-muted">{w.resetsAtMs ? `↻ ${duration(w.resetsAtMs - nowMs)}` : ""}</span>
+      <LimitCells w={w} protect={protect} stale={stale} nowMs={nowMs} />
     </div>
   );
 }
 
-/** One row of the Limits strip: name · numbers when not OK · a 64×4 bar (no pace tick on small bars). */
-export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount; nowMs: number; open?: boolean; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
+/** The window a one-line row shows: a window near its limit, else the current (5h) one. Pure. */
+export function rowWindow(a: LimitAccount): LimitWindow | undefined {
   const top = tightest(a);
+  const t = tone(top?.used ?? null, a.protect);
+  return t === "warn" || t === "alert" ? top : currentWindow(a);
+}
+
+/** The strip's columns (proposal D): account + tool · bar · used · reset, the same on every row. */
+const ROW_GRID = "grid grid-cols-[minmax(0,1fr)_44px_34px_58px] items-center gap-2";
+
+/** One row of the Limits strip (proposal D): account and tool · bar · used · reset, always. Near limit is colour and the number;
+ *  an old reading is italic with its age on hover; a missing sign-in fills the row. */
+export function LimitRow({ a, nowMs, open, current, toolShown, onOpen, onSignIn }: { a: LimitAccount; nowMs: number; open?: boolean; /** The tool switch above already names the tool: the row leaves it out. */ toolShown?: boolean; /** The account the open session runs on (owner, 2026-11-24): marked like the active session row. */ current?: boolean; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
+  const w = rowWindow(a);
   const stale = isStale(a, nowMs);
-  const t = stale ? "none" : tone(top?.used ?? null, a.protect);
-  const tip = a.windows.map((w) => `${w.label} ${pct(w.used)}${w.resetsAtMs ? ` · resets in ${duration(w.resetsAtMs - nowMs)}` : ""}`).join("\n");
+  const age = stale ? `${duration(nowMs - a.checkedMs!)} old` : null;
+  const tip = [age && `Read ${age} — refreshing`, ...a.windows.map((x) => `${x.label} ${pct(x.used)}${x.resetsAtMs ? ` · resets in ${duration(x.resetsAtMs - nowMs)}` : ""}`)].filter(Boolean).join("\n");
   return (
     <div
       role="button"
@@ -104,50 +125,89 @@ export function LimitRow({ a, nowMs, open, onOpen, onSignIn }: { a: LimitAccount
         e.preventDefault();
         onOpen(a.key);
       }}
-      title={tip} className={cn("flex h-6 items-center gap-2 rounded-md px-2", open ? "bg-ac-raise" : "hover:bg-ac-raise")}>
-      <span className="min-w-0 flex-1 truncate text-xs text-ac-soft">
-        {a.name}
-        {a.tool === "codex" && <span className="text-ac-muted"> · Codex</span>}
+      title={[current && "The open session runs on this account", tip].filter(Boolean).join("\n") || undefined}
+      aria-current={current || undefined}
+      data-current={current ? "" : undefined}
+      className={cn(ROW_GRID, "relative h-6 rounded-md px-2", open || current ? "bg-ac-raise" : "hover:bg-ac-raise")}
+    >
+      {current && <Marker />}
+      <span className={cn("flex min-w-0 items-center gap-1.5 text-xs", current ? "text-ac-text" : "text-ac-soft", stale && "italic")}>
+        <AccountMark color={a.color} />
+        <span className={cn("shrink-0", current && "font-semibold")}>{a.name}</span>
+        <span className="min-w-0 truncate text-[11px] text-ac-muted">
+          {!toolShown && (a.tool === "codex" ? "Codex" : "Claude")}
+          {w && w.label !== "5h" && `${toolShown ? "" : " · "}${w.label.replace("week · ", "week ")}`}
+        </span>
         {a.next && (
-          <span className="ml-1 text-ac-muted" title="Next for new sessions">
+          <span className="shrink-0 text-ac-muted" title="Next for new sessions">
             →
           </span>
         )}
-        {stale && <span className="text-[11px] text-ac-muted"> · {duration(nowMs - a.checkedMs!)} old</span>}
       </span>
       {a.signIn ? (
-        <button type="button" onClick={(e) => (e.stopPropagation(), onSignIn(a.key))} className="shrink-0 text-[11px] text-ac-muted hover:text-ac-text">
-          sign in ›
+        <button type="button" onClick={(e) => (e.stopPropagation(), onSignIn(a.key))} className="col-span-3 justify-self-end text-[11px] font-medium text-ac-brand-text hover:underline">
+          Sign in ›
         </button>
-      ) : !a.windows.length ? (
+      ) : !w ? (
         // Not read yet: never an empty track, which reads as 0 % used.
-        <span className="shrink-0 text-[11px] text-ac-muted">no data yet</span>
+        <span className="col-span-3 justify-self-end text-[11px] text-ac-muted">no data yet</span>
       ) : (
-        <>
-          {(t === "warn" || t === "alert") && top && (
-            <span className={cn("shrink-0 font-ac-mono text-[10.5px]", TEXT[t])}>
-              {pct(top.used)}
-              {top.resetsAtMs ? ` · ${duration(top.resetsAtMs - nowMs)}` : ""}
-            </span>
-          )}
-          <span className="relative block h-1 w-16 shrink-0 rounded-full bg-ac-raise">
-            <span className={cn("absolute inset-y-0 left-0 rounded-full", FILL[t], stale && "opacity-50")} style={{ width: `${top?.used ?? 0}%` }} />
-          </span>
-        </>
+        // On a raised row (open, or the current account) the track steps up a shade so it stays visible.
+        <LimitCells w={w} protect={a.protect} stale={stale} nowMs={nowMs} tick={false} bar={open || current ? "h-1 bg-ac-line2" : "h-1"} />
       )}
     </div>
   );
 }
 
-/** Claude first, then Codex (spec §5.3). */
-export function LimitsStrip({ accounts, nowMs, openKey, onOpen, onSignIn }: { accounts: LimitAccount[]; nowMs: number; openKey: string | null; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
-  const ordered = [...accounts.filter((a) => a.tool === "claude"), ...accounts.filter((a) => a.tool === "codex")];
+/** Rows the strip's box holds; its height stays the same on every tab, more rows scroll inside it (owner, 2026-11-24). */
+export const STRIP_ROWS = 4;
+
+/**
+ * Claude first, then Codex (spec §5.3). With accounts on more than one tool, a
+ * tool switch sits under the head — the tray's segmented control (owner,
+ * 2026-11-24): the open session's tool first, Claude otherwise — and the rows
+ * sit in a dark box like the tray's, always STRIP_ROWS high, scrolling past that.
+ */
+export function LimitsStrip({ accounts, nowMs, openKey, currentKey, onOpen, onSignIn }: { accounts: LimitAccount[]; nowMs: number; openKey: string | null; /** The open session's account; absent: none marked. */ currentKey?: string | null; onOpen: (key: string) => void; onSignIn: (key: string) => void }) {
+  const tools = (["claude", "codex"] as const).filter((t) => accounts.some((a) => a.tool === t));
+  const currentTool = accounts.find((a) => a.key === currentKey)?.tool;
+  const [picked, setPicked] = useState<"claude" | "codex" | null>(null);
+  const tab = picked && tools.includes(picked) ? picked : currentTool && tools.includes(currentTool) ? currentTool : (tools[0] ?? "claude");
+  const shown = tools.length > 1 ? accounts.filter((a) => a.tool === tab) : [...accounts.filter((a) => a.tool === "claude"), ...accounts.filter((a) => a.tool === "codex")];
   return (
-    <section aria-label="Limits" className="relative shrink-0 border-t border-ac-line px-1.5 pb-1.5 pt-1">
-      <div className="flex h-7 items-center px-2 text-[11px] font-semibold text-ac-soft">Limits</div>
-      {ordered.map((a) => (
-        <LimitRow key={a.key} a={a} nowMs={nowMs} open={a.key === openKey} onOpen={onOpen} onSignIn={onSignIn} />
-      ))}
+    <section aria-label="Limits" className="relative shrink-0 border-t border-ac-line px-1.5 pb-1.5 pt-1.5">
+      {tools.length > 1 && (
+        <div className="px-1">
+          <Segmented
+            label="Tool"
+            size="sm"
+            fill
+            value={tab}
+            onChange={setPicked}
+            options={tools.map((t) => ({
+              value: t,
+              label: (
+                <>
+                  {t === "claude" ? "Claude" : "Codex"}
+                  <span className="ml-1.5 font-ac-mono text-[10.5px] font-normal text-ac-muted">{accounts.filter((a) => a.tool === t).length}</span>
+                </>
+              ),
+            }))}
+          />
+        </div>
+      )}
+      {/* The head sits under the switch (owner, 2026-11-24), right above the rows it names. */}
+      <div className={cn(ROW_GRID, "h-7 px-2 text-[11px]")}>
+        <span className="font-semibold text-ac-soft">
+          Limits <span className="font-normal text-ac-muted">· 5h</span>
+        </span>
+        <span className="col-span-3 justify-self-end text-ac-muted">resets</span>
+      </div>
+      <div data-limit-rows="" role="region" aria-label={tools.length > 1 ? `${tab === "claude" ? "Claude" : "Codex"} limits` : undefined} className="mx-1 h-[106px] overflow-y-auto rounded-md border border-ac-line bg-ac-bg p-1">
+        {shown.map((a) => (
+          <LimitRow key={a.key} a={a} nowMs={nowMs} open={a.key === openKey} current={a.key === currentKey} toolShown={tools.length > 1} onOpen={onOpen} onSignIn={onSignIn} />
+        ))}
+      </div>
     </section>
   );
 }
@@ -205,7 +265,7 @@ export function LimitsPopover({ a, nowMs, moveWhy, onMove, onAccounts, running }
         <button type="button" onClick={moveWhy ? undefined : onMove} aria-disabled={moveWhy ? true : undefined} title={moveWhy ?? undefined} aria-description={moveWhy ?? undefined} className={cn("h-7 rounded-md border border-ac-line2 px-2.5 text-xs", moveWhy ? "cursor-default text-ac-faint" : "text-ac-soft hover:text-ac-text")}>
           Move its session…
         </button>
-        <button type="button" onClick={onAccounts} className="h-7 rounded-md px-2.5 text-xs text-ac-muted hover:text-ac-text">
+        <button type="button" onClick={onAccounts} className="h-7 rounded-md px-2.5 text-xs font-medium text-ac-brand-text hover:underline">
           Open Accounts
         </button>
       </div>

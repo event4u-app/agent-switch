@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { SessionRow, SessionsFooter, SessionsZone, childNoun, childrenFromCli, liveOrder, sortLive, type RowSession } from "./sessions.js";
+import { SessionRow, SessionsZone, childNoun, childrenFromCli, liveOrder, sortLive, type RowSession } from "./sessions.js";
 
 afterEach(cleanup);
 const s = (key: string, over: Partial<RowSession> = {}): RowSession => ({ key, title: `title ${key}`, state: "idle", account: { name: "work", nearLimit: false }, branch: "main", pr: null, children: [], needsYou: false, ...over });
 const batch = { onClear: vi.fn(), onPin: vi.fn(), onArchive: vi.fn(), onClean: vi.fn(), onEnd: vi.fn() };
 const zone = (sessions: RowSession[], extra: Partial<Parameters<typeof SessionsZone>[0]> = {}) => (
-  <SessionsZone sessions={sessions} activeKey={null} selection={null} openKeys={new Set()} onSelect={vi.fn()} onToggleChildren={vi.fn()} onCheck={vi.fn()} batch={batch} {...extra} />
+  <SessionsZone sessions={sessions} activeKey={null} selection={null} openKeys={new Set()} onSelect={vi.fn()} onToggleChildren={vi.fn()} onCheck={vi.fn()} onDoneToday={vi.fn()} batch={batch} {...extra} />
 );
 
 describe("children from the CLI", () => {
@@ -59,6 +59,9 @@ describe("Sessions zone (spec §5.2)", () => {
     fireEvent.click(screen.getByLabelText("Show 1 helper session"));
     expect(onToggle).toHaveBeenCalledWith("a");
     rerender(zone([s("a", { children: kids })], { activeKey: "a", openKeys: new Set(["a"]) }));
+    // An idle child starts folded, even one (owner, 2026-11-24).
+    expect(screen.queryByText("seat 1")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Show 1 idle"));
     expect(screen.getByText("seat 1")).toBeTruthy();
     expect(screen.getByText("relation unknown ⓘ")).toBeTruthy();
   });
@@ -73,52 +76,12 @@ describe("Sessions zone (spec §5.2)", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-});
-
-describe("the pinned footer", () => {
-  it("the list keeps only the active rows; quiet and older ones are not drawn there", () => {
-    render(zone([s("a"), s("o1", { older: true }), s("d", { doneToday: true })]));
-    expect(screen.getByText("title a")).toBeTruthy();
-    expect(screen.queryByText("title o1")).toBeNull();
-    expect(screen.queryByText("title d")).toBeNull();
-    expect(screen.queryByText(/Done today|Older than a day/)).toBeNull();
-  });
-
-  it("Done today and Older than a day look alike, each opens its list, Clean up stays with Done today", () => {
-    const onOpen = vi.fn();
-    const onCleanUp = vi.fn();
-    render(<SessionsFooter done={3} older={2} onOpen={onOpen} onCleanUp={onCleanUp} />);
-    const done = screen.getByRole("button", { name: /Done today 3/ });
-    const older = screen.getByRole("button", { name: /Older than a day 2/ });
-    expect(done.className).toBe(older.className);
-    expect(done.getAttribute("aria-expanded")).toBeNull();
-    expect(older.getAttribute("aria-expanded")).toBeNull();
-    const order = screen.getAllByRole("button").map((b) => b.textContent);
-    expect(order.findIndex((t) => /Done today/.test(t ?? ""))).toBeLessThan(order.findIndex((t) => /Older than a day/.test(t ?? "")));
-    fireEvent.click(done);
-    fireEvent.click(older);
-    expect(onOpen.mock.calls).toEqual([["done"], ["older"]]);
-    fireEvent.click(screen.getByText("Clean up"));
-    expect(onCleanUp).toHaveBeenCalledOnce();
-  });
-
-  it("the counts sit in badges in one shared column", () => {
-    const { container } = render(<SessionsFooter done={3} older={12} onOpen={vi.fn()} onCleanUp={vi.fn()} />);
-    const badge = (row: RegExp) => within(screen.getByRole("button", { name: row })).getByText(/^\d+$/);
-    expect(badge(/Done today/).textContent).toBe("3");
-    expect(badge(/Older than a day/).textContent).toBe("12");
-    // One grid holds both rows; each row lays its label and badge on that grid's columns.
-    const grid = container.firstElementChild!;
-    expect(grid.className).toMatch(/\bgrid\b/);
-    for (const b of screen.getAllByRole("button", { name: /Done today|Older than a day/ })) expect(b.className).toMatch(/grid-cols-subgrid/);
-  });
-
-  it("an empty group leaves its row out; nothing to show draws nothing", () => {
-    const { container, rerender } = render(<SessionsFooter done={0} older={4} onOpen={vi.fn()} onCleanUp={vi.fn()} />);
-    expect(screen.queryByText(/Done today/)).toBeNull();
-    expect(screen.getByText(/Older than a day/)).toBeTruthy();
-    rerender(<SessionsFooter done={0} older={0} onOpen={vi.fn()} onCleanUp={vi.fn()} />);
-    expect(container.textContent).toBe("");
+  it("'Done today' is one row that opens All sessions; Clean up lives there (owner, 2026-11-24)", () => {
+    const onDoneToday = vi.fn();
+    render(zone([s("a"), s("d1", { state: "done", doneToday: true }), s("d2", { state: "done", doneToday: true })], { onDoneToday }));
+    fireEvent.click(screen.getByText(/Done today 2/));
+    expect(onDoneToday).toHaveBeenCalledOnce();
+    expect(screen.queryByText("Clean up")).toBeNull();
   });
 });
 
@@ -247,13 +210,44 @@ describe("one status vocabulary (5.1)", () => {
   const on = { onSelect: () => {}, onToggleChildren: () => {}, onCheck: () => {} };
   const failing = (over: Partial<RowSession> = {}) => s("ci", { state: "needs-you", pr: { number: 12, ci: "FAILURE", mergeable: "MERGEABLE" }, ...over });
 
-  it("a row carries one status mark: CI failing is words on the second line, never a ⊗ beside the state dot", () => {
+  it("a row carries one status mark: CI failing is words on its own attention line, never a ⊗ beside the state dot", () => {
     const { container } = render(<SessionRow s={failing()} comfortable {...on} />);
     expect(container.querySelectorAll("svg")).toHaveLength(0);
-    const ci = screen.getAllByText("CI failing");
+    const ci = screen.getAllByText(/CI failing/);
     expect(ci, "said once").toHaveLength(1);
-    expect(ci[0].className).toMatch(/text-ac-alert-text/);
-    expect(ci[0].parentElement!.textContent).toContain("#12");
+    expect(ci[0].textContent).toMatch(/#12 CI failing$/);
+    // Between the title and the account line (owner, 2026-11-24), on the red bar.
+    expect(ci[0].closest("[data-attention]")!.className).toMatch(/text-ac-alert-text/);
+  });
+
+  it("the attention line: needs you, a waiting child, the PR problem, a near limit — highlighted, in that order", () => {
+    const row = s("x", { state: "idle", needsYou: true, pr: { number: 5, ci: "SUCCESS", mergeable: "CONFLICTING" }, account: { name: "side", nearLimit: true } });
+    render(<SessionRow s={row} comfortable {...on} />);
+    const line = document.querySelector("[data-attention]")!;
+    // One bar, in that order, in its most serious tone (owner, 2026-11-24: info blue, warnings orange, problems red).
+    expect(line.textContent).toBe("Needs you · #5 merge conflict · side near its limit");
+    expect(line.getAttribute("data-tone")).toBe("alert");
+    expect(line.className).toMatch(/bg-ac-alert-tint/);
+    cleanup();
+    render(<SessionRow s={s("calm")} comfortable {...on} />);
+    expect(document.querySelector("[data-attention]"), "nothing to do: no extra line").toBeNull();
+  });
+
+  it("needs you takes the accent from the settings, over a warning, under a problem (owner, 2026-11-24)", () => {
+    const bar = (row: RowSession) => {
+      cleanup();
+      render(<SessionRow s={row} comfortable {...on} />);
+      return document.querySelector("[data-attention]")!;
+    };
+    for (const row of [s("n", { state: "needs-you" }), s("c", { state: "idle", children: [{ id: "k", label: "Explore", kind: "subagent", state: "needs-you", source: "hook" }] })]) {
+      const line = bar(row);
+      expect(line.getAttribute("data-tone")).toBe("needs");
+      expect(line.className).toMatch(/bg-ac-brand-tint/);
+      expect(line.className).toMatch(/text-ac-brand-text/);
+    }
+    expect(bar(s("w", { state: "needs-you", account: { name: "side", nearLimit: true } })).getAttribute("data-tone"), "over a warning").toBe("needs");
+    expect(bar(s("a", { state: "needs-you", pr: { number: 7, ci: "FAILURE", mergeable: "MERGEABLE" } })).getAttribute("data-tone"), "under a problem").toBe("alert");
+    expect(bar(s("l", { account: { name: "side", nearLimit: true } })).getAttribute("data-tone"), "a warning alone stays orange").toBe("warn");
   });
 
   it("a compact row says CI failing and merge conflict in words in its one trailing slot", () => {
@@ -265,13 +259,77 @@ describe("one status vocabulary (5.1)", () => {
     expect(container.querySelectorAll("svg")).toHaveLength(0);
   });
 
-  it("the selected row and a checked box use the neutral accent; brand orange stays out of the list", () => {
+  it("the selected row's frame takes the accent (owner, 2026-11-24); a checked box stays neutral", () => {
     const { container } = render(<SessionRow s={s("a")} active {...on} />);
-    expect(container.querySelector(".border-l-ac-text")).toBeTruthy();
-    expect(container.innerHTML).not.toMatch(/ac-brand/);
+    expect(container.querySelector(".border-l-ac-brand")).toBeTruthy();
+    expect(container.querySelector(".border-l-ac-text")).toBeNull();
     cleanup();
     const sel = render(<SessionRow s={s("b")} selecting checked {...on} />);
     expect(sel.getByRole("checkbox").className).toMatch(/bg-ac-text/);
     expect(sel.container.innerHTML).not.toMatch(/ac-brand/);
+  });
+});
+
+describe("status groups with counts (proposal B)", () => {
+  const rows = [
+    s("w1", { title: "Working one", state: "working" }),
+    s("n1", { title: "Asking one", state: "needs-you", needsYou: true }),
+    s("n2", { title: "Failing one", pr: { number: 3, ci: "FAILURE", mergeable: "MERGEABLE" } }),
+    s("i1", { title: "Idle one" }),
+  ];
+  it("Needs you, Running, Idle — in that order, each with a count pill", () => {
+    render(zone(rows, { group: "status" }));
+    const heads = screen.getAllByRole("button", { expanded: true }).map((b) => b.textContent);
+    expect(heads).toEqual(["Needs you2", "Running1"]);
+    // Idle starts folded (owner, 2026-11-24); one click opens it.
+    const idle = screen.getByRole("button", { expanded: false, name: /^Idle/ });
+    expect(idle.textContent).toBe("Idle1");
+    expect(screen.queryByText("Idle one")).toBeNull();
+    fireEvent.click(idle);
+    expect(screen.getAllByText(/^(Asking|Failing|Working|Idle) one$/).map((e) => e.textContent)).toEqual(["Asking one", "Failing one", "Working one", "Idle one"]);
+  });
+  it("an all-idle list keeps Idle open, so it never reads as empty", () => {
+    render(zone([s("i1", { title: "Idle one" }), s("i2", { title: "Idle two" })], { group: "status" }));
+    expect(screen.getByText("Idle one")).toBeTruthy();
+  });
+  it("Idle stays open when the open session is idle", () => {
+    render(zone(rows, { group: "status", activeKey: "i1" }));
+    expect(screen.getByText("Idle one")).toBeTruthy();
+  });
+  it("a session a Needs-you row already shows is not listed twice; an empty group has no header", () => {
+    render(zone(rows, { group: "status", inNeeds: new Set(["n1", "n2"]) }));
+    expect(screen.queryByText("Asking one")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Needs you/ })).toBeNull();
+    expect(screen.getByText("Working one")).toBeTruthy();
+  });
+  it("a long group shows five rows and “N more”, which opens it; the active row always shows", () => {
+    const many = Array.from({ length: 9 }, (_, i) => s(`r${i}`, { title: `Run ${i}`, state: "working" }));
+    render(zone(many, { group: "status", sort: "name", activeKey: "r8" }));
+    expect(screen.getAllByText(/^Run \d$/).map((e) => e.textContent)).toEqual(["Run 0", "Run 1", "Run 2", "Run 3", "Run 4", "Run 8"]);
+    fireEvent.click(screen.getByRole("button", { name: "3 more ›" }));
+    expect(screen.getAllByText(/^Run \d$/)).toHaveLength(9);
+  });
+});
+
+describe("ended sessions under the status grouping", () => {
+  const NOW = new Date(2026, 10, 24, 15, 0).getTime();
+  const rows = [
+    s("claude/w/live", { state: "working" }),
+    s("claude/w/today", { state: "done", doneToday: true, lastActiveMs: NOW - 60 * 60_000 }),
+    s("claude/w/old", { state: "done", doneToday: true, lastActiveMs: NOW - 26 * 60 * 60_000 }),
+  ];
+  it("pins Done today and Older below the list; each opens All sessions", () => {
+    const onDoneToday = vi.fn();
+    render(zone(rows, { group: "status", nowMs: NOW, onDoneToday }));
+    const pinned = document.querySelector("[data-done-groups]") as HTMLElement;
+    expect(pinned.textContent).toMatch(/Done today1.*Older1/);
+    expect(screen.queryByText("title claude/w/today")).toBeNull();
+    for (const b of pinned.querySelectorAll('button[title^="Open All sessions"]')) fireEvent.click(b);
+    // Each opens All sessions on its own tab.
+    expect(onDoneToday.mock.calls).toEqual([["today"], ["older"]]);
+  });
+  it("leaves an empty row out", () => {
+    render(zone(rows.slice(0, 2), { group: "status", nowMs: NOW }));
+    expect(document.querySelector("[data-done-groups]")!.textContent).not.toContain("Older");
   });
 });

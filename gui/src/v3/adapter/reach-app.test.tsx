@@ -97,6 +97,12 @@ async function mount({ engineRunning = true } = {}) {
   await screen.findAllByText("Event store", {}, { timeout: 3000 });
 }
 
+/** Idle starts folded (owner, 2026-11-24): open it to reach an idle session's row. Not counted as a user click. */
+function openIdle() {
+  const idle = within(screen.getByLabelText("Sessions window")).queryByRole("button", { expanded: false, name: /^Idle/ });
+  if (idle) fireEvent.click(idle);
+}
+
 let clicks = 0;
 const click = (el: Element) => (clicks++, fireEvent.click(el));
 
@@ -109,6 +115,7 @@ describe("V3App on fixture CLI output (spec §11)", () => {
   it("Overview: the needs item and the running session come from the CLI", async () => {
     await mount();
     expect(await screen.findByText("94% of 5h")).toBeTruthy();
+    openIdle();
     expect(within(screen.getByLabelText("Sessions window")).getByText("Event store")).toBeTruthy();
     expect(screen.getByText("Limits")).toBeTruthy();
   });
@@ -123,6 +130,7 @@ describe("V3App on fixture CLI output (spec §11)", () => {
 
   it("Session sheet actions: session row, then ⋯", async () => {
     await mount();
+    openIdle();
     click(within(screen.getByLabelText("Sessions window")).getByText("Event store"));
     click(await screen.findByLabelText("Session actions"));
     expect(screen.getByRole("menu")).toBeTruthy();

@@ -149,18 +149,30 @@ describe("workbench (spec §6)", () => {
     expect(on.view).not.toHaveBeenCalled();
   });
 
-  it("session bar: a hosted session whose model and thinking cannot change locks both chips and says why (7.6)", () => {
+  it("session bar: a hosted session whose model and thinking cannot change locks the chip and says why (7.6)", () => {
     const on = handlers();
     render(<SessionBar s={bar({ respawnWhy: "Codex keeps the model and thinking it started with" })} openIn={null} on={on} />);
-    const model = screen.getByText("Opus 5.5").closest("button")!;
-    const thinking = screen.getByText("High").closest("button")!;
-    for (const chip of [model, thinking]) {
-      expect(chip.getAttribute("aria-disabled")).toBe("true");
-      expect(chip.getAttribute("title")).toMatch(/Codex keeps/);
-      fireEvent.click(chip);
-    }
+    const chip = screen.getByText("Opus 5.5").closest("button")!;
+    expect(chip.getAttribute("aria-disabled")).toBe("true");
+    expect(chip.getAttribute("title")).toMatch(/Codex keeps/);
+    fireEvent.click(chip);
     expect(on.model).not.toHaveBeenCalled();
-    expect(on.thinking).not.toHaveBeenCalled();
+  });
+
+  it("session bar: thinking is an arrow behind the model — down least, right medium, up most (owner, 2026-11-24)", () => {
+    const dir = (level: string) => {
+      const { container, unmount } = render(<SessionBar s={bar({ thinking: level })} openIn={null} on={handlers()} />);
+      const a = container.querySelector("[data-thinking]")!;
+      const out = [a.getAttribute("aria-label"), a.querySelector("svg")!.getAttribute("class")!.match(/lucide-arrow-[a-z-]+/)![0]];
+      unmount();
+      return out;
+    };
+    expect(dir("minimal")).toEqual(["Thinking Minimal", "lucide-arrow-down"]);
+    expect(dir("low")).toEqual(["Thinking Low", "lucide-arrow-down-right"]);
+    expect(dir("medium")).toEqual(["Thinking Medium", "lucide-arrow-right"]);
+    expect(dir("high")).toEqual(["Thinking High", "lucide-arrow-up-right"]);
+    expect(dir("max")).toEqual(["Thinking Max", "lucide-arrow-up"]);
+    expect(screen.queryByText("High"), "no second chip").toBeNull();
   });
 
   it("session bar: where the session runs is a visible chip — hosted, or the user's terminal app being watched", () => {
@@ -170,22 +182,14 @@ describe("workbench (spec §6)", () => {
     expect(screen.getByText("type here, or attach from your terminal")).toBeTruthy();
     rerender(<SessionBar s={bar({ hosted: false, where: "Terminal.app" })} openIn={null} on={handlers()} />);
     expect(screen.queryByText("Hosted")).toBeNull();
-    expect(screen.getByText("Terminal.app · watching")).toBeTruthy();
+    expect(screen.getByText("Terminal.app · read-only")).toBeTruthy();
   });
 
-  it("a session in the user's own terminal says in place how to type from the app and what taking over changes", () => {
-    const onTakeOver = vi.fn();
-    render(<ExternalBody where="iTerm2" facts={null} lastLine={null} onFocus={vi.fn()} onTakeOver={onTakeOver} />);
-    expect(screen.getByText(/To type here, take it over: the same conversation continues in Agent Switch on this account, and stops running in iTerm2\./)).toBeTruthy();
-    fireEvent.click(screen.getByText("Take over here…"));
-    expect(onTakeOver).toHaveBeenCalledOnce();
-  });
-
-  it("Focus terminal and Take over show only where they work", () => {
-    render(<ExternalBody where="Ghostty" facts={null} lastLine={null} onFocus={null} onTakeOver={null} />);
+  it("a session in the user's own terminal has no strip of its own: Focus terminal and Take over live in ⋯ (proposal C)", () => {
+    render(<ExternalBody facts={null} lastLine={null} />);
     expect(screen.queryByText("Focus terminal")).toBeNull();
     expect(screen.queryByText("Take over here…")).toBeNull();
-    expect(screen.queryByText(/To type here, take it over/)).toBeNull();
+    expect(screen.queryByText(/read-only here/)).toBeNull();
   });
 
   it("the blocker shows only while Summary is closed, with one action", () => {
@@ -197,12 +201,9 @@ describe("workbench (spec §6)", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("a session in the user's own terminal: where it runs, focus, take over, facts and its last line (D-mirror)", () => {
-    const onFocus = vi.fn();
-    render(<ExternalBody where="Terminal.app" facts={<p>work · main</p>} lastLine="41 passed" onFocus={onFocus} onTakeOver={vi.fn()} />);
-    expect(screen.getByText("Terminal.app")).toBeTruthy();
-    fireEvent.click(screen.getByText("Focus terminal"));
-    expect(onFocus).toHaveBeenCalledOnce();
+  it("a session in the user's own terminal: its facts and its last line (D-mirror)", () => {
+    render(<ExternalBody facts={<p>work · main</p>} lastLine="41 passed" />);
+    expect(screen.getByText("work · main")).toBeTruthy();
     expect(screen.getByText("41 passed")).toBeTruthy();
   });
 

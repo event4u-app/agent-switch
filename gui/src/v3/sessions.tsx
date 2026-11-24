@@ -103,9 +103,22 @@ export function childNoun(s: Pick<RowSession, "children">): string {
 }
 
 export type SortBy = "activity" | "name" | "status";
-export type GroupBy = "none" | "project" | "account" | "tool";
+export type GroupBy = "none" | "status" | "project" | "account" | "tool";
 export const SORT_LABEL: Record<SortBy, string> = { activity: "Activity", name: "Name", status: "Status" };
-export const GROUP_LABEL: Record<GroupBy, string> = { none: "None", project: "Project / folder", account: "Account", tool: "Tool" };
+export const GROUP_LABEL: Record<GroupBy, string> = { none: "None", status: "Status", project: "Project / folder", account: "Account", tool: "Tool" };
+
+/** The list's default grouping (proposal B): cut by what you have to do. */
+export const DEFAULT_GROUP: GroupBy = "status";
+
+/** The status groups, in their fixed order (proposal B). */
+export const STATUS_GROUPS = ["Needs you", "Running", "Idle"] as const;
+export type StatusGroup = (typeof STATUS_GROUPS)[number];
+
+/** A live row's status group: waiting for you (or its PR is failing), running, or idle. Pure. */
+export const statusGroup = (s: RowSession): StatusGroup => (statusRank(s) <= 1 ? "Needs you" : s.state === "working" ? "Running" : "Idle");
+
+/** A group longer than this shows its first rows and "N more" (proposal B). */
+export const GROUP_ROWS = 5;
 
 /** The default order of the list, the same in window and tray (spec §5.2). */
 export const DEFAULT_SORT: SortBy = "status";
@@ -158,6 +171,31 @@ export function prProblem(s: RowSession): "CI failing" | "merge conflict" | null
   return s.pr?.ci === "FAILURE" ? "CI failing" : s.pr?.mergeable === "CONFLICTING" ? "merge conflict" : null;
 }
 
+/** `needs` is the accent set in Settings: waiting on you is the app's call to act, not a warning. */
+type AttentionTone = "needs" | "warn" | "alert" | "info";
+const ATTENTION_TONE: Record<AttentionTone, string> = {
+  info: "bg-ac-info-tint text-ac-info-text",
+  warn: "bg-ac-warn-tint text-ac-warn-text",
+  needs: "bg-ac-brand-tint text-ac-brand-text",
+  alert: "bg-ac-alert-tint text-ac-alert-text",
+};
+const RANK: readonly AttentionTone[] = ["alert", "needs", "warn", "info"];
+/** The bar takes the most serious tone of what it says: a problem, then needs you, then a warning. Pure. */
+export const worst = (asks: readonly { tone: AttentionTone }[]): AttentionTone => RANK.find((t) => asks.some((a) => a.tone === t)) ?? "info";
+
+/** What a row asks of you, for its own line under the title (two-line rows): what to do first. Pure. */
+export function attention(s: RowSession): { text: string; tone: AttentionTone }[] {
+  const out: { text: string; tone: AttentionTone }[] = [];
+  const waiting = s.state !== "needs-you" ? waitingChild(s.children) : null;
+  if (s.state === "needs-you" || s.needsYou) out.push({ text: "Needs you", tone: "needs" });
+  else if (waiting) out.push({ text: `${waiting.label} needs you`, tone: "needs" });
+  const problem = prProblem(s);
+  if (problem) out.push({ text: problem === "CI failing" ? `#${s.pr!.number} CI failing` : `#${s.pr!.number} merge conflict`, tone: "alert" });
+  if (s.account.nearLimit) out.push({ text: `${s.account.name} near its limit`, tone: "warn" });
+  if (s.quiet) out.push({ text: s.quiet, tone: "info" });
+  return out;
+}
+
 /**
  * The one trailing slot, by priority (spec §5.2). Rank 4 rolls up: a waiting
  * descendant lights the same amber dot, and the tooltip names it (D6). Rank 5
@@ -166,6 +204,16 @@ export function prProblem(s: RowSession): "CI failing" | "merge conflict" | null
  * the second line, so `second` leaves it out of the slot. Pure.
  */
 export function trailing(s: RowSession, { counts = true, second = false }: { counts?: boolean; second?: boolean } = {}): ReactNode {
+  // A two-line row says these on its own attention line; the slot keeps the running count.
+  if (second) {
+    const running = counts ? runningOf(s.children) : 0;
+    return running ? (
+      <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-ac-muted" title={`${childNoun(s)} · ${running} running`}>
+        <Bot className="size-3.5" />
+        {running}
+      </span>
+    ) : null;
+  }
   if (s.account.nearLimit) return <span className="shrink-0 text-[11px] text-ac-warn-text" title={`${s.account.name} is near its limit`}>{s.account.name}</span>;
   const problem = prProblem(s);
   if (problem && !second) return <span className="shrink-0 text-[11px] text-ac-alert-text">{problem}</span>;
@@ -187,6 +235,7 @@ export function trailing(s: RowSession, { counts = true, second = false }: { cou
 
 /** The trailing slot speaks about the children — a waiting descendant's dot or the running count — so it unfolds them. Pure. */
 export function childrenSlot(s: RowSession, { second = false }: { second?: boolean } = {}): boolean {
+  if (second) return runningOf(s.children) > 0;
   if (s.account.nearLimit || (prProblem(s) && !second)) return false;
   if (s.state !== "needs-you" && (s.needsYou || waitingChild(s.children))) return !!waitingChild(s.children);
   if (s.quiet) return false;
@@ -318,6 +367,42 @@ export function findChild(sessions: readonly RowSession[], id: string): { root: 
 const isLive = (c: ChildModel): boolean => c.state === "working" || c.state === "needs-you" || !!c.needsYou || (c.children ?? []).some(isLive);
 const holds = (c: ChildModel, key: string): boolean => c.id === key || (c.children ?? []).some((k) => holds(k, key));
 
+/**
+ * Subagents split like the session list (owner, 2026-11-24): "Running" open,
+ * "Idle" folded, each header with its count. Running is everything live
+ * (working, or a child that needs you); the rest is idle. An empty group has
+ * no header. Used by the Children window and the limits popover.
+ */
+export function ChildGroups({ kids, render }: { kids: readonly ChildModel[]; render: (c: ChildModel) => ReactNode }) {
+  const [shut, setShut] = useState<ReadonlySet<string>>(() => new Set(["Idle"]));
+  const groups = [
+    { id: "Running", rows: kids.filter(isLive) },
+    { id: "Idle", rows: kids.filter((c) => !isLive(c)) },
+  ].filter((g) => g.rows.length > 0);
+  return (
+    <>
+      {groups.map((g) => {
+        const open = !shut.has(g.id);
+        return (
+          <div key={g.id} data-child-group={g.id}>
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setShut((x) => (x.has(g.id) ? new Set([...x].filter((y) => y !== g.id)) : new Set([...x, g.id])))}
+              className="flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[11.5px] text-ac-muted hover:bg-ac-raise"
+            >
+              {open ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
+              <span className="font-medium text-ac-soft">{g.id}</span>
+              <span data-group-count="" className="ml-auto inline-flex h-4 min-w-[18px] shrink-0 items-center justify-center rounded-full bg-ac-raise px-1.5 text-[10.5px] tabular-nums leading-none text-ac-soft">{g.rows.length}</span>
+            </button>
+            {open && g.rows.map((c) => <div key={c.id}>{render(c)}</div>)}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 /** The idle fold's state per parent, for the session (D11): survives the row folding and unfolding. */
 const IDLE_OPEN = new Set<string>();
 function useIdleFold(parent: string): [boolean, () => void] {
@@ -378,14 +463,15 @@ function ChildRow({ c, parent, depth, rails, last, onSelect, onSubagent, onPeek,
 
 /**
  * The children under a row, to any depth (3.1–3.5): live children listed,
- * idle and finished ones behind one "N idle" line that opens in place (D11).
- * A single idle child is listed: a fold line in its place would hide nothing.
+ * idle and finished ones behind one "N idle" line that opens in place (D11),
+ * folded at first even for one (owner, 2026-11-24).
  */
 export function ChildTree({ kids, parent, depth = 1, rails = [], ...h }: { kids: readonly ChildModel[]; parent: string; depth?: number; rails?: readonly boolean[] } & TreeHandlers) {
   const [idleOpen, toggleIdle] = useIdleFold(parent);
   const live = kids.filter(isLive);
   const idle = kids.filter((c) => !isLive(c));
-  const fold = idle.length >= 2;
+  // Idle children start folded, even a single one; running ones are listed (owner, 2026-11-24).
+  const fold = idle.length >= 1;
   const shown = !fold || idleOpen || (!!h.focusKey && idle.some((c) => holds(c, h.focusKey!)));
   const items: (ChildModel | "fold")[] = [...live, ...(fold ? (["fold"] as const) : []), ...(shown ? idle : [])];
   return (
@@ -401,10 +487,13 @@ export function ChildTree({ kids, parent, depth = 1, rails = [], ...h }: { kids:
                 aria-expanded={shown}
                 aria-label={`${shown ? "Hide" : "Show"} ${idle.length} idle`}
                 onClick={toggleIdle}
-                className="flex h-6 min-w-0 items-center gap-2 rounded-md pr-2 text-[11.5px] text-ac-muted hover:text-ac-text"
+                className="flex h-6 w-full min-w-0 items-center gap-2 rounded-md pr-2 text-[11.5px] text-ac-muted hover:text-ac-text"
               >
                 <span className="-mx-0.5 inline-flex w-3 shrink-0 justify-center">{shown ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}</span>
-                <span className="truncate">{idle.length} idle</span>
+                {/* Reads like the group headers: name, then its count (owner, 2026-11-24). */}
+                <span className="font-medium text-ac-soft">Idle</span>
+                {/* Inside the active block (raised) the pill steps a shade deeper, so it stays visible. */}
+                <span data-group-count="" className="ml-auto inline-flex h-4 min-w-[18px] shrink-0 items-center justify-center rounded-full bg-ac-line px-1.5 text-[10.5px] tabular-nums leading-none text-ac-soft">{idle.length}</span>
               </button>
             </div>
           );
@@ -499,7 +588,7 @@ export function SessionRow({
   // D12 (owner, Q1 2026-11-22): the active open row and its children are one block — one raise fill, one Marker.
   const block = !!active && kids;
   const slot = trailing(s, { second });
-  const problem = prProblem(s);
+  const asks = second ? attention(s) : [];
   const ref = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLSpanElement>(null);
   useEllipsisRefresh(titleRef, active);
@@ -508,7 +597,7 @@ export function SessionRow({
   }, [active]);
   return (
     <div ref={ref} className={cn(block && "relative mb-1 rounded-md bg-ac-raise pb-0.5")}>
-      {block && <Marker tone="neutral" />}
+      {block && <Marker />}
       <div
         role="button"
         tabIndex={0}
@@ -524,7 +613,7 @@ export function SessionRow({
         onMouseLeave={onPeek && (() => onPeek(null, 0))}
         className={cn("group/row relative rounded-md pl-2.5 pr-2", second ? "py-1.5" : "py-1", block ? null : active ? "bg-ac-raise" : "hover:bg-ac-raise")}
       >
-        {active && !block && <Marker tone="neutral" />}
+        {active && !block && <Marker />}
         {/* The stem from the dot down to the first child (3.2). */}
         {kids && <span aria-hidden data-guide="stem" className={cn("pointer-events-none absolute bottom-0 w-px bg-ac-line", second ? "top-[22px]" : "top-5")} style={{ left: lineX(0) }} />}
         <div className="flex h-5 min-w-0 items-center gap-2">
@@ -563,6 +652,14 @@ export function SessionRow({
             slot
           )}
         </div>
+        {/* What to do, on its own line between the title and the account (owner, 2026-11-24): highlighted, so it reads as a task. */}
+        {second && asks.length > 0 && (
+          // One bar across the row (owner, 2026-11-24): blue for information, orange for warnings, red for problems.
+          // Words only, no icon: the state dot stays the row's one status mark (5.1).
+          <div data-attention="" data-tone={worst(asks)} className={cn("mt-1 ml-4 flex min-w-0 items-center gap-1.5 rounded px-1.5 py-[3px] text-[11px] font-medium leading-4", ATTENTION_TONE[worst(asks)])}>
+            <span className="min-w-0 truncate" title={asks.map((x) => x.text).join(" · ")}>{asks.map((x) => x.text).join(" · ")}</span>
+          </div>
+        )}
         {second && (
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-4 text-[11px] text-ac-muted">
             {s.account.color && <AccountMark color={s.account.color} />}
@@ -570,7 +667,6 @@ export function SessionRow({
             <span>·</span>
             <span className="truncate">{s.branch ?? "no repo"}</span>
             {s.pr && <span className="shrink-0">· #{s.pr.number}</span>}
-            {problem && <span className="shrink-0 text-ac-alert-text">{problem}</span>}
             {age && <span className="ml-auto shrink-0 pl-1">{age}</span>}
           </div>
         )}
@@ -593,6 +689,7 @@ export function SessionsZone({
   onSelect,
   onToggleChildren,
   onCheck,
+  onDoneToday,
   onStart,
   sort = DEFAULT_SORT,
   group = "none",
@@ -609,8 +706,11 @@ export function SessionsZone({
   tray,
   holdOrder,
   focusKey,
+  inNeeds,
   batch,
 }: {
+  /** Sessions a row of the Needs-you zone already shows: under the status grouping they are not listed twice (proposal B). */
+  inNeeds?: ReadonlySet<string>;
   /** The tray card's variant (board "tray"): a 24 px head. */
   tray?: boolean;
   sessions: RowSession[];
@@ -623,6 +723,8 @@ export function SessionsZone({
   onSelect: (key: string) => void;
   onToggleChildren: (key: string) => void;
   onCheck: (key: string) => void;
+  /** Opens All sessions; `which` picks its Done today or Older tab. */
+  onDoneToday: (which?: "today" | "older") => void;
   /** The empty zone's one action (spec §5.2). */
   onStart?: () => void;
   /** The list's order and grouping (the zone head shows and opens them). */
@@ -658,10 +760,28 @@ export function SessionsZone({
   const order = useHeldOrder(sorted.map((s) => s.key), engaged || !!holdOrder);
   const byKey = new Map(sorted.map((s) => [s.key, s]));
   const live = order.map((k) => byKey.get(k)!);
-  const grouped = group !== "none" && !!groupOf;
-  // Grouped: one header per group, in the order the sorted list first meets it; rows keep the sort inside.
-  const groups = grouped ? [...new Set(live.map((s) => groupOf!(s.key) ?? ""))] : [""];
-  const rowsOf = (g: string) => (grouped ? live.filter((s) => (groupOf!(s.key) ?? "") === g) : live);
+  const done = sessions.filter((s) => s.doneToday).length;
+  // Status grouping: ended sessions stay one click away in two rows pinned under the list,
+  // Done today and Older; each opens the All sessions window (owner, 2026-11-24).
+  // The data marks a long-quiet session `older` instead of `doneToday`; midnight still decides the row.
+  const ended = sessions.filter((s) => s.doneToday || s.older);
+  const midnight = nowMs == null ? null : new Date(nowMs).setHours(0, 0, 0, 0);
+  const endedAt = (s: RowSession) => s.lastActiveMs ?? lastActiveOf(s.key);
+  const doneRows = [
+    { id: "Done today", count: ended.filter((s) => midnight == null || (endedAt(s) ?? midnight) >= midnight).length },
+    { id: "Older", count: ended.filter((s) => midnight != null && (endedAt(s) ?? midnight) < midnight).length },
+  ].filter((g) => g.count > 0);
+  const byStatus = group === "status";
+  const grouped = byStatus || (group !== "none" && !!groupOf);
+  const groupKey = (s: RowSession) => (byStatus ? statusGroup(s) : (groupOf!(s.key) ?? ""));
+  // Status: a session the Needs-you zone already shows is not listed again; the group keeps the rest.
+  const listed = byStatus && inNeeds ? live.filter((s) => statusGroup(s) !== "Needs you" || !inNeeds.has(s.key)) : live;
+  // Grouped: one header per group — status groups in their fixed order, others in the order the sorted list first meets them; rows keep the sort inside.
+  const groups = byStatus ? STATUS_GROUPS.filter((g) => listed.some((s) => statusGroup(s) === g)) : grouped ? [...new Set(listed.map(groupKey))] : [""];
+  const rowsOf = (g: string) => (grouped ? listed.filter((s) => groupKey(s) === g) : listed);
+  // A long group shows its first rows and "N more"; the active row always shows.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const capped = (g: string, rows: RowSession[]) => (!grouped || expanded.has(g) || rows.length <= GROUP_ROWS + 1 ? rows : rows.filter((s, i) => i < GROUP_ROWS || s.key === activeKey));
   // A project's rows split by worktree only when more than one holds a live session (D8); otherwise one block, no sub-header.
   const worktreesOf = (g: string) => {
     const l = rowsOf(g);
@@ -679,10 +799,20 @@ export function SessionsZone({
     const t = s.lastActiveMs ?? lastActiveOf(s.key);
     return t == null || nowMs == null ? null : ago(nowMs - t);
   };
+  // Idle starts folded under the status grouping (owner, 2026-11-24) — unless the open session is idle, or
+  // nothing else is listed (an all-idle list would read as empty). A click on the header decides from then on.
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
-  const fold = (g: string) => setFolded((f) => (f.has(g) ? new Set([...f].filter((x) => x !== g)) : new Set([...f, g])));
+  const [idleChoice, setIdleChoice] = useState<boolean | null>(null);
+  const openRow = sessions.find((s) => s.key === activeKey);
+  const idleDefault = byStatus && !(openRow && statusGroup(openRow) === "Idle") && listed.some((s) => statusGroup(s) !== "Idle");
+  const isFolded = (g: string) => (byStatus && g === "Idle" ? (idleChoice ?? idleDefault) : folded.has(g));
+  const fold = (g: string) => {
+    if (byStatus && g === "Idle") return setIdleChoice(!isFolded(g));
+    setFolded((f) => (f.has(g) ? new Set([...f].filter((x) => x !== g)) : new Set([...f, g])));
+  };
   return (
-    <section aria-label="Sessions">
+    // A column that fills the window, so Done today and Older sit at its foot, right above the limits.
+    <section aria-label="Sessions" className="flex flex-1 flex-col">
       {divider ? <div className="mx-3.5 my-1.5 h-px bg-ac-line" /> : <div className="h-2" />}
       <div className={cn("flex items-center gap-2 px-3.5", tray ? "mt-0.5 h-6" : "sticky top-0 z-[1] h-8 bg-ac-panel")}>
         <span className="text-[11px] font-semibold text-ac-soft">Sessions</span>
@@ -700,7 +830,8 @@ export function SessionsZone({
             title="Sort and group"
             className={cn("-mr-1.5 ml-auto inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-ac-muted hover:bg-ac-raise hover:text-ac-text", viewOpen && "bg-ac-raise text-ac-text")}
           >
-            {grouped && <>{GROUP_LABEL[group].split(" ")[0]} · </>}
+            {/* "Status · Status" says one thing twice: grouped and sorted by status reads "Status". */}
+            {grouped && GROUP_LABEL[group] !== SORT_LABEL[sort] && <>{GROUP_LABEL[group].split(" ")[0]} · </>}
             {SORT_LABEL[sort]}
             <ChevronDown className="size-3" />
           </button>
@@ -723,18 +854,20 @@ export function SessionsZone({
             <button
               key={`h:${g}`}
               type="button"
-              aria-expanded={!folded.has(g)}
+              aria-expanded={!isFolded(g)}
               onClick={() => fold(g)}
               title={g ? `${GROUP_LABEL[group]}: ${g}` : undefined}
               className="flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[11.5px] text-ac-muted hover:bg-ac-raise"
             >
-              {folded.has(g) ? <ChevronRight className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />}
+              {isFolded(g) ? <ChevronRight className="size-3 shrink-0" /> : <ChevronDown className="size-3 shrink-0" />}
               {group === "project" ? <Folder className="size-3.5 shrink-0" /> : group === "tool" ? <SquareTerminal className="size-3.5 shrink-0" /> : null}
               <span className="min-w-0 truncate font-medium text-ac-soft">{g || (group === "project" ? "No project" : "Other")}</span>
-              <span>{rowsOf(g).length}</span>
+              <span data-group-count="" className="ml-auto inline-flex h-4 min-w-[18px] shrink-0 items-center justify-center rounded-full bg-ac-raise px-1.5 text-[10.5px] tabular-nums leading-none text-ac-soft">{rowsOf(g).length}</span>
             </button>
           ),
-          ...(folded.has(g) ? [] : worktreesOf(g)).flatMap(({ wt, rows: wtRows }, i) => [
+          ...(isFolded(g) ? [] : worktreesOf(g)).flatMap(({ wt, rows: all }, i) => {
+          const wtRows = capped(`${g}\0${i}`, all);
+          return [
           wt !== undefined ? (
             <h4 key={`w:${g}:${wt?.id ?? i}`} title={wt?.id} className="flex h-6 items-center gap-1.5 pl-[26px] pr-1.5 text-[11px] font-normal text-ac-muted">
               <span className={cn("min-w-0 truncate", wt && "font-ac-mono")}>{wt ? (wt.branch ?? "detached HEAD") : "No repository"}</span>
@@ -760,48 +893,34 @@ export function SessionsZone({
             age={ageOf(s)}
           />
           )),
-          ]),
+          wtRows.length < all.length ? (
+            <button key={`m:${g}:${i}`} type="button" onClick={() => setExpanded((x) => new Set([...x, `${g}\0${i}`]))} className="ml-[26px] flex h-6 items-center text-[11px] text-ac-muted hover:text-ac-text">
+              {all.length - wtRows.length} more ›
+            </button>
+          ) : null,
+          ];
+          }),
         ])}
+        {!byStatus && done > 0 && (
+          <div className="mt-0.5 flex h-7 items-center gap-2 px-2.5 text-[11.5px] text-ac-muted">
+            <button type="button" onClick={() => onDoneToday("today")} className="inline-flex flex-1 items-center gap-2 text-left hover:text-ac-text">
+              <ChevronRight className="size-3" /> Done today {done}
+            </button>
+          </div>
+        )}
       </div>
+      {byStatus && doneRows.length > 0 && (
+        <div data-done-groups="" className="sticky bottom-0 z-[1] mt-auto border-t border-ac-line bg-ac-panel px-1.5 py-1">
+          {/* Each row is one full-width button; Clean up lives in All sessions for now (owner, 2026-11-24). */}
+          {doneRows.map((g) => (
+            <button key={g.id} type="button" onClick={() => onDoneToday(g.id === "Older" ? "older" : "today")} title={`Open All sessions · ${g.id}`} className="flex h-6 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[11.5px] text-ac-muted hover:bg-ac-raise hover:text-ac-text">
+              <ChevronRight className="size-3 shrink-0" />
+              <span className="font-medium text-ac-soft">{g.id}</span>
+              <span data-group-count="" className="ml-auto inline-flex h-4 min-w-[18px] shrink-0 items-center justify-center rounded-full bg-ac-raise px-1.5 text-[10.5px] tabular-nums leading-none text-ac-soft">{g.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </section>
-  );
-}
-
-/** Which past sessions a footer row opens in All sessions. */
-export type PastRange = "done" | "older";
-
-/**
- * The two rows pinned under the session list: sessions quiet past the done-after
- * time, and sessions quiet for over a day. Both open All sessions on their time;
- * a row with nothing in it is left out.
- */
-export function SessionsFooter({ done, older, onOpen, onCleanUp }: { done: number; older: number; onOpen: (range: PastRange) => void; onCleanUp: () => void }) {
-  if (done === 0 && older === 0) return null;
-  // Both rows share the grid's columns, so the badges line up under each other.
-  const row = "col-span-2 col-start-1 grid h-7 grid-cols-subgrid items-center gap-x-2 rounded-md px-1.5 text-left hover:bg-ac-raise hover:text-ac-text";
-  return (
-    <div className="grid shrink-0 grid-cols-[max-content_max-content_1fr] items-center border-t border-ac-line px-1.5 py-1 text-[11.5px] text-ac-muted">
-      {done > 0 && (
-        <>
-          <button type="button" onClick={() => onOpen("done")} className={row}>
-            <span className="inline-flex items-center gap-2">
-              <ChevronRight className="size-3" /> Done today
-            </span>
-            <Chip kind="tag">{done}</Chip>
-          </button>
-          <button type="button" onClick={onCleanUp} title="Removes worktrees whose PR merged; dirty ones are skipped" className="justify-self-end px-1.5 hover:text-ac-text">
-            Clean up
-          </button>
-        </>
-      )}
-      {older > 0 && (
-        <button type="button" onClick={() => onOpen("older")} className={row}>
-          <span className="inline-flex items-center gap-2">
-            <ChevronRight className="size-3" /> Older than a day
-          </span>
-          <Chip kind="tag">{older}</Chip>
-        </button>
-      )}
-    </div>
   );
 }

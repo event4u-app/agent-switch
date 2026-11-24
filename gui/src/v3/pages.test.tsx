@@ -55,10 +55,22 @@ describe("All sessions page (spec §10.2)", () => {
     expect(filterSessions(rows, "store", "all", "any").map((r) => r.key)).toEqual(["a"]);
     expect(filterSessions(rows, "", "done", "any").map((r) => r.key)).toEqual(["b"]);
     expect(filterSessions(rows, "", "all", "codex").map((r) => r.key)).toEqual(["c"]);
+    expect(filterSessions(rows, "", "all", new Set(["codex"] as const)).map((r) => r.key)).toEqual(["c"]);
+    expect(filterSessions(rows, "", "all", new Set()).length, "nothing ticked = every tool").toBe(3);
+    // Ended sessions split like the sidebar (owner, 2026-11-24): since midnight is Done today, before is Older.
+    const old = sess("o", { live: false, lastActiveMs: new Date(NOW).setHours(0, 0, 0, 0) - 60_000 });
+    expect(filterSessions([...rows, old], "", "today", "any", NOW).map((r) => r.key)).toEqual(["b"]);
+    expect(filterSessions([...rows, old], "", "older", "any", NOW).map((r) => r.key)).toEqual(["o"]);
     const onOpen = vi.fn();
     const batch = vi.fn(() => ({ onClear: vi.fn(), onPin: vi.fn(), onArchive: vi.fn(), onClean: vi.fn(), onEnd: vi.fn() }));
     render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={onOpen} batch={batch} />);
-    expect(screen.getByRole("radio", { name: "Live 2" })).toBeTruthy();
+    // Status tabs with counts; a tab with nothing behind it is hidden (proposal E).
+    // Status, tool and time are dropdowns (owner, 2026-11-24); only List | Projects stays a switch.
+    expect(screen.getAllByRole("radio").map((r) => r.textContent)).toEqual(["List", "Projects"]);
+    expect(screen.getByRole("button", { name: "Status: All 3" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Active: Any time" })).toBeTruthy();
+    // Tools: a multi-select dropdown (owner, 2026-11-24); nothing ticked reads "All tools".
+    expect(screen.getByRole("button", { name: "Tool: All tools" })).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Select Event store"));
     expect(onOpen).not.toHaveBeenCalled();
     expect(batch).toHaveBeenLastCalledWith(["a"]);
@@ -69,22 +81,6 @@ describe("All sessions page (spec §10.2)", () => {
   });
 });
 
-describe("All sessions opened for a time (Done today, Older than a day)", () => {
-  it("shows only the sessions of that time, says so in the title, and widens back to all", () => {
-    const rows = [sess("a", { title: "Busy", when: "active" }), sess("b", { title: "Quiet", when: "done" }), sess("c", { title: "Stale", when: "older" })];
-    render(<AllSessionsPage sessions={rows} range="older" nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
-    expect(screen.getByRole("heading", { name: "Older than a day" })).toBeTruthy();
-    expect(screen.getByText("Stale")).toBeTruthy();
-    expect(screen.queryByText("Busy")).toBeNull();
-    expect(screen.queryByText("Quiet")).toBeNull();
-    fireEvent.click(screen.getByRole("radio", { name: "Done today 1" }));
-    expect(screen.getByText("Quiet")).toBeTruthy();
-    expect(screen.queryByText("Stale")).toBeNull();
-    fireEvent.click(screen.getByRole("radio", { name: "Any time 3" }));
-    expect(screen.getByRole("heading", { name: "All sessions" })).toBeTruthy();
-    expect(screen.getByText("Busy")).toBeTruthy();
-  });
-});
 
 describe("All sessions follows the sidebar's order (8.6)", () => {
   it("rows in the sidebar's order first, then the rest newest first", () => {
@@ -158,10 +154,66 @@ describe("All sessions › Projects", () => {
       ["agent-switch", ["a", "d"]],
       [null, ["b"]],
     ]);
+    // List or Projects is the page's own switch (owner, 2026-11-24); it starts from the sidebar's grouping.
     render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
     expect(screen.queryByText("No project")).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "Projects" }));
     expect(screen.getByText("agent-switch")).toBeTruthy();
+    cleanup();
+    render(<AllSessionsPage sessions={rows} group="project" nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
     expect(screen.getByText("No project")).toBeTruthy();
+  });
+});
+
+describe("All sessions, fewer columns (proposal E)", () => {
+  it("Needs you counts waiting and CI-failing sessions; one tool hides the tool filter", () => {
+    const rows = [sess("a", { state: "needs-you" }), sess("b", { pr: { number: 1, ci: "FAILURE" } }), sess("c", { state: "working" }), sess("d")];
+    expect(filterSessions(rows, "", "needs", "any").map((r) => r.key)).toEqual(["a", "b"]);
+    const { unmount } = render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    expect(screen.getByRole("button", { name: "Status: All 4" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Tool:/ }), "one tool: no tool filter").toBeNull();
+    unmount();
+    render(<AllSessionsPage sessions={rows} nowMs={NOW} status="needs" onOpen={vi.fn()} batch={() => ({}) as never} />);
+    expect(screen.getAllByLabelText(/^Select /)).toHaveLength(2);
+  });
+
+  it("a value every row shares is said once above the table, not in every row; the tool is named only where it is not Claude", () => {
+    const same = [sess("a", { model: "Opus 5.5", thinking: "High" }), sess("b", { model: "Opus 5.5", thinking: "High" })];
+    const { rerender } = render(<AllSessionsPage sessions={same} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    expect(screen.getByText(/^Every session here runs on .+ · Opus 5.5 · High\.$/)).toBeTruthy();
+    expect(screen.queryByText("Account")).toBeNull();
+    expect(screen.queryByText("Model")).toBeNull();
+    rerender(<AllSessionsPage sessions={[...same, sess("c", { tool: "codex", model: "default", thinking: "medium" })]} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    expect(screen.getByText("Account")).toBeTruthy();
+    expect(screen.getAllByText(/ · Codex$/)).toHaveLength(1);
+  });
+});
+
+describe("All sessions opens on the tab the sidebar asked for (owner, 2026-11-24)", () => {
+  it("Older opens on Older and lists only what ended before today", () => {
+    const rows = [sess("t", { live: false, title: "Today one" }), sess("o", { live: false, title: "Old one", lastActiveMs: new Date(NOW).setHours(0, 0, 0, 0) - 60_000 })];
+    render(<AllSessionsPage sessions={rows} nowMs={NOW} status="older" onOpen={vi.fn()} batch={() => ({}) as never} />);
+    expect(screen.getByRole("button", { name: "Status: Older" })).toBeTruthy();
+    expect(screen.getByText("Old one")).toBeTruthy();
+    expect(screen.queryByText("Today one")).toBeNull();
+  });
+});
+
+describe("All sessions by time (owner, 2026-11-24)", () => {
+  it("a from–to range keeps only sessions active inside it; Any time clears it", () => {
+    const rows = [sess("a", { title: "Early", lastActiveMs: NOW - 5 * 3_600_000 }), sess("b", { title: "Late", lastActiveMs: NOW - 60_000 })];
+    render(<AllSessionsPage sessions={rows} nowMs={NOW} onOpen={vi.fn()} batch={() => ({}) as never} />);
+    fireEvent.click(screen.getByRole("button", { name: "Active: Any time" }));
+    const field = (ms: number) => {
+      const d = new Date(ms);
+      const p = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: field(NOW - 6 * 3_600_000) } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: field(NOW - 4 * 3_600_000) } });
+    expect(screen.getByText("Early")).toBeTruthy();
+    expect(screen.queryByText("Late")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Any time" }));
+    expect(screen.getByText("Late")).toBeTruthy();
   });
 });

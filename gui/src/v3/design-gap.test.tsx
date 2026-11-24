@@ -92,7 +92,7 @@ describe("Open in (spec §7.7)", () => {
     const models = () => ({ models: [{ id: "opus", label: "Opus", hint: "deepest" }], current: "opus", thinking: ["high"], currentThinking: "high" });
     mount({ ...withTargets(), models });
     openSession();
-    fireEvent.click(screen.getByTitle("Model for the next turn"));
+    fireEvent.click(screen.getByTitle("Model and thinking for the next turn"));
     expect(screen.queryByRole("dialog", { name: "Model and thinking" })).not.toBeNull();
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole("dialog", { name: "Model and thinking" })).toBeNull();
@@ -280,6 +280,18 @@ describe("one trailing glyph per row (spec §5.2)", () => {
     expect(screen.getByLabelText("Hide children")).toBeTruthy();
   });
 
+  it("one session unfolded at a time (owner, 2026-11-24): opening another folds the first", () => {
+    const d = data();
+    const two = (key: string, title: string, label: string) => ({ ...d.sessions[0], key, title, account: { name: "work", nearLimit: false }, children: [{ id: `c-${key}`, label, kind: "subagent", state: "working" as const, source: "hook" as const }] });
+    render(<V3Window data={{ ...d, sessions: [two("s2", "Two", "Kid two"), two("s3", "Three", "Kid three")] }} slots={slots} act={vi.fn()} />);
+    const [first, second] = screen.getAllByLabelText("Show 1 subagent");
+    fireEvent.click(first);
+    expect(screen.getByText("Kid two")).toBeTruthy();
+    fireEvent.click(second);
+    expect(screen.getByText("Kid three")).toBeTruthy();
+    expect(screen.queryByText("Kid two")).toBeNull();
+  });
+
   it("finished children in an empty slot: a chevron on hover only", () => {
     const d = data();
     render(<V3Window data={{ ...d, sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow", account: { name: "work", nearLimit: false }, children: kid("done") }] }} slots={slots} act={vi.fn()} />);
@@ -288,11 +300,18 @@ describe("one trailing glyph per row (spec §5.2)", () => {
     expect(toggle.className).toMatch(/group-hover\/row:opacity-100/);
   });
 
-  it("a slot taken by a higher priority keeps its glyph alone", () => {
+  it("a slot taken by a higher priority keeps its glyph alone (compact)", () => {
     const d = data();
-    render(<V3Window data={{ ...d, sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow", account: { name: "side", nearLimit: true }, children: kid("working") }] }} slots={slots} act={vi.fn()} />);
+    render(<V3Window data={{ ...d, sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow", account: { name: "side", nearLimit: true }, children: kid("working") }] }} slots={slots} act={vi.fn()} layout={{ load: () => ({ comfortable: false }), save: vi.fn() }} />);
     expect(screen.queryByLabelText("Show 1 subagent")).toBeNull();
     expect(screen.getByTitle("side is near its limit")).toBeTruthy();
+  });
+
+  it("a two-line row says it on its attention line; the slot keeps the running count", () => {
+    const d = data();
+    render(<V3Window data={{ ...d, sessions: [d.sessions[0], { ...d.sessions[0], key: "s2", title: "Checkout flow", account: { name: "side", nearLimit: true }, children: kid("working") }] }} slots={slots} act={vi.fn()} />);
+    expect(screen.getByText("side near its limit")).toBeTruthy();
+    expect(screen.getByLabelText("Show 1 subagent")).toBeTruthy();
   });
 });
 
@@ -453,7 +472,7 @@ describe("Model popover (spec §7.6)", () => {
 
   it("opens under the chip, marks only the chosen model and changes it for the next turn", () => {
     const { act } = mount({ models });
-    fireEvent.click(screen.getByTitle("Model for the next turn"));
+    fireEvent.click(screen.getByTitle("Model and thinking for the next turn"));
     const pop = screen.getByRole("dialog", { name: "Model and thinking" });
     expect(within(pop).getAllByRole("menuitemradio").map((b) => b.getAttribute("aria-checked"))).toEqual(["true", "false"]);
     expect(within(pop).getByText("Applies from the next turn.", { exact: false })).toBeTruthy();
@@ -462,9 +481,10 @@ describe("Model popover (spec §7.6)", () => {
     expect(screen.queryByRole("dialog", { name: "Model and thinking" })).toBeNull();
   });
 
-  it("the thinking chip opens the same popover; the segmented control sets the level", () => {
+  it("one chip for model and thinking (owner, 2026-11-24): the arrow says the level; the segmented control sets it", () => {
     const { act } = mount({ models });
-    fireEvent.click(screen.getByTitle("Thinking for the next turn"));
+    expect(document.querySelector("[data-thinking]")?.getAttribute("aria-label")).toMatch(/^Thinking /);
+    fireEvent.click(screen.getByTitle("Model and thinking for the next turn"));
     fireEvent.click(screen.getByRole("radio", { name: "Low" }));
     expect(act).toHaveBeenCalledWith({ type: "set-thinking", key: "s1", level: "low" });
   });
@@ -474,10 +494,10 @@ describe("real data without placeholders (gap §5a–§5b)", () => {
   it("unknown model, thinking and 5h read as the muted field names, never a dash", () => {
     const d = data();
     mount({ bar: () => ({ ...d.bar("s1")!, model: null, thinking: null, account: { ...d.bar("s1")!.account, fiveH: null } }) });
-    const bar = screen.getByTitle("Model for the next turn").parentElement!;
+    const bar = screen.getByTitle("Model and thinking for the next turn").parentElement!;
     expect(bar.textContent).not.toContain("—");
-    expect(screen.getByTitle("Model for the next turn").textContent).toBe("Model");
-    expect(screen.getByTitle("Thinking for the next turn").textContent!.trim()).toBe("Thinking");
+    expect(screen.getByTitle("Model and thinking for the next turn").textContent).toBe("Model");
+    expect(document.querySelector("[data-thinking]"), "no level, no arrow").toBeNull();
   });
 
   it("the model chip shows the label and keeps the raw id in its tooltip", () => {

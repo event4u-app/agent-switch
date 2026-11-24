@@ -108,10 +108,8 @@ export function NeedsZone({
   onAway: () => void;
 }) {
   if (items.length === 0 && !away) return null;
-  const shown = items.slice(0, MAX_ROWS);
   // A focused item further down the queue is shown in place of the last row, so ⌘J is always visible.
-  const focused = focusedId ? items.find((i) => i.id === focusedId) : undefined;
-  if (focused && !shown.includes(focused)) shown[shown.length - 1] = focused;
+  const shown = shownNeeds(items, focusedId);
   const updates = away ? away.finishedTurns + away.stoppedOnError + away.resolved + away.mergedPrs + away.ciBreaks : 0;
   return (
     <section aria-label="Needs you" className={tray ? "pt-1" : undefined}>
@@ -138,6 +136,17 @@ export function NeedsZone({
     </section>
   );
 }
+
+/** The rows the zone shows: the first `MAX_ROWS`, a focused item further down in place of the last. Pure. */
+export function shownNeeds(items: readonly NeedItem[], focusedId?: string | null): NeedItem[] {
+  const shown = items.slice(0, MAX_ROWS);
+  const focused = focusedId ? items.find((i) => i.id === focusedId) : undefined;
+  if (focused && !shown.includes(focused)) shown[shown.length - 1] = focused;
+  return shown;
+}
+
+/** The session an item is about: a PR item names it; an approval, question or CI item's subject is its key. Pure. */
+export const needSession = (n: NeedItem): string | null => n.session ?? (n.kind === "approval" || n.kind === "question" || n.kind === "ci" ? n.subject : null);
 
 /** ⌘J: the next item after the focused one, wrapping; the first when none is focused. Pure. */
 export function nextFocus(items: readonly NeedItem[], current: string | null | undefined): string | null {

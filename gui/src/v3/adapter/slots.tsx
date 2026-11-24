@@ -18,7 +18,8 @@ import { ProvidersSettings } from "../../redesign/screens/settings/providers.js"
 import { SignInSettings } from "../../redesign/screens/settings/sign-ins.js";
 import { UpdatesSettings } from "../../redesign/screens/settings/updates.js";
 import type { SettingsSection } from "../settings.js";
-import { ChatTimeline, EarlierTurns, hiddenText } from "../chat.js";
+import { ChatTimeline, EarlierTurns, copyRows, hiddenText } from "../chat.js";
+import { useCopySource } from "../copy-source.js";
 import { TranscriptTerminal } from "../transcript-terminal.js";
 import { EarlierNotShown } from "../subagent-view.js";
 import { fold } from "../timeline.js";
@@ -71,7 +72,7 @@ function legacyScreen(section: SettingsSection): ReactNode {
 
 /** The session body: Agent Switch's own terminal for a hosted session, the
  *  facts and a focus button for one in the user's terminal (D-mirror). */
-export function SessionBody({ sessionKey, row, hosted, ownView = "chat", vars, followTheme, where, onFocus, onTakeOver, onExit }: { sessionKey: string; row: SessionRow | undefined; hosted: boolean; ownView?: "terminal" | "chat"; vars: Record<string, string>; followTheme: boolean; where: string; onFocus: (() => void) | null; onTakeOver: (() => void) | null; onExit: () => void }) {
+export function SessionBody({ sessionKey, row, hosted, ownView = "chat", vars, followTheme, where, onFocus, onExit }: { sessionKey: string; row: SessionRow | undefined; hosted: boolean; ownView?: "terminal" | "chat"; vars: Record<string, string>; followTheme: boolean; where: string; /** Focus reaches its terminal: the read-only view says so where it cannot answer. Focus and Take over themselves are in ⋯ (proposal C). */ onFocus: (() => void) | null; onExit: () => void }) {
   if (hosted) return <HostedTerminal sessionKey={sessionKey} vars={vars} followTheme={followTheme} backend={tauriBackend} onExit={onExit} />;
   const facts = row ? (
     <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1">
@@ -85,12 +86,12 @@ export function SessionBody({ sessionKey, row, hosted, ownView = "chat", vars, f
       <dd>{row.profile}</dd>
     </dl>
   ) : null;
-  return <ExternalSession sessionKey={sessionKey} row={row} view={ownView} where={row?.surface === "desktop-app" ? "Claude Desktop" : where} facts={facts} onFocus={onFocus} onTakeOver={onTakeOver} />;
+  return <ExternalSession sessionKey={sessionKey} row={row} view={ownView} where={row?.surface === "desktop-app" ? "Claude Desktop" : where} facts={facts} onFocus={onFocus} />;
 }
 
 /** One read of the transcript feeds the timeline and the "read-only here"
  *  tooltip, which carries the count of lines not drawn (gap §5e). */
-function ExternalSession({ sessionKey, row, view, where, facts, onFocus, onTakeOver }: { sessionKey: string; row: SessionRow | undefined; view: "terminal" | "chat"; where: string; facts: ReactNode; onFocus: (() => void) | null; onTakeOver: (() => void) | null }) {
+function ExternalSession({ sessionKey, row, view, where, facts, onFocus }: { sessionKey: string; row: SessionRow | undefined; view: "terminal" | "chat"; where: string; facts: ReactNode; onFocus: (() => void) | null }) {
   const t = useTimeline(sessionKey);
   // The CLI leaves bookkeeping out and counts it; what it sent and the view does not draw adds to that.
   const hidden = useMemo(() => {
@@ -98,7 +99,10 @@ function ExternalSession({ sessionKey, row, view, where, facts, onFocus, onTakeO
     for (const [k, n] of Object.entries(fold(t.events).hidden)) all[k] = (all[k] ?? 0) + n;
     return hiddenText(all);
   }, [t.events, t.hidden]);
-  return <ExternalBody where={where} facts={facts} lastLine={null} onFocus={onFocus} onTakeOver={onTakeOver} readOnlyTitle={hidden} timeline={<ReadOnlyTimeline t={t} row={row} where={where} focusable={!!onFocus} terminal={view === "terminal"} />} />;
+  // Copy conversation sits in the session's ⋯ menu (proposal C).
+  const rows = useMemo(() => fold(t.events).rows, [t.events]);
+  useCopySource(sessionKey, rows.length ? () => copyRows(rows, t.earlier ? () => t.earlier!.all().then((all) => fold(all).rows) : undefined) : null);
+  return <ExternalBody facts={facts} lastLine={null} readOnlyTitle={hidden} timeline={<ReadOnlyTimeline t={t} row={row} where={where} focusable={!!onFocus} terminal={view === "terminal"} copyBar={false} />} />;
 }
 
 /** 7.7: one subagent's transcript, polled while it is on screen like a session's. */
@@ -110,7 +114,7 @@ export function SubagentTranscript({ parent, agentId, read = ipc.subagentTimelin
 
 /** The read-only timeline of a session running elsewhere (ADR-010). Falls back
  *  to the facts while it loads or when it cannot be read. `sayEarlier`: say so when only the end was read. */
-export function ReadOnlyTimeline({ t, row, where, focusable = false, terminal, sayEarlier = false }: { t: TimelineState; row?: SessionRow; /** Where the session runs, for "answer it there". */ where?: string; /** A Focus terminal button is offered next to it. */ focusable?: boolean; terminal?: boolean; /** Say so when only the end was read (a subagent's view). */ sayEarlier?: boolean }) {
+export function ReadOnlyTimeline({ t, row, where, focusable = false, terminal, sayEarlier = false, copyBar = true }: { t: TimelineState; row?: SessionRow; /** false: the session's ⋯ menu copies it (proposal C); a subagent's view keeps its own bar. */ copyBar?: boolean; /** Where the session runs, for "answer it there". */ where?: string; /** A Focus terminal button is offered next to it. */ focusable?: boolean; terminal?: boolean; /** Say so when only the end was read (a subagent's view). */ sayEarlier?: boolean }) {
   if (!t.loaded) return <p className="m-auto text-[13px] text-ac-muted">Reading the conversation…</p>;
   const earlier = sayEarlier && t.cut ? <EarlierNotShown /> : null;
   const state = t.error ? (
@@ -136,7 +140,7 @@ export function ReadOnlyTimeline({ t, row, where, focusable = false, terminal, s
         <TranscriptTerminal events={t.events} />
       </div>
     );
-  return <ChatTimeline events={t.events} notice={notice} earlier={t.earlier} agent={row?.provider === "codex" ? "Codex" : "Claude"} on={{ worktreeOf: worktreeOf(row), ...(where ? { unanswerable: focusable ? `Answer it in ${where} — Focus terminal brings it up.` : `Answer it in ${where}.` } : {}) }} />;
+  return <ChatTimeline events={t.events} notice={notice} earlier={t.earlier} copyBar={copyBar} agent={row?.provider === "codex" ? "Codex" : "Claude"} on={{ worktreeOf: worktreeOf(row), ...(where ? { unanswerable: focusable ? `Answer it in ${where} — Focus terminal brings it up.` : `Answer it in ${where}.` } : {}) }} />;
 }
 
 /** Tools on the store: the board's rows, then the 2.11 agent-config card

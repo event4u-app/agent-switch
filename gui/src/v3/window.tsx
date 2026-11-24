@@ -8,10 +8,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../lib/utils.js";
-import { ArrowLeftRight, ArrowRightToLine, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, Unplug, Wrench, X } from "lucide-react";
+import { ArrowLeftRight, ArrowRightToLine, ClipboardCopy, Copy, Ellipsis, FileCode, Hand, Layers, Library, ListTree, Minimize2, Pencil, Pin, PinOff, Plus, Power, RotateCcw, Send, Settings, SquareTerminal, Unplug, Wrench, X } from "lucide-react";
 import { Button, IconButton } from "../ui/Button.js";
 import { Kbd } from "../ui/Typography.js";
-import type { IdentityColor, ToolEntry } from "../vm/types.js";
+import type { ActivityEvent, IdentityColor, ToolEntry } from "../vm/types.js";
 import { DecisionSheet, EndDialog, NewSessionDialog, type MoveHow, type NewSessionFacts, type NewSessionPlan, type SheetMove, type SheetSession } from "./dialogs.js";
 import { Shell, useFrame, type PageId } from "./frame.js";
 import { LimitsPopover, LimitsStrip, RoomLeft, type LimitAccount } from "./limits.js";
@@ -22,11 +22,12 @@ const LIMITS_MODEL_X = 695;
 import { answeredThere, NeedsZone, type AwayDigest, type NeedItem } from "./needs.js";
 import { limitToOpen, markLimitOpened, openedLimits, wasOpened } from "./adapter/limit-auto.js";
 import { accountOfKey } from "../vm/switch-requests.js";
+import { HistorySheet } from "./history.js";
 import { InboxPopover, Palette, PeekCard, type DoneItem, type PaletteEntry } from "./overlays.js";
-import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type SessionRange, type TableSession } from "./pages.js";
+import { AccountsPage, AllSessionsPage, LibraryPage, type AccountsView, type LibraryRow, type PageAccount, type TableSession, type StatusTab } from "./pages.js";
 import { ChangesWindow, ChildrenWindow, SummaryWindow, type ChangedFile, type SummaryFacts } from "./panels.js";
 import type { ReviewFocus } from "./review.js";
-import { DEFAULT_SORT, SessionsFooter, SessionsZone, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
+import { DEFAULT_SORT, SessionsZone, sortLive, childNoun, childOpens, findChild, type RowSession } from "./sessions.js";
 import { SubagentView } from "./subagent-view.js";
 import { AgentsSettings, AppearanceSettings, OpenInSettings, RemoteSettings, SettingsPage, type AgentRowView, type AgentSuggestionView, type OpenTarget, type SettingsSection } from "./settings.js";
 import type { Appearance } from "./themes/resolve.js";
@@ -37,9 +38,10 @@ import { Anchored, Menu, OpenInButton, OpenInMenu, POPOVER_TRIGGER, monogram, ty
 import { startTabs, type LayoutStore } from "./layout.js";
 import { actionFor, DEFAULT_KEYS, label as keyLabel, type Action, type Binding } from "./keys.js";
 import { EMPTY_TABS, canReopen, closable, closeOthers, closeTab, closeToRight, closeUnpinned, isPageTab, moveTab, nextActive, openTab, pinTab, reopenTab, seedTabs, unpinTab, type TabState } from "./tabs.js";
-import { nextFocus } from "./needs.js";
+import { needSession, nextFocus, shownNeeds } from "./needs.js";
+import { canCopy, copyConversation } from "./copy-source.js";
 import { Switcher } from "./overlays.js";
-import { GROUP_LABEL, SORT_LABEL, liveOrder, type GroupBy, type SortBy } from "./sessions.js";
+import { DEFAULT_GROUP, GROUP_LABEL, SORT_LABEL, liveOrder, type GroupBy, type SortBy } from "./sessions.js";
 
 export interface V3Data {
   nowMs: number;
@@ -47,6 +49,8 @@ export interface V3Data {
   needs: NeedItem[];
   away: AwayDigest | null;
   history: DoneItem[];
+  /** The CLI's activity log, newest first: the History sheet (as v2). Absent = none read. */
+  activity?: ActivityEvent[];
   sessions: RowSession[];
   limits: LimitAccount[];
   accounts: PageAccount[];
@@ -239,7 +243,7 @@ export function V3Window({
   const pages = strip.order.filter(isPageTab).map((id) => id.slice(5) as Page);
   const sessionTabs = strip.order.filter((id) => !isPageTab(id));
   const [active, setActive] = useState<string | null>(null);
-  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor; moved?: BarChipId[] } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number }>(null);
+  const [overlay, setOverlay] = useState<null | "palette" | "inbox" | "history" | "new" | "sessions-menu" | { listView: number } | { switcher: number } | { limits: string } | { model: string; x: number; chip: "model" | "thinking"; at?: "limits" } | { decide: string } | { menu: string; at?: Anchor; moved?: BarChipId[] } | { end: string } | { openin: string; at?: Anchor } | { tabMenu: string; x: number; y: number }>(null);
   const [accountsView, setAccountsView] = useState<AccountsView>("accounts");
   const [section, setSection] = useState<SettingsSection>("General");
   const [selection, setSelection] = useState<Set<string> | null>(null);
@@ -252,7 +256,10 @@ export function V3Window({
   const [comfortable, setComfortable] = useState(saved?.comfortable ?? true);
   const [sortBy, setSortBy] = useState<SortBy>(saved?.sort ?? DEFAULT_SORT);
   // An older layout's "group by project" comes back as the project grouping.
-  const [groupBy, setGroupBy] = useState<GroupBy>(saved?.group ?? (saved?.groupByProject ? "project" : "none"));
+  // Status groups are the default (proposal B); a grouping picked in the menu wins.
+  const [groupBy, setGroupByState] = useState<GroupBy>(saved?.groupSet && saved.group ? saved.group : saved?.group && saved.group !== "none" ? saved.group : saved?.groupByProject ? "project" : DEFAULT_GROUP);
+  const [groupSet, setGroupSet] = useState(!!saved?.groupSet);
+  const setGroupBy = (g: GroupBy) => (setGroupByState(g), setGroupSet(true));
   const [pinnedOnly, setPinnedOnly] = useState(saved?.pinnedOnly ?? false);
   const [focusedNeed, setFocusedNeed] = useState<string | null>(null);
   const lastActiveOf = (k: string) => data.table.find((t) => t.key === k)?.lastActiveMs ?? null;
@@ -270,13 +277,13 @@ export function V3Window({
   };
   useEffect(() => () => void (peekTimer.current && clearTimeout(peekTimer.current)), []);
 
-  /** The time All sessions opens on: a footer row's, or everything from the palette. */
-  const [tableRange, setTableRange] = useState<SessionRange>("all");
   const openPage = useCallback((p: Page) => {
     setStrip((cur) => openTab(cur, `page:${p}`));
     setActive(`page:${p}`);
   }, []);
   const frame = useFrame(openPage);
+  /** The tab All sessions opens on, and a counter that remounts it when Done today or Older asks again. */
+  const [tableTab, setTableTab] = useState<{ status: StatusTab; n: number }>({ status: "all", n: 0 });
   /** The session's Review tab, at `file` when one was picked; every open is new, so the review goes back to Uncommitted. */
   const openReview = (key: string, file?: string) => {
     setReviewFocus((m) => new Map(m).set(key, { ...(file ? { file } : {}), seq: (m.get(key)?.seq ?? 0) + 1 }));
@@ -315,10 +322,10 @@ export function V3Window({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.sessions]);
   useEffect(() => {
-    if (started.current) layout?.save({ tabs: sessionTabs, pinned: strip.pinned, active: active?.startsWith("page:") ? null : active, comfortable, pinnedOnly, sort: sortBy, group: groupBy });
+    if (started.current) layout?.save({ tabs: sessionTabs, pinned: strip.pinned, active: active?.startsWith("page:") ? null : active, comfortable, pinnedOnly, sort: sortBy, group: groupBy, groupSet });
     // sessionTabs is derived from strip.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, strip, active, comfortable, pinnedOnly, sortBy, groupBy]);
+  }, [layout, strip, active, comfortable, pinnedOnly, sortBy, groupBy, groupSet]);
 
   /** Apply a change to the strip; when the active tab leaves, its neighbour takes over. */
   const changeStrip = (f: (s: TabState) => TabState) => {
@@ -370,8 +377,19 @@ export function V3Window({
             ...(itemWhy(key, item) ? { disabled: true, why: itemWhy(key, item)! } : {}),
             onClick: run(() => sessionItem(key, item)),
           };
+    // Proposal C: what used to be a strip over the session — Focus terminal, Take over, Copy conversation — leads the menu.
+    const b = data.bar(key);
+    const elsewhere = !!b && !b.hosted;
+    const where = b?.where ?? "your terminal";
+    const lead: MenuItem[] = [
+      ...(elsewhere && openFacts(key).focusable ? [{ id: "session:focus", label: "Focus terminal", icon: <SquareTerminal />, hint: where, onClick: run(() => act({ type: "open-in", key, pick: { kind: "focus" } })) }] : []),
+      ...(elsewhere && offered.includes("Take over here…") ? [row("Take over here…"), { label: "", note: `The same conversation continues here on this account and stops running in ${where}.` }] : []),
+      ...(canCopy(key) ? [{ id: "session:copy", label: "Copy conversation", icon: <ClipboardCopy />, hint: "Markdown", onClick: run(() => void copyConversation(key).catch(() => undefined)) }] : []),
+    ];
     return [
-      ...offered.filter((item) => item !== "End…").map(row),
+      ...lead,
+      ...(lead.length ? [{ divider: true, label: "" }] : []),
+      ...offered.filter((item) => item !== "End…" && !(elsewhere && item === "Take over here…")).map(row),
       { id: "copy-key", label: "Copy session key", icon: <Copy />, onClick: run(() => void navigator.clipboard?.writeText(key).catch(() => undefined)) },
       ...(offered.includes("End…") ? [{ divider: true, label: "" }, row("End…")] : []),
     ];
@@ -389,10 +407,9 @@ export function V3Window({
     const why = (w: string | null) => (w ? { disabled: true, why: w } : {});
     const items: MenuItem[] = [];
     if (moved.includes("account")) items.push({ id: "chip:account", label: "Account…", icon: <AccountMark color={b.account.color} />, hint: `${b.account.name}${b.account.fiveH != null ? ` · ${b.account.fiveH}%` : ""}`, ...why(moveWhy(key)), onClick: run(() => openMove(key)) });
-    if (moved.includes("model")) items.push({ id: "chip:model", label: "Model…", hint: b.model ?? undefined, ...why(locked && (b.hosted ? locked : "Locked: change it in your terminal (/model)")), onClick: () => setOverlay({ model: key, x, chip: "model" }) });
-    if (moved.includes("thinking")) items.push({ id: "chip:thinking", label: "Thinking…", hint: b.thinking ? b.thinking[0].toUpperCase() + b.thinking.slice(1) : undefined, ...why(locked), onClick: () => setOverlay({ model: key, x, chip: "thinking" }) });
+    if (moved.includes("model")) items.push({ id: "chip:model", label: "Model and thinking…", hint: [b.model, b.thinking && b.thinking[0].toUpperCase() + b.thinking.slice(1)].filter(Boolean).join(" · ") || undefined, ...why(locked && (b.hosted ? locked : "Locked: change it in your terminal (/model)")), onClick: () => setOverlay({ model: key, x, chip: "model" }) });
     if (moved.includes("ctx") && b.contextPct != null) items.push({ label: "", note: `Context ${Math.round(b.contextPct)}% used` });
-    if (moved.includes("where")) items.push({ label: "", note: b.hosted ? `Hosted by Agent Switch: ${HOSTED_HINT}` : `${b.where ?? "Your terminal"} · watching. Take over to type here.` });
+    if (moved.includes("where")) items.push({ label: "", note: b.hosted ? `Hosted by Agent Switch: ${HOSTED_HINT}` : `${b.where ?? "Your terminal"} · read-only. Take over to type here.` });
     return [...items, { divider: true, label: "" }];
   };
 
@@ -546,7 +563,7 @@ export function V3Window({
         />
       );
     // 8.6: the table in the sidebar's order (its sort), ended sessions after it.
-    if (p === "sessions-table") return <AllSessionsPage key={tableRange} range={tableRange} sessions={data.table} order={sortLive(data.sessions, sortBy, lastActiveOf).map((row) => row.key)} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
+    if (p === "sessions-table") return <AllSessionsPage key={tableTab.n} status={tableTab.status} sessions={data.table} order={sortLive(data.sessions, sortBy, lastActiveOf).map((row) => row.key)} group={groupBy === "project" ? "project" : "none"} nowMs={data.nowMs} onOpen={openSession} batch={batch} />;
     if (p === "tools") return slots.tools;
     return (
       <SettingsPage current={section} onSection={setSection}>
@@ -618,7 +635,7 @@ export function V3Window({
           frame.setSessionsShown(true);
           // 3.4: an item about a child opens its root's children and focuses the child row.
           const hit = findChild(data.sessions, needs.find((n) => n.id === id)?.subject ?? "");
-          if (hit) setOpenKids((c) => new Set([...c, hit.root.key]));
+          if (hit) setOpenKids(new Set([hit.root.key]));
           setFocusChild(hit ? hit.child.id : null);
           return (setFocusedNeed(id), true);
         }
@@ -825,7 +842,7 @@ export function V3Window({
           </IconButton>
         </span>
       </div>
-      <div className="relative min-h-0 flex-1 overflow-y-auto pb-2">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
         <NeedsZone items={needs} away={data.away} focusedId={focusedNeed} always={(n) => !!data.chatHere?.(n.subject)} onVerb={onVerb} onMore={() => setOverlay("inbox")} onAway={() => act({ type: "away" })} />
         <SessionsZone
           sessions={pinnedOnly ? data.sessions.filter((x) => pinned.has(x.key)) : data.sessions}
@@ -833,6 +850,7 @@ export function V3Window({
           comfortable={comfortable}
           sort={sortBy}
           group={groupBy}
+          inNeeds={new Set(shownNeeds(needs, focusedNeed).map(needSession).filter((k): k is string => !!k))}
           lastActiveOf={lastActiveOf}
           nowMs={data.nowMs}
           onSubagent={openSubagent}
@@ -852,21 +870,14 @@ export function V3Window({
           selection={selection}
           openKeys={openKids}
           onSelect={openSession}
-          onToggleChildren={(k) => setOpenKids((c) => (c.has(k) ? new Set([...c].filter((x) => x !== k)) : new Set([...c, k])))}
+          // One session unfolded at a time (owner, 2026-11-24): opening one folds the other.
+          onToggleChildren={(k) => setOpenKids((c) => (c.has(k) ? new Set() : new Set([k])))}
           onCheck={(k) => setSelection((c) => { const n = new Set(c ?? []); n.has(k) ? n.delete(k) : n.add(k); return n; })}
+          onDoneToday={(which) => (setTableTab((t) => ({ status: which ?? "all", n: t.n + 1 })), openPage("sessions-table"))}
           batch={batch([...(selection ?? [])])}
         />
       </div>
-      <SessionsFooter
-        done={data.table.filter((t) => t.when === "done").length}
-        older={data.table.filter((t) => t.when === "older").length}
-        onOpen={(range) => {
-          setTableRange(range);
-          openPage("sessions-table");
-        }}
-        onCleanUp={() => act({ type: "clean-up" })}
-      />
-      <LimitsStrip accounts={data.limits} nowMs={data.nowMs} openKey={limitsOpen} onOpen={(key) => setOverlay((o) => (o && typeof o === "object" && "limits" in o && o.limits === key ? null : { limits: key }))} onSignIn={(key) => act({ type: "account", op: "sign-in", key })} />
+      <LimitsStrip accounts={data.limits} nowMs={data.nowMs} openKey={limitsOpen} currentKey={bar && activeSession ? (data.limits.find((l) => l.tool === activeSession.split("/")[0] && l.name === bar.account.name)?.key ?? null) : null} onOpen={(key) => setOverlay((o) => (o && typeof o === "object" && "limits" in o && o.limits === key ? null : { limits: key }))} onSignIn={(key) => act({ type: "account", op: "sign-in", key })} />
     </aside>
   );
 
@@ -889,16 +900,22 @@ export function V3Window({
         onClose={close}
         onOpen={(entry, newTab) => {
           close();
-          if (entry.id === "page:sessions-table") setTableRange("all");
+          // From the palette, All sessions opens on every status.
+          if (entry.id === "page:sessions-table") setTableTab((t) => ({ status: "all", n: t.n + 1 }));
           if (entry.id.startsWith("page:")) openPage(entry.id.slice(5) as Page);
           else if (entry.group === "sessions") openSession(entry.id);
           else if (entry.group === "branches" && entry.id.startsWith("pr:")) openSession(entry.id.slice(3));
           else act({ type: "palette", entry, newTab });
         }}
       />
+    ) : overlay === "history" ? (
+      <Anchored onClose={close} className="absolute bottom-0 right-0 top-11 z-10">
+        <HistorySheet events={data.activity ?? []} nowMs={data.nowMs} />
+      </Anchored>
     ) : overlay === "inbox" ? (
-      <Anchored onClose={close} className="absolute right-3 top-11 z-10">
-        <InboxPopover items={needs} history={data.history} focusedId={null} nowMs={data.nowMs} always={(n) => !!data.chatHere?.(n.subject)} onVerb={(n) => (close(), onVerb(n))} onAllLater={() => (close(), act({ type: "needs-later-all" }))} />
+      // Full height under the title bar, on the right, like v2's notifications sheet (owner, 2026-11-24).
+      <Anchored onClose={close} className="absolute bottom-0 right-0 top-11 z-10">
+        <InboxPopover sheet items={needs} history={data.history} focusedId={null} nowMs={data.nowMs} always={(n) => !!data.chatHere?.(n.subject)} onVerb={(n) => (close(), onVerb(n))} onAllLater={() => (close(), act({ type: "needs-later-all" }))} />
       </Anchored>
     ) : overlay === "new" ? (
       <NewSessionDialog key={data.newSession.initial.folder} initial={data.newSession.initial} facts={data.newSession.facts} onClose={() => (close(), act({ type: "start-draft", plan: null }))} onChange={(plan) => act({ type: "start-draft", plan })} onStart={(plan) => (close(), act({ type: "start", plan }))} />
@@ -941,6 +958,8 @@ export function V3Window({
               onOpen={(key) => (close(), openSession(key))}
               onShowChild={(key) => (close(), openSession(key), frame.selectRight("children"))}
               onModel={(key, chip) => setOverlay({ model: key, x: LIMITS_MODEL_X, chip, at: "limits" })}
+              onMove={openMove}
+              moveWhy={moveWhy}
             />
           }
         />
@@ -955,7 +974,7 @@ export function V3Window({
             { section: "Sort by", label: "" },
             ...(Object.keys(SORT_LABEL) as SortBy[]).map((k) => ({ id: `sort-${k}`, label: SORT_LABEL[k], checked: k === sortBy, hint: [k === DEFAULT_SORT && "default", k === "status" && "needs you first"].filter(Boolean).join(" · ") || undefined, onClick: () => (close(), setSortBy(k)) })),
             { section: "Group by", label: "" },
-            ...(Object.keys(GROUP_LABEL) as GroupBy[]).map((k) => ({ id: `group-${k}`, label: GROUP_LABEL[k], checked: k === groupBy, onClick: () => (close(), setGroupBy(k)) })),
+            ...(Object.keys(GROUP_LABEL) as GroupBy[]).map((k) => ({ id: `group-${k}`, label: GROUP_LABEL[k], checked: k === groupBy, hint: k === DEFAULT_GROUP ? "default" : undefined, onClick: () => (close(), setGroupBy(k)) })),
           ]}
         />
       </Anchored>
@@ -1010,6 +1029,7 @@ export function V3Window({
       health={data.health.state}
       inbox={{ count: needs.length, ciFailing: needs.some((n) => n.kind === "ci") }}
       inboxOpen={overlay === "inbox"}
+      historyOpen={overlay === "history"}
       needsYou={needs.length > 0}
       blocker={!!next}
       rightWhy={activeSession ? null : "no session in this tab"}
@@ -1024,7 +1044,7 @@ export function V3Window({
           </div>
         ))
       }
-      actions={{ onSearch: () => setOverlay("palette"), onStart: () => setOverlay("new"), onSettings: () => openPage("settings"), onInbox: () => setOverlay((o) => (o === "inbox" ? null : "inbox")), onRestart: () => act({ type: "restart-engine" }) }}
+      actions={{ onSearch: () => setOverlay("palette"), onStart: () => setOverlay("new"), onSettings: () => openPage("settings"), onInbox: () => setOverlay((o) => (o === "inbox" ? null : "inbox")), onHistory: () => setOverlay((o) => (o === "history" ? null : "history")), onRestart: () => act({ type: "restart-engine" }) }}
     />
   );
 }

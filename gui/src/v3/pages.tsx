@@ -9,6 +9,8 @@ import { Archive, ArchiveRestore, CircleAlert, Clock, Copy, Ellipsis, GitBranch,
 import { cn } from "../lib/utils.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Segmented } from "../ui/Segmented.js";
+import { MultiSelect } from "./multi-select.js";
+import { ANY_TIME, DateRange, inRange, type TimeRange } from "./date-range.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { Switch } from "../ui/Switch.js";
 import { TextInput } from "../ui/TextInput.js";
@@ -43,9 +45,10 @@ function Table({ cols, heads, children }: { cols: string; heads: ReactNode[]; ch
   );
 }
 
-function Filter({ value, onChange, placeholder, width }: { value: string; onChange: (v: string) => void; placeholder: string; width: number }) {
+/** `width` fixes it; without one it takes the room the switches leave, so a filter bar stays one line. */
+function Filter({ value, onChange, placeholder, width }: { value: string; onChange: (v: string) => void; placeholder: string; width?: number }) {
   return (
-    <div className="relative" style={{ width }}>
+    <div className={cn("relative", width === undefined && "min-w-[120px] flex-1")} style={width === undefined ? undefined : { width }}>
       <Search className="absolute left-2.5 top-2 size-4 text-ac-faint" />
       <TextInput aria-label="Filter" className="w-full pl-8" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
@@ -246,13 +249,7 @@ export interface TableSession {
   projectRoot?: string | null;
   /** The checkout the session works in (its toplevel), for the worktree sub-header (D8). */
   worktree?: { id: string; branch: string | null; linked: boolean } | null;
-  /** Active, quiet past the done-after time (Done today), or quiet for over a day: the sidebar's split. */
-  when?: "active" | "done" | "older";
 }
-
-/** The time All sessions shows: everything, or one of the sidebar footer's rows. */
-export type SessionRange = "all" | "done" | "older";
-const RANGE_TITLE: Record<SessionRange, string> = { all: "All sessions", done: "Done today", older: "Older than a day" };
 
 /** Sessions grouped by project, the most recently active project first; no project last. Pure. */
 export function byProject(rows: readonly TableSession[]): { project: string | null; rows: TableSession[] }[] {
@@ -273,45 +270,103 @@ export function inListOrder(rows: readonly TableSession[], order: readonly strin
   });
 }
 
-export function filterSessions(rows: readonly TableSession[], q: string, state: "all" | "live" | "done", tool: "any" | TableSession["tool"]): TableSession[] {
-  return rows.filter((s) => (state === "all" || (state === "live") === s.live) && (tool === "any" || s.tool === tool) && matches(q, s.title, s.account.name, s.branch, s.pr ? `#${s.pr.number}` : null));
+/** The status tabs of All sessions (proposal E), in their order; "live" is every running or idle one, "done" every ended one.
+ *  Ended sessions split as in the sidebar (owner, 2026-11-24): Done today since midnight, Older before. */
+export type TableStatus = "all" | "needs" | "running" | "idle" | "today" | "older" | "done" | "live";
+export type StatusTab = Exclude<TableStatus, "live" | "done">;
+const STATUS_TAB: { value: StatusTab; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "needs", label: "Needs you" },
+  { value: "running", label: "Running" },
+  { value: "idle", label: "Idle" },
+  { value: "today", label: "Done today" },
+  { value: "older", label: "Older" },
+];
+
+/** An ended row: Done today (ended since local midnight) or Older. Without a clock, today. Pure. */
+export function endedWhen(s: TableSession, nowMs?: number): "today" | "older" {
+  if (nowMs == null || s.lastActiveMs == null) return "today";
+  return s.lastActiveMs >= new Date(nowMs).setHours(0, 0, 0, 0) ? "today" : "older";
 }
 
-export function AllSessionsPage({ sessions, range: opened = "all", order, nowMs, onOpen, batch }: { sessions: TableSession[]; /** The time it opens on (the footer row clicked); the page can widen it. */ range?: SessionRange; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions }) {
+/** A row's status: waiting for you (or its CI is failing), running, idle, or done. Pure. */
+export function tableStatus(s: TableSession): Exclude<TableStatus, "all" | "live"> {
+  if (!s.live) return "done";
+  if (s.state === "needs-you" || s.pr?.ci === "FAILURE" || s.pr?.ci === "ERROR") return "needs";
+  return s.state === "working" ? "running" : "idle";
+}
+
+/** Whether a row belongs under a status tab. Pure. */
+export function inStatus(s: TableSession, state: TableStatus, nowMs?: number): boolean {
+  if (state === "all") return true;
+  if (state === "live") return s.live;
+  const st = tableStatus(s);
+  if (state === "today" || state === "older") return st === "done" && endedWhen(s, nowMs) === state;
+  return st === state;
+}
+
+/** `tool`: one tool, "any", or a set of tools (an empty set is every tool). */
+export function filterSessions(rows: readonly TableSession[], q: string, state: TableStatus, tool: "any" | TableSession["tool"] | ReadonlySet<TableSession["tool"]>, nowMs?: number): TableSession[] {
+  const inState = (s: TableSession) => inStatus(s, state, nowMs);
+  const inTool = (s: TableSession) => (typeof tool === "string" ? tool === "any" || s.tool === tool : tool.size === 0 || tool.has(s.tool));
+  return rows.filter((s) => inState(s) && inTool(s) && matches(q, s.title, s.account.name, s.branch, s.pr ? `#${s.pr.number}` : null));
+}
+
+const TOOL_LABEL: Record<TableSession["tool"], string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
+/** The account as the table says it: the tool only where it is not Claude (proposal E). */
+const accountText = (s: TableSession) => (s.tool === "claude" ? s.account.name : `${s.account.name} · ${TOOL_LABEL[s.tool]}`);
+const modelText = (s: TableSession) => [s.model, s.thinking].filter(Boolean).join(" · ");
+/** One value for every row, or null when they differ (or there are none). Pure. */
+function shared<T>(rows: readonly TableSession[], f: (s: TableSession) => T): T | null {
+  if (!rows.length) return null;
+  const v = f(rows[0]);
+  return rows.every((r) => f(r) === v) ? v : null;
+}
+
+/**
+ * All sessions (spec §10.2, proposal E): search and status tabs with counts —
+ * Needs you first — a tool filter only when more than one tool has sessions,
+ * branch · PR · CI under the title, and a value every row shares said once
+ * above the table instead of in every row. Grouping by project follows the
+ * Sessions window's own Group menu.
+ */
+export function AllSessionsPage({ sessions, order, nowMs, onOpen, batch, group: initialGroup = "none", status: initialStatus = "all" }: { /** The tab it opens on (Done today or Older from the sidebar). */ status?: StatusTab; sessions: TableSession[]; /** The sidebar's order (its keys); absent keeps the given order. */ order?: readonly string[]; nowMs: number; onOpen: (key: string) => void; batch: (keys: string[]) => BatchActions; /** The Sessions window's grouping: by project, or one list. */ group?: "none" | "project" }) {
   const [q, setQ] = useState("");
-  const [range, setRange] = useState<SessionRange>(opened);
-  const [state, setState] = useState<"all" | "live" | "done">("all");
-  const [tool, setTool] = useState<"any" | TableSession["tool"]>("any");
+  // Status and time as dropdowns (owner, 2026-11-24): several statuses at once; nothing ticked = every status.
+  const [state, setState] = useState<ReadonlySet<Exclude<StatusTab, "all">>>(() => new Set(initialStatus === "all" ? [] : [initialStatus]));
+  const [range, setRange] = useState<TimeRange>(ANY_TIME);
+  // Tools as a multi-select dropdown (owner, 2026-11-24); nothing ticked = every tool.
+  const [tool, setTool] = useState<ReadonlySet<TableSession["tool"]>>(() => new Set());
   const [sel, setSel] = useState<Set<string>>(new Set());
-  const [group, setGroup] = useState<"none" | "project">("none");
   const rows = useMemo(() => {
-    const hits = filterSessions(sessions, q, state, tool).filter((s) => range === "all" || s.when === range);
+    const hits = filterSessions(sessions, q, "all", tool, nowMs).filter((s) => (state.size === 0 || [...state].some((st) => inStatus(s, st, nowMs))) && inRange(s.lastActiveMs, range));
     return order ? inListOrder(hits, order) : hits;
-  }, [sessions, order, q, state, tool, range]);
+  }, [sessions, order, q, state, tool, nowMs, range]);
+  // List or Projects stays a switch on the page (owner, 2026-11-24); it starts from the sidebar's grouping.
+  const [group, setGroup] = useState<"none" | "project">(initialGroup);
   const sections = useMemo(() => (group === "project" ? byProject(rows) : [{ project: null as string | null, rows }]), [rows, group]);
-  const live = sessions.filter((s) => s.live).length;
-  const cols = "grid-cols-[24px_minmax(0,1.6fr)_120px_minmax(0,1.2fr)_120px_70px_80px]";
+  const count = (v: StatusTab) => sessions.filter((s) => inStatus(s, v, nowMs)).length;
+  // A tab with nothing behind it is hidden, unless it is the one chosen.
+  const tabs = STATUS_TAB.filter((t) => t.value !== "all" && (state.has(t.value) || count(t.value) > 0)) as { value: Exclude<StatusTab, "all">; label: string }[];
+  const tools = (["claude", "codex", "antigravity"] as const).filter((t) => sessions.some((s) => s.tool === t));
+  const oneAccount = shared(rows, accountText);
+  const oneModel = shared(rows, modelText);
+  const sharedLine = [oneAccount && `on ${oneAccount}`, oneModel && oneModel].filter(Boolean).join(" · ");
+  // Static classes (Tailwind sees only whole strings): one per set of columns shown.
+  const cols = oneAccount === null ? (oneModel === null ? "grid-cols-[24px_minmax(0,2fr)_minmax(0,0.9fr)_minmax(0,1fr)_56px_76px]" : "grid-cols-[24px_minmax(0,2fr)_minmax(0,0.9fr)_56px_76px]") : oneModel === null ? "grid-cols-[24px_minmax(0,2fr)_minmax(0,1fr)_56px_76px]" : "grid-cols-[24px_minmax(0,2fr)_56px_76px]";
+  const heads = ["", "Session", ...(oneAccount === null ? ["Account"] : []), ...(oneModel === null ? ["Model"] : []), "Context", "Active"];
   const toggle = (k: string) => setSel((c) => (c.has(k) ? new Set([...c].filter((x) => x !== k)) : new Set([...c, k])));
   return (
-    <PageBody title={RANGE_TITLE[range]} sub="Scan, filter and act on many sessions at once.">
+    <PageBody title="All sessions" sub="Scan, filter and act on many sessions at once.">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Filter value={q} onChange={setQ} placeholder="Filter…" width={300} />
-        <Segmented size="sm" label="State" value={state} onChange={setState} options={[{ value: "all", label: `All ${sessions.length}` }, { value: "live", label: `Live ${live}` }, { value: "done", label: `Done ${sessions.length - live}` }]} />
-        <Segmented
-          size="sm"
-          label="Time"
-          value={range}
-          onChange={setRange}
-          options={[
-            { value: "all", label: `Any time ${sessions.length}` },
-            { value: "done", label: `Done today ${sessions.filter((s) => s.when === "done").length}` },
-            { value: "older", label: `Older than a day ${sessions.filter((s) => s.when === "older").length}` },
-          ]}
-        />
-        <Segmented size="sm" label="Tool" value={tool} onChange={setTool} options={[{ value: "any", label: "Any tool" }, { value: "claude", label: "Claude" }, { value: "codex", label: "Codex" }, { value: "antigravity", label: "Antigravity" }]} />
+        <Filter value={q} onChange={setQ} placeholder="Filter…" />
+        <MultiSelect width={176} label="Status" all={`All ${sessions.length}`} picked={state} onChange={setState} options={tabs.map((t) => ({ value: t.value, label: t.label, hint: count(t.value) }))} />
+        {tools.length > 1 && <MultiSelect width={150} label="Tool" all="All tools" picked={tool} onChange={setTool} options={tools.map((t) => ({ value: t, label: TOOL_LABEL[t], hint: sessions.filter((s) => s.tool === t).length }))} />}
+        <DateRange label="Active" value={range} onChange={setRange} nowMs={nowMs} width={156} />
         <Segmented size="sm" label="Group" value={group} onChange={setGroup} options={[{ value: "none", label: "List" }, { value: "project", label: "Projects" }]} />
       </div>
       {sel.size > 0 && <BatchBar count={sel.size} className="mb-2" actions={batch([...sel])} />}
+      {rows.length > 1 && sharedLine && <p className="mb-2 text-xs text-ac-muted">Every session here runs {sharedLine}.</p>}
       {sections.map((sec) => (
         <div key={sec.project ?? "-"} className={group === "project" ? "mb-4" : undefined}>
           {group === "project" && (
@@ -320,27 +375,30 @@ export function AllSessionsPage({ sessions, range: opened = "all", order, nowMs,
               <span className="font-ac-mono text-[11px] text-ac-faint">{sec.rows.length}</span>
             </div>
           )}
-          <Table cols={cols} heads={["", "Session", "Account", "Branch · PR", "Model", "Context", "Active"]}>
+          <Table cols={cols} heads={heads}>
             {sec.rows.map((s) => (
               <div key={s.key} onClick={() => onOpen(s.key)} className={cn("grid cursor-default items-center gap-3 border-b border-ac-line px-3 py-2 last:border-b-0 hover:bg-ac-raise", cols)}>
                 <CheckBox label={`Select ${s.title}`} checked={sel.has(s.key)} onChange={() => toggle(s.key)} />
-                <span className="flex min-w-0 items-center gap-2">
-                  <SessionStateIcon state={s.state} />
-                  <span className="truncate text-[13px] text-ac-text">{s.title}</span>
-                </span>
-                <span className="flex min-w-0 items-center gap-1.5 text-xs text-ac-soft">
-                  <AccountMark color={s.account.color} />
-                  <span className="truncate">
-                    {s.tool === "claude" ? "Claude" : s.tool === "codex" ? "Codex" : "Antigravity"} · {s.account.name}
+                <span className="min-w-0">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <SessionStateIcon state={s.state} />
+                    <span className="truncate text-[13px] text-ac-text">{s.title}</span>
+                  </span>
+                  {/* Branch · PR · CI under the title (proposal E). */}
+                  <span className="mt-0.5 flex min-w-0 items-center gap-1.5 pl-4 font-ac-mono text-[11px] text-ac-muted">
+                    <GitBranch className="size-3 shrink-0" />
+                    <span className="truncate">{s.branch ?? "no repo"}</span>
+                    {s.pr && <span className="shrink-0">· #{s.pr.number}</span>}
+                    {(s.pr?.ci === "FAILURE" || s.pr?.ci === "ERROR") && <span className="shrink-0 font-sans text-ac-alert-text">CI failing</span>}
                   </span>
                 </span>
-                <span className="flex min-w-0 items-center gap-1.5 font-ac-mono text-[11px] text-ac-muted">
-                  <GitBranch className="size-3 shrink-0" />
-                  <span className="truncate">{s.branch ?? "no repo"}</span>
-                  {s.pr && <span className="shrink-0">#{s.pr.number}</span>}
-                  {(s.pr?.ci === "FAILURE" || s.pr?.ci === "ERROR") && <span className="shrink-0 font-sans text-ac-alert-text">CI failing</span>}
-                </span>
-                <span className="truncate text-xs text-ac-soft">{[s.model, s.thinking].filter(Boolean).join(" · ")}</span>
+                {oneAccount === null && (
+                  <span className="flex min-w-0 items-center gap-1.5 text-xs text-ac-soft">
+                    <AccountMark color={s.account.color} />
+                    <span className="truncate">{accountText(s)}</span>
+                  </span>
+                )}
+                {oneModel === null && <span className="truncate text-xs text-ac-soft">{modelText(s)}</span>}
                 <span className="font-ac-mono text-[11px] text-ac-muted">{s.contextPct == null ? "" : `${Math.round(s.contextPct)}%`}</span>
                 <span className="text-right text-xs text-ac-muted">{lastSeen(s.lastActiveMs, nowMs)}</span>
               </div>

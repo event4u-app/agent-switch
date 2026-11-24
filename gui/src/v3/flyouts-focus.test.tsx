@@ -119,7 +119,10 @@ describe("the sort menu names its real default (8.6)", () => {
     mount();
     fireEvent.click(within(screen.getByLabelText("Sessions window")).getByTitle("Sort and group"));
     const menu = screen.getByRole("menu", { name: "Sort and group" });
-    expect(within(menu).getByRole("menuitem", { name: /^Status/ }).textContent).toMatch(/default/);
+    // "Status" twice: the sort, and the grouping (proposal B) — both are the defaults.
+    const [sortStatus, groupStatus] = within(menu).getAllByRole("menuitem", { name: /^Status/ });
+    expect(sortStatus.textContent).toMatch(/default/);
+    expect(groupStatus.textContent).toMatch(/default/);
     expect(within(menu).getByRole("menuitem", { name: /^Activity/ }).textContent).not.toMatch(/default/);
   });
 });

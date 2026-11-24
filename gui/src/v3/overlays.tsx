@@ -236,10 +236,10 @@ export interface DoneItem {
 }
 
 /** `always`: whether ⇧↵ (allow always) answers that item — only a chat this window runs; absent means none. */
-export function InboxPopover({ items, history, focusedId, nowMs, onVerb, onAllLater, always = () => false }: { items: NeedItem[]; history: DoneItem[]; focusedId: string | null; nowMs: number; onVerb: (n: NeedItem) => void; onAllLater: () => void; always?: (n: NeedItem) => boolean }) {
+export function InboxPopover({ items, history, focusedId, nowMs, onVerb, onAllLater, always = () => false, sheet }: { items: NeedItem[]; history: DoneItem[]; focusedId: string | null; nowMs: number; onVerb: (n: NeedItem) => void; onAllLater: () => void; always?: (n: NeedItem) => boolean; /** The whole height of the window under the title bar, as v2's notifications sheet (owner, 2026-11-24). */ sheet?: boolean }) {
   const focus = focusedId ?? items[0]?.id ?? null;
   return (
-    <div role="dialog" aria-label="Needs you" className="w-[420px] rounded-xl border border-ac-line2 bg-ac-panel p-2" style={{ boxShadow: "var(--ac-shadow)" }}>
+    <div role="dialog" aria-label="Needs you" className={cn("w-[420px] bg-ac-panel p-2", sheet ? "h-full overflow-y-auto border-l border-ac-line2" : "rounded-xl border border-ac-line2")} style={{ boxShadow: "var(--ac-shadow)" }}>
       <div className="flex h-8 items-center gap-2 px-2">
         <span className="ac-caps">Needs you</span>
         <span className="text-[11px] text-ac-muted">⌘J next · ↵ do it · L later</span>

@@ -49,7 +49,7 @@ export function Chip({ kind = "meta", tone = "warn", icon, children, title }: { 
  *  State language: hover / keyboard cursor = raise fill only; chosen option in a list = check;
  *  where you are (tab, row, rail button, nav item) = the Marker.
  *  Selection is always the same Marker: a rounded frame whose leading edge is the accent — left on items, top on tabs, never an inset shadow. */
-/** `neutral` is for lists that carry status colour (the session list), where orange must mean "needs you" only. */
+/** `neutral` is kept for callers that want no accent; the session list and the limits mark where you are in the accent (owner, 2026-11-24). */
 export function Marker({ side = "left", tone = "brand" }: { side?: "left"; tone?: "brand" | "warn" | "neutral" }) {
   const lead = tone === "warn" ? "border-l-ac-warn" : tone === "neutral" ? "border-l-ac-text" : "border-l-ac-brand";
   void side;

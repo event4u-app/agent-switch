@@ -469,7 +469,6 @@ export function V3Frame({ theme }: { theme: ThemeState }) {
         followTheme={appearance.terminalFollows}
         where={data.bar(key)?.where ?? "your terminal"}
         onFocus={data.bar(key)?.focusable && focusTerminal !== false ? () => void ipc.focusSessionTerminal(key).catch((e: unknown) => s.toast({ tone: "alert", text: `Focus failed: ${e instanceof Error ? e.message : String(e)}` })) : null}
-        onTakeOver={canTakeOver(byKey.get(key), hostedKeys.has(key), feeds.host?.mode ?? "ephemeral") ? () => deps.takeOver?.(key) : null}
         onExit={refresh}
       />
       </>

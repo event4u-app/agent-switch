@@ -9,7 +9,7 @@ import { CircleX, ExternalLink, FolderGit2, GitBranch, Minus } from "lucide-reac
 import { cn } from "../lib/utils.js";
 import { IconButton } from "../ui/Button.js";
 import { Act } from "./kit.js";
-import { ChildLine, type ChildModel } from "./sessions.js";
+import { ChildGroups, ChildLine, type ChildModel } from "./sessions.js";
 import { moreFiles } from "./review.js";
 
 function Window({ title, aside, onHide, children }: { title: string; aside?: ReactNode; onHide: () => void; children: ReactNode }) {
@@ -230,9 +230,7 @@ export function ChildrenWindow({ noun, children, onHide, onOpen, subagents = tru
   return (
     <Window title="Children" aside={noun} onHide={onHide}>
       <div className="px-3.5 py-2">
-        {children.map((c) => (
-          <ChildLine key={c.id} c={c} onOpen={onOpen} subagents={subagents} />
-        ))}
+        <ChildGroups kids={children} render={(c) => <ChildLine c={c} onOpen={onOpen} subagents={subagents} />} />
       </div>
       <p className="px-3.5 pb-3 text-[11px] leading-relaxed text-ac-muted">
         Each child says where it came from: its hooks, the lineage it named, Agent Switch starting it, or a count of files. A relation Agent Switch cannot prove is shown as relation unknown — it is never guessed.

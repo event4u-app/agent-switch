@@ -14,6 +14,7 @@ import type { WindowLayout } from "../layout.js";
 import { V3Tray } from "../tray.js";
 import { FirstRun } from "../firstrun.js";
 import { ChatTimeline } from "../chat.js";
+import { Composer } from "../composer.js";
 import { EarlierNotShown } from "../subagent-view.js";
 import type { AsEvent } from "../timeline.js";
 import CHAT from "../fixtures/timeline-claude-2.1.316.json";
@@ -86,10 +87,13 @@ const SESSIONS: RowSession[] = [
   S({ key: "claude/personal/s-notes", title: "Release notes 2.11", state: "done", account: { name: "personal", nearLimit: false }, branch: "docs/release-2.11", pr: { number: 140, ci: "SUCCESS", mergeable: "MERGEABLE" }, doneToday: true }),
   S({ key: "claude/personal/s-checkout", title: "Checkout flow accessibility", state: "needs-you", account: { name: "personal", nearLimit: false }, branch: "a11y/checkout", pr: { number: 311, ci: "FAILURE", mergeable: "CONFLICTING" }, needsYou: true,
     children: [{ id: "u1", label: "claude --print in /tmp/tmp.k2J9", kind: "unknown", state: "done", source: "unknown" }] }),
+  // Ended yesterday: the status grouping's "Older" group.
+  S({ key: "claude/work/s-spike", title: "Spike: tmux control mode", state: "done", branch: "spike/tmux-cc", lastActiveMs: NOW - 26 * 60 * MIN, doneToday: true }),
 ];
 
 const BAR: Record<string, { model: string; thinking: string; ctx: number; hosted: boolean; acct: string; color: "teal" | "pink" | "purple"; five: number; protect: number }> = {
   "claude/work/s-store": { model: "Opus 5.5", thinking: "High", ctx: 58, hosted: true, acct: "work", color: "teal", five: 39, protect: 95 },
+  "claude/work/s-spike": { model: "Sonnet 5.5", thinking: "Medium", ctx: 9, hosted: false, acct: "work", color: "teal", five: 39, protect: 95 },
   "claude/personal/s-themes": { model: "Opus 5.5", thinking: "High", ctx: 21, hosted: true, acct: "personal", color: "pink", five: 12, protect: 98 },
   "codex/work/s-hook": { model: "default", thinking: "medium", ctx: 33, hosted: false, acct: "work", color: "teal", five: 30, protect: 90 },
   "claude/work/s-council": { model: "Opus 5.5", thinking: "High", ctx: 44, hosted: true, acct: "work", color: "teal", five: 39, protect: 95 },
@@ -195,14 +199,20 @@ export function makeData(o: { theme: string; accent: Accent; health?: string; aw
     { id: "h2", who: "v3 engine", what: "subagent “Explore” done", doneAt: iso(12 * MIN) },
     { id: "h3", who: "work", what: "refreshed its sign-in", doneAt: iso(H) },
   ],
+  // The CLI's activity log as the History sheet reads it (activityFromEntries), newest first.
+  activity: [
+    { id: "a1", at: NOW - 4 * MIN, kind: "start" as const, text: "Theme system, Darcula default: started on personal", detail: "folder rule ~/code/agent-switch → pool day" },
+    { id: "a2", at: NOW - 21 * MIN, kind: "switch" as const, text: "Release plan agent-config 1.9: moved to work", detail: "side reached 94% of 5h" },
+    { id: "a3", at: NOW - 28 * MIN, kind: "limit" as const, text: "side: near its 5h limit", detail: "94% used, resets in 1h 18m" },
+    { id: "a4", at: NOW - H, kind: "refresh" as const, text: "work: sign-in refreshed" },
+    { id: "a5", at: NOW - 2 * H, kind: "login" as const, text: "Codex · personal: sign-in failed", detail: "stored login expired", ok: false },
+    { id: "a6", at: NOW - 5 * H, kind: "update" as const, text: "Agent Switch updated to 3.0.0-beta.4" },
+    { id: "a7", at: NOW - 26 * H, kind: "guard" as const, text: "Guard policy loaded", detail: "2 rules" },
+  ],
   sessions: SESSIONS,
   limits: LIMITS,
   accounts: LIMITS.map((a, i) => ({ ...a, email: a.tool === "codex" ? null : `${a.name}@example.com`, label: ["Work", "Personal", "Other", "Work", "Personal"][i], isDefault: a.name === "work", running: [2, 2, 1, 1, 0][i] })),
-  table: SESSIONS.map((s, i): TableSession => ({ key: s.key, title: s.title, state: s.state, live: s.state !== "done", tool: s.key.startsWith("codex") ? "codex" : "claude", account: { name: s.account.name, color: BAR[s.key].color }, branch: s.branch, pr: s.pr && { number: s.pr.number, ci: s.pr.ci }, model: BAR[s.key].model, thinking: BAR[s.key].thinking, contextPct: BAR[s.key].ctx, lastActiveMs: NOW - i * 7 * MIN, project: "agent-switch", when: s.doneToday ? ("done" as const) : ("active" as const) })).concat([
-    // Quiet for days, still in the transcript list: the footer's "Older than a day".
-    { key: "claude/work/s-old-docs", title: "Docs site search index", state: "idle", live: true, tool: "claude", account: { name: "work", color: "teal" }, branch: "docs/search", pr: null, model: "Sonnet 5.5", thinking: "Medium", contextPct: 22, lastActiveMs: NOW - 3 * 24 * H, project: "agent-switch", when: "older" as const },
-    { key: "claude/personal/s-old-spike", title: "Spike: tmux control mode", state: "done", live: false, tool: "claude", account: { name: "personal", color: "pink" }, branch: "spike/tmux-cc", pr: null, model: "Opus 5.5", thinking: "High", contextPct: 64, lastActiveMs: NOW - 6 * 24 * H, project: "agent-switch", when: "older" as const },
-  ]),
+  table: SESSIONS.map((s, i) => ({ key: s.key, title: s.title, state: s.state, live: s.state !== "done", tool: s.key.startsWith("codex") ? "codex" : "claude", account: { name: s.account.name, color: BAR[s.key].color }, branch: s.branch, pr: s.pr && { number: s.pr.number, ci: s.pr.ci }, model: BAR[s.key].model, thinking: BAR[s.key].thinking, contextPct: BAR[s.key].ctx, lastActiveMs: s.lastActiveMs ?? NOW - i * 7 * MIN, project: "agent-switch" })),
   library: [
     { key: "l1", name: "Rebind ADR discussion", summary: "Why live rebind stays explicit; provider/version checks; recovery path", tags: ["adr", "rebind"], color: "teal", project: "agent-switch", branch: "docs/adr-003", pr: { number: 120, lifecycle: "merged" }, lastMs: NOW - 6 * 24 * H, pinned: true, archived: false, vault: { state: "saved", bytes: 2_400_000 }, transcript: true },
     { key: "l2", name: "v3 engine: event store + ingest", summary: "M1 schema, WAL, dedupe per producer", tags: ["v3", "engine"], color: "teal", project: "agent-switch", branch: "feat/event-store", pr: { number: 142, lifecycle: "open" }, lastMs: NOW, pinned: true, archived: false, vault: { state: "saved", bytes: 8_100_000 }, transcript: true },
@@ -349,10 +359,12 @@ export function Scene({ view = "main", theme = "darcula", accent = "theme", heal
     ),
     body: (key) =>
       BAR[key]?.hosted === false ? (
-        <ExternalBody where="Terminal.app · tab 3" facts={<p>as-hook p95 benchmark · ~/code/agent-switch · perf/as-hook</p>} lastLine="as-hook is 6.7× faster at p95 (6.2 ms vs 41.8 ms)." onFocus={() => {}} onTakeOver={() => {}} />
+        <ExternalBody facts={<p>as-hook p95 benchmark · ~/code/agent-switch · perf/as-hook</p>} lastLine="as-hook is 6.7× faster at p95 (6.2 ms vs 41.8 ms)." />
       ) : inChat(key) ? (
-        <div className="h-full overflow-y-auto bg-ac-bg px-6 py-4">
-          <ChatTimeline events={CHAT.transcript as AsEvent[]} />
+        // As the app's ChatView: the timeline, then the message box (copy is in ⋯, proposal C).
+        <div className="flex h-full min-h-0 flex-col bg-ac-bg">
+          <ChatTimeline events={CHAT.transcript as AsEvent[]} copyBar={false} />
+          <Composer running={false} queued={0} mode="default" onMode={() => {}} onSend={() => {}} onStop={() => {}} />
         </div>
       ) : (
         <HostedTerminal sessionKey={key} vars={vars} followTheme backend={fakeBackend(key)} onExit={() => {}} />
