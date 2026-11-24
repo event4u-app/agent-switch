@@ -139,6 +139,18 @@ test("terminalHolds: a live hosted window running its program keeps the chat out
   assert.equal(terminalHolds(k, []), false);
 });
 
+test("chat on a window running its terminal: a bridge left from before (same app) is handed over, then the window parks; any other writer is refused", () => {
+  const rows = [row()];
+  const { host, log } = fakeHost(rows);
+  const asked: string[] = [];
+  assert.equal(toChat(deps(host, { writer: () => "app bridge:42", adoptChat: (k, w) => (asked.push(`${k} ${w}`), true) }), "claude/work/s1").parked, true);
+  assert.deepEqual(asked, ["claude/work/s1 app bridge:42"]);
+  assert.deepEqual(log, ["park claude/work/s1 notice claude/work/s1"]);
+  const fresh = fakeHost([row()]);
+  assert.throws(() => toChat(deps(fresh.host, { writer: () => "app bridge:42", adoptChat: () => false }), "claude/work/s1"), (e: unknown) => e instanceof ViewRefused && /already has a writer/.test(e.message));
+  assert.deepEqual(fresh.log, [], "refused: the window is not parked");
+});
+
 test("sameApp: a bridge of the app that runs this CLI, or of an app that has gone; never another app's", async () => {
   const { sameApp } = await import("../src/commands/view.js");
   assert.equal(sameApp(10, () => process.ppid), true);

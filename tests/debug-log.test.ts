@@ -76,6 +76,18 @@ test("`debug-log add` takes the app's batch; `debug-log --json` returns it with 
   assert.deepEqual(o.log.map((e: { what: string }) => e.what), ["view", "view chat"]);
 });
 
+test("a chat bridge that is refused says so in the debug log, with its key and why", () => {
+  const mod = new URL("../src/commands/bridge.js", import.meta.url).href;
+  fs.rmSync(DEBUG_LOG_FILE, { force: true });
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e", `const { cmdBridge } = await import(${JSON.stringify(mod)}); await cmdBridge("claude", "claude/nobody/0000aaaa", {});`], { env: { ...process.env, AGENT_SWITCH_HOME: HOME }, encoding: "utf8" });
+  assert.match(r.stdout, /"bridge":"error"/);
+  const e = readDebug().find((x) => x.kind === "bridge" && x.what === "refused");
+  assert.ok(e, JSON.stringify(readDebug()));
+  assert.equal(e.src, "cli");
+  assert.equal(e.key, "claude/nobody/0000aaaa");
+  assert.match(e.error ?? "", /no Claude or Codex session/);
+});
+
 const mod = new URL("../src/debug-log.js", import.meta.url).href;
 /** Several real processes at once, each appending `n` entries (or, with `off`, switching the log off midway). */
 function writers(count: number, n: number, off = false): Promise<void> {

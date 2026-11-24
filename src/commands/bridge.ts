@@ -26,6 +26,7 @@ import { liveSessions } from "../api.js";
 import { eventFile, lastHookCwd, readEvents } from "../hooks.js";
 import { InputLeases, LeaseHeld, type Holder } from "../host/lease.js";
 import { TmuxHost, type HostedRow, type HostedSession } from "../host/tmux-host.js";
+import { logDebug } from "../debug-log.js";
 import { restoreAfterChat } from "./view.js";
 import { configDir, die, readBinaryPath, requireProfile, ROOT } from "../profiles.js";
 import { provider as providerOf, type ProviderId } from "../providers.js";
@@ -71,6 +72,7 @@ export function hostedTarget(key: string, hosted: readonly Pick<HostedSession, "
 
 /** The bridge cannot start on `key`: say why on stdout (the app reads only stdout) and give a parked window its program back. */
 function refuse(key: string, message: string): void {
+  logDebug({ kind: "bridge", what: "refused", key, ok: false, error: message });
   process.stdout.write(JSON.stringify({ bridge: "error", message }) + "\n");
   restoreAfterChat(key);
   process.exitCode = 1;
@@ -341,15 +343,61 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
     if (runsElsewhere(t)) return refuse(t.key, `${t.key} is running in a terminal; open it there, or take it over first`);
   }
 
-  const out = (o: BridgeOutput) => process.stdout.write(JSON.stringify(o) + "\n");
+  const out = (o: BridgeOutput) => {
+    // What the chat showed as an error, and how the agent ended, without the conversation itself.
+    if ("bridge" in o && o.bridge === "error") logDebug({ kind: "bridge", what: "error", key: t.key, ok: false, error: o.message });
+    if ("bridge" in o && o.bridge === "exit") logDebug({ kind: "bridge", what: "agent exited", key: t.key, detail: { code: o.code ?? "signal" } });
+    // A turn that failed, or an error the agent reported inside the conversation (its message only).
+    if ("event" in o && o.event.t === "error") logDebug({ kind: "bridge", what: "agent error", key: t.key, ok: false, error: o.event.message });
+    if ("event" in o && o.event.t === "turn.end" && o.event.ok === false) logDebug({ kind: "bridge", what: "turn failed", key: t.key, ok: false, ms: o.event.durationMs ?? undefined });
+    process.stdout.write(JSON.stringify(o) + "\n");
+  };
   cleanStaging(ROOT);
   const leases = new InputLeases(ROOT);
   const holder: Holder = { id: `bridge:${process.pid}`, pid: process.pid, kind: "app" };
+  let send: (c: BridgeCommand) => void = () => {};
+  let busy: () => boolean = () => false;
+  let openNow: () => readonly string[] = () => [];
+  let handedOver = false;
+  // Set once the agent is wired up and `send`/`busy` are its own.
+  let wired = false;
+  // `view <key> terminal` ends a chat the app lost track of: close as if the chat closed, so the
+  // window gets its program back. Never mid-turn: the close waits for the turn (and anything
+  // queued) to end. Listening from before the lease is taken: a signal that came before the
+  // handlers would end this process without releasing it. A close asked before the agent is
+  // wired waits for it; the timer never holds a bridge open that ended on its own.
+  let closing = false;
+  const onTerm = () => {
+    if (closing) return;
+    closing = true;
+    logDebug({ kind: "bridge", what: handedOver ? "handover asked" : "close asked", key: t.key, detail: { busy: busy(), wired, approvals: openNow().length } });
+    // An approval this chat still waits for is one nobody can see any more (the app lost the chat):
+    // the person chose the other view, so it is denied, and the turn can end.
+    const message = handedOver ? "Closed in Agent Switch: the chat was opened again" : "Closed for the terminal in Agent Switch";
+    const tick = () => {
+      if (!wired) return void setTimeout(tick, 250).unref();
+      for (const id of openNow()) {
+        logDebug({ kind: "bridge", what: "approval denied on close", key: t.key });
+        send({ cmd: "deny", id, message });
+      }
+      if (busy()) return void setTimeout(tick, 250).unref();
+      send({ cmd: "close" });
+    };
+    tick();
+  };
+  // `view <key> chat` from an app window that lost this chat (a reload) takes it over: same close, window stays parked.
+  const onHandover = () => {
+    handedOver = true;
+    onTerm();
+  };
+  process.on("SIGTERM", onTerm);
+  process.on("SIGUSR2", onHandover);
   if (t.sessionId) {
     try {
       leases.acquire(t.key, holder);
     } catch (err) {
       if (err instanceof LeaseHeld) {
+        logDebug({ kind: "bridge", what: "lease held", key: t.key, ok: false, error: err.message });
         out({ bridge: "error", message: err.message });
         process.exitCode = 3;
         return;
@@ -387,10 +435,6 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
     if (t.sessionId) leases.release(t.key, holder);
   };
 
-  let send: (c: BridgeCommand) => void = () => {};
-  let busy: () => boolean = () => false;
-  let handedOver = false;
-  let openNow: () => readonly string[] = () => [];
   const inbox = setInterval(() => t.sessionId && drainInbox(ROOT, t.key, bridgeApplier(openNow, (c) => send(c))), INBOX_POLL_MS);
   let finished: Promise<void>;
   if (t.provider === "codex") {
@@ -436,26 +480,12 @@ export async function cmdBridge(providerId: ProviderId, arg: string | undefined,
     }
   });
   rl.on("close", () => send({ cmd: "close" }));
-  // `view <key> terminal` ends a chat the app lost track of: close as if the chat closed, so the
-  // window gets its program back. Never mid-turn: the close waits for the turn (and anything
-  // queued) to end. Kept until `done()` has run, so a second signal cannot cut a restore short.
-  let closing = false;
-  const onTerm = () => {
-    if (closing) return;
-    closing = true;
-    const tick = () => (busy() ? void setTimeout(tick, 250) : send({ cmd: "close" }));
-    tick();
-  };
-  // `view <key> chat` from an app window that lost this chat (a reload) takes it over: same close, window stays parked.
-  const onHandover = () => {
-    handedOver = true;
-    onTerm();
-  };
-  process.on("SIGTERM", onTerm);
-  process.on("SIGUSR2", onHandover);
+  wired = true;
+  logDebug({ kind: "bridge", what: "started", key: t.key, ok: true, detail: { provider: t.provider, mode } });
   await finished;
   rl.close();
   done();
+  logDebug({ kind: "bridge", what: "ended", key: t.key, detail: { handedOver } });
   process.off("SIGTERM", onTerm);
   process.off("SIGUSR2", onHandover);
 }

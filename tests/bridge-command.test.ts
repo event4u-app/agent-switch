@@ -101,6 +101,96 @@ test("bridge: SIGTERM mid-turn lets the turn finish, then closes and releases th
   }
 });
 
+test("bridge: a close or handover that arrives the moment it says ready still ends it cleanly, lease released", async () => {
+  const h = home();
+  const id = "9f640d3b-0a51-47b5-944c-934d3148a098";
+  const key = `claude/work/${id}`;
+  // The agent must really start, or the bridge ends on its own.
+  const tr = path.join(h, "claude", "work", "config", "projects", "-work-fx", `${id}.jsonl`);
+  fs.writeFileSync(tr, fs.readFileSync(tr, "utf8").replaceAll('"/work/fx"', JSON.stringify(h)));
+  const code = `const { cmdBridge } = await import(${JSON.stringify(mod)}); await cmdBridge("claude", ${JSON.stringify(id)}, {});`;
+  const once = (signal: NodeJS.Signals) =>
+    new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((res) => {
+      const c = spawn(process.execPath, ["--input-type=module", "-e", code], { env: { ...process.env, AGENT_SWITCH_HOME: h }, stdio: ["pipe", "pipe", "pipe"] });
+      let sent = false;
+      c.stdout.on("data", (d: Buffer) => {
+        if (!sent && d.toString().includes('"bridge":"ready"')) {
+          sent = true;
+          c.kill(signal);
+        }
+      });
+      c.on("close", (code, sig) => res({ code, signal: sig }));
+    });
+  // Measured before the handlers moved ahead of the start: 30 of 30 such runs were killed outright.
+  for (let i = 0; i < 10; i++) {
+    const r = await once(i % 2 ? "SIGTERM" : "SIGUSR2");
+    assert.deepEqual(r, { code: 0, signal: null }, `run ${i}: ended by the signal itself, not by a clean close`);
+  }
+  const lease = run(h, `const { InputLeases } = await import(${JSON.stringify(leaseMod)}); console.log(JSON.stringify(new InputLeases(process.env.AGENT_SWITCH_HOME).read(${JSON.stringify(key)})));`);
+  assert.equal(JSON.parse(lease.stdout), null);
+});
+
+test("bridge: a close while the chat waits for an approval nobody sees denies it, so the turn ends and the bridge closes", async () => {
+  const h = home();
+  const id = "9f640d3b-0a51-47b5-944c-934d3148a098";
+  const key = `claude/work/${id}`;
+  const tr = path.join(h, "claude", "work", "config", "projects", "-work-fx", `${id}.jsonl`);
+  fs.writeFileSync(tr, fs.readFileSync(tr, "utf8").replaceAll('"/work/fx"', JSON.stringify(h)));
+  const answers = path.join(h, "answers");
+  // An agent that asks to run a command and waits for the answer before it ends the turn.
+  const asking = path.join(h, "asking-claude.mjs");
+  fs.writeFileSync(
+    asking,
+    `#!${process.execPath}
+import fs from "node:fs";
+const out = (o) => process.stdout.write(JSON.stringify(o) + "\\n");
+let buf = "";
+process.stdin.on("data", (d) => {
+  buf += d;
+  let i;
+  while ((i = buf.indexOf("\\n")) >= 0) {
+    const line = buf.slice(0, i); buf = buf.slice(i + 1);
+    let m; try { m = JSON.parse(line); } catch { continue; }
+    if (m.type === "user") out({ type: "control_request", request_id: "r1", request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "tail daemon.log" } } });
+    if (m.type === "control_response") {
+      fs.appendFileSync(${JSON.stringify(answers)}, JSON.stringify(m.response) + "\\n");
+      out({ type: "result", subtype: "success", is_error: false, duration_ms: 1, total_cost_usd: 0 });
+    }
+  }
+});
+process.stdin.on("end", () => process.exit(0));
+`,
+    { mode: 0o755 },
+  );
+  fs.writeFileSync(path.join(h, "state.json"), JSON.stringify({ active: {}, binaryPaths: { claude: asking } }));
+  const code = `const { cmdBridge } = await import(${JSON.stringify(mod)}); await cmdBridge("claude", ${JSON.stringify(id)}, {});`;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", code], { env: { ...process.env, AGENT_SWITCH_HOME: h }, stdio: ["pipe", "pipe", "pipe"] });
+  let out = "";
+  child.stdout.on("data", (d: Buffer) => (out += d.toString()));
+  const exited = new Promise<number | null>((r) => child.once("close", (c) => r(c)));
+  const until = async (f: () => boolean, ms: number) => {
+    const end = Date.now() + ms;
+    while (!f() && Date.now() < end) await new Promise((r) => setTimeout(r, 25));
+    return f();
+  };
+  try {
+    assert.ok(await until(() => out.includes('"bridge":"ready"'), 10_000), out);
+    child.stdin.write(JSON.stringify({ cmd: "send", text: "check the log" }) + "\n");
+    assert.ok(await until(() => out.includes('"approval.requested"') || out.includes("r1"), 5_000), out);
+    child.kill("SIGTERM");
+    const ended = await Promise.race([exited, new Promise((r) => setTimeout(() => r("hung"), 8_000))]);
+    assert.equal(ended, 0, `the bridge closed instead of waiting forever: ${out}`);
+    const answer = JSON.parse(fs.readFileSync(answers, "utf8").trim().split("\n")[0]);
+    assert.equal(answer.request_id, "r1");
+    assert.equal(answer.response.behavior, "deny");
+    assert.equal(answer.response.message, "Closed for the terminal in Agent Switch");
+    const lease = run(h, `const { InputLeases } = await import(${JSON.stringify(leaseMod)}); console.log(JSON.stringify(new InputLeases(process.env.AGENT_SWITCH_HOME).read(${JSON.stringify(key)})));`);
+    assert.equal(JSON.parse(lease.stdout), null);
+  } finally {
+    child.kill("SIGKILL");
+  }
+});
+
 test("bridge: an agent binary that cannot start ends the bridge instead of hanging", () => {
   const h = home();
   fs.writeFileSync(path.join(h, "state.json"), JSON.stringify({ active: {}, binaryPaths: { claude: path.join(h, "no-such-claude") } }));
@@ -183,6 +273,40 @@ test("bridge: handed over to a new chat (SIGUSR2), it closes and leaves the wind
     assert.ok(!runs.some((l) => /--resume 9f640d3b/.test(l) && !/(^| )-p( |$)/.test(l)), `no terminal program came back: ${runs.join(" | ")}`);
     const lease = JSON.parse(spawnSync(process.execPath, ["--input-type=module", "-e", `const { InputLeases } = await import(${JSON.stringify(leaseMod)}); console.log(JSON.stringify(new InputLeases(process.env.AGENT_SWITCH_HOME).read(${JSON.stringify(key)})));`], { env, encoding: "utf8" }).stdout);
     assert.equal(lease, null, "the lease is free for the new chat");
+  } finally {
+    spawnSync("tmux", ["-L", socket, "kill-server"]);
+  }
+});
+
+test("bridge: chat → terminal, then a chat started again on the window running its program is refused — one program on the conversation", { skip: spawnSync("tmux", ["-V"]).status === 0 ? false : "tmux is not installed here" }, () => {
+  const h = home();
+  const id = "9f640d3b-0a51-47b5-944c-934d3148a098";
+  const key = `claude/work/${id}`;
+  const log = path.join(h, "runs");
+  const fake = path.join(h, "fake-claude-log.mjs");
+  fs.writeFileSync(fake, `#!${process.execPath}\nimport fs from "node:fs";\nfs.appendFileSync(${JSON.stringify(log)}, process.argv.slice(2).join(" ") + "\\n");\nprocess.stdin.on("data", () => {});\nprocess.stdin.on("end", () => process.exit(0));\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(h, "state.json"), JSON.stringify({ active: {}, binaryPaths: { claude: fake } }));
+  const tr = path.join(h, "claude", "work", "config", "projects", "-work-fx", `${id}.jsonl`);
+  fs.writeFileSync(tr, fs.readFileSync(tr, "utf8").replaceAll('"/work/fx"', JSON.stringify(h)));
+  const socket = `asw-bt-${process.pid}`;
+  const env = { ...process.env, AGENT_SWITCH_HOME: h, AGENT_SWITCH_HOST_SOCKET: socket };
+  const hostMod = new URL("../src/host/tmux-host.js", import.meta.url).href;
+  const go = (code: string, input = "") => spawnSync(process.execPath, ["--input-type=module", "-e", code], { env, encoding: "utf8", input, timeout: 20_000 });
+  const runs = () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").trim().split("\n") : []);
+  try {
+    // The window runs the program again (the chat was closed for the terminal), not parked.
+    const started = go(`const { TmuxHost } = await import(${JSON.stringify(hostMod)}); new TmuxHost(process.env.AGENT_SWITCH_HOME).start({ provider: "claude", account: "work", configDir: "/tmp", cwd: process.env.AGENT_SWITCH_HOME, bin: ${JSON.stringify(fake)}, sessionId: ${JSON.stringify(id)} });`);
+    assert.equal(started.status, 0, started.stderr);
+    const end = Date.now() + 5000;
+    while (!runs().length && Date.now() < end) spawnSync("sleep", ["0.05"]);
+    const before = runs().length;
+    const again = go(`const { cmdBridge } = await import(${JSON.stringify(mod)}); await cmdBridge("claude", ${JSON.stringify(id)}, {}); process.exit(process.exitCode ?? 0);`);
+    assert.equal(again.status, 1);
+    assert.match(JSON.parse(again.stdout.trim().split("\n")[0]).message, /open in its terminal in Agent Switch/);
+    spawnSync("sleep", ["0.3"]);
+    assert.equal(runs().length, before, `no second program started: ${runs().join(" | ")}`);
+    const reg = JSON.parse(fs.readFileSync(path.join(h, "host", "sessions.json"), "utf8"));
+    assert.equal(reg[key].parked, undefined, "the terminal keeps the window");
   } finally {
     spawnSync("tmux", ["-L", socket, "kill-server"]);
   }

@@ -14,6 +14,7 @@ import * as path from "node:path";
 
 import { configDir, die, readBinaryPath, ROOT } from "../profiles.js";
 import { provider as providerOf } from "../providers.js";
+import { logDebug } from "../debug-log.js";
 import { alive as pidAlive, InputLeases } from "../host/lease.js";
 import { TmuxHost, type HostedSession } from "../host/tmux-host.js";
 import { turnInFlight } from "../telemetry.js";
@@ -83,7 +84,8 @@ export function toChat(d: ViewDeps, key: string): HostedSession {
   }
   if (d.turnRunning(key)) throw new ViewRefused("a turn is running — switch after this turn");
   const w = d.writer(key);
-  if (w) throw new ViewRefused(`${key} already has a writer (${w})`);
+  // A chat bridge this app lost track of, still holding the session beside its terminal: handed over first.
+  if (w && !d.adoptChat?.(key, w)) throw new ViewRefused(`${key} already has a writer (${w})`);
   return d.host.park(key, d.parked(key));
 }
 
@@ -190,11 +192,14 @@ export function restoreAfterChat(key: string, deps?: ViewDeps, asHolder?: string
 export function cmdView(arg: string | undefined, to: string | undefined, flags: Record<string, string | boolean>): void {
   if (!arg || (to !== "chat" && to !== "terminal")) die("usage: agent-switch view <session> chat|terminal [--json]");
   if (!TmuxHost.available()) die("Chat needs a session hosted in Agent Switch (hosting needs tmux)");
+  const t0 = Date.now();
   try {
     const s = to === "chat" ? toChat(realViewDeps(), arg) : toTerminal(realViewDeps(), arg, { takeOver: true });
+    logDebug({ kind: "view", what: `to ${to}`, key: arg, ok: true, ms: Date.now() - t0 });
     if (flags.json) console.log(JSON.stringify({ ok: true, key: s.key, view: to }));
     else console.log(to === "chat" ? `${s.key} is open in the chat view; its window waits until the chat closes.` : `${s.key} is back in its terminal.`);
   } catch (err) {
+    logDebug({ kind: "view", what: `to ${to}`, key: arg, ok: false, ms: Date.now() - t0, error: (err as Error).message });
     if (!(err instanceof ViewRefused)) throw err;
     if (flags.json) {
       console.log(JSON.stringify({ ok: false, error: err.message }));
