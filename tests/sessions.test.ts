@@ -181,17 +181,23 @@ test("listSessions lists only sessions you can open (owner, 2026-11-24): nothing
     seedRun(encodeProjectDir("/private/var/folders/_s/abc123/T/dl-unopim-1"), "nested", said("sdk-cli"), t - 1_000);
     seedRun(encodeProjectDir("/private/tmp/claude-501/scratchpad/s1-cwd"), "cwd", said("cli"), t - 2_000);
     seedRun(encodeProjectDir("/private/tmp/claude-501/x/scratchpad-readers"), "readers", said("sdk-cli"), t - 3_000);
-    seedRun(encodeProjectDir(os.tmpdir()), "ostmp", said("cli"), t - 4_000);
-    // Opened and closed before a word was said: nothing to open.
-    seedRun("-Users-me-code-app", "empty", `${JSON.stringify({ type: "summary", cwd: "/Users/me/code/app" })}\n`, t - 5_000);
+    seedRun(encodeProjectDir("/fake-os-tmp/work"), "ostmp", said("cli"), t - 4_000);
+    // Opened and left before a word was said: nothing to open.
+    seedRun("-Users-me-code-app", "empty", `${JSON.stringify({ type: "summary", cwd: "/Users/me/code/app" })}\n`, t - 20 * 60_000);
+    // Just started, nothing written yet: a live session, it stays.
+    seedRun("-Users-me-code-app", "fresh", "", t - 9_000);
     // The chat bridge runs `claude -p` too: in a real project it is a hosted chat and stays.
     seedRun("-Users-me-code-app", "hosted", said("sdk-cli"), t - 6_000);
     seedRun("-Users-me-code-app", "terminal", said("cli"), t - 7_000);
     seedRun("-Users-me-code-other", "next", said("cli"), t - 8_000);
 
-    assert.deepEqual(listSessions(cfg, 10).map((r) => r.sessionId), ["hosted", "terminal", "next"]);
+    // This test's own home sits in the real temp folder, so the temp folders are given here.
+    const temp = ["/private/var/folders", "/private/tmp", "/fake-os-tmp"].map(encodeProjectDir);
+    assert.deepEqual(listSessions(cfg, 10, undefined, temp).map((r) => r.sessionId), ["hosted", "terminal", "next", "fresh"]);
     // Hidden sessions never take a slot from the cap.
-    assert.deepEqual(listSessions(cfg, 2).map((r) => r.sessionId), ["hosted", "terminal"]);
+    assert.deepEqual(listSessions(cfg, 2, undefined, temp).map((r) => r.sessionId), ["hosted", "terminal"]);
+    // A profile that itself lives in a temp folder is a sandbox: nothing there is hidden, the abandoned empty one aside.
+    assert.deepEqual(listSessions(cfg, 10, undefined, [...temp, encodeProjectDir(path.resolve(cfg))]).length, 9);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

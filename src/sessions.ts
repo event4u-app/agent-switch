@@ -124,11 +124,15 @@ function inTempFolder(projectDir: string, temp: readonly string[]): boolean {
   return temp.some((p) => projectDir === p || projectDir.startsWith(`${p}-`));
 }
 
-/** Opened and closed before a word was said: no user or assistant record. Anything past
- *  the head cap has content; a smaller file is read whole, once per size. */
+/** A session just started has nothing written yet; only one left that way this long is abandoned. */
+const EMPTY_GRACE_MS = 10 * 60_000;
+
+/** Opened and left before a word was said: no user or assistant record, and quiet past
+ *  the grace time. Anything past the head cap has content; a smaller file is read
+ *  whole, once per size. */
 const emptyCache = new Map<string, { size: number; empty: boolean }>();
 function isEmptyTranscript(file: string, st: fs.Stats): boolean {
-  if (st.size > HEADER_CAP) return false;
+  if (st.size > HEADER_CAP || Date.now() - st.mtimeMs < EMPTY_GRACE_MS) return false;
   const hit = emptyCache.get(file);
   if (hit && hit.size === st.size) return hit.empty;
   let empty = false;
@@ -282,7 +286,13 @@ export interface SessionRow {
 /** Recent sessions of one profile config dir, newest first, capped at `limit`.
  *  Pure directory scan — works on seeded fakes, shared trees, and win32. Sorts
  *  and caps on `stat` alone, so only the returned rows pay for a header read. */
-export function listSessions(configDir: string, limit: number, readHeader: (file: string) => SessionHeader = readSessionHeader): SessionRow[] {
+export function listSessions(
+  configDir: string,
+  limit: number,
+  readHeader: (file: string) => SessionHeader = readSessionHeader,
+  /** The temp folders, encoded; injectable because a test's own home lives in one. */
+  temp: readonly string[] = tempProjectPrefixes(),
+): SessionRow[] {
   const projects = path.join(configDir, "projects");
   let dirs: fs.Dirent[];
   try {
@@ -291,9 +301,11 @@ export function listSessions(configDir: string, limit: number, readHeader: (file
     return [];
   }
   const found: { file: string; sessionId: string; projectDir: string; st: fs.Stats }[] = [];
-  const temp = tempProjectPrefixes();
+  // A profile that itself lives in a temp folder is a throwaway home (a sandbox,
+  // a test run): there the temp folder is where the work is, so nothing is hidden.
+  const sandbox = inTempFolder(encodeProjectDir(path.resolve(configDir)), temp);
   for (const d of dirs) {
-    if (inTempFolder(d.name, temp)) continue;
+    if (!sandbox && inTempFolder(d.name, temp)) continue;
     // A shared-history tree links `projects/` itself, not its children — but be
     // tolerant of either; only descend into directories (or links to them).
     const dirPath = path.join(projects, d.name);

@@ -223,7 +223,7 @@ function seedTranscript(home: string, profile: string, encDir: string, id: strin
   const dir = path.join(home, "claude", profile, "config", "projects", encDir);
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${id}.jsonl`);
-  fs.writeFileSync(file, `${JSON.stringify({ cwd: "/tmp/proj", summary: "seeded" })}\n{"opaque":1}\n`);
+  fs.writeFileSync(file, `${JSON.stringify({ cwd: "/tmp/proj", summary: "seeded" })}\n{"type":"user","opaque":1}\n`);
   return file;
 }
 
@@ -394,7 +394,7 @@ test("`sessions --json` git facts follow the folder of the newest turn (a worktr
     seed(home, "claude", "work");
     const dir = path.join(home, "claude", "work", "config", "projects", "-repo");
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "5555-git.jsonl"), JSON.stringify({ cwd: repo, summary: "git" }) + "\n");
+    fs.writeFileSync(path.join(dir, "5555-git.jsonl"), JSON.stringify({ type: "user", cwd: repo, summary: "git" }) + "\n");
     const before = JSON.parse(run(home, ["sessions", "--json"]))[0].git;
     assert.deepEqual([before.branch, before.worktree, before.cwdSource], ["main", false, "transcript"]);
 
@@ -451,7 +451,7 @@ test("`sessions resume`: a dirty checkout gets a new worktree at the session's l
     seed(home, "claude", "work");
     const dir = path.join(home, "claude", "work", "config", "projects", "-repo");
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "6666-resume.jsonl"), JSON.stringify({ cwd: repo }) + "\n");
+    fs.writeFileSync(path.join(dir, "6666-resume.jsonl"), JSON.stringify({ type: "user", cwd: repo }) + "\n");
     const p = JSON.parse(run(home, ["sessions", "resume", "6666-resume", "--json"]));
     assert.equal(p.target, "new_worktree");
     assert.ok(p.checks.some((c: any) => !c.ok && /not committed/.test(c.text)));
@@ -473,7 +473,7 @@ test("open: targets for a session's worktree root, a default per repo, and nothi
     seed(home, "claude", "work");
     const dir = path.join(home, "claude", "work", "config", "projects", "-repo");
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "9999-open.jsonl"), JSON.stringify({ cwd: path.join(repo, "src") }) + "\n");
+    fs.writeFileSync(path.join(dir, "9999-open.jsonl"), JSON.stringify({ type: "user", cwd: path.join(repo, "src") }) + "\n");
     const t = JSON.parse(run(home, ["open-targets", "9999-open", "--json"]));
     assert.equal(t.root, repo, "the worktree root, not the subfolder");
     assert.deepEqual(t.agentApp, { app: "claude-desktop", label: "Claude Desktop", note: "opens the app" });
@@ -2512,7 +2512,7 @@ test("sessions: a session whose last hook event is Notification, with nothing wr
     const t0 = Date.now() - 10 * 60_000;
     for (const n of [1, 2, 3]) {
       const f = path.join(proj, `${id(n)}.jsonl`);
-      fs.writeFileSync(f, JSON.stringify({ cwd: "/w/app" }) + "\n");
+      fs.writeFileSync(f, JSON.stringify({ type: "user", cwd: "/w/app" }) + "\n");
       fs.utimesSync(f, t0 / 1000, t0 / 1000);
     }
     const ev = (n: number, event: string, at: number) => JSON.stringify({ event, sessionId: id(n), at: new Date(at).toISOString() });
