@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bot, ChevronDown, ChevronRight, Folder, SquareTerminal } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, Folder, SquareTerminal, Swords, Users, Workflow as WorkflowIcon } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon, type StateSource } from "../ui/SessionStateIcon.js";
 import type { IdentityColor, SessionState } from "../vm/types.js";
@@ -98,7 +98,7 @@ export const childTotal = (s: Pick<RowSession, "children">) => s.children.reduce
 export function childNoun(s: Pick<RowSession, "children">): string {
   const n = childTotal(s);
   const kinds = new Set(s.children.map((c) => c.kind));
-  const noun = kinds.size === 1 && kinds.has("subagent") ? "subagent" : [...kinds].every((k) => ["council", "arena", "court", "helper"].includes(k)) ? "helper session" : "related session";
+  const noun = kinds.size === 1 && kinds.has("subagent") ? "subagent" : [...kinds].every((k) => BOARD_KINDS.has(k)) ? "run" : [...kinds].every((k) => ["council", "arena", "court", "helper"].includes(k)) ? "helper session" : "related session";
   return `${n} ${n === 1 ? noun : noun + "s"}`;
 }
 
@@ -199,6 +199,13 @@ export function attention(s: RowSession): { text: string; tone: AttentionTone }[
   return out;
 }
 
+/** The children count's glyph: swords when an arena runs under the row, the workflow mark for runs only, else the subagent bot. */
+function ChildrenIcon({ kids }: { kids: readonly ChildModel[] }) {
+  if (kids.some((k) => k.kind === "arena-board")) return <Swords className="size-3.5" />;
+  if (kids.length && kids.every((k) => BOARD_KINDS.has(k.kind))) return <WorkflowIcon className="size-3.5" />;
+  return <Bot className="size-3.5" />;
+}
+
 /**
  * The one trailing slot, by priority (spec §5.2). Rank 4 rolls up: a waiting
  * descendant lights the same amber dot, and the tooltip names it (D6). Rank 5
@@ -212,7 +219,7 @@ export function trailing(s: RowSession, { counts = true, second = false }: { cou
     const running = counts ? runningOf(s.children) : 0;
     return running ? (
       <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-ac-muted" title={`${childNoun(s)} · ${running} running`}>
-        <Bot className="size-3.5" />
+        <ChildrenIcon kids={s.children} />
         {running}
       </span>
     ) : null;
@@ -229,7 +236,7 @@ export function trailing(s: RowSession, { counts = true, second = false }: { cou
   if (running)
     return (
       <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-ac-muted" title={`${childNoun(s)} · ${running} running`}>
-        <Bot className="size-3.5" />
+        <ChildrenIcon kids={s.children} />
         {running}
       </span>
     );
@@ -251,7 +258,12 @@ const TOOL_NAME: Record<ChildTool, string> = { claude: "Claude", codex: "Codex",
 const TOOL_MONO: Record<ChildTool, string> = { claude: "C", codex: "Cx", antigravity: "Ag" };
 
 /** A child that is a session with a key opens like any session; a subagent or a counted entry is not a session. Pure. */
-export const childOpens = (c: ChildModel) => c.kind !== "subagent" && c.source !== "counted" && c.id.split("/").length === 3;
+export const childOpens = (c: ChildModel) => c.kind !== "subagent" && c.source !== "counted" && !boardOpens(c) && c.id.split("/").length === 3;
+
+/** The kinds of row that stand for what a session orchestrates: they open its board. */
+export const BOARD_KINDS: ReadonlySet<string> = new Set(["arena-board", "council-board", "workflow"]);
+/** A row for an arena, a council or a workflow run opens the session's board there. Pure. */
+export const boardOpens = (c: ChildModel) => BOARD_KINDS.has(c.kind) && c.id.startsWith("board:");
 
 /** A subagent its hooks or Claude Code's own files reported opens its own transcript, read-only (7.7); a counted one is known by number only. Pure. */
 export const subagentOpens = (c: ChildModel) => c.kind === "subagent" && (c.source === "hook" || c.source === "files");
@@ -262,6 +274,7 @@ export const subagentElapsed = (c: ChildModel, nowMs: number): string | null => 
 /** The row's tooltip: identity and provenance in words (D5). `viewable`: a subagent row here opens its transcript. Pure. */
 export function childTitle(c: ChildModel, viewable = false): string {
   const via = VIA[c.source];
+  if (boardOpens(c)) return [c.label, c.kind === "arena-board" ? "arena" : c.kind === "council-board" ? "council" : "workflow run", via, "opens the board"].join(" · ");
   if (viewable && subagentOpens(c)) return [c.label, "subagent", c.doing ?? null, c.worktree ? `worktree ${c.worktree}` : null, via, "opens its transcript, read-only"].filter(Boolean).join(" · ");
   if (!childOpens(c)) return [c.count ? `${c.count} ${c.label}` : c.label, c.kind === "subagent" ? "subagent" : c.kind, c.worktree ? `worktree ${c.worktree}` : null, via, "runs inside its session — nothing to open"].filter(Boolean).join(" · ");
   return [c.label, c.tool ? TOOL_NAME[c.tool] : null, c.account?.name ?? null, via].filter(Boolean).join(" · ");
@@ -276,7 +289,11 @@ function ChildCells({ c }: { c: ChildModel }) {
   return (
     <>
       <SessionStateIcon state={c.state} source={c.stateSource} quiet={!!c.quiet} />
-      {c.kind === "subagent" || !c.tool ? (
+      {BOARD_KINDS.has(c.kind) ? (
+        <span className={cn("inline-flex size-4 shrink-0 items-center justify-center", c.kind === "arena-board" ? "text-ac-brand-text" : c.kind === "council-board" ? "text-ac-violet-text" : "text-ac-muted")}>
+          {c.kind === "arena-board" ? <Swords className="size-3.5" aria-label="arena" /> : c.kind === "council-board" ? <Users className="size-3.5" aria-label="council" /> : <WorkflowIcon className="size-3.5" aria-label="workflow" />}
+        </span>
+      ) : c.kind === "subagent" || !c.tool ? (
         <span className="inline-flex size-4 shrink-0 items-center justify-center text-ac-muted">
           <Bot className="size-3.5" aria-label="subagent" />
         </span>
@@ -425,16 +442,19 @@ interface TreeHandlers {
   onSelect: (key: string) => void;
   /** A hook subagent opens its transcript under its parent session (7.7). */
   onSubagent?: (parent: string, agentId: string) => void;
+  /** An arena, council or workflow row opens its session's board (`id`: the row's board id). */
+  onBoard?: (id: string) => void;
   onPeek?: (key: string | null, y: number) => void;
   /** ⌘J: the child row to focus (3.4). */
   focusKey?: string | null;
 }
 
-function ChildRow({ c, parent, depth, rails, last, onSelect, onSubagent, onPeek, focusKey }: { c: ChildModel; parent: string; depth: number; rails: readonly boolean[]; last: boolean } & TreeHandlers) {
+function ChildRow({ c, parent, depth, rails, last, onSelect, onSubagent, onBoard, onPeek, focusKey }: { c: ChildModel; parent: string; depth: number; rails: readonly boolean[]; last: boolean } & TreeHandlers) {
   const ref = useRef<HTMLDivElement>(null);
   const viewable = !!onSubagent && subagentOpens(c);
-  const opens = childOpens(c) || viewable;
-  const open = () => (onPeek?.(null, 0), viewable ? onSubagent!(parent, c.id) : onSelect(c.id));
+  const board = !!onBoard && boardOpens(c);
+  const opens = childOpens(c) || viewable || board;
+  const open = () => (onPeek?.(null, 0), board ? onBoard!(c.id) : viewable ? onSubagent!(parent, c.id) : onSelect(c.id));
   useEffect(() => {
     if (focusKey && focusKey === c.id) ref.current?.focus();
   }, [focusKey, c.id]);
@@ -567,6 +587,7 @@ export function SessionRow({
   onCheck,
   onPeek,
   onSubagent,
+  onBoard,
   focusKey,
   age,
 }: {
@@ -584,6 +605,7 @@ export function SessionRow({
   /** ⌘J: a child row to focus (3.4). */
   focusKey?: string | null;
   onSubagent?: (parent: string, agentId: string) => void;
+  onBoard?: (id: string) => void;
   /** "21m ago": how long since the session last did something. */
   age?: string | null;
 }) {
@@ -669,7 +691,7 @@ export function SessionRow({
       </div>
       {kids && (
         <div className={cn(!block && "mb-1")}>
-          <ChildTree kids={s.children} parent={s.key} onSelect={onSelect} onSubagent={onSubagent} onPeek={onPeek} focusKey={focusKey} />
+          <ChildTree kids={s.children} parent={s.key} onSelect={onSelect} onSubagent={onSubagent} onBoard={onBoard} onPeek={onPeek} focusKey={focusKey} />
         </div>
       )}
     </div>
@@ -692,6 +714,7 @@ export function SessionsZone({
   lastActiveOf = () => null,
   nowMs,
   onSubagent,
+  onBoard,
   groupOf,
   worktreeOf,
   onView,
@@ -732,6 +755,8 @@ export function SessionsZone({
   nowMs?: number;
   /** A hook subagent's row opens its transcript (7.7). */
   onSubagent?: (parent: string, agentId: string) => void;
+  /** An arena, council or workflow row opens its session's board. */
+  onBoard?: (id: string) => void;
   /** The group a row belongs to (project, account or tool), or null for "none of them". */
   groupOf?: (key: string) => string | null;
   /** The checkout a row works in, for the worktree sub-header under "Group by project" (D8). */
@@ -885,6 +910,7 @@ export function SessionsZone({
             onCheck={onCheck}
             onPeek={onPeek}
             onSubagent={onSubagent}
+            onBoard={onBoard}
             focusKey={focusKey}
             age={ageOf(s)}
           />

@@ -16,6 +16,9 @@ import { ProviderId, PROVIDER_IDS, isProviderId } from "./providers.js";
  *  leaks into the positionals and the flag reads back as boolean `true`
  *  (the bug behind `notify`/`providers --surface` silently losing their args). */
 const VALUE_FLAGS = new Set([
+  // `workflows --council RUN --say TEXT`: the live council table's run and the remark.
+  "council",
+  "say",
   "provider",
   "exclude",
   "prompt",

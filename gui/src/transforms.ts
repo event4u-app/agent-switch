@@ -114,6 +114,14 @@ export interface SessionRow {
   /** v3: helper sessions and subagents (`sessions --json` → children). */
   children?: unknown[];
   childCount?: number;
+  /** v3: the session's Workflow runs, compact (`workflows <key>` has the detail). */
+  workflows?: unknown[];
+  /** v3: the agent-config brackets (arenas) the session drives, compact. */
+  brackets?: unknown[];
+  /** v3: which boards the session's own text names a run for: "bracket", "council". */
+  boards?: string[];
+  /** v3: a council table of this session listens right now. */
+  councilLive?: boolean;
   /** v3: the session key of the parent, when this one is a helper. */
   parent?: string;
   /** v3: library entry and whether the transcript is kept. */
