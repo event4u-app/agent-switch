@@ -129,3 +129,12 @@ describe("one session unfolded at a time (owner, 2026-11-24)", () => {
     expect(screen.queryByText("kid 1")).toBeNull();
   });
 });
+
+describe("open in its tab (owner, 2026-11-24)", () => {
+  it("uses the browser's open-in-tab icon, so it never looks like the High thinking arrow beside it", () => {
+    render(<RunningOn name="side" sessions={[{ row: s("claude/side/a", { title: "Fix wedge" }), model: "Opus 5.5", thinking: "High", hosted: true }]} onOpen={vi.fn()} onShowChild={vi.fn()} onModel={vi.fn()} />);
+    const open = screen.getByTitle("Open “Fix wedge” in its tab");
+    expect(open.querySelector(".lucide-external-link")).toBeTruthy();
+    expect(open.querySelector(".lucide-arrow-up-right")).toBeNull();
+  });
+});

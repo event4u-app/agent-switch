@@ -6,7 +6,7 @@
  * window. Locked for a session in the user's own terminal.
  */
 import { useState } from "react";
-import { ArrowUpRight, ChevronDown, ChevronRight, Lock, PanelRight } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Lock, PanelRight } from "lucide-react";
 import { cn } from "../lib/utils.js";
 import { SessionStateIcon } from "../ui/SessionStateIcon.js";
 import { AccountMark } from "./kit.js";
@@ -77,7 +77,7 @@ export function RunningOn({
                 <button type="button" onClick={() => onOpen(s.key)} title={`Open “${s.title}” in its tab`} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
                   <SessionStateIcon state={s.state} />
                   <span className="min-w-0 flex-1 truncate text-[12.5px] text-ac-soft group-hover:text-ac-text">{s.title}</span>
-                  <ArrowUpRight className="size-3.5 shrink-0 text-ac-faint group-hover:text-ac-text" />
+                  <ExternalLink aria-hidden className="size-3.5 shrink-0 text-ac-faint group-hover:text-ac-text" />
                 </button>
               </div>
               {/* Account, then model and thinking: the same chips, in the same order, as the session bar. */}
