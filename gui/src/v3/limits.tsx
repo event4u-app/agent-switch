@@ -265,7 +265,7 @@ export function LimitsPopover({ a, nowMs, moveWhy, onMove, onAccounts, running }
         <button type="button" onClick={moveWhy ? undefined : onMove} aria-disabled={moveWhy ? true : undefined} title={moveWhy ?? undefined} aria-description={moveWhy ?? undefined} className={cn("h-7 rounded-md border border-ac-line2 px-2.5 text-xs", moveWhy ? "cursor-default text-ac-faint" : "text-ac-soft hover:text-ac-text")}>
           Move its session…
         </button>
-        <button type="button" onClick={onAccounts} className="h-7 rounded-md px-2.5 text-xs text-ac-muted hover:text-ac-text">
+        <button type="button" onClick={onAccounts} className="h-7 rounded-md px-2.5 text-xs font-medium text-ac-brand-text hover:underline">
           Open Accounts
         </button>
       </div>
