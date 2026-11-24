@@ -903,8 +903,9 @@ export function V3Window({
         }}
       />
     ) : overlay === "inbox" ? (
-      <Anchored onClose={close} className="absolute right-3 top-11 z-10">
-        <InboxPopover items={needs} history={data.history} focusedId={null} nowMs={data.nowMs} always={(n) => !!data.chatHere?.(n.subject)} onVerb={(n) => (close(), onVerb(n))} onAllLater={() => (close(), act({ type: "needs-later-all" }))} />
+      // Full height under the title bar, on the right, like v2's notifications sheet (owner, 2026-11-24).
+      <Anchored onClose={close} className="absolute bottom-0 right-0 top-11 z-10">
+        <InboxPopover sheet items={needs} history={data.history} focusedId={null} nowMs={data.nowMs} always={(n) => !!data.chatHere?.(n.subject)} onVerb={(n) => (close(), onVerb(n))} onAllLater={() => (close(), act({ type: "needs-later-all" }))} />
       </Anchored>
     ) : overlay === "new" ? (
       <NewSessionDialog key={data.newSession.initial.folder} initial={data.newSession.initial} facts={data.newSession.facts} onClose={() => (close(), act({ type: "start-draft", plan: null }))} onChange={(plan) => act({ type: "start-draft", plan })} onStart={(plan) => (close(), act({ type: "start", plan }))} />
