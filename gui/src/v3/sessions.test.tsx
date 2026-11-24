@@ -233,6 +233,23 @@ describe("one status vocabulary (5.1)", () => {
     expect(document.querySelector("[data-attention]"), "nothing to do: no extra line").toBeNull();
   });
 
+  it("needs you takes the accent from the settings, over a warning, under a problem (owner, 2026-11-24)", () => {
+    const bar = (row: RowSession) => {
+      cleanup();
+      render(<SessionRow s={row} comfortable {...on} />);
+      return document.querySelector("[data-attention]")!;
+    };
+    for (const row of [s("n", { state: "needs-you" }), s("c", { state: "idle", children: [{ id: "k", label: "Explore", kind: "subagent", state: "needs-you", source: "hook" }] })]) {
+      const line = bar(row);
+      expect(line.getAttribute("data-tone")).toBe("needs");
+      expect(line.className).toMatch(/bg-ac-brand-tint/);
+      expect(line.className).toMatch(/text-ac-brand-text/);
+    }
+    expect(bar(s("w", { state: "needs-you", account: { name: "side", nearLimit: true } })).getAttribute("data-tone"), "over a warning").toBe("needs");
+    expect(bar(s("a", { state: "needs-you", pr: { number: 7, ci: "FAILURE", mergeable: "MERGEABLE" } })).getAttribute("data-tone"), "under a problem").toBe("alert");
+    expect(bar(s("l", { account: { name: "side", nearLimit: true } })).getAttribute("data-tone"), "a warning alone stays orange").toBe("warn");
+  });
+
   it("a compact row says CI failing and merge conflict in words in its one trailing slot", () => {
     render(<SessionRow s={failing()} {...on} />);
     expect(screen.getByText("CI failing")).toBeTruthy();

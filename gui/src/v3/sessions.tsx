@@ -169,17 +169,24 @@ export function prProblem(s: RowSession): "CI failing" | "merge conflict" | null
   return s.pr?.ci === "FAILURE" ? "CI failing" : s.pr?.mergeable === "CONFLICTING" ? "merge conflict" : null;
 }
 
-const ATTENTION_TONE = { info: "bg-ac-info-tint text-ac-info-text", warn: "bg-ac-warn-tint text-ac-warn-text", alert: "bg-ac-alert-tint text-ac-alert-text" } as const;
-/** The bar takes the most serious tone of what it says. Pure. */
-export const worst = (asks: readonly { tone: "warn" | "alert" | "info" }[]): "warn" | "alert" | "info" =>
-  asks.some((a) => a.tone === "alert") ? "alert" : asks.some((a) => a.tone === "warn") ? "warn" : "info";
+/** `needs` is the accent set in Settings: waiting on you is the app's call to act, not a warning. */
+type AttentionTone = "needs" | "warn" | "alert" | "info";
+const ATTENTION_TONE: Record<AttentionTone, string> = {
+  info: "bg-ac-info-tint text-ac-info-text",
+  warn: "bg-ac-warn-tint text-ac-warn-text",
+  needs: "bg-ac-brand-tint text-ac-brand-text",
+  alert: "bg-ac-alert-tint text-ac-alert-text",
+};
+const RANK: readonly AttentionTone[] = ["alert", "needs", "warn", "info"];
+/** The bar takes the most serious tone of what it says: a problem, then needs you, then a warning. Pure. */
+export const worst = (asks: readonly { tone: AttentionTone }[]): AttentionTone => RANK.find((t) => asks.some((a) => a.tone === t)) ?? "info";
 
 /** What a row asks of you, for its own line under the title (two-line rows): what to do first. Pure. */
-export function attention(s: RowSession): { text: string; tone: "warn" | "alert" | "info" }[] {
-  const out: { text: string; tone: "warn" | "alert" | "info" }[] = [];
+export function attention(s: RowSession): { text: string; tone: AttentionTone }[] {
+  const out: { text: string; tone: AttentionTone }[] = [];
   const waiting = s.state !== "needs-you" ? waitingChild(s.children) : null;
-  if (s.state === "needs-you" || s.needsYou) out.push({ text: "Needs you", tone: "warn" });
-  else if (waiting) out.push({ text: `${waiting.label} needs you`, tone: "warn" });
+  if (s.state === "needs-you" || s.needsYou) out.push({ text: "Needs you", tone: "needs" });
+  else if (waiting) out.push({ text: `${waiting.label} needs you`, tone: "needs" });
   const problem = prProblem(s);
   if (problem) out.push({ text: problem === "CI failing" ? `#${s.pr!.number} CI failing` : `#${s.pr!.number} merge conflict`, tone: "alert" });
   if (s.account.nearLimit) out.push({ text: `${s.account.name} near its limit`, tone: "warn" });
